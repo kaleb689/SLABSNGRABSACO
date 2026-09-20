@@ -5,9 +5,12 @@ const state = { tier: 1, plans: {
 }};
 
 function go(page){
+  const target = document.getElementById(page);
+  if(!target) return;
   document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
-  document.getElementById(page).classList.add("active");
-  document.querySelectorAll(".nav-link").forEach(x=>x.classList.toggle("active",x.dataset.page===page));
+  target.classList.add("active");
+  document.querySelectorAll(".nav-link[data-page]").forEach(x=>x.classList.toggle("active",x.dataset.page===page));
+  if(location.hash !== `#${page}`) history.replaceState(null,"",`#${page}`);
   window.scrollTo({top:0,behavior:"smooth"});
 }
 function selectTier(tier){
@@ -16,7 +19,16 @@ function selectTier(tier){
     `${state.plans[tier].name} — $${state.plans[tier].amount}/month`;
   go("profile");
 }
-document.querySelectorAll("[data-page]").forEach(el=>el.addEventListener("click",()=>go(el.dataset.page)));
+document.querySelectorAll("[data-page]").forEach(el=>el.addEventListener("click",(event)=>{
+  event.preventDefault();
+  go(el.dataset.page);
+}));
+window.addEventListener("hashchange",()=>{
+  const page=location.hash.slice(1);
+  if(["home","pricing","profile","guide"].includes(page)) go(page);
+});
+const initialPage=location.hash.slice(1);
+if(["home","pricing","profile","guide"].includes(initialPage)) go(initialPage);
 document.querySelectorAll("[data-select]").forEach(el=>el.addEventListener("click",()=>selectTier(Number(el.dataset.select))));
 
 const params = new URLSearchParams(location.search);
