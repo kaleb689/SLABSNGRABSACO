@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SLABS N GRABS ACO — Secure Admin</title><link rel="stylesheet" href="/styles.css"></head>
+<body><main class="admin-shell"><div class="admin-login-card">
+<img src="/slabsngrabs-aco-logo-transparent.png" class="admin-logo" alt="SLABS N GRABS ACO">
+<h1>Secure Admin Portal</h1><p class="muted">Authorized access only.</p>
+<form id="loginForm"><label>Admin password<input id="password" type="password" autocomplete="current-password" required></label>
+<button class="primary" type="submit">Sign in</button><p id="msg"></p></form></div>
+<section id="dashboard" hidden><div class="admin-head"><h1>Paid Customer Profiles</h1><button id="logout">Log out</button></div><div id="rows"></div></section></main>
+<script>
+const f=document.getElementById('loginForm'), dash=document.getElementById('dashboard'), msg=document.getElementById('msg');
+async function load(){const r=await fetch('/api/admin/submissions');if(!r.ok)return;const d=await r.json();f.parentElement.hidden=true;dash.hidden=false;
+document.getElementById('rows').innerHTML=(d.submissions||d||[]).map(x=>`<article class="admin-card"><h3>${x.profileName||x.id||'Submission'}</h3><pre>${JSON.stringify(x,null,2)}</pre></article>`).join('')||'<p>No paid submissions yet.</p>';}
+f.addEventListener('submit',async e=>{e.preventDefault();const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('password').value})});if(r.ok)load();else msg.textContent='Invalid credentials.';});
+document.getElementById('logout').onclick=async()=>{await fetch('/api/admin/logout',{method:'POST'});location.reload()};load();
+</script></body></html>
