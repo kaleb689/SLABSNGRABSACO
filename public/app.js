@@ -1,97 +1,710 @@
-const state = { tier: 1, plans: {
-  1:{name:"Tier 1",profiles:1,amount:30},
-  2:{name:"Tier 2",profiles:2,amount:50},
-  3:{name:"Tier 3",profiles:3,amount:80}
-}};
+const PLANS = {
+  1: {
+    name: "Starter",
+    profiles: 1,
+    amount: 30
+  },
+  2: {
+    name: "Popular",
+    profiles: 2,
+    amount: 50
+  },
+  3: {
+    name: "Advanced",
+    profiles: 3,
+    amount: 80
+  },
+  4: {
+    name: "Pro",
+    profiles: 5,
+    amount: 130
+  },
+  5: {
+    name: "High Volume",
+    profiles: 10,
+    amount: 215
+  },
+  6: {
+    name: "Power User",
+    profiles: 20,
+    amount: 450
+  },
+  7: {
+    name: "Elite",
+    profiles: 50,
+    amount: 950
+  }
+};
 
-function go(page){
+const state = {
+  tier: Number(localStorage.getItem("sng_selected_tier")) || 1
+};
+
+if (!PLANS[state.tier]) {
+  state.tier = 1;
+}
+
+/* -----------------------------
+   PAGE NAVIGATION
+----------------------------- */
+
+function go(page) {
   const target = document.getElementById(page);
-  if(!target) return;
-  document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
+
+  if (!target) return;
+
+  document.querySelectorAll(".page").forEach(section => {
+    section.classList.remove("active");
+  });
+
   target.classList.add("active");
-  document.querySelectorAll(".nav-link[data-page]").forEach(x=>x.classList.toggle("active",x.dataset.page===page));
-  if(location.hash !== `#${page}`) history.replaceState(null,"",`#${page}`);
-  window.scrollTo({top:0,behavior:"smooth"});
+
+  document.querySelectorAll(".nav-link[data-page]").forEach(link => {
+    link.classList.toggle(
+      "active",
+      link.dataset.page === page
+    );
+  });
+
+  if (location.hash !== `#${page}`) {
+    history.replaceState(null, "", `#${page}`);
+  }
+
+  if (page === "my-profile") {
+    loadMemberProfile();
+  }
+
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth"
+  });
 }
-function selectTier(tier){
-  state.tier=tier;
-  document.getElementById("selected-plan").textContent =
-    `${state.plans[tier].name} — $${state.plans[tier].amount}/month`;
-  go("profile");
-}
-document.querySelectorAll("[data-page]").forEach(el=>el.addEventListener("click",(event)=>{
-  event.preventDefault();
-  go(el.dataset.page);
-}));
-window.addEventListener("hashchange",()=>{
-  const page=location.hash.slice(1);
-  if(["home","pricing","profile","guide"].includes(page)) go(page);
+
+document.querySelectorAll("[data-page]").forEach(element => {
+  element.addEventListener("click", event => {
+    event.preventDefault();
+    go(element.dataset.page);
+  });
 });
-const initialPage=location.hash.slice(1);
-if(["home","pricing","profile","guide"].includes(initialPage)) go(initialPage);
-document.querySelectorAll("[data-select]").forEach(el=>el.addEventListener("click",()=>selectTier(Number(el.dataset.select))));
 
-const params = new URLSearchParams(location.search);
-if(params.get("payment")==="success") alert("Payment completed. Your profile will be processed after Stripe confirms the payment.");
-if(params.get("payment")==="cancelled") alert("Checkout was cancelled. You can return and try again.");
+window.addEventListener("hashchange", () => {
+  const page = location.hash.slice(1);
 
-document.getElementById("profile-form").addEventListener("submit", async (event)=>{
-  event.preventDefault();
-  const form = event.currentTarget;
-  const message = document.getElementById("form-message");
-  const all = Object.fromEntries(new FormData(form).entries());
-  const secretKeys = ["acoEmail","acoPassword","cardLabel","cardholder","acoCardNumber","expMonth","expYear"];
-  const secrets = Object.fromEntries(secretKeys.map(k => [k, all[k] || ""]));
-  const cvvConfirmed = all.cvvConfirmed === "yes";
-  const profile = {...all};
-  secretKeys.forEach(k => delete profile[k]);
-  delete profile.confirm;
-  delete profile.cvvConfirmed;
-  message.textContent = "Encrypting setup information and preparing Stripe checkout…";
-  try{
-    const response = await fetch("/api/create-checkout-session",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({tier:state.tier,profile,secrets,cvvConfirmed})
-    });
-    const data = await response.json();
-    if(!response.ok) throw new Error(data.error || "Checkout could not be started.");
-    window.location.href=data.url;
-  }catch(error){
-    message.textContent=error.message;
+  if (
+    ["home", "pricing", "profile", "guide", "my-profile"].includes(page)
+  ) {
+    go(page);
   }
 });
 
-const yearSelect=document.querySelector('[name="expYear"]');
-if(yearSelect){const y=new Date().getFullYear();for(let i=0;i<15;i++){const o=document.createElement("option");o.value=String(y+i);o.textContent=String(y+i);yearSelect.appendChild(o)}}
-const showPass=document.getElementById("show-pass");
-if(showPass){showPass.addEventListener("click",()=>{const input=document.querySelector('[name="acoPassword"]');const show=input.type==="password";input.type=show?"text":"password";showPass.textContent=show?"Hide":"Show"})}
+const initialPage = location.hash.slice(1);
 
-async function adminLoad(){
-  const r=await fetch("/api/admin/submissions");
-  if(r.status===401){document.getElementById("admin-login").classList.remove("hidden");document.getElementById("admin-panel").classList.add("hidden");return}
-  const data=await r.json();
-  document.getElementById("admin-login").classList.add("hidden");document.getElementById("admin-panel").classList.remove("hidden");
-  const list=document.getElementById("admin-list");
-  list.innerHTML=data.length?data.map(x=>`<article class="admin-card">
-    <div class="admin-card-head"><div><strong>${escapeHtml(x.profile.firstName)} ${escapeHtml(x.profile.lastName)}</strong><small>${escapeHtml(x.plan.name)} · $${x.plan.amount}/month · ${new Date(x.paidAt).toLocaleString()}</small></div><span class="paid-pill">PAID</span></div>
-    <div class="admin-grid">
-      <div><label>Profile</label><span>${escapeHtml(x.profile.profileName)}</span></div><div><label>Contact</label><span>${escapeHtml(x.profile.email)} · ${escapeHtml(x.profile.phone)}</span></div>
-      <div class="wide"><label>Shipping</label><span>${escapeHtml([x.profile.address,x.profile.address2,x.profile.city,x.profile.state,x.profile.zip,x.profile.country].filter(Boolean).join(", "))}</span></div>
-      <div><label>ACO / IMAP Email</label><span>${escapeHtml(x.secrets.acoEmail)}</span></div><div><label>ACO Email Password</label><span class="secret-value">${escapeHtml(x.secrets.acoPassword)}</span></div>
-      <div><label>Card Label</label><span>${escapeHtml(x.secrets.cardLabel)}</span></div><div><label>Cardholder</label><span>${escapeHtml(x.secrets.cardholder)}</span></div>
-      <div class="wide"><label>ACO Card</label><span class="secret-value">${escapeHtml(formatCard(x.secrets.acoCardNumber))} · Exp ${escapeHtml(x.secrets.expMonth)}/${escapeHtml(x.secrets.expYear)}</span></div><div><label>CVV Status</label><span>${x.cvvConfirmed ? "Confirmed by customer ✓" : "Not confirmed"}</span></div>
-    </div>
-    <div class="admin-actions"><button class="secondary" onclick="deleteSubmission('${x.id}')">Delete sensitive package</button></div>
-  </article>`).join(""):`<div class="notice">No paid submissions are available.</div>`;
+if (
+  ["home", "pricing", "profile", "guide", "my-profile"].includes(initialPage)
+) {
+  go(initialPage);
 }
-function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
-function formatCard(v){return String(v||"").replace(/(\d{4})(?=\d)/g,"$1 ")}
-document.getElementById("admin-login-form")?.addEventListener("submit",async e=>{
-  e.preventDefault();const m=document.getElementById("admin-login-message");
-  const r=await fetch("/api/admin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:document.getElementById("admin-password").value})});
-  if(!r.ok){m.textContent="Incorrect password or too many attempts.";return}m.textContent="";document.getElementById("admin-password").value="";await adminLoad();
+
+/* -----------------------------
+   PRICING CARDS
+----------------------------- */
+
+function renderPricing() {
+  const grid = document.getElementById("pricing-grid");
+
+  if (!grid) return;
+
+  grid.innerHTML = Object.entries(PLANS)
+    .map(([tier, plan]) => {
+      const featured = Number(tier) === 2;
+
+      return `
+        <article class="plan ${featured ? "featured" : ""}">
+          ${featured ? '<span class="popular">POPULAR</span>' : ""}
+
+          <span class="tier-name">${escapeHtml(plan.name)}</span>
+
+          <div class="plan-price">
+            $${plan.amount}
+            <small>/month</small>
+          </div>
+
+          <h3>
+            ${plan.profiles}
+            ${plan.profiles === 1 ? "ACO Profile" : "ACO Profiles"}
+          </h3>
+
+          <p>
+            ${plan.profiles}
+            ${plan.profiles === 1 ? "profile" : "profiles"}
+            at each supported retailer.
+          </p>
+
+          <hr>
+
+          <ul class="plan-features">
+            <li>
+              ${plan.profiles}
+              ${plan.profiles === 1 ? "profile" : "profiles"}
+              at each retailer
+            </li>
+            <li>Target, Walmart, Sam's Club, Costco & PKC</li>
+            <li>Profile submission portal</li>
+            <li>Discord community access</li>
+            <li>Community support</li>
+          </ul>
+
+          <button
+            type="button"
+            class="primary full"
+            data-select="${tier}">
+            Choose ${escapeHtml(plan.name)}
+          </button>
+        </article>
+      `;
+    })
+    .join("");
+
+  document.querySelectorAll("[data-select]").forEach(button => {
+    button.addEventListener("click", () => {
+      selectTier(Number(button.dataset.select));
+    });
+  });
+}
+
+/* -----------------------------
+   PLAN SELECTION / CART
+----------------------------- */
+
+function selectTier(tier) {
+  if (!PLANS[tier]) return;
+
+  state.tier = tier;
+
+  localStorage.setItem(
+    "sng_selected_tier",
+    String(tier)
+  );
+
+  updateSelectedPlan();
+  updateCart();
+  openCart();
+}
+
+function updateSelectedPlan() {
+  const plan = PLANS[state.tier];
+  const selected = document.getElementById("selected-plan");
+
+  if (!plan || !selected) return;
+
+  selected.textContent =
+    `${plan.name} — $${plan.amount}/month`;
+}
+
+function updateCart() {
+  const plan = PLANS[state.tier];
+
+  const count = document.getElementById("cart-count");
+  const content = document.getElementById("cart-content");
+
+  if (!plan) {
+    if (count) count.textContent = "0";
+
+    if (content) {
+      content.innerHTML =
+        '<p class="muted">Your cart is empty.</p>';
+    }
+
+    return;
+  }
+
+  if (count) {
+    count.textContent = "1";
+  }
+
+  if (content) {
+    content.innerHTML = `
+      <div class="cart-plan">
+        <span class="tier-name">
+          ${escapeHtml(plan.name)}
+        </span>
+
+        <strong>
+          $${plan.amount}/month
+        </strong>
+
+        <p>
+          ${plan.profiles}
+          ${plan.profiles === 1 ? "ACO profile" : "ACO profiles"}
+          per supported retailer.
+        </p>
+
+        <button
+          type="button"
+          class="primary full"
+          id="cart-checkout">
+          Get Started →
+        </button>
+
+        <button
+          type="button"
+          class="secondary full"
+          id="cart-change">
+          View All Tiers
+        </button>
+      </div>
+    `;
+
+    document
+      .getElementById("cart-checkout")
+      ?.addEventListener("click", () => {
+        closeCart();
+        go("profile");
+      });
+
+    document
+      .getElementById("cart-change")
+      ?.addEventListener("click", () => {
+        closeCart();
+        go("pricing");
+      });
+  }
+}
+
+function openCart() {
+  const drawer = document.getElementById("cart-drawer");
+  const backdrop = document.getElementById("cart-backdrop");
+
+  if (!drawer || !backdrop) return;
+
+  drawer.classList.add("open");
+  backdrop.classList.add("open");
+
+  drawer.setAttribute("aria-hidden", "false");
+}
+
+function closeCart() {
+  const drawer = document.getElementById("cart-drawer");
+  const backdrop = document.getElementById("cart-backdrop");
+
+  if (!drawer || !backdrop) return;
+
+  drawer.classList.remove("open");
+  backdrop.classList.remove("open");
+
+  drawer.setAttribute("aria-hidden", "true");
+}
+
+document
+  .getElementById("cart-button")
+  ?.addEventListener("click", openCart);
+
+document
+  .getElementById("cart-close")
+  ?.addEventListener("click", closeCart);
+
+document
+  .getElementById("cart-backdrop")
+  ?.addEventListener("click", closeCart);
+
+/* -----------------------------
+   GET STARTED FORM
+----------------------------- */
+
+const profileForm = document.getElementById("profile-form");
+
+profileForm?.addEventListener("submit", async event => {
+  event.preventDefault();
+
+  const form = event.currentTarget;
+  const message = document.getElementById("form-message");
+
+  const formData = new FormData(form);
+  const all = Object.fromEntries(formData.entries());
+
+  const secretKeys = [
+    "acoEmail",
+    "acoPassword",
+    "cardLabel",
+    "cardholder",
+    "acoCardNumber",
+    "expMonth",
+    "expYear"
+  ];
+
+  const secrets = Object.fromEntries(
+    secretKeys.map(key => [
+      key,
+      all[key] || ""
+    ])
+  );
+
+  const cvvConfirmed =
+    all.cvvConfirmed === "yes";
+
+  const profile = {
+    ...all
+  };
+
+  secretKeys.forEach(key => {
+    delete profile[key];
+  });
+
+  delete profile.confirm;
+  delete profile.cvvConfirmed;
+
+  if (message) {
+    message.textContent =
+      "Preparing secure Stripe checkout…";
+  }
+
+  try {
+    const response = await fetch(
+      "/api/create-checkout-session",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          tier: state.tier,
+          profile,
+          secrets,
+          cvvConfirmed
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Checkout could not be started."
+      );
+    }
+
+    if (!data.url) {
+      throw new Error(
+        "Stripe checkout URL was not returned."
+      );
+    }
+
+    window.location.href = data.url;
+
+  } catch (error) {
+    if (message) {
+      message.textContent = error.message;
+    }
+  }
 });
-document.getElementById("admin-logout")?.addEventListener("click",async()=>{await fetch("/api/admin/logout",{method:"POST"});await adminLoad()});
-window.deleteSubmission=async id=>{if(!confirm("Permanently delete this customer's sensitive package? This cannot be undone."))return;const r=await fetch(`/api/admin/submissions/${id}`,{method:"DELETE"});if(r.ok)await adminLoad()};
-document.querySelector('[data-page="admin"]')?.addEventListener("click",adminLoad);
+
+/* -----------------------------
+   EXPIRATION YEAR OPTIONS
+----------------------------- */
+
+const yearSelect =
+  document.querySelector('[name="expYear"]');
+
+if (yearSelect) {
+  const currentYear =
+    new Date().getFullYear();
+
+  for (let i = 0; i < 15; i++) {
+    const option =
+      document.createElement("option");
+
+    option.value =
+      String(currentYear + i);
+
+    option.textContent =
+      String(currentYear + i);
+
+    yearSelect.appendChild(option);
+  }
+}
+
+/* -----------------------------
+   SHOW / HIDE ACO PASSWORD
+----------------------------- */
+
+const showPass =
+  document.getElementById("show-pass");
+
+showPass?.addEventListener("click", () => {
+  const input =
+    document.querySelector(
+      '[name="acoPassword"]'
+    );
+
+  if (!input) return;
+
+  const show =
+    input.type === "password";
+
+  input.type =
+    show ? "text" : "password";
+
+  showPass.textContent =
+    show ? "Hide" : "Show";
+});
+
+/* -----------------------------
+   PAYMENT RETURN
+----------------------------- */
+
+const params =
+  new URLSearchParams(location.search);
+
+if (params.get("payment") === "success") {
+  localStorage.setItem(
+    "sng_recent_payment",
+    "success"
+  );
+
+  history.replaceState(
+    null,
+    "",
+    "/#my-profile"
+  );
+
+  setTimeout(() => {
+    go("my-profile");
+  }, 100);
+}
+
+if (params.get("payment") === "cancelled") {
+  history.replaceState(
+    null,
+    "",
+    "/#profile"
+  );
+
+  setTimeout(() => {
+    go("profile");
+
+    const message =
+      document.getElementById("form-message");
+
+    if (message) {
+      message.textContent =
+        "Checkout was cancelled. Your selected membership is still saved.";
+    }
+  }, 100);
+}
+
+/* -----------------------------
+   MY PROFILE
+----------------------------- */
+
+async function loadMemberProfile() {
+  const card =
+    document.getElementById("member-card");
+
+  if (!card) return;
+
+  card.innerHTML =
+    '<div class="loading">Checking your membership…</div>';
+
+  try {
+    const response =
+      await fetch("/api/my-profile", {
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+
+    if (response.status === 401) {
+      card.innerHTML = `
+        <div class="member-empty">
+          <span class="eyebrow">
+            MEMBERSHIP ACCESS
+          </span>
+
+          <h3>
+            Your membership profile isn't connected yet.
+          </h3>
+
+          <p>
+            Complete checkout through this site to connect
+            your membership. If you already subscribed and
+            need help accessing your profile, contact us
+            through Discord.
+          </p>
+
+          <button
+            type="button"
+            class="primary"
+            id="member-pricing">
+            View Memberships
+          </button>
+        </div>
+      `;
+
+      document
+        .getElementById("member-pricing")
+        ?.addEventListener("click", () => {
+          go("pricing");
+        });
+
+      return;
+    }
+
+    const data =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to load membership."
+      );
+    }
+
+    const daysRemaining =
+      Number.isFinite(Number(data.daysRemaining))
+        ? Math.max(
+            0,
+            Number(data.daysRemaining)
+          )
+        : "—";
+
+    card.innerHTML = `
+      <div class="member-status-row">
+        <div>
+          <span class="eyebrow">
+            MEMBERSHIP STATUS
+          </span>
+
+          <h3>
+            ${escapeHtml(
+              data.profileName ||
+              data.username ||
+              "Member"
+            )}
+          </h3>
+        </div>
+
+        <span class="status-pill ${data.status === "active" ? "active" : ""}">
+          ${escapeHtml(
+            data.status || "Unknown"
+          )}
+        </span>
+      </div>
+
+      <div class="member-grid">
+
+        <div class="member-stat">
+          <small>CURRENT PLAN</small>
+          <strong>
+            ${escapeHtml(
+              data.planName || "—"
+            )}
+          </strong>
+        </div>
+
+        <div class="member-stat">
+          <small>MONTHLY PRICE</small>
+          <strong>
+            ${
+              data.amount != null
+                ? `$${escapeHtml(data.amount)}/month`
+                : "—"
+            }
+          </strong>
+        </div>
+
+        <div class="member-stat">
+          <small>PROFILES</small>
+          <strong>
+            ${escapeHtml(
+              data.profiles ?? "—"
+            )}
+          </strong>
+        </div>
+
+        <div class="member-stat">
+          <small>DAYS REMAINING</small>
+          <strong>
+            ${escapeHtml(daysRemaining)}
+          </strong>
+        </div>
+
+        <div class="member-stat wide">
+          <small>CURRENT PERIOD ENDS</small>
+          <strong>
+            ${
+              data.currentPeriodEnd
+                ? escapeHtml(
+                    formatDate(
+                      data.currentPeriodEnd
+                    )
+                  )
+                : "—"
+            }
+          </strong>
+        </div>
+
+      </div>
+
+      <p class="member-note">
+        Your membership period is based on your
+        Stripe subscription billing period.
+      </p>
+    `;
+
+  } catch (error) {
+    card.innerHTML = `
+      <div class="member-empty">
+        <h3>
+          We couldn't load your membership.
+        </h3>
+
+        <p>
+          ${escapeHtml(error.message)}
+        </p>
+      </div>
+    `;
+  }
+}
+
+/* -----------------------------
+   HELPERS
+----------------------------- */
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(
+      /[&<>"']/g,
+      character => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      })[character]
+    );
+}
+
+function formatDate(value) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString(
+    undefined,
+    {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    }
+  );
+}
+
+/* -----------------------------
+   INITIALIZE
+----------------------------- */
+
+renderPricing();
+updateSelectedPlan();
+updateCart();
