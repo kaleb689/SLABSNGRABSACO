@@ -1,52 +1,31 @@
 const PLANS = {
-  1: {
-    name: "Starter",
-    profiles: 1,
-    amount: 30
-  },
-  2: {
-    name: "Popular",
-    profiles: 2,
-    amount: 50
-  },
-  3: {
-    name: "Advanced",
-    profiles: 3,
-    amount: 80
-  },
-  4: {
-    name: "Pro",
-    profiles: 5,
-    amount: 130
-  },
-  5: {
-    name: "High Volume",
-    profiles: 10,
-    amount: 215
-  },
-  6: {
-    name: "Power User",
-    profiles: 20,
-    amount: 450
-  },
-  7: {
-    name: "Elite",
-    profiles: 50,
-    amount: 950
-  }
+  1: { name: "Starter", profiles: 1, amount: 30 },
+  2: { name: "Popular", profiles: 2, amount: 50 },
+  3: { name: "Advanced", profiles: 3, amount: 80 },
+  4: { name: "Pro", profiles: 5, amount: 130 },
+  5: { name: "High Volume", profiles: 10, amount: 215 },
+  6: { name: "Power User", profiles: 20, amount: 450 },
+  7: { name: "Elite", profiles: 50, amount: 950 }
 };
+
+const savedTier = Number(localStorage.getItem("sng_selected_tier"));
 
 const state = {
-  tier: Number(localStorage.getItem("sng_selected_tier")) || 1
+  tier: PLANS[savedTier] ? savedTier : null
 };
 
-if (!PLANS[state.tier]) {
-  state.tier = 1;
-}
 
-/* -----------------------------
+/* =====================================================
    PAGE NAVIGATION
------------------------------ */
+===================================================== */
+
+const VALID_PAGES = [
+  "home",
+  "pricing",
+  "profile",
+  "guide",
+  "my-profile"
+];
 
 function go(page) {
   const target = document.getElementById(page);
@@ -59,12 +38,14 @@ function go(page) {
 
   target.classList.add("active");
 
-  document.querySelectorAll(".nav-link[data-page]").forEach(link => {
-    link.classList.toggle(
-      "active",
-      link.dataset.page === page
-    );
-  });
+  document
+    .querySelectorAll(".nav-link[data-page]")
+    .forEach(link => {
+      link.classList.toggle(
+        "active",
+        link.dataset.page === page
+      );
+    });
 
   if (location.hash !== `#${page}`) {
     history.replaceState(null, "", `#${page}`);
@@ -80,34 +61,35 @@ function go(page) {
   });
 }
 
+
 document.querySelectorAll("[data-page]").forEach(element => {
   element.addEventListener("click", event => {
     event.preventDefault();
+
     go(element.dataset.page);
   });
 });
 
+
 window.addEventListener("hashchange", () => {
   const page = location.hash.slice(1);
 
-  if (
-    ["home", "pricing", "profile", "guide", "my-profile"].includes(page)
-  ) {
+  if (VALID_PAGES.includes(page)) {
     go(page);
   }
 });
 
+
 const initialPage = location.hash.slice(1);
 
-if (
-  ["home", "pricing", "profile", "guide", "my-profile"].includes(initialPage)
-) {
+if (VALID_PAGES.includes(initialPage)) {
   go(initialPage);
 }
 
-/* -----------------------------
+
+/* =====================================================
    PRICING CARDS
------------------------------ */
+===================================================== */
 
 function renderPricing() {
   const grid = document.getElementById("pricing-grid");
@@ -116,13 +98,27 @@ function renderPricing() {
 
   grid.innerHTML = Object.entries(PLANS)
     .map(([tier, plan]) => {
-      const featured = Number(tier) === 2;
+      const tierNumber = Number(tier);
+      const featured = tierNumber === 2;
+
+      const profileWord =
+        plan.profiles === 1 ? "Profile" : "Profiles";
 
       return `
-        <article class="plan ${featured ? "featured" : ""}">
-          ${featured ? '<span class="popular">POPULAR</span>' : ""}
+        <article
+          class="plan ${featured ? "featured" : ""}"
+          data-tier="${tier}"
+        >
 
-          <span class="tier-name">${escapeHtml(plan.name)}</span>
+          ${
+            featured
+              ? '<span class="popular">POPULAR</span>'
+              : ""
+          }
+
+          <span class="plan-name">
+            ${escapeHtml(plan.name)}
+          </span>
 
           <div class="plan-price">
             $${plan.amount}
@@ -130,51 +126,81 @@ function renderPricing() {
           </div>
 
           <h3>
-            ${plan.profiles}
-            ${plan.profiles === 1 ? "ACO Profile" : "ACO Profiles"}
+            ${plan.profiles} ACO ${profileWord}
           </h3>
 
-          <p>
+          <p class="plan-description">
             ${plan.profiles}
-            ${plan.profiles === 1 ? "profile" : "profiles"}
+            ${
+              plan.profiles === 1
+                ? "profile"
+                : "profiles"
+            }
             at each supported retailer.
           </p>
 
-          <hr>
+          <ul class="features">
 
-          <ul class="plan-features">
             <li>
               ${plan.profiles}
-              ${plan.profiles === 1 ? "profile" : "profiles"}
+              ${
+                plan.profiles === 1
+                  ? "profile"
+                  : "profiles"
+              }
               at each retailer
             </li>
-            <li>Target, Walmart, Sam's Club, Costco & PKC</li>
-            <li>Profile submission portal</li>
-            <li>Discord community access</li>
-            <li>Community support</li>
+
+            <li>
+              Target, Walmart, Sam's Club,
+              Costco &amp; PKC
+            </li>
+
+            <li>
+              Profile submission portal
+            </li>
+
+            <li>
+              Discord community access
+            </li>
+
+            <li>
+              Community support
+            </li>
+
           </ul>
 
           <button
             type="button"
             class="primary full"
-            data-select="${tier}">
-            Choose ${escapeHtml(plan.name)}
+            data-select="${tier}"
+          >
+            Select Tier
           </button>
+
         </article>
       `;
     })
     .join("");
 
-  document.querySelectorAll("[data-select]").forEach(button => {
-    button.addEventListener("click", () => {
-      selectTier(Number(button.dataset.select));
-    });
-  });
+  bindTierButtons();
 }
 
-/* -----------------------------
-   PLAN SELECTION / CART
------------------------------ */
+
+/* =====================================================
+   PLAN SELECTION
+===================================================== */
+
+function bindTierButtons() {
+  document
+    .querySelectorAll("[data-select]")
+    .forEach(button => {
+      button.addEventListener("click", () => {
+        selectTier(Number(button.dataset.select));
+      });
+    });
+}
+
 
 function selectTier(tier) {
   if (!PLANS[tier]) return;
@@ -191,41 +217,90 @@ function selectTier(tier) {
   openCart();
 }
 
-function updateSelectedPlan() {
-  const plan = PLANS[state.tier];
-  const selected = document.getElementById("selected-plan");
 
-  if (!plan || !selected) return;
+/* =====================================================
+   SELECTED PLAN
+===================================================== */
+
+function updateSelectedPlan() {
+  const selected =
+    document.getElementById("selected-plan");
+
+  if (!selected) return;
+
+  if (!state.tier || !PLANS[state.tier]) {
+    selected.textContent =
+      "Choose a membership first";
+
+    return;
+  }
+
+  const plan = PLANS[state.tier];
 
   selected.textContent =
     `${plan.name} — $${plan.amount}/month`;
 }
 
-function updateCart() {
-  const plan = PLANS[state.tier];
 
-  const count = document.getElementById("cart-count");
-  const content = document.getElementById("cart-content");
+/* =====================================================
+   CART
+===================================================== */
+
+function updateCart() {
+  const count =
+    document.getElementById("cart-count");
+
+  const content =
+    document.getElementById("cart-content");
+
+  const plan =
+    state.tier ? PLANS[state.tier] : null;
+
 
   if (!plan) {
-    if (count) count.textContent = "0";
+    if (count) {
+      count.textContent = "0";
+    }
 
     if (content) {
-      content.innerHTML =
-        '<p class="muted">Your cart is empty.</p>';
+      content.innerHTML = `
+        <div class="empty-cart">
+          <p>
+            Your cart is empty.
+          </p>
+
+          <button
+            type="button"
+            class="primary full"
+            id="empty-cart-pricing"
+          >
+            View Memberships
+          </button>
+        </div>
+      `;
+
+      document
+        .getElementById("empty-cart-pricing")
+        ?.addEventListener("click", () => {
+          closeCart();
+          go("pricing");
+        });
     }
 
     return;
   }
 
+
   if (count) {
     count.textContent = "1";
   }
 
+
   if (content) {
     content.innerHTML = `
-      <div class="cart-plan">
-        <span class="tier-name">
+      <div class="cart-item">
+
+        <span class="plan-name">
           ${escapeHtml(plan.name)}
         </span>
 
@@ -235,25 +310,34 @@ function updateCart() {
 
         <p>
           ${plan.profiles}
-          ${plan.profiles === 1 ? "ACO profile" : "ACO profiles"}
+          ${
+            plan.profiles === 1
+              ? "ACO profile"
+              : "ACO profiles"
+          }
           per supported retailer.
         </p>
 
-        <button
-          type="button"
-          class="primary full"
-          id="cart-checkout">
-          Get Started →
-        </button>
-
-        <button
-          type="button"
-          class="secondary full"
-          id="cart-change">
-          View All Tiers
-        </button>
       </div>
+
+      <button
+        type="button"
+        class="primary full"
+        id="cart-checkout"
+      >
+        Get Started →
+      </button>
+
+      <button
+        type="button"
+        class="secondary full"
+        id="cart-change"
+        style="margin-top:10px"
+      >
+        View All Tiers
+      </button>
     `;
+
 
     document
       .getElementById("cart-checkout")
@@ -261,6 +345,7 @@ function updateCart() {
         closeCart();
         go("profile");
       });
+
 
     document
       .getElementById("cart-change")
@@ -271,148 +356,241 @@ function updateCart() {
   }
 }
 
+
 function openCart() {
-  const drawer = document.getElementById("cart-drawer");
-  const backdrop = document.getElementById("cart-backdrop");
+  const drawer =
+    document.getElementById("cart-drawer");
+
+  const backdrop =
+    document.getElementById("cart-backdrop");
 
   if (!drawer || !backdrop) return;
 
   drawer.classList.add("open");
   backdrop.classList.add("open");
 
-  drawer.setAttribute("aria-hidden", "false");
+  drawer.setAttribute(
+    "aria-hidden",
+    "false"
+  );
 }
 
+
 function closeCart() {
-  const drawer = document.getElementById("cart-drawer");
-  const backdrop = document.getElementById("cart-backdrop");
+  const drawer =
+    document.getElementById("cart-drawer");
+
+  const backdrop =
+    document.getElementById("cart-backdrop");
 
   if (!drawer || !backdrop) return;
 
   drawer.classList.remove("open");
   backdrop.classList.remove("open");
 
-  drawer.setAttribute("aria-hidden", "true");
+  drawer.setAttribute(
+    "aria-hidden",
+    "true"
+  );
 }
+
 
 document
   .getElementById("cart-button")
-  ?.addEventListener("click", openCart);
+  ?.addEventListener(
+    "click",
+    openCart
+  );
+
 
 document
   .getElementById("cart-close")
-  ?.addEventListener("click", closeCart);
+  ?.addEventListener(
+    "click",
+    closeCart
+  );
+
 
 document
   .getElementById("cart-backdrop")
-  ?.addEventListener("click", closeCart);
-
-/* -----------------------------
-   GET STARTED FORM
------------------------------ */
-
-const profileForm = document.getElementById("profile-form");
-
-profileForm?.addEventListener("submit", async event => {
-  event.preventDefault();
-
-  const form = event.currentTarget;
-  const message = document.getElementById("form-message");
-
-  const formData = new FormData(form);
-  const all = Object.fromEntries(formData.entries());
-
-  const secretKeys = [
-    "acoEmail",
-    "acoPassword",
-    "cardLabel",
-    "cardholder",
-    "acoCardNumber",
-    "expMonth",
-    "expYear"
-  ];
-
-  const secrets = Object.fromEntries(
-    secretKeys.map(key => [
-      key,
-      all[key] || ""
-    ])
+  ?.addEventListener(
+    "click",
+    closeCart
   );
 
-  const cvvConfirmed =
-    all.cvvConfirmed === "yes";
 
-  const profile = {
-    ...all
-  };
+/* =====================================================
+   GET STARTED FORM
+===================================================== */
 
-  secretKeys.forEach(key => {
-    delete profile[key];
-  });
+const profileForm =
+  document.getElementById("profile-form");
 
-  delete profile.confirm;
-  delete profile.cvvConfirmed;
 
-  if (message) {
-    message.textContent =
-      "Preparing secure Stripe checkout…";
-  }
+profileForm?.addEventListener(
+  "submit",
+  async event => {
 
-  try {
-    const response = await fetch(
-      "/api/create-checkout-session",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          tier: state.tier,
-          profile,
-          secrets,
-          cvvConfirmed
-        })
+    event.preventDefault();
+
+    const form =
+      event.currentTarget;
+
+    const message =
+      document.getElementById(
+        "form-message"
+      );
+
+    /*
+      Require a membership to be selected before
+      starting checkout.
+    */
+
+    if (!state.tier || !PLANS[state.tier]) {
+      if (message) {
+        message.textContent =
+          "Please choose a membership tier first.";
       }
-    );
 
-    const data = await response.json();
+      go("pricing");
 
-    if (!response.ok) {
-      throw new Error(
-        data.error ||
-        "Checkout could not be started."
-      );
+      return;
     }
 
-    if (!data.url) {
-      throw new Error(
-        "Stripe checkout URL was not returned."
+
+    const formData =
+      new FormData(form);
+
+    const all =
+      Object.fromEntries(
+        formData.entries()
       );
-    }
 
-    window.location.href = data.url;
 
-  } catch (error) {
+    const secretKeys = [
+      "acoEmail",
+      "acoPassword",
+      "cardLabel",
+      "cardholder",
+      "acoCardNumber",
+      "expMonth",
+      "expYear"
+    ];
+
+
+    const secrets =
+      Object.fromEntries(
+        secretKeys.map(key => [
+          key,
+          all[key] || ""
+        ])
+      );
+
+
+    const cvvConfirmed =
+      all.cvvConfirmed === "yes";
+
+
+    const profile = {
+      ...all
+    };
+
+
+    secretKeys.forEach(key => {
+      delete profile[key];
+    });
+
+
+    delete profile.confirm;
+    delete profile.cvvConfirmed;
+
+
     if (message) {
-      message.textContent = error.message;
+      message.textContent =
+        "Preparing secure Stripe checkout…";
+    }
+
+
+    try {
+
+      const response =
+        await fetch(
+          "/api/create-checkout-session",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            body: JSON.stringify({
+              tier: state.tier,
+              profile,
+              secrets,
+              cvvConfirmed
+            })
+          }
+        );
+
+
+      const data =
+        await response.json();
+
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+          "Checkout could not be started."
+        );
+      }
+
+
+      if (!data.url) {
+        throw new Error(
+          "Stripe checkout URL was not returned."
+        );
+      }
+
+
+      window.location.href =
+        data.url;
+
+
+    } catch (error) {
+
+      if (message) {
+        message.textContent =
+          error.message;
+      }
+
     }
   }
-});
+);
 
-/* -----------------------------
+
+/* =====================================================
    EXPIRATION YEAR OPTIONS
------------------------------ */
+===================================================== */
 
 const yearSelect =
-  document.querySelector('[name="expYear"]');
+  document.querySelector(
+    '[name="expYear"]'
+  );
+
 
 if (yearSelect) {
+
   const currentYear =
     new Date().getFullYear();
 
+
   for (let i = 0; i < 15; i++) {
+
     const option =
-      document.createElement("option");
+      document.createElement(
+        "option"
+      );
 
     option.value =
       String(currentYear + i);
@@ -420,47 +598,73 @@ if (yearSelect) {
     option.textContent =
       String(currentYear + i);
 
-    yearSelect.appendChild(option);
+    yearSelect.appendChild(
+      option
+    );
   }
 }
 
-/* -----------------------------
+
+/* =====================================================
    SHOW / HIDE ACO PASSWORD
------------------------------ */
+===================================================== */
 
 const showPass =
-  document.getElementById("show-pass");
+  document.getElementById(
+    "show-pass"
+  );
 
-showPass?.addEventListener("click", () => {
-  const input =
-    document.querySelector(
-      '[name="acoPassword"]'
-    );
 
-  if (!input) return;
+showPass?.addEventListener(
+  "click",
+  () => {
 
-  const show =
-    input.type === "password";
+    const input =
+      document.querySelector(
+        '[name="acoPassword"]'
+      );
 
-  input.type =
-    show ? "text" : "password";
+    if (!input) return;
 
-  showPass.textContent =
-    show ? "Hide" : "Show";
-});
 
-/* -----------------------------
+    const show =
+      input.type === "password";
+
+
+    input.type =
+      show
+        ? "text"
+        : "password";
+
+
+    showPass.textContent =
+      show
+        ? "Hide"
+        : "Show";
+  }
+);
+
+
+/* =====================================================
    PAYMENT RETURN
------------------------------ */
+===================================================== */
 
 const params =
-  new URLSearchParams(location.search);
+  new URLSearchParams(
+    location.search
+  );
 
-if (params.get("payment") === "success") {
+
+if (
+  params.get("payment") ===
+  "success"
+) {
+
   localStorage.setItem(
     "sng_recent_payment",
     "success"
   );
+
 
   history.replaceState(
     null,
@@ -468,54 +672,84 @@ if (params.get("payment") === "success") {
     "/#my-profile"
   );
 
+
   setTimeout(() => {
     go("my-profile");
   }, 100);
 }
 
-if (params.get("payment") === "cancelled") {
+
+if (
+  params.get("payment") ===
+  "cancelled"
+) {
+
   history.replaceState(
     null,
     "",
     "/#profile"
   );
 
+
   setTimeout(() => {
+
     go("profile");
 
     const message =
-      document.getElementById("form-message");
+      document.getElementById(
+        "form-message"
+      );
 
     if (message) {
       message.textContent =
         "Checkout was cancelled. Your selected membership is still saved.";
     }
+
   }, 100);
 }
 
-/* -----------------------------
+
+/* =====================================================
    MY PROFILE
------------------------------ */
+===================================================== */
 
 async function loadMemberProfile() {
+
   const card =
-    document.getElementById("member-card");
+    document.getElementById(
+      "member-card"
+    );
 
   if (!card) return;
 
-  card.innerHTML =
-    '<div class="loading">Checking your membership…</div>';
+
+  card.innerHTML = `
+    <div class="loading">
+      Checking your membership…
+    </div>
+  `;
+
 
   try {
+
     const response =
-      await fetch("/api/my-profile", {
-        credentials: "same-origin",
-        cache: "no-store"
-      });
+      await fetch(
+        "/api/my-profile",
+        {
+          credentials:
+            "same-origin",
+
+          cache:
+            "no-store"
+        }
+      );
+
 
     if (response.status === 401) {
+
       card.innerHTML = `
         <div class="member-empty">
+
           <span class="eyebrow">
             MEMBERSHIP ACCESS
           </span>
@@ -525,32 +759,45 @@ async function loadMemberProfile() {
           </h3>
 
           <p>
-            Complete checkout through this site to connect
-            your membership. If you already subscribed and
-            need help accessing your profile, contact us
-            through Discord.
+            Complete checkout through this site
+            to connect your membership.
+
+            If you already subscribed and need
+            help accessing your profile,
+            contact us through Discord.
           </p>
 
           <button
             type="button"
             class="primary"
-            id="member-pricing">
+            id="member-pricing"
+          >
             View Memberships
           </button>
+
         </div>
       `;
 
+
       document
-        .getElementById("member-pricing")
-        ?.addEventListener("click", () => {
-          go("pricing");
-        });
+        .getElementById(
+          "member-pricing"
+        )
+        ?.addEventListener(
+          "click",
+          () => {
+            go("pricing");
+          }
+        );
+
 
       return;
     }
 
+
     const data =
       await response.json();
+
 
     if (!response.ok) {
       throw new Error(
@@ -559,17 +806,28 @@ async function loadMemberProfile() {
       );
     }
 
+
     const daysRemaining =
-      Number.isFinite(Number(data.daysRemaining))
+      Number.isFinite(
+        Number(
+          data.daysRemaining
+        )
+      )
         ? Math.max(
             0,
-            Number(data.daysRemaining)
+            Number(
+              data.daysRemaining
+            )
           )
         : "—";
 
+
     card.innerHTML = `
+
       <div class="member-status-row">
+
         <div>
+
           <span class="eyebrow">
             MEMBERSHIP STATUS
           </span>
@@ -581,55 +839,102 @@ async function loadMemberProfile() {
               "Member"
             )}
           </h3>
+
         </div>
 
-        <span class="status-pill ${data.status === "active" ? "active" : ""}">
+        <span
+          class="
+            status-pill
+            ${
+              data.status === "active"
+                ? "active"
+                : ""
+            }
+          "
+        >
           ${escapeHtml(
-            data.status || "Unknown"
+            data.status ||
+            "Unknown"
           )}
         </span>
+
       </div>
+
 
       <div class="member-grid">
 
         <div class="member-stat">
-          <small>CURRENT PLAN</small>
+
+          <small>
+            CURRENT PLAN
+          </small>
+
           <strong>
             ${escapeHtml(
-              data.planName || "—"
+              data.planName ||
+              "—"
             )}
           </strong>
+
         </div>
 
+
         <div class="member-stat">
-          <small>MONTHLY PRICE</small>
+
+          <small>
+            MONTHLY PRICE
+          </small>
+
           <strong>
             ${
               data.amount != null
-                ? `$${escapeHtml(data.amount)}/month`
+                ? `$${escapeHtml(
+                    data.amount
+                  )}/month`
                 : "—"
             }
           </strong>
+
         </div>
 
+
         <div class="member-stat">
-          <small>PROFILES</small>
+
+          <small>
+            PROFILES
+          </small>
+
           <strong>
             ${escapeHtml(
-              data.profiles ?? "—"
+              data.profiles ??
+              "—"
             )}
           </strong>
+
         </div>
+
 
         <div class="member-stat">
-          <small>DAYS REMAINING</small>
+
+          <small>
+            DAYS REMAINING
+          </small>
+
           <strong>
-            ${escapeHtml(daysRemaining)}
+            ${escapeHtml(
+              daysRemaining
+            )}
           </strong>
+
         </div>
 
+
         <div class="member-stat wide">
-          <small>CURRENT PERIOD ENDS</small>
+
+          <small>
+            CURRENT PERIOD ENDS
+          </small>
+
           <strong>
             ${
               data.currentPeriodEnd
@@ -641,55 +946,78 @@ async function loadMemberProfile() {
                 : "—"
             }
           </strong>
+
         </div>
 
       </div>
 
+
       <p class="member-note">
-        Your membership period is based on your
-        Stripe subscription billing period.
+        Your membership period is based
+        on your Stripe subscription
+        billing period.
       </p>
     `;
 
+
   } catch (error) {
+
     card.innerHTML = `
+
       <div class="member-empty">
+
         <h3>
           We couldn't load your membership.
         </h3>
 
         <p>
-          ${escapeHtml(error.message)}
+          ${escapeHtml(
+            error.message
+          )}
         </p>
+
       </div>
     `;
+
   }
 }
 
-/* -----------------------------
+
+/* =====================================================
    HELPERS
------------------------------ */
+===================================================== */
 
 function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(
-      /[&<>"']/g,
-      character => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;"
-      })[character]
-    );
+
+  return String(
+    value ?? ""
+  ).replace(
+    /[&<>"']/g,
+    character => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    })[character]
+  );
 }
 
-function formatDate(value) {
-  const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+function formatDate(value) {
+
+  const date =
+    new Date(value);
+
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return value;
   }
+
 
   return date.toLocaleDateString(
     undefined,
@@ -701,10 +1029,13 @@ function formatDate(value) {
   );
 }
 
-/* -----------------------------
+
+/* =====================================================
    INITIALIZE
------------------------------ */
+===================================================== */
 
 renderPricing();
+
 updateSelectedPlan();
+
 updateCart();
