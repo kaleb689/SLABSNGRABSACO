@@ -68,43 +68,7 @@ async function sendNotification(record){
   return response.ok;
 }
 
-/* TEMPORARY ADMIN-ONLY EMAIL TEST — remove after testing */
-app.post("/api/admin/test-email", requireAdmin, async (req, res) => {
-  try {
-    const testRecord = {
-      id: "EMAIL-TEST",
-      plan: {
-        name: "Email Notification Test",
-        amount: 0
-      },
-      profile: {
-        firstName: "Test",
-        lastName: "Customer",
-        email: "test@example.com"
-      }
-    };
 
-    const sent = await sendNotification(testRecord);
-
-    if (!sent) {
-      return res.status(500).json({
-        ok: false,
-        error: "Email was not sent. Check Resend configuration."
-      });
-    }
-
-    res.json({
-      ok: true,
-      message: "Test notification email sent."
-    });
-  } catch (err) {
-    console.error("Test email failed:", err.message);
-    res.status(500).json({
-      ok: false,
-      error: "Test email failed."
-    });
-  }
-});
 const adminSessions=new Map();
 const loginAttempts=new Map();
 function parseCookies(req){return Object.fromEntries(String(req.headers.cookie||"").split(";").filter(Boolean).map(x=>{const i=x.indexOf("=");return [x.slice(0,i).trim(),decodeURIComponent(x.slice(i+1))]}))}
