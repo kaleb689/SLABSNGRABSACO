@@ -4,15 +4,205 @@ const PLANS = {
   3: { name: "Advanced", profiles: 3, amount: 80 },
   4: { name: "Pro", profiles: 5, amount: 130 },
   5: { name: "High Volume", profiles: 10, amount: 215 },
-  6: { name: "Power User", profiles: 20, amount: 450 },
-  7: { name: "Elite", profiles: 50, amount: 950 }
+  6: { name: "Power User", profiles: 20, amount: 300 },
+  7: { name: "Elite", profiles: 50, amount: 650 }
 };
 
-const savedTier = Number(localStorage.getItem("sng_selected_tier"));
+const savedTier = Number(
+  localStorage.getItem("sng_selected_tier")
+);
 
 const state = {
-  tier: PLANS[savedTier] ? savedTier : null
+  tier: PLANS[savedTier] ? savedTier : null,
+  customer: null,
+  orders: [],
+  profileLoaded: false
 };
+
+
+/* =====================================================
+   HELPERS
+===================================================== */
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    character =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      })[character]
+  );
+}
+
+
+function formatDate(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString(
+    undefined,
+    {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    }
+  );
+}
+
+
+function calculateDaysRemaining(value) {
+  if (!value) return "—";
+
+  const end = new Date(value);
+
+  if (Number.isNaN(end.getTime())) {
+    return "—";
+  }
+
+  const difference =
+    end.getTime() - Date.now();
+
+  return Math.max(
+    0,
+    Math.ceil(
+      difference /
+      (1000 * 60 * 60 * 24)
+    )
+  );
+}
+
+
+async function readJson(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+
+function setButtonBusy(
+  button,
+  busy,
+  busyText = "Working…"
+) {
+  if (!button) return;
+
+  if (busy) {
+    if (!button.dataset.originalText) {
+      button.dataset.originalText =
+        button.textContent;
+    }
+
+    button.disabled = true;
+    button.textContent = busyText;
+    return;
+  }
+
+  button.disabled = false;
+
+  if (button.dataset.originalText) {
+    button.textContent =
+      button.dataset.originalText;
+
+    delete button.dataset.originalText;
+  }
+}
+
+
+function setMessage(
+  element,
+  message = "",
+  type = ""
+) {
+  if (!element) return;
+
+  element.textContent = message;
+
+  element.classList.remove(
+    "success",
+    "error",
+    "info"
+  );
+
+  if (type) {
+    element.classList.add(type);
+  }
+
+  element.hidden = !message;
+}
+
+
+function showAccountMessage(
+  message,
+  type = "info"
+) {
+  const element =
+    document.getElementById(
+      "account-message"
+    );
+
+  setMessage(
+    element,
+    message,
+    type
+  );
+}
+
+
+function clearAccountMessage() {
+  showAccountMessage("");
+}
+
+
+function normalizeStatus(status) {
+  if (!status) return "Unknown";
+
+  return String(status)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, character =>
+      character.toUpperCase()
+    );
+}
+
+
+function getOrderNumber(order) {
+  return (
+    order?.orderNumber ||
+    order?.submissionNumber ||
+    order?.id ||
+    ""
+  );
+}
+
+
+function getOrderProfile(order) {
+  return (
+    order?.profile ||
+    order?.customer ||
+    {}
+  );
+}
+
+
+function getMembershipSource(data) {
+  if (!data) return {};
+
+  return (
+    data.membership ||
+    data.subscription ||
+    data
+  );
+}
 
 
 /* =====================================================
@@ -27,19 +217,27 @@ const VALID_PAGES = [
   "my-profile"
 ];
 
+
 function go(page) {
-  const target = document.getElementById(page);
+  const target =
+    document.getElementById(page);
 
   if (!target) return;
 
-  document.querySelectorAll(".page").forEach(section => {
-    section.classList.remove("active");
-  });
+  document
+    .querySelectorAll(".page")
+    .forEach(section => {
+      section.classList.remove(
+        "active"
+      );
+    });
 
   target.classList.add("active");
 
   document
-    .querySelectorAll(".nav-link[data-page]")
+    .querySelectorAll(
+      ".nav-link[data-page]"
+    )
     .forEach(link => {
       link.classList.toggle(
         "active",
@@ -47,8 +245,15 @@ function go(page) {
       );
     });
 
-  if (location.hash !== `#${page}`) {
-    history.replaceState(null, "", `#${page}`);
+  if (
+    location.hash !==
+    `#${page}`
+  ) {
+    history.replaceState(
+      null,
+      "",
+      `#${page}`
+    );
   }
 
   if (page === "my-profile") {
@@ -62,29 +267,37 @@ function go(page) {
 }
 
 
-document.querySelectorAll("[data-page]").forEach(element => {
-  element.addEventListener("click", event => {
-    event.preventDefault();
+document
+  .querySelectorAll("[data-page]")
+  .forEach(element => {
+    element.addEventListener(
+      "click",
+      event => {
+        event.preventDefault();
 
-    go(element.dataset.page);
+        closeCart();
+
+        go(
+          element.dataset.page
+        );
+      }
+    );
   });
-});
 
 
-window.addEventListener("hashchange", () => {
-  const page = location.hash.slice(1);
+window.addEventListener(
+  "hashchange",
+  () => {
+    const page =
+      location.hash.slice(1);
 
-  if (VALID_PAGES.includes(page)) {
-    go(page);
+    if (
+      VALID_PAGES.includes(page)
+    ) {
+      go(page);
+    }
   }
-});
-
-
-const initialPage = location.hash.slice(1);
-
-if (VALID_PAGES.includes(initialPage)) {
-  go(initialPage);
-}
+);
 
 
 /* =====================================================
@@ -92,96 +305,115 @@ if (VALID_PAGES.includes(initialPage)) {
 ===================================================== */
 
 function renderPricing() {
-  const grid = document.getElementById("pricing-grid");
+  const grid =
+    document.getElementById(
+      "pricing-grid"
+    );
 
   if (!grid) return;
 
-  grid.innerHTML = Object.entries(PLANS)
-    .map(([tier, plan]) => {
-      const tierNumber = Number(tier);
-      const featured = tierNumber === 2;
+  grid.innerHTML =
+    Object.entries(PLANS)
+      .map(([tier, plan]) => {
+        const tierNumber =
+          Number(tier);
 
-      const profileWord =
-        plan.profiles === 1 ? "Profile" : "Profiles";
+        const featured =
+          tierNumber === 2;
 
-      return `
-        <article
-          class="plan ${featured ? "featured" : ""}"
-          data-tier="${tier}"
-        >
+        const profileWord =
+          plan.profiles === 1
+            ? "Profile"
+            : "Profiles";
 
-          ${
-            featured
-              ? '<span class="popular">POPULAR</span>'
-              : ""
-          }
+        return `
+          <article
+            class="plan ${
+              featured
+                ? "featured"
+                : ""
+            }"
+            data-tier="${tier}"
+          >
 
-          <span class="plan-name">
-            ${escapeHtml(plan.name)}
-          </span>
-
-          <div class="plan-price">
-            $${plan.amount}
-            <small>/month</small>
-          </div>
-
-          <h3>
-            ${plan.profiles} ACO ${profileWord}
-          </h3>
-
-          <p class="plan-description">
-            ${plan.profiles}
             ${
-              plan.profiles === 1
-                ? "profile"
-                : "profiles"
+              featured
+                ? `
+                  <span class="popular">
+                    POPULAR
+                  </span>
+                `
+                : ""
             }
-            at each supported retailer.
-          </p>
 
-          <ul class="features">
+            <span class="plan-name">
+              ${escapeHtml(plan.name)}
+            </span>
 
-            <li>
+            <div class="plan-price">
+              $${plan.amount}
+              <small>/month</small>
+            </div>
+
+            <h3>
+              ${plan.profiles}
+              ACO ${profileWord}
+            </h3>
+
+            <p class="plan-description">
               ${plan.profiles}
               ${
                 plan.profiles === 1
                   ? "profile"
                   : "profiles"
               }
-              at each retailer
-            </li>
+              at each supported retailer.
+            </p>
 
-            <li>
-              Target, Walmart, Sam's Club,
-              Costco &amp; PKC
-            </li>
+            <ul class="features">
 
-            <li>
-              Profile submission portal
-            </li>
+              <li>
+                ${plan.profiles}
+                ${
+                  plan.profiles === 1
+                    ? "profile"
+                    : "profiles"
+                }
+                at each retailer
+              </li>
 
-            <li>
-              Discord community access
-            </li>
+              <li>
+                Target, Walmart,
+                Sam's Club, Costco
+                &amp; PKC
+              </li>
 
-            <li>
-              Community support
-            </li>
+              <li>
+                Profile submission portal
+              </li>
 
-          </ul>
+              <li>
+                Discord community access
+              </li>
 
-          <button
-            type="button"
-            class="primary full"
-            data-select="${tier}"
-          >
-            Select Tier
-          </button>
+              <li>
+                Community support
+              </li>
 
-        </article>
-      `;
-    })
-    .join("");
+            </ul>
+
+            <button
+              type="button"
+              class="primary full"
+              data-select="${tier}"
+            >
+              Select Tier
+            </button>
+
+          </article>
+        `;
+      })
+      .join("");
 
   bindTierButtons();
 }
@@ -193,11 +425,20 @@ function renderPricing() {
 
 function bindTierButtons() {
   document
-    .querySelectorAll("[data-select]")
+    .querySelectorAll(
+      "[data-select]"
+    )
     .forEach(button => {
-      button.addEventListener("click", () => {
-        selectTier(Number(button.dataset.select));
-      });
+      button.addEventListener(
+        "click",
+        () => {
+          selectTier(
+            Number(
+              button.dataset.select
+            )
+          );
+        }
+      );
     });
 }
 
@@ -218,24 +459,42 @@ function selectTier(tier) {
 }
 
 
+function clearSelectedTier() {
+  state.tier = null;
+
+  localStorage.removeItem(
+    "sng_selected_tier"
+  );
+
+  updateSelectedPlan();
+  updateCart();
+}
+
+
 /* =====================================================
    SELECTED PLAN
 ===================================================== */
 
 function updateSelectedPlan() {
   const selected =
-    document.getElementById("selected-plan");
+    document.getElementById(
+      "selected-plan"
+    );
 
   if (!selected) return;
 
-  if (!state.tier || !PLANS[state.tier]) {
+  if (
+    !state.tier ||
+    !PLANS[state.tier]
+  ) {
     selected.textContent =
       "Choose a membership first";
 
     return;
   }
 
-  const plan = PLANS[state.tier];
+  const plan =
+    PLANS[state.tier];
 
   selected.textContent =
     `${plan.name} — $${plan.amount}/month`;
@@ -248,23 +507,38 @@ function updateSelectedPlan() {
 
 function updateCart() {
   const count =
-    document.getElementById("cart-count");
+    document.getElementById(
+      "cart-count"
+    );
 
   const content =
-    document.getElementById("cart-content");
+    document.getElementById(
+      "cart-content"
+    );
+
+  const clearButton =
+    document.getElementById(
+      "clear-cart"
+    );
 
   const plan =
-    state.tier ? PLANS[state.tier] : null;
-
+    state.tier
+      ? PLANS[state.tier]
+      : null;
 
   if (!plan) {
     if (count) {
       count.textContent = "0";
     }
 
+    if (clearButton) {
+      clearButton.hidden = true;
+    }
+
     if (content) {
       content.innerHTML = `
         <div class="empty-cart">
+
           <p>
             Your cart is empty.
           </p>
@@ -276,25 +550,33 @@ function updateCart() {
           >
             View Memberships
           </button>
+
         </div>
       `;
 
       document
-        .getElementById("empty-cart-pricing")
-        ?.addEventListener("click", () => {
-          closeCart();
-          go("pricing");
-        });
+        .getElementById(
+          "empty-cart-pricing"
+        )
+        ?.addEventListener(
+          "click",
+          () => {
+            closeCart();
+            go("pricing");
+          }
+        );
     }
 
     return;
   }
 
-
   if (count) {
     count.textContent = "1";
   }
 
+  if (clearButton) {
+    clearButton.hidden = false;
+  }
 
   if (content) {
     content.innerHTML = `
@@ -327,44 +609,37 @@ function updateCart() {
       >
         Get Started →
       </button>
-
-      <button
-        type="button"
-        class="secondary full"
-        id="cart-change"
-        style="margin-top:10px"
-      >
-        View All Tiers
-      </button>
     `;
 
-
     document
-      .getElementById("cart-checkout")
-      ?.addEventListener("click", () => {
-        closeCart();
-        go("profile");
-      });
-
-
-    document
-      .getElementById("cart-change")
-      ?.addEventListener("click", () => {
-        closeCart();
-        go("pricing");
-      });
+      .getElementById(
+        "cart-checkout"
+      )
+      ?.addEventListener(
+        "click",
+        () => {
+          closeCart();
+          go("profile");
+        }
+      );
   }
 }
 
 
 function openCart() {
   const drawer =
-    document.getElementById("cart-drawer");
+    document.getElementById(
+      "cart-drawer"
+    );
 
   const backdrop =
-    document.getElementById("cart-backdrop");
+    document.getElementById(
+      "cart-backdrop"
+    );
 
-  if (!drawer || !backdrop) return;
+  if (!drawer || !backdrop) {
+    return;
+  }
 
   drawer.classList.add("open");
   backdrop.classList.add("open");
@@ -378,12 +653,18 @@ function openCart() {
 
 function closeCart() {
   const drawer =
-    document.getElementById("cart-drawer");
+    document.getElementById(
+      "cart-drawer"
+    );
 
   const backdrop =
-    document.getElementById("cart-backdrop");
+    document.getElementById(
+      "cart-backdrop"
+    );
 
-  if (!drawer || !backdrop) return;
+  if (!drawer || !backdrop) {
+    return;
+  }
 
   drawer.classList.remove("open");
   backdrop.classList.remove("open");
@@ -412,10 +693,37 @@ document
 
 
 document
-  .getElementById("cart-backdrop")
+  .getElementById(
+    "cart-backdrop"
+  )
   ?.addEventListener(
     "click",
     closeCart
+  );
+
+
+document
+  .getElementById(
+    "cart-view-tiers"
+  )
+  ?.addEventListener(
+    "click",
+    () => {
+      closeCart();
+      go("pricing");
+    }
+  );
+
+
+document
+  .getElementById(
+    "clear-cart"
+  )
+  ?.addEventListener(
+    "click",
+    () => {
+      clearSelectedTier();
+    }
   );
 
 
@@ -424,13 +732,14 @@ document
 ===================================================== */
 
 const profileForm =
-  document.getElementById("profile-form");
+  document.getElementById(
+    "profile-form"
+  );
 
 
 profileForm?.addEventListener(
   "submit",
   async event => {
-
     event.preventDefault();
 
     const form =
@@ -441,22 +750,18 @@ profileForm?.addEventListener(
         "form-message"
       );
 
-    /*
-      Require a membership to be selected before
-      starting checkout.
-    */
-
-    if (!state.tier || !PLANS[state.tier]) {
+    if (
+      !state.tier ||
+      !PLANS[state.tier]
+    ) {
       if (message) {
         message.textContent =
           "Please choose a membership tier first.";
       }
 
       go("pricing");
-
       return;
     }
-
 
     const formData =
       new FormData(form);
@@ -465,7 +770,6 @@ profileForm?.addEventListener(
       Object.fromEntries(
         formData.entries()
       );
-
 
     const secretKeys = [
       "acoEmail",
@@ -477,7 +781,6 @@ profileForm?.addEventListener(
       "expYear"
     ];
 
-
     const secrets =
       Object.fromEntries(
         secretKeys.map(key => [
@@ -486,33 +789,26 @@ profileForm?.addEventListener(
         ])
       );
 
-
     const cvvConfirmed =
       all.cvvConfirmed === "yes";
-
 
     const profile = {
       ...all
     };
 
-
     secretKeys.forEach(key => {
       delete profile[key];
     });
 
-
     delete profile.confirm;
     delete profile.cvvConfirmed;
-
 
     if (message) {
       message.textContent =
         "Preparing secure Stripe checkout…";
     }
 
-
     try {
-
       const response =
         await fetch(
           "/api/create-checkout-session",
@@ -524,6 +820,9 @@ profileForm?.addEventListener(
                 "application/json"
             },
 
+            credentials:
+              "same-origin",
+
             body: JSON.stringify({
               tier: state.tier,
               profile,
@@ -533,10 +832,8 @@ profileForm?.addEventListener(
           }
         );
 
-
       const data =
-        await response.json();
-
+        await readJson(response);
 
       if (!response.ok) {
         throw new Error(
@@ -545,25 +842,20 @@ profileForm?.addEventListener(
         );
       }
 
-
       if (!data.url) {
         throw new Error(
           "Stripe checkout URL was not returned."
         );
       }
 
-
       window.location.href =
         data.url;
 
-
     } catch (error) {
-
       if (message) {
         message.textContent =
           error.message;
       }
-
     }
   }
 );
@@ -573,36 +865,93 @@ profileForm?.addEventListener(
    EXPIRATION YEAR OPTIONS
 ===================================================== */
 
-const yearSelect =
-  document.querySelector(
-    '[name="expYear"]'
-  );
-
-
-if (yearSelect) {
+function fillExpirationYears(
+  select
+) {
+  if (!select) return;
 
   const currentYear =
     new Date().getFullYear();
 
+  for (
+    let i = 0;
+    i < 15;
+    i++
+  ) {
+    const year =
+      String(currentYear + i);
 
-  for (let i = 0; i < 15; i++) {
+    if (
+      Array.from(
+        select.options
+      ).some(
+        option =>
+          option.value === year
+      )
+    ) {
+      continue;
+    }
 
     const option =
       document.createElement(
         "option"
       );
 
-    option.value =
-      String(currentYear + i);
+    option.value = year;
+    option.textContent = year;
 
-    option.textContent =
-      String(currentYear + i);
-
-    yearSelect.appendChild(
-      option
-    );
+    select.appendChild(option);
   }
 }
+
+
+fillExpirationYears(
+  document.querySelector(
+    '#profile-form [name="expYear"]'
+  )
+);
+
+fillExpirationYears(
+  document.getElementById(
+    "edit-exp-year"
+  )
+);
+
+
+/* =====================================================
+   CARD NUMBER FORMATTING
+===================================================== */
+
+function bindCardFormatting(
+  input
+) {
+  if (!input) return;
+
+  input.addEventListener(
+    "input",
+    () => {
+      const digits =
+        input.value
+          .replace(/\D/g, "")
+          .slice(0, 19);
+
+      input.value =
+        digits
+          .replace(
+            /(\d{4})(?=\d)/g,
+            "$1 "
+          )
+          .trim();
+    }
+  );
+}
+
+
+document
+  .querySelectorAll(
+    '[name="acoCardNumber"]'
+  )
+  .forEach(bindCardFormatting);
 
 
 /* =====================================================
@@ -618,24 +967,20 @@ const showPass =
 showPass?.addEventListener(
   "click",
   () => {
-
     const input =
       document.querySelector(
-        '[name="acoPassword"]'
+        '#profile-form [name="acoPassword"]'
       );
 
     if (!input) return;
 
-
     const show =
       input.type === "password";
-
 
     input.type =
       show
         ? "text"
         : "password";
-
 
     showPass.textContent =
       show
@@ -643,10 +988,8 @@ showPass?.addEventListener(
         : "Show";
   }
 );
-
-
 /* =====================================================
-   PAYMENT RETURN
+   PAYMENT RETURN / ACCOUNT LINK TOKENS
 ===================================================== */
 
 const params =
@@ -655,16 +998,30 @@ const params =
   );
 
 
-if (
-  params.get("payment") ===
-  "success"
-) {
+const paymentStatus =
+  params.get("payment");
 
+const resetToken =
+  params.get("resetPassword") ||
+  params.get("resetToken") ||
+  params.get("reset_token");
+
+const verifyEmailToken =
+  params.get("verifyEmail") ||
+  params.get("verifyEmailToken") ||
+  params.get("verify_email_token");
+
+const claimToken =
+  params.get("claim") ||
+  params.get("claimToken") ||
+  params.get("claim_token");
+
+
+if (paymentStatus === "success") {
   localStorage.setItem(
     "sng_recent_payment",
     "success"
   );
-
 
   history.replaceState(
     null,
@@ -672,27 +1029,20 @@ if (
     "/#my-profile"
   );
 
-
   setTimeout(() => {
     go("my-profile");
   }, 100);
 }
 
 
-if (
-  params.get("payment") ===
-  "cancelled"
-) {
-
+if (paymentStatus === "cancelled") {
   history.replaceState(
     null,
     "",
     "/#profile"
   );
 
-
   setTimeout(() => {
-
     go("profile");
 
     const message =
@@ -704,38 +1054,2163 @@ if (
       message.textContent =
         "Checkout was cancelled. Your selected membership is still saved.";
     }
-
   }, 100);
 }
 
 
 /* =====================================================
-   MY PROFILE
+   CUSTOMER ACCOUNT UI
 ===================================================== */
 
-async function loadMemberProfile() {
+const accountAuth =
+  document.getElementById(
+    "account-auth"
+  );
 
-  const card =
-    document.getElementById(
-      "member-card"
-    );
+const customerDashboard =
+  document.getElementById(
+    "customer-dashboard"
+  );
 
-  if (!card) return;
+const loginPanel =
+  document.getElementById(
+    "login-panel"
+  );
+
+const registerPanel =
+  document.getElementById(
+    "register-panel"
+  );
+
+const forgotPasswordPanel =
+  document.getElementById(
+    "forgot-password-panel"
+  );
+
+const passwordResetPanel =
+  document.getElementById(
+    "password-reset-panel"
+  );
 
 
-  card.innerHTML = `
-    <div class="loading">
-      Checking your membership…
-    </div>
-  `;
+function showSignedOut() {
+  state.customer = null;
+  state.orders = [];
+  state.profileLoaded = true;
 
+  if (accountAuth) {
+    accountAuth.hidden = false;
+  }
+
+  if (customerDashboard) {
+    customerDashboard.hidden = true;
+  }
+
+  if (loginPanel) {
+    loginPanel.hidden = false;
+  }
+
+  if (registerPanel) {
+    registerPanel.hidden = false;
+  }
+
+  if (forgotPasswordPanel) {
+    forgotPasswordPanel.hidden = true;
+  }
+
+  if (passwordResetPanel) {
+    passwordResetPanel.hidden = true;
+  }
+}
+
+
+function showSignedIn() {
+  if (accountAuth) {
+    accountAuth.hidden = true;
+  }
+
+  if (customerDashboard) {
+    customerDashboard.hidden = false;
+  }
+}
+
+
+function showForgotPassword() {
+  clearAccountMessage();
+
+  if (loginPanel) {
+    loginPanel.hidden = true;
+  }
+
+  if (registerPanel) {
+    registerPanel.hidden = true;
+  }
+
+  if (forgotPasswordPanel) {
+    forgotPasswordPanel.hidden = false;
+  }
+
+  if (passwordResetPanel) {
+    passwordResetPanel.hidden = true;
+  }
+}
+
+
+function showNormalAuth() {
+  clearAccountMessage();
+
+  if (loginPanel) {
+    loginPanel.hidden = false;
+  }
+
+  if (registerPanel) {
+    registerPanel.hidden = false;
+  }
+
+  if (forgotPasswordPanel) {
+    forgotPasswordPanel.hidden = true;
+  }
+
+  if (passwordResetPanel) {
+    passwordResetPanel.hidden = true;
+  }
+}
+
+
+function showPasswordReset() {
+  if (accountAuth) {
+    accountAuth.hidden = false;
+  }
+
+  if (customerDashboard) {
+    customerDashboard.hidden = true;
+  }
+
+  if (loginPanel) {
+    loginPanel.hidden = true;
+  }
+
+  if (registerPanel) {
+    registerPanel.hidden = true;
+  }
+
+  if (forgotPasswordPanel) {
+    forgotPasswordPanel.hidden = true;
+  }
+
+  if (passwordResetPanel) {
+    passwordResetPanel.hidden = false;
+  }
+
+  go("my-profile");
+}
+
+
+document
+  .getElementById(
+    "show-forgot-password"
+  )
+  ?.addEventListener(
+    "click",
+    showForgotPassword
+  );
+
+
+document
+  .getElementById(
+    "back-to-login"
+  )
+  ?.addEventListener(
+    "click",
+    showNormalAuth
+  );
+
+
+/* =====================================================
+   REGISTER
+===================================================== */
+
+const registerForm =
+  document.getElementById(
+    "register-form"
+  );
+
+
+registerForm?.addEventListener(
+  "submit",
+  async event => {
+    event.preventDefault();
+
+    clearAccountMessage();
+
+    const form =
+      event.currentTarget;
+
+    const button =
+      form.querySelector(
+        'button[type="submit"]'
+      );
+
+    const data =
+      Object.fromEntries(
+        new FormData(form).entries()
+      );
+
+    if (
+      data.password !==
+      data.confirmPassword
+    ) {
+      showAccountMessage(
+        "Your passwords do not match.",
+        "error"
+      );
+
+      return;
+    }
+
+    if (
+      String(
+        data.password || ""
+      ).length < 10
+    ) {
+      showAccountMessage(
+        "Your password must be at least 10 characters.",
+        "error"
+      );
+
+      return;
+    }
+
+    try {
+      setButtonBusy(
+        button,
+        true,
+        "Creating Account…"
+      );
+
+      const response =
+        await fetch(
+          "/api/account/register",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            credentials:
+              "same-origin",
+
+            body: JSON.stringify({
+              email:
+                String(
+                  data.email || ""
+                ).trim(),
+
+              password:
+                data.password
+            })
+          }
+        );
+
+      const result =
+        await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+          "Account could not be created."
+        );
+      }
+
+      form.reset();
+
+      showAccountMessage(
+        result.message ||
+        "Your account was created. Check your email for the verification link.",
+        "success"
+      );
+
+      await loadMemberProfile(
+        true
+      );
+
+    } catch (error) {
+      showAccountMessage(
+        error.message,
+        "error"
+      );
+
+    } finally {
+      setButtonBusy(
+        button,
+        false
+      );
+    }
+  }
+);
+
+
+/* =====================================================
+   LOGIN
+===================================================== */
+
+const loginForm =
+  document.getElementById(
+    "login-form"
+  );
+
+
+loginForm?.addEventListener(
+  "submit",
+  async event => {
+    event.preventDefault();
+
+    clearAccountMessage();
+
+    const form =
+      event.currentTarget;
+
+    const button =
+      form.querySelector(
+        'button[type="submit"]'
+      );
+
+    const data =
+      Object.fromEntries(
+        new FormData(form).entries()
+      );
+
+    try {
+      setButtonBusy(
+        button,
+        true,
+        "Signing In…"
+      );
+
+      const response =
+        await fetch(
+          "/api/account/login",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            credentials:
+              "same-origin",
+
+            body: JSON.stringify({
+              email:
+                String(
+                  data.email || ""
+                ).trim(),
+
+              password:
+                data.password
+            })
+          }
+        );
+
+      const result =
+        await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+          "Unable to sign in."
+        );
+      }
+
+      form.reset();
+
+      showAccountMessage(
+        result.message ||
+        "Signed in successfully.",
+        "success"
+      );
+
+      await loadMemberProfile(
+        true
+      );
+
+    } catch (error) {
+      showAccountMessage(
+        error.message,
+        "error"
+      );
+
+    } finally {
+      setButtonBusy(
+        button,
+        false
+      );
+    }
+  }
+);
+
+
+/* =====================================================
+   LOGOUT
+===================================================== */
+
+document
+  .getElementById(
+    "customer-logout"
+  )
+  ?.addEventListener(
+    "click",
+    async () => {
+      clearAccountMessage();
+
+      try {
+        const response =
+          await fetch(
+            "/api/account/logout",
+            {
+              method: "POST",
+
+              credentials:
+                "same-origin"
+            }
+          );
+
+        if (!response.ok) {
+          const result =
+            await readJson(response);
+
+          throw new Error(
+            result.error ||
+            "Unable to log out."
+          );
+        }
+
+        showSignedOut();
+
+        showAccountMessage(
+          "You have been logged out.",
+          "success"
+        );
+
+      } catch (error) {
+        showAccountMessage(
+          error.message,
+          "error"
+        );
+      }
+    }
+  );
+
+
+/* =====================================================
+   FORGOT PASSWORD
+===================================================== */
+
+const forgotPasswordForm =
+  document.getElementById(
+    "forgot-password-form"
+  );
+
+
+forgotPasswordForm
+  ?.addEventListener(
+    "submit",
+    async event => {
+      event.preventDefault();
+
+      clearAccountMessage();
+
+      const form =
+        event.currentTarget;
+
+      const button =
+        form.querySelector(
+          'button[type="submit"]'
+        );
+
+      const data =
+        Object.fromEntries(
+          new FormData(
+            form
+          ).entries()
+        );
+
+      try {
+        setButtonBusy(
+          button,
+          true,
+          "Sending…"
+        );
+
+        const response =
+          await fetch(
+            "/api/account/request-password-reset",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+
+              credentials:
+                "same-origin",
+
+              body:
+                JSON.stringify({
+                  email:
+                    String(
+                      data.email ||
+                      ""
+                    ).trim()
+                })
+            }
+          );
+
+        const result =
+          await readJson(
+            response
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            result.error ||
+            "Unable to send password reset email."
+          );
+        }
+
+        form.reset();
+
+        showAccountMessage(
+          result.message ||
+          "If an account exists for that email, a password reset link has been sent.",
+          "success"
+        );
+
+      } catch (error) {
+        showAccountMessage(
+          error.message,
+          "error"
+        );
+
+      } finally {
+        setButtonBusy(
+          button,
+          false
+        );
+      }
+    }
+  );
+
+
+/* =====================================================
+   RESET PASSWORD
+===================================================== */
+
+const passwordResetForm =
+  document.getElementById(
+    "password-reset-form"
+  );
+
+
+passwordResetForm
+  ?.addEventListener(
+    "submit",
+    async event => {
+      event.preventDefault();
+
+      clearAccountMessage();
+
+      const form =
+        event.currentTarget;
+
+      const button =
+        form.querySelector(
+          'button[type="submit"]'
+        );
+
+      const data =
+        Object.fromEntries(
+          new FormData(
+            form
+          ).entries()
+        );
+
+      if (!resetToken) {
+        showAccountMessage(
+          "This password reset link is missing its secure token.",
+          "error"
+        );
+
+        return;
+      }
+
+      if (
+        data.password !==
+        data.confirmPassword
+      ) {
+        showAccountMessage(
+          "Your passwords do not match.",
+          "error"
+        );
+
+        return;
+      }
+
+      if (
+        String(
+          data.password || ""
+        ).length < 10
+      ) {
+        showAccountMessage(
+          "Your password must be at least 10 characters.",
+          "error"
+        );
+
+        return;
+      }
+
+      try {
+        setButtonBusy(
+          button,
+          true,
+          "Resetting…"
+        );
+
+        const response =
+          await fetch(
+            "/api/account/reset-password",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+
+              credentials:
+                "same-origin",
+
+              body:
+                JSON.stringify({
+                  token:
+                    resetToken,
+
+                  password:
+                    data.password
+                })
+            }
+          );
+
+        const result =
+          await readJson(
+            response
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            result.error ||
+            "Unable to reset your password."
+          );
+        }
+
+        form.reset();
+
+        history.replaceState(
+          null,
+          "",
+          "/#my-profile"
+        );
+
+        showNormalAuth();
+
+        showAccountMessage(
+          result.message ||
+          "Your password has been reset. You can now sign in.",
+          "success"
+        );
+
+      } catch (error) {
+        showAccountMessage(
+          error.message,
+          "error"
+        );
+
+      } finally {
+        setButtonBusy(
+          button,
+          false
+        );
+      }
+    }
+  );
+
+
+/* =====================================================
+   EMAIL VERIFICATION
+===================================================== */
+
+async function verifyCustomerEmail(
+  token
+) {
+  if (!token) return;
+
+  go("my-profile");
+
+  showAccountMessage(
+    "Verifying your email…",
+    "info"
+  );
 
   try {
+    const response =
+      await fetch(
+        "/api/account/verify-email",
+        {
+          method: "POST",
 
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          credentials:
+            "same-origin",
+
+          body:
+            JSON.stringify({
+              token
+            })
+        }
+      );
+
+    const result =
+      await readJson(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+        "Email verification failed."
+      );
+    }
+
+    history.replaceState(
+      null,
+      "",
+      "/#my-profile"
+    );
+
+    showAccountMessage(
+      result.message ||
+      "Your email has been verified.",
+      "success"
+    );
+
+    await loadMemberProfile(
+      true
+    );
+
+  } catch (error) {
+    showAccountMessage(
+      error.message,
+      "error"
+    );
+  }
+}
+
+
+/* =====================================================
+   RESEND EMAIL VERIFICATION
+===================================================== */
+
+async function resendVerification() {
+  clearAccountMessage();
+
+  try {
+    const response =
+      await fetch(
+        "/api/account/resend-verification",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          credentials:
+            "same-origin",
+
+          body:
+            JSON.stringify({})
+        }
+      );
+
+    const result =
+      await readJson(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+        "Unable to send verification email."
+      );
+    }
+
+    showAccountMessage(
+      result.message ||
+      "Verification email sent.",
+      "success"
+    );
+
+  } catch (error) {
+    showAccountMessage(
+      error.message,
+      "error"
+    );
+  }
+}
+
+
+document
+  .getElementById(
+    "resend-verification"
+  )
+  ?.addEventListener(
+    "click",
+    resendVerification
+  );
+
+
+document
+  .getElementById(
+    "security-resend-verification"
+  )
+  ?.addEventListener(
+    "click",
+    resendVerification
+  );
+
+
+/* =====================================================
+   SECURITY PASSWORD RESET
+===================================================== */
+
+document
+  .getElementById(
+    "security-password-reset"
+  )
+  ?.addEventListener(
+    "click",
+    async () => {
+      clearAccountMessage();
+
+      const email =
+        state.customer?.email;
+
+      if (!email) {
+        showAccountMessage(
+          "Unable to determine your account email.",
+          "error"
+        );
+
+        return;
+      }
+
+      try {
+        const response =
+          await fetch(
+            "/api/account/request-password-reset",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+
+              credentials:
+                "same-origin",
+
+              body:
+                JSON.stringify({
+                  email
+                })
+            }
+          );
+
+        const result =
+          await readJson(
+            response
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            result.error ||
+            "Unable to send password reset email."
+          );
+        }
+
+        showAccountMessage(
+          result.message ||
+          "Password reset email sent.",
+          "success"
+        );
+
+      } catch (error) {
+        showAccountMessage(
+          error.message,
+          "error"
+        );
+      }
+    }
+  );
+
+
+/* =====================================================
+   ACCOUNT TABS
+===================================================== */
+
+function switchAccountTab(
+  tabName
+) {
+  document
+    .querySelectorAll(
+      "[data-account-tab]"
+    )
+    .forEach(button => {
+      button.classList.toggle(
+        "active",
+        button.dataset
+          .accountTab ===
+          tabName
+      );
+    });
+
+  document
+    .querySelectorAll(
+      "[data-account-panel]"
+    )
+    .forEach(panel => {
+      const active =
+        panel.dataset
+          .accountPanel ===
+        tabName;
+
+      panel.classList.toggle(
+        "active",
+        active
+      );
+
+      panel.hidden = !active;
+    });
+}
+
+
+document
+  .querySelectorAll(
+    "[data-account-tab]"
+  )
+  .forEach(button => {
+    button.addEventListener(
+      "click",
+      () => {
+        switchAccountTab(
+          button.dataset
+            .accountTab
+        );
+      }
+    );
+  });
+
+
+/* =====================================================
+   LINK EXISTING ORDER
+===================================================== */
+
+const claimOrderForm =
+  document.getElementById(
+    "claim-order-form"
+  );
+
+
+claimOrderForm?.addEventListener(
+  "submit",
+  async event => {
+    event.preventDefault();
+
+    const form =
+      event.currentTarget;
+
+    const message =
+      document.getElementById(
+        "claim-order-message"
+      );
+
+    const button =
+      form.querySelector(
+        'button[type="submit"]'
+      );
+
+    const data =
+      Object.fromEntries(
+        new FormData(
+          form
+        ).entries()
+      );
+
+    const orderNumber =
+      String(
+        data.orderNumber || ""
+      ).trim();
+
+    const email =
+      String(
+        data.email || ""
+      ).trim();
+
+    const phone =
+      String(
+        data.phone || ""
+      ).trim();
+
+    if (!email && !phone) {
+      setMessage(
+        message,
+        "Enter either the purchase email or purchase phone number.",
+        "error"
+      );
+
+      return;
+    }
+
+    try {
+      setButtonBusy(
+        button,
+        true,
+        "Verifying…"
+      );
+
+      setMessage(
+        message,
+        ""
+      );
+
+      const response =
+        await fetch(
+          "/api/account/claim-order",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            credentials:
+              "same-origin",
+
+            body:
+              JSON.stringify({
+                orderNumber,
+                email,
+                phone
+              })
+          }
+        );
+
+      const result =
+        await readJson(
+          response
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+          "Unable to verify that order."
+        );
+      }
+
+      form.reset();
+
+      setMessage(
+        message,
+        result.message ||
+        "If the information matches, a secure verification link has been sent to the email address on the order.",
+        "success"
+      );
+
+    } catch (error) {
+      setMessage(
+        message,
+        error.message,
+        "error"
+      );
+
+    } finally {
+      setButtonBusy(
+        button,
+        false
+      );
+    }
+  }
+);
+
+
+/* =====================================================
+   VERIFY ORDER CLAIM
+===================================================== */
+
+async function verifyOrderClaim(
+  token
+) {
+  if (!token) return;
+
+  go("my-profile");
+
+  showAccountMessage(
+    "Verifying your order…",
+    "info"
+  );
+
+  try {
+    const response =
+      await fetch(
+        "/api/account/verify-order-claim",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          credentials:
+            "same-origin",
+
+          body:
+            JSON.stringify({
+              token
+            })
+        }
+      );
+
+    const result =
+      await readJson(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+        "Unable to link this order."
+      );
+    }
+
+    history.replaceState(
+      null,
+      "",
+      "/#my-profile"
+    );
+
+    showAccountMessage(
+      result.message ||
+      "Your order has been linked to your account.",
+      "success"
+    );
+
+    await loadMemberProfile(
+      true
+    );
+
+  } catch (error) {
+    showAccountMessage(
+      error.message,
+      "error"
+    );
+  }
+}
+/* =====================================================
+   CUSTOMER PROFILE RENDERING
+===================================================== */
+
+function setText(id, value) {
+  const element =
+    document.getElementById(id);
+
+  if (!element) return;
+
+  element.textContent =
+    value ?? "—";
+}
+
+
+function renderAccountHeader(
+  account
+) {
+  const email =
+    account?.email || "Member";
+
+  const verified =
+    Boolean(
+      account?.emailVerifiedAt
+    );
+
+  setText(
+    "customer-account-email",
+    email
+  );
+
+  setText(
+    "security-email",
+    email
+  );
+
+  setText(
+    "email-verification-status",
+    verified
+      ? "Email verified"
+      : "Email not verified"
+  );
+
+  setText(
+    "security-email-status",
+    verified
+      ? "Verified"
+      : "Not Verified"
+  );
+
+  const resend =
+    document.getElementById(
+      "resend-verification"
+    );
+
+  const securityResend =
+    document.getElementById(
+      "security-resend-verification"
+    );
+
+  if (resend) {
+    resend.hidden = verified;
+  }
+
+  if (securityResend) {
+    securityResend.hidden =
+      verified;
+  }
+}
+
+
+/* =====================================================
+   MEMBERSHIP RENDERING
+===================================================== */
+
+function renderMembership(
+  membership
+) {
+  if (!membership) {
+    setText(
+      "membership-plan-name",
+      "No active membership"
+    );
+
+    setText(
+      "membership-status",
+      "—"
+    );
+
+    setText(
+      "membership-price",
+      "—"
+    );
+
+    setText(
+      "membership-profiles",
+      "—"
+    );
+
+    setText(
+      "membership-period-end",
+      "—"
+    );
+
+    setText(
+      "membership-days-remaining",
+      "—"
+    );
+
+    setText(
+      "detail-plan",
+      "—"
+    );
+
+    setText(
+      "detail-status",
+      "—"
+    );
+
+    setText(
+      "detail-price",
+      "—"
+    );
+
+    setText(
+      "detail-profiles",
+      "—"
+    );
+
+    setText(
+      "detail-period-end",
+      "—"
+    );
+
+    setText(
+      "membership-description",
+      "You do not currently have a membership linked to this account."
+    );
+
+    return;
+  }
+
+  const tier =
+    Number(
+      membership.tier
+    );
+
+  const localPlan =
+    PLANS[tier] || null;
+
+  const planName =
+    membership.planName ||
+    localPlan?.name ||
+    "Membership";
+
+  const amount =
+    membership.amount ??
+    localPlan?.amount ??
+    null;
+
+  const profiles =
+    membership.profiles ??
+    localPlan?.profiles ??
+    null;
+
+  const status =
+    normalizeStatus(
+      membership.status
+    );
+
+  const periodEnd =
+    membership.subscriptionEndDate ||
+    membership.currentPeriodEnd ||
+    membership.cancelAt ||
+    null;
+
+  const daysRemaining =
+    Number.isFinite(
+      Number(
+        membership.daysRemaining
+      )
+    )
+      ? Math.max(
+          0,
+          Number(
+            membership.daysRemaining
+          )
+        )
+      : calculateDaysRemaining(
+          periodEnd
+        );
+
+  const priceText =
+    amount != null
+      ? `$${amount}/month`
+      : "—";
+
+  const profileText =
+    profiles != null
+      ? String(profiles)
+      : "—";
+
+  const dateText =
+    periodEnd
+      ? formatDate(periodEnd)
+      : "—";
+
+  setText(
+    "membership-plan-name",
+    planName
+  );
+
+  setText(
+    "membership-status",
+    status
+  );
+
+  setText(
+    "membership-price",
+    priceText
+  );
+
+  setText(
+    "membership-profiles",
+    profileText
+  );
+
+  setText(
+    "membership-period-end",
+    dateText
+  );
+
+  setText(
+    "membership-days-remaining",
+    daysRemaining
+  );
+
+  setText(
+    "detail-plan",
+    planName
+  );
+
+  setText(
+    "detail-status",
+    status
+  );
+
+  setText(
+    "detail-price",
+    priceText
+  );
+
+  setText(
+    "detail-profiles",
+    profileText
+  );
+
+  setText(
+    "detail-period-end",
+    dateText
+  );
+
+  const description =
+    document.getElementById(
+      "membership-description"
+    );
+
+  if (description) {
+    if (
+      membership.cancelAtPeriodEnd
+    ) {
+      description.textContent =
+        periodEnd
+          ? `Your membership is scheduled to end on ${formatDate(
+              periodEnd
+            )}.`
+          : "Your membership is scheduled to cancel at the end of the current billing period.";
+    } else {
+      description.textContent =
+        "Your membership information is connected to your SLABS N GRABS ACO customer account.";
+    }
+  }
+}
+
+
+/* =====================================================
+   ORDER HISTORY
+===================================================== */
+
+function renderOrders(
+  orders
+) {
+  const container =
+    document.getElementById(
+      "customer-orders"
+    );
+
+  if (!container) return;
+
+  if (
+    !Array.isArray(orders) ||
+    orders.length === 0
+  ) {
+    container.innerHTML = `
+      <div class="member-empty">
+
+        <h3>
+          No linked orders yet.
+        </h3>
+
+        <p>
+          New purchases made while signed
+          in will appear here automatically.
+          You can also link an older order
+          below.
+        </p>
+
+      </div>
+    `;
+
+    return;
+  }
+
+  container.innerHTML =
+    orders
+      .map(order => {
+        const orderNumber =
+          getOrderNumber(order);
+
+        const tier =
+          Number(order.tier);
+
+        const localPlan =
+          PLANS[tier] || null;
+
+        const planName =
+          order.planName ||
+          localPlan?.name ||
+          "Membership";
+
+        const amount =
+          order.amount ??
+          localPlan?.amount ??
+          null;
+
+        const profiles =
+          order.profiles ??
+          localPlan?.profiles ??
+          null;
+
+        const orderDate =
+          order.paidAt ||
+          order.createdAt ||
+          null;
+
+        const endDate =
+          order.subscriptionEndDate ||
+          order.currentPeriodEnd ||
+          order.cancelAt ||
+          null;
+
+        const status =
+          normalizeStatus(
+            order.status
+          );
+
+        return `
+          <article class="customer-order">
+
+            <div class="customer-order-head">
+
+              <div>
+
+                <span class="eyebrow">
+                  ORDER
+                </span>
+
+                <h3>
+                  ${escapeHtml(
+                    orderNumber ||
+                    "Order"
+                  )}
+                </h3>
+
+              </div>
+
+              <span class="membership-status">
+                ${escapeHtml(status)}
+              </span>
+
+            </div>
+
+            <div class="account-detail-list">
+
+              <div>
+                <span>Membership</span>
+                <strong>
+                  ${escapeHtml(
+                    planName
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>Monthly Price</span>
+                <strong>
+                  ${
+                    amount != null
+                      ? `$${escapeHtml(
+                          amount
+                        )}/month`
+                      : "—"
+                  }
+                </strong>
+              </div>
+
+              <div>
+                <span>ACO Profiles</span>
+                <strong>
+                  ${
+                    profiles != null
+                      ? escapeHtml(
+                          profiles
+                        )
+                      : "—"
+                  }
+                </strong>
+              </div>
+
+              <div>
+                <span>Order Date</span>
+                <strong>
+                  ${
+                    orderDate
+                      ? escapeHtml(
+                          formatDate(
+                            orderDate
+                          )
+                        )
+                      : "—"
+                  }
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  Renewal / End Date
+                </span>
+
+                <strong>
+                  ${
+                    endDate
+                      ? escapeHtml(
+                          formatDate(
+                            endDate
+                          )
+                        )
+                      : "—"
+                  }
+                </strong>
+              </div>
+
+              ${
+                order.updatedAt
+                  ? `
+                    <div>
+                      <span>
+                        Last Updated
+                      </span>
+
+                      <strong>
+                        ${escapeHtml(
+                          formatDate(
+                            order.updatedAt
+                          )
+                        )}
+                      </strong>
+                    </div>
+                  `
+                  : ""
+              }
+
+            </div>
+
+          </article>
+        `;
+      })
+      .join("");
+}
+
+
+/* =====================================================
+   EDIT ORDER SELECT
+===================================================== */
+
+function populateEditOrderSelect(
+  orders
+) {
+  const select =
+    document.getElementById(
+      "edit-order-select"
+    );
+
+  const form =
+    document.getElementById(
+      "edit-order-form"
+    );
+
+  if (!select) return;
+
+  select.innerHTML = `
+    <option value="">
+      Select an order
+    </option>
+  `;
+
+  if (
+    !Array.isArray(orders) ||
+    orders.length === 0
+  ) {
+    if (form) {
+      form.hidden = true;
+    }
+
+    return;
+  }
+
+  orders.forEach(order => {
+    const orderNumber =
+      getOrderNumber(order);
+
+    if (!orderNumber) return;
+
+    const option =
+      document.createElement(
+        "option"
+      );
+
+    option.value =
+      orderNumber;
+
+    option.textContent =
+      `${orderNumber} — ${
+        order.planName ||
+        "Membership"
+      }`;
+
+    select.appendChild(
+      option
+    );
+  });
+}
+
+
+function findOrder(
+  orderNumber
+) {
+  return state.orders.find(
+    order =>
+      getOrderNumber(order) ===
+      orderNumber
+  );
+}
+
+
+function fillEditOrderForm(
+  order
+) {
+  const form =
+    document.getElementById(
+      "edit-order-form"
+    );
+
+  if (!form) return;
+
+  if (!order) {
+    form.hidden = true;
+    return;
+  }
+
+  form.hidden = false;
+
+  const profile =
+    getOrderProfile(order);
+
+  const fields = [
+    "profileName",
+    "firstName",
+    "lastName",
+    "email",
+    "phone",
+    "address",
+    "address2",
+    "country",
+    "state",
+    "city",
+    "zip"
+  ];
+
+  fields.forEach(name => {
+    const input =
+      form.elements[name];
+
+    if (!input) return;
+
+    input.value =
+      profile[name] || "";
+  });
+
+  [
+    "acoEmail",
+    "acoPassword",
+    "cardLabel",
+    "cardholder",
+    "acoCardNumber",
+    "expMonth",
+    "expYear"
+  ].forEach(name => {
+    const input =
+      form.elements[name];
+
+    if (input) {
+      input.value = "";
+    }
+  });
+
+  form.dataset.orderNumber =
+    getOrderNumber(order);
+
+  setMessage(
+    document.getElementById(
+      "edit-order-message"
+    ),
+    ""
+  );
+}
+
+
+document
+  .getElementById(
+    "edit-order-select"
+  )
+  ?.addEventListener(
+    "change",
+    event => {
+      const orderNumber =
+        event.currentTarget.value;
+
+      fillEditOrderForm(
+        findOrder(orderNumber)
+      );
+    }
+  );
+
+
+/* =====================================================
+   SAVE CUSTOMER ORDER CHANGES
+===================================================== */
+
+const editOrderForm =
+  document.getElementById(
+    "edit-order-form"
+  );
+
+
+editOrderForm?.addEventListener(
+  "submit",
+  async event => {
+    event.preventDefault();
+
+    const form =
+      event.currentTarget;
+
+    const orderNumber =
+      form.dataset.orderNumber;
+
+    const message =
+      document.getElementById(
+        "edit-order-message"
+      );
+
+    const button =
+      form.querySelector(
+        'button[type="submit"]'
+      );
+
+    if (!orderNumber) {
+      setMessage(
+        message,
+        "Select an order first.",
+        "error"
+      );
+
+      return;
+    }
+
+    const all =
+      Object.fromEntries(
+        new FormData(
+          form
+        ).entries()
+      );
+
+    const profile = {
+      profileName:
+        all.profileName || "",
+
+      firstName:
+        all.firstName || "",
+
+      lastName:
+        all.lastName || "",
+
+      email:
+        all.email || "",
+
+      phone:
+        all.phone || "",
+
+      address:
+        all.address || "",
+
+      address2:
+        all.address2 || "",
+
+      country:
+        all.country || "",
+
+      state:
+        all.state || "",
+
+      city:
+        all.city || "",
+
+      zip:
+        all.zip || ""
+    };
+
+    const secrets = {};
+
+    const replacementAcoEmail =
+      String(
+        all.acoEmail || ""
+      ).trim();
+
+    const replacementPassword =
+      String(
+        all.acoPassword || ""
+      );
+
+    const cardLabel =
+      String(
+        all.cardLabel || ""
+      ).trim();
+
+    const cardholder =
+      String(
+        all.cardholder || ""
+      ).trim();
+
+    const cardNumber =
+      String(
+        all.acoCardNumber || ""
+      )
+        .replace(/\D/g, "");
+
+    const expMonth =
+      String(
+        all.expMonth || ""
+      ).trim();
+
+    const expYear =
+      String(
+        all.expYear || ""
+      ).trim();
+
+    if (replacementAcoEmail) {
+      secrets.acoEmail =
+        replacementAcoEmail;
+    }
+
+    if (replacementPassword) {
+      secrets.acoPassword =
+        replacementPassword;
+    }
+
+    const anyCardField =
+      Boolean(
+        cardLabel ||
+        cardholder ||
+        cardNumber ||
+        expMonth ||
+        expYear
+      );
+
+    if (anyCardField) {
+      if (
+        !cardLabel ||
+        !cardholder ||
+        !cardNumber ||
+        !expMonth ||
+        !expYear
+      ) {
+        setMessage(
+          message,
+          "To replace the ACO card, complete all card replacement fields.",
+          "error"
+        );
+
+        return;
+      }
+
+      secrets.cardLabel =
+        cardLabel;
+
+      secrets.cardholder =
+        cardholder;
+
+      secrets.acoCardNumber =
+        cardNumber;
+
+      secrets.expMonth =
+        expMonth;
+
+      secrets.expYear =
+        expYear;
+    }
+
+    try {
+      setButtonBusy(
+        button,
+        true,
+        "Saving…"
+      );
+
+      setMessage(
+        message,
+        ""
+      );
+
+      const response =
+        await fetch(
+          `/api/account/orders/${encodeURIComponent(
+            orderNumber
+          )}`,
+          {
+            method: "PUT",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            credentials:
+              "same-origin",
+
+            body:
+              JSON.stringify({
+                profile,
+                secrets
+              })
+          }
+        );
+
+      const result =
+        await readJson(
+          response
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+          "Unable to save your changes."
+        );
+      }
+
+      setMessage(
+        message,
+        result.message ||
+        "Your order information has been updated.",
+        "success"
+      );
+
+      await loadMemberProfile(
+        true
+      );
+
+      const select =
+        document.getElementById(
+          "edit-order-select"
+        );
+
+      if (select) {
+        select.value =
+          orderNumber;
+
+        fillEditOrderForm(
+          findOrder(
+            orderNumber
+          )
+        );
+      }
+
+    } catch (error) {
+      setMessage(
+        message,
+        error.message,
+        "error"
+      );
+
+    } finally {
+      setButtonBusy(
+        button,
+        false
+      );
+    }
+  }
+);
+
+
+/* =====================================================
+   UPGRADE MEMBERSHIP
+===================================================== */
+
+/*
+  Membership upgrades must be handled by Stripe
+  on the server so an existing subscription is
+  changed safely rather than accidentally creating
+  a second subscription.
+
+  Until the dedicated server-side upgrade route is
+  added, this button takes the customer to the tier
+  list without creating another subscription.
+*/
+
+document
+  .getElementById(
+    "upgrade-membership"
+  )
+  ?.addEventListener(
+    "click",
+    () => {
+      showAccountMessage(
+        "Choose the membership you are interested in. Existing membership upgrades will be processed through the secure Stripe upgrade flow.",
+        "info"
+      );
+
+      go("pricing");
+    }
+  );
+
+
+/* =====================================================
+   LOAD MY PROFILE
+===================================================== */
+
+async function loadMemberProfile(
+  force = false
+) {
+  if (
+    state.profileLoaded &&
+    !force &&
+    state.customer
+  ) {
+    showSignedIn();
+    return;
+  }
+
+  try {
     const response =
       await fetch(
         "/api/my-profile",
         {
+          method: "GET",
+
           credentials:
             "same-origin",
 
@@ -744,289 +3219,96 @@ async function loadMemberProfile() {
         }
       );
 
+    if (
+      response.status === 401
+    ) {
+      showSignedOut();
 
-    if (response.status === 401) {
-
-      card.innerHTML = `
-        <div class="member-empty">
-
-          <span class="eyebrow">
-            MEMBERSHIP ACCESS
-          </span>
-
-          <h3>
-            Your membership profile isn't connected yet.
-          </h3>
-
-          <p>
-            Complete checkout through this site
-            to connect your membership.
-
-            If you already subscribed and need
-            help accessing your profile,
-            contact us through Discord.
-          </p>
-
-          <button
-            type="button"
-            class="primary"
-            id="member-pricing"
-          >
-            View Memberships
-          </button>
-
-        </div>
-      `;
-
-
-      document
-        .getElementById(
-          "member-pricing"
-        )
-        ?.addEventListener(
-          "click",
-          () => {
-            go("pricing");
-          }
-        );
-
+      if (resetToken) {
+        showPasswordReset();
+      }
 
       return;
     }
 
-
     const data =
-      await response.json();
-
+      await readJson(
+        response
+      );
 
     if (!response.ok) {
       throw new Error(
         data.error ||
-        "Unable to load membership."
+        "Unable to load your customer profile."
       );
     }
 
+    state.customer =
+      data.account || null;
 
-    const daysRemaining =
-      Number.isFinite(
-        Number(
-          data.daysRemaining
-        )
+    state.orders =
+      Array.isArray(
+        data.orders
       )
-        ? Math.max(
-            0,
-            Number(
-              data.daysRemaining
-            )
-          )
-        : "—";
+        ? data.orders
+        : [];
 
+    state.profileLoaded = true;
 
-    card.innerHTML = `
+    showSignedIn();
 
-      <div class="member-status-row">
+    renderAccountHeader(
+      state.customer
+    );
 
-        <div>
+    renderMembership(
+      data.currentMembership ||
+      null
+    );
 
-          <span class="eyebrow">
-            MEMBERSHIP STATUS
-          </span>
+    renderOrders(
+      state.orders
+    );
 
-          <h3>
-            ${escapeHtml(
-              data.profileName ||
-              data.username ||
-              "Member"
-            )}
-          </h3>
-
-        </div>
-
-        <span
-          class="
-            status-pill
-            ${
-              data.status === "active"
-                ? "active"
-                : ""
-            }
-          "
-        >
-          ${escapeHtml(
-            data.status ||
-            "Unknown"
-          )}
-        </span>
-
-      </div>
-
-
-      <div class="member-grid">
-
-        <div class="member-stat">
-
-          <small>
-            CURRENT PLAN
-          </small>
-
-          <strong>
-            ${escapeHtml(
-              data.planName ||
-              "—"
-            )}
-          </strong>
-
-        </div>
-
-
-        <div class="member-stat">
-
-          <small>
-            MONTHLY PRICE
-          </small>
-
-          <strong>
-            ${
-              data.amount != null
-                ? `$${escapeHtml(
-                    data.amount
-                  )}/month`
-                : "—"
-            }
-          </strong>
-
-        </div>
-
-
-        <div class="member-stat">
-
-          <small>
-            PROFILES
-          </small>
-
-          <strong>
-            ${escapeHtml(
-              data.profiles ??
-              "—"
-            )}
-          </strong>
-
-        </div>
-
-
-        <div class="member-stat">
-
-          <small>
-            DAYS REMAINING
-          </small>
-
-          <strong>
-            ${escapeHtml(
-              daysRemaining
-            )}
-          </strong>
-
-        </div>
-
-
-        <div class="member-stat wide">
-
-          <small>
-            CURRENT PERIOD ENDS
-          </small>
-
-          <strong>
-            ${
-              data.currentPeriodEnd
-                ? escapeHtml(
-                    formatDate(
-                      data.currentPeriodEnd
-                    )
-                  )
-                : "—"
-            }
-          </strong>
-
-        </div>
-
-      </div>
-
-
-      <p class="member-note">
-        Your membership period is based
-        on your Stripe subscription
-        billing period.
-      </p>
-    `;
-
+    populateEditOrderSelect(
+      state.orders
+    );
 
   } catch (error) {
+    state.profileLoaded =
+      false;
 
-    card.innerHTML = `
-
-      <div class="member-empty">
-
-        <h3>
-          We couldn't load your membership.
-        </h3>
-
-        <p>
-          ${escapeHtml(
-            error.message
-          )}
-        </p>
-
-      </div>
-    `;
-
+    showAccountMessage(
+      error.message,
+      "error"
+    );
   }
 }
 
 
 /* =====================================================
-   HELPERS
+   SECURE LINK STARTUP
 ===================================================== */
 
-function escapeHtml(value) {
-
-  return String(
-    value ?? ""
-  ).replace(
-    /[&<>"']/g,
-    character => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    })[character]
-  );
-}
-
-
-function formatDate(value) {
-
-  const date =
-    new Date(value);
-
-
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
-    return value;
+async function processSecureLinks() {
+  if (resetToken) {
+    showPasswordReset();
+    return;
   }
 
+  if (verifyEmailToken) {
+    await verifyCustomerEmail(
+      verifyEmailToken
+    );
 
-  return date.toLocaleDateString(
-    undefined,
-    {
-      year: "numeric",
-      month: "long",
-      day: "numeric"
-    }
-  );
+    return;
+  }
+
+  if (claimToken) {
+    await verifyOrderClaim(
+      claimToken
+    );
+  }
 }
 
 
@@ -1039,3 +3321,20 @@ renderPricing();
 updateSelectedPlan();
 
 updateCart();
+
+
+const initialPage =
+  location.hash.slice(1);
+
+if (
+  VALID_PAGES.includes(
+    initialPage
+  )
+) {
+  go(initialPage);
+} else {
+  go("home");
+}
+
+
+processSecureLinks();
