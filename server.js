@@ -128,6 +128,190 @@ const clean = (value, max = 300) =>
     .slice(0, max);
 
 /* -------------------------------------------------------
+   STRIPE SUBSCRIPTION HELPERS
+------------------------------------------------------- */
+
+function stripeTimestampToIso(value) {
+  const timestamp = Number(value);
+
+  if (
+    !Number.isFinite(timestamp) ||
+    timestamp <= 0
+  ) {
+    return null;
+  }
+
+  return new Date(
+    timestamp * 1000
+  ).toISOString();
+}
+
+
+function getSubscriptionPeriodEnd(subscription) {
+  /*
+    Older Stripe API versions placed
+    current_period_end directly on the
+    subscription.
+
+    Newer Stripe API versions place the
+    billing period on each subscription item.
+
+    Supporting both formats keeps the site
+    compatible with either Stripe version.
+  */
+
+  if (
+    subscription?.current_period_end
+  ) {
+    return stripeTimestampToIso(
+      subscription.current_period_end
+    );
+  }
+
+
+  const items =
+    subscription?.items?.data || [];
+
+
+  const periodEnds =
+    items
+      .map(item =>
+        Number(
+          item?.current_period_end
+        )
+      )
+      .filter(value =>
+        Number.isFinite(value) &&
+        value > 0
+      );
+
+
+  if (!periodEnds.length) {
+    return null;
+  }
+
+
+  /*
+    A subscription normally has one recurring
+    item here, but using the latest end date
+    also handles subscriptions containing
+    multiple items.
+  */
+
+  return stripeTimestampToIso(
+    Math.max(...periodEnds)
+  );
+}
+
+
+function getSubscriptionPeriodStart(subscription) {
+  if (
+    subscription?.current_period_start
+  ) {
+    return stripeTimestampToIso(
+      subscription.current_period_start
+    );
+  }
+
+
+  const items =
+    subscription?.items?.data || [];
+
+
+  const periodStarts =
+    items
+      .map(item =>
+        Number(
+          item?.current_period_start
+        )
+      )
+      .filter(value =>
+        Number.isFinite(value) &&
+        value > 0
+      );
+
+
+  if (!periodStarts.length) {
+    return null;
+  }
+
+
+  return stripeTimestampToIso(
+    Math.min(...periodStarts)
+  );
+}
+
+
+function applySubscriptionInfo(
+  record,
+  subscription
+) {
+  if (
+    !record ||
+    !subscription
+  ) {
+    return record;
+  }
+
+
+  record.subscriptionStatus =
+    subscription.status ||
+    record.subscriptionStatus ||
+    "unknown";
+
+
+  record.currentPeriodStart =
+    getSubscriptionPeriodStart(
+      subscription
+    );
+
+
+  record.currentPeriodEnd =
+    getSubscriptionPeriodEnd(
+      subscription
+    );
+
+
+  record.cancelAtPeriodEnd =
+    subscription.cancel_at_period_end ===
+    true;
+
+
+  record.cancelAt =
+    stripeTimestampToIso(
+      subscription.cancel_at
+    );
+
+
+  record.canceledAt =
+    stripeTimestampToIso(
+      subscription.canceled_at
+    );
+
+
+  record.endedAt =
+    stripeTimestampToIso(
+      subscription.ended_at
+    );
+
+
+  /*
+    If Stripe has an explicit cancel_at date,
+    use that as the paid-through/end date when
+    appropriate.
+  */
+
+  record.subscriptionEndDate =
+    record.cancelAt ||
+    record.currentPeriodEnd ||
+    record.endedAt ||
+    null;
+
+
+  return record;
+}
+
+/* -------------------------------------------------------
    PROFILE VALIDATION
 ------------------------------------------------------- */
 
@@ -542,20 +726,10 @@ app.post(
                         .stripeSubscriptionId
                     );
 
-                record.subscriptionStatus =
-                  subscription.status;
-
-                if (
-                  subscription
-                    .current_period_end
-                ) {
-                  record.currentPeriodEnd =
-                    new Date(
-                      subscription
-                        .current_period_end *
-                      1000
-                    ).toISOString();
-                }
+             applySubscriptionInfo(
+  record,
+  subscription
+);
               } catch (error) {
                 console.error(
                   "Subscription lookup failed:",
@@ -646,22 +820,16 @@ app.post(
             ) ===
             String(subscription.id)
           ) {
-            record.subscriptionStatus =
-              subscription.status;
+       applySubscriptionInfo(
+  record,
+  subscription
+);
 
-            if (
-              subscription
-                .current_period_end
-            ) {
-              record.currentPeriodEnd =
-                new Date(
-                  subscription
-                    .current_period_end *
-                  1000
-                ).toISOString();
-            }
+record.subscriptionUpdatedAt =
+  new Date().toISOString();
 
-            changed = true;
+changed = true;
+
           }
         }
 
@@ -912,6 +1080,136 @@ app.get(
         PAID_FILE,
         []
       );
+
+
+    /*
+      Refresh subscription information directly
+      from Stripe before showing Admin.
+
+      This also repairs older saved records that
+      are missing currentPeriodEnd.
+    */
+
+    let subscriptionDataChanged =
+      false;
+
+
+    for (const record of paid) {
+
+      if (
+        !record.stripeSubscriptionId
+      ) {
+        continue;
+      }
+
+
+      try {
+
+        const subscription =
+          await stripe
+            .subscriptions
+            .retrieve(
+              record
+                .stripeSubscriptionId
+            );
+
+
+        const before =
+          JSON.stringify({
+            subscriptionStatus:
+              record.subscriptionStatus,
+
+            currentPeriodStart:
+              record.currentPeriodStart,
+
+            currentPeriodEnd:
+              record.currentPeriodEnd,
+
+            cancelAtPeriodEnd:
+              record.cancelAtPeriodEnd,
+
+            cancelAt:
+              record.cancelAt,
+
+            canceledAt:
+              record.canceledAt,
+
+            endedAt:
+              record.endedAt,
+
+            subscriptionEndDate:
+              record.subscriptionEndDate
+          });
+
+
+        applySubscriptionInfo(
+          record,
+          subscription
+        );
+
+
+        const after =
+          JSON.stringify({
+            subscriptionStatus:
+              record.subscriptionStatus,
+
+            currentPeriodStart:
+              record.currentPeriodStart,
+
+            currentPeriodEnd:
+              record.currentPeriodEnd,
+
+            cancelAtPeriodEnd:
+              record.cancelAtPeriodEnd,
+
+            cancelAt:
+              record.cancelAt,
+
+            canceledAt:
+              record.canceledAt,
+
+            endedAt:
+              record.endedAt,
+
+            subscriptionEndDate:
+              record.subscriptionEndDate
+          });
+
+
+        if (before !== after) {
+
+          record.subscriptionUpdatedAt =
+            new Date().toISOString();
+
+          subscriptionDataChanged =
+            true;
+        }
+
+
+      } catch (error) {
+
+        console.error(
+          "Admin subscription refresh failed:",
+          record.id,
+          error.message
+        );
+
+      }
+
+    }
+
+
+    if (
+      subscriptionDataChanged
+    ) {
+
+      await writeJson(
+        PAID_FILE,
+        paid
+      );
+
+    }
+
 
     const output = [];
 
