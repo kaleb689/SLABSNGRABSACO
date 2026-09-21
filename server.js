@@ -75,7 +75,64 @@ function parseCookies(req){return Object.fromEntries(String(req.headers.cookie||
 function safeEqual(a,b){const A=Buffer.from(String(a)),B=Buffer.from(String(b));return A.length===B.length&&crypto.timingSafeEqual(A,B)}
 function requireAdmin(req,res,next){const token=parseCookies(req).sng_admin,session=token&&adminSessions.get(token);if(!session||session.expires<Date.now()){if(token)adminSessions.delete(token);return res.status(401).json({error:"Unauthorized"})}session.expires=Date.now()+30*60*1000;next()}
 function decryptJson(payload){const key=encryptionKey(),iv=Buffer.from(payload.iv,"base64"),tag=Buffer.from(payload.tag,"base64"),decipher=crypto.createDecipheriv("aes-256-gcm",key,iv);decipher.setAuthTag(tag);return JSON.parse(Buffer.concat([decipher.update(Buffer.from(payload.data,"base64")),decipher.final()]).toString("utf8"))}
+/* TEMPORARY ADMIN-ONLY STORAGE TEST — remove after testing */
+app.post("/api/admin/test-storage", requireAdmin, async (req,res)=>{
+  try{
+    const id=crypto.randomUUID();
+    const createdAt=new Date().toISOString();
 
+    const profile={
+      profileName:"STORAGE TEST",
+      firstName:"Test",
+      lastName:"Customer",
+      email:"test@example.com",
+      phone:"000-000-0000",
+      address:"Test Address",
+      address2:"",
+      country:"US",
+      state:"FL",
+      city:"Test City",
+      zip:"00000"
+    };
+
+    const secrets={
+      acoEmail:"test@example.com",
+      acoPassword:"TEST-ONLY-NOT-REAL",
+      cardLabel:"TEST CARD",
+      cardholder:"TEST CUSTOMER",
+      acoCardNumber:"4111111111111111",
+      expMonth:"12",
+      expYear:"2030"
+    };
+
+    await saveEncryptedPackage(id,{
+      submissionId:id,
+      profile,
+      secrets,
+      cvvConfirmed:true,
+      createdAt
+    });
+
+    const paid=await readJson(PAID_FILE,[]);
+    paid.push({
+      id,
+      plan:{name:"STORAGE TEST",profiles:1,amount:0},
+      profile,
+      cvvConfirmed:true,
+      createdAt,
+      paidAt:createdAt,
+      stripeSessionId:"TEST-NO-PAYMENT",
+      stripeCustomerId:null
+    });
+
+    await writeJson(PAID_FILE,paid);
+
+    res.json({ok:true,message:"Persistent storage test created."});
+  }catch(err){
+    console.error("Storage test failed:",err.message);
+    res.status(500).json({error:"Storage test failed."});
+  }
+});
 /* Stripe webhook must be raw and registered before JSON middleware. */
 app.post("/api/stripe-webhook",express.raw({type:"application/json"}),async(req,res)=>{
   let event;
