@@ -90,20 +90,19 @@ const PLANS = {
     priceId: process.env.STRIPE_TIER5_PRICE_ID
   },
 
-  6: {
-    name: "Power User",
-    profiles: 20,
-    amount: 450,
-    priceId: process.env.STRIPE_TIER6_PRICE_ID
-  },
+ 6: {
+  name: "Power User",
+  profiles: 20,
+  amount: 300,
+  priceId: process.env.STRIPE_TIER6_PRICE_ID
+},
 
-  7: {
-    name: "Elite",
-    profiles: 50,
-    amount: 950,
-    priceId: process.env.STRIPE_TIER7_PRICE_ID
-  }
-};
+ 7: {
+  name: "Elite",
+  profiles: 50,
+  amount: 650,
+  priceId: process.env.STRIPE_TIER7_PRICE_ID
+},
 
 /* -------------------------------------------------------
    SECURITY HEADERS
