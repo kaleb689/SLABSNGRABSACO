@@ -437,9 +437,6 @@
   </div>
 
 </section>
-
-
-
 <!-- =====================================================
      GET STARTED / PROFILE
 ===================================================== -->
@@ -1369,11 +1366,8 @@
   </div>
 
 </section>
-
-
-
 <!-- =====================================================
-     MY PROFILE
+     MY PROFILE / CUSTOMER ACCOUNT
 ===================================================== -->
 
 <section
@@ -1393,21 +1387,1225 @@
     </h2>
 
     <p>
-      View your membership plan and
-      subscription information.
+      Manage your membership, orders,
+      profile information, and account security.
     </p>
 
   </div>
 
 
+  <!-- ===================================================
+       ACCOUNT STATUS / GLOBAL MESSAGES
+  ==================================================== -->
+
   <div
-    id="member-card"
-    class="member-card"
+    id="account-message"
+    class="account-message"
+    hidden
+  ></div>
+
+
+  <!-- ===================================================
+       SIGNED OUT AREA
+  ==================================================== -->
+
+  <div
+    id="account-auth"
+    class="account-auth"
   >
 
-    <div class="loading">
-      Checking your membership…
+    <div class="account-auth-grid">
+
+
+      <!-- SIGN IN -->
+
+      <div
+        id="login-panel"
+        class="account-card auth-card"
+      >
+
+        <span class="eyebrow">
+          WELCOME BACK
+        </span>
+
+        <h3>
+          Sign In
+        </h3>
+
+        <p class="account-muted">
+          Sign in to view your membership,
+          orders, and saved profile information.
+        </p>
+
+
+        <form id="login-form">
+
+          <label>
+            Email Address
+
+            <input
+              type="email"
+              name="email"
+              autocomplete="email"
+              required
+            />
+          </label>
+
+
+          <label>
+            Password
+
+            <input
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              minlength="10"
+              required
+            />
+          </label>
+
+
+          <button
+            type="submit"
+            class="primary full"
+          >
+            Sign In
+          </button>
+
+        </form>
+
+
+        <div class="auth-links">
+
+          <button
+            type="button"
+            class="text-button"
+            id="show-forgot-password"
+          >
+            Forgot password?
+          </button>
+
+        </div>
+
+      </div>
+
+
+
+      <!-- CREATE ACCOUNT -->
+
+      <div
+        id="register-panel"
+        class="account-card auth-card"
+      >
+
+        <span class="eyebrow">
+          NEW MEMBER
+        </span>
+
+        <h3>
+          Create Account
+        </h3>
+
+        <p class="account-muted">
+          Create an account to keep your
+          SLABS N GRABS ACO membership and
+          orders organized in one place.
+        </p>
+
+
+        <form id="register-form">
+
+          <label>
+            Email Address
+
+            <input
+              type="email"
+              name="email"
+              autocomplete="email"
+              required
+            />
+          </label>
+
+
+          <label>
+            Password
+
+            <input
+              type="password"
+              name="password"
+              autocomplete="new-password"
+              minlength="10"
+              required
+            />
+
+            <small>
+              Minimum 10 characters.
+            </small>
+          </label>
+
+
+          <label>
+            Confirm Password
+
+            <input
+              type="password"
+              name="confirmPassword"
+              autocomplete="new-password"
+              minlength="10"
+              required
+            />
+          </label>
+
+
+          <button
+            type="submit"
+            class="primary full"
+          >
+            Create Account
+          </button>
+
+        </form>
+
+      </div>
+
     </div>
+
+
+
+    <!-- FORGOT PASSWORD -->
+
+    <div
+      id="forgot-password-panel"
+      class="account-card account-narrow"
+      hidden
+    >
+
+      <span class="eyebrow">
+        ACCOUNT RECOVERY
+      </span>
+
+      <h3>
+        Reset Password
+      </h3>
+
+      <p class="account-muted">
+        Enter your account email.
+        If an account exists, we'll send a
+        secure password-reset link.
+      </p>
+
+
+      <form id="forgot-password-form">
+
+        <label>
+          Email Address
+
+          <input
+            type="email"
+            name="email"
+            autocomplete="email"
+            required
+          />
+        </label>
+
+
+        <button
+          type="submit"
+          class="primary full"
+        >
+          Send Reset Link
+        </button>
+
+      </form>
+
+
+      <button
+        type="button"
+        class="secondary full"
+        id="back-to-login"
+      >
+        Back to Sign In
+      </button>
+
+    </div>
+
+
+
+    <!-- PASSWORD RESET FROM EMAIL LINK -->
+
+    <div
+      id="password-reset-panel"
+      class="account-card account-narrow"
+      hidden
+    >
+
+      <span class="eyebrow">
+        SECURE PASSWORD RESET
+      </span>
+
+      <h3>
+        Choose New Password
+      </h3>
+
+      <p class="account-muted">
+        Enter a new password for your account.
+      </p>
+
+
+      <form id="password-reset-form">
+
+        <label>
+          New Password
+
+          <input
+            type="password"
+            name="password"
+            autocomplete="new-password"
+            minlength="10"
+            required
+          />
+        </label>
+
+
+        <label>
+          Confirm New Password
+
+          <input
+            type="password"
+            name="confirmPassword"
+            autocomplete="new-password"
+            minlength="10"
+            required
+          />
+        </label>
+
+
+        <button
+          type="submit"
+          class="primary full"
+        >
+          Reset Password
+        </button>
+
+      </form>
+
+    </div>
+
+  </div>
+
+
+
+  <!-- ===================================================
+       SIGNED IN CUSTOMER DASHBOARD
+  ==================================================== -->
+
+  <div
+    id="customer-dashboard"
+    class="customer-dashboard"
+    hidden
+  >
+
+
+    <!-- ACCOUNT HEADER -->
+
+    <div class="account-card account-topbar">
+
+      <div>
+
+        <span class="eyebrow">
+          YOUR ACCOUNT
+        </span>
+
+        <h3 id="customer-account-email">
+          Member
+        </h3>
+
+
+        <div class="account-verification-row">
+
+          <span
+            id="email-verification-status"
+            class="account-status"
+          >
+            Checking verification…
+          </span>
+
+
+          <button
+            type="button"
+            id="resend-verification"
+            class="text-button"
+            hidden
+          >
+            Resend verification email
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <button
+        type="button"
+        id="customer-logout"
+        class="secondary"
+      >
+        Log Out
+      </button>
+
+    </div>
+
+
+
+    <!-- DASHBOARD TABS -->
+
+    <div
+      class="account-tabs"
+      role="tablist"
+      aria-label="Customer account"
+    >
+
+      <button
+        type="button"
+        class="account-tab active"
+        data-account-tab="membership"
+      >
+        Membership
+      </button>
+
+      <button
+        type="button"
+        class="account-tab"
+        data-account-tab="orders"
+      >
+        My Orders
+      </button>
+
+      <button
+        type="button"
+        class="account-tab"
+        data-account-tab="edit-profile"
+      >
+        Edit Profile
+      </button>
+
+      <button
+        type="button"
+        class="account-tab"
+        data-account-tab="security"
+      >
+        Account &amp; Security
+      </button>
+
+    </div>
+
+
+
+    <!-- =================================================
+         MEMBERSHIP TAB
+    ================================================== -->
+
+    <div
+      id="account-tab-membership"
+      class="account-tab-panel active"
+      data-account-panel="membership"
+    >
+
+      <div class="account-dashboard-grid">
+
+
+        <div class="account-card membership-main-card">
+
+          <div class="account-card-heading">
+
+            <div>
+
+              <span class="eyebrow">
+                CURRENT MEMBERSHIP
+              </span>
+
+              <h3 id="membership-plan-name">
+                No active membership
+              </h3>
+
+            </div>
+
+
+            <span
+              id="membership-status"
+              class="membership-status"
+            >
+              —
+            </span>
+
+          </div>
+
+
+          <div class="membership-stats">
+
+            <div class="membership-stat">
+
+              <span>
+                Monthly Price
+              </span>
+
+              <strong id="membership-price">
+                —
+              </strong>
+
+            </div>
+
+
+            <div class="membership-stat">
+
+              <span>
+                ACO Profiles
+              </span>
+
+              <strong id="membership-profiles">
+                —
+              </strong>
+
+            </div>
+
+
+            <div class="membership-stat">
+
+              <span>
+                Period Ends
+              </span>
+
+              <strong id="membership-period-end">
+                —
+              </strong>
+
+            </div>
+
+
+            <div class="membership-stat">
+
+              <span>
+                Days Remaining
+              </span>
+
+              <strong id="membership-days-remaining">
+                —
+              </strong>
+
+            </div>
+
+          </div>
+
+
+          <p
+            id="membership-description"
+            class="account-muted"
+          >
+            Your active membership information
+            will appear here.
+          </p>
+
+
+          <button
+            type="button"
+            id="upgrade-membership"
+            class="primary"
+          >
+            Upgrade Membership
+          </button>
+
+        </div>
+
+
+
+        <div class="account-card">
+
+          <span class="eyebrow">
+            MEMBERSHIP DETAILS
+          </span>
+
+          <h3>
+            Subscription
+          </h3>
+
+
+          <div class="account-detail-list">
+
+            <div>
+              <span>Plan</span>
+              <strong id="detail-plan">—</strong>
+            </div>
+
+            <div>
+              <span>Status</span>
+              <strong id="detail-status">—</strong>
+            </div>
+
+            <div>
+              <span>Monthly</span>
+              <strong id="detail-price">—</strong>
+            </div>
+
+            <div>
+              <span>Profile Allowance</span>
+              <strong id="detail-profiles">—</strong>
+            </div>
+
+            <div>
+              <span>Renewal / End Date</span>
+              <strong id="detail-period-end">—</strong>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+
+    <!-- =================================================
+         MY ORDERS TAB
+    ================================================== -->
+
+    <div
+      id="account-tab-orders"
+      class="account-tab-panel"
+      data-account-panel="orders"
+      hidden
+    >
+
+      <div class="account-card">
+
+        <div class="account-card-heading">
+
+          <div>
+
+            <span class="eyebrow">
+              ORDER HISTORY
+            </span>
+
+            <h3>
+              My Orders
+            </h3>
+
+          </div>
+
+        </div>
+
+
+        <div
+          id="customer-orders"
+          class="customer-orders"
+        >
+
+          <div class="loading">
+            Loading your orders…
+          </div>
+
+        </div>
+
+      </div>
+
+
+
+      <!-- LINK EXISTING ORDER -->
+
+      <div class="account-card claim-order-card">
+
+        <span class="eyebrow">
+          ALREADY PURCHASED?
+        </span>
+
+        <h3>
+          Link an Existing Order
+        </h3>
+
+        <p class="account-muted">
+          If you purchased before customer accounts
+          were available, you can securely connect
+          that order to this account.
+        </p>
+
+
+        <div class="guide-alert info compact">
+
+          <strong>
+            How verification works
+          </strong>
+
+          <p>
+            Enter your order number and either the
+            email address or phone number used when
+            the order was placed. If the information
+            matches, a verification link will be sent
+            to the email address already stored on
+            that order.
+          </p>
+
+        </div>
+
+
+        <form id="claim-order-form">
+
+          <label>
+            Order / Submission Number *
+
+            <input
+              required
+              name="orderNumber"
+              autocomplete="off"
+              placeholder="Enter order number"
+            />
+          </label>
+
+
+          <div class="two">
+
+            <label>
+              Purchase Email
+
+              <input
+                type="email"
+                name="email"
+                autocomplete="email"
+                placeholder="Email used for purchase"
+              />
+            </label>
+
+
+            <label>
+              Purchase Phone
+
+              <input
+                type="tel"
+                name="phone"
+                autocomplete="tel"
+                placeholder="Phone used for purchase"
+              />
+            </label>
+
+          </div>
+
+
+          <small class="fine">
+            Enter at least one: purchase email or
+            purchase phone number.
+          </small>
+
+
+          <button
+            type="submit"
+            class="primary"
+          >
+            Verify &amp; Link Order
+          </button>
+
+
+          <p
+            id="claim-order-message"
+            class="form-message"
+          ></p>
+
+        </form>
+
+      </div>
+
+    </div>
+
+
+
+    <!-- =================================================
+         EDIT PROFILE TAB
+    ================================================== -->
+
+    <div
+      id="account-tab-edit-profile"
+      class="account-tab-panel"
+      data-account-panel="edit-profile"
+      hidden
+    >
+
+      <div class="account-card">
+
+        <span class="eyebrow">
+          CUSTOMER INFORMATION
+        </span>
+
+        <h3>
+          Edit Profile / Order Information
+        </h3>
+
+        <p class="account-muted">
+          Select an order and update the customer,
+          shipping, or ACO setup information
+          associated with it.
+        </p>
+
+
+        <label>
+          Order to Edit
+
+          <select id="edit-order-select">
+            <option value="">
+              Select an order
+            </option>
+          </select>
+        </label>
+
+
+        <form
+          id="edit-order-form"
+          hidden
+        >
+
+          <div class="account-form-section">
+
+            <h4>
+              Profile Information
+            </h4>
+
+
+            <label>
+              Profile Name *
+
+              <input
+                required
+                name="profileName"
+              />
+            </label>
+
+
+            <div class="two">
+
+              <label>
+                First Name *
+
+                <input
+                  required
+                  name="firstName"
+                />
+              </label>
+
+
+              <label>
+                Last Name *
+
+                <input
+                  required
+                  name="lastName"
+                />
+              </label>
+
+            </div>
+
+
+            <div class="two">
+
+              <label>
+                Email *
+
+                <input
+                  required
+                  type="email"
+                  name="email"
+                />
+              </label>
+
+
+              <label>
+                Phone *
+
+                <input
+                  required
+                  type="tel"
+                  name="phone"
+                />
+              </label>
+
+            </div>
+
+          </div>
+
+
+
+          <div class="account-form-section">
+
+            <h4>
+              Shipping Address
+            </h4>
+
+
+            <label>
+              Address *
+
+              <input
+                required
+                name="address"
+              />
+            </label>
+
+
+            <label>
+              Address 2
+
+              <input
+                name="address2"
+                placeholder="Apt. / Suite"
+              />
+            </label>
+
+
+            <div class="two">
+
+              <label>
+                Country *
+
+                <select
+                  required
+                  name="country"
+                >
+                  <option value="">
+                    Select country
+                  </option>
+
+                  <option>
+                    United States
+                  </option>
+
+                  <option>
+                    Canada
+                  </option>
+
+                  <option>
+                    Other
+                  </option>
+                </select>
+
+              </label>
+
+
+              <label>
+                State *
+
+                <input
+                  required
+                  name="state"
+                />
+              </label>
+
+            </div>
+
+
+            <div class="two">
+
+              <label>
+                City *
+
+                <input
+                  required
+                  name="city"
+                />
+              </label>
+
+
+              <label>
+                Zipcode *
+
+                <input
+                  required
+                  name="zip"
+                />
+              </label>
+
+            </div>
+
+          </div>
+
+
+
+          <div class="account-form-section">
+
+            <h4>
+              Replace ACO / IMAP Information
+            </h4>
+
+            <p class="account-muted">
+              For security, your existing ACO password
+              is never displayed here. Leave replacement
+              fields blank to keep the existing information.
+            </p>
+
+
+            <label>
+              Replacement ACO / IMAP Email
+
+              <input
+                type="email"
+                name="acoEmail"
+                autocomplete="off"
+                placeholder="Leave blank to keep existing"
+              />
+            </label>
+
+
+            <label>
+              Replacement ACO / IMAP Password
+
+              <input
+                type="password"
+                name="acoPassword"
+                autocomplete="new-password"
+                placeholder="Leave blank to keep existing"
+              />
+            </label>
+
+          </div>
+
+
+
+          <div class="account-form-section">
+
+            <h4>
+              Replace ACO Card
+            </h4>
+
+            <p class="account-muted">
+              Your existing full card number is never
+              returned to this page. Only enter the fields
+              below when you want to replace the card
+              associated with this order.
+            </p>
+
+
+            <label>
+              Card Label
+
+              <input
+                name="cardLabel"
+                placeholder="e.g. Personal Visa"
+              />
+            </label>
+
+
+            <label>
+              Cardholder Name
+
+              <input
+                name="cardholder"
+                autocomplete="off"
+              />
+            </label>
+
+
+            <label>
+              New Card Number
+
+              <input
+                name="acoCardNumber"
+                inputmode="numeric"
+                autocomplete="off"
+                maxlength="23"
+                placeholder="0000 0000 0000 0000"
+              />
+            </label>
+
+
+            <div class="two">
+
+              <label>
+                Exp. Month
+
+                <select name="expMonth">
+                  <option value="">Month</option>
+                  <option>01</option>
+                  <option>02</option>
+                  <option>03</option>
+                  <option>04</option>
+                  <option>05</option>
+                  <option>06</option>
+                  <option>07</option>
+                  <option>08</option>
+                  <option>09</option>
+                  <option>10</option>
+                  <option>11</option>
+                  <option>12</option>
+                </select>
+
+              </label>
+
+
+              <label>
+                Exp. Year
+
+                <select
+                  name="expYear"
+                  id="edit-exp-year"
+                >
+                  <option value="">Year</option>
+                </select>
+
+              </label>
+
+            </div>
+
+
+            <div class="guide-alert warning compact">
+
+              <strong>
+                No CVV
+              </strong>
+
+              <p>
+                Do not enter a CVV anywhere on this
+                website. CVV digits are not requested,
+                transmitted, stored, or displayed.
+              </p>
+
+            </div>
+
+          </div>
+
+
+
+          <button
+            type="submit"
+            class="primary"
+          >
+            Save Changes
+          </button>
+
+
+          <p
+            id="edit-order-message"
+            class="form-message"
+          ></p>
+
+        </form>
+
+      </div>
+
+    </div>
+
+
+
+    <!-- =================================================
+         ACCOUNT & SECURITY TAB
+    ================================================== -->
+
+    <div
+      id="account-tab-security"
+      class="account-tab-panel"
+      data-account-panel="security"
+      hidden
+    >
+
+      <div class="account-dashboard-grid">
+
+
+        <div class="account-card">
+
+          <span class="eyebrow">
+            ACCOUNT SECURITY
+          </span>
+
+          <h3>
+            Email Verification
+          </h3>
+
+
+          <div class="account-detail-list">
+
+            <div>
+              <span>Account Email</span>
+              <strong id="security-email">—</strong>
+            </div>
+
+            <div>
+              <span>Email Status</span>
+              <strong id="security-email-status">—</strong>
+            </div>
+
+          </div>
+
+
+          <button
+            type="button"
+            id="security-resend-verification"
+            class="secondary"
+          >
+            Resend Verification Email
+          </button>
+
+        </div>
+
+
+
+        <div class="account-card">
+
+          <span class="eyebrow">
+            PASSWORD
+          </span>
+
+          <h3>
+            Reset Your Password
+          </h3>
+
+          <p class="account-muted">
+            We'll send a secure password-reset link
+            to your account email address.
+          </p>
+
+
+          <button
+            type="button"
+            id="security-password-reset"
+            class="secondary"
+          >
+            Send Password Reset Email
+          </button>
+
+        </div>
+
+
+      </div>
+
+
+
+      <div class="account-card security-notice">
+
+        <span class="eyebrow">
+          SECURITY
+        </span>
+
+        <h3>
+          Protecting Your Information
+        </h3>
+
+        <p class="account-muted">
+          Your customer account password is stored
+          using one-way password hashing and cannot
+          be viewed from your customer profile.
+        </p>
+
+        <p class="account-muted">
+          Existing ACO passwords and full ACO card
+          numbers are not returned to the customer
+          dashboard. Sensitive fields can only be
+          replaced.
+        </p>
+
+        <p class="account-muted">
+          CVV digits are never requested through
+          your customer account.
+        </p>
+
+      </div>
+
+    </div>
+
 
   </div>
 
@@ -1431,6 +2629,7 @@
   <button
     class="cart-close"
     id="cart-close"
+    type="button"
     aria-label="Close cart"
   >
     ×
@@ -1447,6 +2646,32 @@
 
 
   <div id="cart-content"></div>
+
+
+  <div
+    id="cart-actions"
+    class="cart-actions"
+  >
+
+    <button
+      type="button"
+      class="secondary full"
+      id="cart-view-tiers"
+      data-page="pricing"
+    >
+      View All Tiers
+    </button>
+
+
+    <button
+      type="button"
+      class="clear-cart-button full"
+      id="clear-cart"
+    >
+      Clear Cart
+    </button>
+
+  </div>
 
 </div>
 
