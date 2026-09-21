@@ -107,12 +107,54 @@ app.get('/admin', (req, res) => {
 app.use(express.static(path.join(__dirname,"public")));
 
 app.post("/api/admin/login",(req,res)=>{
-  const ip=req.ip||"unknown",now=Date.now(),attempt=loginAttempts.get(ip)||{count:0,reset:now+15*60*1000};
-  if(now>attempt.reset){attempt.count=0;attempt.reset=now+15*60*1000}
-  if(attempt.count>=8)return res.status(429).json({error:"Too many attempts"});
-  if(!process.env.ADMIN_PASSWORD||!safeEqual(req.body.password||"",process.env.ADMIN_PASSWORD)){attempt.count++;loginAttempts.set(ip,attempt);return res.status(401).json({error:"Invalid credentials"})}
-  loginAttempts.delete(ip);const token=crypto.randomBytes(32).toString("hex");adminSessions.set(token,{expires:now+30*60*1000});
-  res.setHeader("Set-Cookie",`sng_admin=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800${BASE_URL.startsWith("https://")?"; Secure":""}`);res.json({ok:true});
+  const ip=req.ip||"unknown";
+  const now=Date.now();
+  const attempt=loginAttempts.get(ip)||{count:0,reset:now+15*60*1000};
+
+  if(now>attempt.reset){
+    attempt.count=0;
+    attempt.reset=now+15*60*1000;
+  }
+
+  if(attempt.count>=8){
+    return res.status(429).json({error:"Too many attempts"});
+  }
+
+  const password=req.body.password||"";
+  const code=String(req.body.code||"").replace(/\s/g,"");
+  const secret=process.env.ADMIN_2FA_SECRET||"";
+
+  const passwordValid=
+    !!process.env.ADMIN_PASSWORD &&
+    safeEqual(password,process.env.ADMIN_PASSWORD);
+
+  let codeValid=false;
+
+  if(secret && /^\d{6}$/.test(code)){
+    try{
+      codeValid=authenticator.check(code,secret);
+    }catch{
+      codeValid=false;
+    }
+  }
+
+  if(!passwordValid||!codeValid){
+    attempt.count++;
+    loginAttempts.set(ip,attempt);
+    return res.status(401).json({error:"Invalid credentials"});
+  }
+
+  loginAttempts.delete(ip);
+
+  const token=crypto.randomBytes(32).toString("hex");
+  adminSessions.set(token,{expires:now+30*60*1000});
+
+  res.setHeader(
+    "Set-Cookie",
+    `sng_admin=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800${BASE_URL.startsWith("https://")?"; Secure":""}`
+  );
+
+  res.json({ok:true});
 });
 app.post("/api/admin/logout",(req,res)=>{const token=parseCookies(req).sng_admin;if(token)adminSessions.delete(token);res.setHeader("Set-Cookie","sng_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");res.json({ok:true})});
 app.get("/api/admin/submissions",requireAdmin,async(req,res)=>{
