@@ -120,8 +120,18 @@ app.get("/api/admin/submissions",requireAdmin,async(req,res)=>{
   res.json(out.sort((a,b)=>String(b.paidAt).localeCompare(String(a.paidAt))));
 });
 app.delete("/api/admin/submissions/:id",requireAdmin,async(req,res)=>{
-  const id=String(req.params.id||"");if(!/^[a-f0-9-]{30,40}$/i.test(id))return res.status(400).json({error:"Bad id"});
-  try{await fs.unlink(path.join(SECRET_DIR,`${id}.encrypted.json`))}catch{}
+  const id=String(req.params.id||"");
+  if(!/^[a-f0-9-]{30,40}$/i.test(id)){
+    return res.status(400).json({error:"Bad id"});
+  }
+
+  try{
+    await fs.unlink(path.join(SECRET_DIR,`${id}.encrypted.json`));
+  }catch{}
+
+  const paid=await readJson(PAID_FILE,[]);
+  await writeJson(PAID_FILE,paid.filter(record=>record.id!==id));
+
   res.json({ok:true});
 });
 
