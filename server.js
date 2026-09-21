@@ -147,31 +147,37 @@ function stripeTimestampToIso(value) {
 }
 
 
-function getSubscriptionPeriodEnd(subscription) {
-  /*
-    Older Stripe API versions placed
-    current_period_end directly on the
-    subscription.
-
-    Newer Stripe API versions place the
-    billing period on each subscription item.
-
-    Supporting both formats keeps the site
-    compatible with either Stripe version.
-  */
-
-  if (
-    subscription?.current_period_end
-  ) {
+async function getSubscriptionPeriodEnd(subscription) {
+  if (subscription?.current_period_end) {
     return stripeTimestampToIso(
       subscription.current_period_end
     );
   }
 
-
-  const items =
+  let items =
     subscription?.items?.data || [];
 
+  /*
+    If Stripe's subscription response doesn't
+    contain the billing-period fields, retrieve
+    the subscription items directly.
+  */
+
+  if (
+    subscription?.id &&
+    !items.some(
+      item => item?.current_period_end
+    )
+  ) {
+    const itemList =
+      await stripe.subscriptionItems.list({
+        subscription: subscription.id,
+        limit: 100
+      });
+
+    items =
+      itemList?.data || [];
+  }
 
   const periodEnds =
     items
@@ -185,18 +191,9 @@ function getSubscriptionPeriodEnd(subscription) {
         value > 0
       );
 
-
   if (!periodEnds.length) {
     return null;
   }
-
-
-  /*
-    A subscription normally has one recurring
-    item here, but using the latest end date
-    also handles subscriptions containing
-    multiple items.
-  */
 
   return stripeTimestampToIso(
     Math.max(...periodEnds)
@@ -204,19 +201,31 @@ function getSubscriptionPeriodEnd(subscription) {
 }
 
 
-function getSubscriptionPeriodStart(subscription) {
-  if (
-    subscription?.current_period_start
-  ) {
+async function getSubscriptionPeriodStart(subscription) {
+  if (subscription?.current_period_start) {
     return stripeTimestampToIso(
       subscription.current_period_start
     );
   }
 
-
-  const items =
+  let items =
     subscription?.items?.data || [];
 
+  if (
+    subscription?.id &&
+    !items.some(
+      item => item?.current_period_start
+    )
+  ) {
+    const itemList =
+      await stripe.subscriptionItems.list({
+        subscription: subscription.id,
+        limit: 100
+      });
+
+    items =
+      itemList?.data || [];
+  }
 
   const periodStarts =
     items
@@ -230,11 +239,9 @@ function getSubscriptionPeriodStart(subscription) {
         value > 0
       );
 
-
   if (!periodStarts.length) {
     return null;
   }
-
 
   return stripeTimestampToIso(
     Math.min(...periodStarts)
@@ -242,7 +249,7 @@ function getSubscriptionPeriodStart(subscription) {
 }
 
 
-function applySubscriptionInfo(
+async function applySubscriptionInfo(
   record,
   subscription
 ) {
@@ -260,16 +267,15 @@ function applySubscriptionInfo(
     "unknown";
 
 
-  record.currentPeriodStart =
-    getSubscriptionPeriodStart(
-      subscription
-    );
+ record.currentPeriodStart =
+  await getSubscriptionPeriodStart(
+    subscription
+  );
 
-
-  record.currentPeriodEnd =
-    getSubscriptionPeriodEnd(
-      subscription
-    );
+record.currentPeriodEnd =
+  await getSubscriptionPeriodEnd(
+    subscription
+  );
 
 
   record.cancelAtPeriodEnd =
@@ -726,7 +732,7 @@ app.post(
                         .stripeSubscriptionId
                     );
 
-             applySubscriptionInfo(
+ await applySubscriptionInfo(
   record,
   subscription
 );
@@ -820,7 +826,7 @@ app.post(
             ) ===
             String(subscription.id)
           ) {
-       applySubscriptionInfo(
+    await applySubscriptionInfo(
   record,
   subscription
 );
@@ -1142,10 +1148,10 @@ app.get(
           });
 
 
-        applySubscriptionInfo(
-          record,
-          subscription
-        );
+        await applySubscriptionInfo(
+  record,
+  subscription
+);
 
 
         const after =
