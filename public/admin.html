@@ -46,8 +46,8 @@
 const f = document.getElementById('loginForm');
 const dash = document.getElementById('dashboard');
 const msg = document.getElementById('msg');
-const rows = Array.isArray(d) ? d : (d.submissions || []);
-function escapeHtml(value){
+const rows = document.getElementById('rows');
+  function escapeHtml(value){
   return String(value ?? '')
     .replaceAll('&','&amp;')
     .replaceAll('<','&lt;')
@@ -62,8 +62,7 @@ async function load(){
   if(!r.ok) return;
 
   const data = await r.json();
-  const submissions = data.submissions || data || [];
-
+const submissions = Array.isArray(data) ? data : (data.submissions || []);
   f.parentElement.hidden = true;
   dash.hidden = false;
 
