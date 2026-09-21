@@ -18,7 +18,7 @@ app.use((req,res,next)=>{
 
 const PORT = process.env.PORT || 4242;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
-const DATA_DIR = path.join(__dirname, "/var/data/slabsngrabsaco");
+const DATA_DIR = process.env.DATA_DIR || "/var/data/slabsngrabsaco";
 const PENDING_FILE = path.join(DATA_DIR, "pending-submissions.json");
 const PAID_FILE = path.join(DATA_DIR, "paid-submissions.json");
 const SECRET_DIR = path.join(DATA_DIR, "secure-packages");
