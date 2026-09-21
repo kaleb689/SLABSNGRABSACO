@@ -46,8 +46,7 @@
 const f = document.getElementById('loginForm');
 const dash = document.getElementById('dashboard');
 const msg = document.getElementById('msg');
-const rows = document.getElementById('rows');
-
+const rows = Array.isArray(d) ? d : (d.submissions || []);
 function escapeHtml(value){
   return String(value ?? '')
     .replaceAll('&','&amp;')
