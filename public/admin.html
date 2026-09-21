@@ -1,159 +1,1965 @@
 <!doctype html>
-<html>
+<html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SLABS N GRABS ACO — Secure Admin</title>
-<link rel="stylesheet" href="/styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+
+  <title>
+    SLABS N GRABS ACO — Secure Admin
+  </title>
+
+  <link
+    rel="stylesheet"
+    href="/styles.css"
+  >
+
+  <style>
+
+    /* =========================================
+       ADMIN PAGE
+    ========================================= */
+
+    body.admin-page {
+      min-height: 100vh;
+      background:
+        radial-gradient(
+          circle at 50% 0,
+          rgba(18, 201, 255, .10),
+          transparent 32%
+        ),
+        linear-gradient(
+          180deg,
+          #050a12,
+          #07101b
+        );
+    }
+
+    .admin-shell {
+      width: min(1250px, 100%);
+      min-height: 100vh;
+
+      margin: 0 auto;
+
+      padding: 30px 22px 70px;
+    }
+
+
+    /* =========================================
+       LOGIN
+    ========================================= */
+
+    .admin-login-wrap {
+      min-height: calc(100vh - 60px);
+
+      display: flex;
+
+      align-items: center;
+      justify-content: center;
+    }
+
+    .admin-login-card {
+      width: min(440px, 100%);
+
+      margin: auto;
+
+      padding: 32px;
+
+      text-align: center;
+
+      border: 1px solid #1a4a65;
+
+      border-radius: 16px;
+
+      background:
+        linear-gradient(
+          180deg,
+          rgba(11, 24, 37, .97),
+          rgba(7, 17, 27, .97)
+        );
+
+      box-shadow:
+        0 30px 80px rgba(0, 0, 0, .55),
+        0 0 45px rgba(18, 201, 255, .08);
+    }
+
+    .admin-logo {
+      display: block;
+
+      width: 115px;
+      height: 90px;
+
+      object-fit: contain;
+
+      margin: 0 auto 14px;
+    }
+
+    .admin-login-card h1 {
+      margin: 0 0 8px;
+
+      font-size: 28px;
+
+      letter-spacing: -1px;
+    }
+
+    .admin-login-card .muted {
+      margin-bottom: 26px;
+    }
+
+    .admin-login-card form {
+      text-align: left;
+    }
+
+    .admin-login-card label {
+      margin-bottom: 17px;
+    }
+
+    .admin-login-card input {
+      height: 48px;
+    }
+
+    .admin-login-card .primary {
+      width: 100%;
+
+      margin-top: 5px;
+    }
+
+    #msg {
+      min-height: 20px;
+
+      margin: 13px 0 0;
+
+      color: #ff768c;
+
+      text-align: center;
+
+      font-size: 12px;
+
+      font-weight: 700;
+    }
+
+
+    /* =========================================
+       DASHBOARD
+    ========================================= */
+
+    #dashboard {
+      width: 100%;
+    }
+
+    .admin-dashboard-logo {
+      display: block;
+
+      width: 95px;
+      height: 72px;
+
+      object-fit: contain;
+
+      margin-bottom: 10px;
+    }
+
+    .admin-head {
+      display: flex;
+
+      align-items: center;
+      justify-content: space-between;
+
+      gap: 20px;
+
+      margin-bottom: 28px;
+
+      padding-bottom: 22px;
+
+      border-bottom: 1px solid #17384e;
+    }
+
+    .admin-head-copy h1 {
+      margin: 5px 0;
+
+      font-size: clamp(
+        28px,
+        4vw,
+        45px
+      );
+
+      letter-spacing: -1.5px;
+    }
+
+    .admin-head-copy p {
+      margin: 0;
+
+      color: #8e9db4;
+    }
+
+    #logout {
+      border: 1px solid #28516a;
+
+      border-radius: 8px;
+
+      background: #0a1722;
+
+      color: #d9f6ff;
+
+      padding: 11px 18px;
+
+      font-weight: 800;
+
+      cursor: pointer;
+    }
+
+    #logout:hover {
+      border-color: #12c9ff;
+
+      color: #12c9ff;
+    }
+
+
+    /* =========================================
+       CUSTOMER ORDER LIST
+    ========================================= */
+
+    .admin-summary {
+      display: flex;
+
+      align-items: center;
+      justify-content: space-between;
+
+      gap: 15px;
+
+      margin-bottom: 18px;
+    }
+
+    .admin-summary-count {
+      color: #8e9db4;
+
+      font-size: 13px;
+    }
+
+    .admin-orders {
+      display: grid;
+
+      gap: 13px;
+    }
+
+    .customer-order {
+      overflow: hidden;
+
+      border: 1px solid #17384e;
+
+      border-radius: 12px;
+
+      background:
+        linear-gradient(
+          180deg,
+          #091521,
+          #07111b
+        );
+    }
+
+    .customer-order[open] {
+      border-color: #1c6a8d;
+
+      box-shadow:
+        0 0 30px
+        rgba(18, 201, 255, .07);
+    }
+
+    .customer-order-summary {
+      width: 100%;
+
+      min-height: 88px;
+
+      display: grid;
+
+      grid-template-columns:
+        minmax(190px, 1.4fr)
+        minmax(120px, .8fr)
+        minmax(120px, .8fr)
+        auto;
+
+      align-items: center;
+
+      gap: 18px;
+
+      padding: 17px 20px;
+
+      cursor: pointer;
+
+      list-style: none;
+
+      user-select: none;
+    }
+
+    .customer-order-summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .customer-order-summary::marker {
+      display: none;
+    }
+
+    .customer-order-summary:hover {
+      background: #0a1926;
+    }
+
+    .customer-main {
+      min-width: 0;
+    }
+
+    .customer-main strong {
+      display: block;
+
+      overflow: hidden;
+
+      color: #f5fbff;
+
+      font-size: 16px;
+
+      text-overflow: ellipsis;
+
+      white-space: nowrap;
+    }
+
+    .customer-main small {
+      display: block;
+
+      margin-top: 5px;
+
+      overflow: hidden;
+
+      color: #71879b;
+
+      text-overflow: ellipsis;
+
+      white-space: nowrap;
+    }
+
+    .order-meta small {
+      display: block;
+
+      margin-bottom: 4px;
+
+      color: #60788e;
+
+      font-size: 9px;
+
+      font-weight: 900;
+
+      letter-spacing: 1px;
+    }
+
+    .order-meta strong {
+      color: #dff7ff;
+
+      font-size: 13px;
+    }
+
+    .order-plan {
+      color: #12c9ff !important;
+    }
+
+    .order-chevron {
+      color: #12c9ff;
+
+      font-size: 24px;
+
+      transition: transform .2s ease;
+    }
+
+    .customer-order[open]
+    .order-chevron {
+      transform: rotate(90deg);
+    }
+
+
+    /* =========================================
+       OPEN CUSTOMER ORDER
+    ========================================= */
+
+    .customer-order-body {
+      padding: 25px;
+
+      border-top: 1px solid #17384e;
+
+      background: #07111b;
+    }
+
+    .order-top {
+      display: flex;
+
+      align-items: center;
+      justify-content: space-between;
+
+      gap: 20px;
+
+      margin-bottom: 22px;
+    }
+
+    .order-top h2 {
+      margin: 0 0 5px;
+
+      font-size: 22px;
+    }
+
+    .order-id {
+      color: #637a90;
+
+      font-size: 10px;
+
+      word-break: break-all;
+    }
+
+    .status-pill {
+      display: inline-flex;
+
+      align-items: center;
+
+      gap: 7px;
+
+      padding: 7px 10px;
+
+      border: 1px solid #1f7057;
+
+      border-radius: 99px;
+
+      background: #0b2a20;
+
+      color: #63e3ad;
+
+      font-size: 10px;
+
+      font-weight: 900;
+
+      text-transform: uppercase;
+    }
+
+    .status-pill::before {
+      content: "";
+
+      width: 7px;
+      height: 7px;
+
+      border-radius: 50%;
+
+      background: currentColor;
+
+      box-shadow:
+        0 0 8px currentColor;
+    }
+
+
+    /* =========================================
+       INFO PANELS
+    ========================================= */
+
+    .order-sections {
+      display: grid;
+
+      gap: 22px;
+    }
+
+    .order-section {
+      overflow: hidden;
+
+      border: 1px solid #17384e;
+
+      border-radius: 12px;
+
+      background: #08131e;
+    }
+
+    .order-section-head {
+      padding: 17px 20px;
+
+      border-bottom: 1px solid #17384e;
+
+      background: #0a1723;
+    }
+
+    .order-section-head h3 {
+      margin: 0;
+
+      font-size: 16px;
+    }
+
+    .order-section-head p {
+      margin: 5px 0 0;
+
+      color: #71879b;
+
+      font-size: 11px;
+    }
+
+    .info-grid {
+      display: grid;
+
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+
+      gap: 0;
+    }
+
+    .info-field {
+      min-height: 78px;
+
+      padding: 16px 20px;
+
+      border-bottom: 1px solid #122e41;
+    }
+
+    .info-field:nth-child(odd) {
+      border-right: 1px solid #122e41;
+    }
+
+    .info-field.wide {
+      grid-column: 1 / -1;
+
+      border-right: 0;
+    }
+
+    .info-field label {
+      display: block;
+
+      margin: 0 0 7px;
+
+      color: #71879b;
+
+      font-size: 9px;
+
+      font-weight: 900;
+
+      letter-spacing: 1px;
+
+      text-transform: uppercase;
+    }
+
+    .info-value {
+      min-height: 18px;
+
+      color: #eefaff;
+
+      font-size: 13px;
+
+      font-weight: 700;
+
+      line-height: 1.5;
+
+      word-break: break-word;
+    }
+
+    .info-value.muted-value {
+      color: #8e9db4;
+    }
+
+
+    /* =========================================
+       SENSITIVE VALUES
+    ========================================= */
+
+    .sensitive-row {
+      display: flex;
+
+      align-items: center;
+
+      justify-content: space-between;
+
+      gap: 12px;
+    }
+
+    .sensitive-value {
+      min-width: 0;
+
+      overflow: hidden;
+
+      text-overflow: ellipsis;
+    }
+
+    .reveal-button {
+      flex: 0 0 auto;
+
+      border: 1px solid #28516a;
+
+      border-radius: 6px;
+
+      background: #0b1c29;
+
+      color: #aeeeff;
+
+      padding: 6px 9px;
+
+      font-size: 9px;
+
+      font-weight: 900;
+
+      cursor: pointer;
+    }
+
+    .reveal-button:hover {
+      border-color: #12c9ff;
+
+      color: #12c9ff;
+    }
+
+    .security-note {
+      margin: 0;
+
+      padding: 14px 18px;
+
+      border: 1px solid #765a1d;
+
+      border-radius: 8px;
+
+      background: #2b220c;
+
+      color: #f2cf68;
+
+      font-size: 11px;
+
+      line-height: 1.6;
+    }
+
+
+    /* =========================================
+       SUBSCRIPTION
+    ========================================= */
+
+    .subscription-grid {
+      display: grid;
+
+      grid-template-columns:
+        repeat(4, 1fr);
+
+      gap: 10px;
+
+      padding: 18px;
+    }
+
+    .subscription-stat {
+      padding: 14px;
+
+      border: 1px solid #17384e;
+
+      border-radius: 8px;
+
+      background: #06101a;
+    }
+
+    .subscription-stat small {
+      display: block;
+
+      margin-bottom: 7px;
+
+      color: #61798f;
+
+      font-size: 8px;
+
+      font-weight: 900;
+
+      letter-spacing: 1px;
+    }
+
+    .subscription-stat strong {
+      color: #eafaff;
+
+      font-size: 13px;
+    }
+
+
+    /* =========================================
+       ACTIONS
+    ========================================= */
+
+    .order-actions {
+      display: flex;
+
+      justify-content: flex-end;
+
+      margin-top: 20px;
+    }
+
+    .delete-submission {
+      border: 1px solid #77313c;
+
+      border-radius: 7px;
+
+      background: #2a1015;
+
+      color: #ff8799;
+
+      padding: 9px 14px;
+
+      font-size: 11px;
+
+      font-weight: 900;
+
+      cursor: pointer;
+    }
+
+    .delete-submission:hover {
+      background: #3a131b;
+
+      border-color: #ff5c78;
+    }
+
+    .empty-admin {
+      padding: 40px;
+
+      border: 1px solid #17384e;
+
+      border-radius: 12px;
+
+      background: #08131e;
+
+      text-align: center;
+
+      color: #8e9db4;
+    }
+
+
+    /* =========================================
+       RESPONSIVE
+    ========================================= */
+
+    @media (max-width: 850px) {
+
+      .customer-order-summary {
+        grid-template-columns:
+          1fr
+          auto;
+      }
+
+      .customer-order-summary
+      .order-meta {
+        display: none;
+      }
+
+      .subscription-grid {
+        grid-template-columns:
+          repeat(2, 1fr);
+      }
+
+    }
+
+
+    @media (max-width: 600px) {
+
+      .admin-shell {
+        padding: 15px 12px 50px;
+      }
+
+      .admin-login-card {
+        padding: 25px 18px;
+      }
+
+      .admin-logo {
+        width: 95px;
+        height: 75px;
+      }
+
+      .admin-head {
+        align-items: flex-start;
+
+        flex-direction: column;
+      }
+
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .info-field:nth-child(odd) {
+        border-right: 0;
+      }
+
+      .info-field.wide {
+        grid-column: auto;
+      }
+
+      .subscription-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .customer-order-body {
+        padding: 15px;
+      }
+
+      .order-top {
+        align-items: flex-start;
+
+        flex-direction: column;
+      }
+
+    }
+
+  </style>
 </head>
 
-<body>
+
+<body class="admin-page">
+
 <main class="admin-shell">
 
-<div class="admin-login-card">
-<img src="/slabsngrabs-aco-logo-transparent.png" class="admin-logo" alt="SLABS N GRABS ACO">
 
-<h1>Secure Admin Portal</h1>
-<p class="muted">Authorized access only.</p>
+  <!-- =====================================
+       ADMIN LOGIN
+  ====================================== -->
 
-<form id="loginForm">
-<label>Admin password
-  <input id="password" type="password" autocomplete="current-password" required>
-</label>
+  <div
+    class="admin-login-wrap"
+    id="loginWrap"
+  >
 
-<label>Authenticator code
-  <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code"
-         pattern="[0-9]{6}" maxlength="6" placeholder="6-digit code" required>
-</label>
+    <div class="admin-login-card">
 
-<button class="primary" type="submit">Sign in</button>
-<p id="msg"></p>
-</form>
-</div>
+      <img
+        src="/slabsngrabs-aco-logo-transparent.png"
+        class="admin-logo"
+        alt="SLABS N GRABS ACO"
+      >
 
-<section id="dashboard" hidden>
-<div class="admin-head">
-<h1>Paid Customer Profiles</h1>
-<button id="logout">Log out</button>
-</div>
+      <span class="eyebrow">
+        ADMINISTRATION
+      </span>
 
-<div id="rows"></div>
-</section>
+      <h1>
+        Secure Admin Portal
+      </h1>
+
+      <p class="muted">
+        Authorized access only.
+      </p>
+
+
+      <form id="loginForm">
+
+        <label>
+          Admin password
+
+          <input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+            required
+          >
+        </label>
+
+
+        <label>
+          Authenticator code
+
+          <input
+            id="code"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            placeholder="6-digit code"
+            required
+          >
+        </label>
+
+
+        <button
+          class="primary"
+          type="submit"
+        >
+          Sign in
+        </button>
+
+
+        <p id="msg"></p>
+
+      </form>
+
+    </div>
+
+  </div>
+
+
+  <!-- =====================================
+       ADMIN DASHBOARD
+  ====================================== -->
+
+  <section
+    id="dashboard"
+    hidden
+  >
+
+    <div class="admin-head">
+
+      <div class="admin-head-copy">
+
+        <img
+          src="/slabsngrabs-aco-logo-transparent.png"
+          class="admin-dashboard-logo"
+          alt="SLABS N GRABS ACO"
+        >
+
+        <span class="eyebrow">
+          SECURE ADMIN
+        </span>
+
+        <h1>
+          Customer Orders
+        </h1>
+
+        <p>
+          Paid customer profiles and
+          membership information.
+        </p>
+
+      </div>
+
+
+      <button
+        id="logout"
+        type="button"
+      >
+        Log out
+      </button>
+
+    </div>
+
+
+    <div class="admin-summary">
+
+      <span class="eyebrow">
+        PAID SUBMISSIONS
+      </span>
+
+      <span
+        id="submissionCount"
+        class="admin-summary-count"
+      ></span>
+
+    </div>
+
+
+    <div
+      id="rows"
+      class="admin-orders"
+    ></div>
+
+  </section>
 
 </main>
 
+
 <script>
-const f = document.getElementById('loginForm');
-const dash = document.getElementById('dashboard');
-const msg = document.getElementById('msg');
-const rows = document.getElementById('rows');
-  function escapeHtml(value){
-  return String(value ?? '')
-    .replaceAll('&','&amp;')
-    .replaceAll('<','&lt;')
-    .replaceAll('>','&gt;')
-    .replaceAll('"','&quot;')
-    .replaceAll("'","&#039;");
+
+const loginForm =
+  document.getElementById(
+    "loginForm"
+  );
+
+const loginWrap =
+  document.getElementById(
+    "loginWrap"
+  );
+
+const dashboard =
+  document.getElementById(
+    "dashboard"
+  );
+
+const msg =
+  document.getElementById(
+    "msg"
+  );
+
+const rows =
+  document.getElementById(
+    "rows"
+  );
+
+const submissionCount =
+  document.getElementById(
+    "submissionCount"
+  );
+
+
+/* =========================================
+   HELPERS
+========================================= */
+
+function escapeHtml(value) {
+
+  return String(
+    value ?? ""
+  )
+    .replaceAll(
+      "&",
+      "&amp;"
+    )
+    .replaceAll(
+      "<",
+      "&lt;"
+    )
+    .replaceAll(
+      ">",
+      "&gt;"
+    )
+    .replaceAll(
+      '"',
+      "&quot;"
+    )
+    .replaceAll(
+      "'",
+      "&#039;"
+    );
 }
 
-async function load(){
-  const r = await fetch('/api/admin/submissions');
 
-  if(!r.ok) return;
+function displayValue(value) {
 
-  const data = await r.json();
-const submissions = Array.isArray(data) ? data : (data.submissions || []);
-  f.parentElement.hidden = true;
-  dash.hidden = false;
+  const text =
+    String(
+      value ?? ""
+    ).trim();
 
-  if(!submissions.length){
-    rows.innerHTML = '<p>No paid submissions yet.</p>';
+  return text
+    ? escapeHtml(text)
+    : '<span class="muted-value">—</span>';
+}
+
+
+function formatDate(value) {
+
+  if (!value) {
+    return "—";
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return escapeHtml(value);
+  }
+
+  return date.toLocaleDateString(
+    undefined,
+    {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    }
+  );
+}
+
+
+function maskCard(value) {
+
+  const digits =
+    String(
+      value ?? ""
+    )
+      .replace(/\D/g, "");
+
+  if (!digits) {
+    return "—";
+  }
+
+  const lastFour =
+    digits.slice(-4);
+
+  return `•••• •••• •••• ${lastFour}`;
+}
+
+
+function maskPassword(value) {
+
+  if (!value) {
+    return "—";
+  }
+
+  return "••••••••••••";
+}
+
+
+function statusText(value) {
+
+  const status =
+    String(
+      value || "active"
+    );
+
+  return status
+    .replaceAll(
+      "_",
+      " "
+    );
+}
+
+
+/* =========================================
+   INFORMATION FIELD
+========================================= */
+
+function field(
+  label,
+  value,
+  wide = false
+) {
+
+  return `
+    <div class="info-field ${wide ? "wide" : ""}">
+
+      <label>
+        ${escapeHtml(label)}
+      </label>
+
+      <div class="info-value">
+        ${displayValue(value)}
+      </div>
+
+    </div>
+  `;
+}
+
+
+/* =========================================
+   SENSITIVE FIELD
+========================================= */
+
+function sensitiveField(
+  label,
+  value,
+  type,
+  wide = false
+) {
+
+  const raw =
+    String(
+      value ?? ""
+    );
+
+  let masked =
+    "—";
+
+  if (type === "card") {
+    masked =
+      maskCard(raw);
+  }
+
+  if (type === "password") {
+    masked =
+      maskPassword(raw);
+  }
+
+
+  return `
+    <div class="info-field ${wide ? "wide" : ""}">
+
+      <label>
+        ${escapeHtml(label)}
+      </label>
+
+      <div class="sensitive-row">
+
+        <div
+          class="info-value sensitive-value"
+          data-sensitive
+          data-hidden="true"
+          data-masked="${escapeHtml(masked)}"
+          data-value="${escapeHtml(raw)}"
+        >
+          ${escapeHtml(masked)}
+        </div>
+
+        ${
+          raw
+            ? `
+              <button
+                type="button"
+                class="reveal-button"
+              >
+                Reveal
+              </button>
+            `
+            : ""
+        }
+
+      </div>
+
+    </div>
+  `;
+}
+
+
+/* =========================================
+   CUSTOMER ORDER
+========================================= */
+
+function renderOrder(x) {
+
+  const profile =
+    x.profile || {};
+
+  const secrets =
+    x.secrets || {};
+
+  const plan =
+    x.plan || {};
+
+  const customerName =
+    [
+      profile.firstName,
+      profile.lastName
+    ]
+      .filter(Boolean)
+      .join(" ") ||
+    profile.profileName ||
+    "Customer";
+
+  const address =
+    [
+      profile.address,
+      profile.address2
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+  const cityLine =
+    [
+      profile.city,
+      profile.state,
+      profile.zip
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+  const expiration =
+    secrets.expMonth &&
+    secrets.expYear
+      ? `${secrets.expMonth}/${secrets.expYear}`
+      : "—";
+
+  const planName =
+    plan.name || "Membership";
+
+  const amount =
+    plan.amount != null
+      ? `$${plan.amount}/month`
+      : "—";
+
+  const profileCount =
+    plan.profiles != null
+      ? plan.profiles
+      : "—";
+
+
+  return `
+
+    <details
+      class="customer-order"
+      data-id="${escapeHtml(x.id)}"
+    >
+
+      <summary class="customer-order-summary">
+
+        <div class="customer-main">
+
+          <strong>
+            ${escapeHtml(customerName)}
+          </strong>
+
+          <small>
+            ${escapeHtml(
+              profile.email || ""
+            )}
+          </small>
+
+        </div>
+
+
+        <div class="order-meta">
+
+          <small>
+            MEMBERSHIP
+          </small>
+
+          <strong class="order-plan">
+            ${escapeHtml(planName)}
+          </strong>
+
+        </div>
+
+
+        <div class="order-meta">
+
+          <small>
+            PAID
+          </small>
+
+          <strong>
+            ${formatDate(x.paidAt)}
+          </strong>
+
+        </div>
+
+
+        <span class="order-chevron">
+          ›
+        </span>
+
+      </summary>
+
+
+      <div class="customer-order-body">
+
+
+        <div class="order-top">
+
+          <div>
+
+            <h2>
+              ${escapeHtml(customerName)}
+            </h2>
+
+            <div class="order-id">
+              Order ID:
+              ${escapeHtml(x.id)}
+            </div>
+
+          </div>
+
+
+          <span class="status-pill">
+            ${escapeHtml(
+              statusText(
+                x.subscriptionStatus
+              )
+            )}
+          </span>
+
+        </div>
+
+
+        <div class="order-sections">
+
+
+          <!-- SUBSCRIPTION -->
+
+          <section class="order-section">
+
+            <div class="order-section-head">
+
+              <h3>
+                Membership
+              </h3>
+
+              <p>
+                Stripe subscription information.
+              </p>
+
+            </div>
+
+
+            <div class="subscription-grid">
+
+              <div class="subscription-stat">
+
+                <small>
+                  CURRENT TIER
+                </small>
+
+                <strong>
+                  ${escapeHtml(planName)}
+                </strong>
+
+              </div>
+
+
+              <div class="subscription-stat">
+
+                <small>
+                  MONTHLY PRICE
+                </small>
+
+                <strong>
+                  ${escapeHtml(amount)}
+                </strong>
+
+              </div>
+
+
+              <div class="subscription-stat">
+
+                <small>
+                  ACO PROFILES
+                </small>
+
+                <strong>
+                  ${escapeHtml(profileCount)}
+                </strong>
+
+              </div>
+
+
+              <div class="subscription-stat">
+
+                <small>
+                  PERIOD ENDS
+                </small>
+
+                <strong>
+                  ${formatDate(
+                    x.currentPeriodEnd
+                  )}
+                </strong>
+
+              </div>
+
+            </div>
+
+          </section>
+
+
+          <!-- CUSTOMER / SHIPPING -->
+
+          <section class="order-section">
+
+            <div class="order-section-head">
+
+              <h3>
+                Shipping &amp; Customer Information
+              </h3>
+
+              <p>
+                Information submitted by the customer.
+              </p>
+
+            </div>
+
+
+            <div class="info-grid">
+
+              ${field(
+                "Profile Name",
+                profile.profileName
+              )}
+
+              ${field(
+                "Email",
+                profile.email
+              )}
+
+              ${field(
+                "First Name",
+                profile.firstName
+              )}
+
+              ${field(
+                "Last Name",
+                profile.lastName
+              )}
+
+              ${field(
+                "Phone",
+                profile.phone
+              )}
+
+              ${field(
+                "Country",
+                profile.country
+              )}
+
+              ${field(
+                "Address",
+                address,
+                true
+              )}
+
+              ${field(
+                "City / State / Zip",
+                cityLine,
+                true
+              )}
+
+            </div>
+
+          </section>
+
+
+          <!-- ACO -->
+
+          <section class="order-section">
+
+            <div class="order-section-head">
+
+              <h3>
+                ACO Information
+              </h3>
+
+              <p>
+                Credentials submitted for
+                ACO configuration.
+              </p>
+
+            </div>
+
+
+            <div class="info-grid">
+
+              ${field(
+                "ACO / IMAP Email",
+                secrets.acoEmail
+              )}
+
+              ${sensitiveField(
+                "ACO / IMAP Password",
+                secrets.acoPassword,
+                "password"
+              )}
+
+            </div>
+
+          </section>
+
+
+          <!-- CARD -->
+
+          <section class="order-section">
+
+            <div class="order-section-head">
+
+              <h3>
+                Card Information
+              </h3>
+
+              <p>
+                ACO card information submitted
+                by the customer.
+              </p>
+
+            </div>
+
+
+            <div class="info-grid">
+
+              ${field(
+                "Card Label",
+                secrets.cardLabel
+              )}
+
+              ${field(
+                "Cardholder Name",
+                secrets.cardholder
+              )}
+
+              ${sensitiveField(
+                "Card Number",
+                secrets.acoCardNumber,
+                "card",
+                true
+              )}
+
+              ${field(
+                "Expiration",
+                expiration
+              )}
+
+              ${field(
+                "CVV Confirmed",
+                x.cvvConfirmed
+                  ? "Yes"
+                  : "No"
+              )}
+
+            </div>
+
+          </section>
+
+
+          <p class="security-note">
+            Sensitive values are masked by default.
+            Reveal them only when needed for customer
+            setup. CVV digits are never collected,
+            displayed, or stored.
+          </p>
+
+        </div>
+
+
+        <div class="order-actions">
+
+          <button
+            type="button"
+            class="delete-submission"
+            data-id="${escapeHtml(x.id)}"
+          >
+            Delete Customer Order
+          </button>
+
+        </div>
+
+      </div>
+
+    </details>
+  `;
+}
+
+
+/* =========================================
+   LOAD ADMIN DATA
+========================================= */
+
+async function load() {
+
+  const response =
+    await fetch(
+      "/api/admin/submissions",
+      {
+        credentials:
+          "same-origin",
+
+        cache:
+          "no-store"
+      }
+    );
+
+
+  if (!response.ok) {
+
+    loginWrap.hidden = false;
+    dashboard.hidden = true;
+
     return;
   }
 
-  rows.innerHTML = submissions.map(x => `
-    <article class="admin-card" data-id="${escapeHtml(x.id)}">
 
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap;">
-        <h3>${escapeHtml(x.profile?.profileName || x.profileName || x.id || 'Submission')}</h3>
+  const data =
+    await response.json();
 
-        <button
-          type="button"
-          class="delete-submission"
-          data-id="${escapeHtml(x.id)}"
-          style="background:#b42318;color:white;border:0;border-radius:8px;padding:10px 16px;cursor:pointer;font-weight:700;">
-          Delete
-        </button>
-      </div>
 
-      <pre>${escapeHtml(JSON.stringify(x,null,2))}</pre>
-
-    </article>
-  `).join('');
-
-  document.querySelectorAll('.delete-submission').forEach(button => {
-    button.addEventListener('click', async () => {
-
-      const id = button.dataset.id;
-
-      const confirmed = confirm(
-        'Permanently delete this customer submission? This cannot be undone.'
-      );
-
-      if(!confirmed) return;
-
-      button.disabled = true;
-      button.textContent = 'Deleting...';
-
-      try{
-        const response = await fetch(
-          `/api/admin/submissions/${encodeURIComponent(id)}`,
-          {method:'DELETE'}
+  const submissions =
+    Array.isArray(data)
+      ? data
+      : (
+          data.submissions ||
+          []
         );
 
-        if(!response.ok){
-          throw new Error('Delete failed');
-        }
 
-        await load();
+  loginWrap.hidden = true;
+  dashboard.hidden = false;
 
-      }catch(err){
-        alert('Unable to delete this submission.');
-        button.disabled = false;
-        button.textContent = 'Delete';
-      }
-    });
-  });
+
+  submissionCount.textContent =
+    submissions.length === 1
+      ? "1 customer order"
+      : `${submissions.length} customer orders`;
+
+
+  if (!submissions.length) {
+
+    rows.innerHTML = `
+      <div class="empty-admin">
+
+        <h3>
+          No paid submissions yet.
+        </h3>
+
+        <p>
+          Paid customer orders will
+          appear here individually.
+        </p>
+
+      </div>
+    `;
+
+    return;
+  }
+
+
+  rows.innerHTML =
+    submissions
+      .map(renderOrder)
+      .join("");
+
+
+  bindRevealButtons();
+  bindDeleteButtons();
 }
 
-f.addEventListener('submit', async e => {
-  e.preventDefault();
 
-  msg.textContent = '';
+/* =========================================
+   REVEAL / HIDE SENSITIVE INFO
+========================================= */
 
-  const r = await fetch('/api/admin/login',{
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({
-    password:document.getElementById('password').value,
-    code:document.getElementById('code').value
-  })
-});
+function bindRevealButtons() {
 
-  if(r.ok){
-    document.getElementById('password').value = '';
-    load();
-  }else{
-    msg.textContent = 'Invalid credentials.';
+  document
+    .querySelectorAll(
+      ".reveal-button"
+    )
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        event => {
+
+          /*
+            Prevent the click from affecting
+            the parent details element.
+          */
+
+          event.preventDefault();
+          event.stopPropagation();
+
+
+          const row =
+            button.closest(
+              ".sensitive-row"
+            );
+
+
+          const value =
+            row?.querySelector(
+              "[data-sensitive]"
+            );
+
+
+          if (!value) return;
+
+
+          const hidden =
+            value.dataset.hidden ===
+            "true";
+
+
+          if (hidden) {
+
+            value.textContent =
+              value.dataset.value ||
+              "—";
+
+            value.dataset.hidden =
+              "false";
+
+            button.textContent =
+              "Hide";
+
+          } else {
+
+            value.textContent =
+              value.dataset.masked ||
+              "—";
+
+            value.dataset.hidden =
+              "true";
+
+            button.textContent =
+              "Reveal";
+
+          }
+
+        }
+      );
+
+    });
+}
+
+
+/* =========================================
+   DELETE CUSTOMER ORDER
+========================================= */
+
+function bindDeleteButtons() {
+
+  document
+    .querySelectorAll(
+      ".delete-submission"
+    )
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        async () => {
+
+          const id =
+            button.dataset.id;
+
+
+          const confirmed =
+            confirm(
+              "Permanently delete this customer submission? This cannot be undone."
+            );
+
+
+          if (!confirmed) {
+            return;
+          }
+
+
+          button.disabled = true;
+
+          button.textContent =
+            "Deleting...";
+
+
+          try {
+
+            const response =
+              await fetch(
+                `/api/admin/submissions/${encodeURIComponent(id)}`,
+                {
+                  method:
+                    "DELETE",
+
+                  credentials:
+                    "same-origin"
+                }
+              );
+
+
+            if (!response.ok) {
+              throw new Error(
+                "Delete failed"
+              );
+            }
+
+
+            await load();
+
+
+          } catch (error) {
+
+            alert(
+              "Unable to delete this submission."
+            );
+
+            button.disabled =
+              false;
+
+            button.textContent =
+              "Delete Customer Order";
+
+          }
+
+        }
+      );
+
+    });
+}
+
+
+/* =========================================
+   ADMIN LOGIN
+========================================= */
+
+loginForm.addEventListener(
+  "submit",
+  async event => {
+
+    event.preventDefault();
+
+    msg.textContent = "";
+
+
+    const response =
+      await fetch(
+        "/api/admin/login",
+        {
+          method:
+            "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          credentials:
+            "same-origin",
+
+          body:
+            JSON.stringify({
+              password:
+                document
+                  .getElementById(
+                    "password"
+                  )
+                  .value,
+
+              code:
+                document
+                  .getElementById(
+                    "code"
+                  )
+                  .value
+            })
+        }
+      );
+
+
+    if (response.ok) {
+
+      document
+        .getElementById(
+          "password"
+        )
+        .value = "";
+
+      document
+        .getElementById(
+          "code"
+        )
+        .value = "";
+
+
+      await load();
+
+
+    } else {
+
+      msg.textContent =
+        "Invalid password or authenticator code.";
+
+    }
+
   }
-});
+);
 
-document.getElementById('logout').onclick = async () => {
-  await fetch('/api/admin/logout',{method:'POST'});
-  location.reload();
-};
+
+/* =========================================
+   LOGOUT
+========================================= */
+
+document
+  .getElementById(
+    "logout"
+  )
+  .addEventListener(
+    "click",
+    async () => {
+
+      await fetch(
+        "/api/admin/logout",
+        {
+          method:
+            "POST",
+
+          credentials:
+            "same-origin"
+        }
+      );
+
+      location.reload();
+
+    }
+  );
+
+
+/* =========================================
+   INITIALIZE
+========================================= */
 
 load();
+
 </script>
 
 </body>
