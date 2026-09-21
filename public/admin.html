@@ -17,9 +17,13 @@
 <p class="muted">Authorized access only.</p>
 
 <form id="loginForm">
-<label>
-Admin password
-<input id="password" type="password" autocomplete="current-password" required>
+<label>Admin password
+  <input id="password" type="password" autocomplete="current-password" required>
+</label>
+
+<label>Authenticator code
+  <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code"
+         pattern="[0-9]{6}" maxlength="6" placeholder="6-digit code" required>
 </label>
 
 <button class="primary" type="submit">Sign in</button>
@@ -132,10 +136,10 @@ f.addEventListener('submit', async e => {
   const r = await fetch('/api/admin/login',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      password:document.getElementById('password').value
-    })
-  });
+  body:JSON.stringify({
+  password:document.getElementById('password').value,
+  code:document.getElementById('code').value
+})
 
   if(r.ok){
     document.getElementById('password').value = '';
