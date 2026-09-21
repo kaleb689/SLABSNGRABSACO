@@ -3,199 +3,442 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SLABSNGRABSACO — Memberships</title>
-  <meta name="description" content="SLABSNGRABSACO membership and profile setup." />
+  <title>SLABS N GRABS ACO</title>
+  <meta name="description" content="SLABS N GRABS ACO membership and profile setup." />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
+
+<div class="watermarks" aria-hidden="true">
+  <img src="/slabsngrabs-aco-logo-transparent.png">
+  <img src="/slabsngrabs-aco-logo-transparent.png">
+  <img src="/slabsngrabs-aco-logo-transparent.png">
+</div>
+
 <header class="site-header">
-  <a class="brand" href="#home" data-page="home"><img class="brand-logo" src="/slabsngrabs-aco-logo-transparent.png" alt="SLABS N GRABS ACO" /></a>
-  <nav>
-    <a href="#home" data-page="home" class="nav-link">Home</a>
-    <a href="#pricing" data-page="pricing" class="nav-link">Pricing</a>
-    <a href="#profile" data-page="profile" class="nav-link">Submit Profile</a>
-    <a href="#guide" data-page="guide" class="nav-link">Guide</a>
-    <a href="https://discord.gg/E5cQPEMHM" class="nav-link discord-link" target="_blank" rel="noopener noreferrer" aria-label="Join our Discord">
-      <svg class="discord-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.54 5.34A16.3 16.3 0 0 0 15.44 4l-.5 1.02a15.1 15.1 0 0 0-5.86 0L8.56 4a16.4 16.4 0 0 0-4.1 1.35C1.87 9.2 1.17 12.95 1.52 16.65a16.6 16.6 0 0 0 5.03 2.55l1.22-1.67a10.7 10.7 0 0 1-1.92-.93l.47-.36c3.7 1.72 7.72 1.72 11.38 0l.47.36c-.62.37-1.26.68-1.92.93l1.22 1.67a16.5 16.5 0 0 0 5.02-2.55c.42-4.3-.72-8.02-2.95-11.31ZM8.66 14.42c-1.11 0-2.02-1.02-2.02-2.27 0-1.25.89-2.27 2.02-2.27 1.14 0 2.04 1.03 2.02 2.27 0 1.25-.89 2.27-2.02 2.27Zm6.68 0c-1.11 0-2.02-1.02-2.02-2.27 0-1.25.89-2.27 2.02-2.27 1.14 0 2.04 1.03 2.02 2.27 0 1.25-.88 2.27-2.02 2.27Z"/></svg>
-      <span>Discord</span>
+  <div class="header-left">
+    <a class="brand" href="#home" data-page="home">
+      <img class="brand-logo" src="/slabsngrabs-aco-logo-transparent.png" alt="SLABS N GRABS ACO" />
     </a>
+    <a href="#home" data-page="home" class="nav-link home-link">Home</a>
+  </div>
+
+  <nav>
+    <a href="#pricing" data-page="pricing" class="nav-link">Pricing</a>
+    <a href="#guide" data-page="guide" class="nav-link">Guide</a>
+    <a href="#my-profile" data-page="my-profile" class="nav-link">My Profile</a>
+
+    <a href="https://discord.gg/E5cQPEMHM"
+       class="nav-link"
+       target="_blank"
+       rel="noopener noreferrer">Discord</a>
+
+    <button class="cart-button" id="cart-button" type="button" aria-label="Open cart">
+      Cart <span id="cart-count">0</span>
+    </button>
+
+    <a href="#profile" data-page="profile" class="get-started">Get Started</a>
   </nav>
 </header>
 
 <main>
+
 <section id="home" class="page active">
   <div class="hero wrap">
-    <div>
-      <span class="eyebrow">YOUR CHECKOUT ADVANTAGE</span>
-      <img class="hero-brand-logo" src="/slabsngrabs-aco-logo-transparent.png" alt="SLABS N GRABS ACO logo" /><h1>You get the<br><em>packages.</em><br>I do the work.</h1>
-      <p class="lead">Welcome to SLABSNGRABSACO
-I do all the heavy lifting so everyone can enjoy products at MSRP instead of inflated market prices. ACO means Auto Checkout. I run your account through my automated checkout setup using the information you provide, allowing you to purchase products directly from the retailer at the retailer’s price and have the packages shipped directly to your home—cutting out the middleman.
-I was once in your spot, trying to buy everything at market price, and eventually I had enough. This is my way of trying to give everyone a chance at getting the products they actually want. I do have to charge a monthly membership fee because running and maintaining the bots and infrastructure is expensive. Whether you’re growing your collection or just looking for some packs to rip, I look forward to helping you.
 
-<span style="font-weight:1000; color:white;">Have questions? Click the Discord link at the top of the page and drop us a message.</span> </p>
-      <div class="actions"><button class="primary" data-page="pricing">View memberships →</button><button class="secondary" data-page="profile">Submit a profile</button></div>
-      <div class="trust">✓ Flexible monthly plans &nbsp; ✓ Built for collectors</div>
+    <div class="hero-copy">
+      <span class="eyebrow">YOUR CHECKOUT ADVANTAGE</span>
+
+      <h1>
+        You get the <em>packages.</em><br>
+        I do the work.
+      </h1>
+
+      <p class="lead">
+        SLABS N GRABS ACO helps collectors set up Auto Checkout profiles so they
+        can purchase supported products directly from retailers at retail pricing.
+        Choose the membership that fits your needs, submit your setup information,
+        and let us handle the heavy lifting.
+      </p>
+
+      <div class="actions">
+        <button class="primary" data-page="pricing">View memberships →</button>
+        <button class="secondary" data-page="profile">Get Started</button>
+      </div>
+
+      <div class="trust">
+        Flexible monthly plans · Built for collectors · Secure Stripe checkout
+      </div>
     </div>
-    <div class="feature-card">
-      <div class="card-top"><span>MEMBERSHIP ACCESS</span><b>PREMIUM</b></div>
-      <div class="price">$30 <small>/month</small></div>
-      <p>Start your ACO journey.</p>
-      <hr />
-      <ul><li>1 profile included</li><li>Select supported retailers</li><li>Monthly membership</li><li>Dedicated profile submission</li></ul>
-      <button class="primary full" data-select="1">Get started →</button>
-      <small class="fine">Secure payment processing through Stripe</small>
+
+    <div class="hero-card">
+      <img src="/slabsngrabs-aco-logo-transparent.png" alt="SLABS N GRABS ACO">
+
+      <span>STARTER</span>
+
+      <div class="hero-price">
+        $30 <small>/month</small>
+      </div>
+
+      <p>1 ACO profile per supported retailer.</p>
+
+      <button class="primary full" data-select="1">Choose Starter</button>
     </div>
-  </div>
-  <div class="wrap section">
-    <div class="section-heading"><span class="eyebrow">HOW IT WORKS</span><h2>Simple. Streamlined. Ready.</h2></div>
-    <div class="steps"><article><strong>01</strong><h3>Choose your plan</h3><p>Select the membership that fits your profile needs.</p></article><article><strong>02</strong><h3>Submit your profile</h3><p>Provide your details through our organized submission form.</p></article><article><strong>03</strong><h3>You're ready</h3><p>After payment and confirmation, your membership can be set up.</p></article></div>
+
   </div>
 </section>
 
 <section id="pricing" class="page wrap section">
-  <div class="section-heading"><span class="eyebrow">MEMBERSHIPS</span><h2>Choose your <em>tier.</em></h2><p>Flexible monthly plans built around your ACO profile needs.</p></div>
-  <div class="pricing-grid">
-    <article class="plan"><span class="tier">TIER 01</span><div class="plan-price">$30 <small>/month</small></div><h3>1 Profile</h3><p>One profile membership</p><hr /><label>SUPPORTED RETAILERS</label><div>Target · Walmart · Sam’s Club · Costco · PKC</div><button class="primary full" data-select="1">Select Tier 1</button></article>
-    <article class="plan featured"><span class="popular">POPULAR</span><span class="tier">TIER 02</span><div class="plan-price">$50 <small>/month</small></div><h3>2 Profiles</h3><p>Two profile memberships</p><hr /><label>SUPPORTED RETAILERS</label><div>Target · Walmart · Sam’s Club · Costco · PKC</div><button class="primary full" data-select="2">Select Tier 2</button></article>
-    <article class="plan"><span class="tier">TIER 03</span><div class="plan-price">$80 <small>/month</small></div><h3>3 Profiles</h3><p>Three profile memberships</p><hr /><label>SUPPORTED RETAILERS</label><div>Target · Walmart · Sam’s Club · Costco · PKC</div><button class="primary full" data-select="3">Select Tier 3</button></article>
+
+  <div class="section-heading">
+    <span class="eyebrow">MEMBERSHIPS</span>
+    <h2>CHOOSE YOUR <em>TIER</em></h2>
+    <p>Pick the monthly plan that matches the number of ACO profiles you need.</p>
   </div>
+
+  <div class="retailers">
+    <span>SUPPORTED RETAILERS</span>
+    <strong>Target</strong>
+    <strong>Walmart</strong>
+    <strong>Sam's Club</strong>
+    <strong>Costco</strong>
+    <strong>PKC</strong>
+  </div>
+
+  <div class="pricing-grid" id="pricing-grid"></div>
+
+  <div class="tier-help">
+    <div>
+      <span class="eyebrow">NEED A HAND?</span>
+      <h3>NOT SURE WHICH TIER?</h3>
+      <p>
+        Join the Discord and our team will help you pick the right plan
+        for your goals and budget.
+      </p>
+    </div>
+
+    <a class="primary"
+       href="https://discord.gg/E5cQPEMHM"
+       target="_blank"
+       rel="noopener noreferrer">
+       Ask in Discord →
+    </a>
+  </div>
+
 </section>
 
 <section id="profile" class="page wrap section">
-  <div class="section-heading left"><span class="eyebrow">MEMBERSHIP SETUP</span><h2>Create your <em>profile.</em></h2><p>Enter your profile details below. Payment details are handled separately by Stripe Checkout.</p></div>
+
+  <div class="section-heading left">
+    <span class="eyebrow">GET STARTED</span>
+    <h2>CREATE YOUR <em>PROFILE</em></h2>
+    <p>
+      Enter your setup details, then continue to secure Stripe Checkout
+      for your membership.
+    </p>
+  </div>
+
   <form id="profile-form" class="form-card">
-    <div class="form-header"><div><h3>Profile information</h3><p>Fields marked * are required.</p></div><span class="secure-badge">SECURE FORM</span></div>
-    <div class="form-layout">
-      <div class="fields">
-        <label>Profile Name *<input required name="profileName" placeholder="Enter profile name" /></label>
-        <div class="two"><label>First Name *<input required name="firstName" /></label><label>Last Name *<input required name="lastName" /></label></div>
-        <div class="two"><label>Email *<input required type="email" name="email" placeholder="example@gmail.com" /></label><label>Phone *<input required name="phone" /></label></div>
-        <label>Address *<input required name="address" /></label>
-        <label>Address 2<input name="address2" placeholder="Apt. / Suite" /></label>
-        <label>Country *<select required name="country"><option value="">Select country</option><option>United States</option><option>Canada</option><option>Other</option></select></label>
-        <label>State *<input required name="state" placeholder="Select state or province" /></label>
-        <div class="two"><label>City *<input required name="city" /></label><label>Zipcode *<input required name="zip" /></label></div>
+
+    <div class="form-header">
+      <div>
+        <h3>Profile information</h3>
+        <p>Fields marked * are required.</p>
       </div>
-      <aside class="payment-panel">
-        <div class="payment-title"><span class="lock">⌑</span><div><h3>Payment information</h3><p>Secure Stripe checkout</p></div></div>
-        <p>Your SLABSNGRABSACO membership payment is handled by Stripe. The ACO setup information below is collected separately so your requested profile can be configured.</p>
-        <div class="selected-plan"><small>SELECTED MEMBERSHIP</small><strong id="selected-plan">Tier 1 — $30/month</strong></div>
-        <button type="button" class="secondary full" data-page="pricing">Change membership</button>
-        
-        <div class="secure-setup">
-          <div class="secure-setup-title"><span>🔐</span><div><strong>ACO setup information</strong><small>Encrypted before storage</small></div></div>
-          <p class="secure-copy">Use the dedicated email created for this ACO service. Do not use a personal email account.</p>
-          <label>ACO / IMAP Email *<input required type="email" name="acoEmail" autocomplete="off" placeholder="aco-email@example.com" /></label>
-          <label>ACO / IMAP Email Password *<div class="password-row"><input required type="password" name="acoPassword" autocomplete="new-password" placeholder="Dedicated email password" /><button type="button" class="show-pass" id="show-pass">Show</button></div></label>
-          <div class="secure-divider"></div>
-          <p class="secure-copy">The following card is for the ACO profile you are asking SLABSNGRABSACO to configure. It is separate from the Stripe card used to pay your membership.</p>
-          <label>Card Label *<input required name="cardLabel" placeholder="e.g. Personal Visa" /></label>
-          <label>Cardholder Name *<input required name="cardholder" autocomplete="off" /></label>
-          <label>Card Number *<input required name="acoCardNumber" inputmode="numeric" autocomplete="off" maxlength="23" placeholder="0000 0000 0000 0000" /></label>
-          <div class="two">
-            <label>Exp. Month *<select required name="expMonth"><option value="">Month</option><option>01</option><option>02</option><option>03</option><option>04</option><option>05</option><option>06</option><option>07</option><option>08</option><option>09</option><option>10</option><option>11</option><option>12</option></select></label>
-            <label>Exp. Year *<select required name="expYear"><option value="">Year</option></select></label>
-          </div>
-          <label class="consent cvv-confirm"><input required type="checkbox" name="cvvConfirmed" value="yes" /> <span><strong>CVV Confirmed</strong><small>I confirm I have access to the CVV for this card. The CVV digits are not entered, transmitted, or stored by SLABSNGRABSACO.</small></span></label>
-          <div class="guide-alert warning compact"><strong>Sensitive information</strong><p>This information is encrypted server-side and is not included in ordinary notification emails. Stripe separately handles your SLABSNGRABSACO membership payment.</p></div>
+      <span class="secure-badge">SECURE FORM</span>
+    </div>
+
+    <div class="form-layout">
+
+      <div class="fields">
+
+        <label>
+          Profile Name *
+          <input required name="profileName" placeholder="Enter profile name">
+        </label>
+
+        <div class="two">
+          <label>
+            First Name *
+            <input required name="firstName">
+          </label>
+
+          <label>
+            Last Name *
+            <input required name="lastName">
+          </label>
         </div>
 
-        <label class="consent"><input required type="checkbox" name="confirm" /> I confirm that the information above is accurate.</label>
-        <button class="primary full" type="submit">＋ Continue to Stripe Checkout</button>
+        <div class="two">
+          <label>
+            Email *
+            <input required type="email" name="email">
+          </label>
+
+          <label>
+            Phone *
+            <input required name="phone">
+          </label>
+        </div>
+
+        <label>
+          Address *
+          <input required name="address">
+        </label>
+
+        <label>
+          Address 2
+          <input name="address2" placeholder="Apt. / Suite">
+        </label>
+
+        <div class="two">
+          <label>
+            Country *
+            <select required name="country">
+              <option value="">Select country</option>
+              <option>United States</option>
+              <option>Canada</option>
+              <option>Other</option>
+            </select>
+          </label>
+
+          <label>
+            State *
+            <input required name="state">
+          </label>
+        </div>
+
+        <div class="two">
+          <label>
+            City *
+            <input required name="city">
+          </label>
+
+          <label>
+            Zipcode *
+            <input required name="zip">
+          </label>
+        </div>
+
+      </div>
+
+      <aside class="payment-panel">
+
+        <h3>Selected membership</h3>
+
+        <div class="selected-plan">
+          <strong id="selected-plan">Starter — $30/month</strong>
+        </div>
+
+        <button type="button" class="secondary full" data-page="pricing">
+          Change membership
+        </button>
+
+        <div class="secure-divider"></div>
+
+        <h3>ACO setup information</h3>
+
+        <p class="muted">
+          Use the dedicated email created for this ACO service.
+        </p>
+
+        <label>
+          ACO / IMAP Email *
+          <input required type="email" name="acoEmail" autocomplete="off">
+        </label>
+
+        <label>
+          ACO / IMAP Email Password *
+
+          <div class="password-row">
+            <input required
+                   type="password"
+                   name="acoPassword"
+                   autocomplete="new-password">
+
+            <button type="button" class="show-pass" id="show-pass">
+              Show
+            </button>
+          </div>
+        </label>
+
+        <label>
+          Card Label *
+          <input required name="cardLabel" placeholder="e.g. Personal Visa">
+        </label>
+
+        <label>
+          Cardholder Name *
+          <input required name="cardholder" autocomplete="off">
+        </label>
+
+        <label>
+          Card Number *
+          <input required
+                 name="acoCardNumber"
+                 inputmode="numeric"
+                 autocomplete="off"
+                 maxlength="23"
+                 placeholder="0000 0000 0000 0000">
+        </label>
+
+        <div class="two">
+
+          <label>
+            Exp. Month *
+            <select required name="expMonth">
+              <option value="">Month</option>
+              <option>01</option>
+              <option>02</option>
+              <option>03</option>
+              <option>04</option>
+              <option>05</option>
+              <option>06</option>
+              <option>07</option>
+              <option>08</option>
+              <option>09</option>
+              <option>10</option>
+              <option>11</option>
+              <option>12</option>
+            </select>
+          </label>
+
+          <label>
+            Exp. Year *
+            <select required name="expYear">
+              <option value="">Year</option>
+            </select>
+          </label>
+
+        </div>
+
+        <label class="consent">
+          <input required type="checkbox" name="cvvConfirmed" value="yes">
+
+          <span>
+            <strong>CVV Confirmed</strong>
+            <small>
+              I confirm I have access to the CVV. CVV digits are never
+              entered, transmitted, or stored here.
+            </small>
+          </span>
+        </label>
+
+        <label class="consent">
+          <input required type="checkbox" name="confirm">
+          <span>I confirm the information above is accurate.</span>
+        </label>
+
+        <button class="primary full" type="submit">
+          Continue to Stripe Checkout →
+        </button>
+
         <p id="form-message" class="form-message"></p>
-        <small class="fine">After Stripe confirms payment, the business receives a notification that your encrypted setup package is ready.</small>
+
       </aside>
+
     </div>
   </form>
 </section>
 
 <section id="guide" class="page wrap section">
+
   <div class="section-heading left">
     <span class="eyebrow">GETTING STARTED</span>
-    <h2>ACO <em>setup guide.</em></h2>
-    <p>Follow these steps to prepare your profiles, payment methods, and supported email connections.</p>
-  </div>
-
-  <div class="guide-alert success">
-    <span class="guide-icon">✦</span>
-    <div><strong>Important</strong><p>ACO runs pulls for every account marked “Active.” Make sure only the accounts you want checked are active.</p></div>
+    <h2>ACO <em>SETUP GUIDE</em></h2>
+    <p>
+      Prepare your profile, payment method, and supported email connection.
+    </p>
   </div>
 
   <div class="guide-list">
+
     <details class="guide-card" open>
-      <summary><span class="guide-icon blue">♧</span><span>Step 1 — Set Up a Profile</span><span class="chevron">⌄</span></summary>
+      <summary>Step 1 — Set Up a Profile</summary>
+
       <div class="guide-content">
-        <p>Profiles store your personal and shipping information. Each ACO account is linked to a profile so you don’t have to type the same address repeatedly.</p>
-        <ol>
-          <li>Go to <strong>Configuration → Profiles</strong> in the sidebar.</li>
-          <li>Click <strong>Add Profile</strong> and complete the form: Profile Name (a label you’ll recognize, such as “Main Profile”), First Name, Last Name, Phone Number, and full shipping address.</li>
-          <li>Click <strong>Create Profile</strong>. You can create as many profiles as needed—typically one per shipping address.</li>
-        </ol>
-        <div class="guide-alert info"><strong>Before you continue:</strong><p>You must have at least one profile before creating an ACO account. Profiles can be reused across multiple accounts.</p></div>
+        <p>
+          Create your ACO profile with your shipping and contact information.
+          Use a clear profile name so it is easy to identify.
+        </p>
       </div>
     </details>
 
     <details class="guide-card">
-      <summary><span class="guide-icon blue">▣</span><span>Step 2 — Add a Payment Card</span><span class="chevron">›</span></summary>
+      <summary>Step 2 — Add a Payment Card</summary>
+
       <div class="guide-content">
-        <p>Payment cards may be stored centrally in the ACO application’s Payment Methods area and linked to one or more ACO accounts.</p>
-        <ol>
-          <li>Go to <strong>Configuration → Payment Methods</strong> and select <strong>Add Card</strong>.</li>
-          <li>Enter a Card Company, Card Number/EXP, Name on Card, and the requested card details in the official ACO application.</li>
-          <li>Save the card and link it only to the accounts you intend to use.</li>
-        </ol>
-        <div class="guide-alert warning"><strong>Security reminder:</strong><p>Never send full card numbers, CVVs, or expiration dates to SLABSNGRABSACO by email. Use the official ACO application and its security controls.</p></div>
+        <p>
+          Use the payment method intended for your ACO profile and verify
+          the billing information matches the card issuer.
+        </p>
       </div>
     </details>
 
     <details class="guide-card">
-      <summary><span class="guide-icon blue">✉</span><span>Step 3 — Set Up an IMAP Profile (Walmart, Target &amp; Sam’s Club)</span><span class="chevron">›</span></summary>
+      <summary>Step 3 — Set Up IMAP</summary>
+
       <div class="guide-content">
-        <p>Walmart, Target, and Sam’s Club may send order confirmations and two-factor authentication messages by email. The checkout software may need inbox access to read those messages.</p>
-        <ol>
-          <li>Go to <strong>Configuration → IMAP Profiles</strong> and click <strong>Add IMAP Profile</strong>.</li>
-          <li>Give the profile a Label, enter the Email Address, choose your Email Host from the dropdown, and enter the provider-specific App Password.</li>
-          <li>Save the profile, then click <strong>Test IMAP</strong> to verify the connection.</li>
-        </ol>
-        <div class="guide-alert warning"><strong>Use an app password:</strong><p>Use a dedicated app password rather than your regular email password. Follow your email provider’s official security instructions to create one.</p></div>
-        <div class="guide-alert success"><strong>Note:</strong><p>Pokémon Center accounts may not need an IMAP profile. Sam’s Club accounts may require IMAP depending on the setup.</p></div>
+        <p>
+          For retailers that require email verification, use a dedicated
+          email account and provider-supported app password when available.
+        </p>
       </div>
     </details>
 
     <details class="guide-card">
-      <summary><span class="guide-icon blue">✉</span><span>Why IMAP? — Understanding Email Access</span><span class="chevron">›</span></summary>
+      <summary>Need Help?</summary>
+
       <div class="guide-content">
-        <p>IMAP is an email-access protocol that lets approved software read messages in an inbox without needing to operate your entire email account.</p>
-        <ul>
-          <li>It can help the software locate order confirmations and verification messages.</li>
-          <li>Use a dedicated email address when practical.</li>
-          <li>Enable two-factor authentication with your email provider.</li>
-          <li>Use an app password with limited access when your provider supports it.</li>
-          <li>Remove access and rotate credentials if you stop using the integration.</li>
-        </ul>
-        <div class="guide-alert info"><strong>Privacy tip:</strong><p>Only grant access to an inbox you control, and review what messages the software can access before connecting it.</p></div>
+        <p>Join the Discord for help with your setup and membership.</p>
+
+        <a class="primary inline"
+           href="https://discord.gg/E5cQPEMHM"
+           target="_blank"
+           rel="noopener noreferrer">
+           Open Discord
+        </a>
       </div>
     </details>
 
-    <details class="guide-card">
-      <summary><span class="guide-icon blue">⌕</span><span>How To — Generate an App Password</span><span class="required-tag">REQUIRED FOR IMAP</span><span class="chevron">›</span></summary>
-      <div class="guide-content">
-        <p>App-password steps vary by provider. Use the official help page for your email service and never share the generated password with anyone who does not need it.</p>
-        <ol>
-          <li>Open your email provider’s account-security settings.</li>
-          <li>Enable two-step verification if required.</li>
-          <li>Find the <strong>App Passwords</strong> or equivalent option.</li>
-          <li>Create a dedicated app password for the IMAP connection.</li>
-          <li>Copy it into the official ACO application’s IMAP profile field—not into this website.</li>
-        </ol>
-        <div class="guide-alert warning"><strong>Keep credentials private:</strong><p>SLABSNGRABSACO does not need your regular email password, app password, card number, or CVV to process a membership payment.</p></div>
-      </div>
-    </details>
   </div>
 </section>
 
+<section id="my-profile" class="page wrap section">
+
+  <div class="section-heading left">
+    <span class="eyebrow">MEMBER ACCOUNT</span>
+    <h2>MY <em>PROFILE</em></h2>
+    <p>
+      Your membership details are shown securely on this device after
+      a successful Stripe checkout.
+    </p>
+  </div>
+
+  <div id="member-card" class="member-card">
+    <div class="loading">Checking your membership…</div>
+  </div>
+
+</section>
+
 </main>
-<footer>© 2026 SLABSNGRABSACO · Modern membership experience</footer>
+
+<div class="cart-drawer" id="cart-drawer" aria-hidden="true">
+
+  <button class="cart-close" id="cart-close" aria-label="Close cart">
+    ×
+  </button>
+
+  <span class="eyebrow">YOUR CART</span>
+  <h3>Selected membership</h3>
+
+  <div id="cart-content"></div>
+
+</div>
+
+<div class="cart-backdrop" id="cart-backdrop"></div>
+
 <script src="/app.js"></script>
+
 </body>
 </html>
