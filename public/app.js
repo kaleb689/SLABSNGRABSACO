@@ -13,13 +13,25 @@ const savedTier = Number(
 );
 
 const state = {
-  tier: PLANS[savedTier] ? savedTier : null,
+  tier:
+    PLANS[savedTier]
+      ? savedTier
+      : null,
+
   customer: null,
+
+  membership: null,
+
+  upgradeMode: false,
+
   orders: [],
+
   profileLoaded: false,
 
   retailerProfiles: [],
+
   retailerAllowance: 0,
+
   retailerProfilesLoaded: false
 };
 
@@ -707,6 +719,72 @@ function initializeMembershipCarousel() {
    PLAN SELECTION
 ===================================================== */
 
+function updatePricingUpgradeButtons() {
+  const currentTier =
+    Number(
+      state.membership?.tier ||
+      0
+    );
+
+  document
+    .querySelectorAll(
+      "[data-select]"
+    )
+    .forEach(button => {
+      const tier =
+        Number(
+          button.dataset.select
+        );
+
+      if (!PLANS[tier]) {
+        return;
+      }
+
+      button.disabled =
+        false;
+
+      button.textContent =
+        "Select Tier";
+
+      if (
+        !state.upgradeMode ||
+        !currentTier
+      ) {
+        return;
+      }
+
+      if (
+        tier <
+        currentTier
+      ) {
+        button.disabled =
+          true;
+
+        button.textContent =
+          "Lower Tier";
+
+        return;
+      }
+
+      if (
+        tier ===
+        currentTier
+      ) {
+        button.disabled =
+          true;
+
+        button.textContent =
+          "Current Tier";
+
+        return;
+      }
+
+      button.textContent =
+        "Upgrade";
+    });
+}
+
+
 function bindTierButtons() {
   document
     .querySelectorAll(
@@ -715,8 +793,8 @@ function bindTierButtons() {
     .forEach(button => {
       button.addEventListener(
         "click",
-        () => {
-          selectTier(
+        async () => {
+          await selectTier(
             Number(
               button.dataset.select
             )
@@ -724,13 +802,30 @@ function bindTierButtons() {
         }
       );
     });
+
+  updatePricingUpgradeButtons();
 }
 
 
-function selectTier(tier) {
-  if (!PLANS[tier]) return;
+async function selectTier(
+  tier
+) {
+  if (!PLANS[tier]) {
+    return;
+  }
 
-  state.tier = tier;
+  if (
+    state.upgradeMode
+  ) {
+    await upgradeMembershipToTier(
+      tier
+    );
+
+    return;
+  }
+
+  state.tier =
+    tier;
 
   localStorage.setItem(
     "sng_selected_tier",
@@ -740,18 +835,6 @@ function selectTier(tier) {
   updateSelectedPlan();
   updateCart();
   openCart();
-}
-
-
-function clearSelectedTier() {
-  state.tier = null;
-
-  localStorage.removeItem(
-    "sng_selected_tier"
-  );
-
-  updateSelectedPlan();
-  updateCart();
 }
 
 
@@ -1375,8 +1458,12 @@ const passwordResetPanel =
 
 function showSignedOut() {
   state.customer = null;
-  state.orders = [];
-  state.profileLoaded = true;
+state.membership = null;
+state.upgradeMode = false;
+state.orders = [];
+state.profileLoaded = true;
+
+updatePricingUpgradeButtons();
 
   if (accountAuth) {
     accountAuth.hidden = false;
@@ -2594,6 +2681,22 @@ function renderAccountHeader(
 function renderMembership(
   membership
 ) {
+    const upgradeButton =
+    document.getElementById(
+      "upgrade-membership"
+    );
+
+    if (!membership) {
+    if (upgradeButton) {
+      upgradeButton.disabled =
+        true;
+
+      upgradeButton.textContent =
+        "Upgrade Membership";
+    }
+  }
+
+  if (!membership) {
   if (!membership) {
     setText(
       "membership-plan-name",
@@ -2662,6 +2765,45 @@ function renderMembership(
     Number(
       membership.tier
     );
+
+    if (upgradeButton) {
+  if (
+    membership
+      .cancelAtPeriodEnd ===
+    true
+  ) {
+    upgradeButton.disabled =
+      true;
+
+    upgradeButton.textContent =
+      "Reactivate to Upgrade";
+
+  } else if (
+    tier >= 7
+  ) {
+    upgradeButton.disabled =
+      true;
+
+    upgradeButton.textContent =
+      "Highest Tier";
+
+  } else if (
+    PLANS[tier]
+  ) {
+    upgradeButton.disabled =
+      false;
+
+    upgradeButton.textContent =
+      "Upgrade Membership";
+
+  } else {
+    upgradeButton.disabled =
+      true;
+
+    upgradeButton.textContent =
+      "Upgrade Membership";
+  }
+}
 
   const localPlan =
     PLANS[tier] || null;
@@ -3440,16 +3582,159 @@ editOrderForm?.addEventListener(
    UPGRADE MEMBERSHIP
 ===================================================== */
 
-/*
-  Membership upgrades must be handled by Stripe
-  on the server so an existing subscription is
-  changed safely rather than accidentally creating
-  a second subscription.
+async function upgradeMembershipToTier(
+  tier
+) {
+  const targetPlan =
+    PLANS[tier];
 
-  Until the dedicated server-side upgrade route is
-  added, this button takes the customer to the tier
-  list without creating another subscription.
-*/
+  const currentTier =
+    Number(
+      state.membership?.tier ||
+      0
+    );
+
+  if (!targetPlan) {
+    return;
+  }
+
+  if (!currentTier) {
+    window.alert(
+      "Your current membership could not be identified. Please refresh My Profile and try again."
+    );
+
+    return;
+  }
+
+  if (
+    tier ===
+    currentTier
+  ) {
+    window.alert(
+      `You are already on the ${targetPlan.name} membership.`
+    );
+
+    return;
+  }
+
+  if (
+    tier <
+    currentTier
+  ) {
+    window.alert(
+      "This option is for upgrades only. Downgrades will be handled separately."
+    );
+
+    return;
+  }
+
+  const currentPlan =
+    PLANS[currentTier];
+
+  const confirmed =
+    window.confirm(
+      `Upgrade from ${currentPlan?.name || "your current membership"} to ${targetPlan.name}?\n\n` +
+      `New monthly price: $${targetPlan.amount}/month\n` +
+      `ACO profiles: ${targetPlan.profiles}\n\n` +
+      "Stripe will immediately calculate and charge only the prorated difference for the remaining time in your current billing period. Your normal renewal date will stay the same."
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const matchingButtons =
+    Array.from(
+      document.querySelectorAll(
+        `[data-select="${tier}"]`
+      )
+    );
+
+  try {
+    matchingButtons.forEach(
+      button => {
+        setButtonBusy(
+          button,
+          true,
+          "Upgrading…"
+        );
+      }
+    );
+
+    const response =
+      await fetch(
+        "/api/account/membership/upgrade",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          credentials:
+            "same-origin",
+
+          body:
+            JSON.stringify({
+              tier
+            })
+        }
+      );
+
+    const result =
+      await readJson(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+        "Unable to upgrade your membership."
+      );
+    }
+
+    state.upgradeMode =
+      false;
+
+    clearSelectedTier();
+
+    await loadMemberProfile(
+      true
+    );
+
+    updatePricingUpgradeButtons();
+
+    go(
+      "my-profile"
+    );
+
+    showAccountMessage(
+      result.message ||
+      `Your membership has been upgraded to ${targetPlan.name}.`,
+      "success"
+    );
+
+  } catch (error) {
+    window.alert(
+      error.message ||
+      "The membership could not be upgraded."
+    );
+
+  } finally {
+    matchingButtons.forEach(
+      button => {
+        setButtonBusy(
+          button,
+          false
+        );
+      }
+    );
+
+    updatePricingUpgradeButtons();
+  }
+}
+
 
 document
   .getElementById(
@@ -3458,12 +3743,42 @@ document
   ?.addEventListener(
     "click",
     () => {
-      showAccountMessage(
-        "Choose the membership you are interested in. Existing membership upgrades will be processed through the secure Stripe upgrade flow.",
-        "info"
-      );
+      const currentTier =
+        Number(
+          state.membership?.tier ||
+          0
+        );
 
-      go("pricing");
+      if (!currentTier) {
+        showAccountMessage(
+          "Your active membership could not be identified.",
+          "error"
+        );
+
+        return;
+      }
+
+      if (
+        currentTier >= 7
+      ) {
+        showAccountMessage(
+          "You already have the highest membership tier.",
+          "info"
+        );
+
+        return;
+      }
+
+      state.upgradeMode =
+        true;
+
+      clearSelectedTier();
+
+      updatePricingUpgradeButtons();
+
+      go(
+        "pricing"
+      );
     }
   );
 
@@ -6741,11 +7056,16 @@ async function loadMemberProfile(
       state.customer
     );
 
-   renderMembership(
+   state.membership =
   data.membership ||
   data.currentMembership ||
-  null
+  null;
+
+renderMembership(
+  state.membership
 );
+
+updatePricingUpgradeButtons();
 
 state.retailerAllowance =
   Math.max(
