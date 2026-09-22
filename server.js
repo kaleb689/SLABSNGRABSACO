@@ -6270,13 +6270,174 @@ async function parseTargetTestOrder({
         )
     ) !== null
   ) {
-    let name =
-      clean(
-        itemMatch[1],
-        300
+   let name =
+  clean(
+    itemMatch[1],
+    300
+  );
+
+/*
+  Real Target emails can place a tracking/product URL
+  immediately before Qty instead of the actual product
+  name.
+
+  If that happens, look backward through the nearby
+  text for the real product title. We only accept a
+  replacement when it matches the ALT/TITLE of an
+  image actually contained in the Target email.
+*/
+
+if (
+  /^https?:\/\//i.test(
+    name
+  )
+) {
+  const matchStart =
+    itemMatch.index;
+
+  const nearbyText =
+    orderText
+      .slice(
+        Math.max(
+          0,
+          matchStart - 1500
+        ),
+        matchStart
       );
 
-    const quantity =
+  const nearbyLines =
+    nearbyText
+      .split("\n")
+      .map(line =>
+        clean(
+          line,
+          500
+        )
+      )
+      .filter(Boolean);
+
+  let recoveredName =
+    null;
+
+  /*
+    First try individual lines, starting with the
+    line closest to Qty.
+  */
+
+  for (
+    let index =
+      nearbyLines.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    const candidate =
+      nearbyLines[index];
+
+    if (
+      !candidate ||
+      /^https?:\/\//i.test(
+        candidate
+      ) ||
+      /^order\b/i.test(
+        candidate
+      ) ||
+      /^shipping\b/i.test(
+        candidate
+      ) ||
+      /^delivers\s+to\b/i.test(
+        candidate
+      ) ||
+      /^arrives\b/i.test(
+        candidate
+      ) ||
+      /^thanks\b/i.test(
+        candidate
+      ) ||
+      /^rate\b/i.test(
+        candidate
+      ) ||
+      /^visit\b/i.test(
+        candidate
+      ) ||
+      /^\$[\d,.]+/.test(
+        candidate
+      )
+    ) {
+      continue;
+    }
+
+    if (
+      findTargetProductImage(
+        candidate,
+        emailImages
+      )
+    ) {
+      recoveredName =
+        candidate;
+
+      break;
+    }
+  }
+
+  /*
+    Target/Gmail may split a product title across
+    two text lines, so also test neighboring lines
+    joined together.
+  */
+
+  if (!recoveredName) {
+    for (
+      let index =
+        nearbyLines.length - 1;
+      index >= 1;
+      index -= 1
+    ) {
+      const first =
+        nearbyLines[
+          index - 1
+        ];
+
+      const second =
+        nearbyLines[index];
+
+      if (
+        /^https?:\/\//i.test(
+          first
+        ) ||
+        /^https?:\/\//i.test(
+          second
+        )
+      ) {
+        continue;
+      }
+
+      const candidate =
+        clean(
+          `${first} ${second}`,
+          500
+        );
+
+      if (
+        findTargetProductImage(
+          candidate,
+          emailImages
+        )
+      ) {
+        recoveredName =
+          candidate;
+
+        break;
+      }
+    }
+  }
+
+  if (recoveredName) {
+    name =
+      recoveredName;
+  }
+}
+
+const quantity =
       Number(
         itemMatch[2]
       );
