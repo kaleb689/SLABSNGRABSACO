@@ -6277,14 +6277,16 @@ async function parseTargetTestOrder({
   );
 
 /*
-  Real Target emails can place a tracking/product URL
-  immediately before Qty instead of the actual product
-  name.
+  Real Target emails can place a tracking URL
+  immediately before Qty instead of the product name.
 
-  If that happens, look backward through the nearby
-  text for the real product title. We only accept a
-  replacement when it matches the ALT/TITLE of an
-  image actually contained in the Target email.
+  In real Target messages, the decoded text also
+  contains an image marker such as:
+
+  [image: Pokémon Trading Card Game: 30th Celebration Elite Trainer Box]
+
+  Recover that exact product title and require it to
+  match an actual image ALT/TITLE from the email.
 */
 
 if (
@@ -6296,18 +6298,17 @@ if (
     itemMatch.index;
 
   const nearbyText =
-    orderText
-      .slice(
-        Math.max(
-          0,
-          matchStart - 1500
-        ),
-        matchStart
-      );
+    orderText.slice(
+      Math.max(
+        0,
+        matchStart - 2500
+      ),
+      matchStart
+    );
 
   const nearbyLines =
     nearbyText
-      .split("\n")
+      .split(/\r?\n/)
       .map(line =>
         clean(
           line,
@@ -6320,8 +6321,10 @@ if (
     null;
 
   /*
-    First try individual lines, starting with the
-    line closest to Qty.
+    First choice:
+    use Target's decoded [image: PRODUCT NAME]
+    marker. Search backward so the image nearest
+    this Qty/price block wins.
   */
 
   for (
@@ -6330,41 +6333,23 @@ if (
     index >= 0;
     index -= 1
   ) {
-    const candidate =
+    const line =
       nearbyLines[index];
 
-    if (
-      !candidate ||
-      /^https?:\/\//i.test(
-        candidate
-      ) ||
-      /^order\b/i.test(
-        candidate
-      ) ||
-      /^shipping\b/i.test(
-        candidate
-      ) ||
-      /^delivers\s+to\b/i.test(
-        candidate
-      ) ||
-      /^arrives\b/i.test(
-        candidate
-      ) ||
-      /^thanks\b/i.test(
-        candidate
-      ) ||
-      /^rate\b/i.test(
-        candidate
-      ) ||
-      /^visit\b/i.test(
-        candidate
-      ) ||
-      /^\$[\d,.]+/.test(
-        candidate
-      )
-    ) {
+    const imageMarker =
+      line.match(
+        /^\[image:\s*(.+?)\s*\]$/i
+      );
+
+    if (!imageMarker?.[1]) {
       continue;
     }
+
+    const candidate =
+      clean(
+        imageMarker[1],
+        500
+      );
 
     if (
       findTargetProductImage(
@@ -6380,42 +6365,61 @@ if (
   }
 
   /*
-    Target/Gmail may split a product title across
-    two text lines, so also test neighboring lines
-    joined together.
+    Fallback:
+    some MIME/plain-text conversions may remove
+    the square-bracket image marker. Check nearby
+    normal text against actual image ALT/TITLE
+    values contained in the email.
   */
 
   if (!recoveredName) {
     for (
       let index =
         nearbyLines.length - 1;
-      index >= 1;
+      index >= 0;
       index -= 1
     ) {
-      const first =
-        nearbyLines[
-          index - 1
-        ];
-
-      const second =
+      const candidate =
         nearbyLines[index];
 
       if (
+        !candidate ||
         /^https?:\/\//i.test(
-          first
+          candidate
         ) ||
-        /^https?:\/\//i.test(
-          second
+        /^order\b/i.test(
+          candidate
+        ) ||
+        /^shipping\b/i.test(
+          candidate
+        ) ||
+        /^delivers\s+to\b/i.test(
+          candidate
+        ) ||
+        /^arrives\b/i.test(
+          candidate
+        ) ||
+        /^thanks\b/i.test(
+          candidate
+        ) ||
+        /^rate\b/i.test(
+          candidate
+        ) ||
+        /^visit\b/i.test(
+          candidate
+        ) ||
+        /^qty\b/i.test(
+          candidate
+        ) ||
+        /^quantity\b/i.test(
+          candidate
+        ) ||
+        /^\$[\d,.]+/.test(
+          candidate
         )
       ) {
         continue;
       }
-
-      const candidate =
-        clean(
-          `${first} ${second}`,
-          500
-        );
 
       if (
         findTargetProductImage(
