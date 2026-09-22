@@ -6492,6 +6492,176 @@ app.get(
 /* -------------------------------------------------------
    TEMPORARY ADMIN TARGET PARSER ENDPOINT
 ------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-imap/target-html-debug",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const email =
+        normalizeEmail(
+          process.env.IMAP_TEST_EMAIL
+        );
+
+      const password =
+        String(
+          process.env.IMAP_TEST_PASSWORD ||
+          ""
+        );
+
+      if (!email || !password) {
+        return res
+          .status(500)
+          .json({
+            error:
+              "IMAP test credentials are not configured."
+          });
+      }
+
+      const provider =
+        getImapProvider(email);
+
+      if (!provider) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Unsupported IMAP test provider."
+          });
+      }
+
+      const client =
+        createCustomerImapClient(
+          email,
+          password
+        );
+
+      try {
+        await client.connect();
+
+        const lock =
+          await client.getMailboxLock(
+            "INBOX"
+          );
+
+        try {
+          const messages = [];
+
+          for await (
+            const message of client.fetch(
+              "1:*",
+              {
+                uid: true,
+                envelope: true,
+                internalDate: true,
+                source: true
+              }
+            )
+          ) {
+            const subject =
+              String(
+                message.envelope
+                  ?.subject || ""
+              );
+
+            if (
+              !/target/i.test(subject) ||
+              !/order/i.test(subject)
+            ) {
+              continue;
+            }
+
+            messages.push(message);
+          }
+
+          const message =
+            messages.at(-1);
+
+          if (!message) {
+            return res
+              .status(404)
+              .json({
+                error:
+                  "No Target order email was found."
+              });
+          }
+
+          const decoded =
+            await decodeImapMessage(
+              message.source
+            );
+
+          const images =
+            extractEmailImageUrls(
+              decoded.html
+            );
+
+          return res.json({
+            ok: true,
+
+            subject:
+              message.envelope
+                ?.subject || "",
+
+            hasText:
+              !!decoded.text,
+
+            textLength:
+              decoded.text.length,
+
+            hasHtml:
+              !!decoded.html,
+
+            htmlLength:
+              decoded.html.length,
+
+            imageCount:
+              images.length,
+
+            images,
+
+            /*
+              Only return a small sanitized HTML
+              preview. Do not return the entire
+              customer's email body.
+            */
+            htmlPreview:
+              decoded.html
+                .slice(0, 1500)
+                .replace(
+                  /[\r\n\t]+/g,
+                  " "
+                )
+          });
+
+        } finally {
+          lock.release();
+        }
+
+      } finally {
+        try {
+          await client.logout();
+        } catch {
+          // Ignore logout errors.
+        }
+      }
+
+    } catch (error) {
+      console.error(
+        "Target HTML debug error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to inspect the Target test email."
+        });
+    }
+  }
+);
+
 /* -------------------------------------------------------
    TEMPORARY SUCCESS TEST STORAGE
    Completely separate from real customer Success data.
