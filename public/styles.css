@@ -4825,10 +4825,11 @@ select:focus {
 #my-profile .profile-counter-bubble {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
 
-  gap: 10px;
+  gap: 14px;
 
+  width: 220px;
   min-height: 48px;
 
   padding: 10px 16px;
@@ -4870,26 +4871,23 @@ select:focus {
 /* Counter number */
 
 #my-profile .profile-counter-bubble strong {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-block;
 
-  min-width: 30px;
-  height: 30px;
+  min-width: 18px;
+  height: auto;
 
   margin: 0;
+  padding: 0;
 
-  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
 
-  border: 1px solid rgba(18, 201, 255, 0.35);
-  border-radius: 999px;
-
-  background: rgba(18, 201, 255, 0.12);
+  background: transparent;
 
   color: #ffffff;
 
   font-family: inherit;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 900;
   line-height: 1;
 
@@ -4897,8 +4895,25 @@ select:focus {
 
   text-align: center;
 
-  box-shadow:
-    0 0 12px rgba(18, 201, 255, 0.08);
+  box-shadow: none;
+}
+
+
+/* Active profile number turns green
+   only when at least one profile is active */
+
+#my-profile .profile-active-count.has-active-profiles {
+  color: #45e68b;
+
+  text-shadow:
+    0 0 10px rgba(69, 230, 139, 0.35);
+}
+
+
+/* Available count stays neutral */
+
+#my-profile .profile-available-count {
+  color: #ffffff;
 }
 
 
