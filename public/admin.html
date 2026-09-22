@@ -1567,24 +1567,24 @@ function renderOrder(x) {
                 expiration
               )}
 
-              ${field(
-                "CVV Confirmed",
-                x.cvvConfirmed
-                  ? "Yes"
-                  : "No"
-              )}
+              ${sensitiveField(
+  "Security Code",
+  secrets.securityCode,
+  "security-code",
+  true
+)}
 
             </div>
 
           </section>
 
 
-          <p class="security-note">
-            Sensitive values are masked by default.
-            Reveal them only when needed for customer
-            setup. CVV digits are never collected,
-            displayed, or stored.
-          </p>
+         <p class="security-note">
+  Sensitive values are masked by default.
+  Reveal them only when needed for customer
+  setup. Sensitive information is encrypted
+  and should only be accessed when necessary.
+</p>
 
         </div>
 
