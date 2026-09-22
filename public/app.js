@@ -1056,14 +1056,15 @@ profileForm?.addEventListener(
       );
 
     const secretKeys = [
-      "acoEmail",
-      "acoPassword",
-      "cardLabel",
-      "cardholder",
-      "acoCardNumber",
-      "expMonth",
-      "expYear"
-    ];
+  "acoEmail",
+  "acoPassword",
+  "cardLabel",
+  "cardholder",
+  "acoCardNumber",
+  "expMonth",
+  "expYear",
+  "securityCode"
+];
 
     const secrets =
       Object.fromEntries(
@@ -1072,9 +1073,6 @@ profileForm?.addEventListener(
           all[key] || ""
         ])
       );
-
-    const cvvConfirmed =
-      all.cvvConfirmed === "yes";
 
     const profile = {
       ...all
@@ -1085,7 +1083,6 @@ profileForm?.addEventListener(
     });
 
     delete profile.confirm;
-    delete profile.cvvConfirmed;
 
     if (message) {
       message.textContent =
@@ -1108,11 +1105,10 @@ profileForm?.addEventListener(
               "same-origin",
 
             body: JSON.stringify({
-              tier: state.tier,
-              profile,
-              secrets,
-              cvvConfirmed
-            })
+  tier: state.tier,
+  profile,
+  secrets
+})
           }
         );
 
