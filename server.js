@@ -300,6 +300,133 @@ async function getSubscriptionPeriodStart(subscription) {
   );
 }
 
+function stripePriceIdFromSubscription(
+  subscription
+) {
+  const items =
+    subscription
+      ?.items
+      ?.data || [];
+
+  const item =
+    items.find(
+      entry =>
+        entry?.price
+    );
+
+  if (!item) {
+    return "";
+  }
+
+  if (
+    typeof item.price ===
+    "string"
+  ) {
+    return item.price;
+  }
+
+  return String(
+    item.price?.id ||
+    ""
+  );
+}
+
+
+function planForStripePriceId(
+  priceId
+) {
+  const normalizedPriceId =
+    String(
+      priceId || ""
+    );
+
+  if (!normalizedPriceId) {
+    return null;
+  }
+
+  for (
+    const [
+      tierValue,
+      plan
+    ] of Object.entries(
+      PLANS
+    )
+  ) {
+    if (
+      plan.priceId &&
+      String(
+        plan.priceId
+      ) ===
+        normalizedPriceId
+    ) {
+      return {
+        tier:
+          Number(
+            tierValue
+          ),
+
+        name:
+          plan.name,
+
+        profiles:
+          plan.profiles,
+
+        amount:
+          plan.amount,
+
+        priceId:
+          plan.priceId
+      };
+    }
+  }
+
+  return null;
+}
+
+
+function syncRecordPlanFromSubscription(
+  record,
+  subscription
+) {
+  if (
+    !record ||
+    !subscription
+  ) {
+    return null;
+  }
+
+  const priceId =
+    stripePriceIdFromSubscription(
+      subscription
+    );
+
+  const matchedPlan =
+    planForStripePriceId(
+      priceId
+    );
+
+  if (!matchedPlan) {
+    return null;
+  }
+
+  record.plan = {
+    tier:
+      matchedPlan.tier,
+
+    name:
+      matchedPlan.name,
+
+    profiles:
+      matchedPlan.profiles,
+
+    amount:
+      matchedPlan.amount
+  };
+
+  return matchedPlan;
+}
+
+
 async function applySubscriptionInfo(
   record,
   subscription
@@ -310,6 +437,20 @@ async function applySubscriptionInfo(
   ) {
     return record;
   }
+
+  /*
+    Synchronize the local membership tier
+    from the actual Stripe subscription price.
+
+    This allows upgrades made through this site
+    or directly in Stripe to update the customer's
+    local membership record correctly.
+  */
+
+  syncRecordPlanFromSubscription(
+    record,
+    subscription
+  );
 
   record.subscriptionStatus =
     subscription.status ||
@@ -327,7 +468,8 @@ async function applySubscriptionInfo(
     );
 
   record.cancelAtPeriodEnd =
-    subscription.cancel_at_period_end ===
+    subscription
+      .cancel_at_period_end ===
     true;
 
   record.cancelAt =
@@ -345,12 +487,6 @@ async function applySubscriptionInfo(
       subscription.ended_at
     );
 
-  /*
-    If Stripe has an explicit cancel_at date,
-    use that as the paid-through/end date when
-    appropriate.
-  */
-
   record.subscriptionEndDate =
     record.cancelAt ||
     record.currentPeriodEnd ||
@@ -359,6 +495,7 @@ async function applySubscriptionInfo(
 
   return record;
 }
+
 
 /* -------------------------------------------------------
    PROFILE VALIDATION
@@ -4512,6 +4649,428 @@ app.post(
     }
   }
 );
+
+/* -------------------------------------------------------
+   UPGRADE EXISTING MEMBERSHIP
+   - Updates the existing Stripe subscription
+   - Keeps the current billing-cycle date
+   - Immediately invoices only the prorated difference
+   - Does NOT create a second subscription
+------------------------------------------------------- */
+
+app.post(
+  "/api/account/membership/upgrade",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const targetTier =
+        Number(
+          req.body?.tier
+        );
+
+      const targetPlan =
+        PLANS[targetTier];
+
+      if (
+        !Number.isInteger(
+          targetTier
+        ) ||
+        !targetPlan
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid membership tier."
+          });
+      }
+
+      if (!targetPlan.priceId) {
+        return res
+          .status(500)
+          .json({
+            error:
+              `${targetPlan.name} is not configured for Stripe yet.`
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const records =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      /*
+        Find this customer's active membership
+        that actually has a Stripe subscription.
+      */
+
+      const activeRecords =
+        records.filter(
+          record =>
+            record.customerAccountId ===
+              req.customerAccount.id &&
+            record.stripeSubscriptionId &&
+            subscriptionAllowsProfiles(
+              record
+            )
+        );
+
+      if (!activeRecords.length) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "No active Stripe membership was found for this account."
+          });
+      }
+
+      /*
+        If historical duplicate memberships exist,
+        use the membership with the highest current
+        profile allowance.
+      */
+
+      const record =
+        [...activeRecords]
+          .sort(
+            (a, b) =>
+              profileAllowanceForRecord(
+                b
+              ) -
+              profileAllowanceForRecord(
+                a
+              )
+          )[0];
+
+      const subscription =
+        await stripe
+          .subscriptions
+          .retrieve(
+            record
+              .stripeSubscriptionId
+          );
+
+      if (
+        subscription.status !==
+        "active"
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "Only an active membership can be upgraded."
+          });
+      }
+
+      if (
+        subscription
+          .cancel_at_period_end ===
+        true
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This membership is scheduled to cancel. Reactivate it before upgrading."
+          });
+      }
+
+      const subscriptionItems =
+        subscription
+          ?.items
+          ?.data || [];
+
+      /*
+        SLABS N GRABS ACO memberships are
+        single-price subscriptions.
+
+        Refuse to make an automatic change if
+        Stripe contains an unexpected item setup.
+      */
+
+      if (
+        subscriptionItems.length !== 1
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This membership has an unexpected Stripe configuration and cannot be upgraded automatically."
+          });
+      }
+
+      const subscriptionItem =
+        subscriptionItems[0];
+
+      const currentPriceId =
+        typeof subscriptionItem
+          ?.price === "string"
+          ? subscriptionItem.price
+          : subscriptionItem
+              ?.price?.id || "";
+
+      const matchedCurrentPlan =
+        planForStripePriceId(
+          currentPriceId
+        );
+
+      const currentTier =
+        matchedCurrentPlan
+          ?.tier ||
+        Number(
+          record?.plan?.tier ||
+          record?.plan?.id ||
+          0
+        );
+
+      if (
+        !Number.isInteger(
+          currentTier
+        ) ||
+        currentTier < 1
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "The current membership tier could not be identified."
+          });
+      }
+
+      if (
+        targetTier ===
+        currentTier
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              `You are already on the ${targetPlan.name} membership.`
+          });
+      }
+
+      if (
+        targetTier <
+        currentTier
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "This upgrade option can only move to a higher membership tier."
+          });
+      }
+
+      /*
+        Use one timestamp for the proration
+        calculation and the actual update.
+      */
+
+      const prorationDate =
+        Math.floor(
+          Date.now() / 1000
+        );
+
+      /*
+        IMPORTANT:
+
+        always_invoice:
+        Creates the prorated credit/charge and
+        invoices it immediately.
+
+        error_if_incomplete:
+        If the immediate payment fails, Stripe
+        does NOT apply the membership upgrade.
+
+        The billing-cycle anchor remains unchanged,
+        so their normal renewal date stays the same.
+      */
+
+      const updatedSubscription =
+        await stripe
+          .subscriptions
+          .update(
+            subscription.id,
+            {
+              items: [
+                {
+                  id:
+                    subscriptionItem.id,
+
+                  price:
+                    targetPlan.priceId,
+
+                  quantity: 1
+                }
+              ],
+
+              proration_behavior:
+                "always_invoice",
+
+              payment_behavior:
+                "error_if_incomplete",
+
+              proration_date:
+                prorationDate,
+
+              metadata: {
+                ...(
+                  subscription
+                    .metadata ||
+                  {}
+                ),
+
+                membership_tier:
+                  String(
+                    targetTier
+                  )
+              }
+            }
+          );
+
+      /*
+        Keep our local paid membership record
+        synchronized immediately.
+
+        The Stripe webhook remains the secondary
+        source of subscription updates.
+      */
+
+      await applySubscriptionInfo(
+        record,
+        updatedSubscription
+      );
+
+      /*
+        Fallback assignment in case Stripe's
+        response ever omits the expanded price.
+      */
+
+      record.plan = {
+        tier:
+          targetTier,
+
+        name:
+          targetPlan.name,
+
+        profiles:
+          targetPlan.profiles,
+
+        amount:
+          targetPlan.amount
+      };
+
+      const upgradedAt =
+        new Date()
+          .toISOString();
+
+      record.membershipUpgradeFromTier =
+        currentTier;
+
+      record.membershipUpgradedAt =
+        upgradedAt;
+
+      record.subscriptionUpdatedAt =
+        upgradedAt;
+
+      await writeJson(
+        PAID_FILE,
+        records
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          `Membership upgraded to ${targetPlan.name}. Stripe charged the prorated difference for the remaining billing period.`,
+
+        membership: {
+          tier:
+            targetTier,
+
+          name:
+            targetPlan.name,
+
+          profiles:
+            targetPlan.profiles,
+
+          amount:
+            targetPlan.amount,
+
+          status:
+            updatedSubscription
+              .status ||
+            "active",
+
+          currentPeriodStart:
+            record
+              .currentPeriodStart ||
+            null,
+
+          currentPeriodEnd:
+            record
+              .currentPeriodEnd ||
+            null,
+
+          subscriptionEndDate:
+            record
+              .subscriptionEndDate ||
+            null,
+
+          cancelAtPeriodEnd:
+            record
+              .cancelAtPeriodEnd ===
+            true
+        }
+      });
+
+    } catch (error) {
+      console.error(
+        "Membership upgrade error:",
+        error?.type ||
+        error?.code ||
+        error?.message ||
+        error
+      );
+
+      /*
+        A failed immediate Stripe payment must
+        not silently upgrade the membership.
+      */
+
+      if (
+        error?.type ===
+          "StripeCardError" ||
+        error?.statusCode === 402 ||
+        error?.code ===
+          "card_declined" ||
+        error?.code ===
+          "payment_intent_authentication_failure"
+      ) {
+        return res
+          .status(402)
+          .json({
+            error:
+              "The prorated upgrade payment could not be completed. Your current membership was not changed."
+          });
+      }
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to upgrade the membership right now. Your current membership has not been changed."
+        });
+    }
+  }
+);
+
 
 /* -------------------------------------------------------
    SUCCESS DASHBOARD
