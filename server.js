@@ -6327,21 +6327,7 @@ app.get(
   }
 );
 
-    const imageUrls =
-      extractEmailImageUrls(
-        testHtml
-      );
-
-    return res.json({
-      ok: true,
-
-      count:
-        imageUrls.length,
-
-      imageUrls
-    });
-  }
-);
+    
 /* -------------------------------------------------------
    TEMPORARY ADMIN TARGET PARSER ENDPOINT
 ------------------------------------------------------- */
