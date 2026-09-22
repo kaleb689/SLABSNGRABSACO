@@ -4664,10 +4664,31 @@ function renderSuccessChart(
               )
             : 0;
 
-        const label =
-          item.label ||
-          item.date ||
-          "";
+        const rawDate =
+  item.date ||
+  item.label ||
+  "";
+
+const parsedDate =
+  rawDate
+    ? new Date(
+        `${rawDate}T12:00:00`
+      )
+    : null;
+
+const label =
+  parsedDate &&
+  !Number.isNaN(
+    parsedDate.getTime()
+  )
+    ? parsedDate.toLocaleDateString(
+        "en-US",
+        {
+          month: "short",
+          day: "numeric"
+        }
+      )
+    : rawDate;
 
         return `
           <div
@@ -4881,23 +4902,15 @@ function renderSuccessDashboard(
   );
 
   setSuccessText(
-    "success-best-day",
-    bestDay
-      ? (
-          typeof bestDay ===
-          "object"
-            ? (
-                bestDay.label ||
-                formatSuccessDate(
-                  bestDay.date
-                )
-              )
-            : formatSuccessDate(
-                bestDay
-              )
-        )
-      : "—"
-  );
+  "success-best-day",
+  Number.isFinite(
+    Number(bestDay)
+  )
+    ? String(
+        Number(bestDay)
+      )
+    : "—"
+);
 
   const sync =
     data.sync || {};
