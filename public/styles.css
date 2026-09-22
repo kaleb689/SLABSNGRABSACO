@@ -4799,3 +4799,313 @@ select:focus {
     font-size: 14px;
   }
 }
+
+/* =========================================================
+   MY PROFILE — COUNTERS + ORDER EDIT FINAL DESIGN
+   ========================================================= */
+
+
+/* =========================================================
+   PROFILE COUNTER BUBBLES
+   ========================================================= */
+
+#my-profile .profile-counter-group {
+  flex: 0 0 auto;
+
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+
+  gap: 12px;
+
+  flex-wrap: wrap;
+}
+
+
+#my-profile .profile-counter-bubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 10px;
+
+  min-height: 48px;
+
+  padding: 10px 16px;
+
+  border: 1px solid rgba(18, 201, 255, 0.38);
+  border-radius: 999px;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(18, 201, 255, 0.11),
+      rgba(0, 124, 255, 0.055)
+    );
+
+  box-shadow:
+    inset 0 0 18px rgba(18, 201, 255, 0.035),
+    0 0 18px rgba(18, 201, 255, 0.035);
+
+  white-space: nowrap;
+}
+
+
+/* Counter label */
+
+#my-profile .profile-counter-bubble span {
+  color: var(--cyan);
+
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+
+  letter-spacing: 0.04em;
+
+  text-transform: uppercase;
+}
+
+
+/* Counter number */
+
+#my-profile .profile-counter-bubble strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 30px;
+  height: 30px;
+
+  margin: 0;
+
+  padding: 0 8px;
+
+  border: 1px solid rgba(18, 201, 255, 0.35);
+  border-radius: 999px;
+
+  background: rgba(18, 201, 255, 0.12);
+
+  color: #ffffff;
+
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+
+  letter-spacing: 0;
+
+  text-align: center;
+
+  box-shadow:
+    0 0 12px rgba(18, 201, 255, 0.08);
+}
+
+
+/* =========================================================
+   ORDER TO EDIT
+   ========================================================= */
+
+#my-profile .order-edit-selector {
+  width: 100%;
+
+  margin: 10px 0 24px;
+
+  padding: 20px;
+
+  border: 1px solid rgba(24, 52, 74, 0.95);
+  border-radius: 16px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(13, 25, 40, 0.96),
+      rgba(7, 16, 27, 0.96)
+    );
+}
+
+
+/* Large visible heading */
+
+#my-profile .order-edit-label {
+  margin: 0 0 12px;
+
+  color: #ffffff;
+
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+
+/* Dropdown + button row */
+
+#my-profile .order-edit-control {
+  display: grid;
+
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto;
+
+  align-items: stretch;
+
+  gap: 12px;
+}
+
+
+/* Large order dropdown */
+
+#my-profile .order-edit-control select {
+  width: 100%;
+
+  min-height: 54px;
+
+  margin: 0;
+
+  padding: 0 16px;
+
+  border: 1px solid rgba(18, 201, 255, 0.3);
+  border-radius: 11px;
+
+  background: #050d16;
+
+  color: #eefaff;
+
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+
+  outline: none;
+
+  cursor: pointer;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+
+#my-profile .order-edit-control select:hover {
+  border-color: rgba(18, 201, 255, 0.55);
+}
+
+
+#my-profile .order-edit-control select:focus {
+  border-color: var(--cyan);
+
+  background: #07131e;
+
+  box-shadow:
+    0 0 0 3px rgba(18, 201, 255, 0.09);
+}
+
+
+/* Large Edit Order button */
+
+#my-profile .order-edit-button {
+  min-width: 160px;
+  min-height: 54px;
+
+  margin: 0;
+
+  padding: 0 24px;
+
+  border: 1px solid rgba(18, 201, 255, 0.7);
+  border-radius: 11px;
+
+  background:
+    linear-gradient(
+      135deg,
+      var(--cyan),
+      var(--cyan2)
+    );
+
+  color: #031019;
+
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 900;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 0 24px rgba(18, 201, 255, 0.18);
+
+  transition:
+    transform 0.2s ease,
+    filter 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+
+#my-profile .order-edit-button:hover {
+  transform: translateY(-1px);
+
+  filter: brightness(1.08);
+
+  box-shadow:
+    0 0 30px rgba(18, 201, 255, 0.28);
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 760px) {
+
+  #my-profile .retailer-profile-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+
+  #my-profile .profile-counter-group {
+    width: 100%;
+
+    justify-content: flex-start;
+  }
+
+
+  #my-profile .profile-counter-bubble {
+    flex: 1 1 220px;
+
+    justify-content: space-between;
+  }
+
+
+  #my-profile .order-edit-control {
+    grid-template-columns: 1fr;
+  }
+
+
+  #my-profile .order-edit-button {
+    width: 100%;
+  }
+}
+
+
+@media (max-width: 480px) {
+
+  #my-profile .profile-counter-group {
+    display: grid;
+
+    grid-template-columns: 1fr;
+
+    gap: 9px;
+  }
+
+
+  #my-profile .profile-counter-bubble {
+    width: 100%;
+
+    justify-content: space-between;
+  }
+
+
+  #my-profile .order-edit-selector {
+    padding: 16px;
+  }
+}
