@@ -2964,3 +2964,20 @@ select:focus {
     padding-top: 50px;
   }
 }
+
+/* ======================================================
+   HOME MEMBERSHIP SPACING FIX
+====================================================== */
+
+#home .home-memberships {
+  padding-top: 45px;
+  margin-top: 0;
+}
+
+#home .home-membership-heading {
+  margin-top: 0;
+}
+
+#home .home-memberships .wrap {
+  padding-top: 0;
+}
