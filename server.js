@@ -6611,12 +6611,12 @@ async function parseTargetTestOrder({
 
       price,
 
-      imageUrl:
-        matchedProductImage?.imageUrl ||
+           imageUrl:
+        matchedProductImage ||
         findTargetProductImage(
           name,
           emailImages
-        )?.imageUrl ||
+        ) ||
         null
     });
   }
