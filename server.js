@@ -7534,6 +7534,173 @@ async function persistTargetTestOrder(
   };
 }
 
+/* -------------------------------------------------------
+   TEMPORARY EXACT TARGET UID PARSER TEST
+   Reads UID 24 directly.
+   Does NOT save anything.
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-imap/target-order-uid24",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    const testEmail =
+      normalizeEmail(
+        process.env.IMAP_TEST_EMAIL
+      );
+
+    const testPassword =
+      String(
+        process.env.IMAP_TEST_PASSWORD ||
+        ""
+      );
+
+    if (
+      !testEmail ||
+      !testPassword
+    ) {
+      return res
+        .status(500)
+        .json({
+          ok: false,
+          error:
+            "Test mailbox environment variables are not configured."
+        });
+    }
+
+    const {
+      provider,
+      client
+    } =
+      createCustomerImapClient(
+        testEmail,
+        testPassword
+      );
+
+    try {
+      await client.connect();
+
+      const lock =
+        await client.getMailboxLock(
+          "INBOX",
+          {
+            readOnly: true
+          }
+        );
+
+      try {
+        const message =
+          await client.fetchOne(
+            24,
+            {
+              uid: true,
+              envelope: true,
+              internalDate: true,
+              source: true
+            },
+            {
+              uid: true
+            }
+          );
+
+        if (
+          !message ||
+          !message.source
+        ) {
+          return res
+            .status(404)
+            .json({
+              ok: false,
+              error:
+                "Target test message UID 24 could not be found."
+            });
+        }
+
+        const parsed =
+          await parseTargetTestOrder({
+            subject:
+              message.envelope
+                ?.subject ||
+              "",
+
+            source:
+              message.source,
+
+            uid:
+              message.uid,
+
+            messageId:
+              message.envelope
+                ?.messageId ||
+              "",
+
+            date:
+              (
+                message.envelope?.date ||
+                message.internalDate
+              )
+                ? new Date(
+                    message.envelope?.date ||
+                    message.internalDate
+                  ).toISOString()
+                : null
+          });
+
+        return res.json({
+          ok: true,
+
+          provider:
+            provider.name,
+
+          uid:
+            message.uid,
+
+          matched:
+            !!parsed,
+
+          order:
+            parsed
+        });
+
+      } finally {
+        lock.release();
+      }
+
+    } catch (error) {
+      console.error(
+        "Exact Target UID test failed:",
+        error?.code ||
+        error?.name ||
+        "target_uid_test_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+          error:
+            "The exact Target test message could not be parsed."
+        });
+
+    } finally {
+      if (client.usable) {
+        try {
+          await client.logout();
+        } catch {
+          client.close();
+        }
+      } else {
+        client.close();
+      }
+    }
+  }
+);
+
 app.get(
   "/api/admin/test-imap/target-order",
   requireAdmin,
