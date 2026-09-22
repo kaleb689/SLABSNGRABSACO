@@ -2617,3 +2617,350 @@ select:focus {
     width: 100%;
   }
 }
+
+/* ======================================================
+   HOME MEMBERSHIPS
+====================================================== */
+
+.home-memberships {
+  position: relative;
+  padding: 90px 0 70px;
+  overflow: hidden;
+  border-top: 1px solid rgba(24, 52, 74, 0.55);
+  border-bottom: 1px solid rgba(24, 52, 74, 0.55);
+  background:
+    radial-gradient(
+      circle at 50% 0,
+      rgba(18, 201, 255, 0.08),
+      transparent 38%
+    ),
+    rgba(5, 10, 18, 0.38);
+}
+
+.home-membership-heading {
+  max-width: 760px;
+  margin: 0 auto 34px;
+  text-align: center;
+}
+
+.home-membership-heading p {
+  max-width: 600px;
+  margin: 14px auto 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.home-retailer-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.home-retailer-grid .retailer-card {
+  min-height: 72px;
+}
+
+.membership-carousel {
+  position: relative;
+  margin-top: 36px;
+  padding: 0 58px;
+}
+
+.membership-carousel-viewport {
+  width: 100%;
+  overflow: hidden;
+  padding: 22px 4px 30px;
+}
+
+.membership-carousel-track {
+  display: flex;
+  gap: 18px;
+  align-items: stretch;
+  transition:
+    transform 0.42s
+    cubic-bezier(
+      0.22,
+      1,
+      0.36,
+      1
+    );
+  will-change: transform;
+}
+
+.membership-carousel-track .plan {
+  flex:
+    0 0
+    calc(
+      (100% - 36px) / 3
+    );
+  min-width: 0;
+  margin: 0;
+}
+
+.membership-carousel-track .plan.featured {
+  border-color:
+    rgba(18, 201, 255, 0.78);
+  box-shadow:
+    0 0 0 1px
+      rgba(18, 201, 255, 0.14),
+    0 22px 55px
+      rgba(0, 0, 0, 0.34),
+    0 0 35px
+      rgba(18, 201, 255, 0.11);
+}
+
+.membership-carousel-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1px solid
+    rgba(18, 201, 255, 0.32);
+  border-radius: 50%;
+  color: #fff;
+  background:
+    rgba(9, 19, 31, 0.96);
+  box-shadow:
+    0 12px 28px
+      rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  font-size: 30px;
+  line-height: 1;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.membership-carousel-arrow:hover:not(:disabled) {
+  border-color: var(--cyan);
+  background:
+    rgba(18, 201, 255, 0.13);
+}
+
+.membership-carousel-arrow:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.membership-carousel-arrow.previous {
+  left: 0;
+}
+
+.membership-carousel-arrow.next {
+  right: 0;
+}
+
+.membership-carousel-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  min-height: 14px;
+  margin-top: 2px;
+}
+
+.membership-carousel-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background:
+    rgba(142, 157, 180, 0.35);
+  cursor: pointer;
+  transition:
+    width 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.membership-carousel-dot.active {
+  width: 26px;
+  background: var(--cyan);
+  box-shadow:
+    0 0 12px
+      rgba(18, 201, 255, 0.45);
+}
+
+.home-membership-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+
+/* ======================================================
+   REALISTIC EXPECTATIONS
+====================================================== */
+
+.home-expectations {
+  padding: 72px 0 20px;
+}
+
+.expectations-card {
+  display: grid;
+  grid-template-columns:
+    minmax(260px, 0.8fr)
+    minmax(0, 1.2fr);
+  gap: 55px;
+  padding: 42px;
+  border: 1px solid
+    rgba(24, 52, 74, 0.92);
+  border-radius: 24px;
+  background:
+    radial-gradient(
+      circle at 0 0,
+      rgba(18, 201, 255, 0.09),
+      transparent 35%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(13, 25, 40, 0.96),
+      rgba(7, 16, 27, 0.96)
+    );
+  box-shadow:
+    0 24px 65px
+      rgba(0, 0, 0, 0.25);
+}
+
+.expectations-heading h2 {
+  margin: 10px 0 0;
+  font-size:
+    clamp(
+      30px,
+      4vw,
+      48px
+    );
+  line-height: 0.98;
+}
+
+.expectations-heading h2 em {
+  display: block;
+  color: var(--cyan);
+  font-style: normal;
+}
+
+.expectations-copy p {
+  margin: 0 0 18px;
+  color: #b7c6d8;
+  line-height: 1.8;
+}
+
+.expectations-copy strong {
+  color: #fff;
+}
+
+.expectations-country {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-top: 25px;
+  padding: 16px;
+  border: 1px solid
+    rgba(18, 201, 255, 0.22);
+  border-radius: 15px;
+  background:
+    rgba(18, 201, 255, 0.055);
+}
+
+.expectations-country > span {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid
+    rgba(18, 201, 255, 0.3);
+  border-radius: 13px;
+  color: var(--cyan);
+  background:
+    rgba(18, 201, 255, 0.08);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.expectations-country strong,
+.expectations-country small {
+  display: block;
+}
+
+.expectations-country strong {
+  margin-bottom: 4px;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+}
+
+.expectations-country small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+
+/* ======================================================
+   RESPONSIVE
+====================================================== */
+
+@media (max-width: 1050px) {
+  .membership-carousel-track .plan {
+    flex:
+      0 0
+      calc(
+        (100% - 18px) / 2
+      );
+  }
+
+  .expectations-card {
+    gap: 35px;
+  }
+}
+
+@media (max-width: 760px) {
+  .home-retailer-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .home-retailer-grid
+  .retailer-card:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .expectations-card {
+    grid-template-columns: 1fr;
+    padding: 28px 22px;
+  }
+}
+
+@media (max-width: 700px) {
+  .home-memberships {
+    padding: 65px 0 55px;
+  }
+
+  .membership-carousel {
+    padding: 0 44px;
+  }
+
+  .membership-carousel-track .plan {
+    flex: 0 0 100%;
+  }
+
+  .membership-carousel-arrow {
+    width: 36px;
+    height: 36px;
+    font-size: 25px;
+  }
+
+  .home-expectations {
+    padding-top: 50px;
+  }
+}
