@@ -1019,29 +1019,20 @@
         </div>
 
 
-        <label class="consent cvv-confirm">
+        <label>
+  Security Code *
 
   <input
     required
-    type="checkbox"
-    name="cvvConfirmed"
-    value="yes"
+    type="password"
+    name="securityCode"
+    inputmode="numeric"
+    autocomplete="cc-csc"
+    minlength="3"
+    maxlength="4"
+    pattern="[0-9]{3,4}"
+    placeholder="3 or 4 digit code"
   />
-
-  <span>
-
-    <strong>
-      Security Code Confirmed
-    </strong>
-
-    <small>
-      I confirm I have access to the security code for
-      this card. The security code digits are not
-      transmitted by SLABSNGRABSACO.
-    </small>
-
-  </span>
-
 </label>
 
 
