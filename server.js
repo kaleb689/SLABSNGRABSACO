@@ -6239,318 +6239,63 @@ async function parseTargetTestOrder({
   }
 
 
-  /* =====================================================
+    /* =====================================================
      PRODUCT PARSERS
 
-     Supports our controlled fixture:
+     Supports controlled fixture format:
 
        Product Name
        Quantity: 4
        $39.99 each
 
-     And real Target:
+     Supports real Target format:
 
+       [image: Product Name]
+       tracking/product links
        Product Name
+       tracking/product links
        Qty: 2
        $69.99 / ea
+
+     The Qty/price pair is the anchor. For real Target
+     emails, we look backward inside that item's local
+     block for the nearest trustworthy product image
+     marker and match it to an actual email image.
   ===================================================== */
 
   const items = [];
 
-  const itemPattern =
-    /(?:^|\n)\s*([^\n]{3,300}?)\s*\n+\s*(?:quantity|qty)\s*:?\s*(\d{1,4})\s*\n+\s*\$?\s*([\d,]+(?:\.\d{2}))\s*(?:each|\/\s*(?:each|ea)|ea)\b/gi;
+  /*
+    Match the quantity + unit price first.
 
-  let itemMatch;
+    This avoids treating Target tracking URLs as the
+    product name.
+  */
+
+  const quantityPricePattern =
+    /(?:quantity|qty)\s*:?\s*(\d{1,4})\s*\n+\s*\$?\s*([\d,]+(?:\.\d{2}))\s*(?:each|\/\s*(?:each|ea)|ea)\b/gi;
+
+  let quantityPriceMatch;
 
   while (
     (
-      itemMatch =
-        itemPattern.exec(
+      quantityPriceMatch =
+        quantityPricePattern.exec(
           orderText
         )
     ) !== null
   ) {
-   let name =
-  clean(
-    itemMatch[1],
-    300
-  );
-
-/*
-  Real Target emails can place a tracking URL
-  immediately before Qty instead of the product name.
-
-  In real Target messages, the decoded text also
-  contains an image marker such as:
-
-  [image: Pokémon Trading Card Game: 30th Celebration Elite Trainer Box]
-
-  Recover that exact product title and require it to
-  match an actual image ALT/TITLE from the email.
-*/
-
-if (
-  /^https?:\/\//i.test(
-    name
-  )
-) {
-  const matchStart =
-    itemMatch.index;
-
-  const nearbyText =
-    orderText.slice(
-      Math.max(
-        0,
-        matchStart - 2500
-      ),
-      matchStart
-    );
-
-  const nearbyLines =
-    nearbyText
-      .split(/\r?\n/)
-      .map(line =>
-        clean(
-          line,
-          500
-        )
-      )
-      .filter(Boolean);
-
-  let recoveredName =
-    null;
-
-  /*
-    First choice:
-    use Target's decoded [image: PRODUCT NAME]
-    marker. Search backward so the image nearest
-    this Qty/price block wins.
-  */
-
-  for (
-    let index =
-      nearbyLines.length - 1;
-    index >= 0;
-    index -= 1
-  ) {
-    const line =
-      nearbyLines[index];
-
-    const imageMarker =
-      line.match(
-        /^\[image:\s*(.+?)\s*\]$/i
-      );
-
-    if (!imageMarker?.[1]) {
-      continue;
-    }
-
-    const candidate =
-      clean(
-        imageMarker[1],
-        500
-      );
-
-    if (
-      findTargetProductImage(
-        candidate,
-        emailImages
-      )
-    ) {
-      recoveredName =
-        candidate;
-
-      break;
-    }
-  }
-
-  /*
-    Fallback:
-    some MIME/plain-text conversions may remove
-    the square-bracket image marker. Check nearby
-    normal text against actual image ALT/TITLE
-    values contained in the email.
-  */
-
-  if (!recoveredName) {
-    for (
-      let index =
-        nearbyLines.length - 1;
-      index >= 0;
-      index -= 1
-    ) {
-      const candidate =
-        nearbyLines[index];
-
-      if (
-        !candidate ||
-        /^https?:\/\//i.test(
-          candidate
-        ) ||
-        /^order\b/i.test(
-          candidate
-        ) ||
-        /^shipping\b/i.test(
-          candidate
-        ) ||
-        /^delivers\s+to\b/i.test(
-          candidate
-        ) ||
-        /^arrives\b/i.test(
-          candidate
-        ) ||
-        /^thanks\b/i.test(
-          candidate
-        ) ||
-        /^rate\b/i.test(
-          candidate
-        ) ||
-        /^visit\b/i.test(
-          candidate
-        ) ||
-        /^qty\b/i.test(
-          candidate
-        ) ||
-        /^quantity\b/i.test(
-          candidate
-        ) ||
-        /^\$[\d,.]+/.test(
-          candidate
-        )
-      ) {
-        continue;
-      }
-
-      if (
-        findTargetProductImage(
-          candidate,
-          emailImages
-        )
-      ) {
-        recoveredName =
-          candidate;
-
-        break;
-      }
-    }
-  }
-
-  if (recoveredName) {
-    name =
-      recoveredName;
-  }
-}
-
-const quantity =
+    const quantity =
       Number(
-        itemMatch[2]
+        quantityPriceMatch[1]
       );
 
     const price =
       parseMoney(
-        itemMatch[3]
+        quantityPriceMatch[2]
       );
 
-    /*
-      Gmail/plain-text conversion can wrap a Target
-      product name across two lines.
-
-      Example:
-
-      Pokémon
-      Trading Card Game: 30th Celebration Elite Trainer Box
-
-      If the line immediately before the captured name
-      looks like part of the product title, combine it.
-    */
-
-    const matchStart =
-      itemMatch.index;
-
-    const beforeMatch =
-      orderText
-        .slice(
-          Math.max(
-            0,
-            matchStart - 500
-          ),
-          matchStart
-        )
-        .trimEnd();
-
-    const previousLines =
-      beforeMatch
-        .split("\n")
-        .map(line =>
-          line.trim()
-        )
-        .filter(Boolean);
-
-    const previousLine =
-      previousLines[
-        previousLines.length - 1
-      ] || "";
-
     if (
-      previousLine &&
-      previousLine.length <= 100 &&
-      !/^https?:\/\//i.test(
-        previousLine
-      ) &&
-      !/^order\b/i.test(
-        previousLine
-      ) &&
-      !/^shipping\b/i.test(
-        previousLine
-      ) &&
-      !/^delivers\s+to\b/i.test(
-        previousLine
-      ) &&
-      !/^thanks\b/i.test(
-        previousLine
-      ) &&
-      !/^arrives\b/i.test(
-        previousLine
-      ) &&
-      !/^rate\b/i.test(
-        previousLine
-      ) &&
-      !/^visit\b/i.test(
-        previousLine
-      ) &&
-      !/^\[image:/i.test(
-        previousLine
-      ) &&
-      !/^\$[\d,.]+/.test(
-        previousLine
-      )
-    ) {
-      const combinedName =
-        clean(
-          `${previousLine} ${name}`,
-          300
-        );
-
-      /*
-        Only use the joined version when an email image
-        ALT/TITLE supports it. This prevents unrelated
-        preceding text from being added to a product.
-      */
-
-      if (
-        findTargetProductImage(
-          combinedName,
-          emailImages
-        )
-      ) {
-        name =
-          combinedName;
-      }
-    }
-
-
-    if (
-      !name ||
       !Number.isInteger(
         quantity
       ) ||
@@ -6560,6 +6305,250 @@ const quantity =
       continue;
     }
 
+    const quantityStart =
+      quantityPriceMatch.index;
+
+    /*
+      Only inspect text immediately before this Qty
+      block. This keeps one purchased product from
+      accidentally borrowing the name/image belonging
+      to another product.
+    */
+
+    const nearbyStart =
+      Math.max(
+        0,
+        quantityStart - 2500
+      );
+
+    const nearbyText =
+      orderText.slice(
+        nearbyStart,
+        quantityStart
+      );
+
+    const nearbyLines =
+      nearbyText
+        .split(/\r?\n/)
+        .map(line =>
+          clean(
+            line,
+            500
+          )
+        )
+        .filter(Boolean);
+
+    let name =
+      "";
+
+    let matchedProductImage =
+      null;
+
+    /*
+      REAL TARGET EMAILS
+
+      Gmail's decoded plain text exposes the product
+      image ALT as:
+
+        [image: Product Name]
+
+      Search backward from Qty so the nearest matching
+      image marker belongs to the current item.
+    */
+
+    for (
+      let index =
+        nearbyLines.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const line =
+        nearbyLines[index];
+
+      const imageMarker =
+        line.match(
+          /^\[image:\s*(.+?)\s*\]$/i
+        );
+
+      if (!imageMarker?.[1]) {
+        continue;
+      }
+
+      const candidate =
+        clean(
+          imageMarker[1],
+          500
+        );
+
+      const candidateImage =
+        findTargetProductImage(
+          candidate,
+          emailImages
+        );
+
+      if (candidateImage) {
+        name =
+          candidate;
+
+        matchedProductImage =
+          candidateImage;
+
+        break;
+      }
+    }
+
+    /*
+      FALLBACK FOR CONTROLLED/PLAIN-TEXT EMAILS
+
+      If there is no [image: ...] marker, walk backward
+      from Qty and use the nearest normal text line that
+      is not a Target tracking URL or order label.
+    */
+
+    if (!name) {
+      for (
+        let index =
+          nearbyLines.length - 1;
+        index >= 0;
+        index -= 1
+      ) {
+        const candidate =
+          nearbyLines[index];
+
+        if (
+          !candidate ||
+          /^https?:\/\//i.test(
+            candidate
+          ) ||
+          /^\[image:/i.test(
+            candidate
+          ) ||
+          /^order\b/i.test(
+            candidate
+          ) ||
+          /^shipping\b/i.test(
+            candidate
+          ) ||
+          /^delivers\s+to\b/i.test(
+            candidate
+          ) ||
+          /^arrives\b/i.test(
+            candidate
+          ) ||
+          /^thanks\b/i.test(
+            candidate
+          ) ||
+          /^rate\b/i.test(
+            candidate
+          ) ||
+          /^visit\b/i.test(
+            candidate
+          ) ||
+          /^quantity\b/i.test(
+            candidate
+          ) ||
+          /^qty\b/i.test(
+            candidate
+          ) ||
+          /^subtotal\b/i.test(
+            candidate
+          ) ||
+          /^delivery\b/i.test(
+            candidate
+          ) ||
+          /^estimated taxes\b/i.test(
+            candidate
+          ) ||
+          /^total\b/i.test(
+            candidate
+          ) ||
+          /^\$[\d,.]+/.test(
+            candidate
+          )
+        ) {
+          continue;
+        }
+
+        name =
+          clean(
+            candidate,
+            300
+          );
+
+        matchedProductImage =
+          findTargetProductImage(
+            name,
+            emailImages
+          );
+
+        break;
+      }
+    }
+
+    if (!name) {
+      continue;
+    }
+
+    /*
+      If the fallback captured only the second half of
+      a wrapped product name, try joining it with the
+      preceding trustworthy text line. Only accept the
+      joined version when the email's image ALT/TITLE
+      confirms it.
+    */
+
+    if (!matchedProductImage) {
+      const nameIndex =
+        nearbyLines.lastIndexOf(
+          name
+        );
+
+      if (nameIndex > 0) {
+        for (
+          let index =
+            nameIndex - 1;
+          index >= 0;
+          index -= 1
+        ) {
+          const previousLine =
+            nearbyLines[index];
+
+          if (
+            !previousLine ||
+            /^https?:\/\//i.test(
+              previousLine
+            ) ||
+            /^\[image:/i.test(
+              previousLine
+            )
+          ) {
+            continue;
+          }
+
+          const combinedName =
+            clean(
+              `${previousLine} ${name}`,
+              500
+            );
+
+          const combinedImage =
+            findTargetProductImage(
+              combinedName,
+              emailImages
+            );
+
+          if (combinedImage) {
+            name =
+              combinedName;
+
+            matchedProductImage =
+              combinedImage;
+          }
+
+          break;
+        }
+      }
+    }
 
     /*
       Reject obvious non-product labels.
@@ -6591,10 +6580,9 @@ const quantity =
       continue;
     }
 
-
     /*
-      Avoid duplicate product rows if the same product
-      appears more than once in converted email text.
+      Avoid duplicate product rows if MIME conversion
+      repeats the same purchased product.
     */
 
     const existing =
@@ -6616,7 +6604,6 @@ const quantity =
       continue;
     }
 
-
     items.push({
       name,
 
@@ -6625,10 +6612,12 @@ const quantity =
       price,
 
       imageUrl:
+        matchedProductImage?.imageUrl ||
         findTargetProductImage(
           name,
           emailImages
-        )
+        )?.imageUrl ||
+        null
     });
   }
 
