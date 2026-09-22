@@ -5546,40 +5546,16 @@ function parseTargetTestOrder({
     return null;
   }
 
+
+  /* =====================================================
+     ORDER NUMBER
+  ===================================================== */
+
   const orderMatch =
     combined.match(
       /order\s*(?:number|#|no\.?)?\s*:?\s*#?\s*([A-Z0-9-]{6,40})/i
     );
 
-  const totalMatch =
-    combined.match(
-      /order\s+total\s*:?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i
-    );
-
-  const quantityMatch =
-    combined.match(
-      /quantity\s*:?\s*(\d{1,4})/i
-    );
-
-  const unitPriceMatch =
-    combined.match(
-      /\$?\s*([\d,]+(?:\.\d{2}))\s*(?:each|\/\s*each)/i
-    );
-
-  let productName = null;
-
-  const productMatch =
-    combined.match(
-      /order\s*(?:number|#|no\.?)?\s*:?\s*#?\s*[A-Z0-9-]{6,40}\s*\n+\s*([^\n]{3,300})\s*\n+\s*quantity\s*:/i
-    );
-
-  if (productMatch?.[1]) {
-    productName =
-      clean(
-        productMatch[1],
-        300
-      );
-  }
 
   const orderNumber =
     orderMatch?.[1]
@@ -5589,6 +5565,17 @@ function parseTargetTestOrder({
         )
       : null;
 
+
+  /* =====================================================
+     ORDER TOTAL
+  ===================================================== */
+
+  const totalMatch =
+    combined.match(
+      /order\s+total\s*:?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i
+    );
+
+
   const orderTotal =
     totalMatch?.[1]
       ? parseMoney(
@@ -5596,19 +5583,6 @@ function parseTargetTestOrder({
         )
       : null;
 
-  const quantity =
-    quantityMatch?.[1]
-      ? Number(
-          quantityMatch[1]
-        )
-      : null;
-
-  const unitPrice =
-    unitPriceMatch?.[1]
-      ? parseMoney(
-          unitPriceMatch[1]
-        )
-      : null;
 
   if (
     !orderNumber ||
@@ -5617,43 +5591,150 @@ function parseTargetTestOrder({
     return null;
   }
 
+
+  /* =====================================================
+     MULTI-PRODUCT PARSER
+
+     Expected normalized text:
+
+     Product Name
+     Quantity: 4
+     $39.99 each
+
+     Product Name
+     Quantity: 2
+     $54.99 each
+  ===================================================== */
+
+  const items = [];
+
+
+  const itemPattern =
+    /(?:^|\n)\s*([^\n]{3,300}?)\s*\n+\s*quantity\s*:?\s*(\d{1,4})\s*\n+\s*\$?\s*([\d,]+(?:\.\d{2}))\s*(?:each|\/\s*each)/gi;
+
+
+  let itemMatch;
+
+
+  while (
+    (
+      itemMatch =
+        itemPattern.exec(
+          combined
+        )
+    ) !== null
+  ) {
+    const name =
+      clean(
+        itemMatch[1],
+        300
+      );
+
+
+    const quantity =
+      Number(
+        itemMatch[2]
+      );
+
+
+    const price =
+      parseMoney(
+        itemMatch[3]
+      );
+
+
+    if (
+      !name ||
+      !Number.isInteger(
+        quantity
+      ) ||
+      quantity <= 0 ||
+      price === null
+    ) {
+      continue;
+    }
+
+
+    /*
+      Ignore lines that clearly aren't
+      product names.
+    */
+
+    if (
+      /^order\b/i.test(name) ||
+      /^quantity\b/i.test(name) ||
+      /^order total\b/i.test(name) ||
+      /^thanks for your order/i.test(
+        name
+      )
+    ) {
+      continue;
+    }
+
+
+    items.push({
+      name,
+
+      quantity,
+
+      price,
+
+      /*
+        The current plain-text test email
+        has no trustworthy product image.
+
+        This field is ready for the HTML
+        image parser we'll add next.
+      */
+      imageUrl: null
+    });
+  }
+
+
+  /* =====================================================
+     TOTAL ITEM COUNT
+  ===================================================== */
+
+  const itemCount =
+    items.reduce(
+      (
+        total,
+        item
+      ) =>
+        total +
+        Number(
+          item.quantity || 0
+        ),
+      0
+    );
+
+
+  /* =====================================================
+     RETURN NORMALIZED TARGET CHECKOUT
+  ===================================================== */
+
   return {
-    retailer: "Target",
+    retailer:
+      "Target",
 
     orderNumber,
 
     checkoutAt:
       date || null,
 
-    itemCount:
-      Number.isInteger(quantity)
-        ? quantity
-        : 0,
+    itemCount,
 
     orderTotal,
 
-    items:
-      productName
-        ? [
-            {
-              name:
-                productName,
+    items,
 
-              quantity:
-                Number.isInteger(quantity)
-                  ? quantity
-                  : 1,
-
-              price:
-                unitPrice
-            }
-          ]
-        : [],
-
-    source: "imap-test",
+    source:
+      "imap-test",
 
     mailboxUid:
-      String(uid || ""),
+      String(
+        uid || ""
+      ),
 
     messageId:
       clean(
@@ -5662,8 +5743,6 @@ function parseTargetTestOrder({
       )
   };
 }
-
-
 async function readLatestTargetTestOrder(
   email,
   password
