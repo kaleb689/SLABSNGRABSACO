@@ -6493,6 +6493,222 @@ app.get(
    TEMPORARY ADMIN TARGET PARSER ENDPOINT
 ------------------------------------------------------- */
 
+/* -------------------------------------------------------
+   TEMPORARY TARGET HTML EMAIL FIXTURE
+------------------------------------------------------- */
+
+app.post(
+  "/api/admin/send-target-image-test",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const testEmail =
+        normalizeEmail(
+          process.env.IMAP_TEST_EMAIL
+        );
+
+      if (
+        !testEmail ||
+        !process.env.RESEND_API_KEY
+      ) {
+        return res
+          .status(500)
+          .json({
+            error:
+              "Target image test email is not configured."
+          });
+      }
+
+      const orderNumber =
+        "9876543210457";
+
+      const html = `
+        <!doctype html>
+        <html>
+          <body
+            style="
+              font-family: Arial, sans-serif;
+              color: #111;
+            "
+          >
+            <img
+              src="https://placehold.co/600x150.png?text=TARGET"
+              alt="Target"
+              width="600"
+              height="150"
+            >
+
+            <img
+              src="https://placehold.co/1x1.png"
+              alt=""
+              width="1"
+              height="1"
+            >
+
+            <p>
+              Thanks for your order!
+            </p>
+
+            <p>
+              Order #${orderNumber}
+            </p>
+
+            <div>
+              <img
+                src="https://placehold.co/400x400.png?text=Ascended+Heroes+Tin"
+                alt="Pokemon Trading Card Game: Ascended Heroes Tin"
+                width="400"
+                height="400"
+              >
+
+              <p>
+                Pokemon Trading Card Game: Ascended Heroes Tin<br>
+                Quantity: 4<br>
+                $39.99 each
+              </p>
+            </div>
+
+            <div>
+              <img
+                src="https://placehold.co/400x400.png?text=Elite+Trainer+Box"
+                alt="Pokemon Trading Card Game: Elite Trainer Box"
+                width="400"
+                height="400"
+              >
+
+              <p>
+                Pokemon Trading Card Game: Elite Trainer Box<br>
+                Quantity: 2<br>
+                $54.99 each
+              </p>
+            </div>
+
+            <div>
+              <img
+                src="https://placehold.co/400x400.png?text=Booster+Bundle"
+                alt="Pokemon Trading Card Game: Booster Bundle"
+                width="400"
+                height="400"
+              >
+
+              <p>
+                Pokemon Trading Card Game: Booster Bundle<br>
+                Quantity: 1<br>
+                $29.99 each
+              </p>
+            </div>
+
+            <p>
+              Order total: $299.93
+            </p>
+
+            <p>
+              Your order has been confirmed.
+            </p>
+          </body>
+        </html>
+      `;
+
+      const textBody =
+`Thanks for your order!
+
+Order #${orderNumber}
+
+Pokemon Trading Card Game: Ascended Heroes Tin
+Quantity: 4
+$39.99 each
+
+Pokemon Trading Card Game: Elite Trainer Box
+Quantity: 2
+$54.99 each
+
+Pokemon Trading Card Game: Booster Bundle
+Quantity: 1
+$29.99 each
+
+Order total: $299.93
+
+Your order has been confirmed.`;
+
+      const response =
+        await fetch(
+          "https://api.resend.com/emails",
+          {
+            method: "POST",
+
+            headers: {
+              Authorization:
+                `Bearer ${process.env.RESEND_API_KEY}`,
+
+              "Content-Type":
+                "application/json"
+            },
+
+            body:
+              JSON.stringify({
+                from:
+                  process.env.FROM_EMAIL ||
+                  "SLABSNGRABSACO <onboarding@resend.dev>",
+
+                to: [
+                  testEmail
+                ],
+
+                subject:
+                  `Your Target order is confirmed - Order #${orderNumber}`,
+
+                text:
+                  textBody,
+
+                html
+              })
+          }
+        );
+
+      const result =
+        await response
+          .json()
+          .catch(() => ({}));
+
+      if (!response.ok) {
+        console.error(
+          "Target image fixture send failed:",
+          response.status,
+          result
+        );
+
+        return res
+          .status(500)
+          .json({
+            error:
+              "Unable to send Target image test email."
+          });
+      }
+
+      return res.json({
+        ok: true,
+        sent: true,
+        orderNumber,
+        message:
+          "Target HTML image test email sent."
+      });
+
+    } catch (error) {
+      console.error(
+        "Target image fixture error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to send Target image test email."
+        });
+    }
+  }
+);
+
 app.get(
   "/api/admin/test-imap/target-html-debug",
   requireAdmin,
