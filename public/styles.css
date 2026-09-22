@@ -3921,3 +3921,394 @@ select:focus {
   margin-left: 0 !important;
   margin-right: 0 !important;
 }
+
+/* =========================================================
+   DEFINITIVE HOME MEMBERSHIP CAROUSEL FIX
+   Keep this block LAST in styles.css
+   ========================================================= */
+
+
+/* ---------------------------------------------------------
+   CAROUSEL OUTER WRAPPER
+--------------------------------------------------------- */
+
+#home.home-reference .home-reference-carousel {
+  position: relative;
+
+  width: min(1180px, 100%);
+
+  margin-left: auto;
+  margin-right: auto;
+
+  padding-left: 58px;
+  padding-right: 58px;
+}
+
+
+/* ---------------------------------------------------------
+   VIEWPORT
+--------------------------------------------------------- */
+
+#home.home-reference .membership-carousel-viewport {
+  position: relative;
+
+  width: 100%;
+
+  overflow: hidden;
+
+  padding:
+    18px
+    0
+    30px;
+
+  margin: 0;
+}
+
+
+/* ---------------------------------------------------------
+   TRACK
+
+   IMPORTANT:
+   home-pricing-grid also has pricing-grid on it.
+   This forces HOME ONLY to use flex instead of the
+   normal pricing-page CSS grid.
+--------------------------------------------------------- */
+
+#home.home-reference #home-pricing-grid,
+#home.home-reference .membership-carousel-track,
+#home.home-reference .pricing-grid.membership-carousel-track {
+  display: flex !important;
+
+  grid-template-columns: none !important;
+
+  align-items: stretch;
+
+  justify-content: flex-start !important;
+
+  flex-wrap: nowrap !important;
+
+  gap: 18px !important;
+
+  width: 100%;
+
+  margin: 0 !important;
+
+  padding: 0 !important;
+
+  transition:
+    transform 0.35s ease;
+
+  will-change: transform;
+}
+
+
+/* ---------------------------------------------------------
+   DESKTOP CARDS
+   Exactly 3 cards visible.
+--------------------------------------------------------- */
+
+#home.home-reference #home-pricing-grid > .plan {
+  position: relative;
+
+  flex:
+    0
+    0
+    calc((100% - 36px) / 3) !important;
+
+  width:
+    calc((100% - 36px) / 3) !important;
+
+  min-width:
+    calc((100% - 36px) / 3) !important;
+
+  max-width:
+    calc((100% - 36px) / 3) !important;
+
+  grid-column: auto !important;
+
+  margin: 0 !important;
+
+  box-sizing: border-box;
+
+  transform: none !important;
+}
+
+
+/* ---------------------------------------------------------
+   REMOVE OLD PRICING-PAGE POSITIONING FROM HOME
+
+   The original CSS moves cards 5, 6 and 7 by 52%.
+   That must NEVER happen inside the carousel.
+--------------------------------------------------------- */
+
+#home.home-reference #home-pricing-grid > .plan:nth-child(5),
+#home.home-reference #home-pricing-grid > .plan:nth-child(6),
+#home.home-reference #home-pricing-grid > .plan:nth-child(7) {
+  grid-column: auto !important;
+
+  transform: none !important;
+}
+
+
+#home.home-reference #home-pricing-grid > .plan:nth-child(5):hover,
+#home.home-reference #home-pricing-grid > .plan:nth-child(6):hover,
+#home.home-reference #home-pricing-grid > .plan:nth-child(7):hover {
+  transform:
+    translateY(-5px) !important;
+}
+
+
+/* ---------------------------------------------------------
+   NORMAL CARD HOVER
+--------------------------------------------------------- */
+
+#home.home-reference #home-pricing-grid > .plan:hover {
+  transform:
+    translateY(-5px) !important;
+}
+
+
+/* ---------------------------------------------------------
+   FEATURED / POPULAR CARD
+
+   Keep the Popular card raised slightly.
+--------------------------------------------------------- */
+
+#home.home-reference #home-pricing-grid > .plan.featured {
+  transform:
+    translateY(-7px) !important;
+
+  border-color:
+    rgba(18, 201, 255, 0.95);
+
+  box-shadow:
+    0 0 0 1px
+      rgba(18, 201, 255, 0.10),
+
+    0 0 32px
+      rgba(18, 201, 255, 0.14),
+
+    0 20px 48px
+      rgba(0, 0, 0, 0.30);
+}
+
+
+#home.home-reference #home-pricing-grid > .plan.featured:hover {
+  transform:
+    translateY(-10px) !important;
+}
+
+
+/* ---------------------------------------------------------
+   ARROWS
+--------------------------------------------------------- */
+
+#home.home-reference .membership-carousel-arrow {
+  position: absolute;
+
+  top: 50%;
+
+  z-index: 20;
+
+  display: grid;
+
+  place-items: center;
+
+  width: 44px;
+  height: 44px;
+
+  padding: 0;
+
+  transform:
+    translateY(-50%);
+
+  border:
+    1px solid
+    rgba(18, 201, 255, 0.42);
+
+  border-radius: 50%;
+
+  background:
+    rgba(7, 17, 27, 0.96);
+
+  color: var(--cyan);
+
+  font-size: 27px;
+
+  line-height: 1;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 0 20px
+    rgba(18, 201, 255, 0.08);
+}
+
+
+#home.home-reference .membership-carousel-arrow.previous {
+  left: 2px;
+}
+
+
+#home.home-reference .membership-carousel-arrow.next {
+  right: 2px;
+}
+
+
+#home.home-reference .membership-carousel-arrow:hover:not(:disabled) {
+  border-color: var(--cyan);
+
+  background:
+    rgba(18, 201, 255, 0.10);
+
+  box-shadow:
+    0 0 22px
+    rgba(18, 201, 255, 0.15);
+}
+
+
+#home.home-reference .membership-carousel-arrow:disabled {
+  opacity: 0.25;
+
+  cursor: default;
+}
+
+
+/* ---------------------------------------------------------
+   DOTS
+--------------------------------------------------------- */
+
+#home.home-reference .membership-carousel-dots {
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 7px;
+
+  min-height: 14px;
+
+  margin-top: 5px;
+}
+
+
+#home.home-reference .membership-carousel-dot {
+  width: 7px;
+  height: 7px;
+
+  padding: 0;
+
+  border: 0;
+
+  border-radius: 999px;
+
+  background:
+    rgba(132, 151, 173, 0.34);
+
+  cursor: pointer;
+}
+
+
+#home.home-reference .membership-carousel-dot.active {
+  width: 23px;
+
+  background: var(--cyan);
+
+  box-shadow:
+    0 0 11px
+    rgba(18, 201, 255, 0.45);
+}
+
+
+/* =========================================================
+   TABLET
+   Exactly 2 cards visible.
+   ========================================================= */
+
+@media (max-width: 1050px) {
+
+  #home.home-reference #home-pricing-grid,
+  #home.home-reference .membership-carousel-track {
+    gap: 18px !important;
+  }
+
+
+  #home.home-reference #home-pricing-grid > .plan {
+    flex:
+      0
+      0
+      calc((100% - 18px) / 2) !important;
+
+    width:
+      calc((100% - 18px) / 2) !important;
+
+    min-width:
+      calc((100% - 18px) / 2) !important;
+
+    max-width:
+      calc((100% - 18px) / 2) !important;
+  }
+
+}
+
+
+/* =========================================================
+   MOBILE
+   Exactly 1 card visible.
+
+   Keep 18px gap because app.js also calculates movement
+   using an 18px gap.
+   ========================================================= */
+
+@media (max-width: 700px) {
+
+  #home.home-reference .home-reference-carousel {
+    padding-left: 43px;
+
+    padding-right: 43px;
+  }
+
+
+  #home.home-reference #home-pricing-grid,
+  #home.home-reference .membership-carousel-track {
+    gap: 18px !important;
+  }
+
+
+  #home.home-reference #home-pricing-grid > .plan {
+    flex:
+      0
+      0
+      100% !important;
+
+    width:
+      100% !important;
+
+    min-width:
+      100% !important;
+
+    max-width:
+      100% !important;
+  }
+
+
+  #home.home-reference .membership-carousel-arrow {
+    width: 35px;
+
+    height: 35px;
+
+    font-size: 23px;
+  }
+
+
+  #home.home-reference .membership-carousel-arrow.previous {
+    left: 1px;
+  }
+
+
+  #home.home-reference .membership-carousel-arrow.next {
+    right: 1px;
+  }
+
+}
