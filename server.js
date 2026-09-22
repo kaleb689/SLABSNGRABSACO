@@ -5455,6 +5455,287 @@ app.get(
 );
 
 /* -------------------------------------------------------
+   TEMPORARY REAL TARGET EMAIL DIAGNOSTIC
+   Reads ONLY UID 24 from the test mailbox.
+   Does NOT save anything.
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-target-real-email",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    const testEmail =
+      normalizeEmail(
+        process.env.IMAP_TEST_EMAIL
+      );
+
+    const testPassword =
+      String(
+        process.env.IMAP_TEST_PASSWORD ||
+        ""
+      );
+
+    if (
+      !testEmail ||
+      !testPassword
+    ) {
+      return res
+        .status(500)
+        .json({
+          ok: false,
+          error:
+            "Test mailbox environment variables are not configured."
+        });
+    }
+
+    const {
+      provider,
+      client
+    } =
+      createCustomerImapClient(
+        testEmail,
+        testPassword
+      );
+
+    try {
+      await client.connect();
+
+      const lock =
+        await client.getMailboxLock(
+          "INBOX",
+          {
+            readOnly: true
+          }
+        );
+
+      try {
+        /*
+          UID 24 is the real Target order
+          forwarded into the test mailbox.
+        */
+
+        const message =
+          await client.fetchOne(
+            24,
+            {
+              uid: true,
+              envelope: true,
+              internalDate: true,
+              source: true
+            },
+            {
+              uid: true
+            }
+          );
+
+        if (
+          !message ||
+          !message.source
+        ) {
+          return res
+            .status(404)
+            .json({
+              ok: false,
+              error:
+                "UID 24 could not be read."
+            });
+        }
+
+        /*
+          Decode the real forwarded MIME email.
+        */
+
+        const parsed =
+          await simpleParser(
+            message.source,
+            {
+              skipHtmlToText: true,
+              skipTextToHtml: true
+            }
+          );
+
+        const text =
+          String(
+            parsed?.text || ""
+          );
+
+        const html =
+          typeof parsed?.html ===
+          "string"
+            ? parsed.html
+            : "";
+
+        /*
+          Use our existing image extractor against
+          the decoded HTML.
+        */
+
+        const images =
+          extractEmailImageUrls(
+            html
+          );
+
+        /*
+          Diagnostic only.
+
+          We deliberately return short previews,
+          not the entire real email.
+        */
+
+        const orderNumberMatches =
+          [
+            ...(
+              `${message.envelope?.subject || ""}\n${text}`
+            ).matchAll(
+              /(?:order|order\s*#|order\s*number)[^A-Z0-9]{0,20}([A-Z0-9-]{6,40})/gi
+            )
+          ]
+            .map(
+              match =>
+                clean(
+                  match?.[1],
+                  100
+                )
+            )
+            .filter(Boolean)
+            .slice(0, 10);
+
+        const uniqueOrderNumbers =
+          [
+            ...new Set(
+              orderNumberMatches
+            )
+          ];
+
+        return res.json({
+          ok: true,
+
+          provider:
+            provider.name,
+
+          uid:
+            message.uid,
+
+          subject:
+            message.envelope
+              ?.subject ||
+            "",
+
+          date:
+            (
+              message.envelope?.date ||
+              message.internalDate
+            )
+              ? new Date(
+                  message.envelope?.date ||
+                  message.internalDate
+                ).toISOString()
+              : null,
+
+          parsedSubject:
+            parsed?.subject ||
+            null,
+
+          textLength:
+            text.length,
+
+          htmlLength:
+            html.length,
+
+          hasText:
+            text.length > 0,
+
+          hasHtml:
+            html.length > 0,
+
+          detectedOrderNumbers:
+            uniqueOrderNumbers,
+
+          expectedOrderDetected:
+            uniqueOrderNumbers.includes(
+              "902003694213213"
+            ),
+
+          imageCount:
+            images.length,
+
+          images:
+            images
+              .slice(0, 30)
+              .map(
+                image => ({
+                  imageUrl:
+                    image.imageUrl,
+
+                  alt:
+                    image.alt,
+
+                  title:
+                    image.title,
+
+                  width:
+                    image.width,
+
+                  height:
+                    image.height
+                })
+              ),
+
+          textPreview:
+            text
+              .slice(
+                0,
+                5000
+              ),
+
+          htmlPreview:
+            html
+              .slice(
+                0,
+                3000
+              )
+        });
+
+      } finally {
+        lock.release();
+      }
+
+    } catch (error) {
+      console.error(
+        "Real Target diagnostic failed:",
+        error?.code ||
+        error?.name ||
+        "target_real_email_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+          error:
+            "The real Target test email could not be inspected."
+        });
+
+    } finally {
+      if (client.usable) {
+        try {
+          await client.logout();
+        } catch {
+          client.close();
+        }
+      } else {
+        client.close();
+      }
+    }
+  }
+);
+
+/* -------------------------------------------------------
    TEMPORARY TARGET ORDER PARSER TEST
    Reads only likely Target order messages.
    Does NOT save anything to Success yet.
