@@ -2240,17 +2240,25 @@
 
           </div>
 
-          <div class="profile-allowance-badge">
+          <div class="profile-counter-group">
 
-            <span>
-              PROFILE ALLOWANCE
-            </span>
+  <div class="profile-counter-bubble">
+    <span>PROFILE ALLOWANCE:</span>
 
-            <strong id="retailer-profile-allowance">
-              —
-            </strong>
+    <strong id="retailer-profile-allowance">
+      0
+    </strong>
+  </div>
 
-          </div>
+  <div class="profile-counter-bubble">
+    <span>PROFILES AVAILABLE:</span>
+
+    <strong id="retailer-profiles-available">
+      0
+    </strong>
+  </div>
+
+</div>
 
         </div>
 
@@ -2370,15 +2378,31 @@
           existing order? Select the order below.
         </p>
 
-        <label>
-          Order to Edit
+        <div class="order-edit-selector">
 
-          <select id="edit-order-select">
-            <option value="">
-              Select an order
-            </option>
-          </select>
-        </label>
+  <div class="order-edit-label">
+    Order to Edit:
+  </div>
+
+  <div class="order-edit-control">
+
+    <select id="edit-order-select">
+      <option value="">
+        Select an order
+      </option>
+    </select>
+
+    <button
+      type="button"
+      id="edit-selected-order"
+      class="primary order-edit-button"
+    >
+      Edit Order
+    </button>
+
+  </div>
+
+</div>
 
 
         <form
