@@ -6530,11 +6530,13 @@ app.get(
           });
       }
 
-      const client =
-        createCustomerImapClient(
-          email,
-          password
-        );
+      const {
+  client
+} =
+  createCustomerImapClient(
+    email,
+    password
+  );
 
       try {
         await client.connect();
