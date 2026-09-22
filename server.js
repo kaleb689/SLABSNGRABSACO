@@ -40,6 +40,12 @@ const ORDER_CLAIM_FILE =
     "order-claim-tokens.json"
   );
 
+const RETAILER_PROFILES_FILE =
+  path.join(
+    DATA_DIR,
+    "retailer-profiles.json"
+  );
+
 const CUSTOMER_SESSION_COOKIE =
   "sng_customer";
 
@@ -90,7 +96,7 @@ const PLANS = {
     priceId: process.env.STRIPE_TIER5_PRICE_ID
   },
 
-6: {
+  6: {
     name: "Power User",
     profiles: 20,
     amount: 300,
@@ -104,6 +110,7 @@ const PLANS = {
     priceId: process.env.STRIPE_TIER7_PRICE_ID
   }
 };
+
 /* -------------------------------------------------------
    SECURITY HEADERS
 ------------------------------------------------------- */
@@ -174,7 +181,6 @@ function stripeTimestampToIso(value) {
   ).toISOString();
 }
 
-
 async function getSubscriptionPeriodEnd(subscription) {
   if (subscription?.current_period_end) {
     return stripeTimestampToIso(
@@ -228,7 +234,6 @@ async function getSubscriptionPeriodEnd(subscription) {
   );
 }
 
-
 async function getSubscriptionPeriodStart(subscription) {
   if (subscription?.current_period_start) {
     return stripeTimestampToIso(
@@ -276,7 +281,6 @@ async function getSubscriptionPeriodStart(subscription) {
   );
 }
 
-
 async function applySubscriptionInfo(
   record,
   subscription
@@ -288,46 +292,39 @@ async function applySubscriptionInfo(
     return record;
   }
 
-
   record.subscriptionStatus =
     subscription.status ||
     record.subscriptionStatus ||
     "unknown";
 
+  record.currentPeriodStart =
+    await getSubscriptionPeriodStart(
+      subscription
+    );
 
- record.currentPeriodStart =
-  await getSubscriptionPeriodStart(
-    subscription
-  );
-
-record.currentPeriodEnd =
-  await getSubscriptionPeriodEnd(
-    subscription
-  );
-
+  record.currentPeriodEnd =
+    await getSubscriptionPeriodEnd(
+      subscription
+    );
 
   record.cancelAtPeriodEnd =
     subscription.cancel_at_period_end ===
     true;
-
 
   record.cancelAt =
     stripeTimestampToIso(
       subscription.cancel_at
     );
 
-
   record.canceledAt =
     stripeTimestampToIso(
       subscription.canceled_at
     );
 
-
   record.endedAt =
     stripeTimestampToIso(
       subscription.ended_at
     );
-
 
   /*
     If Stripe has an explicit cancel_at date,
@@ -340,7 +337,6 @@ record.currentPeriodEnd =
     record.currentPeriodEnd ||
     record.endedAt ||
     null;
-
 
   return record;
 }
@@ -592,7 +588,6 @@ const adminSessions = new Map();
 const loginAttempts = new Map();
 const customerAuthAttempts =
   new Map();
-
 function customerAuthRateLimit(
   req,
   res,
@@ -695,6 +690,7 @@ function safeEqual(a, b) {
     crypto.timingSafeEqual(A, B)
   );
 }
+
 /* -------------------------------------------------------
    CUSTOMER ACCOUNT SECURITY
 ------------------------------------------------------- */
@@ -705,7 +701,6 @@ function normalizeEmail(value) {
     .toLowerCase()
     .slice(0, 200);
 }
-
 
 function customerSessionSecret() {
   const secret =
@@ -720,13 +715,11 @@ function customerSessionSecret() {
   return secret;
 }
 
-
 function base64url(value) {
   return Buffer
     .from(value)
     .toString("base64url");
 }
-
 
 function signCustomerSession(payload) {
   const encoded =
@@ -745,7 +738,6 @@ function signCustomerSession(payload) {
 
   return `${encoded}.${signature}`;
 }
-
 
 function verifyCustomerSession(token) {
   try {
@@ -806,7 +798,6 @@ function verifyCustomerSession(token) {
   }
 }
 
-
 function setCustomerSession(
   res,
   accountId
@@ -832,7 +823,6 @@ function setCustomerSession(
   );
 }
 
-
 function clearCustomerSession(res) {
   res.setHeader(
     "Set-Cookie",
@@ -843,7 +833,6 @@ function clearCustomerSession(res) {
     }`
   );
 }
-
 
 async function hashCustomerPassword(
   password,
@@ -881,7 +870,6 @@ async function hashCustomerPassword(
   };
 }
 
-
 async function verifyCustomerPassword(
   password,
   account
@@ -910,7 +898,6 @@ async function verifyCustomerPassword(
   }
 }
 
-
 async function getCustomerAccounts() {
   const accounts =
     await readJson(
@@ -923,7 +910,6 @@ async function getCustomerAccounts() {
     : [];
 }
 
-
 async function saveCustomerAccounts(
   accounts
 ) {
@@ -932,7 +918,6 @@ async function saveCustomerAccounts(
     accounts
   );
 }
-
 
 async function getAuthenticatedCustomer(
   req
@@ -972,7 +957,6 @@ async function getAuthenticatedCustomer(
 
   return account;
 }
-
 
 async function requireCustomer(
   req,
@@ -1014,7 +998,6 @@ async function requireCustomer(
   }
 }
 
-
 function publicCustomerAccount(
   account
 ) {
@@ -1030,13 +1013,11 @@ function publicCustomerAccount(
   };
 }
 
-
 function createSecureToken() {
   return crypto
     .randomBytes(32)
     .toString("hex");
 }
-
 
 function hashSecureToken(token) {
   return crypto
@@ -1165,7 +1146,6 @@ If you did not request a password reset, you can ignore this email.`
   }
 }
 
-
 async function createEmailVerification(
   account
 ) {
@@ -1225,6 +1205,7 @@ async function createEmailVerification(
     rawToken
   );
 }
+
 function requireAdmin(req, res, next) {
   const token =
     parseCookies(req).sng_admin;
@@ -1317,13 +1298,15 @@ app.post(
 
               plan: entry.plan,
               profile: entry.profile,
-              customerAccountId:
-  entry.customerAccountId || null,
 
-customerLinkedAt:
-  entry.customerAccountId
-    ? new Date().toISOString()
-    : null,
+              customerAccountId:
+                entry.customerAccountId ||
+                null,
+
+              customerLinkedAt:
+                entry.customerAccountId
+                  ? new Date().toISOString()
+                  : null,
 
               cvvConfirmed:
                 entry.cvvConfirmed === true,
@@ -1369,10 +1352,11 @@ customerLinkedAt:
                         .stripeSubscriptionId
                     );
 
- await applySubscriptionInfo(
-  record,
-  subscription
-);
+                await applySubscriptionInfo(
+                  record,
+                  subscription
+                );
+
               } catch (error) {
                 console.error(
                   "Subscription lookup failed:",
@@ -1463,16 +1447,15 @@ customerLinkedAt:
             ) ===
             String(subscription.id)
           ) {
-    await applySubscriptionInfo(
-  record,
-  subscription
-);
+            await applySubscriptionInfo(
+              record,
+              subscription
+            );
 
-record.subscriptionUpdatedAt =
-  new Date().toISOString();
+            record.subscriptionUpdatedAt =
+              new Date().toISOString();
 
-changed = true;
-
+            changed = true;
           }
         }
 
@@ -1549,6 +1532,7 @@ app.use(
     )
   )
 );
+
 /* -------------------------------------------------------
    CUSTOMER ACCOUNT ROUTES
 ------------------------------------------------------- */
@@ -1656,15 +1640,15 @@ app.post(
       );
 
       try {
-  await createEmailVerification(
-    account
-  );
-} catch (error) {
-  console.error(
-    "Verification email send failed:",
-    error.message
-  );
-}
+        await createEmailVerification(
+          account
+        );
+      } catch (error) {
+        console.error(
+          "Verification email send failed:",
+          error.message
+        );
+      }
 
       setCustomerSession(
         res,
@@ -1675,6 +1659,7 @@ app.post(
         .status(201)
         .json({
           ok: true,
+
           account:
             publicCustomerAccount(
               account
@@ -1696,7 +1681,6 @@ app.post(
     }
   }
 );
-
 
 app.post(
   "/api/account/login",
@@ -1774,6 +1758,7 @@ app.post(
 
       return res.json({
         ok: true,
+
         account:
           publicCustomerAccount(
             account
@@ -1796,7 +1781,6 @@ app.post(
   }
 );
 
-
 app.post(
   "/api/account/logout",
   (req, res) => {
@@ -1807,7 +1791,6 @@ app.post(
     });
   }
 );
-
 
 app.get(
   "/api/account/session",
@@ -1899,7 +1882,6 @@ app.post(
     }
   }
 );
-
 
 app.post(
   "/api/account/verify-email",
@@ -2040,6 +2022,7 @@ app.post(
     }
   }
 );
+
 /* -------------------------------------------------------
    CUSTOMER PASSWORD RESET
 ------------------------------------------------------- */
@@ -2081,11 +2064,6 @@ app.post(
             ) === email &&
             item.disabled !== true
         );
-
-      /*
-        Always return the same public response,
-        whether the account exists or not.
-      */
 
       if (!account) {
         return res.json(
@@ -2167,19 +2145,12 @@ app.post(
         error
       );
 
-      /*
-        Keep the public response generic so this
-        endpoint cannot be used to discover which
-        email addresses have accounts.
-      */
-
       return res.json(
         genericResponse
       );
     }
   }
 );
-
 
 app.post(
   "/api/account/reset-password",
@@ -2297,11 +2268,6 @@ app.post(
         accounts
       );
 
-      /*
-        Delete all reset tokens for this account.
-        This makes the reset link single-use.
-      */
-
       const remaining =
         (
           Array.isArray(records)
@@ -2320,11 +2286,6 @@ app.post(
         PASSWORD_RESET_FILE,
         remaining
       );
-
-      /*
-        Give the customer a fresh authenticated
-        session after a successful reset.
-      */
 
       setCustomerSession(
         res,
@@ -2352,6 +2313,7 @@ app.post(
     }
   }
 );
+
 /* -------------------------------------------------------
    EXISTING ORDER CLAIM
 ------------------------------------------------------- */
@@ -2362,7 +2324,6 @@ function normalizePhone(value) {
     .slice(-10);
 }
 
-
 function customerOrderNumber(
   record
 ) {
@@ -2372,7 +2333,6 @@ function customerOrderNumber(
     ""
   ).trim();
 }
-
 
 async function sendOrderClaimEmail(
   email,
@@ -2439,7 +2399,6 @@ If you did not request this, you can ignore this email.`
   }
 }
 
-
 app.post(
   "/api/account/claim-order",
   customerAuthRateLimit,
@@ -2491,12 +2450,6 @@ app.post(
           orderNumber.toLowerCase()
         );
 
-      /*
-        Use a generic response for failed matches
-        so the endpoint does not reveal whether
-        an order number exists.
-      */
-
       const genericResponse = {
         ok: true,
         message:
@@ -2508,11 +2461,6 @@ app.post(
           genericResponse
         );
       }
-
-      /*
-        Never allow an order already owned by a
-        different account to be silently claimed.
-      */
 
       if (
         record.customerAccountId &&
@@ -2597,11 +2545,6 @@ app.post(
             )
           : [];
 
-      /*
-        Remove older pending claims for this
-        same account/order combination.
-      */
-
       const activeClaims =
         filteredClaims.filter(
           claim =>
@@ -2670,7 +2613,6 @@ app.post(
     }
   }
 );
-
 
 app.post(
   "/api/account/verify-order-claim",
@@ -2745,87 +2687,35 @@ app.post(
             claim.orderId
         );
 
-      if (!record) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Order could not be found."
-          });
-      }
-
       if (
-        record.customerAccountId &&
-        record.customerAccountId !==
-          req.customerAccount.id
+        !record ||
+        (
+          record.customerAccountId &&
+          record.customerAccountId !==
+            req.customerAccount.id
+        )
       ) {
         return res
-          .status(409)
+          .status(400)
           .json({
             error:
-              "This order is already connected to another account."
+              "This order can no longer be connected."
           });
       }
 
-      const verifiedAt =
-        new Date()
-          .toISOString();
+      const linkedAt =
+        new Date().toISOString();
 
       record.customerAccountId =
         req.customerAccount.id;
 
       record.customerLinkedAt =
-        verifiedAt;
-
-      record.updatedAt =
-        verifiedAt;
+        linkedAt;
 
       await writeJson(
         PAID_FILE,
         paid
       );
-
-      /*
-        Mark the customer's email as verified
-        when the claim email is the same email
-        used by their customer account.
-      */
-
-      const orderEmail =
-        normalizeEmail(
-          record.profile?.email
-        );
-
-      if (
-        orderEmail &&
-        orderEmail ===
-          normalizeEmail(
-            req.customerAccount.email
-          )
-      ) {
-        const accounts =
-          await getCustomerAccounts();
-
-        const account =
-          accounts.find(
-            item =>
-              item.id ===
-              req.customerAccount.id
-          );
-
-        if (account) {
-          account.emailVerifiedAt =
-            account.emailVerifiedAt ||
-            verifiedAt;
-
-          account.updatedAt =
-            verifiedAt;
-
-          await saveCustomerAccounts(
-            accounts
-          );
-        }
-      }
 
       const remainingClaims =
         (
@@ -2834,8 +2724,8 @@ app.post(
             : []
         ).filter(
           item =>
-            item.id !==
-              claim.id &&
+            item.orderId !==
+              record.id &&
             Number(
               item.expiresAt
             ) > now
@@ -2848,14 +2738,8 @@ app.post(
 
       return res.json({
         ok: true,
-
         message:
-          "Your order has been connected to your account.",
-
-        orderNumber:
-          customerOrderNumber(
-            record
-          )
+          "Your order has been connected to your account."
       });
 
     } catch (error) {
@@ -2868,7 +2752,608 @@ app.post(
         .status(500)
         .json({
           error:
-            "Unable to verify this order."
+            "Unable to connect this order."
+        });
+    }
+  }
+);
+
+/* -------------------------------------------------------
+   RETAILER PROFILE HELPERS
+------------------------------------------------------- */
+
+const RETAILER_KEYS = [
+  "target",
+  "walmart",
+  "pkc",
+  "samsClub",
+  "costco"
+];
+
+function emptyRetailerCredentials() {
+  return {
+    target: {
+      username: "",
+      password: ""
+    },
+
+    walmart: {
+      username: "",
+      password: ""
+    },
+
+    pkc: {
+      username: "",
+      password: ""
+    },
+
+    samsClub: {
+      username: "",
+      password: ""
+    },
+
+    costco: {
+      username: "",
+      password: ""
+    }
+  };
+}
+
+function normalizeRetailerCredentials(
+  value
+) {
+  const normalized =
+    emptyRetailerCredentials();
+
+  const source =
+    value &&
+    typeof value === "object"
+      ? value
+      : {};
+
+  for (
+    const retailer of
+    RETAILER_KEYS
+  ) {
+    const item =
+      source[retailer] &&
+      typeof source[retailer] ===
+        "object"
+        ? source[retailer]
+        : {};
+
+    normalized[retailer] = {
+      username:
+        clean(
+          item.username,
+          254
+        ),
+
+      password:
+        String(
+          item.password || ""
+        ).slice(0, 512)
+    };
+  }
+
+  return normalized;
+}
+
+async function getRetailerProfiles() {
+  const records =
+    await readJson(
+      RETAILER_PROFILES_FILE,
+      []
+    );
+
+  return Array.isArray(records)
+    ? records
+    : [];
+}
+
+async function saveRetailerProfiles(
+  records
+) {
+  await writeJson(
+    RETAILER_PROFILES_FILE,
+    records
+  );
+}
+
+function subscriptionAllowsProfiles(
+  record
+) {
+  const status =
+    String(
+      record?.subscriptionStatus ||
+      ""
+    ).toLowerCase();
+
+  return [
+    "active",
+    "trialing"
+  ].includes(status);
+}
+
+function profileAllowanceForRecord(
+  record
+) {
+  const planProfiles =
+    Number(
+      record?.plan?.profiles
+    );
+
+  if (
+    Number.isInteger(
+      planProfiles
+    ) &&
+    planProfiles > 0
+  ) {
+    return Math.min(
+      planProfiles,
+      50
+    );
+  }
+
+  const planTier =
+    Number(
+      record?.plan?.tier ||
+      record?.plan?.id
+    );
+
+  if (
+    PLANS[planTier]?.profiles
+  ) {
+    return PLANS[
+      planTier
+    ].profiles;
+  }
+
+  const planName =
+    String(
+      record?.plan?.name ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const matchingPlan =
+    Object.values(
+      PLANS
+    ).find(
+      plan =>
+        String(
+          plan.name
+        ).toLowerCase() ===
+          planName
+    );
+
+  return matchingPlan
+    ? matchingPlan.profiles
+    : 0;
+}
+
+async function getCustomerProfileAllowance(
+  accountId
+) {
+  const paid =
+    await readJson(
+      PAID_FILE,
+      []
+    );
+
+  const owned =
+    (
+      Array.isArray(paid)
+        ? paid
+        : []
+    ).filter(
+      record =>
+        record.customerAccountId ===
+          accountId &&
+        subscriptionAllowsProfiles(
+          record
+        )
+    );
+
+  if (!owned.length) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    ...owned.map(
+      profileAllowanceForRecord
+    )
+  );
+}
+
+function safeRetailerProfile(
+  record,
+  allowance
+) {
+  let credentials =
+    emptyRetailerCredentials();
+
+  try {
+    if (record?.credentials) {
+      credentials =
+        normalizeRetailerCredentials(
+          decryptJson(
+            record.credentials
+          )
+        );
+    }
+  } catch (error) {
+    console.error(
+      "Retailer profile decrypt error:",
+      error.message
+    );
+  }
+
+  const retailers = {};
+
+  for (
+    const retailer of
+    RETAILER_KEYS
+  ) {
+    retailers[retailer] = {
+      username:
+        credentials[
+          retailer
+        ].username,
+
+      passwordConfigured:
+        Boolean(
+          credentials[
+            retailer
+          ].password
+        )
+    };
+  }
+
+  return {
+    slot:
+      Number(record.slot),
+
+    profileName:
+      clean(
+        record.profileName,
+        80
+      ),
+
+    locked:
+      Number(record.slot) >
+      allowance,
+
+    retailers,
+
+    createdAt:
+      record.createdAt ||
+      null,
+
+    updatedAt:
+      record.updatedAt ||
+      null
+  };
+}
+
+/* -------------------------------------------------------
+   RETAILER PROFILE ROUTES
+------------------------------------------------------- */
+
+app.get(
+  "/api/account/retailer-profiles",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const allowance =
+        await getCustomerProfileAllowance(
+          req.customerAccount.id
+        );
+
+      const records =
+        await getRetailerProfiles();
+
+      const ownedRecords =
+        records
+          .filter(
+            record =>
+              record.customerAccountId ===
+                req.customerAccount.id
+          )
+          .sort(
+            (a, b) =>
+              Number(a.slot) -
+              Number(b.slot)
+          );
+
+      return res.json({
+        ok: true,
+        allowance,
+
+        profiles:
+          ownedRecords.map(
+            record =>
+              safeRetailerProfile(
+                record,
+                allowance
+              )
+          )
+      });
+
+    } catch (error) {
+      console.error(
+        "Retailer profile list error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load retailer profiles."
+        });
+    }
+  }
+);
+
+app.put(
+  "/api/account/retailer-profiles/:slot",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const slot =
+        Number(
+          req.params.slot
+        );
+
+      if (
+        !Number.isInteger(slot) ||
+        slot < 1 ||
+        slot > 50
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid profile slot."
+          });
+      }
+
+      const allowance =
+        await getCustomerProfileAllowance(
+          req.customerAccount.id
+        );
+
+      if (allowance <= 0) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "An active membership is required before retailer profiles can be saved."
+          });
+      }
+
+      if (slot > allowance) {
+        return res
+          .status(403)
+          .json({
+            error:
+              `Your current membership allows ${allowance} profile${allowance === 1 ? "" : "s"}.`
+          });
+      }
+
+      const profileName =
+        clean(
+          req.body?.profileName,
+          80
+        );
+
+      if (!profileName) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a profile name."
+          });
+      }
+
+      const submitted =
+        req.body?.retailers &&
+        typeof req.body
+          .retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      const records =
+        await getRetailerProfiles();
+
+      const existingIndex =
+        records.findIndex(
+          record =>
+            record.customerAccountId ===
+              req.customerAccount.id &&
+            Number(record.slot) ===
+              slot
+        );
+
+      const existingRecord =
+        existingIndex >= 0
+          ? records[
+              existingIndex
+            ]
+          : null;
+
+      let existingCredentials =
+        emptyRetailerCredentials();
+
+      if (
+        existingRecord
+          ?.credentials
+      ) {
+        try {
+          existingCredentials =
+            normalizeRetailerCredentials(
+              decryptJson(
+                existingRecord
+                  .credentials
+              )
+            );
+        } catch (error) {
+          console.error(
+            "Existing retailer profile decrypt error:",
+            error.message
+          );
+
+          return res
+            .status(500)
+            .json({
+              error:
+                "Unable to update this retailer profile securely."
+            });
+        }
+      }
+
+      const updatedCredentials =
+        emptyRetailerCredentials();
+
+      for (
+        const retailer of
+        RETAILER_KEYS
+      ) {
+        const submittedRetailer =
+          submitted[
+            retailer
+          ] &&
+          typeof submitted[
+            retailer
+          ] === "object"
+            ? submitted[
+                retailer
+              ]
+            : {};
+
+        const username =
+          clean(
+            submittedRetailer
+              .username,
+            254
+          );
+
+        const suppliedPassword =
+          String(
+            submittedRetailer
+              .password ||
+            ""
+          );
+
+        if (
+          suppliedPassword.length >
+          512
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "A retailer password is too long."
+            });
+        }
+
+        updatedCredentials[
+          retailer
+        ] = {
+          username,
+
+          /*
+            An empty password means:
+            keep the currently encrypted password.
+
+            A non-empty password means:
+            replace it with the new value.
+          */
+
+          password:
+            suppliedPassword ||
+            existingCredentials[
+              retailer
+            ].password ||
+            ""
+        };
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      const record = {
+        id:
+          existingRecord?.id ||
+          crypto.randomUUID(),
+
+        customerAccountId:
+          req.customerAccount.id,
+
+        slot,
+
+        profileName,
+
+        credentials:
+          encryptJson(
+            updatedCredentials
+          ),
+
+        createdAt:
+          existingRecord
+            ?.createdAt ||
+          now,
+
+        updatedAt:
+          now
+      };
+
+      if (
+        existingIndex >= 0
+      ) {
+        records[
+          existingIndex
+        ] = record;
+      } else {
+        records.push(
+          record
+        );
+      }
+
+      await saveRetailerProfiles(
+        records
+      );
+
+      return res.json({
+        ok: true,
+        allowance,
+
+        profile:
+          safeRetailerProfile(
+            record,
+            allowance
+          ),
+
+        message:
+          "Retailer profile saved securely."
+      });
+
+    } catch (error) {
+      console.error(
+        "Retailer profile save error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to save this retailer profile."
         });
     }
   }
@@ -2879,129 +3364,163 @@ app.post(
 
 app.post(
   "/api/admin/login",
-  (req, res) => {
-    const ip =
-      req.ip || "unknown";
+  async (req, res) => {
+    try {
+      const password =
+        String(
+          req.body.password || ""
+        );
 
-    const now =
-      Date.now();
+      const code =
+        String(
+          req.body.code || ""
+        )
+          .replace(/\s/g, "");
 
-    const attempt =
-      loginAttempts.get(ip) || {
-        count: 0,
-        reset:
-          now +
-          15 * 60 * 1000
-      };
+      const ip =
+        req.ip || "unknown";
 
-    if (
-      now > attempt.reset
-    ) {
-      attempt.count = 0;
+      const now =
+        Date.now();
 
-      attempt.reset =
-        now +
+      const windowMs =
         15 * 60 * 1000;
-    }
 
-    if (
-      attempt.count >= 8
-    ) {
-      return res
-        .status(429)
-        .json({
-          error:
-            "Too many attempts"
-        });
-    }
+      const maxAttempts =
+        8;
 
-    const password =
-      req.body.password || "";
+      let attempt =
+        loginAttempts.get(ip);
 
-    const code =
-      String(
-        req.body.code || ""
-      ).replace(/\s/g, "");
-
-    const secret =
-      process.env
-        .ADMIN_2FA_SECRET || "";
-
-    const passwordValid =
-      !!process.env
-        .ADMIN_PASSWORD &&
-      safeEqual(
-        password,
-        process.env
-          .ADMIN_PASSWORD
-      );
-
-    let codeValid = false;
-
-    if (
-      secret &&
-      /^\d{6}$/.test(code)
-    ) {
-      try {
-        codeValid =
-          authenticator.check(
-            code,
-            secret
-          );
-      } catch {
-        codeValid = false;
+      if (
+        !attempt ||
+        now > attempt.reset
+      ) {
+        attempt = {
+          count: 0,
+          reset:
+            now + windowMs
+        };
       }
-    }
 
-    if (
-      !passwordValid ||
-      !codeValid
-    ) {
-      attempt.count++;
+      if (
+        attempt.count >=
+        maxAttempts
+      ) {
+        const retryAfter =
+          Math.max(
+            1,
+            Math.ceil(
+              (
+                attempt.reset -
+                now
+              ) / 1000
+            )
+          );
+
+        res.setHeader(
+          "Retry-After",
+          String(retryAfter)
+        );
+
+        return res
+          .status(429)
+          .json({
+            error:
+              "Too many login attempts. Please try again later."
+          });
+      }
+
+      attempt.count += 1;
 
       loginAttempts.set(
         ip,
         attempt
       );
 
+      const secret =
+        process.env
+          .ADMIN_2FA_SECRET || "";
+
+      const passwordValid =
+        process.env
+          .ADMIN_PASSWORD &&
+        safeEqual(
+          password,
+          process.env
+            .ADMIN_PASSWORD
+        );
+
+      let codeValid = false;
+
+      if (secret && code) {
+        try {
+          codeValid =
+            authenticator.check(
+              code,
+              secret
+            );
+        } catch {
+          codeValid = false;
+        }
+      }
+
+      if (
+        !passwordValid ||
+        !codeValid
+      ) {
+        return res
+          .status(401)
+          .json({
+            error:
+              "Invalid password or authentication code."
+          });
+      }
+
+      loginAttempts.delete(ip);
+
+      const token =
+        crypto
+          .randomBytes(32)
+          .toString("hex");
+
+      adminSessions.set(
+        token,
+        {
+          expires:
+            Date.now() +
+            30 * 60 * 1000
+        }
+      );
+
+      res.setHeader(
+        "Set-Cookie",
+        `sng_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800${
+          BASE_URL.startsWith(
+            "https://"
+          )
+            ? "; Secure"
+            : ""
+        }`
+      );
+
+      return res.json({
+        ok: true
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin login error:",
+        error
+      );
+
       return res
-        .status(401)
+        .status(500)
         .json({
           error:
-            "Invalid credentials"
+            "Unable to sign in."
         });
     }
-
-    loginAttempts.delete(ip);
-
-    const token =
-      crypto
-        .randomBytes(32)
-        .toString("hex");
-
-    adminSessions.set(
-      token,
-      {
-        expires:
-          now +
-          30 * 60 * 1000
-      }
-    );
-
-    res.setHeader(
-      "Set-Cookie",
-      `sng_admin=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800${
-        BASE_URL.startsWith(
-          "https://"
-        )
-          ? "; Secure"
-          : ""
-      }`
-    );
-
-    res.json({
-      ok: true
-    });
   }
 );
 
@@ -3024,10 +3543,16 @@ app.post(
 
     res.setHeader(
       "Set-Cookie",
-      "sng_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+      `sng_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${
+        BASE_URL.startsWith(
+          "https://"
+        )
+          ? "; Secure"
+          : ""
+      }`
     );
 
-    res.json({
+    return res.json({
       ok: true
     });
   }
@@ -3041,147 +3566,378 @@ app.get(
   "/api/admin/submissions",
   requireAdmin,
   async (req, res) => {
-    const paid =
-      await readJson(
-        PAID_FILE,
-        []
-      );
-
-
-    /*
-      Refresh subscription information directly
-      from Stripe before showing Admin.
-
-      This also repairs older saved records that
-      are missing currentPeriodEnd.
-    */
-
-    let subscriptionDataChanged =
-      false;
-
-
-    for (const record of paid) {
-
-      if (
-        !record.stripeSubscriptionId
-      ) {
-        continue;
-      }
-
-
-      try {
-
-        const subscription =
-          await stripe
-            .subscriptions
-            .retrieve(
-              record
-                .stripeSubscriptionId
-            );
-
-
-        const before =
-          JSON.stringify({
-            subscriptionStatus:
-              record.subscriptionStatus,
-
-            currentPeriodStart:
-              record.currentPeriodStart,
-
-            currentPeriodEnd:
-              record.currentPeriodEnd,
-
-            cancelAtPeriodEnd:
-              record.cancelAtPeriodEnd,
-
-            cancelAt:
-              record.cancelAt,
-
-            canceledAt:
-              record.canceledAt,
-
-            endedAt:
-              record.endedAt,
-
-            subscriptionEndDate:
-              record.subscriptionEndDate
-          });
-
-
-        await applySubscriptionInfo(
-  record,
-  subscription
-);
-
-
-        const after =
-          JSON.stringify({
-            subscriptionStatus:
-              record.subscriptionStatus,
-
-            currentPeriodStart:
-              record.currentPeriodStart,
-
-            currentPeriodEnd:
-              record.currentPeriodEnd,
-
-            cancelAtPeriodEnd:
-              record.cancelAtPeriodEnd,
-
-            cancelAt:
-              record.cancelAt,
-
-            canceledAt:
-              record.canceledAt,
-
-            endedAt:
-              record.endedAt,
-
-            subscriptionEndDate:
-              record.subscriptionEndDate
-          });
-
-
-        if (before !== after) {
-
-          record.subscriptionUpdatedAt =
-            new Date().toISOString();
-
-          subscriptionDataChanged =
-            true;
-        }
-
-
-      } catch (error) {
-
-        console.error(
-          "Admin subscription refresh failed:",
-          record.id,
-          error.message
+    try {
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
         );
 
+      const result = [];
+
+      for (
+        const record of
+        Array.isArray(paid)
+          ? paid
+          : []
+      ) {
+        let secrets = null;
+
+        try {
+          const encrypted =
+            await readJson(
+              path.join(
+                SECRET_DIR,
+                `${record.id}.encrypted.json`
+              ),
+              null
+            );
+
+          if (encrypted) {
+            secrets =
+              decryptJson(
+                encrypted
+              );
+          }
+        } catch (error) {
+          console.error(
+            "Admin secure package decrypt error:",
+            record.id,
+            error.message
+          );
+        }
+
+        result.push({
+          ...record,
+
+          secrets:
+            secrets || null
+        });
       }
 
+      return res.json(
+        result
+      );
+
+    } catch (error) {
+      console.error(
+        "Admin submissions error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load submissions."
+        });
     }
+  }
+);
 
+app.delete(
+  "/api/admin/submissions/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
 
-    if (
-      subscriptionDataChanged
-    ) {
+      if (!id) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Submission ID is required."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const records =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const record =
+        records.find(
+          item =>
+            String(
+              item.id
+            ) === id
+        );
+
+      if (!record) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Submission could not be found."
+          });
+      }
+
+      const remaining =
+        records.filter(
+          item =>
+            String(
+              item.id
+            ) !== id
+        );
 
       await writeJson(
         PAID_FILE,
-        paid
+        remaining
       );
 
+      try {
+        await fs.unlink(
+          path.join(
+            SECRET_DIR,
+            `${id}.encrypted.json`
+          )
+        );
+      } catch (error) {
+        if (
+          error?.code !==
+          "ENOENT"
+        ) {
+          throw error;
+        }
+      }
+
+      return res.json({
+        ok: true,
+        deletedId: id
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin delete error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to delete this submission."
+        });
     }
+  }
+);
 
+/* -------------------------------------------------------
+   CUSTOMER PROFILE / ORDER HELPERS
+------------------------------------------------------- */
 
-    const output = [];
+function safeCustomerOrder(
+  record
+) {
+  return {
+    id:
+      record.id,
 
-    for (
-      const record of paid
-    ) {
+    orderNumber:
+      customerOrderNumber(
+        record
+      ),
+
+    plan:
+      record.plan || null,
+
+    profile:
+      record.profile || null,
+
+    createdAt:
+      record.createdAt ||
+      null,
+
+    paidAt:
+      record.paidAt ||
+      null,
+
+    subscriptionStatus:
+      record.subscriptionStatus ||
+      null,
+
+    currentPeriodStart:
+      record.currentPeriodStart ||
+      null,
+
+    currentPeriodEnd:
+      record.currentPeriodEnd ||
+      null,
+
+    subscriptionEndDate:
+      record.subscriptionEndDate ||
+      null,
+
+    cancelAtPeriodEnd:
+      record.cancelAtPeriodEnd ===
+      true,
+
+    canceledAt:
+      record.canceledAt ||
+      null,
+
+    endedAt:
+      record.endedAt ||
+      null,
+
+    customerLinkedAt:
+      record.customerLinkedAt ||
+      null,
+
+    updatedAt:
+      record.updatedAt ||
+      record.subscriptionUpdatedAt ||
+      null
+  };
+}
+
+async function getCustomerOwnedOrders(
+  accountId
+) {
+  const paid =
+    await readJson(
+      PAID_FILE,
+      []
+    );
+
+  return (
+    Array.isArray(paid)
+      ? paid
+      : []
+  ).filter(
+    record =>
+      record.customerAccountId ===
+        accountId
+  );
+}
+
+/* -------------------------------------------------------
+   UPDATE CUSTOMER ORDER / ACO INFORMATION
+------------------------------------------------------- */
+
+app.put(
+  "/api/account/orders/:orderNumber",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const requestedOrderNumber =
+        clean(
+          req.params.orderNumber,
+          150
+        );
+
+      if (!requestedOrderNumber) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Order number is required."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const records =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const record =
+        records.find(
+          item =>
+            customerOrderNumber(
+              item
+            ).toLowerCase() ===
+              requestedOrderNumber
+                .toLowerCase() &&
+            item.customerAccountId ===
+              req.customerAccount.id
+        );
+
+      if (!record) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Order could not be found."
+          });
+      }
+
+      const profileBody =
+        req.body?.profile &&
+        typeof req.body.profile ===
+          "object"
+          ? req.body.profile
+          : {};
+
+      const nextProfile = {
+        ...(record.profile || {})
+      };
+
+      const editableProfileFields = [
+        ["profileName", 300],
+        ["firstName", 100],
+        ["lastName", 100],
+        ["email", 200],
+        ["phone", 50],
+        ["address", 300],
+        ["address2", 300],
+        ["country", 100],
+        ["state", 100],
+        ["city", 100],
+        ["zip", 30]
+      ];
+
+      for (
+        const [
+          key,
+          max
+        ] of
+        editableProfileFields
+      ) {
+        if (
+          Object.prototype
+            .hasOwnProperty.call(
+              profileBody,
+              key
+            )
+        ) {
+          nextProfile[key] =
+            clean(
+              profileBody[key],
+              max
+            );
+        }
+      }
+
+      if (!validProfile(
+        nextProfile
+      )) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Please complete all required customer and shipping information."
+          });
+      }
+
+      let existingSecrets = {};
+
       try {
         const encrypted =
           await readJson(
@@ -3192,108 +3948,234 @@ app.get(
             null
           );
 
-        if (!encrypted) {
-          continue;
+        if (encrypted) {
+          existingSecrets =
+            decryptJson(
+              encrypted
+            );
         }
-
-        const packageData =
-          decryptJson(
-            encrypted
-          );
-
-        output.push({
-          ...record,
-
-          secrets:
-            packageData.secrets,
-
-          cvvConfirmed:
-            packageData
-              .cvvConfirmed ===
-              true ||
-            record
-              .cvvConfirmed ===
-              true
-        });
-
       } catch (error) {
         console.error(
-          "Admin decrypt failed",
-          record.id,
+          "Customer secure package decrypt error:",
           error.message
         );
+
+        return res
+          .status(500)
+          .json({
+            error:
+              "Unable to securely load the saved ACO information."
+          });
       }
-    }
 
-    res.json(
-      output.sort(
-        (a, b) =>
-          String(
-            b.paidAt
-          ).localeCompare(
-            String(a.paidAt)
+      const secretsBody =
+        req.body?.secrets &&
+        typeof req.body.secrets ===
+          "object"
+          ? req.body.secrets
+          : {};
+
+      const nextSecrets = {
+        ...existingSecrets
+      };
+
+      if (
+        Object.prototype
+          .hasOwnProperty.call(
+            secretsBody,
+            "acoEmail"
           )
-      )
-    );
-  }
-);
+      ) {
+        const value =
+          clean(
+            secretsBody.acoEmail,
+            200
+          );
 
-/* -------------------------------------------------------
-   DELETE SUBMISSION
-------------------------------------------------------- */
+        if (value) {
+          nextSecrets.acoEmail =
+            value;
+        }
+      }
 
-app.delete(
-  "/api/admin/submissions/:id",
-  requireAdmin,
-  async (req, res) => {
-    const id =
-      String(
-        req.params.id || ""
+      const replacementAcoPassword =
+        String(
+          secretsBody
+            .acoPassword || ""
+        );
+
+      if (
+        replacementAcoPassword
+      ) {
+        if (
+          replacementAcoPassword
+            .length > 300
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "ACO password is too long."
+            });
+        }
+
+        nextSecrets.acoPassword =
+          replacementAcoPassword;
+      }
+
+      if (
+        Object.prototype
+          .hasOwnProperty.call(
+            secretsBody,
+            "cardLabel"
+          )
+      ) {
+        const value =
+          clean(
+            secretsBody.cardLabel,
+            100
+          );
+
+        if (value) {
+          nextSecrets.cardLabel =
+            value;
+        }
+      }
+
+      if (
+        Object.prototype
+          .hasOwnProperty.call(
+            secretsBody,
+            "cardholder"
+          )
+      ) {
+        const value =
+          clean(
+            secretsBody.cardholder,
+            150
+          );
+
+        if (value) {
+          nextSecrets.cardholder =
+            value;
+        }
+      }
+
+      const replacementCardNumber =
+        clean(
+          secretsBody
+            .acoCardNumber,
+          30
+        ).replace(
+          /[^\d]/g,
+          ""
+        );
+
+      if (
+        replacementCardNumber
+      ) {
+        if (
+          !/^\d{12,19}$/.test(
+            replacementCardNumber
+          )
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "Enter a valid replacement card number."
+            });
+        }
+
+        nextSecrets.acoCardNumber =
+          replacementCardNumber;
+      }
+
+      const replacementMonth =
+        clean(
+          secretsBody.expMonth,
+          2
+        );
+
+      const replacementYear =
+        clean(
+          secretsBody.expYear,
+          4
+        );
+
+      if (
+        replacementMonth ||
+        replacementYear
+      ) {
+        if (
+          !replacementMonth ||
+          !replacementYear
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "Enter both the replacement expiration month and year."
+            });
+        }
+
+        nextSecrets.expMonth =
+          replacementMonth;
+
+        nextSecrets.expYear =
+          replacementYear;
+      }
+
+      const updatedAt =
+        new Date()
+          .toISOString();
+
+      record.profile =
+        nextProfile;
+
+      record.updatedAt =
+        updatedAt;
+
+      await saveEncryptedPackage(
+        record.id,
+        nextSecrets
       );
 
-    if (
-      !/^[a-f0-9-]{30,40}$/i.test(
-        id
-      )
-    ) {
+      await writeJson(
+        PAID_FILE,
+        records
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          "Your profile information has been updated.",
+
+        order:
+          safeCustomerOrder(
+            record
+          )
+      });
+
+    } catch (error) {
+      console.error(
+        "Customer order update error:",
+        error
+      );
+
       return res
-        .status(400)
+        .status(500)
         .json({
-          error: "Bad id"
+          error:
+            "Unable to update your profile information."
         });
     }
-
-    try {
-      await fs.unlink(
-        path.join(
-          SECRET_DIR,
-          `${id}.encrypted.json`
-        )
-      );
-    } catch {}
-
-    const paid =
-      await readJson(
-        PAID_FILE,
-        []
-      );
-
-    await writeJson(
-      PAID_FILE,
-      paid.filter(
-        record =>
-          record.id !== id
-      )
-    );
-
-    res.json({
-      ok: true
-    });
   }
 );
 
 /* -------------------------------------------------------
-   CREATE STRIPE CHECKOUT
+   CREATE CHECKOUT SESSION
 ------------------------------------------------------- */
 
 app.post(
@@ -3301,7 +4183,9 @@ app.post(
   async (req, res) => {
     try {
       const tier =
-        Number(req.body.tier);
+        Number(
+          req.body.tier
+        );
 
       const plan =
         PLANS[tier];
@@ -3315,21 +4199,12 @@ app.post(
           });
       }
 
-      /*
-        The first three plans already have
-        Stripe prices configured.
-
-        Tiers 4-7 will work automatically
-        once their Render environment
-        variables are added.
-      */
-
       if (!plan.priceId) {
         return res
-          .status(400)
+          .status(500)
           .json({
             error:
-              `${plan.name} checkout is not configured yet. Please contact us or choose another membership.`
+              `${plan.name} is not configured for Stripe checkout yet.`
           });
       }
 
@@ -3344,42 +4219,51 @@ app.post(
         );
 
       const cvvConfirmed =
-        req.body
-          .cvvConfirmed === true;
+        req.body.cvvConfirmed ===
+        true;
 
       if (
-        !validProfile(profile) ||
-        !validSecrets(secrets) ||
-        !cvvConfirmed
+        !validProfile(profile)
       ) {
         return res
           .status(400)
           .json({
             error:
-              "Please complete all required profile and ACO setup fields."
+              "Please complete all required customer and shipping information."
           });
       }
+
+      if (
+        !validSecrets(secrets)
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Please complete all required ACO and card information."
+          });
+      }
+
+      if (!cvvConfirmed) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Please confirm that the card has a valid CVV. Do not enter the CVV on this website."
+          });
+      }
+
+      const authenticatedAccount =
+        await getAuthenticatedCustomer(
+          req
+        );
 
       const id =
         crypto.randomUUID();
 
-      const createdAt =
+      const now =
         new Date()
           .toISOString();
-      
-      const customerAccount =
-  await getAuthenticatedCustomer(req);
-      
-      await saveEncryptedPackage(
-        id,
-        {
-          submissionId: id,
-          profile,
-          secrets,
-          cvvConfirmed,
-          createdAt
-        }
-      );
 
       const pending =
         await readJson(
@@ -3390,12 +4274,10 @@ app.post(
       pending[id] = {
         id,
 
-        customerAccountId:
-  customerAccount?.id || null,
-        
         plan: {
           tier,
-          name: plan.name,
+          name:
+            plan.name,
           profiles:
             plan.profiles,
           amount:
@@ -3403,13 +4285,26 @@ app.post(
         },
 
         profile,
+
+        customerAccountId:
+          authenticatedAccount
+            ?.id ||
+          null,
+
         cvvConfirmed,
-        createdAt
+
+        createdAt:
+          now
       };
 
       await writeJson(
         PENDING_FILE,
         pending
+      );
+
+      await saveEncryptedPackage(
+        id,
+        secrets
       );
 
       const session =
@@ -3428,35 +4323,26 @@ app.post(
               }
             ],
 
-            customer_email:
-              profile.email,
+            success_url:
+              `${BASE_URL}/?payment=success#my-profile`,
 
-            client_reference_id:
-              id,
+            cancel_url:
+              `${BASE_URL}/?payment=cancelled#pricing`,
 
             metadata: {
               submission_id:
-                id,
-
-              tier:
-                String(tier)
+                id
             },
 
             subscription_data: {
               metadata: {
                 submission_id:
-                  id,
-
-                tier:
-                  String(tier)
+                  id
               }
             },
 
-            success_url:
-              `${BASE_URL}/?payment=success`,
-
-            cancel_url:
-              `${BASE_URL}/?payment=cancelled`,
+            customer_email:
+              profile.email,
 
             billing_address_collection:
               "auto",
@@ -3465,14 +4351,17 @@ app.post(
               true
           });
 
-      res.json({
+      return res.json({
         url: session.url
       });
 
     } catch (error) {
-      console.error(error);
+      console.error(
+        "Checkout session error:",
+        error
+      );
 
-      res
+      return res
         .status(500)
         .json({
           error:
@@ -3481,227 +4370,243 @@ app.post(
     }
   }
 );
-
 /* -------------------------------------------------------
    MY PROFILE
 ------------------------------------------------------- */
-
-/*
-  IMPORTANT:
-
-  Customer membership records are intentionally NOT
-  exposed from this endpoint yet.
-
-  We need customer authentication before returning
-  private membership information. This prevents someone
-  from obtaining another customer's information simply
-  by knowing an email address or profile name.
-
-  Once customer authentication is added, this endpoint
-  will return the authenticated customer's Stripe
-  subscription information.
-*/
 
 app.get(
   "/api/my-profile",
   requireCustomer,
   async (req, res) => {
     try {
+      const account =
+        req.customerAccount;
+
+      const ownedOrders =
+        await getCustomerOwnedOrders(
+          account.id
+        );
+
+      /*
+        Refresh subscription information from Stripe
+        when possible so the customer dashboard has
+        the latest membership status and billing dates.
+      */
+
+      let paidChanged = false;
+
       const paid =
         await readJson(
           PAID_FILE,
           []
         );
 
-      const orders =
-        paid
-          .filter(
-            record =>
-              record.customerAccountId ===
-              req.customerAccount.id
-          )
-          .sort(
-            (a, b) =>
-              new Date(
-                b.paidAt ||
-                b.createdAt ||
-                0
-              ) -
-              new Date(
-                a.paidAt ||
-                a.createdAt ||
-                0
-              )
-          );
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
 
-      const safeOrders =
-        orders.map(record => {
-          const endDate =
-            record.subscriptionEndDate ||
-            record.currentPeriodEnd ||
-            null;
+      for (
+        const order of
+        ownedOrders
+      ) {
+        if (
+          !order.stripeSubscriptionId
+        ) {
+          continue;
+        }
 
-          let daysRemaining =
-            null;
+        try {
+          const subscription =
+            await stripe
+              .subscriptions
+              .retrieve(
+                order
+                  .stripeSubscriptionId
+              );
 
-          if (endDate) {
-            const end =
-              new Date(
-                endDate
-              ).getTime();
+          const storedRecord =
+            paidRecords.find(
+              item =>
+                item.id ===
+                order.id
+            );
 
-            if (
-              Number.isFinite(end)
-            ) {
-              daysRemaining =
-                Math.max(
-                  0,
-                  Math.ceil(
-                    (
-                      end -
-                      Date.now()
-                    ) /
-                    86400000
-                  )
-                );
-            }
+          if (storedRecord) {
+            await applySubscriptionInfo(
+              storedRecord,
+              subscription
+            );
+
+            storedRecord
+              .subscriptionUpdatedAt =
+              new Date()
+                .toISOString();
+
+            /*
+              Keep the in-memory order used for
+              this response synchronized too.
+            */
+
+            Object.assign(
+              order,
+              storedRecord
+            );
+
+            paidChanged = true;
           }
 
-          return {
-            orderNumber:
-              customerOrderNumber(
-                record
-              ),
+        } catch (error) {
+          /*
+            Do not block the customer dashboard if
+            Stripe cannot be reached. The most
+            recently stored subscription data will
+            still be returned.
+          */
 
-            createdAt:
-              record.createdAt ||
-              null,
+          console.error(
+            "Customer subscription refresh failed:",
+            order.id,
+            error.message
+          );
+        }
+      }
 
-            paidAt:
-              record.paidAt ||
-              null,
+      if (paidChanged) {
+        await writeJson(
+          PAID_FILE,
+          paidRecords
+        );
+      }
 
-            updatedAt:
-              record.updatedAt ||
-              null,
+      const safeOrders =
+        ownedOrders
+          .map(
+            safeCustomerOrder
+          )
+          .sort(
+            (a, b) => {
+              const aTime =
+                new Date(
+                  a.paidAt ||
+                  a.createdAt ||
+                  0
+                ).getTime();
 
-            planName:
-              record.plan?.name ||
-              null,
+              const bTime =
+                new Date(
+                  b.paidAt ||
+                  b.createdAt ||
+                  0
+                ).getTime();
 
-            tier:
-              record.plan?.tier ||
-              null,
-
-            amount:
-              record.plan?.amount ??
-              null,
-
-            profiles:
-              record.plan?.profiles ??
-              null,
-
-            status:
-              record.subscriptionStatus ||
-              "unknown",
-
-            currentPeriodStart:
-              record.currentPeriodStart ||
-              null,
-
-            currentPeriodEnd:
-              record.currentPeriodEnd ||
-              null,
-
-            subscriptionEndDate:
-              record.subscriptionEndDate ||
-              null,
-
-            cancelAtPeriodEnd:
-              record.cancelAtPeriodEnd ===
-              true,
-
-            cancelAt:
-              record.cancelAt ||
-              null,
-
-            daysRemaining,
-
-            profile: {
-              profileName:
-                record.profile
-                  ?.profileName || "",
-
-              firstName:
-                record.profile
-                  ?.firstName || "",
-
-              lastName:
-                record.profile
-                  ?.lastName || "",
-
-              email:
-                record.profile
-                  ?.email || "",
-
-              phone:
-                record.profile
-                  ?.phone || "",
-
-              address:
-                record.profile
-                  ?.address || "",
-
-              address2:
-                record.profile
-                  ?.address2 || "",
-
-              country:
-                record.profile
-                  ?.country || "",
-
-              state:
-                record.profile
-                  ?.state || "",
-
-              city:
-                record.profile
-                  ?.city || "",
-
-              zip:
-                record.profile
-                  ?.zip || ""
+              return bTime - aTime;
             }
-          };
-        });
+          );
 
-      const currentOrder =
-        safeOrders.find(
-          order =>
-            [
-              "active",
-              "trialing",
-              "past_due"
-            ].includes(
-              String(
-                order.status
-              ).toLowerCase()
-            )
-        ) ||
-        safeOrders[0] ||
-        null;
+      /*
+        Determine the customer's currently usable
+        retailer-profile allowance from their active
+        paid membership.
+      */
+
+      const profileAllowance =
+        await getCustomerProfileAllowance(
+          account.id
+        );
+
+      /*
+        Pick the strongest currently active membership
+        for the summary shown at the top of My Profile.
+
+        This does not combine profile allowances from
+        multiple subscriptions.
+      */
+
+      const activeOrders =
+        ownedOrders.filter(
+          subscriptionAllowsProfiles
+        );
+
+      let membership = null;
+
+      if (activeOrders.length) {
+        const selected =
+          [...activeOrders]
+            .sort(
+              (a, b) =>
+                profileAllowanceForRecord(
+                  b
+                ) -
+                profileAllowanceForRecord(
+                  a
+                )
+            )[0];
+
+        membership = {
+          orderNumber:
+            customerOrderNumber(
+              selected
+            ),
+
+          name:
+            selected.plan?.name ||
+            "Membership",
+
+          tier:
+            selected.plan?.tier ||
+            selected.plan?.id ||
+            null,
+
+          profiles:
+            profileAllowanceForRecord(
+              selected
+            ),
+
+          amount:
+            Number(
+              selected.plan?.amount ||
+              0
+            ),
+
+          status:
+            selected
+              .subscriptionStatus ||
+            "active",
+
+          currentPeriodStart:
+            selected
+              .currentPeriodStart ||
+            null,
+
+          currentPeriodEnd:
+            selected
+              .currentPeriodEnd ||
+            null,
+
+          subscriptionEndDate:
+            selected
+              .subscriptionEndDate ||
+            null,
+
+          cancelAtPeriodEnd:
+            selected
+              .cancelAtPeriodEnd ===
+            true
+        };
+      }
 
       return res.json({
+        ok: true,
+
         account:
           publicCustomerAccount(
-            req.customerAccount
+            account
           ),
 
-        hasOrders:
-          safeOrders.length > 0,
+        membership,
 
-        currentMembership:
-          currentOrder,
+        profileAllowance,
 
         orders:
           safeOrders
@@ -3709,7 +4614,7 @@ app.get(
 
     } catch (error) {
       console.error(
-        "My Profile error:",
+        "My profile error:",
         error
       );
 
@@ -3717,421 +4622,132 @@ app.get(
         .status(500)
         .json({
           error:
-            "Unable to load your customer profile."
+            "Unable to load your account."
         });
     }
   }
 );
 
 /* -------------------------------------------------------
-   CUSTOMER ORDER EDITING
-------------------------------------------------------- */
-
-app.put(
-  "/api/account/orders/:orderNumber",
-  requireCustomer,
-  async (req, res) => {
-    try {
-      const orderNumber =
-        clean(
-          req.params.orderNumber,
-          150
-        );
-
-      const paid =
-        await readJson(
-          PAID_FILE,
-          []
-        );
-
-      const record =
-        paid.find(
-          item =>
-            customerOrderNumber(
-              item
-            ) === orderNumber &&
-            item.customerAccountId ===
-              req.customerAccount.id
-        );
-
-      if (!record) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Order could not be found."
-          });
-      }
-
-      /*
-        Only customer-editable profile fields
-        are accepted here.
-
-        Membership tier changes are NOT handled
-        by this endpoint.
-      */
-
-      const incomingProfile =
-        sanitizeProfile(
-          req.body.profile || {}
-        );
-
-      if (
-        !validProfile(
-          incomingProfile
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Please complete all required customer and shipping fields."
-          });
-      }
-
-      record.profile = {
-        ...record.profile,
-        ...incomingProfile
-      };
-
-      /*
-        Sensitive ACO information is replacement
-        only. Existing passwords and card numbers
-        are never sent back to the customer.
-      */
-
-      const replacement =
-        req.body.secrets &&
-        typeof req.body.secrets ===
-          "object"
-          ? req.body.secrets
-          : {};
-
-      const encryptedPath =
-        path.join(
-          SECRET_DIR,
-          `${record.id}.encrypted.json`
-        );
-
-      let existingPackage;
-
-      try {
-        existingPackage =
-          decryptJson(
-            await readJson(
-              encryptedPath,
-              null
-            )
-          );
-      } catch (error) {
-        console.error(
-          "Customer secure package read failed:",
-          error.message
-        );
-
-        return res
-          .status(500)
-          .json({
-            error:
-              "Secure order information could not be loaded."
-          });
-      }
-
-      if (!existingPackage) {
-        return res
-          .status(500)
-          .json({
-            error:
-              "Secure order information could not be loaded."
-          });
-      }
-
-      const existingSecrets =
-        existingPackage.secrets ||
-        {};
-
-      const updatedSecrets = {
-        ...existingSecrets
-      };
-
-      /*
-        ACO email may be edited normally.
-      */
-
-      if (
-        Object.prototype.hasOwnProperty.call(
-          replacement,
-          "acoEmail"
-        )
-      ) {
-        const acoEmail =
-          clean(
-            replacement.acoEmail,
-            200
-          );
-
-        if (
-          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-            acoEmail
-          )
-        ) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Enter a valid ACO/IMAP email address."
-            });
-        }
-
-        updatedSecrets.acoEmail =
-          acoEmail;
-      }
-
-      /*
-        Blank password means keep the existing
-        password. A nonblank value replaces it.
-      */
-
-      if (
-        clean(
-          replacement.acoPassword,
-          300
-        )
-      ) {
-        const newPassword =
-          clean(
-            replacement.acoPassword,
-            300
-          );
-
-        if (
-          newPassword.length < 6
-        ) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "The replacement ACO password is too short."
-            });
-        }
-
-        updatedSecrets.acoPassword =
-          newPassword;
-      }
-
-      if (
-        Object.prototype.hasOwnProperty.call(
-          replacement,
-          "cardLabel"
-        )
-      ) {
-        const cardLabel =
-          clean(
-            replacement.cardLabel,
-            100
-          );
-
-        if (!cardLabel) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Card label is required."
-            });
-        }
-
-        updatedSecrets.cardLabel =
-          cardLabel;
-      }
-
-      if (
-        Object.prototype.hasOwnProperty.call(
-          replacement,
-          "cardholder"
-        )
-      ) {
-        const cardholder =
-          clean(
-            replacement.cardholder,
-            150
-          );
-
-        if (!cardholder) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Cardholder name is required."
-            });
-        }
-
-        updatedSecrets.cardholder =
-          cardholder;
-      }
-
-      /*
-        If a replacement card number is supplied,
-        validate it and replace the stored number.
-
-        Blank means retain the current number.
-      */
-
-      const replacementCard =
-        clean(
-          replacement.acoCardNumber,
-          30
-        ).replace(
-          /[^\d]/g,
-          ""
-        );
-
-      if (replacementCard) {
-        if (
-          !/^\d{12,19}$/.test(
-            replacementCard
-          )
-        ) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Enter a valid replacement card number."
-            });
-        }
-
-        updatedSecrets.acoCardNumber =
-          replacementCard;
-      }
-
-      /*
-        Expiration may be updated when both
-        month and year are supplied.
-      */
-
-      const expMonth =
-        clean(
-          replacement.expMonth,
-          2
-        );
-
-      const expYear =
-        clean(
-          replacement.expYear,
-          4
-        );
-
-      if (
-        expMonth ||
-        expYear
-      ) {
-        if (
-          !/^(0?[1-9]|1[0-2])$/.test(
-            expMonth
-          ) ||
-          !/^\d{4}$/.test(
-            expYear
-          )
-        ) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Enter a valid expiration month and year."
-            });
-        }
-
-        updatedSecrets.expMonth =
-          expMonth.padStart(
-            2,
-            "0"
-          );
-
-        updatedSecrets.expYear =
-          expYear;
-      }
-
-      existingPackage.profile =
-        record.profile;
-
-      existingPackage.secrets =
-        updatedSecrets;
-
-      existingPackage.updatedAt =
-        new Date()
-          .toISOString();
-
-      await saveEncryptedPackage(
-        record.id,
-        existingPackage
-      );
-
-      record.updatedAt =
-        existingPackage.updatedAt;
-
-      record.customerUpdatedAt =
-        existingPackage.updatedAt;
-
-      record.updatedBy =
-        "customer";
-
-      await writeJson(
-        PAID_FILE,
-        paid
-      );
-
-      return res.json({
-        ok: true,
-
-        message:
-          "Your order information has been updated.",
-
-        orderNumber:
-          customerOrderNumber(
-            record
-          ),
-
-        updatedAt:
-          record.updatedAt
-      });
-
-    } catch (error) {
-      console.error(
-        "Customer order update error:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          error:
-            "Unable to update your order information."
-        });
-    }
-  }
-);
-
-/* -------------------------------------------------------
-   FALLBACK
+   HEALTH CHECK
 ------------------------------------------------------- */
 
 app.get(
-  "*",
+  "/api/health",
   (req, res) => {
-    res.sendFile(
-      path.join(
-        __dirname,
-        "public",
-        "index.html"
-      )
-    );
+    return res.json({
+      ok: true,
+      service:
+        "SLABSNGRABSACO"
+    });
   }
 );
 
-app.listen(
-  PORT,
-  () => {
-    console.log(
-      `SLABSNGRABSACO running at ${BASE_URL}`
+/* -------------------------------------------------------
+   START SERVER
+------------------------------------------------------- */
+
+async function startServer() {
+  try {
+    /*
+      Make sure all persistent storage locations
+      exist before accepting requests.
+    */
+
+    await fs.mkdir(
+      DATA_DIR,
+      {
+        recursive: true
+      }
     );
+
+    await fs.mkdir(
+      SECRET_DIR,
+      {
+        recursive: true
+      }
+    );
+
+    /*
+      Initialize persistent JSON files only when
+      they do not already exist. readJson() safely
+      returns the fallback if a file is missing,
+      while writeJson() creates parent directories.
+    */
+
+    const initializeArrayFile =
+      async file => {
+        try {
+          await fs.access(
+            file
+          );
+        } catch {
+          await writeJson(
+            file,
+            []
+          );
+        }
+      };
+
+    const initializeObjectFile =
+      async file => {
+        try {
+          await fs.access(
+            file
+          );
+        } catch {
+          await writeJson(
+            file,
+            {}
+          );
+        }
+      };
+
+    await initializeObjectFile(
+      PENDING_FILE
+    );
+
+    await initializeArrayFile(
+      PAID_FILE
+    );
+
+    await initializeArrayFile(
+      CUSTOMER_ACCOUNTS_FILE
+    );
+
+    await initializeArrayFile(
+      PASSWORD_RESET_FILE
+    );
+
+    await initializeArrayFile(
+      EMAIL_VERIFY_FILE
+    );
+
+    await initializeArrayFile(
+      ORDER_CLAIM_FILE
+    );
+
+    await initializeArrayFile(
+      RETAILER_PROFILES_FILE
+    );
+
+    app.listen(
+      PORT,
+      () => {
+        console.log(
+          `SLABSNGRABSACO server running on port ${PORT}`
+        );
+      }
+    );
+
+  } catch (error) {
+    console.error(
+      "Server startup failed:",
+      error
+    );
+
+    process.exit(1);
   }
-);
+}
+
+startServer();
