@@ -450,7 +450,83 @@
       box-shadow:
         0 0 8px currentColor;
     }
+/* =========================================
+   CUSTOMER UPDATE STATUS
+========================================= */
 
+.customer-update-meta {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+
+  gap: 7px;
+}
+
+
+.customer-updated-pill {
+  display: inline-flex;
+  align-items: center;
+
+  gap: 7px;
+
+  padding: 7px 10px;
+
+  border: 1px solid #176c86;
+  border-radius: 99px;
+
+  background: rgba(18, 201, 255, .09);
+
+  color: #56dcff;
+
+  font-size: 10px;
+  font-weight: 900;
+
+  letter-spacing: .4px;
+
+  text-transform: uppercase;
+}
+
+
+.customer-updated-pill::before {
+  content: "";
+
+  width: 7px;
+  height: 7px;
+
+  border-radius: 50%;
+
+  background: currentColor;
+
+  box-shadow:
+    0 0 8px currentColor;
+}
+
+
+.customer-last-updated {
+  color: #71879b;
+
+  font-size: 10px;
+  font-weight: 700;
+
+  text-align: right;
+}
+
+
+.customer-last-updated strong {
+  color: #dff7ff;
+}
+
+
+@media (max-width: 600px) {
+
+  .customer-update-meta {
+    align-items: flex-start;
+  }
+
+  .customer-last-updated {
+    text-align: left;
+  }
+}
 
     /* =========================================
        INFO PANELS
@@ -1055,6 +1131,38 @@ function formatDate(value) {
 }
 
 
+function formatDateTime(value) {
+
+  if (!value) {
+    return "—";
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return escapeHtml(value);
+  }
+
+  return escapeHtml(
+    date.toLocaleString(
+      undefined,
+      {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      }
+    )
+  );
+}
+
+
 function maskCard(value) {
 
   const digits =
@@ -1072,7 +1180,6 @@ function maskCard(value) {
 
   return `•••• •••• •••• ${lastFour}`;
 }
-
 
 function maskPassword(value) {
 
@@ -1332,13 +1439,36 @@ function renderOrder(x) {
           </div>
 
 
-          <span class="status-pill">
-            ${escapeHtml(
-              statusText(
-                x.subscriptionStatus
-              )
-            )}
+          <div class="customer-update-meta">
+
+  <span class="status-pill">
+    ${escapeHtml(
+      statusText(
+        x.subscriptionStatus
+      )
+    )}
+  </span>
+
+  ${
+    x.customerUpdatedAt
+      ? `
+          <span class="customer-updated-pill">
+            Customer Updated
           </span>
+
+          <div class="customer-last-updated">
+            Last updated:
+            <strong>
+              ${formatDateTime(
+                x.customerUpdatedAt
+              )}
+            </strong>
+          </div>
+        `
+      : ""
+  }
+
+</div>
 
         </div>
 
