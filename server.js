@@ -6164,6 +6164,103 @@ app.post(
             "The Target test order could not be saved."
         });
     }
+    app.post(
+  "/api/admin/test-imap/target-order/save",
+  requireAdmin,
+  async (req, res) => {
+
+    // ...all of the code we just added...
+
+  }
+);
+
+
+/* -------------------------------------------------------
+   TEMPORARY ADMIN SUCCESS DASHBOARD TEST DATA
+   Uses isolated success-checkouts-test.json only.
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-success",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    try {
+      const records =
+        await getTestSuccessCheckouts();
+
+      const summary =
+        buildSuccessSummary(
+          records
+        );
+
+      return res.json({
+        ok: true,
+
+        testMode: true,
+
+        sync: {
+          status:
+            "Test mailbox connected",
+
+          lastSyncedAt:
+            records.length
+              ? (
+                  records
+                    .map(record =>
+                      record.updatedAt ||
+                      record.createdAt ||
+                      null
+                    )
+                    .filter(Boolean)
+                    .sort()
+                    .reverse()[0] ||
+                  null
+                )
+              : null
+        },
+
+        totalCheckouts:
+          summary.totalCheckouts,
+
+        totalItems:
+          summary.totalItems,
+
+        checkoutValue:
+          summary.checkoutValue,
+
+        bestDay:
+          summary.bestDay,
+
+        activity:
+          summary.activity,
+
+        recentCheckouts:
+          summary.recentCheckouts
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin Success test error:",
+        error?.code ||
+        error?.name ||
+        "success_test_error"
+      );
+
+      return res
+        .status(500)
+        .json({
+          ok: false,
+          error:
+            "Unable to load Success test data."
+        });
+    }
+  }
+);
   }
 );
 /* -------------------------------------------------------
