@@ -4878,9 +4878,10 @@ function successDateKey(
 
 function buildSuccessActivity(
   records,
-  days = 14
+  startDate = null,
+  endDate = null
 ) {
-  const counts =
+  const daily =
     new Map();
 
   for (
@@ -4895,70 +4896,145 @@ function buildSuccessActivity(
       continue;
     }
 
-    counts.set(
+    const existing =
+      daily.get(key) || {
+        count: 0,
+        value: 0
+      };
+
+    existing.count += 1;
+
+    existing.value +=
+      Number(
+        record.orderTotal || 0
+      ) || 0;
+
+    daily.set(
       key,
-      (
-        counts.get(key) ||
-        0
-      ) + 1
+      existing
     );
   }
 
-  const activity = [];
+  const end =
+    endDate
+      ? new Date(
+          `${endDate}T00:00:00.000Z`
+        )
+      : new Date();
 
-  const today =
-    new Date();
-
-  today.setUTCHours(
+  end.setUTCHours(
     0,
     0,
     0,
     0
   );
 
-  for (
-    let offset =
-      days - 1;
-    offset >= 0;
-    offset -= 1
-  ) {
-    const date =
-      new Date(today);
+  const start =
+    startDate
+      ? new Date(
+          `${startDate}T00:00:00.000Z`
+        )
+      : new Date(end);
 
-    date.setUTCDate(
-      today.getUTCDate() -
-      offset
+  if (!startDate) {
+    start.setUTCDate(
+      end.getUTCDate() - 13
     );
+  }
 
+  start.setUTCHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  const activity = [];
+
+  const cursor =
+    new Date(start);
+
+  while (
+    cursor.getTime() <=
+    end.getTime()
+  ) {
     const key =
-      date
+      cursor
         .toISOString()
         .slice(0, 10);
 
+    const values =
+      daily.get(key) || {
+        count: 0,
+        value: 0
+      };
+
     activity.push({
       date: key,
+
       count:
-        counts.get(key) ||
-        0
+        values.count,
+
+      value:
+        Number(
+          values.value
+            .toFixed(2)
+        )
     });
+
+    cursor.setUTCDate(
+      cursor.getUTCDate() + 1
+    );
   }
 
   return activity;
 }
 
 function buildSuccessSummary(
-  records
+  records,
+  startDate = null,
+  endDate = null
 ) {
   const safeRecords =
     records.map(
       safeSuccessCheckout
     );
 
+  const rangeRecords =
+    safeRecords.filter(
+      record => {
+        const key =
+          successDateKey(
+            record.checkoutAt
+          );
+
+        if (!key) {
+          return false;
+        }
+
+        if (
+          startDate &&
+          key < startDate
+        ) {
+          return false;
+        }
+
+        if (
+          endDate &&
+          key > endDate
+        ) {
+          return false;
+        }
+
+        return true;
+      }
+    );
+
   const totalCheckouts =
-    safeRecords.length;
+    rangeRecords.length;
 
   const totalItems =
-    safeRecords.reduce(
+    rangeRecords.reduce(
       (sum, record) =>
         sum +
         Number(
@@ -4968,7 +5044,7 @@ function buildSuccessSummary(
     );
 
   const checkoutValue =
-    safeRecords.reduce(
+    rangeRecords.reduce(
       (sum, record) =>
         sum +
         Number(
@@ -4981,7 +5057,7 @@ function buildSuccessSummary(
     new Map();
 
   for (
-    const record of safeRecords
+    const record of rangeRecords
   ) {
     const key =
       successDateKey(
@@ -5009,7 +5085,7 @@ function buildSuccessSummary(
       : 0;
 
   const recentCheckouts =
-    [...safeRecords]
+    [...rangeRecords]
       .sort(
         (a, b) =>
           new Date(
@@ -5040,7 +5116,8 @@ function buildSuccessSummary(
     activity:
       buildSuccessActivity(
         safeRecords,
-        14
+        startDate,
+        endDate
       ),
 
     recentCheckouts
@@ -6577,10 +6654,158 @@ app.get(
             accountId
         );
 
-      const summary =
-        buildSuccessSummary(
-          ownedRecords
-        );
+      const requestedStart =
+  clean(
+    req.query.start,
+    10
+  );
+
+const requestedEnd =
+  clean(
+    req.query.end,
+    10
+  );
+
+const datePattern =
+  /^\d{4}-\d{2}-\d{2}$/;
+
+const startDate =
+  datePattern.test(
+    requestedStart
+  )
+    ? requestedStart
+    : null;
+
+const endDate =
+  datePattern.test(
+    requestedEnd
+  )
+    ? requestedEnd
+    : null;
+
+if (
+  (
+    requestedStart &&
+    !startDate
+  ) ||
+  (
+    requestedEnd &&
+    !endDate
+  )
+) {
+  return res
+    .status(400)
+    .json({
+      error:
+        "Invalid Success date range."
+    });
+}
+
+if (
+  startDate &&
+  endDate &&
+  startDate > endDate
+) {
+  return res
+    .status(400)
+    .json({
+      error:
+        "The start date must be before the end date."
+    });
+}
+
+let rangeStart =
+  startDate;
+
+let rangeEnd =
+  endDate;
+
+if (
+  !rangeStart ||
+  !rangeEnd
+) {
+  const today =
+    new Date();
+
+  today.setUTCHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  const defaultStart =
+    new Date(today);
+
+  defaultStart.setUTCDate(
+    today.getUTCDate() - 13
+  );
+
+  rangeStart =
+    defaultStart
+      .toISOString()
+      .slice(0, 10);
+
+  rangeEnd =
+    today
+      .toISOString()
+      .slice(0, 10);
+}
+
+const startTime =
+  new Date(
+    `${rangeStart}T00:00:00.000Z`
+  ).getTime();
+
+const endTime =
+  new Date(
+    `${rangeEnd}T00:00:00.000Z`
+  ).getTime();
+
+const rangeDays =
+  Math.floor(
+    (
+      endTime -
+      startTime
+    ) /
+    (
+      24 *
+      60 *
+      60 *
+      1000
+    )
+  ) + 1;
+
+/*
+  Keep a single graph request
+  reasonably sized while still
+  allowing customers to look
+  several months back.
+*/
+if (
+  rangeDays < 1 ||
+  rangeDays > 180
+) {
+  return res
+    .status(400)
+    .json({
+      error:
+        "Choose a date range of 180 days or less."
+    });
+}
+
+const summary =
+  buildSuccessSummary(
+    ownedRecords,
+    rangeStart,
+    rangeEnd
+  );
+
+summary.range = {
+  start: rangeStart,
+  end: rangeEnd,
+  days: rangeDays
+};
 
       return res.json({
         ok: true,
