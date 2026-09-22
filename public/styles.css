@@ -3743,3 +3743,160 @@ select:focus {
   }
 
 }
+/* =========================================================
+   HOME CAROUSEL GAP + CLEAR CART BUTTON FIX
+   ========================================================= */
+
+
+/* ---------- CAROUSEL SPACING ---------- */
+
+#home .home-reference-carousel {
+  max-width: 1180px;
+  padding-left: 58px;
+  padding-right: 58px;
+}
+
+#home .membership-carousel-viewport {
+  width: 100%;
+  overflow: hidden;
+  padding: 18px 0 28px;
+}
+
+#home .membership-carousel-track {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+}
+
+#home .membership-carousel-track .plan {
+  flex: 0 0 calc((100% - 32px) / 3);
+  width: calc((100% - 32px) / 3);
+  min-width: calc((100% - 32px) / 3);
+  max-width: calc((100% - 32px) / 3);
+  box-sizing: border-box;
+  margin: 0;
+}
+
+
+/* Keep featured card from creating visual spacing issues */
+
+#home .membership-carousel-track .plan.featured {
+  transform: translateY(-7px);
+}
+
+
+/* ---------- TABLET: 2 CARDS ---------- */
+
+@media (max-width: 1050px) {
+
+  #home .membership-carousel-track .plan {
+    flex-basis: calc((100% - 16px) / 2);
+    width: calc((100% - 16px) / 2);
+    min-width: calc((100% - 16px) / 2);
+    max-width: calc((100% - 16px) / 2);
+  }
+
+}
+
+
+/* ---------- MOBILE: 1 CARD ---------- */
+
+@media (max-width: 700px) {
+
+  #home .home-reference-carousel {
+    padding-left: 43px;
+    padding-right: 43px;
+  }
+
+  #home .membership-carousel-track {
+    gap: 0;
+  }
+
+  #home .membership-carousel-track .plan {
+    flex-basis: 100%;
+    width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+  }
+
+}
+
+
+/* =========================================================
+   CLEAR CART BUTTON
+   Make it match the site's other secondary buttons
+   ========================================================= */
+
+#clear-cart,
+.clear-cart,
+#clear-cart-button,
+.clear-cart-button {
+  appearance: none;
+  -webkit-appearance: none;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 44px;
+  padding: 11px 20px;
+
+  border: 1px solid rgba(20, 205, 255, 0.38);
+  border-radius: 8px;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(15, 31, 45, 0.95),
+      rgba(8, 20, 31, 0.95)
+    );
+
+  color: #e9f8ff;
+
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.18);
+
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+
+#clear-cart:hover,
+.clear-cart:hover,
+#clear-cart-button:hover,
+.clear-cart-button:hover {
+  border-color: var(--cyan);
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(18, 201, 255, 0.14),
+      rgba(8, 24, 37, 0.98)
+    );
+
+  color: #ffffff;
+
+  box-shadow:
+    0 0 18px rgba(18, 201, 255, 0.10);
+
+  transform: translateY(-1px);
+}
+
+
+#clear-cart:active,
+.clear-cart:active,
+#clear-cart-button:active,
+.clear-cart-button:active {
+  transform: translateY(0);
+}
