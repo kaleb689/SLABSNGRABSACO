@@ -5041,6 +5041,112 @@ function buildSuccessSummary(
   };
 }
 
+/* -------------------------------------------------------
+   TEMPORARY ADMIN IMAP TEST
+   Remove after mailbox integration is verified.
+------------------------------------------------------- */
+
+app.post(
+  "/api/admin/test-imap",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    try {
+      const testEmail =
+        normalizeEmail(
+          process.env.IMAP_TEST_EMAIL
+        );
+
+      const testPassword =
+        String(
+          process.env.IMAP_TEST_PASSWORD ||
+          ""
+        );
+
+      if (
+        !testEmail ||
+        !testPassword
+      ) {
+        return res
+          .status(500)
+          .json({
+            connected: false,
+            error:
+              "Test mailbox environment variables are not configured."
+          });
+      }
+
+      const result =
+        await verifyCustomerImap(
+          testEmail,
+          testPassword
+        );
+
+      return res.json({
+        ok: true,
+        connected: true,
+        provider:
+          result.provider,
+        message:
+          "Test mailbox connection successful."
+      });
+
+    } catch (error) {
+      /*
+        Never return the mailbox address,
+        password, or raw provider response.
+      */
+
+      if (
+        error?.code ===
+        "UNSUPPORTED_PROVIDER"
+      ) {
+        return res
+          .status(400)
+          .json({
+            connected: false,
+            error:
+              "This test mailbox provider is not supported yet."
+          });
+      }
+
+      if (
+        error?.authenticationFailed ===
+          true ||
+        error?.code ===
+          "AUTHENTICATIONFAILED"
+      ) {
+        return res
+          .status(401)
+          .json({
+            connected: false,
+            error:
+              "Test mailbox authentication failed. Check the app password."
+          });
+      }
+
+      console.error(
+        "Admin IMAP test failed:",
+        error?.code ||
+        error?.name ||
+        "connection_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          connected: false,
+          error:
+            "The test mailbox could not be connected right now."
+        });
+    }
+  }
+);
+
 app.post(
   "/api/account/success/test-imap",
   requireCustomer,
