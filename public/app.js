@@ -447,20 +447,28 @@ function renderPricing() {
 ===================================================== */
 
 function initializeMembershipCarousel() {
-  const track = document.getElementById("home-pricing-grid");
-  const viewport = track?.parentElement;
+  const track =
+    document.getElementById(
+      "home-pricing-grid"
+    );
 
-  const previousButton = document.getElementById(
-    "membership-carousel-previous"
-  );
+  const viewport =
+    track?.parentElement;
 
-  const nextButton = document.getElementById(
-    "membership-carousel-next"
-  );
+  const previousButton =
+    document.getElementById(
+      "membership-carousel-previous"
+    );
 
-  const dotsContainer = document.getElementById(
-    "membership-carousel-dots"
-  );
+  const nextButton =
+    document.getElementById(
+      "membership-carousel-next"
+    );
+
+  const dotsContainer =
+    document.getElementById(
+      "membership-carousel-dots"
+    );
 
   if (
     !track ||
@@ -488,20 +496,6 @@ function initializeMembershipCarousel() {
   }
 
 
-  function getTrackGap() {
-    const trackStyles = window.getComputedStyle(track);
-
-    const gap =
-      parseFloat(
-        trackStyles.columnGap ||
-        trackStyles.gap ||
-        "0"
-      ) || 0;
-
-    return gap;
-  }
-
-
   function getCards() {
     return Array.from(
       track.querySelectorAll(".plan")
@@ -510,38 +504,54 @@ function initializeMembershipCarousel() {
 
 
   function getMaxIndex() {
-    const cards = getCards();
-    const visibleCards = getVisibleCards();
-
     return Math.max(
       0,
-      cards.length - visibleCards
+      getCards().length -
+        getVisibleCards()
     );
   }
 
 
   function createDots() {
-    const maxIndex = getMaxIndex();
+    const maxIndex =
+      getMaxIndex();
 
     dotsContainer.innerHTML = "";
 
-    for (let index = 0; index <= maxIndex; index += 1) {
-      const dot = document.createElement("button");
+    for (
+      let index = 0;
+      index <= maxIndex;
+      index += 1
+    ) {
+      const dot =
+        document.createElement(
+          "button"
+        );
 
       dot.type = "button";
-      dot.className = "membership-carousel-dot";
+
+      dot.className =
+        "membership-carousel-dot";
 
       dot.setAttribute(
         "aria-label",
-        `Show membership group ${index + 1}`
+        `Show membership group ${
+          index + 1
+        }`
       );
 
-      dot.addEventListener("click", () => {
-        currentIndex = index;
-        updateCarousel();
-      });
+      dot.addEventListener(
+        "click",
+        () => {
+          currentIndex = index;
 
-      dotsContainer.appendChild(dot);
+          updateCarousel();
+        }
+      );
+
+      dotsContainer.appendChild(
+        dot
+      );
     }
   }
 
@@ -553,22 +563,30 @@ function initializeMembershipCarousel() {
       return;
     }
 
-    const maxIndex = getMaxIndex();
+    const maxIndex =
+      getMaxIndex();
 
     currentIndex = Math.min(
-      Math.max(currentIndex, 0),
+      Math.max(
+        currentIndex,
+        0
+      ),
       maxIndex
     );
 
-    const firstCard = cards[0];
-
-    const cardWidth =
-      firstCard.getBoundingClientRect().width;
-
-    const gap = getTrackGap();
+    /*
+     * Use the card's ACTUAL position
+     * inside the track.
+     *
+     * This avoids all width/gap
+     * calculation errors.
+     */
+    const targetCard =
+      cards[currentIndex];
 
     const movement =
-      currentIndex * (cardWidth + gap);
+      targetCard.offsetLeft -
+      cards[0].offsetLeft;
 
     track.style.transform =
       `translate3d(-${movement}px, 0, 0)`;
@@ -578,7 +596,7 @@ function initializeMembershipCarousel() {
       currentIndex === 0;
 
     nextButton.disabled =
-      currentIndex >= maxIndex;
+      currentIndex === maxIndex;
 
 
     const dots = Array.from(
@@ -587,76 +605,101 @@ function initializeMembershipCarousel() {
       )
     );
 
-    dots.forEach((dot, index) => {
-      dot.classList.toggle(
-        "active",
-        index === currentIndex
-      );
+    dots.forEach(
+      (dot, index) => {
+        const active =
+          index === currentIndex;
 
-      dot.setAttribute(
-        "aria-current",
-        index === currentIndex
-          ? "true"
-          : "false"
-      );
-    });
+        dot.classList.toggle(
+          "active",
+          active
+        );
+
+        dot.setAttribute(
+          "aria-current",
+          active
+            ? "true"
+            : "false"
+        );
+      }
+    );
   }
 
 
   previousButton.onclick = () => {
-    if (currentIndex <= 0) {
+    if (currentIndex === 0) {
       return;
     }
 
     currentIndex -= 1;
+
     updateCarousel();
   };
 
 
   nextButton.onclick = () => {
-    const maxIndex = getMaxIndex();
+    const maxIndex =
+      getMaxIndex();
 
-    if (currentIndex >= maxIndex) {
+    if (
+      currentIndex >= maxIndex
+    ) {
       return;
     }
 
     currentIndex += 1;
+
     updateCarousel();
   };
 
 
   /*
-   * IMPORTANT:
-   * Always begin the Home carousel with:
+   * Always start:
    *
-   * Starter | Popular | Advanced
+   * Starter
+   * Popular
+   * Advanced
    */
   currentIndex = 0;
 
   createDots();
 
-  requestAnimationFrame(() => {
-    updateCarousel();
-  });
+  requestAnimationFrame(
+    () => {
+      track.style.transform =
+        "translate3d(0, 0, 0)";
+
+      updateCarousel();
+    }
+  );
 
 
   let resizeTimer;
 
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimer);
-
-    resizeTimer = setTimeout(() => {
-      const maxIndex = getMaxIndex();
-
-      currentIndex = Math.min(
-        currentIndex,
-        maxIndex
+  window.addEventListener(
+    "resize",
+    () => {
+      clearTimeout(
+        resizeTimer
       );
 
-      createDots();
-      updateCarousel();
-    }, 100);
-  });
+      resizeTimer =
+        setTimeout(
+          () => {
+            currentIndex =
+              Math.min(
+                currentIndex,
+                getMaxIndex()
+              );
+
+            createDots();
+
+            updateCarousel();
+          },
+          100
+        );
+    }
+  );
 }
 
 
