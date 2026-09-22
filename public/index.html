@@ -1898,20 +1898,28 @@
     >
 
       <button
-        type="button"
-        class="account-tab active"
-        data-account-tab="membership"
-      >
-        Membership
-      </button>
+  type="button"
+  class="account-tab active"
+  data-account-tab="membership"
+>
+  Membership
+</button>
 
-      <button
-        type="button"
-        class="account-tab"
-        data-account-tab="orders"
-      >
-        My Orders
-      </button>
+<button
+  type="button"
+  class="account-tab"
+  data-account-tab="success"
+>
+  Success
+</button>
+
+<button
+  type="button"
+  class="account-tab"
+  data-account-tab="orders"
+>
+  My Orders
+</button>
 
       <button
         type="button"
@@ -2051,7 +2059,217 @@
 
     </div>
 
+<!-- =================================================
+     SUCCESS
+================================================== -->
 
+<div
+  id="account-tab-success"
+  class="account-tab-panel"
+  data-account-panel="success"
+  hidden
+>
+
+  <div class="success-dashboard">
+
+    <div class="success-heading">
+
+      <div>
+        <span class="eyebrow">
+          ACO PERFORMANCE
+        </span>
+
+        <h3>
+          Success
+        </h3>
+
+        <p class="account-muted">
+          Track successful retailer checkouts detected
+          through your connected ACO email.
+        </p>
+      </div>
+
+      <div
+        id="success-sync-status"
+        class="success-sync-status"
+      >
+        Waiting for checkout data
+      </div>
+
+    </div>
+
+
+    <!-- SUCCESS STATS -->
+
+    <div class="success-stats">
+
+      <div class="success-stat-card">
+        <span>
+          TOTAL CHECKOUTS
+        </span>
+
+        <strong id="success-total-checkouts">
+          0
+        </strong>
+
+        <small>
+          Successful orders
+        </small>
+      </div>
+
+
+      <div class="success-stat-card">
+        <span>
+          ITEMS SECURED
+        </span>
+
+        <strong id="success-total-items">
+          0
+        </strong>
+
+        <small>
+          Total items ordered
+        </small>
+      </div>
+
+
+      <div class="success-stat-card">
+        <span>
+          CHECKOUT VALUE
+        </span>
+
+        <strong id="success-total-value">
+          $0.00
+        </strong>
+
+        <small>
+          Initial order value
+        </small>
+      </div>
+
+
+      <div class="success-stat-card">
+        <span>
+          BEST DAY
+        </span>
+
+        <strong id="success-best-day">
+          0
+        </strong>
+
+        <small>
+          Checkouts in one day
+        </small>
+      </div>
+
+    </div>
+
+
+    <!-- CHECKOUT ACTIVITY -->
+
+    <div class="account-card success-activity-card">
+
+      <div class="success-card-heading">
+
+        <div>
+          <span class="eyebrow">
+            ACTIVITY
+          </span>
+
+          <h3>
+            Checkout Activity
+          </h3>
+        </div>
+
+        <span class="success-period-label">
+          Last 14 days
+        </span>
+
+      </div>
+
+
+      <div
+        id="success-chart"
+        class="success-chart"
+        aria-label="Checkout activity for the last 14 days"
+      >
+
+        <div class="success-chart-empty">
+          Checkout activity will appear here
+          after successful orders are detected.
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- RECENT SUCCESS -->
+
+    <div class="account-card success-recent-card">
+
+      <div class="success-card-heading">
+
+        <div>
+          <span class="eyebrow">
+            RECENT ACTIVITY
+          </span>
+
+          <h3>
+            Recent Success
+          </h3>
+        </div>
+
+      </div>
+
+
+      <div
+        id="success-checkouts"
+        class="success-checkouts"
+      >
+
+        <div class="success-empty-state">
+
+          <div class="success-empty-icon">
+            ✓
+          </div>
+
+          <h3>
+            No checkouts detected yet
+          </h3>
+
+          <p>
+            Successful retailer orders detected through
+            your connected ACO email will appear here.
+          </p>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <div class="success-info-note">
+
+      <strong>
+        How Success tracking works
+      </strong>
+
+      <p>
+        Checkout activity is generated from supported
+        retailer order confirmations detected through
+        your connected ACO email. Checkout values may
+        change later if an order is modified, cancelled,
+        refunded, or partially fulfilled.
+      </p>
+
+    </div>
+
+  </div>
+
+</div>
+    
     <!-- MY ORDERS -->
 
     <div
