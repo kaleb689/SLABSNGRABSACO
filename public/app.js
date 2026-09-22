@@ -308,119 +308,371 @@ window.addEventListener(
    PRICING CARDS
 ===================================================== */
 
-function renderPricing() {
-  const grid =
-    document.getElementById(
-      "pricing-grid"
-    );
+function pricingCardsHtml() {
+  return Object.entries(PLANS)
+    .map(([tier, plan]) => {
+      const tierNumber =
+        Number(tier);
 
-  if (!grid) return;
+      const featured =
+        tierNumber === 2;
 
-  grid.innerHTML =
-    Object.entries(PLANS)
-      .map(([tier, plan]) => {
-        const tierNumber =
-          Number(tier);
+      const profileWord =
+        plan.profiles === 1
+          ? "Profile"
+          : "Profiles";
 
-        const featured =
-          tierNumber === 2;
+      return `
+        <article
+          class="plan ${
+            featured
+              ? "featured"
+              : ""
+          }"
+          data-tier="${tier}"
+        >
 
-        const profileWord =
-          plan.profiles === 1
-            ? "Profile"
-            : "Profiles";
+          ${
+            featured
+              ? `
+                <span class="popular">
+                  POPULAR
+                </span>
+              `
+              : ""
+          }
 
-        return `
-          <article
-            class="plan ${
-              featured
-                ? "featured"
-                : ""
-            }"
-            data-tier="${tier}"
-          >
+          <span class="plan-name">
+            ${escapeHtml(plan.name)}
+          </span>
 
+          <div class="plan-price">
+            $${plan.amount}
+            <small>/month</small>
+          </div>
+
+          <h3>
+            ${plan.profiles}
+            ACO ${profileWord}
+          </h3>
+
+          <p class="plan-description">
+            ${plan.profiles}
             ${
-              featured
-                ? `
-                  <span class="popular">
-                    POPULAR
-                  </span>
-                `
-                : ""
+              plan.profiles === 1
+                ? "profile"
+                : "profiles"
             }
+            at each supported retailer.
+          </p>
 
-            <span class="plan-name">
-              ${escapeHtml(plan.name)}
-            </span>
+          <ul class="features">
 
-            <div class="plan-price">
-              $${plan.amount}
-              <small>/month</small>
-            </div>
-
-            <h3>
-              ${plan.profiles}
-              ACO ${profileWord}
-            </h3>
-
-            <p class="plan-description">
+            <li>
               ${plan.profiles}
               ${
                 plan.profiles === 1
                   ? "profile"
                   : "profiles"
               }
-              at each supported retailer.
-            </p>
+              at each retailer
+            </li>
 
-            <ul class="features">
+            <li>
+              Target, Walmart,
+              Sam's Club, Costco
+              &amp; PKC
+            </li>
 
-              <li>
-                ${plan.profiles}
-                ${
-                  plan.profiles === 1
-                    ? "profile"
-                    : "profiles"
-                }
-                at each retailer
-              </li>
+            <li>
+              Profile submission portal
+            </li>
 
-              <li>
-                Target, Walmart,
-                Sam's Club, Costco
-                &amp; PKC
-              </li>
+            <li>
+              Discord community access
+            </li>
 
-              <li>
-                Profile submission portal
-              </li>
+            <li>
+              Community support
+            </li>
 
-              <li>
-                Discord community access
-              </li>
+          </ul>
 
-              <li>
-                Community support
-              </li>
+          <button
+            type="button"
+            class="primary full"
+            data-select="${tier}"
+          >
+            Select Tier
+          </button>
 
-            </ul>
+        </article>
+      `;
+    })
+    .join("");
+}
 
-            <button
-              type="button"
-              class="primary full"
-              data-select="${tier}"
-            >
-              Select Tier
-            </button>
 
-          </article>
-        `;
-      })
-      .join("");
+function renderPricing() {
+  const pricingGrid =
+    document.getElementById(
+      "pricing-grid"
+    );
+
+  const homePricingGrid =
+    document.getElementById(
+      "home-pricing-grid"
+    );
+
+  const cards =
+    pricingCardsHtml();
+
+  if (pricingGrid) {
+    pricingGrid.innerHTML =
+      cards;
+  }
+
+  if (homePricingGrid) {
+    homePricingGrid.innerHTML =
+      cards;
+  }
 
   bindTierButtons();
+  initializeMembershipCarousel();
 }
+
+
+/* =====================================================
+   HOME MEMBERSHIP CAROUSEL
+===================================================== */
+
+let membershipCarouselIndex = 0;
+
+
+function membershipCardsVisible() {
+  if (
+    window.innerWidth <= 700
+  ) {
+    return 1;
+  }
+
+  if (
+    window.innerWidth <= 1050
+  ) {
+    return 2;
+  }
+
+  return 3;
+}
+
+
+function membershipCarouselMaxIndex() {
+  const track =
+    document.getElementById(
+      "home-pricing-grid"
+    );
+
+  if (!track) {
+    return 0;
+  }
+
+  const total =
+    track.children.length;
+
+  return Math.max(
+    0,
+    total -
+      membershipCardsVisible()
+  );
+}
+
+
+function renderMembershipCarouselDots() {
+  const dots =
+    document.getElementById(
+      "membership-carousel-dots"
+    );
+
+  if (!dots) {
+    return;
+  }
+
+  const maxIndex =
+    membershipCarouselMaxIndex();
+
+  dots.innerHTML = "";
+
+  for (
+    let index = 0;
+    index <= maxIndex;
+    index += 1
+  ) {
+    const button =
+      document.createElement(
+        "button"
+      );
+
+    button.type = "button";
+
+    button.className =
+      "membership-carousel-dot";
+
+    if (
+      index ===
+      membershipCarouselIndex
+    ) {
+      button.classList.add(
+        "active"
+      );
+    }
+
+    button.setAttribute(
+      "aria-label",
+      `Show membership group ${
+        index + 1
+      }`
+    );
+
+    button.addEventListener(
+      "click",
+      () => {
+        membershipCarouselIndex =
+          index;
+
+        updateMembershipCarousel();
+      }
+    );
+
+    dots.appendChild(
+      button
+    );
+  }
+}
+
+
+function updateMembershipCarousel() {
+  const track =
+    document.getElementById(
+      "home-pricing-grid"
+    );
+
+  if (!track) {
+    return;
+  }
+
+  const cards =
+    Array.from(
+      track.children
+    );
+
+  if (!cards.length) {
+    return;
+  }
+
+  const maxIndex =
+    membershipCarouselMaxIndex();
+
+  membershipCarouselIndex =
+    Math.min(
+      membershipCarouselIndex,
+      maxIndex
+    );
+
+  membershipCarouselIndex =
+    Math.max(
+      0,
+      membershipCarouselIndex
+    );
+
+  const firstCard =
+    cards[0];
+
+  const gap = 18;
+
+  const cardWidth =
+    firstCard.getBoundingClientRect()
+      .width;
+
+  const offset =
+    membershipCarouselIndex *
+    (cardWidth + gap);
+
+  track.style.transform =
+    `translateX(-${offset}px)`;
+
+  const previous =
+    document.getElementById(
+      "membership-carousel-previous"
+    );
+
+  const next =
+    document.getElementById(
+      "membership-carousel-next"
+    );
+
+  if (previous) {
+    previous.disabled =
+      membershipCarouselIndex === 0;
+  }
+
+  if (next) {
+    next.disabled =
+      membershipCarouselIndex >=
+      maxIndex;
+  }
+
+  renderMembershipCarouselDots();
+}
+
+
+function initializeMembershipCarousel() {
+  const track =
+    document.getElementById(
+      "home-pricing-grid"
+    );
+
+  if (!track) {
+    return;
+  }
+
+  const previous =
+    document.getElementById(
+      "membership-carousel-previous"
+    );
+
+  const next =
+    document.getElementById(
+      "membership-carousel-next"
+    );
+
+  previous?.addEventListener(
+    "click",
+    () => {
+      membershipCarouselIndex -= 1;
+
+      updateMembershipCarousel();
+    }
+  );
+
+  next?.addEventListener(
+    "click",
+    () => {
+      membershipCarouselIndex += 1;
+
+      updateMembershipCarousel();
+    }
+  );
+
+  updateMembershipCarousel();
+}
+
+
+window.addEventListener(
+  "resize",
+  () => {
+    updateMembershipCarousel();
+  }
+);
 
 
 /* =====================================================
