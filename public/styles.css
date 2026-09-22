@@ -4696,3 +4696,106 @@ select:focus {
   }
 
 }
+
+/* =========================================================
+   MY PROFILE — FINAL VISIBILITY / SPACING IMPROVEMENTS
+   ========================================================= */
+
+
+/* ---------- LARGER ORDER EDIT BUTTON ---------- */
+
+#my-profile .account-action-button {
+  min-height: 50px;
+  padding: 13px 24px;
+
+  font-size: 14px;
+  font-weight: 900;
+
+  border-radius: 11px;
+}
+
+
+/* Make primary order actions especially easy to see */
+
+#my-profile .primary.account-action-button {
+  min-width: 150px;
+
+  box-shadow:
+    0 0 26px rgba(18, 201, 255, 0.22);
+}
+
+
+/* ---------- PROFILE ALLOWANCE BADGE ---------- */
+
+#my-profile .profile-allowance-badge {
+  flex: 0 0 auto;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 10px;
+
+  min-height: 44px;
+
+  padding: 10px 17px;
+
+  border: 1px solid rgba(18, 201, 255, 0.35);
+  border-radius: 999px;
+
+  background: rgba(18, 201, 255, 0.08);
+
+  color: var(--cyan);
+
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+
+  letter-spacing: 0;
+
+  white-space: nowrap;
+}
+
+
+/*
+  Keep every piece of text inside the allowance
+  badge on the same typography and baseline.
+*/
+
+#my-profile .profile-allowance-badge,
+#my-profile .profile-allowance-badge span,
+#my-profile .profile-allowance-badge strong,
+#my-profile .profile-allowance-badge small {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+
+/* ---------- MOBILE ---------- */
+
+@media (max-width: 760px) {
+
+  #my-profile .profile-allowance-badge {
+    width: 100%;
+
+    justify-content: center;
+
+    gap: 8px;
+
+    white-space: normal;
+
+    text-align: center;
+  }
+
+  #my-profile .account-action-button {
+    min-height: 52px;
+
+    font-size: 14px;
+  }
+}
