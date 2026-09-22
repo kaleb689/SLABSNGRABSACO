@@ -4191,25 +4191,65 @@ app.put(
           replacementYear;
       }
 
-      const updatedAt =
-        new Date()
-          .toISOString();
+      /* -------------------------------------------------------
+   SECURITY CODE REPLACEMENT
+   Blank = keep the existing saved value
+------------------------------------------------------- */
 
-      record.profile =
-        nextProfile;
+const replacementSecurityCode =
+  clean(
+    secretsBody.securityCode,
+    300
+  );
 
-      record.updatedAt =
-        updatedAt;
+if (replacementSecurityCode) {
+  nextSecrets.securityCode =
+    replacementSecurityCode;
+}
 
-      await saveEncryptedPackage(
-        record.id,
-        nextSecrets
-      );
 
-      await writeJson(
-        PAID_FILE,
-        records
-      );
+/* -------------------------------------------------------
+   CUSTOMER UPDATE AUDIT
+------------------------------------------------------- */
+
+const updatedAt =
+  new Date()
+    .toISOString();
+
+record.profile =
+  nextProfile;
+
+/*
+  General last-modified timestamp.
+*/
+record.updatedAt =
+  updatedAt;
+
+/*
+  Specifically identifies an edit made
+  from the customer's My Profile page.
+*/
+record.customerUpdatedAt =
+  updatedAt;
+
+record.updatedBy =
+  "customer";
+
+
+/* Save updated encrypted ACO information */
+
+await saveEncryptedPackage(
+  record.id,
+  nextSecrets
+);
+
+
+/* Save updated customer/order record */
+
+await writeJson(
+  PAID_FILE,
+  records
+);
 
       return res.json({
         ok: true,
