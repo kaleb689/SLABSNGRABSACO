@@ -1194,14 +1194,25 @@ function publicCustomerAccount(
   account
 ) {
   return {
-    id: account.id,
-    email: account.email,
+    id:
+      account.id,
+
+    email:
+      account.email,
+
     emailVerified:
       !!account.emailVerifiedAt,
+
+    emailVerifiedAt:
+      account.emailVerifiedAt ||
+      null,
+
     createdAt:
       account.createdAt,
+
     lastLoginAt:
-      account.lastLoginAt || null
+      account.lastLoginAt ||
+      null
   };
 }
 
@@ -1828,6 +1839,11 @@ app.post(
         accounts
       );
 
+      const autoLinkResult =
+  await autoLinkVerifiedCustomerOrders(
+    account
+  );
+
       try {
         await createEmailVerification(
           account
@@ -2185,16 +2201,21 @@ app.post(
       );
 
       return res.json({
-        ok: true,
+  ok: true,
 
-        message:
-          "Your email address has been verified.",
+  message:
+    autoLinkResult.linked > 0
+      ? `Your email address has been verified and ${autoLinkResult.linked} existing order${autoLinkResult.linked === 1 ? "" : "s"} ${autoLinkResult.linked === 1 ? "has" : "have"} been connected to your account.`
+      : "Your email address has been verified.",
 
-        account:
-          publicCustomerAccount(
-            account
-          )
-      });
+  linkedOrders:
+    autoLinkResult.linked,
+
+  account:
+    publicCustomerAccount(
+      account
+    )
+});
 
     } catch (error) {
       console.error(
@@ -4071,6 +4092,100 @@ async function getCustomerOwnedOrders(
       record.customerAccountId ===
         accountId
   );
+}
+
+/* -------------------------------------------------------
+   AUTO-LINK VERIFIED CUSTOMER ORDERS
+------------------------------------------------------- */
+
+async function autoLinkVerifiedCustomerOrders(
+  account
+) {
+  if (
+    !account?.id ||
+    !account?.emailVerifiedAt
+  ) {
+    return {
+      linked: 0
+    };
+  }
+
+  const accountEmail =
+    normalizeEmail(
+      account.email
+    );
+
+  if (!accountEmail) {
+    return {
+      linked: 0
+    };
+  }
+
+  const paid =
+    await readJson(
+      PAID_FILE,
+      []
+    );
+
+  const records =
+    Array.isArray(paid)
+      ? paid
+      : [];
+
+  let linked = 0;
+
+  const linkedAt =
+    new Date()
+      .toISOString();
+
+  for (
+    const record of records
+  ) {
+    /*
+      Never move an order that is already
+      connected to another account.
+    */
+    if (
+      record.customerAccountId
+    ) {
+      continue;
+    }
+
+    const orderEmail =
+      normalizeEmail(
+        record?.profile?.email
+      );
+
+    if (
+      !orderEmail ||
+      orderEmail !==
+        accountEmail
+    ) {
+      continue;
+    }
+
+    record.customerAccountId =
+      account.id;
+
+    record.customerLinkedAt =
+      linkedAt;
+
+    record.customerLinkedBy =
+      "verified-email";
+
+    linked += 1;
+  }
+
+  if (linked > 0) {
+    await writeJson(
+      PAID_FILE,
+      records
+    );
+  }
+
+  return {
+    linked
+  };
 }
 
 /* -------------------------------------------------------
@@ -9727,12 +9842,29 @@ app.get(
   async (req, res) => {
     try {
       const account =
-        req.customerAccount;
+  req.customerAccount;
 
-      const ownedOrders =
-        await getCustomerOwnedOrders(
-          account.id
-        );
+/*
+  If this customer has already verified the
+  same email used on an older paid order,
+  automatically connect that order now.
+
+  This also repairs accounts that were created
+  before automatic linking was added.
+*/
+
+if (
+  account.emailVerifiedAt
+) {
+  await autoLinkVerifiedCustomerOrders(
+    account
+  );
+}
+
+const ownedOrders =
+  await getCustomerOwnedOrders(
+    account.id
+  );
 
       /*
         Refresh subscription information from Stripe
