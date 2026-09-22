@@ -5042,6 +5042,291 @@ function buildSuccessSummary(
 }
 
 /* -------------------------------------------------------
+   TEMPORARY ADMIN MAILBOX READER
+   Reads sanitized metadata only.
+   Remove after mailbox integration is verified.
+------------------------------------------------------- */
+
+async function readRecentTestMailboxMessages(
+  email,
+  password,
+  limit = 20
+) {
+  const {
+    provider,
+    client
+  } =
+    createCustomerImapClient(
+      email,
+      password
+    );
+
+  try {
+    await client.connect();
+
+    const lock =
+      await client.getMailboxLock(
+        "INBOX",
+        {
+          readOnly: true
+        }
+      );
+
+    try {
+      const totalMessages =
+        Number(
+          client.mailbox?.exists || 0
+        );
+
+      if (totalMessages === 0) {
+        return {
+          provider:
+            provider.name,
+
+          totalMessages: 0,
+
+          messages: []
+        };
+      }
+
+      const safeLimit =
+        Math.min(
+          Math.max(
+            Number(limit) || 20,
+            1
+          ),
+          50
+        );
+
+      const startSequence =
+        Math.max(
+          1,
+          totalMessages -
+            safeLimit +
+            1
+        );
+
+      const messages =
+        await client.fetchAll(
+          `${startSequence}:*`,
+          {
+            uid: true,
+            envelope: true,
+            internalDate: true,
+            size: true
+          }
+        );
+
+      const sanitized =
+        messages
+          .map(message => {
+            const envelope =
+              message.envelope || {};
+
+            const from =
+              Array.isArray(
+                envelope.from
+              )
+                ? envelope.from
+                    .map(sender =>
+                      String(
+                        sender?.address ||
+                        ""
+                      )
+                        .trim()
+                        .toLowerCase()
+                    )
+                    .filter(Boolean)
+                : [];
+
+            return {
+              uid:
+                Number(
+                  message.uid || 0
+                ),
+
+              messageId:
+                String(
+                  envelope.messageId ||
+                  ""
+                ).slice(0, 500),
+
+              from,
+
+              subject:
+                String(
+                  envelope.subject ||
+                  ""
+                ).slice(0, 500),
+
+              date:
+                (
+                  envelope.date ||
+                  message.internalDate
+                )
+                  ? new Date(
+                      envelope.date ||
+                      message.internalDate
+                    ).toISOString()
+                  : null,
+
+              size:
+                Number(
+                  message.size || 0
+                )
+            };
+          })
+          .reverse();
+
+      return {
+        provider:
+          provider.name,
+
+        totalMessages,
+
+        messages:
+          sanitized
+      };
+
+    } finally {
+      lock.release();
+    }
+
+  } finally {
+    if (client.usable) {
+      try {
+        await client.logout();
+      } catch {
+        client.close();
+      }
+    } else {
+      client.close();
+    }
+  }
+}
+
+
+/* -------------------------------------------------------
+   TEMPORARY ADMIN MAILBOX READER ENDPOINT
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-imap/messages",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    try {
+      const testEmail =
+        normalizeEmail(
+          process.env.IMAP_TEST_EMAIL
+        );
+
+      const testPassword =
+        String(
+          process.env.IMAP_TEST_PASSWORD ||
+          ""
+        );
+
+      if (
+        !testEmail ||
+        !testPassword
+      ) {
+        return res
+          .status(500)
+          .json({
+            ok: false,
+
+            error:
+              "Test mailbox environment variables are not configured."
+          });
+      }
+
+      const result =
+        await readRecentTestMailboxMessages(
+          testEmail,
+          testPassword,
+          20
+        );
+
+      return res.json({
+        ok: true,
+
+        provider:
+          result.provider,
+
+        totalMessages:
+          result.totalMessages,
+
+        returned:
+          result.messages.length,
+
+        messages:
+          result.messages
+      });
+
+    } catch (error) {
+      /*
+        Never return raw provider errors.
+        Provider responses can contain
+        mailbox information.
+      */
+
+      if (
+        error?.code ===
+        "UNSUPPORTED_PROVIDER"
+      ) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+
+            error:
+              "This test mailbox provider is not supported."
+          });
+      }
+
+      if (
+        error instanceof
+          AuthenticationFailure ||
+        error?.authenticationFailed ===
+          true ||
+        error?.code ===
+          "AUTHENTICATIONFAILED"
+      ) {
+        return res
+          .status(401)
+          .json({
+            ok: false,
+
+            error:
+              "Test mailbox authentication failed."
+          });
+      }
+
+      console.error(
+        "Admin mailbox reader failed:",
+        error?.code ||
+        error?.name ||
+        "mailbox_reader_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+
+          error:
+            "The test mailbox could not be read right now."
+        });
+    }
+  }
+);
+
+/* -------------------------------------------------------
    TEMPORARY ADMIN IMAP TEST
    Remove after mailbox integration is verified.
 ------------------------------------------------------- */
