@@ -4724,6 +4724,38 @@ function normalizeSuccessRetailer(
   );
 }
 
+function safeSuccessImageUrl(
+  value
+) {
+  const raw =
+    String(value || "")
+      .trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const url =
+      new URL(raw);
+
+    if (
+      url.protocol !== "https:"
+    ) {
+      return null;
+    }
+
+    return clean(
+      url.toString(),
+      2000
+    );
+
+  } catch {
+    return null;
+  }
+}
+
+
 function safeSuccessItem(item) {
   const quantity =
     Math.max(
@@ -4740,6 +4772,14 @@ function safeSuccessItem(item) {
       item?.price || 0
     );
 
+  const imageUrl =
+    safeSuccessImageUrl(
+      item?.imageUrl ||
+      item?.image ||
+      item?.productImage ||
+      item?.thumbnail
+    );
+
   return {
     name:
       clean(
@@ -4754,7 +4794,9 @@ function safeSuccessItem(item) {
       Number.isFinite(price) &&
       price >= 0
         ? price
-        : 0
+        : 0,
+
+    imageUrl
   };
 }
 
@@ -5973,28 +6015,33 @@ async function persistTargetTestOrder(
       ),
 
     items:
-      Array.isArray(order.items)
-        ? order.items.map(item => ({
-            name:
-              clean(
-                item?.name,
-                300
+  Array.isArray(order.items)
+    ? order.items.map(item => ({
+        name:
+          clean(
+            item?.name,
+            300
+          ),
+
+        quantity:
+          Number(
+            item?.quantity || 0
+          ),
+
+        price:
+          item?.price === null ||
+          item?.price === undefined
+            ? null
+            : Number(
+                item.price
               ),
 
-            quantity:
-              Number(
-                item?.quantity || 0
-              ),
-
-            price:
-              item?.price === null ||
-              item?.price === undefined
-                ? null
-                : Number(
-                    item.price
-                  )
-          }))
-        : [],
+        imageUrl:
+          safeSuccessImageUrl(
+            item?.imageUrl
+          )
+      }))
+    : [],
 
     status:
       "confirmed",
