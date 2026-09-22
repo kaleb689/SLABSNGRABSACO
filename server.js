@@ -5684,6 +5684,124 @@ function extractEmailImageUrls(
   return images;
 }
 
+function normalizeTargetProductText(
+  value
+) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(
+      /[^a-z0-9]+/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .trim();
+}
+
+
+function findTargetProductImage(
+  productName,
+  images
+) {
+  const normalizedName =
+    normalizeTargetProductText(
+      productName
+    );
+
+  if (!normalizedName) {
+    return null;
+  }
+
+  const candidates =
+    Array.isArray(images)
+      ? images
+      : [];
+
+
+  /*
+    First choice:
+    exact ALT or TITLE match.
+  */
+
+  for (
+    const image of candidates
+  ) {
+    const alt =
+      normalizeTargetProductText(
+        image?.alt
+      );
+
+    const title =
+      normalizeTargetProductText(
+        image?.title
+      );
+
+    if (
+      alt === normalizedName ||
+      title === normalizedName
+    ) {
+      return (
+        safeSuccessImageUrl(
+          image?.imageUrl
+        ) || null
+      );
+    }
+  }
+
+
+  /*
+    Second choice:
+    one normalized name contains
+    the other.
+
+    Require a meaningful amount of
+    text so short retailer labels such
+    as "Target" cannot match a product.
+  */
+
+  for (
+    const image of candidates
+  ) {
+    const labels = [
+      normalizeTargetProductText(
+        image?.alt
+      ),
+
+      normalizeTargetProductText(
+        image?.title
+      )
+    ].filter(
+      label =>
+        label.length >= 12
+    );
+
+
+    const matched =
+      labels.some(
+        label =>
+          label.includes(
+            normalizedName
+          ) ||
+          normalizedName.includes(
+            label
+          )
+      );
+
+
+    if (matched) {
+      return (
+        safeSuccessImageUrl(
+          image?.imageUrl
+        ) || null
+      );
+    }
+  }
+
+
+  return null;
+}
 
 function parseMoney(value) {
   const amount =
@@ -5707,6 +5825,13 @@ function parseTargetTestOrder({
 }) {
   const text =
     extractEmailText(source);
+
+
+  const emailImages =
+    extractEmailImageUrls(
+      source
+    );
+
 
   const combined =
     `${subject || ""}\n${text}`;
@@ -5850,21 +5975,18 @@ function parseTargetTestOrder({
 
 
     items.push({
+  name,
+
+  quantity,
+
+  price,
+
+  imageUrl:
+    findTargetProductImage(
       name,
-
-      quantity,
-
-      price,
-
-      /*
-        The current plain-text test email
-        has no trustworthy product image.
-
-        This field is ready for the HTML
-        image parser we'll add next.
-      */
-      imageUrl: null
-    });
+      emailImages
+    )
+});
   }
 
 
