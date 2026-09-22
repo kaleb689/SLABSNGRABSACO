@@ -4346,3 +4346,353 @@ select:focus {
       rgba(88, 101, 242, 0.35)
     );
 }
+
+/* =========================================================
+   MY PROFILE — BUTTON / TAB DESIGN
+   ========================================================= */
+
+/* ---------- ACCOUNT TAB BAR ---------- */
+
+#my-profile .account-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+
+  width: 100%;
+  margin: 24px 0 28px;
+  padding: 7px;
+
+  border: 1px solid #183b52;
+  border-radius: 16px;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(13, 25, 40, 0.96),
+      rgba(7, 16, 27, 0.96)
+    );
+
+  box-shadow:
+    0 18px 45px rgba(0, 0, 0, 0.22);
+}
+
+
+/* ---------- INDIVIDUAL TABS ---------- */
+
+#my-profile .account-tab {
+  appearance: none;
+  -webkit-appearance: none;
+
+  min-height: 52px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 12px 15px;
+
+  border: 1px solid transparent;
+  border-radius: 11px;
+
+  background: transparent;
+
+  color: #8e9db4;
+
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+
+  cursor: pointer;
+
+  transition:
+    color 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+
+#my-profile .account-tab:hover {
+  color: #dff8ff;
+
+  border-color: rgba(18, 201, 255, 0.18);
+
+  background: rgba(18, 201, 255, 0.06);
+}
+
+
+/* ---------- ACTIVE TAB ---------- */
+
+#my-profile .account-tab.active {
+  color: #031019;
+
+  border-color: rgba(18, 201, 255, 0.9);
+
+  background:
+    linear-gradient(
+      135deg,
+      var(--cyan),
+      var(--cyan2)
+    );
+
+  box-shadow:
+    0 0 22px rgba(18, 201, 255, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+
+#my-profile .account-tab.active:hover {
+  color: #031019;
+
+  transform: translateY(-1px);
+
+  box-shadow:
+    0 0 28px rgba(18, 201, 255, 0.3);
+}
+
+
+/* =========================================================
+   MY PROFILE — STANDARD ACTION BUTTONS
+   ========================================================= */
+
+#my-profile .account-action-button {
+  appearance: none;
+  -webkit-appearance: none;
+
+  min-height: 44px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 8px;
+
+  padding: 11px 18px;
+
+  border-radius: 9px;
+
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 900;
+
+  text-decoration: none;
+
+  cursor: pointer;
+
+  transition:
+    filter 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+
+#my-profile .account-action-button:hover {
+  transform: translateY(-1px);
+}
+
+
+/* ---------- PRIMARY ACCOUNT BUTTON ---------- */
+
+#my-profile .primary.account-action-button {
+  border: 1px solid rgba(18, 201, 255, 0.9);
+
+  background:
+    linear-gradient(
+      135deg,
+      var(--cyan),
+      var(--cyan2)
+    );
+
+  color: #031019;
+
+  box-shadow:
+    0 0 24px rgba(18, 201, 255, 0.18);
+}
+
+
+#my-profile .primary.account-action-button:hover {
+  filter: brightness(1.08);
+
+  box-shadow:
+    0 0 30px rgba(18, 201, 255, 0.28);
+}
+
+
+/* ---------- SECONDARY ACCOUNT BUTTON ---------- */
+
+#my-profile .secondary.account-action-button {
+  border: 1px solid #244157;
+
+  background:
+    linear-gradient(
+      180deg,
+      #0d1b29,
+      #09131f
+    );
+
+  color: #d7f5ff;
+
+  box-shadow:
+    0 10px 25px rgba(0, 0, 0, 0.16);
+}
+
+
+#my-profile .secondary.account-action-button:hover {
+  border-color: rgba(18, 201, 255, 0.45);
+
+  background:
+    linear-gradient(
+      180deg,
+      #102536,
+      #0a1825
+    );
+
+  color: #ffffff;
+}
+
+
+/* =========================================================
+   MY PROFILE — TEXT BUTTONS
+   Forgot password / resend verification
+   ========================================================= */
+
+#my-profile .text-button {
+  appearance: none;
+  -webkit-appearance: none;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  margin: 8px 0 0;
+  padding: 8px 11px;
+
+  border: 1px solid rgba(18, 201, 255, 0.2);
+  border-radius: 8px;
+
+  background: rgba(18, 201, 255, 0.055);
+
+  color: var(--cyan);
+
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+
+  cursor: pointer;
+
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+
+#my-profile .text-button:hover {
+  border-color: rgba(18, 201, 255, 0.48);
+
+  background: rgba(18, 201, 255, 0.12);
+
+  color: #e5fbff;
+
+  box-shadow:
+    0 0 18px rgba(18, 201, 255, 0.08);
+}
+
+
+/* =========================================================
+   LOGOUT BUTTON
+   ========================================================= */
+
+#my-profile #customer-logout {
+  min-width: 105px;
+}
+
+
+/* =========================================================
+   SIGN IN / REGISTER / RESET BUTTONS
+   ========================================================= */
+
+#my-profile .account-auth .primary,
+#my-profile .account-auth .secondary {
+  min-height: 46px;
+
+  border-radius: 9px;
+
+  font-size: 12px;
+  font-weight: 900;
+}
+
+
+/* =========================================================
+   BUTTON FOCUS
+   ========================================================= */
+
+#my-profile .account-tab:focus-visible,
+#my-profile .account-action-button:focus-visible,
+#my-profile .text-button:focus-visible,
+#my-profile .primary:focus-visible,
+#my-profile .secondary:focus-visible {
+  outline: none;
+
+  box-shadow:
+    0 0 0 3px rgba(18, 201, 255, 0.15),
+    0 0 20px rgba(18, 201, 255, 0.12);
+}
+
+
+/* =========================================================
+   DISABLED BUTTONS
+   ========================================================= */
+
+#my-profile button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  filter: none !important;
+}
+
+
+/* =========================================================
+   MY PROFILE — MOBILE BUTTONS
+   ========================================================= */
+
+@media (max-width: 760px) {
+
+  #my-profile .account-tabs {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+
+    gap: 8px;
+
+    padding: 6px;
+  }
+
+  #my-profile .account-tab {
+    min-height: 48px;
+
+    padding: 10px 8px;
+
+    font-size: 11px;
+  }
+
+  #my-profile .account-action-button {
+    width: 100%;
+  }
+
+  #my-profile #customer-logout {
+    width: auto;
+  }
+}
+
+
+@media (max-width: 480px) {
+
+  #my-profile .account-tabs {
+    grid-template-columns: 1fr;
+  }
+
+}
