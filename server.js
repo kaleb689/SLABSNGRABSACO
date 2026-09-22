@@ -2870,12 +2870,74 @@ function subscriptionAllowsProfiles(
     String(
       record?.subscriptionStatus ||
       ""
-    ).toLowerCase();
+    )
+      .trim()
+      .toLowerCase();
 
-  return [
-    "active",
-    "trialing"
-  ].includes(status);
+  /*
+    Current Stripe subscription statuses that
+    should have access to retailer profiles.
+  */
+  if (
+    [
+      "active",
+      "trialing"
+    ].includes(status)
+  ) {
+    return true;
+  }
+
+  /*
+    Explicit inactive Stripe statuses must
+    never receive profile access.
+  */
+  if (
+    [
+      "canceled",
+      "cancelled",
+      "unpaid",
+      "incomplete",
+      "incomplete_expired",
+      "paused"
+    ].includes(status)
+  ) {
+    return false;
+  }
+
+  /*
+    Past-due memberships are not treated as
+    active until Stripe reports them active again.
+  */
+  if (status === "past_due") {
+    return false;
+  }
+
+  /*
+    Compatibility for older paid records created
+    before subscriptionStatus was stored.
+
+    Only allow the legacy record when:
+    - it is in paid-submissions.json
+    - it has evidence of a completed payment
+    - it has not been explicitly ended/canceled
+  */
+  const hasPaidRecord =
+    Boolean(
+      record?.paidAt ||
+      record?.stripeSessionId
+    );
+
+  const hasEnded =
+    Boolean(
+      record?.endedAt ||
+      record?.canceledAt
+    );
+
+  return (
+    !status &&
+    hasPaidRecord &&
+    !hasEnded
+  );
 }
 
 function profileAllowanceForRecord(
