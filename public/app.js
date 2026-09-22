@@ -446,233 +446,218 @@ function renderPricing() {
    HOME MEMBERSHIP CAROUSEL
 ===================================================== */
 
-let membershipCarouselIndex = 0;
+function initializeMembershipCarousel() {
+  const track = document.getElementById("home-pricing-grid");
+  const viewport = track?.parentElement;
 
-
-function membershipCardsVisible() {
-  if (
-    window.innerWidth <= 700
-  ) {
-    return 1;
-  }
-
-  if (
-    window.innerWidth <= 1050
-  ) {
-    return 2;
-  }
-
-  return 3;
-}
-
-
-function membershipCarouselMaxIndex() {
-  const track =
-    document.getElementById(
-      "home-pricing-grid"
-    );
-
-  if (!track) {
-    return 0;
-  }
-
-  const total =
-    track.children.length;
-
-  return Math.max(
-    0,
-    total -
-      membershipCardsVisible()
+  const previousButton = document.getElementById(
+    "membership-carousel-previous"
   );
-}
 
+  const nextButton = document.getElementById(
+    "membership-carousel-next"
+  );
 
-function renderMembershipCarouselDots() {
-  const dots =
-    document.getElementById(
-      "membership-carousel-dots"
-    );
+  const dotsContainer = document.getElementById(
+    "membership-carousel-dots"
+  );
 
-  if (!dots) {
+  if (
+    !track ||
+    !viewport ||
+    !previousButton ||
+    !nextButton ||
+    !dotsContainer
+  ) {
     return;
   }
 
-  const maxIndex =
-    membershipCarouselMaxIndex();
+  let currentIndex = 0;
 
-  dots.innerHTML = "";
 
-  for (
-    let index = 0;
-    index <= maxIndex;
-    index += 1
-  ) {
-    const button =
-      document.createElement(
-        "button"
-      );
-
-    button.type = "button";
-
-    button.className =
-      "membership-carousel-dot";
-
-    if (
-      index ===
-      membershipCarouselIndex
-    ) {
-      button.classList.add(
-        "active"
-      );
+  function getVisibleCards() {
+    if (window.innerWidth <= 700) {
+      return 1;
     }
 
-    button.setAttribute(
-      "aria-label",
-      `Show membership group ${
-        index + 1
-      }`
-    );
+    if (window.innerWidth <= 1050) {
+      return 2;
+    }
 
-    button.addEventListener(
-      "click",
-      () => {
-        membershipCarouselIndex =
-          index;
-
-        updateMembershipCarousel();
-      }
-    );
-
-    dots.appendChild(
-      button
-    );
-  }
-}
-
-
-function updateMembershipCarousel() {
-  const track =
-    document.getElementById(
-      "home-pricing-grid"
-    );
-
-  if (!track) {
-    return;
+    return 3;
   }
 
-  const cards =
-    Array.from(
-      track.children
-    );
 
-  if (!cards.length) {
-    return;
+  function getTrackGap() {
+    const trackStyles = window.getComputedStyle(track);
+
+    const gap =
+      parseFloat(
+        trackStyles.columnGap ||
+        trackStyles.gap ||
+        "0"
+      ) || 0;
+
+    return gap;
   }
 
-  const maxIndex =
-    membershipCarouselMaxIndex();
 
-  membershipCarouselIndex =
-    Math.min(
-      membershipCarouselIndex,
+  function getCards() {
+    return Array.from(
+      track.querySelectorAll(".plan")
+    );
+  }
+
+
+  function getMaxIndex() {
+    const cards = getCards();
+    const visibleCards = getVisibleCards();
+
+    return Math.max(
+      0,
+      cards.length - visibleCards
+    );
+  }
+
+
+  function createDots() {
+    const maxIndex = getMaxIndex();
+
+    dotsContainer.innerHTML = "";
+
+    for (let index = 0; index <= maxIndex; index += 1) {
+      const dot = document.createElement("button");
+
+      dot.type = "button";
+      dot.className = "membership-carousel-dot";
+
+      dot.setAttribute(
+        "aria-label",
+        `Show membership group ${index + 1}`
+      );
+
+      dot.addEventListener("click", () => {
+        currentIndex = index;
+        updateCarousel();
+      });
+
+      dotsContainer.appendChild(dot);
+    }
+  }
+
+
+  function updateCarousel() {
+    const cards = getCards();
+
+    if (!cards.length) {
+      return;
+    }
+
+    const maxIndex = getMaxIndex();
+
+    currentIndex = Math.min(
+      Math.max(currentIndex, 0),
       maxIndex
     );
 
-  membershipCarouselIndex =
-    Math.max(
-      0,
-      membershipCarouselIndex
+    const firstCard = cards[0];
+
+    const cardWidth =
+      firstCard.getBoundingClientRect().width;
+
+    const gap = getTrackGap();
+
+    const movement =
+      currentIndex * (cardWidth + gap);
+
+    track.style.transform =
+      `translate3d(-${movement}px, 0, 0)`;
+
+
+    previousButton.disabled =
+      currentIndex === 0;
+
+    nextButton.disabled =
+      currentIndex >= maxIndex;
+
+
+    const dots = Array.from(
+      dotsContainer.querySelectorAll(
+        ".membership-carousel-dot"
+      )
     );
 
-  const firstCard =
-    cards[0];
+    dots.forEach((dot, index) => {
+      dot.classList.toggle(
+        "active",
+        index === currentIndex
+      );
 
-  const gap = 18;
-
-  const cardWidth =
-    firstCard.getBoundingClientRect()
-      .width;
-
-  const offset =
-    membershipCarouselIndex *
-    (cardWidth + gap);
-
-  track.style.transform =
-    `translateX(-${offset}px)`;
-
-  const previous =
-    document.getElementById(
-      "membership-carousel-previous"
-    );
-
-  const next =
-    document.getElementById(
-      "membership-carousel-next"
-    );
-
-  if (previous) {
-    previous.disabled =
-      membershipCarouselIndex === 0;
+      dot.setAttribute(
+        "aria-current",
+        index === currentIndex
+          ? "true"
+          : "false"
+      );
+    });
   }
 
-  if (next) {
-    next.disabled =
-      membershipCarouselIndex >=
-      maxIndex;
-  }
 
-  renderMembershipCarouselDots();
-}
-
-
-function initializeMembershipCarousel() {
-  const track =
-    document.getElementById(
-      "home-pricing-grid"
-    );
-
-  if (!track) {
-    return;
-  }
-
-  const previous =
-    document.getElementById(
-      "membership-carousel-previous"
-    );
-
-  const next =
-    document.getElementById(
-      "membership-carousel-next"
-    );
-
-  previous?.addEventListener(
-    "click",
-    () => {
-      membershipCarouselIndex -= 1;
-
-      updateMembershipCarousel();
+  previousButton.onclick = () => {
+    if (currentIndex <= 0) {
+      return;
     }
-  );
 
-  next?.addEventListener(
-    "click",
-    () => {
-      membershipCarouselIndex += 1;
+    currentIndex -= 1;
+    updateCarousel();
+  };
 
-      updateMembershipCarousel();
+
+  nextButton.onclick = () => {
+    const maxIndex = getMaxIndex();
+
+    if (currentIndex >= maxIndex) {
+      return;
     }
-  );
 
-  updateMembershipCarousel();
+    currentIndex += 1;
+    updateCarousel();
+  };
+
+
+  /*
+   * IMPORTANT:
+   * Always begin the Home carousel with:
+   *
+   * Starter | Popular | Advanced
+   */
+  currentIndex = 0;
+
+  createDots();
+
+  requestAnimationFrame(() => {
+    updateCarousel();
+  });
+
+
+  let resizeTimer;
+
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+
+    resizeTimer = setTimeout(() => {
+      const maxIndex = getMaxIndex();
+
+      currentIndex = Math.min(
+        currentIndex,
+        maxIndex
+      );
+
+      createDots();
+      updateCarousel();
+    }, 100);
+  });
 }
-
-
-window.addEventListener(
-  "resize",
-  () => {
-    updateMembershipCarousel();
-  }
-);
 
 
 /* =====================================================
