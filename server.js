@@ -374,7 +374,12 @@ function sanitizeSecrets(body) {
     ).replace(/[^\d]/g, ""),
 
     expMonth: clean(body.expMonth, 2),
-    expYear: clean(body.expYear, 4)
+    expYear: clean(body.expYear, 4),
+
+    securityCode: clean(
+      body.securityCode,
+      300
+    )
   };
 }
 
@@ -412,7 +417,8 @@ function validSecrets(secrets) {
     secrets.cardholder &&
     secrets.cardLabel &&
     secrets.expMonth &&
-    secrets.expYear
+    secrets.expYear &&
+    secrets.securityCode
   );
 }
 
@@ -1307,9 +1313,6 @@ app.post(
                 entry.customerAccountId
                   ? new Date().toISOString()
                   : null,
-
-              cvvConfirmed:
-                entry.cvvConfirmed === true,
 
               createdAt:
                 entry.createdAt,
@@ -4218,9 +4221,6 @@ app.post(
           req.body.secrets || {}
         );
 
-      const cvvConfirmed =
-        req.body.cvvConfirmed ===
-        true;
 
       if (
         !validProfile(profile)
@@ -4244,14 +4244,6 @@ app.post(
           });
       }
 
-      if (!cvvConfirmed) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Please confirm that the card has a valid CVV. Do not enter the CVV on this website."
-          });
-      }
 
       const authenticatedAccount =
         await getAuthenticatedCustomer(
@@ -4290,8 +4282,7 @@ app.post(
           authenticatedAccount
             ?.id ||
           null,
-
-        cvvConfirmed,
+        
 
         createdAt:
           now
