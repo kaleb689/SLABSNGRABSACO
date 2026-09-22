@@ -7538,53 +7538,104 @@ select:focus {
 }
 
 /* ======================================================
-   SUCCESS — HALF-WIDTH RECENT ACTIVITY AREA
+   SUCCESS — RECENT ACTIVITY DESKTOP LAYOUT FIX
 ====================================================== */
 
+/*
+  The existing Success checkout container is being
+  constrained by an older layout rule.
+
+  Force the container to use the entire dashboard row.
+*/
 #my-profile #success-checkouts {
-  width: 100%;
-}
+  display: block !important;
 
-
-/*
-  Recent Success occupies roughly half of the
-  available dashboard width on desktop.
-*/
-#my-profile .success-recent-shell {
-  width: 56% !important;
-  max-width: none !important;
-
-  min-width: 0;
-
-  box-sizing: border-box;
-}
-
-
-/*
-  Give the three product previews enough room
-  to actually look like product cards.
-*/
-#my-profile .success-product-previews {
-  grid-template-columns:
-    repeat(3, minmax(0, 1fr)) !important;
-
-  gap: 14px;
-}
-
-
-#my-profile .success-product-image-wrap {
-  min-height: 125px;
-}
-
-
-/*
-  ALL ORDERS is a full history view, so it should
-  use the entire available dashboard width instead
-  of staying constrained to half width.
-*/
-#my-profile .success-all-orders-view {
   width: 100% !important;
   max-width: none !important;
+
+  min-width: 0 !important;
+
+  grid-column:
+    1 / -1 !important;
+
+  box-sizing: border-box !important;
+}
+
+
+/*
+  Recent Success gets approximately the left half
+  of the full dashboard row.
+*/
+#my-profile #success-checkouts
+.success-recent-shell {
+  display: block !important;
+
+  width: calc(50% - 10px) !important;
+  max-width: none !important;
+  min-width: 560px !important;
+
+  margin:
+    0
+    auto
+    0
+    0 !important;
+
+  box-sizing: border-box !important;
+}
+
+
+/* Three equal product areas */
+
+#my-profile #success-checkouts
+.success-product-previews {
+  display: grid !important;
+
+  grid-template-columns:
+    repeat(
+      3,
+      minmax(0, 1fr)
+    ) !important;
+
+  width: 100% !important;
+
+  gap: 14px !important;
+}
+
+
+#my-profile #success-checkouts
+.success-product-image-wrap {
+  width: 100% !important;
+
+  min-height: 125px !important;
+}
+
+
+/* Summary stays three columns */
+
+#my-profile #success-checkouts
+.success-checkout-summary {
+  display: grid !important;
+
+  grid-template-columns:
+    repeat(
+      3,
+      minmax(0, 1fr)
+    ) !important;
+
+  width: 100% !important;
+}
+
+
+/*
+  All Orders is intentionally different:
+  it gets the full dashboard width.
+*/
+
+#my-profile #success-checkouts
+.success-all-orders-view {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
 }
 
 
@@ -7592,10 +7643,13 @@ select:focus {
    TABLET
 ====================================================== */
 
-@media (max-width: 1050px) {
+@media (max-width: 1100px) {
 
-  #my-profile .success-recent-shell {
+  #my-profile #success-checkouts
+  .success-recent-shell {
     width: 70% !important;
+
+    min-width: 0 !important;
   }
 
 }
@@ -7607,13 +7661,24 @@ select:focus {
 
 @media (max-width: 700px) {
 
-  #my-profile .success-recent-shell {
+  #my-profile #success-checkouts
+  .success-recent-shell {
     width: 100% !important;
+
+    min-width: 0 !important;
   }
 
 
-  #my-profile .success-product-image-wrap {
-    min-height: 90px;
+  #my-profile #success-checkouts
+  .success-product-image-wrap {
+    min-height: 90px !important;
+  }
+
+
+  #my-profile #success-checkouts
+  .success-checkout-summary {
+    grid-template-columns:
+      1fr !important;
   }
 
 }
