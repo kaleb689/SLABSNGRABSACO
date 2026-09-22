@@ -5327,6 +5327,513 @@ app.get(
 );
 
 /* -------------------------------------------------------
+   TEMPORARY TARGET ORDER PARSER TEST
+   Reads only likely Target order messages.
+   Does NOT save anything to Success yet.
+------------------------------------------------------- */
+
+function htmlToPlainText(value) {
+  return String(value || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+
+function extractEmailText(source) {
+  const raw =
+    Buffer.isBuffer(source)
+      ? source.toString("utf8")
+      : String(source || "");
+
+  /*
+    For this controlled parser test we only need
+    readable text from the message source.
+
+    We remove common MIME/HTML noise but do not
+    permanently store the raw message.
+  */
+
+  return htmlToPlainText(
+    raw
+      .replace(
+        /^Content-[^\n]*$/gim,
+        " "
+      )
+      .replace(
+        /^MIME-Version:[^\n]*$/gim,
+        " "
+      )
+  );
+}
+
+
+function parseMoney(value) {
+  const amount =
+    Number(
+      String(value || "")
+        .replace(/[$,\s]/g, "")
+    );
+
+  return Number.isFinite(amount)
+    ? Math.round(amount * 100) / 100
+    : null;
+}
+
+
+function parseTargetTestOrder({
+  subject,
+  source,
+  uid,
+  messageId,
+  date
+}) {
+  const text =
+    extractEmailText(source);
+
+  const combined =
+    `${subject || ""}\n${text}`;
+
+  /*
+    Require clear Target/order language before
+    attempting to parse anything.
+  */
+
+  if (
+    !/target/i.test(combined) ||
+    !/order/i.test(combined)
+  ) {
+    return null;
+  }
+
+  const orderMatch =
+    combined.match(
+      /order\s*(?:number|#|no\.?)?\s*:?\s*#?\s*([A-Z0-9-]{6,40})/i
+    );
+
+  const totalMatch =
+    combined.match(
+      /order\s+total\s*:?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i
+    );
+
+  const quantityMatch =
+    combined.match(
+      /quantity\s*:?\s*(\d{1,4})/i
+    );
+
+  const unitPriceMatch =
+    combined.match(
+      /\$?\s*([\d,]+(?:\.\d{2}))\s*(?:each|\/\s*each)/i
+    );
+
+  let productName = null;
+
+  const productMatch =
+    combined.match(
+      /order\s*(?:number|#|no\.?)?\s*:?\s*#?\s*[A-Z0-9-]{6,40}\s*\n+\s*([^\n]{3,300})\s*\n+\s*quantity\s*:/i
+    );
+
+  if (productMatch?.[1]) {
+    productName =
+      clean(
+        productMatch[1],
+        300
+      );
+  }
+
+  const orderNumber =
+    orderMatch?.[1]
+      ? clean(
+          orderMatch[1],
+          100
+        )
+      : null;
+
+  const orderTotal =
+    totalMatch?.[1]
+      ? parseMoney(
+          totalMatch[1]
+        )
+      : null;
+
+  const quantity =
+    quantityMatch?.[1]
+      ? Number(
+          quantityMatch[1]
+        )
+      : null;
+
+  const unitPrice =
+    unitPriceMatch?.[1]
+      ? parseMoney(
+          unitPriceMatch[1]
+        )
+      : null;
+
+  if (
+    !orderNumber ||
+    orderTotal === null
+  ) {
+    return null;
+  }
+
+  return {
+    retailer: "Target",
+
+    orderNumber,
+
+    checkoutAt:
+      date || null,
+
+    itemCount:
+      Number.isInteger(quantity)
+        ? quantity
+        : 0,
+
+    orderTotal,
+
+    items:
+      productName
+        ? [
+            {
+              name:
+                productName,
+
+              quantity:
+                Number.isInteger(quantity)
+                  ? quantity
+                  : 1,
+
+              price:
+                unitPrice
+            }
+          ]
+        : [],
+
+    source: "imap-test",
+
+    mailboxUid:
+      String(uid || ""),
+
+    messageId:
+      clean(
+        messageId,
+        500
+      )
+  };
+}
+
+
+async function readLatestTargetTestOrder(
+  email,
+  password
+) {
+  const {
+    provider,
+    client
+  } =
+    createCustomerImapClient(
+      email,
+      password
+    );
+
+  try {
+    await client.connect();
+
+    const lock =
+      await client.getMailboxLock(
+        "INBOX",
+        {
+          readOnly: true
+        }
+      );
+
+    try {
+      const totalMessages =
+        Number(
+          client.mailbox?.exists || 0
+        );
+
+      if (!totalMessages) {
+        return {
+          provider:
+            provider.name,
+
+          matched:
+            false,
+
+          order:
+            null
+        };
+      }
+
+      /*
+        Only inspect the newest 25 messages.
+        First fetch envelope metadata.
+      */
+
+      const startSequence =
+        Math.max(
+          1,
+          totalMessages - 24
+        );
+
+      const candidates =
+        await client.fetchAll(
+          `${startSequence}:*`,
+          {
+            uid: true,
+            envelope: true,
+            internalDate: true
+          }
+        );
+
+      /*
+        Newest first.
+      */
+
+      candidates.reverse();
+
+      for (
+        const candidate of candidates
+      ) {
+        const subject =
+          String(
+            candidate
+              .envelope
+              ?.subject ||
+            ""
+          );
+
+        /*
+          Do not fetch message content unless
+          the subject looks like a Target order.
+        */
+
+        if (
+          !/target/i.test(subject) ||
+          !/order/i.test(subject)
+        ) {
+          continue;
+        }
+
+        const message =
+          await client.fetchOne(
+            candidate.uid,
+            {
+              uid: true,
+              envelope: true,
+              internalDate: true,
+              source: true
+            },
+            {
+              uid: true
+            }
+          );
+
+        if (!message) {
+          continue;
+        }
+
+        const parsed =
+          parseTargetTestOrder({
+            subject:
+              message.envelope
+                ?.subject ||
+              subject,
+
+            source:
+              message.source,
+
+            uid:
+              message.uid,
+
+            messageId:
+              message.envelope
+                ?.messageId ||
+              "",
+
+            date:
+              (
+                message.envelope?.date ||
+                message.internalDate
+              )
+                ? new Date(
+                    message.envelope?.date ||
+                    message.internalDate
+                  ).toISOString()
+                : null
+          });
+
+        if (parsed) {
+          return {
+            provider:
+              provider.name,
+
+            matched:
+              true,
+
+            order:
+              parsed
+          };
+        }
+      }
+
+      return {
+        provider:
+          provider.name,
+
+        matched:
+          false,
+
+        order:
+          null
+      };
+
+    } finally {
+      lock.release();
+    }
+
+  } finally {
+    if (client.usable) {
+      try {
+        await client.logout();
+      } catch {
+        client.close();
+      }
+    } else {
+      client.close();
+    }
+  }
+}
+
+
+/* -------------------------------------------------------
+   TEMPORARY ADMIN TARGET PARSER ENDPOINT
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-imap/target-order",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    try {
+      const testEmail =
+        normalizeEmail(
+          process.env.IMAP_TEST_EMAIL
+        );
+
+      const testPassword =
+        String(
+          process.env.IMAP_TEST_PASSWORD ||
+          ""
+        );
+
+      if (
+        !testEmail ||
+        !testPassword
+      ) {
+        return res
+          .status(500)
+          .json({
+            ok: false,
+
+            error:
+              "Test mailbox environment variables are not configured."
+          });
+      }
+
+      const result =
+        await readLatestTargetTestOrder(
+          testEmail,
+          testPassword
+        );
+
+      return res.json({
+        ok: true,
+
+        provider:
+          result.provider,
+
+        matched:
+          result.matched,
+
+        order:
+          result.order
+      });
+
+    } catch (error) {
+      if (
+        error?.code ===
+        "UNSUPPORTED_PROVIDER"
+      ) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+
+            error:
+              "This test mailbox provider is not supported."
+          });
+      }
+
+      if (
+        error instanceof
+          AuthenticationFailure ||
+        error?.authenticationFailed ===
+          true ||
+        error?.code ===
+          "AUTHENTICATIONFAILED"
+      ) {
+        return res
+          .status(401)
+          .json({
+            ok: false,
+
+            error:
+              "Test mailbox authentication failed."
+          });
+      }
+
+      console.error(
+        "Target parser test failed:",
+        error?.code ||
+        error?.name ||
+        "target_parser_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+
+          error:
+            "The Target test order could not be read right now."
+        });
+    }
+  }
+);
+
+/* -------------------------------------------------------
    TEMPORARY ADMIN IMAP TEST
    Remove after mailbox integration is verified.
 ------------------------------------------------------- */
