@@ -4504,7 +4504,611 @@ async function saveRetailerProfile(
   }
 }
 
+/* =====================================================
+   SUCCESS DASHBOARD
+===================================================== */
 
+const successState = {
+  loaded: false,
+  loading: false,
+  data: null
+};
+
+
+function formatSuccessCurrency(
+  value
+) {
+  const amount =
+    Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return "$0.00";
+  }
+
+  return new Intl.NumberFormat(
+    "en-US",
+    {
+      style: "currency",
+      currency: "USD"
+    }
+  ).format(amount);
+}
+
+
+function formatSuccessNumber(
+  value
+) {
+  const number =
+    Number(value);
+
+  if (!Number.isFinite(number)) {
+    return "0";
+  }
+
+  return new Intl.NumberFormat(
+    "en-US"
+  ).format(number);
+}
+
+
+function formatSuccessDate(
+  value
+) {
+  if (!value) {
+    return "—";
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString(
+    undefined,
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric"
+    }
+  );
+}
+
+
+function setSuccessText(
+  id,
+  value
+) {
+  const element =
+    document.getElementById(id);
+
+  if (!element) {
+    return;
+  }
+
+  element.textContent =
+    value ?? "—";
+}
+
+
+function renderSuccessChart(
+  activity = []
+) {
+  const chart =
+    document.getElementById(
+      "success-chart"
+    );
+
+  if (!chart) {
+    return;
+  }
+
+  if (
+    !Array.isArray(activity) ||
+    activity.length === 0
+  ) {
+    chart.innerHTML = `
+      <div class="success-chart-empty">
+        Checkout activity will appear
+        here after successful checkouts
+        are synchronized.
+      </div>
+    `;
+
+    return;
+  }
+
+  const maximum =
+    Math.max(
+      1,
+      ...activity.map(item =>
+        Math.max(
+          0,
+          Number(
+            item.count ??
+            item.checkouts ??
+            0
+          ) || 0
+        )
+      )
+    );
+
+  chart.innerHTML =
+    activity
+      .map(item => {
+        const count =
+          Math.max(
+            0,
+            Number(
+              item.count ??
+              item.checkouts ??
+              0
+            ) || 0
+          );
+
+        const height =
+          count > 0
+            ? Math.max(
+                8,
+                Math.round(
+                  (
+                    count /
+                    maximum
+                  ) * 100
+                )
+              )
+            : 0;
+
+        const label =
+          item.label ||
+          item.date ||
+          "";
+
+        return `
+          <div
+            class="success-chart-column"
+            title="${escapeHtml(
+              `${label}: ${count} checkout${
+                count === 1
+                  ? ""
+                  : "s"
+              }`
+            )}"
+          >
+            <div
+              class="success-chart-bar-wrap"
+            >
+              <div
+                class="success-chart-bar"
+                style="height: ${height}%"
+              ></div>
+            </div>
+
+            <span>
+              ${escapeHtml(label)}
+            </span>
+          </div>
+        `;
+      })
+      .join("");
+}
+
+
+function renderSuccessCheckouts(
+  checkouts = []
+) {
+  const container =
+    document.getElementById(
+      "success-checkouts"
+    );
+
+  if (!container) {
+    return;
+  }
+
+  if (
+    !Array.isArray(checkouts) ||
+    checkouts.length === 0
+  ) {
+    container.innerHTML = `
+      <div class="success-empty">
+        <strong>
+          No successful checkouts yet.
+        </strong>
+
+        <p>
+          Successful ACO checkouts will
+          appear here after they are
+          synchronized to your account.
+        </p>
+      </div>
+    `;
+
+    return;
+  }
+
+  container.innerHTML =
+    checkouts
+      .map(checkout => {
+        const retailer =
+          checkout.retailer ||
+          checkout.store ||
+          "Retailer";
+
+        const product =
+          checkout.product ||
+          checkout.productName ||
+          checkout.item ||
+          "Successful Checkout";
+
+        const quantity =
+          Math.max(
+            1,
+            Number(
+              checkout.quantity ??
+              checkout.items ??
+              1
+            ) || 1
+          );
+
+        const value =
+          Number(
+            checkout.value ??
+            checkout.total ??
+            checkout.amount ??
+            0
+          ) || 0;
+
+        const date =
+          checkout.checkoutAt ||
+          checkout.date ||
+          checkout.createdAt ||
+          null;
+
+        return `
+          <article
+            class="success-checkout-card"
+          >
+            <div
+              class="success-checkout-main"
+            >
+              <span
+                class="success-checkout-retailer"
+              >
+                ${escapeHtml(retailer)}
+              </span>
+
+              <h4>
+                ${escapeHtml(product)}
+              </h4>
+
+              <p>
+                ${escapeHtml(
+                  formatSuccessDate(date)
+                )}
+              </p>
+            </div>
+
+            <div
+              class="success-checkout-meta"
+            >
+              <span>
+                ${formatSuccessNumber(
+                  quantity
+                )}
+                ${
+                  quantity === 1
+                    ? "item"
+                    : "items"
+                }
+              </span>
+
+              <strong>
+                ${escapeHtml(
+                  formatSuccessCurrency(
+                    value
+                  )
+                )}
+              </strong>
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+}
+
+
+function renderSuccessDashboard(
+  data = {}
+) {
+  const summary =
+    data.summary || {};
+
+  const totalCheckouts =
+    Number(
+      summary.totalCheckouts ??
+      data.totalCheckouts ??
+      0
+    ) || 0;
+
+  const itemsSecured =
+    Number(
+      summary.itemsSecured ??
+      data.itemsSecured ??
+      0
+    ) || 0;
+
+  const checkoutValue =
+    Number(
+      summary.checkoutValue ??
+      summary.totalValue ??
+      data.checkoutValue ??
+      data.totalValue ??
+      0
+    ) || 0;
+
+  const bestDay =
+    summary.bestDay ??
+    data.bestDay ??
+    null;
+
+  setSuccessText(
+    "success-total-checkouts",
+    formatSuccessNumber(
+      totalCheckouts
+    )
+  );
+
+  setSuccessText(
+    "success-items-secured",
+    formatSuccessNumber(
+      itemsSecured
+    )
+  );
+
+  setSuccessText(
+    "success-checkout-value",
+    formatSuccessCurrency(
+      checkoutValue
+    )
+  );
+
+  setSuccessText(
+    "success-best-day",
+    bestDay
+      ? (
+          typeof bestDay ===
+          "object"
+            ? (
+                bestDay.label ||
+                formatSuccessDate(
+                  bestDay.date
+                )
+              )
+            : formatSuccessDate(
+                bestDay
+              )
+        )
+      : "—"
+  );
+
+  const sync =
+    data.sync || {};
+
+  const syncStatus =
+    sync.status ||
+    data.syncStatus ||
+    "Not connected";
+
+  setSuccessText(
+    "success-sync-status",
+    syncStatus
+  );
+
+  const syncUpdated =
+    document.getElementById(
+      "success-sync-updated"
+    );
+
+  if (syncUpdated) {
+    const lastSync =
+      sync.lastSyncedAt ||
+      data.lastSyncedAt ||
+      null;
+
+    syncUpdated.textContent =
+      lastSync
+        ? `Last synchronized ${formatSuccessDate(
+            lastSync
+          )}`
+        : "Checkout synchronization has not run yet.";
+  }
+
+  renderSuccessChart(
+    Array.isArray(data.activity)
+      ? data.activity
+      : []
+  );
+
+  renderSuccessCheckouts(
+    Array.isArray(data.checkouts)
+      ? data.checkouts
+      : []
+  );
+}
+
+
+function renderSuccessLoading() {
+  setSuccessText(
+    "success-total-checkouts",
+    "—"
+  );
+
+  setSuccessText(
+    "success-items-secured",
+    "—"
+  );
+
+  setSuccessText(
+    "success-checkout-value",
+    "—"
+  );
+
+  setSuccessText(
+    "success-best-day",
+    "—"
+  );
+
+  setSuccessText(
+    "success-sync-status",
+    "Loading…"
+  );
+}
+
+
+function renderSuccessError(
+  message
+) {
+  setSuccessText(
+    "success-sync-status",
+    "Unavailable"
+  );
+
+  const container =
+    document.getElementById(
+      "success-checkouts"
+    );
+
+  if (container) {
+    container.innerHTML = `
+      <div class="success-empty">
+        <strong>
+          Success data could not be loaded.
+        </strong>
+
+        <p>
+          ${escapeHtml(
+            message ||
+            "Please try again."
+          )}
+        </p>
+      </div>
+    `;
+  }
+}
+
+
+async function loadSuccessDashboard(
+  force = false
+) {
+  if (
+    successState.loading
+  ) {
+    return;
+  }
+
+  if (
+    successState.loaded &&
+    !force
+  ) {
+    renderSuccessDashboard(
+      successState.data || {}
+    );
+
+    return;
+  }
+
+  successState.loading = true;
+
+  renderSuccessLoading();
+
+  try {
+    const response =
+      await fetch(
+        "/api/account/success",
+        {
+          method: "GET",
+
+          credentials:
+            "same-origin",
+
+          cache:
+            "no-store"
+        }
+      );
+
+    const data =
+      await readJson(
+        response
+      );
+
+    if (
+      response.status === 401
+    ) {
+      throw new Error(
+        "Please sign in to view your Success dashboard."
+      );
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to load Success data."
+      );
+    }
+
+    successState.data =
+      data || {};
+
+    successState.loaded =
+      true;
+
+    renderSuccessDashboard(
+      successState.data
+    );
+
+  } catch (error) {
+    successState.loaded =
+      false;
+
+    renderSuccessError(
+      error.message
+    );
+
+  } finally {
+    successState.loading =
+      false;
+  }
+}
+
+
+/* =====================================================
+   LOAD SUCCESS WHEN SUCCESS TAB OPENS
+===================================================== */
+
+document
+  .querySelectorAll(
+    "[data-account-tab]"
+  )
+  .forEach(button => {
+    button.addEventListener(
+      "click",
+      () => {
+        if (
+          button.dataset
+            .accountTab ===
+          "success"
+        ) {
+          loadSuccessDashboard();
+        }
+      }
+    );
+  });
 /* =====================================================
    LOAD RETAILER PROFILES WHEN PROFILES TAB OPENS
 ===================================================== */
