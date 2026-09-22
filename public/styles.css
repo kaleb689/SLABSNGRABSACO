@@ -5689,53 +5689,497 @@ select:focus {
 }
 
 /* ======================================================
-   SUCCESS ACTIVITY GRAPH — LIVE DATA
+   SUCCESS ACTIVITY GRAPH — HISTORY + LIVE DATA
 ====================================================== */
 
 #my-profile .success-chart {
-  display: grid;
-  grid-template-columns: repeat(14, minmax(0, 1fr));
-  align-items: stretch;
-  justify-content: stretch;
+  position: relative;
 
-  min-height: 280px;
-  padding: 22px 18px 16px;
+  width: 100%;
 
-  overflow: hidden;
+  min-height: 340px;
+
+  padding:
+    18px
+    18px
+    16px;
+
+  overflow-x: auto;
+  overflow-y: hidden;
 }
+
+
+/* ======================================================
+   DATE RANGE CONTROLS
+====================================================== */
+
+#my-profile .success-chart-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  flex-wrap: wrap;
+
+  gap: 10px;
+
+  width: 100%;
+
+  margin-bottom: 22px;
+}
+
+
+#my-profile .success-range-button,
+#my-profile .success-range-current {
+  min-height: 38px;
+
+  padding:
+    8px
+    14px;
+
+  border:
+    1px solid
+    rgba(18, 201, 255, 0.22);
+
+  border-radius: 10px;
+
+  background:
+    rgba(8, 22, 34, 0.92);
+
+  color: #d8e7f5;
+
+  font-family: inherit;
+
+  font-size: 11px;
+  font-weight: 800;
+
+  cursor: pointer;
+
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+
+#my-profile .success-range-current {
+  min-width: 230px;
+
+  color: #ffffff;
+
+  border-color:
+    rgba(18, 201, 255, 0.42);
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(18, 201, 255, 0.11),
+      rgba(8, 22, 34, 0.96)
+    );
+
+  box-shadow:
+    0 0 18px
+    rgba(18, 201, 255, 0.08);
+}
+
+
+#my-profile .success-range-button:hover:not(:disabled),
+#my-profile .success-range-current:hover {
+  border-color:
+    rgba(18, 201, 255, 0.75);
+
+  background:
+    rgba(18, 201, 255, 0.12);
+
+  color: #ffffff;
+
+  box-shadow:
+    0 0 16px
+    rgba(18, 201, 255, 0.12);
+
+  transform:
+    translateY(-1px);
+}
+
+
+#my-profile .success-range-button:disabled {
+  opacity: 0.38;
+
+  cursor: not-allowed;
+
+  transform: none;
+
+  box-shadow: none;
+}
+
+
+#my-profile .success-range-choose {
+  color: #12c9ff;
+}
+
+
+/* ======================================================
+   CUSTOM DATE PICKER
+====================================================== */
+
+#my-profile .success-date-picker {
+  display: flex;
+
+  align-items: flex-end;
+  justify-content: center;
+
+  flex-wrap: wrap;
+
+  gap: 12px;
+
+  width: 100%;
+
+  margin:
+    -8px
+    auto
+    24px;
+
+  padding:
+    15px;
+
+  border:
+    1px solid
+    rgba(18, 201, 255, 0.16);
+
+  border-radius: 14px;
+
+  background:
+    rgba(5, 17, 28, 0.78);
+}
+
+
+#my-profile .success-date-picker[hidden] {
+  display: none !important;
+}
+
+
+#my-profile .success-date-picker label {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 6px;
+
+  min-width: 160px;
+}
+
+
+#my-profile .success-date-picker label span {
+  color: #8195aa;
+
+  font-size: 9px;
+  font-weight: 900;
+
+  letter-spacing: 0.8px;
+
+  text-transform: uppercase;
+}
+
+
+#my-profile .success-date-picker input {
+  height: 38px;
+
+  padding:
+    7px
+    10px;
+
+  border:
+    1px solid
+    rgba(18, 201, 255, 0.22);
+
+  border-radius: 9px;
+
+  outline: none;
+
+  background:
+    #071522;
+
+  color: #ffffff;
+
+  font-family: inherit;
+
+  color-scheme: dark;
+}
+
+
+#my-profile .success-date-picker input:focus {
+  border-color:
+    rgba(18, 201, 255, 0.72);
+
+  box-shadow:
+    0 0 0 3px
+    rgba(18, 201, 255, 0.08);
+}
+
+
+/* ======================================================
+   GRAPH LAYOUT
+====================================================== */
+
+#my-profile .success-chart-layout {
+  display: grid;
+
+  grid-template-columns:
+    58px
+    minmax(700px, 1fr);
+
+  width: 100%;
+
+  min-width: 758px;
+
+  min-height: 270px;
+}
+
+
+/* ======================================================
+   Y AXIS
+====================================================== */
+
+#my-profile .success-chart-y-axis {
+  position: relative;
+
+  display: grid;
+
+  grid-template-columns:
+    18px
+    40px;
+
+  height: 238px;
+}
+
+
+#my-profile .success-chart-y-title {
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  writing-mode:
+    vertical-rl;
+
+  transform:
+    rotate(180deg);
+
+  color: #6f8499;
+
+  font-size: 8px;
+  font-weight: 900;
+
+  letter-spacing: 1.4px;
+}
+
+
+#my-profile .success-chart-y-ticks {
+  display: flex;
+
+  flex-direction: column;
+
+  justify-content:
+    space-between;
+
+  height: 100%;
+}
+
+
+#my-profile .success-chart-y-tick {
+  position: relative;
+
+  display: flex;
+
+  align-items: center;
+  justify-content: flex-end;
+
+  width: 100%;
+
+  height: 1px;
+}
+
+
+#my-profile .success-chart-y-tick span {
+  padding-right: 8px;
+
+  color: #8195aa;
+
+  font-size: 9px;
+  font-weight: 800;
+
+  line-height: 1;
+}
+
+
+#my-profile .success-chart-y-tick i {
+  display: none;
+}
+
+
+/* ======================================================
+   GRAPH PLOT
+====================================================== */
+
+#my-profile .success-chart-plot {
+  position: relative;
+
+  height: 270px;
+
+  min-width: 700px;
+}
+
+
+/* ======================================================
+   HORIZONTAL GRID
+====================================================== */
+
+#my-profile .success-chart-grid {
+  position: absolute;
+
+  z-index: 1;
+
+  top: 0;
+  left: 0;
+  right: 0;
+
+  height: 238px;
+
+  display: flex;
+
+  flex-direction: column;
+
+  justify-content:
+    space-between;
+
+  pointer-events: none;
+}
+
+
+#my-profile .success-chart-grid-line {
+  width: 100%;
+
+  border-top:
+    1px solid
+    rgba(129, 149, 170, 0.12);
+}
+
+
+/* ======================================================
+   GRAPH COLUMNS
+====================================================== */
+
+#my-profile .success-chart-columns {
+  position: relative;
+
+  z-index: 2;
+
+  display: grid;
+
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(34px, 1fr)
+    );
+
+  align-items: stretch;
+
+  width: 100%;
+
+  height: 270px;
+}
+
 
 #my-profile .success-chart-column {
   position: relative;
-  z-index: 2;
 
   min-width: 0;
-  height: 100%;
+
+  height: 270px;
 
   display: flex;
+
   flex-direction: column;
+
   align-items: center;
-  justify-content: flex-end;
 
   text-align: center;
 }
 
+
+/* ======================================================
+   BAR AREA
+====================================================== */
+
 #my-profile .success-chart-bar-wrap {
+  position: relative;
+
   width: 100%;
-  flex: 1;
+
+  height: 238px;
 
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
 
-  min-height: 190px;
-  padding: 0 4px 10px;
+  flex-direction: column;
+
+  align-items: center;
+
+  justify-content: flex-end;
+
+  padding:
+    20px
+    3px
+    0;
+
+  box-sizing: border-box;
 }
 
+
+/* ======================================================
+   DAILY CHECKOUT VALUE
+====================================================== */
+
+#my-profile .success-chart-value {
+  position: relative;
+
+  z-index: 4;
+
+  margin-bottom: 5px;
+
+  color: #dff9ff;
+
+  font-size: 9px;
+  font-weight: 900;
+
+  line-height: 1;
+
+  white-space: nowrap;
+
+  text-shadow:
+    0 0 8px
+    rgba(18, 201, 255, 0.48);
+}
+
+
+/* ======================================================
+   CHECKOUT BAR
+====================================================== */
+
 #my-profile .success-chart-bar {
-  width: min(28px, 70%);
+  width:
+    min(
+      28px,
+      72%
+    );
+
   min-height: 0;
 
-  border-radius: 7px 7px 3px 3px;
+  border-radius:
+    7px
+    7px
+    3px
+    3px;
 
   background:
     linear-gradient(
@@ -5745,33 +6189,85 @@ select:focus {
     );
 
   box-shadow:
-    0 0 12px rgba(18, 201, 255, 0.32),
-    0 0 24px rgba(69, 230, 139, 0.12);
+    0 0 12px
+      rgba(18, 201, 255, 0.32),
+    0 0 24px
+      rgba(69, 230, 139, 0.12);
 
   transition:
     height 0.35s ease,
-    filter 0.2s ease;
+    filter 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
-#my-profile .success-chart-column:hover .success-chart-bar {
-  filter: brightness(1.15);
+
+#my-profile
+.success-chart-column:hover
+.success-chart-bar {
+  filter:
+    brightness(1.15);
+
+  box-shadow:
+    0 0 15px
+      rgba(18, 201, 255, 0.48),
+    0 0 30px
+      rgba(69, 230, 139, 0.18);
 }
+
+
+/* ======================================================
+   DATE LABELS
+====================================================== */
 
 #my-profile .success-chart-column > span {
   width: 100%;
-  min-height: 26px;
+
+  min-height: 30px;
 
   display: flex;
+
   align-items: flex-end;
   justify-content: center;
+
+  padding-top: 7px;
 
   color: #8195aa;
 
   font-size: 9px;
   font-weight: 800;
 
+  line-height: 1.1;
+
   white-space: nowrap;
 }
+
+
+/* ======================================================
+   EMPTY GRAPH
+====================================================== */
+
+#my-profile .success-chart-empty {
+  min-height: 220px;
+
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  padding: 30px;
+
+  color: #8195aa;
+
+  font-size: 12px;
+  font-weight: 700;
+
+  text-align: center;
+}
+
+
+/* ======================================================
+   TABLET
+====================================================== */
 
 @media (max-width: 950px) {
 
@@ -5780,17 +6276,98 @@ select:focus {
     padding-right: 10px;
   }
 
-  #my-profile .success-chart-column > span {
-    font-size: 8px;
+
+  #my-profile .success-chart-controls {
+    justify-content:
+      flex-start;
+  }
+
+
+  #my-profile .success-range-current {
+    min-width: 200px;
   }
 
 }
 
+
+/* ======================================================
+   MOBILE
+====================================================== */
+
 @media (max-width: 620px) {
 
   #my-profile .success-chart {
-    min-width: 700px;
+    padding-left: 8px;
+    padding-right: 8px;
   }
+
+
+  #my-profile .success-chart-controls {
+    display: grid;
+
+    grid-template-columns:
+      1fr
+      1fr;
+
+    gap: 8px;
+  }
+
+
+  #my-profile .success-range-current {
+    grid-column:
+      1 / -1;
+
+    grid-row: 1;
+
+    width: 100%;
+
+    min-width: 0;
+  }
+
+
+  #my-profile .success-range-choose {
+    grid-column:
+      1 / -1;
+  }
+
+
+  #my-profile .success-date-picker {
+    align-items: stretch;
+  }
+
+
+  #my-profile .success-date-picker label {
+    width: 100%;
+
+    min-width: 0;
+  }
+
+
+  #my-profile .success-date-picker input {
+    width: 100%;
+  }
+
+
+  #my-profile .success-chart-layout {
+    grid-template-columns:
+      52px
+      minmax(700px, 1fr);
+
+    min-width: 752px;
+  }
+
+
+  #my-profile .success-chart-y-axis {
+    grid-template-columns:
+      16px
+      36px;
+  }
+
+
+  #my-profile .success-chart-value {
+    font-size: 8px;
+  }
+
 
   #my-profile .success-chart-column > span {
     font-size: 8px;
