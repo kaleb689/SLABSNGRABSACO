@@ -1,6 +1,10 @@
 import express from "express";
 import Stripe from "stripe";
 import { authenticator } from "otplib";
+import {
+  ImapFlow,
+  AuthenticationFailure
+} from "imapflow";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -535,6 +539,36 @@ async function saveEncryptedPackage(
     ),
     encryptJson(object)
   );
+}
+
+async function loadEncryptedPackage(
+  id
+) {
+  if (!id) {
+    return null;
+  }
+
+  try {
+    const payload =
+      await readJson(
+        path.join(
+          SECRET_DIR,
+          `${id}.encrypted.json`
+        ),
+        null
+      );
+
+    if (!payload) {
+      return null;
+    }
+
+    return decryptJson(
+      payload
+    );
+
+  } catch {
+    return null;
+  }
 }
 
 /* -------------------------------------------------------
@@ -4474,6 +4508,170 @@ app.post(
    SUCCESS DASHBOARD
 ------------------------------------------------------- */
 
+/* -------------------------------------------------------
+   CUSTOMER IMAP CONNECTION
+------------------------------------------------------- */
+
+function getImapProvider(
+  email
+) {
+  const normalized =
+    normalizeEmail(email);
+
+  const domain =
+    normalized.split("@")[1] || "";
+
+  const providers = {
+    "gmail.com": {
+      name: "Google",
+      host: "imap.gmail.com",
+      port: 993
+    },
+
+    "googlemail.com": {
+      name: "Google",
+      host: "imap.gmail.com",
+      port: 993
+    },
+
+    "yahoo.com": {
+      name: "Yahoo",
+      host: "imap.mail.yahoo.com",
+      port: 993
+    },
+
+    "ymail.com": {
+      name: "Yahoo",
+      host: "imap.mail.yahoo.com",
+      port: 993
+    },
+
+    "outlook.com": {
+      name: "Microsoft",
+      host: "outlook.office365.com",
+      port: 993
+    },
+
+    "hotmail.com": {
+      name: "Microsoft",
+      host: "outlook.office365.com",
+      port: 993
+    },
+
+    "live.com": {
+      name: "Microsoft",
+      host: "outlook.office365.com",
+      port: 993
+    }
+  };
+
+  return (
+    providers[domain] ||
+    null
+  );
+}
+
+
+function createCustomerImapClient(
+  email,
+  password
+) {
+  const provider =
+    getImapProvider(email);
+
+  if (!provider) {
+    const error =
+      new Error(
+        "Unsupported mailbox provider."
+      );
+
+    error.code =
+      "UNSUPPORTED_PROVIDER";
+
+    throw error;
+  }
+
+  return {
+    provider,
+
+    client:
+      new ImapFlow({
+        host:
+          provider.host,
+
+        port:
+          provider.port,
+
+        secure:
+          true,
+
+        auth: {
+          user:
+            normalizeEmail(email),
+
+          pass:
+            String(password || "")
+        },
+
+        /*
+          Never allow IMAP credentials,
+          commands or mailbox content
+          into application logs.
+        */
+        logger:
+          false,
+
+        connectionTimeout:
+          15000,
+
+        greetingTimeout:
+          10000,
+
+        socketTimeout:
+          30000,
+
+        disableAutoIdle:
+          true
+      })
+  };
+}
+
+
+async function verifyCustomerImap(
+  email,
+  password
+) {
+  const {
+    provider,
+    client
+  } =
+    createCustomerImapClient(
+      email,
+      password
+    );
+
+  try {
+    await client.connect();
+
+    return {
+      connected: true,
+      provider:
+        provider.name
+    };
+
+  } finally {
+    if (client.usable) {
+      try {
+        await client.logout();
+      } catch {
+        client.close();
+      }
+    } else {
+      client.close();
+    }
+  }
+}
+
 async function getSuccessCheckouts() {
   const records =
     await readJson(
@@ -4842,6 +5040,192 @@ function buildSuccessSummary(
     recentCheckouts
   };
 }
+
+app.post(
+  "/api/account/success/test-imap",
+  requireCustomer,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    try {
+      const accountId =
+        req.customerAccount.id;
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      /*
+        Only orders owned by the signed-in
+        customer may supply IMAP credentials.
+      */
+
+      const ownedOrders =
+        (
+          Array.isArray(paid)
+            ? paid
+            : []
+        )
+          .filter(
+            record =>
+              record.customerAccountId ===
+                accountId &&
+              subscriptionAllowsProfiles(
+                record
+              )
+          )
+          .sort(
+            (a, b) =>
+              new Date(
+                b.paidAt ||
+                b.createdAt ||
+                0
+              ).getTime() -
+              new Date(
+                a.paidAt ||
+                a.createdAt ||
+                0
+              ).getTime()
+          );
+
+      if (!ownedOrders.length) {
+        return res
+          .status(403)
+          .json({
+            connected: false,
+
+            error:
+              "An active membership with ACO setup information is required."
+          });
+      }
+
+      /*
+        For this first connection test we use
+        the customer's newest active paid
+        setup record.
+
+        Later, when we build multi-profile
+        synchronization, each mailbox will
+        be mapped to its specific profile.
+      */
+
+      const order =
+        ownedOrders[0];
+
+      const secrets =
+        await loadEncryptedPackage(
+          order.id
+        );
+
+      const acoEmail =
+        normalizeEmail(
+          secrets?.acoEmail
+        );
+
+      const acoPassword =
+        String(
+          secrets?.acoPassword ||
+          ""
+        );
+
+      if (
+        !acoEmail ||
+        !acoPassword
+      ) {
+        return res
+          .status(400)
+          .json({
+            connected: false,
+
+            error:
+              "ACO email credentials are not configured for this account."
+          });
+      }
+
+      const result =
+        await verifyCustomerImap(
+          acoEmail,
+          acoPassword
+        );
+
+      return res.json({
+        ok: true,
+
+        connected: true,
+
+        provider:
+          result.provider,
+
+        /*
+          Deliberately return neither the
+          mailbox email nor its password.
+        */
+
+        message:
+          "Mailbox connection successful."
+      });
+
+    } catch (error) {
+      /*
+        Do not send raw IMAP server errors
+        to the browser because provider
+        responses may contain account
+        information.
+      */
+
+      if (
+        error?.code ===
+        "UNSUPPORTED_PROVIDER"
+      ) {
+        return res
+          .status(400)
+          .json({
+            connected: false,
+
+            error:
+              "This mailbox provider is not supported yet."
+          });
+      }
+
+      if (
+        error instanceof
+          AuthenticationFailure ||
+        error?.authenticationFailed ===
+          true
+      ) {
+        return res
+          .status(401)
+          .json({
+            connected: false,
+
+            error:
+              "Mailbox authentication failed. Check the ACO email app password."
+          });
+      }
+
+      console.error(
+        "IMAP connection test failed:",
+        error?.code ||
+        error?.name ||
+        "connection_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          connected: false,
+
+          error:
+            "The mailbox could not be connected right now."
+        });
+    }
+  }
+);
 
 app.get(
   "/api/account/success",
