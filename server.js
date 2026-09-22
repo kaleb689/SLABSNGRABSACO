@@ -6253,8 +6253,6 @@ app.get(
     }
   }
 );
-  }
-);
 /* -------------------------------------------------------
    TEMPORARY ADMIN IMAP TEST
    Remove after mailbox integration is verified.
