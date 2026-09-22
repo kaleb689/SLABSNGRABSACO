@@ -3868,24 +3868,40 @@ function bindRetailerProfileForms() {
 
 
 function renderRetailerProfiles() {
+
   const container =
     document.getElementById(
       "retailer-profiles"
     );
 
-  const allowanceBadge =
+
+  const activeBadge =
     document.getElementById(
-      "retailer-profile-allowance"
+      "retailer-profiles-active"
     );
+
+
+  const availableBadge =
+    document.getElementById(
+      "retailer-profiles-available"
+    );
+
 
   const mainMessage =
     document.getElementById(
       "retailer-profile-message"
     );
 
+
   if (!container) {
     return;
   }
+
+
+  /*
+    Get the number of profiles allowed
+    by the customer's current membership.
+  */
 
   const allowance =
     Math.max(
@@ -3895,18 +3911,93 @@ function renderRetailerProfiles() {
       ) || 0
     );
 
-  if (allowanceBadge) {
-    allowanceBadge.textContent =
-      allowance === 1
-        ? "1 profile available"
-        : `${allowance} profiles available`;
+
+  /*
+    Count the saved profiles that are
+    currently inside the customer's
+    active membership allowance.
+
+    Profiles saved above the current
+    allowance remain stored, but they
+    are locked and are NOT counted as
+    active.
+  */
+
+  const activeProfiles =
+    state.retailerProfiles.filter(
+      profile => {
+
+        const slot =
+          Number(
+            profile?.slot
+          ) || 0;
+
+        return (
+          slot >= 1 &&
+          slot <= allowance
+        );
+      }
+    ).length;
+
+
+  /*
+    Calculate the number of unused
+    profile slots still available.
+  */
+
+  const availableProfiles =
+    Math.max(
+      0,
+      allowance - activeProfiles
+    );
+
+
+  /*
+    PROFILES ACTIVE
+
+    Show only the number.
+
+    The CSS class makes the number
+    green whenever at least one
+    profile is active.
+  */
+
+  if (activeBadge) {
+
+    activeBadge.textContent =
+      String(activeProfiles);
+
+    activeBadge.classList.toggle(
+      "has-active-profiles",
+      activeProfiles > 0
+    );
   }
 
+
+  /*
+    PROFILES AVAILABLE
+
+    Show only the number.
+  */
+
+  if (availableBadge) {
+
+    availableBadge.textContent =
+      String(availableProfiles);
+  }
+
+
+  /*
+    No active membership.
+  */
+
   if (allowance <= 0) {
+
     container.innerHTML = `
       <div
         class="retailer-profile-placeholder"
       >
+
         <div
           class="retailer-profile-placeholder-icon"
         >
@@ -3931,8 +4022,10 @@ function renderRetailerProfiles() {
         >
           View Memberships
         </button>
+
       </div>
     `;
+
 
     document
       .getElementById(
@@ -3945,24 +4038,29 @@ function renderRetailerProfiles() {
         }
       );
 
+
     if (mainMessage) {
+
       setMessage(
         mainMessage,
         ""
       );
     }
 
+
     return;
   }
 
-  /*
-    Normally we display the customer's current
-    allowance.
 
-    If they previously had a larger membership,
-    saved profiles above their current allowance
-    are also displayed as locked so their data is
-    never silently lost.
+  /*
+    Normally we display the customer's
+    current allowance.
+
+    If they previously had a larger
+    membership, saved profiles above
+    their current allowance are also
+    displayed as locked so their data
+    is never silently lost.
   */
 
   const highestSavedSlot =
@@ -3977,6 +4075,7 @@ function renderRetailerProfiles() {
       0
     );
 
+
   const totalSlots =
     Math.min(
       50,
@@ -3986,13 +4085,16 @@ function renderRetailerProfiles() {
       )
     );
 
+
   const cards = [];
+
 
   for (
     let slot = 1;
     slot <= totalSlots;
     slot += 1
   ) {
+
     cards.push(
       retailerProfileCardHtml(
         slot,
@@ -4003,19 +4105,25 @@ function renderRetailerProfiles() {
     );
   }
 
+
   container.innerHTML =
     cards.join("");
 
+
   bindRetailerPasswordToggles();
+
   bindRetailerProfileForms();
 
+
   if (mainMessage) {
+
     setMessage(
       mainMessage,
       ""
     );
   }
 }
+  
 
 
 async function loadRetailerProfiles(
