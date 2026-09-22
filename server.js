@@ -6139,26 +6139,27 @@ async function parseTargetTestOrder({
       source
     );
 
-
   const text =
     decoded.text ||
     extractEmailText(
       source
     );
 
-
   const emailImages =
     extractEmailImageUrls(
       decoded.html
     );
 
-
   const combined =
     `${subject || ""}\n${text}`;
 
   /*
-    Require clear Target/order language before
-    attempting to parse anything.
+    Accept both:
+    - direct Target emails
+    - forwarded Target emails
+
+    We require Target + order language somewhere
+    in the decoded message.
   */
 
   if (
@@ -6175,9 +6176,8 @@ async function parseTargetTestOrder({
 
   const orderMatch =
     combined.match(
-      /order\s*(?:number|#|no\.?)?\s*:?\s*#?\s*([A-Z0-9-]{6,40})/i
+      /order\s*(?:number|#|no\.?)?\s*:?\s*#?\s*([0-9]{6,40})/i
     );
-
 
   const orderNumber =
     orderMatch?.[1]
@@ -6197,14 +6197,12 @@ async function parseTargetTestOrder({
       /order\s+total\s*:?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i
     );
 
-
   const orderTotal =
     totalMatch?.[1]
       ? parseMoney(
           totalMatch[1]
         )
       : null;
-
 
   if (
     !orderNumber ||
@@ -6215,54 +6213,175 @@ async function parseTargetTestOrder({
 
 
   /* =====================================================
-     MULTI-PRODUCT PARSER
+     REMOVE TARGET RECOMMENDATION / MARKETING SECTION
 
-     Expected normalized text:
+     Real Target emails can contain unrelated products
+     under "Up next, just for you". Those must never
+     become checkout items.
+  ===================================================== */
 
-     Product Name
-     Quantity: 4
-     $39.99 each
+  let orderText =
+    combined;
 
-     Product Name
-     Quantity: 2
-     $54.99 each
+  const recommendationIndex =
+    orderText.search(
+      /up\s+next,\s*just\s+for\s+you\s*:/i
+    );
+
+  if (
+    recommendationIndex >= 0
+  ) {
+    orderText =
+      orderText.slice(
+        0,
+        recommendationIndex
+      );
+  }
+
+
+  /* =====================================================
+     PRODUCT PARSERS
+
+     Supports our controlled fixture:
+
+       Product Name
+       Quantity: 4
+       $39.99 each
+
+     And real Target:
+
+       Product Name
+       Qty: 2
+       $69.99 / ea
   ===================================================== */
 
   const items = [];
 
-
   const itemPattern =
-    /(?:^|\n)\s*([^\n]{3,300}?)\s*\n+\s*quantity\s*:?\s*(\d{1,4})\s*\n+\s*\$?\s*([\d,]+(?:\.\d{2}))\s*(?:each|\/\s*each)/gi;
-
+    /(?:^|\n)\s*([^\n]{3,300}?)\s*\n+\s*(?:quantity|qty)\s*:?\s*(\d{1,4})\s*\n+\s*\$?\s*([\d,]+(?:\.\d{2}))\s*(?:each|\/\s*(?:each|ea)|ea)\b/gi;
 
   let itemMatch;
-
 
   while (
     (
       itemMatch =
         itemPattern.exec(
-          combined
+          orderText
         )
     ) !== null
   ) {
-    const name =
+    let name =
       clean(
         itemMatch[1],
         300
       );
-
 
     const quantity =
       Number(
         itemMatch[2]
       );
 
-
     const price =
       parseMoney(
         itemMatch[3]
       );
+
+    /*
+      Gmail/plain-text conversion can wrap a Target
+      product name across two lines.
+
+      Example:
+
+      Pokémon
+      Trading Card Game: 30th Celebration Elite Trainer Box
+
+      If the line immediately before the captured name
+      looks like part of the product title, combine it.
+    */
+
+    const matchStart =
+      itemMatch.index;
+
+    const beforeMatch =
+      orderText
+        .slice(
+          Math.max(
+            0,
+            matchStart - 500
+          ),
+          matchStart
+        )
+        .trimEnd();
+
+    const previousLines =
+      beforeMatch
+        .split("\n")
+        .map(line =>
+          line.trim()
+        )
+        .filter(Boolean);
+
+    const previousLine =
+      previousLines[
+        previousLines.length - 1
+      ] || "";
+
+    if (
+      previousLine &&
+      previousLine.length <= 100 &&
+      !/^https?:\/\//i.test(
+        previousLine
+      ) &&
+      !/^order\b/i.test(
+        previousLine
+      ) &&
+      !/^shipping\b/i.test(
+        previousLine
+      ) &&
+      !/^delivers\s+to\b/i.test(
+        previousLine
+      ) &&
+      !/^thanks\b/i.test(
+        previousLine
+      ) &&
+      !/^arrives\b/i.test(
+        previousLine
+      ) &&
+      !/^rate\b/i.test(
+        previousLine
+      ) &&
+      !/^visit\b/i.test(
+        previousLine
+      ) &&
+      !/^\[image:/i.test(
+        previousLine
+      ) &&
+      !/^\$[\d,.]+/.test(
+        previousLine
+      )
+    ) {
+      const combinedName =
+        clean(
+          `${previousLine} ${name}`,
+          300
+        );
+
+      /*
+        Only use the joined version when an email image
+        ALT/TITLE supports it. This prevents unrelated
+        preceding text from being added to a product.
+      */
+
+      if (
+        findTargetProductImage(
+          combinedName,
+          emailImages
+        )
+      ) {
+        name =
+          combinedName;
+      }
+    }
 
 
     if (
@@ -6278,15 +6397,29 @@ async function parseTargetTestOrder({
 
 
     /*
-      Ignore lines that clearly aren't
-      product names.
+      Reject obvious non-product labels.
     */
 
     if (
       /^order\b/i.test(name) ||
       /^quantity\b/i.test(name) ||
-      /^order total\b/i.test(name) ||
+      /^qty\b/i.test(name) ||
+      /^order total\b/i.test(
+        name
+      ) ||
       /^thanks for your order/i.test(
+        name
+      ) ||
+      /^subtotal\b/i.test(
+        name
+      ) ||
+      /^delivery\b/i.test(
+        name
+      ) ||
+      /^estimated taxes\b/i.test(
+        name
+      ) ||
+      /^total\b/i.test(
         name
       )
     ) {
@@ -6294,19 +6427,44 @@ async function parseTargetTestOrder({
     }
 
 
+    /*
+      Avoid duplicate product rows if the same product
+      appears more than once in converted email text.
+    */
+
+    const existing =
+      items.find(
+        item =>
+          normalizeTargetProductText(
+            item.name
+          ) ===
+          normalizeTargetProductText(
+            name
+          ) &&
+          item.quantity ===
+            quantity &&
+          item.price ===
+            price
+      );
+
+    if (existing) {
+      continue;
+    }
+
+
     items.push({
-  name,
-
-  quantity,
-
-  price,
-
-  imageUrl:
-    findTargetProductImage(
       name,
-      emailImages
-    )
-});
+
+      quantity,
+
+      price,
+
+      imageUrl:
+        findTargetProductImage(
+          name,
+          emailImages
+        )
+    });
   }
 
 
