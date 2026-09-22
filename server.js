@@ -5507,6 +5507,20 @@ function extractEmailText(source) {
   );
 }
 
+function decodeEmailHtmlValue(
+  value
+) {
+  return String(value || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&nbsp;/gi, " ")
+    .trim();
+}
+
+
 function extractEmailImageUrls(
   source
 ) {
@@ -5515,10 +5529,10 @@ function extractEmailImageUrls(
       ? source.toString("utf8")
       : String(source || "");
 
-  const urls = [];
+  const images = [];
 
   const imagePattern =
-    /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
+    /<img\b([^>]*)>/gi;
 
   let match;
 
@@ -5528,48 +5542,146 @@ function extractEmailImageUrls(
         imagePattern.exec(raw)
     ) !== null
   ) {
-    let candidate =
-      String(
-        match[1] || ""
-      )
-        .replace(/&amp;/gi, "&")
-        .trim();
+    const attributes =
+      match[1] || "";
 
-    /*
-      Ignore embedded images, attachments,
-      tracking CIDs and non-HTTPS sources.
-    */
-
-    if (
-      !candidate ||
-      /^cid:/i.test(candidate) ||
-      /^data:/i.test(candidate)
-    ) {
-      continue;
-    }
-
-    const safeUrl =
-      safeSuccessImageUrl(
-        candidate
+    const srcMatch =
+      attributes.match(
+        /\bsrc\s*=\s*["']([^"']+)["']/i
       );
 
-    if (!safeUrl) {
+    if (!srcMatch?.[1]) {
       continue;
     }
 
+    const rawUrl =
+      decodeEmailHtmlValue(
+        srcMatch[1]
+      );
+
+    if (
+      !rawUrl ||
+      /^cid:/i.test(rawUrl) ||
+      /^data:/i.test(rawUrl)
+    ) {
+      continue;
+    }
+
+    const imageUrl =
+      safeSuccessImageUrl(
+        rawUrl
+      );
+
+    if (!imageUrl) {
+      continue;
+    }
+
+
+    const altMatch =
+      attributes.match(
+        /\balt\s*=\s*["']([^"']*)["']/i
+      );
+
+
+    const titleMatch =
+      attributes.match(
+        /\btitle\s*=\s*["']([^"']*)["']/i
+      );
+
+
+    const widthMatch =
+      attributes.match(
+        /\bwidth\s*=\s*["']?(\d{1,5})/i
+      );
+
+
+    const heightMatch =
+      attributes.match(
+        /\bheight\s*=\s*["']?(\d{1,5})/i
+      );
+
+
+    const alt =
+      decodeEmailHtmlValue(
+        altMatch?.[1]
+      );
+
+
+    const title =
+      decodeEmailHtmlValue(
+        titleMatch?.[1]
+      );
+
+
+    const width =
+      Number(
+        widthMatch?.[1] || 0
+      );
+
+
+    const height =
+      Number(
+        heightMatch?.[1] || 0
+      );
+
+
     /*
-      Avoid storing the same image more
-      than once.
+      Ignore obvious tracking pixels.
+
+      We intentionally do NOT require dimensions
+      because many retailer emails omit width/height
+      attributes entirely.
     */
 
     if (
-      !urls.includes(safeUrl)
+      (
+        width > 0 &&
+        width <= 5
+      ) ||
+      (
+        height > 0 &&
+        height <= 5
+      )
     ) {
-      urls.push(safeUrl);
+      continue;
     }
+
+
+    if (
+      images.some(
+        image =>
+          image.imageUrl ===
+          imageUrl
+      )
+    ) {
+      continue;
+    }
+
+
+    images.push({
+      imageUrl,
+
+      alt:
+        clean(
+          alt,
+          500
+        ),
+
+      title:
+        clean(
+          title,
+          500
+        ),
+
+      width:
+        width || null,
+
+      height:
+        height || null
+    });
   }
 
-  return urls;
+  return images;
 }
 
 
@@ -5999,10 +6111,35 @@ app.get(
       <html>
         <body>
 
+          <!-- RETAILER LOGO — SHOULD NOT MATCH PRODUCT -->
+
+          <img
+            src="https://placehold.co/600x150.png?text=TARGET"
+            alt="Target"
+            width="600"
+            height="150"
+          >
+
+
+          <!-- TRACKING PIXEL — SHOULD BE REMOVED -->
+
+          <img
+            src="https://placehold.co/1x1.png"
+            alt=""
+            width="1"
+            height="1"
+          >
+
+
+          <!-- PRODUCT 1 -->
+
           <div class="product">
+
             <img
               src="https://placehold.co/400x400.png?text=Ascended+Heroes+Tin"
               alt="Pokemon Trading Card Game: Ascended Heroes Tin"
+              width="400"
+              height="400"
             >
 
             <div>
@@ -6010,20 +6147,18 @@ app.get(
               Ascended Heroes Tin
             </div>
 
-            <div>
-              Quantity: 4
-            </div>
-
-            <div>
-              $39.99 each
-            </div>
           </div>
 
 
+          <!-- PRODUCT 2 -->
+
           <div class="product">
+
             <img
               src="https://placehold.co/400x400.png?text=Elite+Trainer+Box"
               alt="Pokemon Trading Card Game: Elite Trainer Box"
+              width="400"
+              height="400"
             >
 
             <div>
@@ -6031,20 +6166,18 @@ app.get(
               Elite Trainer Box
             </div>
 
-            <div>
-              Quantity: 2
-            </div>
-
-            <div>
-              $54.99 each
-            </div>
           </div>
 
 
+          <!-- PRODUCT 3 -->
+
           <div class="product">
+
             <img
               src="https://placehold.co/400x400.png?text=Booster+Bundle"
               alt="Pokemon Trading Card Game: Booster Bundle"
+              width="400"
+              height="400"
             >
 
             <div>
@@ -6052,18 +6185,147 @@ app.get(
               Booster Bundle
             </div>
 
-            <div>
-              Quantity: 1
-            </div>
-
-            <div>
-              $29.99 each
-            </div>
           </div>
 
         </body>
       </html>
     `;
+
+
+    const images =
+      extractEmailImageUrls(
+        testHtml
+      );
+
+
+    /*
+      These are the same product names our
+      Target parser produced from the IMAP test.
+    */
+
+    const products = [
+      {
+        name:
+          "Pokemon Trading Card Game: Ascended Heroes Tin"
+      },
+
+      {
+        name:
+          "Pokemon Trading Card Game: Elite Trainer Box"
+      },
+
+      {
+        name:
+          "Pokemon Trading Card Game: Booster Bundle"
+      }
+    ];
+
+
+    const normalizeProductText =
+      value =>
+        String(value || "")
+          .toLowerCase()
+          .replace(
+            /[^a-z0-9]+/g,
+            " "
+          )
+          .trim();
+
+
+    const matchedProducts =
+      products.map(
+        product => {
+          const productName =
+            normalizeProductText(
+              product.name
+            );
+
+
+          const matchingImage =
+            images.find(
+              image => {
+                const alt =
+                  normalizeProductText(
+                    image.alt
+                  );
+
+                const title =
+                  normalizeProductText(
+                    image.title
+                  );
+
+
+                return (
+                  alt ===
+                    productName ||
+                  title ===
+                    productName ||
+                  (
+                    alt &&
+                    (
+                      alt.includes(
+                        productName
+                      ) ||
+                      productName.includes(
+                        alt
+                      )
+                    )
+                  ) ||
+                  (
+                    title &&
+                    (
+                      title.includes(
+                        productName
+                      ) ||
+                      productName.includes(
+                        title
+                      )
+                    )
+                  )
+                );
+              }
+            );
+
+
+          return {
+            name:
+              product.name,
+
+            imageUrl:
+              matchingImage
+                ?.imageUrl ||
+              null
+          };
+        }
+      );
+
+
+    return res.json({
+      ok: true,
+
+      extractedImages:
+        images.length,
+
+      matchedProducts:
+        matchedProducts.filter(
+          product =>
+            !!product.imageUrl
+        ).length,
+
+      products:
+        matchedProducts,
+
+      /*
+        Keep this temporarily so we can verify
+        that the Target logo was extracted but
+        NOT assigned to a product.
+      */
+
+      detectedImages:
+        images
+    });
+  }
+);
 
     const imageUrls =
       extractEmailImageUrls(
