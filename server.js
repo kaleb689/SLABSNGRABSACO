@@ -6047,7 +6047,125 @@ app.get(
     }
   }
 );
+/* -------------------------------------------------------
+   TEMPORARY ADMIN TARGET -> SUCCESS TEST SYNC
+------------------------------------------------------- */
 
+app.post(
+  "/api/admin/test-imap/target-order/save",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    try {
+      const testEmail =
+        normalizeEmail(
+          process.env.IMAP_TEST_EMAIL
+        );
+
+      const testPassword =
+        String(
+          process.env.IMAP_TEST_PASSWORD ||
+          ""
+        );
+
+      if (
+        !testEmail ||
+        !testPassword
+      ) {
+        return res
+          .status(500)
+          .json({
+            ok: false,
+            saved: false,
+            error:
+              "Test mailbox environment variables are not configured."
+          });
+      }
+
+      const result =
+        await readLatestTargetTestOrder(
+          testEmail,
+          testPassword
+        );
+
+      if (
+        !result.matched ||
+        !result.order
+      ) {
+        return res
+          .status(404)
+          .json({
+            ok: false,
+            saved: false,
+            error:
+              "No Target test order was found."
+          });
+      }
+
+      const persisted =
+        await persistTargetTestOrder(
+          result.order
+        );
+
+      return res.json({
+        ok: true,
+
+        provider:
+          result.provider,
+
+        saved:
+          persisted.saved,
+
+        duplicate:
+          persisted.duplicate,
+
+        totalStored:
+          persisted.totalStored,
+
+        order: {
+          retailer:
+            persisted.record.retailer,
+
+          orderNumber:
+            persisted.record.orderNumber,
+
+          checkoutAt:
+            persisted.record.checkoutAt,
+
+          itemCount:
+            persisted.record.itemCount,
+
+          orderTotal:
+            persisted.record.orderTotal,
+
+          items:
+            persisted.record.items
+        }
+      });
+
+    } catch (error) {
+      console.error(
+        "Target test persistence failed:",
+        error?.code ||
+        error?.name ||
+        "target_test_persistence_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+          saved: false,
+          error:
+            "The Target test order could not be saved."
+        });
+    }
+  }
+);
 /* -------------------------------------------------------
    TEMPORARY ADMIN IMAP TEST
    Remove after mailbox integration is verified.
