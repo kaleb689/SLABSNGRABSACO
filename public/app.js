@@ -5426,6 +5426,174 @@ function renderSuccessChart(
 }
 
 
+/* =====================================================
+   SUCCESS — RECENT ORDER CAROUSEL
+===================================================== */
+
+let successCheckoutIndex = 0;
+
+
+function getSuccessCheckoutItems(
+  checkout
+) {
+  if (
+    Array.isArray(checkout?.items) &&
+    checkout.items.length
+  ) {
+    return checkout.items;
+  }
+
+  const productName =
+    checkout?.product ||
+    checkout?.productName ||
+    checkout?.item ||
+    "";
+
+  if (!productName) {
+    return [];
+  }
+
+  return [
+    {
+      name: productName,
+
+      quantity:
+        Math.max(
+          1,
+          Number(
+            checkout.quantity ??
+            checkout.itemCount ??
+            1
+          ) || 1
+        ),
+
+      price:
+        Number(
+          checkout.price ??
+          checkout.itemPrice ??
+          0
+        ) || 0,
+
+      imageUrl:
+        checkout.imageUrl ||
+        checkout.productImage ||
+        null
+    }
+  ];
+}
+
+
+function getSuccessItemImage(
+  item
+) {
+  return (
+    item?.imageUrl ||
+    item?.image ||
+    item?.productImage ||
+    item?.thumbnail ||
+    ""
+  );
+}
+
+
+function renderSuccessProductPreview(
+  item,
+  index
+) {
+  const name =
+    item?.name ||
+    item?.productName ||
+    `Item ${index + 1}`;
+
+  const image =
+    getSuccessItemImage(
+      item
+    );
+
+  const quantity =
+    Math.max(
+      1,
+      Number(
+        item?.quantity ??
+        item?.qty ??
+        1
+      ) || 1
+    );
+
+  if (image) {
+    return `
+      <div
+        class="success-product-preview"
+        title="${escapeHtml(name)}"
+      >
+        <div class="success-product-image-wrap">
+
+          <img
+            src="${escapeHtml(image)}"
+            alt="${escapeHtml(name)}"
+            class="success-product-image"
+            loading="lazy"
+            referrerpolicy="no-referrer"
+          />
+
+          ${
+            quantity > 1
+              ? `
+                <span
+                  class="success-product-quantity"
+                >
+                  ×${formatSuccessNumber(
+                    quantity
+                  )}
+                </span>
+              `
+              : ""
+          }
+
+        </div>
+
+        <span class="success-product-preview-name">
+          ${escapeHtml(name)}
+        </span>
+      </div>
+    `;
+  }
+
+  return `
+    <div
+      class="success-product-preview"
+      title="${escapeHtml(name)}"
+    >
+      <div
+        class="success-product-image-wrap success-product-placeholder"
+      >
+        <span>
+          ITEM
+        </span>
+
+        ${
+          quantity > 1
+            ? `
+              <span
+                class="success-product-quantity"
+              >
+                ×${formatSuccessNumber(
+                  quantity
+                )}
+              </span>
+            `
+            : ""
+        }
+      </div>
+
+      <span class="success-product-preview-name">
+        ${escapeHtml(name)}
+      </span>
+    </div>
+  `;
+}
+
+
 function renderSuccessCheckouts(
   checkouts = []
 ) {
@@ -5442,8 +5610,11 @@ function renderSuccessCheckouts(
     !Array.isArray(checkouts) ||
     checkouts.length === 0
   ) {
+    successCheckoutIndex = 0;
+
     container.innerHTML = `
       <div class="success-empty">
+
         <strong>
           No successful checkouts yet.
         </strong>
@@ -5453,13 +5624,383 @@ function renderSuccessCheckouts(
           appear here after they are
           synchronized to your account.
         </p>
+
       </div>
     `;
 
     return;
   }
 
-  container.innerHTML =
+
+  /*
+    Keep the selected order inside the
+    available checkout range.
+  */
+  successCheckoutIndex =
+    Math.min(
+      Math.max(
+        successCheckoutIndex,
+        0
+      ),
+      checkouts.length - 1
+    );
+
+
+  const checkout =
+    checkouts[
+      successCheckoutIndex
+    ];
+
+
+  const retailer =
+    checkout.retailer ||
+    checkout.store ||
+    "Retailer";
+
+
+  const orderNumber =
+    checkout.orderNumber ||
+    checkout.orderId ||
+    checkout.id ||
+    "";
+
+
+  const date =
+    checkout.checkoutAt ||
+    checkout.date ||
+    checkout.createdAt ||
+    null;
+
+
+  /*
+    IMPORTANT:
+    Our normalized Success records use
+    itemCount and orderTotal.
+
+    Older fallback names remain supported
+    so historical/test data still works.
+  */
+  const quantity =
+    Math.max(
+      0,
+      Number(
+        checkout.itemCount ??
+        checkout.quantity ??
+        checkout.totalItems ??
+        0
+      ) || 0
+    );
+
+
+  const value =
+    Number(
+      checkout.orderTotal ??
+      checkout.checkoutValue ??
+      checkout.value ??
+      checkout.total ??
+      checkout.amount ??
+      0
+    ) || 0;
+
+
+  const items =
+    getSuccessCheckoutItems(
+      checkout
+    );
+
+
+  /*
+    Recent Success intentionally shows
+    no more than three products.
+  */
+  const previewItems =
+    items.slice(
+      0,
+      3
+    );
+
+
+  const hiddenProducts =
+    Math.max(
+      0,
+      items.length -
+      previewItems.length
+    );
+
+
+  const productPreviewHtml =
+    previewItems.length
+      ? previewItems
+          .map(
+            (
+              item,
+              index
+            ) =>
+              renderSuccessProductPreview(
+                item,
+                index
+              )
+          )
+          .join("")
+      : `
+          <div
+            class="success-product-preview"
+          >
+            <div
+              class="success-product-image-wrap success-product-placeholder"
+            >
+              <span>
+                ITEM
+              </span>
+            </div>
+
+            <span
+              class="success-product-preview-name"
+            >
+              Successful Checkout
+            </span>
+          </div>
+        `;
+
+
+  container.innerHTML = `
+    <div class="success-recent-shell">
+
+      <div class="success-recent-top">
+
+        <div>
+          <span class="success-checkout-retailer">
+            ${escapeHtml(retailer)}
+          </span>
+
+          <h4>
+            Successful Checkout
+          </h4>
+
+          <p>
+            ${escapeHtml(
+              formatSuccessDate(
+                date
+              )
+            )}
+          </p>
+        </div>
+
+
+        <button
+          type="button"
+          class="success-all-orders-link"
+          id="success-all-orders"
+        >
+          ALL ORDERS →
+        </button>
+
+      </div>
+
+
+      <div class="success-product-previews">
+
+        ${productPreviewHtml}
+
+      </div>
+
+
+      ${
+        hiddenProducts > 0
+          ? `
+            <div
+              class="success-more-products"
+            >
+              +${formatSuccessNumber(
+                hiddenProducts
+              )}
+              more ${
+                hiddenProducts === 1
+                  ? "product"
+                  : "products"
+              }
+            </div>
+          `
+          : ""
+      }
+
+
+      <div class="success-checkout-summary">
+
+        <div>
+          <span>
+            ITEMS SECURED
+          </span>
+
+          <strong>
+            ${formatSuccessNumber(
+              quantity
+            )}
+          </strong>
+        </div>
+
+
+        <div>
+          <span>
+            CHECKOUT VALUE
+          </span>
+
+          <strong>
+            ${escapeHtml(
+              formatSuccessCurrency(
+                value
+              )
+            )}
+          </strong>
+        </div>
+
+
+        ${
+          orderNumber
+            ? `
+              <div>
+                <span>
+                  ORDER
+                </span>
+
+                <strong>
+                  ${escapeHtml(
+                    orderNumber
+                  )}
+                </strong>
+              </div>
+            `
+            : ""
+        }
+
+      </div>
+
+
+      <div class="success-order-navigation">
+
+        <button
+          type="button"
+          class="success-order-nav-button"
+          id="success-order-previous"
+          ${
+            successCheckoutIndex === 0
+              ? "disabled"
+              : ""
+          }
+        >
+          ← Previous Order
+        </button>
+
+
+        <span class="success-order-position">
+          ${formatSuccessNumber(
+            successCheckoutIndex + 1
+          )}
+          of
+          ${formatSuccessNumber(
+            checkouts.length
+          )}
+        </span>
+
+
+        <button
+          type="button"
+          class="success-order-nav-button"
+          id="success-order-next"
+          ${
+            successCheckoutIndex >=
+            checkouts.length - 1
+              ? "disabled"
+              : ""
+          }
+        >
+          Next Order →
+        </button>
+
+      </div>
+
+    </div>
+  `;
+
+
+  document
+    .getElementById(
+      "success-order-previous"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        if (
+          successCheckoutIndex <= 0
+        ) {
+          return;
+        }
+
+        successCheckoutIndex -= 1;
+
+        renderSuccessCheckouts(
+          checkouts
+        );
+      }
+    );
+
+
+  document
+    .getElementById(
+      "success-order-next"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        if (
+          successCheckoutIndex >=
+          checkouts.length - 1
+        ) {
+          return;
+        }
+
+        successCheckoutIndex += 1;
+
+        renderSuccessCheckouts(
+          checkouts
+        );
+      }
+    );
+
+
+  document
+    .getElementById(
+      "success-all-orders"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        renderSuccessAllOrders(
+          checkouts
+        );
+      }
+    );
+}
+
+
+/* =====================================================
+   SUCCESS — ALL ORDERS VIEW
+===================================================== */
+
+function renderSuccessAllOrders(
+  checkouts = []
+) {
+  const container =
+    document.getElementById(
+      "success-checkouts"
+    );
+
+  if (!container) {
+    return;
+  }
+
+
+  const ordersHtml =
     checkouts
       .map(checkout => {
         const retailer =
@@ -5467,29 +6008,13 @@ function renderSuccessCheckouts(
           checkout.store ||
           "Retailer";
 
-        const product =
-          checkout.product ||
-          checkout.productName ||
-          checkout.item ||
-          "Successful Checkout";
 
-        const quantity =
-          Math.max(
-            1,
-            Number(
-              checkout.quantity ??
-              checkout.items ??
-              1
-            ) || 1
-          );
+        const orderNumber =
+          checkout.orderNumber ||
+          checkout.orderId ||
+          checkout.id ||
+          "";
 
-        const value =
-          Number(
-            checkout.value ??
-            checkout.total ??
-            checkout.amount ??
-            0
-          ) || 0;
 
         const date =
           checkout.checkoutAt ||
@@ -5497,56 +6022,285 @@ function renderSuccessCheckouts(
           checkout.createdAt ||
           null;
 
+
+        const quantity =
+          Math.max(
+            0,
+            Number(
+              checkout.itemCount ??
+              checkout.quantity ??
+              checkout.totalItems ??
+              0
+            ) || 0
+          );
+
+
+        const value =
+          Number(
+            checkout.orderTotal ??
+            checkout.checkoutValue ??
+            checkout.value ??
+            checkout.total ??
+            checkout.amount ??
+            0
+          ) || 0;
+
+
+        const items =
+          getSuccessCheckoutItems(
+            checkout
+          );
+
+
+        const itemRows =
+          items.length
+            ? items
+                .map(item => {
+                  const name =
+                    item.name ||
+                    item.productName ||
+                    "Item";
+
+                  const itemQuantity =
+                    Math.max(
+                      1,
+                      Number(
+                        item.quantity ??
+                        item.qty ??
+                        1
+                      ) || 1
+                    );
+
+                  const image =
+                    getSuccessItemImage(
+                      item
+                    );
+
+                  return `
+                    <div
+                      class="success-all-orders-item"
+                    >
+
+                      <div
+                        class="success-all-orders-item-image ${
+                          image
+                            ? ""
+                            : "success-product-placeholder"
+                        }"
+                      >
+
+                        ${
+                          image
+                            ? `
+                              <img
+                                src="${escapeHtml(
+                                  image
+                                )}"
+                                alt="${escapeHtml(
+                                  name
+                                )}"
+                                loading="lazy"
+                                referrerpolicy="no-referrer"
+                              />
+                            `
+                            : `
+                              <span>
+                                ITEM
+                              </span>
+                            `
+                        }
+
+                      </div>
+
+
+                      <div
+                        class="success-all-orders-item-name"
+                      >
+                        ${escapeHtml(
+                          name
+                        )}
+                      </div>
+
+
+                      <strong
+                        class="success-all-orders-item-quantity"
+                      >
+                        ×${formatSuccessNumber(
+                          itemQuantity
+                        )}
+                      </strong>
+
+                    </div>
+                  `;
+                })
+                .join("")
+            : `
+                <div
+                  class="success-all-orders-item"
+                >
+
+                  <div
+                    class="success-all-orders-item-image success-product-placeholder"
+                  >
+                    <span>
+                      ITEM
+                    </span>
+                  </div>
+
+                  <div
+                    class="success-all-orders-item-name"
+                  >
+                    Successful Checkout
+                  </div>
+
+                  <strong
+                    class="success-all-orders-item-quantity"
+                  >
+                    ×${formatSuccessNumber(
+                      Math.max(
+                        1,
+                        quantity
+                      )
+                    )}
+                  </strong>
+
+                </div>
+              `;
+
+
         return `
           <article
-            class="success-checkout-card"
+            class="success-all-orders-card"
           >
-            <div
-              class="success-checkout-main"
-            >
-              <span
-                class="success-checkout-retailer"
-              >
-                ${escapeHtml(retailer)}
-              </span>
-
-              <h4>
-                ${escapeHtml(product)}
-              </h4>
-
-              <p>
-                ${escapeHtml(
-                  formatSuccessDate(date)
-                )}
-              </p>
-            </div>
 
             <div
-              class="success-checkout-meta"
+              class="success-all-orders-head"
             >
-              <span>
-                ${formatSuccessNumber(
-                  quantity
-                )}
+
+              <div>
+
+                <span
+                  class="success-checkout-retailer"
+                >
+                  ${escapeHtml(
+                    retailer
+                  )}
+                </span>
+
+                <h4>
+                  ${escapeHtml(
+                    formatSuccessDate(
+                      date
+                    )
+                  )}
+                </h4>
+
                 ${
-                  quantity === 1
-                    ? "item"
-                    : "items"
+                  orderNumber
+                    ? `
+                      <p>
+                        Order #${escapeHtml(
+                          orderNumber
+                        )}
+                      </p>
+                    `
+                    : ""
                 }
-              </span>
 
-              <strong>
-                ${escapeHtml(
-                  formatSuccessCurrency(
-                    value
-                  )
-                )}
-              </strong>
+              </div>
+
+
+              <div
+                class="success-all-orders-total"
+              >
+                <span>
+                  ${formatSuccessNumber(
+                    quantity
+                  )}
+                  ${
+                    quantity === 1
+                      ? "item"
+                      : "items"
+                  }
+                </span>
+
+                <strong>
+                  ${escapeHtml(
+                    formatSuccessCurrency(
+                      value
+                    )
+                  )}
+                </strong>
+              </div>
+
             </div>
+
+
+            <div
+              class="success-all-orders-items"
+            >
+              ${itemRows}
+            </div>
+
           </article>
         `;
       })
       .join("");
+
+
+  container.innerHTML = `
+    <div class="success-all-orders-view">
+
+      <div class="success-all-orders-title">
+
+        <div>
+          <span class="eyebrow">
+            CHECKOUT HISTORY
+          </span>
+
+          <h3>
+            All Orders
+          </h3>
+
+          <p>
+            Every synchronized checkout
+            and the products secured in
+            each order.
+          </p>
+        </div>
+
+
+        <button
+          type="button"
+          class="success-order-nav-button"
+          id="success-back-to-recent"
+        >
+          ← Back to Recent Success
+        </button>
+
+      </div>
+
+
+      <div class="success-all-orders-list">
+        ${ordersHtml}
+      </div>
+
+    </div>
+  `;
+
+
+  document
+    .getElementById(
+      "success-back-to-recent"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        renderSuccessCheckouts(
+          checkouts
+        );
+      }
+    );
 }
 
 
