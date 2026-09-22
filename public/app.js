@@ -5038,9 +5038,18 @@ async function loadSuccessDashboard(
   renderSuccessLoading();
 
   try {
+    const successTestMode =
+  new URLSearchParams(
+    window.location.search
+  ).get("successTest") === "1";
+
+const successEndpoint =
+  successTestMode
+    ? "/api/admin/test-success"
+    : "/api/account/success";
     const response =
-      await fetch(
-        "/api/account/success",
+        await fetch(
+  successEndpoint,
         {
           method: "GET",
 
