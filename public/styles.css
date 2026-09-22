@@ -4312,3 +4312,37 @@ select:focus {
   }
 
 }
+
+/* =========================================================
+   HOME FEATURE ICONS
+   ========================================================= */
+
+#home .home-reference-feature-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 42px;
+
+  color: var(--cyan);
+
+  font-size: 32px;
+  line-height: 1;
+
+  margin-bottom: 10px;
+}
+
+#home .home-reference-feature-icon svg {
+  display: block;
+  overflow: visible;
+}
+
+#home .discord-feature-icon {
+  color: #5865f2;
+
+  filter:
+    drop-shadow(
+      0 0 8px
+      rgba(88, 101, 242, 0.35)
+    );
+}
