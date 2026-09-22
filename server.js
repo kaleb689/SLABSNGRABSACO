@@ -7701,6 +7701,265 @@ async function persistTargetTestOrder(
    Does NOT save anything.
 ------------------------------------------------------- */
 
+/* -------------------------------------------------------
+   TEMPORARY TARGET UID 24 ITEM CONTEXT DEBUG
+   Read-only. Does not save anything.
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-imap/target-uid24-item-debug",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    const testEmail =
+      normalizeEmail(
+        process.env.IMAP_TEST_EMAIL
+      );
+
+    const testPassword =
+      String(
+        process.env.IMAP_TEST_PASSWORD ||
+        ""
+      );
+
+    if (
+      !testEmail ||
+      !testPassword
+    ) {
+      return res
+        .status(500)
+        .json({
+          ok: false,
+          error:
+            "Test mailbox environment variables are not configured."
+        });
+    }
+
+    const {
+      provider,
+      client
+    } =
+      createCustomerImapClient(
+        testEmail,
+        testPassword
+      );
+
+    try {
+      await client.connect();
+
+      const lock =
+        await client.getMailboxLock(
+          "INBOX",
+          {
+            readOnly: true
+          }
+        );
+
+      try {
+        const message =
+          await client.fetchOne(
+            24,
+            {
+              uid: true,
+              envelope: true,
+              source: true
+            },
+            {
+              uid: true
+            }
+          );
+
+        if (
+          !message ||
+          !message.source
+        ) {
+          return res
+            .status(404)
+            .json({
+              ok: false,
+              error:
+                "UID 24 could not be found."
+            });
+        }
+
+        const decoded =
+          await decodeImapMessage(
+            message.source
+          );
+
+        const text =
+          String(
+            decoded.text || ""
+          );
+
+        const html =
+          String(
+            decoded.html || ""
+          );
+
+        const lines =
+          text
+            .split(/\r?\n/)
+            .map(line =>
+              clean(
+                line,
+                500
+              )
+            )
+            .filter(Boolean);
+
+        /*
+          Find the real purchased-item quantity
+          line from the Target order.
+        */
+
+        const qtyIndex =
+          lines.findIndex(line =>
+            /^qty\s*:\s*2\b/i.test(
+              line
+            )
+          );
+
+        let contextLines = [];
+
+        if (qtyIndex >= 0) {
+          contextLines =
+            lines.slice(
+              Math.max(
+                0,
+                qtyIndex - 12
+              ),
+              Math.min(
+                lines.length,
+                qtyIndex + 8
+              )
+            );
+        }
+
+        /*
+          Keep this diagnostic privacy-safe:
+          only return lines relevant to the item,
+          URLs, quantity, and price.
+        */
+
+        contextLines =
+          contextLines.filter(line =>
+            /pokemon/i.test(line) ||
+            /qty\s*:/i.test(line) ||
+            /\$69\.99/i.test(line) ||
+            /https?:\/\//i.test(line) ||
+            /elite\s+trainer/i.test(line)
+          );
+
+        const images =
+          extractEmailImageUrls(
+            html
+          )
+            .filter(image =>
+              /pokemon/i.test(
+                String(
+                  image.alt || ""
+                )
+              ) ||
+              /elite\s+trainer/i.test(
+                String(
+                  image.alt || ""
+                )
+              ) ||
+              /pokemon/i.test(
+                String(
+                  image.title || ""
+                )
+              )
+            )
+            .slice(
+              0,
+              10
+            )
+            .map(image => ({
+              alt:
+                clean(
+                  image.alt,
+                  500
+                ),
+
+              title:
+                clean(
+                  image.title,
+                  500
+                ),
+
+              imageUrl:
+                safeSuccessImageUrl(
+                  image.imageUrl
+                )
+            }));
+
+        return res.json({
+          ok: true,
+
+          provider:
+            provider.name,
+
+          uid:
+            message.uid,
+
+          subject:
+            clean(
+              message.envelope
+                ?.subject,
+              300
+            ),
+
+          qtyLineFound:
+            qtyIndex >= 0,
+
+          qtyLineIndex:
+            qtyIndex,
+
+          contextLines,
+
+          images
+        });
+
+      } finally {
+        lock.release();
+      }
+
+    } catch (error) {
+      console.error(
+        "Target UID 24 item debug failed:",
+        error?.code ||
+        error?.name ||
+        "target_item_debug_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+          error:
+            "Unable to inspect the Target test message."
+        });
+
+    } finally {
+      if (client.usable) {
+        try {
+          await client.logout();
+        } catch {
+          client.close();
+        }
+      } else {
+        client.close();
+      }
+    }
+  }
+);
+
 app.get(
   "/api/admin/test-imap/target-order-uid24",
   requireAdmin,
