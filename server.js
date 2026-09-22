@@ -5,6 +5,9 @@ import {
   ImapFlow,
   AuthenticationFailure
 } from "imapflow";
+import {
+  simpleParser
+} from "mailparser";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -5815,21 +5818,57 @@ function parseMoney(value) {
     : null;
 }
 
+async function decodeImapMessage(
+  source
+) {
+  const parsed =
+    await simpleParser(
+      source,
+      {
+        skipHtmlToText: true,
+        skipTextToHtml: true
+      }
+    );
 
-function parseTargetTestOrder({
+  const text =
+    String(
+      parsed?.text || ""
+    );
+
+  const html =
+    typeof parsed?.html === "string"
+      ? parsed.html
+      : "";
+
+  return {
+    text,
+    html
+  };
+}
+
+async function parseTargetTestOrder({
   subject,
   source,
   uid,
   messageId,
   date
 }) {
+  const decoded =
+    await decodeImapMessage(
+      source
+    );
+
+
   const text =
-    extractEmailText(source);
+    decoded.text ||
+    extractEmailText(
+      source
+    );
 
 
   const emailImages =
     extractEmailImageUrls(
-      source
+      decoded.html
     );
 
 
@@ -6154,7 +6193,7 @@ async function readLatestTargetTestOrder(
         }
 
         const parsed =
-          parseTargetTestOrder({
+  await parseTargetTestOrder({
             subject:
               message.envelope
                 ?.subject ||
