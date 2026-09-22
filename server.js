@@ -5507,6 +5507,71 @@ function extractEmailText(source) {
   );
 }
 
+function extractEmailImageUrls(
+  source
+) {
+  const raw =
+    Buffer.isBuffer(source)
+      ? source.toString("utf8")
+      : String(source || "");
+
+  const urls = [];
+
+  const imagePattern =
+    /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
+
+  let match;
+
+  while (
+    (
+      match =
+        imagePattern.exec(raw)
+    ) !== null
+  ) {
+    let candidate =
+      String(
+        match[1] || ""
+      )
+        .replace(/&amp;/gi, "&")
+        .trim();
+
+    /*
+      Ignore embedded images, attachments,
+      tracking CIDs and non-HTTPS sources.
+    */
+
+    if (
+      !candidate ||
+      /^cid:/i.test(candidate) ||
+      /^data:/i.test(candidate)
+    ) {
+      continue;
+    }
+
+    const safeUrl =
+      safeSuccessImageUrl(
+        candidate
+      );
+
+    if (!safeUrl) {
+      continue;
+    }
+
+    /*
+      Avoid storing the same image more
+      than once.
+    */
+
+    if (
+      !urls.includes(safeUrl)
+    ) {
+      urls.push(safeUrl);
+    }
+  }
+
+  return urls;
+}
+
 
 function parseMoney(value) {
   const amount =
@@ -5926,7 +5991,95 @@ async function readLatestTargetTestOrder(
   }
 }
 
+app.get(
+  "/api/admin/test-target-html-images",
+  requireAdmin,
+  (req, res) => {
+    const testHtml = `
+      <html>
+        <body>
 
+          <div class="product">
+            <img
+              src="https://placehold.co/400x400.png?text=Ascended+Heroes+Tin"
+              alt="Pokemon Trading Card Game: Ascended Heroes Tin"
+            >
+
+            <div>
+              Pokemon Trading Card Game:
+              Ascended Heroes Tin
+            </div>
+
+            <div>
+              Quantity: 4
+            </div>
+
+            <div>
+              $39.99 each
+            </div>
+          </div>
+
+
+          <div class="product">
+            <img
+              src="https://placehold.co/400x400.png?text=Elite+Trainer+Box"
+              alt="Pokemon Trading Card Game: Elite Trainer Box"
+            >
+
+            <div>
+              Pokemon Trading Card Game:
+              Elite Trainer Box
+            </div>
+
+            <div>
+              Quantity: 2
+            </div>
+
+            <div>
+              $54.99 each
+            </div>
+          </div>
+
+
+          <div class="product">
+            <img
+              src="https://placehold.co/400x400.png?text=Booster+Bundle"
+              alt="Pokemon Trading Card Game: Booster Bundle"
+            >
+
+            <div>
+              Pokemon Trading Card Game:
+              Booster Bundle
+            </div>
+
+            <div>
+              Quantity: 1
+            </div>
+
+            <div>
+              $29.99 each
+            </div>
+          </div>
+
+        </body>
+      </html>
+    `;
+
+    const imageUrls =
+      extractEmailImageUrls(
+        testHtml
+      );
+
+    return res.json({
+      ok: true,
+
+      count:
+        imageUrls.length,
+
+      imageUrls
+    });
+  }
+);
 /* -------------------------------------------------------
    TEMPORARY ADMIN TARGET PARSER ENDPOINT
 ------------------------------------------------------- */
