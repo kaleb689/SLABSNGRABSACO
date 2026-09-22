@@ -5124,3 +5124,40 @@ select:focus {
     padding: 16px;
   }
 }
+/* ======================================================
+   HOME BOTTOM FEATURES — CENTER CONTENT
+====================================================== */
+
+#home .home-reference-features {
+  align-items: stretch;
+}
+
+#home .home-reference-feature {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  text-align: center;
+}
+
+#home .home-reference-feature-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#home .home-reference-feature strong,
+#home .home-reference-feature p {
+  width: 100%;
+  text-align: center;
+}
+
+#home .home-reference-feature svg {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
