@@ -46,6 +46,12 @@ const RETAILER_PROFILES_FILE =
     "retailer-profiles.json"
   );
 
+const SUCCESS_CHECKOUTS_FILE =
+  path.join(
+    DATA_DIR,
+    "success-checkouts.json"
+  );
+
 const CUSTOMER_SESSION_COOKIE =
   "sng_customer";
 
@@ -4463,6 +4469,463 @@ app.post(
     }
   }
 );
+
+/* -------------------------------------------------------
+   SUCCESS DASHBOARD
+------------------------------------------------------- */
+
+async function getSuccessCheckouts() {
+  const records =
+    await readJson(
+      SUCCESS_CHECKOUTS_FILE,
+      []
+    );
+
+  return Array.isArray(records)
+    ? records
+    : [];
+}
+
+async function saveSuccessCheckouts(
+  records
+) {
+  await writeJson(
+    SUCCESS_CHECKOUTS_FILE,
+    records
+  );
+}
+
+function normalizeSuccessRetailer(
+  value
+) {
+  const retailer =
+    String(value || "")
+      .trim()
+      .toLowerCase();
+
+  const retailers = {
+    target: "Target",
+    walmart: "Walmart",
+    "sam's club": "Sam's Club",
+    "sams club": "Sam's Club",
+    samsclub: "Sam's Club",
+    costco: "Costco",
+    pkc: "PKC"
+  };
+
+  return (
+    retailers[retailer] ||
+    clean(value, 80) ||
+    "Retailer"
+  );
+}
+
+function safeSuccessItem(item) {
+  const quantity =
+    Math.max(
+      1,
+      Math.floor(
+        Number(
+          item?.quantity || 1
+        )
+      )
+    );
+
+  const price =
+    Number(
+      item?.price || 0
+    );
+
+  return {
+    name:
+      clean(
+        item?.name ||
+        "Item",
+        300
+      ),
+
+    quantity,
+
+    price:
+      Number.isFinite(price) &&
+      price >= 0
+        ? price
+        : 0
+  };
+}
+
+function safeSuccessCheckout(
+  record
+) {
+  const total =
+    Number(
+      record?.orderTotal || 0
+    );
+
+  const items =
+    Array.isArray(record?.items)
+      ? record.items.map(
+          safeSuccessItem
+        )
+      : [];
+
+  let itemCount =
+    Number(
+      record?.itemCount
+    );
+
+  if (
+    !Number.isFinite(itemCount) ||
+    itemCount < 0
+  ) {
+    itemCount =
+      items.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.quantity || 0
+          ),
+        0
+      );
+  }
+
+  return {
+    id:
+      String(
+        record?.id || ""
+      ),
+
+    retailer:
+      normalizeSuccessRetailer(
+        record?.retailer
+      ),
+
+    orderNumber:
+      clean(
+        record?.orderNumber,
+        150
+      ),
+
+    profileSlot:
+      Number.isInteger(
+        Number(
+          record?.profileSlot
+        )
+      )
+        ? Number(
+            record.profileSlot
+          )
+        : null,
+
+    profileName:
+      clean(
+        record?.profileName,
+        80
+      ),
+
+    checkoutAt:
+      record?.checkoutAt ||
+      record?.createdAt ||
+      null,
+
+    orderTotal:
+      Number.isFinite(total) &&
+      total >= 0
+        ? total
+        : 0,
+
+    itemCount:
+      Math.max(
+        0,
+        Math.floor(
+          itemCount || 0
+        )
+      ),
+
+    items,
+
+    status:
+      clean(
+        record?.status ||
+        "confirmed",
+        50
+      )
+  };
+}
+
+function successDateKey(
+  value
+) {
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  return date
+    .toISOString()
+    .slice(0, 10);
+}
+
+function buildSuccessActivity(
+  records,
+  days = 14
+) {
+  const counts =
+    new Map();
+
+  for (
+    const record of records
+  ) {
+    const key =
+      successDateKey(
+        record.checkoutAt
+      );
+
+    if (!key) {
+      continue;
+    }
+
+    counts.set(
+      key,
+      (
+        counts.get(key) ||
+        0
+      ) + 1
+    );
+  }
+
+  const activity = [];
+
+  const today =
+    new Date();
+
+  today.setUTCHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  for (
+    let offset =
+      days - 1;
+    offset >= 0;
+    offset -= 1
+  ) {
+    const date =
+      new Date(today);
+
+    date.setUTCDate(
+      today.getUTCDate() -
+      offset
+    );
+
+    const key =
+      date
+        .toISOString()
+        .slice(0, 10);
+
+    activity.push({
+      date: key,
+      count:
+        counts.get(key) ||
+        0
+    });
+  }
+
+  return activity;
+}
+
+function buildSuccessSummary(
+  records
+) {
+  const safeRecords =
+    records.map(
+      safeSuccessCheckout
+    );
+
+  const totalCheckouts =
+    safeRecords.length;
+
+  const totalItems =
+    safeRecords.reduce(
+      (sum, record) =>
+        sum +
+        Number(
+          record.itemCount || 0
+        ),
+      0
+    );
+
+  const checkoutValue =
+    safeRecords.reduce(
+      (sum, record) =>
+        sum +
+        Number(
+          record.orderTotal || 0
+        ),
+      0
+    );
+
+  const dailyCounts =
+    new Map();
+
+  for (
+    const record of safeRecords
+  ) {
+    const key =
+      successDateKey(
+        record.checkoutAt
+      );
+
+    if (!key) {
+      continue;
+    }
+
+    dailyCounts.set(
+      key,
+      (
+        dailyCounts.get(key) ||
+        0
+      ) + 1
+    );
+  }
+
+  const bestDay =
+    dailyCounts.size
+      ? Math.max(
+          ...dailyCounts.values()
+        )
+      : 0;
+
+  const recentCheckouts =
+    [...safeRecords]
+      .sort(
+        (a, b) =>
+          new Date(
+            b.checkoutAt || 0
+          ).getTime() -
+          new Date(
+            a.checkoutAt || 0
+          ).getTime()
+      )
+      .slice(
+        0,
+        20
+      );
+
+  return {
+    totalCheckouts,
+
+    totalItems,
+
+    checkoutValue:
+      Number(
+        checkoutValue
+          .toFixed(2)
+      ),
+
+    bestDay,
+
+    activity:
+      buildSuccessActivity(
+        safeRecords,
+        14
+      ),
+
+    recentCheckouts
+  };
+}
+
+app.get(
+  "/api/account/success",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      res.setHeader(
+        "Cache-Control",
+        "no-store"
+      );
+
+      const accountId =
+        req.customerAccount.id;
+
+      /*
+        Success records are always filtered
+        server-side by the authenticated
+        customer account.
+
+        The browser never supplies an account ID.
+      */
+
+      const records =
+        await getSuccessCheckouts();
+
+      const ownedRecords =
+        records.filter(
+          record =>
+            record.customerAccountId ===
+            accountId
+        );
+
+      const summary =
+        buildSuccessSummary(
+          ownedRecords
+        );
+
+      return res.json({
+        ok: true,
+
+        sync: {
+          status:
+            ownedRecords.length
+              ? "ready"
+              : "waiting",
+
+          message:
+            ownedRecords.length
+              ? "Checkout data is up to date"
+              : "Waiting for checkout data",
+
+          lastSyncAt:
+            ownedRecords
+              .map(
+                record =>
+                  record.syncedAt ||
+                  record.updatedAt ||
+                  record.createdAt ||
+                  null
+              )
+              .filter(Boolean)
+              .sort()
+              .reverse()[0] ||
+            null
+        },
+
+        ...summary
+      });
+
+    } catch (error) {
+      console.error(
+        "Success dashboard error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load Success data."
+        });
+    }
+  }
+);
 /* -------------------------------------------------------
    MY PROFILE
 ------------------------------------------------------- */
@@ -4823,6 +5286,10 @@ async function startServer() {
     await initializeArrayFile(
       RETAILER_PROFILES_FILE
     );
+
+    await initializeArrayFile(
+  SUCCESS_CHECKOUTS_FILE
+);
 
     app.listen(
       PORT,
