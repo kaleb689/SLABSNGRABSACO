@@ -56,6 +56,12 @@ const SUCCESS_CHECKOUTS_FILE =
     "success-checkouts.json"
   );
 
+const SUCCESS_CHECKOUTS_TEST_FILE =
+  path.join(
+    DATA_DIR,
+    "success-checkouts-test.json"
+  );
+
 const CUSTOMER_SESSION_COOKIE =
   "sng_customer";
 
@@ -5726,6 +5732,215 @@ async function readLatestTargetTestOrder(
 /* -------------------------------------------------------
    TEMPORARY ADMIN TARGET PARSER ENDPOINT
 ------------------------------------------------------- */
+/* -------------------------------------------------------
+   TEMPORARY SUCCESS TEST STORAGE
+   Completely separate from real customer Success data.
+------------------------------------------------------- */
+
+async function getTestSuccessCheckouts() {
+  const records =
+    await readJson(
+      SUCCESS_CHECKOUTS_TEST_FILE,
+      []
+    );
+
+  return Array.isArray(records)
+    ? records
+    : [];
+}
+
+
+async function saveTestSuccessCheckouts(
+  records
+) {
+  await writeJson(
+    SUCCESS_CHECKOUTS_TEST_FILE,
+    records
+  );
+}
+
+
+function sameTestCheckout(
+  existing,
+  incoming
+) {
+  /*
+    Primary dedupe:
+    same mailbox message.
+  */
+
+  if (
+    incoming.messageId &&
+    existing.messageId &&
+    String(existing.messageId) ===
+      String(incoming.messageId)
+  ) {
+    return true;
+  }
+
+  /*
+    Secondary dedupe:
+    same retailer + order number.
+
+    This prevents the same order from being
+    counted twice even if the retailer sends
+    another confirmation message.
+  */
+
+  return (
+    String(
+      existing.retailer || ""
+    ).toLowerCase() ===
+      String(
+        incoming.retailer || ""
+      ).toLowerCase() &&
+
+    String(
+      existing.orderNumber || ""
+    ).toLowerCase() ===
+      String(
+        incoming.orderNumber || ""
+      ).toLowerCase()
+  );
+}
+
+
+async function persistTargetTestOrder(
+  order
+) {
+  if (
+    !order ||
+    !order.orderNumber
+  ) {
+    throw new Error(
+      "INVALID_TEST_ORDER"
+    );
+  }
+
+  const records =
+    await getTestSuccessCheckouts();
+
+  const duplicate =
+    records.find(record =>
+      sameTestCheckout(
+        record,
+        order
+      )
+    );
+
+  if (duplicate) {
+    return {
+      saved: false,
+      duplicate: true,
+      record: duplicate,
+      totalStored:
+        records.length
+    };
+  }
+
+  const now =
+    new Date()
+      .toISOString();
+
+  const record = {
+    id:
+      crypto.randomUUID(),
+
+    customerAccountId:
+      "TEST-ACCOUNT",
+
+    profileSlot: 1,
+
+    profileName:
+      "IMAP Test Profile",
+
+    source:
+      "imap-test",
+
+    retailer:
+      clean(
+        order.retailer,
+        100
+      ),
+
+    orderNumber:
+      clean(
+        order.orderNumber,
+        100
+      ),
+
+    messageId:
+      clean(
+        order.messageId,
+        500
+      ),
+
+    mailboxUid:
+      clean(
+        order.mailboxUid,
+        100
+      ),
+
+    checkoutAt:
+      order.checkoutAt ||
+      now,
+
+    orderTotal:
+      Number(
+        order.orderTotal || 0
+      ),
+
+    itemCount:
+      Number(
+        order.itemCount || 0
+      ),
+
+    items:
+      Array.isArray(order.items)
+        ? order.items.map(item => ({
+            name:
+              clean(
+                item?.name,
+                300
+              ),
+
+            quantity:
+              Number(
+                item?.quantity || 0
+              ),
+
+            price:
+              item?.price === null ||
+              item?.price === undefined
+                ? null
+                : Number(
+                    item.price
+                  )
+          }))
+        : [],
+
+    status:
+      "confirmed",
+
+    createdAt: now,
+
+    updatedAt: now
+  };
+
+  records.push(record);
+
+  await saveTestSuccessCheckouts(
+    records
+  );
+
+  return {
+    saved: true,
+    duplicate: false,
+    record,
+    totalStored:
+      records.length
+  };
+}
 
 app.get(
   "/api/admin/test-imap/target-order",
