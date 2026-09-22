@@ -6538,3 +6538,226 @@ select:focus {
   }
 
 }
+
+/* ======================================================
+   SUCCESS GRAPH — CONTROLS BELOW GRAPH
+====================================================== */
+
+#my-profile .success-chart {
+  display: flex !important;
+  flex-direction: column !important;
+
+  width: 100% !important;
+
+  padding:
+    14px
+    0
+    0 !important;
+
+  overflow: visible !important;
+
+  border: 0 !important;
+  background: transparent !important;
+}
+
+
+/* ======================================================
+   1. GRAPH FIRST
+====================================================== */
+
+#my-profile .success-chart-layout {
+  order: 1 !important;
+
+  display: grid !important;
+
+  grid-template-columns:
+    58px
+    minmax(0, 1fr) !important;
+
+  width: 100% !important;
+  min-width: 0 !important;
+
+  min-height: 320px;
+
+  margin: 0 !important;
+
+  padding:
+    24px
+    22px
+    14px
+    14px;
+
+  border:
+    1px solid
+    rgba(18, 201, 255, 0.18);
+
+  border-radius: 14px;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(5, 19, 31, 0.72),
+      rgba(3, 15, 25, 0.58)
+    );
+
+  box-sizing: border-box;
+
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+
+/* ======================================================
+   MAKE GRAPH USE FULL FRAME
+====================================================== */
+
+#my-profile .success-chart-plot {
+  width: 100% !important;
+
+  min-width: 700px;
+
+  height: 280px;
+}
+
+
+#my-profile .success-chart-y-axis {
+  height: 250px;
+}
+
+
+#my-profile .success-chart-grid {
+  height: 250px;
+}
+
+
+#my-profile .success-chart-columns {
+  width: 100% !important;
+
+  height: 280px;
+}
+
+
+#my-profile .success-chart-column {
+  height: 280px;
+}
+
+
+#my-profile .success-chart-bar-wrap {
+  height: 250px;
+}
+
+
+/* ======================================================
+   2. CONTROLS BELOW GRAPH
+====================================================== */
+
+#my-profile .success-chart-controls {
+  order: 2 !important;
+
+  display: flex !important;
+
+  align-items: center;
+  justify-content: center !important;
+
+  flex-wrap: wrap;
+
+  gap: 10px;
+
+  width: 100%;
+
+  margin:
+    14px
+    0
+    0 !important;
+
+  padding: 0 !important;
+}
+
+
+/* Keep date-range button centered and readable */
+
+#my-profile .success-range-current {
+  min-width: 230px;
+}
+
+
+/* ======================================================
+   3. CUSTOM DATE PICKER BELOW BUTTONS
+====================================================== */
+
+#my-profile .success-date-picker {
+  order: 3 !important;
+
+  width: 100%;
+
+  margin:
+    12px
+    0
+    0 !important;
+}
+
+
+#my-profile .success-date-picker[hidden] {
+  display: none !important;
+}
+
+
+/* ======================================================
+   EMPTY STATE
+====================================================== */
+
+#my-profile .success-chart-empty {
+  order: 1 !important;
+
+  width: 100%;
+
+  min-height: 300px;
+
+  box-sizing: border-box;
+}
+
+
+/* ======================================================
+   MOBILE
+====================================================== */
+
+@media (max-width: 620px) {
+
+  #my-profile .success-chart-layout {
+    grid-template-columns:
+      52px
+      minmax(700px, 1fr) !important;
+
+    overflow-x: auto;
+  }
+
+
+  #my-profile .success-chart-controls {
+    display: grid !important;
+
+    grid-template-columns:
+      1fr
+      1fr;
+
+    gap: 8px;
+  }
+
+
+  #my-profile .success-range-current {
+    grid-column:
+      1 / -1;
+
+    grid-row: 1;
+
+    width: 100%;
+
+    min-width: 0;
+  }
+
+
+  #my-profile .success-range-choose {
+    grid-column:
+      1 / -1;
+  }
+
+}
