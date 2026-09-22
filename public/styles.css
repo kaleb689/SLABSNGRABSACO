@@ -7536,3 +7536,84 @@ select:focus {
   }
 
 }
+
+/* ======================================================
+   SUCCESS — HALF-WIDTH RECENT ACTIVITY AREA
+====================================================== */
+
+#my-profile #success-checkouts {
+  width: 100%;
+}
+
+
+/*
+  Recent Success occupies roughly half of the
+  available dashboard width on desktop.
+*/
+#my-profile .success-recent-shell {
+  width: 56% !important;
+  max-width: none !important;
+
+  min-width: 0;
+
+  box-sizing: border-box;
+}
+
+
+/*
+  Give the three product previews enough room
+  to actually look like product cards.
+*/
+#my-profile .success-product-previews {
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr)) !important;
+
+  gap: 14px;
+}
+
+
+#my-profile .success-product-image-wrap {
+  min-height: 125px;
+}
+
+
+/*
+  ALL ORDERS is a full history view, so it should
+  use the entire available dashboard width instead
+  of staying constrained to half width.
+*/
+#my-profile .success-all-orders-view {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+
+/* ======================================================
+   TABLET
+====================================================== */
+
+@media (max-width: 1050px) {
+
+  #my-profile .success-recent-shell {
+    width: 70% !important;
+  }
+
+}
+
+
+/* ======================================================
+   MOBILE
+====================================================== */
+
+@media (max-width: 700px) {
+
+  #my-profile .success-recent-shell {
+    width: 100% !important;
+  }
+
+
+  #my-profile .success-product-image-wrap {
+    min-height: 90px;
+  }
+
+}
