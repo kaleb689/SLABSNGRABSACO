@@ -4511,8 +4511,228 @@ async function saveRetailerProfile(
 const successState = {
   loaded: false,
   loading: false,
-  data: null
+  data: null,
+
+  rangeStart: null,
+  rangeEnd: null
 };
+
+
+function successDateInputValue(
+  date
+) {
+  return date
+    .toISOString()
+    .slice(0, 10);
+}
+
+
+function getDefaultSuccessRange() {
+  const end =
+    new Date();
+
+  end.setHours(
+    12,
+    0,
+    0,
+    0
+  );
+
+  const start =
+    new Date(end);
+
+  start.setDate(
+    end.getDate() - 13
+  );
+
+  return {
+    start:
+      successDateInputValue(
+        start
+      ),
+
+    end:
+      successDateInputValue(
+        end
+      )
+  };
+}
+
+
+function getSuccessRange() {
+  if (
+    successState.rangeStart &&
+    successState.rangeEnd
+  ) {
+    return {
+      start:
+        successState.rangeStart,
+
+      end:
+        successState.rangeEnd
+    };
+  }
+
+  const range =
+    getDefaultSuccessRange();
+
+  successState.rangeStart =
+    range.start;
+
+  successState.rangeEnd =
+    range.end;
+
+  return range;
+}
+
+
+function successRangeDays(
+  start,
+  end
+) {
+  const startDate =
+    new Date(
+      `${start}T12:00:00`
+    );
+
+  const endDate =
+    new Date(
+      `${end}T12:00:00`
+    );
+
+  return (
+    Math.round(
+      (
+        endDate.getTime() -
+        startDate.getTime()
+      ) /
+      (
+        1000 *
+        60 *
+        60 *
+        24
+      )
+    ) + 1
+  );
+}
+
+
+function shiftSuccessRange(
+  direction
+) {
+  const range =
+    getSuccessRange();
+
+  const days =
+    successRangeDays(
+      range.start,
+      range.end
+    );
+
+  const start =
+    new Date(
+      `${range.start}T12:00:00`
+    );
+
+  const end =
+    new Date(
+      `${range.end}T12:00:00`
+    );
+
+  start.setDate(
+    start.getDate() +
+    (
+      direction *
+      days
+    )
+  );
+
+  end.setDate(
+    end.getDate() +
+    (
+      direction *
+      days
+    )
+  );
+
+  const today =
+    new Date();
+
+  today.setHours(
+    12,
+    0,
+    0,
+    0
+  );
+
+  if (
+    end.getTime() >
+    today.getTime()
+  ) {
+    end.setTime(
+      today.getTime()
+    );
+
+    start.setTime(
+      today.getTime()
+    );
+
+    start.setDate(
+      start.getDate() -
+      (
+        days - 1
+      )
+    );
+  }
+
+  successState.rangeStart =
+    successDateInputValue(
+      start
+    );
+
+  successState.rangeEnd =
+    successDateInputValue(
+      end
+    );
+}
+
+
+function formatSuccessRangeLabel(
+  start,
+  end
+) {
+  const startDate =
+    new Date(
+      `${start}T12:00:00`
+    );
+
+  const endDate =
+    new Date(
+      `${end}T12:00:00`
+    );
+
+  const startText =
+    startDate.toLocaleDateString(
+      "en-US",
+      {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      }
+    );
+
+  const endText =
+    endDate.toLocaleDateString(
+      "en-US",
+      {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      }
+    );
+
+  return `${startText} – ${endText}`;
+}
 
 
 function formatSuccessCurrency(
@@ -4608,115 +4828,601 @@ function renderSuccessChart(
     return;
   }
 
-  if (
-    !Array.isArray(activity) ||
-    activity.length === 0
-  ) {
-    chart.innerHTML = `
-      <div class="success-chart-empty">
-        Checkout activity will appear
-        here after successful checkouts
-        are synchronized.
-      </div>
-    `;
+  const range =
+    getSuccessRange();
 
-    return;
-  }
+  const today =
+    successDateInputValue(
+      new Date()
+    );
+
+  const normalizedActivity =
+    Array.isArray(activity)
+      ? activity.map(item => {
+          const count =
+            Math.max(
+              0,
+              Number(
+                item.count ??
+                item.checkouts ??
+                0
+              ) || 0
+            );
+
+          const value =
+            Math.max(
+              0,
+              Number(
+                item.value ??
+                item.checkoutValue ??
+                item.total ??
+                0
+              ) || 0
+            );
+
+          const rawDate =
+            item.date ||
+            item.label ||
+            "";
+
+          const parsedDate =
+            rawDate
+              ? new Date(
+                  `${rawDate}T12:00:00`
+                )
+              : null;
+
+          const label =
+            parsedDate &&
+            !Number.isNaN(
+              parsedDate.getTime()
+            )
+              ? parsedDate
+                  .toLocaleDateString(
+                    "en-US",
+                    {
+                      month: "short",
+                      day: "numeric"
+                    }
+                  )
+              : rawDate;
+
+          return {
+            count,
+            value,
+            rawDate,
+            label
+          };
+        })
+      : [];
 
   const maximum =
     Math.max(
-      1,
-      ...activity.map(item =>
-        Math.max(
-          0,
-          Number(
-            item.count ??
-            item.checkouts ??
-            0
-          ) || 0
-        )
+      0,
+      ...normalizedActivity.map(
+        item => item.count
       )
     );
 
-  chart.innerHTML =
-    activity
+
+  /*
+    Choose a clean automatic Y-axis
+    interval based on the customer's
+    busiest day in the selected range.
+  */
+  function niceStep(
+    maxValue
+  ) {
+    if (maxValue <= 2) {
+      return 1;
+    }
+
+    const roughStep =
+      maxValue / 5;
+
+    const magnitude =
+      Math.pow(
+        10,
+        Math.floor(
+          Math.log10(
+            roughStep
+          )
+        )
+      );
+
+    const normalized =
+      roughStep /
+      magnitude;
+
+    let multiplier;
+
+    if (normalized <= 1) {
+      multiplier = 1;
+    } else if (
+      normalized <= 2
+    ) {
+      multiplier = 2;
+    } else if (
+      normalized <= 2.5
+    ) {
+      multiplier = 2.5;
+    } else if (
+      normalized <= 5
+    ) {
+      multiplier = 5;
+    } else {
+      multiplier = 10;
+    }
+
+    return (
+      multiplier *
+      magnitude
+    );
+  }
+
+
+  const step =
+    niceStep(
+      Math.max(
+        1,
+        maximum
+      )
+    );
+
+  let axisMaximum =
+    Math.ceil(
+      Math.max(
+        1,
+        maximum
+      ) /
+      step
+    ) *
+    step;
+
+  /*
+    A single checkout should not fill
+    the entire graph.
+  */
+  if (
+    maximum <= 1
+  ) {
+    axisMaximum = 2;
+  }
+
+  const axisTicks = [];
+
+  for (
+    let tick = 0;
+    tick <= axisMaximum +
+      step / 2;
+    tick += step
+  ) {
+    axisTicks.push(
+      Number(
+        tick.toFixed(4)
+      )
+    );
+  }
+
+  const columnsHtml =
+    normalizedActivity
       .map(item => {
-        const count =
-          Math.max(
-            0,
-            Number(
-              item.count ??
-              item.checkouts ??
-              0
-            ) || 0
-          );
-
         const height =
-          count > 0
-            ? Math.max(
-                8,
-                Math.round(
-                  (
-                    count /
-                    maximum
-                  ) * 100
-                )
-              )
+          item.count > 0
+            ? (
+                item.count /
+                axisMaximum
+              ) * 100
             : 0;
-
-        const rawDate =
-  item.date ||
-  item.label ||
-  "";
-
-const parsedDate =
-  rawDate
-    ? new Date(
-        `${rawDate}T12:00:00`
-      )
-    : null;
-
-const label =
-  parsedDate &&
-  !Number.isNaN(
-    parsedDate.getTime()
-  )
-    ? parsedDate.toLocaleDateString(
-        "en-US",
-        {
-          month: "short",
-          day: "numeric"
-        }
-      )
-    : rawDate;
 
         return `
           <div
             class="success-chart-column"
             title="${escapeHtml(
-              `${label}: ${count} checkout${
-                count === 1
+              `${item.label}: ${
+                item.count
+              } checkout${
+                item.count === 1
                   ? ""
                   : "s"
-              }`
+              } — ${formatSuccessCurrency(
+                item.value
+              )}`
             )}"
           >
+
             <div
               class="success-chart-bar-wrap"
             >
+
+              ${
+                item.count > 0
+                  ? `
+                    <div
+                      class="success-chart-value"
+                    >
+                      ${escapeHtml(
+                        formatSuccessCurrency(
+                          item.value
+                        )
+                      )}
+                    </div>
+                  `
+                  : ""
+              }
+
               <div
                 class="success-chart-bar"
                 style="height: ${height}%"
               ></div>
+
             </div>
 
             <span>
-              ${escapeHtml(label)}
+              ${escapeHtml(
+                item.label
+              )}
             </span>
+
           </div>
         `;
       })
       .join("");
+
+
+  const ticksHtml =
+    [...axisTicks]
+      .reverse()
+      .map(tick => `
+        <div
+          class="success-chart-y-tick"
+        >
+          <span>
+            ${escapeHtml(
+              formatSuccessNumber(
+                tick
+              )
+            )}
+          </span>
+
+          <i></i>
+        </div>
+      `)
+      .join("");
+
+
+  const nextDisabled =
+    range.end >= today;
+
+
+  chart.innerHTML = `
+    <div class="success-chart-controls">
+
+      <button
+        type="button"
+        class="success-range-button"
+        id="success-range-previous"
+      >
+        ← Previous
+      </button>
+
+      <button
+        type="button"
+        class="success-range-current"
+        id="success-range-current"
+      >
+        ${escapeHtml(
+          formatSuccessRangeLabel(
+            range.start,
+            range.end
+          )
+        )}
+      </button>
+
+      <button
+        type="button"
+        class="success-range-button"
+        id="success-range-next"
+        ${
+          nextDisabled
+            ? "disabled"
+            : ""
+        }
+      >
+        Next →
+      </button>
+
+      <button
+        type="button"
+        class="success-range-button success-range-choose"
+        id="success-range-choose"
+      >
+        Choose Dates
+      </button>
+
+    </div>
+
+
+    <div
+      class="success-date-picker"
+      id="success-date-picker"
+      hidden
+    >
+
+      <label>
+        <span>Start Date</span>
+
+        <input
+          type="date"
+          id="success-range-start"
+          value="${escapeHtml(
+            range.start
+          )}"
+          max="${escapeHtml(
+            today
+          )}"
+        />
+      </label>
+
+      <label>
+        <span>End Date</span>
+
+        <input
+          type="date"
+          id="success-range-end"
+          value="${escapeHtml(
+            range.end
+          )}"
+          max="${escapeHtml(
+            today
+          )}"
+        />
+      </label>
+
+      <button
+        type="button"
+        class="primary"
+        id="success-range-apply"
+      >
+        Apply
+      </button>
+
+      <button
+        type="button"
+        class="success-range-button"
+        id="success-range-cancel"
+      >
+        Cancel
+      </button>
+
+    </div>
+
+
+    ${
+      normalizedActivity.length
+        ? `
+          <div class="success-chart-layout">
+
+            <div class="success-chart-y-axis">
+
+              <div class="success-chart-y-title">
+                CHECKOUTS
+              </div>
+
+              <div class="success-chart-y-ticks">
+                ${ticksHtml}
+              </div>
+
+            </div>
+
+
+            <div class="success-chart-plot">
+
+              <div class="success-chart-grid">
+                ${[...axisTicks]
+                  .reverse()
+                  .map(
+                    () => `
+                      <div
+                        class="success-chart-grid-line"
+                      ></div>
+                    `
+                  )
+                  .join("")}
+              </div>
+
+              <div class="success-chart-columns">
+                ${columnsHtml}
+              </div>
+
+            </div>
+
+          </div>
+        `
+        : `
+          <div class="success-chart-empty">
+            Checkout activity will appear
+            here after successful checkouts
+            are synchronized.
+          </div>
+        `
+    }
+  `;
+
+
+  document
+    .getElementById(
+      "success-range-previous"
+    )
+    ?.addEventListener(
+      "click",
+      async () => {
+        shiftSuccessRange(-1);
+
+        successState.loaded =
+          false;
+
+        await loadSuccessDashboard(
+          true
+        );
+      }
+    );
+
+
+  document
+    .getElementById(
+      "success-range-next"
+    )
+    ?.addEventListener(
+      "click",
+      async () => {
+        shiftSuccessRange(1);
+
+        successState.loaded =
+          false;
+
+        await loadSuccessDashboard(
+          true
+        );
+      }
+    );
+
+
+  const datePicker =
+    document.getElementById(
+      "success-date-picker"
+    );
+
+
+  document
+    .getElementById(
+      "success-range-choose"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        if (datePicker) {
+          datePicker.hidden =
+            !datePicker.hidden;
+        }
+      }
+    );
+
+
+  document
+    .getElementById(
+      "success-range-current"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        if (datePicker) {
+          datePicker.hidden =
+            !datePicker.hidden;
+        }
+      }
+    );
+
+
+  document
+    .getElementById(
+      "success-range-cancel"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        if (datePicker) {
+          datePicker.hidden = true;
+        }
+      }
+    );
+
+
+  document
+    .getElementById(
+      "success-range-apply"
+    )
+    ?.addEventListener(
+      "click",
+      async () => {
+        const startInput =
+          document.getElementById(
+            "success-range-start"
+          );
+
+        const endInput =
+          document.getElementById(
+            "success-range-end"
+          );
+
+        const start =
+          startInput?.value || "";
+
+        const end =
+          endInput?.value || "";
+
+        if (
+          !start ||
+          !end
+        ) {
+          alert(
+            "Choose both a start and end date."
+          );
+
+          return;
+        }
+
+        if (
+          start > end
+        ) {
+          alert(
+            "The start date must be before the end date."
+          );
+
+          return;
+        }
+
+        if (
+          end > today
+        ) {
+          alert(
+            "The end date cannot be in the future."
+          );
+
+          return;
+        }
+
+        const days =
+          successRangeDays(
+            start,
+            end
+          );
+
+        if (
+          days < 1 ||
+          days > 180
+        ) {
+          alert(
+            "Choose a date range of 180 days or less."
+          );
+
+          return;
+        }
+
+        successState.rangeStart =
+          start;
+
+        successState.rangeEnd =
+          end;
+
+        successState.loaded =
+          false;
+
+        await loadSuccessDashboard(
+          true
+        );
+      }
+    );
 }
 
 
@@ -5052,17 +5758,38 @@ async function loadSuccessDashboard(
 
   try {
     const successTestMode =
-  new URLSearchParams(
-    window.location.search
-  ).get("successTest") === "1";
+      new URLSearchParams(
+        window.location.search
+      ).get("successTest") === "1";
 
-const successEndpoint =
-  successTestMode
-    ? "/api/admin/test-success"
-    : "/api/account/success";
+    const range =
+      getSuccessRange();
+
+    const query =
+      new URLSearchParams({
+        start:
+          range.start,
+
+        end:
+          range.end
+      });
+
+    /*
+      Keep the existing temporary
+      admin test bridge intact.
+
+      Production customer Success
+      requests use the new date-range
+      parameters.
+    */
+    const successEndpoint =
+      successTestMode
+        ? "/api/admin/test-success"
+        : `/api/account/success?${query.toString()}`;
+
     const response =
-        await fetch(
-  successEndpoint,
+      await fetch(
+        successEndpoint,
         {
           method: "GET",
 
@@ -5092,6 +5819,23 @@ const successEndpoint =
         data.error ||
         "Unable to load Success data."
       );
+    }
+
+    /*
+      Production returns the actual
+      accepted range. Keep the browser
+      synchronized with it.
+    */
+    if (
+      !successTestMode &&
+      data.range?.start &&
+      data.range?.end
+    ) {
+      successState.rangeStart =
+        data.range.start;
+
+      successState.rangeEnd =
+        data.range.end;
     }
 
     successState.data =
