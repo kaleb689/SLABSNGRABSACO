@@ -4836,10 +4836,12 @@ function renderSuccessDashboard(
       0
     ) || 0;
 
-  const itemsSecured =
+ const itemsSecured =
     Number(
       summary.itemsSecured ??
+      summary.totalItems ??
       data.itemsSecured ??
+      data.totalItems ??
       0
     ) || 0;
 
@@ -4865,14 +4867,14 @@ function renderSuccessDashboard(
   );
 
   setSuccessText(
-    "success-items-secured",
+    "success-total-items",
     formatSuccessNumber(
       itemsSecured
     )
   );
 
   setSuccessText(
-    "success-checkout-value",
+    "success-total-value",
     formatSuccessCurrency(
       checkoutValue
     )
@@ -4936,9 +4938,17 @@ function renderSuccessDashboard(
   );
 
   renderSuccessCheckouts(
-    Array.isArray(data.checkouts)
-      ? data.checkouts
-      : []
+    Array.isArray(
+      data.recentCheckouts
+    )
+      ? data.recentCheckouts
+      : (
+          Array.isArray(
+            data.checkouts
+          )
+            ? data.checkouts
+            : []
+        )
   );
 }
 
@@ -4950,12 +4960,12 @@ function renderSuccessLoading() {
   );
 
   setSuccessText(
-    "success-items-secured",
+    "success-total-items",
     "—"
   );
 
   setSuccessText(
-    "success-checkout-value",
+    "success-total-value",
     "—"
   );
 
