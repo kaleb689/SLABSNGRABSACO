@@ -16,7 +16,11 @@ const state = {
   tier: PLANS[savedTier] ? savedTier : null,
   customer: null,
   orders: [],
-  profileLoaded: false
+  profileLoaded: false,
+
+  retailerProfiles: [],
+  retailerAllowance: 0,
+  retailerProfilesLoaded: false
 };
 
 
@@ -3187,6 +3191,964 @@ document
     }
   );
 
+/* =====================================================
+   RETAILER PROFILES
+===================================================== */
+
+const RETAILERS = [
+  {
+    key: "target",
+    name: "Target"
+  },
+  {
+    key: "walmart",
+    name: "Walmart"
+  },
+  {
+    key: "pkc",
+    name: "PKC"
+  },
+  {
+    key: "samsClub",
+    name: "Sam's Club"
+  },
+  {
+    key: "costco",
+    name: "Costco"
+  }
+];
+
+
+function getRetailerProfileBySlot(
+  slot
+) {
+  return (
+    state.retailerProfiles.find(
+      profile =>
+        Number(profile.slot) ===
+        Number(slot)
+    ) || null
+  );
+}
+
+
+function retailerPasswordStatus(
+  configured
+) {
+  return configured
+    ? `
+      <span
+        class="retailer-password-status saved"
+      >
+        ✓ Password saved
+      </span>
+    `
+    : `
+      <span
+        class="retailer-password-status"
+      >
+        No password saved
+      </span>
+    `;
+}
+
+
+function retailerFieldsHtml(
+  retailer,
+  savedRetailer = {}
+) {
+  const username =
+    savedRetailer.username || "";
+
+  const passwordConfigured =
+    Boolean(
+      savedRetailer.passwordConfigured
+    );
+
+  return `
+    <div
+      class="retailer-credential-card"
+      data-retailer="${escapeHtml(
+        retailer.key
+      )}"
+    >
+
+      <div
+        class="retailer-credential-heading"
+      >
+        <div>
+          <h4>
+            ${escapeHtml(
+              retailer.name
+            )}
+          </h4>
+
+          <p>
+            Enter the login used for this
+            retailer account.
+          </p>
+        </div>
+
+        ${retailerPasswordStatus(
+          passwordConfigured
+        )}
+      </div>
+
+      <div
+        class="retailer-credential-fields"
+      >
+
+        <label>
+          Username / Email
+
+          <input
+            type="text"
+            name="${escapeHtml(
+              retailer.key
+            )}Username"
+            value="${escapeHtml(
+              username
+            )}"
+            autocomplete="off"
+            maxlength="254"
+            placeholder="${escapeHtml(
+              retailer.name
+            )} username or email"
+          >
+        </label>
+
+        <label>
+          ${
+            passwordConfigured
+              ? "Replace Password"
+              : "Password"
+          }
+
+          <div
+            class="retailer-password-input-wrap"
+          >
+            <input
+              type="password"
+              name="${escapeHtml(
+                retailer.key
+              )}Password"
+              autocomplete="new-password"
+              maxlength="512"
+              placeholder="${
+                passwordConfigured
+                  ? "Leave blank to keep saved password"
+                  : `Enter ${escapeHtml(
+                      retailer.name
+                    )} password`
+              }"
+            >
+
+            <button
+              type="button"
+              class="retailer-password-toggle"
+              data-retailer-password-toggle
+              aria-label="Show password"
+            >
+              Show
+            </button>
+          </div>
+        </label>
+
+      </div>
+
+    </div>
+  `;
+}
+
+
+function retailerProfileCardHtml(
+  slot,
+  savedProfile = null
+) {
+  const profileName =
+    savedProfile?.profileName ||
+    `Profile ${slot}`;
+
+  const locked =
+    slot >
+    state.retailerAllowance;
+
+  const retailers =
+    savedProfile?.retailers ||
+    {};
+
+  return `
+    <article
+      class="retailer-profile-card ${
+        locked
+          ? "locked"
+          : ""
+      }"
+      data-retailer-profile="${slot}"
+    >
+
+      <div
+        class="retailer-profile-card-head"
+      >
+
+        <div
+          class="retailer-profile-title"
+        >
+          <span
+            class="retailer-profile-number"
+          >
+            ${slot}
+          </span>
+
+          <div>
+            <span class="eyebrow">
+              ACO PROFILE ${slot}
+            </span>
+
+            <h3>
+              ${escapeHtml(
+                profileName
+              )}
+            </h3>
+          </div>
+        </div>
+
+        ${
+          locked
+            ? `
+              <span
+                class="retailer-profile-lock"
+              >
+                Locked
+              </span>
+            `
+            : `
+              <span
+                class="retailer-profile-active"
+              >
+                Available
+              </span>
+            `
+        }
+
+      </div>
+
+      ${
+        locked
+          ? `
+            <div
+              class="retailer-profile-locked-message"
+            >
+              <strong>
+                This profile is currently locked.
+              </strong>
+
+              <p>
+                Your current membership allows
+                ${state.retailerAllowance}
+                ${
+                  state.retailerAllowance === 1
+                    ? "profile"
+                    : "profiles"
+                }.
+                Upgrade your membership to access
+                this profile again. Any previously
+                saved information remains stored.
+              </p>
+            </div>
+          `
+          : `
+            <form
+              class="retailer-profile-form"
+              data-retailer-profile-form="${slot}"
+            >
+
+              <div
+                class="retailer-profile-name-field"
+              >
+                <label>
+                  Profile Name
+
+                  <input
+                    type="text"
+                    name="profileName"
+                    value="${escapeHtml(
+                      profileName
+                    )}"
+                    maxlength="80"
+                    placeholder="Example: Personal"
+                    required
+                  >
+                </label>
+
+                <p>
+                  Give this ACO profile a name
+                  you will recognize.
+                </p>
+              </div>
+
+              <div
+                class="retailer-credentials-grid"
+              >
+                ${RETAILERS
+                  .map(
+                    retailer =>
+                      retailerFieldsHtml(
+                        retailer,
+                        retailers[
+                          retailer.key
+                        ] || {}
+                      )
+                  )
+                  .join("")}
+              </div>
+
+              <div
+                class="retailer-profile-save-row"
+              >
+                <div
+                  class="account-message retailer-profile-save-message"
+                  data-retailer-profile-message="${slot}"
+                  hidden
+                ></div>
+
+                <button
+                  type="submit"
+                  class="primary retailer-profile-save"
+                >
+                  Save Profile ${slot}
+                </button>
+              </div>
+
+            </form>
+          `
+      }
+
+    </article>
+  `;
+}
+
+
+function bindRetailerPasswordToggles() {
+  document
+    .querySelectorAll(
+      "[data-retailer-password-toggle]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        () => {
+          const wrapper =
+            button.closest(
+              ".retailer-password-input-wrap"
+            );
+
+          const input =
+            wrapper?.querySelector(
+              'input[type="password"], input[type="text"]'
+            );
+
+          if (!input) {
+            return;
+          }
+
+          const showing =
+            input.type === "text";
+
+          input.type =
+            showing
+              ? "password"
+              : "text";
+
+          button.textContent =
+            showing
+              ? "Show"
+              : "Hide";
+
+          button.setAttribute(
+            "aria-label",
+            showing
+              ? "Show password"
+              : "Hide password"
+          );
+        }
+      );
+    });
+}
+
+
+function bindRetailerProfileForms() {
+  document
+    .querySelectorAll(
+      "[data-retailer-profile-form]"
+    )
+    .forEach(form => {
+      form.addEventListener(
+        "submit",
+        saveRetailerProfile
+      );
+    });
+}
+
+
+function renderRetailerProfiles() {
+  const container =
+    document.getElementById(
+      "retailer-profiles"
+    );
+
+  const allowanceBadge =
+    document.getElementById(
+      "retailer-profile-allowance"
+    );
+
+  const mainMessage =
+    document.getElementById(
+      "retailer-profile-message"
+    );
+
+  if (!container) {
+    return;
+  }
+
+  const allowance =
+    Math.max(
+      0,
+      Number(
+        state.retailerAllowance
+      ) || 0
+    );
+
+  if (allowanceBadge) {
+    allowanceBadge.textContent =
+      allowance === 1
+        ? "1 profile available"
+        : `${allowance} profiles available`;
+  }
+
+  if (allowance <= 0) {
+    container.innerHTML = `
+      <div
+        class="retailer-profile-placeholder"
+      >
+        <div
+          class="retailer-profile-placeholder-icon"
+        >
+          🔒
+        </div>
+
+        <h3>
+          Active membership required
+        </h3>
+
+        <p>
+          Once an active membership is
+          connected to this account, your
+          retailer profile slots will appear
+          here automatically.
+        </p>
+
+        <button
+          type="button"
+          class="primary"
+          id="retailer-view-memberships"
+        >
+          View Memberships
+        </button>
+      </div>
+    `;
+
+    document
+      .getElementById(
+        "retailer-view-memberships"
+      )
+      ?.addEventListener(
+        "click",
+        () => {
+          go("pricing");
+        }
+      );
+
+    if (mainMessage) {
+      setMessage(
+        mainMessage,
+        ""
+      );
+    }
+
+    return;
+  }
+
+  /*
+    Normally we display the customer's current
+    allowance.
+
+    If they previously had a larger membership,
+    saved profiles above their current allowance
+    are also displayed as locked so their data is
+    never silently lost.
+  */
+
+  const highestSavedSlot =
+    state.retailerProfiles.reduce(
+      (highest, profile) =>
+        Math.max(
+          highest,
+          Number(
+            profile.slot
+          ) || 0
+        ),
+      0
+    );
+
+  const totalSlots =
+    Math.min(
+      50,
+      Math.max(
+        allowance,
+        highestSavedSlot
+      )
+    );
+
+  const cards = [];
+
+  for (
+    let slot = 1;
+    slot <= totalSlots;
+    slot += 1
+  ) {
+    cards.push(
+      retailerProfileCardHtml(
+        slot,
+        getRetailerProfileBySlot(
+          slot
+        )
+      )
+    );
+  }
+
+  container.innerHTML =
+    cards.join("");
+
+  bindRetailerPasswordToggles();
+  bindRetailerProfileForms();
+
+  if (mainMessage) {
+    setMessage(
+      mainMessage,
+      ""
+    );
+  }
+}
+
+
+async function loadRetailerProfiles(
+  force = false
+) {
+  if (
+    state.retailerProfilesLoaded &&
+    !force
+  ) {
+    renderRetailerProfiles();
+    return;
+  }
+
+  const container =
+    document.getElementById(
+      "retailer-profiles"
+    );
+
+  const message =
+    document.getElementById(
+      "retailer-profile-message"
+    );
+
+  if (container) {
+    container.innerHTML = `
+      <div
+        class="retailer-profile-placeholder"
+      >
+        <div
+          class="retailer-profile-placeholder-icon"
+        >
+          …
+        </div>
+
+        <h3>
+          Loading your profiles
+        </h3>
+
+        <p>
+          Your secure retailer profile
+          information is loading.
+        </p>
+      </div>
+    `;
+  }
+
+  setMessage(
+    message,
+    ""
+  );
+
+  try {
+    const response =
+      await fetch(
+        "/api/account/retailer-profiles",
+        {
+          method: "GET",
+
+          credentials:
+            "same-origin",
+
+          cache:
+            "no-store"
+        }
+      );
+
+    const data =
+      await readJson(
+        response
+      );
+
+    if (
+      response.status === 401
+    ) {
+      state.retailerProfiles = [];
+      state.retailerAllowance = 0;
+      state.retailerProfilesLoaded =
+        false;
+
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to load your retailer profiles."
+      );
+    }
+
+    state.retailerAllowance =
+      Math.max(
+        0,
+        Number(
+          data.allowance
+        ) || 0
+      );
+
+    state.retailerProfiles =
+      Array.isArray(
+        data.profiles
+      )
+        ? data.profiles
+        : [];
+
+    state.retailerProfilesLoaded =
+      true;
+
+    renderRetailerProfiles();
+
+  } catch (error) {
+    state.retailerProfilesLoaded =
+      false;
+
+    setMessage(
+      message,
+      error.message,
+      "error"
+    );
+
+    if (container) {
+      container.innerHTML = `
+        <div
+          class="retailer-profile-placeholder"
+        >
+          <h3>
+            Profiles could not be loaded
+          </h3>
+
+          <p>
+            ${escapeHtml(
+              error.message
+            )}
+          </p>
+
+          <button
+            type="button"
+            class="secondary"
+            id="retry-retailer-profiles"
+          >
+            Try Again
+          </button>
+        </div>
+      `;
+
+      document
+        .getElementById(
+          "retry-retailer-profiles"
+        )
+        ?.addEventListener(
+          "click",
+          () => {
+            loadRetailerProfiles(
+              true
+            );
+          }
+        );
+    }
+  }
+}
+
+
+async function saveRetailerProfile(
+  event
+) {
+  event.preventDefault();
+
+  const form =
+    event.currentTarget;
+
+  const slot =
+    Number(
+      form.dataset
+        .retailerProfileForm
+    );
+
+  const message =
+    document.querySelector(
+      `[data-retailer-profile-message="${slot}"]`
+    );
+
+  const button =
+    form.querySelector(
+      'button[type="submit"]'
+    );
+
+  if (
+    !Number.isInteger(slot) ||
+    slot < 1 ||
+    slot > 50
+  ) {
+    setMessage(
+      message,
+      "Invalid profile slot.",
+      "error"
+    );
+
+    return;
+  }
+
+  if (
+    slot >
+    state.retailerAllowance
+  ) {
+    setMessage(
+      message,
+      "This profile is not available with your current membership.",
+      "error"
+    );
+
+    return;
+  }
+
+  const formData =
+    new FormData(form);
+
+  const profileName =
+    String(
+      formData.get(
+        "profileName"
+      ) || ""
+    ).trim();
+
+  if (!profileName) {
+    setMessage(
+      message,
+      "Enter a profile name.",
+      "error"
+    );
+
+    return;
+  }
+
+  const retailers = {};
+
+  for (
+    const retailer of
+    RETAILERS
+  ) {
+    retailers[
+      retailer.key
+    ] = {
+      username:
+        String(
+          formData.get(
+            `${retailer.key}Username`
+          ) || ""
+        ).trim(),
+
+      /*
+        A blank password intentionally tells
+        the server to retain the encrypted
+        password already on file.
+      */
+
+      password:
+        String(
+          formData.get(
+            `${retailer.key}Password`
+          ) || ""
+        )
+    };
+  }
+
+  try {
+    setButtonBusy(
+      button,
+      true,
+      "Saving…"
+    );
+
+    setMessage(
+      message,
+      ""
+    );
+
+    const response =
+      await fetch(
+        `/api/account/retailer-profiles/${slot}`,
+        {
+          method: "PUT",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          credentials:
+            "same-origin",
+
+          body:
+            JSON.stringify({
+              profileName,
+              retailers
+            })
+        }
+      );
+
+    const data =
+      await readJson(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to save this profile."
+      );
+    }
+
+    const savedProfile =
+      data.profile || null;
+
+    if (savedProfile) {
+      const existingIndex =
+        state.retailerProfiles
+          .findIndex(
+            profile =>
+              Number(
+                profile.slot
+              ) === slot
+          );
+
+      if (
+        existingIndex >= 0
+      ) {
+        state.retailerProfiles[
+          existingIndex
+        ] = savedProfile;
+      } else {
+        state.retailerProfiles.push(
+          savedProfile
+        );
+      }
+    }
+
+    state.retailerAllowance =
+      Math.max(
+        0,
+        Number(
+          data.allowance ??
+          state.retailerAllowance
+        ) || 0
+      );
+
+    /*
+      Render again so newly stored passwords
+      immediately change to "Password saved".
+      The password itself is never returned
+      from the server.
+    */
+
+    renderRetailerProfiles();
+
+    const refreshedMessage =
+      document.querySelector(
+        `[data-retailer-profile-message="${slot}"]`
+      );
+
+    setMessage(
+      refreshedMessage,
+      data.message ||
+      `Profile ${slot} saved securely.`,
+      "success"
+    );
+
+  } catch (error) {
+    setMessage(
+      message,
+      error.message,
+      "error"
+    );
+
+  } finally {
+    setButtonBusy(
+      button,
+      false
+    );
+  }
+}
+
+
+/* =====================================================
+   LOAD RETAILER PROFILES WHEN PROFILES TAB OPENS
+===================================================== */
+
+document
+  .querySelectorAll(
+    "[data-account-tab]"
+  )
+  .forEach(button => {
+    button.addEventListener(
+      "click",
+      () => {
+        /*
+          Your HTML keeps the internal tab value
+          "edit-profile" for compatibility, while
+          the visible label is "Profiles".
+        */
+
+        if (
+          button.dataset
+            .accountTab ===
+          "edit-profile"
+        ) {
+          loadRetailerProfiles();
+        }
+      }
+    );
+  });
 
 /* =====================================================
    LOAD MY PROFILE
@@ -3261,10 +4223,22 @@ async function loadMemberProfile(
       state.customer
     );
 
-    renderMembership(
-      data.currentMembership ||
-      null
-    );
+   renderMembership(
+  data.membership ||
+  data.currentMembership ||
+  null
+);
+
+state.retailerAllowance =
+  Math.max(
+    0,
+    Number(
+      data.profileAllowance
+    ) || 0
+  );
+
+state.retailerProfilesLoaded =
+  false;
 
     renderOrders(
       state.orders
