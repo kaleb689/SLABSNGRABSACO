@@ -6163,17 +6163,9 @@ app.post(
           error:
             "The Target test order could not be saved."
         });
-    }
-    app.post(
-  "/api/admin/test-imap/target-order/save",
-  requireAdmin,
-  async (req, res) => {
-
-    // ...all of the code we just added...
-
-  }
+      }
 );
-
+    
 
 /* -------------------------------------------------------
    TEMPORARY ADMIN SUCCESS DASHBOARD TEST DATA
