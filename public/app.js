@@ -2697,7 +2697,6 @@ function renderMembership(
   }
 
   if (!membership) {
-  if (!membership) {
     setText(
       "membership-plan-name",
       "No active membership"
