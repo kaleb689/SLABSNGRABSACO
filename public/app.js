@@ -4429,6 +4429,18 @@ function bindRetailerProfileForms() {
     });
 }
 
+function bindSpecialProfileForms() {
+  document
+    .querySelectorAll(
+      "[data-special-profile-form]"
+    )
+    .forEach(form => {
+      form.addEventListener(
+        "submit",
+        saveSpecialProfile
+      );
+    });
+}
 
 function renderRetailerProfiles() {
 
@@ -4628,6 +4640,8 @@ if (allowance <= 0) {
 
   bindRetailerPasswordToggles();
 
+  bindSpecialProfileForms();
+
   if (mainMessage) {
     setMessage(
       mainMessage,
@@ -4737,6 +4751,8 @@ container.innerHTML = `
   bindRetailerPasswordToggles();
 
   bindRetailerProfileForms();
+
+  bindSpecialProfileForms();
 
 
   if (mainMessage) {
