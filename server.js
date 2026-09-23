@@ -4821,6 +4821,168 @@ if (
   }
 );
 
+app.get(
+  "/api/admin/free-submissions",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const accounts =
+        await getCustomerAccounts();
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const linkedAccountIds =
+        new Set(
+          paidRecords
+            .map(
+              record =>
+                record.customerAccountId
+            )
+            .filter(Boolean)
+        );
+
+      const paidEmails =
+        new Set(
+          paidRecords
+            .map(
+              record =>
+                normalizeEmail(
+                  record.profile?.email
+                )
+            )
+            .filter(Boolean)
+        );
+
+      const freeSubmissions =
+        accounts
+          .filter(account => {
+            const accountEmail =
+              normalizeEmail(
+                account.email
+              );
+
+            return (
+              !linkedAccountIds.has(
+                account.id
+              ) &&
+              !paidEmails.has(
+                accountEmail
+              )
+            );
+          })
+          .map(account => ({
+            id:
+              account.id,
+
+            customerAccountId:
+              account.id,
+
+            submissionType:
+              "free",
+
+            accountOnly:
+              true,
+
+            profile: {
+              email:
+                account.email || "",
+
+              firstName:
+                "",
+
+              lastName:
+                "",
+
+              phone:
+                "",
+
+              address:
+                "",
+
+              address2:
+                "",
+
+              city:
+                "",
+
+              state:
+                "",
+
+              zip:
+                ""
+            },
+
+            plan: {
+              name:
+                "No Paid Membership",
+
+              amount:
+                null,
+
+              profiles:
+                0
+            },
+
+            secrets:
+              null,
+
+            subscriptionStatus:
+              "none",
+
+            currentPeriodStart:
+              null,
+
+            currentPeriodEnd:
+              null,
+
+            paidAt:
+              null,
+
+            createdAt:
+              account.createdAt ||
+              null,
+
+            accountCreatedAt:
+              account.createdAt ||
+              null,
+
+            emailVerifiedAt:
+              account.emailVerifiedAt ||
+              null,
+
+            disabled:
+              account.disabled ===
+              true
+          }));
+
+      return res.json(
+        freeSubmissions
+      );
+
+    } catch (error) {
+      console.error(
+        "Admin free submissions error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load free submissions."
+        });
+    }
+  }
+);
 
 /* -------------------------------------------------------
    ADMIN RETAILER PROFILES
