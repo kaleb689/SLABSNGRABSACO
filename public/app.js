@@ -7986,14 +7986,16 @@ renderOrders(
     );
 
   } catch (error) {
-    state.profileLoaded =
-      false;
+  state.profileLoaded =
+    false;
 
-    showAccountMessage(
-      error.message,
-      "error"
-    );
-  }
+  showSignedOut();
+
+  showAccountMessage(
+    error.message,
+    "error"
+  );
+}
 }
 
 
