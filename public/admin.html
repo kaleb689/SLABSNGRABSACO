@@ -3357,19 +3357,30 @@ async function loadAdminRetailerProfiles(
         ? data.profiles
         : [];
 
-    if (!profiles.length) {
+    const specialProfiles =
+  Array.isArray(
+    data.specialProfiles
+  )
+    ? data.specialProfiles
+    : [];
 
-      container.innerHTML = `
-        <p class="admin-retailer-empty">
-          This customer has not saved any retailer profiles yet.
-        </p>
-      `;
+const freeProfile =
+  specialProfiles.find(
+    profile =>
+      profile.profileType ===
+      "free"
+  ) || null;
 
-      return;
-    }
+const rentedProfile =
+  specialProfiles.find(
+    profile =>
+      profile.profileType ===
+      "rented"
+  ) || null;
 
-    container.innerHTML =
-      profiles
+   const normalProfilesHtml =
+  profiles.length
+    ? profiles
         .map(
           profile =>
             retailerProfileHtml(
@@ -3377,9 +3388,36 @@ async function loadAdminRetailerProfiles(
               profile
             )
         )
-        .join("");
+        .join("")
+    : `
+        <p class="admin-retailer-empty">
+          This customer has not saved any normal retailer profiles yet.
+        </p>
+      `;
 
-    bindRetailerProfileForms();
+const specialProfilesHtml = `
+  ${specialProfileHtml(
+    orderId,
+    "free",
+    freeProfile
+  )}
+
+  ${specialProfileHtml(
+    orderId,
+    "rented",
+    rentedProfile
+  )}
+`;
+
+container.innerHTML = `
+  ${normalProfilesHtml}
+
+  ${specialProfilesHtml}
+`;
+
+bindRetailerProfileForms();
+
+bindSpecialProfileForms();
 
   } catch (error) {
 
