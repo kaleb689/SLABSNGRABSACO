@@ -4683,6 +4683,42 @@ app.get(
               Number(b.slot)
           );
 
+      const specialRecords =
+  await getSpecialProfiles();
+
+const ownedSpecialProfiles =
+  specialRecords
+    .filter(
+      record =>
+        record.customerAccountId ===
+          order.customerAccountId
+    )
+    .sort(
+      (a, b) => {
+        const order = {
+          free: 1,
+          rented: 2
+        };
+
+        return (
+          (
+            order[
+              normalizeSpecialProfileType(
+                a.profileType
+              )
+            ] || 99
+          ) -
+          (
+            order[
+              normalizeSpecialProfileType(
+                b.profileType
+              )
+            ] || 99
+          )
+        );
+      }
+    );
+
       const profiles =
   owned.map(
     record =>
@@ -4693,10 +4729,20 @@ app.get(
   );
 
       return res.json({
-        ok: true,
-        allowance,
-        profiles
-      });
+  ok: true,
+
+  allowance,
+
+  profiles,
+
+  specialProfiles:
+    ownedSpecialProfiles.map(
+      record =>
+        adminSpecialProfile(
+          record
+        )
+    )
+});
 
     } catch (error) {
       console.error(
