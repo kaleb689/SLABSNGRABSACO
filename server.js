@@ -3947,45 +3947,73 @@ app.get(
           synchronized with Stripe.
         */
 
-        if (
-          record
-            .stripeSubscriptionId
-        ) {
-          try {
-            const subscription =
-              await stripe
-                .subscriptions
-                .retrieve(
-                  record
-                    .stripeSubscriptionId
-                );
+      if (
+  !record.stripeSubscriptionId &&
+  record.stripeSessionId
+) {
 
-            await applySubscriptionInfo(
-              record,
-              subscription
-            );
+  try {
 
-            record
-              .subscriptionUpdatedAt =
-              new Date()
-                .toISOString();
+    const checkoutSession =
+      await stripe.checkout.sessions.retrieve(
+        record.stripeSessionId
+      );
 
-            paidChanged =
-              true;
+    if (checkoutSession.subscription) {
 
-          } catch (error) {
-            console.error(
-              "Admin subscription refresh failed:",
-              record.id,
-              error.message
-            );
-          }
-        }
+      record.stripeSubscriptionId =
+        typeof checkoutSession.subscription === "string"
+          ? checkoutSession.subscription
+          : checkoutSession.subscription.id;
+
+      paidChanged = true;
+    }
+
+  } catch (error) {
+
+    console.error(
+      "Admin subscription ID recovery failed:",
+      record.id,
+      error.message
+    );
+
+  }
+}
 
 
-        let secrets =
-          null;
+if (
+  record.stripeSubscriptionId
+) {
 
+  try {
+
+    const subscription =
+      await stripe
+        .subscriptions
+        .retrieve(
+          record.stripeSubscriptionId
+        );
+
+    await applySubscriptionInfo(
+      record,
+      subscription
+    );
+
+    record.subscriptionUpdatedAt =
+      new Date().toISOString();
+
+    paidChanged = true;
+
+  } catch (error) {
+
+    console.error(
+      "Admin subscription refresh failed:",
+      record.id,
+      error.message
+    );
+
+  }
+}
         try {
           const encrypted =
             await readJson(
