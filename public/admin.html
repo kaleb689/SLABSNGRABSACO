@@ -268,18 +268,18 @@
         rgba(18, 201, 255, .07);
     }
 
-    .customer-order-summary {
-      width: 100%;
+   .customer-order-summary {
+  width: 100%;
+  min-height: 88px;
 
-      min-height: 88px;
+  display: grid;
 
-      display: grid;
-
-      grid-template-columns:
-        minmax(190px, 1.4fr)
-        minmax(120px, .8fr)
-        minmax(120px, .8fr)
-        auto;
+  grid-template-columns:
+    minmax(190px, 1.4fr)
+    minmax(120px, .8fr)
+    minmax(120px, .8fr)
+    minmax(190px, 1fr)
+    auto;
 
       align-items: center;
 
@@ -755,10 +755,6 @@
     /* =========================================
    ADMIN EDITING
 ========================================= */
-<form
-  class="admin-edit-form"
-  data-edit-form="${escapeHtml(x.id)}"
->
     
 .admin-edit-panel {
   padding: 20px;
@@ -1734,6 +1730,23 @@ function renderOrder(x) {
 
         </div>
 
+<div class="order-meta order-status-meta">
+  <small>
+    STATUS
+  </small>
+
+  <span
+    class="status-pill ${subscriptionState.active ? "active" : "inactive"}"
+  >
+    ${escapeHtml(subscriptionState.label)}
+  </span>
+
+  <div class="order-status-subline">
+    ${escapeHtml(activeThrough)}
+    •
+    ${escapeHtml(daysLeft)}
+  </div>
+</div>
 
         <span class="order-chevron">
           ›
@@ -1804,47 +1817,6 @@ function renderOrder(x) {
       Save
     </button>
   </div>
-
-</div>
-
-  <span class="status-pill">
-    ${escapeHtml(
-      statusText(
-        x.subscriptionStatus
-
-        <div class="order-meta order-status-meta">
-  <small>STATUS</small>
-
-  <span class="status-pill ${subscriptionState.active ? "active" : "inactive"}">
-    ${escapeHtml(subscriptionState.label)}
-  </span>
-
-  <div class="order-status-subline">
-    ${escapeHtml(activeThrough)} • ${escapeHtml(daysLeft)}
-  </div>
-</div>
-      )
-    )}
-  </span>
-
-  ${
-    x.customerUpdatedAt
-      ? `
-          <span class="customer-updated-pill">
-            Customer Updated
-          </span>
-
-          <div class="customer-last-updated">
-            Last updated:
-            <strong>
-              ${formatDateTime(
-                x.customerUpdatedAt
-              )}
-            </strong>
-          </div>
-        `
-      : ""
-  }
 
 </div>
 
@@ -2117,10 +2089,11 @@ function renderOrder(x) {
     hidden
   >
 
-    <form
-      class="admin-submission-edit-form"
-      data-id="${escapeHtml(x.id)}"
-    >
+   <form
+  class="admin-submission-edit-form"
+  data-id="${escapeHtml(x.id)}"
+  data-edit-form="${escapeHtml(x.id)}"
+>
 
       <div class="admin-edit-grid">
 
@@ -2403,13 +2376,7 @@ function renderOrder(x) {
 
         <div class="order-actions">
 
-  <button
-    type="button"
-    class="admin-edit-button"
-    data-edit-submission="${escapeHtml(x.id)}"
-  >
-    Edit Customer Information
-  </button>
+  
 
   <button
     type="button"
