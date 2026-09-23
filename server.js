@@ -53,6 +53,12 @@ const RETAILER_PROFILES_FILE =
     "retailer-profiles.json"
   );
 
+const SPECIAL_PROFILES_FILE =
+  path.join(
+    DATA_DIR,
+    "special-profiles.json"
+  );
+
 const SUCCESS_CHECKOUTS_FILE =
   path.join(
     DATA_DIR,
@@ -3049,6 +3055,479 @@ function normalizeRetailerCredentials(
   return normalized;
 }
 
+/* -------------------------------------------------------
+   SPECIAL PROFILE HELPERS
+------------------------------------------------------- */
+
+const SPECIAL_PROFILE_TYPES = [
+  "free",
+  "rented"
+];
+
+const SPECIAL_PROFILE_DURATIONS = [
+  "indefinite",
+  "1_drop",
+  "1_week",
+  "1_month"
+];
+
+
+function normalizeSpecialProfileType(
+  value
+) {
+  const type =
+    String(
+      value || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  return SPECIAL_PROFILE_TYPES.includes(
+    type
+  )
+    ? type
+    : null;
+}
+
+
+function normalizeSpecialProfileDuration(
+  value
+) {
+  const duration =
+    String(
+      value || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  return SPECIAL_PROFILE_DURATIONS.includes(
+    duration
+  )
+    ? duration
+    : null;
+}
+
+
+function specialProfileExpiresAt(
+  durationType,
+  startValue = new Date()
+) {
+  const duration =
+    normalizeSpecialProfileDuration(
+      durationType
+    );
+
+  if (
+    !duration ||
+    duration === "indefinite"
+  ) {
+    return null;
+  }
+
+  const start =
+    startValue instanceof Date
+      ? new Date(
+          startValue.getTime()
+        )
+      : new Date(
+          startValue
+        );
+
+  if (
+    Number.isNaN(
+      start.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    duration === "1_drop"
+  ) {
+    start.setDate(
+      start.getDate() + 1
+    );
+
+    return start.toISOString();
+  }
+
+  if (
+    duration === "1_week"
+  ) {
+    start.setDate(
+      start.getDate() + 7
+    );
+
+    return start.toISOString();
+  }
+
+  if (
+    duration === "1_month"
+  ) {
+    start.setMonth(
+      start.getMonth() + 1
+    );
+
+    return start.toISOString();
+  }
+
+  return null;
+}
+
+
+function specialProfileIsActive(
+  record
+) {
+  if (
+    record?.active !== true
+  ) {
+    return false;
+  }
+
+  const duration =
+    normalizeSpecialProfileDuration(
+      record?.durationType
+    );
+
+  if (
+    duration === "indefinite"
+  ) {
+    return true;
+  }
+
+  if (!record?.expiresAt) {
+    return false;
+  }
+
+  const expiration =
+    new Date(
+      record.expiresAt
+    );
+
+  if (
+    Number.isNaN(
+      expiration.getTime()
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    expiration.getTime() >
+    Date.now()
+  );
+}
+
+
+function specialProfileDaysRemaining(
+  record
+) {
+  if (
+    !specialProfileIsActive(
+      record
+    )
+  ) {
+    return 0;
+  }
+
+  if (
+    normalizeSpecialProfileDuration(
+      record?.durationType
+    ) === "indefinite"
+  ) {
+    return null;
+  }
+
+  const expiration =
+    new Date(
+      record.expiresAt
+    );
+
+  return Math.max(
+    0,
+    Math.ceil(
+      (
+        expiration.getTime() -
+        Date.now()
+      ) /
+      (
+        1000 *
+        60 *
+        60 *
+        24
+      )
+    )
+  );
+}
+
+
+async function getSpecialProfiles() {
+  const records =
+    await readJson(
+      SPECIAL_PROFILES_FILE,
+      []
+    );
+
+  return Array.isArray(records)
+    ? records
+    : [];
+}
+
+
+async function saveSpecialProfiles(
+  records
+) {
+  await writeJson(
+    SPECIAL_PROFILES_FILE,
+    records
+  );
+}
+
+function specialProfileLabel(
+  profileType
+) {
+  return (
+    normalizeSpecialProfileType(
+      profileType
+    ) === "rented"
+      ? "RENTED PROFILE"
+      : "FREE PROFILE"
+  );
+}
+
+
+function specialProfileDurationLabel(
+  durationType
+) {
+  const duration =
+    normalizeSpecialProfileDuration(
+      durationType
+    );
+
+  if (
+    duration === "1_drop"
+  ) {
+    return "1 DROP";
+  }
+
+  if (
+    duration === "1_week"
+  ) {
+    return "1 WEEK";
+  }
+
+  if (
+    duration === "1_month"
+  ) {
+    return "1 MONTH";
+  }
+
+  return "INDEFINITELY";
+}
+
+
+function safeSpecialProfile(
+  record
+) {
+  let credentials =
+    emptyRetailerCredentials();
+
+  try {
+    if (record?.credentials) {
+      credentials =
+        normalizeRetailerCredentials(
+          decryptJson(
+            record.credentials
+          )
+        );
+    }
+  } catch (error) {
+    console.error(
+      "Special profile decrypt error:",
+      error.message
+    );
+  }
+
+  const retailers = {};
+
+  for (
+    const retailer of
+    RETAILER_KEYS
+  ) {
+    const saved =
+      credentials[retailer] || {
+        username: "",
+        password: ""
+      };
+
+    retailers[retailer] = {
+      username:
+        saved.username || "",
+
+      passwordConfigured:
+        Boolean(
+          saved.password
+        )
+    };
+  }
+
+  const active =
+    specialProfileIsActive(
+      record
+    );
+
+  return {
+    id:
+      record.id || null,
+
+    profileType:
+      normalizeSpecialProfileType(
+        record.profileType
+      ),
+
+    profileName:
+      specialProfileLabel(
+        record.profileType
+      ),
+
+    active,
+
+    durationType:
+      normalizeSpecialProfileDuration(
+        record.durationType
+      ),
+
+    durationLabel:
+      specialProfileDurationLabel(
+        record.durationType
+      ),
+
+    startsAt:
+      record.startsAt || null,
+
+    expiresAt:
+      record.expiresAt || null,
+
+    daysRemaining:
+      specialProfileDaysRemaining(
+        record
+      ),
+
+    retailers,
+
+    createdAt:
+      record.createdAt || null,
+
+    updatedAt:
+      record.updatedAt || null
+  };
+}
+
+
+function adminSpecialProfile(
+  record
+) {
+  let credentials =
+    emptyRetailerCredentials();
+
+  try {
+    if (record?.credentials) {
+      credentials =
+        normalizeRetailerCredentials(
+          decryptJson(
+            record.credentials
+          )
+        );
+    }
+  } catch (error) {
+    console.error(
+      "Admin special profile decrypt error:",
+      error.message
+    );
+  }
+
+  const retailers = {};
+
+  for (
+    const retailer of
+    RETAILER_KEYS
+  ) {
+    const saved =
+      credentials[retailer] || {
+        username: "",
+        password: ""
+      };
+
+    retailers[retailer] = {
+      username:
+        saved.username || "",
+
+      password:
+        saved.password || "",
+
+      passwordConfigured:
+        Boolean(
+          saved.password
+        )
+    };
+  }
+
+  const active =
+    specialProfileIsActive(
+      record
+    );
+
+  return {
+    id:
+      record.id || null,
+
+    customerAccountId:
+      record.customerAccountId ||
+      null,
+
+    profileType:
+      normalizeSpecialProfileType(
+        record.profileType
+      ),
+
+    profileName:
+      specialProfileLabel(
+        record.profileType
+      ),
+
+    active,
+
+    durationType:
+      normalizeSpecialProfileDuration(
+        record.durationType
+      ),
+
+    durationLabel:
+      specialProfileDurationLabel(
+        record.durationType
+      ),
+
+    startsAt:
+      record.startsAt || null,
+
+    expiresAt:
+      record.expiresAt || null,
+
+    daysRemaining:
+      specialProfileDaysRemaining(
+        record
+      ),
+
+    retailers,
+
+    createdAt:
+      record.createdAt || null,
+
+    updatedAt:
+      record.updatedAt || null
+  };
+}
+
 async function getRetailerProfiles() {
   const records =
     await readJson(
@@ -3415,19 +3894,67 @@ app.get(
               Number(b.slot)
           );
 
-      return res.json({
-        ok: true,
-        allowance,
+      const specialRecords =
+  await getSpecialProfiles();
 
-        profiles:
-          ownedRecords.map(
-            record =>
-              safeRetailerProfile(
-                record,
-                allowance
+const activeSpecialProfiles =
+  specialRecords
+    .filter(
+      record =>
+        record.customerAccountId ===
+          req.customerAccount.id &&
+        specialProfileIsActive(
+          record
+        )
+    )
+    .sort(
+      (a, b) => {
+        const order = {
+          free: 1,
+          rented: 2
+        };
+
+        return (
+          (
+            order[
+              normalizeSpecialProfileType(
+                a.profileType
               )
+            ] || 99
+          ) -
+          (
+            order[
+              normalizeSpecialProfileType(
+                b.profileType
+              )
+            ] || 99
           )
-      });
+        );
+      }
+    );
+
+    return res.json({
+  ok: true,
+
+  allowance,
+
+  profiles:
+    ownedRecords.map(
+      record =>
+        safeRetailerProfile(
+          record,
+          allowance
+        )
+    ),
+
+  specialProfiles:
+    activeSpecialProfiles.map(
+      record =>
+        safeSpecialProfile(
+          record
+        )
+    )
+});
 
     } catch (error) {
       console.error(
@@ -10755,6 +11282,10 @@ async function startServer() {
     await initializeArrayFile(
       RETAILER_PROFILES_FILE
     );
+
+    await initializeArrayFile(
+  SPECIAL_PROFILES_FILE
+);
 
     await initializeArrayFile(
   SUCCESS_CHECKOUTS_FILE
