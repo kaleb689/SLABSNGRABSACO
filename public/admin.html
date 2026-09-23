@@ -3723,6 +3723,183 @@ if (editButton) {
 
 }
 
+  function bindSpecialProfileForms() {
+
+  document
+    .querySelectorAll(
+      ".admin-special-profile-form"
+    )
+    .forEach(form => {
+
+      if (
+        form.dataset.bound ===
+        "true"
+      ) {
+        return;
+      }
+
+      form.dataset.bound =
+        "true";
+
+      form.addEventListener(
+        "submit",
+        async event => {
+
+          event.preventDefault();
+
+          const orderId =
+            form.dataset.orderId;
+
+          const profileType =
+            form.dataset.profileType;
+
+          const formData =
+            new FormData(form);
+
+          const retailers = {};
+
+          for (
+            const retailer of
+            ADMIN_RETAILERS
+          ) {
+            retailers[
+              retailer.key
+            ] = {
+              username:
+                formData.get(
+                  `${retailer.key}_username`
+                ) || "",
+
+              password:
+                formData.get(
+                  `${retailer.key}_password`
+                ) || ""
+            };
+          }
+
+          const body = {
+            durationType:
+              formData.get(
+                "durationType"
+              ) ||
+              "indefinite",
+
+            active:
+              formData.get(
+                "active"
+              ) === "true",
+
+            retailers
+          };
+
+          const button =
+            form.querySelector(
+              ".admin-save-button"
+            );
+
+          const message =
+            form.querySelector(
+              ".admin-edit-message"
+            );
+
+          const originalText =
+            button?.textContent ||
+            "Save Profile";
+
+          if (button) {
+            button.disabled =
+              true;
+
+            button.textContent =
+              "Saving...";
+          }
+
+          if (message) {
+            message.textContent =
+              "";
+
+            message.className =
+              "admin-edit-message";
+          }
+
+          try {
+
+            const response =
+              await fetch(
+                `/api/admin/submissions/${encodeURIComponent(
+                  orderId
+                )}/special-profiles/${encodeURIComponent(
+                  profileType
+                )}`,
+                {
+                  method:
+                    "PUT",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify(
+                      body
+                    )
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to save special profile."
+              );
+            }
+
+            if (message) {
+              message.textContent =
+                result.message ||
+                "Special profile updated.";
+
+              message.className =
+                "admin-edit-message success";
+            }
+
+            await loadAdminRetailerProfiles(
+              orderId
+            );
+
+          } catch (error) {
+
+            if (message) {
+              message.textContent =
+                error.message;
+
+              message.className =
+                "admin-edit-message error";
+            }
+
+            if (button) {
+              button.disabled =
+                false;
+
+              button.textContent =
+                originalText;
+            }
+          }
+        }
+      );
+    });
+}
+
   function bindAdminSaveButtons() {
   document
     .querySelectorAll("[data-save-submission]")
