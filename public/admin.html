@@ -1358,15 +1358,15 @@
       class="admin-submission-filter"
     >
      <option value="paid">
-  PAID SUBMISSIONS
-</option>
+PAID SUBSCRIPTIONS
+     </option>
 
 <option value="free-profile">
-  FREE PROFILES
+  FREE MEMBERSHIPS
 </option>
 
 <option value="rented-profile">
-  RENTED PROFILES
+  RENTED MEMBERSHIPS
 </option>
     </select>
 
@@ -4199,131 +4199,136 @@ if (editButton) {
     });
 }
 
-  function bindCreateSpecialProfileButton(
-  profileType
+  function managedRetailerFields(
+  membership = {}
 ) {
-  const button =
-    document.querySelector(
-      "[data-create-special-profile]"
-    );
+  const retailers =
+    membership.retailers || {};
 
-  const select =
-    document.querySelector(
-      "[data-create-special-customer]"
-    );
+  return ADMIN_RETAILERS
+    .map(retailer => {
+      const saved =
+        retailers[retailer.key] ||
+        {};
 
-  const container =
-    document.querySelector(
-      "[data-new-special-profile-form]"
-    );
+      return `
+        <div class="admin-retailer-block">
 
-  if (
-    !button ||
-    !select ||
-    !container
-  ) {
-    return;
-  }
+          <h4>
+            ${escapeHtml(retailer.name)}
+          </h4>
 
-  button.addEventListener(
-    "click",
-    () => {
-      const customerAccountId =
-        select.value;
+          <div class="admin-edit-field">
 
-      if (!customerAccountId) {
-        alert(
-          "Choose a customer first."
-        );
+            <label>
+              Email / Username
+            </label>
 
-        return;
-      }
+            <input
+              name="${escapeHtml(
+                retailer.key
+              )}_username"
+              value="${escapeHtml(
+                saved.username || ""
+              )}"
+              autocomplete="off"
+            >
 
-      container.innerHTML =
-        specialProfileHtml(
-          customerAccountId,
-          profileType,
-          null
-        );
+          </div>
 
-      bindSpecialProfileForms();
-      bindSpecialProfileRemoveButtons();
+          <div class="admin-edit-field">
 
-      container.scrollIntoView({
-        behavior:
-          "smooth",
-        block:
-          "start"
-      });
-    }
-  );
+            <label>
+              Password
+            </label>
+
+            <input
+              type="text"
+              name="${escapeHtml(
+                retailer.key
+              )}_password"
+              value="${escapeHtml(
+                saved.password || ""
+              )}"
+              autocomplete="off"
+            >
+
+          </div>
+
+        </div>
+      `;
+    })
+    .join("");
 }
 
 
-function renderSpecialProfileDashboard(
-  data,
-  profileType
+function managedMembershipCardHtml(
+  membership,
+  type,
+  paidCustomers
 ) {
-  const type =
-    profileType ===
-    "rented"
-      ? "rented"
-      : "free";
-
   const label =
     type === "rented"
-      ? "RENTED PROFILE"
-      : "FREE PROFILE";
+      ? "RENTED MEMBERSHIP"
+      : "FREE MEMBERSHIP";
 
-  const profiles =
-    Array.isArray(
-      data?.profiles
-    )
-      ? data.profiles
-      : [];
+  const active =
+    membership.active === true;
 
-  const customers =
-    Array.isArray(
-      data?.customers
-    )
-      ? data.customers
-      : [];
+  const assignment =
+    membership.assignment || {};
 
-  const availableCustomers =
-    customers.filter(
-      customer =>
-        customer.hasProfile !==
-        true
-    );
+  const assignedCustomer =
+    membership.assignedCustomer ||
+    {};
 
-  submissionCount.textContent =
-    profiles.length === 1
-      ? `1 ${label.toLowerCase()}`
-      : `${profiles.length} ${label.toLowerCase()}s`;
+  const customerProfile =
+    membership.customerProfile ||
+    {};
+
+  const daysRemaining =
+    assignment.daysRemaining;
+
+  const statusLine =
+    active
+      ? (
+          daysRemaining == null
+            ? "ACTIVE — INDEFINITE"
+            : `ACTIVE — ${daysRemaining} ${
+                daysRemaining === 1
+                  ? "DAY"
+                  : "DAYS"
+              } LEFT`
+        )
+      : "INACTIVE";
 
   const customerOptions =
-    availableCustomers
+    paidCustomers
       .map(customer => {
-        const name =
-          customer.name ||
-          "Customer";
-
-        const email =
-          customer.email ||
-          "";
+        const selected =
+          String(
+            customer.customerAccountId
+          ) ===
+          String(
+            assignment.customerAccountId ||
+            ""
+          );
 
         return `
           <option
             value="${escapeHtml(
-              customer.id
+              customer.customerAccountId
             )}"
+            ${selected ? "selected" : ""}
           >
             ${escapeHtml(
-              name
-            )}${
-              email
+              customer.name ||
+              "Customer"
+            )}
+            ${
+              customer.email
                 ? ` — ${escapeHtml(
-                    email
+                    customer.email
                   )}`
                 : ""
             }
@@ -4332,7 +4337,514 @@ function renderSpecialProfileDashboard(
       })
       .join("");
 
-  const createHtml = `
+  const retailerBlocks =
+    managedRetailerFields(
+      membership
+    );
+
+  return `
+    <section
+      class="order-section"
+      data-managed-membership-card
+      data-managed-status="${
+        active
+          ? "active"
+          : "inactive"
+      }"
+    >
+
+      <div class="order-section-head">
+
+        <div>
+          <h3>
+            ${escapeHtml(
+              membership.profileName ||
+              label
+            )}
+          </h3>
+
+          <p>
+            ACCOUNT EMAIL:
+            <strong>
+              ${escapeHtml(
+                membership.accountEmail ||
+                "Not entered"
+              )}
+            </strong>
+          </p>
+        </div>
+
+        <span
+          class="status-pill ${
+            active
+              ? "active"
+              : "inactive"
+          }"
+        >
+          ${escapeHtml(statusLine)}
+        </span>
+
+      </div>
+
+
+      <div class="admin-retailer-wrap">
+
+        <form
+          class="managed-membership-edit-form"
+          data-managed-id="${escapeHtml(
+            membership.id
+          )}"
+          data-managed-type="${escapeHtml(
+            type
+          )}"
+        >
+
+          <div class="admin-edit-grid">
+
+            <div class="admin-edit-field">
+
+              <label>
+                Membership Name
+              </label>
+
+              <input
+                name="profileName"
+                value="${escapeHtml(
+                  membership.profileName ||
+                  label
+                )}"
+              >
+
+            </div>
+
+
+            <div class="admin-edit-field">
+
+              <label>
+                Account Email
+              </label>
+
+              <input
+                type="email"
+                name="accountEmail"
+                value="${escapeHtml(
+                  membership.accountEmail ||
+                  ""
+                )}"
+                autocomplete="off"
+              >
+
+              <small class="admin-edit-help">
+                Admin only. Customers will
+                not see this email.
+              </small>
+
+            </div>
+
+
+            <div class="admin-edit-field wide">
+
+              <label>
+                Admin Notes
+              </label>
+
+              <input
+                name="notes"
+                value="${escapeHtml(
+                  membership.notes ||
+                  ""
+                )}"
+              >
+
+            </div>
+
+          </div>
+
+
+          <div
+            class="admin-retailer-grid"
+            style="margin-top:16px;"
+          >
+            ${retailerBlocks}
+          </div>
+
+
+          <div class="admin-edit-actions">
+
+            <button
+              type="submit"
+              class="admin-save-button"
+            >
+              Save Account
+            </button>
+
+          </div>
+
+          <div
+            class="admin-edit-message"
+          ></div>
+
+        </form>
+
+
+        <div
+          style="
+            margin-top:22px;
+            padding-top:20px;
+            border-top:1px solid #17384e;
+          "
+        >
+
+          <div class="admin-edit-grid">
+
+            <div class="admin-edit-field wide">
+
+              <label>
+                Attach To Active Paid Subscription
+              </label>
+
+              <select
+                data-managed-customer="${escapeHtml(
+                  membership.id
+                )}"
+              >
+
+                <option value="">
+                  Choose active paid customer
+                </option>
+
+                ${customerOptions}
+
+              </select>
+
+            </div>
+
+
+            <div class="admin-edit-field">
+
+              <label>
+                Duration
+              </label>
+
+              <select
+                data-managed-duration="${escapeHtml(
+                  membership.id
+                )}"
+              >
+
+                <option
+                  value="indefinite"
+                  ${
+                    assignment.durationType ===
+                    "indefinite"
+                      ? "selected"
+                      : ""
+                  }
+                >
+                  INDEFINITELY
+                </option>
+
+                <option
+                  value="1_drop"
+                  ${
+                    assignment.durationType ===
+                    "1_drop"
+                      ? "selected"
+                      : ""
+                  }
+                >
+                  1 DROP
+                </option>
+
+                <option
+                  value="1_week"
+                  ${
+                    assignment.durationType ===
+                    "1_week"
+                      ? "selected"
+                      : ""
+                  }
+                >
+                  1 WEEK
+                </option>
+
+                <option
+                  value="1_month"
+                  ${
+                    assignment.durationType ===
+                    "1_month"
+                      ? "selected"
+                      : ""
+                  }
+                >
+                  1 MONTH
+                </option>
+
+              </select>
+
+            </div>
+
+          </div>
+
+
+          ${
+            active
+              ? `
+                <div
+                  class="info-grid"
+                  style="margin-top:16px;"
+                >
+
+                  ${field(
+                    "Assigned Customer",
+                    assignedCustomer.name
+                  )}
+
+                  ${field(
+                    "Customer Email",
+                    assignedCustomer.email
+                  )}
+
+                  ${field(
+                    "Started",
+                    formatDate(
+                      assignment.startsAt
+                    )
+                  )}
+
+                  ${field(
+                    "Expires",
+                    assignment.expiresAt
+                      ? formatDate(
+                          assignment.expiresAt
+                        )
+                      : "Indefinite"
+                  )}
+
+                </div>
+              `
+              : ""
+          }
+
+
+          ${
+            Object.keys(
+              customerProfile
+            ).some(
+              key =>
+                customerProfile[key]
+            )
+              ? `
+                <details
+                  class="order-section admin-collapsible"
+                  style="margin-top:16px;"
+                >
+
+                  <summary
+                    class="order-section-head admin-collapsible-head"
+                  >
+
+                    <div>
+                      <h3>
+                        Auto Populated Customer Information
+                      </h3>
+
+                      <p>
+                        Customer information copied
+                        into this managed membership.
+                      </p>
+                    </div>
+
+                    <span
+                      class="admin-collapsible-arrow"
+                    >
+                      ›
+                    </span>
+
+                  </summary>
+
+                  <div class="info-grid">
+
+                    ${field(
+                      "First Name",
+                      customerProfile.firstName
+                    )}
+
+                    ${field(
+                      "Last Name",
+                      customerProfile.lastName
+                    )}
+
+                    ${field(
+                      "Customer Email",
+                      customerProfile.email
+                    )}
+
+                    ${field(
+                      "Phone",
+                      customerProfile.phone
+                    )}
+
+                    ${field(
+                      "Address",
+                      customerProfile.address,
+                      true
+                    )}
+
+                    ${field(
+                      "Address 2",
+                      customerProfile.address2,
+                      true
+                    )}
+
+                    ${field(
+                      "City",
+                      customerProfile.city
+                    )}
+
+                    ${field(
+                      "State",
+                      customerProfile.state
+                    )}
+
+                    ${field(
+                      "ZIP",
+                      customerProfile.zip
+                    )}
+
+                    ${field(
+                      "Country",
+                      customerProfile.country
+                    )}
+
+                  </div>
+
+                </details>
+              `
+              : ""
+          }
+
+
+          <div class="admin-edit-actions">
+
+            <button
+              type="button"
+              class="admin-save-button"
+              data-managed-assign="${escapeHtml(
+                membership.id
+              )}"
+              data-managed-type="${escapeHtml(
+                type
+              )}"
+            >
+              ${
+                active
+                  ? "Update Subscription"
+                  : "Start Subscription"
+              }
+            </button>
+
+
+            <button
+              type="button"
+              class="admin-edit-button"
+              data-managed-autopopulate="${escapeHtml(
+                membership.id
+              )}"
+              data-managed-type="${escapeHtml(
+                type
+              )}"
+              ${active ? "" : "disabled"}
+            >
+              AUTO POPULATE
+            </button>
+
+
+            ${
+              active
+                ? `
+                  <button
+                    type="button"
+                    class="delete-submission"
+                    data-managed-end="${escapeHtml(
+                      membership.id
+                    )}"
+                    data-managed-type="${escapeHtml(
+                      type
+                    )}"
+                  >
+                    End Subscription
+                  </button>
+                `
+                : ""
+            }
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+  `;
+}
+
+
+function renderManagedMembershipDashboard(
+  data,
+  type
+) {
+  const label =
+    type === "rented"
+      ? "RENTED MEMBERSHIP"
+      : "FREE MEMBERSHIP";
+
+  const memberships =
+    Array.isArray(
+      data?.memberships
+    )
+      ? data.memberships
+      : [];
+
+  const paidCustomers =
+    Array.isArray(
+      data?.paidCustomers
+    )
+      ? data.paidCustomers
+      : [];
+
+  submissionCount.textContent =
+    memberships.length === 1
+      ? `1 ${label.toLowerCase()}`
+      : `${memberships.length} ${label.toLowerCase()}s`;
+
+  const cards =
+    memberships.length
+      ? memberships
+          .map(
+            membership =>
+              managedMembershipCardHtml(
+                membership,
+                type,
+                paidCustomers
+              )
+          )
+          .join("")
+      : `
+          <div class="empty-admin">
+            <h3>
+              No ${label}s yet.
+            </h3>
+
+            <p>
+              Create your first managed
+              ${label.toLowerCase()} above.
+            </p>
+          </div>
+        `;
+
+  rows.innerHTML = `
+
     <section class="order-section">
 
       <div class="order-section-head">
@@ -4343,150 +4855,677 @@ function renderSpecialProfileDashboard(
           </h3>
 
           <p>
-            Choose a customer account,
-            then fill in the retailer
-            profile information.
+            Add one of your managed accounts.
+            The Account Email and retailer
+            credentials are Admin-only.
           </p>
         </div>
 
       </div>
 
-      <div class="admin-retailer-wrap">
 
-        <div class="admin-edit-field">
+      <form
+        class="admin-retailer-wrap"
+        id="createManagedMembershipForm"
+      >
 
-          <label>
-            Customer
-          </label>
+        <div class="admin-edit-grid">
 
-          <select
-            data-create-special-customer
-          >
-            <option value="">
-              Choose customer
-            </option>
+          <div class="admin-edit-field">
 
-            ${customerOptions}
-          </select>
+            <label>
+              Membership Name
+            </label>
+
+            <input
+              name="profileName"
+              placeholder="${label}"
+            >
+
+          </div>
+
+
+          <div class="admin-edit-field">
+
+            <label>
+              Account Email
+            </label>
+
+            <input
+              type="email"
+              name="accountEmail"
+              autocomplete="off"
+              placeholder="Managed account email"
+            >
+
+            <small class="admin-edit-help">
+              Visible only in Admin.
+            </small>
+
+          </div>
+
+
+          <div class="admin-edit-field wide">
+
+            <label>
+              Admin Notes
+            </label>
+
+            <input
+              name="notes"
+              placeholder="Optional notes"
+            >
+
+          </div>
 
         </div>
+
+
+        <div
+          class="admin-retailer-grid"
+          style="margin-top:16px;"
+        >
+
+          ${managedRetailerFields()}
+
+        </div>
+
 
         <div class="admin-edit-actions">
 
           <button
-            type="button"
+            type="submit"
             class="admin-save-button"
-            data-create-special-profile
-            ${
-              availableCustomers.length
-                ? ""
-                : "disabled"
-            }
           >
-            + CREATE PROFILE
+            + CREATE ${label}
           </button>
 
         </div>
 
-        ${
-          !availableCustomers.length
-            ? `
-              <p class="admin-retailer-empty">
-                Every customer already has
-                this profile type.
-              </p>
-            `
-            : ""
-        }
-
         <div
-          data-new-special-profile-form
+          class="admin-edit-message"
         ></div>
+
+      </form>
+
+    </section>
+
+
+    <section class="order-section">
+
+      <div class="order-section-head">
+
+        <div>
+          <h3>
+            ${label}S
+          </h3>
+
+          <p>
+            Managed inventory.
+          </p>
+        </div>
+
+        <select
+          id="managedMembershipStatusFilter"
+          class="admin-submission-filter"
+        >
+          <option value="all">
+            ALL
+          </option>
+
+          <option value="active">
+            ACTIVE
+          </option>
+
+          <option value="inactive">
+            INACTIVE
+          </option>
+        </select>
 
       </div>
 
     </section>
+
+    <div
+      id="managedMembershipCards"
+      style="display:grid;gap:13px;"
+    >
+      ${cards}
+    </div>
   `;
 
-  const existingHtml =
-    profiles.length
-      ? profiles
-          .map(profile => {
-            const customer =
-              profile.customer ||
-              {};
-
-            const customerName =
-              customer.name ||
-              "Customer";
-
-            const customerEmail =
-              customer.email ||
-              "";
-
-            const customerId =
-              customer.id ||
-              profile.customerAccountId;
-
-            return `
-              <section class="order-section">
-
-                <div class="order-section-head">
-
-                  <div>
-                    <h3>
-                      ${escapeHtml(
-                        customerName
-                      )}
-                    </h3>
-
-                    <p>
-                      ${escapeHtml(
-                        customerEmail
-                      )}
-                    </p>
-                  </div>
-
-                </div>
-
-                ${specialProfileHtml(
-                  customerId,
-                  type,
-                  profile
-                )}
-
-              </section>
-            `;
-          })
-          .join("")
-      : `
-          <div class="empty-admin">
-
-            <h3>
-              No ${label}s yet.
-            </h3>
-
-            <p>
-              Use the + CREATE PROFILE
-              button above to add one.
-            </p>
-
-          </div>
-        `;
-
-  rows.innerHTML = `
-    ${createHtml}
-    ${existingHtml}
-  `;
-
-  bindCreateSpecialProfileButton(
+  bindManagedMembershipDashboard(
     type
   );
-
-  bindSpecialProfileForms();
-  bindSpecialProfileRemoveButtons();
 }
-  
+
+
+function managedMembershipBody(
+  form
+) {
+  const formData =
+    new FormData(form);
+
+  const retailers = {};
+
+  for (
+    const retailer of
+    ADMIN_RETAILERS
+  ) {
+    retailers[
+      retailer.key
+    ] = {
+      username:
+        formData.get(
+          `${retailer.key}_username`
+        ) || "",
+
+      password:
+        formData.get(
+          `${retailer.key}_password`
+        ) || ""
+    };
+  }
+
+  return {
+    profileName:
+      formData.get(
+        "profileName"
+      ) || "",
+
+    accountEmail:
+      formData.get(
+        "accountEmail"
+      ) || "",
+
+    notes:
+      formData.get(
+        "notes"
+      ) || "",
+
+    retailers
+  };
+}
+
+
+function bindManagedMembershipDashboard(
+  type
+) {
+  const createForm =
+    document.getElementById(
+      "createManagedMembershipForm"
+    );
+
+  if (createForm) {
+    createForm.addEventListener(
+      "submit",
+      async event => {
+        event.preventDefault();
+
+        const button =
+          createForm.querySelector(
+            ".admin-save-button"
+          );
+
+        const message =
+          createForm.querySelector(
+            ".admin-edit-message"
+          );
+
+        if (button) {
+          button.disabled = true;
+          button.textContent =
+            "Creating...";
+        }
+
+        try {
+          const response =
+            await fetch(
+              `/api/admin/${type}-memberships`,
+              {
+                method: "POST",
+
+                credentials:
+                  "same-origin",
+
+                headers: {
+                  "Content-Type":
+                    "application/json"
+                },
+
+                body:
+                  JSON.stringify(
+                    managedMembershipBody(
+                      createForm
+                    )
+                  )
+              }
+            );
+
+          const result =
+            await response
+              .json()
+              .catch(() => ({}));
+
+          if (!response.ok) {
+            throw new Error(
+              result.error ||
+              "Unable to create membership."
+            );
+          }
+
+          await load();
+
+        } catch (error) {
+          if (message) {
+            message.textContent =
+              error.message;
+
+            message.className =
+              "admin-edit-message error";
+          }
+
+          if (button) {
+            button.disabled = false;
+            button.textContent =
+              `+ CREATE ${
+                type === "rented"
+                  ? "RENTED MEMBERSHIP"
+                  : "FREE MEMBERSHIP"
+              }`;
+          }
+        }
+      }
+    );
+  }
+
+
+  document
+    .querySelectorAll(
+      ".managed-membership-edit-form"
+    )
+    .forEach(form => {
+
+      form.addEventListener(
+        "submit",
+        async event => {
+          event.preventDefault();
+
+          const id =
+            form.dataset.managedId;
+
+          const formType =
+            form.dataset.managedType;
+
+          const button =
+            form.querySelector(
+              ".admin-save-button"
+            );
+
+          const message =
+            form.querySelector(
+              ".admin-edit-message"
+            );
+
+          if (button) {
+            button.disabled = true;
+            button.textContent =
+              "Saving...";
+          }
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/${formType}-memberships/${encodeURIComponent(
+                  id
+                )}`,
+                {
+                  method: "PUT",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify(
+                      managedMembershipBody(
+                        form
+                      )
+                    )
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to save membership."
+              );
+            }
+
+            await load();
+
+          } catch (error) {
+            if (message) {
+              message.textContent =
+                error.message;
+
+              message.className =
+                "admin-edit-message error";
+            }
+
+            if (button) {
+              button.disabled = false;
+              button.textContent =
+                "Save Account";
+            }
+          }
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-managed-assign]"
+    )
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        async () => {
+          const id =
+            button.dataset
+              .managedAssign;
+
+          const buttonType =
+            button.dataset
+              .managedType;
+
+          const customerSelect =
+            document.querySelector(
+              `[data-managed-customer="${CSS.escape(
+                id
+              )}"]`
+            );
+
+          const durationSelect =
+            document.querySelector(
+              `[data-managed-duration="${CSS.escape(
+                id
+              )}"]`
+            );
+
+          const customerAccountId =
+            customerSelect?.value ||
+            "";
+
+          if (!customerAccountId) {
+            alert(
+              "Choose an active paid customer first."
+            );
+
+            return;
+          }
+
+          button.disabled = true;
+          button.textContent =
+            "Saving...";
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/${buttonType}-memberships/${encodeURIComponent(
+                  id
+                )}/assign`,
+                {
+                  method: "POST",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      customerAccountId,
+
+                      durationType:
+                        durationSelect?.value ||
+                        "indefinite"
+                    })
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to start membership."
+              );
+            }
+
+            await load();
+
+          } catch (error) {
+            alert(error.message);
+
+            button.disabled = false;
+            button.textContent =
+              "Start Subscription";
+          }
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-managed-autopopulate]"
+    )
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        async () => {
+          const id =
+            button.dataset
+              .managedAutopopulate;
+
+          const buttonType =
+            button.dataset
+              .managedType;
+
+          const customerSelect =
+            document.querySelector(
+              `[data-managed-customer="${CSS.escape(
+                id
+              )}"]`
+            );
+
+          const customerAccountId =
+            customerSelect?.value ||
+            "";
+
+          if (!customerAccountId) {
+            alert(
+              "Choose the attached customer first."
+            );
+
+            return;
+          }
+
+          button.disabled = true;
+          button.textContent =
+            "POPULATING...";
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/managed-memberships/${encodeURIComponent(
+                  buttonType
+                )}/${encodeURIComponent(
+                  id
+                )}/auto-populate`,
+                {
+                  method: "POST",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      customerAccountId
+                    })
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to auto populate."
+              );
+            }
+
+            await load();
+
+          } catch (error) {
+            alert(error.message);
+
+            button.disabled = false;
+            button.textContent =
+              "AUTO POPULATE";
+          }
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-managed-end]"
+    )
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        async () => {
+          const id =
+            button.dataset
+              .managedEnd;
+
+          const buttonType =
+            button.dataset
+              .managedType;
+
+          const confirmed =
+            confirm(
+              "End this membership and return it to the available pool?"
+            );
+
+          if (!confirmed) {
+            return;
+          }
+
+          button.disabled = true;
+          button.textContent =
+            "Ending...";
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/${buttonType}-memberships/${encodeURIComponent(
+                  id
+                )}/end`,
+                {
+                  method: "POST",
+
+                  credentials:
+                    "same-origin"
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to end membership."
+              );
+            }
+
+            await load();
+
+          } catch (error) {
+            alert(error.message);
+
+            button.disabled = false;
+            button.textContent =
+              "End Subscription";
+          }
+        }
+      );
+    });
+
+
+  const statusFilter =
+    document.getElementById(
+      "managedMembershipStatusFilter"
+    );
+
+  if (statusFilter) {
+    statusFilter.addEventListener(
+      "change",
+      () => {
+        const value =
+          statusFilter.value;
+
+        document
+          .querySelectorAll(
+            "[data-managed-membership-card]"
+          )
+          .forEach(card => {
+            const status =
+              card.dataset
+                .managedStatus;
+
+            card.hidden =
+              value !== "all" &&
+              status !== value;
+          });
+      }
+    );
+  }
+}
+
 /* =========================================
    LOAD ADMIN DATA
 ========================================= */
@@ -4499,13 +5538,13 @@ async function load() {
 
 let endpoint =
   "/api/admin/submissions";
-
+  
 if (
   submissionType ===
   "free-profile"
 ) {
   endpoint =
-    "/api/admin/special-profiles/free";
+    "/api/admin/free-memberships";
 }
 
 if (
@@ -4513,7 +5552,7 @@ if (
   "rented-profile"
 ) {
   endpoint =
-    "/api/admin/special-profiles/rented";
+    "/api/admin/rented-memberships";
 }
 
 const response =
@@ -4577,13 +5616,13 @@ const response =
   dashboard.hidden =
     false;
 
-  renderSpecialProfileDashboard(
-    data,
-    submissionType ===
-      "rented-profile"
-      ? "rented"
-      : "free"
-  );
+ renderManagedMembershipDashboard(
+  data,
+  submissionType ===
+    "rented-profile"
+    ? "rented"
+    : "free"
+);
 
   return;
 }
