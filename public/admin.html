@@ -744,6 +744,247 @@
       font-size: 13px;
     }
 
+    /* =========================================
+   ADMIN EDITING
+========================================= */
+
+.admin-edit-panel {
+  padding: 20px;
+  border-top: 1px solid #17384e;
+  background: #06101a;
+}
+
+.admin-edit-panel[hidden] {
+  display: none !important;
+}
+
+.admin-edit-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-edit-field {
+  display: grid;
+  gap: 7px;
+}
+
+.admin-edit-field.wide {
+  grid-column: 1 / -1;
+}
+
+.admin-edit-field label {
+  color: #71879b;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.admin-edit-field input,
+.admin-edit-field select {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+
+  border: 1px solid #244b63;
+  border-radius: 7px;
+
+  background: #081723;
+  color: #eefaff;
+
+  padding: 9px 11px;
+
+  font: inherit;
+  font-size: 12px;
+}
+
+.admin-edit-field input:focus,
+.admin-edit-field select:focus {
+  outline: none;
+  border-color: #12c9ff;
+}
+
+.admin-edit-help {
+  margin: 5px 0 0;
+
+  color: #71879b;
+
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.admin-edit-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  margin-top: 18px;
+}
+
+.admin-edit-button,
+.admin-save-button,
+.admin-cancel-button,
+.load-retailer-profiles {
+  border-radius: 7px;
+
+  padding: 9px 14px;
+
+  font-size: 10px;
+  font-weight: 900;
+
+  cursor: pointer;
+}
+
+.admin-edit-button,
+.load-retailer-profiles {
+  border: 1px solid #28516a;
+
+  background: #0b1c29;
+  color: #aeeeff;
+}
+
+.admin-save-button {
+  border: 1px solid #12c9ff;
+
+  background: #0b2533;
+  color: #12c9ff;
+}
+
+.admin-cancel-button {
+  border: 1px solid #405365;
+
+  background: #111c25;
+  color: #a9b7c4;
+}
+
+.admin-edit-button:hover,
+.load-retailer-profiles:hover,
+.admin-save-button:hover {
+  border-color: #12c9ff;
+  color: #12c9ff;
+}
+
+.admin-edit-message {
+  margin-top: 12px;
+
+  color: #8da6bb;
+
+  font-size: 11px;
+}
+
+.admin-edit-message.success {
+  color: #57e69b;
+}
+
+.admin-edit-message.error {
+  color: #ff8799;
+}
+
+
+/* =========================================
+   RETAILER PROFILES
+========================================= */
+
+.admin-retailer-wrap {
+  padding: 18px;
+}
+
+.admin-retailer-loading,
+.admin-retailer-empty {
+  color: #71879b;
+  font-size: 11px;
+}
+
+.admin-retailer-profile {
+  overflow: hidden;
+
+  margin-bottom: 16px;
+
+  border: 1px solid #17384e;
+  border-radius: 9px;
+
+  background: #07131e;
+}
+
+.admin-retailer-profile:last-child {
+  margin-bottom: 0;
+}
+
+.admin-retailer-profile-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+
+  padding: 13px 15px;
+
+  border-bottom: 1px solid #17384e;
+
+  background: #0a1723;
+}
+
+.admin-retailer-profile-head strong {
+  color: #eefaff;
+  font-size: 12px;
+}
+
+.admin-retailer-profile-head span {
+  color: #12c9ff;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.admin-retailer-form {
+  padding: 15px;
+}
+
+.admin-retailer-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 12px;
+}
+
+.admin-retailer-block {
+  padding: 13px;
+
+  border: 1px solid #17384e;
+  border-radius: 8px;
+
+  background: #081722;
+}
+
+.admin-retailer-block h4 {
+  margin: 0 0 11px;
+
+  color: #eafaff;
+
+  font-size: 11px;
+}
+
+.admin-password-status {
+  display: block;
+
+  margin-top: 6px;
+
+  color: #71879b;
+
+  font-size: 9px;
+}
+
+@media (max-width: 700px) {
+  .admin-edit-grid,
+  .admin-retailer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-edit-field.wide {
+    grid-column: auto;
+  }
+}
 
     /* =========================================
        ACTIONS
@@ -1712,6 +1953,300 @@ function renderOrder(x) {
 
           </section>
 
+<section class="order-section">
+
+  <div class="order-section-head">
+
+    <h3>
+      Admin Edit
+    </h3>
+
+    <p>
+      Correct customer information without
+      changing their Stripe membership.
+    </p>
+
+  </div>
+
+  <div
+    class="admin-edit-panel"
+    data-edit-panel="${escapeHtml(x.id)}"
+    hidden
+  >
+
+    <form
+      class="admin-submission-edit-form"
+      data-id="${escapeHtml(x.id)}"
+    >
+
+      <div class="admin-edit-grid">
+
+        <div class="admin-edit-field">
+          <label>Profile Name</label>
+
+          <input
+            name="profileName"
+            value="${escapeHtml(profile.profileName || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>Email</label>
+
+          <input
+            type="email"
+            name="email"
+            value="${escapeHtml(profile.email || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>First Name</label>
+
+          <input
+            name="firstName"
+            value="${escapeHtml(profile.firstName || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>Last Name</label>
+
+          <input
+            name="lastName"
+            value="${escapeHtml(profile.lastName || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>Phone</label>
+
+          <input
+            name="phone"
+            value="${escapeHtml(profile.phone || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>Country</label>
+
+          <input
+            name="country"
+            value="${escapeHtml(profile.country || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field wide">
+          <label>Address</label>
+
+          <input
+            name="address"
+            value="${escapeHtml(profile.address || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field wide">
+          <label>Address 2</label>
+
+          <input
+            name="address2"
+            value="${escapeHtml(profile.address2 || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>City</label>
+
+          <input
+            name="city"
+            value="${escapeHtml(profile.city || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>State</label>
+
+          <input
+            name="state"
+            value="${escapeHtml(profile.state || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>Zip</label>
+
+          <input
+            name="zip"
+            value="${escapeHtml(profile.zip || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>IMAP / Host Email</label>
+
+          <input
+            type="email"
+            name="acoEmail"
+            value="${escapeHtml(secrets.acoEmail || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field wide">
+          <label>
+            IMAP / Host App Password
+          </label>
+
+          <input
+            type="password"
+            name="acoPassword"
+            autocomplete="new-password"
+            placeholder="Leave blank to keep existing password"
+          >
+
+          <small class="admin-edit-help">
+            Password created through email for SNGACO.
+            Leave blank unless the customer gave you a replacement.
+          </small>
+        </div>
+
+        <div class="admin-edit-field">
+          <label>Card Label</label>
+
+          <input
+            name="cardLabel"
+            value="${escapeHtml(secrets.cardLabel || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>Cardholder Name</label>
+
+          <input
+            name="cardholder"
+            value="${escapeHtml(secrets.cardholder || "")}"
+          >
+        </div>
+
+        <div class="admin-edit-field wide">
+          <label>Replacement Card Number</label>
+
+          <input
+            name="acoCardNumber"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="Leave blank to keep existing card"
+          >
+        </div>
+
+        <div class="admin-edit-field">
+          <label>Replacement Exp. Month</label>
+
+          <select name="expMonth">
+            <option value="">
+              Keep existing
+            </option>
+            <option>01</option>
+            <option>02</option>
+            <option>03</option>
+            <option>04</option>
+            <option>05</option>
+            <option>06</option>
+            <option>07</option>
+            <option>08</option>
+            <option>09</option>
+            <option>10</option>
+            <option>11</option>
+            <option>12</option>
+          </select>
+        </div>
+
+        <div class="admin-edit-field">
+          <label>Replacement Exp. Year</label>
+
+          <input
+            name="expYear"
+            inputmode="numeric"
+            maxlength="4"
+            placeholder="Keep existing"
+          >
+        </div>
+
+        <div class="admin-edit-field wide">
+          <label>Replacement Security Code</label>
+
+          <input
+            type="password"
+            name="securityCode"
+            autocomplete="off"
+            placeholder="Leave blank to keep existing"
+          >
+        </div>
+
+      </div>
+
+      <div class="admin-edit-actions">
+
+        <button
+          type="submit"
+          class="admin-save-button"
+        >
+          Save Customer Changes
+        </button>
+
+        <button
+          type="button"
+          class="admin-cancel-button"
+          data-cancel-edit="${escapeHtml(x.id)}"
+        >
+          Cancel
+        </button>
+
+      </div>
+
+      <div
+        class="admin-edit-message"
+        data-edit-message="${escapeHtml(x.id)}"
+      ></div>
+
+    </form>
+
+  </div>
+
+</section>
+
+<section class="order-section">
+
+  <div class="order-section-head">
+
+    <h3>
+      Retailer Profiles
+    </h3>
+
+    <p>
+      Target, Walmart, PKC, Sam's Club,
+      and Costco login information.
+    </p>
+
+  </div>
+
+  <div class="admin-retailer-wrap">
+
+    <button
+      type="button"
+      class="load-retailer-profiles"
+      data-retailer-order="${escapeHtml(x.id)}"
+    >
+      Load Retailer Profiles
+    </button>
+
+    <div
+      class="admin-retailer-container"
+      data-retailer-container="${escapeHtml(x.id)}"
+    ></div>
+
+  </div>
+
+</section>
 
          <p class="security-note">
   Sensitive values are masked by default.
@@ -1725,9 +2260,17 @@ function renderOrder(x) {
 
         <div class="order-actions">
 
-          <button
-            type="button"
-            class="delete-submission"
+  <button
+    type="button"
+    class="admin-edit-button"
+    data-edit-submission="${escapeHtml(x.id)}"
+  >
+    Edit Customer Information
+  </button>
+
+  <button
+    type="button"
+    class="delete-submission"
             data-id="${escapeHtml(x.id)}"
           >
             Delete Customer Order
@@ -1741,6 +2284,800 @@ function renderOrder(x) {
   `;
 }
 
+  /* =========================================
+   ADMIN CUSTOMER EDITING
+========================================= */
+
+function bindAdminEditButtons() {
+
+  document
+    .querySelectorAll(
+      "[data-edit-submission]"
+    )
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        event => {
+
+          event.preventDefault();
+          event.stopPropagation();
+
+          const id =
+            button.dataset
+              .editSubmission;
+
+          const panel =
+            document.querySelector(
+              `[data-edit-panel="${CSS.escape(id)}"]`
+            );
+
+          if (!panel) {
+            return;
+          }
+
+          panel.hidden =
+            !panel.hidden;
+
+        }
+      );
+
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-cancel-edit]"
+    )
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        event => {
+
+          event.preventDefault();
+
+          const id =
+            button.dataset
+              .cancelEdit;
+
+          const panel =
+            document.querySelector(
+              `[data-edit-panel="${CSS.escape(id)}"]`
+            );
+
+          if (panel) {
+            panel.hidden =
+              true;
+          }
+
+        }
+      );
+
+    });
+
+
+  document
+    .querySelectorAll(
+      ".admin-submission-edit-form"
+    )
+    .forEach(form => {
+
+      form.addEventListener(
+        "submit",
+        async event => {
+
+          event.preventDefault();
+
+          const id =
+            form.dataset.id;
+
+          const submitButton =
+            form.querySelector(
+              ".admin-save-button"
+            );
+
+          const message =
+            document.querySelector(
+              `[data-edit-message="${CSS.escape(id)}"]`
+            );
+
+          const formData =
+            new FormData(form);
+
+          const profile = {
+            profileName:
+              formData.get(
+                "profileName"
+              ) || "",
+
+            firstName:
+              formData.get(
+                "firstName"
+              ) || "",
+
+            lastName:
+              formData.get(
+                "lastName"
+              ) || "",
+
+            email:
+              formData.get(
+                "email"
+              ) || "",
+
+            phone:
+              formData.get(
+                "phone"
+              ) || "",
+
+            address:
+              formData.get(
+                "address"
+              ) || "",
+
+            address2:
+              formData.get(
+                "address2"
+              ) || "",
+
+            country:
+              formData.get(
+                "country"
+              ) || "",
+
+            state:
+              formData.get(
+                "state"
+              ) || "",
+
+            city:
+              formData.get(
+                "city"
+              ) || "",
+
+            zip:
+              formData.get(
+                "zip"
+              ) || ""
+          };
+
+          const secrets = {
+            acoEmail:
+              formData.get(
+                "acoEmail"
+              ) || "",
+
+            acoPassword:
+              formData.get(
+                "acoPassword"
+              ) || "",
+
+            cardLabel:
+              formData.get(
+                "cardLabel"
+              ) || "",
+
+            cardholder:
+              formData.get(
+                "cardholder"
+              ) || "",
+
+            acoCardNumber:
+              formData.get(
+                "acoCardNumber"
+              ) || "",
+
+            expMonth:
+              formData.get(
+                "expMonth"
+              ) || "",
+
+            expYear:
+              formData.get(
+                "expYear"
+              ) || "",
+
+            securityCode:
+              formData.get(
+                "securityCode"
+              ) || ""
+          };
+
+          if (submitButton) {
+            submitButton.disabled =
+              true;
+
+            submitButton.textContent =
+              "Saving...";
+          }
+
+          if (message) {
+            message.textContent =
+              "";
+
+            message.className =
+              "admin-edit-message";
+          }
+
+          try {
+
+            const response =
+              await fetch(
+                `/api/admin/submissions/${encodeURIComponent(id)}`,
+                {
+                  method:
+                    "PUT",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      profile,
+                      secrets
+                    })
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to save changes."
+              );
+            }
+
+            if (message) {
+              message.textContent =
+                result.message ||
+                "Customer information updated.";
+
+              message.className =
+                "admin-edit-message success";
+            }
+
+            setTimeout(
+              () => {
+                load();
+              },
+              700
+            );
+
+          } catch (error) {
+
+            if (message) {
+              message.textContent =
+                error.message;
+
+              message.className =
+                "admin-edit-message error";
+            }
+
+          } finally {
+
+            if (submitButton) {
+              submitButton.disabled =
+                false;
+
+              submitButton.textContent =
+                "Save Customer Changes";
+            }
+
+          }
+
+        }
+      );
+
+    });
+
+}
+
+  /* =========================================
+   ADMIN RETAILER PROFILES
+========================================= */
+
+const ADMIN_RETAILERS = [
+  {
+    key: "target",
+    name: "Target"
+  },
+  {
+    key: "walmart",
+    name: "Walmart"
+  },
+  {
+    key: "pkc",
+    name: "PKC"
+  },
+  {
+    key: "samsClub",
+    name: "Sam's Club"
+  },
+  {
+    key: "costco",
+    name: "Costco"
+  }
+];
+
+
+function retailerProfileHtml(
+  orderId,
+  profile
+) {
+
+  const retailers =
+    profile.retailers || {};
+
+  const retailerBlocks =
+    ADMIN_RETAILERS
+      .map(retailer => {
+
+        const saved =
+          retailers[
+            retailer.key
+          ] || {};
+
+        return `
+          <div class="admin-retailer-block">
+
+            <h4>
+              ${escapeHtml(
+                retailer.name
+              )}
+            </h4>
+
+            <div class="admin-edit-field">
+
+              <label>
+                Email / Username
+              </label>
+
+              <input
+                name="${escapeHtml(
+                  retailer.key
+                )}_username"
+                value="${escapeHtml(
+                  saved.username || ""
+                )}"
+                autocomplete="off"
+              >
+
+            </div>
+
+            <div class="admin-edit-field">
+
+              <label>
+                Password
+              </label>
+
+              <input
+                type="password"
+                name="${escapeHtml(
+                  retailer.key
+                )}_password"
+                autocomplete="new-password"
+                placeholder="Leave blank to keep existing"
+              >
+
+              <small class="admin-password-status">
+                ${
+                  saved.passwordConfigured
+                    ? "Password currently saved"
+                    : "No password saved"
+                }
+              </small>
+
+            </div>
+
+          </div>
+        `;
+
+      })
+      .join("");
+
+
+  return `
+    <div
+      class="admin-retailer-profile"
+      data-retailer-slot="${escapeHtml(
+        profile.slot
+      )}"
+    >
+
+      <div class="admin-retailer-profile-head">
+
+        <strong>
+          Profile ${escapeHtml(
+            profile.slot
+          )}
+        </strong>
+
+        <span>
+          ${
+            profile.locked
+              ? "LOCKED BY CURRENT PLAN"
+              : "ACTIVE SLOT"
+          }
+        </span>
+
+      </div>
+
+
+      <form
+        class="admin-retailer-form"
+        data-order-id="${escapeHtml(
+          orderId
+        )}"
+        data-slot="${escapeHtml(
+          profile.slot
+        )}"
+      >
+
+        <div class="admin-edit-field wide">
+
+          <label>
+            Profile Name
+          </label>
+
+          <input
+            name="profileName"
+            value="${escapeHtml(
+              profile.profileName ||
+              `Profile ${profile.slot}`
+            )}"
+          >
+
+        </div>
+
+
+        <div class="admin-retailer-grid">
+
+          ${retailerBlocks}
+
+        </div>
+
+
+        <div class="admin-edit-actions">
+
+          <button
+            type="submit"
+            class="admin-save-button"
+            ${
+              profile.locked
+                ? "disabled"
+                : ""
+            }
+          >
+            Save Retailer Profile
+          </button>
+
+        </div>
+
+
+        <div
+          class="admin-edit-message"
+        ></div>
+
+      </form>
+
+    </div>
+  `;
+}
+
+
+async function loadAdminRetailerProfiles(
+  orderId
+) {
+
+  const container =
+    document.querySelector(
+      `[data-retailer-container="${CSS.escape(orderId)}"]`
+    );
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = `
+    <p class="admin-retailer-loading">
+      Loading retailer profiles...
+    </p>
+  `;
+
+  try {
+
+    const response =
+      await fetch(
+        `/api/admin/submissions/${encodeURIComponent(orderId)}/retailer-profiles`,
+        {
+          credentials:
+            "same-origin",
+
+          cache:
+            "no-store"
+        }
+      );
+
+    const data =
+      await response
+        .json()
+        .catch(
+          () => ({})
+        );
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to load retailer profiles."
+      );
+    }
+
+    const profiles =
+      Array.isArray(
+        data.profiles
+      )
+        ? data.profiles
+        : [];
+
+    if (!profiles.length) {
+
+      container.innerHTML = `
+        <p class="admin-retailer-empty">
+          This customer has not saved any retailer profiles yet.
+        </p>
+      `;
+
+      return;
+    }
+
+    container.innerHTML =
+      profiles
+        .map(
+          profile =>
+            retailerProfileHtml(
+              orderId,
+              profile
+            )
+        )
+        .join("");
+
+    bindRetailerProfileForms();
+
+  } catch (error) {
+
+    container.innerHTML = `
+      <p class="admin-retailer-empty">
+        ${escapeHtml(
+          error.message
+        )}
+      </p>
+    `;
+
+  }
+}
+
+
+function bindAdminRetailerButtons() {
+
+  document
+    .querySelectorAll(
+      ".load-retailer-profiles"
+    )
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        async event => {
+
+          event.preventDefault();
+          event.stopPropagation();
+
+          const orderId =
+            button.dataset
+              .retailerOrder;
+
+          button.disabled =
+            true;
+
+          button.textContent =
+            "Loading...";
+
+          await loadAdminRetailerProfiles(
+            orderId
+          );
+
+          button.textContent =
+            "Refresh Retailer Profiles";
+
+          button.disabled =
+            false;
+
+        }
+      );
+
+    });
+
+}
+
+
+function bindRetailerProfileForms() {
+
+  document
+    .querySelectorAll(
+      ".admin-retailer-form"
+    )
+    .forEach(form => {
+
+      if (
+        form.dataset.bound ===
+        "true"
+      ) {
+        return;
+      }
+
+      form.dataset.bound =
+        "true";
+
+      form.addEventListener(
+        "submit",
+        async event => {
+
+          event.preventDefault();
+
+          const orderId =
+            form.dataset.orderId;
+
+          const slot =
+            form.dataset.slot;
+
+          const formData =
+            new FormData(form);
+
+          const retailers = {};
+
+          for (
+            const retailer of
+            ADMIN_RETAILERS
+          ) {
+            retailers[
+              retailer.key
+            ] = {
+              username:
+                formData.get(
+                  `${retailer.key}_username`
+                ) || "",
+
+              password:
+                formData.get(
+                  `${retailer.key}_password`
+                ) || ""
+            };
+          }
+
+          const body = {
+            profileName:
+              formData.get(
+                "profileName"
+              ) || "",
+
+            retailers
+          };
+
+          const button =
+            form.querySelector(
+              ".admin-save-button"
+            );
+
+          const message =
+            form.querySelector(
+              ".admin-edit-message"
+            );
+
+          if (button) {
+            button.disabled =
+              true;
+
+            button.textContent =
+              "Saving...";
+          }
+
+          if (message) {
+            message.textContent =
+              "";
+
+            message.className =
+              "admin-edit-message";
+          }
+
+          try {
+
+            const response =
+              await fetch(
+                `/api/admin/submissions/${encodeURIComponent(orderId)}/retailer-profiles/${encodeURIComponent(slot)}`,
+                {
+                  method:
+                    "PUT",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify(
+                      body
+                    )
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to save retailer profile."
+              );
+            }
+
+            if (message) {
+              message.textContent =
+                result.message ||
+                "Retailer profile updated.";
+
+              message.className =
+                "admin-edit-message success";
+            }
+
+            await loadAdminRetailerProfiles(
+              orderId
+            );
+
+          } catch (error) {
+
+            if (message) {
+              message.textContent =
+                error.message;
+
+              message.className =
+                "admin-edit-message error";
+            }
+
+            if (button) {
+              button.disabled =
+                false;
+
+              button.textContent =
+                "Save Retailer Profile";
+            }
+
+          }
+
+        }
+      );
+
+    });
+
+}
 
 /* =========================================
    LOAD ADMIN DATA
@@ -1820,8 +3157,10 @@ async function load() {
       .join("");
 
 
-  bindRevealButtons();
-  bindDeleteButtons();
+ bindRevealButtons();
+bindAdminEditButtons();
+bindAdminRetailerButtons();
+bindDeleteButtons();
 }
 
 
