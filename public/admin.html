@@ -2461,7 +2461,10 @@ function renderOrder(x) {
 
 </section>
 
-<details class="order-section admin-collapsible">
+<details
+  class="order-section admin-collapsible"
+  open
+>
 
   <summary class="order-section-head admin-collapsible-head">
 
@@ -3195,8 +3198,10 @@ name="${escapeHtml(
     profile?.durationType ||
     "indefinite";
 
-  const active =
-    profile?.active === true;
+ const active =
+  profile
+    ? profile.active === true
+    : true;
 
   const daysRemaining =
     profile?.daysRemaining;
@@ -3353,7 +3358,7 @@ name="${escapeHtml(
     type="submit"
     class="admin-save-button"
   >
-    Save ${label}
+    ${profile ? "Save" : "Add"} ${label}
   </button>
 
   ${
@@ -3554,7 +3559,48 @@ if (specialContainer) {
   }
 }
 
+function bindCustomerSpecialProfiles() {
+  document
+    .querySelectorAll(
+      ".customer-order"
+    )
+    .forEach(order => {
 
+      order.addEventListener(
+        "toggle",
+        async () => {
+
+          if (!order.open) {
+            return;
+          }
+
+          if (
+            order.dataset
+              .specialProfilesLoaded ===
+            "true"
+          ) {
+            return;
+          }
+
+          const orderId =
+            order.dataset.id;
+
+          if (!orderId) {
+            return;
+          }
+
+          order.dataset
+            .specialProfilesLoaded =
+            "true";
+
+          await loadAdminRetailerProfiles(
+            orderId
+          );
+        }
+      );
+    });
+}
+  
 function bindAdminRetailerButtons() {
 
   document
@@ -4280,6 +4326,7 @@ bindAdminSaveButtons();
 bindAdminEditButtons();
 bindAdminRetailerButtons();
 bindDeleteButtons();
+  bindCustomerSpecialProfiles();
 }
 
 submissionTypeFilter?.addEventListener(
