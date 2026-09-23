@@ -3295,57 +3295,7 @@ if (editButton) {
   });
 
       form
-  .querySelectorAll(
-    ".retailer-password-toggle"
-  )
-  .forEach(button => {
-
-    button.addEventListener(
-      "click",
-      event => {
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        const row =
-          button.closest(
-            ".admin-retailer-password-row"
-          );
-
-        const input =
-          row?.querySelector(
-            "[data-retailer-password]"
-          );
-
-        if (!input) {
-          return;
-        }
-
-        const hidden =
-          input.type ===
-          "password";
-
-        input.type =
-          hidden
-            ? "text"
-            : "password";
-
-        button.textContent =
-          hidden
-            ? "Hide"
-            : "Show";
-
-      }
-    );
-
-  });
-
-      form.addEventListener(
-        "submit",
-        async event => {
-
-          event.preventDefault();
-
+  
           const orderId =
             form.dataset.orderId;
 
