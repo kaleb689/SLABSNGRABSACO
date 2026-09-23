@@ -6775,11 +6775,22 @@ app.post(
       const now =
         new Date();
 
-      const expiresAt =
-        specialProfileExpiresAt(
-          durationType,
-          now
-        );
+      const expirationBase =
+  existingActive?.expiresAt &&
+  new Date(
+    existingActive.expiresAt
+  ).getTime() >
+    now.getTime()
+    ? new Date(
+        existingActive.expiresAt
+      )
+    : now;
+
+const expiresAt =
+  specialProfileExpiresAt(
+    durationType,
+    expirationBase
+  );
 
       if (existingActive) {
         existingActive
@@ -8125,11 +8136,22 @@ app.post(
           ?.startsAt ||
         now.toISOString();
 
-      const expiresAt =
-        specialProfileExpiresAt(
-          durationType,
-          now
-        );
+      const expirationBase =
+  existingActive?.expiresAt &&
+  new Date(
+    existingActive.expiresAt
+  ).getTime() >
+    now.getTime()
+    ? new Date(
+        existingActive.expiresAt
+      )
+    : now;
+
+const expiresAt =
+  specialProfileExpiresAt(
+    durationType,
+    expirationBase
+  );
 
       if (existingActive) {
         existingActive
