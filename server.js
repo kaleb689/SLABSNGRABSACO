@@ -3831,6 +3831,736 @@ app.post(
 );
 
 /* -------------------------------------------------------
+   ADMIN UPDATE SUBMISSION
+------------------------------------------------------- */
+
+app.put(
+  "/api/admin/submissions/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      if (!id) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Submission ID is required."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const records =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const record =
+        records.find(
+          item =>
+            String(
+              item.id
+            ) === id
+        );
+
+      if (!record) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Submission could not be found."
+          });
+      }
+
+      const profileBody =
+        req.body?.profile &&
+        typeof req.body.profile ===
+          "object"
+          ? req.body.profile
+          : {};
+
+      const nextProfile = {
+        ...(record.profile || {})
+      };
+
+      const editableProfileFields = [
+        ["profileName", 300],
+        ["firstName", 100],
+        ["lastName", 100],
+        ["email", 200],
+        ["phone", 50],
+        ["address", 300],
+        ["address2", 300],
+        ["country", 100],
+        ["state", 100],
+        ["city", 100],
+        ["zip", 30]
+      ];
+
+      for (
+        const [
+          key,
+          max
+        ] of editableProfileFields
+      ) {
+        if (
+          Object.prototype
+            .hasOwnProperty.call(
+              profileBody,
+              key
+            )
+        ) {
+          nextProfile[key] =
+            clean(
+              profileBody[key],
+              max
+            );
+        }
+      }
+
+      if (
+        !validProfile(
+          nextProfile
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Please complete all required customer and shipping information."
+          });
+      }
+
+      let existingSecrets = {};
+
+      try {
+        const encrypted =
+          await readJson(
+            path.join(
+              SECRET_DIR,
+              `${record.id}.encrypted.json`
+            ),
+            null
+          );
+
+        if (encrypted) {
+          existingSecrets =
+            decryptJson(
+              encrypted
+            );
+        }
+      } catch (error) {
+        console.error(
+          "Admin secure package decrypt error:",
+          error.message
+        );
+
+        return res
+          .status(500)
+          .json({
+            error:
+              "Unable to securely load this submission."
+          });
+      }
+
+      const secretsBody =
+        req.body?.secrets &&
+        typeof req.body.secrets ===
+          "object"
+          ? req.body.secrets
+          : {};
+
+      const nextSecrets = {
+        ...existingSecrets
+      };
+
+      if (
+        Object.prototype
+          .hasOwnProperty.call(
+            secretsBody,
+            "acoEmail"
+          )
+      ) {
+        const value =
+          clean(
+            secretsBody.acoEmail,
+            200
+          );
+
+        if (value) {
+          nextSecrets.acoEmail =
+            value;
+        }
+      }
+
+      const replacementAcoPassword =
+        String(
+          secretsBody
+            .acoPassword || ""
+        );
+
+      if (
+        replacementAcoPassword
+      ) {
+        if (
+          replacementAcoPassword
+            .length > 300
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "IMAP / Host App Password is too long."
+            });
+        }
+
+        nextSecrets.acoPassword =
+          replacementAcoPassword;
+      }
+
+      if (
+        Object.prototype
+          .hasOwnProperty.call(
+            secretsBody,
+            "cardLabel"
+          )
+      ) {
+        const value =
+          clean(
+            secretsBody.cardLabel,
+            100
+          );
+
+        if (value) {
+          nextSecrets.cardLabel =
+            value;
+        }
+      }
+
+      if (
+        Object.prototype
+          .hasOwnProperty.call(
+            secretsBody,
+            "cardholder"
+          )
+      ) {
+        const value =
+          clean(
+            secretsBody.cardholder,
+            150
+          );
+
+        if (value) {
+          nextSecrets.cardholder =
+            value;
+        }
+      }
+
+      const replacementCardNumber =
+        clean(
+          secretsBody
+            .acoCardNumber,
+          30
+        ).replace(
+          /[^\d]/g,
+          ""
+        );
+
+      if (
+        replacementCardNumber
+      ) {
+        if (
+          !/^\d{12,19}$/.test(
+            replacementCardNumber
+          )
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "Enter a valid replacement card number."
+            });
+        }
+
+        nextSecrets.acoCardNumber =
+          replacementCardNumber;
+      }
+
+      const replacementMonth =
+        clean(
+          secretsBody.expMonth,
+          2
+        );
+
+      const replacementYear =
+        clean(
+          secretsBody.expYear,
+          4
+        );
+
+      if (
+        replacementMonth ||
+        replacementYear
+      ) {
+        if (
+          !replacementMonth ||
+          !replacementYear
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "Enter both the replacement expiration month and year."
+            });
+        }
+
+        nextSecrets.expMonth =
+          replacementMonth;
+
+        nextSecrets.expYear =
+          replacementYear;
+      }
+
+      const replacementSecurityCode =
+        clean(
+          secretsBody.securityCode,
+          300
+        );
+
+      if (
+        replacementSecurityCode
+      ) {
+        nextSecrets.securityCode =
+          replacementSecurityCode;
+      }
+
+      const updatedAt =
+        new Date()
+          .toISOString();
+
+      record.profile =
+        nextProfile;
+
+      record.updatedAt =
+        updatedAt;
+
+      record.adminUpdatedAt =
+        updatedAt;
+
+      record.updatedBy =
+        "admin";
+
+      await saveEncryptedPackage(
+        record.id,
+        nextSecrets
+      );
+
+      await writeJson(
+        PAID_FILE,
+        records
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          "Customer submission updated successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin submission update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update this submission."
+        });
+    }
+  }
+);
+
+
+/* -------------------------------------------------------
+   ADMIN RETAILER PROFILES
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/submissions/:id/retailer-profiles",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const records =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const order =
+        records.find(
+          item =>
+            String(
+              item.id
+            ) === id
+        );
+
+      if (!order) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Submission could not be found."
+          });
+      }
+
+      if (
+        !order.customerAccountId
+      ) {
+        return res.json({
+          ok: true,
+          profiles: []
+        });
+      }
+
+      const allowance =
+        await getCustomerProfileAllowance(
+          order.customerAccountId
+        );
+
+      const retailerRecords =
+        await getRetailerProfiles();
+
+      const owned =
+        retailerRecords
+          .filter(
+            record =>
+              record.customerAccountId ===
+                order.customerAccountId
+          )
+          .sort(
+            (a, b) =>
+              Number(a.slot) -
+              Number(b.slot)
+          );
+
+      const profiles =
+        owned.map(
+          record =>
+            safeRetailerProfile(
+              record,
+              allowance
+            )
+        );
+
+      return res.json({
+        ok: true,
+        allowance,
+        profiles
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin retailer profile list error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load retailer profiles."
+        });
+    }
+  }
+);
+
+
+app.put(
+  "/api/admin/submissions/:id/retailer-profiles/:slot",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const slot =
+        Number(
+          req.params.slot
+        );
+
+      if (
+        !Number.isInteger(slot) ||
+        slot < 1 ||
+        slot > 50
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid retailer profile slot."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const order =
+        paidRecords.find(
+          item =>
+            String(
+              item.id
+            ) === id
+        );
+
+      if (
+        !order ||
+        !order.customerAccountId
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Linked customer account could not be found."
+          });
+      }
+
+      const allowance =
+        await getCustomerProfileAllowance(
+          order.customerAccountId
+        );
+
+      if (
+        slot > allowance
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              `This membership currently allows ${allowance} profile${allowance === 1 ? "" : "s"}.`
+          });
+      }
+
+      const profileName =
+        clean(
+          req.body?.profileName,
+          80
+        );
+
+      if (!profileName) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a retailer profile name."
+          });
+      }
+
+      const submitted =
+        req.body?.retailers &&
+        typeof req.body.retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      const records =
+        await getRetailerProfiles();
+
+      const existingIndex =
+        records.findIndex(
+          record =>
+            record.customerAccountId ===
+              order.customerAccountId &&
+            Number(record.slot) ===
+              slot
+        );
+
+      const existingRecord =
+        existingIndex >= 0
+          ? records[
+              existingIndex
+            ]
+          : null;
+
+      let existingCredentials =
+        emptyRetailerCredentials();
+
+      if (
+        existingRecord
+          ?.credentials
+      ) {
+        existingCredentials =
+          normalizeRetailerCredentials(
+            decryptJson(
+              existingRecord
+                .credentials
+            )
+          );
+      }
+
+      const updatedCredentials =
+        emptyRetailerCredentials();
+
+      for (
+        const retailer of
+        RETAILER_KEYS
+      ) {
+        const submittedRetailer =
+          submitted[retailer] &&
+          typeof submitted[
+            retailer
+          ] === "object"
+            ? submitted[
+                retailer
+              ]
+            : {};
+
+        const username =
+          clean(
+            submittedRetailer
+              .username,
+            254
+          );
+
+        const password =
+          String(
+            submittedRetailer
+              .password || ""
+          );
+
+        if (
+          password.length >
+          512
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "A retailer password is too long."
+            });
+        }
+
+        updatedCredentials[
+          retailer
+        ] = {
+          username,
+
+          password:
+            password ||
+            existingCredentials[
+              retailer
+            ].password ||
+            ""
+        };
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      const record = {
+        id:
+          existingRecord?.id ||
+          crypto.randomUUID(),
+
+        customerAccountId:
+          order.customerAccountId,
+
+        slot,
+
+        profileName,
+
+        credentials:
+          encryptJson(
+            updatedCredentials
+          ),
+
+        createdAt:
+          existingRecord
+            ?.createdAt ||
+          now,
+
+        updatedAt:
+          now,
+
+        adminUpdatedAt:
+          now
+      };
+
+      if (
+        existingIndex >= 0
+      ) {
+        records[
+          existingIndex
+        ] = record;
+
+      } else {
+        records.push(
+          record
+        );
+      }
+
+      await saveRetailerProfiles(
+        records
+      );
+
+      return res.json({
+        ok: true,
+        message:
+          "Retailer profile updated successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin retailer profile update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update the retailer profile."
+        });
+    }
+  }
+);
+
+/* -------------------------------------------------------
    ADMIN SUBMISSIONS
 ------------------------------------------------------- */
 
