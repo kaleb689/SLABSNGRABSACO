@@ -7994,11 +7994,20 @@ renderOrders(
       state.orders
     );
 
-  } catch (error) {
+} catch (error) {
   state.profileLoaded =
     false;
 
-  showSignedOut();
+  console.error(
+    "My Profile load error:",
+    error
+  );
+
+  if (state.customer) {
+    showSignedIn();
+  } else {
+    showSignedOut();
+  }
 
   showAccountMessage(
     error.message,
