@@ -4178,6 +4178,165 @@ function retailerProfileCardHtml(
   `;
 }
 
+function specialProfileCardHtml(
+  profile
+) {
+  if (!profile) {
+    return "";
+  }
+
+  const profileType =
+    profile.profileType ===
+    "rented"
+      ? "rented"
+      : "free";
+
+  const profileName =
+    profileType === "rented"
+      ? "RENTED PROFILE"
+      : "FREE PROFILE";
+
+  const retailers =
+    profile.retailers || {};
+
+  const daysRemaining =
+    profile.daysRemaining;
+
+  const indefinite =
+    profile.durationType ===
+    "indefinite";
+
+  const statusClass =
+    indefinite ||
+    (
+      Number.isFinite(
+        Number(daysRemaining)
+      ) &&
+      Number(daysRemaining) > 7
+    )
+      ? "status-green"
+      : "status-yellow";
+
+  const timeRemaining =
+    indefinite
+      ? "INDEFINITE"
+      : `${Math.max(
+          0,
+          Number(daysRemaining) || 0
+        )} ${
+          Number(daysRemaining) === 1
+            ? "DAY"
+            : "DAYS"
+        }`;
+
+  const expirationText =
+    indefinite
+      ? "NO EXPIRATION"
+      : formatDate(
+          profile.expiresAt
+        );
+
+  return `
+    <article
+      class="retailer-profile-card special-retailer-profile"
+      data-special-profile="${escapeHtml(
+        profileType
+      )}"
+    >
+
+      <div
+        class="retailer-profile-card-head"
+      >
+
+        <div
+          class="retailer-profile-title"
+        >
+
+          <span
+            class="retailer-profile-number"
+          >
+            ${
+              profileType === "free"
+                ? "F"
+                : "R"
+            }
+          </span>
+
+          <div>
+
+            <span class="eyebrow">
+              SPECIAL ACO ACCESS
+            </span>
+
+            <h3>
+              ${profileName}
+            </h3>
+
+          </div>
+
+        </div>
+
+        <span
+          class="retailer-profile-active ${statusClass}"
+        >
+          ● ACTIVE
+        </span>
+
+      </div>
+
+      <div
+        class="retailer-profile-name-field"
+      >
+
+        <p>
+          <strong>
+            ACCESS:
+          </strong>
+          ${escapeHtml(
+            profile.durationLabel ||
+            "INDEFINITELY"
+          )}
+        </p>
+
+        <p>
+          <strong>
+            TIME REMAINING:
+          </strong>
+          ${escapeHtml(
+            timeRemaining
+          )}
+        </p>
+
+        <p>
+          <strong>
+            EXPIRATION:
+          </strong>
+          ${escapeHtml(
+            expirationText
+          )}
+        </p>
+
+      </div>
+
+      <div
+        class="retailer-credentials-grid"
+      >
+        ${RETAILERS
+          .map(
+            retailer =>
+              retailerFieldsHtml(
+                retailer,
+                retailers[
+                  retailer.key
+                ] || {}
+              )
+          )
+          .join("")}
+      </div>
+
+    </article>
+  `;
+}
 
 function bindRetailerPasswordToggles() {
   document
