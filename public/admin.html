@@ -2467,12 +2467,52 @@ function renderOrder(x) {
 
     <div>
       <h3>
+        Special Profiles
+      </h3>
+
+      <p>
+        Add or manage FREE PROFILE and RENTED PROFILE access.
+      </p>
+    </div>
+
+    <span class="admin-collapsible-arrow">
+      ›
+    </span>
+
+  </summary>
+
+  <div class="admin-retailer-wrap">
+
+    <button
+      type="button"
+      class="load-retailer-profiles"
+      data-retailer-order="${escapeHtml(x.id)}"
+    >
+      Load Special Profiles
+    </button>
+
+    <div
+      class="admin-retailer-container"
+      data-special-profile-container="${escapeHtml(x.id)}"
+    ></div>
+
+  </div>
+
+</details>
+
+
+<details class="order-section admin-collapsible">
+
+  <summary class="order-section-head admin-collapsible-head">
+
+    <div>
+      <h3>
         Retailer Profiles
       </h3>
 
       <p>
-        Target, Walmart, PKC, Sam's Club,
-        and Costco login information.
+        Profiles created by the customer for Target,
+        Walmart, PKC, Sam's Club, and Costco.
       </p>
     </div>
 
@@ -3355,19 +3395,41 @@ async function loadAdminRetailerProfiles(
 ) {
 
   const container =
-    document.querySelector(
-      `[data-retailer-container="${CSS.escape(orderId)}"]`
-    );
+  document.querySelector(
+    `[data-retailer-container="${CSS.escape(orderId)}"]`
+  );
 
-  if (!container) {
-    return;
-  }
+const specialContainer =
+  document.querySelector(
+    `[data-special-profile-container="${CSS.escape(orderId)}"]`
+  );
 
+if (
+  !container &&
+  !specialContainer
+) {
+  return;
+}
+
+if (container) {
   container.innerHTML = `
-    <p class="admin-retailer-loading">
-      Loading retailer profiles...
+    <p class="admin-retailer-empty">
+      ${escapeHtml(
+        error.message
+      )}
     </p>
   `;
+}
+
+if (specialContainer) {
+  specialContainer.innerHTML = `
+    <p class="admin-retailer-empty">
+      ${escapeHtml(
+        error.message
+      )}
+    </p>
+  `;
+}
 
   try {
 
@@ -3456,11 +3518,15 @@ const specialProfilesHtml = `
   )}
 `;
 
-container.innerHTML = `
-  ${normalProfilesHtml}
+if (container) {
+  container.innerHTML =
+    normalProfilesHtml;
+}
 
-  ${specialProfilesHtml}
-`;
+if (specialContainer) {
+  specialContainer.innerHTML =
+    specialProfilesHtml;
+}
 
 bindRetailerProfileForms();
 
@@ -3469,13 +3535,25 @@ bindSpecialProfileForms();
 
   } catch (error) {
 
-    container.innerHTML = `
-      <p class="admin-retailer-empty">
-        ${escapeHtml(
-          error.message
-        )}
-      </p>
-    `;
+    if (container) {
+  container.innerHTML = `
+    <p class="admin-retailer-empty">
+      ${escapeHtml(
+        error.message
+      )}
+    </p>
+  `;
+}
+
+if (specialContainer) {
+  specialContainer.innerHTML = `
+    <p class="admin-retailer-empty">
+      ${escapeHtml(
+        error.message
+      )}
+    </p>
+  `;
+}
 
   }
 }
