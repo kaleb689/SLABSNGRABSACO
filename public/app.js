@@ -1518,7 +1518,16 @@ function showSignedIn() {
 
   if (customerDashboard) {
     customerDashboard.hidden = false;
+    customerDashboard.removeAttribute(
+      "hidden"
+    );
+    customerDashboard.style.display =
+      "";
   }
+
+  switchAccountTab(
+    "membership"
+  );
 }
 
 
