@@ -178,7 +178,6 @@ function showAccountMessage(
     type
   );
 }
-}
 
 
 function clearAccountMessage() {
