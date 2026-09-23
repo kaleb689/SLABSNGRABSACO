@@ -5047,6 +5047,222 @@ app.get(
   }
 );
 
+app.get(
+  "/api/admin/special-profiles/:profileType",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const profileType =
+        normalizeSpecialProfileType(
+          req.params.profileType
+        );
+
+      if (!profileType) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid special profile type."
+          });
+      }
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const specialRecords =
+        await getSpecialProfiles();
+
+      const matchingProfiles =
+        specialRecords.filter(
+          record =>
+            normalizeSpecialProfileType(
+              record.profileType
+            ) === profileType
+        );
+
+      const profiles =
+        matchingProfiles.map(
+          record => {
+            const account =
+              accounts.find(
+                item =>
+                  item.id ===
+                  record.customerAccountId
+              );
+
+            const paidRecord =
+              paidRecords.find(
+                item =>
+                  item.customerAccountId ===
+                  record.customerAccountId
+              );
+
+            const savedProfile =
+              account?.adminProfile &&
+              typeof account.adminProfile ===
+                "object"
+                ? account.adminProfile
+                : {};
+
+            const paidProfile =
+              paidRecord?.profile &&
+              typeof paidRecord.profile ===
+                "object"
+                ? paidRecord.profile
+                : {};
+
+            const firstName =
+              savedProfile.firstName ||
+              paidProfile.firstName ||
+              "";
+
+            const lastName =
+              savedProfile.lastName ||
+              paidProfile.lastName ||
+              "";
+
+            const customerName =
+              [
+                firstName,
+                lastName
+              ]
+                .filter(Boolean)
+                .join(" ") ||
+              savedProfile.profileName ||
+              paidProfile.profileName ||
+              "Customer";
+
+            return {
+              ...adminSpecialProfile(
+                record
+              ),
+
+              customer: {
+                id:
+                  record.customerAccountId,
+
+                name:
+                  customerName,
+
+                email:
+                  account?.email ||
+                  savedProfile.email ||
+                  paidProfile.email ||
+                  ""
+              }
+            };
+          }
+        );
+
+      const customers =
+        accounts.map(
+          account => {
+            const paidRecord =
+              paidRecords.find(
+                item =>
+                  item.customerAccountId ===
+                  account.id
+              );
+
+            const savedProfile =
+              account.adminProfile &&
+              typeof account.adminProfile ===
+                "object"
+                ? account.adminProfile
+                : {};
+
+            const paidProfile =
+              paidRecord?.profile &&
+              typeof paidRecord.profile ===
+                "object"
+                ? paidRecord.profile
+                : {};
+
+            const firstName =
+              savedProfile.firstName ||
+              paidProfile.firstName ||
+              "";
+
+            const lastName =
+              savedProfile.lastName ||
+              paidProfile.lastName ||
+              "";
+
+            const customerName =
+              [
+                firstName,
+                lastName
+              ]
+                .filter(Boolean)
+                .join(" ") ||
+              savedProfile.profileName ||
+              paidProfile.profileName ||
+              "Customer";
+
+            const hasProfile =
+              matchingProfiles.some(
+                record =>
+                  record.customerAccountId ===
+                  account.id
+              );
+
+            return {
+              id:
+                account.id,
+
+              name:
+                customerName,
+
+              email:
+                account.email ||
+                savedProfile.email ||
+                paidProfile.email ||
+                "",
+
+              hasProfile,
+
+              paid:
+                Boolean(
+                  paidRecord
+                )
+            };
+          }
+        );
+
+      return res.json({
+        ok: true,
+        profileType,
+        profiles,
+        customers
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin special profile list error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load special profiles."
+        });
+    }
+  }
+);
+
 /* -------------------------------------------------------
    ADMIN RETAILER PROFILES
 ------------------------------------------------------- */
