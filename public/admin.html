@@ -3715,7 +3715,24 @@ loginForm.addEventListener(
         .value = "";
 
 
-      await load();
+      loginWrap.hidden = true;
+dashboard.hidden = false;
+
+try {
+
+  await load();
+
+} catch (error) {
+
+  console.error(
+    "Admin dashboard load failed:",
+    error
+  );
+
+  msg.textContent =
+    "Login successful, but the admin dashboard failed to load. Check the server logs.";
+
+}
 
 
     } else {
