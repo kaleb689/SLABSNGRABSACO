@@ -39,7 +39,7 @@ rentedMemberships: [],
 retailerAllowance: 0,
 
 retailerProfilesLoaded: false
-
+};
 
 /* =====================================================
    HELPERS
@@ -1477,6 +1477,10 @@ function showSignedOut() {
 state.membership = null;
 state.upgradeMode = false;
 state.orders = [];
+
+state.freeMemberships = [];
+state.rentedMemberships = [];
+
 state.profileLoaded = true;
 
 updatePricingUpgradeButtons();
@@ -4371,6 +4375,278 @@ function specialProfileCardHtml(
   `;
 }
 
+function managedMembershipCardHtml(
+  membership
+) {
+  if (!membership) {
+    return "";
+  }
+
+  const type =
+    membership.profileType ===
+    "rented"
+      ? "rented"
+      : "free";
+
+  const title =
+    type === "rented"
+      ? "RENTED MEMBERSHIP"
+      : "FREE MEMBERSHIP";
+
+  const letter =
+    type === "rented"
+      ? "R"
+      : "F";
+
+  const profile =
+    membership.customerProfile &&
+    typeof membership.customerProfile ===
+      "object"
+      ? membership.customerProfile
+      : null;
+
+  const indefinite =
+    membership.durationType ===
+      "indefinite" ||
+    !membership.expiresAt;
+
+  const daysRemaining =
+    indefinite
+      ? null
+      : Math.max(
+          0,
+          Number(
+            membership.daysRemaining
+          ) || 0
+        );
+
+  const timeRemaining =
+    indefinite
+      ? "INDEFINITE"
+      : `${daysRemaining} ${
+          daysRemaining === 1
+            ? "DAY"
+            : "DAYS"
+        }`;
+
+  const expirationText =
+    indefinite
+      ? "NO EXPIRATION"
+      : formatDate(
+          membership.expiresAt
+        );
+
+  const statusClass =
+    indefinite ||
+    daysRemaining > 7
+      ? "status-green"
+      : "status-yellow";
+
+  const customerName =
+    profile
+      ? `${profile.firstName || ""} ${
+          profile.lastName || ""
+        }`.trim()
+      : "";
+
+  return `
+    <article
+      class="retailer-profile-card special-retailer-profile"
+      data-managed-membership="${escapeHtml(
+        type
+      )}"
+    >
+
+      <div
+        class="retailer-profile-card-head"
+      >
+
+        <div
+          class="retailer-profile-title"
+        >
+
+          <span
+            class="retailer-profile-number"
+          >
+            ${letter}
+          </span>
+
+          <div>
+
+            <span class="eyebrow">
+              MANAGED ACO ACCESS
+            </span>
+
+            <h3>
+              ${title}
+            </h3>
+
+          </div>
+
+        </div>
+
+        <span
+          class="retailer-profile-active ${statusClass}"
+        >
+          ● ACTIVE
+        </span>
+
+      </div>
+
+      <div
+        class="retailer-profile-name-field"
+      >
+
+        <p>
+          <strong>
+            START DATE:
+          </strong>
+
+          ${escapeHtml(
+            formatDate(
+              membership.startsAt
+            )
+          )}
+        </p>
+
+        <p>
+          <strong>
+            ACCESS:
+          </strong>
+
+          ${escapeHtml(
+            membership.durationLabel ||
+            (
+              indefinite
+                ? "INDEFINITE"
+                : "ACTIVE"
+            )
+          )}
+        </p>
+
+        <p>
+          <strong>
+            TIME REMAINING:
+          </strong>
+
+          ${escapeHtml(
+            timeRemaining
+          )}
+        </p>
+
+        <p>
+          <strong>
+            EXPIRATION:
+          </strong>
+
+          ${escapeHtml(
+            expirationText
+          )}
+        </p>
+
+      </div>
+
+      ${
+        profile
+          ? `
+              <div
+                class="retailer-profile-name-field"
+              >
+
+                <p>
+                  <strong>
+                    YOUR INFORMATION
+                  </strong>
+                </p>
+
+                ${
+                  customerName
+                    ? `
+                        <p>
+                          <strong>
+                            NAME:
+                          </strong>
+                          ${escapeHtml(
+                            customerName
+                          )}
+                        </p>
+                      `
+                    : ""
+                }
+
+                ${
+                  profile.email
+                    ? `
+                        <p>
+                          <strong>
+                            EMAIL:
+                          </strong>
+                          ${escapeHtml(
+                            profile.email
+                          )}
+                        </p>
+                      `
+                    : ""
+                }
+
+                ${
+                  profile.phone
+                    ? `
+                        <p>
+                          <strong>
+                            PHONE:
+                          </strong>
+                          ${escapeHtml(
+                            profile.phone
+                          )}
+                        </p>
+                      `
+                    : ""
+                }
+
+                ${
+                  profile.address
+                    ? `
+                        <p>
+                          <strong>
+                            ADDRESS:
+                          </strong>
+                          ${escapeHtml(
+                            [
+                              profile.address,
+                              profile.address2,
+                              profile.city,
+                              profile.state,
+                              profile.zip,
+                              profile.country
+                            ]
+                              .filter(Boolean)
+                              .join(", ")
+                          )}
+                        </p>
+                      `
+                    : ""
+                }
+
+              </div>
+            `
+          : `
+              <div
+                class="retailer-profile-name-field"
+              >
+                <p>
+                  Your customer information has
+                  not been added to this managed
+                  membership yet.
+                </p>
+              </div>
+            `
+      }
+
+    </article>
+  `;
+}
+
 function bindRetailerPasswordToggles() {
   document
     .querySelectorAll(
@@ -4571,15 +4847,31 @@ function renderRetailerProfiles() {
 
 if (allowance <= 0) {
 
-  const specialCards =
-    state.specialProfiles
-      .map(
-        profile =>
-          specialProfileCardHtml(
-            profile
-          )
-      )
-      .filter(Boolean);
+  const freeCards =
+  state.freeMemberships
+    .map(
+      membership =>
+        managedMembershipCardHtml(
+          membership
+        )
+    )
+    .filter(Boolean);
+
+const rentedCards =
+  state.rentedMemberships
+    .map(
+      membership =>
+        managedMembershipCardHtml(
+          membership
+        )
+    )
+    .filter(Boolean);
+
+const specialCards =
+  [
+    ...freeCards,
+    ...rentedCards
+  ];
 
   container.innerHTML = `
     ${
@@ -4587,8 +4879,8 @@ if (allowance <= 0) {
         ? `
             <div class="profile-category-section special-profile-category">
               <div class="profile-category-heading">
-                SPECIAL PROFILES
-              </div>
+MANAGED MEMBERSHIPS
+</div>
 
               ${specialCards.join("")}
             </div>
@@ -4740,7 +5032,7 @@ container.innerHTML = `
       ? `
           <div class="profile-category-section special-profile-category">
             <div class="profile-category-heading">
-              SPECIAL PROFILES
+              MANAGED MEMBERSHIPS
             </div>
 
             ${specialCards.join("")}
@@ -4932,6 +5224,93 @@ state.specialProfiles =
           }
         );
     }
+  }
+}
+
+async function loadManagedMemberships() {
+  try {
+    const [
+      freeResponse,
+      rentedResponse
+    ] = await Promise.all([
+      fetch(
+        "/api/account/free-memberships",
+        {
+          method: "GET",
+          credentials:
+            "same-origin",
+          cache:
+            "no-store"
+        }
+      ),
+
+      fetch(
+        "/api/account/rented-memberships",
+        {
+          method: "GET",
+          credentials:
+            "same-origin",
+          cache:
+            "no-store"
+        }
+      )
+    ]);
+
+    if (
+      freeResponse.status === 401 ||
+      rentedResponse.status === 401
+    ) {
+      state.freeMemberships = [];
+      state.rentedMemberships = [];
+      return;
+    }
+
+    const freeData =
+      await readJson(
+        freeResponse
+      );
+
+    const rentedData =
+      await readJson(
+        rentedResponse
+      );
+
+    if (!freeResponse.ok) {
+      throw new Error(
+        freeData.error ||
+        "Unable to load free memberships."
+      );
+    }
+
+    if (!rentedResponse.ok) {
+      throw new Error(
+        rentedData.error ||
+        "Unable to load rented memberships."
+      );
+    }
+
+    state.freeMemberships =
+      Array.isArray(
+        freeData.memberships
+      )
+        ? freeData.memberships
+        : [];
+
+    state.rentedMemberships =
+      Array.isArray(
+        rentedData.memberships
+      )
+        ? rentedData.memberships
+        : [];
+
+  } catch (error) {
+    state.freeMemberships = [];
+    state.rentedMemberships = [];
+
+    console.error(
+      "Managed membership load error:",
+      error
+    );
   }
 }
 
@@ -7596,9 +7975,11 @@ state.retailerAllowance =
 state.retailerProfilesLoaded =
   false;
 
-    renderOrders(
-      state.orders
-    );
+await loadManagedMemberships();
+
+renderOrders(
+  state.orders
+);
 
     populateEditOrderSelect(
       state.orders
