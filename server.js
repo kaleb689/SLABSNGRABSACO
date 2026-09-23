@@ -5251,14 +5251,6 @@ if (!customerAccountId) {
     });
 }
 
-if (!customerAccountId) {
-  return res
-    .status(404)
-    .json({
-      error:
-        "Customer account could not be found."
-    });
-}
 
       const submitted =
         req.body?.retailers &&
@@ -5388,7 +5380,7 @@ if (!customerAccountId) {
           crypto.randomUUID(),
 
         customerAccountId:
-          customerAccountId,,
+          customerAccountId,
 
         profileType,
 
@@ -5575,7 +5567,7 @@ app.put(
         records.findIndex(
           record =>
             record.customerAccountId ===
-              customerAccountId, &&
+              order.customerAccountId &&
             Number(record.slot) ===
               slot
         );
