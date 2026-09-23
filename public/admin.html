@@ -3294,7 +3294,12 @@ if (editButton) {
 
   });
 
-      form
+      form.addEventListener(
+  "submit",
+  async event => {
+
+    event.preventDefault();
+
   
           const orderId =
             form.dataset.orderId;
