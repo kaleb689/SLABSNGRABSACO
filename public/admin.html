@@ -1011,6 +1011,41 @@
   }
 }
 
+    .admin-retailer-password-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-retailer-password-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.retailer-password-toggle {
+  flex: 0 0 auto;
+
+  min-height: 40px;
+
+  border: 1px solid #28516a;
+  border-radius: 7px;
+
+  background: #0b1c29;
+  color: #aeeeff;
+
+  padding: 8px 12px;
+
+  font-size: 10px;
+  font-weight: 900;
+
+  cursor: pointer;
+}
+
+.retailer-password-toggle:hover {
+  border-color: #12c9ff;
+  color: #12c9ff;
+}
+
     /* =========================================
        ACTIONS
     ========================================= */
@@ -2443,8 +2478,41 @@ function bindAdminEditButtons() {
             return;
           }
 
-          panel.hidden =
-            !panel.hidden;
+          const opening =
+  panel.hidden;
+
+panel.hidden =
+  !opening;
+
+button.textContent =
+  opening
+    ? "Close Edit"
+    : "Edit";
+
+if (opening) {
+
+  setTimeout(
+    () => {
+      panel.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+
+      const firstInput =
+        panel.querySelector(
+          "input, select"
+        );
+
+      if (firstInput) {
+        firstInput.focus({
+          preventScroll: true
+        });
+      }
+    },
+    50
+  );
+
+}
 
         }
       );
@@ -2756,6 +2824,9 @@ function retailerProfileHtml(
             retailer.key
           ] || {};
 
+        const savedPassword =
+          saved.password || "";
+
         return `
           <div class="admin-retailer-block">
 
@@ -2785,50 +2856,48 @@ function retailerProfileHtml(
 
             <div class="admin-edit-field">
 
-           <div class="admin-edit-field">
+              <label>
+                Password
+              </label>
 
-  <label>
-    Password
-  </label>
+              <div class="admin-retailer-password-row">
 
-  <div class="admin-retailer-password-row">
+                <input
+                  type="password"
+                  name="${escapeHtml(
+                    retailer.key
+                  )}_password"
+                  value="${escapeHtml(
+                    savedPassword
+                  )}"
+                  autocomplete="off"
+                  data-retailer-password
+                >
 
-    <input
-      type="password"
-      name="${escapeHtml(
-        retailer.key
-      )}_password"
-      value="${escapeHtml(
-        saved.password || ""
-      )}"
-      autocomplete="off"
-      data-retailer-password
-    >
+                ${
+                  savedPassword
+                    ? `
+                        <button
+                          type="button"
+                          class="retailer-password-toggle"
+                        >
+                          Show
+                        </button>
+                      `
+                    : ""
+                }
 
-    ${
-      saved.password
-        ? `
-            <button
-              type="button"
-              class="reveal-button retailer-password-toggle"
-            >
-              Show
-            </button>
-          `
-        : ""
-    }
+              </div>
 
-  </div>
+              <small class="admin-password-status">
+                ${
+                  savedPassword
+                    ? "Password currently saved"
+                    : "No password saved"
+                }
+              </small>
 
-  <small class="admin-password-status">
-    ${
-      saved.password
-        ? "Password currently saved"
-        : "No password saved"
-    }
-  </small>
-
-</div>
+            </div>
 
           </div>
         `;
@@ -2863,7 +2932,6 @@ function retailerProfileHtml(
 
       </div>
 
-
       <form
         class="admin-retailer-form"
         data-order-id="${escapeHtml(
@@ -2890,13 +2958,11 @@ function retailerProfileHtml(
 
         </div>
 
-
         <div class="admin-retailer-grid">
 
           ${retailerBlocks}
 
         </div>
-
 
         <div class="admin-edit-actions">
 
@@ -2913,7 +2979,6 @@ function retailerProfileHtml(
           </button>
 
         </div>
-
 
         <div
           class="admin-edit-message"
@@ -3078,6 +3143,52 @@ function bindRetailerProfileForms() {
 
       form.dataset.bound =
         "true";
+
+      form
+  .querySelectorAll(
+    ".retailer-password-toggle"
+  )
+  .forEach(button => {
+
+    button.addEventListener(
+      "click",
+      event => {
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const row =
+          button.closest(
+            ".admin-retailer-password-row"
+          );
+
+        const input =
+          row?.querySelector(
+            "[data-retailer-password]"
+          );
+
+        if (!input) {
+          return;
+        }
+
+        const isHidden =
+          input.type ===
+          "password";
+
+        input.type =
+          isHidden
+            ? "text"
+            : "password";
+
+        button.textContent =
+          isHidden
+            ? "Hide"
+            : "Show";
+
+      }
+    );
+
+  });
 
       form
   .querySelectorAll(
