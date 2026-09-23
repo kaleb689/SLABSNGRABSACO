@@ -2924,8 +2924,8 @@ function retailerProfileHtml(
               <div class="admin-retailer-password-row">
 
                 <input
-                  type="password"
-                  name="${escapeHtml(
+type="text"
+name="${escapeHtml(
                     retailer.key
                   )}_password"
                   value="${escapeHtml(
@@ -2936,19 +2936,6 @@ function retailerProfileHtml(
                   readonly
                 >
                 
-
-                ${
-                  savedPassword
-                    ? `
-                        <button
-                          type="button"
-                          class="retailer-password-toggle"
-                        >
-                          Show
-                        </button>
-                      `
-                    : ""
-                }
 
               </div>
 
