@@ -5005,40 +5005,59 @@ app.get(
           []
         );
 
-      const records =
+      const paidRecords =
         Array.isArray(paid)
           ? paid
           : [];
 
       const order =
-        records.find(
+        paidRecords.find(
           item =>
             String(
               item.id
             ) === id
         );
 
-      if (!order) {
+      let customerAccountId =
+        order?.customerAccountId ||
+        null;
+
+      /*
+        Free submissions use the customer
+        account ID directly instead of a
+        paid order ID.
+      */
+
+      if (!customerAccountId) {
+        const accounts =
+          await getCustomerAccounts();
+
+        const account =
+          accounts.find(
+            item =>
+              String(
+                item.id
+              ) === id
+          );
+
+        if (account) {
+          customerAccountId =
+            account.id;
+        }
+      }
+
+      if (!customerAccountId) {
         return res
           .status(404)
           .json({
             error:
-              "Submission could not be found."
+              "Customer account could not be found."
           });
-      }
-
-      if (
-        !order.customerAccountId
-      ) {
-        return res.json({
-          ok: true,
-          profiles: []
-        });
       }
 
       const allowance =
         await getCustomerProfileAllowance(
-          order.customerAccountId
+          customerAccountId
         );
 
       const retailerRecords =
@@ -5049,7 +5068,7 @@ app.get(
           .filter(
             record =>
               record.customerAccountId ===
-                order.customerAccountId
+              customerAccountId
           )
           .sort(
             (a, b) =>
@@ -5058,40 +5077,81 @@ app.get(
           );
 
       const specialRecords =
-  await getSpecialProfiles();
+        await getSpecialProfiles();
 
-const ownedSpecialProfiles =
-  specialRecords
-    .filter(
-      record =>
-        record.customerAccountId ===
-          order.customerAccountId
-    )
-    .sort(
-      (a, b) => {
-        const order = {
-          free: 1,
-          rented: 2
-        };
-
-        return (
-          (
-            order[
-              normalizeSpecialProfileType(
-                a.profileType
-              )
-            ] || 99
-          ) -
-          (
-            order[
-              normalizeSpecialProfileType(
-                b.profileType
-              )
-            ] || 99
+      const ownedSpecialProfiles =
+        specialRecords
+          .filter(
+            record =>
+              record.customerAccountId ===
+              customerAccountId
           )
+          .sort(
+            (a, b) => {
+              const typeOrder = {
+                free: 1,
+                rented: 2
+              };
+
+              return (
+                (
+                  typeOrder[
+                    normalizeSpecialProfileType(
+                      a.profileType
+                    )
+                  ] || 99
+                ) -
+                (
+                  typeOrder[
+                    normalizeSpecialProfileType(
+                      b.profileType
+                    )
+                  ] || 99
+                )
+              );
+            }
+          );
+
+      const profiles =
+        owned.map(
+          record =>
+            adminRetailerProfile(
+              record,
+              allowance
+            )
         );
-      }
-    );
+
+      return res.json({
+        ok: true,
+
+        allowance,
+
+        profiles,
+
+        specialProfiles:
+          ownedSpecialProfiles.map(
+            record =>
+              adminSpecialProfile(
+                record
+              )
+          )
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin retailer profile list error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load retailer profiles."
+        });
+    }
+  }
+);
 
       const profiles =
   owned.map(
