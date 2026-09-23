@@ -3307,17 +3307,38 @@ name="${escapeHtml(
 
         </div>
 
-        <div class="admin-edit-actions">
+       <div class="admin-edit-actions">
 
-          <button
-            type="submit"
-            class="admin-save-button"
-          >
-            Save ${label}
-          </button>
+  <button
+    type="submit"
+    class="admin-save-button"
+  >
+    Save ${label}
+  </button>
 
-        </div>
+  ${
+    profile
+      ? `
+        <button
+          type="button"
+          class="admin-cancel-button admin-remove-special-profile"
+          data-order-id="${escapeHtml(
+            orderId
+          )}"
+          data-profile-type="${escapeHtml(
+            type
+          )}"
+          data-profile-label="${escapeHtml(
+            label
+          )}"
+        >
+          Remove ${label}
+        </button>
+      `
+      : ""
+  }
 
+</div>
         <div
           class="admin-edit-message"
         ></div>
@@ -3444,6 +3465,7 @@ container.innerHTML = `
 bindRetailerProfileForms();
 
 bindSpecialProfileForms();
+    bindSpecialProfileRemoveButtons();
 
   } catch (error) {
 
@@ -3920,6 +3942,112 @@ if (editButton) {
               button.textContent =
                 originalText;
             }
+          }
+        }
+      );
+    });
+}
+
+  function bindSpecialProfileRemoveButtons() {
+  document
+    .querySelectorAll(
+      ".admin-remove-special-profile"
+    )
+    .forEach(button => {
+
+      if (
+        button.dataset.bound ===
+        "true"
+      ) {
+        return;
+      }
+
+      button.dataset.bound =
+        "true";
+
+      button.addEventListener(
+        "click",
+        async event => {
+
+          event.preventDefault();
+
+          const orderId =
+            button.dataset.orderId;
+
+          const profileType =
+            button.dataset.profileType;
+
+          const profileLabel =
+            button.dataset
+              .profileLabel ||
+            "profile";
+
+          const confirmed =
+            confirm(
+              `Remove ${profileLabel}? This will permanently remove this profile from the customer.`
+            );
+
+          if (!confirmed) {
+            return;
+          }
+
+          const originalText =
+            button.textContent;
+
+          button.disabled =
+            true;
+
+          button.textContent =
+            "Removing...";
+
+          try {
+
+            const response =
+              await fetch(
+                `/api/admin/submissions/${encodeURIComponent(
+                  orderId
+                )}/special-profiles/${encodeURIComponent(
+                  profileType
+                )}`,
+                {
+                  method:
+                    "DELETE",
+
+                  credentials:
+                    "same-origin"
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to remove special profile."
+              );
+            }
+
+            await loadAdminRetailerProfiles(
+              orderId
+            );
+
+          } catch (error) {
+
+            alert(
+              error.message ||
+              "Unable to remove special profile."
+            );
+
+            button.disabled =
+              false;
+
+            button.textContent =
+              originalText;
           }
         }
       );
