@@ -1626,8 +1626,8 @@ function renderOrder(x) {
             <div class="order-section-head">
 
               <h3>
-                ACO Information
-              </h3>
+  IMAP / Host Email
+</h3>
 
               <p>
                 Credentials submitted for
@@ -1640,17 +1640,21 @@ function renderOrder(x) {
             <div class="info-grid">
 
               ${field(
-                "ACO / IMAP Email",
+                "IMAP / Host Email",
                 secrets.acoEmail
               )}
 
               ${sensitiveField(
-                "ACO / IMAP Password",
+                "IMAP / Host App Password",
                 secrets.acoPassword,
                 "password"
               )}
 
             </div>
+
+            <p class="muted">
+  (Password created through email for SNGACO)
+</p>
 
           </section>
 
