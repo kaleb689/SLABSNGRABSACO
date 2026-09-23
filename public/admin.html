@@ -1340,18 +1340,40 @@
     </div>
 
 
-    <div class="admin-summary">
+  <div class="admin-summary">
 
-      <span class="eyebrow">
+  <div
+    class="admin-submission-filter-wrap"
+  >
+
+    <label
+      for="submissionTypeFilter"
+      class="eyebrow"
+    >
+      VIEW
+    </label>
+
+    <select
+      id="submissionTypeFilter"
+      class="admin-submission-filter"
+    >
+      <option value="paid">
         PAID SUBMISSIONS
-      </span>
+      </option>
 
-      <span
-        id="submissionCount"
-        class="admin-summary-count"
-      ></span>
+      <option value="free">
+        FREE SUBMISSIONS
+      </option>
+    </select>
 
-    </div>
+  </div>
+
+  <span
+    id="submissionCount"
+    class="admin-summary-count"
+  ></span>
+
+</div>
 
 
     <div
