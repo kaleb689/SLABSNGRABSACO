@@ -2880,10 +2880,57 @@ function renderMembership(
     planName
   );
 
-  setText(
-    "membership-status",
-    status
+  const membershipStatusElement =
+  document.getElementById(
+    "membership-status"
   );
+
+if (membershipStatusElement) {
+
+  const normalizedMembershipStatus =
+    String(
+      membership.status || ""
+    ).toLowerCase();
+
+  const isActive =
+    [
+      "active",
+      "trialing"
+    ].includes(
+      normalizedMembershipStatus
+    );
+
+  membershipStatusElement.classList.remove(
+    "status-green",
+    "status-yellow",
+    "status-red"
+  );
+
+  if (isActive) {
+
+    membershipStatusElement.classList.add(
+      daysRemaining <= 7
+        ? "status-yellow"
+        : "status-green"
+    );
+
+    membershipStatusElement.textContent =
+      `● ACTIVE — ${daysRemaining} ${
+        daysRemaining === 1
+          ? "day"
+          : "days"
+      } left`;
+
+  } else {
+
+    membershipStatusElement.classList.add(
+      "status-red"
+    );
+
+    membershipStatusElement.textContent =
+      `● ${status.toUpperCase()}`;
+  }
+}
 
   setText(
     "membership-price",
