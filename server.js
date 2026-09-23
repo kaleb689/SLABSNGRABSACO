@@ -4760,6 +4760,292 @@ const ownedSpecialProfiles =
   }
 );
 
+/* -------------------------------------------------------
+   ADMIN SPECIAL PROFILES
+------------------------------------------------------- */
+
+app.put(
+  "/api/admin/submissions/:id/special-profiles/:profileType",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const profileType =
+        normalizeSpecialProfileType(
+          req.params.profileType
+        );
+
+      if (!profileType) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid special profile type."
+          });
+      }
+
+      const durationType =
+        normalizeSpecialProfileDuration(
+          req.body?.durationType
+        );
+
+      if (!durationType) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose a valid profile duration."
+          });
+      }
+
+      const active =
+        req.body?.active !== false;
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const order =
+        paidRecords.find(
+          item =>
+            String(
+              item.id
+            ) === id
+        );
+
+      if (
+        !order ||
+        !order.customerAccountId
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Linked customer account could not be found."
+          });
+      }
+
+      const submitted =
+        req.body?.retailers &&
+        typeof req.body.retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      const records =
+        await getSpecialProfiles();
+
+      const existingIndex =
+        records.findIndex(
+          record =>
+            record.customerAccountId ===
+              order.customerAccountId &&
+            normalizeSpecialProfileType(
+              record.profileType
+            ) === profileType
+        );
+
+      const existingRecord =
+        existingIndex >= 0
+          ? records[
+              existingIndex
+            ]
+          : null;
+
+      let existingCredentials =
+        emptyRetailerCredentials();
+
+      if (
+        existingRecord
+          ?.credentials
+      ) {
+        existingCredentials =
+          normalizeRetailerCredentials(
+            decryptJson(
+              existingRecord
+                .credentials
+            )
+          );
+      }
+
+      const updatedCredentials =
+        emptyRetailerCredentials();
+
+      for (
+        const retailer of
+        RETAILER_KEYS
+      ) {
+        const submittedRetailer =
+          submitted[retailer] &&
+          typeof submitted[
+            retailer
+          ] === "object"
+            ? submitted[
+                retailer
+              ]
+            : {};
+
+        const username =
+          clean(
+            submittedRetailer
+              .username,
+            254
+          );
+
+        const password =
+          String(
+            submittedRetailer
+              .password || ""
+          );
+
+        if (
+          password.length > 512
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "A retailer password is too long."
+            });
+        }
+
+        updatedCredentials[
+          retailer
+        ] = {
+          username,
+
+          password:
+            password ||
+            existingCredentials[
+              retailer
+            ].password ||
+            ""
+        };
+      }
+
+      const now =
+        new Date();
+
+      const startsAt =
+        active
+          ? now.toISOString()
+          : (
+              existingRecord
+                ?.startsAt ||
+              null
+            );
+
+      const expiresAt =
+        active
+          ? specialProfileExpiresAt(
+              durationType,
+              now
+            )
+          : (
+              existingRecord
+                ?.expiresAt ||
+              null
+            );
+
+      const record = {
+        id:
+          existingRecord?.id ||
+          crypto.randomUUID(),
+
+        customerAccountId:
+          order.customerAccountId,
+
+        profileType,
+
+        profileName:
+          specialProfileLabel(
+            profileType
+          ),
+
+        active,
+
+        durationType,
+
+        startsAt,
+
+        expiresAt,
+
+        credentials:
+          encryptJson(
+            updatedCredentials
+          ),
+
+        createdAt:
+          existingRecord
+            ?.createdAt ||
+          now.toISOString(),
+
+        updatedAt:
+          now.toISOString(),
+
+        adminUpdatedAt:
+          now.toISOString()
+      };
+
+      if (
+        existingIndex >= 0
+      ) {
+        records[
+          existingIndex
+        ] = record;
+
+      } else {
+        records.push(
+          record
+        );
+      }
+
+      await saveSpecialProfiles(
+        records
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          `${specialProfileLabel(
+            profileType
+          )} updated successfully.`,
+
+        profile:
+          adminSpecialProfile(
+            record
+          )
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin special profile update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update the special profile."
+        });
+    }
+  }
+);
+
 
 app.put(
   "/api/admin/submissions/:id/retailer-profiles/:slot",
