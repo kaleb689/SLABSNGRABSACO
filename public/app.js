@@ -32,10 +32,13 @@ const state = {
 
 specialProfiles: [],
 
+freeMemberships: [],
+
+rentedMemberships: [],
+
 retailerAllowance: 0,
 
 retailerProfilesLoaded: false
-};
 
 
 /* =====================================================
