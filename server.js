@@ -5153,46 +5153,7 @@ app.get(
   }
 );
 
-      const profiles =
-  owned.map(
-    record =>
-      adminRetailerProfile(
-        record,
-        allowance
-      )
-  );
-
-      return res.json({
-  ok: true,
-
-  allowance,
-
-  profiles,
-
-  specialProfiles:
-    ownedSpecialProfiles.map(
-      record =>
-        adminSpecialProfile(
-          record
-        )
-    )
-});
-
-    } catch (error) {
-      console.error(
-        "Admin retailer profile list error:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          error:
-            "Unable to load retailer profiles."
-        });
-    }
-  }
-);
+      
 
 /* -------------------------------------------------------
    ADMIN SPECIAL PROFILES
