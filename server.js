@@ -3161,15 +3161,34 @@ function specialProfileExpiresAt(
     return start.toISOString();
   }
 
-  if (
-    duration === "1_month"
-  ) {
-    start.setMonth(
-      start.getMonth() + 1
-    );
+if (
+  duration === "1_month"
+) {
+  const originalDay =
+    start.getDate();
 
-    return start.toISOString();
-  }
+  start.setDate(1);
+
+  start.setMonth(
+    start.getMonth() + 1
+  );
+
+  const lastDayOfTargetMonth =
+    new Date(
+      start.getFullYear(),
+      start.getMonth() + 1,
+      0
+    ).getDate();
+
+  start.setDate(
+    Math.min(
+      originalDay,
+      lastDayOfTargetMonth
+    )
+  );
+
+  return start.toISOString();
+}
 
   return null;
 }
@@ -4879,90 +4898,134 @@ app.get(
               )
             );
           })
-          .map(account => ({
-            id:
-              account.id,
+        .map(account => {
+  let secrets = null;
 
-            customerAccountId:
-              account.id,
+  if (account.adminSecrets) {
+    try {
+      secrets =
+        decryptJson(
+          account.adminSecrets
+        );
+    } catch (error) {
+      console.error(
+        "Free account secure data decrypt error:",
+        account.id,
+        error.message
+      );
+    }
+  }
 
-            submissionType:
-              "free",
+  const savedProfile =
+    account.adminProfile &&
+    typeof account.adminProfile ===
+      "object"
+      ? account.adminProfile
+      : {};
 
-            accountOnly:
-              true,
+  return {
+    id:
+      account.id,
 
-            profile: {
-              email:
-                account.email || "",
+    customerAccountId:
+      account.id,
 
-              firstName:
-                "",
+    submissionType:
+      "free",
 
-              lastName:
-                "",
+    accountOnly:
+      true,
 
-              phone:
-                "",
+    profile: {
+      profileName:
+        savedProfile.profileName ||
+        "",
 
-              address:
-                "",
+      email:
+        savedProfile.email ||
+        account.email ||
+        "",
 
-              address2:
-                "",
+      firstName:
+        savedProfile.firstName ||
+        "",
 
-              city:
-                "",
+      lastName:
+        savedProfile.lastName ||
+        "",
 
-              state:
-                "",
+      phone:
+        savedProfile.phone ||
+        "",
 
-              zip:
-                ""
-            },
+      address:
+        savedProfile.address ||
+        "",
 
-            plan: {
-              name:
-                "No Paid Membership",
+      address2:
+        savedProfile.address2 ||
+        "",
 
-              amount:
-                null,
+      country:
+        savedProfile.country ||
+        "",
 
-              profiles:
-                0
-            },
+      city:
+        savedProfile.city ||
+        "",
 
-            secrets:
-              null,
+      state:
+        savedProfile.state ||
+        "",
 
-            subscriptionStatus:
-              "none",
+      zip:
+        savedProfile.zip ||
+        ""
+    },
 
-            currentPeriodStart:
-              null,
+    plan: {
+      name:
+        "No Paid Membership",
 
-            currentPeriodEnd:
-              null,
+      amount:
+        null,
 
-            paidAt:
-              null,
+      profiles:
+        0
+    },
 
-            createdAt:
-              account.createdAt ||
-              null,
+    secrets:
+      secrets || null,
 
-            accountCreatedAt:
-              account.createdAt ||
-              null,
+    subscriptionStatus:
+      "none",
 
-            emailVerifiedAt:
-              account.emailVerifiedAt ||
-              null,
+    currentPeriodStart:
+      null,
 
-            disabled:
-              account.disabled ===
-              true
-          }));
+    currentPeriodEnd:
+      null,
+
+    paidAt:
+      null,
+
+    createdAt:
+      account.createdAt ||
+      null,
+
+    accountCreatedAt:
+      account.createdAt ||
+      null,
+
+    emailVerifiedAt:
+      account.emailVerifiedAt ||
+      null,
+
+    disabled:
+      account.disabled ===
+      true
+  };
+});
 
       return res.json(
         freeSubmissions
@@ -5350,29 +5413,72 @@ if (!customerAccountId) {
         };
       }
 
-      const now =
-        new Date();
+    const now =
+  new Date();
 
-      const startsAt =
-        active
+const existingDuration =
+  normalizeSpecialProfileDuration(
+    existingRecord
+      ?.durationType
+  );
+
+const wasActive =
+  existingRecord
+    ? specialProfileIsActive(
+        existingRecord
+      )
+    : false;
+
+const restartTimer =
+  active &&
+  (
+    !existingRecord ||
+    !wasActive ||
+    existingDuration !==
+      durationType
+  );
+
+const startsAt =
+  active
+    ? (
+        restartTimer
           ? now.toISOString()
           : (
               existingRecord
                 ?.startsAt ||
-              null
-            );
+              now.toISOString()
+            )
+      )
+    : (
+        existingRecord
+          ?.startsAt ||
+        null
+      );
 
-      const expiresAt =
-        active
+const expiresAt =
+  active
+    ? (
+        restartTimer
           ? specialProfileExpiresAt(
               durationType,
               now
             )
           : (
               existingRecord
-                ?.expiresAt ||
-              null
-            );
+                ?.expiresAt ??
+              specialProfileExpiresAt(
+                durationType,
+                existingRecord
+                  ?.startsAt ||
+                now
+              )
+            )
+      )
+    : (
+        existingRecord
+          ?.expiresAt ||
+        null
+      );
 
       const record = {
         id:
@@ -5723,9 +5829,472 @@ app.put(
   }
 );
 
+app.delete(
+  "/api/admin/submissions/:id/special-profiles/:profileType",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const profileType =
+        normalizeSpecialProfileType(
+          req.params.profileType
+        );
+
+      if (!profileType) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid special profile type."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const order =
+        paidRecords.find(
+          item =>
+            String(
+              item.id
+            ) === id
+        );
+
+      let customerAccountId =
+        order?.customerAccountId ||
+        null;
+
+      if (!customerAccountId) {
+        const accounts =
+          await getCustomerAccounts();
+
+        const account =
+          accounts.find(
+            item =>
+              String(
+                item.id
+              ) === id
+          );
+
+        if (account) {
+          customerAccountId =
+            account.id;
+        }
+      }
+
+      if (!customerAccountId) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account could not be found."
+          });
+      }
+
+      const records =
+        await getSpecialProfiles();
+
+      const existingIndex =
+        records.findIndex(
+          record =>
+            record.customerAccountId ===
+              customerAccountId &&
+            normalizeSpecialProfileType(
+              record.profileType
+            ) === profileType
+        );
+
+      if (existingIndex < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Special profile could not be found."
+          });
+      }
+
+      records.splice(
+        existingIndex,
+        1
+      );
+
+      await saveSpecialProfiles(
+        records
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          `${specialProfileLabel(
+            profileType
+          )} removed successfully.`
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin special profile remove error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to remove the special profile."
+        });
+    }
+  }
+);
+
 /* -------------------------------------------------------
    ADMIN SUBMISSIONS
 ------------------------------------------------------- */
+app.put(
+  "/api/admin/submissions/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      if (!id) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Submission ID is required."
+          });
+      }
+
+      const profileBody =
+        req.body?.profile &&
+        typeof req.body.profile ===
+          "object"
+          ? req.body.profile
+          : {};
+
+      const secretsBody =
+        req.body?.secrets &&
+        typeof req.body.secrets ===
+          "object"
+          ? req.body.secrets
+          : {};
+
+      const profile =
+        sanitizeProfile(
+          profileBody
+        );
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const paidIndex =
+        paidRecords.findIndex(
+          item =>
+            String(
+              item.id
+            ) === id
+        );
+
+      /*
+        PAID SUBMISSION
+      */
+
+      if (paidIndex >= 0) {
+        const record =
+          paidRecords[
+            paidIndex
+          ];
+
+        const existingSecrets =
+          (
+            await loadEncryptedPackage(
+              id
+            )
+          ) || {};
+
+        const submittedSecrets =
+          sanitizeSecrets(
+            secretsBody
+          );
+
+        const nextSecrets = {
+          ...existingSecrets,
+
+          acoEmail:
+            submittedSecrets
+              .acoEmail,
+
+          cardLabel:
+            submittedSecrets
+              .cardLabel,
+
+          cardholder:
+            submittedSecrets
+              .cardholder
+        };
+
+        if (
+          submittedSecrets
+            .acoPassword
+        ) {
+          nextSecrets.acoPassword =
+            submittedSecrets
+              .acoPassword;
+        }
+
+        if (
+          submittedSecrets
+            .acoCardNumber
+        ) {
+          nextSecrets.acoCardNumber =
+            submittedSecrets
+              .acoCardNumber;
+        }
+
+        if (
+          submittedSecrets
+            .expMonth
+        ) {
+          nextSecrets.expMonth =
+            submittedSecrets
+              .expMonth;
+        }
+
+        if (
+          submittedSecrets
+            .expYear
+        ) {
+          nextSecrets.expYear =
+            submittedSecrets
+              .expYear;
+        }
+
+        if (
+          submittedSecrets
+            .securityCode
+        ) {
+          nextSecrets.securityCode =
+            submittedSecrets
+              .securityCode;
+        }
+
+        record.profile =
+          profile;
+
+        record.adminUpdatedAt =
+          new Date()
+            .toISOString();
+
+        paidRecords[
+          paidIndex
+        ] = record;
+
+        await writeJson(
+          PAID_FILE,
+          paidRecords
+        );
+
+        await saveEncryptedPackage(
+          id,
+          nextSecrets
+        );
+
+        return res.json({
+          ok: true,
+
+          message:
+            "Customer information updated."
+        });
+      }
+
+      /*
+        FREE CUSTOMER ACCOUNT
+      */
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const accountIndex =
+        accounts.findIndex(
+          account =>
+            String(
+              account.id
+            ) === id
+        );
+
+      if (accountIndex < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account could not be found."
+          });
+      }
+
+      const account =
+        accounts[
+          accountIndex
+        ];
+
+      let existingSecrets = {};
+
+      if (account.adminSecrets) {
+        try {
+          existingSecrets =
+            decryptJson(
+              account.adminSecrets
+            ) || {};
+        } catch (error) {
+          console.error(
+            "Free account secure data decrypt error:",
+            account.id,
+            error.message
+          );
+        }
+      }
+
+      const submittedSecrets =
+        sanitizeSecrets(
+          secretsBody
+        );
+
+      const nextSecrets = {
+        ...existingSecrets,
+
+        acoEmail:
+          submittedSecrets
+            .acoEmail,
+
+        cardLabel:
+          submittedSecrets
+            .cardLabel,
+
+        cardholder:
+          submittedSecrets
+            .cardholder
+      };
+
+      if (
+        submittedSecrets
+          .acoPassword
+      ) {
+        nextSecrets.acoPassword =
+          submittedSecrets
+            .acoPassword;
+      }
+
+      if (
+        submittedSecrets
+          .acoCardNumber
+      ) {
+        nextSecrets.acoCardNumber =
+          submittedSecrets
+            .acoCardNumber;
+      }
+
+      if (
+        submittedSecrets
+          .expMonth
+      ) {
+        nextSecrets.expMonth =
+          submittedSecrets
+            .expMonth;
+      }
+
+      if (
+        submittedSecrets
+          .expYear
+      ) {
+        nextSecrets.expYear =
+          submittedSecrets
+            .expYear;
+      }
+
+      if (
+        submittedSecrets
+          .securityCode
+      ) {
+        nextSecrets.securityCode =
+          submittedSecrets
+            .securityCode;
+      }
+
+      account.adminProfile = {
+        ...(account.adminProfile ||
+          {}),
+
+        ...profile
+      };
+
+      account.adminSecrets =
+        encryptJson(
+          nextSecrets
+        );
+
+      account.adminUpdatedAt =
+        new Date()
+          .toISOString();
+
+      account.updatedAt =
+        account.adminUpdatedAt;
+
+      accounts[
+        accountIndex
+      ] = account;
+
+      await saveCustomerAccounts(
+        accounts
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          "Customer information updated."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin submission update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update customer information."
+        });
+    }
+  }
+);
+
 
 app.delete(
   "/api/admin/submissions/:id",
