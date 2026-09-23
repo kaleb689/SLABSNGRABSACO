@@ -3310,6 +3310,81 @@ function safeRetailerProfile(
   };
 }
 
+function adminRetailerProfile(
+  record,
+  allowance
+) {
+  let credentials =
+    emptyRetailerCredentials();
+
+  try {
+    if (record?.credentials) {
+      credentials =
+        normalizeRetailerCredentials(
+          decryptJson(
+            record.credentials
+          )
+        );
+    }
+  } catch (error) {
+    console.error(
+      "Admin retailer profile decrypt error:",
+      error.message
+    );
+  }
+
+  const retailers = {};
+
+  for (
+    const retailer of
+    RETAILER_KEYS
+  ) {
+    const saved =
+      credentials[retailer] || {
+        username: "",
+        password: ""
+      };
+
+    retailers[retailer] = {
+      username:
+        saved.username || "",
+
+      password:
+        saved.password || "",
+
+      passwordConfigured:
+        Boolean(
+          saved.password
+        )
+    };
+  }
+
+  return {
+    slot:
+      Number(record.slot),
+
+    profileName:
+      clean(
+        record.profileName,
+        80
+      ),
+
+    locked:
+      Number(record.slot) >
+      allowance,
+
+    retailers,
+
+    createdAt:
+      record.createdAt ||
+      null,
+
+    updatedAt:
+      record.updatedAt ||
+      null
+  };
+}
+
 /* -------------------------------------------------------
    RETAILER PROFILE ROUTES
 ------------------------------------------------------- */
@@ -3834,26 +3909,11 @@ app.post(
    ADMIN UPDATE SUBMISSION
 ------------------------------------------------------- */
 
-app.put(
-  "/api/admin/submissions/:id",
+app.get(
+  "/api/admin/submissions",
   requireAdmin,
   async (req, res) => {
     try {
-      const id =
-        clean(
-          req.params.id,
-          150
-        );
-
-      if (!id) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Submission ID is required."
-          });
-      }
-
       const paid =
         await readJson(
           PAID_FILE,
@@ -3865,321 +3925,119 @@ app.put(
           ? paid
           : [];
 
-      const record =
-        records.find(
-          item =>
-            String(
-              item.id
-            ) === id
-        );
+      const result = [];
 
-      if (!record) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Submission could not be found."
-          });
-      }
-
-      const profileBody =
-        req.body?.profile &&
-        typeof req.body.profile ===
-          "object"
-          ? req.body.profile
-          : {};
-
-      const nextProfile = {
-        ...(record.profile || {})
-      };
-
-      const editableProfileFields = [
-        ["profileName", 300],
-        ["firstName", 100],
-        ["lastName", 100],
-        ["email", 200],
-        ["phone", 50],
-        ["address", 300],
-        ["address2", 300],
-        ["country", 100],
-        ["state", 100],
-        ["city", 100],
-        ["zip", 30]
-      ];
+      let paidChanged =
+        false;
 
       for (
-        const [
-          key,
-          max
-        ] of editableProfileFields
+        const record of records
       ) {
+
+        /*
+          Refresh Stripe subscription information
+          before returning the admin dashboard.
+
+          This keeps:
+          - active / inactive status
+          - current period start
+          - current period end
+          - cancel state
+          - upgraded plan
+          synchronized with Stripe.
+        */
+
         if (
-          Object.prototype
-            .hasOwnProperty.call(
-              profileBody,
-              key
-            )
+          record
+            .stripeSubscriptionId
         ) {
-          nextProfile[key] =
-            clean(
-              profileBody[key],
-              max
+          try {
+            const subscription =
+              await stripe
+                .subscriptions
+                .retrieve(
+                  record
+                    .stripeSubscriptionId
+                );
+
+            await applySubscriptionInfo(
+              record,
+              subscription
             );
-        }
-      }
 
-      if (
-        !validProfile(
-          nextProfile
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Please complete all required customer and shipping information."
-          });
-      }
+            record
+              .subscriptionUpdatedAt =
+              new Date()
+                .toISOString();
 
-      let existingSecrets = {};
+            paidChanged =
+              true;
 
-      try {
-        const encrypted =
-          await readJson(
-            path.join(
-              SECRET_DIR,
-              `${record.id}.encrypted.json`
-            ),
-            null
-          );
-
-        if (encrypted) {
-          existingSecrets =
-            decryptJson(
-              encrypted
+          } catch (error) {
+            console.error(
+              "Admin subscription refresh failed:",
+              record.id,
+              error.message
             );
+          }
         }
-      } catch (error) {
-        console.error(
-          "Admin secure package decrypt error:",
-          error.message
-        );
 
-        return res
-          .status(500)
-          .json({
-            error:
-              "Unable to securely load this submission."
-          });
-      }
 
-      const secretsBody =
-        req.body?.secrets &&
-        typeof req.body.secrets ===
-          "object"
-          ? req.body.secrets
-          : {};
+        let secrets =
+          null;
 
-      const nextSecrets = {
-        ...existingSecrets
-      };
+        try {
+          const encrypted =
+            await readJson(
+              path.join(
+                SECRET_DIR,
+                `${record.id}.encrypted.json`
+              ),
+              null
+            );
 
-      if (
-        Object.prototype
-          .hasOwnProperty.call(
-            secretsBody,
-            "acoEmail"
-          )
-      ) {
-        const value =
-          clean(
-            secretsBody.acoEmail,
-            200
+          if (encrypted) {
+            secrets =
+              decryptJson(
+                encrypted
+              );
+          }
+
+        } catch (error) {
+          console.error(
+            "Admin secure package decrypt error:",
+            record.id,
+            error.message
           );
-
-        if (value) {
-          nextSecrets.acoEmail =
-            value;
         }
+
+
+        result.push({
+          ...record,
+
+          secrets:
+            secrets || null
+        });
       }
 
-      const replacementAcoPassword =
-        String(
-          secretsBody
-            .acoPassword || ""
+
+      if (
+        paidChanged
+      ) {
+        await writeJson(
+          PAID_FILE,
+          records
         );
-
-      if (
-        replacementAcoPassword
-      ) {
-        if (
-          replacementAcoPassword
-            .length > 300
-        ) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "IMAP / Host App Password is too long."
-            });
-        }
-
-        nextSecrets.acoPassword =
-          replacementAcoPassword;
       }
 
-      if (
-        Object.prototype
-          .hasOwnProperty.call(
-            secretsBody,
-            "cardLabel"
-          )
-      ) {
-        const value =
-          clean(
-            secretsBody.cardLabel,
-            100
-          );
 
-        if (value) {
-          nextSecrets.cardLabel =
-            value;
-        }
-      }
-
-      if (
-        Object.prototype
-          .hasOwnProperty.call(
-            secretsBody,
-            "cardholder"
-          )
-      ) {
-        const value =
-          clean(
-            secretsBody.cardholder,
-            150
-          );
-
-        if (value) {
-          nextSecrets.cardholder =
-            value;
-        }
-      }
-
-      const replacementCardNumber =
-        clean(
-          secretsBody
-            .acoCardNumber,
-          30
-        ).replace(
-          /[^\d]/g,
-          ""
-        );
-
-      if (
-        replacementCardNumber
-      ) {
-        if (
-          !/^\d{12,19}$/.test(
-            replacementCardNumber
-          )
-        ) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Enter a valid replacement card number."
-            });
-        }
-
-        nextSecrets.acoCardNumber =
-          replacementCardNumber;
-      }
-
-      const replacementMonth =
-        clean(
-          secretsBody.expMonth,
-          2
-        );
-
-      const replacementYear =
-        clean(
-          secretsBody.expYear,
-          4
-        );
-
-      if (
-        replacementMonth ||
-        replacementYear
-      ) {
-        if (
-          !replacementMonth ||
-          !replacementYear
-        ) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Enter both the replacement expiration month and year."
-            });
-        }
-
-        nextSecrets.expMonth =
-          replacementMonth;
-
-        nextSecrets.expYear =
-          replacementYear;
-      }
-
-      const replacementSecurityCode =
-        clean(
-          secretsBody.securityCode,
-          300
-        );
-
-      if (
-        replacementSecurityCode
-      ) {
-        nextSecrets.securityCode =
-          replacementSecurityCode;
-      }
-
-      const updatedAt =
-        new Date()
-          .toISOString();
-
-      record.profile =
-        nextProfile;
-
-      record.updatedAt =
-        updatedAt;
-
-      record.adminUpdatedAt =
-        updatedAt;
-
-      record.updatedBy =
-        "admin";
-
-      await saveEncryptedPackage(
-        record.id,
-        nextSecrets
+      return res.json(
+        result
       );
-
-      await writeJson(
-        PAID_FILE,
-        records
-      );
-
-      return res.json({
-        ok: true,
-
-        message:
-          "Customer submission updated successfully."
-      });
 
     } catch (error) {
       console.error(
-        "Admin submission update error:",
+        "Admin submissions error:",
         error
       );
 
@@ -4187,7 +4045,7 @@ app.put(
         .status(500)
         .json({
           error:
-            "Unable to update this submission."
+            "Unable to load submissions."
         });
     }
   }
@@ -4268,13 +4126,13 @@ app.get(
           );
 
       const profiles =
-        owned.map(
-          record =>
-            safeRetailerProfile(
-              record,
-              allowance
-            )
-        );
+  owned.map(
+    record =>
+      adminRetailerProfile(
+        record,
+        allowance
+      )
+  );
 
       return res.json({
         ok: true,
@@ -4563,79 +4421,6 @@ app.put(
 /* -------------------------------------------------------
    ADMIN SUBMISSIONS
 ------------------------------------------------------- */
-
-app.get(
-  "/api/admin/submissions",
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const paid =
-        await readJson(
-          PAID_FILE,
-          []
-        );
-
-      const result = [];
-
-      for (
-        const record of
-        Array.isArray(paid)
-          ? paid
-          : []
-      ) {
-        let secrets = null;
-
-        try {
-          const encrypted =
-            await readJson(
-              path.join(
-                SECRET_DIR,
-                `${record.id}.encrypted.json`
-              ),
-              null
-            );
-
-          if (encrypted) {
-            secrets =
-              decryptJson(
-                encrypted
-              );
-          }
-        } catch (error) {
-          console.error(
-            "Admin secure package decrypt error:",
-            record.id,
-            error.message
-          );
-        }
-
-        result.push({
-          ...record,
-
-          secrets:
-            secrets || null
-        });
-      }
-
-      return res.json(
-        result
-      );
-
-    } catch (error) {
-      console.error(
-        "Admin submissions error:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          error:
-            "Unable to load submissions."
-        });
-    }
-  }
-);
 
 app.delete(
   "/api/admin/submissions/:id",
