@@ -1418,6 +1418,10 @@ const submissionCount =
     "submissionCount"
   );
 
+  const submissionTypeFilter =
+  document.getElementById(
+    "submissionTypeFilter"
+  );
 
 /* =========================================
    HELPERS
@@ -3949,17 +3953,28 @@ if (editButton) {
 
 async function load() {
 
-  const response =
-    await fetch(
-      "/api/admin/submissions",
-      {
-        credentials:
-          "same-origin",
+ const submissionType =
+  submissionTypeFilter?.value ===
+  "free"
+    ? "free"
+    : "paid";
 
-        cache:
-          "no-store"
-      }
-    );
+const endpoint =
+  submissionType === "free"
+    ? "/api/admin/free-submissions"
+    : "/api/admin/submissions";
+
+const response =
+  await fetch(
+    endpoint,
+    {
+      credentials:
+        "same-origin",
+
+      cache:
+        "no-store"
+    }
+  );
 
 
   if (!response.ok) {
