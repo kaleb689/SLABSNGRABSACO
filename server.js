@@ -4182,6 +4182,186 @@ function adminRetailerProfile(
 ------------------------------------------------------- */
 
 app.get(
+  "/api/account/free-memberships",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const memberships =
+        await getFreeMemberships();
+
+      const assignments =
+        await getFreeAssignments();
+
+      let assignmentsChanged =
+        false;
+
+      const now =
+        new Date();
+
+      /*
+        Expire free assignments automatically
+        before returning customer data.
+      */
+
+      for (
+        const assignment of
+        assignments
+      ) {
+        if (
+          assignment.active !== true ||
+          !assignment.expiresAt
+        ) {
+          continue;
+        }
+
+        const expiresAt =
+          new Date(
+            assignment.expiresAt
+          );
+
+        if (
+          !Number.isNaN(
+            expiresAt.getTime()
+          ) &&
+          expiresAt.getTime() <=
+            now.getTime()
+        ) {
+          assignment.active =
+            false;
+
+          assignment.endedAt =
+            now.toISOString();
+
+          assignment.updatedAt =
+            now.toISOString();
+
+          assignment.endReason =
+            "expired";
+
+          assignmentsChanged =
+            true;
+        }
+      }
+
+      if (assignmentsChanged) {
+        await saveFreeAssignments(
+          assignments
+        );
+      }
+
+      const customerAssignments =
+        assignments.filter(
+          assignment =>
+            assignment
+              .customerAccountId ===
+              req.customerAccount.id &&
+            freeAssignmentIsActive(
+              assignment
+            )
+        );
+
+      const result =
+        customerAssignments
+          .map(assignment => {
+            const membership =
+              memberships.find(
+                item =>
+                  item.id ===
+                  assignment
+                    .freeMembershipId
+              );
+
+            if (!membership) {
+              return null;
+            }
+
+            return {
+              id:
+                membership.id,
+
+              assignmentId:
+                assignment.id,
+
+              profileType:
+                "free",
+
+              profileName:
+                membership.profileName ||
+                "FREE MEMBERSHIP",
+
+              status:
+                "active",
+
+              active:
+                true,
+
+              startsAt:
+                assignment.startsAt ||
+                null,
+
+              expiresAt:
+                assignment.expiresAt ||
+                null,
+
+              durationType:
+                assignment.durationType ||
+                null,
+
+              durationLabel:
+                specialProfileDurationLabel(
+                  assignment.durationType
+                ),
+
+              daysRemaining:
+                freeAssignmentDaysRemaining(
+                  assignment
+                ),
+
+              paidSubmissionId:
+                assignment
+                  .paidSubmissionId ||
+                null,
+
+              customerProfile:
+                assignment
+                  .customerProfile ||
+                null,
+
+              createdAt:
+                membership.createdAt ||
+                null,
+
+              updatedAt:
+                membership.updatedAt ||
+                null
+            };
+          })
+          .filter(Boolean);
+
+      return res.json({
+        ok: true,
+
+        memberships:
+          result
+      });
+
+    } catch (error) {
+      console.error(
+        "Customer free memberships error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load free memberships."
+        });
+    }
+  }
+);
+
+app.get(
   "/api/account/rented-memberships",
   requireCustomer,
   async (req, res) => {
@@ -4333,8 +4513,12 @@ app.get(
                 null,
 
               updatedAt:
-                membership.updatedAt ||
-                null
+  membership.updatedAt ||
+  null,
+
+customerProfile:
+  assignment.customerProfile ||
+  null
             };
           })
           .filter(Boolean);
