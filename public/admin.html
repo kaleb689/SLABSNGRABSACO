@@ -3048,6 +3048,260 @@ name="${escapeHtml(
   `;
 }
 
+  function specialProfileHtml(
+  orderId,
+  profileType,
+  profile = null
+) {
+  const type =
+    profileType === "rented"
+      ? "rented"
+      : "free";
+
+  const label =
+    type === "rented"
+      ? "RENTED PROFILE"
+      : "FREE PROFILE";
+
+  const retailers =
+    profile?.retailers || {};
+
+  const retailerBlocks =
+    ADMIN_RETAILERS
+      .map(retailer => {
+        const saved =
+          retailers[
+            retailer.key
+          ] || {};
+
+        return `
+          <div class="admin-retailer-block">
+
+            <h4>
+              ${escapeHtml(
+                retailer.name
+              )}
+            </h4>
+
+            <div class="admin-edit-field">
+
+              <label>
+                Email / Username
+              </label>
+
+              <input
+                name="${escapeHtml(
+                  retailer.key
+                )}_username"
+                value="${escapeHtml(
+                  saved.username || ""
+                )}"
+                autocomplete="off"
+              >
+
+            </div>
+
+            <div class="admin-edit-field">
+
+              <label>
+                Password
+              </label>
+
+              <input
+                type="text"
+                name="${escapeHtml(
+                  retailer.key
+                )}_password"
+                value="${escapeHtml(
+                  saved.password || ""
+                )}"
+                autocomplete="off"
+              >
+
+            </div>
+
+          </div>
+        `;
+      })
+      .join("");
+
+  const durationType =
+    profile?.durationType ||
+    "indefinite";
+
+  const active =
+    profile?.active === true;
+
+  const daysRemaining =
+    profile?.daysRemaining;
+
+  const statusText =
+    active
+      ? (
+          daysRemaining == null
+            ? "ACTIVE — INDEFINITE"
+            : `ACTIVE — ${daysRemaining} ${
+                daysRemaining === 1
+                  ? "DAY"
+                  : "DAYS"
+              } LEFT`
+        )
+      : "INACTIVE";
+
+  return `
+    <div class="admin-retailer-profile">
+
+      <div class="admin-retailer-profile-head">
+
+        <strong>
+          ${label}
+        </strong>
+
+        <span>
+          ${escapeHtml(
+            statusText
+          )}
+        </span>
+
+      </div>
+
+      <form
+        class="admin-special-profile-form"
+        data-order-id="${escapeHtml(
+          orderId
+        )}"
+        data-profile-type="${escapeHtml(
+          type
+        )}"
+      >
+
+        <div class="admin-edit-grid">
+
+          <div class="admin-edit-field">
+
+            <label>
+              Duration
+            </label>
+
+            <select
+              name="durationType"
+            >
+              <option
+                value="indefinite"
+                ${
+                  durationType ===
+                  "indefinite"
+                    ? "selected"
+                    : ""
+                }
+              >
+                INDEFINITELY
+              </option>
+
+              <option
+                value="1_drop"
+                ${
+                  durationType ===
+                  "1_drop"
+                    ? "selected"
+                    : ""
+                }
+              >
+                1 DROP
+              </option>
+
+              <option
+                value="1_week"
+                ${
+                  durationType ===
+                  "1_week"
+                    ? "selected"
+                    : ""
+                }
+              >
+                1 WEEK
+              </option>
+
+              <option
+                value="1_month"
+                ${
+                  durationType ===
+                  "1_month"
+                    ? "selected"
+                    : ""
+                }
+              >
+                1 MONTH
+              </option>
+
+            </select>
+
+          </div>
+
+          <div class="admin-edit-field">
+
+            <label>
+              Status
+            </label>
+
+            <select
+              name="active"
+            >
+              <option
+                value="true"
+                ${
+                  active
+                    ? "selected"
+                    : ""
+                }
+              >
+                ACTIVE
+              </option>
+
+              <option
+                value="false"
+                ${
+                  !active
+                    ? "selected"
+                    : ""
+                }
+              >
+                INACTIVE
+              </option>
+
+            </select>
+
+          </div>
+
+        </div>
+
+        <div class="admin-retailer-grid">
+
+          ${retailerBlocks}
+
+        </div>
+
+        <div class="admin-edit-actions">
+
+          <button
+            type="submit"
+            class="admin-save-button"
+          >
+            Save ${label}
+          </button>
+
+        </div>
+
+        <div
+          class="admin-edit-message"
+        ></div>
+
+      </form>
+
+    </div>
+  `;
+}
+  
 
 async function loadAdminRetailerProfiles(
   orderId
