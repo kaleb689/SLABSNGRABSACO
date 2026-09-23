@@ -59,6 +59,18 @@ const SPECIAL_PROFILES_FILE =
     "special-profiles.json"
   );
 
+const RENTED_MEMBERSHIPS_FILE =
+  path.join(
+    DATA_DIR,
+    "rented-memberships.json"
+  );
+
+const RENTAL_ASSIGNMENTS_FILE =
+  path.join(
+    DATA_DIR,
+    "rental-assignments.json"
+  );
+
 const SUCCESS_CHECKOUTS_FILE =
   path.join(
     DATA_DIR,
@@ -3302,6 +3314,141 @@ async function saveSpecialProfiles(
   );
 }
 
+async function getRentedMemberships() {
+  const records =
+    await readJson(
+      RENTED_MEMBERSHIPS_FILE,
+      []
+    );
+
+  return Array.isArray(records)
+    ? records
+    : [];
+}
+
+
+async function saveRentedMemberships(
+  records
+) {
+  await writeJson(
+    RENTED_MEMBERSHIPS_FILE,
+    records
+  );
+}
+
+
+async function getRentalAssignments() {
+  const records =
+    await readJson(
+      RENTAL_ASSIGNMENTS_FILE,
+      []
+    );
+
+  return Array.isArray(records)
+    ? records
+    : [];
+}
+
+
+async function saveRentalAssignments(
+  records
+) {
+  await writeJson(
+    RENTAL_ASSIGNMENTS_FILE,
+    records
+  );
+}
+
+
+function rentalAssignmentIsActive(
+  assignment
+) {
+  if (
+    assignment?.active !== true
+  ) {
+    return false;
+  }
+
+  if (!assignment?.expiresAt) {
+    return true;
+  }
+
+  const expiresAt =
+    new Date(
+      assignment.expiresAt
+    );
+
+  if (
+    Number.isNaN(
+      expiresAt.getTime()
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    expiresAt.getTime() >
+    Date.now()
+  );
+}
+
+
+function rentalAssignmentDaysRemaining(
+  assignment
+) {
+  if (
+    !rentalAssignmentIsActive(
+      assignment
+    )
+  ) {
+    return 0;
+  }
+
+  if (!assignment?.expiresAt) {
+    return null;
+  }
+
+  const expiresAt =
+    new Date(
+      assignment.expiresAt
+    );
+
+  const remaining =
+    expiresAt.getTime() -
+    Date.now();
+
+  return Math.max(
+    0,
+    Math.ceil(
+      remaining /
+      (
+        1000 *
+        60 *
+        60 *
+        24
+      )
+    )
+  );
+}
+
+
+function currentRentalAssignment(
+  assignments,
+  rentedMembershipId
+) {
+  return (
+    assignments.find(
+      assignment =>
+        assignment
+          .rentedMembershipId ===
+          rentedMembershipId &&
+        rentalAssignmentIsActive(
+          assignment
+        )
+    ) || null
+  );
+}
+
 function specialProfileLabel(
   profileType
 ) {
@@ -3886,6 +4033,187 @@ function adminRetailerProfile(
 /* -------------------------------------------------------
    RETAILER PROFILE ROUTES
 ------------------------------------------------------- */
+
+app.get(
+  "/api/account/rented-memberships",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const memberships =
+        await getRentedMemberships();
+
+      const assignments =
+        await getRentalAssignments();
+
+      let assignmentsChanged =
+        false;
+
+      const now =
+        new Date();
+
+      /*
+        Expire assignments automatically
+        before returning customer data.
+      */
+
+      for (
+        const assignment of
+        assignments
+      ) {
+        if (
+          assignment.active !== true ||
+          !assignment.expiresAt
+        ) {
+          continue;
+        }
+
+        const expiresAt =
+          new Date(
+            assignment.expiresAt
+          );
+
+        if (
+          !Number.isNaN(
+            expiresAt.getTime()
+          ) &&
+          expiresAt.getTime() <=
+            now.getTime()
+        ) {
+          assignment.active =
+            false;
+
+          assignment.endedAt =
+            now.toISOString();
+
+          assignment.updatedAt =
+            now.toISOString();
+
+          assignment.endReason =
+            "expired";
+
+          assignmentsChanged =
+            true;
+        }
+      }
+
+      if (assignmentsChanged) {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      const customerAssignments =
+        assignments.filter(
+          assignment =>
+            assignment
+              .customerAccountId ===
+              req.customerAccount.id &&
+            rentalAssignmentIsActive(
+              assignment
+            )
+        );
+
+      const result =
+        customerAssignments
+          .map(assignment => {
+            const membership =
+              memberships.find(
+                item =>
+                  item.id ===
+                  assignment
+                    .rentedMembershipId
+              );
+
+            if (!membership) {
+              return null;
+            }
+            
+
+            return {
+              id:
+                membership.id,
+
+              assignmentId:
+                assignment.id,
+
+              profileType:
+                "rented",
+
+              profileName:
+                membership.profileName ||
+                "RENTED MEMBERSHIP",
+
+              status:
+                "active",
+
+              active:
+                true,
+
+              startsAt:
+                assignment.startsAt ||
+                null,
+
+              expiresAt:
+                assignment.expiresAt ||
+                null,
+
+              durationType:
+                assignment.durationType ||
+                null,
+
+              durationLabel:
+                specialProfileDurationLabel(
+                  assignment.durationType
+                ),
+
+              daysRemaining:
+                rentalAssignmentDaysRemaining(
+                  assignment
+                ),
+
+              paidSubmissionId:
+                assignment
+                  .paidSubmissionId ||
+                null,
+
+              stripeSubscriptionId:
+                assignment
+                  .stripeSubscriptionId ||
+                null,
+
+              createdAt:
+                membership.createdAt ||
+                null,
+
+              updatedAt:
+                membership.updatedAt ||
+                null
+            };
+          })
+          .filter(Boolean);
+
+      return res.json({
+        ok: true,
+
+        memberships:
+          result
+      });
+
+    } catch (error) {
+      console.error(
+        "Customer rented memberships error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load rented memberships."
+        });
+    }
+  }
+);
 
 app.get(
   "/api/account/retailer-profiles",
@@ -5258,6 +5586,990 @@ app.get(
         .json({
           error:
             "Unable to load special profiles."
+        });
+    }
+  }
+);
+
+/* -------------------------------------------------------
+   ADMIN RENTED MEMBERSHIPS
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/rented-memberships",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const memberships =
+        await getRentedMemberships();
+
+      const assignments =
+        await getRentalAssignments();
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      let assignmentsChanged =
+        false;
+
+      const now =
+        new Date();
+
+      /*
+        Automatically expire rental assignments
+        whose end date has passed.
+      */
+
+      for (
+        const assignment of
+        assignments
+      ) {
+        if (
+          assignment.active !== true ||
+          !assignment.expiresAt
+        ) {
+          continue;
+        }
+
+        const expiresAt =
+          new Date(
+            assignment.expiresAt
+          );
+
+        if (
+          !Number.isNaN(
+            expiresAt.getTime()
+          ) &&
+          expiresAt.getTime() <=
+            now.getTime()
+        ) {
+          assignment.active =
+            false;
+
+          assignment.endedAt =
+            now.toISOString();
+
+          assignment.endReason =
+            "expired";
+
+          assignmentsChanged =
+            true;
+        }
+      }
+
+      if (assignmentsChanged) {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      /*
+        Only ACTIVE PAID SUBSCRIPTIONS may
+        receive a rented membership.
+      */
+
+      const paidCustomerMap =
+        new Map();
+
+      for (
+        const record of
+        paidRecords
+      ) {
+        if (
+          !record.customerAccountId ||
+          !subscriptionAllowsProfiles(
+            record
+          )
+        ) {
+          continue;
+        }
+
+        const existing =
+          paidCustomerMap.get(
+            record.customerAccountId
+          );
+
+        if (!existing) {
+          paidCustomerMap.set(
+            record.customerAccountId,
+            record
+          );
+        }
+      }
+
+      const paidCustomers =
+        Array.from(
+          paidCustomerMap.values()
+        ).map(record => {
+          const account =
+            accounts.find(
+              item =>
+                item.id ===
+                record.customerAccountId
+            );
+
+          const savedProfile =
+            account?.adminProfile &&
+            typeof account.adminProfile ===
+              "object"
+              ? account.adminProfile
+              : {};
+
+          const paidProfile =
+            record.profile &&
+            typeof record.profile ===
+              "object"
+              ? record.profile
+              : {};
+
+          const customerName =
+            [
+              savedProfile.firstName ||
+                paidProfile.firstName ||
+                "",
+              savedProfile.lastName ||
+                paidProfile.lastName ||
+                ""
+            ]
+              .filter(Boolean)
+              .join(" ") ||
+            savedProfile.profileName ||
+            paidProfile.profileName ||
+            "Customer";
+
+          return {
+            customerAccountId:
+              record.customerAccountId,
+
+            paidSubmissionId:
+              record.id,
+
+            name:
+              customerName,
+
+            email:
+              account?.email ||
+              savedProfile.email ||
+              paidProfile.email ||
+              "",
+
+            subscriptionStatus:
+              record.subscriptionStatus ||
+              null,
+
+            currentPeriodEnd:
+              record.currentPeriodEnd ||
+              null
+          };
+        });
+
+      const result =
+        memberships.map(
+          membership => {
+            const assignment =
+              currentRentalAssignment(
+                assignments,
+                membership.id
+              );
+
+            let assignedCustomer =
+              null;
+
+            if (assignment) {
+              const account =
+                accounts.find(
+                  item =>
+                    item.id ===
+                    assignment
+                      .customerAccountId
+                );
+
+              const paidRecord =
+                paidRecords.find(
+                  item =>
+                    item.customerAccountId ===
+                      assignment
+                        .customerAccountId &&
+                    subscriptionAllowsProfiles(
+                      item
+                    )
+                );
+
+              const savedProfile =
+                account?.adminProfile &&
+                typeof account.adminProfile ===
+                  "object"
+                  ? account.adminProfile
+                  : {};
+
+              const paidProfile =
+                paidRecord?.profile &&
+                typeof paidRecord.profile ===
+                  "object"
+                  ? paidRecord.profile
+                  : {};
+
+              assignedCustomer = {
+                customerAccountId:
+                  assignment
+                    .customerAccountId,
+
+                paidSubmissionId:
+                  paidRecord?.id ||
+                  null,
+
+                name:
+                  [
+                    savedProfile.firstName ||
+                      paidProfile.firstName ||
+                      "",
+                    savedProfile.lastName ||
+                      paidProfile.lastName ||
+                      ""
+                  ]
+                    .filter(Boolean)
+                    .join(" ") ||
+                  savedProfile.profileName ||
+                  paidProfile.profileName ||
+                  "Customer",
+
+                email:
+                  account?.email ||
+                  savedProfile.email ||
+                  paidProfile.email ||
+                  ""
+              };
+            }
+
+
+            return {
+              id:
+                membership.id,
+
+              profileName:
+                membership.profileName ||
+                "RENTED MEMBERSHIP",
+
+              notes:
+                membership.notes ||
+                "",
+
+              createdAt:
+                membership.createdAt ||
+                null,
+
+              updatedAt:
+                membership.updatedAt ||
+                null,
+
+              active:
+                Boolean(
+                  assignment
+                ),
+
+              status:
+                assignment
+                  ? "active"
+                  : "inactive",
+
+              assignment:
+                assignment
+                  ? {
+                      id:
+                        assignment.id,
+
+                      customerAccountId:
+                        assignment
+                          .customerAccountId,
+
+                      startsAt:
+                        assignment.startsAt ||
+                        null,
+
+                      expiresAt:
+                        assignment.expiresAt ||
+                        null,
+
+                      durationType:
+                        assignment.durationType ||
+                        null,
+
+                      daysRemaining:
+                        rentalAssignmentDaysRemaining(
+                          assignment
+                        ),
+
+                      stripeSubscriptionId:
+                        assignment
+                          .stripeSubscriptionId ||
+                        null
+                    }
+                  : null,
+
+              assignedCustomer,
+
+              retailers
+            };
+          }
+        );
+
+      return res.json({
+        ok: true,
+
+        memberships:
+          result,
+
+        paidCustomers
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin rented membership list error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load rented memberships."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/rented-memberships",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const profileName =
+        clean(
+          req.body?.profileName,
+          100
+        ) ||
+        "RENTED MEMBERSHIP";
+
+      const notes =
+        clean(
+          req.body?.notes,
+          500
+        );
+
+      const submitted =
+        req.body?.retailers &&
+        typeof req.body.retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      const credentials =
+        emptyRetailerCredentials();
+
+      for (
+        const retailer of
+        RETAILER_KEYS
+      ) {
+        const submittedRetailer =
+          submitted[retailer] &&
+          typeof submitted[
+            retailer
+          ] === "object"
+            ? submitted[
+                retailer
+              ]
+            : {};
+
+        const username =
+          clean(
+            submittedRetailer
+              .username,
+            254
+          );
+
+        const password =
+          String(
+            submittedRetailer
+              .password ||
+            ""
+          );
+
+        if (
+          password.length >
+          512
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "A retailer password is too long."
+            });
+        }
+
+        credentials[
+          retailer
+        ] = {
+          username,
+          password
+        };
+      }
+
+      const memberships =
+        await getRentedMemberships();
+
+      const now =
+        new Date()
+          .toISOString();
+
+      const record = {
+        id:
+          crypto.randomUUID(),
+
+        profileName,
+
+        notes,
+
+        credentials:
+          encryptJson(
+            credentials
+          ),
+
+        createdAt:
+          now,
+
+        updatedAt:
+          now
+      };
+
+      memberships.push(
+        record
+      );
+
+      await saveRentedMemberships(
+        memberships
+      );
+
+      return res.json({
+        ok: true,
+
+        id:
+          record.id,
+
+        message:
+          "Rented membership created successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin rented membership create error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to create rented membership."
+        });
+    }
+  }
+);
+
+
+app.put(
+  "/api/admin/rented-memberships/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const memberships =
+        await getRentedMemberships();
+
+      const index =
+        memberships.findIndex(
+          membership =>
+            String(
+              membership.id
+            ) === id
+        );
+
+      if (index < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Rented membership could not be found."
+          });
+      }
+
+      const existing =
+        memberships[
+          index
+        ];
+
+      const profileName =
+        clean(
+          req.body?.profileName,
+          100
+        ) ||
+        existing.profileName ||
+        "RENTED MEMBERSHIP";
+
+      const notes =
+        clean(
+          req.body?.notes,
+          500
+        );
+
+      let existingCredentials =
+        emptyRetailerCredentials();
+
+      try {
+        if (
+          existing.credentials
+        ) {
+          existingCredentials =
+            normalizeRetailerCredentials(
+              decryptJson(
+                existing.credentials
+              )
+            );
+        }
+      } catch (error) {
+        console.error(
+          "Existing rented membership decrypt error:",
+          error.message
+        );
+      }
+
+      const submitted =
+        req.body?.retailers &&
+        typeof req.body.retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      const credentials =
+        emptyRetailerCredentials();
+
+      for (
+        const retailer of
+        RETAILER_KEYS
+      ) {
+        const submittedRetailer =
+          submitted[retailer] &&
+          typeof submitted[
+            retailer
+          ] === "object"
+            ? submitted[
+                retailer
+              ]
+            : {};
+
+        const username =
+          clean(
+            submittedRetailer
+              .username,
+            254
+          );
+
+        const password =
+          String(
+            submittedRetailer
+              .password ||
+            ""
+          );
+
+        if (
+          password.length >
+          512
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "A retailer password is too long."
+            });
+        }
+
+        credentials[
+          retailer
+        ] = {
+          username,
+
+          password:
+            password ||
+            existingCredentials[
+              retailer
+            ]?.password ||
+            ""
+        };
+      }
+
+      memberships[
+        index
+      ] = {
+        ...existing,
+
+        profileName,
+
+        notes,
+
+        credentials:
+          encryptJson(
+            credentials
+          ),
+
+        updatedAt:
+          new Date()
+            .toISOString()
+      };
+
+      await saveRentedMemberships(
+        memberships
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          "Rented membership updated successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin rented membership update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update rented membership."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/rented-memberships/:id/assign",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const customerAccountId =
+        clean(
+          req.body
+            ?.customerAccountId,
+          150
+        );
+
+      const durationType =
+        normalizeSpecialProfileDuration(
+          req.body?.durationType
+        );
+
+      if (
+        !customerAccountId
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose a paid customer."
+          });
+      }
+
+      if (!durationType) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose a valid rental duration."
+          });
+      }
+
+      const memberships =
+        await getRentedMemberships();
+
+      const membership =
+        memberships.find(
+          item =>
+            String(
+              item.id
+            ) === id
+        );
+
+      if (!membership) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Rented membership could not be found."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const paidRecord =
+        paidRecords.find(
+          record =>
+            record.customerAccountId ===
+              customerAccountId &&
+            subscriptionAllowsProfiles(
+              record
+            )
+        );
+
+      if (!paidRecord) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "Rented memberships can only be assigned to an active paid subscription."
+          });
+      }
+
+      const assignments =
+        await getRentalAssignments();
+
+      const existingActive =
+        currentRentalAssignment(
+          assignments,
+          id
+        );
+
+      if (
+        existingActive &&
+        existingActive
+          .customerAccountId !==
+          customerAccountId
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This rented membership is already assigned to another customer."
+          });
+      }
+
+      const now =
+        new Date();
+
+      const startsAt =
+        existingActive
+          ?.startsAt ||
+        now.toISOString();
+
+      const expiresAt =
+        specialProfileExpiresAt(
+          durationType,
+          now
+        );
+
+      if (existingActive) {
+        existingActive
+          .customerAccountId =
+          customerAccountId;
+
+        existingActive
+          .paidSubmissionId =
+          paidRecord.id;
+
+        existingActive.active =
+          true;
+
+        existingActive.durationType =
+          durationType;
+
+        existingActive.startsAt =
+          startsAt;
+
+        existingActive.expiresAt =
+          expiresAt;
+
+        existingActive.updatedAt =
+          now.toISOString();
+
+        existingActive.endedAt =
+          null;
+
+        existingActive.endReason =
+          null;
+
+      } else {
+        assignments.push({
+          id:
+            crypto.randomUUID(),
+
+          rentedMembershipId:
+            id,
+
+          customerAccountId,
+
+          paidSubmissionId:
+            paidRecord.id,
+
+          active:
+            true,
+
+          durationType,
+
+          startsAt:
+            now.toISOString(),
+
+          expiresAt,
+
+          stripeSubscriptionId:
+            null,
+
+          stripeCustomerId:
+            paidRecord
+              .stripeCustomerId ||
+            null,
+
+          createdAt:
+            now.toISOString(),
+
+          updatedAt:
+            now.toISOString(),
+
+          endedAt:
+            null,
+
+          endReason:
+            null
+        });
+      }
+
+      await saveRentalAssignments(
+        assignments
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          "Rented membership assigned successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin rented membership assignment error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to assign rented membership."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/rented-memberships/:id/end",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const assignments =
+        await getRentalAssignments();
+
+      const assignment =
+        currentRentalAssignment(
+          assignments,
+          id
+        );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "This rented membership is not currently assigned."
+          });
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      assignment.active =
+        false;
+
+      assignment.endedAt =
+        now;
+
+      assignment.updatedAt =
+        now;
+
+      assignment.endReason =
+        "admin-ended";
+
+      await saveRentalAssignments(
+        assignments
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          "Rented membership ended and returned to the available pool."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin rented membership end error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to end rented membership."
         });
     }
   }
@@ -12817,6 +14129,14 @@ async function startServer() {
 
     await initializeArrayFile(
   SPECIAL_PROFILES_FILE
+);
+
+    await initializeArrayFile(
+  RENTED_MEMBERSHIPS_FILE
+);
+
+await initializeArrayFile(
+  RENTAL_ASSIGNMENTS_FILE
 );
 
     await initializeArrayFile(
