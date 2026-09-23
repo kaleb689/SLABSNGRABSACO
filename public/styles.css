@@ -7682,3 +7682,76 @@ select:focus {
   }
 
 }
+
+/* ======================================================
+   MY PROFILE SIGN IN / CREATE ACCOUNT DROPDOWN
+====================================================== */
+
+#my-profile .account-auth-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 28px;
+}
+
+#my-profile #login-panel {
+  margin-bottom: 8px;
+}
+
+#my-profile .account-register-dropdown {
+  overflow: hidden;
+}
+
+#my-profile .account-register-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+
+  padding: 22px;
+
+  cursor: pointer;
+  list-style: none;
+}
+
+#my-profile .account-register-summary::-webkit-details-marker {
+  display: none;
+}
+
+#my-profile .account-register-summary::marker {
+  display: none;
+}
+
+#my-profile .account-register-summary h3 {
+  margin: 6px 0 4px;
+}
+
+#my-profile .account-register-summary p {
+  margin: 0;
+}
+
+#my-profile .account-register-arrow {
+  flex: 0 0 auto;
+
+  color: #12c9ff;
+
+  font-size: 26px;
+  font-weight: 900;
+
+  transition: transform .2s ease;
+}
+
+#my-profile .account-register-dropdown[open]
+.account-register-arrow {
+  transform: rotate(90deg);
+}
+
+#my-profile .account-register-content {
+  padding: 0 22px 22px;
+
+  border-top: 1px solid
+    rgba(18, 201, 255, .12);
+}
+
+#my-profile .account-register-content > p {
+  margin-top: 20px;
+}
