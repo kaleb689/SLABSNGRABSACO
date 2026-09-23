@@ -413,43 +413,51 @@
       word-break: break-all;
     }
 
-    .status-pill {
-      display: inline-flex;
+   .status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid #28516a;
+  border-radius: 99px;
+  background: #0a1722;
+  color: #dff7ff;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
 
-      align-items: center;
+.status-pill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
 
-      gap: 7px;
+.status-pill.active {
+  border-color: #1f7057;
+  background: #0b2a20;
+  color: #63e3ad;
+}
 
-      padding: 7px 10px;
+.status-pill.inactive {
+  border-color: #7b2635;
+  background: #2a0d14;
+  color: #ff7c93;
+}
 
-      border: 1px solid #1f7057;
+.order-status-meta {
+  min-width: 170px;
+}
 
-      border-radius: 99px;
-
-      background: #0b2a20;
-
-      color: #63e3ad;
-
-      font-size: 10px;
-
-      font-weight: 900;
-
-      text-transform: uppercase;
-    }
-
-    .status-pill::before {
-      content: "";
-
-      width: 7px;
-      height: 7px;
-
-      border-radius: 50%;
-
-      background: currentColor;
-
-      box-shadow:
-        0 0 8px currentColor;
-    }
+.order-status-subline {
+  margin-top: 6px;
+  color: #8e9db4;
+  font-size: 11px;
+  line-height: 1.35;
+}
 /* =========================================
    CUSTOMER UPDATE STATUS
 ========================================= */
@@ -747,7 +755,11 @@
     /* =========================================
    ADMIN EDITING
 ========================================= */
-
+<form
+  class="admin-edit-form"
+  data-edit-form="${escapeHtml(x.id)}"
+>
+    
 .admin-edit-panel {
   padding: 20px;
   border-top: 1px solid #17384e;
@@ -1446,6 +1458,60 @@ function statusText(value) {
     );
 }
 
+  function getSubscriptionState(status, periodEnd) {
+  const normalized = String(status || "").toLowerCase().trim();
+  const end = periodEnd ? new Date(periodEnd) : null;
+  const now = new Date();
+
+  const expired =
+    end &&
+    !Number.isNaN(end.getTime()) &&
+    end.getTime() < now.getTime();
+
+  const activeStatuses = ["active", "trialing"];
+
+  const active =
+    activeStatuses.includes(normalized) &&
+    !expired;
+
+  let label = "INACTIVE";
+
+  if (active) {
+    label = "ACTIVE";
+  } else if (normalized) {
+    label = normalized.replaceAll("_", " ").toUpperCase();
+  }
+
+  return {
+    active,
+    label
+  };
+}
+
+function activeThroughText(periodEnd) {
+  if (!periodEnd) return "No end date";
+  return `Active through ${formatDate(periodEnd)}`;
+}
+
+function daysLeftText(periodEnd) {
+  if (!periodEnd) return "No days left data";
+
+  const now = new Date();
+  const end = new Date(periodEnd);
+
+  if (Number.isNaN(end.getTime())) {
+    return "No days left data";
+  }
+
+  const diffMs = end.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return "Expired";
+  if (diffDays === 0) return "Ends today";
+  if (diffDays === 1) return "1 day left";
+
+  return `${diffDays} days left`;
+}
 
 /* =========================================
    INFORMATION FIELD
@@ -1603,6 +1669,21 @@ function renderOrder(x) {
       ? plan.profiles
       : "—";
 
+    const subscriptionState =
+    getSubscriptionState(
+      x.subscriptionStatus,
+      x.currentPeriodEnd
+    );
+
+  const activeThrough =
+    activeThroughText(
+      x.currentPeriodEnd
+    );
+
+  const daysLeft =
+    daysLeftText(
+      x.currentPeriodEnd
+    );
 
   return `
 
@@ -1679,13 +1760,69 @@ function renderOrder(x) {
 
           </div>
 
+<div class="order-top-actions">
 
-          <div class="customer-update-meta">
+  <div class="customer-update-meta">
+    <span class="status-pill ${subscriptionState.active ? "active" : "inactive"}">
+      ${escapeHtml(subscriptionState.label)}
+    </span>
+
+    ${
+      x.customerUpdatedAt
+        ? `
+          <span class="customer-updated-pill">
+            Customer Updated
+          </span>
+
+          <div class="customer-last-updated">
+            Last updated:
+            <strong>
+              ${formatDateTime(
+                x.customerUpdatedAt
+              )}
+            </strong>
+          </div>
+        `
+        : ""
+    }
+  </div>
+
+  <div class="admin-top-buttons">
+    <button
+      type="button"
+      class="admin-edit-button"
+      data-edit-submission="${escapeHtml(x.id)}"
+    >
+      Edit
+    </button>
+
+    <button
+      type="button"
+      class="admin-save-button"
+      data-save-submission="${escapeHtml(x.id)}"
+    >
+      Save
+    </button>
+  </div>
+
+</div>
 
   <span class="status-pill">
     ${escapeHtml(
       statusText(
         x.subscriptionStatus
+
+        <div class="order-meta order-status-meta">
+  <small>STATUS</small>
+
+  <span class="status-pill ${subscriptionState.active ? "active" : "inactive"}">
+    ${escapeHtml(subscriptionState.label)}
+  </span>
+
+  <div class="order-status-subline">
+    ${escapeHtml(activeThrough)} • ${escapeHtml(daysLeft)}
+  </div>
+</div>
       )
     )}
   </span>
@@ -1776,18 +1913,24 @@ function renderOrder(x) {
 
 
               <div class="subscription-stat">
+  <small>
+    ACTIVE THROUGH
+  </small>
 
-                <small>
-                  PERIOD ENDS
-                </small>
+  <strong>
+    ${escapeHtml(activeThrough)}
+  </strong>
+</div>
 
-                <strong>
-                  ${formatDate(
-                    x.currentPeriodEnd
-                  )}
-                </strong>
+<div class="subscription-stat">
+  <small>
+    DAYS LEFT
+  </small>
 
-              </div>
+  <strong>
+    ${escapeHtml(daysLeft)}
+  </strong>
+</div>
 
             </div>
 
@@ -3079,6 +3222,27 @@ function bindRetailerProfileForms() {
 
 }
 
+  function bindAdminSaveButtons() {
+  document
+    .querySelectorAll("[data-save-submission]")
+    .forEach(button => {
+      button.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const id = button.dataset.saveSubmission;
+
+        const form = document.querySelector(
+          `[data-edit-form="${CSS.escape(id)}"]`
+        );
+
+        if (form) {
+          form.requestSubmit();
+        }
+      });
+    });
+}
+
 /* =========================================
    LOAD ADMIN DATA
 ========================================= */
@@ -3156,7 +3320,7 @@ async function load() {
       .map(renderOrder)
       .join("");
 
-
+bindAdminSaveButtons();
  bindRevealButtons();
 bindAdminEditButtons();
 bindAdminRetailerButtons();
