@@ -7957,3 +7957,13 @@ select:focus {
   }
 
 }
+
+#guide .guide-example figcaption {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.6;
+
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.65);
+}
