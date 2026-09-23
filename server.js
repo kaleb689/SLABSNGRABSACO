@@ -3985,6 +3985,9 @@ if (
   record.stripeSubscriptionId
 ) {
 
+  let secrets =
+  null;
+  
   try {
 
     const subscription =
