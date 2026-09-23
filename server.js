@@ -71,6 +71,18 @@ const RENTAL_ASSIGNMENTS_FILE =
     "rental-assignments.json"
   );
 
+const FREE_MEMBERSHIPS_FILE =
+  path.join(
+    DATA_DIR,
+    "free-memberships.json"
+  );
+
+const FREE_ASSIGNMENTS_FILE =
+  path.join(
+    DATA_DIR,
+    "free-assignments.json"
+  );
+
 const SUCCESS_CHECKOUTS_FILE =
   path.join(
     DATA_DIR,
@@ -3359,6 +3371,141 @@ async function saveRentalAssignments(
   );
 }
 
+async function getFreeMemberships() {
+  const records =
+    await readJson(
+      FREE_MEMBERSHIPS_FILE,
+      []
+    );
+
+  return Array.isArray(records)
+    ? records
+    : [];
+}
+
+
+async function saveFreeMemberships(
+  records
+) {
+  await writeJson(
+    FREE_MEMBERSHIPS_FILE,
+    records
+  );
+}
+
+
+async function getFreeAssignments() {
+  const records =
+    await readJson(
+      FREE_ASSIGNMENTS_FILE,
+      []
+    );
+
+  return Array.isArray(records)
+    ? records
+    : [];
+}
+
+
+async function saveFreeAssignments(
+  records
+) {
+  await writeJson(
+    FREE_ASSIGNMENTS_FILE,
+    records
+  );
+}
+
+
+function freeAssignmentIsActive(
+  assignment
+) {
+  if (
+    assignment?.active !== true
+  ) {
+    return false;
+  }
+
+  if (!assignment?.expiresAt) {
+    return true;
+  }
+
+  const expiresAt =
+    new Date(
+      assignment.expiresAt
+    );
+
+  if (
+    Number.isNaN(
+      expiresAt.getTime()
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    expiresAt.getTime() >
+    Date.now()
+  );
+}
+
+
+function freeAssignmentDaysRemaining(
+  assignment
+) {
+  if (
+    !freeAssignmentIsActive(
+      assignment
+    )
+  ) {
+    return 0;
+  }
+
+  if (!assignment?.expiresAt) {
+    return null;
+  }
+
+  const expiresAt =
+    new Date(
+      assignment.expiresAt
+    );
+
+  const remaining =
+    expiresAt.getTime() -
+    Date.now();
+
+  return Math.max(
+    0,
+    Math.ceil(
+      remaining /
+      (
+        1000 *
+        60 *
+        60 *
+        24
+      )
+    )
+  );
+}
+
+
+function currentFreeAssignment(
+  assignments,
+  freeMembershipId
+) {
+  return (
+    assignments.find(
+      assignment =>
+        assignment
+          .freeMembershipId ===
+          freeMembershipId &&
+        freeAssignmentIsActive(
+          assignment
+        )
+    ) || null
+  );
+}
+
 
 function rentalAssignmentIsActive(
   assignment
@@ -5592,6 +5739,1350 @@ app.get(
 );
 
 /* -------------------------------------------------------
+   ADMIN FREE MEMBERSHIPS
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/free-memberships",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const memberships =
+        await getFreeMemberships();
+
+      const assignments =
+        await getFreeAssignments();
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      let assignmentsChanged =
+        false;
+
+      const now =
+        new Date();
+
+      for (
+        const assignment of
+        assignments
+      ) {
+        if (
+          assignment.active !== true ||
+          !assignment.expiresAt
+        ) {
+          continue;
+        }
+
+        const expiresAt =
+          new Date(
+            assignment.expiresAt
+          );
+
+        if (
+          !Number.isNaN(
+            expiresAt.getTime()
+          ) &&
+          expiresAt.getTime() <=
+            now.getTime()
+        ) {
+          assignment.active =
+            false;
+
+          assignment.endedAt =
+            now.toISOString();
+
+          assignment.endReason =
+            "expired";
+
+          assignmentsChanged =
+            true;
+        }
+      }
+
+      if (assignmentsChanged) {
+        await saveFreeAssignments(
+          assignments
+        );
+      }
+
+      /*
+        Only active PAID subscriptions
+        can receive one of your managed
+        free giveaway profiles.
+      */
+
+      const paidCustomerMap =
+        new Map();
+
+      for (
+        const record of
+        paidRecords
+      ) {
+        if (
+          !record.customerAccountId ||
+          !subscriptionAllowsProfiles(
+            record
+          )
+        ) {
+          continue;
+        }
+
+        if (
+          !paidCustomerMap.has(
+            record.customerAccountId
+          )
+        ) {
+          paidCustomerMap.set(
+            record.customerAccountId,
+            record
+          );
+        }
+      }
+
+      const paidCustomers =
+        Array.from(
+          paidCustomerMap.values()
+        ).map(record => {
+          const account =
+            accounts.find(
+              item =>
+                item.id ===
+                record.customerAccountId
+            );
+
+          const savedProfile =
+            account?.adminProfile &&
+            typeof account.adminProfile ===
+              "object"
+              ? account.adminProfile
+              : {};
+
+          const paidProfile =
+            record.profile &&
+            typeof record.profile ===
+              "object"
+              ? record.profile
+              : {};
+
+          const customerName =
+            [
+              savedProfile.firstName ||
+                paidProfile.firstName ||
+                "",
+              savedProfile.lastName ||
+                paidProfile.lastName ||
+                ""
+            ]
+              .filter(Boolean)
+              .join(" ") ||
+            savedProfile.profileName ||
+            paidProfile.profileName ||
+            "Customer";
+
+          return {
+            customerAccountId:
+              record.customerAccountId,
+
+            paidSubmissionId:
+              record.id,
+
+            name:
+              customerName,
+
+            email:
+              account?.email ||
+              savedProfile.email ||
+              paidProfile.email ||
+              "",
+
+            subscriptionStatus:
+              record.subscriptionStatus ||
+              null,
+
+            currentPeriodEnd:
+              record.currentPeriodEnd ||
+              null
+          };
+        });
+
+      const result =
+        memberships.map(
+          membership => {
+            const assignment =
+              currentFreeAssignment(
+                assignments,
+                membership.id
+              );
+
+            let assignedCustomer =
+              null;
+
+            if (assignment) {
+              const account =
+                accounts.find(
+                  item =>
+                    item.id ===
+                    assignment
+                      .customerAccountId
+                );
+
+              const paidRecord =
+                paidRecords.find(
+                  item =>
+                    item.customerAccountId ===
+                      assignment
+                        .customerAccountId &&
+                    subscriptionAllowsProfiles(
+                      item
+                    )
+                );
+
+              const savedProfile =
+                account?.adminProfile &&
+                typeof account.adminProfile ===
+                  "object"
+                  ? account.adminProfile
+                  : {};
+
+              const paidProfile =
+                paidRecord?.profile &&
+                typeof paidRecord.profile ===
+                  "object"
+                  ? paidRecord.profile
+                  : {};
+
+              assignedCustomer = {
+                customerAccountId:
+                  assignment
+                    .customerAccountId,
+
+                paidSubmissionId:
+                  paidRecord?.id ||
+                  null,
+
+                name:
+                  [
+                    savedProfile.firstName ||
+                      paidProfile.firstName ||
+                      "",
+                    savedProfile.lastName ||
+                      paidProfile.lastName ||
+                      ""
+                  ]
+                    .filter(Boolean)
+                    .join(" ") ||
+                  savedProfile.profileName ||
+                  paidProfile.profileName ||
+                  "Customer",
+
+                email:
+                  account?.email ||
+                  savedProfile.email ||
+                  paidProfile.email ||
+                  ""
+              };
+            }
+
+            let retailers =
+              emptyRetailerCredentials();
+
+            try {
+              if (
+                membership.credentials
+              ) {
+                retailers =
+                  normalizeRetailerCredentials(
+                    decryptJson(
+                      membership
+                        .credentials
+                    )
+                  );
+              }
+            } catch (error) {
+              console.error(
+                "Free membership decrypt error:",
+                membership.id,
+                error.message
+              );
+            }
+
+            let customerSecrets =
+  null;
+
+try {
+  if (
+    membership.customerSecrets
+  ) {
+    customerSecrets =
+      decryptJson(
+        membership.customerSecrets
+      );
+  }
+} catch (error) {
+  console.error(
+    "Free membership customer data decrypt error:",
+    membership.id,
+    error.message
+  );
+}
+
+            return {
+              id:
+                membership.id,
+
+              profileName:
+                membership.profileName ||
+                "FREE MEMBERSHIP",
+
+              accountEmail:
+  membership.accountEmail ||
+  "",
+
+              notes:
+                membership.notes ||
+                "",
+
+              createdAt:
+                membership.createdAt ||
+                null,
+
+              updatedAt:
+                membership.updatedAt ||
+                null,
+
+              active:
+                Boolean(
+                  assignment
+                ),
+
+              status:
+                assignment
+                  ? "active"
+                  : "inactive",
+
+              assignment:
+                assignment
+                  ? {
+                      id:
+                        assignment.id,
+
+                      customerAccountId:
+                        assignment
+                          .customerAccountId,
+
+                      startsAt:
+                        assignment.startsAt ||
+                        null,
+
+                      expiresAt:
+                        assignment.expiresAt ||
+                        null,
+
+                      durationType:
+                        assignment.durationType ||
+                        null,
+
+                      daysRemaining:
+                        freeAssignmentDaysRemaining(
+                          assignment
+                        )
+                    }
+                  : null,
+
+              assignedCustomer,
+
+              retailers,
+
+              customerProfile:
+  membership.customerProfile ||
+  null,
+
+customerSecrets
+            };
+          }
+        );
+
+      return res.json({
+        ok: true,
+
+        memberships:
+          result,
+
+        paidCustomers
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin free membership list error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load free memberships."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/free-memberships",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const profileName =
+        clean(
+          req.body?.profileName,
+          100
+        ) ||
+        "FREE MEMBERSHIP";
+
+      const accountEmail =
+  clean(
+    req.body?.accountEmail,
+    200
+  );
+
+      const notes =
+        clean(
+          req.body?.notes,
+          500
+        );
+
+      const submitted =
+        req.body?.retailers &&
+        typeof req.body.retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      const credentials =
+        emptyRetailerCredentials();
+
+      for (
+        const retailer of
+        RETAILER_KEYS
+      ) {
+        const submittedRetailer =
+          submitted[retailer] &&
+          typeof submitted[
+            retailer
+          ] === "object"
+            ? submitted[
+                retailer
+              ]
+            : {};
+
+        const username =
+          clean(
+            submittedRetailer
+              .username,
+            254
+          );
+
+        const password =
+          String(
+            submittedRetailer
+              .password ||
+            ""
+          );
+
+        if (
+          password.length >
+          512
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "A retailer password is too long."
+            });
+        }
+
+        credentials[
+          retailer
+        ] = {
+          username,
+          password
+        };
+      }
+
+      const memberships =
+        await getFreeMemberships();
+
+      const now =
+        new Date()
+          .toISOString();
+
+      const record = {
+        id:
+          crypto.randomUUID(),
+
+        profileName,
+        accountEmail,
+
+        notes,
+
+        credentials:
+          encryptJson(
+            credentials
+          ),
+
+        customerProfile:
+          null,
+
+        createdAt:
+          now,
+
+        updatedAt:
+          now
+      };
+
+      memberships.push(
+        record
+      );
+
+      await saveFreeMemberships(
+        memberships
+      );
+
+      return res.json({
+        ok: true,
+
+        id:
+          record.id,
+
+        message:
+          "Free membership created successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin free membership create error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to create free membership."
+        });
+    }
+  }
+);
+
+
+app.put(
+  "/api/admin/free-memberships/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const memberships =
+        await getFreeMemberships();
+
+      const index =
+        memberships.findIndex(
+          membership =>
+            String(
+              membership.id
+            ) === id
+        );
+
+      if (index < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Free membership could not be found."
+          });
+      }
+
+      const existing =
+        memberships[index];
+
+      const profileName =
+        clean(
+          req.body?.profileName,
+          100
+        ) ||
+        existing.profileName ||
+        "FREE MEMBERSHIP";
+
+      const accountEmail =
+  clean(
+    req.body?.accountEmail,
+    200
+  );
+
+      const notes =
+        clean(
+          req.body?.notes,
+          500
+        );
+
+      let existingCredentials =
+        emptyRetailerCredentials();
+
+      try {
+        if (
+          existing.credentials
+        ) {
+          existingCredentials =
+            normalizeRetailerCredentials(
+              decryptJson(
+                existing.credentials
+              )
+            );
+        }
+      } catch (error) {
+        console.error(
+          "Existing free membership decrypt error:",
+          error.message
+        );
+      }
+
+      const submitted =
+        req.body?.retailers &&
+        typeof req.body.retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      const credentials =
+        emptyRetailerCredentials();
+
+      for (
+        const retailer of
+        RETAILER_KEYS
+      ) {
+        const submittedRetailer =
+          submitted[retailer] &&
+          typeof submitted[
+            retailer
+          ] === "object"
+            ? submitted[
+                retailer
+              ]
+            : {};
+
+        const username =
+          clean(
+            submittedRetailer
+              .username,
+            254
+          );
+
+        const password =
+          String(
+            submittedRetailer
+              .password ||
+            ""
+          );
+
+        credentials[
+          retailer
+        ] = {
+          username,
+
+          password:
+            password ||
+            existingCredentials[
+              retailer
+            ]?.password ||
+            ""
+        };
+      }
+
+      const suppliedCustomerProfile =
+        req.body?.customerProfile &&
+        typeof req.body.customerProfile ===
+          "object"
+          ? req.body.customerProfile
+          : existing.customerProfile ||
+            null;
+
+      memberships[index] = {
+        ...existing,
+
+        accountEmail:
+  accountEmail ||
+  existing.accountEmail ||
+  "",
+
+        profileName,
+
+        notes,
+
+        credentials:
+          encryptJson(
+            credentials
+          ),
+
+        customerProfile:
+          suppliedCustomerProfile,
+
+        updatedAt:
+          new Date()
+            .toISOString()
+      };
+
+      await saveFreeMemberships(
+        memberships
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          "Free membership updated successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin free membership update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update free membership."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/free-memberships/:id/assign",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const customerAccountId =
+        clean(
+          req.body
+            ?.customerAccountId,
+          150
+        );
+
+      const durationType =
+        normalizeSpecialProfileDuration(
+          req.body?.durationType
+        );
+
+      if (!customerAccountId) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose a paid customer."
+          });
+      }
+
+      if (!durationType) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose a valid free membership duration."
+          });
+      }
+
+      const memberships =
+        await getFreeMemberships();
+
+      const membership =
+        memberships.find(
+          item =>
+            String(
+              item.id
+            ) === id
+        );
+
+      if (!membership) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Free membership could not be found."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const paidRecord =
+        paidRecords.find(
+          record =>
+            record.customerAccountId ===
+              customerAccountId &&
+            subscriptionAllowsProfiles(
+              record
+            )
+        );
+
+      if (!paidRecord) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "Free managed memberships can only be attached to an active paid subscription."
+          });
+      }
+
+      const assignments =
+        await getFreeAssignments();
+
+      const existingActive =
+        currentFreeAssignment(
+          assignments,
+          id
+        );
+
+      if (
+        existingActive &&
+        existingActive
+          .customerAccountId !==
+          customerAccountId
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This free membership is already assigned to another customer."
+          });
+      }
+
+      const now =
+        new Date();
+
+      const expiresAt =
+        specialProfileExpiresAt(
+          durationType,
+          now
+        );
+
+      if (existingActive) {
+        existingActive
+          .customerAccountId =
+          customerAccountId;
+
+        existingActive
+          .paidSubmissionId =
+          paidRecord.id;
+
+        existingActive.active =
+          true;
+
+        existingActive.durationType =
+          durationType;
+
+        existingActive.expiresAt =
+          expiresAt;
+
+        existingActive.updatedAt =
+          now.toISOString();
+
+        existingActive.endedAt =
+          null;
+
+        existingActive.endReason =
+          null;
+
+      } else {
+        assignments.push({
+          id:
+            crypto.randomUUID(),
+
+          freeMembershipId:
+            id,
+
+          customerAccountId,
+
+          paidSubmissionId:
+            paidRecord.id,
+
+          active:
+            true,
+
+          durationType,
+
+          startsAt:
+            now.toISOString(),
+
+          expiresAt,
+
+          createdAt:
+            now.toISOString(),
+
+          updatedAt:
+            now.toISOString(),
+
+          endedAt:
+            null,
+
+          endReason:
+            null
+        });
+      }
+
+      await saveFreeAssignments(
+        assignments
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          "Free membership assigned successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin free membership assignment error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to assign free membership."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/free-memberships/:id/end",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const assignments =
+        await getFreeAssignments();
+
+      const assignment =
+        currentFreeAssignment(
+          assignments,
+          id
+        );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "This free membership is not currently assigned."
+          });
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      assignment.active =
+        false;
+
+      assignment.endedAt =
+        now;
+
+      assignment.updatedAt =
+        now;
+
+      assignment.endReason =
+        "admin-ended";
+
+      await saveFreeAssignments(
+        assignments
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          "Free membership ended and returned to the available pool."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin free membership end error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to end free membership."
+        });
+    }
+  }
+);
+
+/* -------------------------------------------------------
+   ADMIN MANAGED MEMBERSHIP AUTO POPULATE
+------------------------------------------------------- */
+
+app.post(
+  "/api/admin/managed-memberships/:type/:id/auto-populate",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        String(
+          req.params.type ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const customerAccountId =
+        clean(
+          req.body
+            ?.customerAccountId,
+          150
+        );
+
+      if (
+        ![
+          "free",
+          "rented"
+        ].includes(type)
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid managed membership type."
+          });
+      }
+
+      if (!customerAccountId) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose a paid customer first."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const paidRecord =
+        paidRecords.find(
+          record =>
+            record.customerAccountId ===
+              customerAccountId &&
+            subscriptionAllowsProfiles(
+              record
+            )
+        );
+
+      if (!paidRecord) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "An active paid subscription could not be found for this customer."
+          });
+      }
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const account =
+        accounts.find(
+          item =>
+            item.id ===
+            customerAccountId
+        );
+
+      const savedProfile =
+        account?.adminProfile &&
+        typeof account.adminProfile ===
+          "object"
+          ? account.adminProfile
+          : {};
+
+      const paidProfile =
+        paidRecord.profile &&
+        typeof paidRecord.profile ===
+          "object"
+          ? paidRecord.profile
+          : {};
+
+      /*
+        Prefer the information submitted
+        with the paid subscription.
+
+        Fall back to saved Admin profile
+        information when necessary.
+      */
+
+      const customerProfile =
+        sanitizeProfile({
+          profileName:
+            paidProfile.profileName ||
+            savedProfile.profileName ||
+            "",
+
+          firstName:
+            paidProfile.firstName ||
+            savedProfile.firstName ||
+            "",
+
+          lastName:
+            paidProfile.lastName ||
+            savedProfile.lastName ||
+            "",
+
+          email:
+            paidProfile.email ||
+            savedProfile.email ||
+            account?.email ||
+            "",
+
+          phone:
+            paidProfile.phone ||
+            savedProfile.phone ||
+            "",
+
+          address:
+            paidProfile.address ||
+            savedProfile.address ||
+            "",
+
+          address2:
+            paidProfile.address2 ||
+            savedProfile.address2 ||
+            "",
+
+          country:
+            paidProfile.country ||
+            savedProfile.country ||
+            "",
+
+          state:
+            paidProfile.state ||
+            savedProfile.state ||
+            "",
+
+          city:
+            paidProfile.city ||
+            savedProfile.city ||
+            "",
+
+          zip:
+            paidProfile.zip ||
+            savedProfile.zip ||
+            ""
+        });
+
+      /*
+        Load the customer's sensitive
+        ACO/card information from the
+        encrypted paid-order package.
+
+        It stays encrypted when copied
+        into the managed membership.
+      */
+
+      const paidSecrets =
+        await loadEncryptedPackage(
+          paidRecord.id
+        );
+
+      let memberships;
+
+      if (type === "free") {
+        memberships =
+          await getFreeMemberships();
+      } else {
+        memberships =
+          await getRentedMemberships();
+      }
+
+      const index =
+        memberships.findIndex(
+          membership =>
+            String(
+              membership.id
+            ) === id
+        );
+
+      if (index < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              `${
+                type === "free"
+                  ? "Free"
+                  : "Rented"
+              } membership could not be found.`
+          });
+      }
+
+      const existing =
+        memberships[index];
+
+      memberships[index] = {
+        ...existing,
+
+        accountEmail:
+  accountEmail ||
+  existing.accountEmail ||
+  "",
+
+        /*
+          Customer information used by
+          this managed ACO profile.
+        */
+
+        customerProfile,
+
+        /*
+          Sensitive customer information
+          remains encrypted.
+
+          This does NOT contain your
+          retailer account credentials.
+        */
+
+        customerSecrets:
+          paidSecrets
+            ? encryptJson(
+                paidSecrets
+              )
+            : (
+                existing
+                  .customerSecrets ||
+                null
+              ),
+
+        sourceCustomerAccountId:
+          customerAccountId,
+
+        sourcePaidSubmissionId:
+          paidRecord.id,
+
+        autoPopulatedAt:
+          new Date()
+            .toISOString(),
+
+        updatedAt:
+          new Date()
+            .toISOString()
+      };
+
+      /*
+        IMPORTANT:
+        existing.credentials is preserved
+        by ...existing above.
+
+        Auto Populate never changes the
+        Target / Walmart / Pokémon Center
+        username or password.
+      */
+
+      if (type === "free") {
+        await saveFreeMemberships(
+          memberships
+        );
+      } else {
+        await saveRentedMemberships(
+          memberships
+        );
+      }
+
+      return res.json({
+        ok: true,
+
+        customerProfile,
+
+        message:
+          `${
+            type === "free"
+              ? "Free"
+              : "Rented"
+          } membership auto populated successfully.`
+      });
+
+    } catch (error) {
+      console.error(
+        "Managed membership auto populate error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to auto populate the managed membership."
+        });
+    }
+  }
+);
+
+/* -------------------------------------------------------
    ADMIN RENTED MEMBERSHIPS
 ------------------------------------------------------- */
 
@@ -5852,7 +7343,26 @@ app.get(
               };
             }
 
+let customerSecrets =
+  null;
 
+try {
+  if (
+    membership.customerSecrets
+  ) {
+    customerSecrets =
+      decryptJson(
+        membership.customerSecrets
+      );
+  }
+} catch (error) {
+  console.error(
+    "Rented membership customer data decrypt error:",
+    membership.id,
+    error.message
+  );
+}
+            
             return {
               id:
                 membership.id,
@@ -5860,6 +7370,10 @@ app.get(
               profileName:
                 membership.profileName ||
                 "RENTED MEMBERSHIP",
+
+              accountEmail:
+  membership.accountEmail ||
+  "",
 
               notes:
                 membership.notes ||
@@ -5917,9 +7431,15 @@ app.get(
                     }
                   : null,
 
-              assignedCustomer,
+             assignedCustomer,
 
-              retailers
+retailers,
+
+customerProfile:
+  membership.customerProfile ||
+  null,
+
+customerSecrets
             };
           }
         );
@@ -5961,6 +7481,12 @@ app.post(
           100
         ) ||
         "RENTED MEMBERSHIP";
+
+      const accountEmail =
+  clean(
+    req.body?.accountEmail,
+    200
+  );
 
       const notes =
         clean(
@@ -6038,6 +7564,8 @@ app.post(
           crypto.randomUUID(),
 
         profileName,
+
+        accountEmail,
 
         notes,
 
@@ -6132,6 +7660,12 @@ app.put(
         existing.profileName ||
         "RENTED MEMBERSHIP";
 
+      const accountEmail =
+  clean(
+    req.body?.accountEmail,
+    200
+  );
+
       const notes =
         clean(
           req.body?.notes,
@@ -6158,6 +7692,7 @@ app.put(
           error.message
         );
       }
+
 
       const submitted =
         req.body?.retailers &&
@@ -6227,6 +7762,11 @@ app.put(
         index
       ] = {
         ...existing,
+        
+        accountEmail:
+  accountEmail ||
+  existing.accountEmail ||
+  "",
 
         profileName,
 
@@ -14137,6 +15677,14 @@ async function startServer() {
 
 await initializeArrayFile(
   RENTAL_ASSIGNMENTS_FILE
+);
+
+    await initializeArrayFile(
+  FREE_MEMBERSHIPS_FILE
+);
+
+await initializeArrayFile(
+  FREE_ASSIGNMENTS_FILE
 );
 
     await initializeArrayFile(
