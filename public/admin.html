@@ -1357,13 +1357,17 @@
       id="submissionTypeFilter"
       class="admin-submission-filter"
     >
-      <option value="paid">
-        PAID SUBMISSIONS
-      </option>
+     <option value="paid">
+  PAID SUBMISSIONS
+</option>
 
-      <option value="free">
-        FREE SUBMISSIONS
-      </option>
+<option value="free-profile">
+  FREE PROFILES
+</option>
+
+<option value="rented-profile">
+  RENTED PROFILES
+</option>
     </select>
 
   </div>
@@ -4195,6 +4199,294 @@ if (editButton) {
     });
 }
 
+  function bindCreateSpecialProfileButton(
+  profileType
+) {
+  const button =
+    document.querySelector(
+      "[data-create-special-profile]"
+    );
+
+  const select =
+    document.querySelector(
+      "[data-create-special-customer]"
+    );
+
+  const container =
+    document.querySelector(
+      "[data-new-special-profile-form]"
+    );
+
+  if (
+    !button ||
+    !select ||
+    !container
+  ) {
+    return;
+  }
+
+  button.addEventListener(
+    "click",
+    () => {
+      const customerAccountId =
+        select.value;
+
+      if (!customerAccountId) {
+        alert(
+          "Choose a customer first."
+        );
+
+        return;
+      }
+
+      container.innerHTML =
+        specialProfileHtml(
+          customerAccountId,
+          profileType,
+          null
+        );
+
+      bindSpecialProfileForms();
+      bindSpecialProfileRemoveButtons();
+
+      container.scrollIntoView({
+        behavior:
+          "smooth",
+        block:
+          "start"
+      });
+    }
+  );
+}
+
+
+function renderSpecialProfileDashboard(
+  data,
+  profileType
+) {
+  const type =
+    profileType ===
+    "rented"
+      ? "rented"
+      : "free";
+
+  const label =
+    type === "rented"
+      ? "RENTED PROFILE"
+      : "FREE PROFILE";
+
+  const profiles =
+    Array.isArray(
+      data?.profiles
+    )
+      ? data.profiles
+      : [];
+
+  const customers =
+    Array.isArray(
+      data?.customers
+    )
+      ? data.customers
+      : [];
+
+  const availableCustomers =
+    customers.filter(
+      customer =>
+        customer.hasProfile !==
+        true
+    );
+
+  submissionCount.textContent =
+    profiles.length === 1
+      ? `1 ${label.toLowerCase()}`
+      : `${profiles.length} ${label.toLowerCase()}s`;
+
+  const customerOptions =
+    availableCustomers
+      .map(customer => {
+        const name =
+          customer.name ||
+          "Customer";
+
+        const email =
+          customer.email ||
+          "";
+
+        return `
+          <option
+            value="${escapeHtml(
+              customer.id
+            )}"
+          >
+            ${escapeHtml(
+              name
+            )}${
+              email
+                ? ` — ${escapeHtml(
+                    email
+                  )}`
+                : ""
+            }
+          </option>
+        `;
+      })
+      .join("");
+
+  const createHtml = `
+    <section class="order-section">
+
+      <div class="order-section-head">
+
+        <div>
+          <h3>
+            Create ${label}
+          </h3>
+
+          <p>
+            Choose a customer account,
+            then fill in the retailer
+            profile information.
+          </p>
+        </div>
+
+      </div>
+
+      <div class="admin-retailer-wrap">
+
+        <div class="admin-edit-field">
+
+          <label>
+            Customer
+          </label>
+
+          <select
+            data-create-special-customer
+          >
+            <option value="">
+              Choose customer
+            </option>
+
+            ${customerOptions}
+          </select>
+
+        </div>
+
+        <div class="admin-edit-actions">
+
+          <button
+            type="button"
+            class="admin-save-button"
+            data-create-special-profile
+            ${
+              availableCustomers.length
+                ? ""
+                : "disabled"
+            }
+          >
+            + CREATE PROFILE
+          </button>
+
+        </div>
+
+        ${
+          !availableCustomers.length
+            ? `
+              <p class="admin-retailer-empty">
+                Every customer already has
+                this profile type.
+              </p>
+            `
+            : ""
+        }
+
+        <div
+          data-new-special-profile-form
+        ></div>
+
+      </div>
+
+    </section>
+  `;
+
+  const existingHtml =
+    profiles.length
+      ? profiles
+          .map(profile => {
+            const customer =
+              profile.customer ||
+              {};
+
+            const customerName =
+              customer.name ||
+              "Customer";
+
+            const customerEmail =
+              customer.email ||
+              "";
+
+            const customerId =
+              customer.id ||
+              profile.customerAccountId;
+
+            return `
+              <section class="order-section">
+
+                <div class="order-section-head">
+
+                  <div>
+                    <h3>
+                      ${escapeHtml(
+                        customerName
+                      )}
+                    </h3>
+
+                    <p>
+                      ${escapeHtml(
+                        customerEmail
+                      )}
+                    </p>
+                  </div>
+
+                </div>
+
+                ${specialProfileHtml(
+                  customerId,
+                  type,
+                  profile
+                )}
+
+              </section>
+            `;
+          })
+          .join("")
+      : `
+          <div class="empty-admin">
+
+            <h3>
+              No ${label}s yet.
+            </h3>
+
+            <p>
+              Use the + CREATE PROFILE
+              button above to add one.
+            </p>
+
+          </div>
+        `;
+
+  rows.innerHTML = `
+    ${createHtml}
+    ${existingHtml}
+  `;
+
+  bindCreateSpecialProfileButton(
+    type
+  );
+
+  bindSpecialProfileForms();
+  bindSpecialProfileRemoveButtons();
+}
+  
 /* =========================================
    LOAD ADMIN DATA
 ========================================= */
@@ -4202,15 +4494,27 @@ if (editButton) {
 async function load() {
 
  const submissionType =
-  submissionTypeFilter?.value ===
-  "free"
-    ? "free"
-    : "paid";
+  submissionTypeFilter?.value ||
+  "paid";
 
-const endpoint =
-  submissionType === "free"
-    ? "/api/admin/free-submissions"
-    : "/api/admin/submissions";
+let endpoint =
+  "/api/admin/submissions";
+
+if (
+  submissionType ===
+  "free-profile"
+) {
+  endpoint =
+    "/api/admin/special-profiles/free";
+}
+
+if (
+  submissionType ===
+  "rented-profile"
+) {
+  endpoint =
+    "/api/admin/special-profiles/rented";
+}
 
 const response =
   await fetch(
@@ -4260,6 +4564,29 @@ const response =
 
   const data =
     await response.json();
+
+  if (
+  submissionType ===
+    "free-profile" ||
+  submissionType ===
+    "rented-profile"
+) {
+  loginWrap.hidden =
+    true;
+
+  dashboard.hidden =
+    false;
+
+  renderSpecialProfileDashboard(
+    data,
+    submissionType ===
+      "rented-profile"
+      ? "rented"
+      : "free"
+  );
+
+  return;
+}
 
 
   const submissions =
