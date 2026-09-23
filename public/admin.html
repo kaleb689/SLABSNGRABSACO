@@ -578,6 +578,44 @@
       font-size: 11px;
     }
 
+    .admin-collapsible-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.admin-collapsible-head::-webkit-details-marker {
+  display: none;
+}
+
+.admin-collapsible-head::marker {
+  display: none;
+}
+
+.admin-collapsible-head:hover {
+  background: #0c1c2a;
+}
+
+.admin-collapsible-arrow {
+  flex: 0 0 auto;
+
+  color: #12c9ff;
+  font-size: 24px;
+  font-weight: 700;
+
+  transition: transform .2s ease;
+}
+
+.admin-collapsible[open]
+.admin-collapsible-arrow {
+  transform: rotate(90deg);
+}
+
     .info-grid {
       display: grid;
 
@@ -1643,7 +1681,7 @@ function sensitiveField(
                 type="button"
                 class="reveal-button"
               >
-                Reveal
+                Show
               </button>
             `
             : ""
@@ -1963,162 +2001,177 @@ function renderOrder(x) {
 
           <!-- CUSTOMER / SHIPPING -->
 
-          <section class="order-section">
+          <details class="order-section admin-collapsible">
 
-            <div class="order-section-head">
+  <summary class="order-section-head admin-collapsible-head">
 
-              <h3>
-                Shipping &amp; Customer Information
-              </h3>
+    <div>
+      <h3>
+        Shipping &amp; Customer Information
+      </h3>
 
-              <p>
-                Information submitted by the customer.
-              </p>
+      <p>
+        Information submitted by the customer.
+      </p>
+    </div>
 
-            </div>
+    <span class="admin-collapsible-arrow">
+      ›
+    </span>
 
+  </summary>
 
-            <div class="info-grid">
+  <div class="info-grid">
 
-              ${field(
-                "Profile Name",
-                profile.profileName
-              )}
+    ${field(
+      "Profile Name",
+      profile.profileName
+    )}
 
-              ${field(
-                "Email",
-                profile.email
-              )}
+    ${field(
+      "Email",
+      profile.email
+    )}
 
-              ${field(
-                "First Name",
-                profile.firstName
-              )}
+    ${field(
+      "First Name",
+      profile.firstName
+    )}
 
-              ${field(
-                "Last Name",
-                profile.lastName
-              )}
+    ${field(
+      "Last Name",
+      profile.lastName
+    )}
 
-              ${field(
-                "Phone",
-                profile.phone
-              )}
+    ${field(
+      "Phone",
+      profile.phone
+    )}
 
-              ${field(
-                "Country",
-                profile.country
-              )}
+    ${field(
+      "Country",
+      profile.country
+    )}
 
-              ${field(
-                "Address",
-                address,
-                true
-              )}
+    ${field(
+      "Address",
+      address,
+      true
+    )}
 
-              ${field(
-                "City / State / Zip",
-                cityLine,
-                true
-              )}
+    ${field(
+      "City / State / Zip",
+      cityLine,
+      true
+    )}
 
-            </div>
+  </div>
 
-          </section>
+</details>
 
 
           <!-- ACO -->
 
-          <section class="order-section">
+          <details class="order-section admin-collapsible">
 
-            <div class="order-section-head">
+  <summary class="order-section-head admin-collapsible-head">
 
-              <h3>
-  IMAP / Host Email
-</h3>
+    <div>
+      <h3>
+        IMAP / Host Email
+      </h3>
 
-              <p>
-                Credentials submitted for
-                ACO configuration.
-              </p>
+      <p>
+        Credentials submitted for
+        ACO configuration.
+      </p>
+    </div>
 
-            </div>
+    <span class="admin-collapsible-arrow">
+      ›
+    </span>
 
+  </summary>
 
-            <div class="info-grid">
+  <div class="info-grid">
 
-              ${field(
-                "IMAP / Host Email",
-                secrets.acoEmail
-              )}
+    ${field(
+      "IMAP / Host Email",
+      secrets.acoEmail
+    )}
 
-              ${sensitiveField(
-                "IMAP / Host App Password",
-                secrets.acoPassword,
-                "password"
-              )}
+    ${sensitiveField(
+      "IMAP / Host App Password",
+      secrets.acoPassword,
+      "password"
+    )}
 
-            </div>
+  </div>
 
-            <p class="muted">
-  (Password created through email for SNGACO)
-</p>
+  <p class="muted">
+    (Password created through email for SNGACO)
+  </p>
 
-          </section>
+</details>
 
 
           <!-- CARD -->
 
-          <section class="order-section">
+          <details class="order-section admin-collapsible">
 
-            <div class="order-section-head">
+  <summary class="order-section-head admin-collapsible-head">
 
-              <h3>
-                Card Information
-              </h3>
+    <div>
+      <h3>
+        Card Information
+      </h3>
 
-              <p>
-                ACO card information submitted
-                by the customer.
-              </p>
+      <p>
+        ACO card information submitted
+        by the customer.
+      </p>
+    </div>
 
-            </div>
+    <span class="admin-collapsible-arrow">
+      ›
+    </span>
 
+  </summary>
 
-            <div class="info-grid">
+  <div class="info-grid">
 
-              ${field(
-                "Card Label",
-                secrets.cardLabel
-              )}
+    ${field(
+      "Card Label",
+      secrets.cardLabel
+    )}
 
-              ${field(
-                "Cardholder Name",
-                secrets.cardholder
-              )}
+    ${field(
+      "Cardholder Name",
+      secrets.cardholder
+    )}
 
-              ${sensitiveField(
-                "Card Number",
-                secrets.acoCardNumber,
-                "card",
-                true
-              )}
+    ${sensitiveField(
+      "Card Number",
+      secrets.acoCardNumber,
+      "card",
+      true
+    )}
 
-              ${field(
-                "Expiration",
-                expiration
-              )}
+    ${field(
+      "Expiration",
+      expiration
+    )}
 
-              ${sensitiveField(
-  "Security Code",
-  secrets.securityCode,
-  "security-code",
-  true
-)}
+    ${sensitiveField(
+      "Security Code",
+      secrets.securityCode,
+      "security-code",
+      true
+    )}
 
-            </div>
+  </div>
 
-          </section>
+</details>
 
 <section class="order-section">
 
@@ -2382,20 +2435,26 @@ function renderOrder(x) {
 
 </section>
 
-<section class="order-section">
+<details class="order-section admin-collapsible">
 
-  <div class="order-section-head">
+  <summary class="order-section-head admin-collapsible-head">
 
-    <h3>
-      Retailer Profiles
-    </h3>
+    <div>
+      <h3>
+        Retailer Profiles
+      </h3>
 
-    <p>
-      Target, Walmart, PKC, Sam's Club,
-      and Costco login information.
-    </p>
+      <p>
+        Target, Walmart, PKC, Sam's Club,
+        and Costco login information.
+      </p>
+    </div>
 
-  </div>
+    <span class="admin-collapsible-arrow">
+      ›
+    </span>
+
+  </summary>
 
   <div class="admin-retailer-wrap">
 
@@ -2414,7 +2473,7 @@ function renderOrder(x) {
 
   </div>
 
-</section>
+</details>
 
          <p class="security-note">
   Sensitive values are masked by default.
@@ -2850,7 +2909,9 @@ function retailerProfileHtml(
                   saved.username || ""
                 )}"
                 autocomplete="off"
+                readonly
               >
+
 
             </div>
 
@@ -2872,7 +2933,9 @@ function retailerProfileHtml(
                   )}"
                   autocomplete="off"
                   data-retailer-password
+                  readonly
                 >
+                
 
                 ${
                   savedPassword
@@ -2954,6 +3017,7 @@ function retailerProfileHtml(
               profile.profileName ||
               `Profile ${profile.slot}`
             )}"
+            readonly
           >
 
         </div>
@@ -2963,11 +3027,18 @@ function retailerProfileHtml(
           ${retailerBlocks}
 
         </div>
+        
+<div class="admin-edit-actions">
 
-        <div class="admin-edit-actions">
+  <button
+    type="button"
+    class="admin-edit-button retailer-profile-edit"
+  >
+    Edit
+  </button>
 
-          <button
-            type="submit"
+  <button
+    type="submit"
             class="admin-save-button"
             ${
               profile.locked
@@ -3143,6 +3214,39 @@ function bindRetailerProfileForms() {
 
       form.dataset.bound =
         "true";
+
+      const editButton =
+  form.querySelector(
+    ".retailer-profile-edit"
+  );
+
+if (editButton) {
+
+  editButton.addEventListener(
+    "click",
+    event => {
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      form
+        .querySelectorAll(
+          "input[readonly]"
+        )
+        .forEach(input => {
+          input.readOnly = false;
+        });
+
+      editButton.textContent =
+        "Editing";
+
+      editButton.disabled =
+        true;
+
+    }
+  );
+
+}
 
       form
   .querySelectorAll(
@@ -3582,7 +3686,7 @@ function bindRevealButtons() {
               "true";
 
             button.textContent =
-              "Reveal";
+  "Show";
 
           }
 
