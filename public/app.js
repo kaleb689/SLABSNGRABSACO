@@ -4318,21 +4318,51 @@ function specialProfileCardHtml(
 
       </div>
 
-      <div
-        class="retailer-credentials-grid"
-      >
-        ${RETAILERS
-          .map(
-            retailer =>
-              retailerFieldsHtml(
-                retailer,
-                retailers[
-                  retailer.key
-                ] || {}
-              )
+    <form
+  class="special-profile-form"
+  data-special-profile-form="${escapeHtml(
+    profileType
+  )}"
+>
+
+  <div
+    class="retailer-credentials-grid"
+  >
+    ${RETAILERS
+      .map(
+        retailer =>
+          retailerFieldsHtml(
+            retailer,
+            retailers[
+              retailer.key
+            ] || {}
           )
-          .join("")}
-      </div>
+      )
+      .join("")}
+  </div>
+
+  <div
+    class="retailer-profile-save-row"
+  >
+
+    <div
+      class="account-message retailer-profile-save-message"
+      data-special-profile-message="${escapeHtml(
+        profileType
+      )}"
+      hidden
+    ></div>
+
+    <button
+      type="submit"
+      class="primary retailer-profile-save"
+    >
+      Save ${profileName}
+    </button>
+
+  </div>
+
+</form>
 
     </article>
   `;
