@@ -4524,42 +4524,66 @@ function renderRetailerProfiles() {
     No active membership.
   */
 
-  if (allowance <= 0) {
+if (allowance <= 0) {
 
-    container.innerHTML = `
-      <div
-        class="retailer-profile-placeholder"
-      >
+  const specialCards =
+    state.specialProfiles
+      .map(
+        profile =>
+          specialProfileCardHtml(
+            profile
+          )
+      )
+      .filter(Boolean);
 
-        <div
-          class="retailer-profile-placeholder-icon"
-        >
-          🔒
-        </div>
+  container.innerHTML = `
+    ${
+      specialCards.length
+        ? `
+            <div class="profile-category-section special-profile-category">
+              <div class="profile-category-heading">
+                SPECIAL PROFILES
+              </div>
 
-        <h3>
-          Active membership required
-        </h3>
+              ${specialCards.join("")}
+            </div>
+          `
+        : `
+            <div
+              class="retailer-profile-placeholder"
+            >
 
-        <p>
-          Once an active membership is
-          connected to this account, your
-          retailer profile slots will appear
-          here automatically.
-        </p>
+              <div
+                class="retailer-profile-placeholder-icon"
+              >
+                🔒
+              </div>
 
-        <button
-          type="button"
-          class="primary"
-          id="retailer-view-memberships"
-        >
-          View Memberships
-        </button>
+              <h3>
+                Active membership required
+              </h3>
 
-      </div>
-    `;
+              <p>
+                Once an active membership is
+                connected to this account, your
+                retailer profile slots will appear
+                here automatically.
+              </p>
 
+              <button
+                type="button"
+                class="primary"
+                id="retailer-view-memberships"
+              >
+                View Memberships
+              </button>
 
+            </div>
+          `
+    }
+  `;
+
+  if (!specialCards.length) {
     document
       .getElementById(
         "retailer-view-memberships"
@@ -4570,19 +4594,19 @@ function renderRetailerProfiles() {
           go("pricing");
         }
       );
-
-
-    if (mainMessage) {
-
-      setMessage(
-        mainMessage,
-        ""
-      );
-    }
-
-
-    return;
   }
+
+  bindRetailerPasswordToggles();
+
+  if (mainMessage) {
+    setMessage(
+      mainMessage,
+      ""
+    );
+  }
+
+  return;
+}
 
 
   /*
