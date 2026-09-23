@@ -4232,6 +4232,218 @@ app.put(
     }
   }
 );
+
+app.put(
+  "/api/account/special-profiles/:profileType",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const profileType =
+        normalizeSpecialProfileType(
+          req.params.profileType
+        );
+
+      if (!profileType) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid special profile type."
+          });
+      }
+
+      const records =
+        await getSpecialProfiles();
+
+      const existingIndex =
+        records.findIndex(
+          record =>
+            record.customerAccountId ===
+              req.customerAccount.id &&
+            normalizeSpecialProfileType(
+              record.profileType
+            ) === profileType
+        );
+
+      if (existingIndex < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Special profile could not be found."
+          });
+      }
+
+      const existingRecord =
+        records[
+          existingIndex
+        ];
+
+      if (
+        !specialProfileIsActive(
+          existingRecord
+        )
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "This special profile is not currently active."
+          });
+      }
+
+      const submitted =
+        req.body?.retailers &&
+        typeof req.body.retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      let existingCredentials =
+        emptyRetailerCredentials();
+
+      if (
+        existingRecord
+          ?.credentials
+      ) {
+        try {
+          existingCredentials =
+            normalizeRetailerCredentials(
+              decryptJson(
+                existingRecord
+                  .credentials
+              )
+            );
+        } catch (error) {
+          console.error(
+            "Existing special profile decrypt error:",
+            error.message
+          );
+
+          return res
+            .status(500)
+            .json({
+              error:
+                "Unable to update this special profile securely."
+            });
+        }
+      }
+
+      const updatedCredentials =
+        emptyRetailerCredentials();
+
+      for (
+        const retailer of
+        RETAILER_KEYS
+      ) {
+        const submittedRetailer =
+          submitted[
+            retailer
+          ] &&
+          typeof submitted[
+            retailer
+          ] === "object"
+            ? submitted[
+                retailer
+              ]
+            : {};
+
+        const username =
+          clean(
+            submittedRetailer
+              .username,
+            254
+          );
+
+        const suppliedPassword =
+          String(
+            submittedRetailer
+              .password ||
+            ""
+          );
+
+        if (
+          suppliedPassword.length >
+          512
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "A retailer password is too long."
+            });
+        }
+
+        updatedCredentials[
+          retailer
+        ] = {
+          username,
+
+          password:
+            suppliedPassword ||
+            existingCredentials[
+              retailer
+            ].password ||
+            ""
+        };
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      const record = {
+        ...existingRecord,
+
+        credentials:
+          encryptJson(
+            updatedCredentials
+          ),
+
+        updatedAt:
+          now,
+
+        customerUpdatedAt:
+          now
+      };
+
+      records[
+        existingIndex
+      ] = record;
+
+      await saveSpecialProfiles(
+        records
+      );
+
+      return res.json({
+        ok: true,
+
+        message:
+          `${specialProfileLabel(
+            profileType
+          )} saved securely.`,
+
+        profile:
+          safeSpecialProfile(
+            record
+          )
+      });
+
+    } catch (error) {
+      console.error(
+        "Customer special profile update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update this special profile."
+        });
+    }
+  }
+);
 /* -------------------------------------------------------
    ADMIN LOGIN
 ------------------------------------------------------- */
