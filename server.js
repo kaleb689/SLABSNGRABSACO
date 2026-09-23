@@ -4577,45 +4577,7 @@ app.get(
               Number(b.slot)
           );
 
-      const specialRecords =
-  await getSpecialProfiles();
-
-const activeSpecialProfiles =
-  specialRecords
-    .filter(
-      record =>
-        record.customerAccountId ===
-          req.customerAccount.id &&
-        specialProfileIsActive(
-          record
-        )
-    )
-    .sort(
-      (a, b) => {
-        const order = {
-          free: 1,
-          rented: 2
-        };
-
-        return (
-          (
-            order[
-              normalizeSpecialProfileType(
-                a.profileType
-              )
-            ] || 99
-          ) -
-          (
-            order[
-              normalizeSpecialProfileType(
-                b.profileType
-              )
-            ] || 99
-          )
-        );
-      }
-    );
-
+      
     return res.json({
   ok: true,
 
@@ -4630,13 +4592,8 @@ const activeSpecialProfiles =
         )
     ),
 
-  specialProfiles:
-    activeSpecialProfiles.map(
-      record =>
-        safeSpecialProfile(
-          record
-        )
-    )
+  specialProfiles: []
+      
 });
 
     } catch (error) {
