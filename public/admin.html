@@ -3427,11 +3427,35 @@ async function load() {
 
   if (!response.ok) {
 
+  console.error(
+    "Admin submissions failed:",
+    response.status,
+    response.statusText
+  );
+
+  if (response.status === 401) {
+
     loginWrap.hidden = false;
     dashboard.hidden = true;
 
-    return;
+    msg.textContent =
+      "Admin session was not accepted.";
+
+  } else {
+
+    loginWrap.hidden = true;
+    dashboard.hidden = false;
+
+    rows.innerHTML = `
+      <div class="empty-admin">
+        Admin dashboard failed to load.
+        Server error: ${response.status}
+      </div>
+    `;
   }
+
+  return;
+}
 
 
   const data =
