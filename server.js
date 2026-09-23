@@ -3985,9 +3985,7 @@ if (
   record.stripeSubscriptionId
 ) {
 
-  let secrets =
-  null;
-  
+
   try {
 
     const subscription =
@@ -4017,6 +4015,8 @@ if (
 
   }
 }
+        let secrets =
+  null;
         try {
           const encrypted =
             await readJson(
