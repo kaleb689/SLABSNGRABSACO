@@ -3413,20 +3413,16 @@ if (
 
 if (container) {
   container.innerHTML = `
-    <p class="admin-retailer-empty">
-      ${escapeHtml(
-        error.message
-      )}
+    <p class="admin-retailer-loading">
+      Loading retailer profiles...
     </p>
   `;
 }
 
 if (specialContainer) {
   specialContainer.innerHTML = `
-    <p class="admin-retailer-empty">
-      ${escapeHtml(
-        error.message
-      )}
+    <p class="admin-retailer-loading">
+      Loading special profiles...
     </p>
   `;
 }
