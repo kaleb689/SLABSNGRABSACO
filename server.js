@@ -2207,11 +2207,16 @@ app.post(
       account.updatedAt =
         verifiedAt;
 
-      await saveCustomerAccounts(
-        accounts
-      );
+     await saveCustomerAccounts(
+  accounts
+);
 
-      const remaining =
+const autoLinkResult =
+  await autoLinkVerifiedCustomerOrders(
+    account
+  );
+
+const remaining =
         (
           Array.isArray(records)
             ? records
