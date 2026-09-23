@@ -871,6 +871,17 @@ function updateSelectedPlan() {
 /* =====================================================
    CART
 ===================================================== */
+function clearSelectedTier() {
+
+  state.tier = null;
+
+  localStorage.removeItem(
+    "sng_selected_tier"
+  );
+
+  updateSelectedPlan();
+  updateCart();
+}
 
 function updateCart() {
   const count =
