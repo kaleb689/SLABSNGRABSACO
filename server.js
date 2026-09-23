@@ -6017,16 +6017,16 @@ app.get(
               );
             }
 
-            let customerSecrets =
+      let customerSecrets =
   null;
 
 try {
   if (
-    membership.customerSecrets
+    assignment?.customerSecrets
   ) {
     customerSecrets =
       decryptJson(
-        membership.customerSecrets
+        assignment.customerSecrets
       );
   }
 } catch (error) {
@@ -6105,7 +6105,7 @@ try {
               retailers,
 
               customerProfile:
-  membership.customerProfile ||
+  assignment?.customerProfile ||
   null,
 
 customerSecrets
@@ -6242,9 +6242,6 @@ app.post(
             credentials
           ),
 
-        customerProfile:
-          null,
-
         createdAt:
           now,
 
@@ -6319,137 +6316,139 @@ app.put(
       }
 
       const existing =
-        memberships[index];
+  memberships[index];
 
-      const profileName =
-        clean(
-          req.body?.profileName,
-          100
-        ) ||
-        existing.profileName ||
-        "FREE MEMBERSHIP";
+const profileName =
+  clean(
+    req.body?.profileName,
+    100
+  ) ||
+  existing.profileName ||
+  "FREE MEMBERSHIP";
 
-      const accountEmail =
+const accountEmail =
   clean(
     req.body?.accountEmail,
     200
   );
 
-      const notes =
-        clean(
-          req.body?.notes,
-          500
-        );
+const notes =
+  clean(
+    req.body?.notes,
+    500
+  );
 
-      let existingCredentials =
-        emptyRetailerCredentials();
+let existingCredentials =
+  emptyRetailerCredentials();
 
-      try {
-        if (
+try {
+  if (
+    existing.credentials
+  ) {
+    existingCredentials =
+      normalizeRetailerCredentials(
+        decryptJson(
           existing.credentials
-        ) {
-          existingCredentials =
-            normalizeRetailerCredentials(
-              decryptJson(
-                existing.credentials
-              )
-            );
-        }
-      } catch (error) {
-        console.error(
-          "Existing free membership decrypt error:",
-          error.message
-        );
-      }
-
-      const submitted =
-        req.body?.retailers &&
-        typeof req.body.retailers ===
-          "object"
-          ? req.body.retailers
-          : {};
-
-      const credentials =
-        emptyRetailerCredentials();
-
-      for (
-        const retailer of
-        RETAILER_KEYS
-      ) {
-        const submittedRetailer =
-          submitted[retailer] &&
-          typeof submitted[
-            retailer
-          ] === "object"
-            ? submitted[
-                retailer
-              ]
-            : {};
-
-        const username =
-          clean(
-            submittedRetailer
-              .username,
-            254
-          );
-
-        const password =
-          String(
-            submittedRetailer
-              .password ||
-            ""
-          );
-
-        credentials[
-          retailer
-        ] = {
-          username,
-
-          password:
-            password ||
-            existingCredentials[
-              retailer
-            ]?.password ||
-            ""
-        };
-      }
-
-      const suppliedCustomerProfile =
-        req.body?.customerProfile &&
-        typeof req.body.customerProfile ===
-          "object"
-          ? req.body.customerProfile
-          : existing.customerProfile ||
-            null;
-
-      memberships[index] = {
-        ...existing,
-
-        accountEmail:
-  accountEmail ||
-  existing.accountEmail ||
-  "",
-
-        profileName,
-
-        notes,
-
-        credentials:
-          encryptJson(
-            credentials
-          ),
-
-        customerProfile:
-          suppliedCustomerProfile,
-
-        updatedAt:
-          new Date()
-            .toISOString()
-      };
-
-      await saveFreeMemberships(
-        memberships
+        )
       );
+  }
+} catch (error) {
+  console.error(
+    "Existing free membership decrypt error:",
+    error.message
+  );
+}
+
+const submitted =
+  req.body?.retailers &&
+  typeof req.body.retailers ===
+    "object"
+    ? req.body.retailers
+    : {};
+
+const credentials =
+  emptyRetailerCredentials();
+
+for (
+  const retailer of
+  RETAILER_KEYS
+) {
+  const submittedRetailer =
+    submitted[retailer] &&
+    typeof submitted[
+      retailer
+    ] === "object"
+      ? submitted[
+          retailer
+        ]
+      : {};
+
+  const username =
+    clean(
+      submittedRetailer
+        .username,
+      254
+    );
+
+  const password =
+    String(
+      submittedRetailer
+        .password ||
+      ""
+    );
+
+  if (
+    password.length >
+    512
+  ) {
+    return res
+      .status(400)
+      .json({
+        error:
+          "A retailer password is too long."
+      });
+  }
+
+  credentials[
+    retailer
+  ] = {
+    username,
+
+    password:
+      password ||
+      existingCredentials[
+        retailer
+      ]?.password ||
+      ""
+  };
+}
+
+memberships[index] = {
+  ...existing,
+
+  accountEmail:
+    accountEmail ||
+    existing.accountEmail ||
+    "",
+
+  profileName,
+
+  notes,
+
+  credentials:
+    encryptJson(
+      credentials
+    ),
+
+  updatedAt:
+    new Date()
+      .toISOString()
+};
+
+await saveFreeMemberships(
+  memberships
+);
+
 
       return res.json({
         ok: true,
@@ -6981,77 +6980,85 @@ app.post(
           });
       }
 
-      const existing =
-        memberships[index];
+const assignments =
+  type === "free"
+    ? await getFreeAssignments()
+    : await getRentalAssignments();
 
-      memberships[index] = {
-        ...existing,
+const assignment =
+  type === "free"
+    ? currentFreeAssignment(
+        assignments,
+        id
+      )
+    : currentRentalAssignment(
+        assignments,
+        id
+      );
 
-        accountEmail:
-  accountEmail ||
-  existing.accountEmail ||
-  "",
+if (!assignment) {
+  return res
+    .status(400)
+    .json({
+      error:
+        `Start the ${
+          type === "free"
+            ? "free"
+            : "rented"
+        } membership before using Auto Populate.`
+    });
+}
 
-        /*
-          Customer information used by
-          this managed ACO profile.
-        */
+if (
+  String(
+    assignment.customerAccountId ||
+    ""
+  ) !==
+  String(customerAccountId)
+) {
+  return res
+    .status(409)
+    .json({
+      error:
+        "This membership is assigned to a different customer."
+    });
+}
 
-        customerProfile,
+const now =
+  new Date()
+    .toISOString();
 
-        /*
-          Sensitive customer information
-          remains encrypted.
+assignment.customerProfile =
+  customerProfile;
 
-          This does NOT contain your
-          retailer account credentials.
-        */
+assignment.customerSecrets =
+  paidSecrets
+    ? encryptJson(
+        paidSecrets
+      )
+    : (
+        assignment.customerSecrets ||
+        null
+      );
 
-        customerSecrets:
-          paidSecrets
-            ? encryptJson(
-                paidSecrets
-              )
-            : (
-                existing
-                  .customerSecrets ||
-                null
-              ),
+assignment.sourcePaidSubmissionId =
+  paidRecord.id;
 
-        sourceCustomerAccountId:
-          customerAccountId,
+assignment.autoPopulatedAt =
+  now;
 
-        sourcePaidSubmissionId:
-          paidRecord.id,
+assignment.updatedAt =
+  now;
 
-        autoPopulatedAt:
-          new Date()
-            .toISOString(),
-
-        updatedAt:
-          new Date()
-            .toISOString()
-      };
-
-      /*
-        IMPORTANT:
-        existing.credentials is preserved
-        by ...existing above.
-
-        Auto Populate never changes the
-        Target / Walmart / Pokémon Center
-        username or password.
-      */
-
-      if (type === "free") {
-        await saveFreeMemberships(
-          memberships
-        );
-      } else {
-        await saveRentedMemberships(
-          memberships
-        );
-      }
+if (type === "free") {
+  await saveFreeAssignments(
+    assignments
+  );
+} else {
+  await saveRentalAssignments(
+    assignments
+  );
+}
 
       return res.json({
         ok: true,
@@ -7348,11 +7355,11 @@ let customerSecrets =
 
 try {
   if (
-    membership.customerSecrets
+    assignment?.customerSecrets
   ) {
     customerSecrets =
       decryptJson(
-        membership.customerSecrets
+        assignment.customerSecrets
       );
   }
 } catch (error) {
@@ -7436,7 +7443,7 @@ try {
 retailers,
 
 customerProfile:
-  membership.customerProfile ||
+  assignment?.customerProfile ||
   null,
 
 customerSecrets
