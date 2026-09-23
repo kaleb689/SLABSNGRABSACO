@@ -4080,7 +4080,26 @@ bindAdminRetailerButtons();
 bindDeleteButtons();
 }
 
+submissionTypeFilter?.addEventListener(
+  "change",
+  async () => {
+    try {
+      await load();
+    } catch (error) {
+      console.error(
+        "Admin submission filter load failed:",
+        error
+      );
 
+      rows.innerHTML = `
+        <div class="empty-admin">
+          Unable to load submissions.
+        </div>
+      `;
+    }
+  }
+);
+  
 /* =========================================
    REVEAL / HIDE SENSITIVE INFO
 ========================================= */
