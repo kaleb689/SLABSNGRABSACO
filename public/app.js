@@ -30,9 +30,11 @@ const state = {
 
   retailerProfiles: [],
 
-  retailerAllowance: 0,
+specialProfiles: [],
 
-  retailerProfilesLoaded: false
+retailerAllowance: 0,
+
+retailerProfilesLoaded: false
 };
 
 
@@ -4571,9 +4573,10 @@ async function loadRetailerProfiles(
       response.status === 401
     ) {
       state.retailerProfiles = [];
-      state.retailerAllowance = 0;
-      state.retailerProfilesLoaded =
-        false;
+state.specialProfiles = [];
+state.retailerAllowance = 0;
+state.retailerProfilesLoaded =
+  false;
 
       return;
     }
@@ -4594,11 +4597,18 @@ async function loadRetailerProfiles(
       );
 
     state.retailerProfiles =
-      Array.isArray(
-        data.profiles
-      )
-        ? data.profiles
-        : [];
+  Array.isArray(
+    data.profiles
+  )
+    ? data.profiles
+    : [];
+
+state.specialProfiles =
+  Array.isArray(
+    data.specialProfiles
+  )
+    ? data.specialProfiles
+    : [];
 
     state.retailerProfilesLoaded =
       true;
