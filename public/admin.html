@@ -973,6 +973,23 @@
   font-size: 11px;
 }
 
+    .admin-retailer-password-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-retailer-password-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-retailer-password-row .reveal-button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
 .admin-password-status {
   display: block;
 
@@ -2768,28 +2785,50 @@ function retailerProfileHtml(
 
             <div class="admin-edit-field">
 
-              <label>
-                Password
-              </label>
+           <div class="admin-edit-field">
 
-              <input
-                type="password"
-                name="${escapeHtml(
-                  retailer.key
-                )}_password"
-                autocomplete="new-password"
-                placeholder="Leave blank to keep existing"
-              >
+  <label>
+    Password
+  </label>
 
-              <small class="admin-password-status">
-                ${
-                  saved.passwordConfigured
-                    ? "Password currently saved"
-                    : "No password saved"
-                }
-              </small>
+  <div class="admin-retailer-password-row">
 
-            </div>
+    <input
+      type="password"
+      name="${escapeHtml(
+        retailer.key
+      )}_password"
+      value="${escapeHtml(
+        saved.password || ""
+      )}"
+      autocomplete="off"
+      data-retailer-password
+    >
+
+    ${
+      saved.password
+        ? `
+            <button
+              type="button"
+              class="reveal-button retailer-password-toggle"
+            >
+              Show
+            </button>
+          `
+        : ""
+    }
+
+  </div>
+
+  <small class="admin-password-status">
+    ${
+      saved.password
+        ? "Password currently saved"
+        : "No password saved"
+    }
+  </small>
+
+</div>
 
           </div>
         `;
@@ -3039,6 +3078,52 @@ function bindRetailerProfileForms() {
 
       form.dataset.bound =
         "true";
+
+      form
+  .querySelectorAll(
+    ".retailer-password-toggle"
+  )
+  .forEach(button => {
+
+    button.addEventListener(
+      "click",
+      event => {
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const row =
+          button.closest(
+            ".admin-retailer-password-row"
+          );
+
+        const input =
+          row?.querySelector(
+            "[data-retailer-password]"
+          );
+
+        if (!input) {
+          return;
+        }
+
+        const hidden =
+          input.type ===
+          "password";
+
+        input.type =
+          hidden
+            ? "text"
+            : "password";
+
+        button.textContent =
+          hidden
+            ? "Hide"
+            : "Show";
+
+      }
+    );
+
+  });
 
       form.addEventListener(
         "submit",
