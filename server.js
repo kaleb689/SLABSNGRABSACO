@@ -5212,25 +5212,53 @@ app.put(
           ? paid
           : [];
 
-      const order =
-        paidRecords.find(
-          item =>
-            String(
-              item.id
-            ) === id
-        );
+const order =
+  paidRecords.find(
+    item =>
+      String(
+        item.id
+      ) === id
+  );
 
-      if (
-        !order ||
-        !order.customerAccountId
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Linked customer account could not be found."
-          });
-      }
+let customerAccountId =
+  order?.customerAccountId ||
+  null;
+
+if (!customerAccountId) {
+  const accounts =
+    await getCustomerAccounts();
+
+  const account =
+    accounts.find(
+      item =>
+        String(
+          item.id
+        ) === id
+    );
+
+  if (account) {
+    customerAccountId =
+      account.id;
+  }
+}
+
+if (!customerAccountId) {
+  return res
+    .status(404)
+    .json({
+      error:
+        "Customer account could not be found."
+    });
+}
+
+if (!customerAccountId) {
+  return res
+    .status(404)
+    .json({
+      error:
+        "Customer account could not be found."
+    });
+}
 
       const submitted =
         req.body?.retailers &&
@@ -5246,7 +5274,7 @@ app.put(
         records.findIndex(
           record =>
             record.customerAccountId ===
-              order.customerAccountId &&
+              customerAccountId &&
             normalizeSpecialProfileType(
               record.profileType
             ) === profileType
@@ -5360,7 +5388,7 @@ app.put(
           crypto.randomUUID(),
 
         customerAccountId:
-          order.customerAccountId,
+          customerAccountId,,
 
         profileType,
 
@@ -5547,7 +5575,7 @@ app.put(
         records.findIndex(
           record =>
             record.customerAccountId ===
-              order.customerAccountId &&
+              customerAccountId, &&
             Number(record.slot) ===
               slot
         );
