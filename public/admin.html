@@ -4027,31 +4027,45 @@ const response =
   dashboard.hidden = false;
 
 
-  submissionCount.textContent =
-    submissions.length === 1
-      ? "1 customer order"
-      : `${submissions.length} customer orders`;
+submissionCount.textContent =
+  submissions.length === 1
+    ? (
+        submissionType === "free"
+          ? "1 free account"
+          : "1 customer order"
+      )
+    : (
+        submissionType === "free"
+          ? `${submissions.length} free accounts`
+          : `${submissions.length} customer orders`
+      );
 
+if (!submissions.length) {
 
-  if (!submissions.length) {
+  rows.innerHTML = `
+    <div class="empty-admin">
 
-    rows.innerHTML = `
-      <div class="empty-admin">
+      <h3>
+        ${
+          submissionType === "free"
+            ? "No free submissions yet."
+            : "No paid submissions yet."
+        }
+      </h3>
 
-        <h3>
-          No paid submissions yet.
-        </h3>
+      <p>
+        ${
+          submissionType === "free"
+            ? "Customer accounts without a paid submission will appear here."
+            : "Paid customer orders will appear here individually."
+        }
+      </p>
 
-        <p>
-          Paid customer orders will
-          appear here individually.
-        </p>
+    </div>
+  `;
 
-      </div>
-    `;
-
-    return;
-  }
+  return;
+}
 
 
   rows.innerHTML =
