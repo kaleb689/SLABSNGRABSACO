@@ -7764,3 +7764,53 @@ select:focus {
     0 0 0 1px rgba(255, 255, 255, 0.08),
     0 0 22px rgba(255, 255, 255, 0.08);
 }
+
+/* ======================================================
+   CUSTOMER MEMBERSHIP STATUS LIGHT
+====================================================== */
+
+#my-profile .membership-status {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 8px 12px;
+
+  border-radius: 999px;
+
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+#my-profile .membership-status.status-green {
+  color: #45e68b;
+
+  border: 1px solid rgba(69, 230, 139, 0.35);
+
+  background: rgba(69, 230, 139, 0.08);
+
+  box-shadow:
+    0 0 16px rgba(69, 230, 139, 0.12);
+}
+
+#my-profile .membership-status.status-yellow {
+  color: #ffd84a;
+
+  border: 1px solid rgba(255, 216, 74, 0.40);
+
+  background: rgba(255, 216, 74, 0.08);
+
+  box-shadow:
+    0 0 16px rgba(255, 216, 74, 0.12);
+}
+
+#my-profile .membership-status.status-red {
+  color: #ff5c78;
+
+  border: 1px solid rgba(255, 92, 120, 0.35);
+
+  background: rgba(255, 92, 120, 0.08);
+
+  box-shadow:
+    0 0 16px rgba(255, 92, 120, 0.12);
+}
