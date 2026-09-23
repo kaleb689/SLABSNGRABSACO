@@ -5136,6 +5136,188 @@ async function saveRetailerProfile(
   }
 }
 
+async function saveSpecialProfile(
+  event
+) {
+  event.preventDefault();
+
+  const form =
+    event.currentTarget;
+
+  const profileType =
+    String(
+      form.dataset
+        .specialProfileForm ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const message =
+    document.querySelector(
+      `[data-special-profile-message="${CSS.escape(
+        profileType
+      )}"]`
+    );
+
+  const button =
+    form.querySelector(
+      'button[type="submit"]'
+    );
+
+  if (
+    ![
+      "free",
+      "rented"
+    ].includes(
+      profileType
+    )
+  ) {
+    setMessage(
+      message,
+      "Invalid special profile.",
+      "error"
+    );
+
+    return;
+  }
+
+  const formData =
+    new FormData(form);
+
+  const retailers = {};
+
+  for (
+    const retailer of
+    RETAILERS
+  ) {
+    retailers[
+      retailer.key
+    ] = {
+      username:
+        String(
+          formData.get(
+            `${retailer.key}Username`
+          ) || ""
+        ).trim(),
+
+      password:
+        String(
+          formData.get(
+            `${retailer.key}Password`
+          ) || ""
+        )
+    };
+  }
+
+  try {
+    setButtonBusy(
+      button,
+      true,
+      "Saving…"
+    );
+
+    setMessage(
+      message,
+      ""
+    );
+
+    const response =
+      await fetch(
+        `/api/account/special-profiles/${encodeURIComponent(
+          profileType
+        )}`,
+        {
+          method: "PUT",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          credentials:
+            "same-origin",
+
+          body:
+            JSON.stringify({
+              retailers
+            })
+        }
+      );
+
+    const data =
+      await readJson(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to save this special profile."
+      );
+    }
+
+    const savedProfile =
+      data.profile || null;
+
+    if (savedProfile) {
+      const existingIndex =
+        state.specialProfiles
+          .findIndex(
+            profile =>
+              profile.profileType ===
+              profileType
+          );
+
+      if (
+        existingIndex >= 0
+      ) {
+        state.specialProfiles[
+          existingIndex
+        ] = savedProfile;
+
+      } else {
+        state.specialProfiles.push(
+          savedProfile
+        );
+      }
+    }
+
+    renderRetailerProfiles();
+
+    const refreshedMessage =
+      document.querySelector(
+        `[data-special-profile-message="${CSS.escape(
+          profileType
+        )}"]`
+      );
+
+    setMessage(
+      refreshedMessage,
+      data.message ||
+      `${
+        profileType === "rented"
+          ? "RENTED PROFILE"
+          : "FREE PROFILE"
+      } saved securely.`,
+      "success"
+    );
+
+  } catch (error) {
+    setMessage(
+      message,
+      error.message,
+      "error"
+    );
+
+  } finally {
+    setButtonBusy(
+      button,
+      false
+    );
+  }
+}
+
 /* =====================================================
    SUCCESS DASHBOARD
 ===================================================== */
