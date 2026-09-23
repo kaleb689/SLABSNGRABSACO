@@ -4639,8 +4639,45 @@ function renderRetailerProfiles() {
   }
 
 
-  container.innerHTML =
-    cards.join("");
+  const specialCards =
+  state.specialProfiles
+    .map(
+      profile =>
+        specialProfileCardHtml(
+          profile
+        )
+    )
+    .filter(Boolean);
+
+container.innerHTML = `
+  ${
+    cards.length
+      ? `
+          <div class="profile-category-section">
+            <div class="profile-category-heading">
+              PAID PROFILES
+            </div>
+
+            ${cards.join("")}
+          </div>
+        `
+      : ""
+  }
+
+  ${
+    specialCards.length
+      ? `
+          <div class="profile-category-section special-profile-category">
+            <div class="profile-category-heading">
+              SPECIAL PROFILES
+            </div>
+
+            ${specialCards.join("")}
+          </div>
+        `
+      : ""
+  }
+`;
 
 
   bindRetailerPasswordToggles();
