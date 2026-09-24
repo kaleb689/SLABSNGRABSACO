@@ -267,7 +267,8 @@
       flex-wrap: wrap;
     }
 
-    #adminUserView {
+    #adminUserView,
+    #adminDiscordTest {
       min-height: 42px;
       padding: 0 18px;
       border: 1px solid #12c9ff;
@@ -282,7 +283,8 @@
       transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
     }
 
-    #adminUserView:hover {
+    #adminUserView:hover,
+    #adminDiscordTest:hover {
       transform: translateY(-2px);
       border-color: #82ebff;
       box-shadow: 0 0 34px rgba(18, 201, 255, .28);
@@ -2166,6 +2168,22 @@
 
           <span class="admin-user-view-note">
             Paid customer preview
+          </span>
+        </div>
+
+        <div>
+          <button
+            id="adminDiscordTest"
+            type="button"
+          >
+            TEST DISCORD
+          </button>
+
+          <span
+            id="adminDiscordTestNote"
+            class="admin-user-view-note"
+          >
+            Success webhook
           </span>
         </div>
 
@@ -9407,6 +9425,89 @@ document
         "_blank",
         "noopener,noreferrer"
       );
+    }
+  );
+
+
+
+/* =========================================
+   TEST DISCORD SUCCESS WEBHOOK
+========================================= */
+
+document
+  .getElementById(
+    "adminDiscordTest"
+  )
+  ?.addEventListener(
+    "click",
+    async event => {
+      const button =
+        event.currentTarget;
+
+      const note =
+        document.getElementById(
+          "adminDiscordTestNote"
+        );
+
+      const originalText =
+        button.textContent;
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        "SENDING...";
+
+      if (note) {
+        note.textContent =
+          "Sending test";
+      }
+
+      try {
+        const response =
+          await fetch(
+            "/api/admin/test-discord-success",
+            {
+              method:
+                "POST",
+
+              credentials:
+                "same-origin"
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Discord test failed."
+          );
+        }
+
+        if (note) {
+          note.textContent =
+            "Sent successfully";
+        }
+
+      } catch (error) {
+        if (note) {
+          note.textContent =
+            error.message;
+        }
+
+      } finally {
+        button.disabled =
+          false;
+
+        button.textContent =
+          originalText;
+      }
     }
   );
 
