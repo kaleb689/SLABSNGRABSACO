@@ -3327,6 +3327,33 @@ function renderAccountHeader(
       : "Not Verified"
   );
 
+  const headerVerificationStatus =
+    document.getElementById(
+      "email-verification-status"
+    );
+
+  const securityVerificationStatus =
+    document.getElementById(
+      "security-email-status"
+    );
+
+  [
+    headerVerificationStatus,
+    securityVerificationStatus
+  ]
+    .filter(Boolean)
+    .forEach(element => {
+      element.classList.toggle(
+        "verification-verified",
+        verified
+      );
+
+      element.classList.toggle(
+        "verification-unverified",
+        !verified
+      );
+    });
+
   const resend =
     document.getElementById(
       "resend-verification"
