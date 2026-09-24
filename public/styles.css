@@ -10416,3 +10416,129 @@ select:focus {
     text-align: center;
   }
 }
+
+
+/* ======================================================
+   PROFILE CONTROL SIZE / LABEL TOGGLE REFINEMENTS
+====================================================== */
+
+.profile-open-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.profile-open-hint {
+  margin-top: 0;
+  padding: 6px 10px;
+  font-size: 9px;
+  letter-spacing: .5px;
+}
+
+.profile-compact-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  min-height: 22px;
+  font-size: 17px;
+  line-height: 1;
+  color: #6fe8ff;
+}
+
+.profile-group-open {
+  padding: 10px 13px;
+  font-size: 10px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.saved-detail-right-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+}
+
+.saved-detail-open-hint {
+  margin-left: 0;
+  padding: 7px 10px;
+  font-size: 9px;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.saved-detail-chevron {
+  margin-left: 0;
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.saved-detail-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width:760px) {
+  .profile-open-control {
+    gap: 6px;
+  }
+
+  .profile-open-hint {
+    padding: 6px 9px;
+  }
+
+  .saved-detail-open-hint {
+    padding: 6px 8px;
+  }
+}
+
+
+/* ======================================================
+   MY PROFILE WATERMARK READABILITY FIX
+   Keep decorative background logos from sitting behind
+   customer/admin wording on the My Profile page.
+====================================================== */
+
+#my-profile {
+  position: relative;
+  isolation: isolate;
+}
+
+#my-profile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(5, 10, 18, .94),
+      rgba(7, 16, 27, .94)
+    );
+}
+
+/*
+  Keep the outer decorative watermarks visible around
+  the page, but prevent them from competing with text.
+*/
+#my-profile .account-shell,
+#my-profile .customer-account-shell,
+#my-profile .account-panel,
+#my-profile .retailer-profile-shell {
+  position: relative;
+  z-index: 1;
+}
+
