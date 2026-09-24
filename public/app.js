@@ -972,6 +972,19 @@ function clearSelectedTier() {
   updateCart();
 }
 
+
+function clearRentalCartItem() {
+  state.rentalCart =
+    null;
+
+  localStorage.removeItem(
+    "sng_rental_cart"
+  );
+
+  updateCart();
+}
+
+
 function updateCart() {
   const count =
     document.getElementById(
@@ -1055,9 +1068,20 @@ function updateCart() {
   if (plan) {
     parts.push(`
       <div class="cart-item">
-        <span class="plan-name">
-          ${escapeHtml(plan.name)}
-        </span>
+        <div class="cart-item-topline">
+          <span class="plan-name">
+            ${escapeHtml(plan.name)}
+          </span>
+
+          <button
+            type="button"
+            class="cart-item-remove"
+            id="remove-membership-cart-item"
+            aria-label="Remove membership from cart"
+          >
+            Remove
+          </button>
+        </div>
 
         <strong>
           $${plan.amount}/month
@@ -1099,9 +1123,20 @@ function updateCart() {
 
     parts.push(`
       <div class="cart-item rental-cart-item">
-        <span class="plan-name">
-          ${escapeHtml(retailerLabel)} Account Rental
-        </span>
+        <div class="cart-item-topline">
+          <span class="plan-name">
+            ${escapeHtml(retailerLabel)} Account Rental
+          </span>
+
+          <button
+            type="button"
+            class="cart-item-remove"
+            id="remove-rental-cart-item"
+            aria-label="Remove rental from cart"
+          >
+            Remove
+          </button>
+        </div>
 
         <strong>
           $${escapeHtml(rental.price)}
@@ -1125,6 +1160,28 @@ function updateCart() {
 
   content.innerHTML =
     parts.join("");
+
+  document
+    .getElementById(
+      "remove-membership-cart-item"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        clearSelectedTier();
+      }
+    );
+
+  document
+    .getElementById(
+      "remove-rental-cart-item"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        clearRentalCartItem();
+      }
+    );
 
   document
     .getElementById(
