@@ -9497,3 +9497,91 @@ select:focus {
     font-size: 17px;
   }
 }
+
+
+/* ======================================================
+   CART — INDIVIDUAL ITEM REMOVE BUTTONS
+====================================================== */
+
+.cart-item-topline {
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: 12px;
+
+  margin-bottom: 6px;
+}
+
+.cart-item-topline .plan-name {
+  min-width: 0;
+
+  flex: 1;
+}
+
+.cart-item-remove {
+  flex: 0 0 auto;
+
+  border:
+    1px solid rgba(255, 104, 118, 0.5);
+
+  border-radius: 7px;
+
+  padding:
+    7px
+    10px;
+
+  background:
+    rgba(255, 71, 87, 0.08);
+
+  color:
+    #ff8793;
+
+  font-size: 10px;
+
+  font-weight: 900;
+
+  letter-spacing: .25px;
+
+  cursor: pointer;
+
+  transition:
+    background .18s ease,
+    border-color .18s ease,
+    color .18s ease,
+    transform .18s ease;
+}
+
+.cart-item-remove:hover {
+  border-color:
+    rgba(255, 104, 118, 0.9);
+
+  background:
+    rgba(255, 71, 87, 0.15);
+
+  color:
+    #ffb0b8;
+
+  transform:
+    translateY(-1px);
+}
+
+.cart-item-remove:active {
+  transform:
+    translateY(0);
+}
+
+@media (max-width: 520px) {
+  .cart-item-topline {
+    align-items:
+      flex-start;
+  }
+
+  .cart-item-remove {
+    padding:
+      7px
+      9px;
+  }
+}
