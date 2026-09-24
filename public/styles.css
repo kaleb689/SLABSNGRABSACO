@@ -9112,3 +9112,237 @@ select:focus {
     font-size: 13px;
   }
 }
+
+
+/* =========================================================
+   SEPTEMBER 24 — PROFILE / ADMIN ROUND 3
+========================================================= */
+
+.claim-order-card {
+  padding: 31px !important;
+}
+
+.claim-order-card > h3 {
+  font-size: clamp(24px, 2.2vw, 31px) !important;
+  margin: 7px 0 12px !important;
+}
+
+.claim-order-card .account-muted,
+.claim-order-card .guide-alert,
+.claim-order-card label,
+.claim-order-card .fine {
+  font-size: 14px !important;
+  line-height: 1.72 !important;
+}
+
+.claim-order-card input {
+  min-height: 49px;
+  font-size: 14px;
+}
+
+.rental-purchase-bar select {
+  min-height: 52px !important;
+  padding: 0 43px 0 16px !important;
+  font-size: 14px !important;
+  font-weight: 850 !important;
+  border-radius: 11px !important;
+}
+
+.rental-purchase-card {
+  padding: 27px !important;
+}
+
+.rental-price-box,
+.rental-purchase-price,
+#rental-price,
+[data-rental-price] {
+  min-height: 84px !important;
+  padding: 17px 20px !important;
+}
+
+#rental-price,
+[data-rental-price],
+.rental-price-box strong,
+.rental-purchase-price strong {
+  font-size: clamp(25px, 2.8vw, 34px) !important;
+  line-height: 1.05 !important;
+}
+
+.account-topbar {
+  align-items: center;
+}
+
+.account-topbar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 17px;
+  margin-left: auto;
+}
+
+.member-lifetime-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(112px, auto));
+  gap: 9px;
+}
+
+.member-lifetime-stats > div {
+  min-height: 62px;
+  padding: 10px 13px;
+  border: 1px solid rgba(18, 201, 255, .19);
+  border-radius: 11px;
+  background: rgba(18, 201, 255, .035);
+  display: grid;
+  gap: 4px;
+  align-content: center;
+}
+
+.member-lifetime-stats span {
+  color: #93acc0;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .8px;
+}
+
+.member-lifetime-stats strong {
+  color: #eff9ff;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.saved-details-manager {
+  margin-top: 22px;
+}
+
+.saved-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.saved-detail-panel {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid rgba(18, 201, 255, .18);
+  border-radius: 15px;
+  background: linear-gradient(150deg, rgba(18, 201, 255, .04), rgba(7, 16, 27, .88));
+}
+
+.saved-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.saved-detail-head h4 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+
+.saved-detail-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 36px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(18, 201, 255, .28);
+  background: rgba(18, 201, 255, .08);
+  color: #dff7ff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.saved-detail-selector-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.saved-detail-selector-row select {
+  min-width: 0;
+  min-height: 48px;
+}
+
+.saved-detail-selector-row button {
+  min-height: 48px;
+  white-space: nowrap;
+}
+
+.saved-detail-preview {
+  min-height: 126px;
+  padding: 16px;
+  border: 1px solid rgba(180, 207, 226, .12);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, .16);
+}
+
+.saved-detail-preview strong {
+  color: #f2fbff;
+}
+
+.saved-detail-preview p {
+  margin: 0 0 6px;
+  color: #bdccda;
+  line-height: 1.6;
+}
+
+.saved-detail-form {
+  display: grid;
+  gap: 13px;
+  margin-bottom: 15px;
+  padding: 17px;
+  border: 1px solid rgba(18, 201, 255, .22);
+  border-radius: 12px;
+  background: rgba(5, 12, 21, .84);
+}
+
+.saved-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.danger-button {
+  border-color: rgba(255, 102, 124, .35) !important;
+  color: #ff8597 !important;
+}
+
+@media (max-width: 1050px) {
+  .account-topbar {
+    align-items: flex-start;
+  }
+
+  .account-topbar-right {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .member-lifetime-stats {
+    grid-template-columns: repeat(3, minmax(100px, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .saved-details-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .member-lifetime-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .account-topbar-right {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .saved-detail-selector-row {
+    grid-template-columns: 1fr;
+  }
+}
