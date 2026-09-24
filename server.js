@@ -1212,6 +1212,441 @@ async function sendDiscordAdminPaymentNotification(
 }
 
 
+
+/* -------------------------------------------------------
+   ADMIN PROFILE WORKFLOW DISCORD NOTIFICATIONS
+
+   Environment variable:
+   DISCORD_ADMIN_PROFILE_WEBHOOK_URL
+
+   These messages intentionally contain NO retailer
+   passwords, full card numbers, or Security Code values.
+
+   A message is created when:
+   - a paid profile is awaiting activation
+   - a gifted/rented profile is awaiting activation
+   - a gifted/rented profile expires
+
+   The Discord message ID is stored on the profile or
+   assignment so it can be deleted after the admin
+   activates/deactivates the profile.
+------------------------------------------------------- */
+
+function adminProfileWebhookUrl() {
+  return String(
+    process.env
+      .DISCORD_ADMIN_PROFILE_WEBHOOK_URL ||
+    ""
+  ).trim();
+}
+
+
+async function sendDiscordAdminProfileWorkflowNotification(
+  {
+    title,
+    description,
+    customerName,
+    customerEmail,
+    profileLabel,
+    profileType,
+    expiresAt = null
+  } = {}
+) {
+  const webhookUrl =
+    adminProfileWebhookUrl();
+
+  if (!webhookUrl) {
+    return null;
+  }
+
+  const fields = [
+    {
+      name: "Customer",
+      value:
+        clean(
+          customerName ||
+          "Customer",
+          150
+        ),
+      inline: false
+    },
+    {
+      name: "Customer Email",
+      value:
+        clean(
+          customerEmail ||
+          "Not available",
+          200
+        ),
+      inline: false
+    },
+    {
+      name: "Profile",
+      value:
+        clean(
+          profileLabel ||
+          "Profile",
+          150
+        ),
+      inline: true
+    },
+    {
+      name: "Type",
+      value:
+        clean(
+          profileType ||
+          "Profile",
+          100
+        ),
+      inline: true
+    }
+  ];
+
+  if (expiresAt) {
+    fields.push({
+      name: "Expiration",
+      value:
+        clean(
+          String(
+            expiresAt
+          ),
+          100
+        ),
+      inline: false
+    });
+  }
+
+  const separator =
+    webhookUrl.includes("?")
+      ? "&"
+      : "?";
+
+  const response =
+    await fetch(
+      `${webhookUrl}${separator}wait=true`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify({
+            username:
+              "SLABS N GRABS ACO Profiles",
+
+            allowed_mentions: {
+              parse: []
+            },
+
+            embeds: [
+              {
+                title:
+                  clean(
+                    title ||
+                    "PROFILE ACTION REQUIRED",
+                    250
+                  ),
+
+                description:
+                  clean(
+                    description ||
+                    "A customer profile needs admin attention.",
+                    700
+                  ),
+
+                fields,
+
+                timestamp:
+                  new Date()
+                    .toISOString(),
+
+                footer: {
+                  text:
+                    "Admin profile workflow • No sensitive credentials included"
+                }
+              }
+            ]
+          })
+      }
+    );
+
+  if (!response.ok) {
+    const detail =
+      await response
+        .text()
+        .catch(
+          () => ""
+        );
+
+    throw new Error(
+      `Admin profile Discord webhook returned ${response.status}: ${detail.slice(0, 180)}`
+    );
+  }
+
+  const data =
+    await response
+      .json()
+      .catch(
+        () => ({})
+      );
+
+  return (
+    data?.id
+      ? String(data.id)
+      : null
+  );
+}
+
+
+async function deleteDiscordAdminProfileWorkflowNotification(
+  messageId
+) {
+  const webhookUrl =
+    adminProfileWebhookUrl();
+
+  const id =
+    String(
+      messageId ||
+      ""
+    ).trim();
+
+  if (
+    !webhookUrl ||
+    !id
+  ) {
+    return false;
+  }
+
+  const cleanWebhookUrl =
+    webhookUrl.split("?")[0];
+
+  const response =
+    await fetch(
+      `${cleanWebhookUrl}/messages/${encodeURIComponent(
+        id
+      )}`,
+      {
+        method: "DELETE"
+      }
+    );
+
+  if (
+    !response.ok &&
+    response.status !== 404
+  ) {
+    throw new Error(
+      `Unable to delete admin profile Discord message (${response.status}).`
+    );
+  }
+
+  return true;
+}
+
+
+async function customerLabelForProfileWorkflow(
+  customerAccountId,
+  fallbackProfile = {}
+) {
+  const accounts =
+    await getCustomerAccounts();
+
+  const account =
+    accounts.find(
+      item =>
+        String(
+          item.id
+        ) ===
+        String(
+          customerAccountId ||
+          ""
+        )
+    ) || null;
+
+  const name =
+    [
+      fallbackProfile?.firstName,
+      fallbackProfile?.lastName
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim() ||
+    fallbackProfile?.profileName ||
+    "Customer";
+
+  return {
+    name:
+      clean(
+        name,
+        150
+      ) ||
+      "Customer",
+
+    email:
+      normalizeEmail(
+        account?.email ||
+        fallbackProfile?.email ||
+        ""
+      ) ||
+      "Not available"
+  };
+}
+
+
+async function ensurePaidProfileDiscordAwaitingMessage(
+  record
+) {
+  if (
+    !record ||
+    record.activationStatus !==
+      "awaiting_activation" ||
+    record.discordProfileMessageId
+  ) {
+    return false;
+  }
+
+  try {
+    const customer =
+      await customerLabelForProfileWorkflow(
+        record.customerAccountId,
+        record.customerProfile ||
+        {}
+      );
+
+    const messageId =
+      await sendDiscordAdminProfileWorkflowNotification({
+        title:
+          "🟡 PAID PROFILE ACTIVATING",
+        description:
+          "A customer completed a paid ACO profile. Open Admin and activate it when setup is complete.",
+        customerName:
+          customer.name,
+        customerEmail:
+          customer.email,
+        profileLabel:
+          record.profileName ||
+          `Profile ${record.slot}`,
+        profileType:
+          "Paid Profile"
+      });
+
+    if (messageId) {
+      record.discordProfileMessageId =
+        messageId;
+
+      record.discordProfileMessageType =
+        "awaiting_activation";
+
+      return true;
+    }
+  } catch (error) {
+    console.error(
+      "Paid profile Discord notification failed:",
+      error.message
+    );
+  }
+
+  return false;
+}
+
+
+async function ensureManagedProfileDiscordMessage(
+  assignment,
+  type
+) {
+  if (!assignment) {
+    return false;
+  }
+
+  const activationStatus =
+    String(
+      assignment.activationStatus ||
+      ""
+    );
+
+  if (
+    ![
+      "awaiting_activation",
+      "expired"
+    ].includes(
+      activationStatus
+    ) ||
+    assignment.discordProfileMessageId
+  ) {
+    return false;
+  }
+
+  try {
+    const customer =
+      await customerLabelForProfileWorkflow(
+        assignment.customerAccountId,
+        assignment.customerProfile ||
+        {}
+      );
+
+    const gifted =
+      type === "free";
+
+    const profileType =
+      gifted
+        ? "Gifted Profile"
+        : "Rented Profile";
+
+    const expired =
+      activationStatus ===
+      "expired";
+
+    const messageId =
+      await sendDiscordAdminProfileWorkflowNotification({
+        title:
+          expired
+            ? `🔴 ${profileType.toUpperCase()} EXPIRED`
+            : `🟡 ${profileType.toUpperCase()} ACTIVATING`,
+
+        description:
+          expired
+            ? (
+                gifted
+                  ? "A gifted profile has expired. Review it in Admin and deactivate it when the managed account should be released."
+                  : "A rented profile has expired. Review it in Admin. Extend the rental if confirmed, otherwise deactivate it."
+              )
+            : "The customer completed the required shipping/payment information. Open Admin and activate this profile.",
+
+        customerName:
+          customer.name,
+        customerEmail:
+          customer.email,
+
+        profileLabel:
+          profileType,
+
+        profileType,
+
+        expiresAt:
+          assignment.expiresAt ||
+          null
+      });
+
+    if (messageId) {
+      assignment.discordProfileMessageId =
+        messageId;
+
+      assignment.discordProfileMessageType =
+        activationStatus;
+
+      return true;
+    }
+  } catch (error) {
+    console.error(
+      "Managed profile Discord notification failed:",
+      error.message
+    );
+  }
+
+  return false;
+}
+
+
 function membershipPlanFromStripePriceId(
   priceId
 ) {
@@ -2744,7 +3179,8 @@ function normalizeProfileActivationStatus(
       "incomplete",
       "awaiting_activation",
       "activated",
-      "deactivated"
+      "deactivated",
+      "expired"
     ].includes(status)
   ) {
     return status;
@@ -2776,6 +3212,13 @@ function profileActivationLabel(
     "deactivated"
   ) {
     return "Deactivated";
+  }
+
+  if (
+    value ===
+    "expired"
+  ) {
+    return "Expired";
   }
 
   if (
@@ -3292,7 +3735,7 @@ function requireAdmin(req, res, next) {
 
   session.expires =
     Date.now() +
-    30 * 60 * 1000;
+    8 * 60 * 60 * 1000;
 
   next();
 }
@@ -6890,20 +7333,36 @@ app.get(
           expiresAt.getTime() <=
             now.getTime()
         ) {
-          assignment.active =
-            false;
+          if (
+            assignment.activationStatus !==
+            "expired"
+          ) {
+            assignment.activationStatus =
+              "expired";
 
-          assignment.endedAt =
-            now.toISOString();
+            assignment.expiredAt =
+              now.toISOString();
 
-          assignment.updatedAt =
-            now.toISOString();
+            assignment.updatedAt =
+              now.toISOString();
 
-          assignment.endReason =
-            "expired";
+            assignment.endReason =
+              "expired";
 
-          assignmentsChanged =
-            true;
+            assignmentsChanged =
+              true;
+          }
+
+          const discordChanged =
+            await ensureManagedProfileDiscordMessage(
+              assignment,
+              "free"
+            );
+
+          if (discordChanged) {
+            assignmentsChanged =
+              true;
+          }
         }
       }
 
@@ -6919,9 +7378,8 @@ app.get(
             assignment
               .customerAccountId ===
               req.customerAccount.id &&
-            freeAssignmentIsActive(
-              assignment
-            )
+            assignment.active ===
+              true
         );
 
       const result =
@@ -6989,10 +7447,28 @@ try {
                 "FREE MEMBERSHIP",
 
               status:
-                "active",
+                assignment.activationStatus ===
+                  "expired"
+                  ? "expired"
+                  : "active",
 
               active:
-                true,
+                assignment.activationStatus !==
+                  "expired",
+
+              activationStatus:
+                normalizeProfileActivationStatus(
+                  assignment.activationStatus,
+                  false
+                ),
+
+              activationLabel:
+                profileActivationLabel(
+                  normalizeProfileActivationStatus(
+                    assignment.activationStatus,
+                    false
+                  )
+                ),
 
               startsAt:
                 assignment.startsAt ||
@@ -7107,20 +7583,36 @@ app.get(
           expiresAt.getTime() <=
             now.getTime()
         ) {
-          assignment.active =
-            false;
+          if (
+            assignment.activationStatus !==
+            "expired"
+          ) {
+            assignment.activationStatus =
+              "expired";
 
-          assignment.endedAt =
-            now.toISOString();
+            assignment.expiredAt =
+              now.toISOString();
 
-          assignment.updatedAt =
-            now.toISOString();
+            assignment.updatedAt =
+              now.toISOString();
 
-          assignment.endReason =
-            "expired";
+            assignment.endReason =
+              "expired";
 
-          assignmentsChanged =
-            true;
+            assignmentsChanged =
+              true;
+          }
+
+          const discordChanged =
+            await ensureManagedProfileDiscordMessage(
+              assignment,
+              "rented"
+            );
+
+          if (discordChanged) {
+            assignmentsChanged =
+              true;
+          }
         }
       }
 
@@ -7136,9 +7628,8 @@ app.get(
             assignment
               .customerAccountId ===
               req.customerAccount.id &&
-            rentalAssignmentIsActive(
-              assignment
-            )
+            assignment.active ===
+              true
         );
 
       const result =
@@ -7207,10 +7698,28 @@ try {
                 "RENTED MEMBERSHIP",
 
               status:
-                "active",
+                assignment.activationStatus ===
+                  "expired"
+                  ? "expired"
+                  : "active",
 
               active:
-                true,
+                assignment.activationStatus !==
+                  "expired",
+
+              activationStatus:
+                normalizeProfileActivationStatus(
+                  assignment.activationStatus,
+                  false
+                ),
+
+              activationLabel:
+                profileActivationLabel(
+                  normalizeProfileActivationStatus(
+                    assignment.activationStatus,
+                    false
+                  )
+                ),
 
               startsAt:
                 assignment.startsAt ||
@@ -7782,9 +8291,21 @@ app.put(
           customerSecrets
         );
 
+      const previousActivationStatus =
+        normalizeProfileActivationStatus(
+          existingRecord
+            ?.activationStatus,
+          false
+        );
+
       const activationStatus =
         readiness.ready
-          ? "awaiting_activation"
+          ? (
+              previousActivationStatus ===
+                "activated"
+                ? "activated"
+                : "awaiting_activation"
+            )
           : "incomplete";
 
       const record = {
@@ -7818,15 +8339,47 @@ app.put(
         activationStatus,
 
         activationRequestedAt:
-          readiness.ready
-            ? now
+          activationStatus ===
+            "awaiting_activation"
+            ? (
+                existingRecord
+                  ?.activationRequestedAt ||
+                now
+              )
             : null,
 
         activatedAt:
-          null,
+          activationStatus ===
+            "activated"
+            ? (
+                existingRecord
+                  ?.activatedAt ||
+                now
+              )
+            : null,
 
         deactivatedAt:
           null,
+
+        discordProfileMessageId:
+          activationStatus ===
+            "awaiting_activation"
+            ? (
+                existingRecord
+                  ?.discordProfileMessageId ||
+                null
+              )
+            : null,
+
+        discordProfileMessageType:
+          activationStatus ===
+            "awaiting_activation"
+            ? (
+                existingRecord
+                  ?.discordProfileMessageType ||
+                null
+              )
+            : null,
 
         createdAt:
           existingRecord
@@ -7852,6 +8405,26 @@ app.put(
       await saveRetailerProfiles(
         records
       );
+
+      if (
+        record.activationStatus ===
+        "awaiting_activation"
+      ) {
+        const discordChanged =
+          await ensurePaidProfileDiscordAwaitingMessage(
+            record
+          );
+
+        if (discordChanged) {
+          records[
+            existingIndex
+          ] = record;
+
+          await saveRetailerProfiles(
+            records
+          );
+        }
+      }
 
       return res.json({
         ok: true,
@@ -8225,13 +8798,13 @@ app.post(
         {
           expires:
             Date.now() +
-            30 * 60 * 1000
+            8 * 60 * 60 * 1000
         }
       );
 
       res.setHeader(
         "Set-Cookie",
-        `sng_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800${
+        `sng_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${
           BASE_URL.startsWith(
             "https://"
           )
@@ -13891,6 +14464,37 @@ app.post(
       assignment.updatedAt =
         assignment.customerUpdatedAt;
 
+      const readiness =
+        managedProfileReadiness(
+          assignment.customerProfile,
+          nextSecrets
+        );
+
+      const previousStatus =
+        normalizeProfileActivationStatus(
+          assignment.activationStatus,
+          false
+        );
+
+      assignment.activationStatus =
+        readiness.ready
+          ? (
+              previousStatus ===
+                "activated"
+                ? "activated"
+                : "awaiting_activation"
+            )
+          : "incomplete";
+
+      if (
+        assignment.activationStatus ===
+        "awaiting_activation"
+      ) {
+        assignment.activationRequestedAt =
+          assignment.activationRequestedAt ||
+          assignment.customerUpdatedAt;
+      }
+
       if (type === "free") {
         await saveFreeAssignments(
           assignments
@@ -13901,18 +14505,37 @@ app.post(
         );
       }
 
-      const readiness =
-        managedProfileReadiness(
-          assignment.customerProfile,
-          nextSecrets
-        );
+      if (
+        assignment.activationStatus ===
+        "awaiting_activation"
+      ) {
+        const discordChanged =
+          await ensureManagedProfileDiscordMessage(
+            assignment,
+            type
+          );
+
+        if (discordChanged) {
+          if (type === "free") {
+            await saveFreeAssignments(
+              assignments
+            );
+          } else {
+            await saveRentalAssignments(
+              assignments
+            );
+          }
+        }
+      }
 
       return res.json({
         ok: true,
         readiness,
+        activationStatus:
+          assignment.activationStatus,
         message:
           readiness.ready
-            ? "Saved shipping and card information applied. This profile is ready."
+            ? "Saved information applied. This profile is now ACTIVATING and is awaiting admin activation."
             : "Saved information applied. Additional profile information is still required."
       });
 
@@ -14040,6 +14663,37 @@ app.put(
       assignment.updatedAt =
         assignment.customerUpdatedAt;
 
+      const readiness =
+        managedProfileReadiness(
+          customerProfile,
+          customerSecrets
+        );
+
+      const previousStatus =
+        normalizeProfileActivationStatus(
+          assignment.activationStatus,
+          false
+        );
+
+      assignment.activationStatus =
+        readiness.ready
+          ? (
+              previousStatus ===
+                "activated"
+                ? "activated"
+                : "awaiting_activation"
+            )
+          : "incomplete";
+
+      if (
+        assignment.activationStatus ===
+        "awaiting_activation"
+      ) {
+        assignment.activationRequestedAt =
+          assignment.activationRequestedAt ||
+          assignment.customerUpdatedAt;
+      }
+
       if (type === "free") {
         await saveFreeAssignments(
           assignments
@@ -14050,8 +14704,34 @@ app.put(
         );
       }
 
+      if (
+        assignment.activationStatus ===
+        "awaiting_activation"
+      ) {
+        const discordChanged =
+          await ensureManagedProfileDiscordMessage(
+            assignment,
+            type
+          );
+
+        if (discordChanged) {
+          if (type === "free") {
+            await saveFreeAssignments(
+              assignments
+            );
+          } else {
+            await saveRentalAssignments(
+              assignments
+            );
+          }
+        }
+      }
+
       return res.json({
         ok: true,
+
+        activationStatus:
+          assignment.activationStatus,
 
         customerProfile,
 
@@ -14347,24 +15027,114 @@ app.get(
   requireAdmin,
   async (req, res) => {
     try {
-      const profiles =
-        await getRetailerProfiles();
-
-      const accounts =
-        await getCustomerAccounts();
+      const [
+        paidProfiles,
+        freeAssignments,
+        rentalAssignments,
+        accounts
+      ] = await Promise.all([
+        getRetailerProfiles(),
+        getFreeAssignments(),
+        getRentalAssignments(),
+        getCustomerAccounts()
+      ]);
 
       const groups =
         new Map();
 
+      const addProfile = (
+        {
+          id,
+          customerAccountId,
+          customerProfile,
+          profileName,
+          slot = null,
+          type,
+          status,
+          expiresAt = null
+        }
+      ) => {
+        if (
+          !status ||
+          status ===
+            "incomplete"
+        ) {
+          return;
+        }
+
+        const account =
+          accounts.find(
+            item =>
+              String(
+                item.id
+              ) ===
+              String(
+                customerAccountId ||
+                ""
+              )
+          ) || null;
+
+        const customerName =
+          [
+            customerProfile
+              ?.firstName,
+            customerProfile
+              ?.lastName
+          ]
+            .filter(Boolean)
+            .join(" ") ||
+          customerProfile
+            ?.profileName ||
+          account?.email ||
+          "Customer";
+
+        const customerEmail =
+          account?.email ||
+          customerProfile?.email ||
+          "";
+
+        const key =
+          String(
+            customerAccountId ||
+            customerEmail ||
+            "unlinked"
+          );
+
+        if (!groups.has(key)) {
+          groups.set(
+            key,
+            {
+              customerName,
+              customerEmail,
+              profiles: []
+            }
+          );
+        }
+
+        groups
+          .get(key)
+          .profiles
+          .push({
+            id,
+            profileName,
+            slot,
+            type,
+            status,
+            label:
+              profileActivationLabel(
+                status
+              ),
+            expiresAt
+          });
+      };
+
       for (
-        const record of profiles
+        const record of paidProfiles
       ) {
         let secrets = {};
 
         try {
-          if (
-            record.customerSecrets
-          ) {
+          if (record.customerSecrets) {
             secrets =
               decryptJson(
                 record.customerSecrets
@@ -14386,118 +15156,194 @@ app.get(
             readiness.ready
           );
 
-        if (
-          status ===
-          "incomplete"
-        ) {
-          continue;
-        }
-
-        const account =
-          accounts.find(
-            item =>
-              String(
-                item.id
-              ) ===
-              String(
-                record.customerAccountId
-              )
-          ) || null;
-
-        const customerName =
-          [
-            record.customerProfile
-              ?.firstName,
-            record.customerProfile
-              ?.lastName
-          ]
-            .filter(Boolean)
-            .join(" ") ||
-          record.customerProfile
-            ?.profileName ||
-          account?.email ||
-          "Customer";
-
-        const customerEmail =
-          account?.email ||
-          record.customerProfile
-            ?.email ||
-          "";
-
-        const key =
-          String(
-            record.customerAccountId ||
-            customerEmail ||
-            "unlinked"
-          );
-
-        if (!groups.has(key)) {
-          groups.set(
-            key,
-            {
-              customerName,
-              customerEmail,
-              profiles: []
-            }
-          );
-        }
-
-        groups
-          .get(key)
-          .profiles
-          .push({
-            id:
-              record.id,
-
-            slot:
-              Number(
-                record.slot
-              ),
-
-            profileName:
-              record.profileName ||
-              `Profile ${record.slot}`,
-
-            status,
-
-            label:
-              profileActivationLabel(
-                status
-              )
-          });
+        addProfile({
+          id:
+            record.id,
+          customerAccountId:
+            record.customerAccountId,
+          customerProfile:
+            record.customerProfile,
+          profileName:
+            record.profileName ||
+            `Profile ${record.slot}`,
+          slot:
+            Number(record.slot),
+          type:
+            "paid",
+          status
+        });
       }
+
+      const now =
+        Date.now();
+
+      const addManagedAssignments =
+        async (
+          assignments,
+          type
+        ) => {
+          let changed = false;
+
+          for (
+            const assignment of assignments
+          ) {
+            if (
+              assignment.active !==
+              true
+            ) {
+              continue;
+            }
+
+            if (
+              assignment.expiresAt
+            ) {
+              const end =
+                new Date(
+                  assignment.expiresAt
+                ).getTime();
+
+              if (
+                Number.isFinite(end) &&
+                end <= now &&
+                assignment.activationStatus !==
+                  "expired"
+              ) {
+                assignment.activationStatus =
+                  "expired";
+
+                assignment.expiredAt =
+                  new Date()
+                    .toISOString();
+
+                assignment.endReason =
+                  "expired";
+
+                assignment.updatedAt =
+                  assignment.expiredAt;
+
+                changed =
+                  true;
+              }
+            }
+
+            if (
+              assignment.activationStatus ===
+                "expired" &&
+              !assignment.discordProfileMessageId
+            ) {
+              const discordChanged =
+                await ensureManagedProfileDiscordMessage(
+                  assignment,
+                  type
+                );
+
+              changed =
+                changed ||
+                discordChanged;
+            }
+
+            const status =
+              normalizeProfileActivationStatus(
+                assignment.activationStatus,
+                false
+              );
+
+            addProfile({
+              id:
+                assignment.id,
+              customerAccountId:
+                assignment.customerAccountId,
+              customerProfile:
+                assignment.customerProfile,
+              profileName:
+                type === "free"
+                  ? "Gifted Profile"
+                  : "Rented Profile",
+              type:
+                type === "free"
+                  ? "gifted"
+                  : "rented",
+              status,
+              expiresAt:
+                assignment.expiresAt ||
+                null
+            });
+          }
+
+          if (changed) {
+            if (type === "free") {
+              await saveFreeAssignments(
+                assignments
+              );
+            } else {
+              await saveRentalAssignments(
+                assignments
+              );
+            }
+          }
+        };
+
+      await addManagedAssignments(
+        freeAssignments,
+        "free"
+      );
+
+      await addManagedAssignments(
+        rentalAssignments,
+        "rented"
+      );
 
       const customers =
         Array.from(
           groups.values()
+        ).map(group => ({
+          ...group,
+          profiles:
+            group.profiles.sort(
+              (a,b) => {
+                const order = {
+                  paid: 1,
+                  gifted: 2,
+                  rented: 3
+                };
+
+                return (
+                  (order[a.type] || 9) -
+                  (order[b.type] || 9)
+                );
+              }
+            )
+        }));
+
+      const allProfiles =
+        customers.flatMap(
+          group =>
+            group.profiles
         );
 
       return res.json({
         ok: true,
 
         awaitingCount:
-          customers.reduce(
-            (total, group) =>
-              total +
-              group.profiles.filter(
-                profile =>
-                  profile.status ===
-                  "awaiting_activation"
-              ).length,
-            0
-          ),
+          allProfiles.filter(
+            profile =>
+              profile.status ===
+              "awaiting_activation"
+          ).length,
 
         activatedCount:
-          customers.reduce(
-            (total, group) =>
-              total +
-              group.profiles.filter(
-                profile =>
-                  profile.status ===
-                  "activated"
-              ).length,
-            0
-          ),
+          allProfiles.filter(
+            profile =>
+              profile.status ===
+              "activated"
+          ).length,
+
+        expiredCount:
+          allProfiles.filter(
+            profile =>
+              profile.status ===
+              "expired"
+          ).length,
 
         customers
       });
@@ -14513,6 +15359,215 @@ app.get(
         .json({
           error:
             "Unable to load profile activation tracker."
+        });
+    }
+  }
+);
+
+
+
+app.post(
+  "/api/admin/managed-profile-activation/:type/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const action =
+        clean(
+          req.body?.action,
+          30
+        )
+          .trim()
+          .toLowerCase();
+
+      if (
+        ![
+          "free",
+          "rented"
+        ].includes(type)
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid profile type."
+          });
+      }
+
+      if (
+        ![
+          "activate",
+          "deactivate"
+        ].includes(action)
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose activate or deactivate."
+          });
+      }
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
+
+      const assignment =
+        assignments.find(
+          item =>
+            String(
+              item.id
+            ) ===
+            String(id)
+        );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Profile assignment could not be found."
+          });
+      }
+
+      let secrets = {};
+
+      try {
+        if (
+          assignment.customerSecrets
+        ) {
+          secrets =
+            decryptJson(
+              assignment.customerSecrets
+            ) || {};
+        }
+      } catch {
+        secrets = {};
+      }
+
+      const readiness =
+        managedProfileReadiness(
+          assignment.customerProfile,
+          secrets
+        );
+
+      if (
+        action ===
+          "activate" &&
+        !readiness.ready
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "This profile is still missing shipping or payment information."
+          });
+      }
+
+      const discordMessageId =
+        assignment.discordProfileMessageId ||
+        null;
+
+      const now =
+        new Date()
+          .toISOString();
+
+      if (
+        action ===
+        "activate"
+      ) {
+        assignment.active =
+          true;
+
+        assignment.activationStatus =
+          "activated";
+
+        assignment.activatedAt =
+          now;
+
+        assignment.deactivatedAt =
+          null;
+
+      } else {
+        assignment.active =
+          false;
+
+        assignment.activationStatus =
+          "deactivated";
+
+        assignment.deactivatedAt =
+          now;
+
+        assignment.endedAt =
+          assignment.endedAt ||
+          now;
+
+        assignment.endReason =
+          assignment.endReason ||
+          "admin_deactivated";
+      }
+
+      assignment.discordProfileMessageId =
+        null;
+
+      assignment.discordProfileMessageType =
+        null;
+
+      assignment.updatedAt =
+        now;
+
+      if (type === "free") {
+        await saveFreeAssignments(
+          assignments
+        );
+      } else {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      if (discordMessageId) {
+        try {
+          await deleteDiscordAdminProfileWorkflowNotification(
+            discordMessageId
+          );
+        } catch (error) {
+          console.error(
+            "Managed profile Discord message delete failed:",
+            error.message
+          );
+        }
+      }
+
+      return res.json({
+        ok: true,
+        status:
+          assignment.activationStatus
+      });
+
+    } catch (error) {
+      console.error(
+        "Managed profile activation update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update profile activation."
         });
     }
   }
@@ -14611,6 +15666,10 @@ app.post(
         new Date()
           .toISOString();
 
+      const discordMessageId =
+        record.discordProfileMessageId ||
+        null;
+
       if (
         action ===
         "activate"
@@ -14634,9 +15693,28 @@ app.post(
       record.updatedAt =
         now;
 
+      record.discordProfileMessageId =
+        null;
+
+      record.discordProfileMessageType =
+        null;
+
       await saveRetailerProfiles(
         records
       );
+
+      if (discordMessageId) {
+        try {
+          await deleteDiscordAdminProfileWorkflowNotification(
+            discordMessageId
+          );
+        } catch (error) {
+          console.error(
+            "Paid profile Discord message delete failed:",
+            error.message
+          );
+        }
+      }
 
       return res.json({
         ok: true,
