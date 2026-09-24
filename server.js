@@ -10723,6 +10723,31 @@ async function getAvailableManagedAccountsForRetailer(
   return available;
 }
 
+
+app.get(
+  "/api/admin/managed-success-mailbox-status",
+  requireAdmin,
+  async (req, res) => {
+    const config =
+      managedSuccessMailboxConfig();
+
+    return res.json({
+      ok: true,
+      configured:
+        config.configured,
+      emailConfigured:
+        Boolean(
+          config.email
+        ),
+      hostConfigured:
+        Boolean(
+          config.host
+        )
+    });
+  }
+);
+
+
 app.get(
   "/api/managed-availability",
   async (req, res) => {
@@ -20875,7 +20900,33 @@ async function recordSuccessCheckout(
     customerAccountId:
       String(
         record.customerAccountId
-      )
+      ),
+
+    /*
+      Immutable attribution snapshot.
+      Once an order is written to Success, reassigning the
+      managed profile later never moves this old checkout.
+    */
+    managedAccountId:
+      record.managedAccountId
+        ? String(
+            record.managedAccountId
+          )
+        : null,
+
+    managedAssignmentId:
+      record.managedAssignmentId
+        ? String(
+            record.managedAssignmentId
+          )
+        : null,
+
+    managedAssignmentType:
+      record.managedAssignmentType
+        ? String(
+            record.managedAssignmentType
+          )
+        : null
   };
 
   records.push(
@@ -24760,6 +24811,50 @@ let liveSuccessCycleRunning =
   false;
 
 
+
+function extractRoutingEmailsFromSource(
+  source
+) {
+  const raw =
+    Buffer.isBuffer(
+      source
+    )
+      ? source.toString(
+          "utf8"
+        )
+      : String(
+          source ||
+          ""
+        );
+
+  /*
+    Forwarded/redirected mail can preserve the original
+    recipient in headers OR in the forwarded message body.
+    We only keep syntactically valid email addresses.
+  */
+  const matches =
+    raw
+      .slice(
+        0,
+        120000
+      )
+      .match(
+        /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
+      ) ||
+    [];
+
+  return [
+    ...new Set(
+      matches
+        .map(
+          normalizeEmail
+        )
+        .filter(Boolean)
+    )
+  ];
+}
+
+
 async function readRecentRetailerOrders(
   email,
   password,
@@ -25049,9 +25144,24 @@ async function readRecentRetailerOrders(
         }
 
         if (parsed) {
-          orders.push(
-            parsed
-          );
+          orders.push({
+            ...parsed,
+
+            messageId:
+              parsed.messageId ||
+              common.messageId ||
+              "",
+
+            mailboxUid:
+              parsed.mailboxUid ||
+              common.uid ||
+              null,
+
+            routingEmails:
+              extractRoutingEmailsFromSource(
+                message.source
+              )
+          });
         }
       }
 
@@ -25419,6 +25529,696 @@ async function syncCustomerTargetSuccess(
 }
 
 
+
+function managedSuccessMailboxConfig() {
+  const email =
+    normalizeEmail(
+      process.env
+        .MANAGED_SUCCESS_IMAP_EMAIL
+    );
+
+  const password =
+    String(
+      process.env
+        .MANAGED_SUCCESS_IMAP_PASSWORD ||
+      ""
+    );
+
+  const host =
+    String(
+      process.env
+        .MANAGED_SUCCESS_IMAP_HOST ||
+      ""
+    ).trim();
+
+  const port =
+    Number(
+      process.env
+        .MANAGED_SUCCESS_IMAP_PORT ||
+      993
+    );
+
+  return {
+    email,
+    password,
+    host,
+    port:
+      Number.isFinite(port)
+        ? port
+        : 993,
+
+    configured:
+      Boolean(
+        email &&
+        password &&
+        host
+      )
+  };
+}
+
+
+async function readRecentManagedWorkMailboxOrders(
+  maxMessages = 120
+) {
+  const config =
+    managedSuccessMailboxConfig();
+
+  if (
+    !config.configured
+  ) {
+    return {
+      configured:
+        false,
+      orders: []
+    };
+  }
+
+  const client =
+    new ImapFlow({
+      host:
+        config.host,
+
+      port:
+        config.port,
+
+      secure:
+        true,
+
+      auth: {
+        user:
+          config.email,
+
+        pass:
+          config.password
+      },
+
+      logger:
+        false,
+
+      connectionTimeout:
+        15000,
+
+      greetingTimeout:
+        10000,
+
+      socketTimeout:
+        30000,
+
+      disableAutoIdle:
+        true
+    });
+
+  try {
+    await client.connect();
+
+    const lock =
+      await client.getMailboxLock(
+        "INBOX",
+        {
+          readOnly: true
+        }
+      );
+
+    try {
+      const total =
+        Number(
+          client.mailbox?.exists ||
+          0
+        );
+
+      if (!total) {
+        return {
+          configured:
+            true,
+          orders: []
+        };
+      }
+
+      const safeMax =
+        Math.min(
+          250,
+          Math.max(
+            20,
+            Number(
+              maxMessages
+            ) ||
+            120
+          )
+        );
+
+      const start =
+        Math.max(
+          1,
+          total -
+            safeMax +
+            1
+        );
+
+      const candidates =
+        await client.fetchAll(
+          `${start}:*`,
+          {
+            uid: true,
+            envelope: true,
+            internalDate: true
+          }
+        );
+
+      const orders = [];
+
+      for (
+        const candidate of
+        candidates
+      ) {
+        const subject =
+          String(
+            candidate
+              .envelope
+              ?.subject ||
+            ""
+          );
+
+        if (
+          !/order/i.test(
+            subject
+          )
+        ) {
+          continue;
+        }
+
+        const message =
+          await client.fetchOne(
+            candidate.uid,
+            {
+              uid: true,
+              envelope: true,
+              internalDate: true,
+              source: true
+            },
+            {
+              uid: true
+            }
+          );
+
+        if (
+          !message?.source
+        ) {
+          continue;
+        }
+
+        const common = {
+          subject:
+            message.envelope
+              ?.subject ||
+            subject,
+
+          sender:
+            (
+              message.envelope
+                ?.from ||
+              []
+            )
+              .map(
+                address =>
+                  `${address?.name || ""} <${address?.address || ""}>`
+              )
+              .join(" "),
+
+          source:
+            message.source,
+
+          uid:
+            message.uid,
+
+          messageId:
+            message.envelope
+              ?.messageId ||
+            "",
+
+          date:
+            (
+              message.envelope?.date ||
+              message.internalDate
+            )
+              ? new Date(
+                  message.envelope?.date ||
+                  message.internalDate
+                ).toISOString()
+              : null
+        };
+
+        let parsed =
+          null;
+
+        if (!parsed) {
+          parsed =
+            await parseCostcoOrder(
+              common
+            );
+        }
+
+        if (!parsed) {
+          parsed =
+            await parsePokemonCenterOrder(
+              common
+            );
+        }
+
+        if (!parsed) {
+          parsed =
+            await parseWalmartOrder(
+              common
+            );
+        }
+
+        if (!parsed) {
+          parsed =
+            await parseTargetTestOrder(
+              common
+            );
+        }
+
+        if (parsed) {
+          orders.push({
+            ...parsed,
+
+            messageId:
+              parsed.messageId ||
+              common.messageId ||
+              "",
+
+            mailboxUid:
+              parsed.mailboxUid ||
+              common.uid ||
+              null,
+
+            routingEmails:
+              extractRoutingEmailsFromSource(
+                message.source
+              )
+          });
+        }
+      }
+
+      return {
+        configured:
+          true,
+        orders
+      };
+
+    } finally {
+      lock.release();
+    }
+
+  } finally {
+    if (client.usable) {
+      try {
+        await client.logout();
+      } catch {
+        client.close();
+      }
+    } else {
+      client.close();
+    }
+  }
+}
+
+
+async function managedAccountEmailMap() {
+  const accounts =
+    await getManagedAccounts();
+
+  const map =
+    new Map();
+
+  for (
+    const account of
+    accounts
+  ) {
+    let credentials =
+      emptyRetailerCredentials();
+
+    try {
+      if (
+        account.credentials
+      ) {
+        credentials =
+          normalizeRetailerCredentials(
+            decryptJson(
+              account.credentials
+            )
+          );
+      }
+    } catch {
+      continue;
+    }
+
+    for (
+      const retailer of
+      RETAILER_KEYS
+    ) {
+      const email =
+        normalizeEmail(
+          credentials
+            ?.[retailer]
+            ?.username
+        );
+
+      if (
+        !email ||
+        !email.includes(
+          "@"
+        )
+      ) {
+        continue;
+      }
+
+      map.set(
+        email,
+        {
+          managedAccountId:
+            String(
+              account.id
+            ),
+          retailer
+        }
+      );
+    }
+  }
+
+  return map;
+}
+
+
+function assignmentTimeContainsCheckout(
+  assignment,
+  checkoutAt
+) {
+  const checkout =
+    new Date(
+      checkoutAt ||
+      0
+    ).getTime();
+
+  if (
+    !Number.isFinite(
+      checkout
+    )
+  ) {
+    return false;
+  }
+
+  const start =
+    new Date(
+      assignment.startsAt ||
+      assignment.createdAt ||
+      0
+    ).getTime();
+
+  if (
+    Number.isFinite(start) &&
+    checkout < start
+  ) {
+    return false;
+  }
+
+  const endValue =
+    assignment.endedAt ||
+    assignment.expiresAt ||
+    null;
+
+  if (endValue) {
+    const end =
+      new Date(
+        endValue
+      ).getTime();
+
+    if (
+      Number.isFinite(end) &&
+      checkout > end
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
+async function managedAssignmentHistory() {
+  const [
+    freeAssignments,
+    rentalAssignments
+  ] = await Promise.all([
+    getFreeAssignments(),
+    getRentalAssignments()
+  ]);
+
+  return [
+    ...freeAssignments.map(
+      item => ({
+        ...item,
+        assignmentType:
+          "gifted",
+        managedAccountId:
+          item.managedAccountId ||
+          item.freeMembershipId ||
+          null
+      })
+    ),
+
+    ...rentalAssignments.map(
+      item => ({
+        ...item,
+        assignmentType:
+          "rented",
+        managedAccountId:
+          item.managedAccountId ||
+          item.rentedMembershipId ||
+          null
+      })
+    )
+  ];
+}
+
+
+async function syncManagedProfileSuccessMailbox() {
+  const result =
+    await readRecentManagedWorkMailboxOrders(
+      180
+    );
+
+  if (
+    !result.configured
+  ) {
+    return {
+      configured:
+        false,
+      saved:
+        0,
+      unmatched:
+        0
+    };
+  }
+
+  const emailMap =
+    await managedAccountEmailMap();
+
+  const assignments =
+    await managedAssignmentHistory();
+
+  let saved = 0;
+  let unmatched = 0;
+
+  for (
+    const order of
+    result.orders
+  ) {
+    const routingEmails =
+      Array.isArray(
+        order.routingEmails
+      )
+        ? order.routingEmails
+        : [];
+
+    let accountMatch =
+      null;
+
+    for (
+      const email of
+      routingEmails
+    ) {
+      const candidate =
+        emailMap.get(
+          normalizeEmail(
+            email
+          )
+        );
+
+      if (candidate) {
+        accountMatch =
+          candidate;
+        break;
+      }
+    }
+
+    if (!accountMatch) {
+      unmatched += 1;
+      continue;
+    }
+
+    const checkoutAt =
+      order.checkoutAt ||
+      order.date ||
+      new Date()
+        .toISOString();
+
+    const assignment =
+      assignments
+        .filter(
+          item =>
+            String(
+              item.managedAccountId ||
+              ""
+            ) ===
+              String(
+                accountMatch
+                  .managedAccountId
+              ) &&
+            item.customerAccountId &&
+            assignmentTimeContainsCheckout(
+              item,
+              checkoutAt
+            )
+        )
+        .sort(
+          (a,b) =>
+            new Date(
+              b.startsAt ||
+              b.createdAt ||
+              0
+            ).getTime() -
+            new Date(
+              a.startsAt ||
+              a.createdAt ||
+              0
+            ).getTime()
+        )[0] ||
+      null;
+
+    if (!assignment) {
+      unmatched += 1;
+      continue;
+    }
+
+    const retailerKey =
+      String(
+        order.retailer ||
+        accountMatch.retailer ||
+        "retailer"
+      )
+        .trim()
+        .toLowerCase()
+        .replace(
+          /[^a-z0-9]+/g,
+          "-"
+        );
+
+    const orderKey =
+      String(
+        order.orderNumber ||
+        order.messageId ||
+        order.mailboxUid ||
+        ""
+      );
+
+    if (!orderKey) {
+      unmatched += 1;
+      continue;
+    }
+
+    const stableId =
+      `${retailerKey}:managed:${accountMatch.managedAccountId}:${orderKey}`;
+
+    const successRecord = {
+      id:
+        stableId,
+
+      customerAccountId:
+        String(
+          assignment
+            .customerAccountId
+        ),
+
+      managedAccountId:
+        String(
+          accountMatch
+            .managedAccountId
+        ),
+
+      managedAssignmentId:
+        String(
+          assignment.id
+        ),
+
+      managedAssignmentType:
+        assignment
+          .assignmentType,
+
+      profileName:
+        assignment
+          .assignmentType ===
+            "gifted"
+          ? "Gifted Profile"
+          : "Rented Profile",
+
+      retailer:
+        order.retailer ||
+        accountMatch.retailer ||
+        "Retailer",
+
+      orderNumber:
+        order.orderNumber,
+
+      checkoutAt,
+
+      orderTotal:
+        order.orderTotal,
+
+      itemCount:
+        order.itemCount,
+
+      items:
+        order.items,
+
+      status:
+        "confirmed",
+
+      source:
+        `managed-work-mailbox-${retailerKey}`
+    };
+
+    const wasSaved =
+      await recordSuccessCheckout(
+        successRecord
+      );
+
+    if (wasSaved) {
+      saved += 1;
+    }
+  }
+
+  return {
+    configured:
+      true,
+    saved,
+    unmatched,
+    scanned:
+      result.orders.length
+  };
+}
+
+
 async function syncAllActiveCustomerSuccess() {
   if (
     liveSuccessCycleRunning
@@ -25474,6 +26274,15 @@ async function syncAllActiveCustomerSuccess() {
         accountId
       );
     }
+
+    /*
+      Managed Gifted/Rented profiles are routed from the
+      business work mailbox using the managed account email
+      plus the assignment time window. Historical Success
+      stays permanently attached to the customer who owned
+      the profile when the checkout happened.
+    */
+    await syncManagedProfileSuccessMailbox();
 
   } catch (error) {
     console.error(
@@ -27989,6 +28798,8 @@ app.get(
       await syncCustomerTargetSuccess(
         accountId
       );
+
+      await syncManagedProfileSuccessMailbox();
 
       /*
         Success records are always filtered
