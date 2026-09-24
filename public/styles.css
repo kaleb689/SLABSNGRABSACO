@@ -11158,3 +11158,123 @@ select:focus {
   letter-spacing: .1px;
 }
 
+
+
+/* ======================================================
+   FIELD TITLES / DESCRIPTIONS BELOW BOXES — SITEWIDE
+====================================================== */
+
+#profile-form label,
+#my-profile form label,
+.account-form-section label,
+.retailer-credential-fields label,
+.paid-profile-section label,
+.profile-quick-autofill label,
+.saved-detail-form label {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+}
+
+#profile-form label > input,
+#profile-form label > select,
+#profile-form label > textarea,
+#profile-form label > .password-row,
+#my-profile form label > input,
+#my-profile form label > select,
+#my-profile form label > textarea,
+#my-profile form label > .password-row,
+.account-form-section label > input,
+.account-form-section label > select,
+.account-form-section label > textarea,
+.retailer-credential-fields label > input,
+.retailer-credential-fields label > select,
+.paid-profile-section label > input,
+.paid-profile-section label > select,
+.profile-quick-autofill label > select,
+.saved-detail-form label > input,
+.saved-detail-form label > select {
+  order: -2 !important;
+}
+
+#profile-form label > span,
+#my-profile form label > span,
+.account-form-section label > span,
+.retailer-credential-fields label > span,
+.paid-profile-section label > span,
+.profile-quick-autofill label > span,
+.saved-detail-form label > span {
+  order: 0 !important;
+  margin-top: 7px;
+}
+
+#profile-form label > small,
+#profile-form label > .fine,
+#my-profile form label > small,
+#my-profile form label > .fine,
+.account-form-section label > small,
+.retailer-credential-fields label > small,
+.paid-profile-section label > small,
+.saved-detail-form label > small {
+  order: 1 !important;
+  margin-top: 5px !important;
+  margin-bottom: 0 !important;
+}
+
+.app-password-note {
+  color: #ffffff !important;
+  font-size: 13px !important;
+  font-weight: 950 !important;
+  line-height: 1.45 !important;
+}
+
+
+
+/* =====================================================
+   PRE-EDIT ADDITIONAL UPDATE
+   - Larger country dropdowns
+   - High-visibility IMAP notes
+   - Stronger show/hide buttons
+===================================================== */
+
+#profile-form select[name="country"],
+#create-profile-form select[name="country"],
+.get-started-page select[name="country"],
+.secure-card select[name="country"],
+.account-form-section select[name="country"] {
+  min-height: 52px;
+  font-size: 16px;
+  font-weight: 700;
+  padding-top: 13px;
+  padding-bottom: 13px;
+}
+
+.imap-critical-note,
+.app-password-note.critical,
+.admin-app-password-note.critical,
+.customer-imap-password-note.critical {
+  display: block;
+  color: #ffffff !important;
+  font-weight: 900 !important;
+  font-size: 14px !important;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  margin-top: 10px;
+}
+
+.imap-critical-note {
+  font-size: 16px !important;
+  text-transform: uppercase;
+}
+
+.show-pass,
+.reveal-button,
+.retailer-password-toggle,
+.admin-show-sensitive,
+[data-customer-password-toggle],
+[data-admin-sensitive-toggle] {
+  min-width: 84px;
+  min-height: 42px;
+  font-size: 14px;
+  font-weight: 800;
+}
