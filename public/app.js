@@ -30,12 +30,148 @@ const ADMIN_PREVIEW_TIER =
     Math.max(
       1,
       Number(
+        localStorage.getItem(
+          "sng_admin_test_tier"
+        ) ||
         ADMIN_PREVIEW_PARAMS.get(
           "adminPreviewTier"
-        ) || 4
+        ) ||
+        4
       ) || 4
     )
   );
+
+const ADMIN_TEST_RENTALS_KEY =
+  "sng_admin_test_rentals";
+
+const ADMIN_TEST_TIER_KEY =
+  "sng_admin_test_tier";
+
+
+function adminTestReadRentals() {
+  try {
+    const parsed =
+      JSON.parse(
+        localStorage.getItem(
+          ADMIN_TEST_RENTALS_KEY
+        ) ||
+        "[]"
+      );
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+
+  } catch {
+    return [];
+  }
+}
+
+
+function adminTestSaveRentals(
+  rentals
+) {
+  localStorage.setItem(
+    ADMIN_TEST_RENTALS_KEY,
+    JSON.stringify(
+      Array.isArray(rentals)
+        ? rentals
+        : []
+    )
+  );
+}
+
+
+function adminTestExpiration(
+  durationType,
+  from = new Date()
+) {
+  const date =
+    new Date(
+      from.getTime()
+    );
+
+  if (
+    durationType ===
+    "1_drop"
+  ) {
+    date.setDate(
+      date.getDate() + 1
+    );
+  } else if (
+    durationType ===
+    "1_week"
+  ) {
+    date.setDate(
+      date.getDate() + 7
+    );
+  } else {
+    const originalDay =
+      date.getDate();
+
+    date.setDate(1);
+
+    date.setMonth(
+      date.getMonth() + 1
+    );
+
+    const lastDay =
+      new Date(
+        date.getFullYear(),
+        date.getMonth() + 1,
+        0
+      ).getDate();
+
+    date.setDate(
+      Math.min(
+        originalDay,
+        lastDay
+      )
+    );
+  }
+
+  return date.toISOString();
+}
+
+
+function adminTestDurationLabel(
+  durationType
+) {
+  if (
+    durationType ===
+    "1_week"
+  ) {
+    return "1 WEEK";
+  }
+
+  if (
+    durationType ===
+    "1_month"
+  ) {
+    return "1 MONTH";
+  }
+
+  return "1 DROP";
+}
+
+
+function adminTestDaysRemaining(
+  expiresAt
+) {
+  const remaining =
+    new Date(
+      expiresAt
+    ).getTime() -
+    Date.now();
+
+  return Math.max(
+    0,
+    Math.ceil(
+      remaining /
+      86400000
+    )
+  );
+}
 
 const savedTier = Number(
   localStorage.getItem("sng_selected_tier")
@@ -805,6 +941,12 @@ function updatePricingUpgradeButtons() {
       status: "active"
     };
     state.retailerAllowance = targetPlan.profiles;
+
+    localStorage.setItem(
+      ADMIN_TEST_TIER_KEY,
+      String(tier)
+    );
+
     renderMembership(state.membership);
     renderRetailerProfiles();
     updatePricingUpgradeButtons();
@@ -1391,9 +1533,138 @@ async function checkoutRentalCart() {
   }
 
   if (ADMIN_PREVIEW_MODE) {
-    window.alert(
-      "Admin User View preview: Stripe checkout is disabled so no real payment can be created."
+    const now =
+      new Date();
+
+    const startsAt =
+      now.toISOString();
+
+    const expiresAt =
+      adminTestExpiration(
+        rental.durationType,
+        now
+      );
+
+    const retailerLabel =
+      rental.retailer ===
+        "walmart"
+        ? "Walmart"
+        : "Target";
+
+    const existing =
+      adminTestReadRentals();
+
+    const simulated =
+      [];
+
+    for (
+      let index = 0;
+      index <
+        Number(
+          rental.quantity ||
+          0
+        );
+      index += 1
+    ) {
+      const assignmentId =
+        `ADMIN-TEST-${Date.now()}-${index + 1}`;
+
+      simulated.push({
+        assignmentId,
+        profileType:
+          "rented",
+        rentedMembershipId:
+          assignmentId,
+        managedAccountId:
+          assignmentId,
+        retailer:
+          rental.retailer,
+        retailerLabel,
+        durationType:
+          rental.durationType,
+        durationLabel:
+          adminTestDurationLabel(
+            rental.durationType
+          ),
+        startsAt,
+        expiresAt,
+        daysRemaining:
+          adminTestDaysRemaining(
+            expiresAt
+          ),
+        active:
+          true,
+        customerProfile: {
+          profileName:
+            "Admin Test Customer",
+          firstName:
+            "Admin",
+          lastName:
+            "Test Customer",
+          email:
+            "admin-test@slabsngrabsaco.com",
+          phone:
+            "",
+          address:
+            "",
+          address2:
+            "",
+          city:
+            "",
+          state:
+            "",
+          zip:
+            "",
+          country:
+            "US"
+        },
+        customerCard:
+          null,
+        testOnly:
+          true
+      });
+    }
+
+    const updated = [
+      ...existing,
+      ...simulated
+    ];
+
+    adminTestSaveRentals(
+      updated
     );
+
+    state.rentedMemberships =
+      updated;
+
+    state.rentalCart =
+      null;
+
+    localStorage.removeItem(
+      "sng_rental_cart"
+    );
+
+    updateCart();
+
+    renderRetailerProfiles();
+
+    showAccountMessage(
+      `TEST RENTAL COMPLETE: ${simulated.length} ${retailerLabel} account${
+        simulated.length === 1
+          ? ""
+          : "s"
+      } added without payment. No Stripe charge or real inventory was used.`,
+      "success"
+    );
+
+    closeCart();
+
+    document
+      .querySelector(
+        '[data-account-tab="edit-profile"]'
+      )
+      ?.click();
+
     return;
   }
 
@@ -2629,14 +2900,60 @@ function ensureAdminPreviewBanner() {
   const banner = document.createElement("div");
   banner.id = "admin-user-preview-banner";
   banner.innerHTML = `
-    <strong>ADMIN USER VIEW</strong>
-    <span>PREVIEW DATA ONLY · ${escapeHtml(PLANS[ADMIN_PREVIEW_TIER]?.name || "Paid Member")}</span>
+    <strong>ADMIN TEST CUSTOMER</strong>
+    <span>NO PAYMENT · ${escapeHtml(
+      state.membership?.planName ||
+      PLANS[ADMIN_PREVIEW_TIER]?.name ||
+      "Paid Member"
+    )}</span>
+    <button type="button" id="admin-preview-reset">RESET TEST</button>
     <button type="button" id="admin-preview-close">CLOSE</button>
   `;
   document.body.appendChild(banner);
 
   document
-    .getElementById("admin-preview-close")
+    .getElementById(
+      "admin-preview-reset"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        const confirmed =
+          window.confirm(
+            "Reset the Admin Test Customer? This only clears test data and does not affect real customers or inventory."
+          );
+
+        if (!confirmed) {
+          return;
+        }
+
+        localStorage.removeItem(
+          ADMIN_TEST_RENTALS_KEY
+        );
+
+        localStorage.removeItem(
+          ADMIN_TEST_TIER_KEY
+        );
+
+        localStorage.removeItem(
+          "sng_rental_cart"
+        );
+
+        localStorage.removeItem(
+          "sng_selected_tier"
+        );
+
+        window.location.href =
+          "/?adminPreview=1&adminPreviewTier=4#my-profile";
+
+        window.location.reload();
+      }
+    );
+
+  document
+    .getElementById(
+      "admin-preview-close"
+    )
     ?.addEventListener(
       "click",
       () => window.close()
@@ -2686,7 +3003,29 @@ function buildAdminPreviewProfile() {
   state.retailerProfilesLoaded = true;
   state.specialProfiles = [];
   state.freeMemberships = [];
-  state.rentedMemberships = [];
+
+  state.rentedMemberships =
+    adminTestReadRentals()
+      .map(item => ({
+        ...item,
+        daysRemaining:
+          item.expiresAt
+            ? adminTestDaysRemaining(
+                item.expiresAt
+              )
+            : null
+      }))
+      .filter(item =>
+        !item.expiresAt ||
+        new Date(
+          item.expiresAt
+        ).getTime() >
+          Date.now()
+      );
+
+  adminTestSaveRentals(
+    state.rentedMemberships
+  );
 
   showSignedIn();
   renderAccountHeader(state.customer);
@@ -2698,7 +3037,7 @@ function buildAdminPreviewProfile() {
   ensureAdminPreviewBanner();
 
   showAccountMessage(
-    "Admin User View is active. This is preview data only, and payment actions are disabled.",
+    "Admin Test Customer is active. You can test paid-member and rental flows without creating a Stripe charge or touching real inventory.",
     "info"
   );
 
@@ -7158,6 +7497,68 @@ function bindManagedMembershipForms() {
             "Saving…"
           );
 
+          if (
+            ADMIN_PREVIEW_MODE
+          ) {
+            try {
+              const rentals =
+                adminTestReadRentals();
+
+              const item =
+                rentals.find(
+                  rental =>
+                    String(
+                      rental.assignmentId
+                    ) ===
+                    String(
+                      assignmentId
+                    )
+                );
+
+              if (!item) {
+                throw new Error(
+                  "This test rental could not be found."
+                );
+              }
+
+              item.customerProfile =
+                customerProfile;
+
+              item.customerCard =
+                customerCard;
+
+              adminTestSaveRentals(
+                rentals
+              );
+
+              state.rentedMemberships =
+                rentals;
+
+              setMessage(
+                message,
+                "Test customer address and card information saved locally.",
+                "success"
+              );
+
+              renderRetailerProfiles();
+
+            } catch (error) {
+              setMessage(
+                message,
+                error.message,
+                "error"
+              );
+
+            } finally {
+              setButtonBusy(
+                button,
+                false
+              );
+            }
+
+            return;
+          }
+
           try {
             const response =
               await fetch(
@@ -7835,7 +8236,32 @@ state.specialProfiles =
 async function loadManagedMemberships() {
   if (ADMIN_PREVIEW_MODE) {
     state.freeMemberships = [];
-    state.rentedMemberships = [];
+
+    state.rentedMemberships =
+      adminTestReadRentals()
+        .map(item => ({
+          ...item,
+          daysRemaining:
+            item.expiresAt
+              ? adminTestDaysRemaining(
+                  item.expiresAt
+                )
+              : null
+        }))
+        .filter(item =>
+          !item.expiresAt ||
+          new Date(
+            item.expiresAt
+          ).getTime() >
+            Date.now()
+        );
+
+    adminTestSaveRentals(
+      state.rentedMemberships
+    );
+
+    renderRetailerProfiles();
+
     return;
   }
   try {
