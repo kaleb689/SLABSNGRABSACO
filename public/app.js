@@ -2792,7 +2792,7 @@ if (rentalStatus === "success") {
   setTimeout(() => {
     go("my-profile");
     showAccountMessage(
-      "Rental payment received. Your rented accounts will appear in your managed memberships after Stripe confirms the payment.",
+      "Rental payment received. Your rented accounts will appear in your gifted and rented profiles after Stripe confirms the payment.",
       "success"
     );
   }, 150);
@@ -5637,6 +5637,23 @@ function setupSavedDetailsAccordions() {
           "false"
         );
 
+        const openHint =
+          document.createElement(
+            "span"
+          );
+
+        openHint.className =
+          "saved-detail-open-hint";
+
+        openHint.textContent =
+          index === 0
+            ? "OPEN SHIPPING"
+            : "OPEN PAYMENTS";
+
+        head.appendChild(
+          openHint
+        );
+
         const chevron =
           document.createElement(
             "span"
@@ -6921,6 +6938,14 @@ function profileActivationBadgeHtml(
               "Awaiting admin activation"
           }
         : value ===
+            "expired"
+          ? {
+              cls: "expired",
+              title: "EXPIRED",
+              detail:
+                "Awaiting admin review"
+            }
+        : value ===
             "deactivated"
           ? {
               cls: "deactivated",
@@ -7067,6 +7092,12 @@ function retailerProfileCardHtml(
             <small>
               Click to open and manage this profile
             </small>
+
+            <span
+              class="profile-open-hint"
+            >
+              OPEN PROFILE
+            </span>
           </span>
 
           <span
@@ -7870,8 +7901,8 @@ function managedMembershipCardHtml(
 
   const title =
     type === "rented"
-      ? "RENTED MEMBERSHIP"
-      : "FREE MEMBERSHIP";
+      ? "RENTED PROFILE"
+      : "GIFTED PROFILE";
 
   const letter =
     type === "rented"
@@ -7974,6 +8005,15 @@ function managedMembershipCardHtml(
         >
           ${readinessBadgeHtml(
             readiness
+          )}
+
+          ${profileActivationBadgeHtml(
+            membership.activationStatus ||
+            (
+              readiness.ready
+                ? "awaiting_activation"
+                : "incomplete"
+            )
           )}
 
           ${profileCountdownBadgeHtml(
@@ -9060,13 +9100,33 @@ const specialCards =
     ${
       specialCards.length
         ? `
-            <div class="profile-category-section special-profile-category">
-              <div class="profile-category-heading">
-MANAGED MEMBERSHIPS
-</div>
+            <details
+              class="profile-group-dropdown special-profile-category"
+            >
+              <summary>
+                <div>
+                  <span class="eyebrow">
+                    MANAGED ACO ACCESS
+                  </span>
 
-              ${specialCards.join("")}
-            </div>
+                  <strong>
+                    Gifted Profiles &amp; Rented Profiles
+                  </strong>
+                </div>
+
+                <span
+                  class="profile-group-open"
+                >
+                  SHOW ALL GIFTED &amp; RENTED PROFILES
+                </span>
+              </summary>
+
+              <div
+                class="profile-group-dropdown-body"
+              >
+                ${specialCards.join("")}
+              </div>
+            </details>
           `
         : `
             <div
@@ -9219,13 +9279,33 @@ container.innerHTML = `
   ${
     cards.length
       ? `
-          <div class="profile-category-section">
-            <div class="profile-category-heading">
-              PAID PROFILES
-            </div>
+          <details
+            class="profile-group-dropdown"
+          >
+            <summary>
+              <div>
+                <span class="eyebrow">
+                  PAID ACO ACCESS
+                </span>
 
-            ${cards.join("")}
-          </div>
+                <strong>
+                  Paid Profiles
+                </strong>
+              </div>
+
+              <span
+                class="profile-group-open"
+              >
+                SHOW ALL PAID PROFILES
+              </span>
+            </summary>
+
+            <div
+              class="profile-group-dropdown-body"
+            >
+              ${cards.join("")}
+            </div>
+          </details>
         `
       : ""
   }
@@ -9233,13 +9313,33 @@ container.innerHTML = `
   ${
     specialCards.length
       ? `
-          <div class="profile-category-section special-profile-category">
-            <div class="profile-category-heading">
-              MANAGED MEMBERSHIPS
-            </div>
+          <details
+            class="profile-group-dropdown special-profile-category"
+          >
+            <summary>
+              <div>
+                <span class="eyebrow">
+                  MANAGED ACO ACCESS
+                </span>
 
-            ${specialCards.join("")}
-          </div>
+                <strong>
+                  Gifted Profiles &amp; Rented Profiles
+                </strong>
+              </div>
+
+              <span
+                class="profile-group-open"
+              >
+                SHOW ALL GIFTED &amp; RENTED PROFILES
+              </span>
+            </summary>
+
+            <div
+              class="profile-group-dropdown-body"
+            >
+              ${specialCards.join("")}
+            </div>
+          </details>
         `
       : ""
   }
@@ -9526,14 +9626,14 @@ async function loadManagedMemberships() {
     if (!freeResponse.ok) {
       throw new Error(
         freeData.error ||
-        "Unable to load free memberships."
+        "Unable to load gifted profiles."
       );
     }
 
     if (!rentedResponse.ok) {
       throw new Error(
         rentedData.error ||
-        "Unable to load rented memberships."
+        "Unable to load rented profiles."
       );
     }
 
