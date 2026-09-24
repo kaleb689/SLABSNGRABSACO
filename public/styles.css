@@ -9397,3 +9397,103 @@ select:focus {
 .og-member-badge[hidden] {
   display: none !important;
 }
+
+
+/* ======================================================
+   CREATE PROFILE — CLEAR FIELD VALIDATION
+====================================================== */
+
+#profile-form .profile-field-invalid {
+  border-color: #ff5f6d !important;
+
+  box-shadow:
+    0 0 0 3px rgba(255, 95, 109, 0.12) !important;
+
+  background:
+    rgba(255, 95, 109, 0.055);
+}
+
+#profile-form label.has-profile-error {
+  color: #ffd7da;
+}
+
+#profile-form .profile-field-error {
+  display: block;
+
+  margin-top: 7px;
+
+  color: #ff8b95;
+
+  font-size: 11px;
+
+  font-weight: 800;
+
+  line-height: 1.35;
+}
+
+#profile-form .consent.has-profile-error {
+  border-radius: 8px;
+
+  outline:
+    1px solid rgba(255, 95, 109, 0.55);
+
+  outline-offset: 5px;
+}
+
+#profile-form .profile-validation-summary {
+  margin-top: 14px;
+
+  padding: 12px 14px;
+
+  border:
+    1px solid rgba(255, 95, 109, 0.55);
+
+  border-radius: 9px;
+
+  background:
+    rgba(255, 95, 109, 0.08);
+
+  color: #ffd7da;
+
+  font-size: 12px;
+
+  font-weight: 800;
+
+  line-height: 1.45;
+}
+
+
+/* Larger expiration month/year dropdowns */
+
+#profile-form select[name="expMonth"],
+#profile-form select[name="expYear"] {
+  min-height: 54px;
+
+  padding:
+    14px
+    42px
+    14px
+    14px;
+
+  font-size: 16px;
+
+  font-weight: 800;
+
+  line-height: 1.2;
+
+  cursor: pointer;
+}
+
+#profile-form select[name="expMonth"] option,
+#profile-form select[name="expYear"] option {
+  font-size: 16px;
+}
+
+@media (max-width: 720px) {
+  #profile-form select[name="expMonth"],
+  #profile-form select[name="expYear"] {
+    min-height: 58px;
+
+    font-size: 17px;
+  }
+}
