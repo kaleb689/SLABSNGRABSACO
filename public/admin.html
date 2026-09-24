@@ -1945,6 +1945,49 @@
       }
     }
 
+
+    .admin-sensitive-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+      padding: 12px 14px;
+      border: 1px solid rgba(18, 201, 255, .22);
+      border-radius: 10px;
+      background: rgba(18, 201, 255, .035);
+    }
+
+    .admin-sensitive-row > span {
+      color: #9fb3c8;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .65px;
+    }
+
+    .admin-sensitive-row strong {
+      color: #f6fbff;
+      font-size: 13px;
+      letter-spacing: .8px;
+    }
+
+    .admin-show-sensitive {
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 1px solid rgba(18, 201, 255, .38);
+      border-radius: 8px;
+      color: #dff7ff;
+      background: rgba(18, 201, 255, .08);
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .admin-show-sensitive:hover {
+      border-color: rgba(18, 201, 255, .72);
+      box-shadow: 0 0 18px rgba(18, 201, 255, .10);
+    }
+
   </style>
 </head>
 
@@ -4978,8 +5021,96 @@ async function loadAdminSavedDetails(
                   "—"
                 )}
               </p>
+
+              <div
+                class="admin-sensitive-row"
+                data-admin-security-code-row
+              >
+                <span>
+                  ACCOUNT SECURITY CODE:
+                </span>
+
+                <strong
+                  data-admin-security-code-value
+                  data-hidden-value="${escapeHtml(
+                    item.accountSecurityCode ||
+                    ""
+                  )}"
+                >
+                  ${
+                    item.accountSecurityCode
+                      ? "••••••"
+                      : "Not entered"
+                  }
+                </strong>
+
+                ${
+                  item.accountSecurityCode
+                    ? `
+                      <button
+                        type="button"
+                        class="admin-show-sensitive"
+                        data-toggle-account-security-code
+                      >
+                        Show
+                      </button>
+                    `
+                    : ""
+                }
+              </div>
             `
           : `<p class="admin-retailer-empty">No saved payment cards.</p>`;
+
+      paymentPreview
+        .querySelector(
+          "[data-toggle-account-security-code]"
+        )
+        ?.addEventListener(
+          "click",
+          event => {
+            const button =
+              event.currentTarget;
+
+            const value =
+              paymentPreview
+                .querySelector(
+                  "[data-admin-security-code-value]"
+                );
+
+            if (!value) {
+              return;
+            }
+
+            const revealed =
+              button.dataset
+                .revealed ===
+              "true";
+
+            if (revealed) {
+              value.textContent =
+                "••••••";
+
+              button.textContent =
+                "Show";
+
+              button.dataset
+                .revealed =
+                "false";
+            } else {
+              value.textContent =
+                value.dataset
+                  .hiddenValue ||
+                "Not entered";
+
+              button.textContent =
+                "Hide";
+
+              button.dataset
+                .revealed =
+                "true";
+            }
+          }
+        );
     };
 
     addressSelect
