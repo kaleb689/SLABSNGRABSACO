@@ -4568,10 +4568,41 @@ function managedMembershipCardHtml(
   type,
   paidCustomers
 ) {
-  const label =
+  let label =
     type === "rented"
       ? "RENTED MEMBERSHIP"
       : "FREE MEMBERSHIP";
+
+  if (type === "free") {
+    const hasTarget =
+      Boolean(
+        String(
+          membership?.retailers
+            ?.target?.username ||
+          ""
+        ).trim()
+      );
+
+    const hasWalmart =
+      Boolean(
+        String(
+          membership?.retailers
+            ?.walmart?.username ||
+          ""
+        ).trim()
+      );
+
+    if (hasTarget && !hasWalmart) {
+      label =
+        "FREE MEMBERSHIP (TARGET)";
+    } else if (
+      hasWalmart &&
+      !hasTarget
+    ) {
+      label =
+        "FREE MEMBERSHIP (WALMART)";
+    }
+  }
 
   const active =
     membership.active === true;
@@ -4696,8 +4727,12 @@ function managedMembershipCardHtml(
       <div style="flex:1;min-width:0;">
         <h3>
           ${escapeHtml(
-            membership.profileName ||
-            label
+            type === "free"
+              ? label
+              : (
+                  membership.profileName ||
+                  label
+                )
           )}
         </h3>
 
