@@ -6468,6 +6468,174 @@ async function importWalmartManagedAccountsOnce() {
   );
 }
 
+async function getManagedAvailability() {
+  const [
+    managedAccounts,
+    freeAssignments,
+    rentalAssignments
+  ] = await Promise.all([
+    getManagedAccounts(),
+    getFreeAssignments(),
+    getRentalAssignments()
+  ]);
+
+  const inUseAccountIds =
+    new Set();
+
+  for (const assignment of freeAssignments) {
+    if (
+      !freeAssignmentIsActive(
+        assignment
+      )
+    ) {
+      continue;
+    }
+
+    const managedId =
+      assignment.managedAccountId ||
+      assignment.freeMembershipId ||
+      "";
+
+    if (managedId) {
+      inUseAccountIds.add(
+        String(managedId)
+      );
+    }
+  }
+
+  for (const assignment of rentalAssignments) {
+    if (
+      !rentalAssignmentIsActive(
+        assignment
+      )
+    ) {
+      continue;
+    }
+
+    const managedId =
+      assignment.managedAccountId ||
+      assignment.rentedMembershipId ||
+      "";
+
+    if (managedId) {
+      inUseAccountIds.add(
+        String(managedId)
+      );
+    }
+  }
+
+  const availability = {
+    target: {
+      total: 0,
+      available: 0,
+      inUse: 0
+    },
+
+    walmart: {
+      total: 0,
+      available: 0,
+      inUse: 0
+    }
+  };
+
+  for (const account of managedAccounts) {
+    let credentials;
+
+    try {
+      credentials =
+        account.credentials
+          ? normalizeRetailerCredentials(
+              decryptJson(
+                account.credentials
+              )
+            )
+          : emptyRetailerCredentials();
+    } catch {
+      continue;
+    }
+
+    const accountInUse =
+      inUseAccountIds.has(
+        String(account.id)
+      );
+
+    for (const retailer of [
+      "target",
+      "walmart"
+    ]) {
+      const username =
+        String(
+          credentials?.[retailer]
+            ?.username ||
+          ""
+        ).trim();
+
+      if (!username) {
+        continue;
+      }
+
+      availability[
+        retailer
+      ].total += 1;
+
+      if (accountInUse) {
+        availability[
+          retailer
+        ].inUse += 1;
+      } else {
+        availability[
+          retailer
+        ].available += 1;
+      }
+    }
+  }
+
+  return availability;
+}
+
+
+app.get(
+  "/api/managed-availability",
+  async (req, res) => {
+    try {
+      const availability =
+        await getManagedAvailability();
+
+      res.set(
+        "Cache-Control",
+        "no-store"
+      );
+
+      return res.json({
+        ok: true,
+
+        target:
+          availability.target,
+
+        walmart:
+          availability.walmart,
+
+        updatedAt:
+          new Date()
+            .toISOString()
+      });
+
+    } catch (error) {
+      console.error(
+        "Managed availability error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load account availability."
+        });
+    }
+  }
+);
+
 /* -------------------------------------------------------
    ADMIN FREE MEMBERSHIPS
 ------------------------------------------------------- */
