@@ -36,6 +36,8 @@ freeMemberships: [],
 
 rentedMemberships: [],
 
+managedAvailability: null,
+
 retailerAllowance: 0,
 
 retailerProfilesLoaded: false
@@ -4384,6 +4386,82 @@ function specialProfileCardHtml(
   `;
 }
 
+
+function managedAddressOptionsHtml(
+  membership
+) {
+  const current =
+    membership?.customerProfile &&
+    typeof membership.customerProfile ===
+      "object"
+      ? membership.customerProfile
+      : {};
+
+  const seen =
+    new Set();
+
+  const options = [
+    `
+      <option value="current">
+        Current / Manual Address
+      </option>
+    `
+  ];
+
+  for (const order of state.orders) {
+    const profile =
+      getOrderProfile(
+        order
+      );
+
+    const key =
+      [
+        profile.address,
+        profile.address2,
+        profile.city,
+        profile.state,
+        profile.zip,
+        profile.country
+      ]
+        .filter(Boolean)
+        .join("|")
+        .toLowerCase();
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+
+    const label =
+      [
+        profile.address,
+        profile.address2,
+        profile.city,
+        profile.state,
+        profile.zip
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+    options.push(`
+      <option
+        value="${escapeHtml(
+          getOrderNumber(order)
+        )}"
+      >
+        ${escapeHtml(
+          label ||
+          "Saved order address"
+        )}
+      </option>
+    `);
+  }
+
+  return options.join("");
+}
+
+
 function managedMembershipCardHtml(
   membership
 ) {
@@ -4470,6 +4548,9 @@ function managedMembershipCardHtml(
       class="retailer-profile-card special-retailer-profile"
       data-managed-membership="${escapeHtml(
         type
+      )}"
+      data-managed-assignment="${escapeHtml(
+        membership.assignmentId || ""
       )}"
     >
 
@@ -4758,9 +4839,505 @@ function managedMembershipCardHtml(
     : ""
 }
 
+
+      <form
+        class="managed-customer-form"
+        data-managed-customer-form="${escapeHtml(
+          membership.assignmentId || ""
+        )}"
+        data-managed-type="${escapeHtml(
+          type
+        )}"
+      >
+
+        <div class="retailer-profile-name-field">
+
+          <p>
+            <strong>
+              ADDRESS &amp; CARD SETTINGS
+            </strong>
+          </p>
+
+          <p class="account-muted">
+            Choose an address from one of your linked orders,
+            or enter another address below. You can also
+            update the card information and the separate
+            Security Code used for this managed profile.
+          </p>
+
+          <label>
+            Use Address From
+
+            <select
+              data-managed-address-source
+            >
+              ${managedAddressOptionsHtml(
+                membership
+              )}
+            </select>
+          </label>
+
+          <div class="two">
+
+            <label>
+              First Name
+              <input
+                name="firstName"
+                value="${escapeHtml(
+                  profile?.firstName || ""
+                )}"
+              />
+            </label>
+
+            <label>
+              Last Name
+              <input
+                name="lastName"
+                value="${escapeHtml(
+                  profile?.lastName || ""
+                )}"
+              />
+            </label>
+
+          </div>
+
+          <div class="two">
+
+            <label>
+              Email
+              <input
+                type="email"
+                name="email"
+                value="${escapeHtml(
+                  profile?.email || ""
+                )}"
+              />
+            </label>
+
+            <label>
+              Phone
+              <input
+                name="phone"
+                value="${escapeHtml(
+                  profile?.phone || ""
+                )}"
+              />
+            </label>
+
+          </div>
+
+          <label>
+            Address
+            <input
+              name="address"
+              value="${escapeHtml(
+                profile?.address || ""
+              )}"
+            />
+          </label>
+
+          <label>
+            Address 2
+            <input
+              name="address2"
+              value="${escapeHtml(
+                profile?.address2 || ""
+              )}"
+            />
+          </label>
+
+          <div class="two">
+
+            <label>
+              City
+              <input
+                name="city"
+                value="${escapeHtml(
+                  profile?.city || ""
+                )}"
+              />
+            </label>
+
+            <label>
+              State
+              <input
+                name="state"
+                value="${escapeHtml(
+                  profile?.state || ""
+                )}"
+              />
+            </label>
+
+          </div>
+
+          <div class="two">
+
+            <label>
+              ZIP
+              <input
+                name="zip"
+                value="${escapeHtml(
+                  profile?.zip || ""
+                )}"
+              />
+            </label>
+
+            <label>
+              Country
+              <input
+                name="country"
+                value="${escapeHtml(
+                  profile?.country || ""
+                )}"
+              />
+            </label>
+
+          </div>
+
+          <div class="two">
+
+            <label>
+              Card Label
+              <input
+                name="cardLabel"
+                value="${escapeHtml(
+                  card?.cardLabel || ""
+                )}"
+              />
+            </label>
+
+            <label>
+              Cardholder Name
+              <input
+                name="cardholder"
+                value="${escapeHtml(
+                  card?.cardholder || ""
+                )}"
+              />
+            </label>
+
+          </div>
+
+          <label>
+            Card Number
+            <input
+              name="acoCardNumber"
+              inputmode="numeric"
+              autocomplete="off"
+              value="${escapeHtml(
+                card?.acoCardNumber || ""
+              )}"
+            />
+          </label>
+
+          <div class="two">
+
+            <label>
+              Expiration Month
+              <input
+                name="expMonth"
+                inputmode="numeric"
+                maxlength="2"
+                value="${escapeHtml(
+                  card?.expMonth || ""
+                )}"
+              />
+            </label>
+
+            <label>
+              Expiration Year
+              <input
+                name="expYear"
+                inputmode="numeric"
+                maxlength="4"
+                value="${escapeHtml(
+                  card?.expYear || ""
+                )}"
+              />
+            </label>
+
+          </div>
+
+          <label>
+            Security Code
+            <input
+              name="securityCode"
+              autocomplete="off"
+              value="${escapeHtml(
+                card?.securityCode || ""
+              )}"
+            />
+          </label>
+
+          <small class="fine">
+            This Security Code is the separate ACO
+            Security Code field. It is not your card
+            CVV/CVC.
+          </small>
+
+          <div
+            class="account-message"
+            data-managed-customer-message="${escapeHtml(
+              membership.assignmentId || ""
+            )}"
+            hidden
+          ></div>
+
+          <button
+            type="submit"
+            class="primary retailer-profile-save"
+          >
+            Save Address &amp; Card
+          </button>
+
+        </div>
+
+      </form>
+
     </article>
   `;
 }
+
+
+function bindManagedMembershipForms() {
+  document
+    .querySelectorAll(
+      "[data-managed-customer-form]"
+    )
+    .forEach(form => {
+
+      const addressSelect =
+        form.querySelector(
+          "[data-managed-address-source]"
+        );
+
+      addressSelect
+        ?.addEventListener(
+          "change",
+          () => {
+            const orderNumber =
+              addressSelect.value;
+
+            if (
+              !orderNumber ||
+              orderNumber === "current"
+            ) {
+              return;
+            }
+
+            const order =
+              state.orders.find(
+                item =>
+                  String(
+                    getOrderNumber(item)
+                  ) ===
+                  String(orderNumber)
+              );
+
+            if (!order) {
+              return;
+            }
+
+            const profile =
+              getOrderProfile(
+                order
+              );
+
+            for (
+              const fieldName of [
+                "firstName",
+                "lastName",
+                "email",
+                "phone",
+                "address",
+                "address2",
+                "city",
+                "state",
+                "zip",
+                "country"
+              ]
+            ) {
+              const input =
+                form.elements[
+                  fieldName
+                ];
+
+              if (input) {
+                input.value =
+                  profile?.[
+                    fieldName
+                  ] || "";
+              }
+            }
+          }
+        );
+
+
+      form.addEventListener(
+        "submit",
+        async event => {
+          event.preventDefault();
+
+          const assignmentId =
+            form.dataset
+              .managedCustomerForm;
+
+          const type =
+            form.dataset
+              .managedType;
+
+          if (!assignmentId) {
+            showAccountMessage(
+              "This managed membership is missing its assignment ID.",
+              "error"
+            );
+            return;
+          }
+
+          const button =
+            form.querySelector(
+              'button[type="submit"]'
+            );
+
+          const message =
+            document.querySelector(
+              `[data-managed-customer-message="${CSS.escape(
+                assignmentId
+              )}"]`
+            );
+
+          const formData =
+            new FormData(form);
+
+          const customerProfile = {
+            profileName:
+              `${formData.get("firstName") || ""} ${formData.get("lastName") || ""}`.trim() ||
+              "Managed Membership",
+
+            firstName:
+              formData.get("firstName") || "",
+
+            lastName:
+              formData.get("lastName") || "",
+
+            email:
+              formData.get("email") || "",
+
+            phone:
+              formData.get("phone") || "",
+
+            address:
+              formData.get("address") || "",
+
+            address2:
+              formData.get("address2") || "",
+
+            city:
+              formData.get("city") || "",
+
+            state:
+              formData.get("state") || "",
+
+            zip:
+              formData.get("zip") || "",
+
+            country:
+              formData.get("country") || ""
+          };
+
+          const customerCard = {
+            cardLabel:
+              formData.get("cardLabel") || "",
+
+            cardholder:
+              formData.get("cardholder") || "",
+
+            acoCardNumber:
+              formData.get("acoCardNumber") || "",
+
+            expMonth:
+              formData.get("expMonth") || "",
+
+            expYear:
+              formData.get("expYear") || "",
+
+            securityCode:
+              formData.get("securityCode") || ""
+          };
+
+          setButtonBusy(
+            button,
+            true,
+            "Saving…"
+          );
+
+          try {
+            const response =
+              await fetch(
+                `/api/account/managed-memberships/${encodeURIComponent(
+                  type
+                )}/${encodeURIComponent(
+                  assignmentId
+                )}`,
+                {
+                  method: "PUT",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      customerProfile,
+                      customerCard
+                    })
+                }
+              );
+
+            const result =
+              await readJson(
+                response
+              );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to save managed membership details."
+              );
+            }
+
+            setMessage(
+              message,
+              "Address and card information saved.",
+              "success"
+            );
+
+            await loadManagedMemberships();
+
+            renderRetailerProfiles();
+
+          } catch (error) {
+            setMessage(
+              message,
+              error.message,
+              "error"
+            );
+
+          } finally {
+            setButtonBusy(
+              button,
+              false
+            );
+          }
+        }
+      );
+    });
+}
+
 
 function bindRetailerPasswordToggles() {
   document
@@ -5052,6 +5629,8 @@ MANAGED MEMBERSHIPS
 
   bindSpecialProfileForms();
 
+  bindManagedMembershipForms();
+
   if (mainMessage) {
     setMessage(
       mainMessage,
@@ -5117,15 +5696,30 @@ MANAGED MEMBERSHIPS
   }
 
 
-  const specialCards =
-  state.specialProfiles
-    .map(
-      profile =>
-        specialProfileCardHtml(
-          profile
-        )
-    )
-    .filter(Boolean);
+  const freeManagedCards =
+    state.freeMemberships
+      .map(
+        membership =>
+          managedMembershipCardHtml(
+            membership
+          )
+      )
+      .filter(Boolean);
+
+  const rentedManagedCards =
+    state.rentedMemberships
+      .map(
+        membership =>
+          managedMembershipCardHtml(
+            membership
+          )
+      )
+      .filter(Boolean);
+
+  const specialCards = [
+    ...freeManagedCards,
+    ...rentedManagedCards
+  ];
 
 container.innerHTML = `
   ${
@@ -5163,6 +5757,8 @@ container.innerHTML = `
   bindRetailerProfileForms();
 
   bindSpecialProfileForms();
+
+  bindManagedMembershipForms();
 
 
   if (mainMessage) {
@@ -5424,6 +6020,94 @@ async function loadManagedMemberships() {
 
     console.error(
       "Managed membership load error:",
+      error
+    );
+  }
+}
+
+
+
+async function loadManagedAvailabilityCustomer() {
+  const updated =
+    document.getElementById(
+      "customer-availability-updated"
+    );
+
+  try {
+    const response =
+      await fetch(
+        "/api/managed-availability",
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+
+    const data =
+      await readJson(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to load availability."
+      );
+    }
+
+    state.managedAvailability =
+      data;
+
+    const values = {
+      "customer-target-available":
+        data.target?.available,
+      "customer-target-in-use":
+        data.target?.inUse,
+      "customer-target-total":
+        data.target?.total,
+      "customer-walmart-available":
+        data.walmart?.available,
+      "customer-walmart-in-use":
+        data.walmart?.inUse,
+      "customer-walmart-total":
+        data.walmart?.total
+    };
+
+    for (
+      const [
+        id,
+        value
+      ] of Object.entries(
+        values
+      )
+    ) {
+      const element =
+        document.getElementById(
+          id
+        );
+
+      if (element) {
+        element.textContent =
+          value ?? "—";
+      }
+    }
+
+    if (updated) {
+      updated.textContent =
+        "Updated just now";
+    }
+
+  } catch (error) {
+    state.managedAvailability =
+      null;
+
+    if (updated) {
+      updated.textContent =
+        "Unable to load";
+    }
+
+    console.error(
+      "Managed availability load error:",
       error
     );
   }
@@ -7995,6 +8679,31 @@ document
     );
   });
 
+
+/* =====================================================
+   LOAD AVAILABILITY WHEN TAB OPENS
+===================================================== */
+
+document
+  .querySelectorAll(
+    "[data-account-tab]"
+  )
+  .forEach(button => {
+    button.addEventListener(
+      "click",
+      () => {
+        if (
+          button.dataset
+            .accountTab ===
+          "availability"
+        ) {
+          loadManagedAvailabilityCustomer();
+        }
+      }
+    );
+  });
+
+
 /* =====================================================
    LOAD MY PROFILE
 ===================================================== */
@@ -8091,6 +8800,8 @@ state.retailerProfilesLoaded =
   false;
 
 await loadManagedMemberships();
+
+await loadManagedAvailabilityCustomer();
 
 renderOrders(
   state.orders
