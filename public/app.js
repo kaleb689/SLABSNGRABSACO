@@ -5266,12 +5266,20 @@ function profileCountdownInfo({
     };
   }
 
-  const days =
+  const hasExplicitDays =
+    daysRemaining !== null &&
+    daysRemaining !== undefined &&
+    String(
+      daysRemaining
+    ).trim() !== "" &&
     Number.isFinite(
       Number(
         daysRemaining
       )
-    )
+    );
+
+  const days =
+    hasExplicitDays
       ? Math.max(
           0,
           Number(
@@ -8371,6 +8379,60 @@ function bindProfileAccordions() {
 }
 
 
+
+function managedProfilesGroupIsOpen() {
+  const group =
+    document
+      .getElementById(
+        "retailer-profiles"
+      )
+      ?.querySelector(
+        ".profile-group-dropdown.special-profile-category"
+      );
+
+  return Boolean(
+    group?.open
+  );
+}
+
+
+function restoreManagedProfilesGroupOpen(
+  shouldOpen
+) {
+  if (!shouldOpen) {
+    return;
+  }
+
+  const group =
+    document
+      .getElementById(
+        "retailer-profiles"
+      )
+      ?.querySelector(
+        ".profile-group-dropdown.special-profile-category"
+      );
+
+  if (!group) {
+    return;
+  }
+
+  group.open =
+    true;
+
+  const label =
+    group.querySelector(
+      "[data-profile-group-label]"
+    );
+
+  if (label) {
+    label.textContent =
+      label.dataset
+        .hideText ||
+      "HIDE ALL GIFTED & RENTED PROFILES";
+  }
+}
+
+
 async function applyManagedSavedInfo(
   card
 ) {
@@ -8484,6 +8546,77 @@ async function applyManagedSavedInfo(
         paymentMethodId;
     }
 
+    const readiness =
+      profileReadiness(
+        item.customerProfile,
+        item.customerCard
+      );
+
+    if (
+      readiness.ready &&
+      item.activationStatus !==
+        "activated"
+    ) {
+      item.activationStatus =
+        "awaiting_activation";
+    } else if (
+      !readiness.ready
+    ) {
+      item.activationStatus =
+        "incomplete";
+    }
+
+    try {
+      const response =
+        await fetch(
+          "/api/admin/test-managed-profile-workflow",
+          {
+            method: "PUT",
+            credentials:
+              "same-origin",
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+            body:
+              JSON.stringify({
+                type:
+                  "rented",
+                assignmentId:
+                  item.assignmentId,
+                customerProfile:
+                  item.customerProfile,
+                customerCard:
+                  item.customerCard,
+                expiresAt:
+                  item.expiresAt ||
+                  null,
+                durationType:
+                  item.durationType ||
+                  null
+              })
+          }
+        );
+
+      const synced =
+        await readJson(
+          response
+        );
+
+      if (
+        response.ok &&
+        synced.activationStatus
+      ) {
+        item.activationStatus =
+          synced.activationStatus;
+      }
+    } catch (error) {
+      console.error(
+        "Admin test managed activation sync failed:",
+        error
+      );
+    }
+
     adminTestSaveRentals(
       rentals
     );
@@ -8491,11 +8624,13 @@ async function applyManagedSavedInfo(
     state.rentedMemberships =
       rentals;
 
+    const managedGroupOpen =
+      managedProfilesGroupIsOpen();
+
     renderRetailerProfiles();
 
-    showAccountMessage(
-      "Saved test shipping/card information applied.",
-      "success"
+    restoreManagedProfilesGroupOpen(
+      managedGroupOpen
     );
 
     return;
@@ -8538,13 +8673,32 @@ async function applyManagedSavedInfo(
       );
     }
 
+    const managedGroupOpen =
+      managedProfilesGroupIsOpen();
+
     await loadManagedMemberships();
 
-    showAccountMessage(
-      result.message ||
-      "Saved information applied.",
-      "success"
+    renderRetailerProfiles();
+
+    restoreManagedProfilesGroupOpen(
+      managedGroupOpen
     );
+
+    const managedCardMessage =
+      card?.querySelector(
+        "[data-managed-form-message]"
+      );
+
+    if (
+      managedCardMessage
+    ) {
+      managedCardMessage.textContent =
+        result.message ||
+        "Saved information applied.";
+
+      managedCardMessage.className =
+        "managed-form-message success";
+    }
 
   } catch (error) {
     showAccountMessage(
@@ -9844,23 +9998,89 @@ async function loadManagedMemberships() {
   if (ADMIN_PREVIEW_MODE) {
     state.freeMemberships = [];
 
+    let workflowStatuses = [];
+
+    try {
+      const response =
+        await fetch(
+          "/api/admin/test-managed-profile-workflow",
+          {
+            method: "GET",
+            credentials:
+              "same-origin",
+            cache:
+              "no-store"
+          }
+        );
+
+      const data =
+        await readJson(
+          response
+        );
+
+      if (
+        response.ok &&
+        Array.isArray(
+          data.profiles
+        )
+      ) {
+        workflowStatuses =
+          data.profiles;
+      }
+    } catch (error) {
+      console.error(
+        "Admin test managed profile status load failed:",
+        error
+      );
+    }
+
     state.rentedMemberships =
       adminTestReadRentals()
-        .map(item => ({
-          ...item,
-          daysRemaining:
-            item.expiresAt
-              ? adminTestDaysRemaining(
-                  item.expiresAt
-                )
-              : null
-        }))
+        .map(item => {
+          const workflow =
+            workflowStatuses.find(
+              profile =>
+                String(
+                  profile.assignmentId
+                ) ===
+                String(
+                  item.assignmentId
+                ) &&
+                profile.type ===
+                  "rented"
+            );
+
+          return {
+            ...item,
+
+            activationStatus:
+              workflow
+                ?.activationStatus ||
+              item.activationStatus ||
+              "incomplete",
+
+            activationLabel:
+              workflow
+                ?.activationLabel ||
+              item.activationLabel ||
+              null,
+
+            daysRemaining:
+              item.expiresAt
+                ? adminTestDaysRemaining(
+                    item.expiresAt
+                  )
+                : null
+          };
+        })
         .filter(item =>
           !item.expiresAt ||
           new Date(
             item.expiresAt
           ).getTime() >
-            Date.now()
+            Date.now() ||
+          item.activationStatus ===
+            "expired"
         );
 
     adminTestSaveRentals(
@@ -10612,6 +10832,10 @@ async function saveRetailerProfile(
       paidGroupOpen
     );
 
+    reopenPaidProfile(
+      slot
+    );
+
     showAccountMessage(
       `Test Profile ${slot} saved.`,
       "success"
@@ -10719,6 +10943,10 @@ async function saveRetailerProfile(
 
     restorePaidProfilesGroupOpen(
       paidGroupOpen
+    );
+
+    reopenPaidProfile(
+      slot
     );
 
     const refreshedMessage =
