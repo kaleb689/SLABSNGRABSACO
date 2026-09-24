@@ -10505,40 +10505,104 @@ select:focus {
 
 
 /* ======================================================
-   MY PROFILE WATERMARK READABILITY FIX
-   Keep decorative background logos from sitting behind
-   customer/admin wording on the My Profile page.
+   PROFILE CONTROL POSITIONING — FINAL REFINEMENT
 ====================================================== */
 
-#my-profile {
-  position: relative;
-  isolation: isolate;
+.profile-compact-main {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto
+    auto;
+  align-items: center;
+  column-gap: 10px;
 }
 
-#my-profile::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-
-  background:
-    linear-gradient(
-      180deg,
-      rgba(5, 10, 18, .94),
-      rgba(7, 16, 27, .94)
-    );
+.profile-compact-toggle {
+  min-width: 0;
 }
 
-/*
-  Keep the outer decorative watermarks visible around
-  the page, but prevent them from competing with text.
-*/
-#my-profile .account-shell,
-#my-profile .customer-account-shell,
-#my-profile .account-panel,
-#my-profile .retailer-profile-shell {
-  position: relative;
-  z-index: 1;
+.profile-open-control-status-side {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-left: 8px;
 }
 
+.profile-open-control-status-side .profile-open-hint {
+  min-height: 29px;
+  padding: 7px 11px;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .5px;
+  white-space: nowrap;
+}
+
+.profile-open-control-status-side .profile-compact-chevron {
+  min-width: 27px;
+  min-height: 27px;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.profile-status-stack {
+  margin-left: 0;
+}
+
+.profile-group-open {
+  min-height: 38px;
+  padding: 10px 14px;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.saved-detail-right-control {
+  gap: 5px;
+}
+
+.saved-detail-open-hint {
+  min-height: 34px;
+  padding: 8px 11px;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.saved-detail-chevron {
+  min-width: 28px;
+  min-height: 28px;
+  font-size: 21px;
+  font-weight: 900;
+}
+
+@media (max-width: 980px) {
+  .profile-compact-main {
+    grid-template-columns:
+      minmax(0, 1fr)
+      auto;
+    row-gap: 9px;
+  }
+
+  .profile-status-stack {
+    grid-column: 1 / -1;
+  }
+
+  .profile-open-control-status-side {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .profile-open-control-status-side .profile-open-hint {
+    min-height: 28px;
+    padding: 6px 9px;
+    font-size: 9px;
+  }
+
+  .profile-open-control-status-side .profile-compact-chevron {
+    min-width: 25px;
+    min-height: 25px;
+    font-size: 19px;
+  }
+}
