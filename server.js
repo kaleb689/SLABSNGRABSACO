@@ -119,52 +119,96 @@ const PLANS = {
   1: {
     name: "Starter",
     profiles: 1,
-    amount: 30,
+    amount: 10,
     priceId: process.env.STRIPE_TIER1_PRICE_ID
   },
 
   2: {
-    name: "Popular",
+    name: "Intermediate",
     profiles: 2,
-    amount: 50,
+    amount: 15,
     priceId: process.env.STRIPE_TIER2_PRICE_ID
   },
 
   3: {
     name: "Advanced",
     profiles: 3,
-    amount: 80,
+    amount: 25,
     priceId: process.env.STRIPE_TIER3_PRICE_ID
   },
 
   4: {
     name: "Pro",
     profiles: 5,
-    amount: 130,
+    amount: 45,
     priceId: process.env.STRIPE_TIER4_PRICE_ID
   },
 
   5: {
     name: "High Volume",
     profiles: 10,
-    amount: 215,
+    amount: 70,
     priceId: process.env.STRIPE_TIER5_PRICE_ID
   },
 
   6: {
     name: "Power User",
     profiles: 20,
-    amount: 300,
+    amount: 100,
     priceId: process.env.STRIPE_TIER6_PRICE_ID
   },
 
   7: {
     name: "Elite",
     profiles: 50,
-    amount: 650,
+    amount: 215,
     priceId: process.env.STRIPE_TIER7_PRICE_ID
   }
 };
+
+const RENTAL_PRICING = {
+  5: {
+    "1_drop": 10,
+    "1_week": 25,
+    "1_month": 60
+  },
+  10: {
+    "1_drop": 20,
+    "1_week": 50,
+    "1_month": 120
+  },
+  15: {
+    "1_drop": 30,
+    "1_week": 75,
+    "1_month": 180
+  }
+};
+
+function rentalPriceFor(
+  quantity,
+  durationType
+) {
+  return (
+    RENTAL_PRICING?.[quantity]
+      ?.[durationType] ?? null
+  );
+}
+
+function normalizeRentalRetailer(
+  value
+) {
+  const retailer =
+    String(value || "")
+      .trim()
+      .toLowerCase();
+
+  return [
+    "target",
+    "walmart"
+  ].includes(retailer)
+    ? retailer
+    : null;
+}
 
 /* -------------------------------------------------------
    SECURITY HEADERS
@@ -1516,6 +1560,268 @@ app.post(
       ) {
         const session =
           event.data.object;
+
+        if (
+          session.metadata
+            ?.purchase_type ===
+          "rental"
+        ) {
+          const retailer =
+            normalizeRentalRetailer(
+              session.metadata
+                ?.retailer
+            );
+
+          const quantity =
+            Number(
+              session.metadata
+                ?.account_quantity
+            );
+
+          const durationType =
+            normalizeSpecialProfileDuration(
+              session.metadata
+                ?.duration_type
+            );
+
+          const customerAccountId =
+            clean(
+              session.metadata
+                ?.customer_account_id,
+              150
+            );
+
+          const paidSubmissionId =
+            clean(
+              session.metadata
+                ?.paid_submission_id,
+              150
+            );
+
+          const expectedPrice =
+            rentalPriceFor(
+              quantity,
+              durationType
+            );
+
+          if (
+            retailer &&
+            [5, 10, 15].includes(
+              quantity
+            ) &&
+            [
+              "1_drop",
+              "1_week",
+              "1_month"
+            ].includes(durationType) &&
+            expectedPrice != null &&
+            customerAccountId &&
+            paidSubmissionId
+          ) {
+            const assignments =
+              await getRentalAssignments();
+
+            const alreadyFulfilled =
+              assignments.some(
+                assignment =>
+                  String(
+                    assignment
+                      .stripeSessionId ||
+                    ""
+                  ) ===
+                  String(session.id)
+              );
+
+            if (!alreadyFulfilled) {
+              const paid =
+                await readJson(
+                  PAID_FILE,
+                  []
+                );
+
+              const paidRecords =
+                Array.isArray(paid)
+                  ? paid
+                  : [];
+
+              const paidRecord =
+                paidRecords.find(
+                  record =>
+                    String(record.id) ===
+                      String(
+                        paidSubmissionId
+                      ) &&
+                    String(
+                      record.customerAccountId ||
+                      ""
+                    ) ===
+                      String(
+                        customerAccountId
+                      ) &&
+                    subscriptionAllowsProfiles(
+                      record
+                    )
+                );
+
+              if (!paidRecord) {
+                console.error(
+                  "Rental fulfillment skipped: active paid membership was not found.",
+                  session.id
+                );
+              } else {
+                const availableAccounts =
+                  await getAvailableManagedAccountsForRetailer(
+                    retailer
+                  );
+
+                if (
+                  availableAccounts.length <
+                  quantity
+                ) {
+                  console.error(
+                    "Rental fulfillment inventory shortage:",
+                    session.id,
+                    retailer,
+                    quantity,
+                    availableAccounts.length
+                  );
+
+                  if (
+                    session.payment_intent
+                  ) {
+                    try {
+                      await stripe
+                        .refunds
+                        .create({
+                          payment_intent:
+                            typeof session
+                              .payment_intent ===
+                              "string"
+                              ? session
+                                  .payment_intent
+                              : session
+                                  .payment_intent
+                                  .id
+                        });
+                    } catch (refundError) {
+                      console.error(
+                        "Automatic rental refund failed:",
+                        refundError.message
+                      );
+                    }
+                  }
+                } else {
+                  const now =
+                    new Date();
+
+                  const startsAt =
+                    now.toISOString();
+
+                  const expiresAt =
+                    specialProfileExpiresAt(
+                      durationType,
+                      now
+                    );
+
+                  const customerProfile =
+                    sanitizeProfile(
+                      paidRecord.profile ||
+                      {}
+                    );
+
+                  const paidSecrets =
+                    await loadEncryptedPackage(
+                      paidRecord.id
+                    );
+
+                  for (
+                    const account of
+                    availableAccounts.slice(
+                      0,
+                      quantity
+                    )
+                  ) {
+                    assignments.push({
+                      id:
+                        crypto.randomUUID(),
+
+                      rentedMembershipId:
+                        account.id,
+
+                      managedAccountId:
+                        account.id,
+
+                      customerAccountId,
+
+                      paidSubmissionId:
+                        paidRecord.id,
+
+                      active: true,
+
+                      durationType,
+
+                      startsAt,
+
+                      expiresAt,
+
+                      customerProfile,
+
+                      customerSecrets:
+                        paidSecrets
+                          ? encryptJson(
+                              paidSecrets
+                            )
+                          : null,
+
+                      stripeSessionId:
+                        session.id,
+
+                      stripePaymentIntentId:
+                        typeof session
+                          .payment_intent ===
+                          "string"
+                          ? session
+                              .payment_intent
+                          : session
+                              .payment_intent
+                              ?.id ||
+                            null,
+
+                      stripeCustomerId:
+                        typeof session
+                          .customer ===
+                          "string"
+                          ? session.customer
+                          : session.customer
+                              ?.id ||
+                            null,
+
+                      rentalRetailer:
+                        retailer,
+
+                      rentalPrice:
+                        expectedPrice,
+
+                      createdAt:
+                        startsAt,
+
+                      updatedAt:
+                        startsAt,
+
+                      endedAt: null,
+
+                      endReason: null
+                    });
+                  }
+
+                  await saveRentalAssignments(
+                    assignments
+                  );
+                }
+              }
+            }
+          }
+        }
 
         const id =
           session.metadata
@@ -6594,6 +6900,103 @@ async function getManagedAvailability() {
 }
 
 
+async function getAvailableManagedAccountsForRetailer(
+  retailer
+) {
+  const normalizedRetailer =
+    normalizeRentalRetailer(
+      retailer
+    );
+
+  if (!normalizedRetailer) {
+    return [];
+  }
+
+  const [
+    managedAccounts,
+    freeAssignments,
+    rentalAssignments
+  ] = await Promise.all([
+    getManagedAccounts(),
+    getFreeAssignments(),
+    getRentalAssignments()
+  ]);
+
+  const inUseAccountIds =
+    new Set();
+
+  for (const assignment of freeAssignments) {
+    if (!freeAssignmentIsActive(assignment)) {
+      continue;
+    }
+
+    const id =
+      assignment.managedAccountId ||
+      assignment.freeMembershipId ||
+      "";
+
+    if (id) {
+      inUseAccountIds.add(
+        String(id)
+      );
+    }
+  }
+
+  for (const assignment of rentalAssignments) {
+    if (!rentalAssignmentIsActive(assignment)) {
+      continue;
+    }
+
+    const id =
+      assignment.managedAccountId ||
+      assignment.rentedMembershipId ||
+      "";
+
+    if (id) {
+      inUseAccountIds.add(
+        String(id)
+      );
+    }
+  }
+
+  const available = [];
+
+  for (const account of managedAccounts) {
+    if (
+      inUseAccountIds.has(
+        String(account.id)
+      )
+    ) {
+      continue;
+    }
+
+    try {
+      const credentials =
+        account.credentials
+          ? normalizeRetailerCredentials(
+              decryptJson(
+                account.credentials
+              )
+            )
+          : emptyRetailerCredentials();
+
+      if (
+        String(
+          credentials
+            ?.[normalizedRetailer]
+            ?.username || ""
+        ).trim()
+      ) {
+        available.push(account);
+      }
+    } catch {
+      // Skip accounts that cannot be decrypted.
+    }
+  }
+
+  return available;
+}
+
 app.get(
   "/api/managed-availability",
   async (req, res) => {
@@ -11623,6 +12026,200 @@ await writeJson(
     }
   }
 );
+
+/* -------------------------------------------------------
+   CREATE RENTAL CHECKOUT SESSION
+------------------------------------------------------- */
+
+app.post(
+  "/api/create-rental-checkout-session",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const retailer =
+        normalizeRentalRetailer(
+          req.body?.retailer
+        );
+
+      const quantity =
+        Number(
+          req.body?.quantity
+        );
+
+      const durationType =
+        normalizeSpecialProfileDuration(
+          req.body?.durationType
+        );
+
+      const price =
+        rentalPriceFor(
+          quantity,
+          durationType
+        );
+
+      if (
+        !retailer ||
+        ![5, 10, 15].includes(
+          quantity
+        ) ||
+        ![
+          "1_drop",
+          "1_week",
+          "1_month"
+        ].includes(durationType) ||
+        price == null
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose a valid rental package."
+          });
+      }
+
+      const customerAccountId =
+        req.customerAccount.id;
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const paidRecord =
+        paidRecords.find(
+          record =>
+            record.customerAccountId ===
+              customerAccountId &&
+            subscriptionAllowsProfiles(
+              record
+            )
+        );
+
+      if (!paidRecord) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "An active membership is required before renting additional accounts."
+          });
+      }
+
+      const availableAccounts =
+        await getAvailableManagedAccountsForRetailer(
+          retailer
+        );
+
+      if (
+        availableAccounts.length <
+        quantity
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `Only ${availableAccounts.length} ${retailer === "walmart" ? "Walmart" : "Target"} rental account(s) are currently available.`
+          });
+      }
+
+      const retailerLabel =
+        retailer === "walmart"
+          ? "Walmart"
+          : "Target";
+
+      const durationLabel =
+        durationType === "1_week"
+          ? "1 Week"
+          : durationType === "1_month"
+            ? "1 Month"
+            : "1 Drop";
+
+      const session =
+        await stripe
+          .checkout
+          .sessions
+          .create({
+            mode: "payment",
+
+            line_items: [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: "usd",
+                  unit_amount:
+                    Math.round(
+                      price * 100
+                    ),
+                  product_data: {
+                    name:
+                      `${retailerLabel} Account Rental — ${quantity} Accounts — ${durationLabel}`,
+                    description:
+                      `${quantity} SMS-verified ${retailerLabel} account rental(s) for ${durationLabel}.`
+                  }
+                }
+              }
+            ],
+
+            success_url:
+              `${BASE_URL}/?rental=success#my-profile`,
+
+            cancel_url:
+              `${BASE_URL}/?rental=cancelled#my-profile`,
+
+            metadata: {
+              purchase_type:
+                "rental",
+              retailer,
+              account_quantity:
+                String(quantity),
+              duration_type:
+                durationType,
+              rental_price:
+                String(price),
+              customer_account_id:
+                String(
+                  customerAccountId
+                ),
+              paid_submission_id:
+                String(
+                  paidRecord.id
+                )
+            },
+
+            customer_email:
+              req.customerAccount.email ||
+              paidRecord.profile?.email ||
+              undefined,
+
+            allow_promotion_codes:
+              false
+          });
+
+      return res.json({
+        url: session.url
+      });
+
+    } catch (error) {
+      console.error(
+        "Rental checkout session error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to create the rental checkout session."
+        });
+    }
+  }
+);
+
 
 /* -------------------------------------------------------
    CREATE CHECKOUT SESSION
