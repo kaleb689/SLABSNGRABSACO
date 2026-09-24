@@ -2420,6 +2420,46 @@
     }
 
 
+
+    /* =========================================
+       FIELD DESCRIPTION CONSISTENCY
+    ========================================= */
+
+    .admin-app-password-note {
+      display: block;
+      margin-top: 9px;
+      color: #ffffff !important;
+      font-size: 12px !important;
+      font-weight: 900 !important;
+      line-height: 1.45 !important;
+    }
+
+    .admin-edit-field {
+      align-content: start;
+    }
+
+    .admin-edit-field > small,
+    .admin-edit-field .admin-field-note,
+    .admin-edit-field .admin-edit-help {
+      margin-top: 8px;
+    }
+
+    .load-admin-saved-details.admin-edit-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+    }
+
+    .target-pool-loaded-status {
+      display: block;
+      margin-top: 5px;
+      color: #8fa7b9;
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+
   </style>
 </head>
 
@@ -2682,8 +2722,15 @@ PAID SUBSCRIPTIONS
             Replace Target Account Pool
           </strong>
 
+          <small
+            id="targetPoolLoadedStatus"
+            class="target-pool-loaded-status"
+          >
+            Checking currently loaded Target accounts...
+          </small>
+
           <small>
-            Securely replace the existing Target pool with exactly 100 accounts.
+            Securely replace the existing Target pool with exactly 100 accounts. Replacing website files alone does NOT import the password list.
           </small>
         </div>
 
@@ -3015,6 +3062,11 @@ const replaceTargetPool =
 const targetPoolImportStatus =
   document.getElementById(
     "targetPoolImportStatus"
+  );
+
+const targetPoolLoadedStatus =
+  document.getElementById(
+    "targetPoolLoadedStatus"
   );
 
 const awaitingActivationCount =
@@ -4004,7 +4056,7 @@ function renderOrder(x) {
                     </button>
                   </div>
 
-                  <small class="admin-field-note">
+                  <small class="admin-field-note admin-app-password-note">
                     password you created in email not your email password
                   </small>
                 </div>
@@ -4338,7 +4390,7 @@ function renderOrder(x) {
   >
     <button
       type="button"
-      class="load-admin-saved-details"
+      class="load-admin-saved-details admin-edit-button"
       data-order-id="${escapeHtml(x.id)}"
     >
       Load Saved Details
@@ -10685,6 +10737,187 @@ function bindRevealButtons() {
 
     });
 }
+
+
+
+/* =========================================
+   GLOBAL SENSITIVE SHOW / HIDE
+   Capture-phase delegation guarantees that
+   dynamically loaded Admin sections work too.
+========================================= */
+
+document.addEventListener(
+  "click",
+  event => {
+    const button =
+      event.target.closest(
+        [
+          "[data-admin-sensitive-toggle]",
+          ".reveal-button",
+          ".retailer-password-toggle"
+        ].join(",")
+      );
+
+    if (!button) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    /*
+      Inline Admin sensitive inputs.
+    */
+    if (
+      button.matches(
+        "[data-admin-sensitive-toggle]"
+      )
+    ) {
+      const row =
+        button.closest(
+          ".admin-sensitive-input-row"
+        );
+
+      const input =
+        row?.querySelector(
+          "[data-admin-sensitive-input]"
+        );
+
+      if (!input) {
+        return;
+      }
+
+      const showing =
+        input.type === "text";
+
+      input.type =
+        showing
+          ? "password"
+          : "text";
+
+      button.textContent =
+        showing
+          ? "Show"
+          : "Hide";
+
+      return;
+    }
+
+    /*
+      Old-style Admin sensitive text values.
+    */
+    if (
+      button.matches(
+        ".reveal-button"
+      )
+    ) {
+      const sensitiveRow =
+        button.closest(
+          ".sensitive-row"
+        );
+
+      const value =
+        sensitiveRow
+          ?.querySelector(
+            "[data-sensitive]"
+          );
+
+      if (value) {
+        const hidden =
+          value.dataset.hidden ===
+          "true";
+
+        value.textContent =
+          hidden
+            ? (
+                value.dataset.value ||
+                "—"
+              )
+            : (
+                value.dataset.masked ||
+                "—"
+              );
+
+        value.dataset.hidden =
+          hidden
+            ? "false"
+            : "true";
+
+        button.textContent =
+          hidden
+            ? "Hide"
+            : "Show";
+
+        return;
+      }
+
+      /*
+        Some dynamically rendered rows use an input
+        instead of data-sensitive text.
+      */
+      const input =
+        button.parentElement
+          ?.querySelector(
+            'input[type="password"], input[type="text"]'
+          );
+
+      if (input) {
+        const showing =
+          input.type === "text";
+
+        input.type =
+          showing
+            ? "password"
+            : "text";
+
+        button.textContent =
+          showing
+            ? "Show"
+            : "Hide";
+      }
+
+      return;
+    }
+
+    /*
+      Retailer password inputs in Admin.
+    */
+    if (
+      button.matches(
+        ".retailer-password-toggle"
+      )
+    ) {
+      const row =
+        button.closest(
+          ".admin-retailer-password-row"
+        );
+
+      const input =
+        row?.querySelector(
+          "[data-retailer-password]"
+        );
+
+      if (!input) {
+        return;
+      }
+
+      const showing =
+        input.type === "text";
+
+      input.type =
+        showing
+          ? "password"
+          : "text";
+
+      button.textContent =
+        showing
+          ? "Show"
+          : "Hide";
+    }
+  },
+  true
+);
 
 
 /* =========================================
