@@ -7322,22 +7322,28 @@ function retailerProfileCardHtml(
                     </label>
                   </section>
 
-                  <section
-                    class="paid-profile-section"
+                  <details
+                    class="paid-profile-section paid-profile-subsection"
                   >
-                    <div
-                      class="paid-profile-section-head"
+                    <summary
+                      class="paid-profile-subsection-summary"
                     >
                       <div>
                         <span class="eyebrow">
                           SHIPPING INFORMATION
                         </span>
 
-                        <p>
-                          Shipping information for this
-                          specific paid ACO profile.
-                        </p>
+                        <strong>
+                          Shipping Information
+                        </strong>
                       </div>
+
+                      <span
+                        class="paid-profile-subsection-action"
+                        data-section-action
+                      >
+                        CLICK TO OPEN
+                      </span>
 
                       <span
                         class="profile-mini-status ${
@@ -7352,8 +7358,18 @@ function retailerProfileCardHtml(
                             : "● MISSING"
                         }
                       </span>
-                    </div>
 
+                      <span
+                        class="paid-profile-subsection-chevron"
+                        aria-hidden="true"
+                      >
+                        ▾
+                      </span>
+                    </summary>
+
+                    <div
+                      class="paid-profile-subsection-body"
+                    >
                     <div class="two">
                       <label>
                         First Name
@@ -7492,24 +7508,31 @@ function retailerProfileCardHtml(
                         >
                       </label>
                     </div>
-                  </section>
+                    </div>
+                  </details>
 
-                  <section
-                    class="paid-profile-section"
+                  <details
+                    class="paid-profile-section paid-profile-subsection"
                   >
-                    <div
-                      class="paid-profile-section-head"
+                    <summary
+                      class="paid-profile-subsection-summary"
                     >
                       <div>
                         <span class="eyebrow">
                           CARD INFORMATION
                         </span>
 
-                        <p>
-                          Select a saved card above or enter
-                          the card information for this profile.
-                        </p>
+                        <strong>
+                          Card Information
+                        </strong>
                       </div>
+
+                      <span
+                        class="paid-profile-subsection-action"
+                        data-section-action
+                      >
+                        CLICK TO OPEN
+                      </span>
 
                       <span
                         class="profile-mini-status ${
@@ -7524,8 +7547,18 @@ function retailerProfileCardHtml(
                             : "● MISSING"
                         }
                       </span>
-                    </div>
 
+                      <span
+                        class="paid-profile-subsection-chevron"
+                        aria-hidden="true"
+                      >
+                        ▾
+                      </span>
+                    </summary>
+
+                    <div
+                      class="paid-profile-subsection-body"
+                    >
                     <div class="two">
                       <label>
                         Card Label
@@ -7619,26 +7652,43 @@ function retailerProfileCardHtml(
                       >
                     </label>
 
-                    <small class="fine">
-                      This is the separate ACO Account
-                      Security Code. It is not a card CVV/CVC.
-                    </small>
-                  </section>
+                    </div>
+                  </details>
 
-                  <section
-                    class="paid-profile-section"
+                  <details
+                    class="paid-profile-section paid-profile-subsection"
                   >
-                    <span class="eyebrow">
-                      RETAILER ACCOUNTS
-                    </span>
-
-                    <p
-                      class="paid-profile-section-copy"
+                    <summary
+                      class="paid-profile-subsection-summary"
                     >
-                      Add the retailer login information for
-                      this paid ACO profile.
-                    </p>
+                      <div>
+                        <span class="eyebrow">
+                          RETAILER INFORMATION
+                        </span>
 
+                        <strong>
+                          Retailer Information
+                        </strong>
+                      </div>
+
+                      <span
+                        class="paid-profile-subsection-action"
+                        data-section-action
+                      >
+                        CLICK TO OPEN
+                      </span>
+
+                      <span
+                        class="paid-profile-subsection-chevron"
+                        aria-hidden="true"
+                      >
+                        ▾
+                      </span>
+                    </summary>
+
+                    <div
+                      class="paid-profile-subsection-body"
+                    >
                     <div
                       class="retailer-credentials-grid"
                     >
@@ -7654,7 +7704,8 @@ function retailerProfileCardHtml(
                         )
                         .join("")}
                     </div>
-                  </section>
+                    </div>
+                  </details>
 
                   <div
                     class="retailer-profile-save-row"
@@ -8172,6 +8223,95 @@ function bindProfileGroupDropdowns() {
 
       sync();
     });
+}
+
+
+
+function bindPaidProfileSubsections(
+  root = document
+) {
+  root
+    .querySelectorAll(
+      ".paid-profile-subsection"
+    )
+    .forEach(section => {
+      if (
+        section.dataset
+          .subsectionBound ===
+        "true"
+      ) {
+        return;
+      }
+
+      section.dataset
+        .subsectionBound =
+        "true";
+
+      const action =
+        section.querySelector(
+          "[data-section-action]"
+        );
+
+      const sync = () => {
+        if (action) {
+          action.textContent =
+            section.open
+              ? "CLICK TO CLOSE"
+              : "CLICK TO OPEN";
+        }
+      };
+
+      section.addEventListener(
+        "toggle",
+        sync
+      );
+
+      sync();
+    });
+}
+
+
+function reopenPaidProfile(
+  slot
+) {
+  const card =
+    document.querySelector(
+      `[data-retailer-profile="${slot}"]`
+    );
+
+  const body =
+    card?.querySelector(
+      "[data-profile-body]"
+    );
+
+  const button =
+    card?.querySelector(
+      "[data-profile-toggle]"
+    );
+
+  if (
+    !card ||
+    !body ||
+    !button
+  ) {
+    return;
+  }
+
+  body.hidden =
+    false;
+
+  card.classList.add(
+    "expanded"
+  );
+
+  button.setAttribute(
+    "aria-expanded",
+    "true"
+  );
+
+  bindPaidProfileSubsections(
+    card
+  );
 }
 
 
@@ -9477,6 +9617,8 @@ container.innerHTML = `
 
   bindProfileAccordions();
 
+  bindPaidProfileSubsections();
+
   bindManagedAutofill();
 
   bindPersonalProfileAutofill();
@@ -10300,6 +10442,10 @@ async function saveRetailerProfile(
 
     renderRetailerProfiles();
 
+    reopenPaidProfile(
+      slot
+    );
+
     showAccountMessage(
       `Test Profile ${slot} saved.`,
       "success"
@@ -10401,6 +10547,10 @@ async function saveRetailerProfile(
     */
 
     renderRetailerProfiles();
+
+    reopenPaidProfile(
+      slot
+    );
 
     const refreshedMessage =
       document.querySelector(
