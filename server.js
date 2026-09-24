@@ -19174,6 +19174,1225 @@ async function parseTargetTestOrder({
       )
   };
 }
+
+
+
+/* -------------------------------------------------------
+   COSTCO ORDER PARSER
+
+   Built around live Costco.com confirmations:
+   - Sender: Costco Orders / orders.costco.com
+   - Subject includes: "Your Costco.com order <number>"
+   - Order Placed date
+   - Product name
+   - Item number
+   - Price
+   - Quantity
+   - Subtotal
+   - Shipping & Handling
+   - Optional surcharge
+   - Estimated Tax
+   - Total
+------------------------------------------------------- */
+
+function isCostcoMessage(
+  subject,
+  sender,
+  combined
+) {
+  return (
+    /costco/i.test(
+      sender || ""
+    ) ||
+    /costco\.com/i.test(
+      subject || ""
+    ) ||
+    /costco\.com/i.test(
+      combined || ""
+    ) ||
+    /orders\.costco\.com/i.test(
+      sender || ""
+    )
+  );
+}
+
+
+function extractCostcoItems(
+  text,
+  html
+) {
+  const combined =
+    `${text || ""}\n${html || ""}`;
+
+  const items =
+    [];
+
+  /*
+    Typical block:
+
+    Monster Energy Drink, Zero Ultra, 24 fl oz, 12-count
+    Item 1075207
+    Price $38.99
+    Quantity 1
+  */
+
+  const pattern =
+    /([^\r\n]{4,300})\s*(?:\r?\n|\s{2,})\s*Item\s+([A-Z0-9-]{3,60})\s*(?:\r?\n|\s{2,})\s*Price\s*\$?\s*([\d,]+(?:\.\d{2}))\s*(?:\r?\n|\s{2,})\s*Quantity\s+(\d{1,3})/gi;
+
+  let match;
+
+  while (
+    (
+      match =
+        pattern.exec(
+          combined
+        )
+    ) !== null
+  ) {
+    const name =
+      clean(
+        match[1],
+        300
+      )
+        .replace(
+          /^your\s+order\s*/i,
+          ""
+        )
+        .trim();
+
+    const itemNumber =
+      clean(
+        match[2],
+        100
+      );
+
+    const price =
+      parseMoney(
+        match[3]
+      );
+
+    const quantity =
+      Math.max(
+        1,
+        Number(
+          match[4]
+        ) || 1
+      );
+
+    if (
+      !name ||
+      !itemNumber ||
+      price === null
+    ) {
+      continue;
+    }
+
+    items.push({
+      name,
+      sku:
+        itemNumber,
+      quantity,
+      price,
+      imageUrl:
+        null
+    });
+  }
+
+  return items.slice(
+    0,
+    30
+  );
+}
+
+
+async function parseCostcoOrder({
+  subject,
+  sender,
+  source,
+  uid,
+  messageId,
+  date
+}) {
+  const decoded =
+    await decodeImapMessage(
+      source
+    );
+
+  const text =
+    decoded.text ||
+    extractEmailText(
+      source
+    );
+
+  const htmlText =
+    htmlToPlainText(
+      decoded.html
+    );
+
+  const combined =
+    `${subject || ""}\n${sender || ""}\n${text}\n${htmlText}`;
+
+  if (
+    !isCostcoMessage(
+      subject,
+      sender,
+      combined
+    )
+  ) {
+    return null;
+  }
+
+
+  /* =====================================================
+     ORDER NUMBER
+
+     Costco normally places the number directly in the
+     email subject: "Your Costco.com order 1308657677..."
+  ===================================================== */
+
+  const orderMatch =
+    String(
+      subject || ""
+    ).match(
+      /costco\.com\s+order\s+#?\s*([0-9]{7,24})/i
+    ) ||
+    combined.match(
+      /(?:order\s*(?:number|#)?|costco\.com\s+order)\s*:?\s*#?\s*([0-9]{7,24})/i
+    );
+
+  const orderNumber =
+    orderMatch?.[1]
+      ? clean(
+          orderMatch[1],
+          100
+        )
+      : null;
+
+
+  /* =====================================================
+     ORDER DATE
+  ===================================================== */
+
+  const dateMatch =
+    combined.match(
+      /order\s+placed\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i
+    );
+
+  let checkoutAt =
+    date ||
+    null;
+
+  if (
+    dateMatch?.[1]
+  ) {
+    const parts =
+      dateMatch[1]
+        .split("/")
+        .map(Number);
+
+    if (
+      parts.length === 3
+    ) {
+      const [
+        month,
+        day,
+        year
+      ] = parts;
+
+      const parsedDate =
+        new Date(
+          Date.UTC(
+            year,
+            month - 1,
+            day,
+            12,
+            0,
+            0
+          )
+        );
+
+      if (
+        !Number.isNaN(
+          parsedDate.getTime()
+        )
+      ) {
+        checkoutAt =
+          parsedDate.toISOString();
+      }
+    }
+  }
+
+
+  /* =====================================================
+     PRODUCTS
+  ===================================================== */
+
+  const items =
+    extractCostcoItems(
+      text,
+      htmlText
+    );
+
+  const itemCount =
+    items.reduce(
+      (sum, item) =>
+        sum +
+        Number(
+          item.quantity ||
+          1
+        ),
+      0
+    );
+
+
+  /* =====================================================
+     TOTAL
+
+     Use the final Costco "Total" value rather than
+     subtotal, tax or surcharge amounts.
+  ===================================================== */
+
+  const totalMatches =
+    [
+      ...combined.matchAll(
+        /(?:^|\n|\r|\s)Total\s*\$?\s*([\d,]+(?:\.\d{2}))/gi
+      )
+    ];
+
+  const finalTotalMatch =
+    totalMatches.at(-1);
+
+  const orderTotal =
+    finalTotalMatch?.[1]
+      ? parseMoney(
+          finalTotalMatch[1]
+        )
+      : null;
+
+
+  /* =====================================================
+     PRODUCT IMAGES
+  ===================================================== */
+
+  const images =
+    extractEmailImageUrls(
+      decoded.html
+    );
+
+  for (
+    const item of
+    items
+  ) {
+    const key =
+      normalizeWalmartProductText(
+        item.name
+      );
+
+    const image =
+      images.find(image => {
+        const alt =
+          normalizeWalmartProductText(
+            image?.alt
+          );
+
+        const title =
+          normalizeWalmartProductText(
+            image?.title
+          );
+
+        return (
+          alt === key ||
+          title === key ||
+          (
+            alt.length >= 12 &&
+            (
+              alt.includes(key) ||
+              key.includes(alt)
+            )
+          ) ||
+          (
+            title.length >= 12 &&
+            (
+              title.includes(key) ||
+              key.includes(title)
+            )
+          )
+        );
+      });
+
+    if (image?.imageUrl) {
+      item.imageUrl =
+        image.imageUrl;
+    }
+  }
+
+
+  if (
+    !orderNumber ||
+    orderTotal === null
+  ) {
+    return null;
+  }
+
+  return {
+    retailer:
+      "Costco",
+
+    orderNumber,
+
+    checkoutAt,
+
+    itemCount,
+
+    orderTotal,
+
+    items,
+
+    source:
+      "imap-live-costco",
+
+    mailboxUid:
+      String(
+        uid ||
+        ""
+      ),
+
+    messageId:
+      clean(
+        messageId,
+        500
+      )
+  };
+}
+
+
+/* -------------------------------------------------------
+   POKEMON CENTER / PKC ORDER PARSER
+
+   Built around live Pokemon Center confirmations:
+   - Sender: info@em.pokemon.com / Pokemon Center
+   - Subject: "Thank you for shopping at PokemonCenter.com!"
+   - Order Number
+   - Date Ordered
+   - Order Summary
+   - Product name
+   - SKU
+   - Qty
+   - Price
+   - Order Subtotal
+   - Sales Tax
+   - Shipping
+   - Order Total
+------------------------------------------------------- */
+
+function isPokemonCenterMessage(
+  subject,
+  sender,
+  combined
+) {
+  return (
+    /pokemon\s*center/i.test(
+      sender || ""
+    ) ||
+    /pokemoncenter\.com/i.test(
+      subject || ""
+    ) ||
+    /pokemoncenter\.com/i.test(
+      combined || ""
+    ) ||
+    /@em\.pokemon\.com\b/i.test(
+      sender || ""
+    )
+  );
+}
+
+
+function extractPokemonCenterItems(
+  text,
+  html
+) {
+  const combined =
+    `${text || ""}\n${html || ""}`;
+
+  const items =
+    [];
+
+  /*
+    Typical block:
+
+    Pokémon TCG: 30th Celebration Booster Bundle (6 Packs)
+    SKU #: 10-10451-115
+    Qty: 3
+    Price: $26.94
+  */
+
+  const pattern =
+    /(?:order\s+summary[\s\S]*?)?([^\r\n]{4,300})\s*(?:\r?\n|\s{2,})\s*SKU\s*#?\s*:?\s*([A-Z0-9-]{3,80})\s*(?:\r?\n|\s{2,})\s*Qty\s*:?\s*(\d{1,3})\s*(?:\r?\n|\s{2,})\s*Price\s*:?\s*\$\s*([\d,]+(?:\.\d{2}))/gi;
+
+  let match;
+
+  while (
+    (
+      match =
+        pattern.exec(
+          combined
+        )
+    ) !== null
+  ) {
+    const name =
+      clean(
+        match[1],
+        300
+      )
+        .replace(
+          /^order\s+summary\s*/i,
+          ""
+        )
+        .trim();
+
+    const sku =
+      clean(
+        match[2],
+        100
+      );
+
+    const quantity =
+      Math.max(
+        1,
+        Number(
+          match[3]
+        ) || 1
+      );
+
+    const price =
+      parseMoney(
+        match[4]
+      );
+
+    if (
+      !name ||
+      !sku ||
+      price === null
+    ) {
+      continue;
+    }
+
+    items.push({
+      name,
+      sku,
+      quantity,
+      price,
+      imageUrl:
+        null
+    });
+  }
+
+  return items.slice(
+    0,
+    30
+  );
+}
+
+
+async function parsePokemonCenterOrder({
+  subject,
+  sender,
+  source,
+  uid,
+  messageId,
+  date
+}) {
+  const decoded =
+    await decodeImapMessage(
+      source
+    );
+
+  const text =
+    decoded.text ||
+    extractEmailText(
+      source
+    );
+
+  const htmlText =
+    htmlToPlainText(
+      decoded.html
+    );
+
+  const combined =
+    `${subject || ""}\n${sender || ""}\n${text}\n${htmlText}`;
+
+  if (
+    !isPokemonCenterMessage(
+      subject,
+      sender,
+      combined
+    )
+  ) {
+    return null;
+  }
+
+
+  /* =====================================================
+     ORDER NUMBER
+  ===================================================== */
+
+  const orderMatch =
+    combined.match(
+      /order\s+number\s*:?\s*([A-Z0-9-]{5,50})/i
+    );
+
+  const orderNumber =
+    orderMatch?.[1]
+      ? clean(
+          orderMatch[1],
+          100
+        )
+      : null;
+
+
+  /* =====================================================
+     DATE ORDERED
+  ===================================================== */
+
+  const dateMatch =
+    combined.match(
+      /date\s+ordered\s*:?\s*([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})/i
+    );
+
+  let checkoutAt =
+    date ||
+    null;
+
+  if (
+    dateMatch?.[1]
+  ) {
+    const parsedDate =
+      new Date(
+        dateMatch[1]
+      );
+
+    if (
+      !Number.isNaN(
+        parsedDate.getTime()
+      )
+    ) {
+      checkoutAt =
+        parsedDate.toISOString();
+    }
+  }
+
+
+  /* =====================================================
+     PRODUCTS
+  ===================================================== */
+
+  const items =
+    extractPokemonCenterItems(
+      text,
+      htmlText
+    );
+
+  const itemCount =
+    items.reduce(
+      (sum, item) =>
+        sum +
+        Number(
+          item.quantity ||
+          1
+        ),
+      0
+    );
+
+
+  /* =====================================================
+     ORDER TOTAL
+  ===================================================== */
+
+  const totalMatch =
+    combined.match(
+      /order\s+total\s*:?\s*\$\s*([\d,]+(?:\.\d{2}))/i
+    ) ||
+    combined.match(
+      /order\s+total[\s\S]{0,120}?\$\s*([\d,]+(?:\.\d{2}))/i
+    );
+
+  const orderTotal =
+    totalMatch?.[1]
+      ? parseMoney(
+          totalMatch[1]
+        )
+      : null;
+
+
+  /* =====================================================
+     OPTIONAL PRODUCT IMAGES
+
+     Match ALT/TITLE labels to known product names when
+     the email HTML exposes them.
+  ===================================================== */
+
+  const images =
+    extractEmailImageUrls(
+      decoded.html
+    );
+
+  for (
+    const item of
+    items
+  ) {
+    const key =
+      normalizeWalmartProductText(
+        item.name
+      );
+
+    const image =
+      images.find(image => {
+        const alt =
+          normalizeWalmartProductText(
+            image?.alt
+          );
+
+        const title =
+          normalizeWalmartProductText(
+            image?.title
+          );
+
+        return (
+          alt === key ||
+          title === key ||
+          (
+            alt.length >= 12 &&
+            (
+              alt.includes(key) ||
+              key.includes(alt)
+            )
+          ) ||
+          (
+            title.length >= 12 &&
+            (
+              title.includes(key) ||
+              key.includes(title)
+            )
+          )
+        );
+      });
+
+    if (image?.imageUrl) {
+      item.imageUrl =
+        image.imageUrl;
+    }
+  }
+
+
+  if (
+    !orderNumber ||
+    orderTotal === null
+  ) {
+    return null;
+  }
+
+  return {
+    retailer:
+      "PKC",
+
+    orderNumber,
+
+    checkoutAt,
+
+    itemCount,
+
+    orderTotal,
+
+    items,
+
+    source:
+      "imap-live-pkc",
+
+    mailboxUid:
+      String(
+        uid ||
+        ""
+      ),
+
+    messageId:
+      clean(
+        messageId,
+        500
+      )
+  };
+}
+
+
+/* -------------------------------------------------------
+   WALMART ORDER PARSER
+
+   Built around Walmart's live confirmation format:
+   - Subject: "Thanks for your order, <name>"
+   - Sender/domain: Walmart / walmart.com
+   - "Order number: #2000148-92736323"
+   - Fulfillment sections with "1 item" / "4 items"
+   - "Order total" followed by the final order amount
+   - A separate Payment method / Temporary hold amount
+
+   IMPORTANT:
+   We intentionally parse ORDER TOTAL and ignore the
+   temporary authorization hold amount.
+------------------------------------------------------- */
+
+function normalizeWalmartProductText(
+  value
+) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(
+      /[^a-z0-9]+/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .trim();
+}
+
+
+function isWalmartNonProductImageLabel(
+  value
+) {
+  const label =
+    normalizeWalmartProductText(
+      value
+    );
+
+  if (!label) {
+    return true;
+  }
+
+  const blocked = [
+    "walmart",
+    "walmart logo",
+    "walmart plus",
+    "google play",
+    "app store",
+    "download on the app store",
+    "get it on google play",
+    "shop anywhere",
+    "curbside pickup",
+    "delivery",
+    "view order",
+    "see item",
+    "see all",
+    "questions",
+    "help center",
+    "facebook",
+    "instagram",
+    "pinterest",
+    "youtube"
+  ];
+
+  return blocked.some(
+    text =>
+      label === text ||
+      label.startsWith(
+        `${text} `
+      )
+  );
+}
+
+
+function walmartProductCandidates(
+  text,
+  images
+) {
+  const candidates =
+    [];
+
+  const seen =
+    new Set();
+
+  /*
+    Decoded HTML/plain-text commonly exposes useful
+    image ALT text as "[image: Product Name]".
+  */
+  const markerPattern =
+    /\[image:\s*([^\]\r\n]{4,500})\]/gi;
+
+  let marker;
+
+  while (
+    (
+      marker =
+        markerPattern.exec(
+          String(text || "")
+        )
+    ) !== null
+  ) {
+    const name =
+      clean(
+        marker[1],
+        300
+      );
+
+    const key =
+      normalizeWalmartProductText(
+        name
+      );
+
+    if (
+      !key ||
+      isWalmartNonProductImageLabel(
+        name
+      ) ||
+      seen.has(key)
+    ) {
+      continue;
+    }
+
+    const image =
+      (
+        Array.isArray(images)
+          ? images
+          : []
+      ).find(item => {
+        const alt =
+          normalizeWalmartProductText(
+            item?.alt
+          );
+
+        const title =
+          normalizeWalmartProductText(
+            item?.title
+          );
+
+        return (
+          alt === key ||
+          title === key ||
+          (
+            alt.length >= 12 &&
+            (
+              alt.includes(key) ||
+              key.includes(alt)
+            )
+          ) ||
+          (
+            title.length >= 12 &&
+            (
+              title.includes(key) ||
+              key.includes(title)
+            )
+          )
+        );
+      });
+
+    seen.add(key);
+
+    candidates.push({
+      name,
+      quantity:
+        1,
+      price:
+        0,
+      imageUrl:
+        image?.imageUrl ||
+        null
+    });
+  }
+
+  /*
+    If plain-text conversion did not expose [image:]
+    markers, use meaningful ALT/TITLE labels from the
+    email's product images.
+  */
+  for (
+    const image of
+    (
+      Array.isArray(images)
+        ? images
+        : []
+    )
+  ) {
+    const labels = [
+      image?.alt,
+      image?.title
+    ]
+      .map(value =>
+        clean(
+          value,
+          300
+        )
+      )
+      .filter(Boolean);
+
+    const name =
+      labels.find(
+        label =>
+          label.length >= 8 &&
+          !isWalmartNonProductImageLabel(
+            label
+          )
+      );
+
+    if (!name) {
+      continue;
+    }
+
+    const key =
+      normalizeWalmartProductText(
+        name
+      );
+
+    if (
+      !key ||
+      seen.has(key)
+    ) {
+      continue;
+    }
+
+    seen.add(key);
+
+    candidates.push({
+      name,
+      quantity:
+        1,
+      price:
+        0,
+      imageUrl:
+        image?.imageUrl ||
+        null
+    });
+  }
+
+  return candidates
+    .slice(
+      0,
+      20
+    );
+}
+
+
+async function parseWalmartOrder({
+  subject,
+  sender,
+  source,
+  uid,
+  messageId,
+  date
+}) {
+  const decoded =
+    await decodeImapMessage(
+      source
+    );
+
+  const text =
+    decoded.text ||
+    extractEmailText(
+      source
+    );
+
+  const htmlText =
+    htmlToPlainText(
+      decoded.html
+    );
+
+  const combined =
+    `${subject || ""}\n${sender || ""}\n${text}\n${htmlText}`;
+
+  /*
+    Walmart confirmation subjects do not necessarily
+    say "Walmart"; the sender/domain does. Forwarded
+    confirmations can still be recognized by body text.
+  */
+  if (
+    !/order/i.test(
+      combined
+    ) ||
+    !(
+      /walmart/i.test(
+        combined
+      ) ||
+      /@walmart\.com\b/i.test(
+        sender || ""
+      )
+    )
+  ) {
+    return null;
+  }
+
+
+  /* =====================================================
+     ORDER NUMBER
+  ===================================================== */
+
+  const orderMatch =
+    combined.match(
+      /order\s*(?:number|#|no\.?)?\s*:?\s*#?\s*([0-9]{4,12}-[0-9]{5,24})/i
+    ) ||
+    combined.match(
+      /order\s*(?:number|#|no\.?)?\s*:?\s*#?\s*([A-Z0-9-]{8,40})/i
+    );
+
+  const orderNumber =
+    orderMatch?.[1]
+      ? clean(
+          orderMatch[1],
+          100
+        )
+      : null;
+
+
+  /* =====================================================
+     ORDER TOTAL
+
+     Search only the short area immediately following
+     "Order total". This prevents Walmart's separate
+     "Temporary hold" amount from becoming the Success
+     checkout value.
+  ===================================================== */
+
+  const totalSectionMatch =
+    combined.match(
+      /order\s+total\b([\s\S]{0,350})/i
+    );
+
+  const totalMoneyMatch =
+    totalSectionMatch?.[1]
+      ?.match(
+        /\$\s*([\d,]+(?:\.\d{2}))/i
+      );
+
+  const orderTotal =
+    totalMoneyMatch?.[1]
+      ? parseMoney(
+          totalMoneyMatch[1]
+        )
+      : null;
+
+  if (
+    !orderNumber ||
+    orderTotal === null
+  ) {
+    return null;
+  }
+
+
+  /* =====================================================
+     ITEM COUNT
+
+     Walmart may split one order between curbside pickup
+     and delivery. Sum the visible "N item(s)" counts
+     before the Order total section.
+  ===================================================== */
+
+  const beforeTotal =
+    combined
+      .split(
+        /order\s+total\b/i
+      )[0] ||
+    combined;
+
+  const itemCountMatches =
+    [
+      ...beforeTotal.matchAll(
+        /\b(\d{1,3})\s+items?\b/gi
+      )
+    ]
+      .map(
+        match =>
+          Number(
+            match[1]
+          )
+      )
+      .filter(
+        value =>
+          Number.isInteger(
+            value
+          ) &&
+          value > 0 &&
+          value <= 100
+      );
+
+  let itemCount =
+    itemCountMatches.reduce(
+      (sum, value) =>
+        sum + value,
+      0
+    );
+
+
+  /* =====================================================
+     PRODUCT NAMES + IMAGES
+
+     Walmart's confirmation can summarize products by
+     image/ALT text rather than showing a price row for
+     every item. Success does not require per-item prices;
+     the authoritative checkout value is Order total.
+  ===================================================== */
+
+  const allImages =
+    extractEmailImageUrls(
+      decoded.html
+    );
+
+  const items =
+    walmartProductCandidates(
+      beforeTotal,
+      allImages
+    );
+
+  if (
+    itemCount <= 0
+  ) {
+    itemCount =
+      items.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.quantity ||
+            1
+          ),
+        0
+      );
+  }
+
+
+  /* =====================================================
+     RETURN NORMALIZED WALMART CHECKOUT
+  ===================================================== */
+
+  return {
+    retailer:
+      "Walmart",
+
+    orderNumber,
+
+    checkoutAt:
+      date ||
+      null,
+
+    itemCount,
+
+    orderTotal,
+
+    items,
+
+    source:
+      "imap-live-walmart",
+
+    mailboxUid:
+      String(
+        uid ||
+        ""
+      ),
+
+    messageId:
+      clean(
+        messageId,
+        500
+      )
+  };
+}
+
+
 async function readLatestTargetTestOrder(
   email,
   password
@@ -19359,7 +20578,7 @@ async function readLatestTargetTestOrder(
 
 
 /* -------------------------------------------------------
-   LIVE TARGET SUCCESS SYNC
+   LIVE TARGET + WALMART + PKC + COSTCO SUCCESS SYNC
    Uses each active customer's encrypted ACO mailbox
    credentials, saves new Target order confirmations to
    the real Success store, then recordSuccessCheckout()
@@ -19396,10 +20615,10 @@ let liveSuccessCycleRunning =
   false;
 
 
-async function readRecentTargetOrders(
+async function readRecentRetailerOrders(
   email,
   password,
-  maxMessages = 40
+  maxMessages = 60
 ) {
   const {
     provider,
@@ -19438,11 +20657,11 @@ async function readRecentTargetOrders(
 
       const safeMax =
         Math.min(
-          100,
+          120,
           Math.max(
-            10,
+            20,
             Number(maxMessages) ||
-            40
+            60
           )
         );
 
@@ -19465,8 +20684,8 @@ async function readRecentTargetOrders(
         );
 
       /*
-        Process oldest -> newest so the customer's
-        Success timeline remains naturally ordered.
+        Process oldest -> newest so Success history
+        remains naturally ordered.
       */
       const orders = [];
 
@@ -19482,9 +20701,28 @@ async function readRecentTargetOrders(
             ""
           );
 
+        const sender =
+          (
+            candidate
+              .envelope
+              ?.from ||
+            []
+          )
+            .map(address =>
+              `${address?.name || ""} <${address?.address || ""}>`
+            )
+            .join(" ");
+
+        /*
+          Target, Walmart and Pokemon Center confirmations contain
+          order language. Walmart's subject is typically
+          "Thanks for your order, <name>" and may not
+          contain the retailer name.
+        */
         if (
-          !/target/i.test(subject) ||
-          !/order/i.test(subject)
+          !/order/i.test(
+            subject
+          )
         ) {
           continue;
         }
@@ -19510,38 +20748,165 @@ async function readRecentTargetOrders(
           continue;
         }
 
-        const parsed =
-          await parseTargetTestOrder({
-            subject:
+        const common = {
+          subject:
+            message.envelope
+              ?.subject ||
+            subject,
+
+          sender:
+            (
               message.envelope
-                ?.subject ||
-              subject,
-
-            source:
-              message.source,
-
-            uid:
-              message.uid,
-
-            messageId:
-              message.envelope
-                ?.messageId ||
-              "",
-
-            date:
-              (
-                message.envelope?.date ||
-                message.internalDate
+                ?.from ||
+              candidate.envelope
+                ?.from ||
+              []
+            )
+              .map(address =>
+                `${address?.name || ""} <${address?.address || ""}>`
               )
-                ? new Date(
-                    message.envelope?.date ||
-                    message.internalDate
-                  ).toISOString()
-                : null
-          });
+              .join(" ") ||
+            sender,
+
+          source:
+            message.source,
+
+          uid:
+            message.uid,
+
+          messageId:
+            message.envelope
+              ?.messageId ||
+            "",
+
+          date:
+            (
+              message.envelope?.date ||
+              message.internalDate
+            )
+              ? new Date(
+                  message.envelope?.date ||
+                  message.internalDate
+                ).toISOString()
+              : null
+        };
+
+        let parsed =
+          null;
+
+        /*
+          Costco has a distinctive sender/domain and
+          order-number subject.
+        */
+        if (
+          /costco/i.test(
+            common.sender
+          ) ||
+          /costco\.com/i.test(
+            common.subject
+          )
+        ) {
+          parsed =
+            await parseCostcoOrder(
+              common
+            );
+        }
+
+        /*
+          Pokemon Center has a distinctive sender and
+          subject, so try PKC next.
+        */
+        if (
+          !parsed &&
+          (
+            /pokemon/i.test(
+              common.sender
+            ) ||
+            /pokemoncenter\.com/i.test(
+              common.subject
+            )
+          )
+        ) {
+          parsed =
+            await parsePokemonCenterOrder(
+              common
+            );
+        }
+
+        /*
+          Favor the sender/subject hint first, but each
+          parser independently validates the body.
+        */
+        if (
+          !parsed &&
+          (
+            /walmart/i.test(
+              common.sender
+            ) ||
+            /thanks\s+for\s+your\s+order/i.test(
+              common.subject
+            )
+          )
+        ) {
+          parsed =
+            await parseWalmartOrder(
+              common
+            );
+        }
+
+        if (
+          !parsed &&
+          (
+            /target/i.test(
+              common.subject
+            ) ||
+            /target/i.test(
+              common.sender
+            )
+          )
+        ) {
+          parsed =
+            await parseTargetTestOrder(
+              common
+            );
+        }
+
+        /*
+          Forwarded messages can hide the retailer in
+          the envelope, so try the alternate parsers too.
+        */
+        if (!parsed) {
+          parsed =
+            await parseCostcoOrder(
+              common
+            );
+        }
+
+        if (!parsed) {
+          parsed =
+            await parsePokemonCenterOrder(
+              common
+            );
+        }
+
+        if (!parsed) {
+          parsed =
+            await parseWalmartOrder(
+              common
+            );
+        }
+
+        if (!parsed) {
+          parsed =
+            await parseTargetTestOrder(
+              common
+            );
+        }
 
         if (parsed) {
-          orders.push(parsed);
+          orders.push(
+            parsed
+          );
         }
       }
 
@@ -19567,7 +20932,6 @@ async function readRecentTargetOrders(
     }
   }
 }
-
 
 async function getCustomerSuccessMailboxes(
   customerAccountId
@@ -19773,10 +21137,10 @@ async function syncCustomerTargetSuccess(
     ) {
       try {
         const result =
-          await readRecentTargetOrders(
+          await readRecentRetailerOrders(
             mailbox.email,
             mailbox.password,
-            40
+            60
           );
 
         for (
@@ -19790,8 +21154,20 @@ async function syncCustomerTargetSuccess(
             The customer ID prevents an order number
             collision between different customers.
           */
+          const retailerKey =
+            String(
+              order.retailer ||
+              "retailer"
+            )
+              .trim()
+              .toLowerCase()
+              .replace(
+                /[^a-z0-9]+/g,
+                "-"
+              );
+
           const stableId =
-            `target:${accountId}:${String(
+            `${retailerKey}:${accountId}:${String(
               order.orderNumber ||
               order.messageId ||
               order.mailboxUid ||
@@ -19818,7 +21194,8 @@ async function syncCustomerTargetSuccess(
               mailbox.profileName,
 
             retailer:
-              "Target",
+              order.retailer ||
+              "Retailer",
 
             orderNumber:
               order.orderNumber,
@@ -19841,7 +21218,8 @@ async function syncCustomerTargetSuccess(
               "confirmed",
 
             source:
-              "imap-live-target"
+              order.source ||
+              `imap-live-${retailerKey}`
           };
 
           const wasSaved =
@@ -19862,7 +21240,7 @@ async function syncCustomerTargetSuccess(
           provider responses in production logs.
         */
         console.error(
-          "Live Target Success mailbox sync failed:",
+          "Live retailer Success mailbox sync failed:",
           error?.code ||
           error?.name ||
           "target_success_sync_error"
@@ -20010,6 +21388,368 @@ function startLiveSuccessScheduler() {
     interval.unref();
   }
 }
+
+
+
+
+
+/* -------------------------------------------------------
+   ADMIN COSTCO PARSER TEST
+   Diagnostic only: reads the latest Costco confirmation
+   from IMAP_TEST_EMAIL and does not save production data.
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-imap/costco-order",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    try {
+      const email =
+        normalizeEmail(
+          process.env
+            .IMAP_TEST_EMAIL
+        );
+
+      const password =
+        String(
+          process.env
+            .IMAP_TEST_PASSWORD ||
+          ""
+        );
+
+      if (
+        !email ||
+        !password
+      ) {
+        return res
+          .status(500)
+          .json({
+            ok: false,
+            error:
+              "IMAP test credentials are not configured."
+          });
+      }
+
+      const result =
+        await readRecentRetailerOrders(
+          email,
+          password,
+          120
+        );
+
+      const costcoOrders =
+        result.orders
+          .filter(
+            order =>
+              String(
+                order?.retailer ||
+                ""
+              ).toLowerCase() ===
+              "costco"
+          );
+
+      const order =
+        costcoOrders.at(-1) ||
+        null;
+
+      if (!order) {
+        return res
+          .status(404)
+          .json({
+            ok: false,
+            matched:
+              false,
+            error:
+              "No Costco order confirmation was found in the recent test mailbox messages."
+          });
+      }
+
+      return res.json({
+        ok: true,
+        matched:
+          true,
+        provider:
+          result.provider,
+
+        order: {
+          retailer:
+            order.retailer,
+          orderNumber:
+            order.orderNumber,
+          checkoutAt:
+            order.checkoutAt,
+          itemCount:
+            order.itemCount,
+          orderTotal:
+            order.orderTotal,
+          items:
+            order.items
+        }
+      });
+
+    } catch (error) {
+      console.error(
+        "Costco parser diagnostic failed:",
+        error?.code ||
+        error?.name ||
+        "costco_parser_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+          error:
+            "The Costco test order could not be parsed."
+        });
+    }
+  }
+);
+
+
+/* -------------------------------------------------------
+   ADMIN PKC PARSER TEST
+   Diagnostic only: reads the latest Pokemon Center
+   confirmation from IMAP_TEST_EMAIL and does not save
+   anything into production Success.
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-imap/pkc-order",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    try {
+      const email =
+        normalizeEmail(
+          process.env
+            .IMAP_TEST_EMAIL
+        );
+
+      const password =
+        String(
+          process.env
+            .IMAP_TEST_PASSWORD ||
+          ""
+        );
+
+      if (
+        !email ||
+        !password
+      ) {
+        return res
+          .status(500)
+          .json({
+            ok: false,
+            error:
+              "IMAP test credentials are not configured."
+          });
+      }
+
+      const result =
+        await readRecentRetailerOrders(
+          email,
+          password,
+          100
+        );
+
+      const pkcOrders =
+        result.orders
+          .filter(
+            order =>
+              String(
+                order?.retailer ||
+                ""
+              ).toLowerCase() ===
+              "pkc"
+          );
+
+      const order =
+        pkcOrders.at(-1) ||
+        null;
+
+      if (!order) {
+        return res
+          .status(404)
+          .json({
+            ok: false,
+            matched:
+              false,
+            error:
+              "No Pokemon Center order confirmation was found in the recent test mailbox messages."
+          });
+      }
+
+      return res.json({
+        ok: true,
+        matched:
+          true,
+        provider:
+          result.provider,
+
+        order: {
+          retailer:
+            order.retailer,
+          orderNumber:
+            order.orderNumber,
+          checkoutAt:
+            order.checkoutAt,
+          itemCount:
+            order.itemCount,
+          orderTotal:
+            order.orderTotal,
+          items:
+            order.items
+        }
+      });
+
+    } catch (error) {
+      console.error(
+        "PKC parser diagnostic failed:",
+        error?.code ||
+        error?.name ||
+        "pkc_parser_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+          error:
+            "The Pokemon Center test order could not be parsed."
+        });
+    }
+  }
+);
+
+
+/* -------------------------------------------------------
+   ADMIN WALMART PARSER TEST
+   Reads the newest Walmart confirmation from the
+   configured IMAP test mailbox. Diagnostic only:
+   nothing is saved to production Success.
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-imap/walmart-order",
+  requireAdmin,
+  async (req, res) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    try {
+      const email =
+        normalizeEmail(
+          process.env
+            .IMAP_TEST_EMAIL
+        );
+
+      const password =
+        String(
+          process.env
+            .IMAP_TEST_PASSWORD ||
+          ""
+        );
+
+      if (
+        !email ||
+        !password
+      ) {
+        return res
+          .status(500)
+          .json({
+            ok: false,
+            error:
+              "IMAP test credentials are not configured."
+          });
+      }
+
+      const result =
+        await readRecentRetailerOrders(
+          email,
+          password,
+          80
+        );
+
+      const walmartOrders =
+        result.orders
+          .filter(
+            order =>
+              String(
+                order?.retailer ||
+                ""
+              ).toLowerCase() ===
+              "walmart"
+          );
+
+      const order =
+        walmartOrders.at(-1) ||
+        null;
+
+      if (!order) {
+        return res
+          .status(404)
+          .json({
+            ok: false,
+            matched:
+              false,
+            error:
+              "No Walmart order confirmation was found in the recent test mailbox messages."
+          });
+      }
+
+      return res.json({
+        ok: true,
+        matched:
+          true,
+        provider:
+          result.provider,
+
+        order: {
+          retailer:
+            order.retailer,
+          orderNumber:
+            order.orderNumber,
+          checkoutAt:
+            order.checkoutAt,
+          itemCount:
+            order.itemCount,
+          orderTotal:
+            order.orderTotal,
+          items:
+            order.items
+        }
+      });
+
+    } catch (error) {
+      console.error(
+        "Walmart parser diagnostic failed:",
+        error?.code ||
+        error?.name ||
+        "walmart_parser_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+          error:
+            "The Walmart test order could not be parsed."
+        });
+    }
+  }
+);
 
 
 app.get(
