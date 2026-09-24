@@ -9,6 +9,17 @@
     SLABS N GRABS ACO — Secure Admin
   </title>
 
+
+  <link
+    rel="icon"
+    type="image/png"
+    href="/slabsngrabs-aco-logo-transparent.png"
+  >
+  <link
+    rel="apple-touch-icon"
+    href="/slabsngrabs-aco-logo-transparent.png"
+  >
+
   <link
     rel="stylesheet"
     href="/styles.css"
@@ -26,6 +37,8 @@
 
     body.admin-page {
       min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
       background:
         radial-gradient(
           circle at 50% 0,
@@ -37,6 +50,35 @@
           #050a12,
           #07101b
         );
+    }
+
+    body.admin-page::before,
+    body.admin-page::after {
+      content: "";
+      position: fixed;
+      z-index: 0;
+      width: min(42vw, 560px);
+      aspect-ratio: 1 / 1;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      opacity: .035;
+      background-image: url("/slabsngrabs-aco-logo-transparent.png");
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: contain;
+      filter: saturate(.75) brightness(1.25);
+    }
+
+    body.admin-page::before { left: -150px; }
+    body.admin-page::after {
+      right: -150px;
+      transform: translateY(-50%) scaleX(-1);
+    }
+
+    .admin-shell {
+      position: relative;
+      z-index: 1;
     }
 
     .admin-shell {
@@ -215,6 +257,45 @@
       border-color: #12c9ff;
 
       color: #12c9ff;
+    }
+
+    .admin-head-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    #adminUserView {
+      min-height: 42px;
+      padding: 0 18px;
+      border: 1px solid #12c9ff;
+      border-radius: 9px;
+      background: linear-gradient(135deg, rgba(18, 201, 255, .18), rgba(111, 76, 255, .16));
+      color: #effcff;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .7px;
+      cursor: pointer;
+      box-shadow: 0 0 22px rgba(18, 201, 255, .10);
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+
+    #adminUserView:hover {
+      transform: translateY(-2px);
+      border-color: #82ebff;
+      box-shadow: 0 0 34px rgba(18, 201, 255, .28);
+    }
+
+    .admin-user-view-note {
+      display: block;
+      margin-top: 5px;
+      color: #74879b;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .35px;
+      text-align: right;
     }
 
 
@@ -1376,11 +1457,138 @@
 
     }
 
+
+    /* =========================================
+       MATCH MAIN SITE BACKGROUND / WATERMARKS
+    ========================================= */
+
+    body.admin-page::before,
+    body.admin-page::after {
+      display: none !important;
+    }
+
+    .admin-watermarks {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .admin-watermarks img {
+      position: absolute;
+      width: min(520px, 45vw);
+      opacity: .055;
+      filter: grayscale(.1);
+    }
+
+    .admin-watermarks img:nth-child(1) {
+      top: 6%;
+      right: -7%;
+      transform: rotate(-8deg);
+    }
+
+    .admin-watermarks img:nth-child(2) {
+      top: 38%;
+      left: -9%;
+      transform: rotate(7deg);
+    }
+
+    .admin-watermarks img:nth-child(3) {
+      top: 67%;
+      right: -6%;
+      transform: rotate(-5deg);
+    }
+
+    .admin-watermarks img:nth-child(4) {
+      bottom: -10%;
+      left: 22%;
+      transform: rotate(5deg);
+    }
+
+    body.admin-page {
+      background:
+        radial-gradient(circle at 70% 0, #0c4a6729, transparent 35%),
+        linear-gradient(180deg, #050a12, #07101b 70%, #050a12);
+    }
+
+    .admin-shell {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Brighter admin secondary text */
+    .admin-page .muted,
+    .admin-head-copy p,
+    .admin-summary-count,
+    .managed-availability-head p,
+    .managed-availability-updated,
+    .admin-edit-help,
+    .admin-edit-message,
+    .admin-retailer-loading,
+    .admin-retailer-empty,
+    .order-id,
+    .order-status-subline,
+    .customer-last-updated,
+    .info-field label,
+    .admin-password-status {
+      color: #b3c2d2 !important;
+      opacity: 1;
+    }
+
+    /* Same neon interaction language as the customer site */
+    .admin-login-card,
+    .managed-availability-tracker,
+    .managed-availability-card,
+    .customer-order,
+    .order-section,
+    .subscription-stat,
+    .admin-retailer-profile,
+    .admin-retailer-block {
+      transition:
+        transform .22s ease,
+        border-color .22s ease,
+        box-shadow .22s ease,
+        background .22s ease;
+    }
+
+    .admin-login-card:hover,
+    .managed-availability-tracker:hover,
+    .managed-availability-card:hover,
+    .customer-order:hover,
+    .order-section:hover,
+    .subscription-stat:hover,
+    .admin-retailer-profile:hover,
+    .admin-retailer-block:hover {
+      transform: translateY(-3px);
+      border-color: rgba(18, 201, 255, .62) !important;
+      box-shadow:
+        0 0 0 1px rgba(18, 201, 255, .08),
+        0 0 28px rgba(18, 201, 255, .11),
+        0 18px 50px rgba(0, 0, 0, .28);
+    }
+
+    @media (max-width: 700px) {
+      .admin-watermarks img {
+        width: 85vw;
+        opacity: .04;
+      }
+    }
+
   </style>
 </head>
 
 
 <body class="admin-page">
+
+
+<div class="admin-watermarks" aria-hidden="true">
+  <img src="/slabsngrabs-aco-logo-transparent.png" alt="">
+  <img src="/slabsngrabs-aco-logo-transparent.png" alt="">
+  <img src="/slabsngrabs-aco-logo-transparent.png" alt="">
+  <img src="/slabsngrabs-aco-logo-transparent.png" alt="">
+</div>
+
 
 <main class="admin-shell">
 
@@ -1497,12 +1705,29 @@
       </div>
 
 
-      <button
-        id="logout"
-        type="button"
-      >
-        Log out
-      </button>
+      <div class="admin-head-actions">
+
+        <div>
+          <button
+            id="adminUserView"
+            type="button"
+          >
+            USER VIEW ↗
+          </button>
+
+          <span class="admin-user-view-note">
+            Paid customer preview
+          </span>
+        </div>
+
+        <button
+          id="logout"
+          type="button"
+        >
+          Log out
+        </button>
+
+      </div>
 
     </div>
 
@@ -7247,6 +7472,26 @@ try {
 
   }
 );
+
+
+/* =========================================
+   USER VIEW
+========================================= */
+
+document
+  .getElementById(
+    "adminUserView"
+  )
+  ?.addEventListener(
+    "click",
+    () => {
+      window.open(
+        "/?adminPreview=1&adminPreviewTier=4#my-profile",
+        "_blank",
+        "noopener,noreferrer"
+      );
+    }
+  );
 
 
 /* =========================================
