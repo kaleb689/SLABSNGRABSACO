@@ -11026,3 +11026,102 @@ select:focus {
   overflow: hidden;
 }
 
+
+
+/* ======================================================
+   STATIC / ROUNDED — MEMBER HEADER, PROFILES, SECURITY
+====================================================== */
+
+#my-profile .account-topbar,
+#my-profile .account-tabs,
+#account-tab-edit-profile .account-card,
+#account-tab-edit-profile .retailer-profile-card,
+#account-tab-edit-profile .profile-group-dropdown,
+#account-tab-edit-profile .saved-detail-panel,
+#account-tab-security .account-card,
+#account-tab-security .account-detail-list > div,
+#account-tab-security .security-notice,
+#account-tab-membership .account-card,
+#account-tab-membership .membership-stat,
+#account-tab-membership .account-detail-list > div {
+  border-radius: 18px !important;
+}
+
+#my-profile .account-topbar:hover,
+#my-profile .account-tabs:hover,
+#account-tab-edit-profile .account-card:hover,
+#account-tab-edit-profile .retailer-profile-card:hover,
+#account-tab-edit-profile .profile-group-dropdown:hover,
+#account-tab-edit-profile .saved-detail-panel:hover,
+#account-tab-security .account-card:hover,
+#account-tab-security .account-detail-list > div:hover,
+#account-tab-security .security-notice:hover,
+#account-tab-membership .account-card:hover,
+#account-tab-membership .membership-stat:hover,
+#account-tab-membership .account-detail-list > div:hover {
+  transform: none !important;
+}
+
+#my-profile .account-topbar,
+#my-profile .account-tabs,
+#account-tab-edit-profile .account-card,
+#account-tab-edit-profile .retailer-profile-card,
+#account-tab-edit-profile .profile-group-dropdown,
+#account-tab-edit-profile .saved-detail-panel,
+#account-tab-security .account-card,
+#account-tab-security .account-detail-list > div,
+#account-tab-security .security-notice {
+  transition:
+    border-color .18s ease,
+    box-shadow .18s ease,
+    background .18s ease !important;
+}
+
+.member-lifetime-stats > div {
+  border-radius: 14px !important;
+  overflow: hidden;
+}
+
+#my-profile .account-tab {
+  border-radius: 12px !important;
+}
+
+
+/* Paid countdown status should remain visually stable */
+.profile-expiry-status {
+  min-width: 122px;
+}
+
+
+
+/* ======================================================
+   FINAL ACCOUNT PANEL ROUNDING / STATIC POLISH
+====================================================== */
+
+#my-profile .account-topbar,
+#my-profile .account-tabs,
+#account-tab-membership .account-card,
+#account-tab-edit-profile .account-card,
+#account-tab-edit-profile .profile-group-dropdown,
+#account-tab-edit-profile .retailer-profile-card,
+#account-tab-edit-profile .managed-membership-card,
+#account-tab-security .account-card,
+#account-tab-security .account-form-section,
+#account-tab-success .account-card,
+#account-tab-orders .account-card {
+  border-radius: 18px !important;
+  overflow: hidden;
+}
+
+#my-profile .account-topbar:hover,
+#my-profile .account-tabs:hover,
+#account-tab-membership .account-card:hover,
+#account-tab-edit-profile .account-card:hover,
+#account-tab-edit-profile .profile-group-dropdown:hover,
+#account-tab-edit-profile .retailer-profile-card:hover,
+#account-tab-edit-profile .managed-membership-card:hover,
+#account-tab-security .account-card:hover,
+#account-tab-security .account-form-section:hover {
+  transform: none !important;
+}
+
