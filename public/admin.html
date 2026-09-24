@@ -2901,6 +2901,47 @@
     }
 
 
+
+    /* =========================================
+       GIFTED / RENTED PACKAGE STAMPS
+    ========================================= */
+
+    .managed-package-stamp {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 27px;
+      padding: 5px 10px;
+      border: 1px solid #2c5873;
+      border-radius: 999px;
+      background: #0b1d2a;
+      color: #d9f3ff;
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .65px;
+      white-space: nowrap;
+      box-shadow: inset 0 0 14px #0b2537;
+    }
+
+    .managed-package-stamp.drop {
+      border-color: #2b8eb2;
+      color: #43d9ff;
+      background: #082330;
+    }
+
+    .managed-package-stamp.week {
+      border-color: #8d6f20;
+      color: #ffd762;
+      background: #2a2109;
+    }
+
+    .managed-package-stamp.month {
+      border-color: #7943a8;
+      color: #c88aff;
+      background: #21102f;
+    }
+
+
   </style>
 </head>
 
@@ -7536,6 +7577,22 @@ function managedMembershipCardHtml(
       ""
     );
 
+  const durationType =
+    String(
+      assignment.durationType ||
+      membership.durationType ||
+      ""
+    );
+
+  const packageStamp =
+    durationType === "1_drop"
+      ? "1 DROP"
+      : durationType === "1_week"
+        ? "1 WEEK"
+        : durationType === "1_month"
+          ? "1 MONTH"
+          : "";
+
   const statusLine =
     occupiedByOtherType
       ? `IN USE AS ${String(
@@ -7664,6 +7721,24 @@ function managedMembershipCardHtml(
           gap:14px;
         "
       >
+        ${
+          packageStamp
+            ? `
+                <span
+                  class="managed-package-stamp ${
+                    durationType === "1_drop"
+                      ? "drop"
+                      : durationType === "1_week"
+                        ? "week"
+                        : "month"
+                  }"
+                >
+                  ${escapeHtml(packageStamp)}
+                </span>
+              `
+            : ""
+        }
+
         <span
           class="status-pill ${
             activationStatus ===
