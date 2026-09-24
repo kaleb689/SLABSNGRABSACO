@@ -332,6 +332,80 @@
   }
 }
 
+.managed-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  color: #8e9db4;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .7px;
+  cursor: pointer;
+}
+
+.managed-select-wrap input {
+  width: 18px;
+  height: 18px;
+  accent-color: #12c9ff;
+  cursor: pointer;
+}
+
+.managed-bulk-bar {
+  display: grid;
+  grid-template-columns:
+    minmax(190px, 1.5fr)
+    minmax(140px, .7fr)
+    auto auto auto;
+  gap: 10px;
+  align-items: end;
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid #17384e;
+  border-radius: 10px;
+  background: #07131e;
+}
+
+.managed-bulk-bar .admin-edit-field {
+  min-width: 0;
+}
+
+.managed-delete-button {
+  border: 1px solid #77313c;
+  border-radius: 7px;
+  background: #2a1015;
+  color: #ff8799;
+  padding: 9px 14px;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.managed-delete-button:hover {
+  background: #3a131b;
+  border-color: #ff5c78;
+}
+
+.managed-customer-details {
+  margin-top: 16px;
+}
+
+.managed-customer-details .admin-retailer-wrap {
+  padding-top: 0;
+}
+
+@media (max-width: 850px) {
+  .managed-bulk-bar {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .managed-bulk-bar {
+    grid-template-columns: 1fr;
+  }
+}
+
     .admin-orders {
       display: grid;
 
@@ -4502,6 +4576,14 @@ function managedMembershipCardHtml(
   const active =
     membership.active === true;
 
+  const occupiedByOtherType =
+    membership.occupiedByOtherType ===
+    true;
+
+  const occupiedType =
+    membership.occupiedType ||
+    "";
+
   const assignment =
     membership.assignment || {};
 
@@ -4511,6 +4593,10 @@ function managedMembershipCardHtml(
 
   const customerProfile =
     membership.customerProfile ||
+    {};
+
+  const customerSecrets =
+    membership.customerSecrets ||
     {};
 
   const daysRemaining =
@@ -4527,7 +4613,13 @@ function managedMembershipCardHtml(
                   : "DAYS"
               } LEFT`
         )
-      : "INACTIVE";
+      : (
+          occupiedByOtherType
+            ? `IN USE AS ${String(
+                occupiedType
+              ).toUpperCase()}`
+            : "INACTIVE"
+        );
 
   const customerOptions =
     paidCustomers
@@ -4574,7 +4666,8 @@ function managedMembershipCardHtml(
     class="order-section admin-collapsible"
     data-managed-membership-card
     data-managed-status="${
-      active
+      active ||
+      occupiedByOtherType
         ? "active"
         : "inactive"
     }"
@@ -4584,7 +4677,23 @@ function managedMembershipCardHtml(
       class="order-section-head admin-collapsible-head"
     >
 
-      <div>
+      <label
+        class="managed-select-wrap"
+        title="Select this account"
+      >
+        <input
+          type="checkbox"
+          data-managed-select="${escapeHtml(
+            membership.id
+          )}"
+          data-managed-type="${escapeHtml(
+            type
+          )}"
+        >
+        <span>SELECT</span>
+      </label>
+
+      <div style="flex:1;min-width:0;">
         <h3>
           ${escapeHtml(
             membership.profileName ||
@@ -4612,7 +4721,8 @@ function managedMembershipCardHtml(
       >
         <span
           class="status-pill ${
-            active
+            active ||
+            occupiedByOtherType
               ? "active"
               : "inactive"
           }"
@@ -4966,6 +5076,232 @@ function managedMembershipCardHtml(
           }
 
 
+          ${
+            active
+              ? `
+          <details
+            class="order-section admin-collapsible managed-customer-details"
+          >
+            <summary
+              class="order-section-head admin-collapsible-head"
+            >
+              <div>
+                <h3>
+                  Customer Address &amp; Card Information
+                </h3>
+                <p>
+                  Address, card information, and the separate Security Code
+                  used by this managed assignment.
+                </p>
+              </div>
+
+              <span class="admin-collapsible-arrow">
+                ›
+              </span>
+            </summary>
+
+            <form
+              class="admin-retailer-wrap managed-customer-details-form"
+              data-managed-customer-details-id="${escapeHtml(
+                membership.id
+              )}"
+              data-managed-type="${escapeHtml(
+                type
+              )}"
+            >
+              <div class="admin-edit-grid">
+
+                <div class="admin-edit-field">
+                  <label>First Name</label>
+                  <input
+                    name="firstName"
+                    value="${escapeHtml(
+                      customerProfile.firstName || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>Last Name</label>
+                  <input
+                    name="lastName"
+                    value="${escapeHtml(
+                      customerProfile.lastName || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    name="email"
+                    value="${escapeHtml(
+                      customerProfile.email || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>Phone</label>
+                  <input
+                    name="phone"
+                    value="${escapeHtml(
+                      customerProfile.phone || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field wide">
+                  <label>Address</label>
+                  <input
+                    name="address"
+                    value="${escapeHtml(
+                      customerProfile.address || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field wide">
+                  <label>Address 2</label>
+                  <input
+                    name="address2"
+                    value="${escapeHtml(
+                      customerProfile.address2 || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>City</label>
+                  <input
+                    name="city"
+                    value="${escapeHtml(
+                      customerProfile.city || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>State</label>
+                  <input
+                    name="state"
+                    value="${escapeHtml(
+                      customerProfile.state || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>ZIP</label>
+                  <input
+                    name="zip"
+                    value="${escapeHtml(
+                      customerProfile.zip || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>Country</label>
+                  <input
+                    name="country"
+                    value="${escapeHtml(
+                      customerProfile.country || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>Card Label</label>
+                  <input
+                    name="cardLabel"
+                    value="${escapeHtml(
+                      customerSecrets.cardLabel || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>Cardholder Name</label>
+                  <input
+                    name="cardholder"
+                    value="${escapeHtml(
+                      customerSecrets.cardholder || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field wide">
+                  <label>Card Number</label>
+                  <input
+                    name="acoCardNumber"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    value="${escapeHtml(
+                      customerSecrets.acoCardNumber || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>Expiration Month</label>
+                  <input
+                    name="expMonth"
+                    inputmode="numeric"
+                    maxlength="2"
+                    value="${escapeHtml(
+                      customerSecrets.expMonth || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>Expiration Year</label>
+                  <input
+                    name="expYear"
+                    inputmode="numeric"
+                    maxlength="4"
+                    value="${escapeHtml(
+                      customerSecrets.expYear || ""
+                    )}"
+                  >
+                </div>
+
+                <div class="admin-edit-field wide">
+                  <label>Security Code</label>
+                  <input
+                    name="securityCode"
+                    autocomplete="off"
+                    value="${escapeHtml(
+                      customerSecrets.securityCode || ""
+                    )}"
+                  >
+                  <small class="admin-edit-help">
+                    This is the separate ACO Security Code field.
+                    It is not the card CVV/CVC.
+                  </small>
+                </div>
+
+              </div>
+
+              <div class="admin-edit-actions">
+                <button
+                  type="submit"
+                  class="admin-save-button"
+                >
+                  Save Customer Details
+                </button>
+              </div>
+
+              <div class="admin-edit-message"></div>
+            </form>
+          </details>
+                `
+              : ""
+          }
+
+
           <div class="admin-edit-actions">
 
             <button
@@ -4977,11 +5313,22 @@ function managedMembershipCardHtml(
               data-managed-type="${escapeHtml(
                 type
               )}"
+              ${
+                occupiedByOtherType
+                  ? "disabled"
+                  : ""
+              }
             >
               ${
                 active
-                  ? "Update Subscription"
-                  : "Start Subscription"
+                  ? "Update Assignment"
+                  : (
+                      occupiedByOtherType
+                        ? `In Use As ${String(
+                            occupiedType
+                          ).toUpperCase()}`
+                        : "Add / Assign"
+                    )
               }
             </button>
 
@@ -5014,11 +5361,24 @@ function managedMembershipCardHtml(
                       type
                     )}"
                   >
-                    End Subscription
+                    Remove Assignment
                   </button>
                 `
                 : ""
             }
+
+            <button
+              type="button"
+              class="managed-delete-button"
+              data-managed-delete="${escapeHtml(
+                membership.id
+              )}"
+              data-managed-type="${escapeHtml(
+                type
+              )}"
+            >
+              Delete Membership
+            </button>
 
           </div>
 
@@ -5084,11 +5444,34 @@ function renderManagedMembershipDashboard(
           </div>
         `;
 
+  const bulkCustomerOptions =
+    paidCustomers
+      .map(customer => `
+        <option
+          value="${escapeHtml(
+            customer.customerAccountId
+          )}"
+        >
+          ${escapeHtml(
+            customer.name ||
+            "Customer"
+          )}
+          ${
+            customer.email
+              ? ` — ${escapeHtml(
+                  customer.email
+                )}`
+              : ""
+          }
+        </option>
+      `)
+      .join("");
+
   rows.innerHTML = `
 
-    <section class="order-section">
+    <details class="order-section admin-collapsible">
 
-      <div class="order-section-head">
+      <summary class="order-section-head admin-collapsible-head">
 
         <div>
           <h3>
@@ -5102,7 +5485,11 @@ function renderManagedMembershipDashboard(
           </p>
         </div>
 
-      </div>
+        <span class="admin-collapsible-arrow">
+          ›
+        </span>
+
+      </summary>
 
 
       <form
@@ -5189,7 +5576,7 @@ function renderManagedMembershipDashboard(
 
       </form>
 
-    </section>
+    </details>
 
 
     <section class="order-section">
@@ -5226,6 +5613,54 @@ function renderManagedMembershipDashboard(
       </div>
 
     </section>
+
+    <div class="managed-bulk-bar">
+
+      <div class="admin-edit-field">
+        <label>Bulk Customer</label>
+        <select id="managedBulkCustomer">
+          <option value="">
+            Choose active paid customer
+          </option>
+          ${bulkCustomerOptions}
+        </select>
+      </div>
+
+      <div class="admin-edit-field">
+        <label>Bulk Duration</label>
+        <select id="managedBulkDuration">
+          <option value="indefinite">INDEFINITELY</option>
+          <option value="1_drop">1 DROP</option>
+          <option value="1_week">1 WEEK</option>
+          <option value="1_month">1 MONTH</option>
+        </select>
+      </div>
+
+      <button
+        type="button"
+        class="admin-save-button"
+        id="managedBulkAssign"
+      >
+        Add Selected
+      </button>
+
+      <button
+        type="button"
+        class="admin-edit-button"
+        id="managedBulkRemove"
+      >
+        Remove Selected
+      </button>
+
+      <button
+        type="button"
+        class="managed-delete-button"
+        id="managedBulkDelete"
+      >
+        Delete Selected
+      </button>
+
+    </div>
 
     <div
       id="managedMembershipCards"
@@ -5474,6 +5909,183 @@ function bindManagedMembershipDashboard(
     });
 
 
+
+  document
+    .querySelectorAll(
+      "[data-managed-select]"
+    )
+    .forEach(checkbox => {
+      checkbox.addEventListener(
+        "click",
+        event => {
+          event.stopPropagation();
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      ".managed-customer-details-form"
+    )
+    .forEach(form => {
+      form.addEventListener(
+        "submit",
+        async event => {
+          event.preventDefault();
+
+          const id =
+            form.dataset
+              .managedCustomerDetailsId;
+
+          const formType =
+            form.dataset
+              .managedType;
+
+          const formData =
+            new FormData(form);
+
+          const button =
+            form.querySelector(
+              'button[type="submit"]'
+            );
+
+          const message =
+            form.querySelector(
+              ".admin-edit-message"
+            );
+
+          if (button) {
+            button.disabled = true;
+            button.textContent =
+              "Saving...";
+          }
+
+          const customerProfile = {
+            profileName:
+              `${formData.get("firstName") || ""} ${formData.get("lastName") || ""}`.trim() ||
+              "Managed Membership",
+
+            firstName:
+              formData.get("firstName") || "",
+
+            lastName:
+              formData.get("lastName") || "",
+
+            email:
+              formData.get("email") || "",
+
+            phone:
+              formData.get("phone") || "",
+
+            address:
+              formData.get("address") || "",
+
+            address2:
+              formData.get("address2") || "",
+
+            city:
+              formData.get("city") || "",
+
+            state:
+              formData.get("state") || "",
+
+            zip:
+              formData.get("zip") || "",
+
+            country:
+              formData.get("country") || ""
+          };
+
+          const customerCard = {
+            cardLabel:
+              formData.get("cardLabel") || "",
+
+            cardholder:
+              formData.get("cardholder") || "",
+
+            acoCardNumber:
+              formData.get("acoCardNumber") || "",
+
+            expMonth:
+              formData.get("expMonth") || "",
+
+            expYear:
+              formData.get("expYear") || "",
+
+            securityCode:
+              formData.get("securityCode") || ""
+          };
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/managed-memberships/${encodeURIComponent(
+                  formType
+                )}/${encodeURIComponent(
+                  id
+                )}/customer-details`,
+                {
+                  method: "PUT",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      customerProfile,
+                      customerCard
+                    })
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to save customer details."
+              );
+            }
+
+            if (message) {
+              message.textContent =
+                "Customer details saved.";
+
+              message.className =
+                "admin-edit-message success";
+            }
+
+            await load();
+
+          } catch (error) {
+            if (message) {
+              message.textContent =
+                error.message;
+
+              message.className =
+                "admin-edit-message error";
+            }
+
+            if (button) {
+              button.disabled = false;
+              button.textContent =
+                "Save Customer Details";
+            }
+          }
+        }
+      );
+    });
+
+
   document
     .querySelectorAll(
       "[data-managed-assign]"
@@ -5568,7 +6180,7 @@ function bindManagedMembershipDashboard(
 
             button.disabled = false;
             button.textContent =
-              "Start Subscription";
+              "Add / Assign";
           }
         }
       );
@@ -5730,11 +6342,346 @@ function bindManagedMembershipDashboard(
 
             button.disabled = false;
             button.textContent =
-              "End Subscription";
+              "Remove Assignment";
           }
         }
       );
     });
+
+
+
+  document
+    .querySelectorAll(
+      "[data-managed-delete]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async () => {
+          const id =
+            button.dataset
+              .managedDelete;
+
+          const buttonType =
+            button.dataset
+              .managedType;
+
+          const confirmed =
+            confirm(
+              "Permanently delete this managed membership? The profile and its assignment history will be removed. This cannot be undone."
+            );
+
+          if (!confirmed) {
+            return;
+          }
+
+          button.disabled = true;
+          button.textContent =
+            "Deleting...";
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/managed-memberships/${encodeURIComponent(
+                  buttonType
+                )}/${encodeURIComponent(
+                  id
+                )}`,
+                {
+                  method: "DELETE",
+
+                  credentials:
+                    "same-origin"
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to delete membership."
+              );
+            }
+
+            await load();
+
+          } catch (error) {
+            alert(error.message);
+
+            button.disabled = false;
+            button.textContent =
+              "Delete Membership";
+          }
+        }
+      );
+    });
+
+
+  function selectedManagedIds() {
+    return Array.from(
+      document.querySelectorAll(
+        `[data-managed-select][data-managed-type="${CSS.escape(
+          type
+        )}"]:checked`
+      )
+    ).map(
+      checkbox =>
+        checkbox.dataset
+          .managedSelect
+    );
+  }
+
+
+  const bulkAssignButton =
+    document.getElementById(
+      "managedBulkAssign"
+    );
+
+  bulkAssignButton
+    ?.addEventListener(
+      "click",
+      async () => {
+        const ids =
+          selectedManagedIds();
+
+        const customerAccountId =
+          document.getElementById(
+            "managedBulkCustomer"
+          )?.value || "";
+
+        const durationType =
+          document.getElementById(
+            "managedBulkDuration"
+          )?.value ||
+          "indefinite";
+
+        if (!ids.length) {
+          alert(
+            "Select at least one managed account."
+          );
+          return;
+        }
+
+        if (!customerAccountId) {
+          alert(
+            "Choose an active paid customer."
+          );
+          return;
+        }
+
+        bulkAssignButton.disabled = true;
+        bulkAssignButton.textContent =
+          "Adding...";
+
+        try {
+          for (const id of ids) {
+            const response =
+              await fetch(
+                `/api/admin/${type}-memberships/${encodeURIComponent(
+                  id
+                )}/assign`,
+                {
+                  method: "POST",
+                  credentials:
+                    "same-origin",
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+                  body:
+                    JSON.stringify({
+                      customerAccountId,
+                      durationType
+                    })
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                `Unable to assign account ${id}.`
+              );
+            }
+          }
+
+          await load();
+
+        } catch (error) {
+          alert(error.message);
+
+          bulkAssignButton.disabled =
+            false;
+
+          bulkAssignButton.textContent =
+            "Add Selected";
+        }
+      }
+    );
+
+
+  const bulkRemoveButton =
+    document.getElementById(
+      "managedBulkRemove"
+    );
+
+  bulkRemoveButton
+    ?.addEventListener(
+      "click",
+      async () => {
+        const ids =
+          selectedManagedIds();
+
+        if (!ids.length) {
+          alert(
+            "Select at least one managed account."
+          );
+          return;
+        }
+
+        const confirmed =
+          confirm(
+            `Remove ${ids.length} selected assignment${ids.length === 1 ? "" : "s"} and return the account${ids.length === 1 ? "" : "s"} to the available pool?`
+          );
+
+        if (!confirmed) {
+          return;
+        }
+
+        bulkRemoveButton.disabled = true;
+        bulkRemoveButton.textContent =
+          "Removing...";
+
+        try {
+          for (const id of ids) {
+            const response =
+              await fetch(
+                `/api/admin/${type}-memberships/${encodeURIComponent(
+                  id
+                )}/end`,
+                {
+                  method: "POST",
+                  credentials:
+                    "same-origin"
+                }
+              );
+
+            if (
+              response.status === 404
+            ) {
+              continue;
+            }
+
+            const result =
+              await response
+                .json()
+                .catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                `Unable to remove account ${id}.`
+              );
+            }
+          }
+
+          await load();
+
+        } catch (error) {
+          alert(error.message);
+
+          bulkRemoveButton.disabled =
+            false;
+
+          bulkRemoveButton.textContent =
+            "Remove Selected";
+        }
+      }
+    );
+
+
+  const bulkDeleteButton =
+    document.getElementById(
+      "managedBulkDelete"
+    );
+
+  bulkDeleteButton
+    ?.addEventListener(
+      "click",
+      async () => {
+        const ids =
+          selectedManagedIds();
+
+        if (!ids.length) {
+          alert(
+            "Select at least one managed account."
+          );
+          return;
+        }
+
+        const confirmed =
+          confirm(
+            `Permanently delete ${ids.length} selected managed account${ids.length === 1 ? "" : "s"}? This cannot be undone.`
+          );
+
+        if (!confirmed) {
+          return;
+        }
+
+        bulkDeleteButton.disabled = true;
+        bulkDeleteButton.textContent =
+          "Deleting...";
+
+        try {
+          for (const id of ids) {
+            const response =
+              await fetch(
+                `/api/admin/managed-memberships/${encodeURIComponent(
+                  type
+                )}/${encodeURIComponent(
+                  id
+                )}`,
+                {
+                  method: "DELETE",
+                  credentials:
+                    "same-origin"
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                `Unable to delete account ${id}.`
+              );
+            }
+          }
+
+          await load();
+
+        } catch (error) {
+          alert(error.message);
+
+          bulkDeleteButton.disabled =
+            false;
+
+          bulkDeleteButton.textContent =
+            "Delete Selected";
+        }
+      }
+    );
 
 
   const statusFilter =
