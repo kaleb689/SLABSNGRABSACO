@@ -2198,6 +2198,228 @@
     }
 
 
+
+    .admin-notifications {
+      margin: 18px 0 16px;
+      border: 1px solid rgba(18,201,255,.20);
+      border-radius: 16px;
+      overflow: hidden;
+      background: rgba(5,18,29,.72);
+    }
+
+    .admin-notifications > summary {
+      list-style: none;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns:
+        minmax(0,1fr)
+        auto
+        auto;
+      align-items: center;
+      gap: 12px;
+      padding: 15px 17px;
+    }
+
+    .admin-notifications > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .admin-notifications > summary strong {
+      display: block;
+      margin-top: 3px;
+      font-size: 17px;
+    }
+
+    .admin-notification-count {
+      min-width: 34px;
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 999px;
+      color: #91a5b8;
+      background: rgba(255,255,255,.025);
+      font-size: 14px;
+      font-weight: 950;
+    }
+
+    .admin-notification-count.has-notifications {
+      border-color: rgba(255,200,75,.45);
+      color: #ffd46e;
+      background: rgba(255,200,75,.08);
+      box-shadow: 0 0 18px rgba(255,200,75,.10);
+    }
+
+    .admin-notification-arrow {
+      color: #67e4ff;
+      font-size: 18px;
+      transition: transform .18s ease;
+    }
+
+    .admin-notifications[open]
+      .admin-notification-arrow {
+      transform: rotate(180deg);
+    }
+
+    .admin-notification-list {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border-top: 1px solid rgba(255,255,255,.06);
+    }
+
+    .admin-notification-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      border: 1px solid rgba(255,255,255,.065);
+      border-radius: 11px;
+      padding: 11px 12px;
+      color: #eefaff;
+      background: rgba(2,10,18,.58);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .admin-notification-item:hover {
+      border-color: rgba(18,201,255,.35);
+      background: rgba(18,201,255,.055);
+    }
+
+    .admin-notification-item strong,
+    .admin-notification-item small {
+      display: block;
+    }
+
+    .admin-notification-item small {
+      margin-top: 3px;
+      color: #8195a9;
+      font-size: 9px;
+    }
+
+    .notification-target {
+      box-shadow:
+        0 0 0 2px rgba(255,200,75,.48),
+        0 0 24px rgba(255,200,75,.14);
+    }
+
+
+
+    .admin-target-pool-import {
+      margin: 18px 0;
+      border: 1px solid rgba(18,201,255,.22);
+      border-radius: 16px;
+      overflow: hidden;
+      background: rgba(5,18,29,.72);
+    }
+
+    .admin-target-pool-import > summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 15px 17px;
+    }
+
+    .admin-target-pool-import > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .admin-target-pool-import > summary strong,
+    .admin-target-pool-import > summary small {
+      display: block;
+    }
+
+    .admin-target-pool-import > summary small {
+      margin-top: 4px;
+      color: #8195a9;
+    }
+
+    .admin-target-pool-import-body {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border-top: 1px solid rgba(255,255,255,.06);
+    }
+
+    .admin-target-pool-import-body textarea,
+    .admin-target-pool-import-body input[type="file"] {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid rgba(18,201,255,.22);
+      border-radius: 10px;
+      padding: 11px 12px;
+      color: #eefaff;
+      background: rgba(2,10,18,.72);
+    }
+
+    .admin-target-pool-import-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .admin-target-pool-warning {
+      margin: 0;
+      color: #d7b86a;
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+
+
+    .admin-inline-edit-form {
+      padding: 16px;
+      border-top: 1px solid #17384e;
+      background: rgba(3, 12, 20, .32);
+    }
+
+    .admin-inline-section-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 9px;
+      margin-bottom: 14px;
+    }
+
+    .admin-inline-edit-form
+      .admin-edit-field input[readonly] {
+      opacity: .92;
+      cursor: default;
+      background: #07131d;
+    }
+
+    .admin-inline-edit-form
+      .admin-edit-field input:not([readonly]) {
+      border-color: #12c9ff;
+      background: #0a1d2b;
+    }
+
+    .admin-sensitive-input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .admin-sensitive-input-row input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .admin-field-note {
+      display: block;
+      margin-top: 7px;
+      color: #8ea3b7;
+      font-size: 10px;
+      line-height: 1.45;
+    }
+
+
   </style>
 </head>
 
@@ -2446,6 +2668,71 @@ PAID SUBSCRIPTIONS
 
 </div>
 
+
+    <details
+      class="admin-target-pool-import"
+    >
+      <summary>
+        <div>
+          <span class="eyebrow">
+            TARGET INVENTORY
+          </span>
+
+          <strong>
+            Replace Target Account Pool
+          </strong>
+
+          <small>
+            Securely replace the existing Target pool with exactly 100 accounts.
+          </small>
+        </div>
+
+        <span>
+          OPEN IMPORT ▾
+        </span>
+      </summary>
+
+      <div
+        class="admin-target-pool-import-body"
+      >
+        <p>
+          Upload the prepared 100-account text file. Credentials are sent only to the server, encrypted with the existing submission encryption key, and are not written into the website source code.
+        </p>
+
+        <input
+          type="file"
+          id="targetPoolFile"
+          accept=".txt,text/plain"
+        />
+
+        <textarea
+          id="targetPoolAccounts"
+          rows="9"
+          placeholder="email:password&#10;email:password"
+        ></textarea>
+
+        <div
+          class="admin-target-pool-import-actions"
+        >
+          <button
+            type="button"
+            id="replaceTargetPool"
+            class="admin-save-button"
+          >
+            Replace Target Pool
+          </button>
+
+          <span
+            id="targetPoolImportStatus"
+          ></span>
+        </div>
+
+        <p class="admin-target-pool-warning">
+          For safety, replacement is blocked if any existing Target managed account is currently assigned to a customer.
+        </p>
+      </div>
+    </details>
+
 <section
   id="managedAvailabilityTracker"
   class="managed-availability-tracker"
@@ -2546,6 +2833,46 @@ PAID SUBSCRIPTIONS
   </div>
 </section>
     
+    <details
+      id="adminNotifications"
+      class="admin-notifications"
+    >
+      <summary>
+        <div>
+          <span class="eyebrow">
+            ADMIN NOTIFICATIONS
+          </span>
+
+          <strong>
+            Notifications
+          </strong>
+        </div>
+
+        <span
+          id="adminNotificationCount"
+          class="admin-notification-count"
+        >
+          0
+        </span>
+
+        <span
+          class="admin-notification-arrow"
+          aria-hidden="true"
+        >
+          ▾
+        </span>
+      </summary>
+
+      <div
+        id="adminNotificationList"
+        class="admin-notification-list"
+      >
+        <div class="empty-admin">
+          No profiles are awaiting activation.
+        </div>
+      </div>
+    </details>
+
     <section
       id="profileActivationTracker"
       class="profile-activation-tracker"
@@ -2670,6 +2997,26 @@ const rows =
     "rows"
   );
 
+const targetPoolFile =
+  document.getElementById(
+    "targetPoolFile"
+  );
+
+const targetPoolAccounts =
+  document.getElementById(
+    "targetPoolAccounts"
+  );
+
+const replaceTargetPool =
+  document.getElementById(
+    "replaceTargetPool"
+  );
+
+const targetPoolImportStatus =
+  document.getElementById(
+    "targetPoolImportStatus"
+  );
+
 const awaitingActivationCount =
   document.getElementById(
     "awaitingActivationCount"
@@ -2698,6 +3045,21 @@ const refreshProfileActivationTracker =
 const profileDiscordStatus =
   document.getElementById(
     "profileDiscordStatus"
+  );
+
+const adminNotifications =
+  document.getElementById(
+    "adminNotifications"
+  );
+
+const adminNotificationCount =
+  document.getElementById(
+    "adminNotificationCount"
+  );
+
+const adminNotificationList =
+  document.getElementById(
+    "adminNotificationList"
   );
 
 const submissionCount =
@@ -3295,24 +3657,6 @@ function renderOrder(x) {
     }
   </div>
 
-  <div class="admin-top-buttons">
-    <button
-      type="button"
-      class="admin-edit-button"
-      data-edit-submission="${escapeHtml(x.id)}"
-    >
-      Edit
-    </button>
-
-    <button
-      type="button"
-      class="admin-save-button"
-      data-save-submission="${escapeHtml(x.id)}"
-    >
-      Save
-    </button>
-  </div>
-
 </div>
 
         </div>
@@ -3406,439 +3750,430 @@ function renderOrder(x) {
 
           <!-- CUSTOMER / SHIPPING -->
 
-          <details class="order-section admin-collapsible">
+          <details
+            class="order-section admin-collapsible"
+            data-inline-admin-section="shipping"
+          >
 
-  <summary class="order-section-head admin-collapsible-head">
+            <summary
+              class="order-section-head admin-collapsible-head"
+            >
+              <div>
+                <h3>
+                  Shipping &amp; Customer Information
+                </h3>
 
-    <div>
-      <h3>
-        Shipping &amp; Customer Information
-      </h3>
+                <p>
+                  Information submitted by the customer.
+                </p>
+              </div>
 
-      <p>
-        Information submitted by the customer.
-      </p>
-    </div>
+              <span class="admin-collapsible-arrow">
+                ›
+              </span>
+            </summary>
 
-    <span class="admin-collapsible-arrow">
-      ›
-    </span>
+            <form
+              class="admin-inline-edit-form"
+              data-admin-inline-form="${escapeHtml(x.id)}"
+              data-admin-inline-section="shipping"
+            >
+              <div class="admin-inline-section-actions">
+                <button
+                  type="button"
+                  class="admin-edit-button"
+                  data-inline-edit
+                >
+                  Edit
+                </button>
 
-  </summary>
+                <button
+                  type="submit"
+                  class="admin-save-button"
+                  data-inline-save
+                  disabled
+                >
+                  Save
+                </button>
+              </div>
 
-  <div class="info-grid">
+              <div class="admin-edit-grid">
 
-    ${field(
-      "Profile Name",
-      profile.profileName
-    )}
+                <div class="admin-edit-field">
+                  <label>Profile Name</label>
+                  <input
+                    name="profileName"
+                    value="${escapeHtml(profile.profileName || "")}"
+                    readonly
+                  >
+                </div>
 
-    ${field(
-      "Email",
-      profile.email
-    )}
+                <div class="admin-edit-field">
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    name="email"
+                    value="${escapeHtml(profile.email || "")}"
+                    readonly
+                  >
+                </div>
 
-    ${field(
-      "First Name",
-      profile.firstName
-    )}
+                <div class="admin-edit-field">
+                  <label>First Name</label>
+                  <input
+                    name="firstName"
+                    value="${escapeHtml(profile.firstName || "")}"
+                    readonly
+                  >
+                </div>
 
-    ${field(
-      "Last Name",
-      profile.lastName
-    )}
+                <div class="admin-edit-field">
+                  <label>Last Name</label>
+                  <input
+                    name="lastName"
+                    value="${escapeHtml(profile.lastName || "")}"
+                    readonly
+                  >
+                </div>
 
-    ${field(
-      "Phone",
-      profile.phone
-    )}
+                <div class="admin-edit-field wide">
+                  <label>Phone</label>
+                  <input
+                    name="phone"
+                    value="${escapeHtml(profile.phone || "")}"
+                    readonly
+                  >
+                </div>
 
-    ${field(
-      "Country",
-      profile.country
-    )}
+                <div class="admin-edit-field">
+                  <label>Country</label>
+                  <input
+                    name="country"
+                    value="${escapeHtml(profile.country || "")}"
+                    readonly
+                  >
+                </div>
 
-    ${field(
-      "Address",
-      address,
-      true
-    )}
+                <div class="admin-edit-field">
+                  <label>State</label>
+                  <input
+                    name="state"
+                    value="${escapeHtml(profile.state || "")}"
+                    readonly
+                  >
+                </div>
 
-    ${field(
-      "City / State / Zip",
-      cityLine,
-      true
-    )}
+                <div class="admin-edit-field wide">
+                  <label>Address</label>
+                  <input
+                    name="address"
+                    value="${escapeHtml(profile.address || "")}"
+                    readonly
+                  >
+                </div>
 
-  </div>
+                <div class="admin-edit-field wide">
+                  <label>Address 2</label>
+                  <input
+                    name="address2"
+                    value="${escapeHtml(profile.address2 || "")}"
+                    readonly
+                  >
+                </div>
 
-</details>
+                <div class="admin-edit-field">
+                  <label>City</label>
+                  <input
+                    name="city"
+                    value="${escapeHtml(profile.city || "")}"
+                    readonly
+                  >
+                </div>
+
+                <div class="admin-edit-field">
+                  <label>Zip</label>
+                  <input
+                    name="zip"
+                    value="${escapeHtml(profile.zip || "")}"
+                    readonly
+                  >
+                </div>
+
+              </div>
+
+              <div
+                class="admin-edit-message"
+                data-inline-message
+              ></div>
+            </form>
+
+          </details>
 
 
-          <!-- ACO -->
+          <!-- ACO / IMAP -->
 
-          <details class="order-section admin-collapsible">
+          <details
+            class="order-section admin-collapsible"
+            data-inline-admin-section="imap"
+          >
 
-  <summary class="order-section-head admin-collapsible-head">
+            <summary
+              class="order-section-head admin-collapsible-head"
+            >
+              <div>
+                <h3>
+                  IMAP / Host Email
+                </h3>
 
-    <div>
-      <h3>
-        IMAP / Host Email
-      </h3>
+                <p>
+                  Credentials submitted for ACO configuration.
+                </p>
+              </div>
 
-      <p>
-        Credentials submitted for
-        ACO configuration.
-      </p>
-    </div>
+              <span class="admin-collapsible-arrow">
+                ›
+              </span>
+            </summary>
 
-    <span class="admin-collapsible-arrow">
-      ›
-    </span>
+            <form
+              class="admin-inline-edit-form"
+              data-admin-inline-form="${escapeHtml(x.id)}"
+              data-admin-inline-section="imap"
+            >
+              <div class="admin-inline-section-actions">
+                <button
+                  type="button"
+                  class="admin-edit-button"
+                  data-inline-edit
+                >
+                  Edit
+                </button>
 
-  </summary>
+                <button
+                  type="submit"
+                  class="admin-save-button"
+                  data-inline-save
+                  disabled
+                >
+                  Save
+                </button>
+              </div>
 
-  <div class="info-grid">
+              <div class="admin-edit-grid">
 
-    ${field(
-      "IMAP / Host Email",
-      secrets.acoEmail
-    )}
+                <div class="admin-edit-field wide">
+                  <label>IMAP / Host Email</label>
 
-    ${sensitiveField(
-      "IMAP / Host App Password",
-      secrets.acoPassword,
-      "password"
-    )}
+                  <input
+                    type="email"
+                    name="acoEmail"
+                    value="${escapeHtml(secrets.acoEmail || "")}"
+                    readonly
+                  >
+                </div>
 
-  </div>
+                <div class="admin-edit-field wide">
+                  <label>IMAP / Host App Password</label>
 
-  <p class="muted">
-    (Password created through email for SNGACO)
-  </p>
+                  <div class="admin-sensitive-input-row">
+                    <input
+                      type="password"
+                      name="acoPassword"
+                      value="${escapeHtml(secrets.acoPassword || "")}"
+                      autocomplete="off"
+                      placeholder="${
+                        secrets.acoPassword
+                          ? ""
+                          : "No app password saved"
+                      }"
+                      readonly
+                      data-admin-sensitive-input
+                    >
 
-</details>
+                    <button
+                      type="button"
+                      class="reveal-button"
+                      data-admin-sensitive-toggle
+                      ${
+                        secrets.acoPassword
+                          ? ""
+                          : "disabled"
+                      }
+                    >
+                      Show
+                    </button>
+                  </div>
+
+                  <small class="admin-field-note">
+                    password you created in email not your email password
+                  </small>
+                </div>
+
+              </div>
+
+              <div
+                class="admin-edit-message"
+                data-inline-message
+              ></div>
+            </form>
+
+          </details>
 
 
           <!-- CARD -->
 
-          <details class="order-section admin-collapsible">
-
-  <summary class="order-section-head admin-collapsible-head">
-
-    <div>
-      <h3>
-        Card Information
-      </h3>
-
-      <p>
-        ACO card information submitted
-        by the customer.
-      </p>
-    </div>
-
-    <span class="admin-collapsible-arrow">
-      ›
-    </span>
-
-  </summary>
-
-  <div class="info-grid">
-
-    ${field(
-      "Card Label",
-      secrets.cardLabel
-    )}
-
-    ${field(
-      "Cardholder Name",
-      secrets.cardholder
-    )}
-
-    ${sensitiveField(
-      "Card Number",
-      secrets.acoCardNumber,
-      "card",
-      true
-    )}
-
-    ${field(
-      "Expiration",
-      expiration
-    )}
-
-    ${sensitiveField(
-      "Security Code",
-      secrets.securityCode,
-      "security-code",
-      true
-    )}
-
-  </div>
-
-</details>
-
-<section class="order-section">
-
-  <div class="order-section-head">
-
-    <h3>
-      Admin Edit
-    </h3>
-
-    <p>
-      Correct customer information without
-      changing their Stripe membership.
-    </p>
-
-  </div>
-
-  <div
-    class="admin-edit-panel"
-    data-edit-panel="${escapeHtml(x.id)}"
-    hidden
-  >
-
-   <form
-  class="admin-submission-edit-form"
-  data-id="${escapeHtml(x.id)}"
-  data-edit-form="${escapeHtml(x.id)}"
->
-
-      <div class="admin-edit-grid">
-
-        <div class="admin-edit-field">
-          <label>Profile Name</label>
-
-          <input
-            name="profileName"
-            value="${escapeHtml(profile.profileName || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field">
-          <label>Email</label>
-
-          <input
-            type="email"
-            name="email"
-            value="${escapeHtml(profile.email || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field">
-          <label>First Name</label>
-
-          <input
-            name="firstName"
-            value="${escapeHtml(profile.firstName || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field">
-          <label>Last Name</label>
-
-          <input
-            name="lastName"
-            value="${escapeHtml(profile.lastName || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field">
-          <label>Phone</label>
-
-          <input
-            name="phone"
-            value="${escapeHtml(profile.phone || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field">
-          <label>Country</label>
-
-          <input
-            name="country"
-            value="${escapeHtml(profile.country || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field wide">
-          <label>Address</label>
-
-          <input
-            name="address"
-            value="${escapeHtml(profile.address || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field wide">
-          <label>Address 2</label>
-
-          <input
-            name="address2"
-            value="${escapeHtml(profile.address2 || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field">
-          <label>City</label>
-
-          <input
-            name="city"
-            value="${escapeHtml(profile.city || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field">
-          <label>State</label>
-
-          <input
-            name="state"
-            value="${escapeHtml(profile.state || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field">
-          <label>Zip</label>
-
-          <input
-            name="zip"
-            value="${escapeHtml(profile.zip || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field">
-          <label>IMAP / Host Email</label>
-
-          <input
-            type="email"
-            name="acoEmail"
-            value="${escapeHtml(secrets.acoEmail || "")}"
-          >
-        </div>
-
-        <div class="admin-edit-field wide">
-          <label>
-            IMAP / Host App Password
-          </label>
-
-          <input
-            type="password"
-            name="acoPassword"
-            autocomplete="new-password"
-            placeholder="Leave blank to keep existing password"
+          <details
+            class="order-section admin-collapsible"
+            data-inline-admin-section="card"
           >
 
-          <small class="admin-edit-help">
-            Password created through email for SNGACO.
-            Leave blank unless the customer gave you a replacement.
-          </small>
-        </div>
+            <summary
+              class="order-section-head admin-collapsible-head"
+            >
+              <div>
+                <h3>
+                  Card Information
+                </h3>
 
-        <div class="admin-edit-field">
-          <label>Card Label</label>
+                <p>
+                  ACO card information submitted by the customer.
+                </p>
+              </div>
 
-          <input
-            name="cardLabel"
-            value="${escapeHtml(secrets.cardLabel || "")}"
-          >
-        </div>
+              <span class="admin-collapsible-arrow">
+                ›
+              </span>
+            </summary>
 
-        <div class="admin-edit-field">
-          <label>Cardholder Name</label>
+            <form
+              class="admin-inline-edit-form"
+              data-admin-inline-form="${escapeHtml(x.id)}"
+              data-admin-inline-section="card"
+            >
+              <div class="admin-inline-section-actions">
+                <button
+                  type="button"
+                  class="admin-edit-button"
+                  data-inline-edit
+                >
+                  Edit
+                </button>
 
-          <input
-            name="cardholder"
-            value="${escapeHtml(secrets.cardholder || "")}"
-          >
-        </div>
+                <button
+                  type="submit"
+                  class="admin-save-button"
+                  data-inline-save
+                  disabled
+                >
+                  Save
+                </button>
+              </div>
 
-        <div class="admin-edit-field wide">
-          <label>Replacement Card Number</label>
+              <div class="admin-edit-grid">
 
-          <input
-            name="acoCardNumber"
-            inputmode="numeric"
-            autocomplete="off"
-            placeholder="Leave blank to keep existing card"
-          >
-        </div>
+                <div class="admin-edit-field">
+                  <label>Card Label</label>
+                  <input
+                    name="cardLabel"
+                    value="${escapeHtml(secrets.cardLabel || "")}"
+                    readonly
+                  >
+                </div>
 
-        <div class="admin-edit-field">
-          <label>Replacement Exp. Month</label>
+                <div class="admin-edit-field">
+                  <label>Cardholder Name</label>
+                  <input
+                    name="cardholder"
+                    value="${escapeHtml(secrets.cardholder || "")}"
+                    readonly
+                  >
+                </div>
 
-          <select name="expMonth">
-            <option value="">
-              Keep existing
-            </option>
-            <option>01</option>
-            <option>02</option>
-            <option>03</option>
-            <option>04</option>
-            <option>05</option>
-            <option>06</option>
-            <option>07</option>
-            <option>08</option>
-            <option>09</option>
-            <option>10</option>
-            <option>11</option>
-            <option>12</option>
-          </select>
-        </div>
+                <div class="admin-edit-field wide">
+                  <label>Card Number</label>
 
-        <div class="admin-edit-field">
-          <label>Replacement Exp. Year</label>
+                  <div class="admin-sensitive-input-row">
+                    <input
+                      type="password"
+                      name="acoCardNumber"
+                      value="${escapeHtml(secrets.acoCardNumber || "")}"
+                      autocomplete="off"
+                      readonly
+                      data-admin-sensitive-input
+                    >
 
-          <input
-            name="expYear"
-            inputmode="numeric"
-            maxlength="4"
-            placeholder="Keep existing"
-          >
-        </div>
+                    <button
+                      type="button"
+                      class="reveal-button"
+                      data-admin-sensitive-toggle
+                      ${
+                        secrets.acoCardNumber
+                          ? ""
+                          : "disabled"
+                      }
+                    >
+                      Show
+                    </button>
+                  </div>
+                </div>
 
-        <div class="admin-edit-field wide">
-          <label>Replacement Security Code</label>
+                <div class="admin-edit-field">
+                  <label>Expiration Month</label>
+                  <input
+                    name="expMonth"
+                    value="${escapeHtml(secrets.expMonth || "")}"
+                    maxlength="2"
+                    readonly
+                  >
+                </div>
 
-          <input
-            type="password"
-            name="securityCode"
-            autocomplete="off"
-            placeholder="Leave blank to keep existing"
-          >
-        </div>
+                <div class="admin-edit-field">
+                  <label>Expiration Year</label>
+                  <input
+                    name="expYear"
+                    value="${escapeHtml(secrets.expYear || "")}"
+                    maxlength="4"
+                    readonly
+                  >
+                </div>
 
-      </div>
+                <div class="admin-edit-field wide">
+                  <label>Security Code</label>
 
-      <div class="admin-edit-actions">
+                  <div class="admin-sensitive-input-row">
+                    <input
+                      type="password"
+                      name="securityCode"
+                      value="${escapeHtml(secrets.securityCode || "")}"
+                      autocomplete="off"
+                      readonly
+                      data-admin-sensitive-input
+                    >
 
-        <button
-          type="submit"
-          class="admin-save-button"
-        >
-          Save Customer Changes
-        </button>
+                    <button
+                      type="button"
+                      class="reveal-button"
+                      data-admin-sensitive-toggle
+                      ${
+                        secrets.securityCode
+                          ? ""
+                          : "disabled"
+                      }
+                    >
+                      Show
+                    </button>
+                  </div>
+                </div>
 
-        <button
-          type="button"
-          class="admin-cancel-button"
-          data-cancel-edit="${escapeHtml(x.id)}"
-        >
-          Cancel
-        </button>
+              </div>
 
-      </div>
+              <div
+                class="admin-edit-message"
+                data-inline-message
+              ></div>
+            </form>
 
-      <div
-        class="admin-edit-message"
-        data-edit-message="${escapeHtml(x.id)}"
-      ></div>
-
-    </form>
-
-  </div>
-
-</section>
+          </details>
 
 
 <details
@@ -4090,264 +4425,264 @@ function bindAdminEditButtons() {
 
   document
     .querySelectorAll(
-      "[data-edit-submission]"
-    )
-    .forEach(button => {
-
-      button.addEventListener(
-        "click",
-        event => {
-
-          event.preventDefault();
-          event.stopPropagation();
-
-          const id =
-            button.dataset
-              .editSubmission;
-
-          const panel =
-            document.querySelector(
-              `[data-edit-panel="${CSS.escape(id)}"]`
-            );
-
-          if (!panel) {
-            return;
-          }
-
-          const opening =
-  panel.hidden;
-
-panel.hidden =
-  !opening;
-
-button.textContent =
-  opening
-    ? "Close Edit"
-    : "Edit";
-
-if (opening) {
-
-  setTimeout(
-    () => {
-      panel.scrollIntoView({
-        behavior: "smooth",
-        block: "start"
-      });
-
-      const firstInput =
-        panel.querySelector(
-          "input, select"
-        );
-
-      if (firstInput) {
-        firstInput.focus({
-          preventScroll: true
-        });
-      }
-    },
-    50
-  );
-
-}
-
-        }
-      );
-
-    });
-
-
-  document
-    .querySelectorAll(
-      "[data-cancel-edit]"
-    )
-    .forEach(button => {
-
-      button.addEventListener(
-        "click",
-        event => {
-
-          event.preventDefault();
-
-          const id =
-            button.dataset
-              .cancelEdit;
-
-          const panel =
-            document.querySelector(
-              `[data-edit-panel="${CSS.escape(id)}"]`
-            );
-
-          if (panel) {
-            panel.hidden =
-              true;
-          }
-
-        }
-      );
-
-    });
-
-
-  document
-    .querySelectorAll(
-      ".admin-submission-edit-form"
+      ".admin-inline-edit-form"
     )
     .forEach(form => {
+
+      const editButton =
+        form.querySelector(
+          "[data-inline-edit]"
+        );
+
+      const saveButton =
+        form.querySelector(
+          "[data-inline-save]"
+        );
+
+      const message =
+        form.querySelector(
+          "[data-inline-message]"
+        );
+
+      const editableFields =
+        Array.from(
+          form.querySelectorAll(
+            "input, select"
+          )
+        );
+
+      const setEditing =
+        editing => {
+
+          editableFields.forEach(
+            field => {
+              if (
+                field.matches(
+                  "[data-admin-sensitive-input]"
+                ) ||
+                field.tagName ===
+                  "INPUT" ||
+                field.tagName ===
+                  "SELECT"
+              ) {
+                field.readOnly =
+                  !editing;
+
+                if (
+                  field.tagName ===
+                  "SELECT"
+                ) {
+                  field.disabled =
+                    !editing;
+                }
+              }
+            }
+          );
+
+          if (saveButton) {
+            saveButton.disabled =
+              !editing;
+          }
+
+          if (editButton) {
+            editButton.textContent =
+              editing
+                ? "Cancel Edit"
+                : "Edit";
+
+            editButton.dataset.editing =
+              editing
+                ? "true"
+                : "false";
+          }
+        };
+
+      editButton
+        ?.addEventListener(
+          "click",
+          event => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const editing =
+              editButton.dataset
+                .editing !==
+              "true";
+
+            setEditing(
+              editing
+            );
+
+            if (
+              editing
+            ) {
+              const first =
+                editableFields.find(
+                  field =>
+                    !field.disabled
+                );
+
+              first?.focus({
+                preventScroll:
+                  true
+              });
+            }
+          }
+        );
+
+
+      form
+        .querySelectorAll(
+          "[data-admin-sensitive-toggle]"
+        )
+        .forEach(button => {
+          button.addEventListener(
+            "click",
+            event => {
+              event.preventDefault();
+              event.stopPropagation();
+
+              const input =
+                button.parentElement
+                  ?.querySelector(
+                    "[data-admin-sensitive-input]"
+                  );
+
+              if (!input) {
+                return;
+              }
+
+              const show =
+                input.type ===
+                "password";
+
+              input.type =
+                show
+                  ? "text"
+                  : "password";
+
+              button.textContent =
+                show
+                  ? "Hide"
+                  : "Show";
+            }
+          );
+        });
+
 
       form.addEventListener(
         "submit",
         async event => {
-
           event.preventDefault();
 
           const id =
-            form.dataset.id;
+            form.dataset
+              .adminInlineForm;
 
-          const submitButton =
-            form.querySelector(
-              ".admin-save-button"
-            );
-
-          const message =
-            document.querySelector(
-              `[data-edit-message="${CSS.escape(id)}"]`
-            );
+          const section =
+            form.dataset
+              .adminInlineSection;
 
           const formData =
-            new FormData(form);
+            new FormData(
+              form
+            );
 
-          const profile = {
-            profileName:
-              formData.get(
-                "profileName"
-              ) || "",
+          const profile = {};
+          const secrets = {};
 
-            firstName:
-              formData.get(
-                "firstName"
-              ) || "",
+          if (
+            section ===
+            "shipping"
+          ) {
+            [
+              "profileName",
+              "email",
+              "firstName",
+              "lastName",
+              "phone",
+              "country",
+              "state",
+              "address",
+              "address2",
+              "city",
+              "zip"
+            ].forEach(
+              key => {
+                profile[key] =
+                  formData.get(
+                    key
+                  ) || "";
+              }
+            );
+          }
 
-            lastName:
-              formData.get(
-                "lastName"
-              ) || "",
-
-            email:
-              formData.get(
-                "email"
-              ) || "",
-
-            phone:
-              formData.get(
-                "phone"
-              ) || "",
-
-            address:
-              formData.get(
-                "address"
-              ) || "",
-
-            address2:
-              formData.get(
-                "address2"
-              ) || "",
-
-            country:
-              formData.get(
-                "country"
-              ) || "",
-
-            state:
-              formData.get(
-                "state"
-              ) || "",
-
-            city:
-              formData.get(
-                "city"
-              ) || "",
-
-            zip:
-              formData.get(
-                "zip"
-              ) || ""
-          };
-
-          const secrets = {
-            acoEmail:
+          if (
+            section ===
+            "imap"
+          ) {
+            secrets.acoEmail =
               formData.get(
                 "acoEmail"
-              ) || "",
+              ) || "";
 
-            acoPassword:
+            secrets.acoPassword =
               formData.get(
                 "acoPassword"
-              ) || "",
+              ) || "";
+          }
 
-            cardLabel:
-              formData.get(
-                "cardLabel"
-              ) || "",
+          if (
+            section ===
+            "card"
+          ) {
+            [
+              "cardLabel",
+              "cardholder",
+              "acoCardNumber",
+              "expMonth",
+              "expYear",
+              "securityCode"
+            ].forEach(
+              key => {
+                secrets[key] =
+                  formData.get(
+                    key
+                  ) || "";
+              }
+            );
+          }
 
-            cardholder:
-              formData.get(
-                "cardholder"
-              ) || "",
-
-            acoCardNumber:
-              formData.get(
-                "acoCardNumber"
-              ) || "",
-
-            expMonth:
-              formData.get(
-                "expMonth"
-              ) || "",
-
-            expYear:
-              formData.get(
-                "expYear"
-              ) || "",
-
-            securityCode:
-              formData.get(
-                "securityCode"
-              ) || ""
-          };
-
-          if (submitButton) {
-            submitButton.disabled =
+          if (saveButton) {
+            saveButton.disabled =
               true;
 
-            submitButton.textContent =
+            saveButton.textContent =
               "Saving...";
           }
 
           if (message) {
             message.textContent =
               "";
-
             message.className =
               "admin-edit-message";
           }
 
           try {
-
             const response =
               await fetch(
-                `/api/admin/submissions/${encodeURIComponent(id)}`,
+                `/api/admin/submissions/${encodeURIComponent(
+                  id
+                )}`,
                 {
                   method:
                     "PUT",
-
                   credentials:
                     "same-origin",
-
                   headers: {
                     "Content-Type":
                       "application/json"
                   },
-
                   body:
                     JSON.stringify({
                       profile,
@@ -4373,21 +4708,24 @@ if (opening) {
             if (message) {
               message.textContent =
                 result.message ||
-                "Customer information updated.";
+                "Changes saved.";
 
               message.className =
                 "admin-edit-message success";
             }
 
-            setTimeout(
-              () => {
-                load();
-              },
-              700
+            /*
+              Intentionally DO NOT call load() here.
+              This keeps the customer order and the
+              exact info dropdown open until the admin
+              closes it manually.
+            */
+
+            setEditing(
+              false
             );
 
           } catch (error) {
-
             if (message) {
               message.textContent =
                 error.message;
@@ -4396,21 +4734,23 @@ if (opening) {
                 "admin-edit-message error";
             }
 
-          } finally {
-
-            if (submitButton) {
-              submitButton.disabled =
+            if (saveButton) {
+              saveButton.disabled =
                 false;
-
-              submitButton.textContent =
-                "Save Customer Changes";
             }
 
+          } finally {
+            if (saveButton) {
+              saveButton.textContent =
+                "Save";
+            }
           }
-
         }
       );
 
+      setEditing(
+        false
+      );
     });
 
 }
@@ -9341,6 +9681,97 @@ async function loadProfileActivationTracker() {
         ? data.customers
         : [];
 
+    const awaitingProfiles =
+      customers.flatMap(
+        group =>
+          group.profiles
+            .filter(
+              profile =>
+                profile.status ===
+                "awaiting_activation"
+            )
+            .map(
+              profile => ({
+                ...profile,
+                customerName:
+                  group.customerName ||
+                  "Customer",
+                customerEmail:
+                  group.customerEmail ||
+                  ""
+              })
+            )
+      );
+
+    if (
+      adminNotificationCount
+    ) {
+      adminNotificationCount
+        .textContent =
+          String(
+            awaitingProfiles.length
+          );
+
+      adminNotificationCount
+        .classList.toggle(
+          "has-notifications",
+          awaitingProfiles.length >
+            0
+        );
+    }
+
+    if (
+      adminNotificationList
+    ) {
+      adminNotificationList
+        .innerHTML =
+          awaitingProfiles.length
+            ? awaitingProfiles
+                .map(
+                  profile => `
+                    <button
+                      type="button"
+                      class="admin-notification-item"
+                      data-notification-profile-id="${escapeHtml(
+                        profile.id
+                      )}"
+                    >
+                      <span>
+                        <strong>
+                          ${escapeHtml(
+                            profile.profileName ||
+                            "Profile"
+                          )}
+                        </strong>
+
+                        <small>
+                          ${escapeHtml(
+                            profile.customerName
+                          )}
+                          ${
+                            profile.customerEmail
+                              ? ` • ${escapeHtml(
+                                  profile.customerEmail
+                                )}`
+                              : ""
+                          }
+                        </small>
+                      </span>
+
+                      <span>
+                        ACTIVATE →
+                      </span>
+                    </button>
+                  `
+                )
+                .join("")
+            : `
+                <div class="empty-admin">
+                  No profiles are awaiting activation.
+                </div>
+              `;
+    }
+
     profileActivationGroups
       .innerHTML =
         customers.length
@@ -9385,6 +9816,9 @@ async function loadProfileActivationTracker() {
                       .map(profile => `
                         <div
                           class="activation-profile-row"
+                          data-activation-profile-id="${escapeHtml(
+                            profile.id
+                          )}"
                         >
                           <div>
                             <strong>
@@ -9489,6 +9923,8 @@ async function loadProfileActivationTracker() {
 
     bindProfileActivationButtons();
 
+    bindAdminNotificationLinks();
+
   } catch (error) {
     profileActivationGroups
       .innerHTML = `
@@ -9499,6 +9935,70 @@ async function loadProfileActivationTracker() {
         </div>
       `;
   }
+}
+
+
+
+function bindAdminNotificationLinks() {
+  document
+    .querySelectorAll(
+      "[data-notification-profile-id]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        () => {
+          const id =
+            button.dataset
+              .notificationProfileId;
+
+          const target =
+            document.querySelector(
+              `[data-activation-profile-id="${CSS.escape(
+                id
+              )}"]`
+            );
+
+          if (!target) {
+            return;
+          }
+
+          const group =
+            target.closest(
+              ".activation-group"
+            );
+
+          if (group) {
+            group.open =
+              true;
+          }
+
+          if (adminNotifications) {
+            adminNotifications.open =
+              false;
+          }
+
+          target.scrollIntoView({
+            behavior:
+              "smooth",
+            block:
+              "center"
+          });
+
+          target.classList.add(
+            "notification-target"
+          );
+
+          window.setTimeout(
+            () =>
+              target.classList.remove(
+                "notification-target"
+              ),
+            1800
+          );
+        }
+      );
+    });
 }
 
 
@@ -9649,6 +10149,178 @@ window.setInterval(
   },
   15000
 );
+
+
+
+targetPoolFile
+  ?.addEventListener(
+    "change",
+    async () => {
+      const file =
+        targetPoolFile
+          .files
+          ?.[0];
+
+      if (
+        !file ||
+        !targetPoolAccounts
+      ) {
+        return;
+      }
+
+      targetPoolAccounts.value =
+        await file.text();
+
+      if (
+        targetPoolImportStatus
+      ) {
+        const count =
+          targetPoolAccounts
+            .value
+            .split(/\r?\n/)
+            .filter(
+              line =>
+                line.trim()
+            )
+            .length;
+
+        targetPoolImportStatus
+          .textContent =
+            `${count} account${count === 1 ? "" : "s"} loaded from file.`;
+      }
+    }
+  );
+
+
+replaceTargetPool
+  ?.addEventListener(
+    "click",
+    async () => {
+      const accounts =
+        targetPoolAccounts
+          ?.value ||
+        "";
+
+      const count =
+        accounts
+          .split(/\r?\n/)
+          .filter(
+            line =>
+              line.trim()
+          )
+          .length;
+
+      if (
+        count !== 100
+      ) {
+        if (
+          targetPoolImportStatus
+        ) {
+          targetPoolImportStatus
+            .textContent =
+              `Exactly 100 accounts are required. Currently loaded: ${count}.`;
+        }
+
+        return;
+      }
+
+      if (
+        !window.confirm(
+          "Replace the existing Target managed-account pool with these 100 accounts? This cannot proceed while an old Target account is currently assigned."
+        )
+      ) {
+        return;
+      }
+
+      replaceTargetPool.disabled =
+        true;
+
+      replaceTargetPool.textContent =
+        "Replacing...";
+
+      if (
+        targetPoolImportStatus
+      ) {
+        targetPoolImportStatus
+          .textContent =
+            "Encrypting and replacing Target inventory...";
+      }
+
+      try {
+        const response =
+          await fetch(
+            "/api/admin/target-pool/replace",
+            {
+              method:
+                "POST",
+              credentials:
+                "same-origin",
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+              body:
+                JSON.stringify({
+                  accounts
+                })
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to replace Target pool."
+          );
+        }
+
+        if (
+          targetPoolImportStatus
+        ) {
+          targetPoolImportStatus
+            .textContent =
+              `Done. Target: ${data.target?.available ?? "—"} available / ${data.target?.total ?? "—"} total.`;
+        }
+
+        if (
+          targetPoolAccounts
+        ) {
+          targetPoolAccounts.value =
+            "";
+        }
+
+        if (
+          targetPoolFile
+        ) {
+          targetPoolFile.value =
+            "";
+        }
+
+        await loadManagedAvailability();
+
+      } catch (error) {
+        if (
+          targetPoolImportStatus
+        ) {
+          targetPoolImportStatus
+            .textContent =
+              error.message;
+        }
+      } finally {
+        replaceTargetPool.disabled =
+          false;
+
+        replaceTargetPool.textContent =
+          "Replace Target Pool";
+      }
+    }
+  );
 
 
 async function load() {
