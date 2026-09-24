@@ -10300,3 +10300,119 @@ select:focus {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ======================================================
+   PROFILE NAVIGATION / OPEN HINTS / GROUP DROPDOWNS
+====================================================== */
+
+.profile-open-hint {
+  display: inline-flex;
+  width: max-content;
+  margin-top: 5px;
+  border: 1px solid rgba(36,216,255,.3);
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: #8cecff;
+  background: rgba(36,216,255,.06);
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: .45px;
+}
+
+.profile-group-dropdown {
+  margin-bottom: 14px;
+  border: 1px solid rgba(36,216,255,.22);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(4,16,27,.45);
+}
+
+.profile-group-dropdown > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  list-style: none;
+  cursor: pointer;
+  padding: 16px 18px;
+  background: rgba(10,30,46,.62);
+}
+
+.profile-group-dropdown > summary::-webkit-details-marker {
+  display: none;
+}
+
+.profile-group-dropdown > summary strong {
+  display: block;
+  margin-top: 3px;
+  color: #f3fbff;
+  font-size: 15px;
+}
+
+.profile-group-open {
+  flex: 0 0 auto;
+  border: 1px solid rgba(36,216,255,.35);
+  border-radius: 9px;
+  padding: 8px 11px;
+  color: #a6efff;
+  background: rgba(36,216,255,.06);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .4px;
+}
+
+.profile-group-dropdown[open] .profile-group-open {
+  background: rgba(36,216,255,.12);
+}
+
+.profile-group-dropdown-body {
+  padding: 12px;
+  border-top: 1px solid rgba(255,255,255,.06);
+}
+
+.profile-group-dropdown-body
+  .retailer-profile-card:last-child {
+  margin-bottom: 0;
+}
+
+.saved-detail-open-hint,
+.saved-detail-open-static {
+  margin-left: auto;
+  border: 1px solid rgba(36,216,255,.28);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #8cecff;
+  background: rgba(36,216,255,.05);
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: .4px;
+  white-space: nowrap;
+}
+
+.saved-detail-open-static {
+  display: none;
+}
+
+.profile-activation-status.expired {
+  border-color: rgba(255,91,105,.45);
+  background: rgba(255,91,105,.08);
+}
+
+.profile-activation-status.expired
+  .profile-activation-light {
+  background: #ff6472;
+  box-shadow: 0 0 10px rgba(255,100,114,.72);
+}
+
+@media (max-width:760px) {
+  .profile-group-dropdown > summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .profile-group-open {
+    width: 100%;
+    text-align: center;
+  }
+}
