@@ -10777,30 +10777,126 @@ select:focus {
   }
 }
 
-/* optional: fully remove the overlapping icon/watermark */
-.secure-storage-card::before,
-.secure-storage-card::after,
-.credential-storage-card::before,
-.credential-storage-card::after,
-.profile-security-note::before,
-.profile-security-note::after,
-.profile-security-banner::before,
-.profile-security-banner::after {
-  display: none !important;
+
+/* ======================================================
+   PAID PROFILE INNER SECTION DROPDOWNS
+====================================================== */
+
+.paid-profile-subsection {
+  padding: 0;
+  overflow: hidden;
 }
 
-.secure-storage-card img,
-.secure-storage-card svg,
-.credential-storage-card img,
-.credential-storage-card svg,
-.profile-security-note img,
-.profile-security-note svg,
-.profile-security-banner img,
-.profile-security-banner svg {
-  display: none !important;
+.paid-profile-subsection > summary {
+  list-style: none;
 }
 
-/* Remove lock icon from Secure credential storage notice */
+.paid-profile-subsection > summary::-webkit-details-marker {
+  display: none;
+}
+
+.paid-profile-subsection-summary {
+  width: 100%;
+  min-height: 62px;
+
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto
+    auto
+    auto;
+
+  align-items: center;
+  gap: 10px;
+
+  padding: 14px 16px;
+
+  cursor: pointer;
+
+  background:
+    rgba(255,255,255,.015);
+
+  transition:
+    background .18s ease,
+    border-color .18s ease;
+}
+
+.paid-profile-subsection-summary:hover {
+  background:
+    rgba(18,201,255,.055);
+}
+
+.paid-profile-subsection-summary strong {
+  display: block;
+  margin-top: 3px;
+  color: #eefaff;
+  font-size: 13px;
+}
+
+.paid-profile-subsection-action {
+  min-width: 104px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 30px;
+
+  border:
+    1px solid
+    rgba(18,201,255,.30);
+
+  border-radius: 999px;
+
+  padding: 6px 10px;
+
+  color: #93edff;
+
+  background:
+    rgba(18,201,255,.055);
+
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .45px;
+
+  white-space: nowrap;
+}
+
+.paid-profile-subsection-chevron {
+  min-width: 28px;
+  min-height: 28px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  color: #67e4ff;
+
+  font-size: 20px;
+  font-weight: 900;
+
+  transition:
+    transform .18s ease;
+}
+
+.paid-profile-subsection[open]
+  .paid-profile-subsection-chevron {
+  transform:
+    rotate(180deg);
+}
+
+.paid-profile-subsection-body {
+  padding: 16px;
+
+  border-top:
+    1px solid
+    rgba(255,255,255,.06);
+}
+
+
+/* ======================================================
+   SECURE CREDENTIAL NOTICE — CLEAN TEXT
+====================================================== */
 
 .retailer-security-notice::before {
   display: none !important;
@@ -10809,4 +10905,50 @@ select:focus {
 
 .retailer-security-notice {
   padding-left: 18px !important;
+}
+
+
+/* ======================================================
+   MY PROFILE BACKGROUND READABILITY
+====================================================== */
+
+#my-profile {
+  position: relative;
+  isolation: isolate;
+}
+
+#my-profile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(5,10,18,.94),
+      rgba(7,16,27,.94)
+    );
+}
+
+
+@media (max-width:760px) {
+  .paid-profile-subsection-summary {
+    grid-template-columns:
+      minmax(0,1fr)
+      auto;
+
+    row-gap: 8px;
+  }
+
+  .paid-profile-subsection-action,
+  .profile-mini-status {
+    grid-row: 2;
+  }
+
+  .paid-profile-subsection-chevron {
+    grid-column: 2;
+    grid-row: 1;
+  }
 }
