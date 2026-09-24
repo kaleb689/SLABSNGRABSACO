@@ -1988,6 +1988,42 @@
       box-shadow: 0 0 18px rgba(18, 201, 255, .10);
     }
 
+
+    /* =========================================
+       OG MEMBER BADGE
+    ========================================= */
+
+    .admin-customer-name-line {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    .admin-og-member-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 25px;
+      padding: 4px 9px;
+      border: 1px solid rgba(255, 204, 79, .58);
+      border-radius: 999px;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(255, 211, 93, .18),
+          rgba(255, 166, 0, .08)
+        );
+      color: #ffd86a;
+      box-shadow:
+        0 0 18px rgba(255, 196, 64, .10);
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .85px;
+      white-space: nowrap;
+    }
+
   </style>
 </head>
 
@@ -2755,9 +2791,21 @@ function renderOrder(x) {
 
         <div class="customer-main">
 
-          <strong>
-            ${escapeHtml(customerName)}
-          </strong>
+          <div class="admin-customer-name-line">
+            <strong>
+              ${escapeHtml(customerName)}
+            </strong>
+
+            ${
+              x.ogMember
+                ? `
+                  <span class="admin-og-member-badge">
+                    OG MEMBER
+                  </span>
+                `
+                : ""
+            }
+          </div>
 
           <small>
             ${escapeHtml(
