@@ -239,6 +239,99 @@
       font-size: 13px;
     }
 
+    .managed-availability-tracker {
+  margin: 22px 0 28px;
+
+  padding: 22px;
+
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 18px;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, .035),
+      rgba(255, 255, 255, .015)
+    );
+}
+
+.managed-availability-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+
+  margin-bottom: 18px;
+}
+
+.managed-availability-head h2 {
+  margin: 4px 0 4px;
+}
+
+.managed-availability-head p {
+  margin: 0;
+  opacity: .7;
+}
+
+.managed-availability-updated {
+  font-size: .82rem;
+  opacity: .65;
+  white-space: nowrap;
+}
+
+.managed-availability-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.managed-availability-card {
+  padding: 20px;
+
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 16px;
+
+  background:
+    rgba(255, 255, 255, .025);
+}
+
+.managed-availability-number {
+  display: block;
+
+  margin-top: 8px;
+
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.managed-availability-details {
+  display: flex;
+  gap: 22px;
+
+  margin-top: 18px;
+
+  font-size: .9rem;
+  opacity: .8;
+}
+
+.managed-availability-details span {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+@media (max-width: 700px) {
+  .managed-availability-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .managed-availability-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
     .admin-orders {
       display: grid;
 
@@ -1379,7 +1472,106 @@ PAID SUBSCRIPTIONS
 
 </div>
 
+<section
+  id="managedAvailabilityTracker"
+  class="managed-availability-tracker"
+>
+  <div class="managed-availability-head">
+    <div>
+      <span class="eyebrow">
+        LIVE INVENTORY
+      </span>
 
+      <h2>
+        Managed Account Availability
+      </h2>
+
+      <p>
+        Available accounts for FREE memberships
+        and rentals.
+      </p>
+    </div>
+
+    <span
+      id="managedAvailabilityUpdated"
+      class="managed-availability-updated"
+    >
+      Loading...
+    </span>
+  </div>
+
+  <div class="managed-availability-grid">
+
+    <div class="managed-availability-card">
+      <span class="eyebrow">
+        TARGET
+      </span>
+
+      <strong
+        id="targetAvailableCount"
+        class="managed-availability-number"
+      >
+        —
+      </strong>
+
+      <span>
+        Available
+      </span>
+
+      <div class="managed-availability-details">
+        <span>
+          <strong id="targetInUseCount">
+            —
+          </strong>
+          In Use
+        </span>
+
+        <span>
+          <strong id="targetTotalCount">
+            —
+          </strong>
+          Total
+        </span>
+      </div>
+    </div>
+
+
+    <div class="managed-availability-card">
+      <span class="eyebrow">
+        WALMART
+      </span>
+
+      <strong
+        id="walmartAvailableCount"
+        class="managed-availability-number"
+      >
+        —
+      </strong>
+
+      <span>
+        Available
+      </span>
+
+      <div class="managed-availability-details">
+        <span>
+          <strong id="walmartInUseCount">
+            —
+          </strong>
+          In Use
+        </span>
+
+        <span>
+          <strong id="walmartTotalCount">
+            —
+          </strong>
+          Total
+        </span>
+      </div>
+    </div>
+
+  </div>
+</section>
+    
     <div
       id="rows"
       class="admin-orders"
@@ -1420,6 +1612,41 @@ const rows =
 const submissionCount =
   document.getElementById(
     "submissionCount"
+  );
+
+  const targetAvailableCount =
+  document.getElementById(
+    "targetAvailableCount"
+  );
+
+const targetInUseCount =
+  document.getElementById(
+    "targetInUseCount"
+  );
+
+const targetTotalCount =
+  document.getElementById(
+    "targetTotalCount"
+  );
+
+const walmartAvailableCount =
+  document.getElementById(
+    "walmartAvailableCount"
+  );
+
+const walmartInUseCount =
+  document.getElementById(
+    "walmartInUseCount"
+  );
+
+const walmartTotalCount =
+  document.getElementById(
+    "walmartTotalCount"
+  );
+
+const managedAvailabilityUpdated =
+  document.getElementById(
+    "managedAvailabilityUpdated"
   );
 
   const submissionTypeFilter =
@@ -5544,7 +5771,63 @@ function bindManagedMembershipDashboard(
    LOAD ADMIN DATA
 ========================================= */
 
+  async function loadManagedAvailability() {
+  try {
+    const response =
+      await fetch(
+        "/api/managed-availability",
+        {
+          cache: "no-store"
+        }
+      );
+
+    const data =
+      await response
+        .json()
+        .catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to load availability."
+      );
+    }
+
+    targetAvailableCount.textContent =
+      data.target?.available ?? "—";
+
+    targetInUseCount.textContent =
+      data.target?.inUse ?? "—";
+
+    targetTotalCount.textContent =
+      data.target?.total ?? "—";
+
+    walmartAvailableCount.textContent =
+      data.walmart?.available ?? "—";
+
+    walmartInUseCount.textContent =
+      data.walmart?.inUse ?? "—";
+
+    walmartTotalCount.textContent =
+      data.walmart?.total ?? "—";
+
+    managedAvailabilityUpdated.textContent =
+      "Updated just now";
+
+  } catch (error) {
+    console.error(
+      "Managed availability failed:",
+      error
+    );
+
+    managedAvailabilityUpdated.textContent =
+      "Unable to load";
+  }
+}
+  
 async function load() {
+
+  await loadManagedAvailability();
 
  const submissionType =
   submissionTypeFilter?.value ||
