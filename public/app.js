@@ -5650,7 +5650,15 @@ function setupSavedDetailsAccordions() {
             ? "OPEN SHIPPING"
             : "OPEN PAYMENTS";
 
-        head.appendChild(
+        const rightControl =
+          document.createElement(
+            "span"
+          );
+
+        rightControl.className =
+          "saved-detail-right-control";
+
+        rightControl.appendChild(
           openHint
         );
 
@@ -5665,8 +5673,12 @@ function setupSavedDetailsAccordions() {
         chevron.textContent =
           "▾";
 
-        head.appendChild(
+        rightControl.appendChild(
           chevron
+        );
+
+        head.appendChild(
+          rightControl
         );
 
         const toggle = () => {
@@ -5687,6 +5699,19 @@ function setupSavedDetailsAccordions() {
               ? "true"
               : "false"
           );
+
+          openHint.textContent =
+            index === 0
+              ? (
+                  opening
+                    ? "CLOSE SHIPPING"
+                    : "OPEN SHIPPING"
+                )
+              : (
+                  opening
+                    ? "CLOSE PAYMENTS"
+                    : "OPEN PAYMENTS"
+                );
         };
 
         head.addEventListener(
@@ -7092,20 +7117,9 @@ function retailerProfileCardHtml(
             <small>
               Click to open and manage this profile
             </small>
-
-            <span
-              class="profile-open-hint"
-            >
-              OPEN PROFILE
-            </span>
           </span>
 
-          <span
-            class="profile-compact-chevron"
-            aria-hidden="true"
-          >
-            ▾
-          </span>
+
         </button>
 
         ${
@@ -7118,6 +7132,23 @@ function retailerProfileCardHtml(
                 </span>
               `
             : `
+                <span
+                  class="profile-open-control profile-open-control-status-side"
+                  aria-hidden="true"
+                >
+                  <span
+                    class="profile-open-hint"
+                  >
+                    OPEN PROFILE
+                  </span>
+
+                  <span
+                    class="profile-compact-chevron"
+                  >
+                    ▾
+                  </span>
+                </span>
+
                 <div
                   class="profile-status-stack"
                 >
@@ -8064,6 +8095,56 @@ function managedMembershipCardHtml(
     </article>
   `;
 }
+
+
+function bindProfileGroupDropdowns() {
+  document
+    .querySelectorAll(
+      ".profile-group-dropdown"
+    )
+    .forEach(group => {
+      if (
+        group.dataset
+          .groupBound ===
+        "true"
+      ) {
+        return;
+      }
+
+      group.dataset.groupBound =
+        "true";
+
+      const label =
+        group.querySelector(
+          "[data-profile-group-label]"
+        );
+
+      const sync = () => {
+        if (!label) return;
+
+        label.textContent =
+          group.open
+            ? (
+                label.dataset
+                  .hideText ||
+                "HIDE ALL"
+              )
+            : (
+                label.dataset
+                  .showText ||
+                "SHOW ALL"
+              );
+      };
+
+      group.addEventListener(
+        "toggle",
+        sync
+      );
+
+      sync();
+    });
+}
+
 
 function bindProfileAccordions() {
   document
@@ -9116,6 +9197,9 @@ const specialCards =
 
                 <span
                   class="profile-group-open"
+                  data-profile-group-label
+                  data-show-text="SHOW ALL GIFTED & RENTED PROFILES"
+                  data-hide-text="HIDE ALL GIFTED & RENTED PROFILES"
                 >
                   SHOW ALL GIFTED &amp; RENTED PROFILES
                 </span>
@@ -9295,6 +9379,9 @@ container.innerHTML = `
 
               <span
                 class="profile-group-open"
+                data-profile-group-label
+                data-show-text="SHOW ALL PAID PROFILES"
+                data-hide-text="HIDE ALL PAID PROFILES"
               >
                 SHOW ALL PAID PROFILES
               </span>
@@ -9329,6 +9416,9 @@ container.innerHTML = `
 
               <span
                 class="profile-group-open"
+                data-profile-group-label
+                data-show-text="SHOW ALL GIFTED & RENTED PROFILES"
+                data-hide-text="HIDE ALL GIFTED & RENTED PROFILES"
               >
                 SHOW ALL GIFTED &amp; RENTED PROFILES
               </span>
@@ -9353,6 +9443,8 @@ container.innerHTML = `
   bindSpecialProfileForms();
 
   bindManagedMembershipForms();
+
+  bindProfileGroupDropdowns();
 
   bindProfileAccordions();
 
