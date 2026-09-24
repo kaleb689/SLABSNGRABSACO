@@ -9946,3 +9946,230 @@ select:focus {
     width: 100%;
   }
 }
+
+
+/* ======================================================
+   PAID PROFILE FULL SETUP + PROFILE EXPIRATION STATUS
+====================================================== */
+
+.profile-status-stack {
+  display: grid;
+
+  grid-template-columns:
+    minmax(140px, 1fr)
+    minmax(125px, 1fr);
+
+  gap: 8px;
+
+  align-items: stretch;
+}
+
+.profile-expiry-status {
+  display: flex;
+
+  min-width: 125px;
+
+  align-items: center;
+
+  gap: 9px;
+
+  border: 1px solid;
+
+  border-radius: 10px;
+
+  padding:
+    9px
+    11px;
+}
+
+.profile-expiry-status.ready {
+  border-color:
+    rgba(37, 220, 143, .36);
+
+  background:
+    rgba(37, 220, 143, .07);
+}
+
+.profile-expiry-status.warning {
+  border-color:
+    rgba(255, 200, 75, .42);
+
+  background:
+    rgba(255, 200, 75, .075);
+}
+
+.profile-expiry-status.expired {
+  border-color:
+    rgba(255, 91, 105, .4);
+
+  background:
+    rgba(255, 91, 105, .075);
+}
+
+.profile-expiry-light {
+  width: 9px;
+
+  height: 9px;
+
+  flex: 0 0 auto;
+
+  border-radius: 50%;
+}
+
+.profile-expiry-status.ready
+  .profile-expiry-light {
+  background: #29df91;
+
+  box-shadow:
+    0 0 10px
+    rgba(41, 223, 145, .8);
+}
+
+.profile-expiry-status.warning
+  .profile-expiry-light {
+  background: #ffc84b;
+
+  box-shadow:
+    0 0 10px
+    rgba(255, 200, 75, .75);
+}
+
+.profile-expiry-status.expired
+  .profile-expiry-light {
+  background: #ff6472;
+
+  box-shadow:
+    0 0 10px
+    rgba(255, 100, 114, .72);
+}
+
+.profile-expiry-status strong,
+.profile-expiry-status small {
+  display: block;
+}
+
+.profile-expiry-status strong {
+  color: #f7fbff;
+
+  font-size: 10px;
+
+  font-weight: 950;
+
+  letter-spacing: .5px;
+}
+
+.profile-expiry-status small {
+  margin-top: 2px;
+
+  color: #8ea1b5;
+
+  font-size: 9px;
+}
+
+.paid-profile-full-form {
+  display: grid;
+
+  gap: 16px;
+}
+
+.paid-profile-section {
+  border:
+    1px solid
+    rgba(255,255,255,.065);
+
+  border-radius: 12px;
+
+  padding: 16px;
+
+  background:
+    rgba(255,255,255,.018);
+}
+
+.paid-profile-section > .eyebrow {
+  display: block;
+
+  margin-bottom: 12px;
+}
+
+.paid-profile-section-head {
+  display: flex;
+
+  align-items: flex-start;
+
+  justify-content: space-between;
+
+  gap: 14px;
+
+  margin-bottom: 14px;
+}
+
+.paid-profile-section-head p,
+.paid-profile-section-copy {
+  margin:
+    5px
+    0
+    0;
+
+  color: #8094a9;
+
+  font-size: 10px;
+
+  line-height: 1.45;
+}
+
+.profile-mini-status {
+  flex: 0 0 auto;
+
+  border: 1px solid;
+
+  border-radius: 999px;
+
+  padding:
+    5px
+    8px;
+
+  font-size: 8px;
+
+  font-weight: 950;
+
+  letter-spacing: .45px;
+}
+
+.profile-mini-status.ready {
+  border-color:
+    rgba(37,220,143,.38);
+
+  background:
+    rgba(37,220,143,.07);
+
+  color: #70efb8;
+}
+
+.profile-mini-status.missing {
+  border-color:
+    rgba(255,91,105,.4);
+
+  background:
+    rgba(255,91,105,.07);
+
+  color: #ff8994;
+}
+
+@media (max-width: 900px) {
+  .profile-status-stack {
+    grid-template-columns:
+      1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .paid-profile-section-head {
+    flex-direction:
+      column;
+  }
+
+  .profile-mini-status {
+    align-self:
+      flex-start;
+  }
+}
