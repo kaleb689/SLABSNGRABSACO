@@ -4343,37 +4343,46 @@ function managedMembershipCardHtml(
     );
 
   return `
-    <section
-      class="order-section"
-      data-managed-membership-card
-      data-managed-status="${
-        active
-          ? "active"
-          : "inactive"
-      }"
+  <details
+    class="order-section admin-collapsible"
+    data-managed-membership-card
+    data-managed-status="${
+      active
+        ? "active"
+        : "inactive"
+    }"
+  >
+
+    <summary
+      class="order-section-head admin-collapsible-head"
     >
 
-      <div class="order-section-head">
+      <div>
+        <h3>
+          ${escapeHtml(
+            membership.profileName ||
+            label
+          )}
+        </h3>
 
-        <div>
-          <h3>
+        <p>
+          ACCOUNT EMAIL:
+          <strong>
             ${escapeHtml(
-              membership.profileName ||
-              label
+              membership.accountEmail ||
+              "Not entered"
             )}
-          </h3>
+          </strong>
+        </p>
+      </div>
 
-          <p>
-            ACCOUNT EMAIL:
-            <strong>
-              ${escapeHtml(
-                membership.accountEmail ||
-                "Not entered"
-              )}
-            </strong>
-          </p>
-        </div>
-
+      <div
+        style="
+          display:flex;
+          align-items:center;
+          gap:14px;
+        "
+      >
         <span
           class="status-pill ${
             active
@@ -4384,9 +4393,14 @@ function managedMembershipCardHtml(
           ${escapeHtml(statusLine)}
         </span>
 
+        <span
+          class="admin-collapsible-arrow"
+        >
+          ›
+        </span>
       </div>
 
-
+    </summary>
       <div class="admin-retailer-wrap">
 
         <form
@@ -4785,7 +4799,7 @@ function managedMembershipCardHtml(
 
       </div>
 
-    </section>
+    </details>
   `;
 }
 
