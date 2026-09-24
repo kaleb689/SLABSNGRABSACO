@@ -80,6 +80,8 @@ savedDetails: {
 
 accountStats: {
   userSince: null,
+  displayName: "Member",
+  ogMember: false,
   lifetimeSpend: 0,
   totalOrders: 0
 }
@@ -3325,10 +3327,30 @@ function renderAccountHeader(
       account?.emailVerifiedAt
     );
 
+  const stats =
+    state.accountStats || {};
+
+  setText(
+    "customer-account-name",
+    stats.displayName ||
+    "Member"
+  );
+
   setText(
     "customer-account-email",
     email
   );
+
+  const ogMemberBadge =
+    document.getElementById(
+      "og-member-badge"
+    );
+
+  if (ogMemberBadge) {
+    ogMemberBadge.hidden =
+      stats.ogMember !==
+      true;
+  }
 
   setText(
     "security-email",
@@ -3375,9 +3397,6 @@ function renderAccountHeader(
         !verified
       );
     });
-
-  const stats =
-    state.accountStats || {};
 
   setText(
     "member-since",
@@ -9885,6 +9904,10 @@ async function loadMemberProfile(
         userSince:
           data.account?.createdAt ||
           null,
+        displayName:
+          "Member",
+        ogMember:
+          false,
         lifetimeSpend:
           0,
         totalOrders:
