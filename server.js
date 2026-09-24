@@ -15025,6 +15025,389 @@ app.delete(
 
 
 
+
+/* -------------------------------------------------------
+   ADMIN TEST CUSTOMER PROFILE WORKFLOW
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/test-profile-workflow",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const records =
+        await getRetailerProfiles();
+
+      const profiles =
+        records
+          .filter(
+            record =>
+              String(
+                record.customerAccountId ||
+                ""
+              ) ===
+              "ADMIN-PREVIEW"
+          )
+          .sort(
+            (a, b) =>
+              Number(a.slot) -
+              Number(b.slot)
+          )
+          .map(
+            record =>
+              safeRetailerProfile(
+                record,
+                50
+              )
+          );
+
+      return res.json({
+        ok: true,
+        profiles
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin Test Customer profile load error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load Admin Test Customer profiles."
+        });
+    }
+  }
+);
+
+
+app.put(
+  "/api/admin/test-profile-workflow",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const slot =
+        Number(
+          req.body?.slot
+        );
+
+      if (
+        !Number.isInteger(slot) ||
+        slot < 1 ||
+        slot > 50
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid test profile slot."
+          });
+      }
+
+      const profileName =
+        clean(
+          req.body?.profileName,
+          80
+        ) ||
+        `Profile ${slot}`;
+
+      const submittedProfile =
+        req.body?.customerProfile &&
+        typeof req.body.customerProfile ===
+          "object"
+          ? req.body.customerProfile
+          : {};
+
+      const customerProfile =
+        sanitizeProfile({
+          ...submittedProfile,
+          profileName,
+          email:
+            submittedProfile.email ||
+            "admin-preview@slabsngrabsaco.com"
+        });
+
+      const submittedCard =
+        req.body?.customerCard &&
+        typeof req.body.customerCard ===
+          "object"
+          ? req.body.customerCard
+          : {};
+
+      const customerSecrets = {
+        cardLabel:
+          clean(
+            submittedCard.cardLabel,
+            100
+          ),
+
+        cardholder:
+          clean(
+            submittedCard.cardholder,
+            150
+          ),
+
+        acoCardNumber:
+          clean(
+            submittedCard.acoCardNumber,
+            30
+          ).replace(
+            /[^\d]/g,
+            ""
+          ),
+
+        expMonth:
+          clean(
+            submittedCard.expMonth,
+            2
+          ),
+
+        expYear:
+          clean(
+            submittedCard.expYear,
+            4
+          ),
+
+        securityCode:
+          clean(
+            submittedCard.securityCode,
+            300
+          )
+      };
+
+      const readiness =
+        managedProfileReadiness(
+          customerProfile,
+          customerSecrets
+        );
+
+      const records =
+        await getRetailerProfiles();
+
+      const existingIndex =
+        records.findIndex(
+          record =>
+            String(
+              record.customerAccountId ||
+              ""
+            ) ===
+              "ADMIN-PREVIEW" &&
+            Number(
+              record.slot
+            ) ===
+              slot
+        );
+
+      const existingRecord =
+        existingIndex >= 0
+          ? records[
+              existingIndex
+            ]
+          : null;
+
+      const priorStatus =
+        String(
+          existingRecord?.activationStatus ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+      const activationStatus =
+        readiness.ready
+          ? (
+              priorStatus ===
+                "activated"
+                ? "activated"
+                : "awaiting_activation"
+            )
+          : "incomplete";
+
+      const submittedRetailers =
+        req.body?.retailers &&
+        typeof req.body.retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      const credentials =
+        emptyRetailerCredentials();
+
+      for (
+        const retailer of
+        RETAILER_KEYS
+      ) {
+        credentials[
+          retailer
+        ] = {
+          username:
+            clean(
+              submittedRetailers?.[
+                retailer
+              ]?.username,
+              254
+            ),
+
+          password:
+            String(
+              submittedRetailers?.[
+                retailer
+              ]?.password ||
+              ""
+            )
+        };
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      const record = {
+        id:
+          existingRecord?.id ||
+          crypto.randomUUID(),
+
+        customerAccountId:
+          "ADMIN-PREVIEW",
+
+        slot,
+
+        profileName,
+
+        credentials:
+          encryptJson(
+            credentials
+          ),
+
+        customerProfile,
+
+        customerSecrets:
+          encryptJson(
+            customerSecrets
+          ),
+
+        activationStatus,
+
+        activationRequestedAt:
+          activationStatus ===
+            "awaiting_activation"
+            ? (
+                existingRecord
+                  ?.activationRequestedAt ||
+                now
+              )
+            : null,
+
+        activatedAt:
+          activationStatus ===
+            "activated"
+            ? (
+                existingRecord
+                  ?.activatedAt ||
+                now
+              )
+            : null,
+
+        deactivatedAt:
+          null,
+
+        discordProfileMessageId:
+          activationStatus ===
+            "awaiting_activation"
+            ? (
+                existingRecord
+                  ?.discordProfileMessageId ||
+                null
+              )
+            : null,
+
+        discordProfileMessageType:
+          activationStatus ===
+            "awaiting_activation"
+            ? (
+                existingRecord
+                  ?.discordProfileMessageType ||
+                null
+              )
+            : null,
+
+        createdAt:
+          existingRecord?.createdAt ||
+          now,
+
+        updatedAt:
+          now
+      };
+
+      if (
+        existingIndex >= 0
+      ) {
+        records[
+          existingIndex
+        ] = record;
+      } else {
+        records.push(
+          record
+        );
+      }
+
+      await saveRetailerProfiles(
+        records
+      );
+
+      if (
+        record.activationStatus ===
+        "awaiting_activation"
+      ) {
+        const discordChanged =
+          await ensurePaidProfileDiscordAwaitingMessage(
+            record
+          );
+
+        if (discordChanged) {
+          const savedIndex =
+            existingIndex >= 0
+              ? existingIndex
+              : records.length - 1;
+
+          records[
+            savedIndex
+          ] = record;
+
+          await saveRetailerProfiles(
+            records
+          );
+        }
+      }
+
+      return res.json({
+        ok: true,
+        profile:
+          safeRetailerProfile(
+            record,
+            50
+          )
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin Test Customer profile save error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to save Admin Test Customer profile."
+        });
+    }
+  }
+);
+
+
 /* -------------------------------------------------------
    ADMIN PROFILE ACTIVATION TRACKER
 ------------------------------------------------------- */
@@ -15135,6 +15518,9 @@ app.get(
           });
       };
 
+      let paidProfilesChanged =
+        false;
+
       for (
         const record of paidProfiles
       ) {
@@ -15180,6 +15566,21 @@ app.get(
                 readiness.ready
               );
 
+        if (
+          status ===
+            "awaiting_activation" &&
+          !record.discordProfileMessageId
+        ) {
+          const discordChanged =
+            await ensurePaidProfileDiscordAwaitingMessage(
+              record
+            );
+
+          paidProfilesChanged =
+            paidProfilesChanged ||
+            discordChanged;
+        }
+
         addProfile({
           id:
             record.id,
@@ -15196,6 +15597,12 @@ app.get(
             "paid",
           status
         });
+      }
+
+      if (paidProfilesChanged) {
+        await saveRetailerProfiles(
+          paidProfiles
+        );
       }
 
       const now =
@@ -15347,6 +15754,11 @@ app.get(
 
       return res.json({
         ok: true,
+
+        profileWebhookConfigured:
+          Boolean(
+            adminProfileWebhookUrl()
+          ),
 
         awaitingCount:
           allProfiles.filter(
