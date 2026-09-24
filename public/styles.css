@@ -10173,3 +10173,130 @@ select:focus {
       flex-start;
   }
 }
+
+
+/* ======================================================
+   PROFILE ACTIVATION + CLEAN PROFILE PAGE
+====================================================== */
+
+.profile-status-stack {
+  grid-template-columns:
+    repeat(
+      3,
+      minmax(122px, 1fr)
+    );
+}
+
+.profile-activation-status {
+  display: flex;
+  min-width: 122px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid;
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+
+.profile-activation-status strong,
+.profile-activation-status small {
+  display: block;
+}
+
+.profile-activation-status strong {
+  color: #f7fbff;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.profile-activation-status small {
+  margin-top: 2px;
+  color: #8ea1b5;
+  font-size: 9px;
+}
+
+.profile-activation-light {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.profile-activation-status.activated {
+  border-color: rgba(37,220,143,.38);
+  background: rgba(37,220,143,.07);
+}
+
+.profile-activation-status.activated .profile-activation-light {
+  background: #29df91;
+  box-shadow: 0 0 10px rgba(41,223,145,.8);
+}
+
+.profile-activation-status.awaiting {
+  border-color: rgba(255,200,75,.42);
+  background: rgba(255,200,75,.075);
+}
+
+.profile-activation-status.awaiting .profile-activation-light {
+  background: #ffc84b;
+  box-shadow: 0 0 10px rgba(255,200,75,.75);
+}
+
+.profile-activation-status.deactivated,
+.profile-activation-status.incomplete {
+  border-color: rgba(255,91,105,.4);
+  background: rgba(255,91,105,.07);
+}
+
+.profile-activation-status.deactivated .profile-activation-light,
+.profile-activation-status.incomplete .profile-activation-light {
+  background: #ff6472;
+  box-shadow: 0 0 10px rgba(255,100,114,.72);
+}
+
+.managed-static-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.managed-status-stack {
+  grid-template-columns:
+    repeat(
+      2,
+      minmax(130px,1fr)
+    );
+}
+
+.saved-detail-panel {
+  overflow: hidden;
+}
+
+.saved-detail-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.saved-detail-chevron {
+  margin-left: auto;
+  color: #27d9ff;
+  font-size: 16px;
+  transition: transform .18s ease;
+}
+
+.saved-detail-panel.expanded .saved-detail-chevron {
+  transform: rotate(180deg);
+}
+
+.saved-detail-accordion-body {
+  border-top: 1px solid rgba(255,255,255,.065);
+  margin-top: 11px;
+  padding-top: 13px;
+}
+
+@media (max-width:1050px) {
+  .profile-status-stack,
+  .managed-status-stack {
+    grid-template-columns: 1fr;
+  }
+}
