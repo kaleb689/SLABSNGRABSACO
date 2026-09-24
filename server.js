@@ -1642,6 +1642,32 @@ function publicSavedPaymentMethod(
   };
 }
 
+function adminSavedPaymentMethod(
+  method,
+  index
+) {
+  return {
+    ...publicSavedPaymentMethod(
+      method,
+      index
+    ),
+
+    /*
+      This is the separate account security
+      code entered in the site profile.
+      It is only returned through an
+      authenticated ADMIN endpoint.
+      It is not treated as a card CVV/CVC.
+    */
+    accountSecurityCode:
+      String(
+        method?.securityCode ||
+        ""
+      )
+  };
+}
+
+
 function customerSavedAddresses(
   account
 ) {
@@ -1669,6 +1695,28 @@ async function customerSavedDetailsPayload(
     paymentMethods:
       vault.paymentMethods.map(
         publicSavedPaymentMethod
+      )
+  };
+}
+
+
+async function adminCustomerSavedDetailsPayload(
+  account
+) {
+  const vault =
+    await getCustomerVault(
+      account.id
+    );
+
+  return {
+    addresses:
+      customerSavedAddresses(
+        account
+      ),
+
+    paymentMethods:
+      vault.paymentMethods.map(
+        adminSavedPaymentMethod
       )
   };
 }
@@ -11139,7 +11187,7 @@ app.get(
       }
 
       const payload =
-        await customerSavedDetailsPayload(
+        await adminCustomerSavedDetailsPayload(
           account
         );
 
