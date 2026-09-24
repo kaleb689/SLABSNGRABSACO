@@ -8109,10 +8109,16 @@ function managedMembershipCardHtml(
       card
     );
 
+  const awaitingActivation =
+    String(
+      membership.activationStatus ||
+      ""
+    ) ===
+    "awaiting_activation";
+
   const indefinite =
     membership.durationType ===
-      "indefinite" ||
-    !membership.expiresAt;
+      "indefinite";
 
   const daysRemaining =
     indefinite
@@ -8125,15 +8131,24 @@ function managedMembershipCardHtml(
         );
 
   const countdown =
-    profileCountdownInfo({
-      expiresAt:
-        membership.expiresAt,
-      daysRemaining,
-      active:
-        membership.active !==
-        false,
-      indefinite
-    });
+    awaitingActivation
+      ? {
+          className:
+            "warning",
+          label:
+            "ACTIVATING",
+          detail:
+            "Timer starts after activation"
+        }
+      : profileCountdownInfo({
+          expiresAt:
+            membership.expiresAt,
+          daysRemaining,
+          active:
+            membership.active !==
+            false,
+          indefinite
+        });
 
   return `
     <article
@@ -8168,13 +8183,17 @@ function managedMembershipCardHtml(
 
             <small>
               ${
-                indefinite
-                  ? "NO EXPIRATION"
-                  : `${daysRemaining} ${
-                      daysRemaining === 1
-                        ? "DAY"
-                        : "DAYS"
-                    } LEFT`
+                awaitingActivation
+                  ? "TIMER STARTS WHEN ACTIVATED"
+                  : (
+                      indefinite
+                        ? "NO EXPIRATION"
+                        : `${daysRemaining} ${
+                            daysRemaining === 1
+                              ? "DAY"
+                              : "DAYS"
+                          } LEFT`
+                    )
               }
             </small>
           </span>
@@ -13628,3 +13647,45 @@ if (
 
 
 processSecureLinks();
+
+
+/* =====================================================
+   UNIVERSAL SENSITIVE TOGGLE FAILSAFE
+   Ensures show / hide works for customer-side sensitive fields.
+===================================================== */
+(function setupUniversalSensitiveToggleFailsafe() {
+  document.addEventListener('click', function(event) {
+    const button = event.target.closest([
+      '#show-pass',
+      '.show-pass',
+      '[data-retailer-password-toggle]',
+      '.retailer-password-toggle',
+      '[data-customer-password-toggle]'
+    ].join(','));
+
+    if (!button) return;
+
+    const row = button.closest([
+      '.password-row',
+      '.retailer-password-input-wrap',
+      '.customer-sensitive-row',
+      '.admin-sensitive-input-row'
+    ].join(','));
+
+    const input = row?.querySelector('input');
+    if (!input) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const nextType = input.type === 'password' ? 'text' : 'password';
+    try {
+      input.type = nextType;
+    } catch (err) {
+      return;
+    }
+
+    button.textContent = nextType === 'text' ? 'Hide' : 'Show';
+    button.setAttribute('aria-label', nextType === 'text' ? 'Hide sensitive information' : 'Show sensitive information');
+  }, true);
+})();
