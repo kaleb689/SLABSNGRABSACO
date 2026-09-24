@@ -2686,6 +2686,221 @@
     }
 
 
+
+    /* =========================================
+       MEMBERSHIP TIER COLORS
+       Matches the Pricing page tier colors.
+    ========================================= */
+
+    .membership-tier-color-1 {
+      color: #dce8f0 !important;
+    }
+
+    .membership-tier-color-2 {
+      color: #1dd6ff !important;
+      text-shadow: 0 0 15px #00c8ff88;
+    }
+
+    .membership-tier-color-3 {
+      color: #ffd83d !important;
+      text-shadow: 0 0 14px #ffd83d55;
+    }
+
+    .membership-tier-color-4 {
+      color: #bd6cff !important;
+      text-shadow: 0 0 14px #a64dff55;
+    }
+
+    .membership-tier-color-5 {
+      color: #ff943d !important;
+      text-shadow: 0 0 14px #ff7a2f55;
+    }
+
+    .membership-tier-color-6 {
+      color: #45e68b !important;
+      text-shadow: 0 0 14px #31db7a55;
+    }
+
+    .membership-tier-color-7 {
+      color: #ff5aa8 !important;
+      text-shadow: 0 0 14px #ff3b9855;
+    }
+
+
+    /* =========================================
+       CUSTOMER-GROUP GIFTED / RENTED BULK TOOLS
+    ========================================= */
+
+    .managed-group-bulk-toolbar {
+      display: grid;
+      grid-template-columns:
+        minmax(220px, 1fr)
+        minmax(150px, .55fr)
+        auto
+        auto;
+      gap: 10px;
+      align-items: end;
+      padding: 14px;
+      border: 1px solid #1c4057;
+      border-radius: 11px;
+      background: #06111b;
+    }
+
+    .managed-group-bulk-title {
+      display: grid;
+      gap: 4px;
+    }
+
+    .managed-group-bulk-title strong {
+      color: #eefaff;
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    .managed-group-bulk-title small {
+      color: #7890a5;
+      font-size: 10px;
+      line-height: 1.45;
+    }
+
+    .managed-group-duration {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .managed-group-duration select {
+      order: 0;
+    }
+
+    .managed-group-duration span {
+      order: 1;
+      color: #768da1;
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: .8px;
+    }
+
+    .managed-group-available-list {
+      overflow: hidden;
+      border: 1px solid #17384e;
+      border-radius: 11px;
+      background: #07131e;
+    }
+
+    .managed-group-available-list > summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      cursor: pointer;
+      list-style: none;
+      color: #b9cbda;
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .managed-available-list-actions,
+    .managed-assigned-list-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-top: 1px solid #17384e;
+      border-bottom: 1px solid #17384e;
+    }
+
+    .managed-available-account-list {
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 10px;
+      max-height: 300px;
+      overflow: auto;
+    }
+
+    .managed-available-select-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid #17384e;
+      border-radius: 8px;
+      background: #06101a;
+      cursor: pointer;
+    }
+
+    .managed-available-select-row input {
+      width: auto;
+      flex: 0 0 auto;
+      margin: 0;
+    }
+
+    .managed-available-select-row span {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+    }
+
+    .managed-available-select-row strong {
+      overflow: hidden;
+      color: #eefaff;
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .managed-available-select-row small {
+      color: #12c9ff;
+      font-size: 8px;
+      font-weight: 900;
+    }
+
+    .managed-group-empty {
+      margin: 0;
+      border-radius: 9px;
+    }
+
+    @media (max-width: 900px) {
+      .managed-group-bulk-toolbar {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .managed-available-account-list {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .managed-group-bulk-toolbar {
+        grid-template-columns: 1fr;
+      }
+    }
+
+
+
+    .managed-group-remove-button {
+      min-height: 38px;
+      border: 1px solid #77313c;
+      border-radius: 8px;
+      background: #2a1015;
+      color: #ff8799;
+      padding: 9px 14px;
+      font-size: 10px;
+      font-weight: 950;
+      cursor: pointer;
+    }
+
+    .managed-group-remove-button:hover {
+      background: #3a131b;
+      border-color: #ff5c78;
+    }
+
+
   </style>
 </head>
 
@@ -3815,6 +4030,24 @@ function sensitiveField(
    CUSTOMER ORDER
 ========================================= */
 
+
+function adminTierColorClass(
+  plan = {}
+) {
+  const tier =
+    Number(
+      plan?.tier ||
+      plan?.id ||
+      0
+    );
+
+  return tier >= 1 &&
+    tier <= 7
+      ? `membership-tier-color-${tier}`
+      : "";
+}
+
+
 function renderOrder(x) {
 
   const profile =
@@ -3825,6 +4058,11 @@ function renderOrder(x) {
 
   const plan =
     x.plan || {};
+
+  const tierColorClass =
+    adminTierColorClass(
+      plan
+    );
 
   const customerName =
     [
@@ -3930,7 +4168,7 @@ function renderOrder(x) {
             MEMBERSHIP
           </small>
 
-          <strong class="order-plan">
+          <strong class="order-plan ${tierColorClass}">
             ${escapeHtml(planName)}
           </strong>
 
@@ -4068,7 +4306,7 @@ function renderOrder(x) {
                   CURRENT TIER
                 </small>
 
-                <strong>
+                <strong class="${tierColorClass}">
                   ${escapeHtml(planName)}
                 </strong>
 
@@ -7369,6 +7607,10 @@ function managedMembershipCardHtml(
         ? "active"
         : "inactive"
     }"
+    data-managed-customer-account="${escapeHtml(
+      assignment.customerAccountId ||
+      ""
+    )}"
   >
 
     <summary
@@ -7553,98 +7795,6 @@ function managedMembershipCardHtml(
             border-top:1px solid #17384e;
           "
         >
-
-          <div class="admin-edit-grid">
-
-            <div class="admin-edit-field wide">
-
-              <label>
-                Attach To Active Paid Subscription
-              </label>
-
-              <select
-                data-managed-customer="${escapeHtml(
-                  membership.id
-                )}"
-              >
-
-                <option value="">
-                  Choose active paid customer
-                </option>
-
-                ${customerOptions}
-
-              </select>
-
-            </div>
-
-
-            <div class="admin-edit-field">
-
-              <label>
-                Duration
-              </label>
-
-              <select
-                data-managed-duration="${escapeHtml(
-                  membership.id
-                )}"
-              >
-
-                <option
-                  value="indefinite"
-                  ${
-                    assignment.durationType ===
-                    "indefinite"
-                      ? "selected"
-                      : ""
-                  }
-                >
-                  INDEFINITELY
-                </option>
-
-                <option
-                  value="1_drop"
-                  ${
-                    assignment.durationType ===
-                    "1_drop"
-                      ? "selected"
-                      : ""
-                  }
-                >
-                  1 DROP
-                </option>
-
-                <option
-                  value="1_week"
-                  ${
-                    assignment.durationType ===
-                    "1_week"
-                      ? "selected"
-                      : ""
-                  }
-                >
-                  1 WEEK
-                </option>
-
-                <option
-                  value="1_month"
-                  ${
-                    assignment.durationType ===
-                    "1_month"
-                      ? "selected"
-                      : ""
-                  }
-                >
-                  1 MONTH
-                </option>
-
-              </select>
-
-            </div>
-
-          </div>
-
 
           ${
             active
@@ -8062,69 +8212,6 @@ function managedMembershipCardHtml(
           </div>
 
           <div class="admin-edit-actions">
-
-            <button
-              type="button"
-              class="admin-save-button"
-              data-managed-assign="${escapeHtml(
-                membership.id
-              )}"
-              data-managed-type="${escapeHtml(
-                type
-              )}"
-              ${
-                occupiedByOtherType
-                  ? "disabled"
-                  : ""
-              }
-            >
-              ${
-                active
-                  ? "Update Assignment"
-                  : (
-                      occupiedByOtherType
-                        ? `In Use As ${String(
-                            occupiedType
-                          ).toUpperCase()}`
-                        : "Add / Assign"
-                    )
-              }
-            </button>
-
-
-            <button
-              type="button"
-              class="admin-edit-button"
-              data-managed-autopopulate="${escapeHtml(
-                membership.id
-              )}"
-              data-managed-type="${escapeHtml(
-                type
-              )}"
-              ${active ? "" : "disabled"}
-            >
-              AUTO POPULATE
-            </button>
-
-
-            ${
-              active
-                ? `
-                  <button
-                    type="button"
-                    class="delete-submission"
-                    data-managed-end="${escapeHtml(
-                      membership.id
-                    )}"
-                    data-managed-type="${escapeHtml(
-                      type
-                    )}"
-                  >
-                    Remove Assignment
-                  </button>
-                `
-                : ""
-            }
 
             <button
               type="button"
@@ -8892,6 +8979,62 @@ function bindAssignInventoryButtons() {
 }
 
 
+const managedOpenGroupKeys =
+  new Set();
+
+
+function managedAvailableAccountEmail(
+  membership
+) {
+  return (
+    String(
+      membership?.displayEmail ||
+      membership?.accountEmail ||
+      membership?.retailers
+        ?.target?.username ||
+      membership?.retailers
+        ?.walmart?.username ||
+      ""
+    ).trim() ||
+    "No email entered"
+  );
+}
+
+
+function managedAvailableRetailerLabel(
+  membership
+) {
+  const retailers = [];
+
+  if (
+    String(
+      membership?.retailers
+        ?.target?.username ||
+      ""
+    ).trim()
+  ) {
+    retailers.push(
+      "TARGET"
+    );
+  }
+
+  if (
+    String(
+      membership?.retailers
+        ?.walmart?.username ||
+      ""
+    ).trim()
+  ) {
+    retailers.push(
+      "WALMART"
+    );
+  }
+
+  return retailers.join(" + ") ||
+    "MANAGED";
+}
+
+
 function renderManagedMembershipDashboard(
   data,
   type
@@ -8908,34 +9051,55 @@ function renderManagedMembershipDashboard(
       ? data.memberships
       : [];
 
+  const paidCustomers =
+    Array.isArray(
+      data?.paidCustomers
+    )
+      ? data.paidCustomers
+      : [];
+
+  const availableMemberships =
+    Array.isArray(
+      data?.availableMemberships
+    )
+      ? data.availableMemberships
+      : [];
+
   submissionCount.textContent =
     memberships.length === 1
       ? `1 active ${label.toLowerCase()}`
       : `${memberships.length} active ${label.toLowerCase()}s`;
 
-  if (!memberships.length) {
-    rows.innerHTML = `
-      <div class="empty-admin">
-        <h3>
-          No active ${label.toLowerCase()}s.
-        </h3>
-
-        <p>
-          Assign an account from Available Memberships
-          or from a paid customer's Add Available Membership section.
-        </p>
-      </div>
-    `;
-
-    bindManagedMembershipDashboard(
-      type
-    );
-
-    return;
-  }
-
   const groups =
     new Map();
+
+  /*
+    Always create a group for every active paid customer.
+    This means you can ADD accounts even when that customer
+    currently has zero Gifted/Rented assignments.
+  */
+  for (
+    const customer of
+    paidCustomers
+  ) {
+    const key =
+      String(
+        customer.customerAccountId ||
+        ""
+      );
+
+    if (!key) {
+      continue;
+    }
+
+    groups.set(
+      key,
+      {
+        customer,
+        memberships: []
+      }
+    );
+  }
 
   for (
     const membership of
@@ -8969,6 +9133,23 @@ function renderManagedMembershipDashboard(
       );
   }
 
+  if (!groups.size) {
+    rows.innerHTML = `
+      <div class="empty-admin">
+        <h3>
+          No active customers found.
+        </h3>
+
+        <p>
+          Gifted and rented accounts can be added after
+          a customer has an active paid membership.
+        </p>
+      </div>
+    `;
+
+    return;
+  }
+
   const groupedHtml =
     Array.from(
       groups.values()
@@ -8987,29 +9168,71 @@ function renderManagedMembershipDashboard(
           customer.customerAccountId ||
           `unknown-${type}`;
 
+        const groupKey =
+          `${type}:${groupId}`;
+
+        const isOpen =
+          managedOpenGroupKeys.has(
+            groupKey
+          );
+
+        const availableRows =
+          availableMemberships.length
+            ? availableMemberships
+                .map(
+                  membership => `
+                    <label
+                      class="managed-available-select-row"
+                    >
+                      <input
+                        type="checkbox"
+                        data-managed-available-select="${escapeHtml(
+                          membership.id
+                        )}"
+                        data-managed-available-group="${escapeHtml(
+                          groupId
+                        )}"
+                      >
+
+                      <span>
+                        <strong>
+                          ${escapeHtml(
+                            managedAvailableAccountEmail(
+                              membership
+                            )
+                          )}
+                        </strong>
+
+                        <small>
+                          ${escapeHtml(
+                            managedAvailableRetailerLabel(
+                              membership
+                            )
+                          )}
+                        </small>
+                      </span>
+                    </label>
+                  `
+                )
+                .join("")
+            : `
+                <div class="empty-admin managed-group-empty">
+                  No available managed accounts are currently in the pool.
+                </div>
+              `;
+
         return `
           <details
             class="managed-customer-group"
+            data-managed-group-details="${escapeHtml(
+              groupId
+            )}"
+            data-managed-group-type="${escapeHtml(
+              type
+            )}"
+            ${isOpen ? "open" : ""}
           >
             <summary>
-              <label
-                class="managed-group-select"
-                title="Select every account in this customer group"
-              >
-                <input
-                  type="checkbox"
-                  data-managed-select-all-group="${escapeHtml(
-                    groupId
-                  )}"
-                  data-managed-select-all-type="${escapeHtml(
-                    type
-                  )}"
-                >
-                <span>
-                  SELECT ALL
-                </span>
-              </label>
-
               <div>
                 <span class="eyebrow">
                   ${type === "free" ? "GIFTED" : "RENTED"} ACCOUNTS
@@ -9044,17 +9267,144 @@ function renderManagedMembershipDashboard(
                 groupId
               )}"
             >
-              ${group.memberships
-                .map(
-                  membership =>
-                    managedMembershipCardHtml(
-                      membership,
-                      type,
-                      data?.paidCustomers ||
-                      []
-                    )
-                )
-                .join("")}
+              <div class="managed-group-bulk-toolbar">
+                <div class="managed-group-bulk-title">
+                  <strong>
+                    ADD / REMOVE ACCOUNTS
+                  </strong>
+
+                  <small>
+                    Add selected available accounts or remove selected assigned accounts.
+                  </small>
+                </div>
+
+                <label class="managed-group-duration">
+                  <select
+                    data-managed-group-duration="${escapeHtml(
+                      groupId
+                    )}"
+                  >
+                    <option value="1_drop">
+                      1 DROP
+                    </option>
+
+                    <option value="1_week">
+                      1 WEEK
+                    </option>
+
+                    <option value="1_month">
+                      1 MONTH
+                    </option>
+                  </select>
+
+                  <span>
+                    DURATION FOR NEW ACCOUNTS
+                  </span>
+                </label>
+
+                <button
+                  type="button"
+                  class="admin-save-button"
+                  data-managed-group-add="${escapeHtml(
+                    groupId
+                  )}"
+                  data-managed-group-type="${escapeHtml(
+                    type
+                  )}"
+                >
+                  Add Selected
+                </button>
+
+                <button
+                  type="button"
+                  class="managed-group-remove-button"
+                  data-managed-group-remove="${escapeHtml(
+                    groupId
+                  )}"
+                  data-managed-group-type="${escapeHtml(
+                    type
+                  )}"
+                >
+                  Remove Selected
+                </button>
+              </div>
+
+              <details class="managed-group-available-list">
+                <summary>
+                  <span>
+                    AVAILABLE ACCOUNTS TO ADD
+                  </span>
+
+                  <strong>
+                    ${availableMemberships.length}
+                  </strong>
+                </summary>
+
+                <div class="managed-available-list-actions">
+                  <label class="managed-group-select">
+                    <input
+                      type="checkbox"
+                      data-managed-select-all-available="${escapeHtml(
+                        groupId
+                      )}"
+                    >
+
+                    <span>
+                      SELECT ALL AVAILABLE
+                    </span>
+                  </label>
+                </div>
+
+                <div class="managed-available-account-list">
+                  ${availableRows}
+                </div>
+              </details>
+
+              ${
+                group.memberships.length
+                  ? `
+                      <div class="managed-assigned-list-head">
+                        <label
+                          class="managed-group-select"
+                          title="Select every assigned account in this customer group"
+                        >
+                          <input
+                            type="checkbox"
+                            data-managed-select-all-group="${escapeHtml(
+                              groupId
+                            )}"
+                            data-managed-select-all-type="${escapeHtml(
+                              type
+                            )}"
+                          >
+
+                          <span>
+                            SELECT ALL ASSIGNED
+                          </span>
+                        </label>
+
+                        <strong>
+                          ASSIGNED ACCOUNTS
+                        </strong>
+                      </div>
+
+                      ${group.memberships
+                        .map(
+                          membership =>
+                            managedMembershipCardHtml(
+                              membership,
+                              type,
+                              paidCustomers
+                            )
+                        )
+                        .join("")}
+                    `
+                  : `
+                      <div class="empty-admin managed-group-empty">
+                        This customer does not currently have any ${type === "free" ? "gifted" : "rented"} accounts.
+                      </div>
+                    `
+              }
             </div>
           </details>
         `;
@@ -9066,12 +9416,11 @@ function renderManagedMembershipDashboard(
       <div class="order-section-head">
         <div>
           <h3>
-            ACTIVE ${label}S
+            ${label}S BY CUSTOMER
           </h3>
 
           <p>
-            Accounts are grouped by customer to keep large
-            gifted/rented batches organized.
+            Add or remove multiple accounts directly inside each customer's dropdown.
           </p>
         </div>
       </div>
@@ -9139,6 +9488,305 @@ function managedMembershipBody(
 function bindManagedMembershipDashboard(
   type
 ) {
+
+  document
+    .querySelectorAll(
+      "[data-managed-group-details]"
+    )
+    .forEach(group => {
+      const groupId =
+        group.dataset
+          .managedGroupDetails;
+
+      const groupType =
+        group.dataset
+          .managedGroupType ||
+        type;
+
+      const groupKey =
+        `${groupType}:${groupId}`;
+
+      group.addEventListener(
+        "toggle",
+        () => {
+          if (group.open) {
+            managedOpenGroupKeys.add(
+              groupKey
+            );
+          } else {
+            managedOpenGroupKeys.delete(
+              groupKey
+            );
+          }
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-managed-select-all-available]"
+    )
+    .forEach(master => {
+      master.addEventListener(
+        "click",
+        event => {
+          event.stopPropagation();
+
+          const groupId =
+            master.dataset
+              .managedSelectAllAvailable;
+
+          document
+            .querySelectorAll(
+              `[data-managed-available-select][data-managed-available-group="${CSS.escape(
+                groupId
+              )}"]`
+            )
+            .forEach(
+              checkbox => {
+                checkbox.checked =
+                  master.checked;
+              }
+            );
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-managed-group-add]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async event => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const customerAccountId =
+            button.dataset
+              .managedGroupAdd;
+
+          const buttonType =
+            button.dataset
+              .managedGroupType ||
+            type;
+
+          const ids =
+            Array.from(
+              document.querySelectorAll(
+                `[data-managed-available-select][data-managed-available-group="${CSS.escape(
+                  customerAccountId
+                )}"]:checked`
+              )
+            ).map(
+              checkbox =>
+                checkbox.dataset
+                  .managedAvailableSelect
+            );
+
+          if (!ids.length) {
+            alert(
+              "Select at least one available account to add."
+            );
+            return;
+          }
+
+          const durationType =
+            document.querySelector(
+              `[data-managed-group-duration="${CSS.escape(
+                customerAccountId
+              )}"]`
+            )?.value ||
+            "1_drop";
+
+          managedOpenGroupKeys.add(
+            `${buttonType}:${customerAccountId}`
+          );
+
+          button.disabled =
+            true;
+
+          button.textContent =
+            "Adding...";
+
+          try {
+            for (
+              const id of ids
+            ) {
+              const response =
+                await fetch(
+                  `/api/admin/${buttonType}-memberships/${encodeURIComponent(
+                    id
+                  )}/assign`,
+                  {
+                    method:
+                      "POST",
+
+                    credentials:
+                      "same-origin",
+
+                    headers: {
+                      "Content-Type":
+                        "application/json"
+                    },
+
+                    body:
+                      JSON.stringify({
+                        customerAccountId,
+                        durationType
+                      })
+                  }
+                );
+
+              const result =
+                await response
+                  .json()
+                  .catch(
+                    () => ({})
+                  );
+
+              if (!response.ok) {
+                throw new Error(
+                  result.error ||
+                  `Unable to add account ${id}.`
+                );
+              }
+            }
+
+            await load();
+
+          } catch (error) {
+            alert(
+              error.message
+            );
+
+            button.disabled =
+              false;
+
+            button.textContent =
+              "Add Selected";
+          }
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-managed-group-remove]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async event => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const customerAccountId =
+            button.dataset
+              .managedGroupRemove;
+
+          const buttonType =
+            button.dataset
+              .managedGroupType ||
+            type;
+
+          const group =
+            document.querySelector(
+              `[data-managed-customer-group="${CSS.escape(
+                customerAccountId
+              )}"]`
+            );
+
+          const ids =
+            Array.from(
+              group?.querySelectorAll(
+                `[data-managed-select][data-managed-type="${CSS.escape(
+                  buttonType
+                )}"]:checked`
+              ) ||
+              []
+            ).map(
+              checkbox =>
+                checkbox.dataset
+                  .managedSelect
+            );
+
+          if (!ids.length) {
+            alert(
+              "Select at least one assigned account to remove."
+            );
+            return;
+          }
+
+          managedOpenGroupKeys.add(
+            `${buttonType}:${customerAccountId}`
+          );
+
+          button.disabled =
+            true;
+
+          button.textContent =
+            "Removing...";
+
+          try {
+            for (
+              const id of ids
+            ) {
+              const response =
+                await fetch(
+                  `/api/admin/${buttonType}-memberships/${encodeURIComponent(
+                    id
+                  )}/end`,
+                  {
+                    method:
+                      "POST",
+
+                    credentials:
+                      "same-origin"
+                  }
+                );
+
+              const result =
+                await response
+                  .json()
+                  .catch(
+                    () => ({})
+                  );
+
+              if (
+                !response.ok &&
+                response.status !==
+                  404
+              ) {
+                throw new Error(
+                  result.error ||
+                  `Unable to remove account ${id}.`
+                );
+              }
+            }
+
+            await load();
+
+          } catch (error) {
+            alert(
+              error.message
+            );
+
+            button.disabled =
+              false;
+
+            button.textContent =
+              "Remove Selected";
+          }
+        }
+      );
+    });
+
+
 
   document
     .querySelectorAll(
@@ -9974,178 +10622,6 @@ function bindManagedMembershipDashboard(
           .managedSelect
     );
   }
-
-
-  const bulkAssignButton =
-    document.getElementById(
-      "managedBulkAssign"
-    );
-
-  bulkAssignButton
-    ?.addEventListener(
-      "click",
-      async () => {
-        const ids =
-          selectedManagedIds();
-
-        const customerAccountId =
-          document.getElementById(
-            "managedBulkCustomer"
-          )?.value || "";
-
-        const durationType =
-          document.getElementById(
-            "managedBulkDuration"
-          )?.value ||
-          "indefinite";
-
-        if (!ids.length) {
-          alert(
-            "Select at least one managed account."
-          );
-          return;
-        }
-
-        if (!customerAccountId) {
-          alert(
-            "Choose an active paid customer."
-          );
-          return;
-        }
-
-        bulkAssignButton.disabled = true;
-        bulkAssignButton.textContent =
-          "Adding...";
-
-        try {
-          for (const id of ids) {
-            const response =
-              await fetch(
-                `/api/admin/${type}-memberships/${encodeURIComponent(
-                  id
-                )}/assign`,
-                {
-                  method: "POST",
-                  credentials:
-                    "same-origin",
-                  headers: {
-                    "Content-Type":
-                      "application/json"
-                  },
-                  body:
-                    JSON.stringify({
-                      customerAccountId,
-                      durationType
-                    })
-                }
-              );
-
-            const result =
-              await response
-                .json()
-                .catch(() => ({}));
-
-            if (!response.ok) {
-              throw new Error(
-                result.error ||
-                `Unable to assign account ${id}.`
-              );
-            }
-          }
-
-          await load();
-
-        } catch (error) {
-          alert(error.message);
-
-          bulkAssignButton.disabled =
-            false;
-
-          bulkAssignButton.textContent =
-            "Add Selected";
-        }
-      }
-    );
-
-
-  const bulkRemoveButton =
-    document.getElementById(
-      "managedBulkRemove"
-    );
-
-  bulkRemoveButton
-    ?.addEventListener(
-      "click",
-      async () => {
-        const ids =
-          selectedManagedIds();
-
-        if (!ids.length) {
-          alert(
-            "Select at least one managed account."
-          );
-          return;
-        }
-
-        const confirmed =
-          confirm(
-            `Remove ${ids.length} selected assignment${ids.length === 1 ? "" : "s"} and return the account${ids.length === 1 ? "" : "s"} to the available pool?`
-          );
-
-        if (!confirmed) {
-          return;
-        }
-
-        bulkRemoveButton.disabled = true;
-        bulkRemoveButton.textContent =
-          "Removing...";
-
-        try {
-          for (const id of ids) {
-            const response =
-              await fetch(
-                `/api/admin/${type}-memberships/${encodeURIComponent(
-                  id
-                )}/end`,
-                {
-                  method: "POST",
-                  credentials:
-                    "same-origin"
-                }
-              );
-
-            if (
-              response.status === 404
-            ) {
-              continue;
-            }
-
-            const result =
-              await response
-                .json()
-                .catch(() => ({}));
-
-            if (!response.ok) {
-              throw new Error(
-                result.error ||
-                `Unable to remove account ${id}.`
-              );
-            }
-          }
-
-          await load();
-
-        } catch (error) {
-          alert(error.message);
-
-          bulkRemoveButton.disabled =
-            false;
-
-          bulkRemoveButton.textContent =
-            "Remove Selected";
-        }
-      }
-    );
 
 
   const bulkDeleteButton =
@@ -11129,6 +11605,7 @@ document.addEventListener(
           "[data-managed-end]",
           "[data-managed-delete]",
           "[data-delete-available]",
+          "[data-managed-group-remove]",
           ".delete-submission"
         ].join(",")
       );
