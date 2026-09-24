@@ -2924,6 +2924,14 @@
       <button
         type="button"
         class="account-tab"
+        data-account-tab="availability"
+      >
+        Availability
+      </button>
+
+      <button
+        type="button"
+        class="account-tab"
         data-account-tab="security"
       >
         Account &amp; Security
@@ -3907,6 +3915,109 @@
           ></p>
 
         </form>
+
+      </div>
+
+    </div>
+
+
+    <!-- =================================================
+         AVAILABILITY
+    ================================================== -->
+
+    <div
+      id="account-tab-availability"
+      class="account-tab-panel"
+      data-account-panel="availability"
+      hidden
+    >
+
+      <div class="account-card">
+
+        <div class="account-card-heading">
+
+          <div>
+            <span class="eyebrow">
+              LIVE INVENTORY
+            </span>
+
+            <h3>
+              Managed Account Availability
+            </h3>
+
+            <p class="account-muted">
+              Live availability combines accounts used
+              for FREE memberships and rentals.
+            </p>
+          </div>
+
+          <span
+            id="customer-availability-updated"
+            class="account-muted"
+          >
+            Loading…
+          </span>
+
+        </div>
+
+        <div class="account-dashboard-grid">
+
+          <div class="account-card">
+
+            <span class="eyebrow">
+              TARGET
+            </span>
+
+            <div class="membership-stats">
+
+              <div class="membership-stat">
+                <span>Available</span>
+                <strong id="customer-target-available">—</strong>
+              </div>
+
+              <div class="membership-stat">
+                <span>In Use</span>
+                <strong id="customer-target-in-use">—</strong>
+              </div>
+
+              <div class="membership-stat">
+                <span>Total</span>
+                <strong id="customer-target-total">—</strong>
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <div class="account-card">
+
+            <span class="eyebrow">
+              WALMART
+            </span>
+
+            <div class="membership-stats">
+
+              <div class="membership-stat">
+                <span>Available</span>
+                <strong id="customer-walmart-available">—</strong>
+              </div>
+
+              <div class="membership-stat">
+                <span>In Use</span>
+                <strong id="customer-walmart-in-use">—</strong>
+              </div>
+
+              <div class="membership-stat">
+                <span>Total</span>
+                <strong id="customer-walmart-total">—</strong>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
 
       </div>
 
