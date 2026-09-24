@@ -1575,6 +1575,168 @@
       }
     }
 
+
+    /* =========================================
+       BIGGER ADMIN SELECT / DROPDOWN CONTROLS
+    ========================================= */
+
+    .admin-submission-filter {
+      min-width: 270px !important;
+      min-height: 52px !important;
+      padding: 0 42px 0 16px !important;
+      border-radius: 11px !important;
+      font-size: 13px !important;
+      font-weight: 900 !important;
+      letter-spacing: .45px !important;
+    }
+
+    .admin-page select,
+    .admin-edit-field select,
+    [data-managed-duration],
+    [data-managed-customer],
+    .managed-filter-select,
+    .managed-bulk-bar select {
+      min-height: 48px;
+      padding: 0 40px 0 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+
+    [data-managed-duration],
+    [data-managed-customer] {
+      width: 100%;
+      min-width: 180px;
+    }
+
+    .available-membership-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .available-membership-card {
+      border: 1px solid #17384e;
+      border-radius: 16px;
+      padding: 20px;
+      background:
+        linear-gradient(
+          155deg,
+          rgba(18, 201, 255, .055),
+          rgba(6, 16, 26, .96)
+        );
+      transition:
+        transform .22s ease,
+        border-color .22s ease,
+        box-shadow .22s ease;
+    }
+
+    .available-membership-card:hover {
+      transform: translateY(-3px);
+      border-color:
+        rgba(18, 201, 255, .62);
+      box-shadow:
+        0 0 28px
+          rgba(18, 201, 255, .12);
+    }
+
+    .available-membership-card h3 {
+      margin: 5px 0 8px;
+    }
+
+    .available-membership-email {
+      margin: 0 0 14px;
+      color: #d8e8f5;
+      font-size: 13px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+
+    .available-membership-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .available-retailer-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 5px 9px;
+      border: 1px solid
+        rgba(18, 201, 255, .28);
+      border-radius: 999px;
+      color: #cfefff;
+      background:
+        rgba(18, 201, 255, .07);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .5px;
+    }
+
+    .assign-inventory-panel {
+      margin-top: 18px;
+      padding: 20px;
+      border: 1px solid
+        rgba(18, 201, 255, .24);
+      border-radius: 14px;
+      background:
+        rgba(18, 201, 255, .035);
+    }
+
+    .assign-inventory-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .assign-inventory-grid label {
+      display: grid;
+      gap: 7px;
+      color: #b3c2d2;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .7px;
+      text-transform: uppercase;
+    }
+
+    .assign-inventory-grid input,
+    .assign-inventory-grid select {
+      width: 100%;
+      min-height: 48px;
+    }
+
+    .assign-inventory-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    .assign-inventory-message {
+      color: #b3c2d2;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    @media (max-width: 850px) {
+      .available-membership-grid,
+      .assign-inventory-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .admin-submission-filter {
+        width: 100% !important;
+        min-width: 0 !important;
+      }
+    }
+
   </style>
 </head>
 
@@ -1759,6 +1921,10 @@ PAID SUBSCRIPTIONS
 
 <option value="rented-profile">
   RENTED MEMBERSHIPS
+</option>
+
+<option value="available-memberships">
+  AVAILABLE MEMBERSHIPS
 </option>
     </select>
 
@@ -2990,6 +3156,125 @@ function renderOrder(x) {
   </div>
 
 </section>
+
+
+<details
+  class="order-section admin-collapsible"
+>
+
+  <summary
+    class="order-section-head admin-collapsible-head"
+  >
+    <div>
+      <h3>
+        Add Available Membership
+      </h3>
+
+      <p>
+        Pull Target or Walmart inventory into this
+        customer's profile without leaving the order.
+      </p>
+    </div>
+
+    <span class="admin-collapsible-arrow">
+      ›
+    </span>
+  </summary>
+
+  <div class="assign-inventory-panel">
+
+    <div class="assign-inventory-grid">
+
+      <label>
+        Use As
+        <select
+          data-inventory-type="${escapeHtml(x.id)}"
+        >
+          <option value="free">
+            FREE MEMBERSHIP
+          </option>
+
+          <option value="rented">
+            RENTED MEMBERSHIP
+          </option>
+        </select>
+      </label>
+
+      <label>
+        Retailer
+        <select
+          data-inventory-retailer="${escapeHtml(x.id)}"
+        >
+          <option value="target">
+            TARGET
+          </option>
+
+          <option value="walmart">
+            WALMART
+          </option>
+        </select>
+      </label>
+
+      <label>
+        Quantity
+        <input
+          data-inventory-quantity="${escapeHtml(x.id)}"
+          type="number"
+          min="1"
+          max="50"
+          value="1"
+        >
+      </label>
+
+      <label>
+        Duration
+        <select
+          data-inventory-duration="${escapeHtml(x.id)}"
+        >
+          <option value="indefinite">
+            INDEFINITELY
+          </option>
+
+          <option value="1_drop">
+            1 DROP
+          </option>
+
+          <option value="1_week">
+            1 WEEK
+          </option>
+
+          <option value="1_month">
+            1 MONTH
+          </option>
+        </select>
+      </label>
+
+    </div>
+
+    <div class="assign-inventory-actions">
+
+      <button
+        type="button"
+        class="admin-save-button"
+        data-assign-inventory="${escapeHtml(x.id)}"
+        data-customer-account="${escapeHtml(
+          x.customerAccountId || ""
+        )}"
+      >
+        Add Profile
+      </button>
+
+      <span
+        class="assign-inventory-message"
+        data-assign-inventory-message="${escapeHtml(x.id)}"
+      ></span>
+
+    </div>
+
+  </div>
+
+</details>
+
 
 <details
   class="order-section admin-collapsible"
@@ -4788,6 +5073,34 @@ if (editButton) {
 }
 
 
+
+function managedDisplayEmail(
+  membership
+) {
+  return (
+    String(
+      membership?.accountEmail ||
+      ""
+    ).trim() ||
+    String(
+      membership?.displayEmail ||
+      ""
+    ).trim() ||
+    String(
+      membership?.retailers
+        ?.target?.username ||
+      ""
+    ).trim() ||
+    String(
+      membership?.retailers
+        ?.walmart?.username ||
+      ""
+    ).trim() ||
+    "No retailer email entered"
+  );
+}
+
+
 function managedMembershipCardHtml(
   membership,
   type,
@@ -4965,8 +5278,9 @@ function managedMembershipCardHtml(
           ACCOUNT EMAIL:
           <strong>
             ${escapeHtml(
-              membership.accountEmail ||
-              "Not entered"
+              managedDisplayEmail(
+                membership
+              )
             )}
           </strong>
         </p>
@@ -5648,6 +5962,684 @@ function managedMembershipCardHtml(
 
     </details>
   `;
+}
+
+
+
+function availableMembershipCardHtml(
+  membership
+) {
+  const targetEmail =
+    String(
+      membership?.retailers
+        ?.target?.username ||
+      ""
+    ).trim();
+
+  const walmartEmail =
+    String(
+      membership?.retailers
+        ?.walmart?.username ||
+      ""
+    ).trim();
+
+  const retailerPills = [
+    targetEmail
+      ? `<span class="available-retailer-pill">TARGET</span>`
+      : "",
+    walmartEmail
+      ? `<span class="available-retailer-pill">WALMART</span>`
+      : ""
+  ]
+    .filter(Boolean)
+    .join("");
+
+  return `
+    <details
+      class="available-membership-card"
+      data-available-card="${escapeHtml(
+        membership.id
+      )}"
+    >
+      <summary>
+        <span class="eyebrow">
+          AVAILABLE MEMBERSHIP
+        </span>
+
+        <h3>
+          ${escapeHtml(
+            membership.profileName ||
+            "Available Membership"
+          )}
+        </h3>
+
+        <p class="available-membership-email">
+          ${escapeHtml(
+            managedDisplayEmail(
+              membership
+            )
+          )}
+        </p>
+
+        <div class="available-membership-meta">
+          ${
+            retailerPills ||
+            `<span class="available-retailer-pill">NO RETAILER LOGIN</span>`
+          }
+        </div>
+      </summary>
+
+      <form
+        class="available-membership-edit-form"
+        data-available-id="${escapeHtml(
+          membership.id
+        )}"
+      >
+        <div class="admin-edit-grid">
+
+          <div class="admin-edit-field">
+            <label>
+              Membership Name
+            </label>
+
+            <input
+              name="profileName"
+              value="${escapeHtml(
+                membership.profileName ||
+                ""
+              )}"
+            >
+          </div>
+
+          <div class="admin-edit-field">
+            <label>
+              Account Email
+            </label>
+
+            <input
+              name="accountEmail"
+              value="${escapeHtml(
+                membership.accountEmail ||
+                ""
+              )}"
+            >
+          </div>
+
+          <div class="admin-edit-field wide">
+            <label>
+              Admin Notes
+            </label>
+
+            <input
+              name="notes"
+              value="${escapeHtml(
+                membership.notes ||
+                ""
+              )}"
+            >
+          </div>
+
+        </div>
+
+        <div
+          class="admin-retailer-grid"
+          style="margin-top:16px;"
+        >
+          ${managedRetailerFields(
+            membership
+          )}
+        </div>
+
+        <div class="admin-edit-actions">
+          <button
+            type="submit"
+            class="admin-save-button"
+          >
+            Save Membership
+          </button>
+
+          <button
+            type="button"
+            class="delete-submission"
+            data-delete-available="${escapeHtml(
+              membership.id
+            )}"
+          >
+            Delete Membership
+          </button>
+        </div>
+
+        <div
+          class="admin-edit-message"
+        ></div>
+      </form>
+    </details>
+  `;
+}
+
+
+function renderAvailableMembershipDashboard(
+  data
+) {
+  const memberships =
+    Array.isArray(
+      data?.memberships
+    )
+      ? data.memberships
+      : [];
+
+  submissionCount.textContent =
+    memberships.length === 1
+      ? "1 available membership"
+      : `${memberships.length} available memberships`;
+
+  rows.innerHTML = `
+    <details
+      class="order-section admin-collapsible"
+      open
+    >
+      <summary
+        class="order-section-head admin-collapsible-head"
+      >
+        <div>
+          <h3>
+            Add Available Membership
+          </h3>
+
+          <p>
+            Add unused Target or Walmart inventory here.
+            It will stay here until assigned to a customer.
+          </p>
+        </div>
+
+        <span class="admin-collapsible-arrow">
+          ›
+        </span>
+      </summary>
+
+      <form
+        id="availableMembershipCreateForm"
+        class="admin-retailer-wrap"
+      >
+        <div class="admin-edit-grid">
+
+          <div class="admin-edit-field">
+            <label>
+              Membership Name
+            </label>
+
+            <input
+              name="profileName"
+              value="AVAILABLE MEMBERSHIP"
+            >
+          </div>
+
+          <div class="admin-edit-field">
+            <label>
+              Account Email
+            </label>
+
+            <input
+              name="accountEmail"
+              autocomplete="off"
+            >
+          </div>
+
+          <div class="admin-edit-field wide">
+            <label>
+              Admin Notes
+            </label>
+
+            <input name="notes">
+          </div>
+
+        </div>
+
+        <div
+          class="admin-retailer-grid"
+          style="margin-top:16px;"
+        >
+          ${managedRetailerFields()}
+        </div>
+
+        <div class="admin-edit-actions">
+          <button
+            type="submit"
+            class="admin-save-button"
+          >
+            Add To Available Memberships
+          </button>
+        </div>
+
+        <div
+          class="admin-edit-message"
+        ></div>
+      </form>
+    </details>
+
+    <div class="available-membership-grid">
+      ${
+        memberships.length
+          ? memberships
+              .map(
+                availableMembershipCardHtml
+              )
+              .join("")
+          : `
+            <div class="empty-admin">
+              <h3>
+                No available memberships.
+              </h3>
+
+              <p>
+                All managed Target/Walmart inventory is
+                currently in use, or no inventory has
+                been added yet.
+              </p>
+            </div>
+          `
+      }
+    </div>
+  `;
+
+  bindAvailableMembershipButtons();
+}
+
+
+function collectManagedRetailers(
+  form
+) {
+  const retailers = {};
+
+  for (
+    const retailer of
+    ADMIN_RETAILERS
+  ) {
+    retailers[
+      retailer.key
+    ] = {
+      username:
+        form.querySelector(
+          `[name="${retailer.key}_username"]`
+        )?.value || "",
+
+      password:
+        form.querySelector(
+          `[name="${retailer.key}_password"]`
+        )?.value || ""
+    };
+  }
+
+  return retailers;
+}
+
+
+function bindAvailableMembershipButtons() {
+  const createForm =
+    document.getElementById(
+      "availableMembershipCreateForm"
+    );
+
+  createForm
+    ?.addEventListener(
+      "submit",
+      async event => {
+        event.preventDefault();
+
+        const message =
+          createForm.querySelector(
+            ".admin-edit-message"
+          );
+
+        try {
+          const response =
+            await fetch(
+              "/api/admin/available-memberships",
+              {
+                method:
+                  "POST",
+
+                credentials:
+                  "same-origin",
+
+                headers: {
+                  "Content-Type":
+                    "application/json"
+                },
+
+                body:
+                  JSON.stringify({
+                    profileName:
+                      createForm
+                        .elements
+                        .profileName
+                        ?.value ||
+                      "",
+
+                    accountEmail:
+                      createForm
+                        .elements
+                        .accountEmail
+                        ?.value ||
+                      "",
+
+                    notes:
+                      createForm
+                        .elements
+                        .notes
+                        ?.value ||
+                      "",
+
+                    retailers:
+                      collectManagedRetailers(
+                        createForm
+                      )
+                  })
+              }
+            );
+
+          const data =
+            await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              data.error ||
+              "Unable to add available membership."
+            );
+          }
+
+          if (message) {
+            message.textContent =
+              data.message ||
+              "Available membership added.";
+          }
+
+          await load();
+
+        } catch (error) {
+          if (message) {
+            message.textContent =
+              error.message;
+          }
+        }
+      }
+    );
+
+  document
+    .querySelectorAll(
+      ".available-membership-edit-form"
+    )
+    .forEach(form => {
+      form.addEventListener(
+        "submit",
+        async event => {
+          event.preventDefault();
+
+          const id =
+            form.dataset
+              .availableId;
+
+          const message =
+            form.querySelector(
+              ".admin-edit-message"
+            );
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/available-memberships/${encodeURIComponent(
+                  id
+                )}`,
+                {
+                  method:
+                    "PUT",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      profileName:
+                        form.elements
+                          .profileName
+                          ?.value ||
+                        "",
+
+                      accountEmail:
+                        form.elements
+                          .accountEmail
+                          ?.value ||
+                        "",
+
+                      notes:
+                        form.elements
+                          .notes
+                          ?.value ||
+                        "",
+
+                      retailers:
+                        collectManagedRetailers(
+                          form
+                        )
+                    })
+                }
+              );
+
+            const data =
+              await response.json();
+
+            if (!response.ok) {
+              throw new Error(
+                data.error ||
+                "Unable to save available membership."
+              );
+            }
+
+            if (message) {
+              message.textContent =
+                data.message ||
+                "Saved.";
+            }
+
+            await load();
+
+          } catch (error) {
+            if (message) {
+              message.textContent =
+                error.message;
+            }
+          }
+        }
+      );
+    });
+
+  document
+    .querySelectorAll(
+      "[data-delete-available]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async () => {
+          const id =
+            button.dataset
+              .deleteAvailable;
+
+          if (
+            !confirm(
+              "Delete this available membership?"
+            )
+          ) {
+            return;
+          }
+
+          const response =
+            await fetch(
+              `/api/admin/available-memberships/${encodeURIComponent(
+                id
+              )}`,
+              {
+                method:
+                  "DELETE",
+                credentials:
+                  "same-origin"
+              }
+            );
+
+          const data =
+            await response.json();
+
+          if (!response.ok) {
+            alert(
+              data.error ||
+              "Unable to delete membership."
+            );
+            return;
+          }
+
+          await load();
+        }
+      );
+    });
+}
+
+
+function bindAssignInventoryButtons() {
+  document
+    .querySelectorAll(
+      "[data-assign-inventory]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async () => {
+          const orderId =
+            button.dataset
+              .assignInventory;
+
+          const customerAccountId =
+            button.dataset
+              .customerAccount;
+
+          const message =
+            document.querySelector(
+              `[data-assign-inventory-message="${CSS.escape(
+                orderId
+              )}"]`
+            );
+
+          if (!customerAccountId) {
+            if (message) {
+              message.textContent =
+                "This order is not linked to a customer account yet.";
+            }
+            return;
+          }
+
+          const assignmentType =
+            document.querySelector(
+              `[data-inventory-type="${CSS.escape(
+                orderId
+              )}"]`
+            )?.value ||
+            "free";
+
+          const retailer =
+            document.querySelector(
+              `[data-inventory-retailer="${CSS.escape(
+                orderId
+              )}"]`
+            )?.value ||
+            "target";
+
+          const quantity =
+            Number(
+              document.querySelector(
+                `[data-inventory-quantity="${CSS.escape(
+                  orderId
+                )}"]`
+              )?.value ||
+              1
+            );
+
+          const durationType =
+            document.querySelector(
+              `[data-inventory-duration="${CSS.escape(
+                orderId
+              )}"]`
+            )?.value ||
+            "indefinite";
+
+          try {
+            button.disabled =
+              true;
+
+            if (message) {
+              message.textContent =
+                "Assigning available inventory…";
+            }
+
+            const response =
+              await fetch(
+                "/api/admin/available-memberships/assign",
+                {
+                  method:
+                    "POST",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      customerAccountId,
+                      assignmentType,
+                      retailer,
+                      quantity,
+                      durationType
+                    })
+                }
+              );
+
+            const data =
+              await response.json();
+
+            if (!response.ok) {
+              throw new Error(
+                data.error ||
+                "Unable to assign available inventory."
+              );
+            }
+
+            if (message) {
+              message.textContent =
+                data.message ||
+                "Profile added successfully.";
+            }
+
+            await loadManagedAvailability();
+
+          } catch (error) {
+            if (message) {
+              message.textContent =
+                error.message;
+            }
+          } finally {
+            button.disabled =
+              false;
+          }
+        }
+      );
+    });
 }
 
 
@@ -7059,6 +8051,14 @@ if (
     "/api/admin/rented-memberships";
 }
 
+if (
+  submissionType ===
+  "available-memberships"
+) {
+  endpoint =
+    "/api/admin/available-memberships";
+}
+
 const response =
   await fetch(
     endpoint,
@@ -7107,6 +8107,23 @@ const response =
 
   const data =
     await response.json();
+
+  if (
+    submissionType ===
+      "available-memberships"
+  ) {
+    loginWrap.hidden =
+      true;
+
+    dashboard.hidden =
+      false;
+
+    renderAvailableMembershipDashboard(
+      data
+    );
+
+    return;
+  }
 
   if (
   submissionType ===
@@ -7196,6 +8213,7 @@ bindAdminSaveButtons();
 bindAdminEditButtons();
 bindAdminRetailerButtons();
 bindDeleteButtons();
+bindAssignInventoryButtons();
   bindCustomerSpecialProfiles();
 }
 
