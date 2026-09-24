@@ -2180,6 +2180,14 @@
       }
     }
 
+
+    .activation-state.expired {
+      border: 1px solid rgba(255,91,105,.48);
+      color: #ff8d98;
+      background: rgba(255,91,105,.08);
+    }
+
+
   </style>
 </head>
 
@@ -2407,11 +2415,11 @@ PAID SUBSCRIPTIONS
      </option>
 
 <option value="free-profile">
-  FREE MEMBERSHIPS
+  GIFTED PROFILES
 </option>
 
 <option value="rented-profile">
-  RENTED MEMBERSHIPS
+  RENTED PROFILES
 </option>
 
 <option value="available-memberships">
@@ -2439,7 +2447,7 @@ PAID SUBSCRIPTIONS
       </span>
 
       <h2>
-        Managed Account Availability
+        Gifted & Rented Profile Availability
       </h2>
 
       <p>
@@ -2575,6 +2583,20 @@ PAID SUBSCRIPTIONS
               —
             </strong>
           </div>
+
+          <div
+            class="activation-count-box"
+          >
+            <span>
+              EXPIRED
+            </span>
+
+            <strong
+              id="expiredProfileCount"
+            >
+              —
+            </strong>
+          </div>
         </div>
       </div>
 
@@ -2634,6 +2656,11 @@ const activatedProfileCount =
     "activatedProfileCount"
   );
 
+const expiredProfileCount =
+  document.getElementById(
+    "expiredProfileCount"
+  );
+
 const profileActivationGroups =
   document.getElementById(
     "profileActivationGroups"
@@ -2687,6 +2714,35 @@ const managedAvailabilityUpdated =
 /* =========================================
    HELPERS
 ========================================= */
+
+
+function handleAdminUnauthorized(
+  response
+) {
+  if (
+    response?.status !==
+    401
+  ) {
+    return false;
+  }
+
+  loginWrap.hidden =
+    false;
+
+  dashboard.hidden =
+    true;
+
+  msg.textContent =
+    "Your Admin session expired. Sign in again to continue.";
+
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth"
+  });
+
+  return true;
+}
+
 
 function escapeHtml(value) {
 
@@ -3784,11 +3840,11 @@ function renderOrder(x) {
           data-inventory-type="${escapeHtml(x.id)}"
         >
           <option value="free">
-            FREE MEMBERSHIP
+            GIFTED PROFILE
           </option>
 
           <option value="rented">
-            RENTED MEMBERSHIP
+            RENTED PROFILE
           </option>
         </select>
       </label>
@@ -4973,6 +5029,14 @@ async function loadAdminLinkedProfiles(
         );
 
     if (!response.ok) {
+      if (
+        handleAdminUnauthorized(
+          response
+        )
+      ) {
+        return;
+      }
+
       throw new Error(
         data.error ||
         "Unable to load linked profiles."
@@ -5162,6 +5226,14 @@ async function loadAdminSavedDetails(
         );
 
     if (!response.ok) {
+      if (
+        handleAdminUnauthorized(
+          response
+        )
+      ) {
+        return;
+      }
+
       throw new Error(
         data.error ||
         "Unable to load saved details."
@@ -5559,6 +5631,14 @@ if (specialContainer) {
         );
 
     if (!response.ok) {
+      if (
+        handleAdminUnauthorized(
+          response
+        )
+      ) {
+        return;
+      }
+
       throw new Error(
         data.error ||
         "Unable to load retailer profiles."
@@ -6398,8 +6478,8 @@ function managedMembershipCardHtml(
 ) {
   let label =
     type === "rented"
-      ? "RENTED MEMBERSHIP"
-      : "FREE MEMBERSHIP";
+      ? "RENTED PROFILE"
+      : "GIFTED PROFILE";
 
   if (type === "free") {
     const hasTarget =
@@ -6422,13 +6502,13 @@ function managedMembershipCardHtml(
 
     if (hasTarget && !hasWalmart) {
       label =
-        "FREE MEMBERSHIP (TARGET)";
+        "GIFTED PROFILE (TARGET)";
     } else if (
       hasWalmart &&
       !hasTarget
     ) {
       label =
-        "FREE MEMBERSHIP (WALMART)";
+        "GIFTED PROFILE (WALMART)";
     }
   }
 
@@ -7986,8 +8066,8 @@ function renderManagedMembershipDashboard(
 ) {
   const label =
     type === "rented"
-      ? "RENTED MEMBERSHIP"
-      : "FREE MEMBERSHIP";
+      ? "RENTED PROFILE"
+      : "GIFTED PROFILE";
 
   const memberships =
     Array.isArray(
@@ -8180,8 +8260,8 @@ function bindManagedMembershipDashboard(
             button.textContent =
               `+ CREATE ${
                 type === "rented"
-                  ? "RENTED MEMBERSHIP"
-                  : "FREE MEMBERSHIP"
+                  ? "RENTED PROFILE"
+                  : "GIFTED PROFILE"
               }`;
           }
         }
@@ -9192,6 +9272,13 @@ async function loadProfileActivationTracker() {
           0
         );
 
+    expiredProfileCount
+      .textContent =
+        String(
+          data.expiredCount ||
+          0
+        );
+
     const customers =
       Array.isArray(
         data.customers
@@ -9253,9 +9340,18 @@ async function loadProfileActivationTracker() {
                             </strong>
 
                             <small>
-                              PAID PROFILE ${escapeHtml(
-                                profile.slot
-                              )}
+                              ${
+                                profile.type ===
+                                  "paid"
+                                  ? `PAID PROFILE ${escapeHtml(
+                                      profile.slot ||
+                                      ""
+                                    )}`
+                                  : profile.type ===
+                                      "gifted"
+                                    ? "GIFTED PROFILE"
+                                    : "RENTED PROFILE"
+                              }
                             </small>
                           </div>
 
@@ -9274,14 +9370,27 @@ async function loadProfileActivationTracker() {
                           >
                             ${
                               profile.status !==
-                                "activated"
+                                "activated" &&
+                              profile.status !==
+                                "expired"
                                 ? `
                                     <button
                                       type="button"
                                       class="admin-save-button"
-                                      data-activate-profile="${escapeHtml(
-                                        profile.id
-                                      )}"
+                                      ${
+                                        profile.type ===
+                                          "paid"
+                                          ? `data-activate-profile="${escapeHtml(
+                                              profile.id
+                                            )}"`
+                                          : `data-activate-managed-profile="${escapeHtml(
+                                              profile.id
+                                            )}" data-managed-profile-type="${escapeHtml(
+                                              profile.type === "gifted"
+                                                ? "free"
+                                                : "rented"
+                                            )}"`
+                                      }
                                     >
                                       Activate
                                     </button>
@@ -9292,9 +9401,20 @@ async function loadProfileActivationTracker() {
                             <button
                               type="button"
                               class="admin-edit-button"
-                              data-deactivate-profile="${escapeHtml(
-                                profile.id
-                              )}"
+                              ${
+                                profile.type ===
+                                  "paid"
+                                  ? `data-deactivate-profile="${escapeHtml(
+                                      profile.id
+                                    )}"`
+                                  : `data-deactivate-managed-profile="${escapeHtml(
+                                      profile.id
+                                    )}" data-managed-profile-type="${escapeHtml(
+                                      profile.type === "gifted"
+                                        ? "free"
+                                        : "rented"
+                                    )}"`
+                              }
                             >
                               Deactivate
                             </button>
@@ -9330,7 +9450,7 @@ async function loadProfileActivationTracker() {
 function bindProfileActivationButtons() {
   document
     .querySelectorAll(
-      "[data-activate-profile], [data-deactivate-profile]"
+      "[data-activate-profile], [data-deactivate-profile], [data-activate-managed-profile], [data-deactivate-managed-profile]"
     )
     .forEach(button => {
       button.addEventListener(
@@ -9340,22 +9460,52 @@ function bindProfileActivationButtons() {
             button.dataset
               .activateProfile ||
             button.dataset
-              .deactivateProfile;
+              .deactivateProfile ||
+            button.dataset
+              .activateManagedProfile ||
+            button.dataset
+              .deactivateManagedProfile;
+
+          const managedType =
+            button.dataset
+              .managedProfileType ||
+            "";
+
+          const managed =
+            Boolean(
+              button.dataset
+                .activateManagedProfile ||
+              button.dataset
+                .deactivateManagedProfile
+            );
 
           const action =
-            button.dataset
-              .activateProfile
+            (
+              button.dataset
+                .activateProfile ||
+              button.dataset
+                .activateManagedProfile
+            )
               ? "activate"
               : "deactivate";
 
           try {
             button.disabled = true;
 
+            const endpoint =
+              managed
+                ? `/api/admin/managed-profile-activation/${encodeURIComponent(
+                    managedType
+                  )}/${encodeURIComponent(
+                    id
+                  )}`
+                : `/api/admin/profile-activation/${encodeURIComponent(
+                    id
+                  )}`;
+
             const response =
               await fetch(
-                `/api/admin/profile-activation/${encodeURIComponent(
-                  id
-                )}`,
+                endpoint,
                 {
                   method:
                     "POST",
