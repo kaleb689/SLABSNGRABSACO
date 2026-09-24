@@ -1209,18 +1209,41 @@ function updateRentalPriceDisplay() {
     );
 
   if (addButton) {
+    const membershipAllowed =
+      hasActivePaidMembership();
+
     addButton.disabled =
+      !membershipAllowed ||
       price == null ||
       available < quantity;
 
     addButton.textContent =
-      available < quantity
-        ? "Not Enough Accounts"
-        : "Add to Cart";
+      !membershipAllowed
+        ? "Paid Membership Required"
+        : (
+            available < quantity
+              ? "Not Enough Accounts"
+              : "Add to Cart"
+          );
   }
 }
 
 function addRentalToCart() {
+  if (
+    !hasActivePaidMembership()
+  ) {
+    showAccountMessage(
+      "An active paid membership is required before you can rent additional accounts.",
+      "error"
+    );
+
+    go(
+      "pricing"
+    );
+
+    return;
+  }
+
   const retailer =
     document.getElementById(
       "rental-retailer"
@@ -1285,6 +1308,30 @@ async function checkoutRentalCart() {
     state.rentalCart;
 
   if (!rental) return;
+
+  if (
+    !hasActivePaidMembership()
+  ) {
+    state.rentalCart =
+      null;
+
+    localStorage.removeItem(
+      "sng_rental_cart"
+    );
+
+    updateCart();
+
+    showAccountMessage(
+      "An active paid membership is required before you can purchase a rental package.",
+      "error"
+    );
+
+    go(
+      "pricing"
+    );
+
+    return;
+  }
 
   if (ADMIN_PREVIEW_MODE) {
     window.alert(
@@ -3452,6 +3499,135 @@ function renderAccountHeader(
 
 
 /* =====================================================
+   PAID MEMBERSHIP ACCESS
+===================================================== */
+
+function hasActivePaidMembership(
+  membership = state.membership
+) {
+  const status =
+    String(
+      membership?.status ||
+      membership?.subscriptionStatus ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  return [
+    "active",
+    "trialing"
+  ].includes(
+    status
+  );
+}
+
+
+function updateRentalMembershipAccess(
+  membership = state.membership
+) {
+  const allowed =
+    hasActivePaidMembership(
+      membership
+    );
+
+  const rentalTab =
+    document.querySelector(
+      '[data-account-tab="availability"]'
+    );
+
+  const rentalPanel =
+    document.querySelector(
+      '[data-account-panel="availability"]'
+    );
+
+  const rentalAddButton =
+    document.getElementById(
+      "rental-add-to-cart"
+    );
+
+  if (rentalTab) {
+    rentalTab.hidden =
+      !allowed;
+
+    rentalTab.disabled =
+      !allowed;
+  }
+
+  if (!allowed) {
+    if (rentalPanel) {
+      rentalPanel.hidden =
+        true;
+
+      rentalPanel.classList.remove(
+        "active"
+      );
+    }
+
+    if (rentalAddButton) {
+      rentalAddButton.disabled =
+        true;
+    }
+
+    if (
+      rentalTab?.classList.contains(
+        "active"
+      )
+    ) {
+      document
+        .querySelectorAll(
+          "[data-account-tab]"
+        )
+        .forEach(button =>
+          button.classList.remove(
+            "active"
+          )
+        );
+
+      document
+        .querySelectorAll(
+          "[data-account-panel]"
+        )
+        .forEach(panel => {
+          panel.classList.remove(
+            "active"
+          );
+
+          panel.hidden =
+            true;
+        });
+
+      const membershipTab =
+        document.querySelector(
+          '[data-account-tab="membership"]'
+        );
+
+      const membershipPanel =
+        document.querySelector(
+          '[data-account-panel="membership"]'
+        );
+
+      membershipTab
+        ?.classList.add(
+          "active"
+        );
+
+      if (membershipPanel) {
+        membershipPanel.hidden =
+          false;
+
+        membershipPanel.classList.add(
+          "active"
+        );
+      }
+    }
+  }
+
+  return allowed;
+}
+
+
+/* =====================================================
    MEMBERSHIP RENDERING
 ===================================================== */
 
@@ -3466,11 +3642,15 @@ function renderMembership(
     if (!membership) {
     if (upgradeButton) {
       upgradeButton.disabled =
-        true;
+        false;
 
       upgradeButton.textContent =
-        "Upgrade Membership";
+        "Get Membership";
     }
+
+    updateRentalMembershipAccess(
+      null
+    );
   }
 
   if (!membership) {
@@ -3541,6 +3721,10 @@ function renderMembership(
     Number(
       membership.tier
     );
+
+  updateRentalMembershipAccess(
+    membership
+  );
 
     if (upgradeButton) {
   if (
@@ -4903,9 +5087,15 @@ document
         );
 
       if (!currentTier) {
-        showAccountMessage(
-          "Your active membership could not be identified.",
-          "error"
+        state.upgradeMode =
+          false;
+
+        clearSelectedTier();
+
+        updatePricingUpgradeButtons();
+
+        go(
+          "pricing"
         );
 
         return;
@@ -9935,6 +10125,10 @@ async function loadMemberProfile(
   null;
 
 renderMembership(
+  state.membership
+);
+
+updateRentalMembershipAccess(
   state.membership
 );
 
