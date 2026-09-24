@@ -4220,7 +4220,7 @@ app.get(
   async (req, res) => {
     try {
       const memberships =
-        await getFreeMemberships();
+        await getManagedAccounts();
 
       const assignments =
         await getFreeAssignments();
@@ -4437,7 +4437,7 @@ app.get(
   async (req, res) => {
     try {
       const memberships =
-        await getRentedMemberships();
+        await getManagedAccounts();
 
       const assignments =
         await getRentalAssignments();
@@ -6646,10 +6646,13 @@ app.get(
   async (req, res) => {
     try {
       const memberships =
-        await getFreeMemberships();
+        await getManagedAccounts();
 
       const assignments =
         await getFreeAssignments();
+
+      const otherAssignments =
+        await getRentalAssignments();
 
       const accounts =
         await getCustomerAccounts();
@@ -6823,6 +6826,12 @@ app.get(
                 membership.id
               );
 
+            const otherAssignment =
+              currentRentalAssignment(
+                otherAssignments,
+                membership.id
+              );
+
             let assignedCustomer =
               null;
 
@@ -6968,7 +6977,21 @@ try {
               status:
                 assignment
                   ? "active"
-                  : "inactive",
+                  : (
+                      otherAssignment
+                        ? "occupied"
+                        : "inactive"
+                    ),
+
+              occupiedByOtherType:
+                Boolean(
+                  otherAssignment
+                ),
+
+              occupiedType:
+                otherAssignment
+                  ? "rented"
+                  : null,
 
               assignment:
                 assignment
@@ -7121,7 +7144,7 @@ app.post(
       }
 
       const memberships =
-        await getFreeMemberships();
+        await getManagedAccounts();
 
       const now =
         new Date()
@@ -7152,7 +7175,7 @@ app.post(
         record
       );
 
-      await saveFreeMemberships(
+      await saveManagedAccounts(
         memberships
       );
 
@@ -7195,7 +7218,7 @@ app.put(
         );
 
       const memberships =
-        await getFreeMemberships();
+        await getManagedAccounts();
 
       const index =
         memberships.findIndex(
@@ -7344,7 +7367,7 @@ memberships[index] = {
       .toISOString()
 };
 
-await saveFreeMemberships(
+await saveManagedAccounts(
   memberships
 );
 
@@ -7415,7 +7438,7 @@ app.post(
       }
 
       const memberships =
-        await getFreeMemberships();
+        await getManagedAccounts();
 
       const membership =
         memberships.find(
@@ -7472,6 +7495,24 @@ app.post(
           assignments,
           id
         );
+
+      const rentalAssignments =
+        await getRentalAssignments();
+
+      const activeRental =
+        currentRentalAssignment(
+          rentalAssignments,
+          id
+        );
+
+      if (activeRental) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This managed account is already being used as a rental."
+          });
+      }
 
       if (
         existingActive &&
@@ -7863,10 +7904,10 @@ app.post(
 
       if (type === "free") {
         memberships =
-          await getFreeMemberships();
+          await getManagedAccounts();
       } else {
         memberships =
-          await getRentedMemberships();
+          await getManagedAccounts();
       }
 
       const index =
@@ -8009,10 +8050,13 @@ app.get(
   async (req, res) => {
     try {
       const memberships =
-        await getRentedMemberships();
+        await getManagedAccounts();
 
       const assignments =
         await getRentalAssignments();
+
+      const otherAssignments =
+        await getFreeAssignments();
 
       const accounts =
         await getCustomerAccounts();
@@ -8191,6 +8235,12 @@ app.get(
                 membership.id
               );
 
+            const otherAssignment =
+              currentFreeAssignment(
+                otherAssignments,
+                membership.id
+              );
+
             let assignedCustomer =
               null;
 
@@ -8334,7 +8384,21 @@ try {
               status:
                 assignment
                   ? "active"
-                  : "inactive",
+                  : (
+                      otherAssignment
+                        ? "occupied"
+                        : "inactive"
+                    ),
+
+              occupiedByOtherType:
+                Boolean(
+                  otherAssignment
+                ),
+
+              occupiedType:
+                otherAssignment
+                  ? "free"
+                  : null,
 
               assignment:
                 assignment
@@ -8492,7 +8556,7 @@ app.post(
       }
 
       const memberships =
-        await getRentedMemberships();
+        await getManagedAccounts();
 
       const now =
         new Date()
@@ -8524,7 +8588,7 @@ app.post(
         record
       );
 
-      await saveRentedMemberships(
+      await saveManagedAccounts(
         memberships
       );
 
@@ -8567,7 +8631,7 @@ app.put(
         );
 
       const memberships =
-        await getRentedMemberships();
+        await getManagedAccounts();
 
       const index =
         memberships.findIndex(
@@ -8721,7 +8785,7 @@ app.put(
             .toISOString()
       };
 
-      await saveRentedMemberships(
+      await saveManagedAccounts(
         memberships
       );
 
@@ -8793,7 +8857,7 @@ app.post(
       }
 
       const memberships =
-        await getRentedMemberships();
+        await getManagedAccounts();
 
       const membership =
         memberships.find(
@@ -8850,6 +8914,24 @@ app.post(
           assignments,
           id
         );
+
+      const freeAssignments =
+        await getFreeAssignments();
+
+      const activeFree =
+        currentFreeAssignment(
+          freeAssignments,
+          id
+        );
+
+      if (activeFree) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This managed account is already being used as a free membership."
+          });
+      }
 
       if (
         existingActive &&
@@ -9235,6 +9317,561 @@ app.get(
 );
 
       
+
+
+/* -------------------------------------------------------
+   MANAGED MEMBERSHIP CUSTOMER DETAILS
+------------------------------------------------------- */
+
+function managedCustomerCardFromSecrets(
+  secrets
+) {
+  return {
+    cardLabel:
+      clean(
+        secrets?.cardLabel,
+        100
+      ),
+
+    cardholder:
+      clean(
+        secrets?.cardholder,
+        150
+      ),
+
+    acoCardNumber:
+      clean(
+        secrets?.acoCardNumber,
+        30
+      ).replace(
+        /[^\d]/g,
+        ""
+      ),
+
+    expMonth:
+      clean(
+        secrets?.expMonth,
+        2
+      ),
+
+    expYear:
+      clean(
+        secrets?.expYear,
+        4
+      ),
+
+    securityCode:
+      clean(
+        secrets?.securityCode,
+        300
+      )
+  };
+}
+
+
+function mergeManagedCustomerProfile(
+  existingProfile,
+  submittedProfile,
+  fallbackEmail = ""
+) {
+  const existing =
+    existingProfile &&
+    typeof existingProfile ===
+      "object"
+      ? existingProfile
+      : {};
+
+  const submitted =
+    submittedProfile &&
+    typeof submittedProfile ===
+      "object"
+      ? submittedProfile
+      : {};
+
+  return sanitizeProfile({
+    ...existing,
+    ...submitted,
+
+    profileName:
+      submitted.profileName ||
+      existing.profileName ||
+      "Managed Membership",
+
+    email:
+      submitted.email ||
+      existing.email ||
+      fallbackEmail ||
+      ""
+  });
+}
+
+
+function mergeManagedCustomerSecrets(
+  existingSecrets,
+  submittedCard
+) {
+  const existing =
+    existingSecrets &&
+    typeof existingSecrets ===
+      "object"
+      ? existingSecrets
+      : {};
+
+  const submitted =
+    submittedCard &&
+    typeof submittedCard ===
+      "object"
+      ? submittedCard
+      : {};
+
+  return {
+    ...existing,
+
+    cardLabel:
+      clean(
+        submitted.cardLabel,
+        100
+      ),
+
+    cardholder:
+      clean(
+        submitted.cardholder,
+        150
+      ),
+
+    acoCardNumber:
+      clean(
+        submitted.acoCardNumber,
+        30
+      ).replace(
+        /[^\d]/g,
+        ""
+      ),
+
+    expMonth:
+      clean(
+        submitted.expMonth,
+        2
+      ),
+
+    expYear:
+      clean(
+        submitted.expYear,
+        4
+      ),
+
+    securityCode:
+      clean(
+        submitted.securityCode,
+        300
+      )
+  };
+}
+
+
+app.put(
+  "/api/account/managed-memberships/:type/:assignmentId",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const assignmentId =
+        clean(
+          req.params.assignmentId,
+          150
+        );
+
+      if (
+        type !== "free" &&
+        type !== "rented"
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid managed membership type."
+          });
+      }
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
+
+      const isActive =
+        type === "free"
+          ? freeAssignmentIsActive
+          : rentalAssignmentIsActive;
+
+      const assignment =
+        assignments.find(
+          item =>
+            String(
+              item.id
+            ) === assignmentId &&
+            String(
+              item.customerAccountId ||
+              ""
+            ) ===
+              String(
+                req.customerAccount.id
+              ) &&
+            isActive(item)
+        );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Managed membership assignment could not be found."
+          });
+      }
+
+      let existingSecrets = {};
+
+      try {
+        if (
+          assignment.customerSecrets
+        ) {
+          existingSecrets =
+            decryptJson(
+              assignment.customerSecrets
+            );
+        }
+      } catch {
+        existingSecrets = {};
+      }
+
+      const customerProfile =
+        mergeManagedCustomerProfile(
+          assignment.customerProfile,
+          req.body?.customerProfile,
+          req.customerAccount.email
+        );
+
+      const customerSecrets =
+        mergeManagedCustomerSecrets(
+          existingSecrets,
+          req.body?.customerCard
+        );
+
+      assignment.customerProfile =
+        customerProfile;
+
+      assignment.customerSecrets =
+        encryptJson(
+          customerSecrets
+        );
+
+      assignment.customerUpdatedAt =
+        new Date()
+          .toISOString();
+
+      assignment.updatedAt =
+        assignment.customerUpdatedAt;
+
+      if (type === "free") {
+        await saveFreeAssignments(
+          assignments
+        );
+      } else {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      return res.json({
+        ok: true,
+
+        customerProfile,
+
+        customerCard:
+          managedCustomerCardFromSecrets(
+            customerSecrets
+          ),
+
+        updatedAt:
+          assignment.customerUpdatedAt,
+
+        message:
+          "Managed membership details saved successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Customer managed membership update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to save managed membership details."
+        });
+    }
+  }
+);
+
+
+app.put(
+  "/api/admin/managed-memberships/:type/:id/customer-details",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      if (
+        type !== "free" &&
+        type !== "rented"
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid managed membership type."
+          });
+      }
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
+
+      const assignment =
+        type === "free"
+          ? currentFreeAssignment(
+              assignments,
+              id
+            )
+          : currentRentalAssignment(
+              assignments,
+              id
+            );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "This managed account is not currently assigned."
+          });
+      }
+
+      let existingSecrets = {};
+
+      try {
+        if (
+          assignment.customerSecrets
+        ) {
+          existingSecrets =
+            decryptJson(
+              assignment.customerSecrets
+            );
+        }
+      } catch {
+        existingSecrets = {};
+      }
+
+      const customerProfile =
+        mergeManagedCustomerProfile(
+          assignment.customerProfile,
+          req.body?.customerProfile
+        );
+
+      const customerSecrets =
+        mergeManagedCustomerSecrets(
+          existingSecrets,
+          req.body?.customerCard
+        );
+
+      assignment.customerProfile =
+        customerProfile;
+
+      assignment.customerSecrets =
+        encryptJson(
+          customerSecrets
+        );
+
+      assignment.customerUpdatedAt =
+        new Date()
+          .toISOString();
+
+      assignment.updatedAt =
+        assignment.customerUpdatedAt;
+
+      if (type === "free") {
+        await saveFreeAssignments(
+          assignments
+        );
+      } else {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      return res.json({
+        ok: true,
+
+        customerProfile,
+
+        customerCard:
+          managedCustomerCardFromSecrets(
+            customerSecrets
+          ),
+
+        message:
+          "Managed customer details saved successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin managed customer details update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to save managed customer details."
+        });
+    }
+  }
+);
+
+
+app.delete(
+  "/api/admin/managed-memberships/:type/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      if (
+        type !== "free" &&
+        type !== "rented"
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid managed membership type."
+          });
+      }
+
+      const managedAccounts =
+        await getManagedAccounts();
+
+      const index =
+        managedAccounts.findIndex(
+          item =>
+            String(
+              item.id
+            ) === id
+        );
+
+      if (index < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Managed membership could not be found."
+          });
+      }
+
+      managedAccounts.splice(
+        index,
+        1
+      );
+
+      const freeAssignments =
+        await getFreeAssignments();
+
+      const rentalAssignments =
+        await getRentalAssignments();
+
+      const remainingFreeAssignments =
+        freeAssignments.filter(
+          assignment =>
+            String(
+              assignment.freeMembershipId ||
+              ""
+            ) !== id
+        );
+
+      const remainingRentalAssignments =
+        rentalAssignments.filter(
+          assignment =>
+            String(
+              assignment.rentedMembershipId ||
+              ""
+            ) !== id
+        );
+
+      await Promise.all([
+        saveManagedAccounts(
+          managedAccounts
+        ),
+
+        saveFreeAssignments(
+          remainingFreeAssignments
+        ),
+
+        saveRentalAssignments(
+          remainingRentalAssignments
+        )
+      ]);
+
+      return res.json({
+        ok: true,
+
+        message:
+          "Managed membership permanently deleted."
+      });
+
+    } catch (error) {
+      console.error(
+        "Managed membership delete error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to delete managed membership."
+        });
+    }
+  }
+);
+
 
 /* -------------------------------------------------------
    ADMIN SPECIAL PROFILES
@@ -16645,11 +17282,6 @@ await initializeArrayFile(
   SUCCESS_CHECKOUTS_FILE
 );
 
-    await importFreeTargetAccountsOnce();
-
-    await migrateFreeAccountsToManagedPoolOnce();
-
-    await importWalmartManagedAccountsOnce();
     
     app.listen(
       PORT,
