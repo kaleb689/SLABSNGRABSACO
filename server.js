@@ -1145,9 +1145,14 @@ async function sendDiscordAdminPaymentNotification(
     });
   }
 
+  const separator =
+    webhookUrl.includes("?")
+      ? "&"
+      : "?";
+
   const response =
     await fetch(
-      webhookUrl,
+      `${webhookUrl}${separator}wait=true`,
       {
         method:
           "POST",
@@ -1208,9 +1213,272 @@ async function sendDiscordAdminPaymentNotification(
     throw error;
   }
 
+  const data =
+    await response
+      .json()
+      .catch(
+        () => ({})
+      );
+
+  return (
+    data?.id
+      ? String(
+          data.id
+        )
+      : true
+  );
+}
+
+
+
+
+function adminPaymentWebhookUrl() {
+  return String(
+    process.env
+      .DISCORD_ADMIN_PAYMENT_WEBHOOK_URL ||
+    ""
+  ).trim();
+}
+
+
+async function deleteDiscordAdminPaymentNotification(
+  messageId
+) {
+  const webhookUrl =
+    adminPaymentWebhookUrl();
+
+  const id =
+    String(
+      messageId ||
+      ""
+    ).trim();
+
+  if (
+    !webhookUrl ||
+    !id
+  ) {
+    return false;
+  }
+
+  const cleanWebhookUrl =
+    webhookUrl.split("?")[0];
+
+  const response =
+    await fetch(
+      `${cleanWebhookUrl}/messages/${encodeURIComponent(
+        id
+      )}`,
+      {
+        method:
+          "DELETE"
+      }
+    );
+
+  if (
+    !response.ok &&
+    response.status !== 404
+  ) {
+    throw new Error(
+      `Unable to delete admin payment Discord message (${response.status}).`
+    );
+  }
+
   return true;
 }
 
+
+async function maybeClearPaidPurchaseDiscord(
+  customerAccountId
+) {
+  const customerId =
+    String(
+      customerAccountId ||
+      ""
+    );
+
+  if (!customerId) {
+    return false;
+  }
+
+  const paid =
+    await readJson(
+      PAID_FILE,
+      []
+    );
+
+  const paidRecords =
+    Array.isArray(paid)
+      ? paid
+      : [];
+
+  const profiles =
+    await getRetailerProfiles();
+
+  const activatedCount =
+    profiles.filter(
+      profile =>
+        String(
+          profile.customerAccountId ||
+          ""
+        ) ===
+          customerId &&
+        String(
+          profile.activationStatus ||
+          ""
+        ) ===
+          "activated"
+    ).length;
+
+  let changed =
+    false;
+
+  for (
+    const record of paidRecords
+  ) {
+    if (
+      String(
+        record.customerAccountId ||
+        ""
+      ) !== customerId ||
+      !record.adminPaymentDiscordMessageId
+    ) {
+      continue;
+    }
+
+    const required =
+      Math.max(
+        1,
+        Number(
+          record?.plan?.profiles ||
+          1
+        )
+      );
+
+    if (
+      activatedCount <
+      required
+    ) {
+      continue;
+    }
+
+    try {
+      await deleteDiscordAdminPaymentNotification(
+        record.adminPaymentDiscordMessageId
+      );
+    } catch (error) {
+      console.error(
+        "Paid purchase Discord cleanup failed:",
+        error.message
+      );
+      continue;
+    }
+
+    record.adminPaymentDiscordMessageId =
+      null;
+
+    record.adminPaymentDiscordCompletedAt =
+      new Date()
+        .toISOString();
+
+    changed =
+      true;
+  }
+
+  if (changed) {
+    await writeJson(
+      PAID_FILE,
+      paidRecords
+    );
+  }
+
+  return changed;
+}
+
+
+async function maybeClearRentalPurchaseDiscord(
+  assignments,
+  assignment
+) {
+  const sessionId =
+    String(
+      assignment?.stripeSessionId ||
+      ""
+    );
+
+  const messageId =
+    String(
+      assignment
+        ?.adminPaymentDiscordMessageId ||
+      ""
+    );
+
+  if (
+    !sessionId ||
+    !messageId
+  ) {
+    return false;
+  }
+
+  const group =
+    assignments.filter(
+      item =>
+        String(
+          item.stripeSessionId ||
+          ""
+        ) ===
+        sessionId
+    );
+
+  if (!group.length) {
+    return false;
+  }
+
+  const handled =
+    group.every(
+      item =>
+        [
+          "activated",
+          "deactivated"
+        ].includes(
+          String(
+            item.activationStatus ||
+            ""
+          )
+        )
+    );
+
+  if (!handled) {
+    return false;
+  }
+
+  try {
+    await deleteDiscordAdminPaymentNotification(
+      messageId
+    );
+  } catch (error) {
+    console.error(
+      "Rental purchase Discord cleanup failed:",
+      error.message
+    );
+    return false;
+  }
+
+  const now =
+    new Date()
+      .toISOString();
+
+  for (
+    const item of group
+  ) {
+    item.adminPaymentDiscordMessageId =
+      null;
+
+    item.adminPaymentDiscordCompletedAt =
+      now;
+  }
+
+  return true;
+}
 
 
 /* -------------------------------------------------------
@@ -4157,7 +4425,8 @@ app.post(
                           ? "1 Month"
                           : "1 Drop";
 
-                    await sendDiscordAdminPaymentNotification({
+                    const rentalPaymentMessageId =
+                      await sendDiscordAdminPaymentNotification({
                       paymentType:
                         "Rental purchase",
 
@@ -4201,6 +4470,33 @@ app.post(
                         new Date()
                           .toISOString()
                     });
+
+                    if (
+                      rentalPaymentMessageId &&
+                      rentalPaymentMessageId !== true
+                    ) {
+                      for (
+                        const assignment of
+                        assignments
+                      ) {
+                        if (
+                          String(
+                            assignment.stripeSessionId ||
+                            ""
+                          ) ===
+                          String(
+                            session.id
+                          )
+                        ) {
+                          assignment.adminPaymentDiscordMessageId =
+                            rentalPaymentMessageId;
+                        }
+                      }
+
+                      await saveRentalAssignments(
+                        assignments
+                      );
+                    }
 
                   } catch (error) {
                     console.error(
@@ -4400,7 +4696,8 @@ app.post(
             }
 
             try {
-              await sendDiscordAdminPaymentNotification({
+              const paidPaymentMessageId =
+                await sendDiscordAdminPaymentNotification({
                 paymentType:
                   "New paid membership",
 
@@ -4448,6 +4745,48 @@ app.post(
                 paidAt:
                   record.paidAt
               });
+
+              if (
+                paidPaymentMessageId &&
+                paidPaymentMessageId !== true
+              ) {
+                record.adminPaymentDiscordMessageId =
+                  paidPaymentMessageId;
+
+                const latestPaid =
+                  await readJson(
+                    PAID_FILE,
+                    []
+                  );
+
+                const latestIndex =
+                  Array.isArray(
+                    latestPaid
+                  )
+                    ? latestPaid.findIndex(
+                        item =>
+                          String(
+                            item.id
+                          ) ===
+                          String(
+                            record.id
+                          )
+                      )
+                    : -1;
+
+                if (
+                  latestIndex >= 0
+                ) {
+                  latestPaid[
+                    latestIndex
+                  ] = record;
+
+                  await writeJson(
+                    PAID_FILE,
+                    latestPaid
+                  );
+                }
+              }
 
             } catch (error) {
               console.error(
@@ -7366,6 +7705,70 @@ app.get(
         }
       }
 
+      for (
+        const assignment of
+        assignments
+      ) {
+        if (
+          assignment.active !==
+            true ||
+          assignment.activationStatus ===
+            "expired" ||
+          assignment.activationStatus ===
+            "activated" ||
+          !assignment.customerProfile ||
+          !assignment.customerSecrets
+        ) {
+          continue;
+        }
+
+        let secrets = {};
+
+        try {
+          secrets =
+            decryptJson(
+              assignment.customerSecrets
+            ) || {};
+        } catch {
+          secrets = {};
+        }
+
+        const readiness =
+          managedProfileReadiness(
+            assignment.customerProfile,
+            secrets
+          );
+
+        if (
+          readiness.ready &&
+          assignment.activationStatus !==
+            "awaiting_activation"
+        ) {
+          assignment.activationStatus =
+            "awaiting_activation";
+
+          assignment.activationRequestedAt =
+            assignment.activationRequestedAt ||
+            now.toISOString();
+
+          assignment.updatedAt =
+            now.toISOString();
+
+          assignmentsChanged =
+            true;
+
+          const discordChanged =
+            await ensureManagedProfileDiscordMessage(
+              assignment,
+              "free"
+            );
+
+          assignmentsChanged =
+            assignmentsChanged ||
+            discordChanged;
+        }
+      }
+
       if (assignmentsChanged) {
         await saveFreeAssignments(
           assignments
@@ -7613,6 +8016,70 @@ app.get(
             assignmentsChanged =
               true;
           }
+        }
+      }
+
+      for (
+        const assignment of
+        assignments
+      ) {
+        if (
+          assignment.active !==
+            true ||
+          assignment.activationStatus ===
+            "expired" ||
+          assignment.activationStatus ===
+            "activated" ||
+          !assignment.customerProfile ||
+          !assignment.customerSecrets
+        ) {
+          continue;
+        }
+
+        let secrets = {};
+
+        try {
+          secrets =
+            decryptJson(
+              assignment.customerSecrets
+            ) || {};
+        } catch {
+          secrets = {};
+        }
+
+        const readiness =
+          managedProfileReadiness(
+            assignment.customerProfile,
+            secrets
+          );
+
+        if (
+          readiness.ready &&
+          assignment.activationStatus !==
+            "awaiting_activation"
+        ) {
+          assignment.activationStatus =
+            "awaiting_activation";
+
+          assignment.activationRequestedAt =
+            assignment.activationRequestedAt ||
+            now.toISOString();
+
+          assignment.updatedAt =
+            now.toISOString();
+
+          assignmentsChanged =
+            true;
+
+          const discordChanged =
+            await ensureManagedProfileDiscordMessage(
+              assignment,
+              "rented"
+            );
+
+          assignmentsChanged =
+            assignmentsChanged ||
+            discordChanged;
         }
       }
 
@@ -10293,6 +10760,435 @@ app.get(
         .json({
           error:
             "Unable to load account availability."
+        });
+    }
+  }
+);
+
+
+
+/* -------------------------------------------------------
+   ADMIN TARGET POOL REPLACEMENT
+
+   Credentials are submitted at runtime from Admin and are
+   encrypted immediately using SUBMISSION_ENCRYPTION_KEY.
+   They are NOT embedded in the source repository.
+
+   For safety, replacement is blocked while any current
+   Target managed account is actively assigned.
+------------------------------------------------------- */
+
+app.post(
+  "/api/admin/target-pool/replace",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const raw =
+        String(
+          req.body?.accounts ||
+          ""
+        );
+
+      const lines =
+        raw
+          .split(/\r?\n/)
+          .map(
+            line =>
+              line.trim()
+          )
+          .filter(Boolean);
+
+      const parsed =
+        [];
+
+      const seen =
+        new Set();
+
+      for (
+        let index = 0;
+        index < lines.length;
+        index += 1
+      ) {
+        const line =
+          lines[index];
+
+        const separator =
+          line.indexOf(":");
+
+        if (
+          separator <= 0
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                `Line ${index + 1} is not in email:password format.`
+            });
+        }
+
+        const email =
+          normalizeEmail(
+            line.slice(
+              0,
+              separator
+            )
+          );
+
+        const password =
+          line.slice(
+            separator + 1
+          );
+
+        if (
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+            email
+          )
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                `Line ${index + 1} has an invalid email address.`
+            });
+        }
+
+        if (!password) {
+          return res
+            .status(400)
+            .json({
+              error:
+                `Line ${index + 1} is missing a password.`
+            });
+        }
+
+        if (
+          seen.has(
+            email
+          )
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                `Duplicate Target email found on line ${index + 1}.`
+            });
+        }
+
+        seen.add(
+          email
+        );
+
+        parsed.push({
+          email,
+          password
+        });
+      }
+
+      if (
+        parsed.length !==
+        100
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              `This replacement requires exactly 100 Target accounts. Received ${parsed.length}.`
+          });
+      }
+
+      const [
+        managedAccounts,
+        freeAssignments,
+        rentalAssignments
+      ] = await Promise.all([
+        getManagedAccounts(),
+        getFreeAssignments(),
+        getRentalAssignments()
+      ]);
+
+      const activeManagedIds =
+        new Set();
+
+      for (
+        const assignment of
+        freeAssignments
+      ) {
+        if (
+          freeAssignmentIsActive(
+            assignment
+          )
+        ) {
+          const id =
+            assignment
+              .managedAccountId ||
+            assignment
+              .freeMembershipId ||
+            "";
+
+          if (id) {
+            activeManagedIds.add(
+              String(id)
+            );
+          }
+        }
+      }
+
+      for (
+        const assignment of
+        rentalAssignments
+      ) {
+        if (
+          rentalAssignmentIsActive(
+            assignment
+          )
+        ) {
+          const id =
+            assignment
+              .managedAccountId ||
+            assignment
+              .rentedMembershipId ||
+            "";
+
+          if (id) {
+            activeManagedIds.add(
+              String(id)
+            );
+          }
+        }
+      }
+
+      const targetAccountIds =
+        new Set();
+
+      for (
+        const account of
+        managedAccounts
+      ) {
+        try {
+          const credentials =
+            account.credentials
+              ? normalizeRetailerCredentials(
+                  decryptJson(
+                    account.credentials
+                  )
+                )
+              : emptyRetailerCredentials();
+
+          if (
+            String(
+              credentials
+                ?.target
+                ?.username ||
+              ""
+            ).trim()
+          ) {
+            targetAccountIds.add(
+              String(
+                account.id
+              )
+            );
+          }
+        } catch {
+          // Ignore unreadable entries.
+        }
+      }
+
+      const targetInUse =
+        Array.from(
+          targetAccountIds
+        ).filter(
+          id =>
+            activeManagedIds.has(
+              id
+            )
+        );
+
+      if (
+        targetInUse.length >
+        0
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `${targetInUse.length} current Target account${targetInUse.length === 1 ? " is" : "s are"} still assigned. Deactivate/return ${targetInUse.length === 1 ? "it" : "them"} before replacing the Target pool so no customer assignment is broken.`,
+            inUse:
+              targetInUse.length
+          });
+      }
+
+      const retained =
+        [];
+
+      let removedTarget =
+        0;
+
+      for (
+        const account of
+        managedAccounts
+      ) {
+        let credentials =
+          emptyRetailerCredentials();
+
+        try {
+          if (
+            account.credentials
+          ) {
+            credentials =
+              normalizeRetailerCredentials(
+                decryptJson(
+                  account.credentials
+                )
+              );
+          }
+        } catch {
+          retained.push(
+            account
+          );
+          continue;
+        }
+
+        const hasTarget =
+          Boolean(
+            String(
+              credentials
+                ?.target
+                ?.username ||
+              ""
+            ).trim()
+          );
+
+        if (!hasTarget) {
+          retained.push(
+            account
+          );
+          continue;
+        }
+
+        removedTarget +=
+          1;
+
+        const otherRetailerExists =
+          RETAILER_KEYS
+            .filter(
+              retailer =>
+                retailer !==
+                "target"
+            )
+            .some(
+              retailer =>
+                Boolean(
+                  String(
+                    credentials
+                      ?.[retailer]
+                      ?.username ||
+                    ""
+                  ).trim()
+                )
+            );
+
+        if (
+          otherRetailerExists
+        ) {
+          credentials.target = {
+            username: "",
+            password: ""
+          };
+
+          retained.push({
+            ...account,
+            credentials:
+              encryptJson(
+                credentials
+              ),
+            updatedAt:
+              new Date()
+                .toISOString()
+          });
+        }
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      const replacements =
+        parsed.map(
+          item => {
+            const credentials =
+              emptyRetailerCredentials();
+
+            credentials.target = {
+              username:
+                item.email,
+              password:
+                item.password
+            };
+
+            return {
+              id:
+                crypto.randomUUID(),
+
+              profileName:
+                "MANAGED TARGET ACCOUNT",
+
+              accountEmail:
+                "",
+
+              notes:
+                "",
+
+              credentials:
+                encryptJson(
+                  credentials
+                ),
+
+              source:
+                "target-secure-replacement",
+
+              createdAt:
+                now,
+
+              updatedAt:
+                now
+            };
+          }
+        );
+
+      await saveManagedAccounts([
+        ...retained,
+        ...replacements
+      ]);
+
+      const availability =
+        await getManagedAvailability();
+
+      return res.json({
+        ok: true,
+
+        removedTarget,
+
+        addedTarget:
+          replacements.length,
+
+        target:
+          availability.target,
+
+        message:
+          `Target pool replaced successfully. Removed ${removedTarget}; added ${replacements.length}.`
+      });
+
+    } catch (error) {
+      console.error(
+        "Target pool replacement error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to replace the Target account pool."
         });
     }
   }
@@ -15030,6 +15926,377 @@ app.delete(
    ADMIN TEST CUSTOMER PROFILE WORKFLOW
 ------------------------------------------------------- */
 
+
+app.get(
+  "/api/admin/test-managed-profile-workflow",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const [
+        freeAssignments,
+        rentalAssignments
+      ] = await Promise.all([
+        getFreeAssignments(),
+        getRentalAssignments()
+      ]);
+
+      const profiles = [
+        ...freeAssignments
+          .filter(
+            item =>
+              String(
+                item.customerAccountId ||
+                ""
+              ) ===
+              "ADMIN-PREVIEW" &&
+              item.testPreview ===
+                true
+          )
+          .map(
+            item => ({
+              assignmentId:
+                item.id,
+              type:
+                "free",
+              activationStatus:
+                normalizeProfileActivationStatus(
+                  item.activationStatus,
+                  false
+                ),
+              activationLabel:
+                profileActivationLabel(
+                  item.activationStatus
+                )
+            })
+          ),
+
+        ...rentalAssignments
+          .filter(
+            item =>
+              String(
+                item.customerAccountId ||
+                ""
+              ) ===
+              "ADMIN-PREVIEW" &&
+              item.testPreview ===
+                true
+          )
+          .map(
+            item => ({
+              assignmentId:
+                item.id,
+              type:
+                "rented",
+              activationStatus:
+                normalizeProfileActivationStatus(
+                  item.activationStatus,
+                  false
+                ),
+              activationLabel:
+                profileActivationLabel(
+                  item.activationStatus
+                )
+            })
+          )
+      ];
+
+      return res.json({
+        ok: true,
+        profiles
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin test managed workflow load error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load test managed profile workflow."
+        });
+    }
+  }
+);
+
+
+app.put(
+  "/api/admin/test-managed-profile-workflow",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.body?.type,
+          20
+        );
+
+      const assignmentId =
+        clean(
+          req.body?.assignmentId,
+          150
+        );
+
+      if (
+        ![
+          "free",
+          "rented"
+        ].includes(type) ||
+        !assignmentId
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid test managed profile."
+          });
+      }
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
+
+      let assignment =
+        assignments.find(
+          item =>
+            String(
+              item.id
+            ) ===
+              String(
+                assignmentId
+              ) &&
+            String(
+              item.customerAccountId ||
+              ""
+            ) ===
+              "ADMIN-PREVIEW"
+        );
+
+      const customerProfile =
+        sanitizeProfile({
+          ...(req.body
+            ?.customerProfile ||
+            {}),
+          profileName:
+            type === "free"
+              ? "Gifted Profile"
+              : "Rented Profile",
+          email:
+            req.body
+              ?.customerProfile
+              ?.email ||
+            "admin-preview@slabsngrabsaco.com"
+        });
+
+      const card =
+        req.body
+          ?.customerCard &&
+        typeof req.body
+          .customerCard ===
+          "object"
+          ? req.body
+              .customerCard
+          : {};
+
+      const customerSecrets = {
+        cardLabel:
+          clean(
+            card.cardLabel,
+            100
+          ),
+        cardholder:
+          clean(
+            card.cardholder,
+            150
+          ),
+        acoCardNumber:
+          clean(
+            card.acoCardNumber,
+            30
+          ).replace(
+            /[^\d]/g,
+            ""
+          ),
+        expMonth:
+          clean(
+            card.expMonth,
+            2
+          ),
+        expYear:
+          clean(
+            card.expYear,
+            4
+          ),
+        securityCode:
+          clean(
+            card.securityCode,
+            300
+          )
+      };
+
+      const readiness =
+        managedProfileReadiness(
+          customerProfile,
+          customerSecrets
+        );
+
+      const previousStatus =
+        String(
+          assignment
+            ?.activationStatus ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+      const activationStatus =
+        readiness.ready
+          ? (
+              previousStatus ===
+                "activated"
+                ? "activated"
+                : "awaiting_activation"
+            )
+          : "incomplete";
+
+      const now =
+        new Date()
+          .toISOString();
+
+      if (!assignment) {
+        assignment = {
+          id:
+            assignmentId,
+          customerAccountId:
+            "ADMIN-PREVIEW",
+          active:
+            true,
+          testPreview:
+            true,
+          createdAt:
+            now
+        };
+
+        if (
+          type === "free"
+        ) {
+          assignment.freeMembershipId =
+            `TEST-${assignmentId}`;
+        } else {
+          assignment.rentedMembershipId =
+            `TEST-${assignmentId}`;
+        }
+
+        assignments.push(
+          assignment
+        );
+      }
+
+      assignment.customerProfile =
+        customerProfile;
+
+      assignment.customerSecrets =
+        encryptJson(
+          customerSecrets
+        );
+
+      assignment.activationStatus =
+        activationStatus;
+
+      assignment.activationRequestedAt =
+        activationStatus ===
+          "awaiting_activation"
+          ? (
+              assignment.activationRequestedAt ||
+              now
+            )
+          : null;
+
+      assignment.expiresAt =
+        clean(
+          req.body?.expiresAt,
+          100
+        ) ||
+        assignment.expiresAt ||
+        null;
+
+      assignment.durationType =
+        clean(
+          req.body?.durationType,
+          30
+        ) ||
+        assignment.durationType ||
+        null;
+
+      assignment.updatedAt =
+        now;
+
+      if (
+        type === "free"
+      ) {
+        await saveFreeAssignments(
+          assignments
+        );
+      } else {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      if (
+        activationStatus ===
+        "awaiting_activation"
+      ) {
+        const discordChanged =
+          await ensureManagedProfileDiscordMessage(
+            assignment,
+            type
+          );
+
+        if (discordChanged) {
+          if (
+            type === "free"
+          ) {
+            await saveFreeAssignments(
+              assignments
+            );
+          } else {
+            await saveRentalAssignments(
+              assignments
+            );
+          }
+        }
+      }
+
+      return res.json({
+        ok: true,
+        activationStatus,
+        activationLabel:
+          profileActivationLabel(
+            activationStatus
+          )
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin test managed workflow save error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to save test managed profile workflow."
+        });
+    }
+  }
+);
+
+
 app.get(
   "/api/admin/test-profile-workflow",
   requireAdmin,
@@ -15987,6 +17254,29 @@ app.post(
         }
       }
 
+      if (
+        type === "rented"
+      ) {
+        try {
+          const paymentCleared =
+            await maybeClearRentalPurchaseDiscord(
+              assignments,
+              assignment
+            );
+
+          if (paymentCleared) {
+            await saveRentalAssignments(
+              assignments
+            );
+          }
+        } catch (error) {
+          console.error(
+            "Rental purchase completion cleanup failed:",
+            error.message
+          );
+        }
+      }
+
       return res.json({
         ok: true,
         status:
@@ -16147,6 +17437,22 @@ app.post(
         } catch (error) {
           console.error(
             "Paid profile Discord message delete failed:",
+            error.message
+          );
+        }
+      }
+
+      if (
+        action ===
+        "activate"
+      ) {
+        try {
+          await maybeClearPaidPurchaseDiscord(
+            record.customerAccountId
+          );
+        } catch (error) {
+          console.error(
+            "Paid purchase completion cleanup failed:",
             error.message
           );
         }
@@ -16954,11 +18260,6 @@ app.put(
           ? req.body.secrets
           : {};
 
-      const profile =
-        sanitizeProfile(
-          profileBody
-        );
-
       const paid =
         await readJson(
           PAID_FILE,
@@ -16995,26 +18296,38 @@ app.put(
             )
           ) || {};
 
+        const existingProfile =
+          record.profile &&
+          typeof record.profile ===
+            "object"
+            ? record.profile
+            : {};
+
+        const nextProfile =
+          sanitizeProfile({
+            ...existingProfile,
+            ...profileBody
+          });
+
         const submittedSecrets =
           sanitizeSecrets(
             secretsBody
           );
 
         const nextSecrets = {
-          ...existingSecrets,
-
-          acoEmail:
-            submittedSecrets
-              .acoEmail,
-
-          cardLabel:
-            submittedSecrets
-              .cardLabel,
-
-          cardholder:
-            submittedSecrets
-              .cardholder
+          ...existingSecrets
         };
+
+        if (
+          Object.prototype
+            .hasOwnProperty.call(
+              secretsBody,
+              "acoEmail"
+            )
+        ) {
+          nextSecrets.acoEmail =
+            submittedSecrets.acoEmail;
+        }
 
         if (
           submittedSecrets
@@ -17023,6 +18336,28 @@ app.put(
           nextSecrets.acoPassword =
             submittedSecrets
               .acoPassword;
+        }
+
+        if (
+          Object.prototype
+            .hasOwnProperty.call(
+              secretsBody,
+              "cardLabel"
+            )
+        ) {
+          nextSecrets.cardLabel =
+            submittedSecrets.cardLabel;
+        }
+
+        if (
+          Object.prototype
+            .hasOwnProperty.call(
+              secretsBody,
+              "cardholder"
+            )
+        ) {
+          nextSecrets.cardholder =
+            submittedSecrets.cardholder;
         }
 
         if (
@@ -17062,7 +18397,7 @@ app.put(
         }
 
         record.profile =
-          profile;
+          nextProfile;
 
         record.adminUpdatedAt =
           new Date()
@@ -17142,20 +18477,19 @@ app.put(
         );
 
       const nextSecrets = {
-        ...existingSecrets,
-
-        acoEmail:
-          submittedSecrets
-            .acoEmail,
-
-        cardLabel:
-          submittedSecrets
-            .cardLabel,
-
-        cardholder:
-          submittedSecrets
-            .cardholder
+        ...existingSecrets
       };
+
+      if (
+        Object.prototype
+          .hasOwnProperty.call(
+            secretsBody,
+            "acoEmail"
+          )
+      ) {
+        nextSecrets.acoEmail =
+          submittedSecrets.acoEmail;
+      }
 
       if (
         submittedSecrets
@@ -17164,6 +18498,28 @@ app.put(
         nextSecrets.acoPassword =
           submittedSecrets
             .acoPassword;
+      }
+
+      if (
+        Object.prototype
+          .hasOwnProperty.call(
+            secretsBody,
+            "cardLabel"
+          )
+      ) {
+        nextSecrets.cardLabel =
+          submittedSecrets.cardLabel;
+      }
+
+      if (
+        Object.prototype
+          .hasOwnProperty.call(
+            secretsBody,
+            "cardholder"
+          )
+      ) {
+        nextSecrets.cardholder =
+          submittedSecrets.cardholder;
       }
 
       if (
@@ -17202,12 +18558,12 @@ app.put(
             .securityCode;
       }
 
-      account.adminProfile = {
-        ...(account.adminProfile ||
-          {}),
-
-        ...profile
-      };
+      account.adminProfile =
+        sanitizeProfile({
+          ...(account.adminProfile ||
+            {}),
+          ...profileBody
+        });
 
       account.adminSecrets =
         encryptJson(
