@@ -9639,7 +9639,39 @@ async function loadRetailerProfiles(
   force = false
 ) {
   if (ADMIN_PREVIEW_MODE) {
-    state.retailerProfiles = [];
+    try {
+      const response =
+        await fetch(
+          "/api/admin/test-profile-workflow",
+          {
+            method: "GET",
+            credentials:
+              "same-origin",
+            cache:
+              "no-store"
+          }
+        );
+
+      const data =
+        await readJson(
+          response
+        );
+
+      if (response.ok) {
+        state.retailerProfiles =
+          Array.isArray(
+            data.profiles
+          )
+            ? data.profiles
+            : [];
+      }
+    } catch (error) {
+      console.error(
+        "Admin Test Customer profile load failed:",
+        error
+      );
+    }
+
     state.specialProfiles = [];
     state.retailerProfilesLoaded = true;
     renderRetailerProfiles();
@@ -10050,6 +10082,60 @@ document
 
 
 
+
+function paidProfilesGroupIsOpen() {
+  const group =
+    document
+      .getElementById(
+        "retailer-profiles"
+      )
+      ?.querySelector(
+        ".profile-group-dropdown"
+      );
+
+  return Boolean(
+    group?.open
+  );
+}
+
+
+function restorePaidProfilesGroupOpen(
+  shouldOpen
+) {
+  if (!shouldOpen) {
+    return;
+  }
+
+  const group =
+    document
+      .getElementById(
+        "retailer-profiles"
+      )
+      ?.querySelector(
+        ".profile-group-dropdown"
+      );
+
+  if (!group) {
+    return;
+  }
+
+  group.open =
+    true;
+
+  const label =
+    group.querySelector(
+      "[data-profile-group-label]"
+    );
+
+  if (label) {
+    label.textContent =
+      label.dataset
+        .hideText ||
+      "HIDE ALL PAID PROFILES";
+  }
+}
+
+
 async function saveRetailerProfile(
   event
 ) {
@@ -10421,6 +10507,83 @@ async function saveRetailerProfile(
         ? "awaiting_activation"
         : "incomplete";
 
+    try {
+      const syncResponse =
+        await fetch(
+          "/api/admin/test-profile-workflow",
+          {
+            method: "PUT",
+            credentials:
+              "same-origin",
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+            body:
+              JSON.stringify({
+                slot,
+                profileName,
+                customerProfile:
+                  profileRecord.customerProfile,
+                customerCard: {
+                  cardLabel:
+                    customerCard.cardLabel ||
+                    payment?.cardLabel ||
+                    "",
+                  cardholder:
+                    customerCard.cardholder ||
+                    payment?.cardholder ||
+                    "",
+                  acoCardNumber:
+                    customerCard.acoCardNumber ||
+                    payment?.testCardNumber ||
+                    (
+                      payment
+                        ? "4111111111111111"
+                        : ""
+                    ),
+                  expMonth:
+                    customerCard.expMonth ||
+                    payment?.expMonth ||
+                    "",
+                  expYear:
+                    customerCard.expYear ||
+                    payment?.expYear ||
+                    "",
+                  securityCode:
+                    customerCard.securityCode ||
+                    (
+                      payment
+                        ? "1234"
+                        : ""
+                    )
+                },
+                retailers
+              })
+          }
+        );
+
+      const synced =
+        await readJson(
+          syncResponse
+        );
+
+      if (
+        syncResponse.ok &&
+        synced.profile
+      ) {
+        Object.assign(
+          profileRecord,
+          synced.profile
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Admin Test Customer activation sync failed:",
+        error
+      );
+    }
+
     const existing =
       state.retailerProfiles
         .findIndex(
@@ -10440,10 +10603,13 @@ async function saveRetailerProfile(
       );
     }
 
+    const paidGroupOpen =
+      paidProfilesGroupIsOpen();
+
     renderRetailerProfiles();
 
-    reopenPaidProfile(
-      slot
+    restorePaidProfilesGroupOpen(
+      paidGroupOpen
     );
 
     showAccountMessage(
@@ -10546,10 +10712,13 @@ async function saveRetailerProfile(
       from the server.
     */
 
+    const paidGroupOpen =
+      paidProfilesGroupIsOpen();
+
     renderRetailerProfiles();
 
-    reopenPaidProfile(
-      slot
+    restorePaidProfilesGroupOpen(
+      paidGroupOpen
     );
 
     const refreshedMessage =
