@@ -15855,6 +15855,110 @@ async function sendDiscordSuccessNotification(
 }
 
 
+
+/* -------------------------------------------------------
+   ADMIN DISCORD SUCCESS TEST
+   Sends a privacy-safe fixture only. It does not create
+   a customer Success record.
+------------------------------------------------------- */
+
+app.post(
+  "/api/admin/test-discord-success",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const configured =
+        Boolean(
+          String(
+            process.env
+              .DISCORD_SUCCESS_WEBHOOK_URL ||
+            ""
+          ).trim()
+        );
+
+      if (!configured) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+            error:
+              "DISCORD_SUCCESS_WEBHOOK_URL is not configured."
+          });
+      }
+
+      const sent =
+        await sendDiscordSuccessNotification({
+          id:
+            `discord-test-${Date.now()}`,
+
+          retailer:
+            "Target",
+
+          orderNumber:
+            "TEST-ORDER",
+
+          checkoutAt:
+            new Date()
+              .toISOString(),
+
+          orderTotal:
+            79.98,
+
+          itemCount:
+            2,
+
+          items: [
+            {
+              name:
+                "Discord Success Connection Test",
+              quantity:
+                2,
+              price:
+                39.99,
+              imageUrl:
+                null
+            }
+          ],
+
+          status:
+            "test"
+        });
+
+      if (!sent) {
+        return res
+          .status(500)
+          .json({
+            ok: false,
+            error:
+              "Discord webhook is not configured."
+          });
+      }
+
+      return res.json({
+        ok: true,
+        message:
+          "Discord test success was sent."
+      });
+
+    } catch (error) {
+      console.error(
+        "Discord success test failed:",
+        error?.message ||
+        "discord_test_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+          error:
+            "Discord test message could not be sent. Check the webhook URL."
+        });
+    }
+  }
+);
+
+
 function successDateKey(
   value
 ) {
@@ -17809,6 +17913,655 @@ async function readLatestTargetTestOrder(
     }
   }
 }
+
+
+/* -------------------------------------------------------
+   LIVE TARGET SUCCESS SYNC
+   Uses each active customer's encrypted ACO mailbox
+   credentials, saves new Target order confirmations to
+   the real Success store, then recordSuccessCheckout()
+   sends the privacy-safe Discord notification.
+------------------------------------------------------- */
+
+const LIVE_SUCCESS_SYNC_INTERVAL_MS =
+  Math.max(
+    60 * 1000,
+    Number(
+      process.env
+        .SUCCESS_SYNC_INTERVAL_MS ||
+      5 * 60 * 1000
+    )
+  );
+
+const LIVE_SUCCESS_MIN_ACCOUNT_INTERVAL_MS =
+  Math.max(
+    30 * 1000,
+    Number(
+      process.env
+        .SUCCESS_ACCOUNT_SYNC_THROTTLE_MS ||
+      2 * 60 * 1000
+    )
+  );
+
+const liveSuccessLastSyncByAccount =
+  new Map();
+
+const liveSuccessAccountLocks =
+  new Set();
+
+let liveSuccessCycleRunning =
+  false;
+
+
+async function readRecentTargetOrders(
+  email,
+  password,
+  maxMessages = 40
+) {
+  const {
+    provider,
+    client
+  } =
+    createCustomerImapClient(
+      email,
+      password
+    );
+
+  try {
+    await client.connect();
+
+    const lock =
+      await client.getMailboxLock(
+        "INBOX",
+        {
+          readOnly: true
+        }
+      );
+
+    try {
+      const totalMessages =
+        Number(
+          client.mailbox?.exists ||
+          0
+        );
+
+      if (!totalMessages) {
+        return {
+          provider:
+            provider.name,
+          orders: []
+        };
+      }
+
+      const safeMax =
+        Math.min(
+          100,
+          Math.max(
+            10,
+            Number(maxMessages) ||
+            40
+          )
+        );
+
+      const startSequence =
+        Math.max(
+          1,
+          totalMessages -
+            safeMax +
+            1
+        );
+
+      const candidates =
+        await client.fetchAll(
+          `${startSequence}:*`,
+          {
+            uid: true,
+            envelope: true,
+            internalDate: true
+          }
+        );
+
+      /*
+        Process oldest -> newest so the customer's
+        Success timeline remains naturally ordered.
+      */
+      const orders = [];
+
+      for (
+        const candidate of
+        candidates
+      ) {
+        const subject =
+          String(
+            candidate
+              .envelope
+              ?.subject ||
+            ""
+          );
+
+        if (
+          !/target/i.test(subject) ||
+          !/order/i.test(subject)
+        ) {
+          continue;
+        }
+
+        const message =
+          await client.fetchOne(
+            candidate.uid,
+            {
+              uid: true,
+              envelope: true,
+              internalDate: true,
+              source: true
+            },
+            {
+              uid: true
+            }
+          );
+
+        if (
+          !message ||
+          !message.source
+        ) {
+          continue;
+        }
+
+        const parsed =
+          await parseTargetTestOrder({
+            subject:
+              message.envelope
+                ?.subject ||
+              subject,
+
+            source:
+              message.source,
+
+            uid:
+              message.uid,
+
+            messageId:
+              message.envelope
+                ?.messageId ||
+              "",
+
+            date:
+              (
+                message.envelope?.date ||
+                message.internalDate
+              )
+                ? new Date(
+                    message.envelope?.date ||
+                    message.internalDate
+                  ).toISOString()
+                : null
+          });
+
+        if (parsed) {
+          orders.push(parsed);
+        }
+      }
+
+      return {
+        provider:
+          provider.name,
+        orders
+      };
+
+    } finally {
+      lock.release();
+    }
+
+  } finally {
+    if (client.usable) {
+      try {
+        await client.logout();
+      } catch {
+        client.close();
+      }
+    } else {
+      client.close();
+    }
+  }
+}
+
+
+async function getCustomerSuccessMailboxes(
+  customerAccountId
+) {
+  const paid =
+    await readJson(
+      PAID_FILE,
+      []
+    );
+
+  const paidRecords =
+    Array.isArray(paid)
+      ? paid
+      : [];
+
+  const customerOrders =
+    paidRecords
+      .filter(
+        record =>
+          String(
+            record.customerAccountId ||
+            ""
+          ) ===
+            String(
+              customerAccountId
+            ) &&
+          subscriptionAllowsProfiles(
+            record
+          )
+      )
+      .sort(
+        (a, b) =>
+          new Date(
+            b.paidAt ||
+            b.createdAt ||
+            0
+          ).getTime() -
+          new Date(
+            a.paidAt ||
+            a.createdAt ||
+            0
+          ).getTime()
+      );
+
+  const seen =
+    new Set();
+
+  const mailboxes = [];
+
+  for (
+    const order of
+    customerOrders
+  ) {
+    let secrets;
+
+    try {
+      secrets =
+        await loadEncryptedPackage(
+          order.id
+        );
+    } catch {
+      continue;
+    }
+
+    const email =
+      normalizeEmail(
+        secrets?.acoEmail
+      );
+
+    const password =
+      String(
+        secrets?.acoPassword ||
+        ""
+      );
+
+    if (
+      !email ||
+      !password
+    ) {
+      continue;
+    }
+
+    const mailboxKey =
+      email.toLowerCase();
+
+    if (
+      seen.has(
+        mailboxKey
+      )
+    ) {
+      continue;
+    }
+
+    seen.add(
+      mailboxKey
+    );
+
+    mailboxes.push({
+      email,
+      password,
+
+      profileSlot:
+        Number.isInteger(
+          Number(
+            order?.profile?.slot
+          )
+        )
+          ? Number(
+              order.profile.slot
+            )
+          : null,
+
+      profileName:
+        clean(
+          order?.profile
+            ?.profileName ||
+          order?.profile
+            ?.name ||
+          `ACO Profile`,
+          80
+        )
+    });
+  }
+
+  return mailboxes;
+}
+
+
+async function syncCustomerTargetSuccess(
+  customerAccountId,
+  {
+    force = false
+  } = {}
+) {
+  const accountId =
+    String(
+      customerAccountId ||
+      ""
+    );
+
+  if (!accountId) {
+    return {
+      scanned: false,
+      saved: 0,
+      duplicates: 0,
+      mailboxes: 0
+    };
+  }
+
+  if (
+    liveSuccessAccountLocks.has(
+      accountId
+    )
+  ) {
+    return {
+      scanned: false,
+      busy: true,
+      saved: 0,
+      duplicates: 0,
+      mailboxes: 0
+    };
+  }
+
+  const lastSync =
+    Number(
+      liveSuccessLastSyncByAccount
+        .get(accountId) ||
+      0
+    );
+
+  if (
+    !force &&
+    Date.now() -
+      lastSync <
+      LIVE_SUCCESS_MIN_ACCOUNT_INTERVAL_MS
+  ) {
+    return {
+      scanned: false,
+      throttled: true,
+      saved: 0,
+      duplicates: 0,
+      mailboxes: 0
+    };
+  }
+
+  liveSuccessAccountLocks.add(
+    accountId
+  );
+
+  try {
+    const mailboxes =
+      await getCustomerSuccessMailboxes(
+        accountId
+      );
+
+    let saved = 0;
+    let duplicates = 0;
+    let parsedOrders = 0;
+
+    for (
+      const mailbox of
+      mailboxes
+    ) {
+      try {
+        const result =
+          await readRecentTargetOrders(
+            mailbox.email,
+            mailbox.password,
+            40
+          );
+
+        for (
+          const order of
+          result.orders
+        ) {
+          parsedOrders += 1;
+
+          /*
+            Stable ID makes repeated IMAP scans safe.
+            The customer ID prevents an order number
+            collision between different customers.
+          */
+          const stableId =
+            `target:${accountId}:${String(
+              order.orderNumber ||
+              order.messageId ||
+              order.mailboxUid ||
+              ""
+            )}`;
+
+          if (
+            stableId.endsWith(":")
+          ) {
+            continue;
+          }
+
+          const successRecord = {
+            id:
+              stableId,
+
+            customerAccountId:
+              accountId,
+
+            profileSlot:
+              mailbox.profileSlot,
+
+            profileName:
+              mailbox.profileName,
+
+            retailer:
+              "Target",
+
+            orderNumber:
+              order.orderNumber,
+
+            checkoutAt:
+              order.checkoutAt ||
+              new Date()
+                .toISOString(),
+
+            orderTotal:
+              order.orderTotal,
+
+            itemCount:
+              order.itemCount,
+
+            items:
+              order.items,
+
+            status:
+              "confirmed",
+
+            source:
+              "imap-live-target"
+          };
+
+          const wasSaved =
+            await recordSuccessCheckout(
+              successRecord
+            );
+
+          if (wasSaved) {
+            saved += 1;
+          } else {
+            duplicates += 1;
+          }
+        }
+
+      } catch (error) {
+        /*
+          Do not expose mailbox credentials or raw
+          provider responses in production logs.
+        */
+        console.error(
+          "Live Target Success mailbox sync failed:",
+          error?.code ||
+          error?.name ||
+          "target_success_sync_error"
+        );
+      }
+    }
+
+    liveSuccessLastSyncByAccount
+      .set(
+        accountId,
+        Date.now()
+      );
+
+    return {
+      scanned:
+        true,
+
+      saved,
+      duplicates,
+      parsedOrders,
+
+      mailboxes:
+        mailboxes.length
+    };
+
+  } finally {
+    liveSuccessAccountLocks.delete(
+      accountId
+    );
+  }
+}
+
+
+async function syncAllActiveCustomerSuccess() {
+  if (
+    liveSuccessCycleRunning
+  ) {
+    return;
+  }
+
+  liveSuccessCycleRunning =
+    true;
+
+  try {
+    const paid =
+      await readJson(
+        PAID_FILE,
+        []
+      );
+
+    const paidRecords =
+      Array.isArray(paid)
+        ? paid
+        : [];
+
+    const accountIds =
+      [
+        ...new Set(
+          paidRecords
+            .filter(
+              record =>
+                record.customerAccountId &&
+                subscriptionAllowsProfiles(
+                  record
+                )
+            )
+            .map(
+              record =>
+                String(
+                  record.customerAccountId
+                )
+            )
+        )
+      ];
+
+    /*
+      Sequential mailbox connections are intentional.
+      They avoid creating a large burst of simultaneous
+      IMAP logins when the site has many customers.
+    */
+    for (
+      const accountId of
+      accountIds
+    ) {
+      await syncCustomerTargetSuccess(
+        accountId
+      );
+    }
+
+  } catch (error) {
+    console.error(
+      "Live Success sync cycle failed:",
+      error?.code ||
+      error?.name ||
+      "success_sync_cycle_error"
+    );
+
+  } finally {
+    liveSuccessCycleRunning =
+      false;
+  }
+}
+
+
+function startLiveSuccessScheduler() {
+  /*
+    Start shortly after boot so initialization finishes
+    first, then scan every configured interval.
+  */
+  const firstRun =
+    setTimeout(
+      () => {
+        syncAllActiveCustomerSuccess()
+          .catch(() => {});
+      },
+      20 * 1000
+    );
+
+  if (
+    typeof firstRun.unref ===
+    "function"
+  ) {
+    firstRun.unref();
+  }
+
+  const interval =
+    setInterval(
+      () => {
+        syncAllActiveCustomerSuccess()
+          .catch(() => {});
+      },
+      LIVE_SUCCESS_SYNC_INTERVAL_MS
+    );
+
+  if (
+    typeof interval.unref ===
+    "function"
+  ) {
+    interval.unref();
+  }
+}
+
 
 app.get(
   "/api/admin/test-target-html-images",
@@ -19894,6 +20647,16 @@ app.get(
         req.customerAccount.id;
 
       /*
+        Pull in any newly detected Target order
+        confirmations before building the dashboard.
+        This uses the same production record writer
+        that sends the privacy-safe Discord webhook.
+      */
+      await syncCustomerTargetSuccess(
+        accountId
+      );
+
+      /*
         Success records are always filtered
         server-side by the authenticated
         customer account.
@@ -20587,6 +21350,8 @@ await initializeArrayFile(
         console.log(
           `SLABSNGRABSACO server running on port ${PORT}`
         );
+
+        startLiveSuccessScheduler();
       }
     );
 
