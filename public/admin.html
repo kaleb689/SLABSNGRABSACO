@@ -2188,6 +2188,16 @@
     }
 
 
+
+    #profileDiscordStatus.discord-connected {
+      color: #68eeb2;
+    }
+
+    #profileDiscordStatus.discord-missing {
+      color: #ffcf67;
+    }
+
+
   </style>
 </head>
 
@@ -2551,6 +2561,13 @@ PAID SUBSCRIPTIONS
           <h2>
             ACO Profile Activation
           </h2>
+
+          <span
+            id="profileDiscordStatus"
+            class="managed-availability-updated"
+          >
+            Checking Discord alerts...
+          </span>
         </div>
 
         <div
@@ -2676,6 +2693,11 @@ const profileActivationGroups =
 const refreshProfileActivationTracker =
   document.getElementById(
     "refreshProfileActivationTracker"
+  );
+
+const profileDiscordStatus =
+  document.getElementById(
+    "profileDiscordStatus"
   );
 
 const submissionCount =
@@ -9267,6 +9289,27 @@ async function loadProfileActivationTracker() {
       throw new Error(
         data.error ||
         "Unable to load activation tracker."
+      );
+    }
+
+    if (
+      profileDiscordStatus
+    ) {
+      profileDiscordStatus.textContent =
+        data.profileWebhookConfigured
+          ? "Discord profile alerts connected"
+          : "Discord profile webhook not configured";
+
+      profileDiscordStatus.classList.toggle(
+        "discord-connected",
+        Boolean(
+          data.profileWebhookConfigured
+        )
+      );
+
+      profileDiscordStatus.classList.toggle(
+        "discord-missing",
+        !data.profileWebhookConfigured
       );
     }
 
