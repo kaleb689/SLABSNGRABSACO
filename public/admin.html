@@ -2556,6 +2556,13 @@ PAID SUBSCRIPTIONS
         <div
           class="activation-summary-counts"
         >
+          <button
+            type="button"
+            id="refreshProfileActivationTracker"
+            class="admin-edit-button"
+          >
+            Refresh Profiles
+          </button>
           <div
             class="activation-count-box"
           >
@@ -2664,6 +2671,11 @@ const expiredProfileCount =
 const profileActivationGroups =
   document.getElementById(
     "profileActivationGroups"
+  );
+
+const refreshProfileActivationTracker =
+  document.getElementById(
+    "refreshProfileActivationTracker"
   );
 
 const submissionCount =
@@ -9549,6 +9561,51 @@ function bindProfileActivationButtons() {
       );
     });
 }
+
+
+
+refreshProfileActivationTracker
+  ?.addEventListener(
+    "click",
+    async () => {
+      refreshProfileActivationTracker
+        .disabled = true;
+
+      refreshProfileActivationTracker
+        .textContent =
+          "Refreshing...";
+
+      try {
+        await loadProfileActivationTracker();
+      } finally {
+        refreshProfileActivationTracker
+          .disabled = false;
+
+        refreshProfileActivationTracker
+          .textContent =
+            "Refresh Profiles";
+      }
+    }
+  );
+
+
+window.setInterval(
+  () => {
+    if (
+      !dashboard.hidden
+    ) {
+      loadProfileActivationTracker()
+        .catch(
+          error =>
+            console.error(
+              "Activation tracker refresh failed:",
+              error
+            )
+        );
+    }
+  },
+  15000
+);
 
 
 async function load() {
