@@ -2460,6 +2460,232 @@
     }
 
 
+
+    /* =========================================
+       CONSISTENT FIELD DESCRIPTIONS + MANAGED UI
+    ========================================= */
+
+    .admin-edit-field {
+      display: flex !important;
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .admin-edit-field > label {
+      order: 0;
+    }
+
+    .admin-edit-field > input,
+    .admin-edit-field > select,
+    .admin-edit-field > textarea,
+    .admin-edit-field > .admin-sensitive-input-row,
+    .admin-edit-field > .admin-retailer-password-row {
+      order: 1;
+    }
+
+    .admin-edit-field > small,
+    .admin-edit-field > p,
+    .admin-edit-field > .admin-edit-help,
+    .admin-edit-field > .admin-field-note,
+    .admin-edit-field > .admin-password-status {
+      order: 2;
+      margin-top: 8px !important;
+      margin-bottom: 0 !important;
+    }
+
+    .admin-app-password-note {
+      color: #ffffff !important;
+      font-size: 13px !important;
+      font-weight: 950 !important;
+      line-height: 1.45 !important;
+    }
+
+    .status-pill.activating,
+    .managed-status-button.activating {
+      border-color: #a87f20 !important;
+      background: #2a210b !important;
+      color: #ffd262 !important;
+    }
+
+    .managed-status-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+      padding: 12px;
+      border: 1px solid #17384e;
+      border-radius: 10px;
+      background: #07131e;
+    }
+
+    .managed-status-button {
+      min-height: 34px;
+      border-radius: 999px;
+      padding: 7px 11px;
+      font-size: 9px;
+      font-weight: 950;
+      cursor: pointer;
+    }
+
+    .managed-status-button.active {
+      border: 1px solid #1f7057;
+      background: #0b2a20;
+      color: #63e3ad;
+    }
+
+    .managed-status-button.inactive {
+      border: 1px solid #7b2635;
+      background: #2a0d14;
+      color: #ff7c93;
+    }
+
+    .managed-customer-group {
+      border: 1px solid #17384e;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #07131e;
+    }
+
+    .managed-customer-group > summary {
+      display: grid;
+      grid-template-columns: auto minmax(0,1fr) auto auto;
+      align-items: center;
+      gap: 12px;
+      padding: 15px 16px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .managed-customer-group > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .managed-customer-group-body {
+      display: grid;
+      gap: 12px;
+      padding: 12px;
+      border-top: 1px solid #17384e;
+    }
+
+    .managed-group-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .managed-group-count {
+      min-width: 32px;
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid #28516a;
+      color: #12c9ff;
+      font-weight: 950;
+    }
+
+    .managed-group-select,
+    .inventory-select-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #93a8ba;
+      font-size: 9px;
+      font-weight: 900;
+    }
+
+    .inventory-manager-shell {
+      margin: 18px 0;
+    }
+
+    .inventory-manager-grid {
+      display: grid;
+      grid-template-columns: repeat(2,minmax(0,1fr));
+      gap: 12px;
+    }
+
+    .pool-manager-status {
+      display: block;
+      color: #9fb5c6;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .destructive-armed {
+      border-color: #ffb33b !important;
+      color: #ffcf72 !important;
+      background: #3a2608 !important;
+    }
+
+    @media (max-width: 850px) {
+      .inventory-manager-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .managed-customer-group > summary {
+        grid-template-columns: auto minmax(0,1fr) auto;
+      }
+
+      .managed-customer-group > summary
+        .admin-collapsible-arrow {
+        display: none;
+      }
+    }
+
+
+
+    /* =========================================
+       FIELD TITLES / DESCRIPTIONS BELOW BOXES
+    ========================================= */
+
+    .admin-edit-field {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+    }
+
+    .admin-edit-field > input,
+    .admin-edit-field > select,
+    .admin-edit-field > textarea,
+    .admin-edit-field > .admin-sensitive-input-row,
+    .admin-edit-field > .admin-retailer-password-row {
+      order: 0 !important;
+    }
+
+    .admin-edit-field > label {
+      order: 1 !important;
+      margin-top: 7px !important;
+      margin-bottom: 0 !important;
+    }
+
+    .admin-edit-field > small,
+    .admin-edit-field > p,
+    .admin-edit-field > .admin-edit-help,
+    .admin-edit-field > .admin-field-note,
+    .admin-edit-field > .admin-password-status {
+      order: 2 !important;
+      margin-top: 5px !important;
+      margin-bottom: 0 !important;
+    }
+
+    .info-field {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .info-field > .info-value,
+    .info-field > .sensitive-row {
+      order: 0;
+    }
+
+    .info-field > label {
+      order: 1;
+      margin-top: 7px !important;
+      margin-bottom: 0 !important;
+    }
+
+
   </style>
 </head>
 
@@ -2709,76 +2935,176 @@ PAID SUBSCRIPTIONS
 </div>
 
 
-    <details
-      class="admin-target-pool-import"
-    >
-      <summary>
+
+    <section class="inventory-manager-shell">
+      <div class="managed-availability-head">
         <div>
           <span class="eyebrow">
-            TARGET INVENTORY
+            MANAGED INVENTORY
           </span>
 
-          <strong>
-            Replace Target Account Pool
-          </strong>
+          <h2>
+            Target &amp; Walmart Account Manager
+          </h2>
 
-          <small
-            id="targetPoolLoadedStatus"
-            class="target-pool-loaded-status"
-          >
-            Checking currently loaded Target accounts...
-          </small>
-
-          <small>
-            Securely replace the existing Target pool with exactly 100 accounts. Replacing website files alone does NOT import the password list.
-          </small>
+          <p>
+            Add accounts, replace an entire retailer pool,
+            or delete only the accounts you select.
+          </p>
         </div>
-
-        <span>
-          OPEN IMPORT ▾
-        </span>
-      </summary>
-
-      <div
-        class="admin-target-pool-import-body"
-      >
-        <p>
-          Upload the prepared 100-account text file. Credentials are sent only to the server, encrypted with the existing submission encryption key, and are not written into the website source code.
-        </p>
-
-        <input
-          type="file"
-          id="targetPoolFile"
-          accept=".txt,text/plain"
-        />
-
-        <textarea
-          id="targetPoolAccounts"
-          rows="9"
-          placeholder="email:password&#10;email:password"
-        ></textarea>
-
-        <div
-          class="admin-target-pool-import-actions"
-        >
-          <button
-            type="button"
-            id="replaceTargetPool"
-            class="admin-save-button"
-          >
-            Replace Target Pool
-          </button>
-
-          <span
-            id="targetPoolImportStatus"
-          ></span>
-        </div>
-
-        <p class="admin-target-pool-warning">
-          For safety, replacement is blocked if any existing Target managed account is currently assigned to a customer.
-        </p>
       </div>
-    </details>
+
+      <div class="inventory-manager-grid">
+
+        <details
+          class="admin-target-pool-import"
+          data-pool-manager="target"
+        >
+          <summary>
+            <div>
+              <span class="eyebrow">
+                TARGET INVENTORY
+              </span>
+
+              <strong>
+                Manage Target Accounts
+              </strong>
+
+              <small>
+                Add, replace, or delete selected Target accounts.
+              </small>
+            </div>
+
+            <span>
+              OPEN ▾
+            </span>
+          </summary>
+
+          <div class="admin-target-pool-import-body">
+            <input
+              type="file"
+              data-pool-file="target"
+              accept=".txt,text/plain"
+            >
+
+            <textarea
+              data-pool-accounts="target"
+              rows="8"
+              placeholder="email:password&#10;email:password"
+            ></textarea>
+
+            <div class="admin-target-pool-import-actions">
+              <button
+                type="button"
+                class="admin-save-button"
+                data-pool-action="add"
+                data-pool-retailer="target"
+              >
+                Add Accounts
+              </button>
+
+              <button
+                type="button"
+                class="admin-edit-button"
+                data-pool-action="replace"
+                data-pool-retailer="target"
+              >
+                Replace Entire Target Pool
+              </button>
+
+              <button
+                type="button"
+                class="delete-submission"
+                data-pool-action="delete-selected"
+                data-pool-retailer="target"
+              >
+                Delete Selected Target Accounts
+              </button>
+            </div>
+
+            <span
+              class="pool-manager-status"
+              data-pool-status="target"
+            ></span>
+          </div>
+        </details>
+
+
+        <details
+          class="admin-target-pool-import"
+          data-pool-manager="walmart"
+        >
+          <summary>
+            <div>
+              <span class="eyebrow">
+                WALMART INVENTORY
+              </span>
+
+              <strong>
+                Manage Walmart Accounts
+              </strong>
+
+              <small>
+                Add, replace, or delete selected Walmart accounts.
+              </small>
+            </div>
+
+            <span>
+              OPEN ▾
+            </span>
+          </summary>
+
+          <div class="admin-target-pool-import-body">
+            <input
+              type="file"
+              data-pool-file="walmart"
+              accept=".txt,text/plain"
+            >
+
+            <textarea
+              data-pool-accounts="walmart"
+              rows="8"
+              placeholder="email:password&#10;email:password"
+            ></textarea>
+
+            <div class="admin-target-pool-import-actions">
+              <button
+                type="button"
+                class="admin-save-button"
+                data-pool-action="add"
+                data-pool-retailer="walmart"
+              >
+                Add Accounts
+              </button>
+
+              <button
+                type="button"
+                class="admin-edit-button"
+                data-pool-action="replace"
+                data-pool-retailer="walmart"
+              >
+                Replace Entire Walmart Pool
+              </button>
+
+              <button
+                type="button"
+                class="delete-submission"
+                data-pool-action="delete-selected"
+                data-pool-retailer="walmart"
+              >
+                Delete Selected Walmart Accounts
+              </button>
+            </div>
+
+            <span
+              class="pool-manager-status"
+              data-pool-status="walmart"
+            ></span>
+          </div>
+        </details>
+
+      </div>
+    </section>
 
 <section
   id="managedAvailabilityTracker"
@@ -4027,6 +4353,10 @@ function renderOrder(x) {
                 <div class="admin-edit-field wide">
                   <label>IMAP / Host App Password</label>
 
+                  <small class="admin-field-note admin-app-password-note critical imap-critical-note">
+                    PLEASE FOLLOW CHAP 2 IN GUIDE FOR IMAP PASSWORD THIS IS VERY IMPORTANT
+                  </small>
+
                   <div class="admin-sensitive-input-row">
                     <input
                       type="password"
@@ -4046,18 +4376,13 @@ function renderOrder(x) {
                       type="button"
                       class="reveal-button"
                       data-admin-sensitive-toggle
-                      ${
-                        secrets.acoPassword
-                          ? ""
-                          : "disabled"
-                      }
                     >
                       Show
                     </button>
                   </div>
 
-                  <small class="admin-field-note admin-app-password-note">
-                    password you created in email not your email password
+                  <small class="admin-field-note admin-app-password-note critical">
+                    THIS IS NOT YOUR EMAIL PASSWORD
                   </small>
                 </div>
 
@@ -6967,24 +7292,32 @@ function managedMembershipCardHtml(
   const daysRemaining =
     assignment.daysRemaining;
 
+  const activationStatus =
+    String(
+      assignment.activationStatus ||
+      ""
+    );
+
   const statusLine =
-    active
-      ? (
-          daysRemaining == null
-            ? "ACTIVE — INDEFINITE"
-            : `ACTIVE — ${daysRemaining} ${
-                daysRemaining === 1
-                  ? "DAY"
-                  : "DAYS"
-              } LEFT`
-        )
-      : (
-          occupiedByOtherType
-            ? `IN USE AS ${String(
-                occupiedType
-              ).toUpperCase()}`
-            : "INACTIVE"
-        );
+    occupiedByOtherType
+      ? `IN USE AS ${String(
+          occupiedType
+        ).toUpperCase()}`
+      : activationStatus ===
+          "awaiting_activation"
+        ? "ACTIVATING — TIMER NOT STARTED"
+        : activationStatus ===
+            "activated"
+          ? (
+              daysRemaining == null
+                ? "ACTIVE — NO EXPIRATION"
+                : `ACTIVE — ${daysRemaining} ${
+                    daysRemaining === 1
+                      ? "DAY"
+                      : "DAYS"
+                  } LEFT`
+            )
+          : "INACTIVE";
 
   const customerOptions =
     paidCustomers
@@ -7091,10 +7424,15 @@ function managedMembershipCardHtml(
       >
         <span
           class="status-pill ${
-            active ||
-            occupiedByOtherType
-              ? "active"
-              : "inactive"
+            activationStatus ===
+              "awaiting_activation"
+              ? "activating"
+              : (
+                  active ||
+                  occupiedByOtherType
+                    ? "active"
+                    : "inactive"
+                )
           }"
         >
           ${escapeHtml(statusLine)}
@@ -7672,6 +8010,57 @@ function managedMembershipCardHtml(
           }
 
 
+          <div class="managed-status-actions">
+            <span class="eyebrow">
+              STATUS
+            </span>
+
+            <button
+              type="button"
+              class="managed-status-button activating"
+              data-managed-set-status="activating"
+              data-managed-status-id="${escapeHtml(
+                assignment.id || ""
+              )}"
+              data-managed-status-type="${escapeHtml(
+                type
+              )}"
+              ${active ? "" : "disabled"}
+            >
+              ● ACTIVATING
+            </button>
+
+            <button
+              type="button"
+              class="managed-status-button active"
+              data-managed-set-status="activate"
+              data-managed-status-id="${escapeHtml(
+                assignment.id || ""
+              )}"
+              data-managed-status-type="${escapeHtml(
+                type
+              )}"
+              ${active ? "" : "disabled"}
+            >
+              ● ACTIVE
+            </button>
+
+            <button
+              type="button"
+              class="managed-status-button inactive"
+              data-managed-set-status="inactive"
+              data-managed-status-id="${escapeHtml(
+                assignment.id || ""
+              )}"
+              data-managed-status-type="${escapeHtml(
+                type
+              )}"
+              ${active ? "" : "disabled"}
+            >
+              ● INACTIVE
+            </button>
+          </div>
+
           <div class="admin-edit-actions">
 
             <button
@@ -7798,6 +8187,23 @@ function availableMembershipCardHtml(
       )}"
     >
       <summary>
+        <label
+          class="inventory-select-wrap"
+          title="Select this available account"
+        >
+          <input
+            type="checkbox"
+            data-inventory-account-select="${escapeHtml(
+              membership.id
+            )}"
+            data-inventory-has-target="${targetEmail ? "true" : "false"}"
+            data-inventory-has-walmart="${walmartEmail ? "true" : "false"}"
+          >
+          <span>
+            SELECT
+          </span>
+        </label>
+
         <span class="eyebrow">
           AVAILABLE MEMBERSHIP
         </span>
@@ -8507,54 +8913,180 @@ function renderManagedMembershipDashboard(
       ? `1 active ${label.toLowerCase()}`
       : `${memberships.length} active ${label.toLowerCase()}s`;
 
-  rows.innerHTML =
-    memberships.length
-      ? `
-          <section class="order-section">
-            <div class="order-section-head">
+  if (!memberships.length) {
+    rows.innerHTML = `
+      <div class="empty-admin">
+        <h3>
+          No active ${label.toLowerCase()}s.
+        </h3>
+
+        <p>
+          Assign an account from Available Memberships
+          or from a paid customer's Add Available Membership section.
+        </p>
+      </div>
+    `;
+
+    bindManagedMembershipDashboard(
+      type
+    );
+
+    return;
+  }
+
+  const groups =
+    new Map();
+
+  for (
+    const membership of
+    memberships
+  ) {
+    const customer =
+      membership.assignedCustomer ||
+      {};
+
+    const key =
+      String(
+        customer.customerAccountId ||
+        "unassigned"
+      );
+
+    if (!groups.has(key)) {
+      groups.set(
+        key,
+        {
+          customer,
+          memberships: []
+        }
+      );
+    }
+
+    groups
+      .get(key)
+      .memberships
+      .push(
+        membership
+      );
+  }
+
+  const groupedHtml =
+    Array.from(
+      groups.values()
+    )
+      .map(group => {
+        const customer =
+          group.customer ||
+          {};
+
+        const username =
+          customer.name ||
+          customer.email ||
+          "Customer";
+
+        const groupId =
+          customer.customerAccountId ||
+          `unknown-${type}`;
+
+        return `
+          <details
+            class="managed-customer-group"
+          >
+            <summary>
+              <label
+                class="managed-group-select"
+                title="Select every account in this customer group"
+              >
+                <input
+                  type="checkbox"
+                  data-managed-select-all-group="${escapeHtml(
+                    groupId
+                  )}"
+                  data-managed-select-all-type="${escapeHtml(
+                    type
+                  )}"
+                >
+                <span>
+                  SELECT ALL
+                </span>
+              </label>
+
               <div>
+                <span class="eyebrow">
+                  ${type === "free" ? "GIFTED" : "RENTED"} ACCOUNTS
+                </span>
+
                 <h3>
-                  ACTIVE ${label}S
+                  ${escapeHtml(
+                    username
+                  )}'s ${type === "free" ? "Gifted Accounts" : "Rented Accounts"}
                 </h3>
+
                 <p>
-                  Only accounts currently linked to customers are shown here.
+                  ${escapeHtml(
+                    customer.email ||
+                    ""
+                  )}
                 </p>
               </div>
-            </div>
-          </section>
 
-          <div
-            id="managedMembershipCards"
-            style="display:grid;gap:13px;"
-          >
-            ${memberships
-              .map(
-                membership =>
-                  managedMembershipCardHtml(
-                    membership,
-                    type,
-                    []
-                  )
-              )
-              .join("")}
-          </div>
-        `
-      : `
-          <div class="empty-admin">
-            <h3>
-              No active ${label.toLowerCase()}s.
-            </h3>
-            <p>
-              Assign an account from Available Memberships
-              or from a paid customer's Add Available Membership section.
-            </p>
-          </div>
+              <span class="managed-group-count">
+                ${group.memberships.length}
+              </span>
+
+              <span class="admin-collapsible-arrow">
+                ›
+              </span>
+            </summary>
+
+            <div
+              class="managed-customer-group-body"
+              data-managed-customer-group="${escapeHtml(
+                groupId
+              )}"
+            >
+              ${group.memberships
+                .map(
+                  membership =>
+                    managedMembershipCardHtml(
+                      membership,
+                      type,
+                      data?.paidCustomers ||
+                      []
+                    )
+                )
+                .join("")}
+            </div>
+          </details>
         `;
+      })
+      .join("");
+
+  rows.innerHTML = `
+    <section class="order-section">
+      <div class="order-section-head">
+        <div>
+          <h3>
+            ACTIVE ${label}S
+          </h3>
+
+          <p>
+            Accounts are grouped by customer to keep large
+            gifted/rented batches organized.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <div class="managed-group-list">
+      ${groupedHtml}
+    </div>
+  `;
 
   bindManagedMembershipDashboard(
     type
   );
 }
+
 
 function managedMembershipBody(
   form
@@ -8607,6 +9139,134 @@ function managedMembershipBody(
 function bindManagedMembershipDashboard(
   type
 ) {
+
+  document
+    .querySelectorAll(
+      "[data-managed-select-all-group]"
+    )
+    .forEach(master => {
+      master.addEventListener(
+        "click",
+        event => {
+          event.stopPropagation();
+
+          const groupId =
+            master.dataset
+              .managedSelectAllGroup;
+
+          const group =
+            document.querySelector(
+              `[data-managed-customer-group="${CSS.escape(
+                groupId
+              )}"]`
+            );
+
+          group
+            ?.querySelectorAll(
+              `[data-managed-select][data-managed-type="${CSS.escape(
+                type
+              )}"]`
+            )
+            .forEach(
+              checkbox => {
+                checkbox.checked =
+                  master.checked;
+              }
+            );
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-managed-set-status]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async event => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const id =
+            button.dataset
+              .managedStatusId;
+
+          const statusType =
+            button.dataset
+              .managedStatusType;
+
+          const action =
+            button.dataset
+              .managedSetStatus;
+
+          if (
+            !id ||
+            !statusType
+          ) {
+            return;
+          }
+
+          button.disabled =
+            true;
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/managed-profile-activation/${encodeURIComponent(
+                  statusType
+                )}/${encodeURIComponent(
+                  id
+                )}`,
+                {
+                  method:
+                    "POST",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      action
+                    })
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to change profile status."
+              );
+            }
+
+            await load();
+
+          } catch (error) {
+            alert(
+              error.message
+            );
+
+            button.disabled =
+              false;
+          }
+        }
+      );
+    });
+
+
   const createForm =
     document.getElementById(
       "createManagedMembershipForm"
@@ -10375,6 +11035,401 @@ replaceTargetPool
   );
 
 
+
+const destructiveButtonState =
+  new WeakMap();
+
+
+function armDestructiveButton(
+  button,
+  confirmationText =
+    "Click again to confirm"
+) {
+  const current =
+    destructiveButtonState
+      .get(
+        button
+      );
+
+  if (
+    current &&
+    current.expires >
+      Date.now()
+  ) {
+    window.clearTimeout(
+      current.timer
+    );
+
+    destructiveButtonState.delete(
+      button
+    );
+
+    button.classList.remove(
+      "destructive-armed"
+    );
+
+    button.textContent =
+      current.originalText;
+
+    return true;
+  }
+
+  const originalText =
+    button.textContent;
+
+  button.textContent =
+    confirmationText;
+
+  button.classList.add(
+    "destructive-armed"
+  );
+
+  const timer =
+    window.setTimeout(
+      () => {
+        button.textContent =
+          originalText;
+
+        button.classList.remove(
+          "destructive-armed"
+        );
+
+        destructiveButtonState.delete(
+          button
+        );
+      },
+      5000
+    );
+
+  destructiveButtonState.set(
+    button,
+    {
+      expires:
+        Date.now() +
+        5000,
+      originalText,
+      timer
+    }
+  );
+
+  return false;
+}
+
+
+/*
+  First click on destructive Admin actions arms the button.
+  The second click within five seconds is allowed through.
+*/
+document.addEventListener(
+  "click",
+  event => {
+    const button =
+      event.target.closest(
+        [
+          "[data-managed-end]",
+          "[data-managed-delete]",
+          "[data-delete-available]",
+          ".delete-submission"
+        ].join(",")
+      );
+
+    if (!button) {
+      return;
+    }
+
+    if (
+      button.matches(
+        "[data-pool-action]"
+      )
+    ) {
+      return;
+    }
+
+    if (
+      !armDestructiveButton(
+        button
+      )
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    }
+  },
+  true
+);
+
+
+document
+  .querySelectorAll(
+    "[data-pool-file]"
+  )
+  .forEach(input => {
+    input.addEventListener(
+      "change",
+      async () => {
+        const retailer =
+          input.dataset
+            .poolFile;
+
+        const file =
+          input.files?.[0];
+
+        const textarea =
+          document.querySelector(
+            `[data-pool-accounts="${CSS.escape(
+              retailer
+            )}"]`
+          );
+
+        if (
+          file &&
+          textarea
+        ) {
+          textarea.value =
+            await file.text();
+        }
+      }
+    );
+  });
+
+
+document
+  .querySelectorAll(
+    "[data-pool-action]"
+  )
+  .forEach(button => {
+    button.addEventListener(
+      "click",
+      async event => {
+        event.preventDefault();
+
+        const retailer =
+          button.dataset
+            .poolRetailer;
+
+        const action =
+          button.dataset
+            .poolAction;
+
+        const status =
+          document.querySelector(
+            `[data-pool-status="${CSS.escape(
+              retailer
+            )}"]`
+          );
+
+        if (
+          action ===
+            "delete-selected"
+        ) {
+          const selected =
+            Array.from(
+              document.querySelectorAll(
+                "[data-inventory-account-select]:checked"
+              )
+            )
+              .filter(
+                checkbox =>
+                  retailer ===
+                    "target"
+                    ? checkbox.dataset
+                        .inventoryHasTarget ===
+                      "true"
+                    : checkbox.dataset
+                        .inventoryHasWalmart ===
+                      "true"
+              )
+              .map(
+                checkbox =>
+                  checkbox.dataset
+                    .inventoryAccountSelect
+              );
+
+          if (!selected.length) {
+            if (status) {
+              status.textContent =
+                "Select accounts inside Available Memberships first.";
+            }
+            return;
+          }
+
+          if (
+            !armDestructiveButton(
+              button,
+              `Click again to delete ${selected.length}`
+            )
+          ) {
+            return;
+          }
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/account-pool/${encodeURIComponent(
+                  retailer
+                )}/delete-selected`,
+                {
+                  method:
+                    "POST",
+                  credentials:
+                    "same-origin",
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+                  body:
+                    JSON.stringify({
+                      ids:
+                        selected
+                    })
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to delete selected accounts."
+              );
+            }
+
+            if (status) {
+              status.textContent =
+                `${result.deleted} account${result.deleted === 1 ? "" : "s"} deleted.`;
+            }
+
+            await loadManagedAvailability();
+            await load();
+
+          } catch (error) {
+            if (status) {
+              status.textContent =
+                error.message;
+            }
+          }
+
+          return;
+        }
+
+        const textarea =
+          document.querySelector(
+            `[data-pool-accounts="${CSS.escape(
+              retailer
+            )}"]`
+          );
+
+        const accounts =
+          textarea?.value ||
+          "";
+
+        const count =
+          accounts
+            .split(/\r?\n/)
+            .filter(
+              line =>
+                line.trim()
+            )
+            .length;
+
+        if (!count) {
+          if (status) {
+            status.textContent =
+              "Paste or upload at least one email:password account.";
+          }
+          return;
+        }
+
+        if (
+          action ===
+            "replace" &&
+          !armDestructiveButton(
+            button,
+            `Click again to replace ${retailer}`
+          )
+        ) {
+          return;
+        }
+
+        button.disabled =
+          true;
+
+        try {
+          const response =
+            await fetch(
+              `/api/admin/account-pool/${encodeURIComponent(
+                retailer
+              )}/${encodeURIComponent(
+                action
+              )}`,
+              {
+                method:
+                  "POST",
+                credentials:
+                  "same-origin",
+                headers: {
+                  "Content-Type":
+                    "application/json"
+                },
+                body:
+                  JSON.stringify({
+                    accounts
+                  })
+              }
+            );
+
+          const result =
+            await response
+              .json()
+              .catch(
+                () => ({})
+              );
+
+          if (!response.ok) {
+            throw new Error(
+              result.error ||
+              "Unable to update managed inventory."
+            );
+          }
+
+          if (status) {
+            status.textContent =
+              `${action === "add" ? "Added" : "Replaced"} successfully. ${
+                result.availability?.available ??
+                "—"
+              } available / ${
+                result.availability?.total ??
+                "—"
+              } total.`;
+          }
+
+          if (textarea) {
+            textarea.value =
+              "";
+          }
+
+          await loadManagedAvailability();
+          await load();
+
+        } catch (error) {
+          if (status) {
+            status.textContent =
+              error.message;
+          }
+        } finally {
+          button.disabled =
+            false;
+        }
+      }
+    );
+  });
+
+
 async function load() {
 
   await loadManagedAvailability();
@@ -10754,7 +11809,8 @@ document.addEventListener(
         [
           "[data-admin-sensitive-toggle]",
           ".reveal-button",
-          ".retailer-password-toggle"
+          ".retailer-password-toggle",
+          ".admin-show-sensitive"
         ].join(",")
       );
 
@@ -10881,6 +11937,55 @@ document.addEventListener(
     }
 
     /*
+      Saved shipping/payment Security Code reveal.
+    */
+    if (
+      button.matches(
+        ".admin-show-sensitive"
+      )
+    ) {
+      const row =
+        button.closest(
+          ".admin-sensitive-row"
+        );
+
+      const value =
+        row?.querySelector(
+          "[data-admin-security-code-value]"
+        );
+
+      if (!value) {
+        return;
+      }
+
+      const revealed =
+        button.dataset
+          .revealed ===
+        "true";
+
+      value.textContent =
+        revealed
+          ? "••••••"
+          : (
+              value.dataset
+                .hiddenValue ||
+              "Not entered"
+            );
+
+      button.textContent =
+        revealed
+          ? "Show"
+          : "Hide";
+
+      button.dataset.revealed =
+        revealed
+          ? "false"
+          : "true";
+
+      return;
+    }
+
+    /*
       Retailer password inputs in Admin.
     */
     if (
@@ -10919,6 +12024,64 @@ document.addEventListener(
   true
 );
 
+
+
+
+/* =========================================
+   ADMIN UNIVERSAL SENSITIVE TOGGLE FAILSAFE
+   Ensures show / hide works for all Admin sensitive fields.
+========================================= */
+(function setupAdminUniversalSensitiveToggleFailsafe() {
+  document.addEventListener('click', function(event) {
+    const button = event.target.closest([
+      '[data-admin-sensitive-toggle]',
+      '.reveal-button',
+      '.admin-show-sensitive',
+      '.retailer-password-toggle'
+    ].join(','));
+
+    if (!button) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const sensitiveInputRow = button.closest('.admin-sensitive-input-row');
+    if (sensitiveInputRow) {
+      const input = sensitiveInputRow.querySelector('input');
+      if (input) {
+        const nextType = input.type === 'password' ? 'text' : 'password';
+        try { input.type = nextType; } catch (err) { return; }
+        button.textContent = nextType === 'text' ? 'Hide' : 'Show';
+        return;
+      }
+    }
+
+    const securityCodeRow = button.closest('.admin-sensitive-row');
+    if (securityCodeRow) {
+      const value = securityCodeRow.querySelector('[data-admin-security-code-value], [data-sensitive]');
+      if (!value) return;
+      const currentlyHidden = (button.dataset.revealed !== 'true') && (value.dataset.hidden !== 'false');
+      if (value.dataset.hiddenValue || value.dataset.value) {
+        const revealedText = value.dataset.hiddenValue || value.dataset.value || '—';
+        const maskedText = value.dataset.masked || '••••••';
+        value.textContent = currentlyHidden ? revealedText : maskedText;
+        button.textContent = currentlyHidden ? 'Hide' : 'Show';
+        button.dataset.revealed = currentlyHidden ? 'true' : 'false';
+        value.dataset.hidden = currentlyHidden ? 'false' : 'true';
+      }
+      return;
+    }
+
+    const retailerRow = button.closest('.admin-retailer-password-row');
+    if (retailerRow) {
+      const input = retailerRow.querySelector('input');
+      if (!input) return;
+      const nextType = input.type === 'password' ? 'text' : 'password';
+      try { input.type = nextType; } catch (err) { return; }
+      button.textContent = nextType === 'text' ? 'Hide' : 'Show';
+    }
+  }, true);
+})();
 
 /* =========================================
    DELETE CUSTOMER ORDER
