@@ -4280,6 +4280,41 @@ app.get(
               return null;
             }
 
+            let customerCard =
+  null;
+
+try {
+  if (
+    assignment.customerSecrets
+  ) {
+    const customerSecrets =
+      decryptJson(
+        assignment.customerSecrets
+      );
+
+    customerCard = {
+      cardLabel:
+        customerSecrets.cardLabel || "",
+      cardholder:
+        customerSecrets.cardholder || "",
+      acoCardNumber:
+        customerSecrets.acoCardNumber || "",
+      expMonth:
+        customerSecrets.expMonth || "",
+      expYear:
+        customerSecrets.expYear || "",
+      securityCode:
+        customerSecrets.securityCode || ""
+    };
+  }
+} catch (error) {
+  console.error(
+    "Customer free membership card decrypt error:",
+    assignment.id,
+    error.message
+  );
+}
+
             return {
               id:
                 membership.id,
@@ -4331,6 +4366,8 @@ app.get(
                 assignment
                   .customerProfile ||
                 null,
+
+              customerCard,
 
               createdAt:
                 membership.createdAt ||
@@ -4459,6 +4496,41 @@ app.get(
             if (!membership) {
               return null;
             }
+
+            let customerCard =
+  null;
+
+try {
+  if (
+    assignment.customerSecrets
+  ) {
+    const customerSecrets =
+      decryptJson(
+        assignment.customerSecrets
+      );
+
+    customerCard = {
+      cardLabel:
+        customerSecrets.cardLabel || "",
+      cardholder:
+        customerSecrets.cardholder || "",
+      acoCardNumber:
+        customerSecrets.acoCardNumber || "",
+      expMonth:
+        customerSecrets.expMonth || "",
+      expYear:
+        customerSecrets.expYear || "",
+      securityCode:
+        customerSecrets.securityCode || ""
+    };
+  }
+} catch (error) {
+  console.error(
+    "Customer rented membership card decrypt error:",
+    assignment.id,
+    error.message
+  );
+}
             
 
             return {
@@ -4523,7 +4595,9 @@ app.get(
 
 customerProfile:
   assignment.customerProfile ||
-  null
+  null,
+
+customerCard,
             };
           })
           .filter(Boolean);
