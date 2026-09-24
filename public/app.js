@@ -5208,6 +5208,114 @@ function profileReadiness(
 }
 
 
+
+function profileCountdownInfo({
+  expiresAt = null,
+  daysRemaining = null,
+  active = true,
+  indefinite = false
+} = {}) {
+  if (
+    !active
+  ) {
+    return {
+      className: "expired",
+      label: "INACTIVE",
+      detail: "Not active"
+    };
+  }
+
+  if (
+    indefinite ||
+    !expiresAt
+  ) {
+    return {
+      className: "ready",
+      label: "ACTIVE",
+      detail: "No expiration"
+    };
+  }
+
+  const days =
+    Number.isFinite(
+      Number(
+        daysRemaining
+      )
+    )
+      ? Math.max(
+          0,
+          Number(
+            daysRemaining
+          )
+        )
+      : calculateDaysRemaining(
+          expiresAt
+        );
+
+  if (
+    days <= 0
+  ) {
+    return {
+      className: "expired",
+      label: "EXPIRED",
+      detail:
+        formatDate(
+          expiresAt
+        )
+    };
+  }
+
+  return {
+    className:
+      days <= 7
+        ? "warning"
+        : "ready",
+
+    label:
+      "ACTIVE",
+
+    detail:
+      `${days} ${
+        days === 1
+          ? "day"
+          : "days"
+      } left`
+  };
+}
+
+
+function profileCountdownBadgeHtml(
+  info
+) {
+  return `
+    <div
+      class="profile-expiry-status ${
+        info.className
+      }"
+    >
+      <span
+        class="profile-expiry-light"
+        aria-hidden="true"
+      ></span>
+
+      <div>
+        <strong>
+          ${escapeHtml(
+            info.label
+          )}
+        </strong>
+
+        <small>
+          ${escapeHtml(
+            info.detail
+          )}
+        </small>
+      </div>
+    </div>
+  `;
+}
+
+
 function readinessBadgeHtml(
   readiness
 ) {
@@ -6621,12 +6729,12 @@ function retailerProfileCardHtml(
   const customerProfile =
     savedProfile
       ?.customerProfile ||
-    null;
+    {};
 
   const customerCard =
     savedProfile
       ?.customerCard ||
-    null;
+    {};
 
   const readiness =
     savedProfile
@@ -6636,9 +6744,54 @@ function retailerProfileCardHtml(
       customerCard
     );
 
+  const membership =
+    state.membership ||
+    {};
+
+  const paidPeriodEnd =
+    membership.subscriptionEndDate ||
+    membership.currentPeriodEnd ||
+    membership.cancelAt ||
+    null;
+
+  const paidStatus =
+    String(
+      membership.status ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const paidActive =
+    [
+      "active",
+      "trialing"
+    ].includes(
+      paidStatus
+    );
+
+  const countdown =
+    profileCountdownInfo({
+      expiresAt:
+        paidPeriodEnd,
+      daysRemaining:
+        membership.daysRemaining,
+      active:
+        paidActive,
+      indefinite:
+        !paidPeriodEnd &&
+        paidActive
+    });
+
+  const hasSavedCard =
+    Boolean(
+      customerCard
+        ?.maskedNumber
+    );
+
   return `
     <article
-      class="retailer-profile-card compact-profile-card ${
+      class="retailer-profile-card compact-profile-card paid-profile-card ${
         locked
           ? "locked"
           : ""
@@ -6666,7 +6819,7 @@ function retailerProfileCardHtml(
             class="profile-compact-title"
           >
             <span class="eyebrow">
-              ACO PROFILE ${slot}
+              PAID ACO PROFILE ${slot}
             </span>
 
             <strong>
@@ -6674,6 +6827,10 @@ function retailerProfileCardHtml(
                 profileName
               )}
             </strong>
+
+            <small>
+              Click to open and manage this profile
+            </small>
           </span>
 
           <span
@@ -6693,9 +6850,19 @@ function retailerProfileCardHtml(
                   LOCKED
                 </span>
               `
-            : readinessBadgeHtml(
-                readiness
-              )
+            : `
+                <div
+                  class="profile-status-stack"
+                >
+                  ${readinessBadgeHtml(
+                    readiness
+                  )}
+
+                  ${profileCountdownBadgeHtml(
+                    countdown
+                  )}
+                </div>
+              `
         }
 
       </div>
@@ -6714,8 +6881,7 @@ function retailerProfileCardHtml(
                   Your current membership allows
                   ${state.retailerAllowance}
                   ${
-                    state.retailerAllowance ===
-                    1
+                    state.retailerAllowance === 1
                       ? "profile"
                       : "profiles"
                   }.
@@ -6726,7 +6892,6 @@ function retailerProfileCardHtml(
               <div
                 class="profile-quick-autofill"
               >
-
                 <label>
                   <span>
                     Auto Fill Shipping With
@@ -6762,11 +6927,10 @@ function retailerProfileCardHtml(
                 <button
                   type="button"
                   class="secondary profile-autofill-apply"
-                  data-personal-autofill-apply="${slot}"
+                  data-personal-autofill-fill="${slot}"
                 >
-                  Apply Saved Info
+                  Fill Profile
                 </button>
-
               </div>
 
               <div
@@ -6774,9 +6938,8 @@ function retailerProfileCardHtml(
                 data-profile-body
                 hidden
               >
-
                 <form
-                  class="retailer-profile-form"
+                  class="retailer-profile-form paid-profile-full-form"
                   data-retailer-profile-form="${slot}"
                 >
 
@@ -6800,12 +6963,15 @@ function retailerProfileCardHtml(
                     )}"
                   >
 
-                  <div
-                    class="retailer-profile-name-field"
+                  <section
+                    class="paid-profile-section"
                   >
+                    <span class="eyebrow">
+                      PROFILE DETAILS
+                    </span>
+
                     <label>
                       Profile Name
-
                       <input
                         type="text"
                         name="profileName"
@@ -6817,55 +6983,341 @@ function retailerProfileCardHtml(
                         required
                       >
                     </label>
-                  </div>
+                  </section>
 
-                  <div
-                    class="profile-saved-info-summary"
+                  <section
+                    class="paid-profile-section"
                   >
-                    <div>
-                      <span>SHIPPING</span>
-                      <strong>
+                    <div
+                      class="paid-profile-section-head"
+                    >
+                      <div>
+                        <span class="eyebrow">
+                          SHIPPING INFORMATION
+                        </span>
+
+                        <p>
+                          Shipping information for this
+                          specific paid ACO profile.
+                        </p>
+                      </div>
+
+                      <span
+                        class="profile-mini-status ${
+                          readiness.shippingReady
+                            ? "ready"
+                            : "missing"
+                        }"
+                      >
                         ${
-                          readiness
-                            .shippingReady
-                            ? "Saved"
-                            : "Needed"
+                          readiness.shippingReady
+                            ? "● READY"
+                            : "● MISSING"
                         }
-                      </strong>
+                      </span>
                     </div>
 
-                    <div>
-                      <span>CARD</span>
-                      <strong>
+                    <div class="two">
+                      <label>
+                        First Name
+                        <input
+                          name="firstName"
+                          value="${escapeHtml(
+                            customerProfile
+                              .firstName ||
+                            ""
+                          )}"
+                          required
+                        >
+                      </label>
+
+                      <label>
+                        Last Name
+                        <input
+                          name="lastName"
+                          value="${escapeHtml(
+                            customerProfile
+                              .lastName ||
+                            ""
+                          )}"
+                          required
+                        >
+                      </label>
+                    </div>
+
+                    <div class="two">
+                      <label>
+                        Email
+                        <input
+                          type="email"
+                          name="email"
+                          value="${escapeHtml(
+                            customerProfile
+                              .email ||
+                            state.customer
+                              ?.email ||
+                            ""
+                          )}"
+                          required
+                        >
+                      </label>
+
+                      <label>
+                        Phone
+                        <input
+                          name="phone"
+                          value="${escapeHtml(
+                            customerProfile
+                              .phone ||
+                            ""
+                          )}"
+                        >
+                      </label>
+                    </div>
+
+                    <label>
+                      Address
+                      <input
+                        name="address"
+                        value="${escapeHtml(
+                          customerProfile
+                            .address ||
+                          ""
+                        )}"
+                        required
+                      >
+                    </label>
+
+                    <label>
+                      Address 2
+                      <input
+                        name="address2"
+                        value="${escapeHtml(
+                          customerProfile
+                            .address2 ||
+                          ""
+                        )}"
+                      >
+                    </label>
+
+                    <div class="two">
+                      <label>
+                        City
+                        <input
+                          name="city"
+                          value="${escapeHtml(
+                            customerProfile
+                              .city ||
+                            ""
+                          )}"
+                          required
+                        >
+                      </label>
+
+                      <label>
+                        State
+                        <input
+                          name="state"
+                          value="${escapeHtml(
+                            customerProfile
+                              .state ||
+                            ""
+                          )}"
+                          required
+                        >
+                      </label>
+                    </div>
+
+                    <div class="two">
+                      <label>
+                        ZIP
+                        <input
+                          name="zip"
+                          value="${escapeHtml(
+                            customerProfile
+                              .zip ||
+                            ""
+                          )}"
+                          required
+                        >
+                      </label>
+
+                      <label>
+                        Country
+                        <input
+                          name="country"
+                          value="${escapeHtml(
+                            customerProfile
+                              .country ||
+                            "US"
+                          )}"
+                          required
+                        >
+                      </label>
+                    </div>
+                  </section>
+
+                  <section
+                    class="paid-profile-section"
+                  >
+                    <div
+                      class="paid-profile-section-head"
+                    >
+                      <div>
+                        <span class="eyebrow">
+                          CARD INFORMATION
+                        </span>
+
+                        <p>
+                          Select a saved card above or enter
+                          the card information for this profile.
+                        </p>
+                      </div>
+
+                      <span
+                        class="profile-mini-status ${
+                          readiness.cardReady
+                            ? "ready"
+                            : "missing"
+                        }"
+                      >
                         ${
-                          readiness
-                            .cardReady
-                            ? (
+                          readiness.cardReady
+                            ? "● READY"
+                            : "● MISSING"
+                        }
+                      </span>
+                    </div>
+
+                    <div class="two">
+                      <label>
+                        Card Label
+                        <input
+                          name="cardLabel"
+                          value="${escapeHtml(
+                            customerCard
+                              .cardLabel ||
+                            ""
+                          )}"
+                          placeholder="Example: Personal Visa"
+                        >
+                      </label>
+
+                      <label>
+                        Cardholder Name
+                        <input
+                          name="cardholder"
+                          value="${escapeHtml(
+                            customerCard
+                              .cardholder ||
+                            ""
+                          )}"
+                          required
+                        >
+                      </label>
+                    </div>
+
+                    <label>
+                      Card Number
+                      <input
+                        name="acoCardNumber"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        ${
+                          hasSavedCard
+                            ? ""
+                            : "required"
+                        }
+                        placeholder="${
+                          hasSavedCard
+                            ? `Saved ${escapeHtml(
                                 customerCard
-                                  ?.maskedNumber ||
-                                "Saved"
-                              )
-                            : "Needed"
-                        }
-                      </strong>
-                    </div>
-                  </div>
+                                  .maskedNumber
+                              )} — leave blank to keep`
+                            : "Enter card number"
+                        }"
+                      >
+                    </label>
 
-                  <div
-                    class="retailer-credentials-grid"
+                    <div class="two">
+                      <label>
+                        Expiration Month
+                        <input
+                          name="expMonth"
+                          inputmode="numeric"
+                          maxlength="2"
+                          value="${escapeHtml(
+                            customerCard
+                              .expMonth ||
+                            ""
+                          )}"
+                          placeholder="MM"
+                          required
+                        >
+                      </label>
+
+                      <label>
+                        Expiration Year
+                        <input
+                          name="expYear"
+                          inputmode="numeric"
+                          maxlength="4"
+                          value="${escapeHtml(
+                            customerCard
+                              .expYear ||
+                            ""
+                          )}"
+                          placeholder="YYYY"
+                          required
+                        >
+                      </label>
+                    </div>
+
+                    <label>
+                      Account Security Code
+                      <input
+                        name="securityCode"
+                        autocomplete="off"
+                        placeholder="Leave blank to keep saved code"
+                      >
+                    </label>
+
+                    <small class="fine">
+                      This is the separate ACO Account
+                      Security Code. It is not a card CVV/CVC.
+                    </small>
+                  </section>
+
+                  <section
+                    class="paid-profile-section"
                   >
-                    ${RETAILERS
-                      .map(
-                        retailer =>
-                          retailerFieldsHtml(
-                            retailer,
-                            retailers[
-                              retailer.key
-                            ] || {}
-                          )
-                      )
-                      .join("")}
-                  </div>
+                    <span class="eyebrow">
+                      RETAILER ACCOUNTS
+                    </span>
+
+                    <p
+                      class="paid-profile-section-copy"
+                    >
+                      Add the retailer login information for
+                      this paid ACO profile.
+                    </p>
+
+                    <div
+                      class="retailer-credentials-grid"
+                    >
+                      ${RETAILERS
+                        .map(
+                          retailer =>
+                            retailerFieldsHtml(
+                              retailer,
+                              retailers[
+                                retailer.key
+                              ] || {}
+                            )
+                        )
+                        .join("")}
+                    </div>
+                  </section>
 
                   <div
                     class="retailer-profile-save-row"
@@ -6883,13 +7335,10 @@ function retailerProfileCardHtml(
                       Save Profile ${slot}
                     </button>
                   </div>
-
                 </form>
-
               </div>
             `
       }
-
     </article>
   `;
 }
@@ -7234,6 +7683,17 @@ function managedMembershipCardHtml(
           membership.expiresAt
         );
 
+  const countdown =
+    profileCountdownInfo({
+      expiresAt:
+        membership.expiresAt,
+      daysRemaining,
+      active:
+        membership.active !==
+        false,
+      indefinite
+    });
+
   return `
     <article
       class="retailer-profile-card special-retailer-profile compact-profile-card"
@@ -7300,9 +7760,17 @@ function managedMembershipCardHtml(
           </span>
         </button>
 
-        ${readinessBadgeHtml(
-          readiness
-        )}
+        <div
+          class="profile-status-stack"
+        >
+          ${readinessBadgeHtml(
+            readiness
+          )}
+
+          ${profileCountdownBadgeHtml(
+            countdown
+          )}
+        </div>
 
       </div>
 
@@ -7898,7 +8366,7 @@ function bindManagedAutofill() {
 function bindPersonalProfileAutofill() {
   document
     .querySelectorAll(
-      "[data-personal-autofill-apply]"
+      "[data-personal-autofill-fill]"
     )
     .forEach(button => {
       button.addEventListener(
@@ -7918,25 +8386,24 @@ function bindPersonalProfileAutofill() {
             return;
           }
 
-          const shipping =
+          const shippingId =
             card.querySelector(
               "[data-personal-shipping-select]"
             )?.value || "";
 
-          const payment =
+          const paymentId =
             card.querySelector(
               "[data-personal-card-select]"
             )?.value || "";
 
           if (
-            !shipping &&
-            !payment
+            !shippingId &&
+            !paymentId
           ) {
             showAccountMessage(
               "Choose a saved shipping address or card first.",
               "error"
             );
-
             return;
           }
 
@@ -7947,7 +8414,7 @@ function bindPersonalProfileAutofill() {
             form.elements
               .shippingAddressId
               .value =
-                shipping;
+                shippingId;
           }
 
           if (
@@ -7957,21 +8424,184 @@ function bindPersonalProfileAutofill() {
             form.elements
               .paymentMethodId
               .value =
-                payment;
+                paymentId;
           }
 
-          /*
-            Save through the normal profile form so
-            retailer credentials and profile name are
-            preserved while saved shipping/card data
-            is applied server-side.
-          */
-          form.requestSubmit();
+          const address =
+            savedAddressById(
+              shippingId
+            );
+
+          if (address) {
+            const values = {
+              firstName:
+                address.firstName ||
+                "",
+              lastName:
+                address.lastName ||
+                "",
+              address:
+                address.address ||
+                "",
+              address2:
+                address.address2 ||
+                "",
+              city:
+                address.city ||
+                "",
+              state:
+                address.state ||
+                "",
+              zip:
+                address.zip ||
+                "",
+              country:
+                address.country ||
+                "US"
+            };
+
+            Object.entries(
+              values
+            ).forEach(
+              ([
+                key,
+                value
+              ]) => {
+                const input =
+                  form.elements[
+                    key
+                  ];
+
+                if (input) {
+                  input.value =
+                    value;
+                }
+              }
+            );
+          }
+
+          const payment =
+            savedPaymentById(
+              paymentId
+            );
+
+          if (payment) {
+            if (
+              form.elements
+                .cardLabel
+            ) {
+              form.elements
+                .cardLabel
+                .value =
+                  payment.cardLabel ||
+                  "";
+            }
+
+            if (
+              form.elements
+                .cardholder
+            ) {
+              form.elements
+                .cardholder
+                .value =
+                  payment.cardholder ||
+                  "";
+            }
+
+            if (
+              form.elements
+                .expMonth
+            ) {
+              form.elements
+                .expMonth
+                .value =
+                  payment.expMonth ||
+                  "";
+            }
+
+            if (
+              form.elements
+                .expYear
+            ) {
+              form.elements
+                .expYear
+                .value =
+                  payment.expYear ||
+                  "";
+            }
+
+            if (
+              form.elements
+                .acoCardNumber
+            ) {
+              form.elements
+                .acoCardNumber
+                .value =
+                  "";
+
+              form.elements
+                .acoCardNumber
+                .required =
+                  false;
+
+              form.elements
+                .acoCardNumber
+                .placeholder =
+                  payment.maskedNumber
+                    ? `Saved ${payment.maskedNumber} — leave blank to keep`
+                    : "Saved card selected";
+            }
+
+            if (
+              form.elements
+                .securityCode
+            ) {
+              form.elements
+                .securityCode
+                .value =
+                  "";
+
+              form.elements
+                .securityCode
+                .placeholder =
+                  "Saved code selected — leave blank to keep";
+            }
+          }
+
+          const body =
+            card.querySelector(
+              "[data-profile-body]"
+            );
+
+          if (
+            body &&
+            body.hidden
+          ) {
+            body.hidden =
+              false;
+
+            card.classList.add(
+              "expanded"
+            );
+
+            card
+              .querySelector(
+                "[data-profile-toggle]"
+              )
+              ?.setAttribute(
+                "aria-expanded",
+                "true"
+              );
+          }
+
+          showAccountMessage(
+            "Saved information filled into this profile. Review it, then click Save Profile.",
+            "success"
+          );
         }
       );
     });
 }
-
 
 function bindManagedMembershipForms() {
   document
@@ -9211,6 +9841,124 @@ async function saveRetailerProfile(
       ) || ""
     ).trim();
 
+  const customerProfile = {
+    profileName,
+
+    firstName:
+      String(
+        formData.get(
+          "firstName"
+        ) || ""
+      ).trim(),
+
+    lastName:
+      String(
+        formData.get(
+          "lastName"
+        ) || ""
+      ).trim(),
+
+    email:
+      String(
+        formData.get(
+          "email"
+        ) || ""
+      ).trim(),
+
+    phone:
+      String(
+        formData.get(
+          "phone"
+        ) || ""
+      ).trim(),
+
+    address:
+      String(
+        formData.get(
+          "address"
+        ) || ""
+      ).trim(),
+
+    address2:
+      String(
+        formData.get(
+          "address2"
+        ) || ""
+      ).trim(),
+
+    city:
+      String(
+        formData.get(
+          "city"
+        ) || ""
+      ).trim(),
+
+    state:
+      String(
+        formData.get(
+          "state"
+        ) || ""
+      ).trim(),
+
+    zip:
+      String(
+        formData.get(
+          "zip"
+        ) || ""
+      ).trim(),
+
+    country:
+      String(
+        formData.get(
+          "country"
+        ) || ""
+      ).trim()
+  };
+
+  const customerCard = {
+    cardLabel:
+      String(
+        formData.get(
+          "cardLabel"
+        ) || ""
+      ).trim(),
+
+    cardholder:
+      String(
+        formData.get(
+          "cardholder"
+        ) || ""
+      ).trim(),
+
+    acoCardNumber:
+      String(
+        formData.get(
+          "acoCardNumber"
+        ) || ""
+      ).trim(),
+
+    expMonth:
+      String(
+        formData.get(
+          "expMonth"
+        ) || ""
+      ).trim(),
+
+    expYear:
+      String(
+        formData.get(
+          "expYear"
+        ) || ""
+      ).trim(),
+
+    securityCode:
+      String(
+        formData.get(
+          "securityCode"
+        ) || ""
+      ).trim()
+  };
+
   const retailers = {};
 
   for (
@@ -9281,59 +10029,85 @@ async function saveRetailerProfile(
             ]
           )
         ),
-      customerProfile:
-        address
-          ? {
-              firstName:
-                address.firstName ||
-                "",
-              lastName:
-                address.lastName ||
-                "",
-              email:
-                state.customer
-                  ?.email ||
-                "",
-              address:
-                address.address ||
-                "",
-              address2:
-                address.address2 ||
-                "",
-              city:
-                address.city ||
-                "",
-              state:
-                address.state ||
-                "",
-              zip:
-                address.zip ||
-                "",
-              country:
-                address.country ||
+      customerProfile: {
+        ...customerProfile,
+
+        firstName:
+          customerProfile.firstName ||
+          address?.firstName ||
+          "",
+
+        lastName:
+          customerProfile.lastName ||
+          address?.lastName ||
+          "",
+
+        email:
+          customerProfile.email ||
+          state.customer?.email ||
+          "",
+
+        address:
+          customerProfile.address ||
+          address?.address ||
+          "",
+
+        address2:
+          customerProfile.address2 ||
+          address?.address2 ||
+          "",
+
+        city:
+          customerProfile.city ||
+          address?.city ||
+          "",
+
+        state:
+          customerProfile.state ||
+          address?.state ||
+          "",
+
+        zip:
+          customerProfile.zip ||
+          address?.zip ||
+          "",
+
+        country:
+          customerProfile.country ||
+          address?.country ||
+          "US"
+      },
+
+      customerCard: {
+        cardLabel:
+          customerCard.cardLabel ||
+          payment?.cardLabel ||
+          "",
+
+        cardholder:
+          customerCard.cardholder ||
+          payment?.cardholder ||
+          "",
+
+        maskedNumber:
+          customerCard.acoCardNumber
+            ? `•••• •••• •••• ${customerCard.acoCardNumber.replace(/\D/g, "").slice(-4)}`
+            : (
+                payment?.maskedNumber ||
                 ""
-            }
-          : null,
-      customerCard:
-        payment
-          ? {
-              cardLabel:
-                payment.cardLabel ||
-                "",
-              cardholder:
-                payment.cardholder ||
-                "",
-              maskedNumber:
-                payment.maskedNumber ||
-                "•••• •••• •••• 1111",
-              expMonth:
-                payment.expMonth ||
-                "12",
-              expYear:
-                payment.expYear ||
-                "2030"
-            }
-          : null,
+              ),
+
+        expMonth:
+          customerCard.expMonth ||
+          payment?.expMonth ||
+          "",
+
+        expYear:
+          customerCard.expYear ||
+          payment?.expYear ||
+          ""
+      },
+
       selectedAddressId:
         shippingAddressId ||
         null,
@@ -9408,7 +10182,9 @@ async function saveRetailerProfile(
               profileName,
               retailers,
               shippingAddressId,
-              paymentMethodId
+              paymentMethodId,
+              customerProfile,
+              customerCard
             })
         }
       );
