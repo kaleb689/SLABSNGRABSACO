@@ -8416,9 +8416,16 @@ app.put(
           );
 
         if (discordChanged) {
-          records[
-            existingIndex
-          ] = record;
+          const savedIndex =
+            existingIndex >= 0
+              ? existingIndex
+              : records.length - 1;
+
+          if (savedIndex >= 0) {
+            records[
+              savedIndex
+            ] = record;
+          }
 
           await saveRetailerProfiles(
             records
@@ -15150,11 +15157,28 @@ app.get(
             secrets
           );
 
+        const storedStatus =
+          String(
+            record.activationStatus ||
+            ""
+          )
+            .trim()
+            .toLowerCase();
+
         const status =
-          normalizeProfileActivationStatus(
-            record.activationStatus,
-            readiness.ready
-          );
+          [
+            "awaiting_activation",
+            "activated",
+            "deactivated",
+            "expired"
+          ].includes(
+            storedStatus
+          )
+            ? storedStatus
+            : normalizeProfileActivationStatus(
+                record.activationStatus,
+                readiness.ready
+              );
 
         addProfile({
           id:
