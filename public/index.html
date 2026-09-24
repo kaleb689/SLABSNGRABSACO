@@ -2989,13 +2989,34 @@
 
       </div>
 
-      <button
-        type="button"
-        id="customer-logout"
-        class="secondary account-action-button"
-      >
-        Log Out
-      </button>
+      <div class="account-topbar-right">
+
+        <div class="member-lifetime-stats">
+          <div>
+            <span>USER SINCE</span>
+            <strong id="member-since">—</strong>
+          </div>
+
+          <div>
+            <span>LIFETIME SPEND</span>
+            <strong id="member-lifetime-spend">$0.00</strong>
+          </div>
+
+          <div>
+            <span>TOTAL ORDERS</span>
+            <strong id="member-total-orders">0</strong>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          id="customer-logout"
+          class="secondary account-action-button"
+        >
+          Log Out
+        </button>
+
+      </div>
 
     </div>
 
@@ -3628,6 +3649,200 @@
           class="form-message"
         ></p>
 
+      </div>
+
+
+      <!-- SAVED SHIPPING & PAYMENT -->
+
+      <div class="account-card saved-details-manager">
+
+        <div class="account-card-heading">
+          <div>
+            <span class="eyebrow">SAVED CHECKOUT DETAILS</span>
+            <h3>Shipping Addresses &amp; Payment Cards</h3>
+            <p class="account-muted">
+              Save multiple shipping addresses and payment cards,
+              then switch between them without opening every record at once.
+            </p>
+          </div>
+        </div>
+
+        <div class="saved-details-grid">
+
+          <section class="saved-detail-panel">
+            <div class="saved-detail-head">
+              <div>
+                <span class="eyebrow">SHIPPING</span>
+                <h4>Saved Addresses</h4>
+              </div>
+              <span id="saved-address-count" class="saved-detail-count">0</span>
+            </div>
+
+            <div class="saved-detail-selector-row">
+              <select id="saved-address-select">
+                <option value="">No saved addresses</option>
+              </select>
+
+              <button type="button" id="add-saved-address" class="secondary">
+                Add Another Address
+              </button>
+            </div>
+
+            <form id="saved-address-form" class="saved-detail-form" hidden>
+              <input type="hidden" name="id" />
+
+              <label>
+                Address Label
+                <input name="label" placeholder="Home, Office, Address 2..." maxlength="80" required />
+              </label>
+
+              <div class="two">
+                <label>
+                  First Name *
+                  <input name="firstName" maxlength="100" required />
+                </label>
+                <label>
+                  Last Name *
+                  <input name="lastName" maxlength="100" required />
+                </label>
+              </div>
+
+              <label>
+                Address *
+                <input name="address" maxlength="300" required />
+              </label>
+
+              <label>
+                Address 2
+                <input name="address2" maxlength="300" placeholder="Apt. / Suite" />
+              </label>
+
+              <div class="two">
+                <label>
+                  City *
+                  <input name="city" maxlength="100" required />
+                </label>
+                <label>
+                  State *
+                  <input name="state" maxlength="100" required />
+                </label>
+              </div>
+
+              <div class="two">
+                <label>
+                  Zipcode *
+                  <input name="zip" maxlength="30" required />
+                </label>
+
+                <label>
+                  Country *
+                  <select name="country" required>
+                    <option value="">Select country</option>
+                    <option>United States</option>
+                    <option>Canada</option>
+                    <option>Other</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="saved-detail-actions">
+                <button type="submit" class="primary">Save Address</button>
+                <button type="button" id="cancel-saved-address" class="secondary">Cancel</button>
+              </div>
+            </form>
+
+            <div id="saved-address-preview" class="saved-detail-preview">
+              <p class="account-muted">No saved shipping addresses yet.</p>
+            </div>
+
+            <div id="saved-address-existing-actions" class="saved-detail-actions" hidden>
+              <button type="button" id="edit-saved-address" class="secondary">Edit Address</button>
+              <button type="button" id="delete-saved-address" class="secondary danger-button">Delete Address</button>
+            </div>
+          </section>
+
+          <section class="saved-detail-panel">
+            <div class="saved-detail-head">
+              <div>
+                <span class="eyebrow">PAYMENT</span>
+                <h4>Saved Payment Cards</h4>
+              </div>
+              <span id="saved-payment-count" class="saved-detail-count">0</span>
+            </div>
+
+            <div class="saved-detail-selector-row">
+              <select id="saved-payment-select">
+                <option value="">No saved cards</option>
+              </select>
+
+              <button type="button" id="add-saved-payment" class="secondary">
+                Add Another Card
+              </button>
+            </div>
+
+            <form id="saved-payment-form" class="saved-detail-form" hidden>
+              <input type="hidden" name="id" />
+
+              <label>
+                Card Label *
+                <input name="cardLabel" maxlength="100" placeholder="Payment 1, Personal Visa..." required />
+              </label>
+
+              <label>
+                Cardholder Name *
+                <input name="cardholder" maxlength="150" required />
+              </label>
+
+              <label>
+                Card Number *
+                <input name="acoCardNumber" inputmode="numeric" autocomplete="off" maxlength="23" placeholder="Enter card number" />
+              </label>
+
+              <div class="two">
+                <label>
+                  Exp. Month *
+                  <select name="expMonth">
+                    <option value="">Month</option>
+                    <option>01</option><option>02</option><option>03</option><option>04</option>
+                    <option>05</option><option>06</option><option>07</option><option>08</option>
+                    <option>09</option><option>10</option><option>11</option><option>12</option>
+                  </select>
+                </label>
+
+                <label>
+                  Exp. Year *
+                  <input name="expYear" inputmode="numeric" maxlength="4" placeholder="YYYY" />
+                </label>
+              </div>
+
+              <label>
+                Security Code
+                <input type="password" name="securityCode" autocomplete="off" maxlength="8"
+                  placeholder="Enter only when adding/replacing card" />
+                <small class="fine">
+                  Saved security codes are never displayed back in My Profile after they are submitted.
+                </small>
+              </label>
+
+              <div class="saved-detail-actions">
+                <button type="submit" class="primary">Save Card</button>
+                <button type="button" id="cancel-saved-payment" class="secondary">Cancel</button>
+              </div>
+            </form>
+
+            <div id="saved-payment-preview" class="saved-detail-preview">
+              <p class="account-muted">No saved payment cards yet.</p>
+            </div>
+
+            <div id="saved-payment-existing-actions" class="saved-detail-actions" hidden>
+              <button type="button" id="edit-saved-payment" class="secondary">Edit Card</button>
+              <button type="button" id="delete-saved-payment" class="secondary danger-button">Delete Card</button>
+            </div>
+          </section>
+
+        </div>
+
+        <p id="saved-details-message" class="form-message"></p>
       </div>
 
 
