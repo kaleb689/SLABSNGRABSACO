@@ -10952,3 +10952,77 @@ select:focus {
     grid-row: 1;
   }
 }
+
+
+/* ======================================================
+   STATIC / ROUNDED MY PROFILE, SUCCESS, AND ORDER CARDS
+====================================================== */
+
+#account-tab-membership .account-card,
+#account-tab-membership .membership-stat,
+#account-tab-membership .account-detail-list > div,
+#account-tab-success .account-card,
+#account-tab-success .success-stat-card,
+#account-tab-success .success-activity-card,
+#account-tab-success .success-recent-card,
+#account-tab-success .success-all-orders-card,
+#account-tab-success .success-checkout-card,
+#account-tab-success .success-chart,
+#account-tab-success .success-info-note,
+#account-tab-orders .account-card,
+#account-tab-orders .customer-order-card,
+#account-tab-orders .claim-order-card,
+#account-tab-orders .guide-alert {
+  border-radius: 18px !important;
+}
+
+#account-tab-membership .account-card:hover,
+#account-tab-membership .membership-stat:hover,
+#account-tab-membership .account-detail-list > div:hover,
+#account-tab-success .account-card:hover,
+#account-tab-success .success-stat-card:hover,
+#account-tab-success .success-activity-card:hover,
+#account-tab-success .success-recent-card:hover,
+#account-tab-success .success-all-orders-card:hover,
+#account-tab-success .success-checkout-card:hover,
+#account-tab-success .success-chart:hover,
+#account-tab-success .success-info-note:hover,
+#account-tab-orders .account-card:hover,
+#account-tab-orders .customer-order-card:hover,
+#account-tab-orders .claim-order-card:hover,
+#account-tab-orders .guide-alert:hover {
+  transform: none !important;
+}
+
+#account-tab-membership .account-card,
+#account-tab-membership .membership-stat,
+#account-tab-membership .account-detail-list > div,
+#account-tab-success .account-card,
+#account-tab-success .success-stat-card,
+#account-tab-success .success-activity-card,
+#account-tab-success .success-recent-card,
+#account-tab-success .success-all-orders-card,
+#account-tab-success .success-checkout-card,
+#account-tab-success .success-chart,
+#account-tab-success .success-info-note,
+#account-tab-orders .account-card,
+#account-tab-orders .customer-order-card,
+#account-tab-orders .claim-order-card,
+#account-tab-orders .guide-alert {
+  transition:
+    border-color .18s ease,
+    box-shadow .18s ease,
+    background .18s ease !important;
+}
+
+#account-tab-membership .membership-stats,
+#account-tab-membership .account-detail-list {
+  align-items: stretch;
+}
+
+#account-tab-membership .membership-stat,
+#account-tab-membership .account-detail-list > div {
+  height: 100%;
+  overflow: hidden;
+}
+
