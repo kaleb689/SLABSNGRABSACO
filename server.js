@@ -6163,7 +6163,29 @@ app.get(
               );
             }
 
-      let customerSecrets =
+      let retailers =
+  emptyRetailerCredentials();
+
+try {
+  if (
+    membership.credentials
+  ) {
+    retailers =
+      normalizeRetailerCredentials(
+        decryptJson(
+          membership.credentials
+        )
+      );
+  }
+} catch (error) {
+  console.error(
+    "Rented membership decrypt error:",
+    membership.id,
+    error.message
+  );
+}
+            
+            let customerSecrets =
   null;
 
 try {
