@@ -4774,6 +4774,33 @@ function updateRentalMembershipAccess(
    MEMBERSHIP RENDERING
 ===================================================== */
 
+
+function customerTierColorClass(
+  tier
+) {
+  const tierNumber =
+    Number(tier);
+
+  return tierNumber >= 1 &&
+    tierNumber <= 7
+      ? `customer-tier-color-${tierNumber}`
+      : "";
+}
+
+
+function customerTierStatusClass(
+  tier
+) {
+  const tierNumber =
+    Number(tier);
+
+  return tierNumber >= 1 &&
+    tierNumber <= 7
+      ? `customer-tier-status-${tierNumber}`
+      : "";
+}
+
+
 function renderMembership(
   membership
 ) {
@@ -4973,6 +5000,34 @@ function renderMembership(
     planName
   );
 
+  const membershipPlanNameElement =
+    document.getElementById(
+      "membership-plan-name"
+    );
+
+  if (membershipPlanNameElement) {
+    for (
+      let tierNumber = 1;
+      tierNumber <= 7;
+      tierNumber += 1
+    ) {
+      membershipPlanNameElement.classList.remove(
+        `customer-tier-color-${tierNumber}`
+      );
+    }
+
+    const planTierClass =
+      customerTierColorClass(
+        tier
+      );
+
+    if (planTierClass) {
+      membershipPlanNameElement.classList.add(
+        planTierClass
+      );
+    }
+  }
+
   const membershipStatusElement =
   document.getElementById(
     "membership-status"
@@ -4991,13 +5046,34 @@ if (membershipStatusElement) {
     "status-red"
   );
 
+  for (
+    let tierNumber = 1;
+    tierNumber <= 7;
+    tierNumber += 1
+  ) {
+    membershipStatusElement.classList.remove(
+      `customer-tier-status-${tierNumber}`
+    );
+  }
+
   if (isActive) {
 
-    membershipStatusElement.classList.add(
-      daysRemaining <= 7
-        ? "status-yellow"
-        : "status-green"
-    );
+    const tierStatusClass =
+      customerTierStatusClass(
+        tier
+      );
+
+    if (tierStatusClass) {
+      membershipStatusElement.classList.add(
+        tierStatusClass
+      );
+    } else {
+      membershipStatusElement.classList.add(
+        daysRemaining <= 7
+          ? "status-yellow"
+          : "status-green"
+      );
+    }
 
     membershipStatusElement.textContent =
       `● ACTIVE — ${daysRemaining} ${
