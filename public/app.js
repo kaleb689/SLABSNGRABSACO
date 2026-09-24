@@ -7089,42 +7089,40 @@ function retailerProfileCardHtml(
         class="profile-compact-main"
       >
 
-        <button
-          type="button"
-          class="profile-compact-toggle"
-          data-profile-toggle
-          aria-expanded="false"
-        >
-          <span
-            class="retailer-profile-number"
-          >
-            ${slot}
-          </span>
-
-          <span
-            class="profile-compact-title"
-          >
-            <span class="eyebrow">
-              PAID ACO PROFILE ${slot}
-            </span>
-
-            <strong>
-              ${escapeHtml(
-                profileName
-              )}
-            </strong>
-
-            <small>
-              Click to open and manage this profile
-            </small>
-          </span>
-
-
-        </button>
-
         ${
           locked
             ? `
+                <button
+                  type="button"
+                  class="profile-compact-toggle profile-open-button"
+                  disabled
+                  aria-expanded="false"
+                >
+                  <span
+                    class="retailer-profile-number"
+                  >
+                    ${slot}
+                  </span>
+
+                  <span
+                    class="profile-compact-title"
+                  >
+                    <span class="eyebrow">
+                      PAID ACO PROFILE ${slot}
+                    </span>
+
+                    <strong>
+                      ${escapeHtml(
+                        profileName
+                      )}
+                    </strong>
+
+                    <small>
+                      Profile unavailable on your current plan
+                    </small>
+                  </span>
+                </button>
+
                 <span
                   class="retailer-profile-lock"
                 >
@@ -7132,22 +7130,53 @@ function retailerProfileCardHtml(
                 </span>
               `
             : `
-                <span
-                  class="profile-open-control profile-open-control-status-side"
-                  aria-hidden="true"
+                <button
+                  type="button"
+                  class="profile-compact-toggle profile-open-button"
+                  data-profile-toggle
+                  aria-expanded="false"
                 >
                   <span
-                    class="profile-open-hint"
+                    class="retailer-profile-number"
                   >
-                    OPEN PROFILE
+                    ${slot}
                   </span>
 
                   <span
-                    class="profile-compact-chevron"
+                    class="profile-compact-title"
                   >
-                    ▾
+                    <span class="eyebrow">
+                      PAID ACO PROFILE ${slot}
+                    </span>
+
+                    <strong>
+                      ${escapeHtml(
+                        profileName
+                      )}
+                    </strong>
+
+                    <small>
+                      Click anywhere here to open and manage this profile
+                    </small>
                   </span>
-                </span>
+
+                  <span
+                    class="profile-open-control"
+                    aria-hidden="true"
+                  >
+                    <span
+                      class="profile-open-hint"
+                    >
+                      OPEN PROFILE
+                    </span>
+
+                    <span
+                      class="profile-compact-chevron"
+                    >
+                      ▾
+                    </span>
+                  </span>
+                </button>
 
                 <div
                   class="profile-status-stack"
