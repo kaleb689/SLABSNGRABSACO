@@ -2030,6 +2030,156 @@
       white-space: nowrap;
     }
 
+
+    .profile-activation-tracker {
+      margin: 18px 0 22px;
+      border: 1px solid rgba(18,201,255,.18);
+      border-radius: 16px;
+      padding: 18px;
+      background: rgba(5,18,29,.72);
+    }
+
+    .profile-activation-tracker-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 13px;
+    }
+
+    .activation-summary-counts {
+      display: flex;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+
+    .activation-count-box {
+      min-width: 135px;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 10px;
+      padding: 9px 11px;
+      background: rgba(255,255,255,.025);
+    }
+
+    .activation-count-box span,
+    .activation-count-box strong {
+      display: block;
+    }
+
+    .activation-count-box span {
+      color: #8195a9;
+      font-size: 9px;
+      font-weight: 900;
+    }
+
+    .activation-count-box strong {
+      margin-top: 3px;
+      font-size: 18px;
+    }
+
+    .activation-group {
+      margin-top: 9px;
+      border: 1px solid rgba(255,255,255,.075);
+      border-radius: 11px;
+      overflow: hidden;
+      background: rgba(255,255,255,.018);
+    }
+
+    .activation-group > summary {
+      cursor: pointer;
+      list-style: none;
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 13px;
+    }
+
+    .activation-group > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .activation-profile-list {
+      border-top: 1px solid rgba(255,255,255,.06);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .activation-profile-row {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid rgba(255,255,255,.06);
+      border-radius: 9px;
+      padding: 10px;
+      background: rgba(2,10,18,.55);
+    }
+
+    .activation-state {
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 8px;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    .activation-state.awaiting_activation {
+      border: 1px solid rgba(255,200,75,.4);
+      color: #ffd46e;
+      background: rgba(255,200,75,.07);
+    }
+
+    .activation-state.activated {
+      border: 1px solid rgba(37,220,143,.4);
+      color: #71efba;
+      background: rgba(37,220,143,.07);
+    }
+
+    .activation-state.deactivated {
+      border: 1px solid rgba(255,91,105,.4);
+      color: #ff8d98;
+      background: rgba(255,91,105,.07);
+    }
+
+    .activation-actions {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
+    .admin-saved-detail-card details {
+      border: 1px solid rgba(255,255,255,.06);
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(255,255,255,.015);
+    }
+
+    .admin-saved-detail-card details > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 11px 12px;
+      font-weight: 900;
+    }
+
+    .admin-saved-detail-card details > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .admin-saved-detail-body {
+      border-top: 1px solid rgba(255,255,255,.06);
+      padding: 12px;
+    }
+
+    @media (max-width:760px) {
+      .activation-group > summary,
+      .activation-profile-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
   </style>
 </head>
 
@@ -2378,6 +2528,65 @@ PAID SUBSCRIPTIONS
   </div>
 </section>
     
+    <section
+      id="profileActivationTracker"
+      class="profile-activation-tracker"
+    >
+      <div
+        class="profile-activation-tracker-head"
+      >
+        <div>
+          <span class="eyebrow">
+            PROFILE WORKFLOW
+          </span>
+
+          <h2>
+            ACO Profile Activation
+          </h2>
+        </div>
+
+        <div
+          class="activation-summary-counts"
+        >
+          <div
+            class="activation-count-box"
+          >
+            <span>
+              AWAITING ACTIVATION
+            </span>
+
+            <strong
+              id="awaitingActivationCount"
+            >
+              —
+            </strong>
+          </div>
+
+          <div
+            class="activation-count-box"
+          >
+            <span>
+              ACTIVATED
+            </span>
+
+            <strong
+              id="activatedProfileCount"
+            >
+              —
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      <div
+        id="profileActivationGroups"
+      >
+        <p class="admin-retailer-loading">
+          Loading activation tracker...
+        </p>
+      </div>
+    </section>
+
     <div
       id="rows"
       class="admin-orders"
@@ -2413,6 +2622,21 @@ const msg =
 const rows =
   document.getElementById(
     "rows"
+  );
+
+const awaitingActivationCount =
+  document.getElementById(
+    "awaitingActivationCount"
+  );
+
+const activatedProfileCount =
+  document.getElementById(
+    "activatedProfileCount"
+  );
+
+const profileActivationGroups =
+  document.getElementById(
+    "profileActivationGroups"
   );
 
 const submissionCount =
@@ -4962,9 +5186,15 @@ async function loadAdminSavedDetails(
       <div class="admin-saved-details">
 
         <div class="admin-saved-detail-card">
-          <span class="eyebrow">
-            SHIPPING ADDRESSES
-          </span>
+          <details>
+            <summary>
+              EXTRA SHIPPING ADDRESSES
+            </summary>
+
+            <div class="admin-saved-detail-body">
+              <span class="eyebrow">
+                SHIPPING ADDRESSES
+              </span>
 
           <select data-admin-address-select>
             ${
@@ -4986,12 +5216,20 @@ async function loadAdminSavedDetails(
           </select>
 
           <div data-admin-address-preview></div>
+            </div>
+          </details>
         </div>
 
         <div class="admin-saved-detail-card">
-          <span class="eyebrow">
-            PAYMENT CARDS
-          </span>
+          <details>
+            <summary>
+              EXTRA PAYMENTS
+            </summary>
+
+            <div class="admin-saved-detail-body">
+              <span class="eyebrow">
+                PAYMENT CARDS
+              </span>
 
           <select data-admin-payment-select>
             ${
@@ -5013,6 +5251,8 @@ async function loadAdminSavedDetails(
           </select>
 
           <div data-admin-payment-preview></div>
+            </div>
+          </details>
         </div>
 
       </div>
@@ -8906,9 +9146,266 @@ function bindManagedMembershipDashboard(
   }
 }
   
+
+async function loadProfileActivationTracker() {
+  if (!profileActivationGroups) {
+    return;
+  }
+
+  try {
+    const response =
+      await fetch(
+        "/api/admin/profile-activation-tracker",
+        {
+          credentials:
+            "same-origin",
+          cache:
+            "no-store"
+        }
+      );
+
+    const data =
+      await response
+        .json()
+        .catch(
+          () => ({})
+        );
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to load activation tracker."
+      );
+    }
+
+    awaitingActivationCount
+      .textContent =
+        String(
+          data.awaitingCount ||
+          0
+        );
+
+    activatedProfileCount
+      .textContent =
+        String(
+          data.activatedCount ||
+          0
+        );
+
+    const customers =
+      Array.isArray(
+        data.customers
+      )
+        ? data.customers
+        : [];
+
+    profileActivationGroups
+      .innerHTML =
+        customers.length
+          ? customers
+              .map(group => `
+                <details
+                  class="activation-group"
+                >
+                  <summary>
+                    <span>
+                      <strong>
+                        ${escapeHtml(
+                          group.customerName ||
+                          "Customer"
+                        )}
+                      </strong>
+
+                      <small>
+                        ${escapeHtml(
+                          group.customerEmail ||
+                          ""
+                        )}
+                      </small>
+                    </span>
+
+                    <span>
+                      ${group.profiles.length}
+                      ${
+                        group.profiles.length === 1
+                          ? "PROFILE"
+                          : "PROFILES"
+                      }
+                    </span>
+
+                    <span>▾</span>
+                  </summary>
+
+                  <div
+                    class="activation-profile-list"
+                  >
+                    ${group.profiles
+                      .map(profile => `
+                        <div
+                          class="activation-profile-row"
+                        >
+                          <div>
+                            <strong>
+                              ${escapeHtml(
+                                profile.profileName ||
+                                `Profile ${profile.slot}`
+                              )}
+                            </strong>
+
+                            <small>
+                              PAID PROFILE ${escapeHtml(
+                                profile.slot
+                              )}
+                            </small>
+                          </div>
+
+                          <span
+                            class="activation-state ${escapeHtml(
+                              profile.status
+                            )}"
+                          >
+                            ${escapeHtml(
+                              profile.label
+                            )}
+                          </span>
+
+                          <div
+                            class="activation-actions"
+                          >
+                            ${
+                              profile.status !==
+                                "activated"
+                                ? `
+                                    <button
+                                      type="button"
+                                      class="admin-save-button"
+                                      data-activate-profile="${escapeHtml(
+                                        profile.id
+                                      )}"
+                                    >
+                                      Activate
+                                    </button>
+                                  `
+                                : ""
+                            }
+
+                            <button
+                              type="button"
+                              class="admin-edit-button"
+                              data-deactivate-profile="${escapeHtml(
+                                profile.id
+                              )}"
+                            >
+                              Deactivate
+                            </button>
+                          </div>
+                        </div>
+                      `)
+                      .join("")}
+                  </div>
+                </details>
+              `)
+              .join("")
+          : `
+              <div class="empty-admin">
+                No profiles are awaiting activation yet.
+              </div>
+            `;
+
+    bindProfileActivationButtons();
+
+  } catch (error) {
+    profileActivationGroups
+      .innerHTML = `
+        <div class="empty-admin">
+          ${escapeHtml(
+            error.message
+          )}
+        </div>
+      `;
+  }
+}
+
+
+function bindProfileActivationButtons() {
+  document
+    .querySelectorAll(
+      "[data-activate-profile], [data-deactivate-profile]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async () => {
+          const id =
+            button.dataset
+              .activateProfile ||
+            button.dataset
+              .deactivateProfile;
+
+          const action =
+            button.dataset
+              .activateProfile
+              ? "activate"
+              : "deactivate";
+
+          try {
+            button.disabled = true;
+
+            const response =
+              await fetch(
+                `/api/admin/profile-activation/${encodeURIComponent(
+                  id
+                )}`,
+                {
+                  method:
+                    "POST",
+                  credentials:
+                    "same-origin",
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+                  body:
+                    JSON.stringify({
+                      action
+                    })
+                }
+              );
+
+            const data =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                data.error ||
+                "Unable to update activation."
+              );
+            }
+
+            await loadProfileActivationTracker();
+
+          } catch (error) {
+            window.alert(
+              error.message
+            );
+            button.disabled =
+              false;
+          }
+        }
+      );
+    });
+}
+
+
 async function load() {
 
   await loadManagedAvailability();
+
+  await loadProfileActivationTracker();
 
  const submissionType =
   submissionTypeFilter?.value ||
