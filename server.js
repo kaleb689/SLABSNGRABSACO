@@ -2726,6 +2726,69 @@ async function adminCustomerSavedDetailsPayload(
 
 
 
+
+function normalizeProfileActivationStatus(
+  value,
+  ready = false
+) {
+  const status =
+    String(
+      value ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (
+    [
+      "incomplete",
+      "awaiting_activation",
+      "activated",
+      "deactivated"
+    ].includes(status)
+  ) {
+    return status;
+  }
+
+  return ready
+    ? "awaiting_activation"
+    : "incomplete";
+}
+
+
+function profileActivationLabel(
+  status
+) {
+  const value =
+    normalizeProfileActivationStatus(
+      status
+    );
+
+  if (
+    value ===
+    "activated"
+  ) {
+    return "Activated";
+  }
+
+  if (
+    value ===
+    "deactivated"
+  ) {
+    return "Deactivated";
+  }
+
+  if (
+    value ===
+    "awaiting_activation"
+  ) {
+    return "Awaiting Activation";
+  }
+
+  return "Incomplete";
+}
+
+
 function managedProfileReadiness(
   profile,
   secrets
@@ -6574,6 +6637,9 @@ function safeRetailerProfile(
     );
 
   return {
+    id:
+      record.id,
+
     slot:
       Number(record.slot),
 
@@ -6597,6 +6663,28 @@ function safeRetailerProfile(
       ),
 
     readiness,
+
+    activationStatus:
+      normalizeProfileActivationStatus(
+        record.activationStatus,
+        readiness.ready
+      ),
+
+    activationLabel:
+      profileActivationLabel(
+        normalizeProfileActivationStatus(
+          record.activationStatus,
+          readiness.ready
+        )
+      ),
+
+    activatedAt:
+      record.activatedAt ||
+      null,
+
+    deactivatedAt:
+      record.deactivatedAt ||
+      null,
 
     selectedAddressId:
       record.selectedAddressId ||
@@ -6623,6 +6711,8 @@ function adminRetailerProfile(
   let credentials =
     emptyRetailerCredentials();
 
+  let customerSecrets = {};
+
   try {
     if (record?.credentials) {
       credentials =
@@ -6638,6 +6728,32 @@ function adminRetailerProfile(
       error.message
     );
   }
+
+  try {
+    if (
+      record?.customerSecrets
+    ) {
+      customerSecrets =
+        decryptJson(
+          record.customerSecrets
+        ) || {};
+    }
+  } catch {
+    customerSecrets = {};
+  }
+
+  const customerProfile =
+    record?.customerProfile &&
+    typeof record.customerProfile ===
+      "object"
+      ? record.customerProfile
+      : null;
+
+  const readiness =
+    managedProfileReadiness(
+      customerProfile,
+      customerSecrets
+    );
 
   const retailers = {};
 
@@ -6666,6 +6782,9 @@ function adminRetailerProfile(
   }
 
   return {
+    id:
+      record.id,
+
     slot:
       Number(record.slot),
 
@@ -6680,6 +6799,37 @@ function adminRetailerProfile(
       allowance,
 
     retailers,
+
+    customerProfile,
+
+    customerCard:
+      publicProfileCardSummary(
+        customerSecrets
+      ),
+
+    readiness,
+
+    activationStatus:
+      normalizeProfileActivationStatus(
+        record.activationStatus,
+        readiness.ready
+      ),
+
+    activationLabel:
+      profileActivationLabel(
+        normalizeProfileActivationStatus(
+          record.activationStatus,
+          readiness.ready
+        )
+      ),
+
+    activatedAt:
+      record.activatedAt ||
+      null,
+
+    deactivatedAt:
+      record.deactivatedAt ||
+      null,
 
     createdAt:
       record.createdAt ||
@@ -7626,6 +7776,17 @@ app.put(
         new Date()
           .toISOString();
 
+      const readiness =
+        managedProfileReadiness(
+          customerProfile,
+          customerSecrets
+        );
+
+      const activationStatus =
+        readiness.ready
+          ? "awaiting_activation"
+          : "incomplete";
+
       const record = {
         id:
           existingRecord?.id ||
@@ -7653,6 +7814,19 @@ app.put(
         selectedAddressId,
 
         selectedPaymentId,
+
+        activationStatus,
+
+        activationRequestedAt:
+          readiness.ready
+            ? now
+            : null,
+
+        activatedAt:
+          null,
+
+        deactivatedAt:
+          null,
 
         createdAt:
           existingRecord
@@ -14157,6 +14331,330 @@ app.delete(
         .json({
           error:
             "Unable to delete managed membership."
+        });
+    }
+  }
+);
+
+
+
+/* -------------------------------------------------------
+   ADMIN PROFILE ACTIVATION TRACKER
+------------------------------------------------------- */
+
+app.get(
+  "/api/admin/profile-activation-tracker",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const profiles =
+        await getRetailerProfiles();
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const groups =
+        new Map();
+
+      for (
+        const record of profiles
+      ) {
+        let secrets = {};
+
+        try {
+          if (
+            record.customerSecrets
+          ) {
+            secrets =
+              decryptJson(
+                record.customerSecrets
+              ) || {};
+          }
+        } catch {
+          secrets = {};
+        }
+
+        const readiness =
+          managedProfileReadiness(
+            record.customerProfile,
+            secrets
+          );
+
+        const status =
+          normalizeProfileActivationStatus(
+            record.activationStatus,
+            readiness.ready
+          );
+
+        if (
+          status ===
+          "incomplete"
+        ) {
+          continue;
+        }
+
+        const account =
+          accounts.find(
+            item =>
+              String(
+                item.id
+              ) ===
+              String(
+                record.customerAccountId
+              )
+          ) || null;
+
+        const customerName =
+          [
+            record.customerProfile
+              ?.firstName,
+            record.customerProfile
+              ?.lastName
+          ]
+            .filter(Boolean)
+            .join(" ") ||
+          record.customerProfile
+            ?.profileName ||
+          account?.email ||
+          "Customer";
+
+        const customerEmail =
+          account?.email ||
+          record.customerProfile
+            ?.email ||
+          "";
+
+        const key =
+          String(
+            record.customerAccountId ||
+            customerEmail ||
+            "unlinked"
+          );
+
+        if (!groups.has(key)) {
+          groups.set(
+            key,
+            {
+              customerName,
+              customerEmail,
+              profiles: []
+            }
+          );
+        }
+
+        groups
+          .get(key)
+          .profiles
+          .push({
+            id:
+              record.id,
+
+            slot:
+              Number(
+                record.slot
+              ),
+
+            profileName:
+              record.profileName ||
+              `Profile ${record.slot}`,
+
+            status,
+
+            label:
+              profileActivationLabel(
+                status
+              )
+          });
+      }
+
+      const customers =
+        Array.from(
+          groups.values()
+        );
+
+      return res.json({
+        ok: true,
+
+        awaitingCount:
+          customers.reduce(
+            (total, group) =>
+              total +
+              group.profiles.filter(
+                profile =>
+                  profile.status ===
+                  "awaiting_activation"
+              ).length,
+            0
+          ),
+
+        activatedCount:
+          customers.reduce(
+            (total, group) =>
+              total +
+              group.profiles.filter(
+                profile =>
+                  profile.status ===
+                  "activated"
+              ).length,
+            0
+          ),
+
+        customers
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin profile activation tracker error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load profile activation tracker."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/profile-activation/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const action =
+        clean(
+          req.body?.action,
+          30
+        )
+          .trim()
+          .toLowerCase();
+
+      if (
+        ![
+          "activate",
+          "deactivate"
+        ].includes(action)
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose activate or deactivate."
+          });
+      }
+
+      const records =
+        await getRetailerProfiles();
+
+      const record =
+        records.find(
+          item =>
+            String(
+              item.id
+            ) ===
+            String(id)
+        );
+
+      if (!record) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Paid profile could not be found."
+          });
+      }
+
+      let secrets = {};
+
+      try {
+        if (
+          record.customerSecrets
+        ) {
+          secrets =
+            decryptJson(
+              record.customerSecrets
+            ) || {};
+        }
+      } catch {
+        secrets = {};
+      }
+
+      const readiness =
+        managedProfileReadiness(
+          record.customerProfile,
+          secrets
+        );
+
+      if (
+        action ===
+          "activate" &&
+        !readiness.ready
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "This profile still has missing shipping or card information."
+          });
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      if (
+        action ===
+        "activate"
+      ) {
+        record.activationStatus =
+          "activated";
+
+        record.activatedAt =
+          now;
+
+        record.deactivatedAt =
+          null;
+      } else {
+        record.activationStatus =
+          "deactivated";
+
+        record.deactivatedAt =
+          now;
+      }
+
+      record.updatedAt =
+        now;
+
+      await saveRetailerProfiles(
+        records
+      );
+
+      return res.json({
+        ok: true,
+        status:
+          record.activationStatus
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin profile activation update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update profile activation."
         });
     }
   }
