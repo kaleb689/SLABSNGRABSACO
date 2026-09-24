@@ -11305,3 +11305,91 @@ select:focus {
   color: #ffd262;
 }
 
+
+
+/* ======================================================
+   MY PROFILE MEMBERSHIP — PRICING TIER COLORS
+====================================================== */
+
+.customer-tier-color-1 {
+  color: #dce8f0 !important;
+}
+
+.customer-tier-color-2 {
+  color: #1dd6ff !important;
+  text-shadow: 0 0 15px #00c8ff88;
+}
+
+.customer-tier-color-3 {
+  color: #ffd83d !important;
+  text-shadow: 0 0 14px #ffd83d55;
+}
+
+.customer-tier-color-4 {
+  color: #bd6cff !important;
+  text-shadow: 0 0 14px #a64dff55;
+}
+
+.customer-tier-color-5 {
+  color: #ff943d !important;
+  text-shadow: 0 0 14px #ff7a2f55;
+}
+
+.customer-tier-color-6 {
+  color: #45e68b !important;
+  text-shadow: 0 0 14px #31db7a55;
+}
+
+.customer-tier-color-7 {
+  color: #ff5aa8 !important;
+  text-shadow: 0 0 14px #ff3b9855;
+}
+
+.membership-status.customer-tier-status-1 {
+  color: #dce8f0 !important;
+  border-color: #82909b !important;
+  background: #192128 !important;
+}
+
+.membership-status.customer-tier-status-2 {
+  color: #1dd6ff !important;
+  border-color: #178aa3 !important;
+  background: #06232b !important;
+  text-shadow: 0 0 12px #00c8ff66;
+}
+
+.membership-status.customer-tier-status-3 {
+  color: #ffd83d !important;
+  border-color: #9a7b19 !important;
+  background: #2a2207 !important;
+  text-shadow: 0 0 12px #ffd83d44;
+}
+
+.membership-status.customer-tier-status-4 {
+  color: #bd6cff !important;
+  border-color: #70439a !important;
+  background: #20112c !important;
+  text-shadow: 0 0 12px #a64dff44;
+}
+
+.membership-status.customer-tier-status-5 {
+  color: #ff943d !important;
+  border-color: #9b5723 !important;
+  background: #2b1809 !important;
+  text-shadow: 0 0 12px #ff7a2f44;
+}
+
+.membership-status.customer-tier-status-6 {
+  color: #45e68b !important;
+  border-color: #278953 !important;
+  background: #09251a !important;
+  text-shadow: 0 0 12px #31db7a44;
+}
+
+.membership-status.customer-tier-status-7 {
+  color: #ff5aa8 !important;
+  border-color: #9c3768 !important;
+  background: #2b0d1c !important;
+  text-shadow: 0 0 12px #ff3b9844;
+}
+
