@@ -166,31 +166,93 @@ const PLANS = {
   }
 };
 
-const RENTAL_PRICING = {
+const RENTAL_PACKAGES = {
   5: {
-    "1_drop": 10,
-    "1_week": 25,
-    "1_month": 60
+    "1_drop": {
+      amount: 10,
+      priceId:
+        process.env.FIVE_ACCOUNTS_1_DROP
+    },
+    "1_week": {
+      amount: 25,
+      priceId:
+        process.env.FIVE_ACCOUNTS_1_WEEK
+    },
+    "1_month": {
+      amount: 60,
+      priceId:
+        process.env.FIVE_ACCOUNTS_1_MONTH
+    }
   },
+
   10: {
-    "1_drop": 20,
-    "1_week": 50,
-    "1_month": 120
+    "1_drop": {
+      amount: 20,
+      priceId:
+        process.env.TEN_ACCOUNTS_1_DROP
+    },
+    "1_week": {
+      amount: 50,
+      priceId:
+        process.env.TEN_ACCOUNTS_1_WEEK
+    },
+    "1_month": {
+      amount: 120,
+      priceId:
+        process.env.TEN_ACCOUNTS_1_MONTH
+    }
   },
+
   15: {
-    "1_drop": 30,
-    "1_week": 75,
-    "1_month": 180
+    "1_drop": {
+      amount: 30,
+      priceId:
+        process.env.FIFTEEN_ACCOUNTS_1_DROP
+    },
+    "1_week": {
+      amount: 75,
+      priceId:
+        process.env.FIFTEEN_ACCOUNTS_1_WEEK
+    },
+    "1_month": {
+      amount: 180,
+      priceId:
+        process.env.FIFTEEN_ACCOUNTS_1_MONTH
+    }
   }
 };
+
+function rentalPackageFor(
+  quantity,
+  durationType
+) {
+  return (
+    RENTAL_PACKAGES?.[quantity]
+      ?.[durationType] ?? null
+  );
+}
 
 function rentalPriceFor(
   quantity,
   durationType
 ) {
   return (
-    RENTAL_PRICING?.[quantity]
-      ?.[durationType] ?? null
+    rentalPackageFor(
+      quantity,
+      durationType
+    )?.amount ?? null
+  );
+}
+
+function rentalPriceIdFor(
+  quantity,
+  durationType
+) {
+  return (
+    rentalPackageFor(
+      quantity,
+      durationType
+    )?.priceId || null
   );
 }
 
@@ -12057,6 +12119,12 @@ app.post(
           durationType
         );
 
+      const rentalPriceId =
+        rentalPriceIdFor(
+          quantity,
+          durationType
+        );
+
       if (
         !retailer ||
         ![5, 10, 15].includes(
@@ -12074,6 +12142,15 @@ app.post(
           .json({
             error:
               "Choose a valid rental package."
+          });
+      }
+
+      if (!rentalPriceId) {
+        return res
+          .status(500)
+          .json({
+            error:
+              "This rental package is not configured for Stripe checkout yet."
           });
       }
 
@@ -12148,20 +12225,9 @@ app.post(
 
             line_items: [
               {
-                quantity: 1,
-                price_data: {
-                  currency: "usd",
-                  unit_amount:
-                    Math.round(
-                      price * 100
-                    ),
-                  product_data: {
-                    name:
-                      `${retailerLabel} Account Rental — ${quantity} Accounts — ${durationLabel}`,
-                    description:
-                      `${quantity} SMS-verified ${retailerLabel} account rental(s) for ${durationLabel}.`
-                  }
-                }
+                price:
+                  rentalPriceId,
+                quantity: 1
               }
             ],
 
