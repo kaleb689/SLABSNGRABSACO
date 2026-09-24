@@ -2726,6 +2726,67 @@ showPass?.addEventListener(
         : "Show";
   }
 );
+
+/* =====================================================
+   GLOBAL CUSTOMER SHOW / HIDE
+   Handles dynamically rendered profile password fields.
+===================================================== */
+
+document.addEventListener(
+  "click",
+  event => {
+    const button =
+      event.target.closest(
+        [
+          "[data-retailer-password-toggle]",
+          ".retailer-password-toggle",
+          "#show-pass",
+          "[data-customer-password-toggle]"
+        ].join(",")
+      );
+
+    if (!button) {
+      return;
+    }
+
+    const wrap =
+      button.closest(
+        [
+          ".retailer-password-input-wrap",
+          ".password-row",
+          ".customer-sensitive-row"
+        ].join(",")
+      );
+
+    const input =
+      wrap?.querySelector(
+        'input[type="password"], input[type="text"]'
+      );
+
+    if (!input) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const showing =
+      input.type === "text";
+
+    input.type =
+      showing
+        ? "password"
+        : "text";
+
+    button.textContent =
+      showing
+        ? "Show"
+        : "Hide";
+  },
+  true
+);
+
+
 /* =====================================================
    PAYMENT RETURN / ACCOUNT LINK TOKENS
 ===================================================== */
