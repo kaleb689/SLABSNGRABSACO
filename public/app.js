@@ -71,7 +71,18 @@ managedAvailability: null,
 
 retailerAllowance: 0,
 
-retailerProfilesLoaded: false
+retailerProfilesLoaded: false,
+
+savedDetails: {
+  addresses: [],
+  paymentMethods: []
+},
+
+accountStats: {
+  userSince: null,
+  lifetimeSpend: 0,
+  totalOrders: 0
+}
 };
 
 try {
@@ -2119,6 +2130,17 @@ state.orders = [];
 state.freeMemberships = [];
 state.rentedMemberships = [];
 
+state.savedDetails = {
+  addresses: [],
+  paymentMethods: []
+};
+
+state.accountStats = {
+  userSince: null,
+  lifetimeSpend: 0,
+  totalOrders: 0
+};
+
 state.profileLoaded = true;
 
 updatePricingUpgradeButtons();
@@ -3354,6 +3376,41 @@ function renderAccountHeader(
       );
     });
 
+  const stats =
+    state.accountStats || {};
+
+  setText(
+    "member-since",
+    stats.userSince
+      ? formatDate(
+          stats.userSince
+        )
+      : (
+          account.createdAt
+            ? formatDate(
+                account.createdAt
+              )
+            : "—"
+        )
+  );
+
+  setText(
+    "member-lifetime-spend",
+    `$${Number(
+      stats.lifetimeSpend || 0
+    ).toFixed(2)}`
+  );
+
+  setText(
+    "member-total-orders",
+    String(
+      Number(
+        stats.totalOrders || 0
+      )
+    )
+  );
+
+
   const resend =
     document.getElementById(
       "resend-verification"
@@ -3693,6 +3750,336 @@ if (membershipStatusElement) {
 /* =====================================================
    ORDER HISTORY
 ===================================================== */
+
+
+/* =====================================================
+   SAVED SHIPPING ADDRESSES / PAYMENT METHODS
+===================================================== */
+
+function savedAddressById(id) {
+  return (state.savedDetails?.addresses || []).find(
+    item => String(item.id) === String(id)
+  ) || null;
+}
+
+function savedPaymentById(id) {
+  return (state.savedDetails?.paymentMethods || []).find(
+    item => String(item.id) === String(id)
+  ) || null;
+}
+
+function renderSavedDetailsManager() {
+  const addresses = Array.isArray(state.savedDetails?.addresses)
+    ? state.savedDetails.addresses
+    : [];
+
+  const payments = Array.isArray(state.savedDetails?.paymentMethods)
+    ? state.savedDetails.paymentMethods
+    : [];
+
+  const addressSelect = document.getElementById("saved-address-select");
+  const paymentSelect = document.getElementById("saved-payment-select");
+
+  setText("saved-address-count", addresses.length);
+  setText("saved-payment-count", payments.length);
+
+  if (addressSelect) {
+    const current = addressSelect.value;
+    addressSelect.innerHTML = addresses.length
+      ? addresses.map((item, index) => `
+          <option value="${escapeHtml(item.id)}">
+            ${escapeHtml(item.label || `Address ${index + 1}`)}
+          </option>
+        `).join("")
+      : `<option value="">No saved addresses</option>`;
+
+    if (current && savedAddressById(current)) {
+      addressSelect.value = current;
+    }
+  }
+
+  if (paymentSelect) {
+    const current = paymentSelect.value;
+    paymentSelect.innerHTML = payments.length
+      ? payments.map((item, index) => `
+          <option value="${escapeHtml(item.id)}">
+            ${escapeHtml(item.cardLabel || `Payment ${index + 1}`)}
+          </option>
+        `).join("")
+      : `<option value="">No saved cards</option>`;
+
+    if (current && savedPaymentById(current)) {
+      paymentSelect.value = current;
+    }
+  }
+
+  renderSavedAddressPreview();
+  renderSavedPaymentPreview();
+}
+
+function renderSavedAddressPreview() {
+  const id = document.getElementById("saved-address-select")?.value;
+  const item = savedAddressById(id);
+  const preview = document.getElementById("saved-address-preview");
+  const actions = document.getElementById("saved-address-existing-actions");
+  if (!preview) return;
+
+  if (!item) {
+    preview.innerHTML = `<p class="account-muted">No saved shipping addresses yet.</p>`;
+    if (actions) actions.hidden = true;
+    return;
+  }
+
+  const name = [item.firstName, item.lastName].filter(Boolean).join(" ");
+  const line = [
+    item.address, item.address2, item.city,
+    item.state, item.zip, item.country
+  ].filter(Boolean).join(", ");
+
+  preview.innerHTML = `
+    <p><strong>${escapeHtml(item.label || "Saved Address")}</strong></p>
+    <p>${escapeHtml(name || "—")}</p>
+    <p>${escapeHtml(line || "—")}</p>
+  `;
+
+  if (actions) actions.hidden = false;
+}
+
+function renderSavedPaymentPreview() {
+  const id = document.getElementById("saved-payment-select")?.value;
+  const item = savedPaymentById(id);
+  const preview = document.getElementById("saved-payment-preview");
+  const actions = document.getElementById("saved-payment-existing-actions");
+  if (!preview) return;
+
+  if (!item) {
+    preview.innerHTML = `<p class="account-muted">No saved payment cards yet.</p>`;
+    if (actions) actions.hidden = true;
+    return;
+  }
+
+  preview.innerHTML = `
+    <p><strong>${escapeHtml(item.cardLabel || "Saved Payment")}</strong></p>
+    <p>${escapeHtml(item.cardholder || "—")}</p>
+    <p>${escapeHtml(item.maskedNumber || "Card saved")}</p>
+    <p>Expires: ${escapeHtml([item.expMonth, item.expYear].filter(Boolean).join("/") || "—")}</p>
+    <p>Security code: ${item.securityCodeConfigured ? "Saved securely" : "Not saved"}</p>
+  `;
+
+  if (actions) actions.hidden = false;
+}
+
+function fillSavedAddressForm(item = null) {
+  const form = document.getElementById("saved-address-form");
+  if (!form) return;
+  form.hidden = false;
+
+  [
+    "id", "label", "firstName", "lastName", "address",
+    "address2", "city", "state", "zip", "country"
+  ].forEach(name => {
+    if (form.elements[name]) {
+      form.elements[name].value = item?.[name] || "";
+    }
+  });
+}
+
+function fillSavedPaymentForm(item = null) {
+  const form = document.getElementById("saved-payment-form");
+  if (!form) return;
+  form.hidden = false;
+
+  if (form.elements.id) form.elements.id.value = item?.id || "";
+  if (form.elements.cardLabel) form.elements.cardLabel.value = item?.cardLabel || "";
+  if (form.elements.cardholder) form.elements.cardholder.value = item?.cardholder || "";
+  if (form.elements.expMonth) form.elements.expMonth.value = item?.expMonth || "";
+  if (form.elements.expYear) form.elements.expYear.value = item?.expYear || "";
+
+  if (form.elements.acoCardNumber) {
+    form.elements.acoCardNumber.value = "";
+    form.elements.acoCardNumber.required = !item;
+    form.elements.acoCardNumber.placeholder = item
+      ? "Leave blank to keep existing card"
+      : "Enter card number";
+  }
+
+  if (form.elements.securityCode) {
+    form.elements.securityCode.value = "";
+  }
+}
+
+async function loadSavedDetails() {
+  if (!state.customer) return;
+
+  try {
+    const response = await fetch("/api/account/saved-details", {
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+
+    const data = await readJson(response);
+
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to load saved checkout details.");
+    }
+
+    state.savedDetails = {
+      addresses: Array.isArray(data.addresses) ? data.addresses : [],
+      paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : []
+    };
+
+    renderSavedDetailsManager();
+  } catch (error) {
+    console.error("Saved checkout details load failed:", error);
+  }
+}
+
+document.getElementById("saved-address-select")
+  ?.addEventListener("change", renderSavedAddressPreview);
+
+document.getElementById("saved-payment-select")
+  ?.addEventListener("change", renderSavedPaymentPreview);
+
+document.getElementById("add-saved-address")
+  ?.addEventListener("click", () => fillSavedAddressForm());
+
+document.getElementById("add-saved-payment")
+  ?.addEventListener("click", () => fillSavedPaymentForm());
+
+document.getElementById("edit-saved-address")
+  ?.addEventListener("click", () => {
+    const id = document.getElementById("saved-address-select")?.value;
+    fillSavedAddressForm(savedAddressById(id));
+  });
+
+document.getElementById("edit-saved-payment")
+  ?.addEventListener("click", () => {
+    const id = document.getElementById("saved-payment-select")?.value;
+    fillSavedPaymentForm(savedPaymentById(id));
+  });
+
+document.getElementById("cancel-saved-address")
+  ?.addEventListener("click", () => {
+    const form = document.getElementById("saved-address-form");
+    if (form) form.hidden = true;
+  });
+
+document.getElementById("cancel-saved-payment")
+  ?.addEventListener("click", () => {
+    const form = document.getElementById("saved-payment-form");
+    if (form) form.hidden = true;
+  });
+
+document.getElementById("saved-address-form")
+  ?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const id = String(form.elements.id?.value || "").trim();
+    const body = Object.fromEntries(new FormData(form).entries());
+    delete body.id;
+
+    const response = await fetch(
+      id
+        ? `/api/account/shipping-addresses/${encodeURIComponent(id)}`
+        : "/api/account/shipping-addresses",
+      {
+        method: id ? "PUT" : "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }
+    );
+
+    const data = await readJson(response);
+    const message = document.getElementById("saved-details-message");
+
+    if (!response.ok) {
+      setMessage(message, data.error || "Unable to save address.", "error");
+      return;
+    }
+
+    form.hidden = true;
+    await loadSavedDetails();
+    setMessage(message, data.message || "Address saved.", "success");
+  });
+
+document.getElementById("saved-payment-form")
+  ?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const id = String(form.elements.id?.value || "").trim();
+    const body = Object.fromEntries(new FormData(form).entries());
+    delete body.id;
+
+    const response = await fetch(
+      id
+        ? `/api/account/payment-methods/${encodeURIComponent(id)}`
+        : "/api/account/payment-methods",
+      {
+        method: id ? "PUT" : "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }
+    );
+
+    const data = await readJson(response);
+    const message = document.getElementById("saved-details-message");
+
+    if (!response.ok) {
+      setMessage(message, data.error || "Unable to save payment card.", "error");
+      return;
+    }
+
+    form.hidden = true;
+    await loadSavedDetails();
+    setMessage(message, data.message || "Payment card saved.", "success");
+  });
+
+document.getElementById("delete-saved-address")
+  ?.addEventListener("click", async () => {
+    const id = document.getElementById("saved-address-select")?.value;
+    if (!id || !confirm("Delete this saved shipping address?")) return;
+
+    const response = await fetch(
+      `/api/account/shipping-addresses/${encodeURIComponent(id)}`,
+      { method: "DELETE", credentials: "same-origin" }
+    );
+
+    const data = await readJson(response);
+    const message = document.getElementById("saved-details-message");
+
+    if (!response.ok) {
+      setMessage(message, data.error || "Unable to delete address.", "error");
+      return;
+    }
+
+    await loadSavedDetails();
+    setMessage(message, data.message || "Address deleted.", "success");
+  });
+
+document.getElementById("delete-saved-payment")
+  ?.addEventListener("click", async () => {
+    const id = document.getElementById("saved-payment-select")?.value;
+    if (!id || !confirm("Delete this saved payment card?")) return;
+
+    const response = await fetch(
+      `/api/account/payment-methods/${encodeURIComponent(id)}`,
+      { method: "DELETE", credentials: "same-origin" }
+    );
+
+    const data = await readJson(response);
+    const message = document.getElementById("saved-details-message");
+
+    if (!response.ok) {
+      setMessage(message, data.error || "Unable to delete payment card.", "error");
+      return;
+    }
+
+    await loadSavedDetails();
+    setMessage(message, data.message || "Payment card deleted.", "success");
+  });
+
 
 function renderOrders(
   orders
@@ -9399,6 +9786,8 @@ document
           "edit-profile"
         ) {
           loadRetailerProfiles();
+          loadManagedMemberships();
+          loadSavedDetails();
         }
       }
     );
@@ -9491,6 +9880,17 @@ async function loadMemberProfile(
     state.customer =
       data.account || null;
 
+    state.accountStats =
+      data.accountStats || {
+        userSince:
+          data.account?.createdAt ||
+          null,
+        lifetimeSpend:
+          0,
+        totalOrders:
+          0
+      };
+
     state.orders =
       Array.isArray(
         data.orders
@@ -9531,6 +9931,8 @@ state.retailerProfilesLoaded =
 await loadManagedMemberships();
 
 await loadManagedAvailabilityCustomer();
+
+await loadSavedDetails();
 
 renderOrders(
   state.orders
