@@ -7349,7 +7349,7 @@ app.put(
         existingCustomerSecrets = {};
       }
 
-      const customerProfile =
+      const savedProfileBase =
         shippingProfileFromSavedAddress(
           selectedSavedDetails.address,
           req.customerAccount.email,
@@ -7358,14 +7358,172 @@ app.put(
           {}
         );
 
-      customerProfile.profileName =
-        profileName;
+      const submittedCustomerProfile =
+        req.body
+          ?.customerProfile &&
+        typeof req.body
+          .customerProfile ===
+          "object"
+          ? req.body
+              .customerProfile
+          : {};
 
-      const customerSecrets =
+      const customerProfile =
+        sanitizeProfile({
+          ...savedProfileBase,
+          ...submittedCustomerProfile,
+
+          profileName,
+
+          email:
+            submittedCustomerProfile
+              .email ||
+            savedProfileBase.email ||
+            req.customerAccount
+              .email ||
+            ""
+        });
+
+      const savedCardBase =
         paymentSecretsFromSavedPayment(
           selectedSavedDetails.payment,
           existingCustomerSecrets
         );
+
+      const submittedCustomerCard =
+        req.body
+          ?.customerCard &&
+        typeof req.body
+          .customerCard ===
+          "object"
+          ? req.body
+              .customerCard
+          : {};
+
+      const suppliedCardNumber =
+        clean(
+          submittedCustomerCard
+            .acoCardNumber,
+          30
+        ).replace(
+          /[^\d]/g,
+          ""
+        );
+
+      const suppliedSecurityCode =
+        clean(
+          submittedCustomerCard
+            .securityCode,
+          300
+        );
+
+      const customerSecrets = {
+        ...savedCardBase,
+
+        cardLabel:
+          clean(
+            submittedCustomerCard
+              .cardLabel,
+            100
+          ) ||
+          savedCardBase
+            .cardLabel ||
+          "",
+
+        cardholder:
+          clean(
+            submittedCustomerCard
+              .cardholder,
+            150
+          ) ||
+          savedCardBase
+            .cardholder ||
+          "",
+
+        acoCardNumber:
+          suppliedCardNumber ||
+          savedCardBase
+            .acoCardNumber ||
+          existingCustomerSecrets
+            .acoCardNumber ||
+          "",
+
+        expMonth:
+          clean(
+            submittedCustomerCard
+              .expMonth,
+            2
+          ) ||
+          savedCardBase
+            .expMonth ||
+          "",
+
+        expYear:
+          clean(
+            submittedCustomerCard
+              .expYear,
+            4
+          ) ||
+          savedCardBase
+            .expYear ||
+          "",
+
+        securityCode:
+          suppliedSecurityCode ||
+          savedCardBase
+            .securityCode ||
+          existingCustomerSecrets
+            .securityCode ||
+          ""
+      };
+
+      if (
+        customerSecrets
+          .acoCardNumber &&
+        !/^\d{12,19}$/.test(
+          customerSecrets
+            .acoCardNumber
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a valid card number for this profile."
+          });
+      }
+
+      if (
+        customerSecrets
+          .expMonth &&
+        !/^(0[1-9]|1[0-2])$/.test(
+          customerSecrets
+            .expMonth
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a valid expiration month."
+          });
+      }
+
+      if (
+        customerSecrets
+          .expYear &&
+        !/^\d{4}$/.test(
+          customerSecrets
+            .expYear
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a valid expiration year."
+          });
+      }
 
       let existingCredentials =
         emptyRetailerCredentials();
