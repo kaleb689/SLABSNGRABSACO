@@ -1587,6 +1587,558 @@ const profileForm =
   );
 
 
+const PROFILE_FIELD_LABELS = {
+  profileName:
+    "Profile Name",
+  firstName:
+    "First Name",
+  lastName:
+    "Last Name",
+  email:
+    "Email",
+  phone:
+    "Phone",
+  address:
+    "Address",
+  country:
+    "Country",
+  state:
+    "State",
+  city:
+    "City",
+  zip:
+    "Zipcode",
+  acoEmail:
+    "IMAP / Host Email",
+  acoPassword:
+    "IMAP / Host App Password",
+  cardLabel:
+    "Card Label",
+  cardholder:
+    "Cardholder Name",
+  acoCardNumber:
+    "Card Number",
+  expMonth:
+    "Exp. Month",
+  expYear:
+    "Exp. Year",
+  securityCode:
+    "Security Code",
+  confirm:
+    "Information Confirmation"
+};
+
+
+function profileFieldErrorMessage(
+  field
+) {
+  const name =
+    field?.name || "";
+
+  const label =
+    PROFILE_FIELD_LABELS[name] ||
+    "This field";
+
+  const rawValue =
+    field?.type === "checkbox"
+      ? (
+          field.checked
+            ? "checked"
+            : ""
+        )
+      : String(
+          field?.value ||
+          ""
+        ).trim();
+
+  if (
+    field?.required &&
+    !rawValue
+  ) {
+    if (
+      field.type ===
+      "checkbox"
+    ) {
+      return (
+        "Please confirm that the information above is accurate."
+      );
+    }
+
+    return (
+      `${label} is required.`
+    );
+  }
+
+  if (
+    name === "email" ||
+    name === "acoEmail"
+  ) {
+    if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+        rawValue
+      )
+    ) {
+      return (
+        `Enter a valid ${label.toLowerCase()}.`
+      );
+    }
+  }
+
+  if (
+    name === "acoPassword" &&
+    rawValue.length < 6
+  ) {
+    return (
+      "IMAP / Host App Password must be at least 6 characters."
+    );
+  }
+
+  if (
+    name ===
+    "acoCardNumber"
+  ) {
+    const digits =
+      rawValue.replace(
+        /\D/g,
+        ""
+      );
+
+    if (
+      !/^\d{12,19}$/.test(
+        digits
+      )
+    ) {
+      return (
+        "Enter a valid card number using 12–19 digits."
+      );
+    }
+  }
+
+  if (
+    name ===
+    "securityCode" &&
+    !/^\d{3,4}$/.test(
+      rawValue
+    )
+  ) {
+    return (
+      "Security Code must be 3 or 4 digits."
+    );
+  }
+
+  if (
+    name === "expMonth" &&
+    !/^(0[1-9]|1[0-2])$/.test(
+      rawValue
+    )
+  ) {
+    return (
+      "Select a valid expiration month."
+    );
+  }
+
+  if (
+    name === "expYear" &&
+    !/^\d{4}$/.test(
+      rawValue
+    )
+  ) {
+    return (
+      "Select a valid expiration year."
+    );
+  }
+
+  if (
+    (
+      name === "expMonth" ||
+      name === "expYear"
+    )
+  ) {
+    const monthField =
+      profileForm?.elements
+        ?.namedItem(
+          "expMonth"
+        );
+
+    const yearField =
+      profileForm?.elements
+        ?.namedItem(
+          "expYear"
+        );
+
+    const month =
+      Number(
+        monthField?.value
+      );
+
+    const year =
+      Number(
+        yearField?.value
+      );
+
+    if (
+      month &&
+      year
+    ) {
+      const now =
+        new Date();
+
+      const currentMonth =
+        now.getMonth() + 1;
+
+      const currentYear =
+        now.getFullYear();
+
+      if (
+        year < currentYear ||
+        (
+          year === currentYear &&
+          month < currentMonth
+        )
+      ) {
+        return (
+          "The card expiration date has already passed."
+        );
+      }
+    }
+  }
+
+  if (
+    field?.type === "email" &&
+    !field.validity.valid
+  ) {
+    return (
+      `Enter a valid ${label.toLowerCase()}.`
+    );
+  }
+
+  if (
+    !field?.validity?.valid
+  ) {
+    return (
+      `${label} is incorrect.`
+    );
+  }
+
+  return "";
+}
+
+
+function clearProfileFieldError(
+  field
+) {
+  if (!field) return;
+
+  field.classList.remove(
+    "profile-field-invalid"
+  );
+
+  field.removeAttribute(
+    "aria-invalid"
+  );
+
+  const label =
+    field.closest(
+      "label"
+    );
+
+  label?.classList.remove(
+    "has-profile-error"
+  );
+
+  const error =
+    label?.querySelector(
+      ".profile-field-error"
+    );
+
+  error?.remove();
+}
+
+
+function showProfileFieldError(
+  field,
+  errorMessage
+) {
+  if (
+    !field ||
+    !errorMessage
+  ) {
+    return;
+  }
+
+  clearProfileFieldError(
+    field
+  );
+
+  field.classList.add(
+    "profile-field-invalid"
+  );
+
+  field.setAttribute(
+    "aria-invalid",
+    "true"
+  );
+
+  const label =
+    field.closest(
+      "label"
+    );
+
+  label?.classList.add(
+    "has-profile-error"
+  );
+
+  if (!label) return;
+
+  const error =
+    document.createElement(
+      "small"
+    );
+
+  error.className =
+    "profile-field-error";
+
+  error.textContent =
+    errorMessage;
+
+  label.appendChild(
+    error
+  );
+}
+
+
+function validateCreateProfileForm(
+  form,
+  {
+    focusFirst = true
+  } = {}
+) {
+  const fields =
+    Array.from(
+      form.querySelectorAll(
+        "input[name], select[name]"
+      )
+    );
+
+  fields.forEach(
+    clearProfileFieldError
+  );
+
+  const invalid =
+    [];
+
+  fields.forEach(field => {
+    const errorMessage =
+      profileFieldErrorMessage(
+        field
+      );
+
+    if (
+      !errorMessage
+    ) {
+      return;
+    }
+
+    invalid.push({
+      field,
+      name:
+        PROFILE_FIELD_LABELS[
+          field.name
+        ] ||
+        field.name,
+      errorMessage
+    });
+
+    showProfileFieldError(
+      field,
+      errorMessage
+    );
+  });
+
+  /*
+    Expiration is a paired value. If one side makes
+    the date expired, clearly mark both selectors.
+  */
+  const expirationError =
+    invalid.find(item =>
+      (
+        item.field.name ===
+          "expMonth" ||
+        item.field.name ===
+          "expYear"
+      ) &&
+      item.errorMessage.includes(
+        "already passed"
+      )
+    );
+
+  if (expirationError) {
+    [
+      "expMonth",
+      "expYear"
+    ].forEach(name => {
+      const field =
+        form.elements.namedItem(
+          name
+        );
+
+      if (
+        field &&
+        !invalid.some(
+          item =>
+            item.field === field
+        )
+      ) {
+        invalid.push({
+          field,
+          name:
+            PROFILE_FIELD_LABELS[
+              name
+            ],
+          errorMessage:
+            expirationError
+              .errorMessage
+        });
+
+        showProfileFieldError(
+          field,
+          expirationError
+            .errorMessage
+        );
+      }
+    });
+  }
+
+  const message =
+    document.getElementById(
+      "form-message"
+    );
+
+  if (
+    invalid.length
+  ) {
+    const uniqueNames =
+      [
+        ...new Set(
+          invalid.map(
+            item =>
+              item.name
+          )
+        )
+      ];
+
+    if (message) {
+      message.classList.add(
+        "profile-validation-summary"
+      );
+
+      message.textContent =
+        `Please fix ${uniqueNames.length} ${
+          uniqueNames.length === 1
+            ? "field"
+            : "fields"
+        }: ${uniqueNames.join(", ")}.`;
+    }
+
+    if (focusFirst) {
+      const firstField =
+        invalid[0].field;
+
+      firstField
+        .scrollIntoView({
+          behavior:
+            "smooth",
+          block:
+            "center"
+        });
+
+      window.setTimeout(
+        () => {
+          try {
+            firstField.focus({
+              preventScroll:
+                true
+            });
+          } catch {
+            firstField.focus();
+          }
+        },
+        250
+      );
+    }
+
+    return false;
+  }
+
+  if (message) {
+    message.classList.remove(
+      "profile-validation-summary"
+    );
+
+    message.textContent =
+      "";
+  }
+
+  return true;
+}
+
+
+profileForm
+  ?.querySelectorAll(
+    "input[name], select[name]"
+  )
+  .forEach(field => {
+    const eventName =
+      (
+        field.tagName ===
+          "SELECT" ||
+        field.type ===
+          "checkbox"
+      )
+        ? "change"
+        : "input";
+
+    field.addEventListener(
+      eventName,
+      () => {
+        clearProfileFieldError(
+          field
+        );
+
+        /*
+          Re-check the expiration pair together so
+          an expired date clears as soon as corrected.
+        */
+        if (
+          field.name ===
+            "expMonth" ||
+          field.name ===
+            "expYear"
+        ) {
+          const monthField =
+            profileForm.elements
+              .namedItem(
+                "expMonth"
+              );
+
+          const yearField =
+            profileForm.elements
+              .namedItem(
+                "expYear"
+              );
+
+          [
+            monthField,
+            yearField
+          ].forEach(
+            clearProfileFieldError
+          );
+        }
+      }
+    );
+  });
+
+
 profileForm?.addEventListener(
   "submit",
   async event => {
@@ -1610,6 +2162,14 @@ profileForm?.addEventListener(
       }
 
       go("pricing");
+      return;
+    }
+
+    if (
+      !validateCreateProfileForm(
+        form
+      )
+    ) {
       return;
     }
 
@@ -1699,6 +2259,10 @@ profileForm?.addEventListener(
 
     } catch (error) {
       if (message) {
+        message.classList.add(
+          "profile-validation-summary"
+        );
+
         message.textContent =
           error.message;
       }
