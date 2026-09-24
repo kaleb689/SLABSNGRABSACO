@@ -8988,3 +8988,127 @@ select:focus {
     font-size: 11px;
   }
 }
+
+
+/* =========================================================
+   SEPTEMBER 24 — ROUND 2 POLISH
+   ========================================================= */
+
+/* Slightly larger home logo without overpowering the nav */
+.brand-logo {
+  width: 142px;
+  height: 90px;
+}
+
+.header-left {
+  min-width: 150px;
+}
+
+/* More readable My Profile copy and spacing */
+#account-tab-orders .account-card-heading p,
+#account-tab-edit-profile .account-card-heading p,
+#account-tab-security .account-card-heading p,
+#account-tab-security .account-detail-list span,
+#account-tab-security .account-detail-list strong,
+#account-tab-orders .customer-orders-list,
+#account-tab-orders .customer-order-card,
+#account-tab-edit-profile .retailer-profile-heading p,
+#account-tab-edit-profile .retailer-security-notice,
+#account-tab-edit-profile .retailer-profile-card label,
+#account-tab-edit-profile .profile-support-card p {
+  font-size: 14px;
+  line-height: 1.78;
+}
+
+#account-tab-orders .account-card-heading,
+#account-tab-edit-profile .account-card-heading,
+#account-tab-security .account-card-heading {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+
+#account-tab-orders .account-card-heading h3,
+#account-tab-edit-profile .account-card-heading h3,
+#account-tab-security .account-card-heading h3 {
+  margin: 0;
+}
+
+#account-tab-orders .account-card-heading p,
+#account-tab-edit-profile .account-card-heading p,
+#account-tab-security .account-card-heading p {
+  margin: 0;
+}
+
+#account-tab-security .account-detail-list {
+  margin-top: 20px;
+  gap: 16px;
+}
+
+#account-tab-security .account-detail-list > div {
+  padding: 19px 18px;
+  gap: 10px;
+}
+
+#account-tab-security .account-detail-list span {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 11px;
+  letter-spacing: .85px;
+}
+
+#account-tab-security .account-detail-list strong {
+  display: block;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+#account-tab-orders .account-card + .account-card,
+#account-tab-edit-profile .account-card + .account-card,
+#account-tab-security .account-card + .account-card {
+  margin-top: 22px;
+}
+
+/* Verified / unverified email status */
+.verification-verified {
+  color: #55e7a5 !important;
+  font-weight: 900 !important;
+  text-shadow: 0 0 16px rgba(85, 231, 165, .16);
+}
+
+.verification-unverified {
+  color: #ff667c !important;
+  font-weight: 900 !important;
+  text-shadow: 0 0 16px rgba(255, 102, 124, .15);
+}
+
+@media (max-width: 980px) {
+  .brand-logo {
+    width: 126px;
+    height: 80px;
+  }
+
+  .header-left {
+    min-width: 132px;
+  }
+}
+
+@media (max-width: 700px) {
+  .brand-logo {
+    width: 108px;
+    height: 70px;
+  }
+
+  .header-left {
+    min-width: auto;
+  }
+
+  #account-tab-orders .account-card-heading p,
+  #account-tab-edit-profile .account-card-heading p,
+  #account-tab-security .account-card-heading p,
+  #account-tab-security .account-detail-list span,
+  #account-tab-security .account-detail-list strong,
+  #account-tab-edit-profile .retailer-profile-heading p {
+    font-size: 13px;
+  }
+}
