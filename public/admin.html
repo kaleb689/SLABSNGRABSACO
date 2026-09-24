@@ -268,7 +268,9 @@
     }
 
     #adminUserView,
-    #adminDiscordTest {
+    #adminDiscordTest,
+    #adminPaymentDiscordTest,
+    #adminCancellationDiscordTest {
       min-height: 42px;
       padding: 0 18px;
       border: 1px solid #12c9ff;
@@ -284,7 +286,9 @@
     }
 
     #adminUserView:hover,
-    #adminDiscordTest:hover {
+    #adminDiscordTest:hover,
+    #adminPaymentDiscordTest:hover,
+    #adminCancellationDiscordTest:hover {
       transform: translateY(-2px);
       border-color: #82ebff;
       box-shadow: 0 0 34px rgba(18, 201, 255, .28);
@@ -2184,6 +2188,38 @@
             class="admin-user-view-note"
           >
             Success webhook
+          </span>
+        </div>
+
+        <div>
+          <button
+            id="adminPaymentDiscordTest"
+            type="button"
+          >
+            TEST PAYMENTS
+          </button>
+
+          <span
+            id="adminPaymentDiscordTestNote"
+            class="admin-user-view-note"
+          >
+            Admin payment webhook
+          </span>
+        </div>
+
+        <div>
+          <button
+            id="adminCancellationDiscordTest"
+            type="button"
+          >
+            TEST CANCELLATION
+          </button>
+
+          <span
+            id="adminCancellationDiscordTestNote"
+            class="admin-user-view-note"
+          >
+            Membership alerts
           </span>
         </div>
 
@@ -9428,6 +9464,172 @@ document
     }
   );
 
+
+
+
+
+/* =========================================
+   TEST MEMBERSHIP CANCELLATION WEBHOOK
+========================================= */
+
+document
+  .getElementById(
+    "adminCancellationDiscordTest"
+  )
+  ?.addEventListener(
+    "click",
+    async event => {
+      const button =
+        event.currentTarget;
+
+      const note =
+        document.getElementById(
+          "adminCancellationDiscordTestNote"
+        );
+
+      const originalText =
+        button.textContent;
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        "SENDING...";
+
+      if (note) {
+        note.textContent =
+          "Sending test";
+      }
+
+      try {
+        const response =
+          await fetch(
+            "/api/admin/test-cancellation-discord",
+            {
+              method:
+                "POST",
+
+              credentials:
+                "same-origin"
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Cancellation notification test failed."
+          );
+        }
+
+        if (note) {
+          note.textContent =
+            "Sent successfully";
+        }
+
+      } catch (error) {
+        if (note) {
+          note.textContent =
+            error.message;
+        }
+
+      } finally {
+        button.disabled =
+          false;
+
+        button.textContent =
+          originalText;
+      }
+    }
+  );
+
+
+/* =========================================
+   TEST ADMIN PAYMENT DISCORD WEBHOOK
+========================================= */
+
+document
+  .getElementById(
+    "adminPaymentDiscordTest"
+  )
+  ?.addEventListener(
+    "click",
+    async event => {
+      const button =
+        event.currentTarget;
+
+      const note =
+        document.getElementById(
+          "adminPaymentDiscordTestNote"
+        );
+
+      const originalText =
+        button.textContent;
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        "SENDING...";
+
+      if (note) {
+        note.textContent =
+          "Sending test";
+      }
+
+      try {
+        const response =
+          await fetch(
+            "/api/admin/test-payment-discord",
+            {
+              method:
+                "POST",
+
+              credentials:
+                "same-origin"
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Admin payment Discord test failed."
+          );
+        }
+
+        if (note) {
+          note.textContent =
+            "Sent successfully";
+        }
+
+      } catch (error) {
+        if (note) {
+          note.textContent =
+            error.message;
+        }
+
+      } finally {
+        button.disabled =
+          false;
+
+        button.textContent =
+          originalText;
+      }
+    }
+  );
 
 
 /* =========================================
