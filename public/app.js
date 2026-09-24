@@ -3004,6 +3004,90 @@ function buildAdminPreviewProfile() {
   state.specialProfiles = [];
   state.freeMemberships = [];
 
+  state.savedDetails = {
+    addresses: [
+      {
+        id:
+          "admin-test-address-1",
+        label:
+          "Test Home",
+        firstName:
+          "Admin",
+        lastName:
+          "Test Customer",
+        address:
+          "100 Test Lane",
+        address2:
+          "",
+        city:
+          "Test City",
+        state:
+          "FL",
+        zip:
+          "33301",
+        country:
+          "US"
+      },
+      {
+        id:
+          "admin-test-address-2",
+        label:
+          "Test Alternate",
+        firstName:
+          "Admin",
+        lastName:
+          "Test Customer",
+        address:
+          "200 Sample Avenue",
+        address2:
+          "Unit 2",
+        city:
+          "Test City",
+        state:
+          "FL",
+        zip:
+          "33302",
+        country:
+          "US"
+      }
+    ],
+
+    paymentMethods: [
+      {
+        id:
+          "admin-test-card-1",
+        cardLabel:
+          "Test Visa",
+        cardholder:
+          "Admin Test Customer",
+        maskedNumber:
+          "•••• •••• •••• 1111",
+        expMonth:
+          "12",
+        expYear:
+          "2030",
+        testCardNumber:
+          "4111111111111111"
+      },
+      {
+        id:
+          "admin-test-card-2",
+        cardLabel:
+          "Test Backup",
+        cardholder:
+          "Admin Test Customer",
+        maskedNumber:
+          "•••• •••• •••• 4242",
+        expMonth:
+          "11",
+        expYear:
+          "2031",
+        testCardNumber:
+          "4242424242424242"
+      }
+    ]
+  };
+
   state.rentedMemberships =
     adminTestReadRentals()
       .map(item => ({
@@ -4919,6 +5003,259 @@ if (membershipStatusElement) {
    SAVED SHIPPING ADDRESSES / PAYMENT METHODS
 ===================================================== */
 
+
+function profileSavedAddressOptions(
+  selectedId = ""
+) {
+  const addresses =
+    Array.isArray(
+      state.savedDetails
+        ?.addresses
+    )
+      ? state.savedDetails
+          .addresses
+      : [];
+
+  if (!addresses.length) {
+    return `
+      <option value="">
+        No saved shipping addresses
+      </option>
+    `;
+  }
+
+  return `
+    <option value="">
+      Choose saved shipping
+    </option>
+    ${
+      addresses
+        .map(
+          (
+            item,
+            index
+          ) => `
+            <option
+              value="${escapeHtml(
+                item.id
+              )}"
+              ${
+                String(
+                  item.id
+                ) ===
+                String(
+                  selectedId
+                )
+                  ? "selected"
+                  : ""
+              }
+            >
+              ${escapeHtml(
+                item.label ||
+                `Address ${index + 1}`
+              )}
+            </option>
+          `
+        )
+        .join("")
+    }
+  `;
+}
+
+
+function profileSavedPaymentOptions(
+  selectedId = ""
+) {
+  const payments =
+    Array.isArray(
+      state.savedDetails
+        ?.paymentMethods
+    )
+      ? state.savedDetails
+          .paymentMethods
+      : [];
+
+  if (!payments.length) {
+    return `
+      <option value="">
+        No saved payment cards
+      </option>
+    `;
+  }
+
+  return `
+    <option value="">
+      Choose saved card
+    </option>
+    ${
+      payments
+        .map(
+          (
+            item,
+            index
+          ) => `
+            <option
+              value="${escapeHtml(
+                item.id
+              )}"
+              ${
+                String(
+                  item.id
+                ) ===
+                String(
+                  selectedId
+                )
+                  ? "selected"
+                  : ""
+              }
+            >
+              ${escapeHtml(
+                item.cardLabel ||
+                `Card ${index + 1}`
+              )} ${
+                item.maskedNumber
+                  ? `— ${escapeHtml(
+                      item.maskedNumber
+                    )}`
+                  : ""
+              }
+            </option>
+          `
+        )
+        .join("")
+    }
+  `;
+}
+
+
+function profileReadiness(
+  profile,
+  card
+) {
+  const requiredShipping = [
+    "firstName",
+    "lastName",
+    "address",
+    "city",
+    "state",
+    "zip",
+    "country"
+  ];
+
+  const shippingReady =
+    requiredShipping.every(
+      key =>
+        Boolean(
+          String(
+            profile?.[key] ||
+            ""
+          ).trim()
+        )
+    );
+
+  const rawCard =
+    String(
+      card?.acoCardNumber ||
+      card?.maskedNumber ||
+      ""
+    );
+
+  const cardDigits =
+    rawCard.replace(
+      /\D/g,
+      ""
+    );
+
+  const hasMaskedCard =
+    Boolean(
+      card?.maskedNumber &&
+      cardDigits.length === 4
+    );
+
+  const cardReady =
+    Boolean(
+      String(
+        card?.cardholder ||
+        ""
+      ).trim()
+    ) &&
+    (
+      /^\d{12,19}$/.test(
+        cardDigits
+      ) ||
+      hasMaskedCard
+    ) &&
+    /^(0[1-9]|1[0-2])$/.test(
+      String(
+        card?.expMonth ||
+        ""
+      )
+    ) &&
+    /^\d{4}$/.test(
+      String(
+        card?.expYear ||
+        ""
+      )
+    );
+
+  return {
+    ready:
+      shippingReady &&
+      cardReady,
+    shippingReady,
+    cardReady
+  };
+}
+
+
+function readinessBadgeHtml(
+  readiness
+) {
+  const ready =
+    readiness?.ready === true;
+
+  return `
+    <div
+      class="profile-readiness ${
+        ready
+          ? "ready"
+          : "missing"
+      }"
+    >
+      <span
+        class="profile-readiness-light"
+        aria-hidden="true"
+      ></span>
+
+      <div>
+        <strong>
+          ${
+            ready
+              ? "READY"
+              : "MISSING INFO"
+          }
+        </strong>
+
+        <small>
+          ${
+            ready
+              ? "Shipping & card complete"
+              : (
+                  !readiness?.shippingReady &&
+                  !readiness?.cardReady
+                    ? "Shipping & card needed"
+                    : !readiness?.shippingReady
+                      ? "Shipping needed"
+                      : "Card needed"
+                )
+          }
+        </small>
+      </div>
+    </div>
+  `;
+}
+
+
 function savedAddressById(id) {
   return (state.savedDetails?.addresses || []).find(
     item => String(item.id) === String(id)
@@ -5074,6 +5411,14 @@ function fillSavedPaymentForm(item = null) {
 async function loadSavedDetails() {
   if (!state.customer) return;
 
+  if (
+    ADMIN_PREVIEW_MODE
+  ) {
+    renderSavedDetailsManager();
+    renderRetailerProfiles();
+    return;
+  }
+
   try {
     const response = await fetch("/api/account/saved-details", {
       credentials: "same-origin",
@@ -5092,6 +5437,8 @@ async function loadSavedDetails() {
     };
 
     renderSavedDetailsManager();
+
+    renderRetailerProfiles();
   } catch (error) {
     console.error("Saved checkout details load failed:", error);
   }
@@ -6271,9 +6618,27 @@ function retailerProfileCardHtml(
     savedProfile?.retailers ||
     {};
 
+  const customerProfile =
+    savedProfile
+      ?.customerProfile ||
+    null;
+
+  const customerCard =
+    savedProfile
+      ?.customerCard ||
+    null;
+
+  const readiness =
+    savedProfile
+      ?.readiness ||
+    profileReadiness(
+      customerProfile,
+      customerCard
+    );
+
   return `
     <article
-      class="retailer-profile-card ${
+      class="retailer-profile-card compact-profile-card ${
         locked
           ? "locked"
           : ""
@@ -6282,11 +6647,14 @@ function retailerProfileCardHtml(
     >
 
       <div
-        class="retailer-profile-card-head"
+        class="profile-compact-main"
       >
 
-        <div
-          class="retailer-profile-title"
+        <button
+          type="button"
+          class="profile-compact-toggle"
+          data-profile-toggle
+          aria-expanded="false"
         >
           <span
             class="retailer-profile-number"
@@ -6294,35 +6662,40 @@ function retailerProfileCardHtml(
             ${slot}
           </span>
 
-          <div>
+          <span
+            class="profile-compact-title"
+          >
             <span class="eyebrow">
               ACO PROFILE ${slot}
             </span>
 
-            <h3>
+            <strong>
               ${escapeHtml(
                 profileName
               )}
-            </h3>
-          </div>
-        </div>
+            </strong>
+          </span>
+
+          <span
+            class="profile-compact-chevron"
+            aria-hidden="true"
+          >
+            ▾
+          </span>
+        </button>
 
         ${
           locked
             ? `
-              <span
-                class="retailer-profile-lock"
-              >
-                Locked
-              </span>
-            `
-            : `
-              <span
-                class="retailer-profile-active"
-              >
-                Available
-              </span>
-            `
+                <span
+                  class="retailer-profile-lock"
+                >
+                  LOCKED
+                </span>
+              `
+            : readinessBadgeHtml(
+                readiness
+              )
         }
 
       </div>
@@ -6330,92 +6703,191 @@ function retailerProfileCardHtml(
       ${
         locked
           ? `
-            <div
-              class="retailer-profile-locked-message"
-            >
-              <strong>
-                This profile is currently locked.
-              </strong>
-
-              <p>
-                Your current membership allows
-                ${state.retailerAllowance}
-                ${
-                  state.retailerAllowance === 1
-                    ? "profile"
-                    : "profiles"
-                }.
-                Upgrade your membership to access
-                this profile again. Any previously
-                saved information remains stored.
-              </p>
-            </div>
-          `
-          : `
-            <form
-              class="retailer-profile-form"
-              data-retailer-profile-form="${slot}"
-            >
-
               <div
-                class="retailer-profile-name-field"
+                class="retailer-profile-locked-message"
               >
-                <label>
-                  Profile Name
-
-                  <input
-                    type="text"
-                    name="profileName"
-                    value="${escapeHtml(
-                      profileName
-                    )}"
-                    maxlength="80"
-                    placeholder="Example: Personal"
-                    required
-                  >
-                </label>
+                <strong>
+                  This profile is currently locked.
+                </strong>
 
                 <p>
-                  Give this ACO profile a name
-                  you will recognize.
+                  Your current membership allows
+                  ${state.retailerAllowance}
+                  ${
+                    state.retailerAllowance ===
+                    1
+                      ? "profile"
+                      : "profiles"
+                  }.
                 </p>
               </div>
-
+            `
+          : `
               <div
-                class="retailer-credentials-grid"
+                class="profile-quick-autofill"
               >
-                ${RETAILERS
-                  .map(
-                    retailer =>
-                      retailerFieldsHtml(
-                        retailer,
-                        retailers[
-                          retailer.key
-                        ] || {}
-                      )
-                  )
-                  .join("")}
-              </div>
 
-              <div
-                class="retailer-profile-save-row"
-              >
-                <div
-                  class="account-message retailer-profile-save-message"
-                  data-retailer-profile-message="${slot}"
-                  hidden
-                ></div>
+                <label>
+                  <span>
+                    Auto Fill Shipping With
+                  </span>
+
+                  <select
+                    data-personal-shipping-select
+                  >
+                    ${profileSavedAddressOptions(
+                      savedProfile
+                        ?.selectedAddressId ||
+                      ""
+                    )}
+                  </select>
+                </label>
+
+                <label>
+                  <span>
+                    Auto Fill Card With
+                  </span>
+
+                  <select
+                    data-personal-card-select
+                  >
+                    ${profileSavedPaymentOptions(
+                      savedProfile
+                        ?.selectedPaymentId ||
+                      ""
+                    )}
+                  </select>
+                </label>
 
                 <button
-                  type="submit"
-                  class="primary retailer-profile-save"
+                  type="button"
+                  class="secondary profile-autofill-apply"
+                  data-personal-autofill-apply="${slot}"
                 >
-                  Save Profile ${slot}
+                  Apply Saved Info
                 </button>
+
               </div>
 
-            </form>
-          `
+              <div
+                class="profile-collapsible-body"
+                data-profile-body
+                hidden
+              >
+
+                <form
+                  class="retailer-profile-form"
+                  data-retailer-profile-form="${slot}"
+                >
+
+                  <input
+                    type="hidden"
+                    name="shippingAddressId"
+                    value="${escapeHtml(
+                      savedProfile
+                        ?.selectedAddressId ||
+                      ""
+                    )}"
+                  >
+
+                  <input
+                    type="hidden"
+                    name="paymentMethodId"
+                    value="${escapeHtml(
+                      savedProfile
+                        ?.selectedPaymentId ||
+                      ""
+                    )}"
+                  >
+
+                  <div
+                    class="retailer-profile-name-field"
+                  >
+                    <label>
+                      Profile Name
+
+                      <input
+                        type="text"
+                        name="profileName"
+                        value="${escapeHtml(
+                          profileName
+                        )}"
+                        maxlength="80"
+                        placeholder="Example: Personal"
+                        required
+                      >
+                    </label>
+                  </div>
+
+                  <div
+                    class="profile-saved-info-summary"
+                  >
+                    <div>
+                      <span>SHIPPING</span>
+                      <strong>
+                        ${
+                          readiness
+                            .shippingReady
+                            ? "Saved"
+                            : "Needed"
+                        }
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>CARD</span>
+                      <strong>
+                        ${
+                          readiness
+                            .cardReady
+                            ? (
+                                customerCard
+                                  ?.maskedNumber ||
+                                "Saved"
+                              )
+                            : "Needed"
+                        }
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div
+                    class="retailer-credentials-grid"
+                  >
+                    ${RETAILERS
+                      .map(
+                        retailer =>
+                          retailerFieldsHtml(
+                            retailer,
+                            retailers[
+                              retailer.key
+                            ] || {}
+                          )
+                      )
+                      .join("")}
+                  </div>
+
+                  <div
+                    class="retailer-profile-save-row"
+                  >
+                    <div
+                      class="account-message retailer-profile-save-message"
+                      data-retailer-profile-message="${slot}"
+                      hidden
+                    ></div>
+
+                    <button
+                      type="submit"
+                      class="primary retailer-profile-save"
+                    >
+                      Save Profile ${slot}
+                    </button>
+                  </div>
+
+                </form>
+
+              </div>
+            `
       }
 
     </article>
@@ -6719,11 +7191,17 @@ function managedMembershipCardHtml(
       : null;
 
   const card =
-  membership.customerCard &&
-  typeof membership.customerCard ===
-    "object"
-    ? membership.customerCard
-    : null;
+    membership.customerCard &&
+    typeof membership.customerCard ===
+      "object"
+      ? membership.customerCard
+      : null;
+
+  const readiness =
+    profileReadiness(
+      profile,
+      card
+    );
 
   const indefinite =
     membership.durationType ===
@@ -6756,555 +7234,384 @@ function managedMembershipCardHtml(
           membership.expiresAt
         );
 
-  const statusClass =
-    indefinite ||
-    daysRemaining > 7
-      ? "status-green"
-      : "status-yellow";
-
-  const customerName =
-    profile
-      ? `${profile.firstName || ""} ${
-          profile.lastName || ""
-        }`.trim()
-      : "";
-
   return `
     <article
-      class="retailer-profile-card special-retailer-profile"
+      class="retailer-profile-card special-retailer-profile compact-profile-card"
       data-managed-membership="${escapeHtml(
         type
       )}"
       data-managed-assignment="${escapeHtml(
-        membership.assignmentId || ""
+        membership.assignmentId ||
+        ""
       )}"
     >
 
       <div
-        class="retailer-profile-card-head"
+        class="profile-compact-main"
       >
 
-        <div
-          class="retailer-profile-title"
+        <button
+          type="button"
+          class="profile-compact-toggle"
+          data-profile-toggle
+          aria-expanded="false"
         >
-
           <span
             class="retailer-profile-number"
           >
             ${letter}
           </span>
 
-          <div>
-
+          <span
+            class="profile-compact-title"
+          >
             <span class="eyebrow">
               MANAGED ACO ACCESS
             </span>
 
-            <h3>
+            <strong>
               ${title}
-            </h3>
+            </strong>
 
-          </div>
+            <small>
+              ${escapeHtml(
+                membership.durationLabel ||
+                (
+                  indefinite
+                    ? "INDEFINITE"
+                    : "ACTIVE"
+                )
+              )}
+              ${
+                !indefinite
+                  ? ` · ${escapeHtml(
+                      timeRemaining
+                    )} LEFT`
+                  : ""
+              }
+            </small>
+          </span>
 
-        </div>
+          <span
+            class="profile-compact-chevron"
+            aria-hidden="true"
+          >
+            ▾
+          </span>
+        </button>
 
-        <span
-          class="retailer-profile-active ${statusClass}"
-        >
-          ● ACTIVE
-        </span>
+        ${readinessBadgeHtml(
+          readiness
+        )}
 
       </div>
 
       <div
-        class="retailer-profile-name-field"
+        class="profile-quick-autofill"
       >
 
-        <p>
-          <strong>
-            START DATE:
-          </strong>
+        <label>
+          <span>
+            Auto Fill Shipping With
+          </span>
 
-          ${escapeHtml(
-            formatDate(
-              membership.startsAt
-            )
-          )}
-        </p>
+          <select
+            data-managed-shipping-select
+          >
+            ${profileSavedAddressOptions(
+              membership
+                .selectedAddressId ||
+              ""
+            )}
+          </select>
+        </label>
 
-        <p>
-          <strong>
-            ACCESS:
-          </strong>
+        <label>
+          <span>
+            Auto Fill Card With
+          </span>
 
-          ${escapeHtml(
-            membership.durationLabel ||
-            (
-              indefinite
-                ? "INDEFINITE"
-                : "ACTIVE"
-            )
-          )}
-        </p>
+          <select
+            data-managed-card-select
+          >
+            ${profileSavedPaymentOptions(
+              membership
+                .selectedPaymentId ||
+              ""
+            )}
+          </select>
+        </label>
 
-        <p>
-          <strong>
-            TIME REMAINING:
-          </strong>
-
-          ${escapeHtml(
-            timeRemaining
-          )}
-        </p>
-
-        <p>
-          <strong>
-            EXPIRATION:
-          </strong>
-
-          ${escapeHtml(
-            expirationText
-          )}
-        </p>
+        <button
+          type="button"
+          class="secondary profile-autofill-apply"
+          data-managed-autofill-apply
+        >
+          Apply Saved Info
+        </button>
 
       </div>
 
-      ${
-        profile
-          ? `
-              <div
-                class="retailer-profile-name-field"
-              >
-
-                <p>
-                  <strong>
-                    YOUR INFORMATION
-                  </strong>
-                </p>
-
-                ${
-                  customerName
-                    ? `
-                        <p>
-                          <strong>
-                            NAME:
-                          </strong>
-                          ${escapeHtml(
-                            customerName
-                          )}
-                        </p>
-                      `
-                    : ""
-                }
-
-                ${
-                  profile.email
-                    ? `
-                        <p>
-                          <strong>
-                            EMAIL:
-                          </strong>
-                          ${escapeHtml(
-                            profile.email
-                          )}
-                        </p>
-                      `
-                    : ""
-                }
-
-                ${
-                  profile.phone
-                    ? `
-                        <p>
-                          <strong>
-                            PHONE:
-                          </strong>
-                          ${escapeHtml(
-                            profile.phone
-                          )}
-                        </p>
-                      `
-                    : ""
-                }
-
-                ${
-                  profile.address
-                    ? `
-                        <p>
-                          <strong>
-                            ADDRESS:
-                          </strong>
-                          ${escapeHtml(
-                            [
-                              profile.address,
-                              profile.address2,
-                              profile.city,
-                              profile.state,
-                              profile.zip,
-                              profile.country
-                            ]
-                              .filter(Boolean)
-                              .join(", ")
-                          )}
-                        </p>
-                      `
-                    : ""
-                }
-
-              </div>
-            `
-          : `
-              <div
-                class="retailer-profile-name-field"
-              >
-                <p>
-                  Your customer information has
-                  not been added to this managed
-                  membership yet.
-                </p>
-              </div>
-            `
-      }
-
-      ${
-  card
-    ? `
-        <div
-          class="retailer-profile-name-field"
-        >
-
-          <p>
-            <strong>
-              CARD INFORMATION
-            </strong>
-          </p>
-
-          ${
-            card.cardLabel
-              ? `
-                  <p>
-                    <strong>
-                      CARD LABEL:
-                    </strong>
-                    ${escapeHtml(
-                      card.cardLabel
-                    )}
-                  </p>
-                `
-              : ""
-          }
-
-          ${
-            card.cardholder
-              ? `
-                  <p>
-                    <strong>
-                      CARDHOLDER:
-                    </strong>
-                    ${escapeHtml(
-                      card.cardholder
-                    )}
-                  </p>
-                `
-              : ""
-          }
-
-          ${
-            card.acoCardNumber
-              ? `
-                  <p>
-                    <strong>
-                      CARD NUMBER:
-                    </strong>
-                    ${escapeHtml(
-                      card.acoCardNumber
-                    )}
-                  </p>
-                `
-              : ""
-          }
-
-          ${
-            card.expMonth ||
-            card.expYear
-              ? `
-                  <p>
-                    <strong>
-                      EXPIRATION:
-                    </strong>
-                    ${escapeHtml(
-                      [
-                        card.expMonth,
-                        card.expYear
-                      ]
-                        .filter(Boolean)
-                        .join("/")
-                    )}
-                  </p>
-                `
-              : ""
-          }
-
-          ${
-            card.securityCode
-              ? `
-                  <p>
-                    <strong>
-                      SECURITY CODE:
-                    </strong>
-                    ${escapeHtml(
-                      card.securityCode
-                    )}
-                  </p>
-                `
-              : ""
-          }
-
-        </div>
-      `
-    : ""
-}
-
-
-      <form
-        class="managed-customer-form"
-        data-managed-customer-form="${escapeHtml(
-          membership.assignmentId || ""
-        )}"
-        data-managed-type="${escapeHtml(
-          type
-        )}"
+      <div
+        class="profile-collapsible-body"
+        data-profile-body
+        hidden
       >
 
-        <div class="retailer-profile-name-field">
+        <div
+          class="profile-compact-meta"
+        >
+          <span>
+            <strong>START:</strong>
+            ${escapeHtml(
+              formatDate(
+                membership.startsAt
+              )
+            )}
+          </span>
 
-          <p>
-            <strong>
-              ADDRESS &amp; CARD SETTINGS
-            </strong>
-          </p>
+          <span>
+            <strong>EXPIRES:</strong>
+            ${escapeHtml(
+              expirationText
+            )}
+          </span>
+        </div>
 
-          <p class="account-muted">
-            Choose an address from one of your linked orders,
-            or enter another address below. You can also
-            update the card information and the separate
-            Security Code used for this managed profile.
-          </p>
+        <form
+          class="managed-customer-form"
+          data-managed-customer-form="${escapeHtml(
+            membership.assignmentId ||
+            ""
+          )}"
+          data-managed-type="${escapeHtml(
+            type
+          )}"
+        >
 
-          <label>
-            Use Address From
+          <div
+            class="managed-edit-section"
+          >
+            <span class="eyebrow">
+              SHIPPING INFORMATION
+            </span>
 
-            <select
-              data-managed-address-source
-            >
-              ${managedAddressOptionsHtml(
-                membership
-              )}
-            </select>
-          </label>
+            <div class="two">
+              <label>
+                First Name
+                <input
+                  name="firstName"
+                  value="${escapeHtml(
+                    profile?.firstName ||
+                    ""
+                  )}"
+                />
+              </label>
 
-          <div class="two">
+              <label>
+                Last Name
+                <input
+                  name="lastName"
+                  value="${escapeHtml(
+                    profile?.lastName ||
+                    ""
+                  )}"
+                />
+              </label>
+            </div>
+
+            <div class="two">
+              <label>
+                Email
+                <input
+                  type="email"
+                  name="email"
+                  value="${escapeHtml(
+                    profile?.email ||
+                    ""
+                  )}"
+                />
+              </label>
+
+              <label>
+                Phone
+                <input
+                  name="phone"
+                  value="${escapeHtml(
+                    profile?.phone ||
+                    ""
+                  )}"
+                />
+              </label>
+            </div>
 
             <label>
-              First Name
+              Address
               <input
-                name="firstName"
+                name="address"
                 value="${escapeHtml(
-                  profile?.firstName || ""
+                  profile?.address ||
+                  ""
                 )}"
               />
             </label>
 
             <label>
-              Last Name
+              Address 2
               <input
-                name="lastName"
+                name="address2"
                 value="${escapeHtml(
-                  profile?.lastName || ""
+                  profile?.address2 ||
+                  ""
                 )}"
               />
             </label>
 
+            <div class="two">
+              <label>
+                City
+                <input
+                  name="city"
+                  value="${escapeHtml(
+                    profile?.city ||
+                    ""
+                  )}"
+                />
+              </label>
+
+              <label>
+                State
+                <input
+                  name="state"
+                  value="${escapeHtml(
+                    profile?.state ||
+                    ""
+                  )}"
+                />
+              </label>
+            </div>
+
+            <div class="two">
+              <label>
+                ZIP
+                <input
+                  name="zip"
+                  value="${escapeHtml(
+                    profile?.zip ||
+                    ""
+                  )}"
+                />
+              </label>
+
+              <label>
+                Country
+                <input
+                  name="country"
+                  value="${escapeHtml(
+                    profile?.country ||
+                    ""
+                  )}"
+                />
+              </label>
+            </div>
           </div>
 
-          <div class="two">
+          <div
+            class="managed-edit-section"
+          >
+            <span class="eyebrow">
+              CARD INFORMATION
+            </span>
+
+            <div class="two">
+              <label>
+                Card Label
+                <input
+                  name="cardLabel"
+                  value="${escapeHtml(
+                    card?.cardLabel ||
+                    ""
+                  )}"
+                />
+              </label>
+
+              <label>
+                Cardholder Name
+                <input
+                  name="cardholder"
+                  value="${escapeHtml(
+                    card?.cardholder ||
+                    ""
+                  )}"
+                />
+              </label>
+            </div>
 
             <label>
-              Email
+              Card Number
               <input
-                type="email"
-                name="email"
-                value="${escapeHtml(
-                  profile?.email || ""
-                )}"
-              />
-            </label>
-
-            <label>
-              Phone
-              <input
-                name="phone"
-                value="${escapeHtml(
-                  profile?.phone || ""
-                )}"
-              />
-            </label>
-
-          </div>
-
-          <label>
-            Address
-            <input
-              name="address"
-              value="${escapeHtml(
-                profile?.address || ""
-              )}"
-            />
-          </label>
-
-          <label>
-            Address 2
-            <input
-              name="address2"
-              value="${escapeHtml(
-                profile?.address2 || ""
-              )}"
-            />
-          </label>
-
-          <div class="two">
-
-            <label>
-              City
-              <input
-                name="city"
-                value="${escapeHtml(
-                  profile?.city || ""
-                )}"
-              />
-            </label>
-
-            <label>
-              State
-              <input
-                name="state"
-                value="${escapeHtml(
-                  profile?.state || ""
-                )}"
-              />
-            </label>
-
-          </div>
-
-          <div class="two">
-
-            <label>
-              ZIP
-              <input
-                name="zip"
-                value="${escapeHtml(
-                  profile?.zip || ""
-                )}"
-              />
-            </label>
-
-            <label>
-              Country
-              <input
-                name="country"
-                value="${escapeHtml(
-                  profile?.country || ""
-                )}"
-              />
-            </label>
-
-          </div>
-
-          <div class="two">
-
-            <label>
-              Card Label
-              <input
-                name="cardLabel"
-                value="${escapeHtml(
-                  card?.cardLabel || ""
-                )}"
-              />
-            </label>
-
-            <label>
-              Cardholder Name
-              <input
-                name="cardholder"
-                value="${escapeHtml(
-                  card?.cardholder || ""
-                )}"
-              />
-            </label>
-
-          </div>
-
-          <label>
-            Card Number
-            <input
-              name="acoCardNumber"
-              inputmode="numeric"
-              autocomplete="off"
-              value="${escapeHtml(
-                card?.acoCardNumber || ""
-              )}"
-            />
-          </label>
-
-          <div class="two">
-
-            <label>
-              Expiration Month
-              <input
-                name="expMonth"
+                name="acoCardNumber"
                 inputmode="numeric"
-                maxlength="2"
+                autocomplete="off"
                 value="${escapeHtml(
-                  card?.expMonth || ""
+                  card?.acoCardNumber ||
+                  ""
                 )}"
               />
             </label>
+
+            <div class="two">
+              <label>
+                Expiration Month
+                <input
+                  name="expMonth"
+                  inputmode="numeric"
+                  maxlength="2"
+                  value="${escapeHtml(
+                    card?.expMonth ||
+                    ""
+                  )}"
+                />
+              </label>
+
+              <label>
+                Expiration Year
+                <input
+                  name="expYear"
+                  inputmode="numeric"
+                  maxlength="4"
+                  value="${escapeHtml(
+                    card?.expYear ||
+                    ""
+                  )}"
+                />
+              </label>
+            </div>
 
             <label>
-              Expiration Year
+              Security Code
               <input
-                name="expYear"
-                inputmode="numeric"
-                maxlength="4"
+                name="securityCode"
+                autocomplete="off"
                 value="${escapeHtml(
-                  card?.expYear || ""
+                  card?.securityCode ||
+                  ""
                 )}"
               />
             </label>
 
+            <small class="fine">
+              This Security Code is the separate ACO
+              Security Code field. It is not your card
+              CVV/CVC.
+            </small>
           </div>
-
-          <label>
-            Security Code
-            <input
-              name="securityCode"
-              autocomplete="off"
-              value="${escapeHtml(
-                card?.securityCode || ""
-              )}"
-            />
-          </label>
-
-          <small class="fine">
-            This Security Code is the separate ACO
-            Security Code field. It is not your card
-            CVV/CVC.
-          </small>
 
           <div
             class="account-message"
             data-managed-customer-message="${escapeHtml(
-              membership.assignmentId || ""
+              membership.assignmentId ||
+              ""
             )}"
             hidden
           ></div>
@@ -7313,15 +7620,356 @@ function managedMembershipCardHtml(
             type="submit"
             class="primary retailer-profile-save"
           >
-            Save Address &amp; Card
+            Save Profile Details
           </button>
 
-        </div>
+        </form>
 
-      </form>
+      </div>
 
     </article>
   `;
+}
+
+
+function bindProfileAccordions() {
+  document
+    .querySelectorAll(
+      ".compact-profile-card [data-profile-toggle]"
+    )
+    .forEach(button => {
+      if (
+        button.dataset.bound ===
+        "true"
+      ) {
+        return;
+      }
+
+      button.dataset.bound =
+        "true";
+
+      button.addEventListener(
+        "click",
+        () => {
+          const card =
+            button.closest(
+              ".compact-profile-card"
+            );
+
+          const body =
+            card?.querySelector(
+              "[data-profile-body]"
+            );
+
+          if (!body) {
+            return;
+          }
+
+          const opening =
+            body.hidden;
+
+          body.hidden =
+            !opening;
+
+          card?.classList.toggle(
+            "expanded",
+            opening
+          );
+
+          button.setAttribute(
+            "aria-expanded",
+            opening
+              ? "true"
+              : "false"
+          );
+        }
+      );
+    });
+}
+
+
+async function applyManagedSavedInfo(
+  card
+) {
+  const assignmentId =
+    card?.dataset
+      .managedAssignment;
+
+  const type =
+    card?.dataset
+      .managedMembership;
+
+  const shippingAddressId =
+    card?.querySelector(
+      "[data-managed-shipping-select]"
+    )?.value || "";
+
+  const paymentMethodId =
+    card?.querySelector(
+      "[data-managed-card-select]"
+    )?.value || "";
+
+  if (
+    !shippingAddressId &&
+    !paymentMethodId
+  ) {
+    showAccountMessage(
+      "Choose a saved shipping address or card first.",
+      "error"
+    );
+    return;
+  }
+
+  if (
+    ADMIN_PREVIEW_MODE
+  ) {
+    const rentals =
+      adminTestReadRentals();
+
+    const item =
+      rentals.find(
+        rental =>
+          String(
+            rental.assignmentId
+          ) ===
+          String(
+            assignmentId
+          )
+      );
+
+    if (!item) {
+      showAccountMessage(
+        "This test rental could not be found.",
+        "error"
+      );
+      return;
+    }
+
+    const address =
+      savedAddressById(
+        shippingAddressId
+      );
+
+    const payment =
+      savedPaymentById(
+        paymentMethodId
+      );
+
+    if (address) {
+      item.customerProfile = {
+        ...(item.customerProfile || {}),
+        firstName:
+          address.firstName || "",
+        lastName:
+          address.lastName || "",
+        address:
+          address.address || "",
+        address2:
+          address.address2 || "",
+        city:
+          address.city || "",
+        state:
+          address.state || "",
+        zip:
+          address.zip || "",
+        country:
+          address.country || ""
+      };
+
+      item.selectedAddressId =
+        shippingAddressId;
+    }
+
+    if (payment) {
+      item.customerCard = {
+        cardLabel:
+          payment.cardLabel || "",
+        cardholder:
+          payment.cardholder || "",
+        acoCardNumber:
+          payment.testCardNumber ||
+          "4111111111111111",
+        expMonth:
+          payment.expMonth || "12",
+        expYear:
+          payment.expYear || "2030",
+        securityCode:
+          "TEST"
+      };
+
+      item.selectedPaymentId =
+        paymentMethodId;
+    }
+
+    adminTestSaveRentals(
+      rentals
+    );
+
+    state.rentedMemberships =
+      rentals;
+
+    renderRetailerProfiles();
+
+    showAccountMessage(
+      "Saved test shipping/card information applied.",
+      "success"
+    );
+
+    return;
+  }
+
+  try {
+    const response =
+      await fetch(
+        `/api/account/managed-memberships/${encodeURIComponent(
+          type
+        )}/${encodeURIComponent(
+          assignmentId
+        )}/autofill`,
+        {
+          method:
+            "POST",
+          credentials:
+            "same-origin",
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+          body:
+            JSON.stringify({
+              shippingAddressId,
+              paymentMethodId
+            })
+        }
+      );
+
+    const result =
+      await readJson(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+        "Unable to apply saved information."
+      );
+    }
+
+    await loadManagedMemberships();
+
+    showAccountMessage(
+      result.message ||
+      "Saved information applied.",
+      "success"
+    );
+
+  } catch (error) {
+    showAccountMessage(
+      error.message,
+      "error"
+    );
+  }
+}
+
+
+function bindManagedAutofill() {
+  document
+    .querySelectorAll(
+      "[data-managed-autofill-apply]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        () => {
+          const card =
+            button.closest(
+              "[data-managed-assignment]"
+            );
+
+          applyManagedSavedInfo(
+            card
+          );
+        }
+      );
+    });
+}
+
+
+function bindPersonalProfileAutofill() {
+  document
+    .querySelectorAll(
+      "[data-personal-autofill-apply]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        () => {
+          const card =
+            button.closest(
+              "[data-retailer-profile]"
+            );
+
+          const form =
+            card?.querySelector(
+              "[data-retailer-profile-form]"
+            );
+
+          if (!form) {
+            return;
+          }
+
+          const shipping =
+            card.querySelector(
+              "[data-personal-shipping-select]"
+            )?.value || "";
+
+          const payment =
+            card.querySelector(
+              "[data-personal-card-select]"
+            )?.value || "";
+
+          if (
+            !shipping &&
+            !payment
+          ) {
+            showAccountMessage(
+              "Choose a saved shipping address or card first.",
+              "error"
+            );
+
+            return;
+          }
+
+          if (
+            form.elements
+              .shippingAddressId
+          ) {
+            form.elements
+              .shippingAddressId
+              .value =
+                shipping;
+          }
+
+          if (
+            form.elements
+              .paymentMethodId
+          ) {
+            form.elements
+              .paymentMethodId
+              .value =
+                payment;
+          }
+
+          /*
+            Save through the normal profile form so
+            retailer credentials and profile name are
+            preserved while saved shipping/card data
+            is applied server-side.
+          */
+          form.requestSubmit();
+        }
+      );
+    });
 }
 
 
@@ -7918,6 +8566,9 @@ MANAGED MEMBERSHIPS
   bindSpecialProfileForms();
 
   bindManagedMembershipForms();
+  bindProfileAccordions();
+  bindManagedAutofill();
+  bindPersonalProfileAutofill();
 
   if (mainMessage) {
     setMessage(
@@ -8546,6 +9197,20 @@ async function saveRetailerProfile(
     return;
   }
 
+  const shippingAddressId =
+    String(
+      formData.get(
+        "shippingAddressId"
+      ) || ""
+    ).trim();
+
+  const paymentMethodId =
+    String(
+      formData.get(
+        "paymentMethodId"
+      ) || ""
+    ).trim();
+
   const retailers = {};
 
   for (
@@ -8577,6 +9242,141 @@ async function saveRetailerProfile(
     };
   }
 
+  if (
+    ADMIN_PREVIEW_MODE
+  ) {
+    const address =
+      savedAddressById(
+        shippingAddressId
+      );
+
+    const payment =
+      savedPaymentById(
+        paymentMethodId
+      );
+
+    const profileRecord = {
+      slot,
+      profileName,
+      locked:
+        false,
+      retailers:
+        Object.fromEntries(
+          RETAILERS.map(
+            retailer => [
+              retailer.key,
+              {
+                username:
+                  retailers[
+                    retailer.key
+                  ]?.username ||
+                  "",
+                passwordConfigured:
+                  Boolean(
+                    retailers[
+                      retailer.key
+                    ]?.password
+                  )
+              }
+            ]
+          )
+        ),
+      customerProfile:
+        address
+          ? {
+              firstName:
+                address.firstName ||
+                "",
+              lastName:
+                address.lastName ||
+                "",
+              email:
+                state.customer
+                  ?.email ||
+                "",
+              address:
+                address.address ||
+                "",
+              address2:
+                address.address2 ||
+                "",
+              city:
+                address.city ||
+                "",
+              state:
+                address.state ||
+                "",
+              zip:
+                address.zip ||
+                "",
+              country:
+                address.country ||
+                ""
+            }
+          : null,
+      customerCard:
+        payment
+          ? {
+              cardLabel:
+                payment.cardLabel ||
+                "",
+              cardholder:
+                payment.cardholder ||
+                "",
+              maskedNumber:
+                payment.maskedNumber ||
+                "•••• •••• •••• 1111",
+              expMonth:
+                payment.expMonth ||
+                "12",
+              expYear:
+                payment.expYear ||
+                "2030"
+            }
+          : null,
+      selectedAddressId:
+        shippingAddressId ||
+        null,
+      selectedPaymentId:
+        paymentMethodId ||
+        null
+    };
+
+    profileRecord.readiness =
+      profileReadiness(
+        profileRecord.customerProfile,
+        profileRecord.customerCard
+      );
+
+    const existing =
+      state.retailerProfiles
+        .findIndex(
+          item =>
+            Number(
+              item.slot
+            ) === slot
+        );
+
+    if (existing >= 0) {
+      state.retailerProfiles[
+        existing
+      ] = profileRecord;
+    } else {
+      state.retailerProfiles.push(
+        profileRecord
+      );
+    }
+
+    renderRetailerProfiles();
+
+    showAccountMessage(
+      `Test Profile ${slot} saved.`,
+      "success"
+    );
+
+    return;
+  }
+
   try {
     setButtonBusy(
       button,
@@ -8606,7 +9406,9 @@ async function saveRetailerProfile(
           body:
             JSON.stringify({
               profileName,
-              retailers
+              retailers,
+              shippingAddressId,
+              paymentMethodId
             })
         }
       );
