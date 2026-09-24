@@ -6754,20 +6754,9 @@ function retailerProfileCardHtml(
     membership.cancelAt ||
     null;
 
-  const paidStatus =
-    String(
-      membership.status ||
-      ""
-    )
-      .trim()
-      .toLowerCase();
-
   const paidActive =
-    [
-      "active",
-      "trialing"
-    ].includes(
-      paidStatus
+    hasActivePaidMembership(
+      membership
     );
 
   const countdown =
@@ -9328,6 +9317,12 @@ container.innerHTML = `
   bindSpecialProfileForms();
 
   bindManagedMembershipForms();
+
+  bindProfileAccordions();
+
+  bindManagedAutofill();
+
+  bindPersonalProfileAutofill();
 
 
   if (mainMessage) {
