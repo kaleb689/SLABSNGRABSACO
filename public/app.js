@@ -1,11 +1,17 @@
 const PLANS = {
-  1: { name: "Starter", profiles: 1, amount: 30 },
-  2: { name: "Popular", profiles: 2, amount: 50 },
-  3: { name: "Advanced", profiles: 3, amount: 80 },
-  4: { name: "Pro", profiles: 5, amount: 130 },
-  5: { name: "High Volume", profiles: 10, amount: 215 },
-  6: { name: "Power User", profiles: 20, amount: 300 },
-  7: { name: "Elite", profiles: 50, amount: 650 }
+  1: { name: "Starter", profiles: 1, amount: 10 },
+  2: { name: "Intermediate", profiles: 2, amount: 15 },
+  3: { name: "Advanced", profiles: 3, amount: 25 },
+  4: { name: "Pro", profiles: 5, amount: 45 },
+  5: { name: "High Volume", profiles: 10, amount: 70 },
+  6: { name: "Power User", profiles: 20, amount: 100 },
+  7: { name: "Elite", profiles: 50, amount: 215 }
+};
+
+const RENTAL_PRICING = {
+  5: { "1_drop": 10, "1_week": 25, "1_month": 60 },
+  10: { "1_drop": 20, "1_week": 50, "1_month": 120 },
+  15: { "1_drop": 30, "1_week": 75, "1_month": 180 }
 };
 
 const savedTier = Number(
@@ -36,12 +42,32 @@ freeMemberships: [],
 
 rentedMemberships: [],
 
+rentalCart: null,
+
 managedAvailability: null,
 
 retailerAllowance: 0,
 
 retailerProfilesLoaded: false
 };
+
+try {
+  const savedRentalCart =
+    JSON.parse(
+      localStorage.getItem(
+        "sng_rental_cart"
+      ) || "null"
+    );
+
+  if (savedRentalCart) {
+    state.rentalCart =
+      savedRentalCart;
+  }
+} catch {
+  localStorage.removeItem(
+    "sng_rental_cart"
+  );
+}
 
 /* =====================================================
    HELPERS
@@ -334,7 +360,7 @@ function pricingCardsHtml() {
         Number(tier);
 
       const featured =
-        tierNumber === 2;
+        tierNumber === 4;
 
       const profileWord =
         plan.profiles === 1
@@ -676,7 +702,7 @@ function initializeMembershipCarousel() {
    * Always start:
    *
    * Starter
-   * Popular
+   * Pro (Popular)
    * Advanced
    */
   currentIndex = 0;
@@ -911,7 +937,14 @@ function updateCart() {
       ? PLANS[state.tier]
       : null;
 
-  if (!plan) {
+  const rental =
+    state.rentalCart;
+
+  const itemCount =
+    (plan ? 1 : 0) +
+    (rental ? 1 : 0);
+
+  if (!itemCount) {
     if (count) {
       count.textContent = "0";
     }
@@ -923,11 +956,7 @@ function updateCart() {
     if (content) {
       content.innerHTML = `
         <div class="empty-cart">
-
-          <p>
-            Your cart is empty.
-          </p>
-
+          <p>Your cart is empty.</p>
           <button
             type="button"
             class="primary full"
@@ -935,7 +964,6 @@ function updateCart() {
           >
             View Memberships
           </button>
-
         </div>
       `;
 
@@ -956,17 +984,21 @@ function updateCart() {
   }
 
   if (count) {
-    count.textContent = "1";
+    count.textContent =
+      String(itemCount);
   }
 
   if (clearButton) {
     clearButton.hidden = false;
   }
 
-  if (content) {
-    content.innerHTML = `
-      <div class="cart-item">
+  if (!content) return;
 
+  const parts = [];
+
+  if (plan) {
+    parts.push(`
+      <div class="cart-item">
         <span class="plan-name">
           ${escapeHtml(plan.name)}
         </span>
@@ -984,7 +1016,6 @@ function updateCart() {
           }
           per supported retailer.
         </p>
-
       </div>
 
       <button
@@ -992,24 +1023,343 @@ function updateCart() {
         class="primary full"
         id="cart-checkout"
       >
-        Get Started →
+        Continue Membership Checkout →
       </button>
-    `;
+    `);
+  }
 
-    document
-      .getElementById(
-        "cart-checkout"
-      )
-      ?.addEventListener(
-        "click",
-        () => {
-          closeCart();
-          go("profile");
-        }
-      );
+  if (rental) {
+    const retailerLabel =
+      rental.retailer === "walmart"
+        ? "Walmart"
+        : "Target";
+
+    const durationLabel =
+      rental.durationType === "1_week"
+        ? "1 Week"
+        : rental.durationType === "1_month"
+          ? "1 Month"
+          : "1 Drop";
+
+    parts.push(`
+      <div class="cart-item rental-cart-item">
+        <span class="plan-name">
+          ${escapeHtml(retailerLabel)} Account Rental
+        </span>
+
+        <strong>
+          $${escapeHtml(rental.price)}
+        </strong>
+
+        <p>
+          ${escapeHtml(rental.quantity)} accounts •
+          ${escapeHtml(durationLabel)}
+        </p>
+      </div>
+
+      <button
+        type="button"
+        class="primary full"
+        id="rental-cart-checkout"
+      >
+        Checkout Rental →
+      </button>
+    `);
+  }
+
+  content.innerHTML =
+    parts.join("");
+
+  document
+    .getElementById(
+      "cart-checkout"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        closeCart();
+        go("profile");
+      }
+    );
+
+  document
+    .getElementById(
+      "rental-cart-checkout"
+    )
+    ?.addEventListener(
+      "click",
+      checkoutRentalCart
+    );
+}
+
+
+
+function rentalPrice(
+  quantity,
+  durationType
+) {
+  return (
+    RENTAL_PRICING?.[quantity]
+      ?.[durationType] ?? null
+  );
+}
+
+function updateRentalPriceDisplay() {
+  const retailer =
+    document.getElementById(
+      "rental-retailer"
+    )?.value || "target";
+
+  const quantity =
+    Number(
+      document.getElementById(
+        "rental-account-quantity"
+      )?.value || 5
+    );
+
+  const durationType =
+    document.getElementById(
+      "rental-duration"
+    )?.value || "1_drop";
+
+  const price =
+    rentalPrice(
+      quantity,
+      durationType
+    );
+
+  const display =
+    document.getElementById(
+      "rental-auto-price"
+    );
+
+  if (display) {
+    display.textContent =
+      price == null
+        ? "—"
+        : `$${price}`;
+  }
+
+  const available =
+    Number(
+      state.managedAvailability
+        ?.[retailer]
+        ?.available || 0
+    );
+
+  const addButton =
+    document.getElementById(
+      "rental-add-to-cart"
+    );
+
+  if (addButton) {
+    addButton.disabled =
+      price == null ||
+      available < quantity;
+
+    addButton.textContent =
+      available < quantity
+        ? "Not Enough Accounts"
+        : "Add to Cart";
   }
 }
 
+function addRentalToCart() {
+  const retailer =
+    document.getElementById(
+      "rental-retailer"
+    )?.value || "target";
+
+  const quantity =
+    Number(
+      document.getElementById(
+        "rental-account-quantity"
+      )?.value || 5
+    );
+
+  const durationType =
+    document.getElementById(
+      "rental-duration"
+    )?.value || "1_drop";
+
+  const price =
+    rentalPrice(
+      quantity,
+      durationType
+    );
+
+  const available =
+    Number(
+      state.managedAvailability
+        ?.[retailer]
+        ?.available || 0
+    );
+
+  if (
+    price == null ||
+    available < quantity
+  ) {
+    showAccountMessage(
+      "There are not enough accounts available for that rental package.",
+      "error"
+    );
+    return;
+  }
+
+  state.rentalCart = {
+    retailer,
+    quantity,
+    durationType,
+    price
+  };
+
+  localStorage.setItem(
+    "sng_rental_cart",
+    JSON.stringify(
+      state.rentalCart
+    )
+  );
+
+  updateCart();
+  openCart();
+}
+
+async function checkoutRentalCart() {
+  const rental =
+    state.rentalCart;
+
+  if (!rental) return;
+
+  const button =
+    document.getElementById(
+      "rental-cart-checkout"
+    );
+
+  setButtonBusy(
+    button,
+    true,
+    "Opening Stripe…"
+  );
+
+  try {
+    const response =
+      await fetch(
+        "/api/create-rental-checkout-session",
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+          body: JSON.stringify({
+            retailer:
+              rental.retailer,
+            quantity:
+              rental.quantity,
+            durationType:
+              rental.durationType
+          })
+        }
+      );
+
+    const data =
+      await readJson(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to start rental checkout."
+      );
+    }
+
+    window.location.href =
+      data.url;
+
+  } catch (error) {
+    alert(error.message);
+    setButtonBusy(
+      button,
+      false
+    );
+  }
+}
+
+function stockLevelClass(
+  available,
+  total
+) {
+  const safeAvailable =
+    Number(available || 0);
+
+  const safeTotal =
+    Math.max(
+      1,
+      Number(total || 0)
+    );
+
+  const ratio =
+    safeAvailable / safeTotal;
+
+  if (safeAvailable <= 0 || ratio <= .20) {
+    return {
+      className: "stock-red",
+      label: safeAvailable <= 0
+        ? "OUT OF STOCK"
+        : "LOW STOCK"
+    };
+  }
+
+  if (ratio <= .50) {
+    return {
+      className: "stock-yellow",
+      label: "LIMITED"
+    };
+  }
+
+  return {
+    className: "stock-green",
+    label: "IN STOCK"
+  };
+}
+
+function updateRentalStockCard(
+  retailer,
+  data
+) {
+  const card =
+    document.querySelector(
+      `[data-rental-stock-card="${retailer}"]`
+    );
+
+  const status =
+    document.querySelector(
+      `[data-rental-stock-status="${retailer}"]`
+    );
+
+  if (!card || !status) return;
+
+  const stock =
+    stockLevelClass(
+      data?.available,
+      data?.total
+    );
+
+  card.classList.remove(
+    "stock-green",
+    "stock-yellow",
+    "stock-red"
+  );
+
+  card.classList.add(
+    stock.className
+  );
+
+  status.textContent =
+    stock.label;
+}
 
 function openCart() {
   const drawer =
@@ -1108,6 +1458,11 @@ document
     "click",
     () => {
       clearSelectedTier();
+      state.rentalCart = null;
+      localStorage.removeItem(
+        "sng_rental_cart"
+      );
+      updateCart();
     }
   );
 
@@ -1382,6 +1737,9 @@ const params =
 const paymentStatus =
   params.get("payment");
 
+const rentalStatus =
+  params.get("rental");
+
 const resetToken =
   params.get("resetPassword") ||
   params.get("resetToken") ||
@@ -1412,6 +1770,45 @@ if (paymentStatus === "success") {
 
   setTimeout(() => {
     go("my-profile");
+  }, 100);
+}
+
+
+if (rentalStatus === "success") {
+  state.rentalCart = null;
+  localStorage.removeItem(
+    "sng_rental_cart"
+  );
+  updateCart();
+
+  history.replaceState(
+    null,
+    "",
+    "/#my-profile"
+  );
+
+  setTimeout(() => {
+    go("my-profile");
+    showAccountMessage(
+      "Rental payment received. Your rented accounts will appear in your managed memberships after Stripe confirms the payment.",
+      "success"
+    );
+  }, 150);
+}
+
+if (rentalStatus === "cancelled") {
+  history.replaceState(
+    null,
+    "",
+    "/#my-profile"
+  );
+
+  setTimeout(() => {
+    go("my-profile");
+    showAccountMessage(
+      "Rental checkout was cancelled. Your rental selection is still in your cart.",
+      "info"
+    );
   }, 100);
 }
 
@@ -6092,6 +6489,18 @@ async function loadManagedAvailabilityCustomer() {
       }
     }
 
+    updateRentalStockCard(
+      "target",
+      data.target
+    );
+
+    updateRentalStockCard(
+      "walmart",
+      data.walmart
+    );
+
+    updateRentalPriceDisplay();
+
     if (updated) {
       updated.textContent =
         "Updated just now";
@@ -6112,6 +6521,30 @@ async function loadManagedAvailabilityCustomer() {
     );
   }
 }
+
+
+[
+  "rental-retailer",
+  "rental-account-quantity",
+  "rental-duration"
+].forEach(id => {
+  document
+    .getElementById(id)
+    ?.addEventListener(
+      "change",
+      updateRentalPriceDisplay
+    );
+});
+
+document
+  .getElementById(
+    "rental-add-to-cart"
+  )
+  ?.addEventListener(
+    "click",
+    addRentalToCart
+  );
+
 
 
 async function saveRetailerProfile(
