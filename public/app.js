@@ -9737,6 +9737,38 @@ const specialCards =
   }
 
 
+  let missingPaidProfileCount =
+    0;
+
+  for (
+    let slot = 1;
+    slot <= allowance;
+    slot += 1
+  ) {
+    const savedProfile =
+      getRetailerProfileBySlot(
+        slot
+      );
+
+    const readiness =
+      savedProfile?.readiness ||
+      profileReadiness(
+        savedProfile?.customerProfile ||
+        {},
+        savedProfile?.customerCard ||
+        {}
+      );
+
+    if (
+      readiness?.ready !==
+        true
+    ) {
+      missingPaidProfileCount +=
+        1;
+    }
+  }
+
+
   const freeManagedCards =
     state.freeMemberships
       .map(
@@ -9778,6 +9810,24 @@ container.innerHTML = `
                 <strong>
                   Paid Profiles
                 </strong>
+
+                <span
+                  class="paid-profile-missing-tracker ${
+                    missingPaidProfileCount
+                      ? "has-missing"
+                      : "complete"
+                  }"
+                >
+                  ${
+                    missingPaidProfileCount
+                      ? `${missingPaidProfileCount} ${
+                          missingPaidProfileCount === 1
+                            ? "PROFILE"
+                            : "PROFILES"
+                        } MISSING INFORMATION`
+                      : "ALL PAID PROFILES COMPLETE"
+                  }
+                </span>
               </div>
 
               <span
