@@ -10799,3 +10799,14 @@ select:focus {
 .profile-security-banner svg {
   display: none !important;
 }
+
+/* Remove lock icon from Secure credential storage notice */
+
+.retailer-security-notice::before {
+  display: none !important;
+  content: none !important;
+}
+
+.retailer-security-notice {
+  padding-left: 18px !important;
+}
