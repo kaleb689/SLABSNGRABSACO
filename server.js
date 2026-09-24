@@ -914,6 +914,1009 @@ Retrieve the encrypted package through the secured admin portal.`
   return response.ok;
 }
 
+
+/* -------------------------------------------------------
+   ADMIN-ONLY DISCORD PAYMENT NOTIFICATIONS
+
+   Separate from the customer Success webhook.
+   This webhook is intended only for the private
+   admin Discord channel and reports payments
+   received plus what was purchased.
+
+   Environment variable:
+   DISCORD_ADMIN_PAYMENT_WEBHOOK_URL
+------------------------------------------------------- */
+
+function moneyFromStripeCents(
+  value
+) {
+  const cents =
+    Number(value || 0);
+
+  return (
+    Number.isFinite(cents)
+      ? cents / 100
+      : 0
+  );
+}
+
+
+function adminPaymentCustomerLabel(
+  profile,
+  fallbackEmail = ""
+) {
+  const name =
+    [
+      profile?.firstName,
+      profile?.lastName
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+  const email =
+    normalizeEmail(
+      profile?.email ||
+      fallbackEmail
+    );
+
+  return {
+    name:
+      clean(
+        name,
+        150
+      ) ||
+      "Customer",
+
+    email:
+      email ||
+      "Not available"
+  };
+}
+
+
+async function sendDiscordAdminPaymentNotification(
+  payment
+) {
+  const webhookUrl =
+    String(
+      process.env
+        .DISCORD_ADMIN_PAYMENT_WEBHOOK_URL ||
+      ""
+    ).trim();
+
+  if (!webhookUrl) {
+    return false;
+  }
+
+  const amount =
+    Number(
+      payment?.amount ||
+      0
+    );
+
+  const customer =
+    adminPaymentCustomerLabel(
+      payment?.profile ||
+      {},
+      payment?.customerEmail ||
+      ""
+    );
+
+  const fields = [
+    {
+      name:
+        "Payment",
+      value:
+        `$${Math.max(
+          0,
+          amount
+        ).toFixed(2)}`,
+      inline:
+        true
+    },
+
+    {
+      name:
+        "Type",
+      value:
+        clean(
+          payment?.paymentType ||
+          "Payment",
+          100
+        ),
+      inline:
+        true
+    },
+
+    {
+      name:
+        "Customer",
+      value:
+        clean(
+          customer.name,
+          150
+        ),
+      inline:
+        false
+    },
+
+    {
+      name:
+        "Customer Email",
+      value:
+        clean(
+          customer.email,
+          200
+        ),
+      inline:
+        false
+    },
+
+    {
+      name:
+        "Purchased",
+      value:
+        clean(
+          payment?.purchaseSummary ||
+          "Purchase details unavailable",
+          1000
+        ),
+      inline:
+        false
+    }
+  ];
+
+  if (
+    payment?.orderId
+  ) {
+    fields.push({
+      name:
+        "Order / Submission",
+      value:
+        clean(
+          payment.orderId,
+          150
+        ),
+      inline:
+        true
+    });
+  }
+
+  if (
+    payment?.profiles != null
+  ) {
+    fields.push({
+      name:
+        "Profiles",
+      value:
+        String(
+          payment.profiles
+        ),
+      inline:
+        true
+    });
+  }
+
+  if (
+    payment?.retailer
+  ) {
+    fields.push({
+      name:
+        "Retailer",
+      value:
+        clean(
+          payment.retailer,
+          80
+        ),
+      inline:
+        true
+    });
+  }
+
+  if (
+    payment?.quantity
+  ) {
+    fields.push({
+      name:
+        "Quantity",
+      value:
+        String(
+          payment.quantity
+        ),
+      inline:
+        true
+    });
+  }
+
+  if (
+    payment?.duration
+  ) {
+    fields.push({
+      name:
+        "Duration",
+      value:
+        clean(
+          payment.duration,
+          80
+        ),
+      inline:
+        true
+    });
+  }
+
+  const response =
+    await fetch(
+      webhookUrl,
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+
+        body:
+          JSON.stringify({
+            username:
+              "SLABS N GRABS ACO Payments",
+
+            allowed_mentions: {
+              parse: []
+            },
+
+            embeds: [
+              {
+                title:
+                  "💰 PAYMENT RECEIVED",
+
+                description:
+                  clean(
+                    payment?.headline ||
+                    "A payment was received.",
+                    500
+                  ),
+
+                fields,
+
+                timestamp:
+                  new Date(
+                    payment?.paidAt ||
+                    Date.now()
+                  ).toISOString(),
+
+                footer: {
+                  text:
+                    "Private admin payment notification • No card data included"
+                }
+              }
+            ]
+          })
+      }
+    );
+
+  if (!response.ok) {
+    const error =
+      new Error(
+        `Admin Discord payment webhook returned ${response.status}.`
+      );
+
+    error.status =
+      response.status;
+
+    throw error;
+  }
+
+  return true;
+}
+
+
+function membershipPlanFromStripePriceId(
+  priceId
+) {
+  const wanted =
+    String(
+      priceId ||
+      ""
+    );
+
+  if (!wanted) {
+    return null;
+  }
+
+  for (
+    const [
+      tier,
+      plan
+    ] of
+    Object.entries(
+      PLANS
+    )
+  ) {
+    if (
+      String(
+        plan?.priceId ||
+        ""
+      ) ===
+      wanted
+    ) {
+      return {
+        tier:
+          Number(tier),
+        ...plan
+      };
+    }
+  }
+
+  return null;
+}
+
+
+async function sendAdminSubscriptionInvoiceNotification(
+  invoice
+) {
+  const billingReason =
+    String(
+      invoice?.billing_reason ||
+      ""
+    );
+
+  /*
+    Initial subscription payment is already reported
+    from checkout.session.completed. Skipping it here
+    prevents two admin Discord messages for one sale.
+  */
+  if (
+    billingReason ===
+    "subscription_create"
+  ) {
+    return false;
+  }
+
+  const subscriptionId =
+    typeof invoice?.subscription ===
+      "string"
+      ? invoice.subscription
+      : (
+          invoice?.subscription?.id ||
+          invoice?.parent
+            ?.subscription_details
+            ?.subscription ||
+          null
+        );
+
+  const customerId =
+    typeof invoice?.customer ===
+      "string"
+      ? invoice.customer
+      : (
+          invoice?.customer?.id ||
+          null
+        );
+
+  const paid =
+    await readJson(
+      PAID_FILE,
+      []
+    );
+
+  const paidRecords =
+    Array.isArray(paid)
+      ? paid
+      : [];
+
+  let record =
+    paidRecords.find(
+      item =>
+        subscriptionId &&
+        String(
+          item.stripeSubscriptionId ||
+          ""
+        ) ===
+        String(
+          subscriptionId
+        )
+    );
+
+  if (
+    !record &&
+    customerId
+  ) {
+    record =
+      paidRecords.find(
+        item =>
+          String(
+            item.stripeCustomerId ||
+            ""
+          ) ===
+          String(
+            customerId
+          )
+      );
+  }
+
+  let livePlan =
+    null;
+
+  if (
+    subscriptionId
+  ) {
+    try {
+      const subscription =
+        await stripe
+          .subscriptions
+          .retrieve(
+            subscriptionId
+          );
+
+      const priceId =
+        subscription
+          ?.items
+          ?.data
+          ?.[0]
+          ?.price
+          ?.id ||
+        "";
+
+      livePlan =
+        membershipPlanFromStripePriceId(
+          priceId
+        );
+
+    } catch (error) {
+      console.error(
+        "Admin payment notification subscription lookup failed:",
+        error.message
+      );
+    }
+  }
+
+  const plan =
+    livePlan ||
+    record?.plan ||
+    null;
+
+  const isUpgrade =
+    billingReason ===
+      "subscription_update";
+
+  const paymentType =
+    isUpgrade
+      ? "Membership upgrade / proration"
+      : "Membership renewal";
+
+  const purchaseSummary =
+    plan
+      ? `${plan.name || "Membership"} — ${Number(
+          plan.profiles ||
+          0
+        )} profile(s)`
+      : "Membership payment";
+
+  await sendDiscordAdminPaymentNotification({
+    paymentType,
+
+    headline:
+      isUpgrade
+        ? "A membership upgrade payment was received."
+        : "A recurring membership payment was received.",
+
+    amount:
+      moneyFromStripeCents(
+        invoice?.amount_paid
+      ),
+
+    profile:
+      record?.profile ||
+      {},
+
+    customerEmail:
+      invoice
+        ?.customer_email ||
+      record
+        ?.profile
+        ?.email ||
+      "",
+
+    purchaseSummary,
+
+    orderId:
+      record?.id ||
+      null,
+
+    profiles:
+      plan?.profiles ??
+      null,
+
+    paidAt:
+      invoice
+        ?.status_transitions
+        ?.paid_at
+        ? new Date(
+            invoice
+              .status_transitions
+              .paid_at *
+            1000
+          ).toISOString()
+        : new Date()
+            .toISOString()
+  });
+
+  return true;
+}
+
+
+
+/* -------------------------------------------------------
+   ADMIN MEMBERSHIP CANCELLATION NOTIFICATIONS
+
+   Uses the same private admin webhook as payment alerts:
+   DISCORD_ADMIN_PAYMENT_WEBHOOK_URL
+
+   Two stages can be reported:
+   1. Cancellation scheduled by the member.
+   2. Membership actually ended when the period lapses
+      or Stripe reports the subscription deleted/canceled.
+
+   Stored notification timestamps prevent duplicates.
+------------------------------------------------------- */
+
+function subscriptionEndIso(
+  record,
+  subscription = null
+) {
+  const raw =
+    subscription?.cancel_at ||
+    subscription?.current_period_end ||
+    record?.cancelAt ||
+    record?.subscriptionEndDate ||
+    record?.currentPeriodEnd ||
+    null;
+
+  if (!raw) {
+    return null;
+  }
+
+  if (
+    typeof raw ===
+      "number"
+  ) {
+    return new Date(
+      raw * 1000
+    ).toISOString();
+  }
+
+  const parsed =
+    new Date(raw);
+
+  return Number.isNaN(
+    parsed.getTime()
+  )
+    ? null
+    : parsed.toISOString();
+}
+
+
+function adminMembershipPurchaseSummary(
+  record
+) {
+  return `${record?.plan?.name || "Membership"} — ${Number(
+    record?.plan?.profiles ||
+    0
+  )} profile(s)`;
+}
+
+
+async function sendDiscordAdminMembershipCancellationNotification(
+  record,
+  {
+    stage = "ended",
+    reason = "",
+    endAt = null
+  } = {}
+) {
+  const webhookUrl =
+    String(
+      process.env
+        .DISCORD_ADMIN_PAYMENT_WEBHOOK_URL ||
+      ""
+    ).trim();
+
+  if (!webhookUrl) {
+    return false;
+  }
+
+  const customer =
+    adminPaymentCustomerLabel(
+      record?.profile ||
+      {},
+      record?.profile?.email ||
+      ""
+    );
+
+  const scheduled =
+    stage ===
+      "scheduled";
+
+  const fields = [
+    {
+      name:
+        "Customer",
+      value:
+        clean(
+          customer.name,
+          150
+        ),
+      inline:
+        false
+    },
+
+    {
+      name:
+        "Customer Email",
+      value:
+        clean(
+          customer.email,
+          200
+        ),
+      inline:
+        false
+    },
+
+    {
+      name:
+        "Membership",
+      value:
+        clean(
+          adminMembershipPurchaseSummary(
+            record
+          ),
+          500
+        ),
+      inline:
+        false
+    },
+
+    {
+      name:
+        scheduled
+          ? "Scheduled End"
+          : "Ended",
+      value:
+        endAt
+          ? new Date(
+              endAt
+            ).toLocaleString(
+              "en-US",
+              {
+                timeZone:
+                  "America/New_York",
+                dateStyle:
+                  "medium",
+                timeStyle:
+                  "short"
+              }
+            )
+          : "Not available",
+      inline:
+        true
+    },
+
+    {
+      name:
+        "Reason",
+      value:
+        clean(
+          reason ||
+          (
+            scheduled
+              ? "Member scheduled cancellation"
+              : "Membership period ended / subscription canceled"
+          ),
+          300
+        ),
+      inline:
+        true
+    }
+  ];
+
+  if (
+    record?.id
+  ) {
+    fields.push({
+      name:
+        "Order / Submission",
+      value:
+        clean(
+          record.id,
+          150
+        ),
+      inline:
+        true
+    });
+  }
+
+  const response =
+    await fetch(
+      webhookUrl,
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+
+        body:
+          JSON.stringify({
+            username:
+              "SLABS N GRABS ACO Admin",
+
+            allowed_mentions: {
+              parse: []
+            },
+
+            embeds: [
+              {
+                title:
+                  scheduled
+                    ? "⚠️ MEMBERSHIP CANCELLATION SCHEDULED"
+                    : "❌ MEMBERSHIP ENDED",
+
+                description:
+                  scheduled
+                    ? "A member has scheduled their paid membership to cancel at the end of the current billing period."
+                    : "A paid membership has ended and should no longer be treated as active.",
+
+                fields,
+
+                timestamp:
+                  new Date()
+                    .toISOString(),
+
+                footer: {
+                  text:
+                    "Private admin membership notification"
+                }
+              }
+            ]
+          })
+      }
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      `Admin cancellation Discord webhook returned ${response.status}.`
+    );
+  }
+
+  return true;
+}
+
+
+async function notifyScheduledMembershipCancellation(
+  record,
+  subscription
+) {
+  const endAt =
+    subscriptionEndIso(
+      record,
+      subscription
+    );
+
+  const noticeKey =
+    endAt ||
+    String(
+      subscription?.id ||
+      record?.stripeSubscriptionId ||
+      "scheduled"
+    );
+
+  if (
+    record
+      ?.adminCancellationScheduledKey ===
+    noticeKey
+  ) {
+    return false;
+  }
+
+  await sendDiscordAdminMembershipCancellationNotification(
+    record,
+    {
+      stage:
+        "scheduled",
+
+      reason:
+        "Member scheduled cancellation at the end of the billing period.",
+
+      endAt
+    }
+  );
+
+  record
+    .adminCancellationScheduledKey =
+      noticeKey;
+
+  record
+    .adminCancellationScheduledNotifiedAt =
+      new Date()
+        .toISOString();
+
+  return true;
+}
+
+
+async function notifyEndedMembership(
+  record,
+  {
+    subscription = null,
+    reason = ""
+  } = {}
+) {
+  const endAt =
+    subscriptionEndIso(
+      record,
+      subscription
+    ) ||
+    new Date()
+      .toISOString();
+
+  const noticeKey =
+    `${String(
+      subscription?.id ||
+      record?.stripeSubscriptionId ||
+      record?.id ||
+      ""
+    )}:${String(
+      subscription?.status ||
+      record?.subscriptionStatus ||
+      "ended"
+    )}:${endAt}`;
+
+  if (
+    record
+      ?.adminMembershipEndedKey ===
+    noticeKey
+  ) {
+    return false;
+  }
+
+  await sendDiscordAdminMembershipCancellationNotification(
+    record,
+    {
+      stage:
+        "ended",
+
+      reason:
+        reason ||
+        "Membership period ended / subscription canceled.",
+
+      endAt
+    }
+  );
+
+  record
+    .adminMembershipEndedKey =
+      noticeKey;
+
+  record
+    .adminMembershipEndedNotifiedAt =
+      new Date()
+        .toISOString();
+
+  return true;
+}
+
+
+/*
+  Fallback reconciliation:
+  if a cancellation-at-period-end record reaches
+  its stored end date before a Stripe deleted event
+  is processed, send the private admin alert once.
+*/
+async function reconcileLapsedMembershipNotifications() {
+  const paid =
+    await readJson(
+      PAID_FILE,
+      []
+    );
+
+  const records =
+    Array.isArray(paid)
+      ? paid
+      : [];
+
+  let changed =
+    false;
+
+  const now =
+    Date.now();
+
+  for (
+    const record of
+    records
+  ) {
+    if (
+      record?.cancelAtPeriodEnd !==
+        true
+    ) {
+      continue;
+    }
+
+    const endAt =
+      subscriptionEndIso(
+        record
+      );
+
+    if (!endAt) {
+      continue;
+    }
+
+    const endTime =
+      new Date(
+        endAt
+      ).getTime();
+
+    if (
+      !Number.isFinite(
+        endTime
+      ) ||
+      endTime >
+        now
+    ) {
+      continue;
+    }
+
+    const alreadyEnded =
+      [
+        "canceled",
+        "cancelled",
+        "unpaid",
+        "incomplete_expired"
+      ].includes(
+        String(
+          record
+            .subscriptionStatus ||
+          ""
+        ).toLowerCase()
+      );
+
+    try {
+      const sent =
+        await notifyEndedMembership(
+          record,
+          {
+            reason:
+              alreadyEnded
+                ? "Stripe reports the membership ended."
+                : "The scheduled membership period elapsed."
+          }
+        );
+
+      if (sent) {
+        changed =
+          true;
+      }
+
+    } catch (error) {
+      console.error(
+        "Lapsed membership Discord notification failed:",
+        error.message
+      );
+    }
+  }
+
+  if (changed) {
+    await writeJson(
+      PAID_FILE,
+      records
+    );
+  }
+}
+
+
 /* -------------------------------------------------------
    ADMIN SESSIONS
 ------------------------------------------------------- */
@@ -2371,6 +3374,74 @@ app.post(
                   await saveRentalAssignments(
                     assignments
                   );
+
+                  try {
+                    const retailerLabel =
+                      retailer ===
+                      "walmart"
+                        ? "Walmart"
+                        : "Target";
+
+                    const durationLabel =
+                      durationType ===
+                        "1_week"
+                        ? "1 Week"
+                        : durationType ===
+                          "1_month"
+                          ? "1 Month"
+                          : "1 Drop";
+
+                    await sendDiscordAdminPaymentNotification({
+                      paymentType:
+                        "Rental purchase",
+
+                      headline:
+                        "A rental package payment was received and fulfilled.",
+
+                      amount:
+                        moneyFromStripeCents(
+                          session.amount_total
+                        ) ||
+                        expectedPrice,
+
+                      profile:
+                        paidRecord.profile ||
+                        {},
+
+                      customerEmail:
+                        session
+                          ?.customer_details
+                          ?.email ||
+                        paidRecord
+                          ?.profile
+                          ?.email ||
+                        "",
+
+                      purchaseSummary:
+                        `${quantity} ${retailerLabel} rental account(s) — ${durationLabel}`,
+
+                      orderId:
+                        paidRecord.id,
+
+                      retailer:
+                        retailerLabel,
+
+                      quantity,
+
+                      duration:
+                        durationLabel,
+
+                      paidAt:
+                        new Date()
+                          .toISOString()
+                    });
+
+                  } catch (error) {
+                    console.error(
+                      "Admin rental payment Discord notification failed:",
+                      error.message
+                    );
+                  }
                 }
               }
             }
@@ -2561,11 +3632,90 @@ app.post(
                 error.message
               );
             }
+
+            try {
+              await sendDiscordAdminPaymentNotification({
+                paymentType:
+                  "New paid membership",
+
+                headline:
+                  "A new paid membership was purchased.",
+
+                amount:
+                  moneyFromStripeCents(
+                    session.amount_total
+                  ) ||
+                  Number(
+                    record
+                      ?.plan
+                      ?.amount ||
+                    0
+                  ),
+
+                profile:
+                  record.profile ||
+                  {},
+
+                customerEmail:
+                  session
+                    ?.customer_details
+                    ?.email ||
+                  record
+                    ?.profile
+                    ?.email ||
+                  "",
+
+                purchaseSummary:
+                  `${record.plan?.name || "Membership"} — ${Number(
+                    record.plan?.profiles ||
+                    0
+                  )} profile(s) / month`,
+
+                orderId:
+                  record.id,
+
+                profiles:
+                  record.plan
+                    ?.profiles ??
+                  null,
+
+                paidAt:
+                  record.paidAt
+              });
+
+            } catch (error) {
+              console.error(
+                "Admin membership payment Discord notification failed:",
+                error.message
+              );
+            }
           }
         }
       }
 
-      /* SUBSCRIPTION UPDATED */
+      /*
+        SUBSCRIPTION INVOICE PAID
+        Covers recurring renewals and immediate
+        upgrade/proration invoices.
+      */
+
+      if (
+        event.type ===
+        "invoice.payment_succeeded"
+      ) {
+        try {
+          await sendAdminSubscriptionInvoiceNotification(
+            event.data.object
+          );
+        } catch (error) {
+          console.error(
+            "Admin recurring payment Discord notification failed:",
+            error.message
+          );
+        }
+      }
+
+      /* SUBSCRIPTION UPDATED / CANCELED */
 
       if (
         event.type ===
@@ -2582,29 +3732,140 @@ app.post(
             []
           );
 
-        let changed = false;
+        let changed =
+          false;
 
         for (
-          const record of paid
+          const record of
+          paid
         ) {
           if (
             String(
               record
                 .stripeSubscriptionId ||
               ""
-            ) ===
-            String(subscription.id)
+            ) !==
+            String(
+              subscription.id
+            )
           ) {
-            await applySubscriptionInfo(
-              record,
-              subscription
+            continue;
+          }
+
+          const previousStatus =
+            String(
+              record
+                .subscriptionStatus ||
+              ""
+            ).toLowerCase();
+
+          const previousCancelAtPeriodEnd =
+            record
+              .cancelAtPeriodEnd ===
+            true;
+
+          await applySubscriptionInfo(
+            record,
+            subscription
+          );
+
+          record.subscriptionUpdatedAt =
+            new Date()
+              .toISOString();
+
+          const currentStatus =
+            String(
+              record
+                .subscriptionStatus ||
+              subscription?.status ||
+              ""
+            ).toLowerCase();
+
+          const currentCancelAtPeriodEnd =
+            record
+              .cancelAtPeriodEnd ===
+            true ||
+            subscription
+              ?.cancel_at_period_end ===
+            true;
+
+          /*
+            Notify immediately when the member first
+            schedules cancellation for period end.
+          */
+          if (
+            currentCancelAtPeriodEnd &&
+            !previousCancelAtPeriodEnd
+          ) {
+            try {
+              await notifyScheduledMembershipCancellation(
+                record,
+                subscription
+              );
+            } catch (error) {
+              console.error(
+                "Scheduled cancellation Discord notification failed:",
+                error.message
+              );
+            }
+          }
+
+          /*
+            Notify when Stripe reports the subscription
+            actually ended. customer.subscription.deleted
+            covers the normal end-of-period lapse too.
+          */
+          const endedNow =
+            event.type ===
+              "customer.subscription.deleted" ||
+            (
+              [
+                "canceled",
+                "cancelled",
+                "unpaid",
+                "incomplete_expired"
+              ].includes(
+                currentStatus
+              ) &&
+              ![
+                "canceled",
+                "cancelled",
+                "unpaid",
+                "incomplete_expired"
+              ].includes(
+                previousStatus
+              )
             );
 
-            record.subscriptionUpdatedAt =
-              new Date().toISOString();
+          if (endedNow) {
+            try {
+              await notifyEndedMembership(
+                record,
+                {
+                  subscription,
 
-            changed = true;
+                  reason:
+                    event.type ===
+                      "customer.subscription.deleted"
+                      ? (
+                          currentCancelAtPeriodEnd ||
+                          previousCancelAtPeriodEnd
+                            ? "Scheduled cancellation reached the end of the billing period."
+                            : "Subscription was canceled."
+                        )
+                      : `Subscription status changed to ${currentStatus || "ended"}.`
+                }
+              );
+            } catch (error) {
+              console.error(
+                "Membership ended Discord notification failed:",
+                error.message
+              );
+            }
           }
+
+          changed =
+            true;
         }
 
         if (changed) {
@@ -15856,6 +17117,188 @@ async function sendDiscordSuccessNotification(
 
 
 
+
+
+/* -------------------------------------------------------
+   ADMIN MEMBERSHIP CANCELLATION DISCORD TEST
+------------------------------------------------------- */
+
+app.post(
+  "/api/admin/test-cancellation-discord",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const configured =
+        Boolean(
+          String(
+            process.env
+              .DISCORD_ADMIN_PAYMENT_WEBHOOK_URL ||
+            ""
+          ).trim()
+        );
+
+      if (!configured) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+            error:
+              "DISCORD_ADMIN_PAYMENT_WEBHOOK_URL is not configured."
+          });
+      }
+
+      await sendDiscordAdminMembershipCancellationNotification(
+        {
+          id:
+            "TEST-CANCELLATION",
+
+          plan: {
+            name:
+              "Test Membership",
+            profiles:
+              5
+          },
+
+          profile: {
+            firstName:
+              "Test",
+            lastName:
+              "Customer",
+            email:
+              "test@example.com"
+          }
+        },
+        {
+          stage:
+            "scheduled",
+
+          reason:
+            "Test cancellation notification.",
+
+          endAt:
+            new Date(
+              Date.now() +
+              30 *
+              24 *
+              60 *
+              60 *
+              1000
+            ).toISOString()
+        }
+      );
+
+      return res.json({
+        ok: true,
+        message:
+          "Admin cancellation Discord test sent."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin cancellation Discord test failed:",
+        error?.message ||
+        "admin_cancellation_discord_test_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+          error:
+            "The cancellation Discord test could not be sent. Check the private admin webhook."
+        });
+    }
+  }
+);
+
+
+/* -------------------------------------------------------
+   ADMIN PAYMENT DISCORD TEST
+   Sends a private admin payment fixture only.
+------------------------------------------------------- */
+
+app.post(
+  "/api/admin/test-payment-discord",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const configured =
+        Boolean(
+          String(
+            process.env
+              .DISCORD_ADMIN_PAYMENT_WEBHOOK_URL ||
+            ""
+          ).trim()
+        );
+
+      if (!configured) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+            error:
+              "DISCORD_ADMIN_PAYMENT_WEBHOOK_URL is not configured."
+          });
+      }
+
+      await sendDiscordAdminPaymentNotification({
+        paymentType:
+          "Test payment",
+
+        headline:
+          "This is a test of the private admin payment webhook.",
+
+        amount:
+          45,
+
+        profile: {
+          firstName:
+            "Test",
+          lastName:
+            "Customer",
+          email:
+            "test@example.com"
+        },
+
+        purchaseSummary:
+          "Pro Membership — 5 profile(s) / month",
+
+        orderId:
+          "TEST-PAYMENT",
+
+        profiles:
+          5,
+
+        paidAt:
+          new Date()
+            .toISOString()
+      });
+
+      return res.json({
+        ok: true,
+        message:
+          "Admin payment Discord test sent."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin payment Discord test failed:",
+        error?.message ||
+        "admin_payment_discord_test_error"
+      );
+
+      return res
+        .status(502)
+        .json({
+          ok: false,
+          error:
+            "The admin payment Discord test could not be sent. Check the webhook URL."
+        });
+    }
+  }
+);
+
+
 /* -------------------------------------------------------
    ADMIN DISCORD SUCCESS TEST
    Sends a privacy-safe fixture only. It does not create
@@ -18534,6 +19977,9 @@ function startLiveSuccessScheduler() {
       () => {
         syncAllActiveCustomerSuccess()
           .catch(() => {});
+
+        reconcileLapsedMembershipNotifications()
+          .catch(() => {});
       },
       20 * 1000
     );
@@ -18549,6 +19995,9 @@ function startLiveSuccessScheduler() {
     setInterval(
       () => {
         syncAllActiveCustomerSuccess()
+          .catch(() => {});
+
+        reconcileLapsedMembershipNotifications()
           .catch(() => {});
       },
       LIVE_SUCCESS_SYNC_INTERVAL_MS
