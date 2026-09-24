@@ -8,7 +8,7 @@
   --cyan: #12c9ff;
   --cyan2: #007cff;
   --text: #f6fbff;
-  --muted: #8e9db4;
+  --muted: #b3c2d2;
   --danger: #ff5c78;
 }
 
@@ -8590,5 +8590,401 @@ select:focus {
 
   .rental-stock-meta {
     justify-content: space-between;
+  }
+}
+
+
+/* =========================================================
+   SEPTEMBER 24 UI POLISH
+   Larger header • brighter text • neon card interactions
+   ========================================================= */
+
+/* ---------- HEADER SIZE / SPACING ---------- */
+
+.site-header {
+  min-height: 98px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  gap: 24px;
+}
+
+.brand-logo {
+  width: 122px;
+  height: 78px;
+}
+
+.main-nav {
+  gap: 9px;
+}
+
+.nav-link,
+.get-started,
+.cart-button {
+  padding: 12px 14px;
+  font-size: 14px;
+}
+
+.discord-icon {
+  width: 21px;
+  height: 21px;
+}
+
+.cart-button {
+  min-width: 52px;
+  min-height: 46px;
+}
+
+.get-started {
+  margin-left: 14px;
+  padding-left: 20px;
+  padding-right: 20px;
+  min-height: 46px;
+}
+
+/* ---------- BRIGHTER SECONDARY TEXT ---------- */
+
+:root {
+  --muted: #b3c2d2;
+}
+
+.lead,
+.section-heading p,
+.home-reference-section-heading p,
+.home-membership-heading p,
+.plan p,
+.hero-card p,
+.guide-content,
+.account-muted,
+.account-card p,
+.account-detail-list span,
+.membership-stat span,
+.customer-orders,
+.retailer-profile-heading p,
+.rental-availability-hero p,
+.rental-info-card p,
+.rental-price-box small,
+.rental-stock-status,
+.cart-item span,
+.empty-cart,
+.fine,
+.muted,
+.loading {
+  color: #b3c2d2 !important;
+}
+
+.account-muted,
+.account-card p,
+.retailer-profile-heading p,
+.guide-content,
+.lead {
+  line-height: 1.72;
+}
+
+/* ---------- SHARED NEON CARD MOTION ---------- */
+
+.hero-card,
+.steps article,
+.retailer-card,
+.plan,
+.form-card,
+.payment-panel,
+.guide-card,
+.member-card,
+.account-card,
+.membership-stat,
+.account-detail-list > div,
+.retailer-profile-card,
+.retailer-credential-card,
+.profile-support-card,
+.expectations-card,
+.home-reference-expectation-card,
+.faq-card,
+.cart-item,
+.success-stat-card,
+.success-activity-card,
+.success-recent-card,
+.success-all-orders-card,
+.success-checkout-card,
+.rental-stock-card,
+.rental-info-card,
+.rental-purchase-card,
+.rental-guide-card {
+  transition:
+    transform .22s ease,
+    border-color .22s ease,
+    box-shadow .22s ease,
+    background .22s ease,
+    filter .22s ease;
+}
+
+.hero-card:hover,
+.steps article:hover,
+.retailer-card:hover,
+.plan:hover,
+.form-card:hover,
+.payment-panel:hover,
+.guide-card:hover,
+.member-card:hover,
+.account-card:hover,
+.membership-stat:hover,
+.account-detail-list > div:hover,
+.retailer-profile-card:hover,
+.retailer-credential-card:hover,
+.profile-support-card:hover,
+.expectations-card:hover,
+.home-reference-expectation-card:hover,
+.faq-card:hover,
+.cart-item:hover,
+.success-stat-card:hover,
+.success-activity-card:hover,
+.success-recent-card:hover,
+.success-all-orders-card:hover,
+.success-checkout-card:hover,
+.rental-stock-card:hover,
+.rental-info-card:hover,
+.rental-purchase-card:hover,
+.rental-guide-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(18, 201, 255, .62) !important;
+  box-shadow:
+    0 0 0 1px rgba(18, 201, 255, .08),
+    0 0 28px rgba(18, 201, 255, .12),
+    0 18px 50px rgba(0, 0, 0, .30) !important;
+}
+
+/* Don't lift the entire form while typing on very small screens. */
+@media (max-width: 700px) {
+  .form-card:hover,
+  .payment-panel:hover {
+    transform: none;
+  }
+}
+
+/* ---------- MY PROFILE TAB / PANEL SPACING ---------- */
+
+#my-profile .account-tab-panel {
+  padding-top: 12px;
+}
+
+#my-profile .account-tabs {
+  margin-top: 30px;
+  margin-bottom: 34px;
+  gap: 12px;
+  padding: 9px;
+}
+
+#my-profile .account-tab {
+  min-height: 58px;
+  padding: 14px 16px;
+  color: #b8c7d7;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+#my-profile .account-tab.active {
+  color: #effcff;
+}
+
+/* ---------- MEMBERSHIP TAB REDESIGN ---------- */
+
+#account-tab-membership .account-dashboard-grid {
+  gap: 20px;
+  align-items: stretch;
+}
+
+#account-tab-membership .account-card {
+  padding: 24px;
+}
+
+#account-tab-membership .membership-main-card {
+  background:
+    radial-gradient(
+      circle at 20% 0,
+      rgba(18, 201, 255, .10),
+      transparent 34%
+    ),
+    linear-gradient(
+      155deg,
+      rgba(11, 27, 42, .98),
+      rgba(7, 17, 27, .98)
+    );
+}
+
+#account-tab-membership .account-card-heading {
+  margin-bottom: 20px;
+}
+
+#account-tab-membership .account-card-heading h3,
+#account-tab-membership > .account-dashboard-grid > .account-card > h3 {
+  margin-top: 7px;
+  margin-bottom: 0;
+  font-size: clamp(23px, 2.5vw, 31px);
+  line-height: 1.15;
+}
+
+#account-tab-membership .membership-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+  margin: 18px 0 20px;
+}
+
+#account-tab-membership .membership-stat {
+  min-height: 104px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 18px;
+  border: 1px solid rgba(18, 201, 255, .20);
+  border-radius: 14px;
+  background:
+    linear-gradient(
+      155deg,
+      rgba(18, 201, 255, .055),
+      rgba(6, 16, 26, .94)
+    );
+}
+
+#account-tab-membership .membership-stat span {
+  margin-bottom: 9px;
+  color: #aebfd0 !important;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+#account-tab-membership .membership-stat strong {
+  color: #f0fbff;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+#account-tab-membership .account-detail-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+#account-tab-membership .account-detail-list > div {
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  padding: 15px 16px;
+  border: 1px solid rgba(24, 61, 82, .92);
+  border-radius: 12px;
+  background: rgba(6, 16, 26, .86);
+}
+
+#account-tab-membership .account-detail-list > div:last-child {
+  grid-column: 1 / -1;
+}
+
+#account-tab-membership .account-detail-list span {
+  color: #aebfd0 !important;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+}
+
+#account-tab-membership .account-detail-list strong {
+  color: #eefaff;
+  font-size: 15px;
+}
+
+#account-tab-membership .account-action-button {
+  margin-top: 8px;
+}
+
+/* ---------- ORDERS / PROFILES / SECURITY HEADING POLISH ---------- */
+
+#account-tab-orders .account-card,
+#account-tab-edit-profile .account-card,
+#account-tab-security .account-card {
+  padding: 26px;
+}
+
+#account-tab-orders .account-card-heading,
+#account-tab-edit-profile .account-card-heading,
+#account-tab-security .account-card-heading {
+  margin-bottom: 22px;
+}
+
+#account-tab-orders .account-card-heading h3,
+#account-tab-orders .claim-order-card > h3,
+#account-tab-edit-profile .account-card-heading h3,
+#account-tab-security .account-card h3 {
+  margin-top: 8px;
+  margin-bottom: 12px;
+  font-size: clamp(22px, 2.25vw, 29px);
+  line-height: 1.2;
+  letter-spacing: -.02em;
+}
+
+#account-tab-orders .eyebrow,
+#account-tab-edit-profile .eyebrow,
+#account-tab-security .eyebrow {
+  display: inline-block;
+  margin-bottom: 4px;
+}
+
+#account-tab-edit-profile .retailer-profile-heading {
+  margin-bottom: 24px;
+}
+
+#account-tab-edit-profile .retailer-profile-heading p {
+  margin-top: 10px;
+  max-width: 760px;
+}
+
+#account-tab-security .account-dashboard-grid {
+  gap: 20px;
+}
+
+#account-tab-security .security-notice {
+  margin-top: 20px;
+}
+
+/* ---------- MOBILE ---------- */
+
+@media (max-width: 980px) {
+  .site-header {
+    min-height: 90px;
+  }
+
+  .brand-logo {
+    width: 112px;
+    height: 72px;
+  }
+
+  .nav-link,
+  .get-started,
+  .cart-button {
+    font-size: 12px;
+    padding: 10px 9px;
+  }
+
+  .get-started {
+    margin-left: 8px;
+  }
+}
+
+@media (max-width: 700px) {
+  #account-tab-membership .membership-stats,
+  #account-tab-membership .account-detail-list {
+    grid-template-columns: 1fr;
+  }
+
+  #account-tab-membership .account-detail-list > div:last-child {
+    grid-column: auto;
+  }
+
+  #my-profile .account-tab {
+    min-height: 52px;
+    font-size: 11px;
   }
 }
