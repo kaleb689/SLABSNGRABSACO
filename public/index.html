@@ -3781,8 +3781,8 @@
           <section class="saved-detail-panel">
             <div class="saved-detail-head">
               <div>
-                <span class="eyebrow">PAYMENT</span>
-                <h4>Saved Payment Cards</h4>
+                <span class="eyebrow">EXTRA PAYMENTS</span>
+                <h4>Extra Payments</h4>
               </div>
               <span id="saved-payment-count" class="saved-detail-count">0</span>
             </div>
@@ -3793,7 +3793,7 @@
               </select>
 
               <button type="button" id="add-saved-payment" class="secondary">
-                Add Another Card
+                Add Extra Payment
               </button>
             </div>
 
@@ -3833,28 +3833,29 @@
               </div>
 
               <label>
-                Account Security Code
+                Security Code
                 <input type="password" name="securityCode" autocomplete="off" maxlength="32"
                   placeholder="Enter separate account security code" />
                 <small class="fine">
-                  This is a separate account security code, not a card CVV/CVC.
+                  This Security Code is a separate ACO/account code.
+                  It is NOT the CVV/CVC printed on the payment card.
                   It stays hidden in My Profile after saving and can be shown only to an authenticated admin.
                 </small>
               </label>
 
               <div class="saved-detail-actions">
-                <button type="submit" class="primary">Save Card</button>
+                <button type="submit" class="primary">Save Payment</button>
                 <button type="button" id="cancel-saved-payment" class="secondary">Cancel</button>
               </div>
             </form>
 
             <div id="saved-payment-preview" class="saved-detail-preview">
-              <p class="account-muted">No saved payment cards yet.</p>
+              <p class="account-muted">No extra payments saved yet.</p>
             </div>
 
             <div id="saved-payment-existing-actions" class="saved-detail-actions" hidden>
-              <button type="button" id="edit-saved-payment" class="secondary">Edit Card</button>
-              <button type="button" id="delete-saved-payment" class="secondary danger-button">Delete Card</button>
+              <button type="button" id="edit-saved-payment" class="secondary">Edit Payment</button>
+              <button type="button" id="delete-saved-payment" class="secondary danger-button">Delete Payment</button>
             </div>
           </section>
 
