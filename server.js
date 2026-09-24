@@ -2725,6 +2725,266 @@ async function adminCustomerSavedDetailsPayload(
 }
 
 
+
+function managedProfileReadiness(
+  profile,
+  secrets
+) {
+  const shippingRequired = [
+    "firstName",
+    "lastName",
+    "address",
+    "city",
+    "state",
+    "zip",
+    "country"
+  ];
+
+  const shippingReady =
+    shippingRequired.every(
+      key =>
+        Boolean(
+          String(
+            profile?.[key] ||
+            ""
+          ).trim()
+        )
+    );
+
+  const digits =
+    String(
+      secrets?.acoCardNumber ||
+      ""
+    ).replace(
+      /\D/g,
+      ""
+    );
+
+  const cardReady =
+    Boolean(
+      String(
+        secrets?.cardholder ||
+        ""
+      ).trim()
+    ) &&
+    /^\d{12,19}$/.test(
+      digits
+    ) &&
+    /^(0[1-9]|1[0-2])$/.test(
+      String(
+        secrets?.expMonth ||
+        ""
+      )
+    ) &&
+    /^\d{4}$/.test(
+      String(
+        secrets?.expYear ||
+        ""
+      )
+    );
+
+  return {
+    ready:
+      shippingReady &&
+      cardReady,
+
+    shippingReady,
+    cardReady
+  };
+}
+
+
+async function savedCheckoutSelection(
+  account,
+  addressId,
+  paymentId
+) {
+  const address =
+    addressId
+      ? customerSavedAddresses(
+          account
+        ).find(
+          item =>
+            String(
+              item.id
+            ) ===
+            String(
+              addressId
+            )
+        ) || null
+      : null;
+
+  const vault =
+    await getCustomerVault(
+      account.id
+    );
+
+  const payment =
+    paymentId
+      ? vault.paymentMethods.find(
+          item =>
+            String(
+              item.id
+            ) ===
+            String(
+              paymentId
+            )
+        ) || null
+      : null;
+
+  return {
+    address,
+    payment
+  };
+}
+
+
+function shippingProfileFromSavedAddress(
+  address,
+  fallbackEmail = "",
+  existing = {}
+) {
+  if (!address) {
+    return existing || {};
+  }
+
+  return sanitizeProfile({
+    ...(existing || {}),
+
+    profileName:
+      existing?.profileName ||
+      "ACO Profile",
+
+    firstName:
+      address.firstName ||
+      existing?.firstName ||
+      "",
+
+    lastName:
+      address.lastName ||
+      existing?.lastName ||
+      "",
+
+    email:
+      existing?.email ||
+      fallbackEmail ||
+      "",
+
+    phone:
+      existing?.phone ||
+      "",
+
+    address:
+      address.address ||
+      "",
+
+    address2:
+      address.address2 ||
+      "",
+
+    city:
+      address.city ||
+      "",
+
+    state:
+      address.state ||
+      "",
+
+    zip:
+      address.zip ||
+      "",
+
+    country:
+      address.country ||
+      ""
+  });
+}
+
+
+function paymentSecretsFromSavedPayment(
+  payment,
+  existing = {}
+) {
+  if (!payment) {
+    return existing || {};
+  }
+
+  return {
+    ...(existing || {}),
+
+    cardLabel:
+      payment.cardLabel ||
+      "",
+
+    cardholder:
+      payment.cardholder ||
+      "",
+
+    acoCardNumber:
+      payment.acoCardNumber ||
+      "",
+
+    expMonth:
+      payment.expMonth ||
+      "",
+
+    expYear:
+      payment.expYear ||
+      "",
+
+    securityCode:
+      payment.securityCode ||
+      ""
+  };
+}
+
+
+function publicProfileCardSummary(
+  secrets
+) {
+  const digits =
+    String(
+      secrets?.acoCardNumber ||
+      ""
+    ).replace(
+      /\D/g,
+      ""
+    );
+
+  const readiness =
+    managedProfileReadiness(
+      {},
+      secrets
+    );
+
+  return {
+    cardLabel:
+      secrets?.cardLabel ||
+      "",
+
+    cardholder:
+      secrets?.cardholder ||
+      "",
+
+    maskedNumber:
+      digits
+        ? `•••• •••• •••• ${digits.slice(-4)}`
+        : "",
+
+    expMonth:
+      secrets?.expMonth ||
+      "",
+
+    expYear:
+      secrets?.expYear ||
+      "",
+
+    cardReady:
+      readiness.cardReady
+  };
+}
+
+
 function publicCustomerAccount(
   account
 ) {
@@ -6245,6 +6505,8 @@ function safeRetailerProfile(
   let credentials =
     emptyRetailerCredentials();
 
+  let customerSecrets = {};
+
   try {
     if (record?.credentials) {
       credentials =
@@ -6257,6 +6519,22 @@ function safeRetailerProfile(
   } catch (error) {
     console.error(
       "Retailer profile decrypt error:",
+      error.message
+    );
+  }
+
+  try {
+    if (
+      record?.customerSecrets
+    ) {
+      customerSecrets =
+        decryptJson(
+          record.customerSecrets
+        ) || {};
+    }
+  } catch (error) {
+    console.error(
+      "Retailer profile customer details decrypt error:",
       error.message
     );
   }
@@ -6282,6 +6560,19 @@ function safeRetailerProfile(
     };
   }
 
+  const customerProfile =
+    record?.customerProfile &&
+    typeof record.customerProfile ===
+      "object"
+      ? record.customerProfile
+      : null;
+
+  const readiness =
+    managedProfileReadiness(
+      customerProfile,
+      customerSecrets
+    );
+
   return {
     slot:
       Number(record.slot),
@@ -6297,6 +6588,23 @@ function safeRetailerProfile(
       allowance,
 
     retailers,
+
+    customerProfile,
+
+    customerCard:
+      publicProfileCardSummary(
+        customerSecrets
+      ),
+
+    readiness,
+
+    selectedAddressId:
+      record.selectedAddressId ||
+      null,
+
+    selectedPaymentId:
+      record.selectedPaymentId ||
+      null,
 
     createdAt:
       record.createdAt ||
@@ -6975,6 +7283,90 @@ app.put(
             ]
           : null;
 
+      const selectedAddressId =
+        clean(
+          req.body?.shippingAddressId,
+          150
+        ) ||
+        existingRecord
+          ?.selectedAddressId ||
+        null;
+
+      const selectedPaymentId =
+        clean(
+          req.body?.paymentMethodId,
+          150
+        ) ||
+        existingRecord
+          ?.selectedPaymentId ||
+        null;
+
+      const selectedSavedDetails =
+        await savedCheckoutSelection(
+          req.customerAccount,
+          selectedAddressId,
+          selectedPaymentId
+        );
+
+      if (
+        selectedAddressId &&
+        !selectedSavedDetails.address
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "The selected saved shipping address could not be found."
+          });
+      }
+
+      if (
+        selectedPaymentId &&
+        !selectedSavedDetails.payment
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "The selected saved payment card could not be found."
+          });
+      }
+
+      let existingCustomerSecrets = {};
+
+      try {
+        if (
+          existingRecord
+            ?.customerSecrets
+        ) {
+          existingCustomerSecrets =
+            decryptJson(
+              existingRecord
+                .customerSecrets
+            ) || {};
+        }
+      } catch {
+        existingCustomerSecrets = {};
+      }
+
+      const customerProfile =
+        shippingProfileFromSavedAddress(
+          selectedSavedDetails.address,
+          req.customerAccount.email,
+          existingRecord
+            ?.customerProfile ||
+          {}
+        );
+
+      customerProfile.profileName =
+        profileName;
+
+      const customerSecrets =
+        paymentSecretsFromSavedPayment(
+          selectedSavedDetails.payment,
+          existingCustomerSecrets
+        );
+
       let existingCredentials =
         emptyRetailerCredentials();
 
@@ -7092,6 +7484,17 @@ app.put(
           encryptJson(
             updatedCredentials
           ),
+
+        customerProfile,
+
+        customerSecrets:
+          encryptJson(
+            customerSecrets
+          ),
+
+        selectedAddressId,
+
+        selectedPaymentId,
 
         createdAt:
           existingRecord
@@ -12980,6 +13383,222 @@ function mergeManagedCustomerSecrets(
       )
   };
 }
+
+
+
+app.post(
+  "/api/account/managed-memberships/:type/:assignmentId/autofill",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const assignmentId =
+        clean(
+          req.params.assignmentId,
+          150
+        );
+
+      if (
+        type !== "free" &&
+        type !== "rented"
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid managed membership type."
+          });
+      }
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
+
+      const isActive =
+        type === "free"
+          ? freeAssignmentIsActive
+          : rentalAssignmentIsActive;
+
+      const assignment =
+        assignments.find(
+          item =>
+            String(
+              item.id
+            ) ===
+              String(
+                assignmentId
+              ) &&
+            String(
+              item.customerAccountId ||
+              ""
+            ) ===
+              String(
+                req.customerAccount.id
+              ) &&
+            isActive(item)
+        );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Managed membership assignment could not be found."
+          });
+      }
+
+      const addressId =
+        clean(
+          req.body?.shippingAddressId,
+          150
+        );
+
+      const paymentId =
+        clean(
+          req.body?.paymentMethodId,
+          150
+        );
+
+      if (
+        !addressId &&
+        !paymentId
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose a saved shipping address or payment card."
+          });
+      }
+
+      const selected =
+        await savedCheckoutSelection(
+          req.customerAccount,
+          addressId,
+          paymentId
+        );
+
+      if (
+        addressId &&
+        !selected.address
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "The selected shipping address could not be found."
+          });
+      }
+
+      if (
+        paymentId &&
+        !selected.payment
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "The selected payment card could not be found."
+          });
+      }
+
+      let existingSecrets = {};
+
+      try {
+        if (
+          assignment.customerSecrets
+        ) {
+          existingSecrets =
+            decryptJson(
+              assignment.customerSecrets
+            ) || {};
+        }
+      } catch {
+        existingSecrets = {};
+      }
+
+      assignment.customerProfile =
+        shippingProfileFromSavedAddress(
+          selected.address,
+          req.customerAccount.email,
+          assignment.customerProfile ||
+          {}
+        );
+
+      const nextSecrets =
+        paymentSecretsFromSavedPayment(
+          selected.payment,
+          existingSecrets
+        );
+
+      assignment.customerSecrets =
+        encryptJson(
+          nextSecrets
+        );
+
+      assignment.selectedAddressId =
+        addressId ||
+        assignment.selectedAddressId ||
+        null;
+
+      assignment.selectedPaymentId =
+        paymentId ||
+        assignment.selectedPaymentId ||
+        null;
+
+      assignment.customerUpdatedAt =
+        new Date()
+          .toISOString();
+
+      assignment.updatedAt =
+        assignment.customerUpdatedAt;
+
+      if (type === "free") {
+        await saveFreeAssignments(
+          assignments
+        );
+      } else {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      const readiness =
+        managedProfileReadiness(
+          assignment.customerProfile,
+          nextSecrets
+        );
+
+      return res.json({
+        ok: true,
+        readiness,
+        message:
+          readiness.ready
+            ? "Saved shipping and card information applied. This profile is ready."
+            : "Saved information applied. Additional profile information is still required."
+      });
+
+    } catch (error) {
+      console.error(
+        "Managed membership autofill error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to apply saved profile information."
+        });
+    }
+  }
+);
 
 
 app.put(
