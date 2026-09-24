@@ -11125,3 +11125,36 @@ select:focus {
   transform: none !important;
 }
 
+
+
+/* ======================================================
+   FIELD DESCRIPTION CONSISTENCY
+   Labels stay above fields; explanatory/helper text stays
+   below the actual input/select box everywhere.
+====================================================== */
+
+#my-profile label,
+#profile-form label,
+.account-form-section label,
+.retailer-credential-fields label {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+#my-profile label > small,
+#profile-form label > small,
+.account-form-section label > small,
+.retailer-credential-fields label > small {
+  order: 10;
+  margin-top: 8px;
+}
+
+.app-password-note {
+  color: #ffffff !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  line-height: 1.45 !important;
+  letter-spacing: .1px;
+}
+
