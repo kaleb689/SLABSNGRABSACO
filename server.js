@@ -1878,7 +1878,7 @@ async function ensureManagedProfileDiscordMessage(
                   ? "A gifted profile has expired. Review it in Admin and deactivate it when the managed account should be released."
                   : "A rented profile has expired. Review it in Admin. Extend the rental if confirmed, otherwise deactivate it."
               )
-            : "The customer completed the required shipping/payment information. Open Admin and activate this profile.",
+            : "A managed profile was assigned and is now ACTIVATING. Open Admin to review it. Activate once the required customer shipping/payment information is complete.",
 
         customerName:
           customer.name,
@@ -4110,6 +4110,105 @@ function customerHasOgMemberStatus(
 }
 
 
+
+function preferPreviouslyAssignedManagedAccounts(
+  availableAccounts,
+  rentalAssignments,
+  customerAccountId,
+  retailer
+) {
+  const previousIds =
+    [];
+
+  for (
+    const assignment of
+    rentalAssignments
+      .filter(
+        item =>
+          String(
+            item.customerAccountId ||
+            ""
+          ) ===
+            String(
+              customerAccountId
+            ) &&
+          String(
+            item.rentalRetailer ||
+            ""
+          ) ===
+            String(
+              retailer
+            )
+      )
+      .sort(
+        (a,b) =>
+          new Date(
+            b.endedAt ||
+            b.updatedAt ||
+            b.createdAt ||
+            0
+          ).getTime() -
+          new Date(
+            a.endedAt ||
+            a.updatedAt ||
+            a.createdAt ||
+            0
+          ).getTime()
+      )
+  ) {
+    const id =
+      String(
+        assignment.managedAccountId ||
+        assignment.rentedMembershipId ||
+        ""
+      );
+
+    if (
+      id &&
+      !previousIds.includes(id)
+    ) {
+      previousIds.push(id);
+    }
+  }
+
+  const preference =
+    new Map(
+      previousIds.map(
+        (id,index) => [
+          id,
+          index
+        ]
+      )
+    );
+
+  return [
+    ...availableAccounts
+  ].sort(
+    (a,b) => {
+      const ai =
+        preference.has(
+          String(a.id)
+        )
+          ? preference.get(
+              String(a.id)
+            )
+          : Number.MAX_SAFE_INTEGER;
+
+      const bi =
+        preference.has(
+          String(b.id)
+        )
+          ? preference.get(
+              String(b.id)
+            )
+          : Number.MAX_SAFE_INTEGER;
+
+      return ai - bi;
+    }
+  );
+}
+
+
 /* -------------------------------------------------------
    STRIPE WEBHOOK
    MUST COME BEFORE express.json()
@@ -4260,8 +4359,19 @@ app.post(
                   session.id
                 );
               } else {
-                const availableAccounts =
+                const rawAvailableAccounts =
                   await getAvailableManagedAccountsForRetailer(
+                    retailer
+                  );
+
+                const rentalHistory =
+                  await getRentalAssignments();
+
+                const availableAccounts =
+                  preferPreviouslyAssignedManagedAccounts(
+                    rawAvailableAccounts,
+                    rentalHistory,
+                    customerAccountId,
                     retailer
                   );
 
@@ -4351,9 +4461,17 @@ app.post(
 
                       durationType,
 
-                      startsAt,
+                      activationStatus:
+                        "awaiting_activation",
 
-                      expiresAt,
+                      activationRequestedAt:
+                        now.toISOString(),
+
+                      startsAt:
+                        null,
+
+                      expiresAt:
+                        null,
 
                       customerProfile,
 
@@ -4403,6 +4521,28 @@ app.post(
 
                       endReason: null
                     });
+                  }
+
+                  for (
+                    const assignment of
+                    assignments
+                  ) {
+                    if (
+                      String(
+                        assignment.stripeSessionId ||
+                        ""
+                      ) ===
+                        String(
+                          session.id
+                        ) &&
+                      assignment.activationStatus ===
+                        "awaiting_activation"
+                    ) {
+                      await ensureManagedProfileDiscordMessage(
+                        assignment,
+                        "rented"
+                      );
+                    }
                   }
 
                   await saveRentalAssignments(
@@ -6920,6 +7060,100 @@ function specialProfileLabel(
 }
 
 
+
+function managedAssignmentStatus(
+  assignment
+) {
+  const status =
+    String(
+      assignment?.activationStatus ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (
+    status === "awaiting_activation"
+  ) {
+    return "awaiting_activation";
+  }
+
+  if (
+    status === "activated"
+  ) {
+    return "activated";
+  }
+
+  if (
+    [
+      "deactivated",
+      "inactive",
+      "expired"
+    ].includes(status)
+  ) {
+    return "inactive";
+  }
+
+  return assignment?.active === true
+    ? "awaiting_activation"
+    : "inactive";
+}
+
+
+function prepareManagedAssignmentForActivation(
+  assignment,
+  durationType,
+  now = new Date()
+) {
+  assignment.active = true;
+  assignment.durationType = durationType;
+  assignment.activationStatus =
+    "awaiting_activation";
+  assignment.activationRequestedAt =
+    now.toISOString();
+
+  /*
+    Access time starts only after Admin activates.
+  */
+  assignment.startsAt = null;
+  assignment.expiresAt = null;
+  assignment.activatedAt = null;
+  assignment.deactivatedAt = null;
+  assignment.endedAt = null;
+  assignment.endReason = null;
+  assignment.updatedAt =
+    now.toISOString();
+
+  return assignment;
+}
+
+
+function activateManagedAssignmentTimer(
+  assignment,
+  now = new Date()
+) {
+  assignment.active = true;
+  assignment.activationStatus =
+    "activated";
+  assignment.activatedAt =
+    now.toISOString();
+  assignment.startsAt =
+    now.toISOString();
+  assignment.expiresAt =
+    specialProfileExpiresAt(
+      assignment.durationType,
+      now
+    );
+  assignment.deactivatedAt = null;
+  assignment.endedAt = null;
+  assignment.endReason = null;
+  assignment.updatedAt =
+    now.toISOString();
+
+  return assignment;
+}
+
+
 function specialProfileDurationLabel(
   durationType
 ) {
@@ -7655,6 +7889,11 @@ app.get(
       ) {
         if (
           assignment.active !== true ||
+          String(
+            assignment.activationStatus ||
+            ""
+          ) !==
+            "activated" ||
           !assignment.expiresAt
         ) {
           continue;
@@ -7969,6 +8208,11 @@ app.get(
       ) {
         if (
           assignment.active !== true ||
+          String(
+            assignment.activationStatus ||
+            ""
+          ) !==
+            "activated" ||
           !assignment.expiresAt
         ) {
           continue;
@@ -10792,6 +11036,656 @@ app.get(
 
 
 
+
+function normalizeManagedPoolRetailer(
+  value
+) {
+  const retailer =
+    String(value || "")
+      .trim()
+      .toLowerCase();
+
+  return [
+    "target",
+    "walmart"
+  ].includes(retailer)
+    ? retailer
+    : null;
+}
+
+
+function parseManagedPoolAccounts(
+  raw
+) {
+  const lines =
+    String(raw || "")
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+
+  const parsed = [];
+  const seen = new Set();
+
+  for (
+    let index = 0;
+    index < lines.length;
+    index += 1
+  ) {
+    const line = lines[index];
+    const separator =
+      line.indexOf(":");
+
+    if (separator <= 0) {
+      const error =
+        new Error(
+          `Line ${index + 1} is not in email:password format.`
+        );
+      error.status = 400;
+      throw error;
+    }
+
+    const email =
+      normalizeEmail(
+        line.slice(0, separator)
+      );
+
+    const password =
+      line.slice(separator + 1);
+
+    if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+        email
+      )
+    ) {
+      const error =
+        new Error(
+          `Line ${index + 1} has an invalid email address.`
+        );
+      error.status = 400;
+      throw error;
+    }
+
+    if (!password) {
+      const error =
+        new Error(
+          `Line ${index + 1} is missing a password.`
+        );
+      error.status = 400;
+      throw error;
+    }
+
+    if (seen.has(email)) {
+      const error =
+        new Error(
+          `Duplicate email found on line ${index + 1}.`
+        );
+      error.status = 400;
+      throw error;
+    }
+
+    seen.add(email);
+    parsed.push({
+      email,
+      password
+    });
+  }
+
+  return parsed;
+}
+
+
+async function managedAssignedIdSet() {
+  const [
+    freeAssignments,
+    rentalAssignments
+  ] = await Promise.all([
+    getFreeAssignments(),
+    getRentalAssignments()
+  ]);
+
+  const ids = new Set();
+
+  for (
+    const assignment of
+    [
+      ...freeAssignments,
+      ...rentalAssignments
+    ]
+  ) {
+    if (
+      assignment.active === true
+    ) {
+      const id =
+        assignment.managedAccountId ||
+        assignment.freeMembershipId ||
+        assignment.rentedMembershipId ||
+        null;
+
+      if (id) {
+        ids.add(String(id));
+      }
+    }
+  }
+
+  return ids;
+}
+
+
+app.post(
+  "/api/admin/account-pool/:retailer/add",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const retailer =
+        normalizeManagedPoolRetailer(
+          req.params.retailer
+        );
+
+      if (!retailer) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose Target or Walmart."
+          });
+      }
+
+      const parsed =
+        parseManagedPoolAccounts(
+          req.body?.accounts
+        );
+
+      if (!parsed.length) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Add at least one account."
+          });
+      }
+
+      const records =
+        await getManagedAccounts();
+
+      const existingEmails =
+        new Set();
+
+      for (
+        const record of records
+      ) {
+        try {
+          const credentials =
+            record.credentials
+              ? normalizeRetailerCredentials(
+                  decryptJson(
+                    record.credentials
+                  )
+                )
+              : emptyRetailerCredentials();
+
+          const email =
+            normalizeEmail(
+              credentials
+                ?.[retailer]
+                ?.username
+            );
+
+          if (email) {
+            existingEmails.add(
+              email
+            );
+          }
+        } catch {
+          // Preserve unreadable records.
+        }
+      }
+
+      const duplicates =
+        parsed.filter(
+          item =>
+            existingEmails.has(
+              item.email
+            )
+        );
+
+      if (duplicates.length) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `${duplicates.length} ${retailer} account${duplicates.length === 1 ? "" : "s"} already exist.`
+          });
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      for (
+        const item of parsed
+      ) {
+        const credentials =
+          emptyRetailerCredentials();
+
+        credentials[retailer] = {
+          username: item.email,
+          password: item.password
+        };
+
+        records.push({
+          id:
+            crypto.randomUUID(),
+          profileName:
+            `MANAGED ${retailer.toUpperCase()} ACCOUNT`,
+          accountEmail: "",
+          notes: "",
+          credentials:
+            encryptJson(
+              credentials
+            ),
+          source:
+            `${retailer}-secure-add`,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+
+      await saveManagedAccounts(
+        records
+      );
+
+      const availability =
+        await getManagedAvailability();
+
+      return res.json({
+        ok: true,
+        added:
+          parsed.length,
+        retailer,
+        availability:
+          availability[retailer]
+      });
+
+    } catch (error) {
+      console.error(
+        "Managed pool add error:",
+        error
+      );
+
+      return res
+        .status(
+          error.status || 500
+        )
+        .json({
+          error:
+            error.message ||
+            "Unable to add managed accounts."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/account-pool/:retailer/replace",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const retailer =
+        normalizeManagedPoolRetailer(
+          req.params.retailer
+        );
+
+      if (!retailer) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose Target or Walmart."
+          });
+      }
+
+      const parsed =
+        parseManagedPoolAccounts(
+          req.body?.accounts
+        );
+
+      if (!parsed.length) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Add at least one account."
+          });
+      }
+
+      const records =
+        await getManagedAccounts();
+
+      const assignedIds =
+        await managedAssignedIdSet();
+
+      const retained = [];
+      let removed = 0;
+
+      for (
+        const record of records
+      ) {
+        let credentials =
+          emptyRetailerCredentials();
+
+        try {
+          credentials =
+            record.credentials
+              ? normalizeRetailerCredentials(
+                  decryptJson(
+                    record.credentials
+                  )
+                )
+              : emptyRetailerCredentials();
+        } catch {
+          retained.push(record);
+          continue;
+        }
+
+        const hasRetailer =
+          Boolean(
+            String(
+              credentials
+                ?.[retailer]
+                ?.username ||
+              ""
+            ).trim()
+          );
+
+        if (!hasRetailer) {
+          retained.push(record);
+          continue;
+        }
+
+        if (
+          assignedIds.has(
+            String(record.id)
+          )
+        ) {
+          return res
+            .status(409)
+            .json({
+              error:
+                `A current ${retailer} account is assigned to a customer. Finish/remove assigned accounts before replacing the entire pool.`
+            });
+        }
+
+        removed += 1;
+
+        credentials[retailer] = {
+          username: "",
+          password: ""
+        };
+
+        const hasOther =
+          RETAILER_KEYS.some(
+            key =>
+              key !== retailer &&
+              Boolean(
+                String(
+                  credentials
+                    ?.[key]
+                    ?.username ||
+                  ""
+                ).trim()
+              )
+          );
+
+        if (hasOther) {
+          retained.push({
+            ...record,
+            credentials:
+              encryptJson(
+                credentials
+              ),
+            updatedAt:
+              new Date()
+                .toISOString()
+          });
+        }
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      const additions =
+        parsed.map(item => {
+          const credentials =
+            emptyRetailerCredentials();
+
+          credentials[retailer] = {
+            username: item.email,
+            password: item.password
+          };
+
+          return {
+            id:
+              crypto.randomUUID(),
+            profileName:
+              `MANAGED ${retailer.toUpperCase()} ACCOUNT`,
+            accountEmail: "",
+            notes: "",
+            credentials:
+              encryptJson(
+                credentials
+              ),
+            source:
+              `${retailer}-secure-replacement`,
+            createdAt: now,
+            updatedAt: now
+          };
+        });
+
+      await saveManagedAccounts([
+        ...retained,
+        ...additions
+      ]);
+
+      const availability =
+        await getManagedAvailability();
+
+      return res.json({
+        ok: true,
+        removed,
+        added:
+          additions.length,
+        retailer,
+        availability:
+          availability[retailer]
+      });
+
+    } catch (error) {
+      console.error(
+        "Managed pool replace error:",
+        error
+      );
+
+      return res
+        .status(
+          error.status || 500
+        )
+        .json({
+          error:
+            error.message ||
+            "Unable to replace managed pool."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/account-pool/:retailer/delete-selected",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const retailer =
+        normalizeManagedPoolRetailer(
+          req.params.retailer
+        );
+
+      const ids =
+        Array.isArray(
+          req.body?.ids
+        )
+          ? req.body.ids
+              .map(item =>
+                String(item)
+              )
+              .filter(Boolean)
+          : [];
+
+      if (
+        !retailer ||
+        !ids.length
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose at least one account to delete."
+          });
+      }
+
+      const wanted =
+        new Set(ids);
+
+      const assignedIds =
+        await managedAssignedIdSet();
+
+      const blocked =
+        ids.filter(
+          id =>
+            assignedIds.has(id)
+        );
+
+      if (blocked.length) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `${blocked.length} selected account${blocked.length === 1 ? " is" : "s are"} still assigned. Remove the assignment first.`
+          });
+      }
+
+      const records =
+        await getManagedAccounts();
+
+      const next = [];
+      let deleted = 0;
+
+      for (
+        const record of records
+      ) {
+        if (
+          !wanted.has(
+            String(record.id)
+          )
+        ) {
+          next.push(record);
+          continue;
+        }
+
+        let credentials =
+          emptyRetailerCredentials();
+
+        try {
+          credentials =
+            record.credentials
+              ? normalizeRetailerCredentials(
+                  decryptJson(
+                    record.credentials
+                  )
+                )
+              : emptyRetailerCredentials();
+        } catch {
+          next.push(record);
+          continue;
+        }
+
+        if (
+          !String(
+            credentials
+              ?.[retailer]
+              ?.username ||
+            ""
+          ).trim()
+        ) {
+          next.push(record);
+          continue;
+        }
+
+        credentials[retailer] = {
+          username: "",
+          password: ""
+        };
+
+        deleted += 1;
+
+        const hasOther =
+          RETAILER_KEYS.some(
+            key =>
+              Boolean(
+                String(
+                  credentials
+                    ?.[key]
+                    ?.username ||
+                  ""
+                ).trim()
+              )
+          );
+
+        if (hasOther) {
+          next.push({
+            ...record,
+            credentials:
+              encryptJson(
+                credentials
+              ),
+            updatedAt:
+              new Date()
+                .toISOString()
+          });
+        }
+      }
+
+      await saveManagedAccounts(next);
+
+      const availability =
+        await getManagedAvailability();
+
+      return res.json({
+        ok: true,
+        deleted,
+        retailer,
+        availability:
+          availability[retailer]
+      });
+
+    } catch (error) {
+      console.error(
+        "Managed pool delete-selected error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to delete selected managed accounts."
+        });
+    }
+  }
+);
+
+
 /* -------------------------------------------------------
    ADMIN TARGET POOL REPLACEMENT
 
@@ -11870,15 +12764,6 @@ app.post(
       const now =
         new Date();
 
-      const startsAt =
-        now.toISOString();
-
-      const expiresAt =
-        specialProfileExpiresAt(
-          durationType,
-          now
-        );
-
       const customerProfile =
         sanitizeProfile(
           paidRecord.profile ||
@@ -11924,9 +12809,17 @@ app.post(
 
             durationType,
 
-            startsAt,
+            activationStatus:
+              "awaiting_activation",
 
-            expiresAt,
+            activationRequestedAt:
+              now.toISOString(),
+
+            startsAt:
+              null,
+
+            expiresAt:
+              null,
 
             customerProfile,
 
@@ -11938,10 +12831,10 @@ app.post(
                 : null,
 
             createdAt:
-              startsAt,
+              now.toISOString(),
 
             updatedAt:
-              startsAt,
+              now.toISOString(),
 
             endedAt:
               null,
@@ -11949,6 +12842,24 @@ app.post(
             endReason:
               null
           });
+        }
+
+        for (
+          const assignment of
+          assignments
+        ) {
+          if (
+            assignment.customerAccountId ===
+              customerAccountId &&
+            assignment.activationStatus ===
+              "awaiting_activation" &&
+            !assignment.discordProfileMessageId
+          ) {
+            await ensureManagedProfileDiscordMessage(
+              assignment,
+              "free"
+            );
+          }
         }
 
         await saveFreeAssignments(
@@ -11986,9 +12897,17 @@ app.post(
 
             durationType,
 
-            startsAt,
+            activationStatus:
+              "awaiting_activation",
 
-            expiresAt,
+            activationRequestedAt:
+              now.toISOString(),
+
+            startsAt:
+              null,
+
+            expiresAt:
+              null,
 
             customerProfile,
 
@@ -12011,10 +12930,10 @@ app.post(
               null,
 
             createdAt:
-              startsAt,
+              now.toISOString(),
 
             updatedAt:
-              startsAt,
+              now.toISOString(),
 
             endedAt:
               null,
@@ -12022,6 +12941,24 @@ app.post(
             endReason:
               null
           });
+        }
+
+        for (
+          const assignment of
+          assignments
+        ) {
+          if (
+            assignment.customerAccountId ===
+              customerAccountId &&
+            assignment.activationStatus ===
+              "awaiting_activation" &&
+            !assignment.discordProfileMessageId
+          ) {
+            await ensureManagedProfileDiscordMessage(
+              assignment,
+              "rented"
+            );
+          }
         }
 
         await saveRentalAssignments(
@@ -12103,6 +13040,11 @@ app.get(
       ) {
         if (
           assignment.active !== true ||
+          String(
+            assignment.activationStatus ||
+            ""
+          ) !==
+            "activated" ||
           !assignment.expiresAt
         ) {
           continue;
@@ -12122,6 +13064,9 @@ app.get(
         ) {
           assignment.active =
             false;
+
+          assignment.activationStatus =
+            "expired";
 
           assignment.endedAt =
             now.toISOString();
@@ -12447,6 +13392,16 @@ try {
                       durationType:
                         assignment.durationType ||
                         null,
+
+                      activationStatus:
+                        managedAssignmentStatus(
+                          assignment
+                        ),
+
+                      activationLabel:
+                        profileActivationLabel(
+                          assignment.activationStatus
+                        ),
 
                       daysRemaining:
                         freeAssignmentDaysRemaining(
@@ -12964,23 +13919,6 @@ app.post(
       const now =
         new Date();
 
-      const expirationBase =
-  existingActive?.expiresAt &&
-  new Date(
-    existingActive.expiresAt
-  ).getTime() >
-    now.getTime()
-    ? new Date(
-        existingActive.expiresAt
-      )
-    : now;
-
-const expiresAt =
-  specialProfileExpiresAt(
-    durationType,
-    expirationBase
-  );
-
       if (existingActive) {
         existingActive
           .customerAccountId =
@@ -12990,23 +13928,44 @@ const expiresAt =
           .paidSubmissionId =
           paidRecord.id;
 
-        existingActive.active =
-          true;
+        const wasActivated =
+          String(
+            existingActive.activationStatus ||
+            ""
+          ) ===
+          "activated";
 
-        existingActive.durationType =
-          durationType;
+        if (wasActivated) {
+          const extensionBase =
+            existingActive.expiresAt &&
+            new Date(
+              existingActive.expiresAt
+            ).getTime() >
+              now.getTime()
+              ? new Date(
+                  existingActive.expiresAt
+                )
+              : now;
 
-        existingActive.expiresAt =
-          expiresAt;
+          existingActive.durationType =
+            durationType;
 
-        existingActive.updatedAt =
-          now.toISOString();
+          existingActive.expiresAt =
+            specialProfileExpiresAt(
+              durationType,
+              extensionBase
+            );
 
-        existingActive.endedAt =
-          null;
+          existingActive.updatedAt =
+            now.toISOString();
 
-        existingActive.endReason =
-          null;
+        } else {
+          prepareManagedAssignmentForActivation(
+            existingActive,
+            durationType,
+            now
+          );
+        }
 
       } else {
         assignments.push({
@@ -13026,10 +13985,17 @@ const expiresAt =
 
           durationType,
 
-          startsAt:
+          activationStatus:
+            "awaiting_activation",
+
+          activationRequestedAt:
             now.toISOString(),
 
-          expiresAt,
+          startsAt:
+            null,
+
+          expiresAt:
+            null,
 
           createdAt:
             now.toISOString(),
@@ -13048,6 +14014,30 @@ const expiresAt =
       await saveFreeAssignments(
         assignments
       );
+
+      const current =
+        currentFreeAssignment(
+          assignments,
+          id
+        );
+
+      if (
+        current &&
+        current.activationStatus ===
+          "awaiting_activation"
+      ) {
+        const discordChanged =
+          await ensureManagedProfileDiscordMessage(
+            current,
+            "free"
+          );
+
+        if (discordChanged) {
+          await saveFreeAssignments(
+            assignments
+          );
+        }
+      }
 
       return res.json({
         ok: true,
@@ -13522,6 +14512,11 @@ app.get(
       ) {
         if (
           assignment.active !== true ||
+          String(
+            assignment.activationStatus ||
+            ""
+          ) !==
+            "activated" ||
           !assignment.expiresAt
         ) {
           continue;
@@ -13541,6 +14536,9 @@ app.get(
         ) {
           assignment.active =
             false;
+
+          assignment.activationStatus =
+            "expired";
 
           assignment.endedAt =
             now.toISOString();
@@ -13864,6 +14862,16 @@ try {
                       durationType:
                         assignment.durationType ||
                         null,
+
+                      activationStatus:
+                        managedAssignmentStatus(
+                          assignment
+                        ),
+
+                      activationLabel:
+                        profileActivationLabel(
+                          assignment.activationStatus
+                        ),
 
                       daysRemaining:
                         rentalAssignmentDaysRemaining(
@@ -14393,28 +15401,6 @@ app.post(
       const now =
         new Date();
 
-      const startsAt =
-        existingActive
-          ?.startsAt ||
-        now.toISOString();
-
-      const expirationBase =
-  existingActive?.expiresAt &&
-  new Date(
-    existingActive.expiresAt
-  ).getTime() >
-    now.getTime()
-    ? new Date(
-        existingActive.expiresAt
-      )
-    : now;
-
-const expiresAt =
-  specialProfileExpiresAt(
-    durationType,
-    expirationBase
-  );
-
       if (existingActive) {
         existingActive
           .customerAccountId =
@@ -14424,26 +15410,44 @@ const expiresAt =
           .paidSubmissionId =
           paidRecord.id;
 
-        existingActive.active =
-          true;
+        const wasActivated =
+          String(
+            existingActive.activationStatus ||
+            ""
+          ) ===
+          "activated";
 
-        existingActive.durationType =
-          durationType;
+        if (wasActivated) {
+          const extensionBase =
+            existingActive.expiresAt &&
+            new Date(
+              existingActive.expiresAt
+            ).getTime() >
+              now.getTime()
+              ? new Date(
+                  existingActive.expiresAt
+                )
+              : now;
 
-        existingActive.startsAt =
-          startsAt;
+          existingActive.durationType =
+            durationType;
 
-        existingActive.expiresAt =
-          expiresAt;
+          existingActive.expiresAt =
+            specialProfileExpiresAt(
+              durationType,
+              extensionBase
+            );
 
-        existingActive.updatedAt =
-          now.toISOString();
+          existingActive.updatedAt =
+            now.toISOString();
 
-        existingActive.endedAt =
-          null;
-
-        existingActive.endReason =
-          null;
+        } else {
+          prepareManagedAssignmentForActivation(
+            existingActive,
+            durationType,
+            now
+          );
+        }
 
       } else {
         assignments.push({
@@ -14463,10 +15467,17 @@ const expiresAt =
 
           durationType,
 
-          startsAt:
+          activationStatus:
+            "awaiting_activation",
+
+          activationRequestedAt:
             now.toISOString(),
 
-          expiresAt,
+          startsAt:
+            null,
+
+          expiresAt:
+            null,
 
           stripeSubscriptionId:
             null,
@@ -14493,6 +15504,30 @@ const expiresAt =
       await saveRentalAssignments(
         assignments
       );
+
+      const current =
+        currentRentalAssignment(
+          assignments,
+          id
+        );
+
+      if (
+        current &&
+        current.activationStatus ===
+          "awaiting_activation"
+      ) {
+        const discordChanged =
+          await ensureManagedProfileDiscordMessage(
+            current,
+            "rented"
+          );
+
+        if (discordChanged) {
+          await saveRentalAssignments(
+            assignments
+          );
+        }
+      }
 
       return res.json({
         ok: true,
@@ -17136,14 +18171,16 @@ app.post(
       if (
         ![
           "activate",
-          "deactivate"
+          "activating",
+          "deactivate",
+          "inactive"
         ].includes(action)
       ) {
         return res
           .status(400)
           .json({
             error:
-              "Choose activate or deactivate."
+              "Choose activate, activating, or inactive."
           });
       }
 
@@ -17208,25 +18245,54 @@ app.post(
         assignment.discordProfileMessageId ||
         null;
 
+      const nowDate =
+        new Date();
+
       const now =
-        new Date()
-          .toISOString();
+        nowDate.toISOString();
 
       if (
         action ===
-        "activate"
+          "activate"
+      ) {
+        activateManagedAssignmentTimer(
+          assignment,
+          nowDate
+        );
+
+      } else if (
+        action ===
+          "activating"
       ) {
         assignment.active =
           true;
 
         assignment.activationStatus =
-          "activated";
+          "awaiting_activation";
+
+        assignment.activationRequestedAt =
+          now;
+
+        assignment.startsAt =
+          null;
+
+        assignment.expiresAt =
+          null;
 
         assignment.activatedAt =
-          now;
+          null;
 
         assignment.deactivatedAt =
           null;
+
+        assignment.endedAt =
+          null;
+
+        assignment.endReason =
+          null;
+
+        assignment.updatedAt =
+          now;
 
       } else {
         assignment.active =
@@ -17245,16 +18311,21 @@ app.post(
         assignment.endReason =
           assignment.endReason ||
           "admin_deactivated";
+
+        assignment.updatedAt =
+          now;
       }
 
-      assignment.discordProfileMessageId =
-        null;
+      if (
+        action !==
+          "activating"
+      ) {
+        assignment.discordProfileMessageId =
+          null;
 
-      assignment.discordProfileMessageType =
-        null;
-
-      assignment.updatedAt =
-        now;
+        assignment.discordProfileMessageType =
+          null;
+      }
 
       if (type === "free") {
         await saveFreeAssignments(
@@ -17266,7 +18337,11 @@ app.post(
         );
       }
 
-      if (discordMessageId) {
+      if (
+        discordMessageId &&
+        action !==
+          "activating"
+      ) {
         try {
           await deleteDiscordAdminProfileWorkflowNotification(
             discordMessageId
@@ -17274,6 +18349,36 @@ app.post(
         } catch (error) {
           console.error(
             "Managed profile Discord message delete failed:",
+            error.message
+          );
+        }
+      }
+
+      if (
+        action ===
+          "activating"
+      ) {
+        try {
+          const discordChanged =
+            await ensureManagedProfileDiscordMessage(
+              assignment,
+              type
+            );
+
+          if (discordChanged) {
+            if (type === "free") {
+              await saveFreeAssignments(
+                assignments
+              );
+            } else {
+              await saveRentalAssignments(
+                assignments
+              );
+            }
+          }
+        } catch (error) {
+          console.error(
+            "Managed activating Discord notification failed:",
             error.message
           );
         }
@@ -17305,7 +18410,13 @@ app.post(
       return res.json({
         ok: true,
         status:
-          assignment.activationStatus
+          assignment.activationStatus,
+        startsAt:
+          assignment.startsAt ||
+          null,
+        expiresAt:
+          assignment.expiresAt ||
+          null
       });
 
     } catch (error) {
