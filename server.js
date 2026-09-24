@@ -1971,6 +1971,108 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+
+/* -------------------------------------------------------
+   OG MEMBER LAUNCH WINDOW
+   September 24, 2026 8:09 AM ET
+   through October 24, 2026 8:09 AM ET.
+
+   The badge is earned permanently when a customer's
+   first paid membership falls inside this window.
+------------------------------------------------------- */
+
+const OG_MEMBER_START_AT =
+  Date.parse(
+    "2026-09-24T12:09:00.000Z"
+  );
+
+const OG_MEMBER_END_AT =
+  Date.parse(
+    "2026-10-24T12:09:00.000Z"
+  );
+
+function dateFallsInOgMemberWindow(
+  value
+) {
+  const timestamp =
+    new Date(
+      value || 0
+    ).getTime();
+
+  return (
+    Number.isFinite(
+      timestamp
+    ) &&
+    timestamp >=
+      OG_MEMBER_START_AT &&
+    timestamp <=
+      OG_MEMBER_END_AT
+  );
+}
+
+
+function recordQualifiesForOgMember(
+  record
+) {
+  return (
+    record?.ogMember ===
+      true ||
+    dateFallsInOgMemberWindow(
+      record?.paidAt ||
+      record?.createdAt
+    )
+  );
+}
+
+
+function customerHasOgMemberStatus(
+  records
+) {
+  const list =
+    Array.isArray(records)
+      ? records
+      : [];
+
+  if (!list.length) {
+    return false;
+  }
+
+  const paidRecords =
+    list
+      .filter(
+        record =>
+          record?.paidAt ||
+          record?.createdAt
+      )
+      .sort(
+        (a, b) =>
+          new Date(
+            a.paidAt ||
+            a.createdAt ||
+            0
+          ).getTime() -
+          new Date(
+            b.paidAt ||
+            b.createdAt ||
+            0
+          ).getTime()
+      );
+
+  if (!paidRecords.length) {
+    return false;
+  }
+
+  /*
+    Qualification is based on the customer's
+    FIRST paid membership, so the badge cannot
+    be earned later by cancelling/rejoining.
+  */
+  return recordQualifiesForOgMember(
+    paidRecords[0]
+  );
+}
+
+
 /* -------------------------------------------------------
    STRIPE WEBHOOK
    MUST COME BEFORE express.json()
@@ -2312,6 +2414,9 @@ app.post(
                 new Date()
                   .toISOString(),
 
+              ogMember:
+                false,
+
               stripeSessionId:
                 session.id,
 
@@ -2327,6 +2432,55 @@ app.post(
               currentPeriodEnd:
                 null
             };
+
+            /*
+              Permanently mark qualifying launch
+              members. Qualification is based on
+              the customer's first paid membership.
+            */
+
+            if (
+              record.customerAccountId
+            ) {
+              const existingPaid =
+                await readJson(
+                  PAID_FILE,
+                  []
+                );
+
+              const customerPaidRecords =
+                (
+                  Array.isArray(
+                    existingPaid
+                  )
+                    ? existingPaid
+                    : []
+                )
+                  .filter(
+                    item =>
+                      String(
+                        item.customerAccountId ||
+                        ""
+                      ) ===
+                      String(
+                        record.customerAccountId
+                      )
+                  );
+
+              record.ogMember =
+                customerHasOgMemberStatus(
+                  [
+                    ...customerPaidRecords,
+                    record
+                  ]
+                );
+            } else {
+              record.ogMember =
+                dateFallsInOgMemberWindow(
+                  record.paidAt
+                );
+            }
+
 
             /*
               Retrieve the subscription so the
@@ -6321,8 +6475,40 @@ if (
             ) || 0
           );
 
+        const customerPaidRecords =
+          record.customerAccountId
+            ? records.filter(
+                item =>
+                  String(
+                    item.customerAccountId ||
+                    ""
+                  ) ===
+                  String(
+                    record.customerAccountId
+                  )
+              )
+            : [record];
+
+        const ogMember =
+          customerHasOgMemberStatus(
+            customerPaidRecords
+          );
+
+        if (
+          ogMember &&
+          record.ogMember !== true
+        ) {
+          record.ogMember =
+            true;
+
+          paidChanged =
+            true;
+        }
+
         result.push({
           ...record,
+
+          ogMember,
 
           linkedProfileCount,
 
@@ -20076,10 +20262,48 @@ const ownedOrders =
             }
           );
 
+      const profileDisplayOrder =
+        [...ownedOrders]
+          .sort(
+            (a, b) =>
+              new Date(
+                b.paidAt ||
+                b.createdAt ||
+                0
+              ).getTime() -
+              new Date(
+                a.paidAt ||
+                a.createdAt ||
+                0
+              ).getTime()
+          )[0] ||
+        null;
+
+      const profileDisplayName =
+        [
+          profileDisplayOrder
+            ?.profile?.firstName,
+          profileDisplayOrder
+            ?.profile?.lastName
+        ]
+          .filter(Boolean)
+          .join(" ") ||
+        profileDisplayOrder
+          ?.profile?.profileName ||
+        "Member";
+
       const accountStats = {
         userSince:
           account.createdAt ||
           null,
+
+        displayName:
+          profileDisplayName,
+
+        ogMember:
+          customerHasOgMemberStatus(
+            ownedOrders
+          ),
 
         totalOrders:
           safeOrders.length,
