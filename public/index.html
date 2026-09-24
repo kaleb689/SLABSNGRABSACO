@@ -256,6 +256,12 @@
 
       <div class="home-reference-art">
 
+        <div class="home-msrp-callout">
+          NEVER PAY MARKET PRICE AGAIN,<br>
+          YOU PAY MSRP AND GET THE PRODUCT<br>
+          RIGHT TO YOUR DOOR
+        </div>
+
         <div class="home-reference-logo-glow"></div>
 
         <img
@@ -530,6 +536,8 @@
 
 
 </div>
+
+    </div>
 
   </section>
 
@@ -846,7 +854,7 @@
         <div class="selected-plan">
 
           <strong id="selected-plan">
-            Starter — $30/month
+            Starter — $10/month
           </strong>
 
         </div>
@@ -1269,6 +1277,106 @@
 
     </details>
 
+
+
+    <!-- =================================================
+         RENTING ACCOUNTS
+    ================================================== -->
+
+    <details class="guide-card rental-guide-card">
+
+      <summary>
+        <span class="guide-icon blue">R</span>
+        <span>
+          Renting Accounts — How Rental Accounts Work
+        </span>
+        <span class="chevron">›</span>
+      </summary>
+
+      <div class="guide-content">
+        <h3>
+          Need more accounts for a drop?
+        </h3>
+
+        <p>
+          Rental accounts are optional, pre-created retailer
+          accounts that are SMS verified and ready for ACO.
+          You choose the retailer, the number of accounts,
+          and how long you want to rent them.
+        </p>
+
+        <div class="guide-alert info">
+          <strong>
+            Rentals are retailer-specific
+          </strong>
+          <p>
+            Target and Walmart rentals are separate. A Target
+            rental account cannot be used as a Walmart account,
+            and a Walmart rental account cannot be used as a
+            Target account.
+          </p>
+        </div>
+
+        <div class="guide-step">
+          <span class="guide-step-number">1</span>
+          <div>
+            <h4>Choose your retailer</h4>
+            <p>
+              Open My Profile → Rental Availability and choose
+              Target or Walmart.
+            </p>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <span class="guide-step-number">2</span>
+          <div>
+            <h4>Choose 5, 10, or 15 accounts</h4>
+            <p>
+              The live inventory counter shows how many accounts
+              are currently available for each retailer.
+            </p>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <span class="guide-step-number">3</span>
+          <div>
+            <h4>Choose the rental length</h4>
+            <p>
+              Select 1 Drop, 1 Week, or 1 Month. The rental
+              price updates automatically based on your choices.
+            </p>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <span class="guide-step-number">4</span>
+          <div>
+            <h4>Complete the account information</h4>
+            <p>
+              After the rental is assigned, add or select the
+              shipping address and card information you want used
+              for each rented account. Retailer login credentials
+              remain private and are not shown on your customer page.
+            </p>
+          </div>
+        </div>
+
+        <div class="guide-alert warning">
+          <strong>
+            Multiple-account recommendation
+          </strong>
+          <p>
+            For larger rental packages, using more than one payment
+            method and more than one shipping address can help spread
+            activity across accounts. The best setup can vary by drop
+            and retailer.
+          </p>
+        </div>
+      </div>
+
+    </details>
 
 
     <!-- =================================================
@@ -2827,7 +2935,7 @@
 
     </div>
 
-     </div>
+  </div>
 
   </div>
 
@@ -2928,7 +3036,7 @@
         class="account-tab"
         data-account-tab="availability"
       >
-        Availability
+        Rental Availability
       </button>
 
       <button
@@ -3924,7 +4032,7 @@
 
 
     <!-- =================================================
-         AVAILABILITY
+         RENTAL AVAILABILITY
     ================================================== -->
 
     <div
@@ -3934,90 +4042,223 @@
       hidden
     >
 
-      <div class="account-card">
+      <div class="rental-availability-shell">
 
-        <div class="account-card-heading">
-
+        <div class="rental-availability-hero">
           <div>
             <span class="eyebrow">
               LIVE INVENTORY
             </span>
 
             <h3>
-              Managed Account Availability
+              Rental Availability
             </h3>
 
-            <p class="account-muted">
-              Live availability combines accounts used
-              for FREE memberships and rentals.
+            <p>
+              Choose the retailer, number of accounts,
+              and rental length. Your price updates
+              automatically before you add it to cart.
             </p>
           </div>
 
           <span
             id="customer-availability-updated"
-            class="account-muted"
+            class="rental-updated-pill"
           >
             Loading…
           </span>
+        </div>
+
+        <div class="rental-stock-grid">
+
+          <article
+            class="rental-stock-card"
+            data-rental-stock-card="target"
+          >
+            <div class="rental-stock-head">
+              <span class="rental-stock-light"></span>
+              <span
+                class="rental-stock-status"
+                data-rental-stock-status="target"
+              >
+                CHECKING
+              </span>
+            </div>
+
+            <span class="eyebrow">TARGET</span>
+
+            <strong
+              id="customer-target-available"
+              class="rental-stock-number"
+            >—</strong>
+
+            <span class="rental-stock-label">
+              accounts available
+            </span>
+
+            <div class="rental-stock-meta">
+              <span>
+                <strong id="customer-target-in-use">—</strong>
+                in use
+              </span>
+              <span>
+                <strong id="customer-target-total">—</strong>
+                total
+              </span>
+            </div>
+          </article>
+
+          <article
+            class="rental-stock-card"
+            data-rental-stock-card="walmart"
+          >
+            <div class="rental-stock-head">
+              <span class="rental-stock-light"></span>
+              <span
+                class="rental-stock-status"
+                data-rental-stock-status="walmart"
+              >
+                CHECKING
+              </span>
+            </div>
+
+            <span class="eyebrow">WALMART</span>
+
+            <strong
+              id="customer-walmart-available"
+              class="rental-stock-number"
+            >—</strong>
+
+            <span class="rental-stock-label">
+              accounts available
+            </span>
+
+            <div class="rental-stock-meta">
+              <span>
+                <strong id="customer-walmart-in-use">—</strong>
+                in use
+              </span>
+              <span>
+                <strong id="customer-walmart-total">—</strong>
+                total
+              </span>
+            </div>
+          </article>
 
         </div>
 
-        <div class="account-dashboard-grid">
-
-          <div class="account-card">
-
+        <div class="rental-purchase-card">
+          <div class="rental-purchase-heading">
             <span class="eyebrow">
-              TARGET
+              BUILD YOUR RENTAL
             </span>
-
-            <div class="membership-stats">
-
-              <div class="membership-stat">
-                <span>Available</span>
-                <strong id="customer-target-available">—</strong>
-              </div>
-
-              <div class="membership-stat">
-                <span>In Use</span>
-                <strong id="customer-target-in-use">—</strong>
-              </div>
-
-              <div class="membership-stat">
-                <span>Total</span>
-                <strong id="customer-target-total">—</strong>
-              </div>
-
-            </div>
-
+            <h3>
+              Choose Your Account Package
+            </h3>
           </div>
 
+          <div class="rental-purchase-bar">
+            <label>
+              <span>Retailer</span>
+              <select id="rental-retailer">
+                <option value="target">Target</option>
+                <option value="walmart">Walmart</option>
+              </select>
+            </label>
 
-          <div class="account-card">
+            <label>
+              <span>Accounts</span>
+              <select id="rental-account-quantity">
+                <option value="5">5 Accounts</option>
+                <option value="10">10 Accounts</option>
+                <option value="15">15 Accounts</option>
+              </select>
+            </label>
 
-            <span class="eyebrow">
-              WALMART
-            </span>
+            <label>
+              <span>Rental Length</span>
+              <select id="rental-duration">
+                <option value="1_drop">1 Drop</option>
+                <option value="1_week">1 Week</option>
+                <option value="1_month">1 Month</option>
+              </select>
+            </label>
 
-            <div class="membership-stats">
-
-              <div class="membership-stat">
-                <span>Available</span>
-                <strong id="customer-walmart-available">—</strong>
-              </div>
-
-              <div class="membership-stat">
-                <span>In Use</span>
-                <strong id="customer-walmart-in-use">—</strong>
-              </div>
-
-              <div class="membership-stat">
-                <span>Total</span>
-                <strong id="customer-walmart-total">—</strong>
-              </div>
-
+            <div class="rental-price-box">
+              <span>Price</span>
+              <strong id="rental-auto-price">$10</strong>
+              <small>Auto-calculated</small>
             </div>
 
+            <button
+              type="button"
+              class="primary rental-add-button"
+              id="rental-add-to-cart"
+            >
+              Add to Cart
+            </button>
           </div>
+        </div>
+
+        <div class="rental-info-grid">
+
+          <article class="rental-info-card">
+            <span class="eyebrow">
+              LIMITED INVENTORY
+            </span>
+            <h3>
+              Ready-to-use retailer accounts
+            </h3>
+            <p>
+              Account availability is limited. These are
+              handmade accounts created by me that are SMS
+              verified and ready for drops. They only need
+              the rest of your information filled in, such
+              as card information and shipping information.
+            </p>
+            <p>
+              Each rented account is tied to one retailer.
+              A Target rental will not work for Walmart,
+              and a Walmart rental will not work for Target,
+              so please choose the proper retailer package.
+            </p>
+          </article>
+
+          <article class="rental-info-card rental-info-highlight">
+            <span class="eyebrow">
+              EXPAND YOUR SUCCESS
+            </span>
+            <h3>
+              More accounts. More opportunities.
+            </h3>
+            <p>
+              More accounts can give you a better chance
+              at success and multiple orders. This is a
+              numbers game, and additional accounts give
+              you more opportunities during supported drops.
+            </p>
+          </article>
+
+          <article class="rental-info-card">
+            <span class="eyebrow">
+              BEST PRACTICES
+            </span>
+            <h3>
+              Spread out payment and shipping details
+            </h3>
+            <p>
+              For your best odds with multiple accounts,
+              it is encouraged to use different payment
+              information for each account. Otherwise,
+              it is best to stay around 3–4 accounts per card.
+            </p>
+            <p>
+              I also recommend having more than one shipping
+              address for larger amounts of accounts. Depending
+              on the address, I can usually make one address
+              stretch across about 4–5 accounts.
+            </p>
+          </article>
 
         </div>
 
