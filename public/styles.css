@@ -10776,3 +10776,26 @@ select:focus {
     margin-left: 0;
   }
 }
+
+/* optional: fully remove the overlapping icon/watermark */
+.secure-storage-card::before,
+.secure-storage-card::after,
+.credential-storage-card::before,
+.credential-storage-card::after,
+.profile-security-note::before,
+.profile-security-note::after,
+.profile-security-banner::before,
+.profile-security-banner::after {
+  display: none !important;
+}
+
+.secure-storage-card img,
+.secure-storage-card svg,
+.credential-storage-card img,
+.credential-storage-card svg,
+.profile-security-note img,
+.profile-security-note svg,
+.profile-security-banner img,
+.profile-security-banner svg {
+  display: none !important;
+}
