@@ -1737,6 +1737,214 @@
       }
     }
 
+
+    /* =========================================
+       ROUND 3 ADMIN CLEANUP
+    ========================================= */
+
+    .admin-paid-tools {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      justify-content: space-between;
+      margin: 0 0 17px;
+      padding: 14px;
+      border: 1px solid #17384e;
+      border-radius: 13px;
+      background: rgba(8, 20, 32, .82);
+    }
+
+    .admin-paid-search {
+      width: min(470px, 100%);
+      min-height: 50px;
+      padding: 0 15px;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+
+    .admin-profile-count {
+      color: #bfeeff;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .linked-profile-shell {
+      display: grid;
+      grid-template-columns: minmax(230px, .72fr) minmax(0, 1.28fr);
+      gap: 14px;
+      margin-top: 12px;
+    }
+
+    .linked-profile-list {
+      display: grid;
+      align-content: start;
+      gap: 8px;
+    }
+
+    .linked-profile-button {
+      width: 100%;
+      padding: 13px 14px;
+      border: 1px solid #17384e;
+      border-radius: 10px;
+      background: #07121e;
+      color: #e8f7ff;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .linked-profile-button:hover,
+    .linked-profile-button.active {
+      border-color: rgba(18, 201, 255, .65);
+      box-shadow: 0 0 19px rgba(18, 201, 255, .08);
+    }
+
+    .linked-profile-button strong {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .linked-profile-button span {
+      color: #a9bdcd;
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .linked-profile-detail {
+      min-height: 150px;
+      padding: 17px;
+      border: 1px solid #17384e;
+      border-radius: 12px;
+      background: rgba(5, 13, 22, .88);
+    }
+
+    .linked-credential-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .linked-credential {
+      padding: 12px;
+      border: 1px solid rgba(18, 201, 255, .16);
+      border-radius: 10px;
+      background: rgba(18, 201, 255, .03);
+    }
+
+    .linked-credential h5 {
+      margin: 0 0 9px;
+      color: #12c9ff;
+      font-size: 11px;
+    }
+
+    .linked-credential p {
+      margin: 4px 0;
+      color: #d8e6f0;
+      font-size: 12px;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+
+    .available-retailer-columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .available-retailer-column {
+      border: 1px solid #17384e;
+      border-radius: 14px;
+      background: rgba(5, 13, 22, .74);
+      overflow: hidden;
+    }
+
+    .available-retailer-column > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .available-retailer-column > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .available-retailer-count {
+      display: inline-grid;
+      place-items: center;
+      min-width: 42px;
+      min-height: 34px;
+      border-radius: 999px;
+      border: 1px solid rgba(18, 201, 255, .35);
+      color: #e7faff;
+      background: rgba(18, 201, 255, .08);
+      font-weight: 900;
+    }
+
+    .available-retailer-body {
+      padding: 0 13px 13px;
+      display: grid;
+      gap: 9px;
+      max-height: 520px;
+      overflow: auto;
+    }
+
+    .available-compact-card {
+      padding: 13px;
+      border: 1px solid rgba(18, 201, 255, .14);
+      border-radius: 10px;
+      background: rgba(6, 16, 26, .92);
+    }
+
+    .available-compact-card h4 {
+      margin: 0 0 5px;
+      font-size: 13px;
+    }
+
+    .available-compact-card p {
+      margin: 0;
+      color: #b8c8d5;
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .admin-saved-details {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 13px;
+      margin-top: 12px;
+    }
+
+    .admin-saved-detail-card {
+      padding: 14px;
+      border: 1px solid #17384e;
+      border-radius: 11px;
+      background: rgba(5, 13, 22, .76);
+    }
+
+    .admin-saved-detail-card select {
+      width: 100%;
+      min-height: 46px;
+      margin: 9px 0 12px;
+    }
+
+    @media (max-width: 920px) {
+      .linked-profile-shell,
+      .available-retailer-columns,
+      .admin-saved-details {
+        grid-template-columns: 1fr;
+      }
+
+      .linked-credential-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
   </style>
 </head>
 
@@ -2533,6 +2741,22 @@ function renderOrder(x) {
         <div class="order-meta">
 
           <small>
+            PROFILES
+          </small>
+
+          <strong>
+            ${escapeHtml(
+              x.totalProfileCount ??
+              profileCount
+            )}
+          </strong>
+
+        </div>
+
+
+        <div class="order-meta">
+
+          <small>
             PAID
           </small>
 
@@ -3276,46 +3500,56 @@ function renderOrder(x) {
 </details>
 
 
+
+
 <details
   class="order-section admin-collapsible"
-  open
+  data-linked-profiles-section="${escapeHtml(x.id)}"
 >
-
   <summary class="order-section-head admin-collapsible-head">
-
     <div>
-      <h3>
-        Special Profiles
-      </h3>
-
+      <h3>Linked Profiles</h3>
       <p>
-        Add or manage FREE PROFILE and RENTED PROFILE access.
+        Active free and rented managed accounts linked to this customer.
       </p>
     </div>
-
-    <span class="admin-collapsible-arrow">
-      ›
-    </span>
-
+    <span class="admin-collapsible-arrow">›</span>
   </summary>
 
-  <div class="admin-retailer-wrap">
+  <div
+    class="admin-retailer-wrap"
+    data-linked-profiles-container="${escapeHtml(x.id)}"
+  >
+    <p class="admin-retailer-loading">
+      Open this section to load linked profiles.
+    </p>
+  </div>
+</details>
 
+
+<details class="order-section admin-collapsible">
+  <summary class="order-section-head admin-collapsible-head">
+    <div>
+      <h3>Saved Shipping &amp; Payment</h3>
+      <p>
+        Cycle through the customer's saved addresses and masked payment methods.
+      </p>
+    </div>
+    <span class="admin-collapsible-arrow">›</span>
+  </summary>
+
+  <div
+    class="admin-retailer-wrap"
+    data-admin-saved-details="${escapeHtml(x.id)}"
+  >
     <button
       type="button"
-      class="load-retailer-profiles"
-      data-retailer-order="${escapeHtml(x.id)}"
+      class="load-admin-saved-details"
+      data-order-id="${escapeHtml(x.id)}"
     >
-      Load Special Profiles
+      Load Saved Details
     </button>
-
-    <div
-      class="admin-retailer-container"
-      data-special-profile-container="${escapeHtml(x.id)}"
-    ></div>
-
   </div>
-
 </details>
 
 
@@ -4209,6 +4443,589 @@ name="${escapeHtml(
   `;
 }
   
+
+
+function adminLinkedProfileEmail(
+  membership
+) {
+  return (
+    String(
+      membership?.accountEmail ||
+      ""
+    ).trim() ||
+    String(
+      membership?.retailers
+        ?.target?.username ||
+      ""
+    ).trim() ||
+    String(
+      membership?.retailers
+        ?.walmart?.username ||
+      ""
+    ).trim() ||
+    "No retailer email"
+  );
+}
+
+function linkedProfileDetailHtml(
+  membership
+) {
+  if (!membership) {
+    return `
+      <p class="admin-retailer-empty">
+        Select a linked profile.
+      </p>
+    `;
+  }
+
+  const credentials =
+    ADMIN_RETAILERS
+      .map(retailer => {
+        const saved =
+          membership?.retailers
+            ?.[retailer.key] ||
+          {};
+
+        if (
+          !saved.username &&
+          !saved.password
+        ) {
+          return "";
+        }
+
+        return `
+          <div class="linked-credential">
+            <h5>
+              ${escapeHtml(
+                retailer.label
+              )}
+            </h5>
+
+            <p>
+              <strong>USERNAME:</strong>
+              ${escapeHtml(
+                saved.username ||
+                "—"
+              )}
+            </p>
+
+            <p>
+              <strong>PASSWORD:</strong>
+              ${escapeHtml(
+                saved.password ||
+                "—"
+              )}
+            </p>
+          </div>
+        `;
+      })
+      .filter(Boolean)
+      .join("");
+
+  return `
+    <div>
+      <span class="eyebrow">
+        ${escapeHtml(
+          String(
+            membership.type ||
+            ""
+          ).toUpperCase()
+        )} MEMBERSHIP
+      </span>
+
+      <h3>
+        ${escapeHtml(
+          membership.profileName ||
+          "Linked Profile"
+        )}
+      </h3>
+
+      <p class="available-membership-email">
+        ${escapeHtml(
+          adminLinkedProfileEmail(
+            membership
+          )
+        )}
+      </p>
+
+      <div class="linked-credential-grid">
+        ${
+          credentials ||
+          `
+            <p class="admin-retailer-empty">
+              No retailer credentials are stored for this account.
+            </p>
+          `
+        }
+      </div>
+    </div>
+  `;
+}
+
+async function loadAdminLinkedProfiles(
+  orderId
+) {
+  const container =
+    document.querySelector(
+      `[data-linked-profiles-container="${CSS.escape(
+        orderId
+      )}"]`
+    );
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = `
+    <p class="admin-retailer-loading">
+      Loading linked profiles...
+    </p>
+  `;
+
+  try {
+    const response =
+      await fetch(
+        `/api/admin/submissions/${encodeURIComponent(
+          orderId
+        )}/linked-memberships`,
+        {
+          credentials:
+            "same-origin",
+          cache:
+            "no-store"
+        }
+      );
+
+    const data =
+      await response
+        .json()
+        .catch(
+          () => ({})
+        );
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to load linked profiles."
+      );
+    }
+
+    const memberships =
+      Array.isArray(
+        data.memberships
+      )
+        ? data.memberships
+        : [];
+
+    if (!memberships.length) {
+      container.innerHTML = `
+        <p class="admin-retailer-empty">
+          No active linked profiles.
+        </p>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="linked-profile-shell">
+
+        <div class="linked-profile-list">
+          ${memberships
+            .map(
+              (membership, index) => `
+                <button
+                  type="button"
+                  class="linked-profile-button ${
+                    index === 0
+                      ? "active"
+                      : ""
+                  }"
+                  data-linked-profile-index="${index}"
+                >
+                  <strong>
+                    ${escapeHtml(
+                      membership.profileName ||
+                      `Profile ${index + 1}`
+                    )}
+                  </strong>
+
+                  <span>
+                    ${escapeHtml(
+                      adminLinkedProfileEmail(
+                        membership
+                      )
+                    )}
+                  </span>
+                </button>
+              `
+            )
+            .join("")}
+        </div>
+
+        <div class="linked-profile-detail">
+          ${linkedProfileDetailHtml(
+            memberships[0]
+          )}
+        </div>
+
+      </div>
+    `;
+
+    const detail =
+      container.querySelector(
+        ".linked-profile-detail"
+      );
+
+    container
+      .querySelectorAll(
+        "[data-linked-profile-index]"
+      )
+      .forEach(button => {
+        button.addEventListener(
+          "click",
+          () => {
+            const index =
+              Number(
+                button.dataset
+                  .linkedProfileIndex
+              );
+
+            container
+              .querySelectorAll(
+                "[data-linked-profile-index]"
+              )
+              .forEach(item => {
+                item.classList.toggle(
+                  "active",
+                  item === button
+                );
+              });
+
+            if (detail) {
+              detail.innerHTML =
+                linkedProfileDetailHtml(
+                  memberships[index]
+                );
+            }
+          }
+        );
+      });
+
+  } catch (error) {
+    container.innerHTML = `
+      <p class="admin-retailer-empty">
+        ${escapeHtml(
+          error.message
+        )}
+      </p>
+    `;
+  }
+}
+
+function bindLinkedProfileSections() {
+  document
+    .querySelectorAll(
+      "[data-linked-profiles-section]"
+    )
+    .forEach(section => {
+      section.addEventListener(
+        "toggle",
+        () => {
+          if (
+            !section.open ||
+            section.dataset.loaded ===
+              "true"
+          ) {
+            return;
+          }
+
+          section.dataset.loaded =
+            "true";
+
+          loadAdminLinkedProfiles(
+            section.dataset
+              .linkedProfilesSection
+          );
+        }
+      );
+    });
+}
+
+async function loadAdminSavedDetails(
+  orderId
+) {
+  const container =
+    document.querySelector(
+      `[data-admin-saved-details="${CSS.escape(
+        orderId
+      )}"]`
+    );
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = `
+    <p class="admin-retailer-loading">
+      Loading saved details...
+    </p>
+  `;
+
+  try {
+    const response =
+      await fetch(
+        `/api/admin/submissions/${encodeURIComponent(
+          orderId
+        )}/saved-details`,
+        {
+          credentials:
+            "same-origin",
+          cache:
+            "no-store"
+        }
+      );
+
+    const data =
+      await response
+        .json()
+        .catch(
+          () => ({})
+        );
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to load saved details."
+      );
+    }
+
+    const addresses =
+      Array.isArray(
+        data.addresses
+      )
+        ? data.addresses
+        : [];
+
+    const payments =
+      Array.isArray(
+        data.paymentMethods
+      )
+        ? data.paymentMethods
+        : [];
+
+    container.innerHTML = `
+      <div class="admin-saved-details">
+
+        <div class="admin-saved-detail-card">
+          <span class="eyebrow">
+            SHIPPING ADDRESSES
+          </span>
+
+          <select data-admin-address-select>
+            ${
+              addresses.length
+                ? addresses
+                    .map(
+                      (item, index) => `
+                        <option value="${index}">
+                          ${escapeHtml(
+                            item.label ||
+                            `Address ${index + 1}`
+                          )}
+                        </option>
+                      `
+                    )
+                    .join("")
+                : `<option value="">No saved addresses</option>`
+            }
+          </select>
+
+          <div data-admin-address-preview></div>
+        </div>
+
+        <div class="admin-saved-detail-card">
+          <span class="eyebrow">
+            PAYMENT CARDS
+          </span>
+
+          <select data-admin-payment-select>
+            ${
+              payments.length
+                ? payments
+                    .map(
+                      (item, index) => `
+                        <option value="${index}">
+                          ${escapeHtml(
+                            item.cardLabel ||
+                            `Payment ${index + 1}`
+                          )}
+                        </option>
+                      `
+                    )
+                    .join("")
+                : `<option value="">No saved cards</option>`
+            }
+          </select>
+
+          <div data-admin-payment-preview></div>
+        </div>
+
+      </div>
+    `;
+
+    const addressSelect =
+      container.querySelector(
+        "[data-admin-address-select]"
+      );
+
+    const paymentSelect =
+      container.querySelector(
+        "[data-admin-payment-select]"
+      );
+
+    const addressPreview =
+      container.querySelector(
+        "[data-admin-address-preview]"
+      );
+
+    const paymentPreview =
+      container.querySelector(
+        "[data-admin-payment-preview]"
+      );
+
+    const renderAddress = () => {
+      if (!addressPreview) return;
+
+      const item =
+        addresses[
+          Number(
+            addressSelect?.value ||
+            0
+          )
+        ];
+
+      addressPreview.innerHTML =
+        item
+          ? `
+              <p>
+                <strong>
+                  ${escapeHtml(
+                    [
+                      item.firstName,
+                      item.lastName
+                    ]
+                      .filter(Boolean)
+                      .join(" ")
+                  )}
+                </strong>
+              </p>
+
+              <p>
+                ${escapeHtml(
+                  [
+                    item.address,
+                    item.address2,
+                    item.city,
+                    item.state,
+                    item.zip,
+                    item.country
+                  ]
+                    .filter(Boolean)
+                    .join(", ")
+                )}
+              </p>
+            `
+          : `<p class="admin-retailer-empty">No saved addresses.</p>`;
+    };
+
+    const renderPayment = () => {
+      if (!paymentPreview) return;
+
+      const item =
+        payments[
+          Number(
+            paymentSelect?.value ||
+            0
+          )
+        ];
+
+      paymentPreview.innerHTML =
+        item
+          ? `
+              <p>
+                <strong>
+                  ${escapeHtml(
+                    item.cardholder ||
+                    "—"
+                  )}
+                </strong>
+              </p>
+              <p>
+                ${escapeHtml(
+                  item.maskedNumber ||
+                  "Card saved"
+                )}
+              </p>
+              <p>
+                EXP:
+                ${escapeHtml(
+                  [
+                    item.expMonth,
+                    item.expYear
+                  ]
+                    .filter(Boolean)
+                    .join("/") ||
+                  "—"
+                )}
+              </p>
+            `
+          : `<p class="admin-retailer-empty">No saved payment cards.</p>`;
+    };
+
+    addressSelect
+      ?.addEventListener(
+        "change",
+        renderAddress
+      );
+
+    paymentSelect
+      ?.addEventListener(
+        "change",
+        renderPayment
+      );
+
+    renderAddress();
+    renderPayment();
+
+  } catch (error) {
+    container.innerHTML = `
+      <p class="admin-retailer-empty">
+        ${escapeHtml(
+          error.message
+        )}
+      </p>
+    `;
+  }
+}
+
+function bindAdminSavedDetailButtons() {
+  document
+    .querySelectorAll(
+      ".load-admin-saved-details"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        () => {
+          loadAdminSavedDetails(
+            button.dataset
+              .orderId
+          );
+        }
+      );
+    });
+}
+
 
 async function loadAdminRetailerProfiles(
   orderId
@@ -6128,15 +6945,58 @@ function renderAvailableMembershipDashboard(
       ? data.memberships
       : [];
 
+  const targetMemberships =
+    memberships.filter(
+      membership =>
+        Boolean(
+          String(
+            membership?.retailers
+              ?.target?.username ||
+            ""
+          ).trim()
+        )
+    );
+
+  const walmartMemberships =
+    memberships.filter(
+      membership =>
+        Boolean(
+          String(
+            membership?.retailers
+              ?.walmart?.username ||
+            ""
+          ).trim()
+        )
+    );
+
   submissionCount.textContent =
     memberships.length === 1
       ? "1 available membership"
       : `${memberships.length} available memberships`;
 
+  const compactCards =
+    (
+      items,
+      retailerKey
+    ) =>
+      items.length
+        ? items
+            .map(
+              membership =>
+                availableMembershipCardHtml(
+                  membership
+                )
+            )
+            .join("")
+        : `
+            <div class="empty-admin">
+              No available ${retailerKey === "target" ? "Target" : "Walmart"} accounts.
+            </div>
+          `;
+
   rows.innerHTML = `
     <details
       class="order-section admin-collapsible"
-      open
     >
       <summary
         class="order-section-head admin-collapsible-head"
@@ -6145,16 +7005,12 @@ function renderAvailableMembershipDashboard(
           <h3>
             Add Available Membership
           </h3>
-
           <p>
-            Add unused Target or Walmart inventory here.
-            It will stay here until assigned to a customer.
+            Add unused Target or Walmart inventory.
+            This form stays closed until you need it.
           </p>
         </div>
-
-        <span class="admin-collapsible-arrow">
-          ›
-        </span>
+        <span class="admin-collapsible-arrow">›</span>
       </summary>
 
       <form
@@ -6162,12 +7018,10 @@ function renderAvailableMembershipDashboard(
         class="admin-retailer-wrap"
       >
         <div class="admin-edit-grid">
-
           <div class="admin-edit-field">
             <label>
               Membership Name
             </label>
-
             <input
               name="profileName"
               value="AVAILABLE MEMBERSHIP"
@@ -6178,7 +7032,6 @@ function renderAvailableMembershipDashboard(
             <label>
               Account Email
             </label>
-
             <input
               name="accountEmail"
               autocomplete="off"
@@ -6189,10 +7042,8 @@ function renderAvailableMembershipDashboard(
             <label>
               Admin Notes
             </label>
-
             <input name="notes">
           </div>
-
         </div>
 
         <div
@@ -6211,40 +7062,53 @@ function renderAvailableMembershipDashboard(
           </button>
         </div>
 
-        <div
-          class="admin-edit-message"
-        ></div>
+        <div class="admin-edit-message"></div>
       </form>
     </details>
 
-    <div class="available-membership-grid">
-      ${
-        memberships.length
-          ? memberships
-              .map(
-                availableMembershipCardHtml
-              )
-              .join("")
-          : `
-            <div class="empty-admin">
-              <h3>
-                No available memberships.
-              </h3>
+    <div class="available-retailer-columns">
+      <details class="available-retailer-column">
+        <summary>
+          <div>
+            <span class="eyebrow">TARGET</span>
+            <h3>Available Target Accounts</h3>
+          </div>
+          <span class="available-retailer-count">
+            ${targetMemberships.length}
+          </span>
+        </summary>
 
-              <p>
-                All managed Target/Walmart inventory is
-                currently in use, or no inventory has
-                been added yet.
-              </p>
-            </div>
-          `
-      }
+        <div class="available-retailer-body">
+          ${compactCards(
+            targetMemberships,
+            "target"
+          )}
+        </div>
+      </details>
+
+      <details class="available-retailer-column">
+        <summary>
+          <div>
+            <span class="eyebrow">WALMART</span>
+            <h3>Available Walmart Accounts</h3>
+          </div>
+          <span class="available-retailer-count">
+            ${walmartMemberships.length}
+          </span>
+        </summary>
+
+        <div class="available-retailer-body">
+          ${compactCards(
+            walmartMemberships,
+            "walmart"
+          )}
+        </div>
+      </details>
     </div>
   `;
 
   bindAvailableMembershipButtons();
 }
-
 
 function collectManagedRetailers(
   form
@@ -6659,274 +7523,59 @@ function renderManagedMembershipDashboard(
       ? data.memberships
       : [];
 
-  const paidCustomers =
-    Array.isArray(
-      data?.paidCustomers
-    )
-      ? data.paidCustomers
-      : [];
-
   submissionCount.textContent =
     memberships.length === 1
-      ? `1 ${label.toLowerCase()}`
-      : `${memberships.length} ${label.toLowerCase()}s`;
+      ? `1 active ${label.toLowerCase()}`
+      : `${memberships.length} active ${label.toLowerCase()}s`;
 
-  const cards =
+  rows.innerHTML =
     memberships.length
-      ? memberships
-          .map(
-            membership =>
-              managedMembershipCardHtml(
-                membership,
-                type,
-                paidCustomers
+      ? `
+          <section class="order-section">
+            <div class="order-section-head">
+              <div>
+                <h3>
+                  ACTIVE ${label}S
+                </h3>
+                <p>
+                  Only accounts currently linked to customers are shown here.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <div
+            id="managedMembershipCards"
+            style="display:grid;gap:13px;"
+          >
+            ${memberships
+              .map(
+                membership =>
+                  managedMembershipCardHtml(
+                    membership,
+                    type,
+                    []
+                  )
               )
-          )
-          .join("")
+              .join("")}
+          </div>
+        `
       : `
           <div class="empty-admin">
             <h3>
-              No ${label}s yet.
+              No active ${label.toLowerCase()}s.
             </h3>
-
             <p>
-              Create your first managed
-              ${label.toLowerCase()} above.
+              Assign an account from Available Memberships
+              or from a paid customer's Add Available Membership section.
             </p>
           </div>
         `;
-
-  const bulkCustomerOptions =
-    paidCustomers
-      .map(customer => `
-        <option
-          value="${escapeHtml(
-            customer.customerAccountId
-          )}"
-        >
-          ${escapeHtml(
-            customer.name ||
-            "Customer"
-          )}
-          ${
-            customer.email
-              ? ` — ${escapeHtml(
-                  customer.email
-                )}`
-              : ""
-          }
-        </option>
-      `)
-      .join("");
-
-  rows.innerHTML = `
-
-    <details class="order-section admin-collapsible">
-
-      <summary class="order-section-head admin-collapsible-head">
-
-        <div>
-          <h3>
-            Create ${label}
-          </h3>
-
-          <p>
-            Add one of your managed accounts.
-            The Account Email and retailer
-            credentials are Admin-only.
-          </p>
-        </div>
-
-        <span class="admin-collapsible-arrow">
-          ›
-        </span>
-
-      </summary>
-
-
-      <form
-        class="admin-retailer-wrap"
-        id="createManagedMembershipForm"
-      >
-
-        <div class="admin-edit-grid">
-
-          <div class="admin-edit-field">
-
-            <label>
-              Membership Name
-            </label>
-
-            <input
-              name="profileName"
-              placeholder="${label}"
-            >
-
-          </div>
-
-
-          <div class="admin-edit-field">
-
-            <label>
-              Account Email
-            </label>
-
-            <input
-              type="email"
-              name="accountEmail"
-              autocomplete="off"
-              placeholder="Managed account email"
-            >
-
-            <small class="admin-edit-help">
-              Visible only in Admin.
-            </small>
-
-          </div>
-
-
-          <div class="admin-edit-field wide">
-
-            <label>
-              Admin Notes
-            </label>
-
-            <input
-              name="notes"
-              placeholder="Optional notes"
-            >
-
-          </div>
-
-        </div>
-
-
-        <div
-          class="admin-retailer-grid"
-          style="margin-top:16px;"
-        >
-
-          ${managedRetailerFields()}
-
-        </div>
-
-
-        <div class="admin-edit-actions">
-
-          <button
-            type="submit"
-            class="admin-save-button"
-          >
-            + CREATE ${label}
-          </button>
-
-        </div>
-
-        <div
-          class="admin-edit-message"
-        ></div>
-
-      </form>
-
-    </details>
-
-
-    <section class="order-section">
-
-      <div class="order-section-head">
-
-        <div>
-          <h3>
-            ${label}S
-          </h3>
-
-          <p>
-            Managed inventory.
-          </p>
-        </div>
-
-        <select
-          id="managedMembershipStatusFilter"
-          class="admin-submission-filter"
-        >
-          <option value="all">
-            ALL
-          </option>
-
-          <option value="active">
-            ACTIVE
-          </option>
-
-          <option value="inactive">
-            INACTIVE
-          </option>
-        </select>
-
-      </div>
-
-    </section>
-
-    <div class="managed-bulk-bar">
-
-      <div class="admin-edit-field">
-        <label>Bulk Customer</label>
-        <select id="managedBulkCustomer">
-          <option value="">
-            Choose active paid customer
-          </option>
-          ${bulkCustomerOptions}
-        </select>
-      </div>
-
-      <div class="admin-edit-field">
-        <label>Bulk Duration</label>
-        <select id="managedBulkDuration">
-          <option value="indefinite">INDEFINITELY</option>
-          <option value="1_drop">1 DROP</option>
-          <option value="1_week">1 WEEK</option>
-          <option value="1_month">1 MONTH</option>
-        </select>
-      </div>
-
-      <button
-        type="button"
-        class="admin-save-button"
-        id="managedBulkAssign"
-      >
-        Add Selected
-      </button>
-
-      <button
-        type="button"
-        class="admin-edit-button"
-        id="managedBulkRemove"
-      >
-        Remove Selected
-      </button>
-
-      <button
-        type="button"
-        class="managed-delete-button"
-        id="managedBulkDelete"
-      >
-        Delete Selected
-      </button>
-
-    </div>
-
-    <div
-      id="managedMembershipCards"
-      style="display:grid;gap:13px;"
-    >
-      ${cards}
-    </div>
-  `;
 
   bindManagedMembershipDashboard(
     type
   );
 }
-
 
 function managedMembershipBody(
   form
@@ -8203,18 +8852,89 @@ if (!submissions.length) {
 }
 
 
-  rows.innerHTML =
-    submissions
-      .map(renderOrder)
-      .join("");
+  const sortedSubmissions =
+    [...submissions]
+      .sort(
+        (a, b) =>
+          Number(
+            b.totalProfileCount ||
+            b.plan?.profiles ||
+            0
+          ) -
+          Number(
+            a.totalProfileCount ||
+            a.plan?.profiles ||
+            0
+          )
+      );
+
+  rows.innerHTML = `
+    <div class="admin-paid-tools">
+      <input
+        type="search"
+        id="paidCustomerSearch"
+        class="admin-paid-search"
+        placeholder="Search customer name or email..."
+        autocomplete="off"
+      >
+
+      <span class="admin-profile-count">
+        Sorted by most profiles
+      </span>
+    </div>
+
+    <div id="paidCustomerRows">
+      ${sortedSubmissions
+        .map(renderOrder)
+        .join("")}
+    </div>
+  `;
+
+  const paidCustomerSearch =
+    document.getElementById(
+      "paidCustomerSearch"
+    );
+
+  paidCustomerSearch
+    ?.addEventListener(
+      "input",
+      () => {
+        const query =
+          String(
+            paidCustomerSearch.value ||
+            ""
+          )
+            .trim()
+            .toLowerCase();
+
+        document
+          .querySelectorAll(
+            "#paidCustomerRows .customer-order"
+          )
+          .forEach(order => {
+            const text =
+              String(
+                order.textContent ||
+                ""
+              )
+                .toLowerCase();
+
+            order.hidden =
+              Boolean(query) &&
+              !text.includes(query);
+          });
+      }
+    );
 
 bindAdminSaveButtons();
- bindRevealButtons();
+bindRevealButtons();
 bindAdminEditButtons();
 bindAdminRetailerButtons();
 bindDeleteButtons();
 bindAssignInventoryButtons();
-  bindCustomerSpecialProfiles();
+bindLinkedProfileSections();
+bindAdminSavedDetailButtons();
+
 }
 
 submissionTypeFilter?.addEventListener(
