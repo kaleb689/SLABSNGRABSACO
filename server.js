@@ -59,6 +59,12 @@ const SPECIAL_PROFILES_FILE =
     "special-profiles.json"
   );
 
+const MANAGED_ACCOUNTS_FILE =
+  path.join(
+    DATA_DIR,
+    "managed-accounts.json"
+  );
+
 const RENTED_MEMBERSHIPS_FILE =
   path.join(
     DATA_DIR,
@@ -3376,6 +3382,28 @@ async function saveRentalAssignments(
   );
 }
 
+async function getManagedAccounts() {
+  const records =
+    await readJson(
+      MANAGED_ACCOUNTS_FILE,
+      []
+    );
+
+  return Array.isArray(records)
+    ? records
+    : [];
+}
+
+
+async function saveManagedAccounts(
+  records
+) {
+  await writeJson(
+    MANAGED_ACCOUNTS_FILE,
+    records
+  );
+}
+
 async function getFreeMemberships() {
   const records =
     await readJson(
@@ -5957,6 +5985,488 @@ app.get(
     }
   }
 );
+
+async function importFreeTargetAccountsOnce() {
+  const memberships =
+    await getFreeMemberships();
+
+  const accounts = [
+    ["joan_west530@web.de", "h01G#g4ngyHo"],
+    ["jason941_castro@web.de", "wrFNm8rz%oxz"],
+    ["kimberly_hayes467@web.de", "^Zk@GvR76uWP"],
+    ["nancy_rodriguez721@web.de", "#CK9r55#iScQ"],
+    ["donna728_perez@web.de", "8ynghMp!a1J$"],
+    ["julie920_phillips@web.de", "I^T#qeQE0Ggax"],
+    ["xavier_gibson118@web.de", "Ot$QSesm35Yb"],
+    ["tyler_flores72@web.de", "wZwdUlakp$4!Z"],
+    ["linda948_morales@web.de", "SMbj@6xtivLu"],
+    ["frances73_aguilar@web.de", "sqBCd%6Vh@2i"],
+    ["amanda116_aguilar@web.de", "cq#oeczY3HLtH"],
+    ["diego868_gibson@web.de", "Rk#t9KKZ0WEK"],
+    ["betty585_gutierrez@web.de", "F0LL3xhFV$0W"],
+    ["dominic_reynolds67@web.de", "YxNr1h#Y^V@^U"],
+    ["chris40_myers@web.de", "HkP#gFVeYP3o"],
+    ["evan648_dixon@web.de", "6%cJWnI0jrnT"],
+    ["joe_foster614@web.de", "ClK^Sf9MXB4F"],
+    ["sara_bailey408@web.de", "0ZfQt1@UhUm8#"],
+    ["julie778_freeman@web.de", "fx^0t43pWcAoF"],
+    ["david_campbell323@web.de", "wwAakz7Hj!th"],
+    ["thomas_ford883@web.de", "ys@uH7!EI$Gy"],
+    ["thomas_perry443@web.de", "2Q9HCGOX@!ko"],
+    ["mark300_lee@web.de", "j6nq!%z$LZQ3"],
+    ["carter392_cooper@web.de", "E8SNw^3Unhg5"],
+    ["noah_clark569@web.de", "unbBH4w8WML!"],
+    ["maria_ross469@web.de", "X6LqfvJvky$Za"],
+    ["martha_rogers892@web.de", "D%7M9ImeDZ#jR"],
+    ["william_powell402@web.de", "SBVv%#a6296X"],
+    ["martha_bryant708@web.de", "#vW5lV9%a40T"],
+    ["maria_torres386@web.de", "nsD$c@C3h9LgM"],
+    ["hannah10_herrera@web.de", "^zzgAg599B4N"],
+    ["mary623_mendoza@web.de", "RLYydS0y9!tso"],
+    ["connor579_reynolds@web.de", "OeJ@6dmLZ1bWV"],
+    ["linda480_roberts@web.de", "#135f3CFvswi@"],
+    ["colin_wallace35@web.de", "5oJ%#vc7KQSOR"],
+    ["kevin_griffin119@web.de", "s2p8ZZ##Tw3IC"],
+    ["cynthia977_porter@web.de", "4iUgZW8B@cJ7"],
+    ["tim389_rivera@web.de", "VQ$yjH#85hpRa"],
+    ["nicholas159_evans@web.de", "0q$I^49N^ZiQm"],
+    ["eli259_jackson@web.de", "ZoRpv2#@ZRbC"],
+    ["laura837_west@web.de", "5btwyCE@L9Jw"],
+    ["chase_ross271@web.de", "VCH7b0JFGIT%"],
+    ["alexander_thomas404@web.de", "h2Hc1Peg^LuF"],
+    ["judith_guerrero433@web.de", "X9$^FY8ZZeyZ"],
+    ["landon_bryant874@web.de", "a$^3Wxh8e45l"],
+    ["janet617_ramos@web.de", "DQ8DoTZ!Pgef#"],
+    ["kevin_moore543@web.de", "5R9tdfjhkXN!"],
+    ["deborah_harris583@web.de", "WK9wfPcHz!uXb"],
+    ["judith_brooks580@web.de", "6MEgE!EO8mWc"],
+    ["xavier_rodriguez973@web.de", "%6Xle!EJ3q%XJ"]
+  ];
+
+  const existingTargetEmails =
+    new Set();
+
+  for (const membership of memberships) {
+    try {
+      if (!membership.credentials) {
+        continue;
+      }
+
+      const credentials =
+        decryptJson(
+          membership.credentials
+        );
+
+      const targetEmail =
+        String(
+          credentials?.target?.username ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+      if (targetEmail) {
+        existingTargetEmails.add(
+          targetEmail
+        );
+      }
+    } catch {
+      // Ignore memberships that cannot
+      // be decrypted during duplicate check.
+    }
+  }
+
+  const now =
+    new Date().toISOString();
+
+  let added = 0;
+
+  for (const [email, password] of accounts) {
+    const normalizedEmail =
+      email.trim().toLowerCase();
+
+    if (
+      existingTargetEmails.has(
+        normalizedEmail
+      )
+    ) {
+      continue;
+    }
+
+    const credentials =
+      emptyRetailerCredentials();
+
+    credentials.target = {
+      username: email,
+      password
+    };
+
+    memberships.push({
+      id:
+        crypto.randomUUID(),
+
+      profileName:
+        "FREE MEMBERSHIP",
+
+      accountEmail:
+        "",
+
+      notes:
+        "",
+
+      credentials:
+        encryptJson(
+          credentials
+        ),
+
+      createdAt:
+        now,
+
+      updatedAt:
+        now
+    });
+
+    existingTargetEmails.add(
+      normalizedEmail
+    );
+
+    added += 1;
+  }
+
+  if (added > 0) {
+    await saveFreeMemberships(
+      memberships
+    );
+  }
+
+  console.log(
+    `FREE Target import: ${added} account(s) added.`
+  );
+}
+
+async function migrateFreeAccountsToManagedPoolOnce() {
+  const managedAccounts =
+    await getManagedAccounts();
+
+  const freeMemberships =
+    await getFreeMemberships();
+
+  const existingKeys =
+    new Set();
+
+  for (const account of managedAccounts) {
+    try {
+      const credentials =
+        account.credentials
+          ? decryptJson(
+              account.credentials
+            )
+          : null;
+
+      for (const retailer of RETAILER_KEYS) {
+        const username =
+          String(
+            credentials?.[retailer]?.username ||
+            ""
+          )
+            .trim()
+            .toLowerCase();
+
+        if (username) {
+          existingKeys.add(
+            `${retailer}:${username}`
+          );
+        }
+      }
+    } catch {
+      // Ignore unreadable records
+      // during duplicate checking.
+    }
+  }
+
+  const now =
+    new Date().toISOString();
+
+  let added = 0;
+
+  for (const membership of freeMemberships) {
+    if (!membership.credentials) {
+      continue;
+    }
+
+    let credentials;
+
+    try {
+      credentials =
+        normalizeRetailerCredentials(
+          decryptJson(
+            membership.credentials
+          )
+        );
+    } catch {
+      continue;
+    }
+
+    const hasAnyRetailer =
+      RETAILER_KEYS.some(
+        retailer =>
+          credentials[retailer]
+            ?.username
+      );
+
+    if (!hasAnyRetailer) {
+      continue;
+    }
+
+    const alreadyExists =
+      RETAILER_KEYS.some(
+        retailer => {
+          const username =
+            String(
+              credentials[retailer]
+                ?.username ||
+              ""
+            )
+              .trim()
+              .toLowerCase();
+
+          return (
+            username &&
+            existingKeys.has(
+              `${retailer}:${username}`
+            )
+          );
+        }
+      );
+
+    if (alreadyExists) {
+      continue;
+    }
+
+    managedAccounts.push({
+      id:
+        membership.id ||
+        crypto.randomUUID(),
+
+      profileName:
+        membership.profileName ||
+        "MANAGED ACCOUNT",
+
+      accountEmail:
+        membership.accountEmail ||
+        "",
+
+      notes:
+        membership.notes ||
+        "",
+
+      credentials:
+        encryptJson(
+          credentials
+        ),
+
+      source:
+        "free-membership-migration",
+
+      createdAt:
+        membership.createdAt ||
+        now,
+
+      updatedAt:
+        now
+    });
+
+    for (const retailer of RETAILER_KEYS) {
+      const username =
+        String(
+          credentials[retailer]
+            ?.username ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+      if (username) {
+        existingKeys.add(
+          `${retailer}:${username}`
+        );
+      }
+    }
+
+    added += 1;
+  }
+
+  if (added > 0) {
+    await saveManagedAccounts(
+      managedAccounts
+    );
+  }
+
+  console.log(
+    `Managed pool migration: ${added} account(s) added.`
+  );
+}
+
+async function importWalmartManagedAccountsOnce() {
+  const managedAccounts =
+    await getManagedAccounts();
+
+  const accounts = [
+    ["thomas535_baker@web.de", "kIY^gjRRfl3B9"],
+    ["diego_myers291@web.de", "IwCiv4nR%^kp"],
+    ["anthony_webb331@web.de", "FQh8YuEoO@n^L"],
+    ["nicholas_walker18@web.de", "e5L#zwRI7FU5"],
+    ["nicholas_dixon663@web.de", "oFU#4gMC#g80w"],
+    ["robert_rodriguez718@web.de", "KvuNZKw^D!E6z"],
+    ["thomas_alvarez205@web.de", "V6gXHaCo2gvy^"],
+    ["emily161_parker@web.de", "Cgkj36n@t$nu"],
+    ["dorothy253_moreno@web.de", "zy8POninOOSR#"],
+    ["anthony_hernandez560@web.de", "0K^j!pIrKQ8hI"],
+    ["alex903_wallace@web.de", "PnChvEK^E1JL"],
+    ["miles155_hill@web.de", "I!VbTZ4QHaTXc"],
+    ["deborah_palmer832@web.de", "6%1#cB1sC#xB"],
+    ["marie_rodriguez696@web.de", "Usjks8^Wams7y"],
+    ["judith610_davis@web.de", "KuQ6Zi@zerl3"],
+    ["joe_jenkins683@web.de", "R@jlAoL1D$m#"],
+    ["owen505_vasquez@web.de", "5L@Mf@$8Ygbv2"],
+    ["martha519_barnes@web.de", "ba%!y^5DJO!9"],
+    ["cheryl333_roberts@web.de", "cUPv0ycg@3#5"],
+    ["chris688_moore@web.de", "dgk0Fx!Q3o7D"],
+    ["joseph_guerrero899@web.de", "355LnP8gLKgV^"],
+    ["christian_guerrero265@web.de", "5ABOi98G#bvn"],
+    ["dorothy_hill645@web.de", "$ZkXJ7rIq9kaw"],
+    ["alexander171_garcia@web.de", "hFkYS9DTNO^9"],
+    ["dorothy717_powell@web.de", "4hYd^GHA51Ud"],
+    ["mark_vasquez836@web.de", "#5k3mi$FYjA^"],
+    ["jack_hall116@web.de", "BY1h2eq%Qm$r"],
+    ["nathaniel706_wallace@web.de", "ViBIblhjF@g%3"],
+    ["andrea_wells291@web.de", "kCd8@qSFeZD$"],
+    ["anthony163_webb@web.de", "!^!%d0H84DTBV"],
+    ["brenda_aguilar985@web.de", "9zLHdhP%pX^g"],
+    ["jane_hayes306@web.de", "6V0ek!HGmtBq9"],
+    ["martha_evans495@web.de", "bnNEL#IvPP63k"],
+    ["jessica_hughes877@web.de", "Z!GSP8rq@MevW"],
+    ["nancy605_alvarez@web.de", "7jEp7CUj5@QvU"],
+    ["jason79_ross@web.de", "Vxb6FLRl2^mV"],
+    ["linda286_adams@web.de", "Kv#iq8Vl!zHa"],
+    ["william269_robinson@web.de", "ewUD4q%%BTGe"],
+    ["martha748_cook@web.de", "1I4LBnc8IU%D8"],
+    ["ruth_collins157@web.de", "b31@Lh6T!ikH"],
+    ["austin45_torres@web.de", "jPhhfG6b2JQ!"],
+    ["lisa_green714@web.de", "g4FSr%ErrXxT"],
+    ["jonathan147_reed@web.de", "75ppCVGn!t3E"],
+    ["deborah398_rogers@web.de", "Nk$LGwbFb34G"],
+    ["joshua_thompson225@web.de", "sp3H6fsCF#MN"],
+    ["jessica240_sanders@web.de", "6ksCDA5Z@FEi$"],
+    ["owen_gray843@web.de", "t@IvWIwtY6i3"],
+    ["laura_sullivan57@web.de", "hKWb0uWt^wG1N"],
+    ["hunter812_barnes@web.de", "!cha6qO!E62%"],
+    ["patricia365_webb@web.de", "KLy9%NF8#EBkd"]
+  ];
+
+  const existingWalmartEmails =
+    new Set();
+
+  for (const account of managedAccounts) {
+    try {
+      if (!account.credentials) {
+        continue;
+      }
+
+      const credentials =
+        decryptJson(
+          account.credentials
+        );
+
+      const walmartEmail =
+        String(
+          credentials?.walmart?.username ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+      if (walmartEmail) {
+        existingWalmartEmails.add(
+          walmartEmail
+        );
+      }
+    } catch {
+      // Ignore unreadable records
+      // during duplicate checking.
+    }
+  }
+
+  const now =
+    new Date().toISOString();
+
+  let added = 0;
+
+  for (const [email, password] of accounts) {
+    const normalizedEmail =
+      email.trim().toLowerCase();
+
+    if (
+      existingWalmartEmails.has(
+        normalizedEmail
+      )
+    ) {
+      continue;
+    }
+
+    const credentials =
+      emptyRetailerCredentials();
+
+    credentials.walmart = {
+      username: email,
+      password
+    };
+
+    managedAccounts.push({
+      id:
+        crypto.randomUUID(),
+
+      profileName:
+        "MANAGED WALMART ACCOUNT",
+
+      accountEmail:
+        "",
+
+      notes:
+        "",
+
+      credentials:
+        encryptJson(
+          credentials
+        ),
+
+      source:
+        "walmart-import",
+
+      createdAt:
+        now,
+
+      updatedAt:
+        now
+    });
+
+    existingWalmartEmails.add(
+      normalizedEmail
+    );
+
+    added += 1;
+  }
+
+  if (added > 0) {
+    await saveManagedAccounts(
+      managedAccounts
+    );
+  }
+
+  console.log(
+    `Walmart managed import: ${added} account(s) added.`
+  );
+}
 
 /* -------------------------------------------------------
    ADMIN FREE MEMBERSHIPS
@@ -15944,6 +16454,10 @@ async function startServer() {
 );
 
     await initializeArrayFile(
+  MANAGED_ACCOUNTS_FILE
+);
+
+    await initializeArrayFile(
   RENTED_MEMBERSHIPS_FILE
 );
 
@@ -15963,6 +16477,12 @@ await initializeArrayFile(
   SUCCESS_CHECKOUTS_FILE
 );
 
+    await importFreeTargetAccountsOnce();
+
+    await migrateFreeAccountsToManagedPoolOnce();
+
+    await importWalmartManagedAccountsOnce();
+    
     app.listen(
       PORT,
       () => {
