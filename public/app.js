@@ -4414,6 +4414,13 @@ function managedMembershipCardHtml(
       ? membership.customerProfile
       : null;
 
+  const card =
+  membership.customerCard &&
+  typeof membership.customerCard ===
+    "object"
+    ? membership.customerCard
+    : null;
+
   const indefinite =
     membership.durationType ===
       "indefinite" ||
@@ -4651,6 +4658,105 @@ function managedMembershipCardHtml(
               </div>
             `
       }
+
+      ${
+  card
+    ? `
+        <div
+          class="retailer-profile-name-field"
+        >
+
+          <p>
+            <strong>
+              CARD INFORMATION
+            </strong>
+          </p>
+
+          ${
+            card.cardLabel
+              ? `
+                  <p>
+                    <strong>
+                      CARD LABEL:
+                    </strong>
+                    ${escapeHtml(
+                      card.cardLabel
+                    )}
+                  </p>
+                `
+              : ""
+          }
+
+          ${
+            card.cardholder
+              ? `
+                  <p>
+                    <strong>
+                      CARDHOLDER:
+                    </strong>
+                    ${escapeHtml(
+                      card.cardholder
+                    )}
+                  </p>
+                `
+              : ""
+          }
+
+          ${
+            card.acoCardNumber
+              ? `
+                  <p>
+                    <strong>
+                      CARD NUMBER:
+                    </strong>
+                    ${escapeHtml(
+                      card.acoCardNumber
+                    )}
+                  </p>
+                `
+              : ""
+          }
+
+          ${
+            card.expMonth ||
+            card.expYear
+              ? `
+                  <p>
+                    <strong>
+                      EXPIRATION:
+                    </strong>
+                    ${escapeHtml(
+                      [
+                        card.expMonth,
+                        card.expYear
+                      ]
+                        .filter(Boolean)
+                        .join("/")
+                    )}
+                  </p>
+                `
+              : ""
+          }
+
+          ${
+            card.securityCode
+              ? `
+                  <p>
+                    <strong>
+                      SECURITY CODE:
+                    </strong>
+                    ${escapeHtml(
+                      card.securityCode
+                    )}
+                  </p>
+                `
+              : ""
+          }
+
+        </div>
+      `
+    : ""
+}
 
     </article>
   `;
