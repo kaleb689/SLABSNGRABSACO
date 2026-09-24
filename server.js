@@ -1332,6 +1332,348 @@ async function requireCustomer(
   }
 }
 
+
+function customerVaultPath(
+  accountId
+) {
+  return path.join(
+    SECRET_DIR,
+    `customer-${String(
+      accountId
+    )}-vault.encrypted.json`
+  );
+}
+
+async function getCustomerVault(
+  accountId
+) {
+  try {
+    const encrypted =
+      await readJson(
+        customerVaultPath(
+          accountId
+        ),
+        null
+      );
+
+    if (!encrypted) {
+      return {
+        paymentMethods: []
+      };
+    }
+
+    const vault =
+      decryptJson(
+        encrypted
+      );
+
+    return {
+      paymentMethods:
+        Array.isArray(
+          vault?.paymentMethods
+        )
+          ? vault.paymentMethods
+          : []
+    };
+  } catch (error) {
+    if (
+      error?.code ===
+      "ENOENT"
+    ) {
+      return {
+        paymentMethods: []
+      };
+    }
+
+    throw error;
+  }
+}
+
+async function saveCustomerVault(
+  accountId,
+  vault
+) {
+  await writeJson(
+    customerVaultPath(
+      accountId
+    ),
+    encryptJson({
+      paymentMethods:
+        Array.isArray(
+          vault?.paymentMethods
+        )
+          ? vault.paymentMethods
+          : []
+    })
+  );
+}
+
+function sanitizeShippingAddress(
+  body,
+  existingId = null
+) {
+  return {
+    id:
+      existingId ||
+      crypto.randomUUID(),
+
+    label:
+      clean(
+        body?.label,
+        80
+      ) ||
+      "Saved Address",
+
+    firstName:
+      clean(
+        body?.firstName,
+        100
+      ),
+
+    lastName:
+      clean(
+        body?.lastName,
+        100
+      ),
+
+    address:
+      clean(
+        body?.address,
+        300
+      ),
+
+    address2:
+      clean(
+        body?.address2,
+        300
+      ),
+
+    city:
+      clean(
+        body?.city,
+        100
+      ),
+
+    state:
+      clean(
+        body?.state,
+        100
+      ),
+
+    zip:
+      clean(
+        body?.zip,
+        30
+      ),
+
+    country:
+      clean(
+        body?.country,
+        100
+      )
+  };
+}
+
+function validShippingAddress(
+  address
+) {
+  return [
+    "label",
+    "firstName",
+    "lastName",
+    "address",
+    "city",
+    "state",
+    "zip",
+    "country"
+  ].every(
+    key =>
+      Boolean(
+        address?.[key]
+      )
+  );
+}
+
+function sanitizeSavedPaymentMethod(
+  body,
+  existing = null
+) {
+  const rawNumber =
+    clean(
+      body?.acoCardNumber,
+      30
+    ).replace(
+      /[^\d]/g,
+      ""
+    );
+
+  return {
+    id:
+      existing?.id ||
+      crypto.randomUUID(),
+
+    cardLabel:
+      clean(
+        body?.cardLabel,
+        100
+      ) ||
+      existing?.cardLabel ||
+      "Payment",
+
+    cardholder:
+      clean(
+        body?.cardholder,
+        150
+      ) ||
+      existing?.cardholder ||
+      "",
+
+    acoCardNumber:
+      rawNumber ||
+      existing?.acoCardNumber ||
+      "",
+
+    expMonth:
+      clean(
+        body?.expMonth,
+        2
+      ) ||
+      existing?.expMonth ||
+      "",
+
+    expYear:
+      clean(
+        body?.expYear,
+        4
+      ) ||
+      existing?.expYear ||
+      "",
+
+    securityCode:
+      String(
+        body?.securityCode ||
+        ""
+      ).trim() ||
+      existing?.securityCode ||
+      "",
+
+    createdAt:
+      existing?.createdAt ||
+      new Date()
+        .toISOString(),
+
+    updatedAt:
+      new Date()
+        .toISOString()
+  };
+}
+
+function validSavedPaymentMethod(
+  method
+) {
+  return (
+    method.cardLabel &&
+    method.cardholder &&
+    /^\d{12,19}$/.test(
+      method.acoCardNumber
+    ) &&
+    /^(0[1-9]|1[0-2])$/.test(
+      method.expMonth
+    ) &&
+    /^\d{4}$/.test(
+      method.expYear
+    )
+  );
+}
+
+function publicSavedPaymentMethod(
+  method,
+  index
+) {
+  const digits =
+    String(
+      method?.acoCardNumber ||
+      ""
+    ).replace(
+      /\D/g,
+      ""
+    );
+
+  const last4 =
+    digits.slice(-4);
+
+  return {
+    id:
+      method.id,
+
+    cardLabel:
+      method.cardLabel ||
+      `Payment ${index + 1}`,
+
+    cardholder:
+      method.cardholder ||
+      "",
+
+    maskedNumber:
+      last4
+        ? `•••• •••• •••• ${last4}`
+        : "Card saved",
+
+    expMonth:
+      method.expMonth ||
+      "",
+
+    expYear:
+      method.expYear ||
+      "",
+
+    securityCodeConfigured:
+      Boolean(
+        method.securityCode
+      ),
+
+    createdAt:
+      method.createdAt ||
+      null,
+
+    updatedAt:
+      method.updatedAt ||
+      null
+  };
+}
+
+function customerSavedAddresses(
+  account
+) {
+  return Array.isArray(
+    account?.shippingAddresses
+  )
+    ? account.shippingAddresses
+    : [];
+}
+
+async function customerSavedDetailsPayload(
+  account
+) {
+  const vault =
+    await getCustomerVault(
+      account.id
+    );
+
+  return {
+    addresses:
+      customerSavedAddresses(
+        account
+      ),
+
+    paymentMethods:
+      vault.paymentMethods.map(
+        publicSavedPaymentMethod
+      )
+  };
+}
+
+
 function publicCustomerAccount(
   account
 ) {
@@ -5779,6 +6121,14 @@ app.get(
       let paidChanged =
         false;
 
+      const [
+        freeAssignmentsForAdmin,
+        rentalAssignmentsForAdmin
+      ] = await Promise.all([
+        getFreeAssignments(),
+        getRentalAssignments()
+      ]);
+
       for (
         const record of records
       ) {
@@ -5892,8 +6242,45 @@ if (
         }
 
 
+        const linkedProfileCount =
+          record.customerAccountId
+            ? (
+                freeAssignmentsForAdmin.filter(
+                  assignment =>
+                    assignment.customerAccountId ===
+                      record.customerAccountId &&
+                    freeAssignmentIsActive(
+                      assignment
+                    )
+                ).length +
+                rentalAssignmentsForAdmin.filter(
+                  assignment =>
+                    assignment.customerAccountId ===
+                      record.customerAccountId &&
+                    rentalAssignmentIsActive(
+                      assignment
+                    )
+                ).length
+              )
+            : 0;
+
+        const paidProfileCount =
+          Math.max(
+            0,
+            Number(
+              record.plan?.profiles ||
+              0
+            ) || 0
+          );
+
         result.push({
           ...record,
+
+          linkedProfileCount,
+
+          totalProfileCount:
+            paidProfileCount +
+            linkedProfileCount,
 
           secrets:
             secrets || null
@@ -10472,6 +10859,312 @@ app.post(
   }
 );
 
+
+/* -------------------------------------------------------
+   ADMIN LINKED MANAGED PROFILES / SAVED DETAILS
+------------------------------------------------------- */
+
+function managedRetailerCredentialsForAdmin(
+  membership
+) {
+  let retailers =
+    emptyRetailerCredentials();
+
+  try {
+    if (membership?.credentials) {
+      retailers =
+        normalizeRetailerCredentials(
+          decryptJson(
+            membership.credentials
+          )
+        );
+    }
+  } catch (error) {
+    console.error(
+      "Managed credential decrypt failed:",
+      membership?.id,
+      error.message
+    );
+  }
+
+  return retailers;
+}
+
+app.get(
+  "/api/admin/submissions/:id/linked-memberships",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const order =
+        (
+          Array.isArray(paid)
+            ? paid
+            : []
+        ).find(
+          item =>
+            String(item.id) ===
+            id
+        );
+
+      const customerAccountId =
+        order?.customerAccountId ||
+        null;
+
+      if (!customerAccountId) {
+        return res.json({
+          ok: true,
+          memberships: []
+        });
+      }
+
+      const [
+        memberships,
+        freeAssignments,
+        rentalAssignments
+      ] = await Promise.all([
+        getManagedAccounts(),
+        getFreeAssignments(),
+        getRentalAssignments()
+      ]);
+
+      const active = [];
+
+      for (const assignment of freeAssignments) {
+        if (
+          assignment.customerAccountId !==
+            customerAccountId ||
+          !freeAssignmentIsActive(
+            assignment
+          )
+        ) {
+          continue;
+        }
+
+        const membership =
+          memberships.find(
+            item =>
+              String(item.id) ===
+              String(
+                assignment.managedAccountId ||
+                assignment.freeMembershipId ||
+                ""
+              )
+          );
+
+        if (!membership) {
+          continue;
+        }
+
+        active.push({
+          id:
+            membership.id,
+
+          assignmentId:
+            assignment.id,
+
+          type:
+            "free",
+
+          profileName:
+            membership.profileName ||
+            "Free Membership",
+
+          accountEmail:
+            membership.accountEmail ||
+            "",
+
+          retailers:
+            managedRetailerCredentialsForAdmin(
+              membership
+            ),
+
+          startsAt:
+            assignment.startsAt ||
+            null,
+
+          expiresAt:
+            assignment.expiresAt ||
+            null
+        });
+      }
+
+      for (const assignment of rentalAssignments) {
+        if (
+          assignment.customerAccountId !==
+            customerAccountId ||
+          !rentalAssignmentIsActive(
+            assignment
+          )
+        ) {
+          continue;
+        }
+
+        const membership =
+          memberships.find(
+            item =>
+              String(item.id) ===
+              String(
+                assignment.managedAccountId ||
+                assignment.rentedMembershipId ||
+                ""
+              )
+          );
+
+        if (!membership) {
+          continue;
+        }
+
+        active.push({
+          id:
+            membership.id,
+
+          assignmentId:
+            assignment.id,
+
+          type:
+            "rented",
+
+          profileName:
+            membership.profileName ||
+            "Rented Membership",
+
+          accountEmail:
+            membership.accountEmail ||
+            "",
+
+          retailers:
+            managedRetailerCredentialsForAdmin(
+              membership
+            ),
+
+          startsAt:
+            assignment.startsAt ||
+            null,
+
+          expiresAt:
+            assignment.expiresAt ||
+            null
+        });
+      }
+
+      return res.json({
+        ok: true,
+        memberships:
+          active
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin linked memberships error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load linked profiles."
+        });
+    }
+  }
+);
+
+async function adminOrderCustomerAccount(
+  orderId
+) {
+  const paid =
+    await readJson(
+      PAID_FILE,
+      []
+    );
+
+  const order =
+    (
+      Array.isArray(paid)
+        ? paid
+        : []
+    ).find(
+      item =>
+        String(item.id) ===
+        String(orderId)
+    );
+
+  if (
+    !order?.customerAccountId
+  ) {
+    return null;
+  }
+
+  const accounts =
+    await getCustomerAccounts();
+
+  return (
+    accounts.find(
+      account =>
+        account.id ===
+        order.customerAccountId
+    ) ||
+    null
+  );
+}
+
+app.get(
+  "/api/admin/submissions/:id/saved-details",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const account =
+        await adminOrderCustomerAccount(
+          req.params.id
+        );
+
+      if (!account) {
+        return res.json({
+          ok: true,
+          addresses: [],
+          paymentMethods: []
+        });
+      }
+
+      const payload =
+        await customerSavedDetailsPayload(
+          account
+        );
+
+      return res.json({
+        ok: true,
+        ...payload
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin saved details load error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load saved customer details."
+        });
+    }
+  }
+);
+
+
 /* -------------------------------------------------------
    ADMIN RETAILER PROFILES
 ------------------------------------------------------- */
@@ -12373,6 +13066,567 @@ app.delete(
     }
   }
 );
+
+
+/* -------------------------------------------------------
+   CUSTOMER SAVED SHIPPING / PAYMENT METHODS
+------------------------------------------------------- */
+
+app.get(
+  "/api/account/saved-details",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const payload =
+        await customerSavedDetailsPayload(
+          req.customerAccount
+        );
+
+      return res.json({
+        ok: true,
+        ...payload
+      });
+    } catch (error) {
+      console.error(
+        "Customer saved details load error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load saved checkout details."
+        });
+    }
+  }
+);
+
+app.post(
+  "/api/account/shipping-addresses",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const accounts =
+        await getCustomerAccounts();
+
+      const index =
+        accounts.findIndex(
+          item =>
+            item.id ===
+            req.customerAccount.id
+        );
+
+      if (index < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account not found."
+          });
+      }
+
+      const address =
+        sanitizeShippingAddress(
+          req.body
+        );
+
+      if (
+        !validShippingAddress(
+          address
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Complete all required shipping address fields."
+          });
+      }
+
+      const addresses =
+        customerSavedAddresses(
+          accounts[index]
+        );
+
+      if (
+        addresses.length >= 20
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "You can save up to 20 shipping addresses."
+          });
+      }
+
+      addresses.push(
+        address
+      );
+
+      accounts[index]
+        .shippingAddresses =
+          addresses;
+
+      accounts[index]
+        .updatedAt =
+          new Date()
+            .toISOString();
+
+      await saveCustomerAccounts(
+        accounts
+      );
+
+      return res.json({
+        ok: true,
+        id:
+          address.id,
+        message:
+          "Shipping address saved."
+      });
+    } catch (error) {
+      console.error(
+        "Save shipping address error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to save shipping address."
+        });
+    }
+  }
+);
+
+app.put(
+  "/api/account/shipping-addresses/:id",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          120
+        );
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const accountIndex =
+        accounts.findIndex(
+          item =>
+            item.id ===
+            req.customerAccount.id
+        );
+
+      if (accountIndex < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account not found."
+          });
+      }
+
+      const addresses =
+        customerSavedAddresses(
+          accounts[
+            accountIndex
+          ]
+        );
+
+      const addressIndex =
+        addresses.findIndex(
+          item =>
+            String(item.id) ===
+            id
+        );
+
+      if (addressIndex < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Shipping address not found."
+          });
+      }
+
+      const next =
+        sanitizeShippingAddress(
+          req.body,
+          id
+        );
+
+      if (
+        !validShippingAddress(
+          next
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Complete all required shipping address fields."
+          });
+      }
+
+      addresses[
+        addressIndex
+      ] = next;
+
+      accounts[
+        accountIndex
+      ].shippingAddresses =
+        addresses;
+
+      accounts[
+        accountIndex
+      ].updatedAt =
+        new Date()
+          .toISOString();
+
+      await saveCustomerAccounts(
+        accounts
+      );
+
+      return res.json({
+        ok: true,
+        message:
+          "Shipping address updated."
+      });
+    } catch (error) {
+      console.error(
+        "Update shipping address error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update shipping address."
+        });
+    }
+  }
+);
+
+app.delete(
+  "/api/account/shipping-addresses/:id",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          120
+        );
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const accountIndex =
+        accounts.findIndex(
+          item =>
+            item.id ===
+            req.customerAccount.id
+        );
+
+      if (accountIndex < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account not found."
+          });
+      }
+
+      const before =
+        customerSavedAddresses(
+          accounts[
+            accountIndex
+          ]
+        );
+
+      const after =
+        before.filter(
+          item =>
+            String(item.id) !==
+            id
+        );
+
+      if (
+        after.length ===
+        before.length
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Shipping address not found."
+          });
+      }
+
+      accounts[
+        accountIndex
+      ].shippingAddresses =
+        after;
+
+      accounts[
+        accountIndex
+      ].updatedAt =
+        new Date()
+          .toISOString();
+
+      await saveCustomerAccounts(
+        accounts
+      );
+
+      return res.json({
+        ok: true,
+        message:
+          "Shipping address deleted."
+      });
+    } catch (error) {
+      console.error(
+        "Delete shipping address error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to delete shipping address."
+        });
+    }
+  }
+);
+
+app.post(
+  "/api/account/payment-methods",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const vault =
+        await getCustomerVault(
+          req.customerAccount.id
+        );
+
+      if (
+        vault.paymentMethods
+          .length >= 20
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "You can save up to 20 payment cards."
+          });
+      }
+
+      const method =
+        sanitizeSavedPaymentMethod(
+          req.body
+        );
+
+      if (
+        !validSavedPaymentMethod(
+          method
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a card label, cardholder, valid card number, expiration month, and expiration year."
+          });
+      }
+
+      vault.paymentMethods.push(
+        method
+      );
+
+      await saveCustomerVault(
+        req.customerAccount.id,
+        vault
+      );
+
+      return res.json({
+        ok: true,
+        id:
+          method.id,
+        message:
+          "Payment card saved."
+      });
+    } catch (error) {
+      console.error(
+        "Save payment method error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to save payment card."
+        });
+    }
+  }
+);
+
+app.put(
+  "/api/account/payment-methods/:id",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          120
+        );
+
+      const vault =
+        await getCustomerVault(
+          req.customerAccount.id
+        );
+
+      const index =
+        vault.paymentMethods
+          .findIndex(
+            item =>
+              String(item.id) ===
+              id
+          );
+
+      if (index < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Payment card not found."
+          });
+      }
+
+      const next =
+        sanitizeSavedPaymentMethod(
+          req.body,
+          vault.paymentMethods[
+            index
+          ]
+        );
+
+      if (
+        !validSavedPaymentMethod(
+          next
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a card label, cardholder, valid card number, expiration month, and expiration year."
+          });
+      }
+
+      vault.paymentMethods[
+        index
+      ] = next;
+
+      await saveCustomerVault(
+        req.customerAccount.id,
+        vault
+      );
+
+      return res.json({
+        ok: true,
+        message:
+          "Payment card updated."
+      });
+    } catch (error) {
+      console.error(
+        "Update payment method error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update payment card."
+        });
+    }
+  }
+);
+
+app.delete(
+  "/api/account/payment-methods/:id",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          120
+        );
+
+      const vault =
+        await getCustomerVault(
+          req.customerAccount.id
+        );
+
+      const before =
+        vault.paymentMethods;
+
+      const after =
+        before.filter(
+          item =>
+            String(item.id) !==
+            id
+        );
+
+      if (
+        after.length ===
+        before.length
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Payment card not found."
+          });
+      }
+
+      vault.paymentMethods =
+        after;
+
+      await saveCustomerVault(
+        req.customerAccount.id,
+        vault
+      );
+
+      return res.json({
+        ok: true,
+        message:
+          "Payment card deleted."
+      });
+    } catch (error) {
+      console.error(
+        "Delete payment method error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to delete payment card."
+        });
+    }
+  }
+);
+
 
 /* -------------------------------------------------------
    CUSTOMER PROFILE / ORDER HELPERS
@@ -18774,6 +20028,29 @@ const ownedOrders =
             }
           );
 
+      const accountStats = {
+        userSince:
+          account.createdAt ||
+          null,
+
+        totalOrders:
+          safeOrders.length,
+
+        lifetimeSpend:
+          safeOrders.reduce(
+            (sum, order) =>
+              sum +
+              Math.max(
+                0,
+                Number(
+                  order?.plan?.amount ||
+                  0
+                ) || 0
+              ),
+            0
+          )
+      };
+
       /*
         Determine the customer's currently usable
         retailer-profile allowance from their active
@@ -18873,6 +20150,8 @@ const ownedOrders =
           publicCustomerAccount(
             account
           ),
+
+        accountStats,
 
         membership,
 
