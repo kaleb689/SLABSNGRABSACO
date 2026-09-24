@@ -7101,6 +7101,846 @@ app.get(
   }
 );
 
+
+/* -------------------------------------------------------
+   ADMIN AVAILABLE MEMBERSHIP INVENTORY
+------------------------------------------------------- */
+
+async function getAvailableManagedMembershipRecords() {
+  const [
+    managedAccounts,
+    freeAssignments,
+    rentalAssignments
+  ] = await Promise.all([
+    getManagedAccounts(),
+    getFreeAssignments(),
+    getRentalAssignments()
+  ]);
+
+  const inUseIds =
+    new Set();
+
+  for (const assignment of freeAssignments) {
+    if (!freeAssignmentIsActive(assignment)) {
+      continue;
+    }
+
+    const id =
+      assignment.managedAccountId ||
+      assignment.freeMembershipId ||
+      "";
+
+    if (id) {
+      inUseIds.add(String(id));
+    }
+  }
+
+  for (const assignment of rentalAssignments) {
+    if (!rentalAssignmentIsActive(assignment)) {
+      continue;
+    }
+
+    const id =
+      assignment.managedAccountId ||
+      assignment.rentedMembershipId ||
+      "";
+
+    if (id) {
+      inUseIds.add(String(id));
+    }
+  }
+
+  return managedAccounts
+    .filter(
+      account =>
+        !inUseIds.has(
+          String(account.id)
+        )
+    )
+    .map(account => {
+      let retailers =
+        emptyRetailerCredentials();
+
+      try {
+        if (account.credentials) {
+          retailers =
+            normalizeRetailerCredentials(
+              decryptJson(
+                account.credentials
+              )
+            );
+        }
+      } catch (error) {
+        console.error(
+          "Available membership decrypt error:",
+          account.id,
+          error.message
+        );
+      }
+
+      const targetEmail =
+        clean(
+          retailers?.target?.username,
+          254
+        );
+
+      const walmartEmail =
+        clean(
+          retailers?.walmart?.username,
+          254
+        );
+
+      const displayEmail =
+        clean(
+          account.accountEmail,
+          254
+        ) ||
+        targetEmail ||
+        walmartEmail ||
+        "";
+
+      return {
+        id:
+          account.id,
+
+        profileName:
+          account.profileName ||
+          "AVAILABLE MEMBERSHIP",
+
+        accountEmail:
+          account.accountEmail ||
+          "",
+
+        displayEmail,
+
+        notes:
+          account.notes ||
+          "",
+
+        createdAt:
+          account.createdAt ||
+          null,
+
+        updatedAt:
+          account.updatedAt ||
+          null,
+
+        retailers
+      };
+    });
+}
+
+
+app.get(
+  "/api/admin/available-memberships",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const memberships =
+        await getAvailableManagedMembershipRecords();
+
+      return res.json({
+        ok: true,
+        memberships
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin available membership list error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load available memberships."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/available-memberships",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const profileName =
+        clean(
+          req.body?.profileName,
+          100
+        ) ||
+        "AVAILABLE MEMBERSHIP";
+
+      const accountEmail =
+        clean(
+          req.body?.accountEmail,
+          200
+        );
+
+      const notes =
+        clean(
+          req.body?.notes,
+          500
+        );
+
+      const submitted =
+        req.body?.retailers &&
+        typeof req.body.retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      const credentials =
+        emptyRetailerCredentials();
+
+      for (const retailer of RETAILER_KEYS) {
+        const submittedRetailer =
+          submitted[retailer] &&
+          typeof submitted[retailer] ===
+            "object"
+            ? submitted[retailer]
+            : {};
+
+        const username =
+          clean(
+            submittedRetailer.username,
+            254
+          );
+
+        const password =
+          String(
+            submittedRetailer.password ||
+            ""
+          );
+
+        if (password.length > 512) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "A retailer password is too long."
+            });
+        }
+
+        credentials[retailer] = {
+          username,
+          password
+        };
+      }
+
+      const memberships =
+        await getManagedAccounts();
+
+      const now =
+        new Date()
+          .toISOString();
+
+      const record = {
+        id:
+          crypto.randomUUID(),
+
+        profileName,
+        accountEmail,
+        notes,
+
+        credentials:
+          encryptJson(
+            credentials
+          ),
+
+        source:
+          "admin-available-inventory",
+
+        createdAt:
+          now,
+
+        updatedAt:
+          now
+      };
+
+      memberships.push(record);
+
+      await saveManagedAccounts(
+        memberships
+      );
+
+      return res.json({
+        ok: true,
+        id:
+          record.id,
+        message:
+          "Available membership added successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin available membership create error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to add available membership."
+        });
+    }
+  }
+);
+
+
+app.put(
+  "/api/admin/available-memberships/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const memberships =
+        await getManagedAccounts();
+
+      const index =
+        memberships.findIndex(
+          item =>
+            String(item.id) ===
+            id
+        );
+
+      if (index < 0) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Available membership could not be found."
+          });
+      }
+
+      const existing =
+        memberships[index];
+
+      let existingCredentials =
+        emptyRetailerCredentials();
+
+      try {
+        if (existing.credentials) {
+          existingCredentials =
+            normalizeRetailerCredentials(
+              decryptJson(
+                existing.credentials
+              )
+            );
+        }
+      } catch {}
+
+      const submitted =
+        req.body?.retailers &&
+        typeof req.body.retailers ===
+          "object"
+          ? req.body.retailers
+          : {};
+
+      const credentials =
+        emptyRetailerCredentials();
+
+      for (const retailer of RETAILER_KEYS) {
+        const input =
+          submitted[retailer] &&
+          typeof submitted[retailer] ===
+            "object"
+            ? submitted[retailer]
+            : {};
+
+        const username =
+          clean(
+            input.username,
+            254
+          );
+
+        const password =
+          String(
+            input.password ||
+            ""
+          );
+
+        if (password.length > 512) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "A retailer password is too long."
+            });
+        }
+
+        credentials[retailer] = {
+          username:
+            username ||
+            existingCredentials[retailer]
+              ?.username ||
+            "",
+
+          password:
+            password ||
+            existingCredentials[retailer]
+              ?.password ||
+            ""
+        };
+      }
+
+      memberships[index] = {
+        ...existing,
+
+        profileName:
+          clean(
+            req.body?.profileName,
+            100
+          ) ||
+          existing.profileName ||
+          "AVAILABLE MEMBERSHIP",
+
+        accountEmail:
+          clean(
+            req.body?.accountEmail,
+            200
+          ) ||
+          existing.accountEmail ||
+          "",
+
+        notes:
+          clean(
+            req.body?.notes,
+            500
+          ),
+
+        credentials:
+          encryptJson(
+            credentials
+          ),
+
+        updatedAt:
+          new Date()
+            .toISOString()
+      };
+
+      await saveManagedAccounts(
+        memberships
+      );
+
+      return res.json({
+        ok: true,
+        message:
+          "Available membership updated successfully."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin available membership update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update available membership."
+        });
+    }
+  }
+);
+
+
+app.delete(
+  "/api/admin/available-memberships/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const freeAssignments =
+        await getFreeAssignments();
+
+      const rentalAssignments =
+        await getRentalAssignments();
+
+      if (
+        currentFreeAssignment(
+          freeAssignments,
+          id
+        ) ||
+        currentRentalAssignment(
+          rentalAssignments,
+          id
+        )
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This membership is currently assigned and cannot be deleted from Available Memberships."
+          });
+      }
+
+      const memberships =
+        await getManagedAccounts();
+
+      const next =
+        memberships.filter(
+          item =>
+            String(item.id) !== id
+        );
+
+      if (
+        next.length ===
+        memberships.length
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Available membership could not be found."
+          });
+      }
+
+      await saveManagedAccounts(next);
+
+      return res.json({
+        ok: true,
+        message:
+          "Available membership deleted."
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin available membership delete error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to delete available membership."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/available-memberships/assign",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const customerAccountId =
+        clean(
+          req.body?.customerAccountId,
+          150
+        );
+
+      const retailer =
+        normalizeRentalRetailer(
+          req.body?.retailer
+        );
+
+      const assignmentType =
+        String(
+          req.body?.assignmentType ||
+          ""
+        )
+          .trim()
+          .toLowerCase();
+
+      const quantity =
+        Math.min(
+          50,
+          Math.max(
+            1,
+            Math.floor(
+              Number(
+                req.body?.quantity ||
+                1
+              )
+            )
+          )
+        );
+
+      const durationType =
+        normalizeSpecialProfileDuration(
+          req.body?.durationType
+        );
+
+      if (
+        !customerAccountId ||
+        !retailer ||
+        ![
+          "free",
+          "rented"
+        ].includes(
+          assignmentType
+        ) ||
+        !durationType
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose a customer, retailer, assignment type, quantity, and duration."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const paidRecord =
+        paidRecords.find(
+          record =>
+            String(
+              record.customerAccountId ||
+              ""
+            ) ===
+              String(
+                customerAccountId
+              ) &&
+            subscriptionAllowsProfiles(
+              record
+            )
+        );
+
+      if (!paidRecord) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "Available memberships can only be assigned to an active paid customer."
+          });
+      }
+
+      const available =
+        await getAvailableManagedAccountsForRetailer(
+          retailer
+        );
+
+      if (
+        available.length <
+        quantity
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `Only ${available.length} ${retailer} membership${available.length === 1 ? "" : "s"} are currently available.`
+          });
+      }
+
+      const now =
+        new Date();
+
+      const startsAt =
+        now.toISOString();
+
+      const expiresAt =
+        specialProfileExpiresAt(
+          durationType,
+          now
+        );
+
+      const customerProfile =
+        sanitizeProfile(
+          paidRecord.profile ||
+          {}
+        );
+
+      const paidSecrets =
+        await loadEncryptedPackage(
+          paidRecord.id
+        );
+
+      if (
+        assignmentType ===
+        "free"
+      ) {
+        const assignments =
+          await getFreeAssignments();
+
+        for (
+          const account of
+          available.slice(
+            0,
+            quantity
+          )
+        ) {
+          assignments.push({
+            id:
+              crypto.randomUUID(),
+
+            freeMembershipId:
+              account.id,
+
+            managedAccountId:
+              account.id,
+
+            customerAccountId,
+
+            paidSubmissionId:
+              paidRecord.id,
+
+            active:
+              true,
+
+            durationType,
+
+            startsAt,
+
+            expiresAt,
+
+            customerProfile,
+
+            customerSecrets:
+              paidSecrets
+                ? encryptJson(
+                    paidSecrets
+                  )
+                : null,
+
+            createdAt:
+              startsAt,
+
+            updatedAt:
+              startsAt,
+
+            endedAt:
+              null,
+
+            endReason:
+              null
+          });
+        }
+
+        await saveFreeAssignments(
+          assignments
+        );
+
+      } else {
+        const assignments =
+          await getRentalAssignments();
+
+        for (
+          const account of
+          available.slice(
+            0,
+            quantity
+          )
+        ) {
+          assignments.push({
+            id:
+              crypto.randomUUID(),
+
+            rentedMembershipId:
+              account.id,
+
+            managedAccountId:
+              account.id,
+
+            customerAccountId,
+
+            paidSubmissionId:
+              paidRecord.id,
+
+            active:
+              true,
+
+            durationType,
+
+            startsAt,
+
+            expiresAt,
+
+            customerProfile,
+
+            customerSecrets:
+              paidSecrets
+                ? encryptJson(
+                    paidSecrets
+                  )
+                : null,
+
+            rentalRetailer:
+              retailer,
+
+            stripeSubscriptionId:
+              null,
+
+            stripeCustomerId:
+              paidRecord
+                .stripeCustomerId ||
+              null,
+
+            createdAt:
+              startsAt,
+
+            updatedAt:
+              startsAt,
+
+            endedAt:
+              null,
+
+            endReason:
+              null
+          });
+        }
+
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      return res.json({
+        ok: true,
+
+        assigned:
+          quantity,
+
+        assignmentType,
+        retailer,
+
+        message:
+          `${quantity} available membership${quantity === 1 ? "" : "s"} assigned successfully.`
+      });
+
+    } catch (error) {
+      console.error(
+        "Available membership assignment error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to assign available memberships."
+        });
+    }
+  }
+);
+
+
 /* -------------------------------------------------------
    ADMIN FREE MEMBERSHIPS
 ------------------------------------------------------- */
@@ -7283,7 +8123,17 @@ app.get(
         });
 
       const result =
-        memberships.map(
+        memberships
+          .filter(
+            membership =>
+              Boolean(
+                currentFreeAssignment(
+                  assignments,
+                  membership.id
+                )
+              )
+          )
+          .map(
           membership => {
             const assignment =
               currentFreeAssignment(
@@ -8692,7 +9542,17 @@ app.get(
         });
 
       const result =
-        memberships.map(
+        memberships
+          .filter(
+            membership =>
+              Boolean(
+                currentRentalAssignment(
+                  assignments,
+                  membership.id
+                )
+              )
+          )
+          .map(
           membership => {
             const assignment =
               currentRentalAssignment(
@@ -13083,6 +13943,70 @@ async function saveSuccessCheckouts(
   );
 }
 
+
+async function recordSuccessCheckout(
+  record
+) {
+  const safeRecord =
+    safeSuccessCheckout(
+      record
+    );
+
+  if (
+    !safeRecord.id ||
+    !record?.customerAccountId
+  ) {
+    throw new Error(
+      "Success checkout record is missing its ID or customer account."
+    );
+  }
+
+  const records =
+    await getSuccessCheckouts();
+
+  const duplicate =
+    records.some(
+      item =>
+        String(item.id) ===
+        String(safeRecord.id)
+    );
+
+  if (duplicate) {
+    return false;
+  }
+
+  const storedRecord = {
+    ...safeRecord,
+
+    customerAccountId:
+      String(
+        record.customerAccountId
+      )
+  };
+
+  records.push(
+    storedRecord
+  );
+
+  await saveSuccessCheckouts(
+    records
+  );
+
+  try {
+    await sendDiscordSuccessNotification(
+      storedRecord
+    );
+  } catch (error) {
+    console.error(
+      "Discord success notification failed:",
+      error.message
+    );
+  }
+
+  return true;
+}
+
+
 function normalizeSuccessRetailer(
   value
 ) {
@@ -13282,6 +14206,166 @@ function safeSuccessCheckout(
       )
   };
 }
+
+
+async function sendDiscordSuccessNotification(
+  record
+) {
+  const webhookUrl =
+    String(
+      process.env
+        .DISCORD_SUCCESS_WEBHOOK_URL ||
+      ""
+    ).trim();
+
+  if (!webhookUrl) {
+    return false;
+  }
+
+  const safeRecord =
+    safeSuccessCheckout(
+      record
+    );
+
+  const items =
+    Array.isArray(
+      safeRecord.items
+    )
+      ? safeRecord.items
+      : [];
+
+  const itemLines =
+    items.length
+      ? items
+          .slice(0, 10)
+          .map(
+            item =>
+              `• ${item.name} ×${item.quantity}`
+          )
+          .join("\n")
+      : "Purchase confirmed";
+
+  const firstImage =
+    items.find(
+      item =>
+        item.imageUrl
+    )?.imageUrl ||
+    null;
+
+  const embed = {
+    title:
+      "NEW CHECKOUT SUCCESS",
+
+    description:
+      itemLines,
+
+    color:
+      1231359,
+
+    fields: [
+      {
+        name:
+          "Retailer",
+        value:
+          safeRecord.retailer ||
+          "Retailer",
+        inline:
+          true
+      },
+      {
+        name:
+          "Quantity",
+        value:
+          String(
+            safeRecord.itemCount ||
+            items.reduce(
+              (sum, item) =>
+                sum +
+                Number(
+                  item.quantity ||
+                  0
+                ),
+              0
+            )
+          ),
+        inline:
+          true
+      },
+      {
+        name:
+          "Order Value",
+        value:
+          `$${Number(
+            safeRecord.orderTotal ||
+            0
+          ).toFixed(2)}`,
+        inline:
+          true
+      }
+    ],
+
+    timestamp:
+      safeRecord.checkoutAt ||
+      new Date()
+        .toISOString(),
+
+    footer: {
+      text:
+        "SLABS N GRABS ACO • Personal customer information hidden"
+    }
+  };
+
+  if (firstImage) {
+    embed.image = {
+      url:
+        firstImage
+    };
+  }
+
+  const response =
+    await fetch(
+      webhookUrl,
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+
+        body:
+          JSON.stringify({
+            username:
+              "SLABS N GRABS ACO Success",
+
+            embeds: [
+              embed
+            ],
+
+            allowed_mentions: {
+              parse: []
+            }
+          })
+      }
+    );
+
+  if (!response.ok) {
+    const detail =
+      await response
+        .text()
+        .catch(
+          () => ""
+        );
+
+    throw new Error(
+      `Discord success webhook failed (${response.status}) ${detail.slice(0, 300)}`
+    );
+  }
+
+  return true;
+}
+
 
 function successDateKey(
   value
