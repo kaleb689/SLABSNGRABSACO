@@ -9346,3 +9346,54 @@ select:focus {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* =========================================================
+   OG MEMBER BADGE
+   ========================================================= */
+
+.account-identity-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.account-identity-line h3 {
+  margin: 0;
+}
+
+.account-identity-email {
+  margin: 5px 0 0;
+  color: #b3c2d2;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.og-member-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 204, 79, .62);
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 211, 93, .19),
+      rgba(255, 166, 0, .075)
+    );
+  color: #ffd86a;
+  box-shadow:
+    0 0 20px rgba(255, 196, 64, .11);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .9px;
+  white-space: nowrap;
+}
+
+.og-member-badge[hidden] {
+  display: none !important;
+}
