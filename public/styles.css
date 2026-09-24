@@ -11278,3 +11278,30 @@ select:focus {
   font-size: 14px;
   font-weight: 800;
 }
+
+
+/* ======================================================
+   PAID PROFILE MISSING-INFORMATION TRACKER
+====================================================== */
+
+.paid-profile-missing-tracker {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 7px;
+  padding: 6px 9px;
+  border: 1px solid #1f7057;
+  border-radius: 999px;
+  background: #0b2a20;
+  color: #63e3ad;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .35px;
+}
+
+.paid-profile-missing-tracker.has-missing {
+  border-color: #8a6221;
+  background: #2a1e08;
+  color: #ffd262;
+}
+
