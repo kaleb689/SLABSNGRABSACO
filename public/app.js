@@ -14,6 +14,29 @@ const RENTAL_PRICING = {
   15: { "1_drop": 30, "1_week": 75, "1_month": 180 }
 };
 
+const ADMIN_PREVIEW_PARAMS =
+  new URLSearchParams(
+    window.location.search
+  );
+
+const ADMIN_PREVIEW_MODE =
+  ADMIN_PREVIEW_PARAMS.get(
+    "adminPreview"
+  ) === "1";
+
+const ADMIN_PREVIEW_TIER =
+  Math.min(
+    7,
+    Math.max(
+      1,
+      Number(
+        ADMIN_PREVIEW_PARAMS.get(
+          "adminPreviewTier"
+        ) || 4
+      ) || 4
+    )
+  );
+
 const savedTier = Number(
   localStorage.getItem("sng_selected_tier")
 );
@@ -759,6 +782,26 @@ function updatePricingUpgradeButtons() {
       0
     );
 
+  if (ADMIN_PREVIEW_MODE && targetPlan) {
+    state.membership = {
+      ...(state.membership || {}),
+      tier,
+      planName: targetPlan.name,
+      amount: targetPlan.amount,
+      profiles: targetPlan.profiles,
+      status: "active"
+    };
+    state.retailerAllowance = targetPlan.profiles;
+    renderMembership(state.membership);
+    renderRetailerProfiles();
+    updatePricingUpgradeButtons();
+    showAccountMessage(
+      `Preview switched to ${targetPlan.name}. No Stripe charge was created.`,
+      "success"
+    );
+    return;
+  }
+
   document
     .querySelectorAll(
       "[data-select]"
@@ -1229,6 +1272,13 @@ async function checkoutRentalCart() {
     state.rentalCart;
 
   if (!rental) return;
+
+  if (ADMIN_PREVIEW_MODE) {
+    window.alert(
+      "Admin User View preview: Stripe checkout is disabled so no real payment can be created."
+    );
+    return;
+  }
 
   const button =
     document.getElementById(
@@ -1837,6 +1887,195 @@ if (paymentStatus === "cancelled") {
 
 
 /* =====================================================
+   ADMIN USER VIEW PREVIEW
+===================================================== */
+
+function adminPreviewDateFromNow(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
+
+function ensureAdminPreviewBanner() {
+  if (!ADMIN_PREVIEW_MODE) return;
+  if (document.getElementById("admin-user-preview-banner")) return;
+
+  const style = document.createElement("style");
+  style.textContent = `
+    #admin-user-preview-banner {
+      position: fixed;
+      z-index: 99999;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: calc(100vw - 24px);
+      padding: 9px 14px;
+      border: 1px solid rgba(18,201,255,.72);
+      border-radius: 999px;
+      background: rgba(3,12,20,.94);
+      color: #dff8ff;
+      box-shadow: 0 0 28px rgba(18,201,255,.25);
+      backdrop-filter: blur(12px);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .55px;
+      white-space: nowrap;
+    }
+    #admin-user-preview-banner strong { color: #29d6ff; }
+    #admin-user-preview-banner button {
+      border: 0;
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      font: inherit;
+      cursor: pointer;
+    }
+    @media (max-width: 650px) {
+      #admin-user-preview-banner {
+        top: 8px;
+        font-size: 9px;
+        gap: 6px;
+        padding: 7px 10px;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+
+  const banner = document.createElement("div");
+  banner.id = "admin-user-preview-banner";
+  banner.innerHTML = `
+    <strong>ADMIN USER VIEW</strong>
+    <span>PREVIEW DATA ONLY · ${escapeHtml(PLANS[ADMIN_PREVIEW_TIER]?.name || "Paid Member")}</span>
+    <button type="button" id="admin-preview-close">CLOSE</button>
+  `;
+  document.body.appendChild(banner);
+
+  document
+    .getElementById("admin-preview-close")
+    ?.addEventListener(
+      "click",
+      () => window.close()
+    );
+}
+
+function buildAdminPreviewProfile() {
+  const plan = PLANS[ADMIN_PREVIEW_TIER] || PLANS[4];
+  const now = new Date().toISOString();
+  const periodEnd = adminPreviewDateFromNow(30);
+
+  state.customer = {
+    id: "ADMIN-PREVIEW",
+    email: "admin-preview@slabsngrabsaco.com",
+    emailVerifiedAt: now
+  };
+
+  state.membership = {
+    tier: ADMIN_PREVIEW_TIER,
+    planName: plan.name,
+    amount: plan.amount,
+    profiles: plan.profiles,
+    status: "active",
+    currentPeriodStart: now,
+    currentPeriodEnd: periodEnd,
+    subscriptionEndDate: periodEnd,
+    cancelAtPeriodEnd: false
+  };
+
+  state.orders = [
+    {
+      orderNumber: "PREVIEW-1001",
+      tier: ADMIN_PREVIEW_TIER,
+      planName: plan.name,
+      amount: plan.amount,
+      profiles: plan.profiles,
+      status: "active",
+      paidAt: now,
+      currentPeriodEnd: periodEnd,
+      subscriptionEndDate: periodEnd
+    }
+  ];
+
+  state.profileLoaded = true;
+  state.retailerAllowance = plan.profiles;
+  state.retailerProfiles = [];
+  state.retailerProfilesLoaded = true;
+  state.specialProfiles = [];
+  state.freeMemberships = [];
+  state.rentedMemberships = [];
+
+  showSignedIn();
+  renderAccountHeader(state.customer);
+  renderMembership(state.membership);
+  updatePricingUpgradeButtons();
+  renderOrders(state.orders);
+  populateEditOrderSelect(state.orders);
+  renderRetailerProfiles();
+  ensureAdminPreviewBanner();
+
+  showAccountMessage(
+    "Admin User View is active. This is preview data only, and payment actions are disabled.",
+    "info"
+  );
+
+  loadManagedAvailabilityCustomer();
+}
+
+function adminPreviewSuccessData() {
+  const now = new Date();
+  const yesterday = new Date(now.getTime() - 86400000);
+  const key = date => date.toISOString().slice(0, 10);
+
+  return {
+    ok: true,
+    sync: {
+      status: "Preview connected",
+      lastSyncedAt: now.toISOString()
+    },
+    summary: {
+      totalCheckouts: 2,
+      totalItems: 5,
+      checkoutValue: 214.95,
+      bestDay: 1
+    },
+    activity: [
+      { date: key(yesterday), count: 1, value: 94.98 },
+      { date: key(now), count: 1, value: 119.97 }
+    ],
+    recentCheckouts: [
+      {
+        id: "PREVIEW-CHECKOUT-1",
+        retailer: "Target",
+        orderNumber: "PREVIEW-TGT-1001",
+        checkoutAt: now.toISOString(),
+        itemCount: 3,
+        orderTotal: 119.97,
+        status: "confirmed",
+        items: [
+          { name: "Preview Product", quantity: 3, price: 39.99, imageUrl: null }
+        ]
+      },
+      {
+        id: "PREVIEW-CHECKOUT-2",
+        retailer: "Walmart",
+        orderNumber: "PREVIEW-WMT-1002",
+        checkoutAt: yesterday.toISOString(),
+        itemCount: 2,
+        orderTotal: 94.98,
+        status: "confirmed",
+        items: [
+          { name: "Preview Product", quantity: 2, price: 47.49, imageUrl: null }
+        ]
+      }
+    ]
+  };
+}
+
+
+/* =====================================================
    CUSTOMER ACCOUNT UI
 ===================================================== */
 
@@ -2315,6 +2554,13 @@ forgotPasswordForm
     "submit",
     async event => {
       event.preventDefault();
+
+      if (ADMIN_PREVIEW_MODE) {
+        window.alert(
+          "Admin User View preview: membership checkout is disabled so no real Stripe subscription can be created."
+        );
+        return;
+      }
 
       clearAccountMessage();
 
@@ -6172,6 +6418,13 @@ container.innerHTML = `
 async function loadRetailerProfiles(
   force = false
 ) {
+  if (ADMIN_PREVIEW_MODE) {
+    state.retailerProfiles = [];
+    state.specialProfiles = [];
+    state.retailerProfilesLoaded = true;
+    renderRetailerProfiles();
+    return;
+  }
   if (
     state.retailerProfilesLoaded &&
     !force
@@ -6336,6 +6589,11 @@ state.specialProfiles =
 }
 
 async function loadManagedMemberships() {
+  if (ADMIN_PREVIEW_MODE) {
+    state.freeMemberships = [];
+    state.rentedMemberships = [];
+    return;
+  }
   try {
     const [
       freeResponse,
@@ -8933,6 +9191,13 @@ function renderSuccessError(
 async function loadSuccessDashboard(
   force = false
 ) {
+  if (ADMIN_PREVIEW_MODE) {
+    successState.data = adminPreviewSuccessData();
+    successState.loaded = true;
+    successState.loading = false;
+    renderSuccessDashboard(successState.data);
+    return;
+  }
   if (
     successState.loading
   ) {
@@ -9144,6 +9409,10 @@ document
 async function loadMemberProfile(
   force = false
 ) {
+  if (ADMIN_PREVIEW_MODE) {
+    buildAdminPreviewProfile();
+    return;
+  }
   if (
     state.profileLoaded &&
     !force &&
@@ -9301,6 +9570,11 @@ renderPricing();
 updateSelectedPlan();
 
 updateCart();
+
+if (ADMIN_PREVIEW_MODE) {
+  ensureAdminPreviewBanner();
+}
+
 
 
 const initialPage =
