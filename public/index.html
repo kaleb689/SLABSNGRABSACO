@@ -2827,6 +2827,22 @@
             />
           </label>
 
+          <label>
+            Discord Username
+            <input
+              type="text"
+              name="discordUsername"
+              autocomplete="off"
+              maxlength="100"
+              placeholder="Example: kaleb689"
+            />
+            <small>
+              Used for action-needed Discord messages.
+            </small>
+          </label>
+
+          
+
           <button
             type="submit"
             class="primary full"
@@ -3084,6 +3100,19 @@
         data-account-tab="availability"
       >
         Rental Availability
+      </button>
+
+      <button
+        type="button"
+        class="account-tab account-notifications-tab"
+        data-account-tab="notifications"
+      >
+        Notifications
+        <span
+          id="account-notification-light"
+          class="account-notification-light clear"
+          aria-label="No notifications"
+        ></span>
       </button>
 
       <button
@@ -4517,6 +4546,58 @@
 
 
     <!-- =================================================
+         NOTIFICATIONS
+    ================================================== -->
+
+    <div
+      id="account-tab-notifications"
+      class="account-tab-panel"
+      data-account-panel="notifications"
+      hidden
+    >
+      <div class="account-card customer-notifications-card">
+        <div class="account-card-heading">
+          <div>
+            <span class="eyebrow">ACCOUNT NOTIFICATIONS</span>
+            <h3>Notifications</h3>
+            <p class="account-muted">
+              Important profile requests and direct messages from SLABS N GRABS ACO appear here.
+            </p>
+          </div>
+
+          <div class="customer-notification-status">
+            <span
+              id="customer-notification-status-light"
+              class="account-notification-light clear"
+            ></span>
+
+            <strong id="customer-notification-status-text">
+              No notifications
+            </strong>
+          </div>
+        </div>
+
+        <div
+          id="customer-notifications-list"
+          class="customer-notifications-list"
+        >
+          <p class="account-muted">
+            No notifications.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          id="clear-customer-notifications"
+          class="secondary account-action-button"
+        >
+          Clear Notifications
+        </button>
+      </div>
+    </div>
+
+
+    <!-- =================================================
          ACCOUNT & SECURITY
     ================================================== -->
 
@@ -4567,6 +4648,45 @@
         <div class="account-card">
 
           <span class="eyebrow">
+            DISCORD
+          </span>
+
+          <h3>
+            Discord Notifications
+          </h3>
+
+          <p class="account-muted">
+            Add your Discord username so action-needed Discord messages can reference you.
+          </p>
+
+          <form id="discord-settings-form">
+            <label>
+              Discord Username
+              <input
+                type="text"
+                name="discordUsername"
+                maxlength="100"
+                autocomplete="off"
+                placeholder="Example: kaleb689"
+              />
+            </label>
+
+            
+
+            <button
+              type="submit"
+              class="secondary account-action-button"
+            >
+              Save Discord Info
+            </button>
+          </form>
+
+        </div>
+
+
+        <div class="account-card">
+
+          <span class="eyebrow">
             PASSWORD
           </span>
 
@@ -4609,16 +4729,15 @@
         </p>
 
         <p class="account-muted">
-          Existing ACO passwords and full ACO card
-          numbers are not returned to the customer
-          dashboard. Sensitive fields can only be
-          replaced.
+          Sensitive account information is shown only
+          inside your authenticated account and should
+          be viewed only when needed.
         </p>
 
         <p class="account-muted">
-          Saved retailer passwords are also never
-          displayed back to the customer after they
-          have been stored.
+          Saved retailer passwords can be revealed
+          from your authenticated profile using the
+          Show / Hide controls.
         </p>
 
         <p class="account-muted">
@@ -4637,6 +4756,50 @@
 
 
 </main>
+
+
+<!-- =====================================================
+     CUSTOMER ACTION NEEDED POPUP
+===================================================== -->
+
+<div
+  id="customer-notification-popup"
+  class="customer-notification-popup"
+  hidden
+  aria-live="polite"
+>
+  <div class="customer-notification-popup-card">
+    <span class="eyebrow">
+      ACTION NEEDED
+    </span>
+
+    <h3 id="customer-notification-popup-title">
+      Notification
+    </h3>
+
+    <div
+      id="customer-notification-popup-message"
+      class="customer-notification-popup-message"
+    ></div>
+
+    <a
+      href="#my-profile"
+      data-page="my-profile"
+      class="primary full"
+      id="customer-notification-open-profile"
+    >
+      Open Profile Page
+    </a>
+
+    <button
+      type="button"
+      class="secondary full"
+      id="close-customer-notification-popup"
+    >
+      Close Notification
+    </button>
+  </div>
+</div>
 
 
 <!-- =====================================================
