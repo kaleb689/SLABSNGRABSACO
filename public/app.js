@@ -2729,7 +2729,8 @@ showPass?.addEventListener(
 
 /* =====================================================
    GLOBAL CUSTOMER SHOW / HIDE
-   Handles dynamically rendered profile password fields.
+   One delegated handler for every dynamically rendered
+   customer password / sensitive input.
 ===================================================== */
 
 document.addEventListener(
@@ -2738,10 +2739,12 @@ document.addEventListener(
     const button =
       event.target.closest(
         [
+          "#show-pass",
+          ".show-pass",
           "[data-retailer-password-toggle]",
           ".retailer-password-toggle",
-          "#show-pass",
-          "[data-customer-password-toggle]"
+          "[data-customer-password-toggle]",
+          "[data-customer-sensitive-toggle]"
         ].join(",")
       );
 
@@ -2754,13 +2757,18 @@ document.addEventListener(
         [
           ".retailer-password-input-wrap",
           ".password-row",
-          ".customer-sensitive-row"
+          ".customer-sensitive-row",
+          ".admin-sensitive-input-row"
         ].join(",")
       );
 
     const input =
       wrap?.querySelector(
-        'input[type="password"], input[type="text"]'
+        [
+          "[data-customer-sensitive-input]",
+          'input[type="password"]',
+          'input[type="text"]'
+        ].join(",")
       );
 
     if (!input) {
@@ -2769,19 +2777,34 @@ document.addEventListener(
 
     event.preventDefault();
     event.stopPropagation();
+    event.stopImmediatePropagation();
 
-    const showing =
+    const currentlyVisible =
       input.type === "text";
 
-    input.type =
-      showing
-        ? "password"
-        : "text";
+    try {
+      input.type =
+        currentlyVisible
+          ? "password"
+          : "text";
+    } catch {
+      return;
+    }
+
+    const nowVisible =
+      input.type === "text";
 
     button.textContent =
-      showing
-        ? "Show"
-        : "Hide";
+      nowVisible
+        ? "Hide"
+        : "Show";
+
+    button.setAttribute(
+      "aria-label",
+      nowVisible
+        ? "Hide sensitive information"
+        : "Show sensitive information"
+    );
   },
   true
 );
@@ -6979,9 +7002,16 @@ function retailerFieldsHtml(
   const username =
     savedRetailer.username || "";
 
+  const savedPassword =
+    String(
+      savedRetailer.password ||
+      ""
+    );
+
   const passwordConfigured =
     Boolean(
-      savedRetailer.passwordConfigured
+      savedRetailer.passwordConfigured ||
+      savedPassword
     );
 
   return `
@@ -7051,15 +7081,19 @@ function retailerFieldsHtml(
               name="${escapeHtml(
                 retailer.key
               )}Password"
-              autocomplete="new-password"
+              value="${escapeHtml(
+                savedPassword
+              )}"
+              autocomplete="off"
               maxlength="512"
               placeholder="${
                 passwordConfigured
-                  ? "Leave blank to keep saved password"
+                  ? "Saved password"
                   : `Enter ${escapeHtml(
                       retailer.name
                     )} password`
               }"
+              data-customer-sensitive-input
             >
 
             <button
@@ -7216,6 +7250,10 @@ function retailerProfileCardHtml(
 
   const hasSavedCard =
     Boolean(
+      customerCard
+        ?.acoCardNumber ||
+      customerCard
+        ?.cardNumber ||
       customerCard
         ?.maskedNumber
     );
@@ -7469,7 +7507,7 @@ function retailerProfileCardHtml(
 
                   <details
                     class="paid-profile-section paid-profile-subsection"
-                  >
+                   open>
                     <summary
                       class="paid-profile-subsection-summary"
                     >
@@ -7658,7 +7696,7 @@ function retailerProfileCardHtml(
 
                   <details
                     class="paid-profile-section paid-profile-subsection"
-                  >
+                   open>
                     <summary
                       class="paid-profile-subsection-summary"
                     >
@@ -7735,22 +7773,21 @@ function retailerProfileCardHtml(
                     <label>
                       Card Number
                       <input
+                        type="text"
                         name="acoCardNumber"
                         inputmode="numeric"
                         autocomplete="off"
+                        value="${escapeHtml(
+                          customerCard.acoCardNumber ||
+                          customerCard.cardNumber ||
+                          ""
+                        )}"
                         ${
                           hasSavedCard
                             ? ""
                             : "required"
                         }
-                        placeholder="${
-                          hasSavedCard
-                            ? `Saved ${escapeHtml(
-                                customerCard
-                                  .maskedNumber
-                              )} — leave blank to keep`
-                            : "Enter card number"
-                        }"
+                        placeholder="Enter card number"
                       >
                     </label>
 
@@ -7791,9 +7828,14 @@ function retailerProfileCardHtml(
                     <label>
                       Security Code
                       <input
+                        type="text"
                         name="securityCode"
                         autocomplete="off"
-                        placeholder="Leave blank to keep saved code"
+                        value="${escapeHtml(
+                          customerCard.securityCode ||
+                          ""
+                        )}"
+                        placeholder="Security Code"
                       >
                     </label>
 
@@ -13773,48 +13815,6 @@ if (
 
 
 processSecureLinks();
-
-
-/* =====================================================
-   UNIVERSAL SENSITIVE TOGGLE FAILSAFE
-   Ensures show / hide works for customer-side sensitive fields.
-===================================================== */
-(function setupUniversalSensitiveToggleFailsafe() {
-  document.addEventListener('click', function(event) {
-    const button = event.target.closest([
-      '#show-pass',
-      '.show-pass',
-      '[data-retailer-password-toggle]',
-      '.retailer-password-toggle',
-      '[data-customer-password-toggle]'
-    ].join(','));
-
-    if (!button) return;
-
-    const row = button.closest([
-      '.password-row',
-      '.retailer-password-input-wrap',
-      '.customer-sensitive-row',
-      '.admin-sensitive-input-row'
-    ].join(','));
-
-    const input = row?.querySelector('input');
-    if (!input) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const nextType = input.type === 'password' ? 'text' : 'password';
-    try {
-      input.type = nextType;
-    } catch (err) {
-      return;
-    }
-
-    button.textContent = nextType === 'text' ? 'Hide' : 'Show';
-    button.setAttribute('aria-label', nextType === 'text' ? 'Hide sensitive information' : 'Show sensitive information');
-  }, true);
-})();
 
 
 /* ======================================================
