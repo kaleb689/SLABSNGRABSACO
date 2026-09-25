@@ -2104,7 +2104,7 @@ async function ensureManagedProfileDiscordMessage(
                   ? "A gifted profile has expired. Review it in Admin and deactivate it when the managed account should be released."
                   : "A rented profile has expired. Review it in Admin. Extend the rental if confirmed, otherwise deactivate it."
               )
-            : "A managed profile was assigned and is now ACTIVATING. Open Admin to review it. Activate once the required customer shipping/payment information is complete.",
+            : "A managed profile was assigned and is now ACTIVATING. Open Admin to review it. INFO MISSING may remain visible after activation if shipping/card information still needs to be completed.",
 
         customerName:
           customer.name,
@@ -4214,6 +4214,69 @@ function publicProfileCardSummary(
 
     cardReady:
       readiness.cardReady
+  };
+}
+
+
+function fullProfileCardDetails(
+  secrets
+) {
+  const digits =
+    String(
+      secrets?.acoCardNumber ||
+      ""
+    ).replace(
+      /\D/g,
+      ""
+    );
+
+  return {
+    cardLabel:
+      clean(
+        secrets?.cardLabel,
+        100
+      ),
+
+    cardholder:
+      clean(
+        secrets?.cardholder,
+        150
+      ),
+
+    acoCardNumber:
+      digits,
+
+    cardNumber:
+      digits,
+
+    maskedNumber:
+      digits
+        ? `•••• •••• •••• ${digits.slice(-4)}`
+        : "",
+
+    expMonth:
+      clean(
+        secrets?.expMonth,
+        2
+      ),
+
+    expYear:
+      clean(
+        secrets?.expYear,
+        4
+      ),
+
+    securityCode:
+      clean(
+        secrets?.securityCode,
+        300
+      ),
+
+    cardReady:
+      managedProfileReadiness(
+        {},
+        secrets || {}
+      ).cardReady
   };
 }
 
@@ -8089,6 +8152,12 @@ function safeRetailerProfile(
           retailer
         ].username,
 
+      password:
+        credentials[
+          retailer
+        ].password ||
+        "",
+
       passwordConfigured:
         Boolean(
           credentials[
@@ -8133,7 +8202,7 @@ function safeRetailerProfile(
     customerProfile,
 
     customerCard:
-      publicProfileCardSummary(
+      fullProfileCardDetails(
         customerSecrets
       ),
 
@@ -8278,7 +8347,7 @@ function adminRetailerProfile(
     customerProfile,
 
     customerCard:
-      publicProfileCardSummary(
+      fullProfileCardDetails(
         customerSecrets
       ),
 
@@ -20215,18 +20284,17 @@ app.post(
           secrets
         );
 
-      if (
-        action ===
-          "activate" &&
-        !readiness.ready
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "This profile is still missing shipping or payment information."
-          });
-      }
+      /*
+        Admin is allowed to activate Gifted/Rented managed profiles
+        even when shipping or card information is incomplete.
+
+        Readiness remains informational only so Admin still sees
+        INFO COMPLETE / INFO MISSING while activation controls remain
+        independent from data completeness.
+      */
+      const activatedWithMissingInfo =
+        action === "activate" &&
+        !readiness.ready;
 
       const discordMessageId =
         assignment.discordProfileMessageId ||
@@ -20403,7 +20471,12 @@ app.post(
           null,
         expiresAt:
           assignment.expiresAt ||
-          null
+          null,
+
+        infoComplete:
+          readiness.ready,
+
+        activatedWithMissingInfo
       });
 
     } catch (error) {
@@ -21143,11 +21216,153 @@ app.put(
         };
       }
 
+      let existingCustomerSecrets = {};
+
+      try {
+        if (
+          existingRecord
+            ?.customerSecrets
+        ) {
+          existingCustomerSecrets =
+            decryptJson(
+              existingRecord.customerSecrets
+            ) || {};
+        }
+      } catch {
+        existingCustomerSecrets = {};
+      }
+
+      const submittedCustomerProfile =
+        req.body?.customerProfile &&
+        typeof req.body.customerProfile ===
+          "object"
+          ? req.body.customerProfile
+          : null;
+
+      const submittedCustomerCard =
+        req.body?.customerCard &&
+        typeof req.body.customerCard ===
+          "object"
+          ? req.body.customerCard
+          : null;
+
+      const customerProfile =
+        submittedCustomerProfile
+          ? sanitizeProfile({
+              ...(
+                existingRecord?.customerProfile ||
+                {}
+              ),
+              ...submittedCustomerProfile,
+
+              profileName:
+                profileName,
+
+              email:
+                submittedCustomerProfile.email ||
+                existingRecord?.customerProfile?.email ||
+                ""
+            })
+          : (
+              existingRecord?.customerProfile ||
+              null
+            );
+
+      const customerSecrets = {
+        ...existingCustomerSecrets
+      };
+
+      if (submittedCustomerCard) {
+        if (
+          Object.prototype.hasOwnProperty.call(
+            submittedCustomerCard,
+            "cardLabel"
+          )
+        ) {
+          customerSecrets.cardLabel =
+            clean(
+              submittedCustomerCard.cardLabel,
+              100
+            );
+        }
+
+        if (
+          Object.prototype.hasOwnProperty.call(
+            submittedCustomerCard,
+            "cardholder"
+          )
+        ) {
+          customerSecrets.cardholder =
+            clean(
+              submittedCustomerCard.cardholder,
+              150
+            );
+        }
+
+        const submittedNumber =
+          clean(
+            submittedCustomerCard.acoCardNumber,
+            30
+          ).replace(
+            /[^\d]/g,
+            ""
+          );
+
+        if (submittedNumber) {
+          customerSecrets.acoCardNumber =
+            submittedNumber;
+        }
+
+        if (
+          Object.prototype.hasOwnProperty.call(
+            submittedCustomerCard,
+            "expMonth"
+          )
+        ) {
+          customerSecrets.expMonth =
+            clean(
+              submittedCustomerCard.expMonth,
+              2
+            );
+        }
+
+        if (
+          Object.prototype.hasOwnProperty.call(
+            submittedCustomerCard,
+            "expYear"
+          )
+        ) {
+          customerSecrets.expYear =
+            clean(
+              submittedCustomerCard.expYear,
+              4
+            );
+        }
+
+        if (
+          Object.prototype.hasOwnProperty.call(
+            submittedCustomerCard,
+            "securityCode"
+          )
+        ) {
+          customerSecrets.securityCode =
+            clean(
+              submittedCustomerCard.securityCode,
+              300
+            );
+        }
+      }
+
       const now =
         new Date()
           .toISOString();
 
       const record = {
+        ...(
+          existingRecord ||
+          {}
+        ),
+
         id:
           existingRecord?.id ||
           crypto.randomUUID(),
@@ -21162,6 +21377,13 @@ app.put(
         credentials:
           encryptJson(
             updatedCredentials
+          ),
+
+        customerProfile,
+
+        customerSecrets:
+          encryptJson(
+            customerSecrets
           ),
 
         createdAt:
