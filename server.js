@@ -17029,12 +17029,33 @@ app.post(
           150
         );
 
-      if (!savedAddressId) {
+      const submittedManualAddress =
+        req.body?.manualAddress &&
+        typeof req.body.manualAddress ===
+          "object"
+          ? sanitizeShippingAddress(
+              req.body.manualAddress,
+              "manual-address"
+            )
+          : null;
+
+      const usingManualAddress =
+        Boolean(
+          submittedManualAddress?.address &&
+          submittedManualAddress?.city &&
+          submittedManualAddress?.state &&
+          submittedManualAddress?.zip
+        );
+
+      if (
+        !savedAddressId &&
+        !usingManualAddress
+      ) {
         return res
           .status(400)
           .json({
             error:
-              "Select a saved shipping address before using JIG."
+              "Select a saved shipping address or enter a complete manual address before using JIG."
           });
       }
 
@@ -17091,11 +17112,13 @@ app.post(
           : [];
 
       const sourceAddress =
-        addresses.find(
-          item =>
-            String(item.id) ===
-            String(savedAddressId)
-        );
+        usingManualAddress
+          ? submittedManualAddress
+          : addresses.find(
+              item =>
+                String(item.id) ===
+                String(savedAddressId)
+            );
 
       if (!sourceAddress) {
         return res
@@ -17135,7 +17158,11 @@ app.post(
               item.savedAddressId ||
               ""
             ) ===
-              String(savedAddressId)
+              String(
+                usingManualAddress
+                  ? "manual-address"
+                  : savedAddressId
+              )
         );
 
       const usedKeys =
@@ -17195,7 +17222,9 @@ app.post(
         );
 
       assignment.savedAddressId =
-        savedAddressId;
+        usingManualAddress
+          ? "manual-address"
+          : savedAddressId;
 
       assignment.jigVariantIndex =
         chosenIndex + 1;
@@ -17246,7 +17275,10 @@ app.post(
       return res.json({
         ok: true,
 
-        savedAddressId,
+        savedAddressId:
+          usingManualAddress
+            ? "manual-address"
+            : savedAddressId,
 
         variant:
           chosen,
@@ -17356,6 +17388,143 @@ app.get(
           account
         );
 
+      const addresses =
+        Array.isArray(
+          payload.addresses
+        )
+          ? [...payload.addresses]
+          : [];
+
+      /*
+        The customer's original shipping address can live on the
+        paid membership submission rather than in the later
+        My Profile saved-address list. Include it here too.
+      */
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const originalPaidRecord =
+        paidRecords.find(
+          record =>
+            (
+              assignment.paidSubmissionId &&
+              String(record.id) ===
+                String(
+                  assignment.paidSubmissionId
+                )
+            ) ||
+            (
+              String(
+                record.customerAccountId ||
+                ""
+              ) ===
+                String(
+                  assignment.customerAccountId ||
+                  ""
+                ) &&
+              record.profile?.address
+            )
+        );
+
+      const originalProfile =
+        originalPaidRecord?.profile &&
+        typeof originalPaidRecord.profile ===
+          "object"
+          ? sanitizeProfile(
+              originalPaidRecord.profile
+            )
+          : null;
+
+      if (
+        originalProfile?.address &&
+        originalProfile?.city &&
+        originalProfile?.state &&
+        originalProfile?.zip
+      ) {
+        const originalAddress = {
+          id:
+            "original-account-shipping",
+
+          label:
+            "Original Account Shipping",
+
+          firstName:
+            originalProfile.firstName ||
+            "",
+
+          lastName:
+            originalProfile.lastName ||
+            "",
+
+          phone:
+            originalProfile.phone ||
+            "",
+
+          address:
+            originalProfile.address ||
+            "",
+
+          address2:
+            originalProfile.address2 ||
+            "",
+
+          city:
+            originalProfile.city ||
+            "",
+
+          state:
+            originalProfile.state ||
+            "",
+
+          zip:
+            originalProfile.zip ||
+            "",
+
+          country:
+            originalProfile.country ||
+            "US"
+        };
+
+        const originalKey =
+          [
+            originalAddress.address,
+            originalAddress.address2,
+            originalAddress.city,
+            originalAddress.state,
+            originalAddress.zip
+          ]
+            .join("|")
+            .toLowerCase();
+
+        const duplicate =
+          addresses.some(item =>
+            [
+              item?.address,
+              item?.address2,
+              item?.city,
+              item?.state,
+              item?.zip
+            ]
+              .join("|")
+              .toLowerCase() ===
+            originalKey
+          );
+
+        if (!duplicate) {
+          addresses.unshift(
+            originalAddress
+          );
+        }
+      }
+
       return res.json({
         ok: true,
 
@@ -17367,7 +17536,11 @@ app.get(
           assignment.savedPaymentMethodId ||
           "",
 
-        ...payload
+        addresses,
+
+        paymentMethods:
+          payload.paymentMethods ||
+          []
       });
 
     } catch (error) {
