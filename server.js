@@ -3876,7 +3876,7 @@ function exactManagedAddressMatches(
     ) => {
       if (
         !assignment ||
-        !activeFn(
+        !managedAssignmentIsLinked(
           assignment
         ) ||
         exactManagedAddressKey(
@@ -4284,12 +4284,30 @@ function fullProfileCardDetails(
 function publicCustomerAccount(
   account
 ) {
+  const notifications =
+    Array.isArray(
+      account?.notifications
+    )
+      ? account.notifications
+      : [];
+
   return {
     id:
       account.id,
 
     email:
       account.email,
+
+    discordUsername:
+      account.discordUsername ||
+      "",
+
+    discordUserId:
+      account.discordUserId ||
+      "",
+
+    notificationCount:
+      notifications.length,
 
     emailVerified:
       !!account.emailVerifiedAt,
@@ -5787,6 +5805,23 @@ app.post(
 
         email,
 
+        discordUsername:
+          clean(
+            req.body.discordUsername,
+            100
+          ),
+
+        discordUserId:
+          clean(
+            req.body.discordUserId,
+            40
+          ).replace(
+            /\D/g,
+            ""
+          ),
+
+        notifications: [],
+
         passwordSalt:
           passwordData.salt,
 
@@ -6016,6 +6051,194 @@ app.get(
     }
   }
 );
+
+app.put(
+  "/api/account/discord",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const accounts =
+        await getCustomerAccounts();
+
+      const account =
+        accounts.find(
+          item =>
+            String(item.id) ===
+            String(
+              req.customerAccount.id
+            )
+        );
+
+      if (!account) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account could not be found."
+          });
+      }
+
+      account.discordUsername =
+        clean(
+          req.body?.discordUsername,
+          100
+        );
+
+      account.discordUserId =
+        clean(
+          req.body?.discordUserId,
+          40
+        ).replace(
+          /\\D/g,
+          ""
+        );
+
+      account.updatedAt =
+        new Date()
+          .toISOString();
+
+      await saveCustomerAccounts(
+        accounts
+      );
+
+      return res.json({
+        ok: true,
+        account:
+          publicCustomerAccount(
+            account
+          )
+      });
+
+    } catch (error) {
+      console.error(
+        "Discord settings update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to save Discord information."
+        });
+    }
+  }
+);
+
+
+app.get(
+  "/api/account/notifications",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const sync =
+        await syncCustomerMissingNotification(
+          req.customerAccount.id
+        );
+
+      const notifications =
+        Array.isArray(
+          sync.account?.notifications
+        )
+          ? sync.account.notifications
+          : [];
+
+      return res.json({
+        ok: true,
+        notifications
+      });
+
+    } catch (error) {
+      console.error(
+        "Customer notifications load error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load notifications."
+        });
+    }
+  }
+);
+
+
+app.delete(
+  "/api/account/notifications",
+  requireCustomer,
+  async (req, res) => {
+    try {
+      const accounts =
+        await getCustomerAccounts();
+
+      const account =
+        accounts.find(
+          item =>
+            String(item.id) ===
+            String(
+              req.customerAccount.id
+            )
+        );
+
+      if (!account) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account could not be found."
+          });
+      }
+
+      const notifications =
+        customerNotifications(
+          account
+        );
+
+      for (
+        const notification of
+        notifications
+      ) {
+        if (
+          notification.discordMessageId
+        ) {
+          await deleteActionNeededDiscordMessage(
+            notification.discordMessageId
+          );
+        }
+      }
+
+      account.notifications = [];
+      account.updatedAt =
+        new Date()
+          .toISOString();
+
+      await saveCustomerAccounts(
+        accounts
+      );
+
+      return res.json({
+        ok: true
+      });
+
+    } catch (error) {
+      console.error(
+        "Customer notifications clear error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to clear notifications."
+        });
+    }
+  }
+);
+
+
 /* -------------------------------------------------------
    CUSTOMER EMAIL VERIFICATION
 ------------------------------------------------------- */
@@ -7568,6 +7791,677 @@ function currentRentalAssignment(
     ) || null
   );
 }
+
+function managedAssignmentIsLinked(
+  assignment
+) {
+  if (
+    !assignment ||
+    !assignment.customerAccountId
+  ) {
+    return false;
+  }
+
+  if (
+    assignment.returnedToPoolAt ||
+    String(
+      assignment.endReason ||
+      ""
+    ) === "returned_to_pool"
+  ) {
+    return false;
+  }
+
+  if (
+    String(
+      assignment.activationStatus ||
+      ""
+    ) === "expired" ||
+    String(
+      assignment.endReason ||
+      ""
+    ) === "expired"
+  ) {
+    return false;
+  }
+
+  if (
+    assignment.expiresAt
+  ) {
+    const end =
+      new Date(
+        assignment.expiresAt
+      ).getTime();
+
+    if (
+      Number.isFinite(end) &&
+      end <= Date.now()
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
+function linkedFreeAssignment(
+  assignments,
+  membershipId
+) {
+  return (
+    assignments.find(
+      assignment =>
+        String(
+          assignment.managedAccountId ||
+          assignment.freeMembershipId ||
+          ""
+        ) ===
+          String(membershipId) &&
+        managedAssignmentIsLinked(
+          assignment
+        )
+    ) || null
+  );
+}
+
+
+function linkedRentalAssignment(
+  assignments,
+  membershipId
+) {
+  return (
+    assignments.find(
+      assignment =>
+        String(
+          assignment.managedAccountId ||
+          assignment.rentedMembershipId ||
+          ""
+        ) ===
+          String(membershipId) &&
+        managedAssignmentIsLinked(
+          assignment
+        )
+    ) || null
+  );
+}
+
+
+function actionNeededWebhookUrl() {
+  return String(
+    process.env
+      .DISCORD_ACTION_NEEDED_WEBHOOK_URL ||
+    ""
+  ).trim();
+}
+
+
+function customerNotifications(
+  account
+) {
+  if (
+    !Array.isArray(
+      account.notifications
+    )
+  ) {
+    account.notifications = [];
+  }
+
+  return account.notifications;
+}
+
+
+async function deleteActionNeededDiscordMessage(
+  messageId
+) {
+  const webhookUrl =
+    actionNeededWebhookUrl();
+
+  if (
+    !webhookUrl ||
+    !messageId
+  ) {
+    return false;
+  }
+
+  try {
+    const url =
+      new URL(
+        webhookUrl
+      );
+
+    url.pathname =
+      `${url.pathname.replace(/\\/$/, "")}/messages/${encodeURIComponent(
+        messageId
+      )}`;
+
+    const response =
+      await fetch(
+        url,
+        {
+          method: "DELETE"
+        }
+      );
+
+    return (
+      response.ok ||
+      response.status === 404
+    );
+
+  } catch (error) {
+    console.error(
+      "Action needed Discord delete failed:",
+      error.message
+    );
+
+    return false;
+  }
+}
+
+
+async function sendActionNeededDiscordMessage(
+  account,
+  message
+) {
+  const webhookUrl =
+    actionNeededWebhookUrl();
+
+  if (!webhookUrl) {
+    throw new Error(
+      "DISCORD_ACTION_NEEDED_WEBHOOK_URL is not configured."
+    );
+  }
+
+  const discordUsername =
+    clean(
+      account?.discordUsername,
+      100
+    );
+
+  const usernameReference =
+    discordUsername
+      ? `@${discordUsername} `
+      : "";
+
+  const websiteUrl =
+    `${BASE_URL}/#my-profile`;
+
+  const url =
+    new URL(
+      webhookUrl
+    );
+
+  url.searchParams.set(
+    "wait",
+    "true"
+  );
+
+  const response =
+    await fetch(
+      url,
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+
+        body:
+          JSON.stringify({
+            username:
+              "SLABS N GRABS ACO Action Needed",
+
+            allowed_mentions: {
+              parse: []
+            },
+
+            content:
+              `${usernameReference}ACTION NEEDED — please check your profile page: ${websiteUrl}`,
+
+            embeds: [
+              {
+                title:
+                  "Action Needed",
+
+                description:
+                  clean(
+                    message,
+                    3500
+                  ) ||
+                  "Please check your profile page and complete the requested information.",
+
+                url:
+                  websiteUrl,
+
+                timestamp:
+                  new Date()
+                    .toISOString()
+              }
+            ]
+          })
+      }
+    );
+
+  const result =
+    await response
+      .json()
+      .catch(
+        () => ({})
+      );
+
+  if (!response.ok) {
+    throw new Error(
+      `Action-needed Discord webhook returned ${response.status}.`
+    );
+  }
+
+  return result?.id ||
+    null;
+}
+
+
+function profileMissingFieldLabels(
+  profile,
+  secrets,
+  label
+) {
+  const missing = [];
+
+  const shippingFields = [
+    ["firstName", "first name"],
+    ["lastName", "last name"],
+    ["address", "street address"],
+    ["city", "city"],
+    ["state", "state"],
+    ["zip", "ZIP code"],
+    ["country", "country"]
+  ];
+
+  for (
+    const [
+      key,
+      fieldLabel
+    ] of
+    shippingFields
+  ) {
+    if (
+      !String(
+        profile?.[key] ||
+        ""
+      ).trim()
+    ) {
+      missing.push(
+        `${label}: ${fieldLabel}`
+      );
+    }
+  }
+
+  const digits =
+    String(
+      secrets?.acoCardNumber ||
+      ""
+    ).replace(
+      /\D/g,
+      ""
+    );
+
+  if (
+    !String(
+      secrets?.cardholder ||
+      ""
+    ).trim()
+  ) {
+    missing.push(
+      `${label}: cardholder name`
+    );
+  }
+
+  if (
+    !/^\d{12,19}$/.test(
+      digits
+    )
+  ) {
+    missing.push(
+      `${label}: card number`
+    );
+  }
+
+  if (
+    !/^(0[1-9]|1[0-2])$/.test(
+      String(
+        secrets?.expMonth ||
+        ""
+      )
+    )
+  ) {
+    missing.push(
+      `${label}: expiration month`
+    );
+  }
+
+  if (
+    !/^\d{4}$/.test(
+      String(
+        secrets?.expYear ||
+        ""
+      )
+    )
+  ) {
+    missing.push(
+      `${label}: expiration year`
+    );
+  }
+
+  return missing;
+}
+
+
+function paidProfileMissingItems(
+  record,
+  index = 1
+) {
+  const profile =
+    record?.customerProfile ||
+    {};
+
+  let secrets = {};
+
+  try {
+    if (
+      record?.customerSecrets
+    ) {
+      secrets =
+        decryptJson(
+          record.customerSecrets
+        ) || {};
+    }
+  } catch {
+    secrets = {};
+  }
+
+  return profileMissingFieldLabels(
+    profile,
+    secrets,
+    `Paid Profile ${index}`
+  );
+}
+
+async function customerMissingInformation(
+  customerAccountId
+) {
+  const [
+    retailerProfiles,
+    freeAssignments,
+    rentalAssignments
+  ] = await Promise.all([
+    getRetailerProfiles(),
+    getFreeAssignments(),
+    getRentalAssignments()
+  ]);
+
+  const missing = [];
+
+  const paid =
+    retailerProfiles.filter(
+      record =>
+        String(
+          record.customerAccountId ||
+          ""
+        ) ===
+          String(
+            customerAccountId
+          )
+    );
+
+  paid.forEach(
+    (record, index) => {
+      missing.push(
+        ...paidProfileMissingItems(
+          record,
+          index + 1
+        )
+      );
+    }
+  );
+
+  const inspectManaged =
+    (
+      assignment,
+      type,
+      number
+    ) => {
+      if (
+        String(
+          assignment.customerAccountId ||
+          ""
+        ) !==
+          String(
+            customerAccountId
+          ) ||
+        !managedAssignmentIsLinked(
+          assignment
+        )
+      ) {
+        return;
+      }
+
+      let secrets = {};
+
+      try {
+        if (
+          assignment.customerSecrets
+        ) {
+          secrets =
+            decryptJson(
+              assignment.customerSecrets
+            ) || {};
+        }
+      } catch {
+        secrets = {};
+      }
+
+      const label =
+        type === "free"
+          ? `Gifted Profile ${number}`
+          : `Rented Profile ${number}`;
+
+      missing.push(
+        ...profileMissingFieldLabels(
+          assignment.customerProfile ||
+            {},
+          secrets,
+          label
+        )
+      );
+    };
+
+  let giftedNumber = 0;
+
+  for (
+    const assignment of
+    freeAssignments
+  ) {
+    if (
+      String(
+        assignment.customerAccountId ||
+        ""
+      ) ===
+        String(
+          customerAccountId
+        ) &&
+      managedAssignmentIsLinked(
+        assignment
+      )
+    ) {
+      giftedNumber += 1;
+      inspectManaged(
+        assignment,
+        "free",
+        giftedNumber
+      );
+    }
+  }
+
+  let rentedNumber = 0;
+
+  for (
+    const assignment of
+    rentalAssignments
+  ) {
+    if (
+      String(
+        assignment.customerAccountId ||
+        ""
+      ) ===
+        String(
+          customerAccountId
+        ) &&
+      managedAssignmentIsLinked(
+        assignment
+      )
+    ) {
+      rentedNumber += 1;
+      inspectManaged(
+        assignment,
+        "rented",
+        rentedNumber
+      );
+    }
+  }
+
+  return missing;
+}
+
+
+async function syncCustomerMissingNotification(
+  customerAccountId
+) {
+  const accounts =
+    await getCustomerAccounts();
+
+  const account =
+    accounts.find(
+      item =>
+        String(item.id) ===
+        String(customerAccountId)
+    );
+
+  if (!account) {
+    return {
+      account: null,
+      missing: []
+    };
+  }
+
+  const notifications =
+    customerNotifications(
+      account
+    );
+
+  const missing =
+    await customerMissingInformation(
+      customerAccountId
+    );
+
+  const existing =
+    notifications.find(
+      item =>
+        item.kind ===
+        "missing_info"
+    );
+
+  if (!missing.length) {
+    if (existing) {
+      if (
+        existing.discordMessageId
+      ) {
+        await deleteActionNeededDiscordMessage(
+          existing.discordMessageId
+        );
+      }
+
+      account.notifications =
+        notifications.filter(
+          item =>
+            item.id !==
+            existing.id
+        );
+
+      account.updatedAt =
+        new Date()
+          .toISOString();
+
+      await saveCustomerAccounts(
+        accounts
+      );
+    }
+
+    return {
+      account,
+      missing
+    };
+  }
+
+  const message =
+    `Important information is missing:\\n• ${missing.join(
+      "\\n• "
+    )}`;
+
+  if (existing) {
+    existing.message =
+      message;
+
+    existing.missingItems =
+      missing;
+
+    existing.updatedAt =
+      new Date()
+        .toISOString();
+
+  } else {
+    notifications.push({
+      id:
+        crypto.randomUUID(),
+
+      kind:
+        "missing_info",
+
+      title:
+        "Action Needed",
+
+      message,
+
+      missingItems:
+        missing,
+
+      createdAt:
+        new Date()
+          .toISOString(),
+
+      updatedAt:
+        new Date()
+          .toISOString(),
+
+      discordMessageId:
+        null
+    });
+  }
+
+  account.updatedAt =
+    new Date()
+      .toISOString();
+
+  await saveCustomerAccounts(
+    accounts
+  );
+
+  return {
+    account,
+    missing
+  };
+}
+
 
 function specialProfileLabel(
   profileType
@@ -11424,7 +12318,7 @@ async function getAvailableManagedAccountsForRetailer(
     new Set();
 
   for (const assignment of freeAssignments) {
-    if (!freeAssignmentIsActive(assignment)) {
+    if (!managedAssignmentIsLinked(assignment)) {
       continue;
     }
 
@@ -11441,7 +12335,7 @@ async function getAvailableManagedAccountsForRetailer(
   }
 
   for (const assignment of rentalAssignments) {
-    if (!rentalAssignmentIsActive(assignment)) {
+    if (!managedAssignmentIsLinked(assignment)) {
       continue;
     }
 
@@ -13718,7 +14612,7 @@ app.get(
           .filter(
             membership =>
               Boolean(
-                currentFreeAssignment(
+                linkedFreeAssignment(
                   assignments,
                   membership.id
                 )
@@ -13727,13 +14621,13 @@ app.get(
           .map(
           membership => {
             const assignment =
-              currentFreeAssignment(
+              linkedFreeAssignment(
                 assignments,
                 membership.id
               );
 
             const otherAssignment =
-              currentRentalAssignment(
+              linkedRentalAssignment(
                 otherAssignments,
                 membership.id
               );
@@ -15225,7 +16119,7 @@ app.get(
           .filter(
             membership =>
               Boolean(
-                currentRentalAssignment(
+                linkedRentalAssignment(
                   assignments,
                   membership.id
                 )
@@ -15234,13 +16128,13 @@ app.get(
           .map(
           membership => {
             const assignment =
-              currentRentalAssignment(
+              linkedRentalAssignment(
                 assignments,
                 membership.id
               );
 
             const otherAssignment =
-              currentFreeAssignment(
+              linkedFreeAssignment(
                 otherAssignments,
                 membership.id
               );
@@ -16324,11 +17218,11 @@ app.put(
 
       const assignment =
         type === "free"
-          ? currentFreeAssignment(
+          ? linkedFreeAssignment(
               assignments,
               id
             )
-          : currentRentalAssignment(
+          : linkedRentalAssignment(
               assignments,
               id
             );
@@ -16338,7 +17232,7 @@ app.put(
           .status(404)
           .json({
             error:
-              "This linked profile is no longer active."
+              "This linked profile is no longer assigned to this customer."
           });
       }
 
@@ -16465,6 +17359,14 @@ app.put(
         );
       }
 
+      if (
+        assignment.customerAccountId
+      ) {
+        await syncCustomerMissingNotification(
+          assignment.customerAccountId
+        );
+      }
+
       return res.json({
         ok: true,
         customerProfile,
@@ -16512,6 +17414,1246 @@ app.put(
         .json({
           error:
             "Unable to update linked profile information."
+        });
+    }
+  }
+);
+
+
+
+app.post(
+  "/api/admin/linked-memberships/free/:id/extend",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const extension =
+        clean(
+          req.body?.extension,
+          30
+        )
+          .trim()
+          .toLowerCase();
+
+      if (
+        ![
+          "1_week",
+          "1_month",
+          "indefinite"
+        ].includes(
+          extension
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose 1 week, 1 month, or indefinitely."
+          });
+      }
+
+      const assignments =
+        await getFreeAssignments();
+
+      const assignment =
+        linkedFreeAssignment(
+          assignments,
+          id
+        );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Gifted profile assignment could not be found."
+          });
+      }
+
+      const now =
+        new Date();
+
+      const base =
+        assignment.expiresAt &&
+        new Date(
+          assignment.expiresAt
+        ).getTime() >
+          now.getTime()
+          ? new Date(
+              assignment.expiresAt
+            )
+          : now;
+
+      if (
+        extension ===
+        "indefinite"
+      ) {
+        assignment.expiresAt =
+          null;
+
+        assignment.durationType =
+          "indefinite";
+
+      } else if (
+        extension ===
+        "1_week"
+      ) {
+        base.setDate(
+          base.getDate() + 7
+        );
+
+        assignment.expiresAt =
+          base.toISOString();
+
+        assignment.durationType =
+          "1_week";
+
+      } else {
+        base.setMonth(
+          base.getMonth() + 1
+        );
+
+        assignment.expiresAt =
+          base.toISOString();
+
+        assignment.durationType =
+          "1_month";
+      }
+
+      assignment.active =
+        true;
+
+      if (
+        String(
+          assignment.activationStatus ||
+          ""
+        ) === "expired"
+      ) {
+        assignment.activationStatus =
+          "activated";
+      }
+
+      assignment.updatedAt =
+        now.toISOString();
+
+      await saveFreeAssignments(
+        assignments
+      );
+
+      return res.json({
+        ok: true,
+        expiresAt:
+          assignment.expiresAt ||
+          null,
+        durationType:
+          assignment.durationType
+      });
+
+    } catch (error) {
+      console.error(
+        "Extend gifted profile error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to extend gifted profile."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/linked-memberships/:type/:id/return-to-pool",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      if (
+        type !== "free" &&
+        type !== "rented"
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid managed profile type."
+          });
+      }
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
+
+      const assignment =
+        type === "free"
+          ? linkedFreeAssignment(
+              assignments,
+              id
+            )
+          : linkedRentalAssignment(
+              assignments,
+              id
+            );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Managed assignment could not be found."
+          });
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      assignment.active =
+        false;
+
+      assignment.activationStatus =
+        "returned_to_pool";
+
+      assignment.returnedToPoolAt =
+        now;
+
+      assignment.endedAt =
+        now;
+
+      assignment.endReason =
+        "returned_to_pool";
+
+      assignment.updatedAt =
+        now;
+
+      assignment.customerAccountId =
+        null;
+
+      if (type === "free") {
+        await saveFreeAssignments(
+          assignments
+        );
+      } else {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      return res.json({
+        ok: true
+      });
+
+    } catch (error) {
+      console.error(
+        "Return managed profile to pool error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to return this profile to the pool."
+        });
+    }
+  }
+);
+
+
+
+function hayhaProfileObject(
+  name,
+  profile,
+  secrets,
+  groupId
+) {
+  return {
+    name,
+
+    shipping: {
+      firstName:
+        profile?.firstName ||
+        "",
+
+      lastName:
+        profile?.lastName ||
+        "",
+
+      email:
+        profile?.email ||
+        "",
+
+      phone:
+        profile?.phone ||
+        "",
+
+      address:
+        profile?.address ||
+        "",
+
+      address2:
+        profile?.address2 ||
+        "",
+
+      country:
+        profile?.country ||
+        "United States",
+
+      state:
+        profile?.state ||
+        "",
+
+      city:
+        profile?.city ||
+        "",
+
+      zipCode:
+        profile?.zip ||
+        ""
+    },
+
+    cardInfo: {
+      cardNumber:
+        String(
+          secrets?.acoCardNumber ||
+          secrets?.cardNumber ||
+          ""
+        ).replace(
+          /\\D/g,
+          ""
+        ),
+
+      holder:
+        secrets?.cardholder ||
+        "",
+
+      expMonth:
+        secrets?.expMonth ||
+        "",
+
+      expYear:
+        Number(
+          secrets?.expYear ||
+          0
+        ) || "",
+
+      /*
+        The source .hayha format requires a field named "cvv".
+        SLABSNGRABSACO stores a separate Security Code, not card CVV/CVC,
+        so do not silently relabel that value as CVV.
+      */
+      cvv:
+        ""
+    },
+
+    sameAsBilling:
+      true,
+
+    groupId,
+
+    id:
+      crypto.randomUUID(),
+
+    encrypted:
+      false
+  };
+}
+
+
+function safeExportFilePart(
+  value
+) {
+  return String(
+    value ||
+    "Customer"
+  )
+    .replace(
+      /[^a-z0-9 _-]+/gi,
+      ""
+    )
+    .replace(
+      /\\s+/g,
+      " "
+    )
+    .trim() ||
+    "Customer";
+}
+
+
+
+app.get(
+  "/api/admin/submissions/:id/export-options",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const order =
+        (
+          Array.isArray(paid)
+            ? paid
+            : []
+        ).find(
+          item =>
+            String(item.id) ===
+            String(id)
+        );
+
+      if (
+        !order?.customerAccountId
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer order could not be found."
+          });
+      }
+
+      const account =
+        (
+          await getCustomerAccounts()
+        ).find(
+          item =>
+            String(item.id) ===
+            String(
+              order.customerAccountId
+            )
+        );
+
+      const customerName =
+        [
+          order?.profile?.firstName,
+          order?.profile?.lastName
+        ]
+          .filter(Boolean)
+          .join(" ") ||
+        order?.profile?.profileName ||
+        account?.email ||
+        "Customer";
+
+      const [
+        paidProfiles,
+        memberships,
+        freeAssignments,
+        rentalAssignments
+      ] = await Promise.all([
+        getRetailerProfiles(),
+        getManagedAccounts(),
+        getFreeAssignments(),
+        getRentalAssignments()
+      ]);
+
+      const options = [];
+
+      paidProfiles
+        .filter(
+          record =>
+            String(
+              record.customerAccountId ||
+              ""
+            ) ===
+              String(
+                order.customerAccountId
+              )
+        )
+        .forEach(
+          (record, index) => {
+            options.push({
+              key:
+                `paid:${record.id}`,
+
+              type:
+                "paid",
+
+              label:
+                `${customerName} Paid Profile ${index + 1}`,
+
+              accountEmail:
+                record.customerProfile
+                  ?.email ||
+                ""
+            });
+          }
+        );
+
+      let giftedIndex = 0;
+
+      for (
+        const assignment of
+        freeAssignments
+      ) {
+        if (
+          String(
+            assignment.customerAccountId ||
+            ""
+          ) !==
+            String(
+              order.customerAccountId
+            ) ||
+          !managedAssignmentIsLinked(
+            assignment
+          )
+        ) {
+          continue;
+        }
+
+        giftedIndex += 1;
+
+        const membershipId =
+          assignment.managedAccountId ||
+          assignment.freeMembershipId ||
+          assignment.id;
+
+        const membership =
+          memberships.find(
+            item =>
+              String(item.id) ===
+              String(membershipId)
+          );
+
+        options.push({
+          key:
+            `free:${membershipId}`,
+
+          type:
+            "free",
+
+          label:
+            `${customerName} Gifted ${giftedIndex}`,
+
+          accountEmail:
+            membership?.accountEmail ||
+            ""
+        });
+      }
+
+      let rentedIndex = 0;
+
+      for (
+        const assignment of
+        rentalAssignments
+      ) {
+        if (
+          String(
+            assignment.customerAccountId ||
+            ""
+          ) !==
+            String(
+              order.customerAccountId
+            ) ||
+          !managedAssignmentIsLinked(
+            assignment
+          )
+        ) {
+          continue;
+        }
+
+        rentedIndex += 1;
+
+        const membershipId =
+          assignment.managedAccountId ||
+          assignment.rentedMembershipId ||
+          assignment.id;
+
+        const membership =
+          memberships.find(
+            item =>
+              String(item.id) ===
+              String(membershipId)
+          );
+
+        options.push({
+          key:
+            `rented:${membershipId}`,
+
+          type:
+            "rented",
+
+          label:
+            `${customerName} Rented ${rentedIndex}`,
+
+          accountEmail:
+            membership?.accountEmail ||
+            ""
+        });
+      }
+
+      return res.json({
+        ok: true,
+        customerName,
+        options
+      });
+
+    } catch (error) {
+      console.error(
+        "Export options error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load export profile options."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/submissions/:id/export-profiles",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const selected =
+        Array.isArray(
+          req.body?.selected
+        )
+          ? req.body.selected.map(
+              item =>
+                String(item)
+            )
+          : [];
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const order =
+        (
+          Array.isArray(paid)
+            ? paid
+            : []
+        ).find(
+          item =>
+            String(item.id) ===
+            String(id)
+        );
+
+      if (
+        !order ||
+        !order.customerAccountId
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer order could not be found."
+          });
+      }
+
+      const account =
+        (
+          await getCustomerAccounts()
+        ).find(
+          item =>
+            String(item.id) ===
+            String(
+              order.customerAccountId
+            )
+        );
+
+      const customerName =
+        [
+          order?.profile?.firstName,
+          order?.profile?.lastName
+        ]
+          .filter(Boolean)
+          .join(" ") ||
+        order?.profile?.profileName ||
+        account?.email ||
+        "Customer";
+
+      const [
+        paidProfiles,
+        memberships,
+        freeAssignments,
+        rentalAssignments
+      ] = await Promise.all([
+        getRetailerProfiles(),
+        getManagedAccounts(),
+        getFreeAssignments(),
+        getRentalAssignments()
+      ]);
+
+      const groupId =
+        crypto.randomUUID();
+
+      const output = [];
+      const options = [];
+
+      const paidRecords =
+        paidProfiles.filter(
+          record =>
+            String(
+              record.customerAccountId ||
+              ""
+            ) ===
+              String(
+                order.customerAccountId
+              )
+        );
+
+      paidRecords.forEach(
+        (record, index) => {
+          let secrets = {};
+
+          try {
+            if (
+              record.customerSecrets
+            ) {
+              secrets =
+                decryptJson(
+                  record.customerSecrets
+                ) || {};
+            }
+          } catch {
+            secrets = {};
+          }
+
+          const key =
+            `paid:${record.id}`;
+
+          options.push({
+            key,
+            item:
+              hayhaProfileObject(
+                `${customerName} Paid Profile ${index + 1}`,
+                record.customerProfile ||
+                  {},
+                secrets,
+                groupId
+              )
+          });
+        }
+      );
+
+      const linkedFree =
+        freeAssignments.filter(
+          assignment =>
+            String(
+              assignment.customerAccountId ||
+              ""
+            ) ===
+              String(
+                order.customerAccountId
+              ) &&
+            managedAssignmentIsLinked(
+              assignment
+            )
+        );
+
+      linkedFree.forEach(
+        (assignment, index) => {
+          let secrets = {};
+
+          try {
+            if (
+              assignment.customerSecrets
+            ) {
+              secrets =
+                decryptJson(
+                  assignment.customerSecrets
+                ) || {};
+            }
+          } catch {
+            secrets = {};
+          }
+
+          const membershipId =
+            assignment.managedAccountId ||
+            assignment.freeMembershipId ||
+            assignment.id;
+
+          options.push({
+            key:
+              `free:${membershipId}`,
+
+            item:
+              hayhaProfileObject(
+                `${customerName} Gifted ${index + 1}`,
+                assignment.customerProfile ||
+                  {},
+                secrets,
+                groupId
+              )
+          });
+        }
+      );
+
+      const linkedRented =
+        rentalAssignments.filter(
+          assignment =>
+            String(
+              assignment.customerAccountId ||
+              ""
+            ) ===
+              String(
+                order.customerAccountId
+              ) &&
+            managedAssignmentIsLinked(
+              assignment
+            )
+        );
+
+      linkedRented.forEach(
+        (assignment, index) => {
+          let secrets = {};
+
+          try {
+            if (
+              assignment.customerSecrets
+            ) {
+              secrets =
+                decryptJson(
+                  assignment.customerSecrets
+                ) || {};
+            }
+          } catch {
+            secrets = {};
+          }
+
+          const membershipId =
+            assignment.managedAccountId ||
+            assignment.rentedMembershipId ||
+            assignment.id;
+
+          options.push({
+            key:
+              `rented:${membershipId}`,
+
+            item:
+              hayhaProfileObject(
+                `${customerName} Rented ${index + 1}`,
+                assignment.customerProfile ||
+                  {},
+                secrets,
+                groupId
+              )
+          });
+        }
+      );
+
+      for (
+        const option of
+        options
+      ) {
+        if (
+          !selected.length ||
+          selected.includes(
+            option.key
+          )
+        ) {
+          output.push(
+            option.item
+          );
+        }
+      }
+
+      const fileName =
+        `${safeExportFilePart(
+          customerName
+        )} Profiles.hayha`;
+
+      res.setHeader(
+        "Content-Type",
+        "application/json; charset=utf-8"
+      );
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${fileName.replace(/"/g, "")}"`
+      );
+
+      return res.send(
+        JSON.stringify(
+          output,
+          null,
+          2
+        )
+      );
+
+    } catch (error) {
+      console.error(
+        "Profile export error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to export profiles."
+        });
+    }
+  }
+);
+
+
+
+app.post(
+  "/api/admin/submissions/:id/notify-missing-info",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const order =
+        (
+          Array.isArray(paid)
+            ? paid
+            : []
+        ).find(
+          item =>
+            String(item.id) ===
+            String(id)
+        );
+
+      if (
+        !order?.customerAccountId
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account is not linked to this order."
+          });
+      }
+
+      const sync =
+        await syncCustomerMissingNotification(
+          order.customerAccountId
+        );
+
+      if (!sync.missing.length) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "This customer currently has no missing profile information."
+          });
+      }
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const account =
+        accounts.find(
+          item =>
+            String(item.id) ===
+            String(
+              order.customerAccountId
+            )
+        );
+
+      const notification =
+        customerNotifications(
+          account
+        ).find(
+          item =>
+            item.kind ===
+            "missing_info"
+        );
+
+      if (
+        notification
+          ?.discordMessageId
+      ) {
+        await deleteActionNeededDiscordMessage(
+          notification.discordMessageId
+        );
+      }
+
+      let messageId =
+        null;
+
+      let discordError =
+        "";
+
+      try {
+        messageId =
+          await sendActionNeededDiscordMessage(
+            account,
+            notification?.message ||
+            `Important information is missing:\\n• ${sync.missing.join(
+              "\\n• "
+            )}`
+          );
+
+        if (notification) {
+          notification.discordMessageId =
+            messageId;
+
+          notification.discordSentAt =
+            new Date()
+              .toISOString();
+        }
+
+        await saveCustomerAccounts(
+          accounts
+        );
+
+      } catch (error) {
+        discordError =
+          error.message ||
+          "Discord notification could not be sent.";
+      }
+
+      return res.json({
+        ok: true,
+
+        discordUsernameConfigured:
+          Boolean(
+            account.discordUsername
+          ),
+
+        discordSent:
+          Boolean(
+            messageId
+          ),
+
+        discordError
+      });
+
+    } catch (error) {
+      console.error(
+        "Notify missing info error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            error.message ||
+            "Unable to notify customer."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/submissions/:id/message-customer",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const message =
+        clean(
+          req.body?.message,
+          3500
+        );
+
+      if (!message) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a message for the customer."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const order =
+        (
+          Array.isArray(paid)
+            ? paid
+            : []
+        ).find(
+          item =>
+            String(item.id) ===
+            String(id)
+        );
+
+      if (
+        !order?.customerAccountId
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account is not linked to this order."
+          });
+      }
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const account =
+        accounts.find(
+          item =>
+            String(item.id) ===
+            String(
+              order.customerAccountId
+            )
+        );
+
+      if (!account) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account could not be found."
+          });
+      }
+
+      const notifications =
+        customerNotifications(
+          account
+        );
+
+      const notification = {
+        id:
+          crypto.randomUUID(),
+
+        kind:
+          "admin_message",
+
+        title:
+          "Message from SLABS N GRABS ACO",
+
+        message,
+
+        createdAt:
+          new Date()
+            .toISOString(),
+
+        updatedAt:
+          new Date()
+            .toISOString(),
+
+        discordMessageId:
+          null
+      };
+
+      notifications.push(
+        notification
+      );
+
+      account.updatedAt =
+        new Date()
+          .toISOString();
+
+      await saveCustomerAccounts(
+        accounts
+      );
+
+      let discordMessageId =
+        null;
+
+      let discordError =
+        "";
+
+      try {
+        discordMessageId =
+          await sendActionNeededDiscordMessage(
+            account,
+            message
+          );
+
+        notification.discordMessageId =
+          discordMessageId;
+
+        await saveCustomerAccounts(
+          accounts
+        );
+
+      } catch (error) {
+        discordError =
+          error.message ||
+          "Discord notification could not be sent.";
+      }
+
+      return res.json({
+        ok: true,
+
+        discordUsernameConfigured:
+          Boolean(
+            account.discordUsername
+          ),
+
+        discordSent:
+          Boolean(
+            discordMessageId
+          ),
+
+        discordError
+      });
+
+    } catch (error) {
+      console.error(
+        "Message customer error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            error.message ||
+            "Unable to message customer."
         });
     }
   }
@@ -16573,7 +18715,7 @@ app.get(
         if (
           assignment.customerAccountId !==
             customerAccountId ||
-          !freeAssignmentIsActive(
+          !managedAssignmentIsLinked(
             assignment
           )
         ) {
@@ -16625,6 +18767,18 @@ app.get(
           expiresAt:
             assignment.expiresAt ||
             null,
+
+          durationType:
+            assignment.durationType ||
+            null,
+
+          activationStatus:
+            managedAssignmentStatus(
+              assignment
+            ),
+
+          active:
+            assignment.active === true,
 
           customerProfile:
             assignment.customerProfile ||
@@ -16693,7 +18847,7 @@ app.get(
         if (
           assignment.customerAccountId !==
             customerAccountId ||
-          !rentalAssignmentIsActive(
+          !managedAssignmentIsLinked(
             assignment
           )
         ) {
@@ -16745,6 +18899,18 @@ app.get(
           expiresAt:
             assignment.expiresAt ||
             null,
+
+          durationType:
+            assignment.durationType ||
+            null,
+
+          activationStatus:
+            managedAssignmentStatus(
+              assignment
+            ),
+
+          active:
+            assignment.active === true,
 
           customerProfile:
             assignment.customerProfile ||
@@ -17910,11 +20076,11 @@ app.post(
 
       const assignment =
         type === "free"
-          ? currentFreeAssignment(
+          ? linkedFreeAssignment(
               assignments,
               id
             )
-          : currentRentalAssignment(
+          : linkedRentalAssignment(
               assignments,
               id
             );
@@ -18375,11 +20541,11 @@ app.delete(
 
       const assignment =
         type === "free"
-          ? currentFreeAssignment(
+          ? linkedFreeAssignment(
               assignments,
               id
             )
-          : currentRentalAssignment(
+          : linkedRentalAssignment(
               assignments,
               id
             );
@@ -18793,11 +20959,11 @@ app.put(
 
       const assignment =
         type === "free"
-          ? currentFreeAssignment(
+          ? linkedFreeAssignment(
               assignments,
               id
             )
-          : currentRentalAssignment(
+          : linkedRentalAssignment(
               assignments,
               id
             );
@@ -18886,6 +21052,14 @@ app.put(
       } else {
         await saveRentalAssignments(
           assignments
+        );
+      }
+
+      if (
+        assignment.customerAccountId
+      ) {
+        await syncCustomerMissingNotification(
+          assignment.customerAccountId
         );
       }
 
@@ -21414,6 +23588,14 @@ app.put(
       await saveRetailerProfiles(
         records
       );
+
+      if (
+        order.customerAccountId
+      ) {
+        await syncCustomerMissingNotification(
+          order.customerAccountId
+        );
+      }
 
       return res.json({
         ok: true,
@@ -32483,6 +34665,10 @@ app.get(
   requireCustomer,
   async (req, res) => {
     try {
+      await syncCustomerMissingNotification(
+        req.customerAccount.id
+      );
+
       const account =
   req.customerAccount;
 
