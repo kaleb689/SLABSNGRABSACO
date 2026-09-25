@@ -3704,6 +3704,48 @@
     }
 
 
+
+    /* =========================================
+       PAID PROFILE — SHIPPING + CARD VISIBILITY
+    ========================================= */
+
+    .paid-profile-admin-information {
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .paid-profile-admin-box {
+      padding: 15px;
+      border: 1px solid #1d536d;
+      border-radius: 12px;
+      background: #06141f;
+      box-shadow:
+        inset 0 0 18px #08213144;
+    }
+
+    .paid-profile-admin-box
+      > .eyebrow {
+      display: block;
+      margin-bottom: 12px;
+      color: #68e4ff;
+    }
+
+    .paid-profile-admin-box input[readonly] {
+      opacity: 1;
+      color: #eefaff;
+      -webkit-text-fill-color: #eefaff;
+    }
+
+    @media (max-width: 850px) {
+      .paid-profile-admin-information {
+        grid-template-columns: 1fr;
+      }
+    }
+
+
   </style>
 </head>
 
@@ -6209,6 +6251,14 @@ function retailerProfileHtml(
   const retailers =
     profile.retailers || {};
 
+  const customerProfile =
+    profile.customerProfile ||
+    {};
+
+  const customerCard =
+    profile.customerCard ||
+    {};
+
   const retailerBlocks =
     ADMIN_RETAILERS
       .map(retailer => {
@@ -6342,6 +6392,219 @@ name="${escapeHtml(
             readonly
           >
 
+        </div>
+
+        <div class="paid-profile-admin-information">
+          <div class="paid-profile-admin-box">
+            <span class="eyebrow">
+              SHIPPING INFORMATION
+            </span>
+
+            <div class="admin-edit-grid">
+              <div class="admin-edit-field">
+                <label>First Name</label>
+                <input
+                  name="customerFirstName"
+                  value="${escapeHtml(
+                    customerProfile.firstName ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field">
+                <label>Last Name</label>
+                <input
+                  name="customerLastName"
+                  value="${escapeHtml(
+                    customerProfile.lastName ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field">
+                <label>Customer Email</label>
+                <input
+                  name="customerEmail"
+                  value="${escapeHtml(
+                    customerProfile.email ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field">
+                <label>Phone</label>
+                <input
+                  name="customerPhone"
+                  value="${escapeHtml(
+                    customerProfile.phone ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field wide">
+                <label>Street Address</label>
+                <input
+                  name="customerAddress"
+                  value="${escapeHtml(
+                    customerProfile.address ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field wide">
+                <label>Address 2 / Apartment / Unit</label>
+                <input
+                  name="customerAddress2"
+                  value="${escapeHtml(
+                    customerProfile.address2 ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field">
+                <label>City</label>
+                <input
+                  name="customerCity"
+                  value="${escapeHtml(
+                    customerProfile.city ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field">
+                <label>State</label>
+                <input
+                  name="customerState"
+                  value="${escapeHtml(
+                    customerProfile.state ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field">
+                <label>ZIP</label>
+                <input
+                  name="customerZip"
+                  value="${escapeHtml(
+                    customerProfile.zip ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field">
+                <label>Country</label>
+                <input
+                  name="customerCountry"
+                  value="${escapeHtml(
+                    customerProfile.country ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="paid-profile-admin-box">
+            <span class="eyebrow">
+              CARD INFORMATION
+            </span>
+
+            <div class="admin-edit-grid">
+              <div class="admin-edit-field">
+                <label>Card Label</label>
+                <input
+                  name="customerCardLabel"
+                  value="${escapeHtml(
+                    customerCard.cardLabel ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field">
+                <label>Cardholder Name</label>
+                <input
+                  name="customerCardholder"
+                  value="${escapeHtml(
+                    customerCard.cardholder ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field wide">
+                <label>Card Number</label>
+                <input
+                  type="text"
+                  name="customerCardNumber"
+                  value="${escapeHtml(
+                    customerCard.acoCardNumber ||
+                    customerCard.cardNumber ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field">
+                <label>Expiration Month</label>
+                <input
+                  name="customerExpMonth"
+                  value="${escapeHtml(
+                    customerCard.expMonth ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field">
+                <label>Expiration Year</label>
+                <input
+                  name="customerExpYear"
+                  value="${escapeHtml(
+                    customerCard.expYear ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+
+              <div class="admin-edit-field wide">
+                <label>Security Code</label>
+                <input
+                  type="text"
+                  name="customerSecurityCode"
+                  value="${escapeHtml(
+                    customerCard.securityCode ||
+                    ""
+                  )}"
+                  readonly
+                >
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="admin-retailer-grid">
@@ -8509,6 +8772,90 @@ if (editButton) {
               formData.get(
                 "profileName"
               ) || "",
+
+            customerProfile: {
+              firstName:
+                formData.get(
+                  "customerFirstName"
+                ) || "",
+
+              lastName:
+                formData.get(
+                  "customerLastName"
+                ) || "",
+
+              email:
+                formData.get(
+                  "customerEmail"
+                ) || "",
+
+              phone:
+                formData.get(
+                  "customerPhone"
+                ) || "",
+
+              address:
+                formData.get(
+                  "customerAddress"
+                ) || "",
+
+              address2:
+                formData.get(
+                  "customerAddress2"
+                ) || "",
+
+              city:
+                formData.get(
+                  "customerCity"
+                ) || "",
+
+              state:
+                formData.get(
+                  "customerState"
+                ) || "",
+
+              zip:
+                formData.get(
+                  "customerZip"
+                ) || "",
+
+              country:
+                formData.get(
+                  "customerCountry"
+                ) || ""
+            },
+
+            customerCard: {
+              cardLabel:
+                formData.get(
+                  "customerCardLabel"
+                ) || "",
+
+              cardholder:
+                formData.get(
+                  "customerCardholder"
+                ) || "",
+
+              acoCardNumber:
+                formData.get(
+                  "customerCardNumber"
+                ) || "",
+
+              expMonth:
+                formData.get(
+                  "customerExpMonth"
+                ) || "",
+
+              expYear:
+                formData.get(
+                  "customerExpYear"
+                ) || "",
+
+              securityCode:
+                formData.get(
+                  "customerSecurityCode"
+                ) || ""
+            },
 
             retailers
           };
@@ -15682,9 +16029,9 @@ function bindRevealButtons() {
 
 
 /* =========================================
-   GLOBAL SENSITIVE SHOW / HIDE
-   Capture-phase delegation guarantees that
-   dynamically loaded Admin sections work too.
+   GLOBAL ADMIN SHOW / HIDE
+   Single delegated capture handler for all dynamic
+   Admin password / card / Security Code controls.
 ========================================= */
 
 document.addEventListener(
@@ -15696,7 +16043,9 @@ document.addEventListener(
           "[data-admin-sensitive-toggle]",
           ".reveal-button",
           ".retailer-password-toggle",
-          ".admin-show-sensitive"
+          ".admin-show-sensitive",
+          "[data-linked-sensitive-toggle]",
+          "[data-toggle-account-security-code]"
         ].join(",")
       );
 
@@ -15708,266 +16057,125 @@ document.addEventListener(
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    /*
-      Inline Admin sensitive inputs.
-    */
-    if (
-      button.matches(
-        "[data-admin-sensitive-toggle]"
-      )
-    ) {
-      const row =
-        button.closest(
-          ".admin-sensitive-input-row"
-        );
+    const inputRow =
+      button.closest(
+        [
+          ".admin-sensitive-input-row",
+          ".admin-retailer-password-row",
+          ".linked-sensitive-line"
+        ].join(",")
+      );
 
-      const input =
-        row?.querySelector(
-          "[data-admin-sensitive-input]"
-        );
+    const input =
+      inputRow?.querySelector(
+        [
+          "[data-admin-sensitive-input]",
+          "[data-retailer-password]",
+          'input[type="password"]',
+          'input[type="text"]'
+        ].join(",")
+      );
 
-      if (!input) {
-        return;
-      }
-
-      const showing =
+    if (input) {
+      const currentlyVisible =
         input.type === "text";
 
-      input.type =
-        showing
-          ? "password"
-          : "text";
-
-      button.textContent =
-        showing
-          ? "Show"
-          : "Hide";
-
-      return;
-    }
-
-    /*
-      Old-style Admin sensitive text values.
-    */
-    if (
-      button.matches(
-        ".reveal-button"
-      )
-    ) {
-      const sensitiveRow =
-        button.closest(
-          ".sensitive-row"
-        );
-
-      const value =
-        sensitiveRow
-          ?.querySelector(
-            "[data-sensitive]"
-          );
-
-      if (value) {
-        const hidden =
-          value.dataset.hidden ===
-          "true";
-
-        value.textContent =
-          hidden
-            ? (
-                value.dataset.value ||
-                "—"
-              )
-            : (
-                value.dataset.masked ||
-                "—"
-              );
-
-        value.dataset.hidden =
-          hidden
-            ? "false"
-            : "true";
-
-        button.textContent =
-          hidden
-            ? "Hide"
-            : "Show";
-
-        return;
-      }
-
-      /*
-        Some dynamically rendered rows use an input
-        instead of data-sensitive text.
-      */
-      const input =
-        button.parentElement
-          ?.querySelector(
-            'input[type="password"], input[type="text"]'
-          );
-
-      if (input) {
-        const showing =
-          input.type === "text";
-
+      try {
         input.type =
-          showing
+          currentlyVisible
             ? "password"
             : "text";
-
-        button.textContent =
-          showing
-            ? "Show"
-            : "Hide";
-      }
-
-      return;
-    }
-
-    /*
-      Saved shipping/payment Security Code reveal.
-    */
-    if (
-      button.matches(
-        ".admin-show-sensitive"
-      )
-    ) {
-      const row =
-        button.closest(
-          ".admin-sensitive-row"
-        );
-
-      const value =
-        row?.querySelector(
-          "[data-admin-security-code-value]"
-        );
-
-      if (!value) {
+      } catch {
         return;
       }
 
-      const revealed =
-        button.dataset
-          .revealed ===
-        "true";
-
-      value.textContent =
-        revealed
-          ? "••••••"
-          : (
-              value.dataset
-                .hiddenValue ||
-              "Not entered"
-            );
-
-      button.textContent =
-        revealed
-          ? "Show"
-          : "Hide";
-
-      button.dataset.revealed =
-        revealed
-          ? "false"
-          : "true";
-
-      return;
-    }
-
-    /*
-      Retailer password inputs in Admin.
-    */
-    if (
-      button.matches(
-        ".retailer-password-toggle"
-      )
-    ) {
-      const row =
-        button.closest(
-          ".admin-retailer-password-row"
-        );
-
-      const input =
-        row?.querySelector(
-          "[data-retailer-password]"
-        );
-
-      if (!input) {
-        return;
-      }
-
-      const showing =
+      const nowVisible =
         input.type === "text";
 
-      input.type =
-        showing
-          ? "password"
-          : "text";
-
       button.textContent =
-        showing
-          ? "Show"
-          : "Hide";
+        nowVisible
+          ? "Hide"
+          : "Show";
+
+      button.setAttribute(
+        "aria-label",
+        nowVisible
+          ? "Hide sensitive information"
+          : "Show sensitive information"
+      );
+
+      return;
     }
+
+    const row =
+      button.closest(
+        [
+          ".admin-sensitive-row",
+          ".sensitive-row",
+          ".linked-sensitive-line"
+        ].join(",")
+      );
+
+    const value =
+      row?.querySelector(
+        [
+          "[data-admin-security-code-value]",
+          "[data-sensitive]",
+          "[data-full-value]"
+        ].join(",")
+      );
+
+    if (!value) {
+      return;
+    }
+
+    const isShowing =
+      button.dataset.showing ===
+        "true" ||
+      button.dataset.revealed ===
+        "true" ||
+      value.dataset.hidden ===
+        "false";
+
+    const fullValue =
+      value.dataset.fullValue ||
+      value.dataset.hiddenValue ||
+      value.dataset.value ||
+      "—";
+
+    const maskedValue =
+      value.dataset.maskedValue ||
+      value.dataset.masked ||
+      "••••••";
+
+    value.textContent =
+      isShowing
+        ? maskedValue
+        : fullValue;
+
+    button.dataset.showing =
+      isShowing
+        ? "false"
+        : "true";
+
+    button.dataset.revealed =
+      isShowing
+        ? "false"
+        : "true";
+
+    value.dataset.hidden =
+      isShowing
+        ? "true"
+        : "false";
+
+    button.textContent =
+      isShowing
+        ? "Show"
+        : "Hide";
   },
   true
 );
 
-
-
-
-/* =========================================
-   ADMIN UNIVERSAL SENSITIVE TOGGLE FAILSAFE
-   Ensures show / hide works for all Admin sensitive fields.
-========================================= */
-(function setupAdminUniversalSensitiveToggleFailsafe() {
-  document.addEventListener('click', function(event) {
-    const button = event.target.closest([
-      '[data-admin-sensitive-toggle]',
-      '.reveal-button',
-      '.admin-show-sensitive',
-      '.retailer-password-toggle'
-    ].join(','));
-
-    if (!button) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const sensitiveInputRow = button.closest('.admin-sensitive-input-row');
-    if (sensitiveInputRow) {
-      const input = sensitiveInputRow.querySelector('input');
-      if (input) {
-        const nextType = input.type === 'password' ? 'text' : 'password';
-        try { input.type = nextType; } catch (err) { return; }
-        button.textContent = nextType === 'text' ? 'Hide' : 'Show';
-        return;
-      }
-    }
-
-    const securityCodeRow = button.closest('.admin-sensitive-row');
-    if (securityCodeRow) {
-      const value = securityCodeRow.querySelector('[data-admin-security-code-value], [data-sensitive]');
-      if (!value) return;
-      const currentlyHidden = (button.dataset.revealed !== 'true') && (value.dataset.hidden !== 'false');
-      if (value.dataset.hiddenValue || value.dataset.value) {
-        const revealedText = value.dataset.hiddenValue || value.dataset.value || '—';
-        const maskedText = value.dataset.masked || '••••••';
-        value.textContent = currentlyHidden ? revealedText : maskedText;
-        button.textContent = currentlyHidden ? 'Hide' : 'Show';
-        button.dataset.revealed = currentlyHidden ? 'true' : 'false';
-        value.dataset.hidden = currentlyHidden ? 'false' : 'true';
-      }
-      return;
-    }
-
-    const retailerRow = button.closest('.admin-retailer-password-row');
-    if (retailerRow) {
-      const input = retailerRow.querySelector('input');
-      if (!input) return;
-      const nextType = input.type === 'password' ? 'text' : 'password';
-      try { input.type = nextType; } catch (err) { return; }
-      button.textContent = nextType === 'text' ? 'Hide' : 'Show';
-    }
-  }, true);
-})();
 
 /* =========================================
    DELETE CUSTOMER ORDER
