@@ -11393,3 +11393,29 @@ select:focus {
   text-shadow: 0 0 12px #ff3b9844;
 }
 
+
+
+/* ======================================================
+   PAID PROFILE DATA VISIBILITY
+====================================================== */
+
+.paid-profile-card
+  .paid-profile-subsection[open] {
+  border-color:
+    rgba(18, 201, 255, .36);
+}
+
+.paid-profile-card
+  .paid-profile-subsection[open]
+  .paid-profile-subsection-body {
+  display: block;
+}
+
+.paid-profile-card
+  [name="acoCardNumber"],
+.paid-profile-card
+  [name="securityCode"] {
+  color: #f1fbff;
+  -webkit-text-fill-color: #f1fbff;
+}
+
