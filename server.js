@@ -3773,6 +3773,192 @@ function profileActivationLabel(
 }
 
 
+
+function exactManagedAddressKey(
+  profile = {}
+) {
+  const required = [
+    "address",
+    "city",
+    "state",
+    "zip",
+    "country"
+  ];
+
+  if (
+    !required.every(
+      key =>
+        String(
+          profile?.[key] ||
+          ""
+        ).trim()
+    )
+  ) {
+    return "";
+  }
+
+  return JSON.stringify({
+    address:
+      String(
+        profile.address ||
+        ""
+      ).trim(),
+
+    address2:
+      String(
+        profile.address2 ||
+        ""
+      ).trim(),
+
+    city:
+      String(
+        profile.city ||
+        ""
+      ).trim(),
+
+    state:
+      String(
+        profile.state ||
+        ""
+      ).trim(),
+
+    zip:
+      String(
+        profile.zip ||
+        ""
+      ).trim(),
+
+    country:
+      String(
+        profile.country ||
+        ""
+      ).trim()
+  });
+}
+
+
+function managedAssignmentMembershipId(
+  assignment = {}
+) {
+  return String(
+    assignment.managedAccountId ||
+    assignment.freeMembershipId ||
+    assignment.rentedMembershipId ||
+    assignment.membershipId ||
+    ""
+  );
+}
+
+
+function exactManagedAddressMatches(
+  profile,
+  currentMembershipId,
+  memberships,
+  freeAssignments,
+  rentalAssignments
+) {
+  const key =
+    exactManagedAddressKey(
+      profile
+    );
+
+  if (!key) {
+    return [];
+  }
+
+  const matches = [];
+
+  const inspect =
+    (
+      assignment,
+      type,
+      activeFn
+    ) => {
+      if (
+        !assignment ||
+        !activeFn(
+          assignment
+        ) ||
+        exactManagedAddressKey(
+          assignment.customerProfile ||
+          {}
+        ) !==
+          key
+      ) {
+        return;
+      }
+
+      const membershipId =
+        managedAssignmentMembershipId(
+          assignment
+        );
+
+      if (
+        !membershipId ||
+        String(
+          membershipId
+        ) ===
+          String(
+            currentMembershipId ||
+            ""
+          )
+      ) {
+        return;
+      }
+
+      const membership =
+        memberships.find(
+          item =>
+            String(item.id) ===
+            String(membershipId)
+        );
+
+      matches.push({
+        id:
+          membershipId,
+
+        type,
+
+        profileName:
+          membership?.profileName ||
+          (
+            type === "free"
+              ? "Gifted Profile"
+              : "Rented Profile"
+          ),
+
+        accountEmail:
+          membership?.accountEmail ||
+          ""
+      });
+    };
+
+  for (
+    const assignment of
+    freeAssignments || []
+  ) {
+    inspect(
+      assignment,
+      "free",
+      freeAssignmentIsActive
+    );
+  }
+
+  for (
+    const assignment of
+    rentalAssignments || []
+  ) {
+    inspect(
+      assignment,
+      "rented",
+      rentalAssignmentIsActive
+    );
+  }
+
+  return matches;
+}
+
+
 function managedProfileReadiness(
   profile,
   secrets
@@ -13596,6 +13782,24 @@ try {
   );
 }
 
+            const readiness =
+              managedProfileReadiness(
+                assignment?.customerProfile ||
+                {},
+                customerSecrets ||
+                {}
+              );
+
+            const exactAddressMatches =
+              exactManagedAddressMatches(
+                assignment?.customerProfile ||
+                {},
+                membership.id,
+                memberships,
+                assignments,
+                otherAssignments
+              );
+
             return {
               id:
                 membership.id,
@@ -13691,7 +13895,19 @@ try {
   assignment?.customerProfile ||
   null,
 
-customerSecrets
+customerSecrets,
+
+              readiness,
+
+              exactAddressMatches,
+
+              jiggedAddress:
+                assignment?.jiggedAddress ||
+                null,
+
+              jigVariantNumber:
+                assignment?.jigVariantIndex ||
+                null
             };
           }
         );
@@ -15071,6 +15287,24 @@ try {
   );
 }
             
+            const readiness =
+              managedProfileReadiness(
+                assignment?.customerProfile ||
+                {},
+                customerSecrets ||
+                {}
+              );
+
+            const exactAddressMatches =
+              exactManagedAddressMatches(
+                assignment?.customerProfile ||
+                {},
+                membership.id,
+                memberships,
+                otherAssignments,
+                assignments
+              );
+
             return {
               id:
                 membership.id,
@@ -15171,7 +15405,19 @@ customerProfile:
   assignment?.customerProfile ||
   null,
 
-customerSecrets
+customerSecrets,
+
+              readiness,
+
+              exactAddressMatches,
+
+              jiggedAddress:
+                assignment?.jiggedAddress ||
+                null,
+
+              jigVariantNumber:
+                assignment?.jigVariantIndex ||
+                null
             };
           }
         );
@@ -15939,6 +16185,270 @@ function managedRetailerCredentialsForAdmin(
   return retailers;
 }
 
+
+app.put(
+  "/api/admin/submissions/:submissionId/linked-memberships/:type/:id",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const submissionId =
+        clean(
+          req.params.submissionId,
+          150
+        );
+
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      if (
+        type !== "free" &&
+        type !== "rented"
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid linked profile type."
+          });
+      }
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const paidRecord =
+        paidRecords.find(
+          record =>
+            String(record.id) ===
+            String(submissionId)
+        );
+
+      if (!paidRecord) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer submission could not be found."
+          });
+      }
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
+
+      const assignment =
+        type === "free"
+          ? currentFreeAssignment(
+              assignments,
+              id
+            )
+          : currentRentalAssignment(
+              assignments,
+              id
+            );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "This linked profile is no longer active."
+          });
+      }
+
+      if (
+        String(
+          assignment.customerAccountId ||
+          ""
+        ) !==
+        String(
+          paidRecord.customerAccountId ||
+          ""
+        )
+      ) {
+        return res
+          .status(403)
+          .json({
+            error:
+              "This linked profile does not belong to this customer."
+          });
+      }
+
+      const customerProfile =
+        sanitizeProfile({
+          profileName:
+            clean(
+              req.body?.profileName ||
+              assignment.customerProfile
+                ?.profileName ||
+              "",
+              150
+            ),
+
+          firstName:
+            req.body?.firstName,
+
+          lastName:
+            req.body?.lastName,
+
+          email:
+            req.body?.email,
+
+          phone:
+            req.body?.phone,
+
+          address:
+            req.body?.address,
+
+          address2:
+            req.body?.address2,
+
+          country:
+            req.body?.country,
+
+          state:
+            req.body?.state,
+
+          city:
+            req.body?.city,
+
+          zip:
+            req.body?.zip
+        });
+
+      const customerSecrets =
+        sanitizeSecrets({
+          acoEmail:
+            req.body?.acoEmail,
+
+          acoPassword:
+            req.body?.acoPassword,
+
+          cardLabel:
+            req.body?.cardLabel,
+
+          cardholder:
+            req.body?.cardholder,
+
+          acoCardNumber:
+            req.body?.acoCardNumber,
+
+          expMonth:
+            req.body?.expMonth,
+
+          expYear:
+            req.body?.expYear,
+
+          securityCode:
+            req.body?.securityCode
+        });
+
+      assignment.customerProfile =
+        customerProfile;
+
+      assignment.customerSecrets =
+        encryptJson(
+          customerSecrets
+        );
+
+      assignment.updatedAt =
+        new Date()
+          .toISOString();
+
+      /*
+        If Admin manually edits the address after a JIG, the manual
+        edit becomes authoritative and the old JIG metadata is cleared.
+      */
+      delete assignment.jiggedAddress;
+      delete assignment.jigVariantIndex;
+      delete assignment.jigSourceKey;
+      delete assignment.jigSourceAddress;
+
+      /*
+        Keep jigHistoryKeys so previously generated exact JIGs
+        stay unavailable even after manual editing.
+      */
+
+      if (type === "free") {
+        await saveFreeAssignments(
+          assignments
+        );
+      } else {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      return res.json({
+        ok: true,
+        customerProfile,
+
+        customerCard: {
+          cardLabel:
+            customerSecrets.cardLabel ||
+            "",
+
+          cardholder:
+            customerSecrets.cardholder ||
+            "",
+
+          cardNumber:
+            customerSecrets.acoCardNumber ||
+            "",
+
+          maskedNumber:
+            customerSecrets.acoCardNumber
+              ? `•••• •••• •••• ${customerSecrets.acoCardNumber.slice(-4)}`
+              : "",
+
+          expMonth:
+            customerSecrets.expMonth ||
+            "",
+
+          expYear:
+            customerSecrets.expYear ||
+            "",
+
+          securityCode:
+            customerSecrets.securityCode ||
+            ""
+        }
+      });
+
+    } catch (error) {
+      console.error(
+        "Linked profile update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update linked profile information."
+        });
+    }
+  }
+);
+
+
 app.get(
   "/api/admin/submissions/:id/linked-memberships",
   requireAdmin,
@@ -16086,6 +16596,9 @@ app.get(
                   secrets.cardholder ||
                   "",
 
+                cardNumber:
+                  digits,
+
                 maskedNumber:
                   digits
                     ? `•••• •••• •••• ${digits.slice(-4)}`
@@ -16203,6 +16716,9 @@ app.get(
                   secrets.cardholder ||
                   "",
 
+                cardNumber:
+                  digits,
+
                 maskedNumber:
                   digits
                     ? `•••• •••• •••• ${digits.slice(-4)}`
@@ -16222,6 +16738,68 @@ app.get(
               };
             })()
         });
+      }
+
+      for (
+        const item of
+        active
+      ) {
+        item.readiness =
+          managedProfileReadiness(
+            item.customerProfile ||
+            {},
+            {
+              cardholder:
+                item.customerCard?.cardholder ||
+                "",
+
+              acoCardNumber:
+                item.customerCard?.cardNumber ||
+                "",
+
+              expMonth:
+                item.customerCard?.expMonth ||
+                "",
+
+              expYear:
+                item.customerCard?.expYear ||
+                ""
+            }
+          );
+
+        const key =
+          exactManagedAddressKey(
+            item.customerProfile ||
+            {}
+          );
+
+        item.exactAddressMatches =
+          key
+            ? active
+                .filter(
+                  other =>
+                    String(other.id) !==
+                      String(item.id) &&
+                    exactManagedAddressKey(
+                      other.customerProfile ||
+                      {}
+                    ) ===
+                      key
+                )
+                .map(other => ({
+                  id:
+                    other.id,
+
+                  type:
+                    other.type,
+
+                  profileName:
+                    other.profileName,
+
+                  accountEmail:
+                    other.accountEmail
+                }))
+            : [];
       }
 
       return res.json({
@@ -17423,43 +18001,76 @@ app.post(
               savedAddressId
             );
 
+      /*
+        Permanent no-repeat rule:
+        Once a safe JIG variant has been created for this customer
+        from this source address, never create that exact stored
+        address again. History remains even if JIG is later removed.
+      */
       const usedKeys =
-        new Set(
-          assignments
-            .filter(
-              item =>
-                String(
-                  item.customerAccountId ||
-                  ""
-                ) ===
-                  String(
-                    assignment.customerAccountId ||
-                    ""
-                  ) &&
-                String(
-                  item.id
-                ) !==
-                  String(
-                    assignment.id
-                  ) &&
-                String(
-                  item.jigSourceKey ||
-                  item.savedAddressId ||
-                  ""
-                ) ===
-                  String(sourceKey)
-            )
-            .map(
-              item =>
-                safeAddressVariantKey(
-                  item.jiggedAddress ||
-                  item.customerProfile ||
-                  {}
-                )
-            )
-        );
+        new Set();
 
-      let chosen =
+      for (
+        const item of
+        assignments
+      ) {
+        if (
+          String(
+            item.customerAccountId ||
+            ""
+          ) !==
+            String(
+              assignment.customerAccountId ||
+              ""
+            )
+        ) {
+          continue;
+        }
+
+        const itemSourceKey =
+          String(
+            item.jigSourceKey ||
+            item.savedAddressId ||
+            ""
+          );
+
+        if (
+          itemSourceKey !==
+            String(sourceKey)
+        ) {
+          continue;
+        }
+
+        if (item.jiggedAddress) {
+          usedKeys.add(
+            safeAddressVariantKey(
+              item.jiggedAddress
+            )
+          );
+        }
+
+        const history =
+          Array.isArray(
+            item.jigHistoryKeys
+          )
+            ? item.jigHistoryKeys
+            : [];
+
+        for (
+          const historyKey of
+          history
+        ) {
+          if (historyKey) {
+            usedKeys.add(
+              String(
+                historyKey
+              )
+            );
+          }
+        }
+      }
+
+      const chosen =
         variants.find(
           item =>
             !usedKeys.has(
@@ -17470,15 +18081,12 @@ app.post(
         );
 
       if (!chosen) {
-        const index =
-          Number(
-            assignment.jigVariantIndex ||
-            0
-          ) %
-          variants.length;
-
-        chosen =
-          variants[index];
+        return res
+          .status(409)
+          .json({
+            error:
+              `No more JIGs available for this address. All ${variants.length} safe variants have already been used.`
+          });
       }
 
       const chosenIndex =
@@ -17503,8 +18111,65 @@ app.post(
       assignment.jigSourceKey =
         sourceKey;
 
+      assignment.jigSourceAddress = {
+        firstName:
+          sourceAddress.firstName ||
+          "",
+
+        lastName:
+          sourceAddress.lastName ||
+          "",
+
+        phone:
+          sourceAddress.phone ||
+          "",
+
+        address:
+          sourceAddress.address ||
+          "",
+
+        address2:
+          sourceAddress.address2 ||
+          "",
+
+        city:
+          sourceAddress.city ||
+          "",
+
+        state:
+          sourceAddress.state ||
+          "",
+
+        zip:
+          sourceAddress.zip ||
+          "",
+
+        country:
+          sourceAddress.country ||
+          ""
+      };
+
       assignment.jigVariantIndex =
         chosenIndex + 1;
+
+      const chosenKey =
+        safeAddressVariantKey(
+          chosen
+        );
+
+      assignment.jigHistoryKeys =
+        Array.from(
+          new Set([
+            ...(
+              Array.isArray(
+                assignment.jigHistoryKeys
+              )
+                ? assignment.jigHistoryKeys
+                : []
+            ),
+            chosenKey
+          ])
+        );
 
       assignment.jiggedAddress = {
         ...chosen
@@ -17604,6 +18269,164 @@ app.post(
     }
   }
 );
+
+
+app.delete(
+  "/api/admin/managed-memberships/:type/:id/jig-address",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : type === "rented"
+            ? await getRentalAssignments()
+            : null;
+
+      if (!assignments) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid managed membership type."
+          });
+      }
+
+      const assignment =
+        type === "free"
+          ? currentFreeAssignment(
+              assignments,
+              id
+            )
+          : currentRentalAssignment(
+              assignments,
+              id
+            );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "This managed profile is not currently assigned."
+          });
+      }
+
+      const source =
+        assignment.jigSourceAddress &&
+        typeof assignment.jigSourceAddress ===
+          "object"
+          ? assignment.jigSourceAddress
+          : null;
+
+      if (source) {
+        assignment.customerProfile = {
+          ...(
+            assignment.customerProfile ||
+            {}
+          ),
+
+          firstName:
+            source.firstName ||
+            assignment.customerProfile?.firstName ||
+            "",
+
+          lastName:
+            source.lastName ||
+            assignment.customerProfile?.lastName ||
+            "",
+
+          phone:
+            source.phone ||
+            assignment.customerProfile?.phone ||
+            "",
+
+          address:
+            source.address ||
+            "",
+
+          address2:
+            source.address2 ||
+            "",
+
+          city:
+            source.city ||
+            "",
+
+          state:
+            source.state ||
+            "",
+
+          zip:
+            source.zip ||
+            "",
+
+          country:
+            source.country ||
+            ""
+        };
+      }
+
+      delete assignment.jiggedAddress;
+      delete assignment.jigVariantIndex;
+      delete assignment.jigSourceKey;
+      delete assignment.jigSourceAddress;
+
+      /*
+        Do NOT delete jigHistoryKeys.
+        Used JIG variants remain permanently unavailable for this
+        customer/source so an exact JIG is never created twice.
+      */
+
+      assignment.updatedAt =
+        new Date()
+          .toISOString();
+
+      if (type === "free") {
+        await saveFreeAssignments(
+          assignments
+        );
+      } else {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      return res.json({
+        ok: true,
+        customerProfile:
+          assignment.customerProfile ||
+          {}
+      });
+
+    } catch (error) {
+      console.error(
+        "Managed JIG remove error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to remove the JIG address."
+        });
+    }
+  }
+);
+
 
 app.get(
   "/api/admin/managed-memberships/:type/:id/saved-details",
@@ -17837,7 +18660,15 @@ app.get(
 
         paymentMethods:
           payload.paymentMethods ||
-          []
+          [],
+
+        jiggedAddress:
+          assignment.jiggedAddress ||
+          null,
+
+        jigVariantNumber:
+          assignment.jigVariantIndex ||
+          null
       });
 
     } catch (error) {
