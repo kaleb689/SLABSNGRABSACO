@@ -3226,6 +3226,321 @@
     }
 
 
+
+    /* =========================================
+       MAIN ADMIN VIEW DROPDOWN — LARGE BLUE
+    ========================================= */
+
+    .admin-submission-filter-wrap {
+      min-width: 340px;
+      padding: 15px 17px;
+      border: 1px solid #13a4d4;
+      border-radius: 16px;
+      background:
+        linear-gradient(
+          180deg,
+          #0b3650 0%,
+          #071e2d 100%
+        );
+      box-shadow:
+        0 14px 34px #00000038,
+        inset 0 0 24px #0c446066;
+    }
+
+    .admin-submission-filter-wrap
+      > .eyebrow {
+      display: block;
+      margin: 0 0 8px;
+      color: #79e8ff;
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: 1px;
+    }
+
+    #submissionTypeFilter.admin-submission-filter {
+      width: 100%;
+      min-height: 64px;
+      padding: 0 18px;
+      border: 1px solid #2acbf5 !important;
+      border-radius: 12px !important;
+      background: #082d41 !important;
+      color: #f4fcff !important;
+      font-size: 16px !important;
+      font-weight: 950 !important;
+      letter-spacing: .35px;
+      box-shadow:
+        inset 0 0 20px #0b4a6866,
+        0 8px 20px #0000002b;
+      cursor: pointer;
+    }
+
+    /* =========================================
+       MANAGED PROFILE READINESS
+    ========================================= */
+
+    .managed-info-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 28px;
+      padding: 6px 10px;
+      border: 1px solid;
+      border-radius: 999px;
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .6px;
+      white-space: nowrap;
+    }
+
+    .managed-info-tag.complete {
+      border-color: #258459;
+      background: #09281d;
+      color: #58e7a0;
+    }
+
+    .managed-info-tag.missing {
+      border-color: #9c512b;
+      background: #2d160b;
+      color: #ffae7a;
+    }
+
+    .managed-info-light {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: currentColor;
+      box-shadow: 0 0 10px currentColor;
+    }
+
+    .linked-complete-tag {
+      margin-top: 10px;
+    }
+
+    /* =========================================
+       MANAGED ACCOUNT EMAIL PROMINENCE
+    ========================================= */
+
+    .managed-account-email-prominent,
+    .linked-managed-email-prominent {
+      display: grid;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .managed-account-email-prominent span,
+    .linked-managed-email-prominent span {
+      color: #67e3ff;
+      font-size: 8px;
+      font-weight: 950;
+      letter-spacing: 1px;
+    }
+
+    .managed-account-email-prominent strong,
+    .linked-managed-email-prominent strong {
+      color: #f5fdff;
+      font-size: 13px;
+      font-weight: 950;
+      word-break: break-all;
+    }
+
+    .linked-managed-email-prominent {
+      padding: 12px 13px;
+      border: 1px solid #1d607c;
+      border-radius: 10px;
+      background: #071b27;
+    }
+
+    .linked-managed-email-prominent strong {
+      font-size: 15px;
+      color: #74e9ff;
+    }
+
+    /* =========================================
+       EXACT ADDRESS MATCH WARNING
+    ========================================= */
+
+    .exact-address-warning {
+      display: grid;
+      gap: 5px;
+      margin-top: 12px;
+      padding: 11px 12px;
+      border: 1px solid #9b6a23;
+      border-radius: 10px;
+      background: #2d220b;
+    }
+
+    .exact-address-warning strong {
+      color: #ffd56e;
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: .45px;
+    }
+
+    .exact-address-warning small {
+      color: #d8bd84;
+      font-size: 9px;
+      line-height: 1.5;
+    }
+
+    /* =========================================
+       JIG REMOVE / CURRENT JIG
+    ========================================= */
+
+    .gifted-address-jig-row {
+      grid-template-columns:
+        minmax(0, 1fr)
+        auto
+        auto !important;
+    }
+
+    .gifted-jig-remove-button {
+      min-width: 96px;
+      border: 1px solid #8f4f29;
+      border-radius: 8px;
+      background: #2a160c;
+      color: #ffaf7d;
+      padding: 0 13px;
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .45px;
+      cursor: pointer;
+    }
+
+    .gifted-jig-remove-button:hover {
+      border-color: #d7753f;
+      background: #3a1d0e;
+    }
+
+    .gifted-jig-remove-button[hidden] {
+      display: none !important;
+    }
+
+    /* =========================================
+       FULL ATTACHED PROFILE EDITOR
+    ========================================= */
+
+    .managed-full-edit-panel {
+      margin-top: 12px;
+      border-color: #28617d !important;
+      background: #071823 !important;
+    }
+
+    .managed-full-edit-panel
+      > summary h3 {
+      color: #75e8ff;
+    }
+
+    /* =========================================
+       LINKED FULL CARD SHOW / HIDE
+    ========================================= */
+
+    .linked-sensitive-line {
+      display: grid;
+      grid-template-columns:
+        minmax(90px, auto)
+        minmax(0, 1fr)
+        auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+      padding: 8px 9px;
+      border: 1px solid #173f55;
+      border-radius: 8px;
+      background: #06111a;
+    }
+
+    .linked-sensitive-line span {
+      color: #7897aa;
+      font-size: 8px;
+      font-weight: 950;
+      letter-spacing: .6px;
+    }
+
+    .linked-sensitive-line strong {
+      margin: 0;
+      color: #effaff;
+      font-size: 10px;
+      word-break: break-all;
+    }
+
+    .linked-sensitive-toggle {
+      border: 1px solid #2381a4;
+      border-radius: 7px;
+      background: #082532;
+      color: #54dbff;
+      padding: 6px 10px;
+      font-size: 9px;
+      font-weight: 950;
+      cursor: pointer;
+    }
+
+    @media (max-width: 760px) {
+      .admin-submission-filter-wrap {
+        min-width: 0;
+        width: 100%;
+      }
+
+      .linked-sensitive-line {
+        grid-template-columns: 1fr;
+      }
+
+      .gifted-address-jig-row {
+        grid-template-columns: 1fr !important;
+      }
+    }
+
+
+
+    /* =========================================
+       LINKED PROFILE — EDIT ALL INFORMATION
+    ========================================= */
+
+    .linked-edit-all-panel {
+      margin-top: 16px;
+      border: 1px solid #1f607d;
+      border-radius: 12px;
+      background: #071824;
+      overflow: hidden;
+    }
+
+    .linked-edit-all-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 78px;
+      padding: 16px 18px;
+      cursor: pointer;
+      list-style: none;
+      background: #092333;
+    }
+
+    .linked-edit-all-summary h3 {
+      margin: 3px 0;
+      color: #74e9ff;
+      font-size: 15px;
+      font-weight: 950;
+    }
+
+    .linked-edit-all-summary p {
+      margin: 4px 0 0;
+      color: #90abba;
+      font-size: 10px;
+      line-height: 1.45;
+    }
+
+    .linked-edit-all-panel[open]
+      > .linked-edit-all-summary {
+      border-bottom: 1px solid #1f5872;
+      background: #0a2a3c;
+    }
+
+    .linked-edit-all-form {
+      padding: 15px;
+    }
+
+
   </style>
 </head>
 
@@ -6269,6 +6584,11 @@ function linkedProfileDetailHtml(
     membership.customerCard ||
     {};
 
+  const readiness =
+    adminManagedInfoReady(
+      membership
+    );
+
   const shippingLine =
     [
       profile.address,
@@ -6314,13 +6634,39 @@ function linkedProfileDetailHtml(
         )}
       </h3>
 
-      <p class="available-membership-email">
-        ${escapeHtml(
-          adminLinkedProfileEmail(
-            membership
-          )
-        )}
-      </p>
+      <div class="linked-managed-email-prominent">
+        <span>
+          MANAGED ACCOUNT EMAIL
+        </span>
+
+        <strong>
+          ${escapeHtml(
+            adminLinkedProfileEmail(
+              membership
+            )
+          )}
+        </strong>
+      </div>
+
+      ${
+        readiness.ready
+          ? `
+              <span class="managed-info-tag complete linked-complete-tag">
+                <span class="managed-info-light"></span>
+                COMPLETE
+              </span>
+            `
+          : `
+              <span class="managed-info-tag missing linked-complete-tag">
+                <span class="managed-info-light"></span>
+                INFO MISSING
+              </span>
+            `
+      }
+
+      ${adminExactAddressWarning(
+        membership
+      )}
 
       <div class="linked-credential-grid">
         ${
@@ -6391,12 +6737,42 @@ function linkedProfileDetailHtml(
                     )}
                   </p>
 
-                  <p>
-                    ${escapeHtml(
-                      card.maskedNumber ||
-                      "Card saved"
-                    )}
-                  </p>
+                  <div class="linked-sensitive-line">
+                    <span>
+                      CARD NUMBER
+                    </span>
+
+                    <strong
+                      data-linked-card-number
+                      data-full-value="${escapeHtml(
+                        card.cardNumber ||
+                        ""
+                      )}"
+                      data-masked-value="${escapeHtml(
+                        card.maskedNumber ||
+                        "Card saved"
+                      )}"
+                    >
+                      ${escapeHtml(
+                        card.maskedNumber ||
+                        "Card saved"
+                      )}
+                    </strong>
+
+                    ${
+                      card.cardNumber
+                        ? `
+                            <button
+                              type="button"
+                              class="linked-sensitive-toggle"
+                              data-linked-sensitive-toggle
+                            >
+                              Show
+                            </button>
+                          `
+                        : ""
+                    }
+                  </div>
 
                   <p>
                     EXP:
@@ -6414,23 +6790,24 @@ function linkedProfileDetailHtml(
                   ${
                     card.securityCode
                       ? `
-                          <div class="admin-sensitive-row">
+                          <div class="linked-sensitive-line">
                             <span>
-                              SECURITY CODE:
+                              SECURITY CODE
                             </span>
 
                             <strong
-                              data-admin-security-code-value
-                              data-hidden-value="${escapeHtml(
+                              data-full-value="${escapeHtml(
                                 card.securityCode
                               )}"
+                              data-masked-value="••••••"
                             >
                               ••••••
                             </strong>
 
                             <button
                               type="button"
-                              class="admin-show-sensitive"
+                              class="linked-sensitive-toggle"
+                              data-linked-sensitive-toggle
                             >
                               Show
                             </button>
@@ -6447,6 +6824,305 @@ function linkedProfileDetailHtml(
           }
         </div>
       </div>
+
+      <details
+        class="linked-edit-all-panel admin-collapsible"
+        data-linked-edit-panel="${escapeHtml(
+          membership.id
+        )}"
+      >
+        <summary
+          class="linked-edit-all-summary admin-collapsible-head"
+        >
+          <div>
+            <span class="eyebrow">
+              MANAGED PROFILE EDITOR
+            </span>
+
+            <h3>
+              Edit All Information
+            </h3>
+
+            <p>
+              Edit the managed account login, attached shipping, card information, and Security Code.
+            </p>
+          </div>
+
+          <span class="admin-collapsible-arrow">
+            ›
+          </span>
+        </summary>
+
+        <form
+          class="linked-edit-all-form"
+          data-linked-edit-form="${escapeHtml(
+            membership.id
+          )}"
+          data-linked-edit-type="${escapeHtml(
+            membership.type ||
+            ""
+          )}"
+        >
+          <div class="admin-edit-grid">
+
+            <div class="admin-edit-field">
+              <input
+                name="acoEmail"
+                type="email"
+                value="${escapeHtml(
+                  membership?.retailers?.target?.username ||
+                  membership?.retailers?.walmart?.username ||
+                  adminLinkedProfileEmail(
+                    membership
+                  ) ||
+                  ""
+                )}"
+              >
+              <label>Managed Account Email / Username</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <div class="admin-sensitive-input-row">
+                <input
+                  name="acoPassword"
+                  type="password"
+                  value="${escapeHtml(
+                    membership?.retailers?.target?.password ||
+                    membership?.retailers?.walmart?.password ||
+                    ""
+                  )}"
+                  data-admin-sensitive-input
+                >
+
+                <button
+                  type="button"
+                  class="reveal-button"
+                  data-admin-sensitive-toggle
+                >
+                  Show
+                </button>
+              </div>
+              <label>Managed Account Password</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="firstName"
+                value="${escapeHtml(
+                  profile.firstName ||
+                  ""
+                )}"
+              >
+              <label>First Name</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="lastName"
+                value="${escapeHtml(
+                  profile.lastName ||
+                  ""
+                )}"
+              >
+              <label>Last Name</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="email"
+                type="email"
+                value="${escapeHtml(
+                  profile.email ||
+                  ""
+                )}"
+              >
+              <label>Customer Email</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="phone"
+                value="${escapeHtml(
+                  profile.phone ||
+                  ""
+                )}"
+              >
+              <label>Phone</label>
+            </div>
+
+            <div class="admin-edit-field wide">
+              <input
+                name="address"
+                value="${escapeHtml(
+                  profile.address ||
+                  ""
+                )}"
+              >
+              <label>Street Address</label>
+            </div>
+
+            <div class="admin-edit-field wide">
+              <input
+                name="address2"
+                value="${escapeHtml(
+                  profile.address2 ||
+                  ""
+                )}"
+              >
+              <label>Address 2 / Apartment / Unit</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="city"
+                value="${escapeHtml(
+                  profile.city ||
+                  ""
+                )}"
+              >
+              <label>City</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="state"
+                value="${escapeHtml(
+                  profile.state ||
+                  ""
+                )}"
+              >
+              <label>State</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="zip"
+                value="${escapeHtml(
+                  profile.zip ||
+                  ""
+                )}"
+              >
+              <label>ZIP Code</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="country"
+                value="${escapeHtml(
+                  profile.country ||
+                  "US"
+                )}"
+              >
+              <label>Country</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="cardLabel"
+                value="${escapeHtml(
+                  card.cardLabel ||
+                  ""
+                )}"
+              >
+              <label>Card Label</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="cardholder"
+                value="${escapeHtml(
+                  card.cardholder ||
+                  ""
+                )}"
+              >
+              <label>Cardholder Name</label>
+            </div>
+
+            <div class="admin-edit-field wide">
+              <div class="admin-sensitive-input-row">
+                <input
+                  name="acoCardNumber"
+                  type="password"
+                  value="${escapeHtml(
+                    card.cardNumber ||
+                    ""
+                  )}"
+                  data-admin-sensitive-input
+                >
+
+                <button
+                  type="button"
+                  class="reveal-button"
+                  data-admin-sensitive-toggle
+                >
+                  Show
+                </button>
+              </div>
+              <label>Card Number</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="expMonth"
+                value="${escapeHtml(
+                  card.expMonth ||
+                  ""
+                )}"
+              >
+              <label>Expiration Month</label>
+            </div>
+
+            <div class="admin-edit-field">
+              <input
+                name="expYear"
+                value="${escapeHtml(
+                  card.expYear ||
+                  ""
+                )}"
+              >
+              <label>Expiration Year</label>
+            </div>
+
+            <div class="admin-edit-field wide">
+              <div class="admin-sensitive-input-row">
+                <input
+                  name="securityCode"
+                  type="password"
+                  value="${escapeHtml(
+                    card.securityCode ||
+                    ""
+                  )}"
+                  data-admin-sensitive-input
+                >
+
+                <button
+                  type="button"
+                  class="reveal-button"
+                  data-admin-sensitive-toggle
+                >
+                  Show
+                </button>
+              </div>
+              <label>Security Code</label>
+            </div>
+
+          </div>
+
+          <div class="admin-edit-actions">
+            <button
+              type="submit"
+              class="admin-save-button"
+            >
+              Save All Information
+            </button>
+          </div>
+
+          <div
+            class="admin-edit-message"
+            data-linked-edit-message
+          ></div>
+        </form>
+      </details>
     </div>
   `;
 }
@@ -6621,6 +7297,243 @@ async function loadAdminLinkedProfiles(
 }
 
 function bindLinkedProfileSections() {
+
+  document
+    .querySelectorAll(
+      "[data-linked-edit-form]"
+    )
+    .forEach(form => {
+      form.addEventListener(
+        "submit",
+        async event => {
+          event.preventDefault();
+
+          const membershipId =
+            form.dataset
+              .linkedEditForm;
+
+          const type =
+            form.dataset
+              .linkedEditType;
+
+          const customerOrder =
+            form.closest(
+              ".customer-order"
+            );
+
+          const submissionId =
+            customerOrder
+              ?.dataset
+              ?.id ||
+            form.closest(
+              "[data-submission-id]"
+            )?.dataset
+              ?.submissionId ||
+            "";
+
+          const button =
+            form.querySelector(
+              'button[type="submit"]'
+            );
+
+          const message =
+            form.querySelector(
+              "[data-linked-edit-message]"
+            );
+
+          if (
+            !membershipId ||
+            !type ||
+            !submissionId
+          ) {
+            if (message) {
+              message.textContent =
+                "Unable to identify this linked profile.";
+              message.className =
+                "admin-edit-message error";
+            }
+            return;
+          }
+
+          const fd =
+            new FormData(
+              form
+            );
+
+          if (button) {
+            button.disabled =
+              true;
+            button.textContent =
+              "Saving...";
+          }
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/submissions/${encodeURIComponent(
+                  submissionId
+                )}/linked-memberships/${encodeURIComponent(
+                  type
+                )}/${encodeURIComponent(
+                  membershipId
+                )}`,
+                {
+                  method:
+                    "PUT",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      acoEmail:
+                        fd.get("acoEmail") ||
+                        "",
+
+                      acoPassword:
+                        fd.get("acoPassword") ||
+                        "",
+
+                      firstName:
+                        fd.get("firstName") ||
+                        "",
+
+                      lastName:
+                        fd.get("lastName") ||
+                        "",
+
+                      email:
+                        fd.get("email") ||
+                        "",
+
+                      phone:
+                        fd.get("phone") ||
+                        "",
+
+                      address:
+                        fd.get("address") ||
+                        "",
+
+                      address2:
+                        fd.get("address2") ||
+                        "",
+
+                      city:
+                        fd.get("city") ||
+                        "",
+
+                      state:
+                        fd.get("state") ||
+                        "",
+
+                      zip:
+                        fd.get("zip") ||
+                        "",
+
+                      country:
+                        fd.get("country") ||
+                        "",
+
+                      cardLabel:
+                        fd.get("cardLabel") ||
+                        "",
+
+                      cardholder:
+                        fd.get("cardholder") ||
+                        "",
+
+                      acoCardNumber:
+                        fd.get("acoCardNumber") ||
+                        "",
+
+                      expMonth:
+                        fd.get("expMonth") ||
+                        "",
+
+                      expYear:
+                        fd.get("expYear") ||
+                        "",
+
+                      securityCode:
+                        fd.get("securityCode") ||
+                        ""
+                    })
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to save linked profile."
+              );
+            }
+
+            if (message) {
+              message.textContent =
+                "Linked profile information saved.";
+              message.className =
+                "admin-edit-message success";
+            }
+
+            /*
+              Keep the Linked Profiles and Edit All Information
+              panels open after refresh.
+            */
+            form.closest("details")
+              ?.setAttribute(
+                "open",
+                ""
+              );
+
+            const linkedSection =
+              form.closest(
+                ".admin-linked-profiles"
+              );
+
+            linkedSection
+              ?.closest("details")
+              ?.setAttribute(
+                "open",
+                ""
+              );
+
+            await loadAdminLinkedProfiles(
+              customerOrder
+            );
+
+          } catch (error) {
+            if (message) {
+              message.textContent =
+                error.message;
+              message.className =
+                "admin-edit-message error";
+            }
+
+          } finally {
+            if (button) {
+              button.disabled =
+                false;
+              button.textContent =
+                "Save All Information";
+            }
+          }
+        }
+      );
+    });
+
+
   document
     .querySelectorAll(
       "[data-linked-profiles-section]"
@@ -7936,6 +8849,158 @@ function managedDisplayEmail(
 }
 
 
+
+function adminManagedInfoReady(
+  membership
+) {
+  if (
+    membership?.readiness &&
+    typeof membership.readiness ===
+      "object"
+  ) {
+    return membership.readiness;
+  }
+
+  const profile =
+    membership?.customerProfile ||
+    {};
+
+  const secrets =
+    membership?.customerSecrets ||
+    membership?.customerCard ||
+    {};
+
+  const shippingReady =
+    [
+      "firstName",
+      "lastName",
+      "address",
+      "city",
+      "state",
+      "zip",
+      "country"
+    ].every(
+      key =>
+        Boolean(
+          String(
+            profile?.[key] ||
+            ""
+          ).trim()
+        )
+    );
+
+  const digits =
+    String(
+      secrets.acoCardNumber ||
+      secrets.cardNumber ||
+      ""
+    ).replace(
+      /\D/g,
+      ""
+    );
+
+  const cardReady =
+    Boolean(
+      String(
+        secrets.cardholder ||
+        ""
+      ).trim()
+    ) &&
+    /^\d{12,19}$/.test(
+      digits
+    ) &&
+    /^(0[1-9]|1[0-2])$/.test(
+      String(
+        secrets.expMonth ||
+        ""
+      )
+    ) &&
+    /^\d{4}$/.test(
+      String(
+        secrets.expYear ||
+        ""
+      )
+    );
+
+  return {
+    ready:
+      shippingReady &&
+      cardReady,
+
+    shippingReady,
+    cardReady
+  };
+}
+
+
+function adminManagedReadinessTag(
+  membership
+) {
+  const readiness =
+    adminManagedInfoReady(
+      membership
+    );
+
+  return `
+    <span
+      class="managed-info-tag ${
+        readiness.ready
+          ? "complete"
+          : "missing"
+      }"
+    >
+      <span class="managed-info-light"></span>
+      ${
+        readiness.ready
+          ? "INFO COMPLETE"
+          : "INFO MISSING"
+      }
+    </span>
+  `;
+}
+
+
+function adminExactAddressWarning(
+  membership
+) {
+  const matches =
+    Array.isArray(
+      membership?.exactAddressMatches
+    )
+      ? membership.exactAddressMatches
+      : [];
+
+  if (!matches.length) {
+    return "";
+  }
+
+  return `
+    <div class="exact-address-warning">
+      <strong>
+        EXACT ADDRESS MATCH — ${matches.length} OTHER PROFILE${matches.length === 1 ? "" : "S"}
+      </strong>
+
+      <small>
+        Letter-for-letter same shipping address:
+        ${matches
+          .map(item =>
+            `${escapeHtml(
+              item.accountEmail ||
+              item.profileName ||
+              "Managed profile"
+            )} (${escapeHtml(
+              item.type === "free"
+                ? "Gifted"
+                : "Rented"
+            )})`
+          )
+          .join(" • ")}
+      </small>
+    </div>
+  `;
+}
+
+
 function managedMembershipCardHtml(
   membership,
   type,
@@ -8093,6 +9158,9 @@ function managedMembershipCardHtml(
   <details
     class="order-section admin-collapsible"
     data-managed-membership-card
+    data-managed-membership-id="${escapeHtml(
+      membership.id
+    )}"
     data-managed-status="${
       active ||
       occupiedByOtherType
@@ -8137,8 +9205,11 @@ function managedMembershipCardHtml(
           )}
         </h3>
 
-        <p>
-          ACCOUNT EMAIL:
+        <div class="managed-account-email-prominent">
+          <span>
+            MANAGED ACCOUNT EMAIL
+          </span>
+
           <strong>
             ${escapeHtml(
               managedDisplayEmail(
@@ -8146,7 +9217,7 @@ function managedMembershipCardHtml(
               )
             )}
           </strong>
-        </p>
+        </div>
       </div>
 
       <div
@@ -8156,6 +9227,10 @@ function managedMembershipCardHtml(
           gap:14px;
         "
       >
+        ${adminManagedReadinessTag(
+          membership
+        )}
+
         ${
           packageStamp
             ? `
@@ -8341,6 +9416,10 @@ function managedMembershipCardHtml(
                   )}
 
                 </div>
+
+                ${adminExactAddressWarning(
+                  membership
+                )}
               `
               : ""
           }
@@ -8432,6 +9511,21 @@ function managedMembershipCardHtml(
                             >
                               JIG
                             </button>
+
+                            <button
+                              type="button"
+                              class="gifted-jig-remove-button"
+                              data-managed-jig-remove="${escapeHtml(
+                                membership.id
+                              )}"
+                              ${
+                                membership.jiggedAddress
+                                  ? ""
+                                  : "hidden"
+                              }
+                            >
+                              Remove JIG
+                            </button>
                           </div>
 
                           <label>
@@ -8439,7 +9533,7 @@ function managedMembershipCardHtml(
                           </label>
 
                           <small class="admin-edit-help">
-                            Includes Original Account Shipping plus every extra saved address. JIG creates a safe formatting variant for this profile.
+                            Includes Original Account Shipping plus every extra saved address. JIG creates a safe formatting variant and will never reuse the exact same JIG for this customer/address.
                           </small>
 
                           <button
@@ -8610,7 +9704,40 @@ function managedMembershipCardHtml(
                         data-gifted-autopopulate-preview="${escapeHtml(
                           membership.id
                         )}"
-                      ></div>
+                      >
+                        ${
+                          membership.jiggedAddress
+                            ? `
+                                <div class="gifted-autopopulate-preview-card jig-preview-card">
+                                  <span class="eyebrow">
+                                    CURRENT JIGGED ADDRESS
+                                  </span>
+
+                                  <strong>
+                                    ${escapeHtml(
+                                      membership.jiggedAddress.address ||
+                                      ""
+                                    )}
+                                  </strong>
+
+                                  <small>
+                                    ${escapeHtml(
+                                      [
+                                        membership.jiggedAddress.address2,
+                                        membership.jiggedAddress.city,
+                                        membership.jiggedAddress.state,
+                                        membership.jiggedAddress.zip,
+                                        membership.jiggedAddress.country
+                                      ]
+                                        .filter(Boolean)
+                                        .join(", ")
+                                    )}
+                                  </small>
+                                </div>
+                              `
+                            : ""
+                        }
+                      </div>
 
                       <div class="admin-edit-actions">
                         <button
@@ -8730,21 +9857,23 @@ function managedMembershipCardHtml(
 
 
           ${
-            false
+            active
               ? `
           <details
-            class="order-section admin-collapsible managed-customer-details"
+            class="order-section admin-collapsible managed-customer-details managed-full-edit-panel"
+            data-managed-full-edit-panel="${escapeHtml(
+              membership.id
+            )}"
           >
             <summary
               class="order-section-head admin-collapsible-head"
             >
               <div>
                 <h3>
-                  Customer Address &amp; Card Information
+                  Edit All Attached Profile Information
                 </h3>
                 <p>
-                  Address, card information, and the separate Security Code
-                  used by this managed assignment.
+                  Edit every attached shipping and card field for this managed profile.
                 </p>
               </div>
 
@@ -8886,15 +10015,27 @@ function managedMembershipCardHtml(
                 </div>
 
                 <div class="admin-edit-field wide">
+                  <div class="admin-sensitive-input-row">
+                    <input
+                      name="acoCardNumber"
+                      type="password"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      value="${escapeHtml(
+                        customerSecrets.acoCardNumber || ""
+                      )}"
+                      data-admin-sensitive-input
+                    >
+
+                    <button
+                      type="button"
+                      class="reveal-button"
+                      data-admin-sensitive-toggle
+                    >
+                      Show
+                    </button>
+                  </div>
                   <label>Card Number</label>
-                  <input
-                    name="acoCardNumber"
-                    inputmode="numeric"
-                    autocomplete="off"
-                    value="${escapeHtml(
-                      customerSecrets.acoCardNumber || ""
-                    )}"
-                  >
                 </div>
 
                 <div class="admin-edit-field">
@@ -8922,17 +10063,28 @@ function managedMembershipCardHtml(
                 </div>
 
                 <div class="admin-edit-field wide">
+                  <div class="admin-sensitive-input-row">
+                    <input
+                      name="securityCode"
+                      type="password"
+                      autocomplete="off"
+                      value="${escapeHtml(
+                        customerSecrets.securityCode || ""
+                      )}"
+                      data-admin-sensitive-input
+                    >
+
+                    <button
+                      type="button"
+                      class="reveal-button"
+                      data-admin-sensitive-toggle
+                    >
+                      Show
+                    </button>
+                  </div>
                   <label>Security Code</label>
-                  <input
-                    name="securityCode"
-                    autocomplete="off"
-                    value="${escapeHtml(
-                      customerSecrets.securityCode || ""
-                    )}"
-                  >
                   <small class="admin-edit-help">
                     This is the separate ACO Security Code field.
-                    It is not the card CVV/CVC.
                   </small>
                 </div>
 
@@ -8943,7 +10095,7 @@ function managedMembershipCardHtml(
                   type="submit"
                   class="admin-save-button"
                 >
-                  Save Customer Details
+                  Save All Profile Information
                 </button>
               </div>
 
@@ -10316,6 +11468,130 @@ function bindManagedMembershipDashboard(
 
   document
     .querySelectorAll(
+      "[data-managed-jig-remove]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async event => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const form =
+            button.closest(
+              ".gifted-profile-autopopulate-form"
+            );
+
+          if (!form) {
+            return;
+          }
+
+          const id =
+            button.dataset
+              .managedJigRemove;
+
+          const oldText =
+            button.textContent;
+
+          button.disabled =
+            true;
+
+          button.textContent =
+            "Removing...";
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/managed-memberships/${encodeURIComponent(
+                  form.dataset.managedType ||
+                  "free"
+                )}/${encodeURIComponent(
+                  id
+                )}/jig-address`,
+                {
+                  method:
+                    "DELETE",
+
+                  credentials:
+                    "same-origin"
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to remove JIG."
+              );
+            }
+
+            const preview =
+              form.querySelector(
+                "[data-gifted-autopopulate-preview]"
+              );
+
+            preview
+              ?.querySelectorAll(
+                ".jig-preview-card"
+              )
+              .forEach(
+                card =>
+                  card.remove()
+              );
+
+            button.hidden =
+              true;
+
+            const message =
+              form.querySelector(
+                ".admin-edit-message"
+              );
+
+            if (message) {
+              message.textContent =
+                "JIG removed and source address restored.";
+
+              message.className =
+                "admin-edit-message success";
+            }
+
+            const group =
+              form.closest(
+                "[data-managed-customer-group]"
+              );
+
+            if (group) {
+              managedOpenGroupKeys.add(
+                `${form.dataset.managedType || "free"}:${group.dataset.managedCustomerGroup}`
+              );
+            }
+
+          } catch (error) {
+            alert(
+              error.message
+            );
+
+          } finally {
+            button.disabled =
+              false;
+
+            button.textContent =
+              oldText;
+          }
+        }
+      );
+    });
+
+
+
+  document
+    .querySelectorAll(
       "[data-managed-manual-address-toggle]"
     )
     .forEach(button => {
@@ -10562,6 +11838,15 @@ function bindManagedMembershipDashboard(
                 result.variant ||
                 {};
 
+              preview
+                .querySelectorAll(
+                  ".jig-preview-card"
+                )
+                .forEach(
+                  card =>
+                    card.remove()
+                );
+
               preview.insertAdjacentHTML(
                 "afterbegin",
                 `
@@ -10609,6 +11894,16 @@ function bindManagedMembershipDashboard(
               );
             }
 
+            const removeJigButton =
+              form.querySelector(
+                "[data-managed-jig-remove]"
+              );
+
+            if (removeJigButton) {
+              removeJigButton.hidden =
+                false;
+            }
+
             const message =
               form.querySelector(
                 ".admin-edit-message"
@@ -10616,7 +11911,12 @@ function bindManagedMembershipDashboard(
 
             if (message) {
               message.textContent =
-                "JIG address created and saved to this gifted profile.";
+                `JIG address created and saved to this ${
+                  form.dataset.managedType ===
+                    "rented"
+                    ? "rented"
+                    : "gifted"
+                } profile.`;
 
               message.className =
                 "admin-edit-message success";
@@ -12192,7 +13492,7 @@ function bindManagedMembershipDashboard(
 
             if (message) {
               message.textContent =
-                "Customer details saved.";
+                "All attached profile information saved.";
 
               message.className =
                 "admin-edit-message success";
@@ -12212,7 +13512,7 @@ function bindManagedMembershipDashboard(
             if (button) {
               button.disabled = false;
               button.textContent =
-                "Save Customer Details";
+                "Save All Profile Information";
             }
           }
         }
@@ -15167,6 +16467,264 @@ load();
   );
 
   restoreDetails();
+})();
+
+
+
+/* =========================================
+   LINKED PROFILE FULL CARD SHOW / HIDE
+========================================= */
+document.addEventListener(
+  "click",
+  event => {
+    const button =
+      event.target.closest(
+        "[data-linked-sensitive-toggle]"
+      );
+
+    if (!button) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const row =
+      button.closest(
+        ".linked-sensitive-line"
+      );
+
+    const value =
+      row?.querySelector(
+        "[data-full-value]"
+      );
+
+    if (!value) {
+      return;
+    }
+
+    const showing =
+      button.dataset
+        .showing ===
+      "true";
+
+    value.textContent =
+      showing
+        ? (
+            value.dataset
+              .maskedValue ||
+            "••••••"
+          )
+        : (
+            value.dataset
+              .fullValue ||
+            "—"
+          );
+
+    button.dataset.showing =
+      showing
+        ? "false"
+        : "true";
+
+    button.textContent =
+      showing
+        ? "Show"
+        : "Hide";
+  },
+  true
+);
+
+
+
+/* =========================================
+   UNIVERSAL STABLE DETAILS STATE
+   Save/edit/rerender keeps every panel open until user closes it.
+========================================= */
+(function setupStableDetailsState() {
+  const prefix =
+    "sng-details-v2:";
+
+  function stablePart(
+    element
+  ) {
+    if (!element) {
+      return "";
+    }
+
+    const datasetKeys = [
+      "managedMembershipId",
+      "managedCustomerGroup",
+      "managedGroupDetails",
+      "managedAddRemovePanel",
+      "giftedEditPanel",
+      "managedFullEditPanel",
+      "profileSlot",
+      "assignmentId"
+    ];
+
+    for (
+      const key of
+      datasetKeys
+    ) {
+      const value =
+        element.dataset?.[key];
+
+      if (value) {
+        return `${key}:${value}`;
+      }
+    }
+
+    return element.id
+      ? `id:${element.id}`
+      : "";
+  }
+
+  function detailsKey(
+    detail
+  ) {
+    const self =
+      stablePart(
+        detail
+      );
+
+    const parent =
+      stablePart(
+        detail.parentElement
+          ?.closest(
+            "details"
+          )
+      );
+
+    const heading =
+      detail.querySelector(
+        ":scope > summary h1, :scope > summary h2, :scope > summary h3, :scope > summary h4, :scope > summary strong, :scope > summary"
+      )?.textContent
+        ?.replace(/\s+/g, " ")
+        .trim()
+        .replace(/\d+\s+(DAY|DAYS)\s+LEFT/gi, "")
+        .slice(0, 100) ||
+      "details";
+
+    const siblings =
+      detail.parentElement
+        ? Array.from(
+            detail.parentElement.children
+          ).filter(
+            item =>
+              item.tagName ===
+              "DETAILS"
+          )
+        : [];
+
+    return (
+      prefix +
+      [
+        location.pathname,
+        location.hash,
+        parent,
+        self,
+        heading,
+        Math.max(
+          0,
+          siblings.indexOf(
+            detail
+          )
+        )
+      ].join("|")
+    );
+  }
+
+  function restore(
+    root = document
+  ) {
+    const details =
+      root.matches?.("details")
+        ? [root]
+        : Array.from(
+            root.querySelectorAll?.(
+              "details"
+            ) ||
+            []
+          );
+
+    for (
+      const detail of
+      details
+    ) {
+      const state =
+        sessionStorage.getItem(
+          detailsKey(
+            detail
+          )
+        );
+
+      if (state === "open") {
+        detail.open =
+          true;
+      } else if (
+        state === "closed"
+      ) {
+        detail.open =
+          false;
+      }
+    }
+  }
+
+  document.addEventListener(
+    "toggle",
+    event => {
+      const detail =
+        event.target;
+
+      if (
+        detail?.tagName !==
+        "DETAILS"
+      ) {
+        return;
+      }
+
+      sessionStorage.setItem(
+        detailsKey(
+          detail
+        ),
+        detail.open
+          ? "open"
+          : "closed"
+      );
+    },
+    true
+  );
+
+  new MutationObserver(
+    records => {
+      for (
+        const record of
+        records
+      ) {
+        for (
+          const node of
+          record.addedNodes
+        ) {
+          if (
+            node.nodeType ===
+            1
+          ) {
+            restore(
+              node
+            );
+          }
+        }
+      }
+    }
+  ).observe(
+    document.documentElement,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+
+  restore();
 })();
 
 </script>
