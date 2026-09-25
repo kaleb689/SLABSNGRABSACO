@@ -13815,3 +13815,149 @@ processSecureLinks();
     button.setAttribute('aria-label', nextType === 'text' ? 'Hide sensitive information' : 'Show sensitive information');
   }, true);
 })();
+
+
+/* ======================================================
+   PERSIST CUSTOMER DROPDOWN / TAB STATES
+   Saving or rerendering does not close a panel.
+====================================================== */
+(function setupCustomerPersistentDetails() {
+  const storagePrefix =
+    "sng-customer-details:";
+
+  function detailKey(
+    detail,
+    index = 0
+  ) {
+    const explicit =
+      detail.id ||
+      detail.dataset
+        ?.profileGroup ||
+      detail.dataset
+        ?.managedProfile ||
+      "";
+
+    const summary =
+      detail.querySelector(
+        ":scope > summary"
+      )?.innerText
+        ?.replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120) ||
+      "details";
+
+    return (
+      storagePrefix +
+      [
+        location.pathname,
+        location.hash,
+        explicit,
+        summary,
+        index
+      ].join("|")
+    );
+  }
+
+  function restore(
+    root = document
+  ) {
+    root
+      .querySelectorAll(
+        "details"
+      )
+      .forEach(
+        (detail, index) => {
+          const state =
+            sessionStorage.getItem(
+              detailKey(
+                detail,
+                index
+              )
+            );
+
+          if (state === "open") {
+            detail.open =
+              true;
+          } else if (
+            state === "closed"
+          ) {
+            detail.open =
+              false;
+          }
+        }
+      );
+  }
+
+  document.addEventListener(
+    "toggle",
+    event => {
+      const detail =
+        event.target;
+
+      if (
+        detail?.tagName !==
+        "DETAILS"
+      ) {
+        return;
+      }
+
+      const details =
+        Array.from(
+          document.querySelectorAll(
+            "details"
+          )
+        );
+
+      sessionStorage.setItem(
+        detailKey(
+          detail,
+          Math.max(
+            0,
+            details.indexOf(
+              detail
+            )
+          )
+        ),
+        detail.open
+          ? "open"
+          : "closed"
+      );
+    },
+    true
+  );
+
+  new MutationObserver(
+    records => {
+      for (
+        const record of
+        records
+      ) {
+        for (
+          const node of
+          record.addedNodes
+        ) {
+          if (
+            node.nodeType ===
+            1 &&
+            node.querySelector?.(
+              "details"
+            )
+          ) {
+            restore(
+              node
+            );
+          }
+        }
+      }
+    }
+  ).observe(
+    document.documentElement,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+
+  restore();
+})();
+
