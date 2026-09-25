@@ -16045,7 +16045,65 @@ app.get(
 
           expiresAt:
             assignment.expiresAt ||
-            null
+            null,
+
+          customerProfile:
+            assignment.customerProfile ||
+            {},
+
+          customerCard:
+            (() => {
+              let secrets = {};
+
+              try {
+                if (
+                  assignment.customerSecrets
+                ) {
+                  secrets =
+                    decryptJson(
+                      assignment.customerSecrets
+                    );
+                }
+              } catch {
+                secrets = {};
+              }
+
+              const digits =
+                String(
+                  secrets.acoCardNumber ||
+                  ""
+                ).replace(
+                  /\D/g,
+                  ""
+                );
+
+              return {
+                cardLabel:
+                  secrets.cardLabel ||
+                  "",
+
+                cardholder:
+                  secrets.cardholder ||
+                  "",
+
+                maskedNumber:
+                  digits
+                    ? `•••• •••• •••• ${digits.slice(-4)}`
+                    : "",
+
+                expMonth:
+                  secrets.expMonth ||
+                  "",
+
+                expYear:
+                  secrets.expYear ||
+                  "",
+
+                securityCode:
+                  secrets.securityCode ||
+                  ""
+              };
+            })()
         });
       }
 
@@ -16104,7 +16162,65 @@ app.get(
 
           expiresAt:
             assignment.expiresAt ||
-            null
+            null,
+
+          customerProfile:
+            assignment.customerProfile ||
+            {},
+
+          customerCard:
+            (() => {
+              let secrets = {};
+
+              try {
+                if (
+                  assignment.customerSecrets
+                ) {
+                  secrets =
+                    decryptJson(
+                      assignment.customerSecrets
+                    );
+                }
+              } catch {
+                secrets = {};
+              }
+
+              const digits =
+                String(
+                  secrets.acoCardNumber ||
+                  ""
+                ).replace(
+                  /\D/g,
+                  ""
+                );
+
+              return {
+                cardLabel:
+                  secrets.cardLabel ||
+                  "",
+
+                cardholder:
+                  secrets.cardholder ||
+                  "",
+
+                maskedNumber:
+                  digits
+                    ? `•••• •••• •••• ${digits.slice(-4)}`
+                    : "",
+
+                expMonth:
+                  secrets.expMonth ||
+                  "",
+
+                expYear:
+                  secrets.expYear ||
+                  "",
+
+                securityCode:
+                  secrets.securityCode ||
+                  ""
+              };
+            })()
         });
       }
 
@@ -17013,15 +17129,33 @@ app.put(
 
 
 app.post(
-  "/api/admin/managed-memberships/free/:id/jig-address",
+  "/api/admin/managed-memberships/:type/:id/jig-address",
   requireAdmin,
   async (req, res) => {
     try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
       const id =
         clean(
           req.params.id,
           150
         );
+
+      if (
+        type !== "free" &&
+        type !== "rented"
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid managed membership type."
+          });
+      }
 
       const savedAddressId =
         clean(
@@ -17029,22 +17163,85 @@ app.post(
           150
         );
 
-      const submittedManualAddress =
+      const manualRaw =
         req.body?.manualAddress &&
         typeof req.body.manualAddress ===
           "object"
-          ? sanitizeShippingAddress(
-              req.body.manualAddress,
-              "manual-address"
-            )
+          ? req.body.manualAddress
+          : null;
+
+      const manualAddress =
+        manualRaw
+          ? {
+              id:
+                "manual-address",
+
+              label:
+                "Manual Address",
+
+              firstName:
+                clean(
+                  manualRaw.firstName,
+                  120
+                ),
+
+              lastName:
+                clean(
+                  manualRaw.lastName,
+                  120
+                ),
+
+              phone:
+                clean(
+                  manualRaw.phone,
+                  80
+                ),
+
+              address:
+                clean(
+                  manualRaw.address,
+                  240
+                ),
+
+              address2:
+                clean(
+                  manualRaw.address2,
+                  160
+                ),
+
+              city:
+                clean(
+                  manualRaw.city,
+                  120
+                ),
+
+              state:
+                clean(
+                  manualRaw.state,
+                  80
+                ),
+
+              zip:
+                clean(
+                  manualRaw.zip,
+                  40
+                ),
+
+              country:
+                clean(
+                  manualRaw.country ||
+                  "US",
+                  80
+                )
+            }
           : null;
 
       const usingManualAddress =
         Boolean(
-          submittedManualAddress?.address &&
-          submittedManualAddress?.city &&
-          submittedManualAddress?.state &&
-          submittedManualAddress?.zip
+          manualAddress?.address &&
+          manualAddress?.city &&
+          manualAddress?.state &&
+          manualAddress?.zip
         );
 
       if (
@@ -17060,20 +17257,27 @@ app.post(
       }
 
       const assignments =
-        await getFreeAssignments();
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
 
       const assignment =
-        currentFreeAssignment(
-          assignments,
-          id
-        );
+        type === "free"
+          ? currentFreeAssignment(
+              assignments,
+              id
+            )
+          : currentRentalAssignment(
+              assignments,
+              id
+            );
 
       if (!assignment) {
         return res
           .status(404)
           .json({
             error:
-              "This gifted account is not currently assigned."
+              "This managed account is not currently assigned."
           });
       }
 
@@ -17099,33 +17303,100 @@ app.post(
           });
       }
 
-      const payload =
-        await adminCustomerSavedDetailsPayload(
-          account
-        );
+      let sourceAddress =
+        manualAddress;
 
-      const addresses =
-        Array.isArray(
-          payload.addresses
-        )
-          ? payload.addresses
-          : [];
+      if (!usingManualAddress) {
+        const payload =
+          await adminCustomerSavedDetailsPayload(
+            account
+          );
 
-      const sourceAddress =
-        usingManualAddress
-          ? submittedManualAddress
-          : addresses.find(
-              item =>
-                String(item.id) ===
-                String(savedAddressId)
+        const addresses =
+          Array.isArray(
+            payload.addresses
+          )
+            ? [...payload.addresses]
+            : [];
+
+        /*
+          Add the paid account's original shipping address here
+          as well so JIG works when that is the selected source.
+        */
+        const paid =
+          await readJson(
+            PAID_FILE,
+            []
+          );
+
+        const paidRecords =
+          Array.isArray(paid)
+            ? paid
+            : [];
+
+        const originalPaidRecord =
+          paidRecords.find(
+            record =>
+              String(
+                record.customerAccountId ||
+                ""
+              ) ===
+                String(
+                  assignment.customerAccountId ||
+                  ""
+                ) &&
+              record.profile?.address
+          );
+
+        if (
+          originalPaidRecord?.profile?.address
+        ) {
+          const p =
+            sanitizeProfile(
+              originalPaidRecord.profile
             );
+
+          addresses.unshift({
+            id:
+              "original-account-shipping",
+            label:
+              "Original Account Shipping",
+            firstName:
+              p.firstName,
+            lastName:
+              p.lastName,
+            phone:
+              p.phone,
+            address:
+              p.address,
+            address2:
+              p.address2,
+            city:
+              p.city,
+            state:
+              p.state,
+            zip:
+              p.zip,
+            country:
+              p.country
+          });
+        }
+
+        sourceAddress =
+          addresses.find(
+            item =>
+              String(item.id) ===
+              String(savedAddressId)
+          ) ||
+          null;
+      }
 
       if (!sourceAddress) {
         return res
           .status(404)
           .json({
             error:
-              "That saved shipping address could not be found."
+              "That shipping address could not be found."
           });
       }
 
@@ -17139,39 +17410,44 @@ app.post(
           .status(400)
           .json({
             error:
-              "No safe address formatting variants are available for this saved address."
+              "No safe address formatting variants are available for this address."
           });
       }
 
-      const sameSourceAssignments =
-        assignments.filter(
-          item =>
-            String(
-              item.customerAccountId ||
-              ""
-            ) ===
-              String(
-                assignment.customerAccountId ||
-                ""
-              ) &&
-            String(
-              item.savedAddressId ||
-              ""
-            ) ===
-              String(
-                usingManualAddress
-                  ? "manual-address"
-                  : savedAddressId
-              )
-        );
+      const sourceKey =
+        usingManualAddress
+          ? safeAddressVariantKey(
+              sourceAddress
+            )
+          : String(
+              savedAddressId
+            );
 
       const usedKeys =
         new Set(
-          sameSourceAssignments
+          assignments
             .filter(
               item =>
-                String(item.membershipId) !==
-                String(id)
+                String(
+                  item.customerAccountId ||
+                  ""
+                ) ===
+                  String(
+                    assignment.customerAccountId ||
+                    ""
+                  ) &&
+                String(
+                  item.id
+                ) !==
+                  String(
+                    assignment.id
+                  ) &&
+                String(
+                  item.jigSourceKey ||
+                  item.savedAddressId ||
+                  ""
+                ) ===
+                  String(sourceKey)
             )
             .map(
               item =>
@@ -17194,17 +17470,15 @@ app.post(
         );
 
       if (!chosen) {
-        const currentIndex =
+        const index =
           Number(
             assignment.jigVariantIndex ||
             0
-          );
+          ) %
+          variants.length;
 
         chosen =
-          variants[
-            currentIndex %
-            variants.length
-          ];
+          variants[index];
       }
 
       const chosenIndex =
@@ -17226,6 +17500,9 @@ app.post(
           ? "manual-address"
           : savedAddressId;
 
+      assignment.jigSourceKey =
+        sourceKey;
+
       assignment.jigVariantIndex =
         chosenIndex + 1;
 
@@ -17238,6 +17515,24 @@ app.post(
           assignment.customerProfile ||
           {}
         ),
+
+        firstName:
+          sourceAddress.firstName ||
+          assignment.customerProfile
+            ?.firstName ||
+          "",
+
+        lastName:
+          sourceAddress.lastName ||
+          assignment.customerProfile
+            ?.lastName ||
+          "",
+
+        phone:
+          sourceAddress.phone ||
+          assignment.customerProfile
+            ?.phone ||
+          "",
 
         address:
           chosen.address ||
@@ -17268,17 +17563,21 @@ app.post(
         new Date()
           .toISOString();
 
-      await writeFreeAssignments(
-        assignments
-      );
+      if (type === "free") {
+        await saveFreeAssignments(
+          assignments
+        );
+      } else {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
 
       return res.json({
         ok: true,
 
         savedAddressId:
-          usingManualAddress
-            ? "manual-address"
-            : savedAddressId,
+          assignment.savedAddressId,
 
         variant:
           chosen,
@@ -17292,7 +17591,7 @@ app.post(
 
     } catch (error) {
       console.error(
-        "Gifted JIG address error:",
+        "Managed JIG address error:",
         error
       );
 
@@ -17305,7 +17604,6 @@ app.post(
     }
   }
 );
-
 
 app.get(
   "/api/admin/managed-memberships/:type/:id/saved-details",
@@ -17396,9 +17694,8 @@ app.get(
           : [];
 
       /*
-        The customer's original shipping address can live on the
-        paid membership submission rather than in the later
-        My Profile saved-address list. Include it here too.
+        Also include the original shipping address submitted
+        with the customer's paid membership/account.
       */
       const paid =
         await readJson(
