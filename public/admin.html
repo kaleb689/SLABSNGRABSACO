@@ -3050,6 +3050,25 @@
     }
 
 
+
+    .gifted-manual-toggle {
+      width: fit-content;
+      margin-top: 8px;
+    }
+
+    .gifted-manual-panel {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid #20475d;
+      border-radius: 10px;
+      background: #06111a;
+    }
+
+    .gifted-manual-panel[hidden] {
+      display: none !important;
+    }
+
+
   </style>
 </head>
 
@@ -8111,8 +8130,68 @@ function managedMembershipCardHtml(
                           </label>
 
                           <small class="admin-edit-help">
-                            Choose any saved shipping address. JIG makes a safe formatting variant for this profile.
+                            Includes the original account shipping address plus any extra addresses saved later.
                           </small>
+
+                          <button
+                            type="button"
+                            class="admin-secondary-button gifted-manual-toggle"
+                            data-gifted-manual-address-toggle="${escapeHtml(
+                              membership.id
+                            )}"
+                          >
+                            Type Address Manually
+                          </button>
+
+                          <div
+                            class="gifted-manual-panel"
+                            data-gifted-manual-address-panel="${escapeHtml(
+                              membership.id
+                            )}"
+                            hidden
+                          >
+                            <div class="admin-edit-grid">
+                              <div class="admin-edit-field">
+                                <input name="manualFirstName" autocomplete="off">
+                                <label>First Name</label>
+                              </div>
+
+                              <div class="admin-edit-field">
+                                <input name="manualLastName" autocomplete="off">
+                                <label>Last Name</label>
+                              </div>
+
+                              <div class="admin-edit-field wide">
+                                <input name="manualAddress" autocomplete="off">
+                                <label>Street Address</label>
+                              </div>
+
+                              <div class="admin-edit-field wide">
+                                <input name="manualAddress2" autocomplete="off">
+                                <label>Apartment / Unit / Address 2</label>
+                              </div>
+
+                              <div class="admin-edit-field">
+                                <input name="manualCity" autocomplete="off">
+                                <label>City</label>
+                              </div>
+
+                              <div class="admin-edit-field">
+                                <input name="manualState" autocomplete="off">
+                                <label>State</label>
+                              </div>
+
+                              <div class="admin-edit-field">
+                                <input name="manualZip" autocomplete="off">
+                                <label>ZIP Code</label>
+                              </div>
+
+                              <div class="admin-edit-field">
+                                <input name="manualCountry" value="US" autocomplete="off">
+                                <label>Country</label>
+                              </div>
+                            </div>
+                          </div>
                         </div>
 
                         <div class="admin-edit-field wide">
@@ -8132,8 +8211,79 @@ function managedMembershipCardHtml(
                           </label>
 
                           <small class="admin-edit-help">
-                            Choose any saved card the customer has added.
+                            Choose any saved card the customer has added, or enter card information manually.
                           </small>
+
+                          <button
+                            type="button"
+                            class="admin-secondary-button gifted-manual-toggle"
+                            data-gifted-manual-card-toggle="${escapeHtml(
+                              membership.id
+                            )}"
+                          >
+                            Type Card Manually
+                          </button>
+
+                          <div
+                            class="gifted-manual-panel"
+                            data-gifted-manual-card-panel="${escapeHtml(
+                              membership.id
+                            )}"
+                            hidden
+                          >
+                            <div class="admin-edit-grid">
+                              <div class="admin-edit-field">
+                                <input name="manualCardLabel" autocomplete="off">
+                                <label>Card Label</label>
+                              </div>
+
+                              <div class="admin-edit-field">
+                                <input name="manualCardholder" autocomplete="off">
+                                <label>Cardholder Name</label>
+                              </div>
+
+                              <div class="admin-edit-field wide">
+                                <input
+                                  name="manualCardNumber"
+                                  type="password"
+                                  inputmode="numeric"
+                                  autocomplete="off"
+                                >
+                                <label>Card Number</label>
+                              </div>
+
+                              <div class="admin-edit-field">
+                                <input name="manualExpMonth" inputmode="numeric" autocomplete="off">
+                                <label>Expiration Month</label>
+                              </div>
+
+                              <div class="admin-edit-field">
+                                <input name="manualExpYear" inputmode="numeric" autocomplete="off">
+                                <label>Expiration Year</label>
+                              </div>
+
+                              <div class="admin-edit-field wide">
+                                <div class="admin-sensitive-input-row">
+                                  <input
+                                    name="manualSecurityCode"
+                                    type="password"
+                                    autocomplete="off"
+                                    data-admin-sensitive-input
+                                  >
+
+                                  <button
+                                    type="button"
+                                    class="reveal-button"
+                                    data-admin-sensitive-toggle
+                                  >
+                                    Show
+                                  </button>
+                                </div>
+
+                                <label>Security Code</label>
+                              </div>
+                            </div>
+                          </div>
                         </div>
 
                       </div>
@@ -9820,6 +9970,81 @@ function bindManagedMembershipDashboard(
 
   document
     .querySelectorAll(
+      "[data-gifted-manual-address-toggle]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        event => {
+          event.preventDefault();
+
+          const id =
+            button.dataset
+              .giftedManualAddressToggle;
+
+          const panel =
+            document.querySelector(
+              `[data-gifted-manual-address-panel="${CSS.escape(
+                id
+              )}"]`
+            );
+
+          if (!panel) {
+            return;
+          }
+
+          panel.hidden =
+            !panel.hidden;
+
+          button.textContent =
+            panel.hidden
+              ? "Type Address Manually"
+              : "Use Saved Address Dropdown";
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-gifted-manual-card-toggle]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        event => {
+          event.preventDefault();
+
+          const id =
+            button.dataset
+              .giftedManualCardToggle;
+
+          const panel =
+            document.querySelector(
+              `[data-gifted-manual-card-panel="${CSS.escape(
+                id
+              )}"]`
+            );
+
+          if (!panel) {
+            return;
+          }
+
+          panel.hidden =
+            !panel.hidden;
+
+          button.textContent =
+            panel.hidden
+              ? "Type Card Manually"
+              : "Use Saved Card Dropdown";
+        }
+      );
+    });
+
+
+
+  document
+    .querySelectorAll(
       "[data-gifted-jig]"
     )
     .forEach(button => {
@@ -9851,9 +10076,74 @@ function bindManagedMembershipDashboard(
             addressSelect?.value ||
             "";
 
-          if (!savedAddressId) {
+          const manualAddressPanel =
+            form.querySelector(
+              "[data-gifted-manual-address-panel]"
+            );
+
+          const manualAddress = {
+            label:
+              "Manual Address",
+
+            firstName:
+              form.elements
+                .manualFirstName
+                ?.value ||
+              "",
+
+            lastName:
+              form.elements
+                .manualLastName
+                ?.value ||
+              "",
+
+            address:
+              form.elements
+                .manualAddress
+                ?.value ||
+              "",
+
+            address2:
+              form.elements
+                .manualAddress2
+                ?.value ||
+              "",
+
+            city:
+              form.elements
+                .manualCity
+                ?.value ||
+              "",
+
+            state:
+              form.elements
+                .manualState
+                ?.value ||
+              "",
+
+            zip:
+              form.elements
+                .manualZip
+                ?.value ||
+              "",
+
+            country:
+              form.elements
+                .manualCountry
+                ?.value ||
+              "US"
+          };
+
+          const useManualAddress =
+            manualAddressPanel &&
+            !manualAddressPanel.hidden;
+
+          if (
+            !savedAddressId &&
+            !useManualAddress
+          ) {
             alert(
-              "Choose a saved shipping address first."
+              "Choose a saved shipping address or type one manually first."
             );
             return;
           }
@@ -9887,7 +10177,15 @@ function bindManagedMembershipDashboard(
 
                   body:
                     JSON.stringify({
-                      savedAddressId
+                      savedAddressId:
+                        useManualAddress
+                          ? ""
+                          : savedAddressId,
+
+                      manualAddress:
+                        useManualAddress
+                          ? manualAddress
+                          : null
                     })
                 }
               );
@@ -10434,30 +10732,160 @@ function bindManagedMembershipDashboard(
             cardSelect?.value ||
             "";
 
-          const address =
+          const manualAddressPanel =
+            form.querySelector(
+              "[data-gifted-manual-address-panel]"
+            );
+
+          const manualCardPanel =
+            form.querySelector(
+              "[data-gifted-manual-card-panel]"
+            );
+
+          const useManualAddress =
+            manualAddressPanel &&
+            !manualAddressPanel.hidden;
+
+          const useManualCard =
+            manualCardPanel &&
+            !manualCardPanel.hidden;
+
+          const savedAddress =
             (details.addresses || []).find(
               item =>
                 String(item.id) ===
                 String(addressId)
             );
 
-          const card =
+          const savedCard =
             (details.paymentMethods || []).find(
               item =>
                 String(item.id) ===
                 String(paymentId)
             );
 
-          if (!address) {
+          const address =
+            useManualAddress
+              ? {
+                  id:
+                    "manual-address",
+
+                  firstName:
+                    form.elements
+                      .manualFirstName
+                      ?.value ||
+                    "",
+
+                  lastName:
+                    form.elements
+                      .manualLastName
+                      ?.value ||
+                    "",
+
+                  address:
+                    form.elements
+                      .manualAddress
+                      ?.value ||
+                    "",
+
+                  address2:
+                    form.elements
+                      .manualAddress2
+                      ?.value ||
+                    "",
+
+                  city:
+                    form.elements
+                      .manualCity
+                      ?.value ||
+                    "",
+
+                  state:
+                    form.elements
+                      .manualState
+                      ?.value ||
+                    "",
+
+                  zip:
+                    form.elements
+                      .manualZip
+                      ?.value ||
+                    "",
+
+                  country:
+                    form.elements
+                      .manualCountry
+                      ?.value ||
+                    "US"
+                }
+              : savedAddress;
+
+          const card =
+            useManualCard
+              ? {
+                  id:
+                    "manual-card",
+
+                  cardLabel:
+                    form.elements
+                      .manualCardLabel
+                      ?.value ||
+                    "Manual Card",
+
+                  cardholder:
+                    form.elements
+                      .manualCardholder
+                      ?.value ||
+                    "",
+
+                  acoCardNumber:
+                    form.elements
+                      .manualCardNumber
+                      ?.value ||
+                    "",
+
+                  expMonth:
+                    form.elements
+                      .manualExpMonth
+                      ?.value ||
+                    "",
+
+                  expYear:
+                    form.elements
+                      .manualExpYear
+                      ?.value ||
+                    "",
+
+                  accountSecurityCode:
+                    form.elements
+                      .manualSecurityCode
+                      ?.value ||
+                    ""
+                }
+              : savedCard;
+
+          if (
+            !address ||
+            !address.address ||
+            !address.city ||
+            !address.state ||
+            !address.zip
+          ) {
             alert(
-              "Choose a saved shipping address."
+              "Choose a saved shipping address or complete the manual address."
             );
             return;
           }
 
-          if (!card) {
+          if (
+            !card ||
+            !card.cardholder ||
+            !card.acoCardNumber ||
+            !card.expMonth ||
+            !card.expYear
+          ) {
             alert(
-              "Choose saved card information."
+              "Choose saved card information or complete the manual card information."
             );
             return;
           }
@@ -10577,9 +11005,14 @@ function bindManagedMembershipDashboard(
                       customerProfile,
                       customerCard,
                       savedAddressId:
-                        addressId,
+                        useManualAddress
+                          ? "manual-address"
+                          : addressId,
+
                       savedPaymentMethodId:
-                        paymentId
+                        useManualCard
+                          ? "manual-card"
+                          : paymentId
                     })
                 }
               );
