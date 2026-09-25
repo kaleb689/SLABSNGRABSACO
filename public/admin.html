@@ -3051,6 +3051,119 @@
 
 
 
+    /* =========================================
+       LARGE / POLISHED MAIN ADMIN DROPDOWNS
+    ========================================= */
+
+    #submissionTypeFilter,
+    .admin-filter select {
+      min-height: 52px;
+      padding: 0 16px;
+      border: 1px solid #1d607d;
+      border-radius: 11px;
+      background: #071723;
+      color: #eefaff;
+      font-size: 13px;
+      font-weight: 900;
+      box-shadow:
+        inset 0 0 18px #07131d,
+        0 8px 22px #00000022;
+    }
+
+    .customer-order,
+    .managed-customer-group,
+    .managed-group-available-list,
+    .managed-add-remove-panel {
+      border: 1px solid #1c536d !important;
+      border-radius: 14px !important;
+      background: linear-gradient(
+        180deg,
+        #081722 0%,
+        #06121b 100%
+      ) !important;
+      box-shadow:
+        0 12px 30px #00000024,
+        inset 0 0 22px #08203055;
+      overflow: hidden;
+    }
+
+    .customer-order > summary,
+    .managed-customer-group > summary,
+    .managed-group-available-list > summary,
+    .managed-add-remove-panel > summary {
+      min-height: 76px;
+      padding: 17px 18px !important;
+    }
+
+    .managed-customer-group > summary h3,
+    .managed-add-remove-summary h4 {
+      margin: 3px 0;
+      color: #f2fbff;
+      font-size: 15px;
+      font-weight: 950;
+    }
+
+    .managed-group-count {
+      min-width: 34px;
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #2082a5;
+      border-radius: 999px;
+      background: #082838;
+      color: #5de0ff;
+      font-size: 11px;
+      font-weight: 950;
+    }
+
+    /* =========================================
+       ADD / REMOVE ACCOUNTS DROPDOWN
+    ========================================= */
+
+    .managed-add-remove-panel {
+      margin-bottom: 14px;
+      border-color: #236783 !important;
+    }
+
+    .managed-add-remove-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      cursor: pointer;
+      list-style: none;
+      background: #09202d;
+    }
+
+    .managed-add-remove-summary p {
+      margin: 3px 0 0;
+      color: #8da8ba;
+      font-size: 10px;
+    }
+
+    .managed-add-remove-panel[open]
+      > .managed-add-remove-summary {
+      border-bottom: 1px solid #1f536b;
+      background: #0a2735;
+    }
+
+    .managed-add-remove-panel
+      .managed-group-bulk-toolbar {
+      margin: 14px;
+      border-color: #235c75;
+      background: #06141e;
+    }
+
+    .managed-add-remove-panel
+      .managed-group-available-list {
+      margin: 0 14px 14px;
+    }
+
+    /* =========================================
+       MANUAL MANAGED PROFILE ENTRY
+    ========================================= */
+
     .gifted-manual-toggle {
       width: fit-content;
       margin-top: 8px;
@@ -3066,6 +3179,50 @@
 
     .gifted-manual-panel[hidden] {
       display: none !important;
+    }
+
+    /* =========================================
+       LINKED PROFILE ATTACHED SHIPPING / CARD
+    ========================================= */
+
+    .linked-attached-details {
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .linked-attached-box {
+      min-width: 0;
+      padding: 14px;
+      border: 1px solid #1c4f68;
+      border-radius: 11px;
+      background: #06141e;
+      box-shadow:
+        inset 0 0 16px #071924;
+    }
+
+    .linked-attached-box strong {
+      display: block;
+      margin-top: 7px;
+      color: #edfaff;
+      font-size: 11px;
+      font-weight: 950;
+    }
+
+    .linked-attached-box p {
+      margin: 6px 0 0;
+      color: #a7bfce;
+      font-size: 10px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    @media (max-width: 760px) {
+      .linked-attached-details {
+        grid-template-columns: 1fr;
+      }
     }
 
 
@@ -6104,6 +6261,41 @@ function linkedProfileDetailHtml(
       .filter(Boolean)
       .join("");
 
+  const profile =
+    membership.customerProfile ||
+    {};
+
+  const card =
+    membership.customerCard ||
+    {};
+
+  const shippingLine =
+    [
+      profile.address,
+      profile.address2,
+      profile.city,
+      profile.state,
+      profile.zip,
+      profile.country
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+  const hasShipping =
+    Boolean(
+      shippingLine
+    );
+
+  const hasCard =
+    Boolean(
+      card.cardholder ||
+      card.maskedNumber ||
+      card.cardLabel ||
+      card.expMonth ||
+      card.expYear ||
+      card.securityCode
+    );
+
   return `
     <div>
       <span class="eyebrow">
@@ -6140,9 +6332,125 @@ function linkedProfileDetailHtml(
           `
         }
       </div>
+
+      <div class="linked-attached-details">
+        <div class="linked-attached-box">
+          <span class="eyebrow">
+            ATTACHED SHIPPING
+          </span>
+
+          ${
+            hasShipping
+              ? `
+                  <strong>
+                    ${escapeHtml(
+                      [
+                        profile.firstName,
+                        profile.lastName
+                      ]
+                        .filter(Boolean)
+                        .join(" ") ||
+                      "Shipping Address"
+                    )}
+                  </strong>
+
+                  <p>
+                    ${escapeHtml(
+                      shippingLine
+                    )}
+                  </p>
+                `
+              : `
+                  <p class="admin-retailer-empty">
+                    No shipping information attached to this profile.
+                  </p>
+                `
+          }
+        </div>
+
+        <div class="linked-attached-box">
+          <span class="eyebrow">
+            ATTACHED CARD
+          </span>
+
+          ${
+            hasCard
+              ? `
+                  <strong>
+                    ${escapeHtml(
+                      card.cardLabel ||
+                      card.cardholder ||
+                      "Saved Card"
+                    )}
+                  </strong>
+
+                  <p>
+                    ${escapeHtml(
+                      card.cardholder ||
+                      "—"
+                    )}
+                  </p>
+
+                  <p>
+                    ${escapeHtml(
+                      card.maskedNumber ||
+                      "Card saved"
+                    )}
+                  </p>
+
+                  <p>
+                    EXP:
+                    ${escapeHtml(
+                      [
+                        card.expMonth,
+                        card.expYear
+                      ]
+                        .filter(Boolean)
+                        .join("/") ||
+                      "—"
+                    )}
+                  </p>
+
+                  ${
+                    card.securityCode
+                      ? `
+                          <div class="admin-sensitive-row">
+                            <span>
+                              SECURITY CODE:
+                            </span>
+
+                            <strong
+                              data-admin-security-code-value
+                              data-hidden-value="${escapeHtml(
+                                card.securityCode
+                              )}"
+                            >
+                              ••••••
+                            </strong>
+
+                            <button
+                              type="button"
+                              class="admin-show-sensitive"
+                            >
+                              Show
+                            </button>
+                          </div>
+                        `
+                      : ""
+                  }
+                `
+              : `
+                  <p class="admin-retailer-empty">
+                    No card information attached to this profile.
+                  </p>
+                `
+          }
+        </div>
+      </div>
     </div>
   `;
 }
+
 
 async function loadAdminLinkedProfiles(
   orderId
@@ -8039,11 +8347,10 @@ function managedMembershipCardHtml(
 
 
           ${
-            type === "free" &&
             active
               ? `
                 <details
-                  class="order-section admin-collapsible gifted-profile-edit-panel"
+                  class="order-section admin-collapsible gifted-profile-edit-panel managed-profile-edit-panel"
                   data-gifted-edit-panel="${escapeHtml(
                     membership.id
                   )}"
@@ -8054,11 +8361,11 @@ function managedMembershipCardHtml(
                   >
                     <div>
                       <h3>
-                        Edit Gifted Profile
+                        Edit ${type === "free" ? "Gifted" : "Rented"} Profile
                       </h3>
 
                       <p>
-                        Select saved shipping and card information for this gifted profile.
+                        Select saved shipping and card information for this ${type === "free" ? "gifted" : "rented"} profile.
                       </p>
                     </div>
 
@@ -8072,7 +8379,9 @@ function managedMembershipCardHtml(
                     data-gifted-autopopulate-id="${escapeHtml(
                       membership.id
                     )}"
-                    data-managed-type="free"
+                    data-managed-type="${escapeHtml(
+                      type
+                    )}"
                     data-current-email="${escapeHtml(
                       customerProfile.email ||
                       assignedCustomer.email ||
@@ -8130,13 +8439,13 @@ function managedMembershipCardHtml(
                           </label>
 
                           <small class="admin-edit-help">
-                            Includes the original account shipping address plus any extra addresses saved later.
+                            Includes Original Account Shipping plus every extra saved address. JIG creates a safe formatting variant for this profile.
                           </small>
 
                           <button
                             type="button"
-                            class="admin-secondary-button gifted-manual-toggle"
-                            data-gifted-manual-address-toggle="${escapeHtml(
+                            class="admin-edit-button gifted-manual-toggle"
+                            data-managed-manual-address-toggle="${escapeHtml(
                               membership.id
                             )}"
                           >
@@ -8145,7 +8454,7 @@ function managedMembershipCardHtml(
 
                           <div
                             class="gifted-manual-panel"
-                            data-gifted-manual-address-panel="${escapeHtml(
+                            data-managed-manual-address-panel="${escapeHtml(
                               membership.id
                             )}"
                             hidden
@@ -8211,13 +8520,13 @@ function managedMembershipCardHtml(
                           </label>
 
                           <small class="admin-edit-help">
-                            Choose any saved card the customer has added, or enter card information manually.
+                            Choose any saved card, or enter card information manually when needed.
                           </small>
 
                           <button
                             type="button"
-                            class="admin-secondary-button gifted-manual-toggle"
-                            data-gifted-manual-card-toggle="${escapeHtml(
+                            class="admin-edit-button gifted-manual-toggle"
+                            data-managed-manual-card-toggle="${escapeHtml(
                               membership.id
                             )}"
                           >
@@ -8226,7 +8535,7 @@ function managedMembershipCardHtml(
 
                           <div
                             class="gifted-manual-panel"
-                            data-gifted-manual-card-panel="${escapeHtml(
+                            data-managed-manual-card-panel="${escapeHtml(
                               membership.id
                             )}"
                             hidden
@@ -8243,12 +8552,22 @@ function managedMembershipCardHtml(
                               </div>
 
                               <div class="admin-edit-field wide">
-                                <input
-                                  name="manualCardNumber"
-                                  type="password"
-                                  inputmode="numeric"
-                                  autocomplete="off"
-                                >
+                                <div class="admin-sensitive-input-row">
+                                  <input
+                                    name="manualCardNumber"
+                                    type="password"
+                                    inputmode="numeric"
+                                    autocomplete="off"
+                                    data-admin-sensitive-input
+                                  >
+                                  <button
+                                    type="button"
+                                    class="reveal-button"
+                                    data-admin-sensitive-toggle
+                                  >
+                                    Show
+                                  </button>
+                                </div>
                                 <label>Card Number</label>
                               </div>
 
@@ -8270,7 +8589,6 @@ function managedMembershipCardHtml(
                                     autocomplete="off"
                                     data-admin-sensitive-input
                                   >
-
                                   <button
                                     type="button"
                                     class="reveal-button"
@@ -8279,7 +8597,6 @@ function managedMembershipCardHtml(
                                     Show
                                   </button>
                                 </div>
-
                                 <label>Security Code</label>
                               </div>
                             </div>
@@ -8300,7 +8617,7 @@ function managedMembershipCardHtml(
                           type="submit"
                           class="admin-save-button"
                         >
-                          Save Gifted Profile
+                          Save ${type === "free" ? "Gifted" : "Rented"} Profile
                         </button>
                       </div>
 
@@ -8314,7 +8631,7 @@ function managedMembershipCardHtml(
 
 
           ${
-            type !== "free" &&
+            false &&
             Object.keys(
               customerProfile
             ).some(
@@ -8413,8 +8730,7 @@ function managedMembershipCardHtml(
 
 
           ${
-            active &&
-            type !== "free"
+            false
               ? `
           <details
             class="order-section admin-collapsible managed-customer-details"
@@ -9746,18 +10062,46 @@ function renderManagedMembershipDashboard(
                 groupId
               )}"
             >
-              <div class="managed-group-bulk-toolbar">
-                <div class="managed-group-bulk-title">
-                  <strong>
-                    ADD / REMOVE ACCOUNTS
-                  </strong>
+              <details
+                class="managed-add-remove-panel admin-collapsible"
+                data-managed-add-remove-panel="${escapeHtml(
+                  groupId
+                )}"
+              >
+                <summary
+                  class="managed-add-remove-summary admin-collapsible-head"
+                >
+                  <div>
+                    <span class="eyebrow">
+                      ACCOUNT MANAGEMENT
+                    </span>
 
-                  <small>
-                    Add selected available accounts or remove selected assigned accounts.
-                  </small>
-                </div>
+                    <h4>
+                      Add / Remove Accounts
+                    </h4>
 
-                <label class="managed-group-duration">
+                    <p>
+                      Select accounts, choose a package, then add or remove in bulk.
+                    </p>
+                  </div>
+
+                  <span class="admin-collapsible-arrow">
+                    ›
+                  </span>
+                </summary>
+
+                <div class="managed-group-bulk-toolbar">
+                  <div class="managed-group-bulk-title">
+                    <strong>
+                      ADD / REMOVE ACCOUNTS
+                    </strong>
+
+                    <small>
+                      Add selected available accounts or remove selected assigned accounts.
+                    </small>
+                  </div>
+
+                  <label class="managed-group-duration">
                   <select
                     data-managed-group-duration="${escapeHtml(
                       groupId
@@ -9836,6 +10180,8 @@ function renderManagedMembershipDashboard(
 
                 <div class="managed-available-account-list">
                   ${availableRows}
+                </div>
+              </details>
                 </div>
               </details>
 
@@ -9970,21 +10316,22 @@ function bindManagedMembershipDashboard(
 
   document
     .querySelectorAll(
-      "[data-gifted-manual-address-toggle]"
+      "[data-managed-manual-address-toggle]"
     )
     .forEach(button => {
       button.addEventListener(
         "click",
         event => {
           event.preventDefault();
+          event.stopPropagation();
 
           const id =
             button.dataset
-              .giftedManualAddressToggle;
+              .managedManualAddressToggle;
 
           const panel =
             document.querySelector(
-              `[data-gifted-manual-address-panel="${CSS.escape(
+              `[data-managed-manual-address-panel="${CSS.escape(
                 id
               )}"]`
             );
@@ -10007,21 +10354,22 @@ function bindManagedMembershipDashboard(
 
   document
     .querySelectorAll(
-      "[data-gifted-manual-card-toggle]"
+      "[data-managed-manual-card-toggle]"
     )
     .forEach(button => {
       button.addEventListener(
         "click",
         event => {
           event.preventDefault();
+          event.stopPropagation();
 
           const id =
             button.dataset
-              .giftedManualCardToggle;
+              .managedManualCardToggle;
 
           const panel =
             document.querySelector(
-              `[data-gifted-manual-card-panel="${CSS.escape(
+              `[data-managed-manual-card-panel="${CSS.escape(
                 id
               )}"]`
             );
@@ -10076,15 +10424,16 @@ function bindManagedMembershipDashboard(
             addressSelect?.value ||
             "";
 
-          const manualAddressPanel =
+          const manualPanel =
             form.querySelector(
-              "[data-gifted-manual-address-panel]"
+              "[data-managed-manual-address-panel]"
             );
 
-          const manualAddress = {
-            label:
-              "Manual Address",
+          const useManualAddress =
+            manualPanel &&
+            !manualPanel.hidden;
 
+          const manualAddress = {
             firstName:
               form.elements
                 .manualFirstName
@@ -10134,10 +10483,6 @@ function bindManagedMembershipDashboard(
               "US"
           };
 
-          const useManualAddress =
-            manualAddressPanel &&
-            !manualAddressPanel.hidden;
-
           if (
             !savedAddressId &&
             !useManualAddress
@@ -10160,7 +10505,10 @@ function bindManagedMembershipDashboard(
           try {
             const response =
               await fetch(
-                `/api/admin/managed-memberships/free/${encodeURIComponent(
+                `/api/admin/managed-memberships/${encodeURIComponent(
+                  form.dataset.managedType ||
+                  "free"
+                )}/${encodeURIComponent(
                   id
                 )}/jig-address`,
                 {
@@ -10488,7 +10836,10 @@ function bindManagedMembershipDashboard(
 
       const response =
         await fetch(
-          `/api/admin/managed-memberships/free/${encodeURIComponent(
+          `/api/admin/managed-memberships/${encodeURIComponent(
+            form.dataset.managedType ||
+            "free"
+          )}/${encodeURIComponent(
             id
           )}/saved-details`,
           {
@@ -10734,12 +11085,12 @@ function bindManagedMembershipDashboard(
 
           const manualAddressPanel =
             form.querySelector(
-              "[data-gifted-manual-address-panel]"
+              "[data-managed-manual-address-panel]"
             );
 
           const manualCardPanel =
             form.querySelector(
-              "[data-gifted-manual-card-panel]"
+              "[data-managed-manual-card-panel]"
             );
 
           const useManualAddress =
@@ -10885,7 +11236,7 @@ function bindManagedMembershipDashboard(
             !card.expYear
           ) {
             alert(
-              "Choose saved card information or complete the manual card information."
+              "Choose a saved card or complete the manual card information."
             );
             return;
           }
@@ -10979,13 +11330,17 @@ function bindManagedMembershipDashboard(
 
             securityCode:
               card.accountSecurityCode ||
+              card.securityCode ||
               ""
           };
 
           try {
             const response =
               await fetch(
-                `/api/admin/managed-memberships/free/${encodeURIComponent(
+                `/api/admin/managed-memberships/${encodeURIComponent(
+                  form.dataset.managedType ||
+                  "free"
+                )}/${encodeURIComponent(
                   id
                 )}/customer-details`,
                 {
@@ -11046,7 +11401,7 @@ function bindManagedMembershipDashboard(
 
             if (group) {
               managedOpenGroupKeys.add(
-                `free:${group.dataset.managedCustomerGroup}`
+                `${form.dataset.managedType || "free"}:${group.dataset.managedCustomerGroup}`
               );
             }
 
@@ -11066,7 +11421,12 @@ function bindManagedMembershipDashboard(
                 false;
 
               button.textContent =
-                "Save Gifted Profile";
+                `Save ${
+                  form.dataset.managedType ===
+                    "rented"
+                    ? "Rented"
+                    : "Gifted"
+                } Profile`;
             }
           }
         }
@@ -14626,6 +14986,188 @@ document
 ========================================= */
 
 load();
+
+
+
+/* =========================================
+   PERSIST ALL ADMIN DROPDOWN / TAB STATES
+   Open panels stay open through saves and reload/rerender.
+========================================= */
+(function setupAdminPersistentDetails() {
+  const storagePrefix =
+    "sng-admin-details:";
+
+  function detailKey(
+    detail,
+    index = 0
+  ) {
+    const explicit =
+      detail.id ||
+      detail.dataset
+        ?.managedGroupDetails ||
+      detail.dataset
+        ?.managedAddRemovePanel ||
+      detail.dataset
+        ?.giftedEditPanel ||
+      detail.dataset
+        ?.linkedProfilesSection ||
+      detail.dataset
+        ?.managedMembershipCard ||
+      "";
+
+    const parent =
+      detail.closest(
+        "[data-managed-customer-group], [data-managed-group-details], .customer-order"
+      );
+
+    const parentKey =
+      parent?.dataset
+        ?.managedCustomerGroup ||
+      parent?.dataset
+        ?.managedGroupDetails ||
+      parent?.dataset?.id ||
+      "";
+
+    const summary =
+      detail.querySelector(
+        ":scope > summary"
+      )?.innerText
+        ?.replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120) ||
+      "details";
+
+    return (
+      storagePrefix +
+      [
+        location.pathname,
+        parentKey,
+        explicit,
+        summary,
+        index
+      ].join("|")
+    );
+  }
+
+  function restoreDetails(
+    root = document
+  ) {
+    root
+      .querySelectorAll(
+        "details"
+      )
+      .forEach(
+        (detail, index) => {
+          const stored =
+            sessionStorage.getItem(
+              detailKey(
+                detail,
+                index
+              )
+            );
+
+          if (stored === "open") {
+            detail.open =
+              true;
+          } else if (
+            stored === "closed"
+          ) {
+            detail.open =
+              false;
+          }
+        }
+      );
+  }
+
+  document.addEventListener(
+    "toggle",
+    event => {
+      const detail =
+        event.target;
+
+      if (
+        detail?.tagName !==
+        "DETAILS"
+      ) {
+        return;
+      }
+
+      const all =
+        Array.from(
+          document.querySelectorAll(
+            "details"
+          )
+        );
+
+      sessionStorage.setItem(
+        detailKey(
+          detail,
+          Math.max(
+            0,
+            all.indexOf(
+              detail
+            )
+          )
+        ),
+        detail.open
+          ? "open"
+          : "closed"
+      );
+    },
+    true
+  );
+
+  const observer =
+    new MutationObserver(
+      records => {
+        for (
+          const record of
+          records
+        ) {
+          for (
+            const node of
+            record.addedNodes
+          ) {
+            if (
+              node.nodeType !==
+              1
+            ) {
+              continue;
+            }
+
+            if (
+              node.matches?.(
+                "details"
+              )
+            ) {
+              restoreDetails(
+                node.parentElement ||
+                document
+              );
+            } else if (
+              node.querySelector?.(
+                "details"
+              )
+            ) {
+              restoreDetails(
+                node
+              );
+            }
+          }
+        }
+      }
+    );
+
+  observer.observe(
+    document.documentElement,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+
+  restoreDetails();
+})();
 
 </script>
 
