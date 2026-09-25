@@ -318,6 +318,232 @@ async function writeJson(file, value) {
   );
 }
 
+
+function normalizeAddressTokenText(
+  value = ""
+) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+function safeAddressVariants(
+  address = {}
+) {
+  const street =
+    normalizeAddressTokenText(
+      address.address ||
+      ""
+    );
+
+  const address2 =
+    normalizeAddressTokenText(
+      address.address2 ||
+      ""
+    );
+
+  const city =
+    normalizeAddressTokenText(
+      address.city ||
+      ""
+    );
+
+  const state =
+    normalizeAddressTokenText(
+      address.state ||
+      ""
+    );
+
+  const zip =
+    normalizeAddressTokenText(
+      address.zip ||
+      ""
+    );
+
+  const country =
+    normalizeAddressTokenText(
+      address.country ||
+      ""
+    );
+
+  if (!street) {
+    return [];
+  }
+
+  const replacements = [
+    [/\bSOUTHWEST\b/gi, "SW"],
+    [/\bSW\b/gi, "SOUTHWEST"],
+    [/\bNORTHWEST\b/gi, "NW"],
+    [/\bNW\b/gi, "NORTHWEST"],
+    [/\bSOUTHEAST\b/gi, "SE"],
+    [/\bSE\b/gi, "SOUTHEAST"],
+    [/\bNORTHEAST\b/gi, "NE"],
+    [/\bNE\b/gi, "NORTHEAST"],
+    [/\bWEST\b/gi, "W"],
+    [/\bW\b/gi, "WEST"],
+    [/\bEAST\b/gi, "E"],
+    [/\bE\b/gi, "EAST"],
+    [/\bNORTH\b/gi, "N"],
+    [/\bN\b/gi, "NORTH"],
+    [/\bSOUTH\b/gi, "S"],
+    [/\bS\b/gi, "SOUTH"],
+    [/\bBOULEVARD\b/gi, "BLVD"],
+    [/\bBLVD\b/gi, "BOULEVARD"],
+    [/\bAVENUE\b/gi, "AVE"],
+    [/\bAVE\b/gi, "AVENUE"],
+    [/\bTERRACE\b/gi, "TERR"],
+    [/\bTERR\b/gi, "TERRACE"],
+    [/\bSTREET\b/gi, "ST"],
+    [/\bST\b/gi, "STREET"],
+    [/\bROAD\b/gi, "RD"],
+    [/\bRD\b/gi, "ROAD"],
+    [/\bDRIVE\b/gi, "DR"],
+    [/\bDR\b/gi, "DRIVE"],
+    [/\bLANE\b/gi, "LN"],
+    [/\bLN\b/gi, "LANE"],
+    [/\bCOURT\b/gi, "CT"],
+    [/\bCT\b/gi, "COURT"],
+    [/\bPARKWAY\b/gi, "PKWY"],
+    [/\bPKWY\b/gi, "PARKWAY"]
+  ];
+
+  const streetVariants =
+    new Set([street]);
+
+  const firstPass =
+    Array.from(streetVariants);
+
+  for (
+    const base of
+    firstPass
+  ) {
+    for (
+      const [pattern, replacement] of
+      replacements
+    ) {
+      pattern.lastIndex = 0;
+
+      if (pattern.test(base)) {
+        pattern.lastIndex = 0;
+
+        streetVariants.add(
+          normalizeAddressTokenText(
+            base.replace(
+              pattern,
+              replacement
+            )
+          )
+        );
+      }
+    }
+  }
+
+  const secondPass =
+    Array.from(streetVariants);
+
+  for (
+    const base of
+    secondPass
+  ) {
+    for (
+      const [pattern, replacement] of
+      replacements
+    ) {
+      pattern.lastIndex = 0;
+
+      if (pattern.test(base)) {
+        pattern.lastIndex = 0;
+
+        streetVariants.add(
+          normalizeAddressTokenText(
+            base.replace(
+              pattern,
+              replacement
+            )
+          )
+        );
+      }
+    }
+  }
+
+  const seen =
+    new Set();
+
+  return Array.from(streetVariants)
+    .map(variantStreet => ({
+      address:
+        variantStreet,
+
+      address2,
+
+      city,
+
+      state,
+
+      zip,
+
+      country
+    }))
+    .filter(item => {
+      const key =
+        JSON.stringify(item)
+          .toUpperCase();
+
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 5);
+}
+
+
+function safeAddressVariantKey(
+  address = {}
+) {
+  return JSON.stringify({
+    address:
+      normalizeAddressTokenText(
+        address.address ||
+        ""
+      ).toUpperCase(),
+
+    address2:
+      normalizeAddressTokenText(
+        address.address2 ||
+        ""
+      ).toUpperCase(),
+
+    city:
+      normalizeAddressTokenText(
+        address.city ||
+        ""
+      ).toUpperCase(),
+
+    state:
+      normalizeAddressTokenText(
+        address.state ||
+        ""
+      ).toUpperCase(),
+
+    zip:
+      normalizeAddressTokenText(
+        address.zip ||
+        ""
+      ).toUpperCase(),
+
+    country:
+      normalizeAddressTokenText(
+        address.country ||
+        ""
+      ).toUpperCase()
+  });
+}
+
+
 const clean = (value, max = 300) =>
   String(value ?? "")
     .trim()
@@ -16784,6 +17010,383 @@ app.put(
 );
 
 
+
+
+app.post(
+  "/api/admin/managed-memberships/free/:id/jig-address",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const savedAddressId =
+        clean(
+          req.body?.savedAddressId,
+          150
+        );
+
+      if (!savedAddressId) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Select a saved shipping address before using JIG."
+          });
+      }
+
+      const assignments =
+        await getFreeAssignments();
+
+      const assignment =
+        currentFreeAssignment(
+          assignments,
+          id
+        );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "This gifted account is not currently assigned."
+          });
+      }
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const account =
+        accounts.find(
+          item =>
+            String(item.id) ===
+            String(
+              assignment.customerAccountId ||
+              ""
+            )
+        );
+
+      if (!account) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Assigned customer account could not be found."
+          });
+      }
+
+      const payload =
+        await adminCustomerSavedDetailsPayload(
+          account
+        );
+
+      const addresses =
+        Array.isArray(
+          payload.addresses
+        )
+          ? payload.addresses
+          : [];
+
+      const sourceAddress =
+        addresses.find(
+          item =>
+            String(item.id) ===
+            String(savedAddressId)
+        );
+
+      if (!sourceAddress) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "That saved shipping address could not be found."
+          });
+      }
+
+      const variants =
+        safeAddressVariants(
+          sourceAddress
+        );
+
+      if (!variants.length) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "No safe address formatting variants are available for this saved address."
+          });
+      }
+
+      const sameSourceAssignments =
+        assignments.filter(
+          item =>
+            String(
+              item.customerAccountId ||
+              ""
+            ) ===
+              String(
+                assignment.customerAccountId ||
+                ""
+              ) &&
+            String(
+              item.savedAddressId ||
+              ""
+            ) ===
+              String(savedAddressId)
+        );
+
+      const usedKeys =
+        new Set(
+          sameSourceAssignments
+            .filter(
+              item =>
+                String(item.membershipId) !==
+                String(id)
+            )
+            .map(
+              item =>
+                safeAddressVariantKey(
+                  item.jiggedAddress ||
+                  item.customerProfile ||
+                  {}
+                )
+            )
+        );
+
+      let chosen =
+        variants.find(
+          item =>
+            !usedKeys.has(
+              safeAddressVariantKey(
+                item
+              )
+            )
+        );
+
+      if (!chosen) {
+        const currentIndex =
+          Number(
+            assignment.jigVariantIndex ||
+            0
+          );
+
+        chosen =
+          variants[
+            currentIndex %
+            variants.length
+          ];
+      }
+
+      const chosenIndex =
+        Math.max(
+          0,
+          variants.findIndex(
+            item =>
+              safeAddressVariantKey(
+                item
+              ) ===
+              safeAddressVariantKey(
+                chosen
+              )
+          )
+        );
+
+      assignment.savedAddressId =
+        savedAddressId;
+
+      assignment.jigVariantIndex =
+        chosenIndex + 1;
+
+      assignment.jiggedAddress = {
+        ...chosen
+      };
+
+      assignment.customerProfile = {
+        ...(
+          assignment.customerProfile ||
+          {}
+        ),
+
+        address:
+          chosen.address ||
+          "",
+
+        address2:
+          chosen.address2 ||
+          "",
+
+        city:
+          chosen.city ||
+          "",
+
+        state:
+          chosen.state ||
+          "",
+
+        zip:
+          chosen.zip ||
+          "",
+
+        country:
+          chosen.country ||
+          ""
+      };
+
+      assignment.updatedAt =
+        new Date()
+          .toISOString();
+
+      await writeFreeAssignments(
+        assignments
+      );
+
+      return res.json({
+        ok: true,
+
+        savedAddressId,
+
+        variant:
+          chosen,
+
+        variantNumber:
+          chosenIndex + 1,
+
+        totalVariants:
+          variants.length
+      });
+
+    } catch (error) {
+      console.error(
+        "Gifted JIG address error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to create a safe address variant."
+        });
+    }
+  }
+);
+
+
+app.get(
+  "/api/admin/managed-memberships/:type/:id/saved-details",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      if (
+        type !== "free" &&
+        type !== "rented"
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid managed membership type."
+          });
+      }
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
+
+      const assignment =
+        type === "free"
+          ? currentFreeAssignment(
+              assignments,
+              id
+            )
+          : currentRentalAssignment(
+              assignments,
+              id
+            );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "This managed account is not currently assigned."
+          });
+      }
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const account =
+        accounts.find(
+          item =>
+            String(item.id) ===
+            String(
+              assignment.customerAccountId ||
+              ""
+            )
+        );
+
+      if (!account) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Assigned customer account could not be found."
+          });
+      }
+
+      const payload =
+        await adminCustomerSavedDetailsPayload(
+          account
+        );
+
+      return res.json({
+        ok: true,
+
+        selectedAddressId:
+          assignment.savedAddressId ||
+          "",
+
+        selectedPaymentMethodId:
+          assignment.savedPaymentMethodId ||
+          "",
+
+        ...payload
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin managed saved details load error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to load saved customer address/card options."
+        });
+    }
+  }
+);
+
+
 app.put(
   "/api/admin/managed-memberships/:type/:id/customer-details",
   requireAdmin,
@@ -16872,6 +17475,32 @@ app.put(
         encryptJson(
           customerSecrets
         );
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          req.body || {},
+          "savedAddressId"
+        )
+      ) {
+        assignment.savedAddressId =
+          clean(
+            req.body?.savedAddressId,
+            150
+          );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          req.body || {},
+          "savedPaymentMethodId"
+        )
+      ) {
+        assignment.savedPaymentMethodId =
+          clean(
+            req.body?.savedPaymentMethodId,
+            150
+          );
+      }
 
       assignment.customerUpdatedAt =
         new Date()
