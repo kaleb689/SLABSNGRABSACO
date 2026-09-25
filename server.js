@@ -7931,7 +7931,7 @@ async function deleteActionNeededDiscordMessage(
       );
 
     url.pathname =
-      `${url.pathname.replace(/\\/$/, "")}/messages/${encodeURIComponent(
+      `${url.pathname.replace(/\/$/, "")}/messages/${encodeURIComponent(
         messageId
       )}`;
 
