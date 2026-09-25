@@ -3746,6 +3746,343 @@
     }
 
 
+
+    /* =========================================
+       GIFTED / RENTED GROUP POLISH
+    ========================================= */
+
+    .managed-group-summary-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+    }
+
+    .managed-group-count-prominent {
+      min-width: 76px !important;
+      min-height: 42px !important;
+      padding: 0 18px !important;
+      font-size: 16px !important;
+      border-width: 2px !important;
+      box-shadow: 0 0 18px rgba(18,201,255,.13);
+    }
+
+    .managed-group-active-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid;
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .5px;
+      white-space: nowrap;
+    }
+
+    .managed-group-active-badge.has-active {
+      color: #66efac;
+      border-color: #258459;
+      background: #09281d;
+    }
+
+    .managed-group-active-badge.no-active {
+      color: #9aafbd;
+      border-color: #38505f;
+      background: #0a1720;
+    }
+
+    .managed-available-search-wrap {
+      padding: 13px;
+    }
+
+    .managed-available-search {
+      width: 100%;
+      min-height: 52px;
+      padding: 0 15px;
+      border: 1px solid #22738f;
+      border-radius: 10px;
+      background: #061721;
+      color: #effaff;
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    .managed-retailer-available-group {
+      margin: 0 13px 13px;
+      border: 1px solid #205a73;
+      border-radius: 12px;
+      background: #06131d;
+      overflow: hidden;
+    }
+
+    .managed-retailer-available-group > summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 58px;
+      padding: 13px 15px;
+      cursor: pointer;
+      color: #67e5ff;
+      font-weight: 950;
+    }
+
+    .managed-retailer-available-body {
+      display: grid;
+      gap: 9px;
+      padding: 0 12px 12px;
+    }
+
+    .managed-available-large-row {
+      min-height: 72px !important;
+      padding: 13px 15px !important;
+      border-radius: 11px !important;
+    }
+
+    .managed-available-large-row strong {
+      font-size: 13px !important;
+      color: #f1fbff !important;
+    }
+
+    .managed-available-large-row small {
+      font-size: 10px !important;
+      color: #65ddff !important;
+    }
+
+    /* =========================================
+       PAID PROFILE DROPDOWNS
+    ========================================= */
+
+    .admin-retailer-profile-dropdown {
+      overflow: hidden;
+    }
+
+    .admin-retailer-profile-dropdown
+      > .admin-retailer-profile-head {
+      cursor: pointer;
+      list-style: none;
+      min-height: 82px;
+      padding: 15px 17px;
+    }
+
+    .admin-retailer-profile-dropdown
+      > .admin-retailer-profile-head
+      small {
+      display: block;
+      margin-top: 5px;
+      color: #99b0c0;
+      font-size: 10px;
+    }
+
+    .admin-retailer-profile-dropdown[open]
+      > .admin-retailer-profile-head {
+      border-bottom: 1px solid #1e5068;
+      background: #09202e;
+    }
+
+    .admin-retailer-profile-dropdown
+      > form {
+      padding: 15px;
+    }
+
+    /* =========================================
+       CUSTOMER ACTION CENTER / EXPORT
+    ========================================= */
+
+    .customer-action-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(3, minmax(0, 1fr));
+      gap: 13px;
+    }
+
+    .customer-action-card {
+      padding: 14px;
+      border: 1px solid #1e536c;
+      border-radius: 11px;
+      background: #06141f;
+    }
+
+    .customer-action-card h4 {
+      margin: 6px 0;
+      color: #f1fbff;
+      font-size: 14px;
+    }
+
+    .customer-action-card p {
+      color: #8fa8b8;
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .customer-action-card button {
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .customer-action-card textarea {
+      width: 100%;
+      min-height: 100px;
+      margin-top: 8px;
+      padding: 10px;
+      border: 1px solid #1d607d;
+      border-radius: 9px;
+      background: #06111a;
+      color: #effaff;
+      resize: vertical;
+    }
+
+    .profile-export-options {
+      margin-top: 11px;
+      padding: 11px;
+      border: 1px solid #1a455b;
+      border-radius: 9px;
+      background: #050f17;
+    }
+
+    .profile-export-select-list {
+      display: grid;
+      gap: 7px;
+      margin-bottom: 10px;
+      max-height: 320px;
+      overflow: auto;
+    }
+
+    .profile-export-select-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid #173b4d;
+      border-radius: 8px;
+    }
+
+    .profile-export-select-row span {
+      display: grid;
+      gap: 3px;
+    }
+
+    .profile-export-select-row strong {
+      color: #eaf9ff;
+      font-size: 10px;
+    }
+
+    .profile-export-select-row small {
+      color: #7f9aaa;
+      font-size: 9px;
+    }
+
+    /* =========================================
+       LINKED MANAGED CONTROLS
+    ========================================= */
+
+    .linked-managed-controls {
+      margin-top: 14px;
+      border: 1px solid #1f607d;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #071824;
+    }
+
+    .linked-managed-control-body {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+    }
+
+    .linked-control-status-row,
+    .linked-control-actions,
+    .linked-extension-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+
+    .linked-control-status-row span {
+      padding: 8px 10px;
+      border: 1px solid #1d4a61;
+      border-radius: 8px;
+      color: #9ab2c2;
+      font-size: 9px;
+    }
+
+    .linked-control-status-row strong {
+      color: #eaf9ff;
+    }
+
+    .linked-extension-row select {
+      min-height: 42px;
+      min-width: 180px;
+    }
+
+    .linked-profile-list-status {
+      display: inline-flex !important;
+      width: fit-content;
+      margin-top: 2px;
+      padding: 4px 7px;
+      border-radius: 999px;
+      border: 1px solid #25516a;
+      color: #9fc7da !important;
+      background: #071824;
+      font-size: 8px !important;
+      font-weight: 950;
+      letter-spacing: .4px;
+    }
+
+    @media (max-width: 900px) {
+      .customer-action-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .managed-group-summary-status {
+        align-items: flex-end;
+        flex-direction: column;
+      }
+    }
+
+
+
+    .linked-saved-details-tools {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid #1d4e66;
+      border-radius: 10px;
+      background: #06131d;
+    }
+
+    .linked-saved-details-options {
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .linked-saved-details-options[hidden] {
+      display: none !important;
+    }
+
+    .linked-saved-details-options label {
+      display: grid;
+      gap: 6px;
+      color: #78dff8;
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .4px;
+    }
+
+    .linked-saved-details-options select {
+      min-height: 44px;
+    }
+
+    @media (max-width: 760px) {
+      .linked-saved-details-options {
+        grid-template-columns: 1fr;
+      }
+    }
+
+
   </style>
 </head>
 
@@ -5756,6 +6093,101 @@ function renderOrder(x) {
 
 
 
+
+<details
+  class="order-section admin-collapsible customer-action-center"
+  data-customer-action-center="${escapeHtml(x.id)}"
+>
+  <summary class="order-section-head admin-collapsible-head">
+    <div>
+      <h3>Export Profiles &amp; Customer Notifications</h3>
+      <p>
+        Export paid/linked profiles or send an action-needed message to this customer.
+      </p>
+    </div>
+
+    <span class="admin-collapsible-arrow">›</span>
+  </summary>
+
+  <div class="admin-retailer-wrap customer-action-center-body">
+    <div class="customer-action-grid">
+
+      <section class="customer-action-card">
+        <span class="eyebrow">PROFILE EXPORT</span>
+        <h4>Export Profiles</h4>
+        <p>
+          Export all paid, gifted, and rented profiles in .hayha format,
+          or choose only specific profiles. The target file format contains a field named CVV;
+          because this site stores a separate Security Code rather than card CVV/CVC, that export field is left blank.
+        </p>
+
+        <button
+          type="button"
+          class="admin-save-button"
+          data-export-all-profiles="${escapeHtml(x.id)}"
+        >
+          Export All Profiles
+        </button>
+
+        <button
+          type="button"
+          class="admin-edit-button"
+          data-load-export-options="${escapeHtml(x.id)}"
+        >
+          Select Profiles to Export
+        </button>
+
+        <div
+          class="profile-export-options"
+          data-export-options="${escapeHtml(x.id)}"
+          hidden
+        ></div>
+      </section>
+
+      <section class="customer-action-card">
+        <span class="eyebrow">ACTION NEEDED</span>
+        <h4>Notify User Missing Info</h4>
+        <p>
+          Creates/updates the customer notification and sends the action-needed Discord webhook.
+        </p>
+
+        <button
+          type="button"
+          class="admin-save-button"
+          data-notify-missing-info="${escapeHtml(x.id)}"
+        >
+          Notify User Missing Info
+        </button>
+      </section>
+
+      <section class="customer-action-card">
+        <span class="eyebrow">CUSTOM MESSAGE</span>
+        <h4>Message User</h4>
+        <textarea
+          rows="4"
+          data-customer-message-input="${escapeHtml(x.id)}"
+          placeholder="Type the message the customer should see..."
+        ></textarea>
+
+        <button
+          type="button"
+          class="admin-edit-button"
+          data-message-customer="${escapeHtml(x.id)}"
+        >
+          Message User
+        </button>
+      </section>
+
+    </div>
+
+    <div
+      class="admin-edit-message"
+      data-customer-action-message="${escapeHtml(x.id)}"
+    ></div>
+  </div>
+</details>
+
+
 <details
   class="order-section admin-collapsible"
   data-linked-profiles-section="${escapeHtml(x.id)}"
@@ -5764,7 +6196,7 @@ function renderOrder(x) {
     <div>
       <h3>Linked Profiles</h3>
       <p>
-        Active free and rented managed accounts linked to this customer.
+        Gifted and rented managed accounts stay here as soon as they are assigned, regardless of activation status, until expired or returned to the pool.
       </p>
     </div>
     <span class="admin-collapsible-arrow">›</span>
@@ -6342,30 +6774,48 @@ name="${escapeHtml(
 
 
   return `
-    <div
-      class="admin-retailer-profile"
+    <details
+      class="admin-retailer-profile admin-retailer-profile-dropdown"
       data-retailer-slot="${escapeHtml(
+        profile.slot
+      )}"
+      data-profile-slot="${escapeHtml(
         profile.slot
       )}"
     >
 
-      <div class="admin-retailer-profile-head">
+      <summary class="admin-retailer-profile-head admin-collapsible-head">
+        <div>
+          <span class="eyebrow">
+            PAID PROFILE ${escapeHtml(
+              profile.slot
+            )}
+          </span>
 
-        <strong>
-          Profile ${escapeHtml(
-            profile.slot
-          )}
-        </strong>
+          <strong>
+            ${escapeHtml(
+              profile.profileName ||
+              `Profile ${profile.slot}`
+            )}
+          </strong>
+
+          <small>
+            ${escapeHtml(
+              customerProfile.email ||
+              customerProfile.firstName ||
+              ""
+            )}
+          </small>
+        </div>
 
         <span>
           ${
             profile.locked
               ? "LOCKED BY CURRENT PLAN"
-              : "ACTIVE SLOT"
+              : "OPEN ›"
           }
         </span>
-
-      </div>
+      </summary>
 
       <form
         class="admin-retailer-form"
@@ -6642,7 +7092,7 @@ name="${escapeHtml(
 
       </form>
 
-    </div>
+    </details>
   `;
 }
 
@@ -7252,6 +7702,210 @@ function linkedProfileDetailHtml(
       </div>
 
       <details
+        class="linked-managed-controls admin-collapsible"
+        data-linked-managed-controls="${escapeHtml(
+          membership.id
+        )}"
+      >
+        <summary class="linked-edit-all-summary admin-collapsible-head">
+          <div>
+            <span class="eyebrow">MANAGED PROFILE CONTROLS</span>
+            <h3>Manage Linked Profile</h3>
+            <p>
+              Status, JIG, extension, and pool controls for this assigned managed account.
+            </p>
+          </div>
+
+          <span class="admin-collapsible-arrow">›</span>
+        </summary>
+
+        <div class="linked-managed-control-body">
+          <div class="linked-control-status-row">
+            <span>
+              STATUS:
+              <strong>
+                ${escapeHtml(
+                  String(
+                    membership.activationStatus ||
+                    "inactive"
+                  )
+                    .replace(
+                      /_/g,
+                      " "
+                    )
+                    .toUpperCase()
+                )}
+              </strong>
+            </span>
+
+            ${
+              membership.durationType
+                ? `
+                    <span>
+                      PACKAGE:
+                      <strong>
+                        ${escapeHtml(
+                          String(
+                            membership.durationType
+                          )
+                            .replace(
+                              /_/g,
+                              " "
+                            )
+                            .toUpperCase()
+                        )}
+                      </strong>
+                    </span>
+                  `
+                : ""
+            }
+          </div>
+
+          <div class="linked-saved-details-tools">
+            <button
+              type="button"
+              class="admin-edit-button"
+              data-load-linked-saved-details="${escapeHtml(
+                membership.id
+              )}"
+              data-linked-saved-type="${escapeHtml(
+                membership.type
+              )}"
+            >
+              Load Customer Saved Shipping / Card
+            </button>
+
+            <div
+              class="linked-saved-details-options"
+              data-linked-saved-details-options="${escapeHtml(
+                membership.id
+              )}"
+              hidden
+            ></div>
+          </div>
+
+          <div class="linked-control-actions">
+            <button
+              type="button"
+              class="admin-edit-button"
+              data-linked-status-action="activating"
+              data-linked-type="${escapeHtml(
+                membership.type
+              )}"
+              data-linked-id="${escapeHtml(
+                membership.assignmentId ||
+                membership.id
+              )}"
+            >
+              ACTIVATING
+            </button>
+
+            <button
+              type="button"
+              class="admin-save-button"
+              data-linked-status-action="activate"
+              data-linked-type="${escapeHtml(
+                membership.type
+              )}"
+              data-linked-id="${escapeHtml(
+                membership.assignmentId ||
+                membership.id
+              )}"
+            >
+              ACTIVE
+            </button>
+
+            <button
+              type="button"
+              class="admin-cancel-button"
+              data-linked-status-action="inactive"
+              data-linked-type="${escapeHtml(
+                membership.type
+              )}"
+              data-linked-id="${escapeHtml(
+                membership.assignmentId ||
+                membership.id
+              )}"
+            >
+              INACTIVE
+            </button>
+          </div>
+
+          ${
+            membership.type === "free"
+              ? `
+                  <div class="linked-extension-row">
+                    <select
+                      data-linked-gifted-extension="${escapeHtml(
+                        membership.id
+                      )}"
+                    >
+                      <option value="1_week">1 WEEK</option>
+                      <option value="1_month">1 MONTH</option>
+                      <option value="indefinite">INDEFINITELY</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      class="admin-save-button"
+                      data-extend-gifted="${escapeHtml(
+                        membership.id
+                      )}"
+                    >
+                      Extend Gifted
+                    </button>
+                  </div>
+                `
+              : ""
+          }
+
+          <div class="linked-control-actions">
+            <button
+              type="button"
+              class="admin-edit-button"
+              data-linked-jig="${escapeHtml(
+                membership.id
+              )}"
+              data-linked-jig-type="${escapeHtml(
+                membership.type
+              )}"
+            >
+              JIG ADDRESS
+            </button>
+
+            <button
+              type="button"
+              class="admin-cancel-button"
+              data-linked-remove-jig="${escapeHtml(
+                membership.id
+              )}"
+              data-linked-jig-type="${escapeHtml(
+                membership.type
+              )}"
+            >
+              REMOVE JIG
+            </button>
+
+            <button
+              type="button"
+              class="delete-submission"
+              data-return-linked-to-pool="${escapeHtml(
+                membership.id
+              )}"
+              data-return-linked-type="${escapeHtml(
+                membership.type
+              )}"
+            >
+              RETURN TO POOL
+            </button>
+          </div>
+
+          <div class="admin-edit-message" data-linked-control-message></div>
+        </div>
+      </details>
+
+
+      <details
         class="linked-edit-all-panel admin-collapsible"
         data-linked-edit-panel="${escapeHtml(
           membership.id
@@ -7656,6 +8310,17 @@ async function loadAdminLinkedProfiles(
                       )
                     )}
                   </strong>
+
+                  <span class="linked-profile-list-status">
+                    ${escapeHtml(
+                      String(
+                        membership.activationStatus ||
+                        "inactive"
+                      )
+                        .replace(/_/g, " ")
+                        .toUpperCase()
+                    )}
+                  </span>
                 </button>
               `
             )
@@ -11611,6 +12276,30 @@ function renderManagedMembershipDashboard(
     Array.from(
       groups.values()
     )
+      .sort(
+        (a, b) =>
+          (
+            b.memberships.length > 0
+              ? 1
+              : 0
+          ) -
+          (
+            a.memberships.length > 0
+              ? 1
+              : 0
+          ) ||
+          String(
+            a.customer?.name ||
+            a.customer?.email ||
+            ""
+          ).localeCompare(
+            String(
+              b.customer?.name ||
+              b.customer?.email ||
+              ""
+            )
+          )
+      )
       .map(group => {
         const customer =
           group.customer ||
@@ -11633,45 +12322,157 @@ function renderManagedMembershipDashboard(
             groupKey
           );
 
+        const availableRowHtml =
+          membership => `
+            <label
+              class="managed-available-select-row managed-available-large-row"
+              data-managed-available-search-text="${escapeHtml(
+                [
+                  managedAvailableAccountEmail(
+                    membership
+                  ),
+                  managedAvailableRetailerLabel(
+                    membership
+                  )
+                ]
+                  .join(" ")
+                  .toLowerCase()
+              )}"
+            >
+              <input
+                type="checkbox"
+                data-managed-available-select="${escapeHtml(
+                  membership.id
+                )}"
+                data-managed-available-group="${escapeHtml(
+                  groupId
+                )}"
+              >
+
+              <span>
+                <strong>
+                  ${escapeHtml(
+                    managedAvailableAccountEmail(
+                      membership
+                    )
+                  )}
+                </strong>
+
+                <small>
+                  ${escapeHtml(
+                    managedAvailableRetailerLabel(
+                      membership
+                    )
+                  )}
+                </small>
+              </span>
+            </label>
+          `;
+
+        const targetAvailable =
+          availableMemberships.filter(
+            membership =>
+              /target/i.test(
+                managedAvailableRetailerLabel(
+                  membership
+                )
+              )
+          );
+
+        const walmartAvailable =
+          availableMemberships.filter(
+            membership =>
+              /walmart/i.test(
+                managedAvailableRetailerLabel(
+                  membership
+                )
+              )
+          );
+
+        const otherAvailable =
+          availableMemberships.filter(
+            membership =>
+              !/target|walmart/i.test(
+                managedAvailableRetailerLabel(
+                  membership
+                )
+              )
+          );
+
         const availableRows =
           availableMemberships.length
-            ? availableMemberships
-                .map(
-                  membership => `
-                    <label
-                      class="managed-available-select-row"
-                    >
-                      <input
-                        type="checkbox"
-                        data-managed-available-select="${escapeHtml(
-                          membership.id
-                        )}"
-                        data-managed-available-group="${escapeHtml(
-                          groupId
-                        )}"
-                      >
+            ? `
+                <div class="managed-available-search-wrap">
+                  <input
+                    type="search"
+                    class="managed-available-search"
+                    data-managed-available-search="${escapeHtml(
+                      groupId
+                    )}"
+                    placeholder="Search available account email / username..."
+                    autocomplete="off"
+                  >
+                </div>
 
-                      <span>
-                        <strong>
-                          ${escapeHtml(
-                            managedAvailableAccountEmail(
-                              membership
-                            )
-                          )}
-                        </strong>
+                <details class="managed-retailer-available-group" open>
+                  <summary>
+                    <span>TARGET ACCOUNTS</span>
+                    <strong>${targetAvailable.length}</strong>
+                  </summary>
 
-                        <small>
-                          ${escapeHtml(
-                            managedAvailableRetailerLabel(
-                              membership
+                  <div class="managed-retailer-available-body">
+                    ${
+                      targetAvailable.length
+                        ? targetAvailable
+                            .map(
+                              availableRowHtml
                             )
-                          )}
-                        </small>
-                      </span>
-                    </label>
-                  `
-                )
-                .join("")
+                            .join("")
+                        : `<div class="empty-admin managed-group-empty">No Target accounts available.</div>`
+                    }
+                  </div>
+                </details>
+
+                <details class="managed-retailer-available-group" open>
+                  <summary>
+                    <span>WALMART ACCOUNTS</span>
+                    <strong>${walmartAvailable.length}</strong>
+                  </summary>
+
+                  <div class="managed-retailer-available-body">
+                    ${
+                      walmartAvailable.length
+                        ? walmartAvailable
+                            .map(
+                              availableRowHtml
+                            )
+                            .join("")
+                        : `<div class="empty-admin managed-group-empty">No Walmart accounts available.</div>`
+                    }
+                  </div>
+                </details>
+
+                ${
+                  otherAvailable.length
+                    ? `
+                        <details class="managed-retailer-available-group">
+                          <summary>
+                            <span>OTHER ACCOUNTS</span>
+                            <strong>${otherAvailable.length}</strong>
+                          </summary>
+
+                          <div class="managed-retailer-available-body">
+                            ${otherAvailable
+                              .map(
+                                availableRowHtml
+                              )
+                              .join("")}
+                          </div>
+                        </details>
+                      `
+                    : ""
+                }
+              `
             : `
                 <div class="empty-admin managed-group-empty">
                   No available managed accounts are currently in the pool.
@@ -11709,9 +12510,33 @@ function renderManagedMembershipDashboard(
                 </p>
               </div>
 
-              <span class="managed-group-count">
-                ${group.memberships.length}
-              </span>
+              <div class="managed-group-summary-status">
+                <span class="managed-group-count managed-group-count-prominent">
+                  ${group.memberships.length}
+                </span>
+
+                <span
+                  class="managed-group-active-badge ${
+                    group.memberships.length
+                      ? "has-active"
+                      : "no-active"
+                  }"
+                >
+                  ${
+                    type === "free"
+                      ? (
+                          group.memberships.length
+                            ? "GIFTED ACTIVE"
+                            : "NO GIFTED ACTIVE"
+                        )
+                      : (
+                          group.memberships.length
+                            ? "RENTED ACTIVE"
+                            : "NO RENTED ACTIVE"
+                        )
+                  }
+                </span>
+              </div>
 
               <span class="admin-collapsible-arrow">
                 ›
@@ -11975,6 +12800,55 @@ function managedMembershipBody(
 function bindManagedMembershipDashboard(
   type
 ) {
+
+  document
+    .querySelectorAll(
+      "[data-managed-available-search]"
+    )
+    .forEach(input => {
+      input.addEventListener(
+        "input",
+        () => {
+          const groupId =
+            input.dataset
+              .managedAvailableSearch;
+
+          const query =
+            String(
+              input.value ||
+              ""
+            )
+              .trim()
+              .toLowerCase();
+
+          const group =
+            input.closest(
+              "[data-managed-customer-group]"
+            );
+
+          group
+            ?.querySelectorAll(
+              "[data-managed-available-search-text]"
+            )
+            .forEach(row => {
+              const text =
+                String(
+                  row.dataset
+                    .managedAvailableSearchText ||
+                  ""
+                );
+
+              row.hidden =
+                Boolean(query) &&
+                !text.includes(
+                  query
+                );
+            });
+        }
+      );
+    });
+
+
 
   document
     .querySelectorAll(
@@ -17097,6 +17971,1485 @@ document.addEventListener(
 
   restore();
 })();
+
+
+
+/* =========================================
+   CUSTOMER ACTION CENTER / EXPORT / LINKED CONTROLS
+========================================= */
+
+async function adminDownloadProfileExport(
+  orderId,
+  selected = []
+) {
+  const response =
+    await fetch(
+      `/api/admin/submissions/${encodeURIComponent(
+        orderId
+      )}/export-profiles`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify({
+            selected
+          })
+      }
+    );
+
+  if (!response.ok) {
+    const data =
+      await response
+        .json()
+        .catch(
+          () => ({})
+        );
+
+    throw new Error(
+      data.error ||
+      "Unable to export profiles."
+    );
+  }
+
+  const blob =
+    await response.blob();
+
+  const disposition =
+    response.headers.get(
+      "Content-Disposition"
+    ) || "";
+
+  const match =
+    disposition.match(
+      /filename="([^"]+)"/i
+    );
+
+  const filename =
+    match?.[1] ||
+    "Customer Profiles.hayha";
+
+  const url =
+    URL.createObjectURL(
+      blob
+    );
+
+  const link =
+    document.createElement(
+      "a"
+    );
+
+  link.href =
+    url;
+
+  link.download =
+    filename;
+
+  document.body.appendChild(
+    link
+  );
+
+  link.click();
+  link.remove();
+
+  setTimeout(
+    () =>
+      URL.revokeObjectURL(
+        url
+      ),
+    1000
+  );
+}
+
+
+document.addEventListener(
+  "click",
+  async event => {
+    const exportAll =
+      event.target.closest(
+        "[data-export-all-profiles]"
+      );
+
+    if (exportAll) {
+      event.preventDefault();
+
+      try {
+        exportAll.disabled =
+          true;
+
+        exportAll.textContent =
+          "Exporting...";
+
+        await adminDownloadProfileExport(
+          exportAll.dataset
+            .exportAllProfiles,
+          []
+        );
+
+      } catch (error) {
+        alert(
+          error.message
+        );
+
+      } finally {
+        exportAll.disabled =
+          false;
+
+        exportAll.textContent =
+          "Export All Profiles";
+      }
+
+      return;
+    }
+
+
+    const loadOptions =
+      event.target.closest(
+        "[data-load-export-options]"
+      );
+
+    if (loadOptions) {
+      event.preventDefault();
+
+      const orderId =
+        loadOptions.dataset
+          .loadExportOptions;
+
+      const container =
+        document.querySelector(
+          `[data-export-options="${CSS.escape(
+            orderId
+          )}"]`
+        );
+
+      if (!container) {
+        return;
+      }
+
+      container.hidden =
+        false;
+
+      container.innerHTML =
+        `<p class="admin-retailer-loading">Loading profile list...</p>`;
+
+      try {
+        const response =
+          await fetch(
+            `/api/admin/submissions/${encodeURIComponent(
+              orderId
+            )}/export-options`,
+            {
+              credentials:
+                "same-origin",
+              cache:
+                "no-store"
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to load profile list."
+          );
+        }
+
+        const options =
+          Array.isArray(
+            data.options
+          )
+            ? data.options
+            : [];
+
+        container.innerHTML =
+          options.length
+            ? `
+                <div class="profile-export-select-list">
+                  ${options
+                    .map(
+                      option => `
+                        <label class="profile-export-select-row">
+                          <input
+                            type="checkbox"
+                            value="${escapeHtml(
+                              option.key
+                            )}"
+                            data-export-option
+                          >
+
+                          <span>
+                            <strong>
+                              ${escapeHtml(
+                                option.label
+                              )}
+                            </strong>
+
+                            <small>
+                              ${escapeHtml(
+                                option.accountEmail ||
+                                option.type ||
+                                ""
+                              )}
+                            </small>
+                          </span>
+                        </label>
+                      `
+                    )
+                    .join("")}
+                </div>
+
+                <button
+                  type="button"
+                  class="admin-save-button"
+                  data-export-selected-profiles="${escapeHtml(
+                    orderId
+                  )}"
+                >
+                  Export Selected Profiles
+                </button>
+              `
+            : `<p class="admin-retailer-empty">No profiles are available to export.</p>`;
+
+      } catch (error) {
+        container.innerHTML =
+          `<p class="admin-retailer-empty">${escapeHtml(
+            error.message
+          )}</p>`;
+      }
+
+      return;
+    }
+
+
+    const exportSelected =
+      event.target.closest(
+        "[data-export-selected-profiles]"
+      );
+
+    if (exportSelected) {
+      event.preventDefault();
+
+      const orderId =
+        exportSelected.dataset
+          .exportSelectedProfiles;
+
+      const container =
+        document.querySelector(
+          `[data-export-options="${CSS.escape(
+            orderId
+          )}"]`
+        );
+
+      const selected =
+        Array.from(
+          container?.querySelectorAll(
+            "[data-export-option]:checked"
+          ) || []
+        ).map(
+          input =>
+            input.value
+        );
+
+      if (!selected.length) {
+        alert(
+          "Select at least one profile to export."
+        );
+        return;
+      }
+
+      try {
+        exportSelected.disabled =
+          true;
+
+        exportSelected.textContent =
+          "Exporting...";
+
+        await adminDownloadProfileExport(
+          orderId,
+          selected
+        );
+
+      } catch (error) {
+        alert(
+          error.message
+        );
+
+      } finally {
+        exportSelected.disabled =
+          false;
+
+        exportSelected.textContent =
+          "Export Selected Profiles";
+      }
+
+      return;
+    }
+
+
+    const notifyMissing =
+      event.target.closest(
+        "[data-notify-missing-info]"
+      );
+
+    if (notifyMissing) {
+      event.preventDefault();
+
+      const orderId =
+        notifyMissing.dataset
+          .notifyMissingInfo;
+
+      const message =
+        document.querySelector(
+          `[data-customer-action-message="${CSS.escape(
+            orderId
+          )}"]`
+        );
+
+      try {
+        notifyMissing.disabled =
+          true;
+
+        notifyMissing.textContent =
+          "Sending...";
+
+        const response =
+          await fetch(
+            `/api/admin/submissions/${encodeURIComponent(
+              orderId
+            )}/notify-missing-info`,
+            {
+              method: "POST",
+              credentials:
+                "same-origin"
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to notify customer."
+          );
+        }
+
+        if (message) {
+          message.textContent =
+            data.discordSent
+              ? (
+                  data.discordUsernameConfigured
+                    ? "Action-needed notification saved and Discord username referenced."
+                    : "Action-needed notification saved and Discord webhook sent."
+                )
+              : `Action-needed notification saved to the customer account. ${
+                  data.discordError ||
+                  "Discord webhook was not sent."
+                }`;
+
+          message.className =
+            "admin-edit-message success";
+        }
+
+      } catch (error) {
+        if (message) {
+          message.textContent =
+            error.message;
+
+          message.className =
+            "admin-edit-message error";
+        }
+
+      } finally {
+        notifyMissing.disabled =
+          false;
+
+        notifyMissing.textContent =
+          "Notify User Missing Info";
+      }
+
+      return;
+    }
+
+
+    const messageUser =
+      event.target.closest(
+        "[data-message-customer]"
+      );
+
+    if (messageUser) {
+      event.preventDefault();
+
+      const orderId =
+        messageUser.dataset
+          .messageCustomer;
+
+      const input =
+        document.querySelector(
+          `[data-customer-message-input="${CSS.escape(
+            orderId
+          )}"]`
+        );
+
+      const status =
+        document.querySelector(
+          `[data-customer-action-message="${CSS.escape(
+            orderId
+          )}"]`
+        );
+
+      const text =
+        String(
+          input?.value ||
+          ""
+        ).trim();
+
+      if (!text) {
+        alert(
+          "Type a message first."
+        );
+        return;
+      }
+
+      try {
+        messageUser.disabled =
+          true;
+
+        messageUser.textContent =
+          "Sending...";
+
+        const response =
+          await fetch(
+            `/api/admin/submissions/${encodeURIComponent(
+              orderId
+            )}/message-customer`,
+            {
+              method: "POST",
+              credentials:
+                "same-origin",
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+              body:
+                JSON.stringify({
+                  message:
+                    text
+                })
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to message customer."
+          );
+        }
+
+        if (input) {
+          input.value =
+            "";
+        }
+
+        if (status) {
+          status.textContent =
+            data.discordSent
+              ? (
+                  data.discordUsernameConfigured
+                    ? "Customer message saved and Discord username referenced."
+                    : "Customer message saved and Discord webhook sent."
+                )
+              : `Customer message saved to the website. ${
+                  data.discordError ||
+                  "Discord webhook was not sent."
+                }`;
+
+          status.className =
+            "admin-edit-message success";
+        }
+
+      } catch (error) {
+        if (status) {
+          status.textContent =
+            error.message;
+
+          status.className =
+            "admin-edit-message error";
+        }
+
+      } finally {
+        messageUser.disabled =
+          false;
+
+        messageUser.textContent =
+          "Message User";
+      }
+
+      return;
+    }
+
+
+    const loadSaved =
+      event.target.closest(
+        "[data-load-linked-saved-details]"
+      );
+
+    if (loadSaved) {
+      event.preventDefault();
+
+      const id =
+        loadSaved.dataset
+          .loadLinkedSavedDetails;
+
+      const type =
+        loadSaved.dataset
+          .linkedSavedType;
+
+      const container =
+        loadSaved
+          .closest(
+            ".linked-saved-details-tools"
+          )
+          ?.querySelector(
+            "[data-linked-saved-details-options]"
+          );
+
+      if (!container) {
+        return;
+      }
+
+      container.hidden =
+        false;
+
+      container.innerHTML =
+        `<p class="admin-retailer-loading">Loading saved details...</p>`;
+
+      try {
+        const response =
+          await fetch(
+            `/api/admin/managed-memberships/${encodeURIComponent(
+              type
+            )}/${encodeURIComponent(
+              id
+            )}/saved-details`,
+            {
+              credentials:
+                "same-origin",
+              cache:
+                "no-store"
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to load saved details."
+          );
+        }
+
+        const addresses =
+          Array.isArray(
+            data.addresses
+          )
+            ? data.addresses
+            : [];
+
+        const payments =
+          Array.isArray(
+            data.paymentMethods
+          )
+            ? data.paymentMethods
+            : [];
+
+        container.innerHTML = `
+          <label>
+            AUTO POPULATE SHIPPING
+            <select data-linked-saved-address>
+              <option value="">
+                Choose saved shipping...
+              </option>
+              ${addresses
+                .map(
+                  (item, index) => `
+                    <option
+                      value="${index}"
+                    >
+                      ${escapeHtml(
+                        item.label ||
+                        [
+                          item.address,
+                          item.city
+                        ]
+                          .filter(Boolean)
+                          .join(" — ") ||
+                        `Address ${index + 1}`
+                      )}
+                    </option>
+                  `
+                )
+                .join("")}
+            </select>
+          </label>
+
+          <label>
+            AUTO POPULATE CARD INFO
+            <select data-linked-saved-payment>
+              <option value="">
+                Choose saved card...
+              </option>
+              ${payments
+                .map(
+                  (item, index) => `
+                    <option
+                      value="${index}"
+                    >
+                      ${escapeHtml(
+                        item.cardLabel ||
+                        item.label ||
+                        item.maskedNumber ||
+                        `Card ${index + 1}`
+                      )}
+                    </option>
+                  `
+                )
+                .join("")}
+            </select>
+          </label>
+        `;
+
+        container.dataset.addresses =
+          JSON.stringify(
+            addresses
+          );
+
+        container.dataset.payments =
+          JSON.stringify(
+            payments
+          );
+
+      } catch (error) {
+        container.innerHTML =
+          `<p class="admin-retailer-empty">${escapeHtml(
+            error.message
+          )}</p>`;
+      }
+
+      return;
+    }
+
+
+    const statusButton =
+      event.target.closest(
+        "[data-linked-status-action]"
+      );
+
+    if (statusButton) {
+      event.preventDefault();
+
+      const type =
+        statusButton.dataset
+          .linkedType;
+
+      const id =
+        statusButton.dataset
+          .linkedId;
+
+      const action =
+        statusButton.dataset
+          .linkedStatusAction;
+
+      const order =
+        statusButton.closest(
+          ".customer-order"
+        );
+
+      try {
+        const response =
+          await fetch(
+            `/api/admin/managed-profile-activation/${encodeURIComponent(
+              type
+            )}/${encodeURIComponent(
+              id
+            )}`,
+            {
+              method: "POST",
+              credentials:
+                "same-origin",
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+              body:
+                JSON.stringify({
+                  action
+                })
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to update status."
+          );
+        }
+
+        await loadAdminLinkedProfiles(
+          order?.dataset?.id ||
+          ""
+        );
+
+      } catch (error) {
+        alert(
+          error.message
+        );
+      }
+
+      return;
+    }
+
+
+    const extendGifted =
+      event.target.closest(
+        "[data-extend-gifted]"
+      );
+
+    if (extendGifted) {
+      event.preventDefault();
+
+      const id =
+        extendGifted.dataset
+          .extendGifted;
+
+      const select =
+        document.querySelector(
+          `[data-linked-gifted-extension="${CSS.escape(
+            id
+          )}"]`
+        );
+
+      const order =
+        extendGifted.closest(
+          ".customer-order"
+        );
+
+      try {
+        const response =
+          await fetch(
+            `/api/admin/linked-memberships/free/${encodeURIComponent(
+              id
+            )}/extend`,
+            {
+              method: "POST",
+              credentials:
+                "same-origin",
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+              body:
+                JSON.stringify({
+                  extension:
+                    select?.value ||
+                    "1_week"
+                })
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to extend gifted profile."
+          );
+        }
+
+        await loadAdminLinkedProfiles(
+          order?.dataset?.id ||
+          ""
+        );
+
+      } catch (error) {
+        alert(
+          error.message
+        );
+      }
+
+      return;
+    }
+
+
+    const jigButton =
+      event.target.closest(
+        "[data-linked-jig]"
+      );
+
+    if (jigButton) {
+      event.preventDefault();
+
+      const id =
+        jigButton.dataset
+          .linkedJig;
+
+      const type =
+        jigButton.dataset
+          .linkedJigType;
+
+      const controls =
+        jigButton.closest(
+          ".linked-profile-detail"
+        );
+
+      const form =
+        controls?.querySelector(
+          "[data-linked-edit-form]"
+        );
+
+      if (!form) {
+        alert(
+          "Open the profile information first."
+        );
+        return;
+      }
+
+      const fd =
+        new FormData(
+          form
+        );
+
+      const manualAddress = {
+        firstName:
+          fd.get("firstName") ||
+          "",
+        lastName:
+          fd.get("lastName") ||
+          "",
+        phone:
+          fd.get("phone") ||
+          "",
+        address:
+          fd.get("address") ||
+          "",
+        address2:
+          fd.get("address2") ||
+          "",
+        city:
+          fd.get("city") ||
+          "",
+        state:
+          fd.get("state") ||
+          "",
+        zip:
+          fd.get("zip") ||
+          "",
+        country:
+          fd.get("country") ||
+          "US"
+      };
+
+      try {
+        const response =
+          await fetch(
+            `/api/admin/managed-memberships/${encodeURIComponent(
+              type
+            )}/${encodeURIComponent(
+              id
+            )}/jig-address`,
+            {
+              method: "POST",
+              credentials:
+                "same-origin",
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+              body:
+                JSON.stringify({
+                  manualAddress
+                })
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to JIG address."
+          );
+        }
+
+        const order =
+          jigButton.closest(
+            ".customer-order"
+          );
+
+        await loadAdminLinkedProfiles(
+          order?.dataset?.id ||
+          ""
+        );
+
+      } catch (error) {
+        alert(
+          error.message
+        );
+      }
+
+      return;
+    }
+
+
+    const removeJig =
+      event.target.closest(
+        "[data-linked-remove-jig]"
+      );
+
+    if (removeJig) {
+      event.preventDefault();
+
+      const id =
+        removeJig.dataset
+          .linkedRemoveJig;
+
+      const type =
+        removeJig.dataset
+          .linkedJigType;
+
+      const order =
+        removeJig.closest(
+          ".customer-order"
+        );
+
+      try {
+        const response =
+          await fetch(
+            `/api/admin/managed-memberships/${encodeURIComponent(
+              type
+            )}/${encodeURIComponent(
+              id
+            )}/jig-address`,
+            {
+              method: "DELETE",
+              credentials:
+                "same-origin"
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to remove JIG."
+          );
+        }
+
+        await loadAdminLinkedProfiles(
+          order?.dataset?.id ||
+          ""
+        );
+
+      } catch (error) {
+        alert(
+          error.message
+        );
+      }
+
+      return;
+    }
+
+
+    const returnPool =
+      event.target.closest(
+        "[data-return-linked-to-pool]"
+      );
+
+    if (returnPool) {
+      event.preventDefault();
+
+      if (
+        !confirm(
+          "Return this managed account to the available pool and unlink it from this customer?"
+        )
+      ) {
+        return;
+      }
+
+      const id =
+        returnPool.dataset
+          .returnLinkedToPool;
+
+      const type =
+        returnPool.dataset
+          .returnLinkedType;
+
+      const order =
+        returnPool.closest(
+          ".customer-order"
+        );
+
+      try {
+        const response =
+          await fetch(
+            `/api/admin/linked-memberships/${encodeURIComponent(
+              type
+            )}/${encodeURIComponent(
+              id
+            )}/return-to-pool`,
+            {
+              method: "POST",
+              credentials:
+                "same-origin"
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to return profile to pool."
+          );
+        }
+
+        await loadAdminLinkedProfiles(
+          order?.dataset?.id ||
+          ""
+        );
+
+      } catch (error) {
+        alert(
+          error.message
+        );
+      }
+
+      return;
+    }
+  },
+  true
+);
+
+
+/* Dynamic Linked Profiles Edit All Information */
+document.addEventListener(
+  "submit",
+  async event => {
+    const form =
+      event.target.closest(
+        "[data-linked-edit-form]"
+      );
+
+    if (!form) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    const membershipId =
+      form.dataset
+        .linkedEditForm;
+
+    const type =
+      form.dataset
+        .linkedEditType;
+
+    const customerOrder =
+      form.closest(
+        ".customer-order"
+      );
+
+    const submissionId =
+      customerOrder?.dataset?.id ||
+      "";
+
+    const button =
+      form.querySelector(
+        'button[type="submit"]'
+      );
+
+    const message =
+      form.querySelector(
+        "[data-linked-edit-message]"
+      );
+
+    const fd =
+      new FormData(
+        form
+      );
+
+    try {
+      if (button) {
+        button.disabled =
+          true;
+        button.textContent =
+          "Saving...";
+      }
+
+      const response =
+        await fetch(
+          `/api/admin/submissions/${encodeURIComponent(
+            submissionId
+          )}/linked-memberships/${encodeURIComponent(
+            type
+          )}/${encodeURIComponent(
+            membershipId
+          )}`,
+          {
+            method: "PUT",
+            credentials:
+              "same-origin",
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+            body:
+              JSON.stringify({
+                acoEmail:
+                  fd.get("acoEmail") ||
+                  "",
+                acoPassword:
+                  fd.get("acoPassword") ||
+                  "",
+                firstName:
+                  fd.get("firstName") ||
+                  "",
+                lastName:
+                  fd.get("lastName") ||
+                  "",
+                email:
+                  fd.get("email") ||
+                  "",
+                phone:
+                  fd.get("phone") ||
+                  "",
+                address:
+                  fd.get("address") ||
+                  "",
+                address2:
+                  fd.get("address2") ||
+                  "",
+                city:
+                  fd.get("city") ||
+                  "",
+                state:
+                  fd.get("state") ||
+                  "",
+                zip:
+                  fd.get("zip") ||
+                  "",
+                country:
+                  fd.get("country") ||
+                  "",
+                cardLabel:
+                  fd.get("cardLabel") ||
+                  "",
+                cardholder:
+                  fd.get("cardholder") ||
+                  "",
+                acoCardNumber:
+                  fd.get("acoCardNumber") ||
+                  "",
+                expMonth:
+                  fd.get("expMonth") ||
+                  "",
+                expYear:
+                  fd.get("expYear") ||
+                  "",
+                securityCode:
+                  fd.get("securityCode") ||
+                  ""
+              })
+          }
+        );
+
+      const data =
+        await response
+          .json()
+          .catch(
+            () => ({})
+          );
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+          "Unable to save linked profile information."
+        );
+      }
+
+      if (message) {
+        message.textContent =
+          "Linked profile information saved.";
+
+        message.className =
+          "admin-edit-message success";
+      }
+
+      await loadAdminLinkedProfiles(
+        submissionId
+      );
+
+    } catch (error) {
+      if (message) {
+        message.textContent =
+          error.message;
+
+        message.className =
+          "admin-edit-message error";
+      }
+
+    } finally {
+      if (button) {
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Save All Information";
+      }
+    }
+  },
+  true
+);
+
+
+
+document.addEventListener(
+  "change",
+  event => {
+    const addressSelect =
+      event.target.closest(
+        "[data-linked-saved-address]"
+      );
+
+    const paymentSelect =
+      event.target.closest(
+        "[data-linked-saved-payment]"
+      );
+
+    if (
+      !addressSelect &&
+      !paymentSelect
+    ) {
+      return;
+    }
+
+    const container =
+      event.target.closest(
+        "[data-linked-saved-details-options]"
+      );
+
+    const detail =
+      event.target.closest(
+        ".linked-profile-detail"
+      );
+
+    const form =
+      detail?.querySelector(
+        "[data-linked-edit-form]"
+      );
+
+    if (
+      !container ||
+      !form
+    ) {
+      return;
+    }
+
+    if (addressSelect) {
+      const addresses =
+        JSON.parse(
+          container.dataset
+            .addresses ||
+          "[]"
+        );
+
+      const item =
+        addresses[
+          Number(
+            addressSelect.value
+          )
+        ];
+
+      if (!item) {
+        return;
+      }
+
+      const set =
+        (
+          name,
+          value
+        ) => {
+          const input =
+            form.querySelector(
+              `[name="${name}"]`
+            );
+
+          if (input) {
+            input.value =
+              value ||
+              "";
+          }
+        };
+
+      set(
+        "firstName",
+        item.firstName
+      );
+      set(
+        "lastName",
+        item.lastName
+      );
+      set(
+        "phone",
+        item.phone
+      );
+      set(
+        "address",
+        item.address
+      );
+      set(
+        "address2",
+        item.address2
+      );
+      set(
+        "city",
+        item.city
+      );
+      set(
+        "state",
+        item.state
+      );
+      set(
+        "zip",
+        item.zip
+      );
+      set(
+        "country",
+        item.country
+      );
+    }
+
+    if (paymentSelect) {
+      const payments =
+        JSON.parse(
+          container.dataset
+            .payments ||
+          "[]"
+        );
+
+      const item =
+        payments[
+          Number(
+            paymentSelect.value
+          )
+        ];
+
+      if (!item) {
+        return;
+      }
+
+      const set =
+        (
+          name,
+          value
+        ) => {
+          const input =
+            form.querySelector(
+              `[name="${name}"]`
+            );
+
+          if (input) {
+            input.value =
+              value ||
+              "";
+          }
+        };
+
+      set(
+        "cardLabel",
+        item.cardLabel ||
+        item.label
+      );
+      set(
+        "cardholder",
+        item.cardholder
+      );
+      set(
+        "acoCardNumber",
+        item.acoCardNumber ||
+        item.cardNumber
+      );
+      set(
+        "expMonth",
+        item.expMonth
+      );
+      set(
+        "expYear",
+        item.expYear
+      );
+      set(
+        "securityCode",
+        item.securityCode
+      );
+    }
+  },
+  true
+);
 
 </script>
 
