@@ -2942,6 +2942,114 @@
     }
 
 
+
+    /* =========================================
+       GIFTED PROFILE EDIT / AUTO POPULATE
+    ========================================= */
+
+    .gifted-profile-edit-panel {
+      border-color: #1c5168 !important;
+      background: #07151f !important;
+    }
+
+    .gifted-profile-edit-panel > summary h3 {
+      color: #4cddff;
+    }
+
+    .gifted-autopopulate-loading {
+      padding: 16px;
+      border: 1px dashed #24546c;
+      border-radius: 10px;
+      color: #9ab2c5;
+      font-size: 11px;
+      font-weight: 800;
+      background: #06111a;
+    }
+
+    .gifted-autopopulate-fields[hidden] {
+      display: none !important;
+    }
+
+    .gifted-autopopulate-preview {
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .gifted-autopopulate-preview-card {
+      display: grid;
+      gap: 5px;
+      padding: 12px;
+      border: 1px solid #173f55;
+      border-radius: 10px;
+      background: #06111a;
+    }
+
+    .gifted-autopopulate-preview-card strong {
+      color: #edfaff;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .gifted-autopopulate-preview-card small {
+      color: #8fa8ba;
+      font-size: 10px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 720px) {
+      .gifted-autopopulate-preview {
+        grid-template-columns: 1fr;
+      }
+    }
+
+
+
+    .gifted-address-jig-row {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 1fr)
+        auto;
+      gap: 9px;
+      align-items: stretch;
+    }
+
+    .gifted-address-jig-row select {
+      width: 100%;
+    }
+
+    .gifted-jig-button {
+      min-width: 72px;
+      border: 1px solid #2a98bd;
+      border-radius: 8px;
+      background: #082735;
+      color: #51ddff;
+      padding: 0 16px;
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: .8px;
+      cursor: pointer;
+      box-shadow: inset 0 0 16px #0a2733;
+    }
+
+    .gifted-jig-button:hover {
+      border-color: #55dcff;
+      background: #0b3142;
+    }
+
+    .gifted-jig-button:disabled {
+      opacity: .55;
+      cursor: wait;
+    }
+
+    .jig-preview-card {
+      border-color: #2b839f !important;
+      background: #07232d !important;
+    }
+
+
   </style>
 </head>
 
@@ -7912,6 +8020,151 @@ function managedMembershipCardHtml(
 
 
           ${
+            type === "free" &&
+            active
+              ? `
+                <details
+                  class="order-section admin-collapsible gifted-profile-edit-panel"
+                  data-gifted-edit-panel="${escapeHtml(
+                    membership.id
+                  )}"
+                  style="margin-top:16px;"
+                >
+                  <summary
+                    class="order-section-head admin-collapsible-head"
+                  >
+                    <div>
+                      <h3>
+                        Edit Gifted Profile
+                      </h3>
+
+                      <p>
+                        Select saved shipping and card information for this gifted profile.
+                      </p>
+                    </div>
+
+                    <span class="admin-collapsible-arrow">
+                      ›
+                    </span>
+                  </summary>
+
+                  <form
+                    class="admin-retailer-wrap gifted-profile-autopopulate-form"
+                    data-gifted-autopopulate-id="${escapeHtml(
+                      membership.id
+                    )}"
+                    data-managed-type="free"
+                    data-current-email="${escapeHtml(
+                      customerProfile.email ||
+                      assignedCustomer.email ||
+                      ""
+                    )}"
+                    data-current-phone="${escapeHtml(
+                      customerProfile.phone ||
+                      ""
+                    )}"
+                  >
+                    <div
+                      class="gifted-autopopulate-loading"
+                      data-gifted-autopopulate-loading="${escapeHtml(
+                        membership.id
+                      )}"
+                    >
+                      Open this tab to load the customer's saved information.
+                    </div>
+
+                    <div
+                      class="gifted-autopopulate-fields"
+                      data-gifted-autopopulate-fields="${escapeHtml(
+                        membership.id
+                      )}"
+                      hidden
+                    >
+                      <div class="admin-edit-grid">
+
+                        <div class="admin-edit-field wide">
+                          <div class="gifted-address-jig-row">
+                            <select
+                              name="savedAddressId"
+                              data-gifted-address-select="${escapeHtml(
+                                membership.id
+                              )}"
+                            >
+                              <option value="">
+                                Loading saved shipping addresses...
+                              </option>
+                            </select>
+
+                            <button
+                              type="button"
+                              class="gifted-jig-button"
+                              data-gifted-jig="${escapeHtml(
+                                membership.id
+                              )}"
+                            >
+                              JIG
+                            </button>
+                          </div>
+
+                          <label>
+                            Auto Populate Shipping
+                          </label>
+
+                          <small class="admin-edit-help">
+                            Choose any saved shipping address. JIG makes a safe formatting variant for this profile.
+                          </small>
+                        </div>
+
+                        <div class="admin-edit-field wide">
+                          <select
+                            name="savedPaymentMethodId"
+                            data-gifted-card-select="${escapeHtml(
+                              membership.id
+                            )}"
+                          >
+                            <option value="">
+                              Loading saved card information...
+                            </option>
+                          </select>
+
+                          <label>
+                            Auto Populate Card Info
+                          </label>
+
+                          <small class="admin-edit-help">
+                            Choose any saved card the customer has added.
+                          </small>
+                        </div>
+
+                      </div>
+
+                      <div
+                        class="gifted-autopopulate-preview"
+                        data-gifted-autopopulate-preview="${escapeHtml(
+                          membership.id
+                        )}"
+                      ></div>
+
+                      <div class="admin-edit-actions">
+                        <button
+                          type="submit"
+                          class="admin-save-button"
+                        >
+                          Save Gifted Profile
+                        </button>
+                      </div>
+
+                      <div class="admin-edit-message"></div>
+                    </div>
+                  </form>
+                </details>
+              `
+              : ""
+          }
+
+
+          ${
+            type !== "free" &&
             Object.keys(
               customerProfile
             ).some(
@@ -8010,7 +8263,8 @@ function managedMembershipCardHtml(
 
 
           ${
-            active
+            active &&
+            type !== "free"
               ? `
           <details
             class="order-section admin-collapsible managed-customer-details"
@@ -9563,6 +9817,830 @@ function managedMembershipBody(
 function bindManagedMembershipDashboard(
   type
 ) {
+
+  document
+    .querySelectorAll(
+      "[data-gifted-jig]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async event => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const form =
+            button.closest(
+              ".gifted-profile-autopopulate-form"
+            );
+
+          if (!form) {
+            return;
+          }
+
+          const id =
+            button.dataset
+              .giftedJig;
+
+          const addressSelect =
+            form.querySelector(
+              "[data-gifted-address-select]"
+            );
+
+          const savedAddressId =
+            addressSelect?.value ||
+            "";
+
+          if (!savedAddressId) {
+            alert(
+              "Choose a saved shipping address first."
+            );
+            return;
+          }
+
+          const oldText =
+            button.textContent;
+
+          button.disabled =
+            true;
+
+          button.textContent =
+            "JIGGING...";
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/managed-memberships/free/${encodeURIComponent(
+                  id
+                )}/jig-address`,
+                {
+                  method:
+                    "POST",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      savedAddressId
+                    })
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to create address variant."
+              );
+            }
+
+            const preview =
+              form.querySelector(
+                "[data-gifted-autopopulate-preview]"
+              );
+
+            if (preview) {
+              const variant =
+                result.variant ||
+                {};
+
+              preview.insertAdjacentHTML(
+                "afterbegin",
+                `
+                  <div class="gifted-autopopulate-preview-card jig-preview-card">
+                    <span class="eyebrow">
+                      JIGGED ADDRESS
+                    </span>
+
+                    <strong>
+                      ${escapeHtml(
+                        variant.address ||
+                        ""
+                      )}
+                    </strong>
+
+                    <small>
+                      ${escapeHtml(
+                        [
+                          variant.address2,
+                          variant.city,
+                          variant.state,
+                          variant.zip,
+                          variant.country
+                        ]
+                          .filter(Boolean)
+                          .join(", ")
+                      )}
+                    </small>
+
+                    <small>
+                      SAFE VARIANT ${
+                        Number(
+                          result.variantNumber ||
+                          1
+                        )
+                      } OF ${
+                        Number(
+                          result.totalVariants ||
+                          1
+                        )
+                      }
+                    </small>
+                  </div>
+                `
+              );
+            }
+
+            const message =
+              form.querySelector(
+                ".admin-edit-message"
+              );
+
+            if (message) {
+              message.textContent =
+                "JIG address created and saved to this gifted profile.";
+
+              message.className =
+                "admin-edit-message success";
+            }
+
+          } catch (error) {
+            alert(
+              error.message
+            );
+
+          } finally {
+            button.disabled =
+              false;
+
+            button.textContent =
+              oldText;
+          }
+        }
+      );
+    });
+
+
+
+  function giftedAddressLabel(
+    address,
+    index
+  ) {
+    const location =
+      [
+        address?.address,
+        address?.city,
+        address?.state,
+        address?.zip
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+    return (
+      address?.label ||
+      location ||
+      `Address ${index + 1}`
+    );
+  }
+
+
+  function giftedCardLabel(
+    card,
+    index
+  ) {
+    const name =
+      card?.cardLabel ||
+      `Card ${index + 1}`;
+
+    const masked =
+      card?.maskedNumber ||
+      "";
+
+    return masked
+      ? `${name} — ${masked}`
+      : name;
+  }
+
+
+  function renderGiftedAutoPopulatePreview(
+    form
+  ) {
+    const data =
+      form._giftedSavedDetails ||
+      {};
+
+    const addressId =
+      form.querySelector(
+        "[data-gifted-address-select]"
+      )?.value ||
+      "";
+
+    const cardId =
+      form.querySelector(
+        "[data-gifted-card-select]"
+      )?.value ||
+      "";
+
+    const address =
+      (data.addresses || []).find(
+        item =>
+          String(item.id) ===
+          String(addressId)
+      );
+
+    const card =
+      (data.paymentMethods || []).find(
+        item =>
+          String(item.id) ===
+          String(cardId)
+      );
+
+    const preview =
+      form.querySelector(
+        "[data-gifted-autopopulate-preview]"
+      );
+
+    if (!preview) {
+      return;
+    }
+
+    preview.innerHTML = `
+      <div class="gifted-autopopulate-preview-card">
+        <span class="eyebrow">
+          SHIPPING SELECTED
+        </span>
+
+        ${
+          address
+            ? `
+                <strong>
+                  ${escapeHtml(
+                    `${address.firstName || ""} ${address.lastName || ""}`.trim() ||
+                    address.label ||
+                    "Saved address"
+                  )}
+                </strong>
+
+                <small>
+                  ${escapeHtml(
+                    [
+                      address.address,
+                      address.address2,
+                      address.city,
+                      address.state,
+                      address.zip,
+                      address.country
+                    ]
+                      .filter(Boolean)
+                      .join(", ")
+                  )}
+                </small>
+              `
+            : `
+                <strong>
+                  No shipping address selected
+                </strong>
+              `
+        }
+      </div>
+
+      <div class="gifted-autopopulate-preview-card">
+        <span class="eyebrow">
+          CARD SELECTED
+        </span>
+
+        ${
+          card
+            ? `
+                <strong>
+                  ${escapeHtml(
+                    card.cardLabel ||
+                    "Saved card"
+                  )}
+                </strong>
+
+                <small>
+                  ${escapeHtml(
+                    `${card.cardholder || ""}${
+                      card.maskedNumber
+                        ? ` — ${card.maskedNumber}`
+                        : ""
+                    }${
+                      card.expMonth &&
+                      card.expYear
+                        ? ` — EXP ${card.expMonth}/${card.expYear}`
+                        : ""
+                    }`
+                  )}
+                </small>
+              `
+            : `
+                <strong>
+                  No card information selected
+                </strong>
+              `
+        }
+      </div>
+    `;
+  }
+
+
+  async function loadGiftedAutoPopulateOptions(
+    form
+  ) {
+    if (
+      form.dataset
+        .giftedSavedDetailsLoaded ===
+        "true"
+    ) {
+      return;
+    }
+
+    const id =
+      form.dataset
+        .giftedAutopopulateId;
+
+    const loading =
+      form.querySelector(
+        "[data-gifted-autopopulate-loading]"
+      );
+
+    const fields =
+      form.querySelector(
+        "[data-gifted-autopopulate-fields]"
+      );
+
+    try {
+      if (loading) {
+        loading.textContent =
+          "Loading saved customer information...";
+      }
+
+      const response =
+        await fetch(
+          `/api/admin/managed-memberships/free/${encodeURIComponent(
+            id
+          )}/saved-details`,
+          {
+            credentials:
+              "same-origin"
+          }
+        );
+
+      const result =
+        await response
+          .json()
+          .catch(
+            () => ({})
+          );
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+          "Unable to load saved customer information."
+        );
+      }
+
+      form._giftedSavedDetails =
+        result;
+
+      const addresses =
+        Array.isArray(
+          result.addresses
+        )
+          ? result.addresses
+          : [];
+
+      const cards =
+        Array.isArray(
+          result.paymentMethods
+        )
+          ? result.paymentMethods
+          : [];
+
+      const addressSelect =
+        form.querySelector(
+          "[data-gifted-address-select]"
+        );
+
+      const cardSelect =
+        form.querySelector(
+          "[data-gifted-card-select]"
+        );
+
+      if (addressSelect) {
+        addressSelect.innerHTML =
+          addresses.length
+            ? `
+                <option value="">
+                  Choose saved shipping address
+                </option>
+                ${addresses
+                  .map(
+                    (address, index) => `
+                      <option
+                        value="${escapeHtml(
+                          address.id
+                        )}"
+                        ${
+                          String(
+                            result.selectedAddressId ||
+                            ""
+                          ) ===
+                          String(
+                            address.id
+                          )
+                            ? "selected"
+                            : ""
+                        }
+                      >
+                        ${escapeHtml(
+                          giftedAddressLabel(
+                            address,
+                            index
+                          )
+                        )}
+                      </option>
+                    `
+                  )
+                  .join("")}
+              `
+            : `
+                <option value="">
+                  No saved shipping addresses
+                </option>
+              `;
+      }
+
+      if (cardSelect) {
+        cardSelect.innerHTML =
+          cards.length
+            ? `
+                <option value="">
+                  Choose saved card information
+                </option>
+                ${cards
+                  .map(
+                    (card, index) => `
+                      <option
+                        value="${escapeHtml(
+                          card.id
+                        )}"
+                        ${
+                          String(
+                            result.selectedPaymentMethodId ||
+                            ""
+                          ) ===
+                          String(
+                            card.id
+                          )
+                            ? "selected"
+                            : ""
+                        }
+                      >
+                        ${escapeHtml(
+                          giftedCardLabel(
+                            card,
+                            index
+                          )
+                        )}
+                      </option>
+                    `
+                  )
+                  .join("")}
+              `
+            : `
+                <option value="">
+                  No saved card information
+                </option>
+              `;
+      }
+
+      form.dataset
+        .giftedSavedDetailsLoaded =
+        "true";
+
+      if (loading) {
+        loading.hidden =
+          true;
+      }
+
+      if (fields) {
+        fields.hidden =
+          false;
+      }
+
+      renderGiftedAutoPopulatePreview(
+        form
+      );
+
+    } catch (error) {
+      if (loading) {
+        loading.textContent =
+          error.message;
+      }
+    }
+  }
+
+
+  document
+    .querySelectorAll(
+      "[data-gifted-edit-panel]"
+    )
+    .forEach(panel => {
+      panel.addEventListener(
+        "toggle",
+        () => {
+          if (!panel.open) {
+            return;
+          }
+
+          const form =
+            panel.querySelector(
+              ".gifted-profile-autopopulate-form"
+            );
+
+          if (form) {
+            loadGiftedAutoPopulateOptions(
+              form
+            );
+          }
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      ".gifted-profile-autopopulate-form"
+    )
+    .forEach(form => {
+      const addressSelect =
+        form.querySelector(
+          "[data-gifted-address-select]"
+        );
+
+      const cardSelect =
+        form.querySelector(
+          "[data-gifted-card-select]"
+        );
+
+      addressSelect?.addEventListener(
+        "change",
+        () =>
+          renderGiftedAutoPopulatePreview(
+            form
+          )
+      );
+
+      cardSelect?.addEventListener(
+        "change",
+        () =>
+          renderGiftedAutoPopulatePreview(
+            form
+          )
+      );
+
+      form.addEventListener(
+        "submit",
+        async event => {
+          event.preventDefault();
+
+          const id =
+            form.dataset
+              .giftedAutopopulateId;
+
+          const details =
+            form._giftedSavedDetails ||
+            {};
+
+          const addressId =
+            addressSelect?.value ||
+            "";
+
+          const paymentId =
+            cardSelect?.value ||
+            "";
+
+          const address =
+            (details.addresses || []).find(
+              item =>
+                String(item.id) ===
+                String(addressId)
+            );
+
+          const card =
+            (details.paymentMethods || []).find(
+              item =>
+                String(item.id) ===
+                String(paymentId)
+            );
+
+          if (!address) {
+            alert(
+              "Choose a saved shipping address."
+            );
+            return;
+          }
+
+          if (!card) {
+            alert(
+              "Choose saved card information."
+            );
+            return;
+          }
+
+          const button =
+            form.querySelector(
+              'button[type="submit"]'
+            );
+
+          const message =
+            form.querySelector(
+              ".admin-edit-message"
+            );
+
+          if (button) {
+            button.disabled =
+              true;
+
+            button.textContent =
+              "Saving...";
+          }
+
+          const customerProfile = {
+            profileName:
+              `${address.firstName || ""} ${address.lastName || ""}`.trim() ||
+              "Gifted Profile",
+
+            firstName:
+              address.firstName ||
+              "",
+
+            lastName:
+              address.lastName ||
+              "",
+
+            email:
+              form.dataset
+                .currentEmail ||
+              "",
+
+            phone:
+              form.dataset
+                .currentPhone ||
+              "",
+
+            address:
+              address.address ||
+              "",
+
+            address2:
+              address.address2 ||
+              "",
+
+            city:
+              address.city ||
+              "",
+
+            state:
+              address.state ||
+              "",
+
+            zip:
+              address.zip ||
+              "",
+
+            country:
+              address.country ||
+              ""
+          };
+
+          const customerCard = {
+            cardLabel:
+              card.cardLabel ||
+              "",
+
+            cardholder:
+              card.cardholder ||
+              "",
+
+            acoCardNumber:
+              card.acoCardNumber ||
+              "",
+
+            expMonth:
+              card.expMonth ||
+              "",
+
+            expYear:
+              card.expYear ||
+              "",
+
+            securityCode:
+              card.accountSecurityCode ||
+              ""
+          };
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/managed-memberships/free/${encodeURIComponent(
+                  id
+                )}/customer-details`,
+                {
+                  method:
+                    "PUT",
+
+                  credentials:
+                    "same-origin",
+
+                  headers: {
+                    "Content-Type":
+                      "application/json"
+                  },
+
+                  body:
+                    JSON.stringify({
+                      customerProfile,
+                      customerCard,
+                      savedAddressId:
+                        addressId,
+                      savedPaymentMethodId:
+                        paymentId
+                    })
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to save gifted profile."
+              );
+            }
+
+            if (message) {
+              message.textContent =
+                "Gifted profile saved.";
+
+              message.className =
+                "admin-edit-message success";
+            }
+
+            const group =
+              form.closest(
+                "[data-managed-customer-group]"
+              );
+
+            if (group) {
+              managedOpenGroupKeys.add(
+                `free:${group.dataset.managedCustomerGroup}`
+              );
+            }
+
+            await load();
+
+          } catch (error) {
+            if (message) {
+              message.textContent =
+                error.message;
+
+              message.className =
+                "admin-edit-message error";
+            }
+
+            if (button) {
+              button.disabled =
+                false;
+
+              button.textContent =
+                "Save Gifted Profile";
+            }
+          }
+        }
+      );
+    });
+
+
 
   document
     .querySelectorAll(
