@@ -3542,7 +3542,13 @@ registerForm?.addEventListener(
                 ).trim(),
 
               password:
-                data.password
+                data.password,
+
+              discordUsername:
+                String(
+                  data.discordUsername ||
+                  ""
+                ).trim()
             })
           }
         );
@@ -11209,6 +11215,11 @@ async function saveRetailerProfile(
       "success"
     );
 
+    await loadCustomerNotifications({
+      showPopup:
+        false
+    });
+
   } catch (error) {
     setMessage(
       message,
@@ -13666,6 +13677,10 @@ async function loadMemberProfile(
     state.customer =
       data.account || null;
 
+    renderCustomerDiscordSettings();
+
+    await loadCustomerNotifications();
+
     state.accountStats =
       data.accountStats || {
         userSince:
@@ -13757,6 +13772,533 @@ renderOrders(
   );
 }
 }
+
+
+/* =====================================================
+   CUSTOMER DISCORD SETTINGS + NOTIFICATIONS
+===================================================== */
+
+function renderCustomerDiscordSettings() {
+  const form =
+    document.getElementById(
+      "discord-settings-form"
+    );
+
+  if (!form) {
+    return;
+  }
+
+  const username =
+    form.querySelector(
+      '[name="discordUsername"]'
+    );
+
+  const userId =
+    form.querySelector(
+      '[name="discordUserId"]'
+    );
+
+  if (username) {
+    username.value =
+      state.customer
+        ?.discordUsername ||
+      "";
+  }
+
+  if (userId) {
+    userId.value =
+      state.customer
+        ?.discordUserId ||
+      "";
+  }
+}
+
+
+document
+  .getElementById(
+    "discord-settings-form"
+  )
+  ?.addEventListener(
+    "submit",
+    async event => {
+      event.preventDefault();
+
+      const form =
+        event.currentTarget;
+
+      const button =
+        form.querySelector(
+          'button[type="submit"]'
+        );
+
+      const data =
+        Object.fromEntries(
+          new FormData(
+            form
+          ).entries()
+        );
+
+      try {
+        setButtonBusy(
+          button,
+          true,
+          "Saving..."
+        );
+
+        const response =
+          await fetch(
+            "/api/account/discord",
+            {
+              method:
+                "PUT",
+
+              credentials:
+                "same-origin",
+
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+
+              body:
+                JSON.stringify({
+                  discordUsername:
+                    String(
+                      data.discordUsername ||
+                      ""
+                    ).trim()
+                })
+            }
+          );
+
+        const result =
+          await readJson(
+            response
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            result.error ||
+            "Unable to save Discord information."
+          );
+        }
+
+        state.customer =
+          result.account ||
+          state.customer;
+
+        renderCustomerDiscordSettings();
+
+        showAccountMessage(
+          "Discord information saved.",
+          "success"
+        );
+
+      } catch (error) {
+        showAccountMessage(
+          error.message,
+          "error"
+        );
+
+      } finally {
+        setButtonBusy(
+          button,
+          false,
+          "Save Discord Info"
+        );
+      }
+    }
+  );
+
+
+function customerNotificationCardHtml(
+  notification
+) {
+  const title =
+    notification?.title ||
+    (
+      notification?.kind ===
+        "missing_info"
+        ? "Action Needed"
+        : "Notification"
+    );
+
+  const message =
+    String(
+      notification?.message ||
+      ""
+    );
+
+  const created =
+    notification?.createdAt
+      ? formatDate(
+          notification.createdAt
+        )
+      : "";
+
+  return `
+    <article class="customer-notification-item">
+      <div class="customer-notification-item-head">
+        <div>
+          <span class="eyebrow">
+            ${
+              notification?.kind ===
+                "missing_info"
+                ? "ACTION NEEDED"
+                : "MESSAGE"
+            }
+          </span>
+
+          <h4>
+            ${escapeHtml(
+              title
+            )}
+          </h4>
+        </div>
+
+        ${
+          created
+            ? `
+                <small>
+                  ${escapeHtml(
+                    created
+                  )}
+                </small>
+              `
+            : ""
+        }
+      </div>
+
+      <p>
+        ${escapeHtml(
+          message
+        ).replace(
+          /\n/g,
+          "<br>"
+        )}
+      </p>
+    </article>
+  `;
+}
+
+
+function updateCustomerNotificationIndicator(
+  count
+) {
+  const hasNotifications =
+    Number(count) > 0;
+
+  const lights = [
+    document.getElementById(
+      "account-notification-light"
+    ),
+    document.getElementById(
+      "customer-notification-status-light"
+    )
+  ];
+
+  for (
+    const light of
+    lights
+  ) {
+    if (!light) {
+      continue;
+    }
+
+    light.classList.toggle(
+      "alert",
+      hasNotifications
+    );
+
+    light.classList.toggle(
+      "clear",
+      !hasNotifications
+    );
+
+    light.setAttribute(
+      "aria-label",
+      hasNotifications
+        ? `${count} notification${count === 1 ? "" : "s"}`
+        : "No notifications"
+    );
+  }
+
+  const text =
+    document.getElementById(
+      "customer-notification-status-text"
+    );
+
+  if (text) {
+    text.textContent =
+      hasNotifications
+        ? `${count} notification${count === 1 ? "" : "s"}`
+        : "No notifications";
+  }
+}
+
+
+function showCustomerNotificationPopup(
+  notification
+) {
+  const popup =
+    document.getElementById(
+      "customer-notification-popup"
+    );
+
+  if (
+    !popup ||
+    !notification
+  ) {
+    return;
+  }
+
+  const title =
+    document.getElementById(
+      "customer-notification-popup-title"
+    );
+
+  const message =
+    document.getElementById(
+      "customer-notification-popup-message"
+    );
+
+  if (title) {
+    title.textContent =
+      notification.title ||
+      "Action Needed";
+  }
+
+  if (message) {
+    message.innerHTML =
+      escapeHtml(
+        notification.message ||
+        ""
+      ).replace(
+        /\n/g,
+        "<br>"
+      );
+  }
+
+  popup.hidden =
+    false;
+}
+
+
+async function loadCustomerNotifications(
+  {
+    showPopup = true
+  } = {}
+) {
+  if (!state.customer) {
+    updateCustomerNotificationIndicator(
+      0
+    );
+    return;
+  }
+
+  try {
+    const response =
+      await fetch(
+        "/api/account/notifications",
+        {
+          credentials:
+            "same-origin",
+          cache:
+            "no-store"
+        }
+      );
+
+    const data =
+      await readJson(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+        "Unable to load notifications."
+      );
+    }
+
+    const notifications =
+      Array.isArray(
+        data.notifications
+      )
+        ? data.notifications
+        : [];
+
+    state.customerNotifications =
+      notifications;
+
+    updateCustomerNotificationIndicator(
+      notifications.length
+    );
+
+    const list =
+      document.getElementById(
+        "customer-notifications-list"
+      );
+
+    if (list) {
+      list.innerHTML =
+        notifications.length
+          ? notifications
+              .map(
+                customerNotificationCardHtml
+              )
+              .join("")
+          : `
+              <p class="account-muted">
+                No notifications.
+              </p>
+            `;
+    }
+
+    if (
+      showPopup &&
+      notifications.length
+    ) {
+      showCustomerNotificationPopup(
+        notifications[0]
+      );
+    }
+
+  } catch (error) {
+    console.error(
+      "Customer notifications error:",
+      error
+    );
+  }
+}
+
+
+document
+  .getElementById(
+    "clear-customer-notifications"
+  )
+  ?.addEventListener(
+    "click",
+    async event => {
+      const button =
+        event.currentTarget;
+
+      try {
+        setButtonBusy(
+          button,
+          true,
+          "Clearing..."
+        );
+
+        const response =
+          await fetch(
+            "/api/account/notifications",
+            {
+              method:
+                "DELETE",
+
+              credentials:
+                "same-origin"
+            }
+          );
+
+        const data =
+          await readJson(
+            response
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to clear notifications."
+          );
+        }
+
+        state.customerNotifications =
+          [];
+
+        updateCustomerNotificationIndicator(
+          0
+        );
+
+        const list =
+          document.getElementById(
+            "customer-notifications-list"
+          );
+
+        if (list) {
+          list.innerHTML = `
+            <p class="account-muted">
+              No notifications.
+            </p>
+          `;
+        }
+
+        const popup =
+          document.getElementById(
+            "customer-notification-popup"
+          );
+
+        if (popup) {
+          popup.hidden =
+            true;
+        }
+
+      } catch (error) {
+        showAccountMessage(
+          error.message,
+          "error"
+        );
+
+      } finally {
+        setButtonBusy(
+          button,
+          false,
+          "Clear Notifications"
+        );
+      }
+    }
+  );
+
+
+document
+  .getElementById(
+    "close-customer-notification-popup"
+  )
+  ?.addEventListener(
+    "click",
+    () => {
+      const popup =
+        document.getElementById(
+          "customer-notification-popup"
+        );
+
+      if (popup) {
+        popup.hidden =
+          true;
+      }
+    }
+  );
+
+
+document
+  .getElementById(
+    "customer-notification-open-profile"
+  )
+  ?.addEventListener(
+    "click",
+    () => {
+      const popup =
+        document.getElementById(
+          "customer-notification-popup"
+        );
+
+      if (popup) {
+        popup.hidden =
+          true;
+      }
+    }
+  );
+
 
 /* =====================================================
    SECURE LINK STARTUP
