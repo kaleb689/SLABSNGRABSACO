@@ -3541,6 +3541,169 @@
     }
 
 
+
+    /* =========================================
+       LINKED PROFILE LIST — EMAIL FIRST / LARGE
+    ========================================= */
+
+    .linked-profile-list {
+      gap: 12px;
+    }
+
+    .linked-profile-button {
+      min-height: 118px;
+      padding: 19px 20px !important;
+      border: 1px solid #1d526c !important;
+      border-radius: 15px !important;
+      background:
+        linear-gradient(
+          180deg,
+          #071925 0%,
+          #06131d 100%
+        ) !important;
+      box-shadow:
+        inset 0 0 22px #08213155,
+        0 8px 20px #00000022;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    .linked-profile-button:hover,
+    .linked-profile-button.active {
+      border-color: #19bde9 !important;
+      background:
+        linear-gradient(
+          180deg,
+          #0a2534 0%,
+          #071a26 100%
+        ) !important;
+      box-shadow:
+        0 0 22px #11bfe522,
+        inset 0 0 24px #0b334755;
+    }
+
+    .linked-profile-account-label {
+      display: block !important;
+      color: #f1f8fc !important;
+      font-size: 12px !important;
+      font-weight: 950 !important;
+      letter-spacing: .35px;
+      line-height: 1.25;
+      text-transform: uppercase;
+    }
+
+    .linked-profile-account-email {
+      display: block !important;
+      margin: 0 !important;
+      color: #67e5ff !important;
+      font-size: 17px !important;
+      font-weight: 950 !important;
+      line-height: 1.25;
+      letter-spacing: -.15px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    /* =========================================
+       ADMIN VIEW — ENTIRE BLUE BOX IS DROPDOWN
+    ========================================= */
+
+    .admin-summary {
+      align-items: stretch;
+    }
+
+    .admin-submission-filter-wrap {
+      position: relative;
+      width: min(620px, 100%);
+      min-width: min(620px, 100%);
+      min-height: 94px;
+      padding: 0 !important;
+      border: 1px solid #18aede !important;
+      border-radius: 16px !important;
+      background:
+        linear-gradient(
+          180deg,
+          #0a3850 0%,
+          #072537 100%
+        ) !important;
+      box-shadow:
+        0 14px 34px #00000038,
+        inset 0 0 26px #0d4d6b66;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    .admin-submission-filter-wrap
+      > .eyebrow {
+      position: absolute;
+      z-index: 2;
+      top: 16px;
+      left: 21px;
+      margin: 0 !important;
+      color: #79e8ff !important;
+      font-size: 10px !important;
+      font-weight: 950 !important;
+      letter-spacing: 1.2px;
+      pointer-events: none;
+    }
+
+    #submissionTypeFilter.admin-submission-filter {
+      position: absolute;
+      inset: 0;
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 94px !important;
+      margin: 0 !important;
+      padding: 34px 56px 10px 21px !important;
+      border: 0 !important;
+      border-radius: 16px !important;
+      outline: 0;
+      background: transparent !important;
+      color: #f5fcff !important;
+      font-size: 18px !important;
+      font-weight: 950 !important;
+      letter-spacing: .35px;
+      box-shadow: none !important;
+      cursor: pointer;
+      appearance: auto;
+      -webkit-appearance: menulist;
+    }
+
+    .admin-submission-filter-wrap:hover {
+      border-color: #55ddff !important;
+      background:
+        linear-gradient(
+          180deg,
+          #0c435f 0%,
+          #082d41 100%
+        ) !important;
+      box-shadow:
+        0 0 24px #13c7f222,
+        inset 0 0 28px #0d557466;
+    }
+
+    #submissionTypeFilter.admin-submission-filter:focus {
+      outline: none;
+    }
+
+    @media (max-width: 850px) {
+      .admin-submission-filter-wrap {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .linked-profile-button {
+        min-height: 102px;
+      }
+
+      .linked-profile-account-email {
+        font-size: 15px !important;
+      }
+    }
+
+
   </style>
 </head>
 
@@ -7216,20 +7379,20 @@ async function loadAdminLinkedProfiles(
                   }"
                   data-linked-profile-index="${index}"
                 >
-                  <strong>
+                  <span class="linked-profile-account-label">
                     ${escapeHtml(
                       membership.profileName ||
                       `Profile ${index + 1}`
                     )}
-                  </strong>
+                  </span>
 
-                  <span>
+                  <strong class="linked-profile-account-email">
                     ${escapeHtml(
                       adminLinkedProfileEmail(
                         membership
                       )
                     )}
-                  </span>
+                  </strong>
                 </button>
               `
             )
