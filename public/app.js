@@ -13961,3 +13961,173 @@ processSecureLinks();
   restore();
 })();
 
+
+
+/* ======================================================
+   UNIVERSAL CUSTOMER DETAILS STATE V2
+   Saves/edits/rerenders do not close open tabs.
+====================================================== */
+(function setupStableCustomerDetailsState() {
+  const prefix =
+    "sng-customer-details-v2:";
+
+  function key(
+    detail
+  ) {
+    const explicit =
+      detail.id ||
+      detail.dataset
+        ?.profileSlot ||
+      detail.dataset
+        ?.managedProfile ||
+      detail.dataset
+        ?.managedMembership ||
+      detail.dataset
+        ?.assignmentId ||
+      "";
+
+    const parent =
+      detail.parentElement
+        ?.closest(
+          "details"
+        );
+
+    const parentKey =
+      parent?.id ||
+      parent?.dataset
+        ?.profileSlot ||
+      parent?.dataset
+        ?.assignmentId ||
+      "";
+
+    const heading =
+      detail.querySelector(
+        ":scope > summary h1, :scope > summary h2, :scope > summary h3, :scope > summary h4, :scope > summary strong, :scope > summary"
+      )?.textContent
+        ?.replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 100) ||
+      "details";
+
+    const siblings =
+      detail.parentElement
+        ? Array.from(
+            detail.parentElement.children
+          ).filter(
+            item =>
+              item.tagName ===
+              "DETAILS"
+          )
+        : [];
+
+    return (
+      prefix +
+      [
+        location.pathname,
+        location.hash,
+        parentKey,
+        explicit,
+        heading,
+        Math.max(
+          0,
+          siblings.indexOf(
+            detail
+          )
+        )
+      ].join("|")
+    );
+  }
+
+  function restore(
+    root = document
+  ) {
+    const details =
+      root.matches?.("details")
+        ? [root]
+        : Array.from(
+            root.querySelectorAll?.(
+              "details"
+            ) ||
+            []
+          );
+
+    for (
+      const detail of
+      details
+    ) {
+      const state =
+        sessionStorage.getItem(
+          key(
+            detail
+          )
+        );
+
+      if (state === "open") {
+        detail.open =
+          true;
+      } else if (
+        state === "closed"
+      ) {
+        detail.open =
+          false;
+      }
+    }
+  }
+
+  document.addEventListener(
+    "toggle",
+    event => {
+      const detail =
+        event.target;
+
+      if (
+        detail?.tagName !==
+        "DETAILS"
+      ) {
+        return;
+      }
+
+      sessionStorage.setItem(
+        key(
+          detail
+        ),
+        detail.open
+          ? "open"
+          : "closed"
+      );
+    },
+    true
+  );
+
+  new MutationObserver(
+    records => {
+      for (
+        const record of
+        records
+      ) {
+        for (
+          const node of
+          record.addedNodes
+        ) {
+          if (
+            node.nodeType ===
+            1
+          ) {
+            restore(
+              node
+            );
+          }
+        }
+      }
+    }
+  ).observe(
+    document.documentElement,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+
+  restore();
+})();
+
