@@ -11419,3 +11419,125 @@ select:focus {
   -webkit-text-fill-color: #f1fbff;
 }
 
+
+
+/* ======================================================
+   CUSTOMER NOTIFICATIONS + DISCORD
+====================================================== */
+
+.account-notifications-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-notification-light {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.account-notification-light.alert {
+  background: #ff4d4d;
+  box-shadow: 0 0 12px rgba(255,77,77,.8);
+}
+
+.account-notification-light.clear {
+  background: #42e58c;
+  box-shadow: 0 0 12px rgba(66,229,140,.55);
+}
+
+.customer-notification-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #dff8ff;
+  font-size: 11px;
+}
+
+.customer-notifications-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.customer-notification-item {
+  padding: 15px;
+  border: 1px solid rgba(18,201,255,.24);
+  border-radius: 12px;
+  background: rgba(5,18,28,.9);
+}
+
+.customer-notification-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.customer-notification-item h4 {
+  margin: 4px 0 0;
+}
+
+.customer-notification-item p {
+  margin: 10px 0 0;
+  color: #b8cfdd;
+  line-height: 1.55;
+  font-size: 12px;
+}
+
+.customer-notification-item small {
+  color: #718a9b;
+}
+
+.customer-notification-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0,0,0,.76);
+  backdrop-filter: blur(8px);
+}
+
+.customer-notification-popup[hidden] {
+  display: none !important;
+}
+
+.customer-notification-popup-card {
+  width: min(560px, 100%);
+  padding: 24px;
+  border: 1px solid rgba(18,201,255,.48);
+  border-radius: 18px;
+  background: #06131d;
+  box-shadow: 0 26px 70px rgba(0,0,0,.5);
+}
+
+.customer-notification-popup-card h3 {
+  margin: 8px 0 12px;
+}
+
+.customer-notification-popup-message {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid rgba(255,98,74,.35);
+  border-radius: 10px;
+  background: rgba(255,98,74,.07);
+  color: #e7f6ff;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.customer-notification-popup-card .full + .full {
+  margin-top: 10px;
+}
+
+#discord-settings-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
