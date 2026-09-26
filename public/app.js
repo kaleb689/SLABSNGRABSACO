@@ -3509,10 +3509,10 @@ registerForm?.addEventListener(
     if (
       String(
         data.password || ""
-      ).length < 10
+      ).length < 12
     ) {
       showAccountMessage(
-        "Your password must be at least 10 characters.",
+        "Your password must be at least 12 characters.",
         "error"
       );
 
@@ -3914,10 +3914,10 @@ passwordResetForm
       if (
         String(
           data.password || ""
-        ).length < 10
+        ).length < 12
       ) {
         showAccountMessage(
-          "Your password must be at least 10 characters.",
+          "Your password must be at least 12 characters.",
           "error"
         );
 
