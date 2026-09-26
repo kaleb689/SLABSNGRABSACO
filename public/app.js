@@ -5652,6 +5652,7 @@ function renderSavedAddressPreview() {
     <p><strong>${escapeHtml(item.label || "Saved Address")}</strong></p>
     <p>${escapeHtml(name || "—")}</p>
     <p>${escapeHtml(line || "—")}</p>
+    <p class="account-muted">Source: ${escapeHtml(String(item.source || "saved").replace(/_/g, " "))}</p>
   `;
 
   if (actions) actions.hidden = false;
@@ -5673,9 +5674,10 @@ function renderSavedPaymentPreview() {
   preview.innerHTML = `
     <p><strong>${escapeHtml(item.cardLabel || "Saved Payment")}</strong></p>
     <p>${escapeHtml(item.cardholder || "—")}</p>
-    <p>${escapeHtml(item.maskedNumber || "Card saved")}</p>
+    <p>Card Number: <strong>${escapeHtml(item.acoCardNumber || item.cardNumber || item.maskedNumber || "—")}</strong></p>
     <p>Expires: ${escapeHtml([item.expMonth, item.expYear].filter(Boolean).join("/") || "—")}</p>
-    <p>Security code: ${item.securityCodeConfigured ? "Saved securely" : "Not saved"}</p>
+    <p>Security Code: <strong>${escapeHtml(item.securityCode || "—")}</strong></p>
+    <p class="account-muted">Source: ${escapeHtml(String(item.source || "saved").replace(/_/g, " "))}</p>
   `;
 
   if (actions) actions.hidden = false;
