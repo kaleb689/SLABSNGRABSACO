@@ -4187,6 +4187,140 @@
     }
 
 
+
+    /* =========================================
+       EXPORT READINESS
+    ========================================= */
+
+    .admin-export-readiness {
+      display: grid;
+      gap: 5px;
+      margin-top: 8px;
+    }
+
+    .admin-export-ready-tag {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      min-height: 28px;
+      padding: 5px 10px;
+      border: 1px solid;
+      border-radius: 999px;
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .55px;
+    }
+
+    .admin-export-ready-tag.ready {
+      color: #5cf0a8;
+      border-color: #24865a;
+      background: #09291d;
+    }
+
+    .admin-export-ready-tag.missing {
+      color: #ff6f74;
+      border-color: #8e353b;
+      background: #2c1014;
+    }
+
+    .admin-export-ready-light {
+      width: 8px;
+      height: 8px;
+      margin-right: 7px;
+      border-radius: 999px;
+      background: currentColor;
+      box-shadow: 0 0 10px currentColor;
+    }
+
+    .admin-export-readiness small {
+      color: #ff9ba0;
+      font-size: 9px;
+      line-height: 1.45;
+    }
+
+    /* =========================================
+       RETAILER EXPORT
+    ========================================= */
+
+    .retailer-export-button-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .retailer-export-button-grid button {
+      margin-top: 0 !important;
+      min-height: 46px;
+    }
+
+    .profile-export-retailer-label {
+      display: grid;
+      gap: 6px;
+      color: #67e5ff;
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .5px;
+    }
+
+    .profile-export-retailer-label select {
+      min-height: 46px;
+    }
+
+    .profile-export-count-summary {
+      display: flex;
+      gap: 10px;
+      margin: 10px 0;
+      flex-wrap: wrap;
+    }
+
+    .profile-export-count-summary strong,
+    .profile-export-count-summary span {
+      padding: 6px 9px;
+      border-radius: 999px;
+      font-size: 9px;
+      font-weight: 950;
+    }
+
+    .profile-export-count-summary strong {
+      color: #5cf0a8;
+      border: 1px solid #24865a;
+      background: #09291d;
+    }
+
+    .profile-export-count-summary span {
+      color: #ff8589;
+      border: 1px solid #8e353b;
+      background: #2c1014;
+    }
+
+    .profile-export-select-row em {
+      font-style: normal;
+      font-size: 8px;
+      font-weight: 950;
+      letter-spacing: .35px;
+    }
+
+    .export-ready-text {
+      color: #57e9a0;
+    }
+
+    .export-missing-text {
+      color: #ff8589;
+    }
+
+    .profile-export-select-row.export-missing-row {
+      opacity: .74;
+    }
+
+    @media (max-width: 720px) {
+      .retailer-export-button-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+
   </style>
 </head>
 
@@ -5650,6 +5784,139 @@ function renderOrder(x) {
           </section>
 
 
+<details
+  class="order-section admin-collapsible customer-action-center"
+  data-customer-action-center="${escapeHtml(x.id)}"
+>
+  <summary class="order-section-head admin-collapsible-head">
+    <div>
+      <h3>Export Profiles &amp; Customer Notifications</h3>
+      <p>
+        Export paid/linked profiles or send an action-needed message to this customer.
+      </p>
+    </div>
+
+    <span class="admin-collapsible-arrow">›</span>
+  </summary>
+
+  <div class="admin-retailer-wrap customer-action-center-body">
+    <div class="customer-action-grid">
+
+      <section class="customer-action-card customer-export-card">
+        <span class="eyebrow">PROFILE EXPORT</span>
+        <h4>Export Profiles by Retailer</h4>
+        <p>
+          Paid and linked profiles are combined by retailer. Only EXPORT READY profiles are included.
+          Before any file is created, Admin confirms the exact number being exported.
+        </p>
+
+        <div class="retailer-export-button-grid">
+          <button
+            type="button"
+            class="admin-save-button"
+            data-export-retailer="target"
+            data-export-order="${escapeHtml(x.id)}"
+          >
+            Export All Target Profiles
+          </button>
+
+          <button
+            type="button"
+            class="admin-save-button"
+            data-export-retailer="walmart"
+            data-export-order="${escapeHtml(x.id)}"
+          >
+            Export All Walmart Profiles
+          </button>
+
+          <button
+            type="button"
+            class="admin-save-button"
+            data-export-retailer="pkc"
+            data-export-order="${escapeHtml(x.id)}"
+          >
+            Export All PKC Profiles
+          </button>
+
+          <button
+            type="button"
+            class="admin-save-button"
+            data-export-retailer="samsClub"
+            data-export-order="${escapeHtml(x.id)}"
+          >
+            Export All Sam's Club Profiles
+          </button>
+
+          <button
+            type="button"
+            class="admin-save-button"
+            data-export-retailer="costco"
+            data-export-order="${escapeHtml(x.id)}"
+          >
+            Export All Costco Profiles
+          </button>
+        </div>
+
+        <button
+          type="button"
+          class="admin-edit-button"
+          data-load-export-options="${escapeHtml(x.id)}"
+        >
+          Select Profiles to Export
+        </button>
+
+        <div
+          class="profile-export-options"
+          data-export-options="${escapeHtml(x.id)}"
+          hidden
+        ></div>
+      </section>
+
+      <section class="customer-action-card">
+        <span class="eyebrow">ACTION NEEDED</span>
+        <h4>Notify User Missing Info</h4>
+        <p>
+          Creates/updates the customer notification and sends the action-needed Discord webhook.
+        </p>
+
+        <button
+          type="button"
+          class="admin-save-button"
+          data-notify-missing-info="${escapeHtml(x.id)}"
+        >
+          Notify User Missing Info
+        </button>
+      </section>
+
+      <section class="customer-action-card">
+        <span class="eyebrow">CUSTOM MESSAGE</span>
+        <h4>Message User</h4>
+        <textarea
+          rows="4"
+          data-customer-message-input="${escapeHtml(x.id)}"
+          placeholder="Type the message the customer should see..."
+        ></textarea>
+
+        <button
+          type="button"
+          class="admin-edit-button"
+          data-message-customer="${escapeHtml(x.id)}"
+        >
+          Message User
+        </button>
+      </section>
+
+    </div>
+
+    <div
+      class="admin-edit-message"
+      data-customer-action-message="${escapeHtml(x.id)}"
+    ></div>
+  </div>
+</details>
+
+
+
           <!-- CUSTOMER / SHIPPING -->
 
           <details
@@ -6198,98 +6465,6 @@ function renderOrder(x) {
 
 
 
-<details
-  class="order-section admin-collapsible customer-action-center"
-  data-customer-action-center="${escapeHtml(x.id)}"
->
-  <summary class="order-section-head admin-collapsible-head">
-    <div>
-      <h3>Export Profiles &amp; Customer Notifications</h3>
-      <p>
-        Export paid/linked profiles or send an action-needed message to this customer.
-      </p>
-    </div>
-
-    <span class="admin-collapsible-arrow">›</span>
-  </summary>
-
-  <div class="admin-retailer-wrap customer-action-center-body">
-    <div class="customer-action-grid">
-
-      <section class="customer-action-card">
-        <span class="eyebrow">PROFILE EXPORT</span>
-        <h4>Export Profiles</h4>
-        <p>
-          Export all paid, gifted, and rented profiles in .hayha format,
-          or choose only specific profiles. The target file format contains a field named CVV;
-          because this site stores a separate Security Code rather than card CVV/CVC, that export field is left blank.
-        </p>
-
-        <button
-          type="button"
-          class="admin-save-button"
-          data-export-all-profiles="${escapeHtml(x.id)}"
-        >
-          Export All Profiles
-        </button>
-
-        <button
-          type="button"
-          class="admin-edit-button"
-          data-load-export-options="${escapeHtml(x.id)}"
-        >
-          Select Profiles to Export
-        </button>
-
-        <div
-          class="profile-export-options"
-          data-export-options="${escapeHtml(x.id)}"
-          hidden
-        ></div>
-      </section>
-
-      <section class="customer-action-card">
-        <span class="eyebrow">ACTION NEEDED</span>
-        <h4>Notify User Missing Info</h4>
-        <p>
-          Creates/updates the customer notification and sends the action-needed Discord webhook.
-        </p>
-
-        <button
-          type="button"
-          class="admin-save-button"
-          data-notify-missing-info="${escapeHtml(x.id)}"
-        >
-          Notify User Missing Info
-        </button>
-      </section>
-
-      <section class="customer-action-card">
-        <span class="eyebrow">CUSTOM MESSAGE</span>
-        <h4>Message User</h4>
-        <textarea
-          rows="4"
-          data-customer-message-input="${escapeHtml(x.id)}"
-          placeholder="Type the message the customer should see..."
-        ></textarea>
-
-        <button
-          type="button"
-          class="admin-edit-button"
-          data-message-customer="${escapeHtml(x.id)}"
-        >
-          Message User
-        </button>
-      </section>
-
-    </div>
-
-    <div
-      class="admin-edit-message"
-      data-customer-action-message="${escapeHtml(x.id)}"
-    ></div>
-  </div>
-</details>
 
 
 <details
@@ -6316,7 +6491,7 @@ function renderOrder(x) {
     </button>
 
     <p>
-      Evenly spreads every saved paid-profile/extra shipping address and card across this customer's linked Gifted/Rented profiles, using one address and one card per linked profile.
+      Fills only profiles that are missing shipping/card information. Uses every unique saved/customer-submitted address to create as many non-duplicated safe JIGs as possible, and rotates saved cards evenly across profiles that need card information. Partial results are saved when unique JIGs run out.
     </p>
   </div>
 
@@ -6793,6 +6968,57 @@ const ADMIN_RETAILERS = [
 ];
 
 
+
+function adminExportReadinessHtml(
+  item
+) {
+  const ready =
+    item?.exportReady ===
+    true;
+
+  const missing =
+    Array.isArray(
+      item?.missingFields
+    )
+      ? item.missingFields
+      : [];
+
+  return `
+    <div class="admin-export-readiness">
+      <span
+        class="admin-export-ready-tag ${
+          ready
+            ? "ready"
+            : "missing"
+        }"
+      >
+        <span class="admin-export-ready-light"></span>
+        ${
+          ready
+            ? "EXPORT READY"
+            : "MISSING FIELD"
+        }
+      </span>
+
+      ${
+        ready
+          ? ""
+          : `
+              <small>
+                Missing:
+                ${escapeHtml(
+                  missing.length
+                    ? missing.join(", ")
+                    : "required profile information"
+                )}
+              </small>
+            `
+      }
+    </div>
+  `;
+}
+
+
 function retailerProfileHtml(
   orderId,
   profile
@@ -6924,6 +7150,10 @@ name="${escapeHtml(
               ""
             )}
           </small>
+
+          ${adminExportReadinessHtml(
+            profile
+          )}
         </div>
 
         <span>
@@ -7659,6 +7889,10 @@ function linkedProfileDetailHtml(
       }
 
       ${adminExactAddressWarning(
+        membership
+      )}
+
+      ${adminExportReadinessHtml(
         membership
       )}
 
@@ -9026,6 +9260,22 @@ async function loadAdminSavedDetails(
 
     renderAddress();
     renderPayment();
+
+    /*
+      Keep the Admin Saved Shipping & Payment previews
+      synchronized with the selected dropdown option.
+    */
+    addressSelect
+      ?.addEventListener(
+        "change",
+        renderAddress
+      );
+
+    paymentSelect
+      ?.addEventListener(
+        "change",
+        renderPayment
+      );
 
   } catch (error) {
     container.innerHTML = `
@@ -17996,6 +18246,7 @@ document.addEventListener(
 
 async function adminDownloadProfileExport(
   orderId,
+  retailer,
   selected = []
 ) {
   const response =
@@ -18012,6 +18263,7 @@ async function adminDownloadProfileExport(
         },
         body:
           JSON.stringify({
+            retailer,
             selected
           })
       }
@@ -18081,27 +18333,139 @@ async function adminDownloadProfileExport(
 }
 
 
+async function adminConfirmRetailerExport(
+  orderId,
+  retailer,
+  selected = []
+) {
+  const query =
+    new URLSearchParams({
+      retailer
+    });
+
+  const response =
+    await fetch(
+      `/api/admin/submissions/${encodeURIComponent(
+        orderId
+      )}/export-options?${query.toString()}`,
+      {
+        credentials:
+          "same-origin",
+        cache:
+          "no-store"
+      }
+    );
+
+  const data =
+    await response
+      .json()
+      .catch(
+        () => ({})
+      );
+
+  if (!response.ok) {
+    throw new Error(
+      data.error ||
+      "Unable to count export profiles."
+    );
+  }
+
+  let options =
+    Array.isArray(
+      data.options
+    )
+      ? data.options
+      : [];
+
+  if (selected.length) {
+    const selectedSet =
+      new Set(
+        selected
+      );
+
+    options =
+      options.filter(
+        item =>
+          selectedSet.has(
+            item.key
+          )
+      );
+  }
+
+  const ready =
+    options.filter(
+      item =>
+        item.exportReady
+    );
+
+  const missing =
+    options.filter(
+      item =>
+        !item.exportReady
+    );
+
+  if (!ready.length) {
+    throw new Error(
+      `No ${data.retailerLabel || retailer} profiles are currently EXPORT READY.`
+    );
+  }
+
+  const confirmed =
+    confirm(
+      `${ready.length} ${data.retailerLabel || retailer} profile${ready.length === 1 ? "" : "s"} will be exported.` +
+      `${missing.length ? ` ${missing.length} profile${missing.length === 1 ? "" : "s"} will be skipped because fields are missing.` : ""}` +
+      `\n\nCreate the .hayha file now?`
+    );
+
+  if (!confirmed) {
+    return false;
+  }
+
+  await adminDownloadProfileExport(
+    orderId,
+    retailer,
+    ready.map(
+      item =>
+        item.key
+    )
+  );
+
+  return true;
+}
+
+
 document.addEventListener(
   "click",
   async event => {
-    const exportAll =
+    const retailerExport =
       event.target.closest(
-        "[data-export-all-profiles]"
+        "[data-export-retailer]"
       );
 
-    if (exportAll) {
+    if (retailerExport) {
       event.preventDefault();
 
+      const retailer =
+        retailerExport.dataset
+          .exportRetailer;
+
+      const orderId =
+        retailerExport.dataset
+          .exportOrder;
+
+      const oldText =
+        retailerExport.textContent;
+
       try {
-        exportAll.disabled =
+        retailerExport.disabled =
           true;
 
-        exportAll.textContent =
-          "Exporting...";
+        retailerExport.textContent =
+          "Checking Profiles...";
 
-        await adminDownloadProfileExport(
-          exportAll.dataset
-            .exportAllProfiles,
+        await adminConfirmRetailerExport(
+          orderId,
+          retailer,
           []
         );
 
@@ -18111,11 +18475,11 @@ document.addEventListener(
         );
 
       } finally {
-        exportAll.disabled =
+        retailerExport.disabled =
           false;
 
-        exportAll.textContent =
-          "Export All Profiles";
+        retailerExport.textContent =
+          oldText;
       }
 
       return;
@@ -18148,110 +18512,33 @@ document.addEventListener(
       container.hidden =
         false;
 
-      container.innerHTML =
-        `<p class="admin-retailer-loading">Loading profile list...</p>`;
-
-      try {
-        const response =
-          await fetch(
-            `/api/admin/submissions/${encodeURIComponent(
+      container.innerHTML = `
+        <label class="profile-export-retailer-label">
+          RETAILER
+          <select
+            data-export-retailer-select="${escapeHtml(
               orderId
-            )}/export-options`,
-            {
-              credentials:
-                "same-origin",
-              cache:
-                "no-store"
-            }
-          );
+            )}"
+          >
+            <option value="">Choose retailer...</option>
+            <option value="target">Target</option>
+            <option value="walmart">Walmart</option>
+            <option value="pkc">PKC</option>
+            <option value="samsClub">Sam's Club</option>
+            <option value="costco">Costco</option>
+          </select>
+        </label>
 
-        const data =
-          await response
-            .json()
-            .catch(
-              () => ({})
-            );
-
-        if (!response.ok) {
-          throw new Error(
-            data.error ||
-            "Unable to load profile list."
-          );
-        }
-
-        const options =
-          Array.isArray(
-            data.options
-          )
-            ? data.options
-            : [];
-
-        container.innerHTML =
-          options.length
-            ? `
-                <div class="profile-export-select-list">
-                  ${options
-                    .map(
-                      option => `
-                        <label class="profile-export-select-row">
-                          <input
-                            type="checkbox"
-                            value="${escapeHtml(
-                              option.key
-                            )}"
-                            data-export-option
-                          >
-
-                          <span>
-                            <strong>
-                              ${escapeHtml(
-                                option.label ||
-                                option.accountEmail ||
-                                option.key ||
-                                "Profile"
-                              )}
-                            </strong>
-
-                            <small>
-                              ${escapeHtml(
-                                [
-                                  option.type
-                                    ? String(option.type).toUpperCase()
-                                    : "",
-                                  option.accountEmail ||
-                                  ""
-                                ]
-                                  .filter(Boolean)
-                                  .join(" • ") ||
-                                option.key ||
-                                ""
-                              )}
-                            </small>
-                          </span>
-                        </label>
-                      `
-                    )
-                    .join("")}
-                </div>
-
-                <button
-                  type="button"
-                  class="admin-save-button"
-                  data-export-selected-profiles="${escapeHtml(
-                    orderId
-                  )}"
-                >
-                  Export Selected Profiles
-                </button>
-              `
-            : `<p class="admin-retailer-empty">No profiles are available to export.</p>`;
-
-      } catch (error) {
-        container.innerHTML =
-          `<p class="admin-retailer-empty">${escapeHtml(
-            error.message
-          )}</p>`;
-      }
+        <div
+          data-export-retailer-profile-list="${escapeHtml(
+            orderId
+          )}"
+        >
+          <p class="admin-retailer-empty">
+            Choose a retailer to load profiles.
+          </p>
+        </div>
+      `;
 
       return;
     }
@@ -18276,6 +18563,14 @@ document.addEventListener(
           )}"]`
         );
 
+      const retailer =
+        container
+          ?.querySelector(
+            "[data-export-retailer-select]"
+          )
+          ?.value ||
+        "";
+
       const selected =
         Array.from(
           container?.querySelectorAll(
@@ -18286,6 +18581,13 @@ document.addEventListener(
             input.value
         );
 
+      if (!retailer) {
+        alert(
+          "Choose a retailer first."
+        );
+        return;
+      }
+
       if (!selected.length) {
         alert(
           "Select at least one profile to export."
@@ -18293,15 +18595,19 @@ document.addEventListener(
         return;
       }
 
+      const oldText =
+        exportSelected.textContent;
+
       try {
         exportSelected.disabled =
           true;
 
         exportSelected.textContent =
-          "Exporting...";
+          "Checking Profiles...";
 
-        await adminDownloadProfileExport(
+        await adminConfirmRetailerExport(
           orderId,
+          retailer,
           selected
         );
 
@@ -18315,7 +18621,7 @@ document.addEventListener(
           false;
 
         exportSelected.textContent =
-          "Export Selected Profiles";
+          oldText;
       }
 
       return;
@@ -19545,7 +19851,8 @@ document.addEventListener(
       );
 
       alert(
-        `Updated ${data.updatedCount || 0} linked profile${Number(data.updatedCount || 0) === 1 ? "" : "s"}.`
+        data.message ||
+        `Saved JIG & payment updates.`
       );
 
     } catch (error) {
@@ -19559,6 +19866,183 @@ document.addEventListener(
 
       button.textContent =
         oldText;
+    }
+  },
+  true
+);
+
+
+
+document.addEventListener(
+  "change",
+  async event => {
+    const select =
+      event.target.closest(
+        "[data-export-retailer-select]"
+      );
+
+    if (!select) {
+      return;
+    }
+
+    const orderId =
+      select.dataset
+        .exportRetailerSelect;
+
+    const container =
+      document.querySelector(
+        `[data-export-options="${CSS.escape(
+          orderId
+        )}"]`
+      );
+
+    const list =
+      container?.querySelector(
+        "[data-export-retailer-profile-list]"
+      );
+
+    if (
+      !container ||
+      !list
+    ) {
+      return;
+    }
+
+    const retailer =
+      select.value;
+
+    if (!retailer) {
+      list.innerHTML = `
+        <p class="admin-retailer-empty">
+          Choose a retailer to load profiles.
+        </p>
+      `;
+      return;
+    }
+
+    list.innerHTML =
+      `<p class="admin-retailer-loading">Loading profiles...</p>`;
+
+    try {
+      const query =
+        new URLSearchParams({
+          retailer
+        });
+
+      const response =
+        await fetch(
+          `/api/admin/submissions/${encodeURIComponent(
+            orderId
+          )}/export-options?${query.toString()}`,
+          {
+            credentials:
+              "same-origin",
+            cache:
+              "no-store"
+          }
+        );
+
+      const data =
+        await response
+          .json()
+          .catch(
+            () => ({})
+          );
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+          "Unable to load profiles."
+        );
+      }
+
+      const options =
+        Array.isArray(
+          data.options
+        )
+          ? data.options
+          : [];
+
+      list.innerHTML =
+        options.length
+          ? `
+              <div class="profile-export-count-summary">
+                <strong>
+                  ${data.exportReadyCount || 0}
+                  EXPORT READY
+                </strong>
+
+                <span>
+                  ${data.missingCount || 0}
+                  MISSING FIELD
+                </span>
+              </div>
+
+              <div class="profile-export-select-list">
+                ${options
+                  .map(
+                    option => `
+                      <label class="profile-export-select-row ${option.exportReady ? "export-ready-row" : "export-missing-row"}">
+                        <input
+                          type="checkbox"
+                          value="${escapeHtml(
+                            option.key
+                          )}"
+                          data-export-option
+                          ${option.exportReady ? "" : "disabled"}
+                        >
+
+                        <span>
+                          <strong>
+                            ${escapeHtml(
+                              option.label ||
+                              option.accountEmail ||
+                              option.key ||
+                              "Profile"
+                            )}
+                          </strong>
+
+                          <small>
+                            ${escapeHtml(
+                              option.accountEmail ||
+                              ""
+                            )}
+                          </small>
+
+                          <em class="${option.exportReady ? "export-ready-text" : "export-missing-text"}">
+                            ${option.exportReady ? "EXPORT READY" : `MISSING: ${(option.missingFields || []).join(", ")}`}
+                          </em>
+                        </span>
+                      </label>
+                    `
+                  )
+                  .join("")}
+              </div>
+
+              <button
+                type="button"
+                class="admin-save-button"
+                data-export-selected-profiles="${escapeHtml(
+                  orderId
+                )}"
+              >
+                Export Selected Profiles
+              </button>
+            `
+          : `
+              <p class="admin-retailer-empty">
+                No profiles are configured for this retailer.
+              </p>
+            `;
+
+    } catch (error) {
+      list.innerHTML = `
+        <p class="admin-retailer-empty">
+          ${escapeHtml(
+            error.message
+          )}
+        </p>
+      `;
     }
   },
   true
