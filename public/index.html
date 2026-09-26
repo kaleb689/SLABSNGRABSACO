@@ -164,6 +164,34 @@
   class="page active home-reference"
 >
 
+  <section class="public-success" aria-labelledby="public-success-title">
+    <div class="wrap public-success-inner">
+      <div class="public-success-heading">
+        <div>
+          <span class="eyebrow">COMMUNITY CHECKOUTS</span>
+          <h2 id="public-success-title">SLABSNGRABSACO USER CHECKOUT SUCCESS</h2>
+        </div>
+        <span class="public-success-live">Updates automatically</span>
+      </div>
+      <div class="public-success-stats">
+        <div><span>Total checkouts</span><strong id="public-success-checkouts">—</strong></div>
+        <div><span>Total spent at checkout</span><strong id="public-success-spent">—</strong></div>
+      </div>
+      <div class="public-success-products">
+        <div class="public-success-products-head">
+          <span>PRODUCTS PURCHASED</span>
+          <div class="public-success-controls">
+            <button type="button" id="public-success-previous" aria-label="Previous products">‹</button>
+            <span id="public-success-position" aria-live="polite">—</span>
+            <button type="button" id="public-success-next" aria-label="Next products">›</button>
+          </div>
+        </div>
+        <div id="public-success-product" class="public-success-product" aria-live="polite">Loading checkout totals…</div>
+      </div>
+      <p class="public-success-note">Community totals only. No customer or account details are displayed.</p>
+    </div>
+  </section>
+
   <!-- =====================================================
        HERO
   ===================================================== -->
@@ -300,6 +328,35 @@
   <!-- =====================================================
        MEMBERSHIP CAROUSEL
   ===================================================== -->
+
+  <section class="home-success-preview" aria-labelledby="home-success-preview-title">
+    <div class="wrap">
+      <div class="home-success-preview-heading">
+        <span class="eyebrow">YOUR PERSONAL DASHBOARD</span>
+        <h2 id="home-success-preview-title">See every checkout in one place.</h2>
+        <p>Your Success tab connects your profiles and detected retailer orders. Here is a sample of what your tracker can look like.</p>
+      </div>
+      <div class="home-success-demo">
+        <span class="home-success-sample">SAMPLE PREVIEW · EXAMPLE ORDERS</span>
+        <div class="home-success-demo-title"><strong>Success</strong><span>Checkout activity across your profiles</span></div>
+        <div class="home-success-metrics">
+          <div><span>TOTAL CHECKOUTS</span><strong>6</strong><small>Successful orders</small></div>
+          <div><span>TOTAL ORDERS</span><strong>6</strong><small>Across your profiles</small></div>
+          <div><span>ITEMS SECURED</span><strong>11</strong><small>Products ordered</small></div>
+          <div><span>CHECKOUT VALUE</span><strong>$374.93</strong><small>Example order value</small></div>
+        </div>
+        <div class="home-success-demo-card">
+          <div class="home-success-demo-card-head"><div><span class="eyebrow">RECENT ACTIVITY</span><h3>Recent Success</h3></div><span id="home-success-order-position" aria-live="polite">1 of 3</span></div>
+          <div id="home-success-order" class="home-success-order" aria-live="polite"></div>
+          <div class="home-success-order-controls">
+            <button type="button" id="home-success-previous">← Previous Order</button>
+            <button type="button" id="home-success-next">Next Order →</button>
+          </div>
+        </div>
+        <p class="home-success-footnote">Example orders are for illustration. Your account shows only checkouts linked to your profiles.</p>
+      </div>
+    </div>
+  </section>
 
   <section class="home-reference-memberships">
 

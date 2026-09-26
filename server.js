@@ -34470,6 +34470,46 @@ async function getSuccessCheckouts() {
     : [];
 }
 
+/* Public totals contain only aggregate values and product counts. */
+app.get(
+  "/api/public/success",
+  async (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+
+    try {
+      const records = await getSuccessCheckouts();
+      const products = new Map();
+      let totalSpent = 0;
+
+      for (const record of records) {
+        const total = Number(record.orderTotal);
+        if (Number.isFinite(total) && total > 0) totalSpent += total;
+
+        for (const item of Array.isArray(record.items) ? record.items : []) {
+          const name = clean(item?.name, 120).replace(/\s+/g, " ").trim();
+          // Product fields originate in retailer emails. Drop anything that
+          // looks like personal or order information before public display.
+          if (!name || /@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name)) continue;
+          const quantity = Math.max(0, Math.floor(Number(item?.quantity) || 0));
+          if (!quantity) continue;
+          const key = name.toLowerCase();
+          const prior = products.get(key);
+          products.set(key, { name: prior?.name || name, quantity: (prior?.quantity || 0) + quantity });
+        }
+      }
+
+      res.json({
+        totalCheckouts: records.length,
+        totalSpent: Math.round(totalSpent * 100) / 100,
+        products: [...products.values()].sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name))
+      });
+    } catch (error) {
+      console.error("Public Success totals failed:", error?.code || error?.name || "success_totals_error");
+      res.status(503).json({ error: "Checkout totals are temporarily unavailable." });
+    }
+  }
+);
+
 async function saveSuccessCheckouts(
   records
 ) {
@@ -34777,6 +34817,8 @@ async function sendDiscordSuccessNotification(
     String(
       process.env
         .DISCORD_SUCCESS_WEBHOOK_URL ||
+      process.env
+        .DISCORD_SNGACO_SUCCESS ||
       ""
     ).trim();
 
@@ -35128,6 +35170,8 @@ app.post(
           String(
             process.env
               .DISCORD_SUCCESS_WEBHOOK_URL ||
+            process.env
+              .DISCORD_SNGACO_SUCCESS ||
             ""
           ).trim()
         );
@@ -35138,7 +35182,7 @@ app.post(
           .json({
             ok: false,
             error:
-              "DISCORD_SUCCESS_WEBHOOK_URL is not configured."
+              "The Success Discord webhook is not configured."
           });
       }
 

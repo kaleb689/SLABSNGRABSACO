@@ -2994,6 +2994,82 @@ select:focus {
   overflow: hidden;
 }
 
+/* Community totals and the clearly labeled customer preview */
+#home .public-success { padding: 30px 0 0; background: #07121e; }
+#home .public-success-inner {
+  padding: 24px 30px;
+  border: 1px solid rgba(33, 196, 242, .28);
+  border-radius: 24px;
+  background: linear-gradient(125deg, #0d2334, #091523 65%, #11182b);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .25);
+}
+#home .public-success-heading, #home .public-success-products-head,
+#home .home-success-demo-card-head, #home .home-success-order-controls {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+}
+#home .public-success-heading h2 { margin: 6px 0 0; font-size: clamp(1.35rem, 2.8vw, 2rem); line-height: 1.2; }
+#home .public-success-live { color: #65d9ea; font-size: .875rem; white-space: nowrap; }
+#home .public-success-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 22px 0; }
+#home .public-success-stats > div, #home .public-success-products {
+  border: 1px solid rgba(142, 197, 222, .16); border-radius: 17px; background: rgba(2, 13, 23, .55); padding: 18px 20px;
+}
+#home .public-success-stats span, #home .public-success-products-head > span,
+#home .home-success-metrics span, #home .home-success-order-product > span,
+#home .home-success-order-value > span { display: block; color: #9eafc4; font-size: .875rem; }
+#home .public-success-stats strong { display: block; margin-top: 7px; font-size: clamp(1.65rem, 3vw, 2.4rem); color: #effaff; }
+#home .public-success-controls { display: flex; align-items: center; gap: 10px; color: #b9cfe2; font-size: .875rem; }
+#home .public-success-controls button, #home .home-success-order-controls button {
+  border: 1px solid rgba(104, 197, 230, .35); border-radius: 10px; background: #143146; color: #f2fdff;
+  cursor: pointer; min-width: 40px; min-height: 40px; font-size: 1.15rem;
+}
+#home .public-success-controls button:disabled, #home .home-success-order-controls button:disabled { opacity: .45; cursor: default; }
+#home .public-success-product { display: flex; align-items: baseline; justify-content: space-between; gap: 15px; min-height: 45px; margin-top: 13px; }
+#home .public-success-product strong { font-size: 1.05rem; overflow-wrap: anywhere; }
+#home .public-success-product span { color: #5edbed; font-size: 1.45rem; font-weight: 800; white-space: nowrap; }
+#home .public-success-note, #home .home-success-footnote { color: #9eafc4; font-size: .875rem; margin: 13px 0 0; }
+
+#home .home-success-preview { padding: 65px 0 75px; background: linear-gradient(180deg, #07121e, #091929); }
+#home .home-success-preview-heading { max-width: 760px; margin-bottom: 25px; }
+#home .home-success-preview-heading h2 { font-size: clamp(1.75rem, 4vw, 2.75rem); line-height: 1.15; margin: 9px 0; }
+#home .home-success-preview-heading p { font-size: 1rem; line-height: 1.6; color: #b6c7d6; }
+#home .home-success-demo { border: 1px solid rgba(69, 195, 231, .24); border-radius: 23px; padding: 26px; background: #0a1726; box-shadow: 0 24px 60px rgba(0, 0, 0, .22); }
+#home .home-success-sample { display: inline-block; color: #67dcef; border: 1px solid rgba(103, 220, 239, .4); border-radius: 100px; padding: 7px 12px; font-size: .8rem; font-weight: 700; letter-spacing: .04em; }
+#home .home-success-demo-title { display: flex; align-items: baseline; gap: 18px; margin: 22px 0; }
+#home .home-success-demo-title strong { font-size: 1.65rem; }
+#home .home-success-demo-title span { color: #abc0d1; font-size: .95rem; }
+#home .home-success-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
+#home .home-success-metrics > div { border: 1px solid rgba(61, 163, 204, .2); background: #0c2536; border-radius: 15px; padding: 18px; }
+#home .home-success-metrics strong { display: block; margin: 10px 0 4px; color: #fff; font-size: clamp(1.5rem, 2.4vw, 2rem); }
+#home .home-success-metrics small { display: block; color: #a8bed1; font-size: .8rem; }
+#home .home-success-demo-card { margin-top: 18px; border: 1px solid rgba(61, 163, 204, .2); border-radius: 17px; padding: 23px; background: #0e1d2c; }
+#home .home-success-demo-card-head h3 { margin: 5px 0 0; font-size: 1.3rem; }
+#home .home-success-demo-card-head > span { color: #aabed1; font-size: .875rem; }
+#home .home-success-order { display: grid; grid-template-columns: 1fr 1.25fr auto; gap: 22px; align-items: center; padding: 25px 0; border-bottom: 1px solid rgba(91, 169, 204, .18); }
+#home .home-success-retailer { color: #65d9ea; font-weight: 750; }
+#home .home-success-order h4 { margin: 6px 0; font-size: 1.1rem; }
+#home .home-success-order p { color: #a4b9c9; margin: 0; }
+#home .home-success-order-product strong { display: block; margin: 5px 0; overflow-wrap: anywhere; }
+#home .home-success-order-product small { color: #65d9ea; font-size: 1rem; }
+#home .home-success-order-value strong { display: block; margin-top: 5px; font-size: 1.2rem; }
+#home .home-success-order-controls { padding-top: 16px; }
+#home .home-success-order-controls button { font-size: .875rem; padding: 0 13px; }
+@media (max-width: 750px) {
+  #home .public-success-inner, #home .home-success-demo { padding: 19px; border-radius: 18px; }
+  #home .public-success-heading { align-items: flex-start; flex-direction: column; }
+  #home .public-success-stats { gap: 9px; }
+  #home .public-success-stats > div { padding: 15px; }
+  #home .home-success-preview { padding: 44px 0; }
+  #home .home-success-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #home .home-success-demo-title { flex-direction: column; gap: 2px; }
+  #home .home-success-order { grid-template-columns: 1fr 1fr; }
+  #home .home-success-order > div:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 420px) {
+  #home .public-success-stats { grid-template-columns: 1fr; }
+  #home .public-success-products-head { align-items: flex-start; flex-direction: column; }
+  #home .home-success-order-controls button { padding: 0 7px; }
+}
+
 
 /* =========================================================
    HERO

@@ -13616,11 +13616,19 @@ document
             .accountTab ===
           "success"
         ) {
-          loadSuccessDashboard();
+          loadSuccessDashboard(true);
         }
       }
     );
   });
+
+// Refresh only while the customer is looking at the Success tab.
+setInterval(() => {
+  const panel = document.getElementById("account-tab-success");
+  if (document.visibilityState === "visible" && panel && !panel.hidden && document.getElementById("my-profile")?.classList.contains("active")) {
+    loadSuccessDashboard(true);
+  }
+}, 60 * 1000);
 /* =====================================================
    LOAD RETAILER PROFILES WHEN PROFILES TAB OPENS
 ===================================================== */
@@ -14880,3 +14888,91 @@ processSecureLinks();
   );
 })();
 
+/* Public aggregate Success display; this response never includes customer data. */
+const publicSuccessState = { products: [], index: 0, loading: false };
+
+function renderPublicSuccessProduct() {
+  const { products } = publicSuccessState;
+  const product = products[publicSuccessState.index];
+  const container = document.getElementById("public-success-product");
+  if (!container) return;
+
+  container.replaceChildren();
+  if (product) {
+    const name = document.createElement("strong");
+    name.textContent = product.name;
+    const count = document.createElement("span");
+    count.textContent = `×${formatSuccessNumber(product.quantity)}`;
+    container.append(name, count);
+  } else {
+    container.textContent = "Purchased products will appear here after checkout data is detected.";
+  }
+  document.getElementById("public-success-position").textContent = products.length
+    ? `${publicSuccessState.index + 1} of ${products.length}` : "0 of 0";
+  document.getElementById("public-success-previous").disabled = publicSuccessState.index === 0;
+  document.getElementById("public-success-next").disabled = publicSuccessState.index >= products.length - 1;
+}
+
+async function refreshPublicSuccess() {
+  if (publicSuccessState.loading || !document.getElementById("public-success-checkouts")) return;
+  publicSuccessState.loading = true;
+  try {
+    const response = await fetch("/api/public/success", { cache: "no-store" });
+    if (!response.ok) throw new Error("Totals unavailable");
+    const data = await response.json();
+    document.getElementById("public-success-checkouts").textContent = formatSuccessNumber(data.totalCheckouts);
+    document.getElementById("public-success-spent").textContent = formatSuccessCurrency(data.totalSpent);
+    publicSuccessState.products = Array.isArray(data.products) ? data.products : [];
+    publicSuccessState.index = Math.min(publicSuccessState.index, Math.max(0, publicSuccessState.products.length - 1));
+    renderPublicSuccessProduct();
+  } catch {
+    if (document.getElementById("public-success-checkouts").textContent === "—") {
+      document.getElementById("public-success-product").textContent = "Community totals are temporarily unavailable.";
+    }
+  } finally {
+    publicSuccessState.loading = false;
+  }
+}
+
+document.getElementById("public-success-previous")?.addEventListener("click", () => {
+  publicSuccessState.index = Math.max(0, publicSuccessState.index - 1);
+  renderPublicSuccessProduct();
+});
+document.getElementById("public-success-next")?.addEventListener("click", () => {
+  publicSuccessState.index = Math.min(publicSuccessState.products.length - 1, publicSuccessState.index + 1);
+  renderPublicSuccessProduct();
+});
+refreshPublicSuccess();
+setInterval(() => {
+  if (document.visibilityState === "visible") refreshPublicSuccess();
+}, 45 * 1000);
+
+const sampleSuccessOrders = [
+  { retailer: "Target", product: "Pokémon booster bundle", quantity: 2, value: "$59.98", profile: "Profile 1" },
+  { retailer: "Walmart", product: "Pokémon elite trainer box", quantity: 3, value: "$149.97", profile: "Profile 2" },
+  { retailer: "Costco", product: "Trading card tin", quantity: 1, value: "$34.99", profile: "Profile 1" }
+];
+let sampleSuccessIndex = 0;
+
+function renderSampleSuccessOrder() {
+  const order = sampleSuccessOrders[sampleSuccessIndex];
+  const container = document.getElementById("home-success-order");
+  if (!container) return;
+  container.innerHTML = `
+    <div><span class="home-success-retailer">${order.retailer}</span><h4>Successful Checkout</h4><p>${order.profile} · Sample order</p></div>
+    <div class="home-success-order-product"><span>ITEM SECURED</span><strong>${order.product}</strong><small>×${order.quantity}</small></div>
+    <div class="home-success-order-value"><span>CHECKOUT VALUE</span><strong>${order.value}</strong></div>`;
+  document.getElementById("home-success-order-position").textContent = `${sampleSuccessIndex + 1} of ${sampleSuccessOrders.length}`;
+  document.getElementById("home-success-previous").disabled = sampleSuccessIndex === 0;
+  document.getElementById("home-success-next").disabled = sampleSuccessIndex === sampleSuccessOrders.length - 1;
+}
+
+document.getElementById("home-success-previous")?.addEventListener("click", () => {
+  sampleSuccessIndex = Math.max(0, sampleSuccessIndex - 1);
+  renderSampleSuccessOrder();
+});
+document.getElementById("home-success-next")?.addEventListener("click", () => {
+  sampleSuccessIndex = Math.min(sampleSuccessOrders.length - 1, sampleSuccessIndex + 1);
+  renderSampleSuccessOrder();
+});
+renderSampleSuccessOrder();
