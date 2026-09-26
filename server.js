@@ -403,6 +403,7 @@ function adminInlineScriptHashes() {
 function contentSecurityPolicyFor(
   req
 ) {
+  const successDemoDocument = req.path === "/" && req.query.successDemo === "1";
   const adminDocument =
     req.path === "/admin" ||
     req.path === "/admin.html";
@@ -429,7 +430,7 @@ function contentSecurityPolicyFor(
     "media-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
-    "frame-ancestors 'none'",
+    successDemoDocument ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
     "form-action 'self'"
   ];
 
@@ -464,7 +465,7 @@ app.use((req, res, next) => {
 
   res.setHeader(
     "X-Frame-Options",
-    "DENY"
+    req.path === "/" && req.query.successDemo === "1" ? "SAMEORIGIN" : "DENY"
   );
 
   res.setHeader(
