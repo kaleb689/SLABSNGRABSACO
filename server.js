@@ -377,41 +377,213 @@ function safeAddressVariants(
     return [];
   }
 
-  const replacements = [
-    [/\bSOUTHWEST\b/gi, "SW"],
-    [/\bSW\b/gi, "SOUTHWEST"],
-    [/\bNORTHWEST\b/gi, "NW"],
-    [/\bNW\b/gi, "NORTHWEST"],
-    [/\bSOUTHEAST\b/gi, "SE"],
-    [/\bSE\b/gi, "SOUTHEAST"],
-    [/\bNORTHEAST\b/gi, "NE"],
-    [/\bNE\b/gi, "NORTHEAST"],
-    [/\bWEST\b/gi, "W"],
-    [/\bW\b/gi, "WEST"],
-    [/\bEAST\b/gi, "E"],
-    [/\bE\b/gi, "EAST"],
-    [/\bNORTH\b/gi, "N"],
-    [/\bN\b/gi, "NORTH"],
-    [/\bSOUTH\b/gi, "S"],
-    [/\bS\b/gi, "SOUTH"],
-    [/\bBOULEVARD\b/gi, "BLVD"],
-    [/\bBLVD\b/gi, "BOULEVARD"],
-    [/\bAVENUE\b/gi, "AVE"],
-    [/\bAVE\b/gi, "AVENUE"],
-    [/\bTERRACE\b/gi, "TERR"],
-    [/\bTERR\b/gi, "TERRACE"],
-    [/\bSTREET\b/gi, "ST"],
-    [/\bST\b/gi, "STREET"],
-    [/\bROAD\b/gi, "RD"],
-    [/\bRD\b/gi, "ROAD"],
-    [/\bDRIVE\b/gi, "DR"],
-    [/\bDR\b/gi, "DRIVE"],
-    [/\bLANE\b/gi, "LN"],
-    [/\bLN\b/gi, "LANE"],
-    [/\bCOURT\b/gi, "CT"],
-    [/\bCT\b/gi, "COURT"],
-    [/\bPARKWAY\b/gi, "PKWY"],
-    [/\bPKWY\b/gi, "PARKWAY"]
+  /*
+    Safe JIG boundary:
+    We only create truthful formatting variants of the exact address
+    the customer supplied. Never change house number, unit number,
+    city, state, ZIP, country, or the actual street-name words.
+
+    USPS Publication 28 supports standardized directional/suffix/unit
+    abbreviations and omission of nonessential punctuation. We use
+    those formatting equivalences only.
+  */
+  const directionals = [
+    ["NORTHWEST", "NW"],
+    ["SOUTHWEST", "SW"],
+    ["NORTHEAST", "NE"],
+    ["SOUTHEAST", "SE"],
+    ["NORTH", "N"],
+    ["SOUTH", "S"],
+    ["EAST", "E"],
+    ["WEST", "W"]
+  ];
+
+  const suffixes = [
+    ["ALLEY", "ALY"],
+    ["ANNEX", "ANX"],
+    ["ARCADE", "ARC"],
+    ["AVENUE", "AVE"],
+    ["BAYOU", "BYU"],
+    ["BEACH", "BCH"],
+    ["BEND", "BND"],
+    ["BLUFF", "BLF"],
+    ["BLUFFS", "BLFS"],
+    ["BOTTOM", "BTM"],
+    ["BOULEVARD", "BLVD"],
+    ["BRANCH", "BR"],
+    ["BRIDGE", "BRG"],
+    ["BROOK", "BRK"],
+    ["BROOKS", "BRKS"],
+    ["BURG", "BG"],
+    ["BURGS", "BGS"],
+    ["BYPASS", "BYP"],
+    ["CAMP", "CP"],
+    ["CANYON", "CYN"],
+    ["CAPE", "CPE"],
+    ["CAUSEWAY", "CSWY"],
+    ["CENTER", "CTR"],
+    ["CENTERS", "CTRS"],
+    ["CIRCLE", "CIR"],
+    ["CIRCLES", "CIRS"],
+    ["CLIFF", "CLF"],
+    ["CLIFFS", "CLFS"],
+    ["CLUB", "CLB"],
+    ["COMMON", "CMN"],
+    ["COMMONS", "CMNS"],
+    ["CORNER", "COR"],
+    ["CORNERS", "CORS"],
+    ["COURSE", "CRSE"],
+    ["COURT", "CT"],
+    ["COURTS", "CTS"],
+    ["COVE", "CV"],
+    ["CREEK", "CRK"],
+    ["CRESCENT", "CRES"],
+    ["CREST", "CRST"],
+    ["CROSSING", "XING"],
+    ["CROSSROAD", "XRD"],
+    ["CURVE", "CURV"],
+    ["DALE", "DL"],
+    ["DAM", "DM"],
+    ["DIVIDE", "DV"],
+    ["DRIVE", "DR"],
+    ["DRIVES", "DRS"],
+    ["ESTATE", "EST"],
+    ["ESTATES", "ESTS"],
+    ["EXPRESSWAY", "EXPY"],
+    ["EXTENSION", "EXT"],
+    ["EXTENSIONS", "EXTS"],
+    ["FALLS", "FLS"],
+    ["FERRY", "FRY"],
+    ["FIELD", "FLD"],
+    ["FIELDS", "FLDS"],
+    ["FLAT", "FLT"],
+    ["FLATS", "FLTS"],
+    ["FORD", "FRD"],
+    ["FORDS", "FRDS"],
+    ["FOREST", "FRST"],
+    ["FORGE", "FRG"],
+    ["FORGES", "FRGS"],
+    ["FORK", "FRK"],
+    ["FORKS", "FRKS"],
+    ["FORT", "FT"],
+    ["FREEWAY", "FWY"],
+    ["GARDEN", "GDN"],
+    ["GARDENS", "GDNS"],
+    ["GATEWAY", "GTWY"],
+    ["GLEN", "GLN"],
+    ["GLENS", "GLNS"],
+    ["GREEN", "GRN"],
+    ["GREENS", "GRNS"],
+    ["GROVE", "GRV"],
+    ["GROVES", "GRVS"],
+    ["HARBOR", "HBR"],
+    ["HARBORS", "HBRS"],
+    ["HAVEN", "HVN"],
+    ["HEIGHTS", "HTS"],
+    ["HIGHWAY", "HWY"],
+    ["HILL", "HL"],
+    ["HILLS", "HLS"],
+    ["HOLLOW", "HOLW"],
+    ["INLET", "INLT"],
+    ["ISLAND", "IS"],
+    ["ISLANDS", "ISS"],
+    ["JUNCTION", "JCT"],
+    ["JUNCTIONS", "JCTS"],
+    ["KEY", "KY"],
+    ["KEYS", "KYS"],
+    ["KNOLL", "KNL"],
+    ["KNOLLS", "KNLS"],
+    ["LAKE", "LK"],
+    ["LAKES", "LKS"],
+    ["LANDING", "LNDG"],
+    ["LANE", "LN"],
+    ["LIGHT", "LGT"],
+    ["LIGHTS", "LGTS"],
+    ["LOCK", "LCK"],
+    ["LOCKS", "LCKS"],
+    ["LODGE", "LDG"],
+    ["MANOR", "MNR"],
+    ["MANORS", "MNRS"],
+    ["MEADOW", "MDW"],
+    ["MEADOWS", "MDWS"],
+    ["MILL", "ML"],
+    ["MILLS", "MLS"],
+    ["MISSION", "MSN"],
+    ["MOTORWAY", "MTWY"],
+    ["MOUNT", "MT"],
+    ["MOUNTAIN", "MTN"],
+    ["MOUNTAINS", "MTNS"],
+    ["NECK", "NCK"],
+    ["ORCHARD", "ORCH"],
+    ["OVERPASS", "OPAS"],
+    ["PARKWAY", "PKWY"],
+    ["PASSAGE", "PSGE"],
+    ["PINE", "PNE"],
+    ["PINES", "PNES"],
+    ["PLACE", "PL"],
+    ["PLAIN", "PLN"],
+    ["PLAINS", "PLNS"],
+    ["PLAZA", "PLZ"],
+    ["POINT", "PT"],
+    ["POINTS", "PTS"],
+    ["PORT", "PRT"],
+    ["PORTS", "PRTS"],
+    ["PRAIRIE", "PR"],
+    ["RAPID", "RPD"],
+    ["RAPIDS", "RPDS"],
+    ["REST", "RST"],
+    ["RIDGE", "RDG"],
+    ["RIDGES", "RDGS"],
+    ["RIVER", "RIV"],
+    ["ROAD", "RD"],
+    ["ROADS", "RDS"],
+    ["ROUTE", "RTE"],
+    ["SHOAL", "SHL"],
+    ["SHOALS", "SHLS"],
+    ["SHORE", "SHR"],
+    ["SHORES", "SHRS"],
+    ["SKYWAY", "SKWY"],
+    ["SPRING", "SPG"],
+    ["SPRINGS", "SPGS"],
+    ["SQUARE", "SQ"],
+    ["SQUARES", "SQS"],
+    ["STATION", "STA"],
+    ["STREAM", "STRM"],
+    ["STREET", "ST"],
+    ["STREETS", "STS"],
+    ["SUMMIT", "SMT"],
+    ["TERRACE", "TER"],
+    ["THROUGHWAY", "TRWY"],
+    ["TRACE", "TRCE"],
+    ["TRACK", "TRAK"],
+    ["TRAFFICWAY", "TRFY"],
+    ["TRAIL", "TRL"],
+    ["TRAILER", "TRLR"],
+    ["TUNNEL", "TUNL"],
+    ["TURNPIKE", "TPKE"],
+    ["UNDERPASS", "UPAS"],
+    ["UNION", "UN"],
+    ["UNIONS", "UNS"],
+    ["VALLEY", "VLY"],
+    ["VALLEYS", "VLYS"],
+    ["VIADUCT", "VIA"],
+    ["VIEW", "VW"],
+    ["VIEWS", "VWS"],
+    ["VILLAGE", "VLG"],
+    ["VILLAGES", "VLGS"],
+    ["VILLE", "VL"],
+    ["VISTA", "VIS"],
+    ["WELL", "WL"],
+    ["WELLS", "WLS"]
+  ];
+
+  const unitDesignators = [
+    ["APARTMENT", "APT"],
+    ["BUILDING", "BLDG"],
+    ["FLOOR", "FL"],
+    ["SUITE", "STE"],
+    ["ROOM", "RM"],
+    ["DEPARTMENT", "DEPT"]
   ];
 
   const streetVariants =
@@ -419,61 +591,231 @@ function safeAddressVariants(
       street
     ]);
 
-  const queue = [
-    street
-  ];
+  const addStreet =
+    value => {
+      const normalized =
+        normalizeAddressTokenText(
+          value
+        );
 
-  while (
-    queue.length &&
-    streetVariants.size < 30
+      if (normalized) {
+        streetVariants.add(
+          normalized
+        );
+      }
+    };
+
+  /*
+    Predirectional: immediately after the primary house number.
+    Postdirectional: final token.
+  */
+  for (
+    const [
+      full,
+      abbr
+    ] of directionals
   ) {
-    const base =
-      queue.shift();
+    const escapedFull =
+      full.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+
+    const escapedAbbr =
+      abbr.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
 
     for (
-      const [
-        pattern,
-        replacement
-      ] of replacements
+      const base of
+      Array.from(
+        streetVariants
+      )
     ) {
-      pattern.lastIndex = 0;
+      addStreet(
+        base.replace(
+          new RegExp(
+            `^(\\s*\\d+[A-Z0-9\\-/]*\\s+)${escapedFull}\\b`,
+            "i"
+          ),
+          `$1${abbr}`
+        )
+      );
 
-      if (
-        !pattern.test(base)
-      ) {
-        continue;
-      }
+      addStreet(
+        base.replace(
+          new RegExp(
+            `^(\\s*\\d+[A-Z0-9\\-/]*\\s+)${escapedAbbr}\\b`,
+            "i"
+          ),
+          `$1${full}`
+        )
+      );
 
-      pattern.lastIndex = 0;
+      addStreet(
+        base.replace(
+          new RegExp(
+            `\\b${escapedFull}$`,
+            "i"
+          ),
+          abbr
+        )
+      );
 
-      const variant =
+      addStreet(
+        base.replace(
+          new RegExp(
+            `\\b${escapedAbbr}$`,
+            "i"
+          ),
+          full
+        )
+      );
+    }
+  }
+
+  /*
+    Street suffix: only transform the final suffix token, or the token
+    directly before a valid postdirectional. This avoids rewriting a
+    street-name word that merely happens to look like a suffix.
+  */
+  for (
+    const [
+      full,
+      abbr
+    ] of suffixes
+  ) {
+    const fullPattern =
+      full.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+
+    const abbrPattern =
+      abbr.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+
+    const postDirectional =
+      "(?:N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)";
+
+    for (
+      const base of
+      Array.from(
+        streetVariants
+      )
+    ) {
+      addStreet(
+        base.replace(
+          new RegExp(
+            `\\b${fullPattern}\\b(?=(?:\\s+${postDirectional})?$)`,
+            "i"
+          ),
+          abbr
+        )
+      );
+
+      addStreet(
+        base.replace(
+          new RegExp(
+            `\\b${abbrPattern}\\b(?=(?:\\s+${postDirectional})?$)`,
+            "i"
+          ),
+          full
+        )
+      );
+    }
+  }
+
+  /*
+    Keep punctuation that can be significant to delivery, including
+    periods, slashes, hyphens, and apostrophes. Only omit a comma,
+    which does not change the delivery-address components.
+  */
+  for (
+    const base of
+    Array.from(
+      streetVariants
+    )
+  ) {
+    addStreet(
+      base.replace(
+        /,/g,
+        ""
+      )
+    );
+  }
+
+  const unitVariants =
+    new Set([
+      address2
+    ]);
+
+  const addUnit =
+    value => {
+      const normalized =
         normalizeAddressTokenText(
+          value
+        );
+
+      unitVariants.add(
+        normalized
+      );
+    };
+
+  if (address2) {
+    for (
+      const [
+        full,
+        abbr
+      ] of unitDesignators
+    ) {
+      const fullPattern =
+        full.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        );
+
+      const abbrPattern =
+        abbr.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        );
+
+      for (
+        const base of
+        Array.from(
+          unitVariants
+        )
+      ) {
+        addUnit(
           base.replace(
-            pattern,
-            replacement
+            new RegExp(
+              `^${fullPattern}\\b`,
+              "i"
+            ),
+            abbr
           )
         );
 
-      if (
-        variant &&
-        !streetVariants.has(
-          variant
-        )
-      ) {
-        streetVariants.add(
-          variant
+        addUnit(
+          base.replace(
+            new RegExp(
+              `^${abbrPattern}\\b`,
+              "i"
+            ),
+            full
+          )
         );
 
-        queue.push(
-          variant
+        addUnit(
+          base.replace(
+            /,/g,
+            ""
+          )
         );
-      }
-
-      if (
-        streetVariants.size >=
-        30
-      ) {
-        break;
       }
     }
   }
@@ -481,15 +823,23 @@ function safeAddressVariants(
   const seen =
     new Set();
 
-  return Array.from(
+  const variants =
+    [];
+
+  for (
+    const variantStreet of
     streetVariants
-  )
-    .map(
-      variantStreet => ({
+  ) {
+    for (
+      const variantUnit of
+      unitVariants
+    ) {
+      const item = {
         address:
           variantStreet,
 
-        address2,
+        address2:
+          variantUnit,
 
         city,
 
@@ -498,32 +848,40 @@ function safeAddressVariants(
         zip,
 
         country
-      })
-    )
-    .filter(item => {
+      };
+
       const key =
         JSON.stringify(
           item
-        ).toUpperCase();
+        )
+          .toUpperCase();
 
       if (
         seen.has(
           key
         )
       ) {
-        return false;
+        continue;
       }
 
       seen.add(
         key
       );
 
-      return true;
-    })
-    .slice(
-      0,
-      25
-    );
+      variants.push(
+        item
+      );
+
+      if (
+        variants.length >=
+        120
+      ) {
+        return variants;
+      }
+    }
+  }
+
+  return variants;
 }
 
 
@@ -4022,44 +4380,81 @@ async function allCustomerSavedDetails(
     }
   );
 
+  /*
+    Include the customer's account/profile address too. Exact duplicates
+    are removed by savedAddressDedupeKey.
+  */
+  addAddress(
+    account?.adminProfile ||
+    {},
+    "Customer Account Address",
+    `customer-account-address:${account.id}`,
+    "customer_account"
+  );
+
   const paidOrders =
     await readJson(
       PAID_FILE,
       []
     );
 
-  (
-    Array.isArray(
-      paidOrders
+  const customerPaidOrders =
+    (
+      Array.isArray(
+        paidOrders
+      )
+        ? paidOrders
+        : []
     )
-      ? paidOrders
-      : []
-  )
-    .filter(
-      record =>
-        String(
-          record.customerAccountId ||
-          ""
-        ) ===
+      .filter(
+        record =>
           String(
-            account.id
-          )
-    )
-    .forEach(
-      (
-        record,
+            record.customerAccountId ||
+            ""
+          ) ===
+            String(
+              account.id
+            )
+      );
+
+  for (
+    let index = 0;
+    index <
+      customerPaidOrders.length;
+    index += 1
+  ) {
+    const record =
+      customerPaidOrders[
         index
-      ) => {
-        addAddress(
-          record.profile ||
-          record.customer ||
-          {},
-          `Checkout Address ${index + 1}`,
-          `paid-order-address:${record.id || index + 1}`,
-          "paid_order"
-        );
-      }
+      ];
+
+    addAddress(
+      record.profile ||
+      record.customer ||
+      {},
+      `Checkout Address ${index + 1}`,
+      `paid-order-address:${record.id || index + 1}`,
+      "paid_order"
     );
+
+    /*
+      The original checkout card is stored in the encrypted submission
+      package rather than the customer vault. Include it so the Admin
+      JIG/card rotation truly sees every card the customer provided.
+    */
+    const checkoutSecrets =
+      await loadEncryptedPackage(
+        record.id
+      );
+
+    addPayment(
+      checkoutSecrets ||
+      {},
+      `Checkout Card ${index + 1}`,
+      `paid-order-card:${record.id || index + 1}`,
+      "paid_order"
+    );
+  }
 
   const retailerProfiles =
     await getRetailerProfiles();
@@ -12882,27 +13277,65 @@ if (
         }
 
 
-        const linkedProfileCount =
+        const linkedAssignmentsForCustomer =
           record.customerAccountId
-            ? (
-                freeAssignmentsForAdmin.filter(
+            ? [
+                ...freeAssignmentsForAdmin.filter(
                   assignment =>
-                    assignment.customerAccountId ===
-                      record.customerAccountId &&
-                    freeAssignmentIsActive(
+                    String(
+                      assignment.customerAccountId ||
+                      ""
+                    ) ===
+                      String(
+                        record.customerAccountId
+                      ) &&
+                    managedAssignmentIsLinked(
                       assignment
                     )
-                ).length +
-                rentalAssignmentsForAdmin.filter(
+                ),
+
+                ...rentalAssignmentsForAdmin.filter(
                   assignment =>
-                    assignment.customerAccountId ===
-                      record.customerAccountId &&
-                    rentalAssignmentIsActive(
+                    String(
+                      assignment.customerAccountId ||
+                      ""
+                    ) ===
+                      String(
+                        record.customerAccountId
+                      ) &&
+                    managedAssignmentIsLinked(
                       assignment
                     )
-                ).length
-              )
-            : 0;
+                )
+              ]
+            : [];
+
+        const linkedProfileCount =
+          linkedAssignmentsForCustomer
+            .length;
+
+        const linkedActiveProfileCount =
+          linkedAssignmentsForCustomer
+            .filter(
+              assignment =>
+                managedAssignmentStatus(
+                  assignment
+                ) ===
+                  "activated"
+            )
+            .length;
+
+        /*
+          Main customer-card "inactive" count intentionally includes
+          both Awaiting Activation and Inactive profiles. The detailed
+          managed profile row still distinguishes those two statuses.
+        */
+        const linkedInactiveProfileCount =
+          Math.max(
+            0,
+            linkedProfileCount -
+              linkedActiveProfileCount
+          );
 
         const paidProfileCount =
           Math.max(
@@ -12949,6 +13382,10 @@ if (
           ogMember,
 
           linkedProfileCount,
+
+          linkedActiveProfileCount,
+
+          linkedInactiveProfileCount,
 
           totalProfileCount:
             paidProfileCount +
@@ -13895,6 +14332,362 @@ async function importWalmartManagedAccountsOnce() {
   );
 }
 
+
+function managedExactCredentialKey(
+  retailer,
+  username,
+  password
+) {
+  const exactUsername =
+    String(
+      username ||
+      ""
+    ).trim();
+
+  const exactPassword =
+    String(
+      password ||
+      ""
+    );
+
+  if (
+    !retailer ||
+    !exactUsername ||
+    !exactPassword
+  ) {
+    return "";
+  }
+
+  return [
+    retailer,
+    exactUsername,
+    exactPassword
+  ].join(
+    "\u0000"
+  );
+}
+
+
+function managedCredentialPairsFromRecord(
+  record
+) {
+  let credentials =
+    emptyRetailerCredentials();
+
+  try {
+    credentials =
+      record?.credentials
+        ? normalizeRetailerCredentials(
+            decryptJson(
+              record.credentials
+            )
+          )
+        : emptyRetailerCredentials();
+  } catch {
+    return [];
+  }
+
+  const pairs =
+    [];
+
+  for (
+    const retailer of
+    RETAILER_KEYS
+  ) {
+    const username =
+      String(
+        credentials?.[retailer]
+          ?.username ||
+        ""
+      ).trim();
+
+    const password =
+      String(
+        credentials?.[retailer]
+          ?.password ||
+        ""
+      );
+
+    const key =
+      managedExactCredentialKey(
+        retailer,
+        username,
+        password
+      );
+
+    if (!key) {
+      continue;
+    }
+
+    pairs.push({
+      retailer,
+      username,
+      password,
+      key
+    });
+  }
+
+  return pairs;
+}
+
+
+function managedDuplicateCredentialState(
+  records,
+  preferredIds =
+    new Set()
+) {
+  const groups =
+    new Map();
+
+  for (
+    const record of
+    records
+  ) {
+    for (
+      const pair of
+      managedCredentialPairsFromRecord(
+        record
+      )
+    ) {
+      if (
+        !groups.has(
+          pair.key
+        )
+      ) {
+        groups.set(
+          pair.key,
+          []
+        );
+      }
+
+      groups
+        .get(
+          pair.key
+        )
+        .push({
+          record,
+          pair
+        });
+    }
+  }
+
+  const duplicateIds =
+    new Set();
+
+  const duplicateOf =
+    new Map();
+
+  for (
+    const items of
+    groups.values()
+  ) {
+    if (
+      items.length <
+      2
+    ) {
+      continue;
+    }
+
+    const ordered =
+      [...items]
+        .sort(
+          (
+            a,
+            b
+          ) => {
+            const aPreferred =
+              preferredIds.has(
+                String(
+                  a.record.id
+                )
+              )
+                ? 1
+                : 0;
+
+            const bPreferred =
+              preferredIds.has(
+                String(
+                  b.record.id
+                )
+              )
+                ? 1
+                : 0;
+
+            if (
+              aPreferred !==
+              bPreferred
+            ) {
+              return (
+                bPreferred -
+                aPreferred
+              );
+            }
+
+            const aTime =
+              new Date(
+                a.record
+                  .createdAt ||
+                0
+              ).getTime() ||
+              0;
+
+            const bTime =
+              new Date(
+                b.record
+                  .createdAt ||
+                0
+              ).getTime() ||
+              0;
+
+            return (
+              aTime -
+              bTime
+            ) ||
+            String(
+              a.record.id
+            ).localeCompare(
+              String(
+                b.record.id
+              )
+            );
+          }
+        );
+
+    const canonicalId =
+      String(
+        ordered[0]
+          .record
+          .id
+      );
+
+    for (
+      const item of
+      ordered.slice(1)
+    ) {
+      const duplicateId =
+        String(
+          item.record.id
+        );
+
+      duplicateIds.add(
+        duplicateId
+      );
+
+      duplicateOf.set(
+        duplicateId,
+        canonicalId
+      );
+    }
+  }
+
+  return {
+    duplicateIds,
+    duplicateOf
+  };
+}
+
+
+function managedCredentialConflict(
+  records,
+  candidateCredentials,
+  excludeId =
+    ""
+) {
+  const candidatePairs =
+    [];
+
+  for (
+    const retailer of
+    RETAILER_KEYS
+  ) {
+    const username =
+      String(
+        candidateCredentials
+          ?.[retailer]
+          ?.username ||
+        ""
+      ).trim();
+
+    const password =
+      String(
+        candidateCredentials
+          ?.[retailer]
+          ?.password ||
+        ""
+      );
+
+    const key =
+      managedExactCredentialKey(
+        retailer,
+        username,
+        password
+      );
+
+    if (key) {
+      candidatePairs.push({
+        retailer,
+        username,
+        key
+      });
+    }
+  }
+
+  if (
+    !candidatePairs.length
+  ) {
+    return null;
+  }
+
+  for (
+    const record of
+    records
+  ) {
+    if (
+      String(
+        record.id
+      ) ===
+      String(
+        excludeId ||
+        ""
+      )
+    ) {
+      continue;
+    }
+
+    const existingPairs =
+      managedCredentialPairsFromRecord(
+        record
+      );
+
+    for (
+      const candidate of
+      candidatePairs
+    ) {
+      if (
+        existingPairs.some(
+          item =>
+            item.key ===
+            candidate.key
+        )
+      ) {
+        return {
+          retailer:
+            candidate.retailer,
+
+          username:
+            candidate.username,
+
+          recordId:
+            record.id
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+
 async function getManagedAvailability() {
   const [
     managedAccounts,
@@ -13956,17 +14749,25 @@ async function getManagedAvailability() {
     }
   }
 
+  const duplicateState =
+    managedDuplicateCredentialState(
+      managedAccounts,
+      inUseAccountIds
+    );
+
   const availability = {
     target: {
       total: 0,
       available: 0,
-      inUse: 0
+      inUse: 0,
+      duplicates: 0
     },
 
     walmart: {
       total: 0,
       available: 0,
-      inUse: 0
+      inUse: 0,
+      duplicates: 0
     }
   };
 
@@ -14003,6 +14804,22 @@ async function getManagedAvailability() {
         ).trim();
 
       if (!username) {
+        continue;
+      }
+
+      if (
+        duplicateState
+          .duplicateIds
+          .has(
+            String(
+              account.id
+            )
+          )
+      ) {
+        availability[
+          retailer
+        ].duplicates += 1;
+
         continue;
       }
 
@@ -14106,6 +14923,12 @@ async function getAvailableManagedAccountsForRetailer(
     }
   }
 
+  const duplicateState =
+    managedDuplicateCredentialState(
+      managedAccounts,
+      inUseAccountIds
+    );
+
   const heldIds =
     heldManagedAccountIdsFromHolds(
       restoreHolds
@@ -14177,7 +15000,12 @@ async function getAvailableManagedAccountsForRetailer(
     if (
       inUseAccountIds.has(
         accountId
-      )
+      ) ||
+      duplicateState
+        .duplicateIds
+        .has(
+          accountId
+        )
     ) {
       continue;
     }
@@ -14432,7 +15260,9 @@ async function managedAssignedIdSet() {
     ]
   ) {
     if (
-      assignment.active === true
+      managedAssignmentIsLinked(
+        assignment
+      )
     ) {
       const id =
         assignment.managedAccountId ||
@@ -15112,7 +15942,7 @@ app.post(
         freeAssignments
       ) {
         if (
-          freeAssignmentIsActive(
+          managedAssignmentIsLinked(
             assignment
           )
         ) {
@@ -15136,7 +15966,7 @@ app.post(
         rentalAssignments
       ) {
         if (
-          rentalAssignmentIsActive(
+          managedAssignmentIsLinked(
             assignment
           )
         ) {
@@ -15446,12 +16276,25 @@ async function getAvailableManagedMembershipRecords() {
     }
   }
 
+  const duplicateState =
+    managedDuplicateCredentialState(
+      managedAccounts,
+      inUseIds
+    );
+
   return managedAccounts
     .filter(
       account =>
         !inUseIds.has(
           String(account.id)
-        )
+        ) &&
+        !duplicateState
+          .duplicateIds
+          .has(
+            String(
+              account.id
+            )
+          )
     )
     .map(account => {
       let retailers =
@@ -15629,6 +16472,24 @@ app.post(
       const memberships =
         await getManagedAccounts();
 
+
+      const duplicateCredential =
+        managedCredentialConflict(
+          memberships,
+          credentials
+        );
+
+      if (
+        duplicateCredential
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `Duplicate managed profile blocked. The exact ${duplicateCredential.retailer} username/password is already stored on another managed profile.`
+          });
+      }
+
       const now =
         new Date()
           .toISOString();
@@ -15788,7 +16649,26 @@ app.put(
         };
       }
 
-      memberships[index] = {
+            const duplicateCredential =
+        managedCredentialConflict(
+          memberships,
+          credentials,
+          id
+        );
+
+      if (
+        duplicateCredential
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `Duplicate managed profile blocked. The exact ${duplicateCredential.retailer} username/password is already stored on another managed profile.`
+          });
+      }
+
+
+memberships[index] = {
         ...existing,
 
         profileName:
@@ -16992,6 +17872,24 @@ app.post(
       const memberships =
         await getManagedAccounts();
 
+
+      const duplicateCredential =
+        managedCredentialConflict(
+          memberships,
+          credentials
+        );
+
+      if (
+        duplicateCredential
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `Duplicate managed profile blocked. The exact ${duplicateCredential.retailer} username/password is already stored on another managed profile.`
+          });
+      }
+
       const now =
         new Date()
           .toISOString();
@@ -17191,6 +18089,25 @@ for (
   };
 }
 
+      const duplicateCredential =
+        managedCredentialConflict(
+          memberships,
+          credentials,
+          id
+        );
+
+      if (
+        duplicateCredential
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `Duplicate managed profile blocked. The exact ${duplicateCredential.retailer} username/password is already stored on another managed profile.`
+          });
+      }
+
+
 memberships[index] = {
   ...existing,
 
@@ -17285,6 +18202,59 @@ app.post(
 
       const memberships =
         await getManagedAccounts();
+
+      const linkedIds =
+        new Set();
+
+      for (
+        const assignment of
+        [
+          ...(
+            await getFreeAssignments()
+          ),
+          ...(
+            await getRentalAssignments()
+          )
+        ]
+      ) {
+        if (
+          managedAssignmentIsLinked(
+            assignment
+          )
+        ) {
+          linkedIds.add(
+            String(
+              assignment.managedAccountId ||
+              assignment.freeMembershipId ||
+              assignment.rentedMembershipId ||
+              ""
+            )
+          );
+        }
+      }
+
+      const duplicateState =
+        managedDuplicateCredentialState(
+          memberships,
+          linkedIds
+        );
+
+      if (
+        duplicateState
+          .duplicateIds
+          .has(
+            String(
+              id
+            )
+          )
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This managed profile has the exact same retailer username/password as another managed profile and is quarantined from assignment. Delete or correct the duplicate first."
+          });
+      }
 
       const membership =
         memberships.find(
@@ -18645,6 +19615,24 @@ app.post(
       const memberships =
         await getManagedAccounts();
 
+
+      const duplicateCredential =
+        managedCredentialConflict(
+          memberships,
+          credentials
+        );
+
+      if (
+        duplicateCredential
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `Duplicate managed profile blocked. The exact ${duplicateCredential.retailer} username/password is already stored on another managed profile.`
+          });
+      }
+
       const now =
         new Date()
           .toISOString();
@@ -18848,7 +19836,26 @@ app.put(
         };
       }
 
-      memberships[
+            const duplicateCredential =
+        managedCredentialConflict(
+          memberships,
+          credentials,
+          id
+        );
+
+      if (
+        duplicateCredential
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              `Duplicate managed profile blocked. The exact ${duplicateCredential.retailer} username/password is already stored on another managed profile.`
+          });
+      }
+
+
+memberships[
         index
       ] = {
         ...existing,
@@ -18945,6 +19952,59 @@ app.post(
 
       const memberships =
         await getManagedAccounts();
+
+      const linkedIds =
+        new Set();
+
+      for (
+        const assignment of
+        [
+          ...(
+            await getFreeAssignments()
+          ),
+          ...(
+            await getRentalAssignments()
+          )
+        ]
+      ) {
+        if (
+          managedAssignmentIsLinked(
+            assignment
+          )
+        ) {
+          linkedIds.add(
+            String(
+              assignment.managedAccountId ||
+              assignment.freeMembershipId ||
+              assignment.rentedMembershipId ||
+              ""
+            )
+          );
+        }
+      }
+
+      const duplicateState =
+        managedDuplicateCredentialState(
+          memberships,
+          linkedIds
+        );
+
+      if (
+        duplicateState
+          .duplicateIds
+          .has(
+            String(
+              id
+            )
+          )
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This managed profile has the exact same retailer username/password as another managed profile and is quarantined from assignment. Delete or correct the duplicate first."
+          });
+      }
 
       const membership =
         memberships.find(
@@ -19707,6 +20767,12 @@ async function restoreHeldManagedAccountsForCustomer(
     }
   }
 
+  const duplicateState =
+    managedDuplicateCredentialState(
+      managedAccounts,
+      usedIds
+    );
+
   const currentManagedIds =
     new Set(
       managedAccounts.map(
@@ -19755,7 +20821,12 @@ async function restoreHeldManagedAccountsForCustomer(
       ) ||
       usedIds.has(
         managedAccountId
-      )
+      ) ||
+      duplicateState
+        .duplicateIds
+        .has(
+          managedAccountId
+        )
     ) {
       continue;
     }
@@ -20246,6 +21317,200 @@ app.post(
         .json({
           error:
             "Unable to extend gifted profile."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/linked-memberships/:type/:id/extend",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const extension =
+        clean(
+          req.body?.extension,
+          30
+        )
+          .trim()
+          .toLowerCase();
+
+      if (
+        ![
+          "free",
+          "rented"
+        ].includes(
+          type
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid managed profile type."
+          });
+      }
+
+      const allowed =
+        type === "free"
+          ? [
+              "1_week",
+              "1_month",
+              "indefinite"
+            ]
+          : [
+              "1_week",
+              "1_month"
+            ];
+
+      if (
+        !allowed.includes(
+          extension
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              type === "free"
+                ? "Choose 1 week, 1 month, or indefinitely."
+                : "Choose 1 week or 1 month."
+          });
+      }
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
+
+      const assignment =
+        type === "free"
+          ? linkedFreeAssignment(
+              assignments,
+              id
+            )
+          : linkedRentalAssignment(
+              assignments,
+              id
+            );
+
+      if (!assignment) {
+        return res
+          .status(404)
+          .json({
+            error:
+              `${type === "free" ? "Gifted" : "Rented"} profile assignment could not be found.`
+          });
+      }
+
+      const now =
+        new Date();
+
+      const base =
+        assignment.expiresAt &&
+        new Date(
+          assignment.expiresAt
+        ).getTime() >
+          now.getTime()
+          ? new Date(
+              assignment.expiresAt
+            )
+          : now;
+
+      if (
+        extension ===
+        "indefinite"
+      ) {
+        assignment.expiresAt =
+          null;
+
+        assignment.durationType =
+          "indefinite";
+
+      } else if (
+        extension ===
+        "1_week"
+      ) {
+        base.setDate(
+          base.getDate() + 7
+        );
+
+        assignment.expiresAt =
+          base.toISOString();
+
+        assignment.durationType =
+          "1_week";
+
+      } else {
+        base.setMonth(
+          base.getMonth() + 1
+        );
+
+        assignment.expiresAt =
+          base.toISOString();
+
+        assignment.durationType =
+          "1_month";
+      }
+
+      /*
+        Extension changes only the Gifted/Rented time window.
+        Activation is controlled independently by the ACTIVATE /
+        DEACTIVATE button on the managed profile card.
+      */
+      assignment.updatedAt =
+        now.toISOString();
+
+      if (
+        type === "free"
+      ) {
+        await saveFreeAssignments(
+          assignments
+        );
+      } else {
+        await saveRentalAssignments(
+          assignments
+        );
+      }
+
+      return res.json({
+        ok: true,
+
+        expiresAt:
+          assignment.expiresAt ||
+          null,
+
+        durationType:
+          assignment.durationType,
+
+        message:
+          `${type === "free" ? "Gifted" : "Rented"} profile extended successfully.`
+      });
+
+    } catch (error) {
+      console.error(
+        "Extend linked managed profile error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to extend managed profile."
         });
     }
   }
@@ -20917,6 +22182,36 @@ app.get(
         getRentalAssignments()
       ]);
 
+      const linkedIdsForDuplicateCheck =
+        new Set(
+          [
+            ...freeAssignments,
+            ...rentalAssignments
+          ]
+            .filter(
+              assignment =>
+                managedAssignmentIsLinked(
+                  assignment
+                )
+            )
+            .map(
+              assignment =>
+                String(
+                  managedAssignmentMembershipId(
+                    assignment
+                  ) ||
+                  ""
+                )
+            )
+            .filter(Boolean)
+        );
+
+      const duplicateCredentialState =
+        managedDuplicateCredentialState(
+          memberships,
+          linkedIdsForDuplicateCheck
+        );
+
       const options = [];
 
       const paidRecords =
@@ -21048,6 +22343,33 @@ app.get(
                 {},
               secrets
             );
+
+          const duplicateManagedLogin =
+            duplicateCredentialState
+              .duplicateIds
+              .has(
+                String(
+                  membershipId
+                )
+              );
+
+          if (
+            duplicateManagedLogin
+          ) {
+            status.exportReady =
+              false;
+
+            status.missingFields = [
+              ...(
+                Array.isArray(
+                  status.missingFields
+                )
+                  ? status.missingFields
+                  : []
+              ),
+              "duplicate managed login"
+            ];
+          }
 
           options.push({
             key:
@@ -21318,6 +22640,36 @@ app.post(
         getRentalAssignments()
       ]);
 
+      const linkedIdsForDuplicateCheck =
+        new Set(
+          [
+            ...freeAssignments,
+            ...rentalAssignments
+          ]
+            .filter(
+              assignment =>
+                managedAssignmentIsLinked(
+                  assignment
+                )
+            )
+            .map(
+              assignment =>
+                String(
+                  managedAssignmentMembershipId(
+                    assignment
+                  ) ||
+                  ""
+                )
+            )
+            .filter(Boolean)
+        );
+
+      const duplicateCredentialState =
+        managedDuplicateCredentialState(
+          memberships,
+          linkedIdsForDuplicateCheck
+        );
+
       const groupId =
         crypto.randomUUID();
 
@@ -21428,6 +22780,20 @@ app.post(
                 {},
               secrets
             );
+
+          if (
+            duplicateCredentialState
+              .duplicateIds
+              .has(
+                String(
+                  membershipId
+                )
+              )
+          ) {
+            missingFields.push(
+              "duplicate managed login"
+            );
+          }
 
           candidates.push({
             key:
@@ -22104,6 +23470,13 @@ app.post(
                   item.expYear ||
                   ""
                 )
+              ) &&
+              Boolean(
+                String(
+                  item.securityCode ||
+                  item.accountSecurityCode ||
+                  ""
+                ).trim()
               )
             );
           }
@@ -22169,6 +23542,9 @@ app.post(
 
       const profileTargets = [];
 
+      let linkedRotationIndex =
+        0;
+
       for (
         const record of
         paidRecords
@@ -22193,6 +23569,9 @@ app.post(
           kind:
             "paid",
 
+          linkedRotationIndex:
+            null,
+
           record,
 
           profile:
@@ -22210,6 +23589,9 @@ app.post(
         profileTargets.push({
           kind:
             entry.type,
+
+          linkedRotationIndex:
+            linkedRotationIndex++,
 
           record:
             entry.assignment,
@@ -22319,10 +23701,15 @@ app.post(
       }
 
       /*
-        Build one global queue of every unique safe address variant
-        available from every customer-submitted/saved address.
+        Build one global queue using EVERY customer-provided address.
+
+        Important: interleave the address sources instead of exhausting
+        source #1 first. With 5 saved addresses, the first 5 linked
+        managed profiles will therefore each be based on a different
+        source address before we begin the next round of safe variants.
       */
-      const variantQueue = [];
+      const perSourceVariantLists =
+        [];
 
       for (
         const source of
@@ -22356,6 +23743,9 @@ app.post(
               sourceKey
           );
 
+        const sourceEntries =
+          [];
+
         for (
           const variant of
           [
@@ -22373,7 +23763,7 @@ app.post(
             usedAddressKeys.has(
               key
             ) ||
-            variantQueue.some(
+            sourceEntries.some(
               entry =>
                 entry.key ===
                 key
@@ -22382,16 +23772,76 @@ app.post(
             continue;
           }
 
-          variantQueue.push({
+          sourceEntries.push({
             source,
             variant,
             key
           });
         }
+
+        if (
+          sourceEntries.length
+        ) {
+          perSourceVariantLists.push(
+            sourceEntries
+          );
+        }
+      }
+
+      const variantQueue =
+        [];
+
+      let variantRound =
+        0;
+
+      let variantsRemain =
+        true;
+
+      while (
+        variantsRemain &&
+        variantQueue.length <
+          1000
+      ) {
+        variantsRemain =
+          false;
+
+        for (
+          const sourceEntries of
+          perSourceVariantLists
+        ) {
+          const entry =
+            sourceEntries[
+              variantRound
+            ];
+
+          if (!entry) {
+            continue;
+          }
+
+          variantsRemain =
+            true;
+
+          if (
+            variantQueue.some(
+              existing =>
+                existing.key ===
+                entry.key
+            )
+          ) {
+            continue;
+          }
+
+          variantQueue.push(
+            entry
+          );
+        }
+
+        variantRound +=
+          1;
       }
 
       let variantCursor = 0;
-      let cardCursor = 0;
+      let paidCardCursor = 0;
 
       let shippingFilled = 0;
       let cardsFilled = 0;
@@ -22485,14 +23935,28 @@ app.post(
               )
           );
 
+        const isLinkedProfile =
+          target.kind !==
+          "paid";
+
         const duplicateShipping =
           duplicateShippingTargetIndexes.has(
             index
           );
 
-        if (
+        /*
+          Paid retailer profiles keep complete customer-entered shipping
+          and card data. Linked Gifted/Rented profiles are deliberately
+          redistributed every time JIG & ATTACH PAYMENT runs so the full
+          customer address/card pool is actually used.
+        */
+        const shouldAssignShipping =
+          isLinkedProfile ||
           !shippingReady ||
-          duplicateShipping
+          duplicateShipping;
+
+        if (
+          shouldAssignShipping
         ) {
           const entry =
             variantQueue[
@@ -22618,7 +24082,9 @@ app.post(
               index + 1
             );
 
-          } else {
+          } else if (
+            !shippingReady
+          ) {
             profilesStillMissingShipping.push(
               index + 1
             );
@@ -22626,16 +24092,81 @@ app.post(
         }
 
         if (
+          isLinkedProfile &&
+          cards.length
+        ) {
+          /*
+            Deterministic round-robin across ALL linked profiles:
+            with 5 cards, profiles 1-5 receive cards 1-5 and
+            profiles 6-10 repeat cards 1-5 in the same order.
+          */
+          const card =
+            cards[
+              Number(
+                target.linkedRotationIndex ||
+                0
+              ) %
+              cards.length
+            ];
+
+          secrets = {
+            ...secrets,
+
+            cardLabel:
+              card.cardLabel ||
+              "",
+
+            cardholder:
+              card.cardholder ||
+              "",
+
+            acoCardNumber:
+              String(
+                card.acoCardNumber ||
+                card.cardNumber ||
+                ""
+              ).replace(
+                /\D/g,
+                ""
+              ),
+
+            expMonth:
+              card.expMonth ||
+              "",
+
+            expYear:
+              card.expYear ||
+              "",
+
+            securityCode:
+              card.securityCode ||
+              card.accountSecurityCode ||
+              ""
+          };
+
+          record.selectedPaymentId =
+            card.id ||
+            null;
+
+          record.savedPaymentMethodId =
+            card.id ||
+            null;
+
+          cardsFilled += 1;
+
+        } else if (
+          !isLinkedProfile &&
           !cardReady &&
           cards.length
         ) {
           const card =
             cards[
-              cardCursor %
+              paidCardCursor %
               cards.length
             ];
 
-          cardCursor += 1;
+          paidCardCursor +=
+            1;
 
           secrets = {
             ...secrets,
@@ -22783,8 +24314,17 @@ app.post(
         retailerCredentialsPreserved:
           true,
 
+        addressSourceCount:
+          addresses.length,
+
+        cardSourceCount:
+          cards.length,
+
+        linkedProfileCount:
+          linkedRotationIndex,
+
         message:
-          `Saved updates. ${shippingFilled} profile(s) received a unique address JIG, including ${duplicateAddressesRepaired} duplicate address repair(s). ${cardsFilled} profile(s) received card information, ${exportReadyCount} profile(s) are export ready, and ${duplicateAddressesRemaining.length} duplicate address(es) could not be replaced because no unused safe JIG remained.`
+          `Saved updates using ${addresses.length} unique customer address source(s) and ${cards.length} unique customer card(s). ${shippingFilled} profile(s) received a unique safe address formatting variant, ${cardsFilled} profile(s) received round-robin card information, ${exportReadyCount} profile(s) are export ready, and ${duplicateAddressesRemaining.length} duplicate address(es) could not be replaced because no unused safe variant remained.`
       });
 
     } catch (error) {
@@ -22852,6 +24392,36 @@ app.get(
         getFreeAssignments(),
         getRentalAssignments()
       ]);
+
+      const linkedManagedIds =
+        new Set(
+          [
+            ...freeAssignments,
+            ...rentalAssignments
+          ]
+            .filter(
+              assignment =>
+                managedAssignmentIsLinked(
+                  assignment
+                )
+            )
+            .map(
+              assignment =>
+                String(
+                  assignment.managedAccountId ||
+                  assignment.freeMembershipId ||
+                  assignment.rentedMembershipId ||
+                  ""
+                )
+            )
+            .filter(Boolean)
+        );
+
+      const duplicateCredentialState =
+        managedDuplicateCredentialState(
+          memberships,
+          linkedManagedIds
+        );
 
       const active = [];
 
@@ -22923,6 +24493,25 @@ app.get(
 
           active:
             assignment.active === true,
+
+          duplicateManagedLogin:
+            duplicateCredentialState
+              .duplicateIds
+              .has(
+                String(
+                  membership.id
+                )
+              ),
+
+          duplicateOfManagedAccountId:
+            duplicateCredentialState
+              .duplicateOf
+              .get(
+                String(
+                  membership.id
+                )
+              ) ||
+            null,
 
           customerProfile:
             assignment.customerProfile ||
@@ -23056,6 +24645,25 @@ app.get(
           active:
             assignment.active === true,
 
+          duplicateManagedLogin:
+            duplicateCredentialState
+              .duplicateIds
+              .has(
+                String(
+                  membership.id
+                )
+              ),
+
+          duplicateOfManagedAccountId:
+            duplicateCredentialState
+              .duplicateOf
+              .get(
+                String(
+                  membership.id
+                )
+              ) ||
+            null,
+
           customerProfile:
             assignment.customerProfile ||
             {},
@@ -23158,6 +24766,24 @@ app.get(
               {},
             exportSecrets
           );
+
+        if (
+          item.duplicateManagedLogin
+        ) {
+          exportStatus.exportReady =
+            false;
+
+          exportStatus.missingFields = [
+            ...(
+              Array.isArray(
+                exportStatus.missingFields
+              )
+                ? exportStatus.missingFields
+                : []
+            ),
+            "duplicate managed login"
+          ];
+        }
 
         item.exportReady =
           exportStatus.exportReady;
@@ -27704,6 +29330,79 @@ app.post(
             error:
               "Profile assignment could not be found."
           });
+      }
+
+      if (
+        [
+          "activate",
+          "activating"
+        ].includes(
+          action
+        )
+      ) {
+        const managedAccounts =
+          await getManagedAccounts();
+
+        const [
+          freeAssignmentsForDuplicateCheck,
+          rentalAssignmentsForDuplicateCheck
+        ] = await Promise.all([
+          getFreeAssignments(),
+          getRentalAssignments()
+        ]);
+
+        const linkedIds =
+          new Set(
+            [
+              ...freeAssignmentsForDuplicateCheck,
+              ...rentalAssignmentsForDuplicateCheck
+            ]
+              .filter(
+                item =>
+                  managedAssignmentIsLinked(
+                    item
+                  )
+              )
+              .map(
+                item =>
+                  String(
+                    managedAssignmentMembershipId(
+                      item
+                    ) ||
+                    ""
+                  )
+              )
+              .filter(Boolean)
+          );
+
+        const duplicateState =
+          managedDuplicateCredentialState(
+            managedAccounts,
+            linkedIds
+          );
+
+        const managedAccountId =
+          String(
+            managedAssignmentMembershipId(
+              assignment
+            ) ||
+            ""
+          );
+
+        if (
+          duplicateState
+            .duplicateIds
+            .has(
+              managedAccountId
+            )
+        ) {
+          return res
+            .status(409)
+            .json({
+              error:
+                "This managed profile duplicates the exact retailer username/password of another managed profile. Return or correct the duplicate before activation."
+            });
+        }
       }
 
       let secrets = {};
