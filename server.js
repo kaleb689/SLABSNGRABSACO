@@ -3593,6 +3593,12 @@ function publicSavedPaymentMethod(
       method.cardholder ||
       "",
 
+    acoCardNumber:
+      digits,
+
+    cardNumber:
+      digits,
+
     maskedNumber:
       last4
         ? `•••• •••• •••• ${last4}`
@@ -3606,10 +3612,20 @@ function publicSavedPaymentMethod(
       method.expYear ||
       "",
 
+    securityCode:
+      String(
+        method?.securityCode ||
+        ""
+      ),
+
     securityCodeConfigured:
       Boolean(
         method.securityCode
       ),
+
+    source:
+      method.source ||
+      "saved",
 
     createdAt:
       method.createdAt ||
@@ -3621,6 +3637,7 @@ function publicSavedPaymentMethod(
   };
 }
 
+
 function adminSavedPaymentMethod(
   method,
   index
@@ -3631,13 +3648,6 @@ function adminSavedPaymentMethod(
       index
     ),
 
-    /*
-      This is the separate account security
-      code entered in the site profile.
-      It is only returned through an
-      authenticated ADMIN endpoint.
-      It is not treated as a card CVV/CVC.
-    */
     accountSecurityCode:
       String(
         method?.securityCode ||
@@ -3645,6 +3655,8 @@ function adminSavedPaymentMethod(
       )
   };
 }
+
+
 
 
 function customerSavedAddresses(
@@ -3657,47 +3669,446 @@ function customerSavedAddresses(
     : [];
 }
 
-async function customerSavedDetailsPayload(
-  account
+function savedAddressDedupeKey(
+  item = {}
+) {
+  return JSON.stringify({
+    firstName:
+      clean(
+        item.firstName,
+        100
+      ).toUpperCase(),
+
+    lastName:
+      clean(
+        item.lastName,
+        100
+      ).toUpperCase(),
+
+    address:
+      clean(
+        item.address,
+        200
+      ).toUpperCase(),
+
+    address2:
+      clean(
+        item.address2,
+        200
+      ).toUpperCase(),
+
+    city:
+      clean(
+        item.city,
+        100
+      ).toUpperCase(),
+
+    state:
+      clean(
+        item.state,
+        100
+      ).toUpperCase(),
+
+    zip:
+      clean(
+        item.zip,
+        30
+      ).toUpperCase(),
+
+    country:
+      clean(
+        item.country,
+        100
+      ).toUpperCase()
+  });
+}
+
+
+function savedPaymentDedupeKey(
+  item = {}
+) {
+  return JSON.stringify({
+    number:
+      String(
+        item.acoCardNumber ||
+        item.cardNumber ||
+        ""
+      ).replace(
+        /\D/g,
+        ""
+      ),
+
+    expMonth:
+      clean(
+        item.expMonth,
+        2
+      ),
+
+    expYear:
+      clean(
+        item.expYear,
+        4
+      ),
+
+    cardholder:
+      clean(
+        item.cardholder,
+        150
+      ).toUpperCase()
+  });
+}
+
+
+async function allCustomerSavedDetails(
+  account,
+  {
+    admin = false
+  } = {}
 ) {
   const vault =
     await getCustomerVault(
       account.id
     );
 
+  const addresses = [];
+  const payments = [];
+
+  const addressKeys =
+    new Set();
+
+  const paymentKeys =
+    new Set();
+
+  const addAddress =
+    (
+      item,
+      fallbackLabel,
+      fallbackId,
+      source
+    ) => {
+      if (
+        !item ||
+        !String(
+          item.address ||
+          ""
+        ).trim()
+      ) {
+        return;
+      }
+
+      const normalized = {
+        id:
+          item.id ||
+          fallbackId ||
+          crypto.randomUUID(),
+
+        label:
+          item.label ||
+          fallbackLabel ||
+          "Shipping Address",
+
+        firstName:
+          item.firstName ||
+          "",
+
+        lastName:
+          item.lastName ||
+          "",
+
+        phone:
+          item.phone ||
+          "",
+
+        email:
+          item.email ||
+          "",
+
+        address:
+          item.address ||
+          "",
+
+        address2:
+          item.address2 ||
+          "",
+
+        city:
+          item.city ||
+          "",
+
+        state:
+          item.state ||
+          "",
+
+        zip:
+          item.zip ||
+          "",
+
+        country:
+          item.country ||
+          "US",
+
+        source:
+          source ||
+          item.source ||
+          "saved"
+      };
+
+      const key =
+        savedAddressDedupeKey(
+          normalized
+        );
+
+      if (
+        !key ||
+        addressKeys.has(key)
+      ) {
+        return;
+      }
+
+      addressKeys.add(key);
+      addresses.push(
+        normalized
+      );
+    };
+
+  const addPayment =
+    (
+      item,
+      fallbackLabel,
+      fallbackId,
+      source
+    ) => {
+      if (!item) {
+        return;
+      }
+
+      const digits =
+        String(
+          item.acoCardNumber ||
+          item.cardNumber ||
+          ""
+        ).replace(
+          /\D/g,
+          ""
+        );
+
+      if (!digits) {
+        return;
+      }
+
+      const normalized = {
+        id:
+          item.id ||
+          fallbackId ||
+          crypto.randomUUID(),
+
+        cardLabel:
+          item.cardLabel ||
+          fallbackLabel ||
+          "Payment",
+
+        cardholder:
+          item.cardholder ||
+          "",
+
+        acoCardNumber:
+          digits,
+
+        expMonth:
+          item.expMonth ||
+          "",
+
+        expYear:
+          item.expYear ||
+          "",
+
+        securityCode:
+          item.securityCode ||
+          item.accountSecurityCode ||
+          "",
+
+        source:
+          source ||
+          item.source ||
+          "saved",
+
+        createdAt:
+          item.createdAt ||
+          null,
+
+        updatedAt:
+          item.updatedAt ||
+          null
+      };
+
+      const key =
+        savedPaymentDedupeKey(
+          normalized
+        );
+
+      if (
+        !key ||
+        paymentKeys.has(key)
+      ) {
+        return;
+      }
+
+      paymentKeys.add(key);
+      payments.push(
+        normalized
+      );
+    };
+
+  const extraAddresses =
+    customerSavedAddresses(
+      account
+    );
+
+  extraAddresses.forEach(
+    (
+      item,
+      index
+    ) => {
+      addAddress(
+        item,
+        item.label ||
+        `Saved Address ${index + 1}`,
+        item.id ||
+        `saved-address:${index + 1}`,
+        "extra_saved_address"
+      );
+    }
+  );
+
+  vault.paymentMethods.forEach(
+    (
+      item,
+      index
+    ) => {
+      addPayment(
+        item,
+        item.cardLabel ||
+        `Saved Payment ${index + 1}`,
+        item.id ||
+        `saved-payment:${index + 1}`,
+        "extra_saved_payment"
+      );
+    }
+  );
+
+  const retailerProfiles =
+    await getRetailerProfiles();
+
+  const paidProfiles =
+    retailerProfiles
+      .filter(
+        record =>
+          String(
+            record.customerAccountId ||
+            ""
+          ) ===
+            String(
+              account.id
+            )
+      )
+      .sort(
+        (
+          a,
+          b
+        ) =>
+          Number(
+            a.slot ||
+            0
+          ) -
+          Number(
+            b.slot ||
+            0
+          )
+      );
+
+  for (
+    const record of
+    paidProfiles
+  ) {
+    const label =
+      record.profileName ||
+      `Paid Profile ${record.slot || ""}`;
+
+    addAddress(
+      record.customerProfile ||
+      {},
+      `${label} Shipping`,
+      `paid-profile-address:${record.id}`,
+      "paid_profile"
+    );
+
+    let secrets = {};
+
+    try {
+      if (
+        record.customerSecrets
+      ) {
+        secrets =
+          decryptJson(
+            record.customerSecrets
+          ) || {};
+      }
+    } catch {
+      secrets = {};
+    }
+
+    addPayment(
+      secrets,
+      `${label} Card`,
+      `paid-profile-card:${record.id}`,
+      "paid_profile"
+    );
+  }
+
   return {
-    addresses:
-      customerSavedAddresses(
-        account
-      ),
+    addresses,
 
     paymentMethods:
-      vault.paymentMethods.map(
-        publicSavedPaymentMethod
+      payments.map(
+        (
+          item,
+          index
+        ) =>
+          admin
+            ? adminSavedPaymentMethod(
+                item,
+                index
+              )
+            : publicSavedPaymentMethod(
+                item,
+                index
+              )
       )
   };
+}
+
+
+async function customerSavedDetailsPayload(
+  account
+) {
+  return allCustomerSavedDetails(
+    account,
+    {
+      admin: false
+    }
+  );
 }
 
 
 async function adminCustomerSavedDetailsPayload(
   account
 ) {
-  const vault =
-    await getCustomerVault(
-      account.id
-    );
-
-  return {
-    addresses:
-      customerSavedAddresses(
-        account
-      ),
-
-    paymentMethods:
-      vault.paymentMethods.map(
-        adminSavedPaymentMethod
-      )
-  };
+  return allCustomerSavedDetails(
+    account,
+    {
+      admin: true
+    }
+  );
 }
 
 
@@ -8395,6 +8806,63 @@ async function syncCustomerMissingNotification(
       await saveCustomerAccounts(
         accounts
       );
+
+      try {
+        const retailerProfiles =
+          await getRetailerProfiles();
+
+        const firstProfile =
+          retailerProfiles.find(
+            record =>
+              String(
+                record.customerAccountId ||
+                ""
+              ) ===
+                String(
+                  customerAccountId
+                )
+          );
+
+        const customerName =
+          [
+            firstProfile
+              ?.customerProfile
+              ?.firstName,
+            firstProfile
+              ?.customerProfile
+              ?.lastName
+          ]
+            .filter(Boolean)
+            .join(" ") ||
+          account.email ||
+          "Customer";
+
+        await sendDiscordAdminProfileWorkflowNotification({
+          title:
+            "PROFILE COMPLETED",
+
+          description:
+            `${customerName} profile completed.`,
+
+          customerName,
+
+          customerEmail:
+            account.email ||
+            "Not available",
+
+          profileLabel:
+            "All required information complete",
+
+          profileType:
+            "Customer"
+        });
+
+      } catch (error) {
+        console.error(
+          "Profile completed admin Discord notification failed:",
+          error.message
+        );
+      }
     }
 
     return {
@@ -18654,6 +19122,582 @@ app.post(
           error:
             error.message ||
             "Unable to message customer."
+        });
+    }
+  }
+);
+
+
+
+app.post(
+  "/api/admin/submissions/:id/jig-attach-payment",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const order =
+        (
+          Array.isArray(paid)
+            ? paid
+            : []
+        ).find(
+          item =>
+            String(item.id) ===
+            String(id)
+        );
+
+      if (
+        !order?.customerAccountId
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account could not be found."
+          });
+      }
+
+      const accounts =
+        await getCustomerAccounts();
+
+      const account =
+        accounts.find(
+          item =>
+            String(item.id) ===
+            String(
+              order.customerAccountId
+            )
+        );
+
+      if (!account) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account could not be found."
+          });
+      }
+
+      const details =
+        await adminCustomerSavedDetailsPayload(
+          account
+        );
+
+      const addresses =
+        (
+          details.addresses ||
+          []
+        ).filter(
+          item =>
+            String(
+              item.address ||
+              ""
+            ).trim() &&
+            String(
+              item.city ||
+              ""
+            ).trim() &&
+            String(
+              item.state ||
+              ""
+            ).trim() &&
+            String(
+              item.zip ||
+              ""
+            ).trim()
+        );
+
+      const cards =
+        (
+          details.paymentMethods ||
+          []
+        ).filter(
+          item => {
+            const digits =
+              String(
+                item.acoCardNumber ||
+                item.cardNumber ||
+                ""
+              ).replace(
+                /\D/g,
+                ""
+              );
+
+            return (
+              /^\d{12,19}$/.test(
+                digits
+              ) &&
+              String(
+                item.cardholder ||
+                ""
+              ).trim() &&
+              /^(0[1-9]|1[0-2])$/.test(
+                String(
+                  item.expMonth ||
+                  ""
+                )
+              ) &&
+              /^\d{4}$/.test(
+                String(
+                  item.expYear ||
+                  ""
+                )
+              )
+            );
+          }
+        );
+
+      if (!addresses.length) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "This customer does not have any complete saved shipping addresses."
+          });
+      }
+
+      if (!cards.length) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "This customer does not have any complete saved card information."
+          });
+      }
+
+      const [
+        freeAssignments,
+        rentalAssignments
+      ] = await Promise.all([
+        getFreeAssignments(),
+        getRentalAssignments()
+      ]);
+
+      const linked = [
+        ...freeAssignments
+          .filter(
+            assignment =>
+              String(
+                assignment.customerAccountId ||
+                ""
+              ) ===
+                String(
+                  order.customerAccountId
+                ) &&
+              managedAssignmentIsLinked(
+                assignment
+              )
+          )
+          .map(
+            assignment => ({
+              type:
+                "free",
+              assignment
+            })
+          ),
+
+        ...rentalAssignments
+          .filter(
+            assignment =>
+              String(
+                assignment.customerAccountId ||
+                ""
+              ) ===
+                String(
+                  order.customerAccountId
+                ) &&
+              managedAssignmentIsLinked(
+                assignment
+              )
+          )
+          .map(
+            assignment => ({
+              type:
+                "rented",
+              assignment
+            })
+          )
+      ];
+
+      if (!linked.length) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "This customer does not currently have any linked Gifted or Rented profiles."
+          });
+      }
+
+      const globallyUsed =
+        new Set();
+
+      for (
+        const entry of
+        linked
+      ) {
+        const assignment =
+          entry.assignment;
+
+        if (
+          assignment.jiggedAddress
+        ) {
+          globallyUsed.add(
+            safeAddressVariantKey(
+              assignment.jiggedAddress
+            )
+          );
+        }
+
+        const history =
+          Array.isArray(
+            assignment.jigHistoryKeys
+          )
+            ? assignment.jigHistoryKeys
+            : [];
+
+        for (
+          const key of
+          history
+        ) {
+          if (key) {
+            globallyUsed.add(
+              String(key)
+            );
+          }
+        }
+      }
+
+      const updated = [];
+
+      for (
+        let i = 0;
+        i < linked.length;
+        i += 1
+      ) {
+        const {
+          assignment,
+          type
+        } =
+          linked[i];
+
+        let selectedAddress =
+          null;
+
+        let selectedVariant =
+          null;
+
+        let selectedVariantKey =
+          "";
+
+        for (
+          let addressOffset = 0;
+          addressOffset <
+            addresses.length;
+          addressOffset += 1
+        ) {
+          const addressIndex =
+            (
+              i +
+              addressOffset
+            ) %
+            addresses.length;
+
+          const source =
+            addresses[
+              addressIndex
+            ];
+
+          const variants =
+            safeAddressVariants(
+              source
+            );
+
+          const sourceKey =
+            safeAddressVariantKey(
+              source
+            );
+
+          const preferred =
+            variants.find(
+              item => {
+                const key =
+                  safeAddressVariantKey(
+                    item
+                  );
+
+                return (
+                  key !==
+                    sourceKey &&
+                  !globallyUsed.has(
+                    key
+                  )
+                );
+              }
+            );
+
+          const fallback =
+            preferred ||
+            variants.find(
+              item =>
+                !globallyUsed.has(
+                  safeAddressVariantKey(
+                    item
+                  )
+                )
+            );
+
+          if (fallback) {
+            selectedAddress =
+              source;
+
+            selectedVariant =
+              fallback;
+
+            selectedVariantKey =
+              safeAddressVariantKey(
+                fallback
+              );
+
+            break;
+          }
+        }
+
+        if (
+          !selectedAddress ||
+          !selectedVariant
+        ) {
+          return res
+            .status(409)
+            .json({
+              error:
+                `No more unique safe JIGs are available for linked profile ${i + 1}. Add another valid shipping address or remove/replace a linked profile.`
+            });
+        }
+
+        globallyUsed.add(
+          selectedVariantKey
+        );
+
+        const card =
+          cards[
+            i %
+            cards.length
+          ];
+
+        let existingSecrets = {};
+
+        try {
+          if (
+            assignment.customerSecrets
+          ) {
+            existingSecrets =
+              decryptJson(
+                assignment.customerSecrets
+              ) || {};
+          }
+        } catch {
+          existingSecrets = {};
+        }
+
+        assignment.customerProfile = {
+          ...(
+            assignment.customerProfile ||
+            {}
+          ),
+
+          firstName:
+            selectedAddress.firstName ||
+            assignment
+              .customerProfile
+              ?.firstName ||
+            "",
+
+          lastName:
+            selectedAddress.lastName ||
+            assignment
+              .customerProfile
+              ?.lastName ||
+            "",
+
+          phone:
+            selectedAddress.phone ||
+            assignment
+              .customerProfile
+              ?.phone ||
+            "",
+
+          email:
+            selectedAddress.email ||
+            assignment
+              .customerProfile
+              ?.email ||
+            "",
+
+          address:
+            selectedVariant.address ||
+            "",
+
+          address2:
+            selectedVariant.address2 ||
+            "",
+
+          city:
+            selectedVariant.city ||
+            "",
+
+          state:
+            selectedVariant.state ||
+            "",
+
+          zip:
+            selectedVariant.zip ||
+            "",
+
+          country:
+            selectedVariant.country ||
+            "US"
+        };
+
+        assignment.customerSecrets =
+          encryptJson({
+            ...existingSecrets,
+
+            cardLabel:
+              card.cardLabel ||
+              "",
+
+            cardholder:
+              card.cardholder ||
+              "",
+
+            acoCardNumber:
+              String(
+                card.acoCardNumber ||
+                card.cardNumber ||
+                ""
+              ).replace(
+                /\D/g,
+                ""
+              ),
+
+            expMonth:
+              card.expMonth ||
+              "",
+
+            expYear:
+              card.expYear ||
+              "",
+
+            securityCode:
+              card.securityCode ||
+              card.accountSecurityCode ||
+              ""
+          });
+
+        assignment.savedAddressId =
+          selectedAddress.id ||
+          null;
+
+        assignment.savedPaymentMethodId =
+          card.id ||
+          null;
+
+        assignment.jigSourceKey =
+          String(
+            selectedAddress.id ||
+            safeAddressVariantKey(
+              selectedAddress
+            )
+          );
+
+        assignment.jigSourceAddress = {
+          ...selectedAddress
+        };
+
+        assignment.jiggedAddress = {
+          ...selectedVariant
+        };
+
+        assignment.jigHistoryKeys =
+          Array.from(
+            new Set([
+              ...(
+                Array.isArray(
+                  assignment.jigHistoryKeys
+                )
+                  ? assignment.jigHistoryKeys
+                  : []
+              ),
+              selectedVariantKey
+            ])
+          );
+
+        assignment.updatedAt =
+          new Date()
+            .toISOString();
+
+        updated.push({
+          id:
+            assignment.managedAccountId ||
+            assignment.freeMembershipId ||
+            assignment.rentedMembershipId ||
+            assignment.id,
+
+          type,
+
+          addressId:
+            selectedAddress.id ||
+            null,
+
+          paymentId:
+            card.id ||
+            null
+        });
+      }
+
+      await Promise.all([
+        saveFreeAssignments(
+          freeAssignments
+        ),
+        saveRentalAssignments(
+          rentalAssignments
+        )
+      ]);
+
+      await syncCustomerMissingNotification(
+        order.customerAccountId
+      );
+
+      return res.json({
+        ok: true,
+        updatedCount:
+          updated.length,
+        updated
+      });
+
+    } catch (error) {
+      console.error(
+        "JIG & attach payment error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            error.message ||
+            "Unable to JIG addresses and attach payment information."
         });
     }
   }
