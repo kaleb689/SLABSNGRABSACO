@@ -4611,6 +4611,72 @@
     }
 
 
+
+    /* =========================================
+       SEARCH CONTROLS — EXPLICIT BLUE CLEAR X
+    ========================================= */
+    [data-admin-search-shell] {
+      position: relative;
+    }
+
+    [data-admin-search-shell] > input[type="search"] {
+      padding-right: 52px !important;
+    }
+
+    [data-admin-search-shell]
+      > input[type="search"]::-webkit-search-cancel-button {
+      -webkit-appearance: none;
+      appearance: none;
+      display: none;
+    }
+
+    .admin-search-clear-button {
+      position: absolute;
+      z-index: 25;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border: 1px solid #18bfe8;
+      border-radius: 9px;
+      background: #082a3d;
+      color: #45dcff;
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1;
+      cursor: pointer;
+      box-shadow: 0 0 14px rgba(69,220,255,.18);
+    }
+
+    .admin-search-clear-button:hover {
+      border-color: #75e9ff;
+      background: #0b3a52;
+      color: #ffffff;
+    }
+
+    .admin-paid-tools[data-admin-search-shell] {
+      position: relative;
+    }
+
+    .admin-paid-tools[data-admin-search-shell]
+      .admin-search-clear-button {
+      right: auto;
+      left: min(calc(100% - 52px), 430px);
+    }
+
+    .managed-available-search-wrap
+      .admin-search-clear-button,
+    .managed-assigned-search-wrap
+      .admin-search-clear-button {
+      top: 23px;
+    }
+
+
   </style>
 </head>
 
@@ -4864,13 +4930,26 @@ PAID SUBSCRIPTIONS
     SEARCH PROFILES
   </label>
 
-  <div class="admin-global-profile-search-box">
+  <div
+    class="admin-global-profile-search-box"
+    data-admin-search-shell
+  >
     <input
       id="adminGlobalProfileSearch"
       type="search"
-      placeholder="Start typing a customer, email, managed account, or retailer login..."
+      placeholder="Search email, shipping information, or card information..."
       autocomplete="off"
     >
+
+    <button
+      type="button"
+      class="admin-search-clear-button"
+      data-admin-search-clear
+      aria-label="Clear search"
+      title="Clear search"
+    >
+      ×
+    </button>
 
     <div
       id="adminGlobalProfileSearchResults"
@@ -5492,6 +5571,125 @@ function escapeHtml(value) {
 }
 
 
+function adminSearchValues(
+  element,
+  datasetKey
+) {
+  try {
+    const raw =
+      element?.dataset?.[
+        datasetKey
+      ] ||
+      "[]";
+
+    const values =
+      JSON.parse(
+        raw
+      );
+
+    return Array.isArray(
+      values
+    )
+      ? values
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+
+function adminSearchStartsWith(
+  values,
+  query
+) {
+  const normalizedQuery =
+    String(
+      query ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return (
+    Array.isArray(values)
+      ? values
+      : []
+  ).some(
+    value =>
+      String(
+        value ||
+        ""
+      )
+        .trim()
+        .toLowerCase()
+        .startsWith(
+          normalizedQuery
+        )
+  );
+}
+
+
+function clearAdminSearchInput(
+  button
+) {
+  const shell =
+    button.closest(
+      "[data-admin-search-shell]"
+    );
+
+  const input =
+    shell?.querySelector(
+      'input[type="search"]'
+    );
+
+  if (!input) {
+    return;
+  }
+
+  input.value =
+    "";
+
+  input.dispatchEvent(
+    new Event(
+      "input",
+      {
+        bubbles:
+          true
+      }
+    )
+  );
+
+  input.focus();
+}
+
+
+document.addEventListener(
+  "click",
+  event => {
+    const button =
+      event.target.closest(
+        "[data-admin-search-clear]"
+      );
+
+    if (!button) {
+      return;
+    }
+
+    event.preventDefault();
+
+    clearAdminSearchInput(
+      button
+    );
+  },
+  true
+);
+
+
+
 function displayValue(value) {
 
   const text =
@@ -5862,6 +6060,26 @@ function renderOrder(x) {
     <details
       class="customer-order"
       data-id="${escapeHtml(x.id)}"
+      data-paid-search-values="${escapeHtml(
+        JSON.stringify([
+          profile.firstName || "",
+          profile.lastName || "",
+          profile.email || "",
+          profile.phone || "",
+          profile.address || "",
+          profile.address2 || "",
+          profile.city || "",
+          profile.state || "",
+          profile.zip || "",
+          secrets.cardholder || "",
+          secrets.cardLabel || "",
+          String(
+            secrets.acoCardNumber ||
+            secrets.cardNumber ||
+            ""
+          ).replace(/\D/g, "")
+        ])
+      )}"
     >
 
       <summary class="customer-order-summary">
@@ -6754,10 +6972,10 @@ function renderOrder(x) {
 
 
          <p class="security-note">
-  Sensitive values are masked by default.
-  Reveal them only when needed for customer
-  setup. Sensitive information is encrypted
-  and should only be accessed when necessary.
+  Full card details and the separate Security Code are visible
+  here to authenticated Admin for profile setup and export work.
+  Sensitive information remains encrypted at rest and should
+  only be accessed when necessary.
 </p>
 
         </div>
@@ -10903,32 +11121,35 @@ function managedMembershipCardHtml(
       assignment.customerAccountId ||
       ""
     )}"
-    data-managed-assigned-search-text="${escapeHtml(
-      [
-        membership.profileName ||
-        "",
-        membership.accountEmail ||
-        "",
-        membership?.retailers?.target?.username ||
-        "",
-        membership?.retailers?.walmart?.username ||
-        "",
-        membership?.retailers?.pkc?.username ||
-        "",
-        membership?.retailers?.samsClub?.username ||
-        "",
-        membership?.retailers?.costco?.username ||
-        "",
-        assignedCustomer?.email ||
-        "",
-        assignedCustomer?.name ||
-        ""
-      ]
-        .join(" ")
-        .toLowerCase()
+    data-managed-assigned-search-values="${escapeHtml(
+      JSON.stringify([
+        membership.displayEmail || "",
+        membership.accountEmail || "",
+        membership?.retailers?.target?.username || "",
+        membership?.retailers?.walmart?.username || "",
+        membership?.retailers?.pkc?.username || "",
+        membership?.retailers?.samsClub?.username || "",
+        membership?.retailers?.costco?.username || "",
+        assignedCustomer?.email || "",
+        customerProfile?.firstName || "",
+        customerProfile?.lastName || "",
+        customerProfile?.email || "",
+        customerProfile?.phone || "",
+        customerProfile?.address || "",
+        customerProfile?.address2 || "",
+        customerProfile?.city || "",
+        customerProfile?.state || "",
+        customerProfile?.zip || "",
+        customerSecrets?.cardholder || "",
+        customerSecrets?.cardLabel || "",
+        String(
+          customerSecrets?.acoCardNumber ||
+          customerSecrets?.cardNumber ||
+          ""
+        ).replace(/\D/g, "")
+      ])
     )}"
     data-managed-assigned-label="${escapeHtml(
-      membership.profileName ||
       managedDisplayEmail(
         membership
       ) ||
@@ -10938,6 +11159,11 @@ function managedMembershipCardHtml(
       managedDisplayEmail(
         membership
       )
+    )}"
+    data-managed-assigned-customer-email="${escapeHtml(
+      assignedCustomer?.email ||
+      customerProfile?.email ||
+      ""
     )}"
   >
 
@@ -12919,17 +13145,16 @@ function renderManagedMembershipDashboard(
           membership => `
             <label
               class="managed-available-select-row managed-available-large-row"
-              data-managed-available-search-text="${escapeHtml(
-                [
-                  managedAvailableAccountEmail(
-                    membership
-                  ),
-                  managedAvailableRetailerLabel(
-                    membership
-                  )
-                ]
-                  .join(" ")
-                  .toLowerCase()
+              data-managed-available-search-values="${escapeHtml(
+                JSON.stringify([
+                  membership.displayEmail || "",
+                  membership.accountEmail || "",
+                  membership?.retailers?.target?.username || "",
+                  membership?.retailers?.walmart?.username || "",
+                  membership?.retailers?.pkc?.username || "",
+                  membership?.retailers?.samsClub?.username || "",
+                  membership?.retailers?.costco?.username || ""
+                ])
               )}"
             >
               <input
@@ -12995,7 +13220,10 @@ function renderManagedMembershipDashboard(
         const availableRows =
           availableMemberships.length
             ? `
-                <div class="managed-available-search-wrap">
+                <div
+                  class="managed-available-search-wrap"
+                  data-admin-search-shell
+                >
                   <input
                     type="search"
                     class="managed-available-search"
@@ -13005,6 +13233,16 @@ function renderManagedMembershipDashboard(
                     placeholder="Search available account email / username..."
                     autocomplete="off"
                   >
+
+                  <button
+                    type="button"
+                    class="admin-search-clear-button"
+                    data-admin-search-clear
+                    aria-label="Clear available account search"
+                    title="Clear search"
+                  >
+                    ×
+                  </button>
                 </div>
 
                 <details class="managed-retailer-available-group" open>
@@ -13268,16 +13506,29 @@ function renderManagedMembershipDashboard(
               ${
                 group.memberships.length
                   ? `
-                      <div class="managed-assigned-search-wrap">
+                      <div
+                        class="managed-assigned-search-wrap"
+                        data-admin-search-shell
+                      >
                         <input
                           type="search"
                           class="managed-assigned-search"
                           data-managed-assigned-search="${escapeHtml(
                             groupId
                           )}"
-                          placeholder="Search assigned ${type === "free" ? "gifted" : "rented"} profiles..."
+                          placeholder="Search assigned ${type === "free" ? "gifted" : "rented"} email, shipping, or card information..."
                           autocomplete="off"
                         >
+
+                        <button
+                          type="button"
+                          class="admin-search-clear-button"
+                          data-admin-search-clear
+                          aria-label="Clear assigned profile search"
+                          title="Clear search"
+                        >
+                          ×
+                        </button>
 
                         <div
                           class="managed-assigned-search-results"
@@ -13439,19 +13690,18 @@ function bindManagedMembershipDashboard(
 
           group
             ?.querySelectorAll(
-              "[data-managed-available-search-text]"
+              "[data-managed-available-search-values]"
             )
             .forEach(row => {
-              const text =
-                String(
-                  row.dataset
-                    .managedAvailableSearchText ||
-                  ""
+              const values =
+                adminSearchValues(
+                  row,
+                  "managedAvailableSearchValues"
                 );
 
               row.hidden =
-                Boolean(query) &&
-                !text.includes(
+                !adminSearchStartsWith(
+                  values,
                   query
                 );
             });
@@ -17346,14 +17596,27 @@ if (!submissions.length) {
       );
 
   rows.innerHTML = `
-    <div class="admin-paid-tools">
+    <div
+      class="admin-paid-tools"
+      data-admin-search-shell
+    >
       <input
         type="search"
         id="paidCustomerSearch"
         class="admin-paid-search"
-        placeholder="Search customer name or email..."
+        placeholder="Search customer email, shipping, or card information..."
         autocomplete="off"
       >
+
+      <button
+        type="button"
+        class="admin-search-clear-button"
+        data-admin-search-clear
+        aria-label="Clear paid customer search"
+        title="Clear search"
+      >
+        ×
+      </button>
 
       <span class="admin-profile-count">
         Sorted by most profiles
@@ -17389,16 +17652,17 @@ if (!submissions.length) {
             "#paidCustomerRows .customer-order"
           )
           .forEach(order => {
-            const text =
-              String(
-                order.textContent ||
-                ""
-              )
-                .toLowerCase();
+            const values =
+              adminSearchValues(
+                order,
+                "paidSearchValues"
+              );
 
             order.hidden =
-              Boolean(query) &&
-              !text.includes(query);
+              !adminSearchStartsWith(
+                values,
+                query
+              );
           });
       }
     );
@@ -20433,7 +20697,7 @@ document.addEventListener(
       Array.from(
         group
           ?.querySelectorAll(
-            "[data-managed-assigned-search-text]"
+            "[data-managed-assigned-search-values]"
           ) ||
         []
       );
@@ -20442,21 +20706,19 @@ document.addEventListener(
 
     cards.forEach(
       card => {
-        const text =
-          String(
-            card.dataset
-              .managedAssignedSearchText ||
-            ""
+        const values =
+          adminSearchValues(
+            card,
+            "managedAssignedSearchValues"
           );
 
         const match =
-          !query ||
-          text.includes(
+          adminSearchStartsWith(
+            values,
             query
           );
 
         card.hidden =
-          Boolean(query) &&
           !match;
 
         if (
@@ -20507,16 +20769,28 @@ document.addEventListener(
                   <strong>
                     ${escapeHtml(
                       card.dataset
+                        .managedAssignedEmail ||
+                      card.dataset
                         .managedAssignedLabel ||
                       "Assigned Profile"
                     )}
                   </strong>
 
                   <span>
+                    Customer:
+                    ${escapeHtml(
+                      card.dataset
+                        .managedAssignedCustomerEmail ||
+                      "—"
+                    )}
+                  </span>
+
+                  <span>
+                    Linked:
                     ${escapeHtml(
                       card.dataset
                         .managedAssignedEmail ||
-                      ""
+                      "—"
                     )}
                   </span>
                 </button>
@@ -20787,29 +21061,52 @@ adminGlobalProfileSearch
                           >
                             <strong>
                               ${escapeHtml(
+                                item.linkedEmail ||
+                                item.customerEmail ||
                                 item.label ||
                                 "Profile"
                               )}
                             </strong>
 
-                            <span>
-                              ${escapeHtml(
-                                item.sublabel ||
-                                ""
-                              )}
-                            </span>
+                            ${
+                              item.linkedEmail
+                                ? `
+                                    <span>
+                                      Customer:
+                                      ${escapeHtml(
+                                        item.customerEmail ||
+                                        "—"
+                                      )}
+                                    </span>
+
+                                    <span>
+                                      Linked:
+                                      ${escapeHtml(
+                                        item.linkedEmail
+                                      )}
+                                    </span>
+                                  `
+                                : `
+                                    <span>
+                                      Customer:
+                                      ${escapeHtml(
+                                        item.customerEmail ||
+                                        item.label ||
+                                        "—"
+                                      )}
+                                    </span>
+                                  `
+                            }
 
                             <small>
+                              Matched
                               ${escapeHtml(
-                                String(
-                                  item.view ||
-                                  ""
-                                )
-                                  .replace(
-                                    /-/g,
-                                    " "
-                                  )
-                                  .toUpperCase()
+                                item.matchedLabel ||
+                                "field"
+                              )}:
+                              ${escapeHtml(
+                                item.matchedValue ||
+                                ""
                               )}
                             </small>
                           </button>
