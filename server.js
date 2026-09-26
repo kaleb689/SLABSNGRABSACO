@@ -89,6 +89,12 @@ const FREE_ASSIGNMENTS_FILE =
     "free-assignments.json"
   );
 
+const RESTORE_HOLDS_FILE =
+  path.join(
+    DATA_DIR,
+    "managed-restore-holds.json"
+  );
+
 const SUCCESS_CHECKOUTS_FILE =
   path.join(
     DATA_DIR,
@@ -4320,6 +4326,46 @@ function managedAssignmentMembershipId(
 }
 
 
+function managedAccountCanonicalEmail(
+  membership,
+  suppliedCredentials = null
+) {
+  if (!membership) {
+    return "";
+  }
+
+  let credentials =
+    suppliedCredentials;
+
+  if (!credentials) {
+    try {
+      credentials =
+        membership.credentials
+          ? normalizeRetailerCredentials(
+              decryptJson(
+                membership.credentials
+              )
+            )
+          : emptyRetailerCredentials();
+    } catch {
+      credentials =
+        emptyRetailerCredentials();
+    }
+  }
+
+  return String(
+    membership.accountEmail ||
+    membership.displayEmail ||
+    credentials?.target?.username ||
+    credentials?.walmart?.username ||
+    credentials?.pkc?.username ||
+    credentials?.samsClub?.username ||
+    credentials?.costco?.username ||
+    ""
+  ).trim();
+}
+
+
 function exactManagedAddressMatches(
   profile,
   currentMembershipId,
@@ -5371,7 +5417,14 @@ app.post(
               } else {
                 const rawAvailableAccounts =
                   await getAvailableManagedAccountsForRetailer(
-                    retailer
+                    retailer,
+                    {
+                      restoreCustomerAccountId:
+                        customerAccountId,
+
+                      restoreType:
+                        "rented"
+                    }
                   );
 
                 const rentalHistory =
@@ -5557,6 +5610,20 @@ app.post(
 
                   await saveRentalAssignments(
                     assignments
+                  );
+
+                  await consumeRestoreHoldItems(
+                    customerAccountId,
+                    "rented",
+                    availableAccounts
+                      .slice(
+                        0,
+                        quantity
+                      )
+                      .map(
+                        account =>
+                          account.id
+                      )
                   );
 
                   try {
@@ -8002,6 +8069,60 @@ async function saveRentedMemberships(
 
 
 
+const MANAGED_RESTORE_HOLD_DAYS =
+  7;
+
+const MANAGED_RESTORE_HOLD_MS =
+  MANAGED_RESTORE_HOLD_DAYS *
+  24 *
+  60 *
+  60 *
+  1000;
+
+let restoreHoldMutationQueue =
+  Promise.resolve();
+
+
+async function mutateRestoreHolds(
+  mutator
+) {
+  const run =
+    restoreHoldMutationQueue
+      .catch(
+        () => {}
+      )
+      .then(
+        async () => {
+          const holds =
+            normalizeRestoreHoldRecords(
+              await readJson(
+                RESTORE_HOLDS_FILE,
+                []
+              )
+            );
+
+          const result =
+            await mutator(
+              holds
+            );
+
+          await saveRestoreHolds(
+            holds
+          );
+
+          return result;
+        }
+      );
+
+  restoreHoldMutationQueue =
+    run.catch(
+      () => {}
+    );
+
+  return run;
+}
+
+
 function managedAssignmentExpirationIsDue(
   assignment,
   now = Date.now()
@@ -8024,6 +8145,177 @@ function managedAssignmentExpirationIsDue(
     ) &&
     expires <= now
   );
+}
+
+
+async function saveRestoreHolds(
+  records
+) {
+  await writeJson(
+    RESTORE_HOLDS_FILE,
+    records
+  );
+}
+
+
+function restoreHoldRemainingItems(
+  hold
+) {
+  return (
+    Array.isArray(
+      hold?.items
+    )
+      ? hold.items
+      : []
+  ).filter(
+    item =>
+      item &&
+      !item.restoredAt &&
+      !item.releasedAt
+  );
+}
+
+
+function restoreHoldIsActive(
+  hold,
+  now = Date.now()
+) {
+  if (
+    !hold ||
+    ![
+      "held",
+      "partial"
+    ].includes(
+      String(
+        hold.status ||
+        ""
+      )
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    !restoreHoldRemainingItems(
+      hold
+    ).length
+  ) {
+    return false;
+  }
+
+  const until =
+    new Date(
+      hold.holdUntil ||
+      0
+    ).getTime();
+
+  return (
+    Number.isFinite(
+      until
+    ) &&
+    until > now
+  );
+}
+
+
+function normalizeRestoreHoldRecords(
+  records
+) {
+  return (
+    Array.isArray(records)
+      ? records
+      : []
+  ).filter(
+    record =>
+      record &&
+      record.id
+  );
+}
+
+
+async function getRestoreHolds() {
+  return normalizeRestoreHoldRecords(
+    await readJson(
+      RESTORE_HOLDS_FILE,
+      []
+    )
+  );
+}
+
+
+function activeRestoreHoldsFor(
+  holds,
+  {
+    customerAccountId = "",
+    type = ""
+  } = {}
+) {
+  const now =
+    Date.now();
+
+  return (
+    Array.isArray(holds)
+      ? holds
+      : []
+  ).filter(
+    hold =>
+      restoreHoldIsActive(
+        hold,
+        now
+      ) &&
+      (
+        !customerAccountId ||
+        String(
+          hold.customerAccountId ||
+          ""
+        ) ===
+          String(
+            customerAccountId
+          )
+      ) &&
+      (
+        !type ||
+        String(
+          hold.type ||
+          ""
+        ) ===
+          String(type)
+      )
+  );
+}
+
+
+function heldManagedAccountIdsFromHolds(
+  holds
+) {
+  const ids =
+    new Set();
+
+  for (
+    const hold of
+    activeRestoreHoldsFor(
+      holds
+    )
+  ) {
+    for (
+      const item of
+      restoreHoldRemainingItems(
+        hold
+      )
+    ) {
+      if (
+        item.managedAccountId
+      ) {
+        ids.add(
+          String(
+            item.managedAccountId
+          )
+        );
+      }
+    }
+  }
+
+  return ids;
 }
 
 
@@ -8084,7 +8376,9 @@ function clearManagedAssignmentCustomerData(
 
   /*
     Remove everything belonging to the former customer before
-    this managed account is visible in the Available pool.
+    this managed account can become available to another customer.
+    Restore Holds are stored separately and keep only the internal
+    customer ID plus the managed account IDs needed for restoration.
   */
   assignment.customerAccountId =
     null;
@@ -8119,8 +8413,375 @@ function clearManagedAssignmentCustomerData(
 }
 
 
-function cleanupExpiredManagedAssignments(
-  assignments
+async function sendRestoreHoldExpirationDiscord(
+  hold,
+  managedAccounts
+) {
+  if (
+    !hold ||
+    hold.expirationDiscordSentAt
+  ) {
+    return false;
+  }
+
+  try {
+    const customer =
+      await customerLabelForProfileWorkflow(
+        hold.customerAccountId,
+        {}
+      );
+
+    const items =
+      restoreHoldRemainingItems(
+        hold
+      );
+
+    const emails =
+      items
+        .map(item => {
+          const account =
+            managedAccounts.find(
+              record =>
+                String(
+                  record.id
+                ) ===
+                  String(
+                    item.managedAccountId
+                  )
+            );
+
+          return (
+            managedAccountCanonicalEmail(
+              account
+            ) ||
+            String(
+              item.managedAccountId ||
+              ""
+            )
+          );
+        })
+        .filter(Boolean);
+
+    const typeLabel =
+      hold.type === "free"
+        ? "Gifted"
+        : "Rented";
+
+    const count =
+      items.length;
+
+    const emailList =
+      emails.length
+        ? emails
+            .slice(
+              0,
+              30
+            )
+            .join(", ")
+        : "Open Admin to review the held managed accounts.";
+
+    if (
+      !adminProfileWebhookUrl()
+    ) {
+      return false;
+    }
+
+    const messageId =
+      await sendDiscordAdminProfileWorkflowNotification({
+        title:
+          `🔴 ${count} ${typeLabel.toUpperCase()} ACCOUNT${count === 1 ? "" : "S"} EXPIRED`,
+
+        description:
+          `${count} ${typeLabel.toLowerCase()} managed account${count === 1 ? "" : "s"} expired. Mark these profile(s) inactive in your other program. The same managed accounts are reserved for this customer for ${MANAGED_RESTORE_HOLD_DAYS} days unless you release them early. Accounts: ${emailList}`,
+
+        customerName:
+          customer.name,
+
+        customerEmail:
+          customer.email,
+
+        profileLabel:
+          `${count} account${count === 1 ? "" : "s"} on Restore Hold`,
+
+        profileType:
+          `${typeLabel} Restore Hold`,
+
+        expiresAt:
+          hold.holdUntil ||
+          null
+      });
+
+    if (!messageId) {
+      return false;
+    }
+
+    hold.expirationDiscordSentAt =
+      new Date()
+        .toISOString();
+
+    hold.expirationDiscordMessageId =
+      messageId;
+
+    hold.updatedAt =
+      new Date()
+        .toISOString();
+
+    return true;
+
+  } catch (error) {
+    console.error(
+      "Restore Hold expiration Discord notification failed:",
+      error.message
+    );
+
+    return false;
+  }
+}
+
+
+async function sendRestoreCompletedDiscord(
+  {
+    customerAccountId,
+    type,
+    restoredManagedAccountIds = []
+  } = {}
+) {
+  if (
+    !customerAccountId ||
+    !restoredManagedAccountIds.length
+  ) {
+    return;
+  }
+
+  try {
+    const [
+      customer,
+      managedAccounts
+    ] = await Promise.all([
+      customerLabelForProfileWorkflow(
+        customerAccountId,
+        {}
+      ),
+      getManagedAccounts()
+    ]);
+
+    const emails =
+      restoredManagedAccountIds
+        .map(id => {
+          const account =
+            managedAccounts.find(
+              record =>
+                String(
+                  record.id
+                ) ===
+                  String(id)
+            );
+
+          return (
+            managedAccountCanonicalEmail(
+              account
+            ) ||
+            String(id)
+          );
+        })
+        .filter(Boolean);
+
+    const typeLabel =
+      type === "free"
+        ? "Gifted"
+        : "Rented";
+
+    await sendDiscordAdminProfileWorkflowNotification({
+      title:
+        `🟢 ${restoredManagedAccountIds.length} ${typeLabel.toUpperCase()} ACCOUNT${restoredManagedAccountIds.length === 1 ? "" : "S"} RESTORED`,
+
+      description:
+        `Previously used ${typeLabel.toLowerCase()} managed account${restoredManagedAccountIds.length === 1 ? "" : "s"} were restored to this customer and returned to Linked Profiles. Accounts: ${emails.slice(0, 30).join(", ")}`,
+
+      customerName:
+        customer.name,
+
+      customerEmail:
+        customer.email,
+
+      profileLabel:
+        `${restoredManagedAccountIds.length} restored account${restoredManagedAccountIds.length === 1 ? "" : "s"}`,
+
+      profileType:
+        `${typeLabel} Restore`
+    });
+
+  } catch (error) {
+    console.error(
+      "Restore completed Discord notification failed:",
+      error.message
+    );
+  }
+}
+
+
+async function consumeRestoreHoldItems(
+  customerAccountId,
+  type,
+  managedAccountIds
+) {
+  const ids =
+    new Set(
+      (
+        Array.isArray(
+          managedAccountIds
+        )
+          ? managedAccountIds
+          : []
+      ).map(
+        id =>
+          String(id)
+      )
+    );
+
+  if (
+    !customerAccountId ||
+    !ids.size
+  ) {
+    return 0;
+  }
+
+  const restoredIds =
+    await mutateRestoreHolds(
+      async holds => {
+        const nowIso =
+          new Date()
+            .toISOString();
+
+        const restored = [];
+
+        for (
+          const hold of
+          activeRestoreHoldsFor(
+            holds,
+            {
+              customerAccountId,
+              type
+            }
+          )
+        ) {
+          for (
+            const item of
+            restoreHoldRemainingItems(
+              hold
+            )
+          ) {
+            if (
+              !ids.has(
+                String(
+                  item.managedAccountId ||
+                  ""
+                )
+              )
+            ) {
+              continue;
+            }
+
+            item.restoredAt =
+              nowIso;
+
+            restored.push(
+              String(
+                item.managedAccountId
+              )
+            );
+          }
+
+          const remaining =
+            restoreHoldRemainingItems(
+              hold
+            );
+
+          hold.status =
+            remaining.length
+              ? "partial"
+              : "restored";
+
+          if (
+            !remaining.length
+          ) {
+            hold.restoredAt =
+              nowIso;
+          }
+
+          hold.updatedAt =
+            nowIso;
+        }
+
+        return restored;
+      }
+    );
+
+  if (
+    restoredIds.length
+  ) {
+    await sendRestoreCompletedDiscord({
+      customerAccountId,
+      type,
+      restoredManagedAccountIds:
+        restoredIds
+    });
+  }
+
+  return restoredIds.length;
+}
+
+
+async function managedAccountRestoreHoldOwner(
+  managedAccountId
+) {
+  const holds =
+    await getRestoreHolds();
+
+  for (
+    const hold of
+    activeRestoreHoldsFor(
+      holds
+    )
+  ) {
+    if (
+      restoreHoldRemainingItems(
+        hold
+      ).some(
+        item =>
+          String(
+            item.managedAccountId ||
+            ""
+          ) ===
+            String(
+              managedAccountId ||
+              ""
+            )
+      )
+    ) {
+      return {
+        customerAccountId:
+          hold.customerAccountId,
+
+        type:
+          hold.type,
+
+        holdId:
+          hold.id,
+
+        holdUntil:
+          hold.holdUntil
+      };
+    }
+  }
+
+  return null;
+}
+
+
+async function cleanupExpiredManagedAssignments(
+  assignments,
+  type
 ) {
   const now =
     Date.now();
@@ -8130,52 +8791,291 @@ function cleanupExpiredManagedAssignments(
       now
     ).toISOString();
 
-  let changed =
-    false;
+  const due =
+    assignments.filter(
+      assignment =>
+        assignment &&
+        assignment.customerAccountId &&
+        assignment.active ===
+          true &&
+        String(
+          assignment.activationStatus ||
+          ""
+        ) ===
+          "activated" &&
+        managedAssignmentExpirationIsDue(
+          assignment,
+          now
+        )
+    );
+
+  if (!due.length) {
+    return false;
+  }
+
+  const managedAccounts =
+    await getManagedAccounts();
+
+  const grouped =
+    new Map();
 
   for (
     const assignment of
-    assignments
+    due
   ) {
-    if (
-      !managedAssignmentExpirationIsDue(
-        assignment,
-        now
-      )
-    ) {
+    const customerAccountId =
+      String(
+        assignment.customerAccountId ||
+        ""
+      );
+
+    if (!customerAccountId) {
       continue;
     }
 
-    /*
-      Clean even if another route already marked the assignment
-      expired but left customer data behind.
-    */
     if (
-      assignment.customerAccountId ||
-      assignment.customerProfile ||
-      assignment.customerSecrets ||
-      String(
-        assignment.activationStatus ||
-        ""
-      ) !== "expired" ||
-      assignment.active ===
-        true
+      !grouped.has(
+        customerAccountId
+      )
     ) {
-      clearManagedAssignmentCustomerData(
-        assignment,
-        {
-          reason:
-            "expired",
-          nowIso
-        }
+      grouped.set(
+        customerAccountId,
+        []
       );
-
-      changed =
-        true;
     }
+
+    grouped.get(
+      customerAccountId
+    ).push(
+      assignment
+    );
   }
 
-  return changed;
+  /*
+    Serialize Restore Hold mutations so Gifted and Rented expirations
+    occurring in the same request cannot overwrite each other's holds.
+  */
+  await mutateRestoreHolds(
+    async holds => {
+      for (
+        const [
+          customerAccountId,
+          customerAssignments
+        ] of
+        grouped
+      ) {
+        let hold =
+          activeRestoreHoldsFor(
+            holds,
+            {
+              customerAccountId,
+              type
+            }
+          )[0] ||
+          null;
+
+        if (!hold) {
+          hold = {
+            id:
+              crypto.randomUUID(),
+
+            customerAccountId,
+
+            type,
+
+            status:
+              "held",
+
+            holdStartedAt:
+              nowIso,
+
+            holdUntil:
+              new Date(
+                now +
+                MANAGED_RESTORE_HOLD_MS
+              ).toISOString(),
+
+            items: [],
+
+            createdAt:
+              nowIso,
+
+            updatedAt:
+              nowIso,
+
+            expirationDiscordSentAt:
+              null,
+
+            expirationDiscordMessageId:
+              null
+          };
+
+          holds.push(
+            hold
+          );
+        }
+
+        const existingIds =
+          new Set(
+            restoreHoldRemainingItems(
+              hold
+            ).map(
+              item =>
+                String(
+                  item.managedAccountId ||
+                  ""
+                )
+            )
+          );
+
+        let added =
+          0;
+
+        for (
+          const assignment of
+          customerAssignments
+        ) {
+          const managedAccountId =
+            managedAssignmentMembershipId(
+              assignment
+            );
+
+          if (
+            !managedAccountId ||
+            existingIds.has(
+              managedAccountId
+            )
+          ) {
+            continue;
+          }
+
+          const membership =
+            managedAccounts.find(
+              item =>
+                String(
+                  item.id
+                ) ===
+                  String(
+                    managedAccountId
+                  )
+            );
+
+          let retailer =
+            String(
+              assignment.rentalRetailer ||
+              assignment.assignmentRetailer ||
+              ""
+            ).trim();
+
+          if (
+            !retailer &&
+            membership
+          ) {
+            try {
+              const credentials =
+                membership.credentials
+                  ? normalizeRetailerCredentials(
+                      decryptJson(
+                        membership.credentials
+                      )
+                    )
+                  : emptyRetailerCredentials();
+
+              retailer =
+                [
+                  "target",
+                  "walmart",
+                  "pkc",
+                  "samsClub",
+                  "costco"
+                ].find(
+                  key =>
+                    String(
+                      credentials?.[key]
+                        ?.username ||
+                      ""
+                    ).trim()
+                ) || "";
+            } catch {
+              retailer = "";
+            }
+          }
+
+          hold.items.push({
+            managedAccountId,
+
+            previousAssignmentId:
+              assignment.id ||
+              null,
+
+            durationType:
+              assignment.durationType ||
+              null,
+
+            retailer:
+              retailer ||
+              null,
+
+            heldAt:
+              nowIso,
+
+            restoredAt:
+              null,
+
+            releasedAt:
+              null
+          });
+
+          existingIds.add(
+            managedAccountId
+          );
+
+          added += 1;
+        }
+
+        if (added) {
+          hold.status =
+            "held";
+
+          hold.holdUntil =
+            new Date(
+              now +
+              MANAGED_RESTORE_HOLD_MS
+            ).toISOString();
+
+          hold.updatedAt =
+            nowIso;
+
+          hold.expirationDiscordSentAt =
+            null;
+
+          hold.expirationDiscordMessageId =
+            null;
+
+          await sendRestoreHoldExpirationDiscord(
+            hold,
+            managedAccounts
+          );
+        }
+      }
+    }
+  );
+
+  for (
+    const assignment of
+    due
+  ) {
+    clearManagedAssignmentCustomerData(
+      assignment,
+      {
+        reason:
+          "expired",
+        nowIso
+      }
+    );
+  }
+
+  return true;
 }
 
 
@@ -8192,8 +9092,9 @@ async function getRentalAssignments() {
       : [];
 
   if (
-    cleanupExpiredManagedAssignments(
-      assignments
+    await cleanupExpiredManagedAssignments(
+      assignments,
+      "rented"
     )
   ) {
     await saveRentalAssignments(
@@ -8272,8 +9173,9 @@ async function getFreeAssignments() {
       : [];
 
   if (
-    cleanupExpiredManagedAssignments(
-      assignments
+    await cleanupExpiredManagedAssignments(
+      assignments,
+      "free"
     )
   ) {
     await saveFreeAssignments(
@@ -12981,8 +13883,13 @@ async function getManagedAvailability() {
     getRentalAssignments()
   ]);
 
+  const restoreHolds =
+    await getRestoreHolds();
+
   const inUseAccountIds =
-    new Set();
+    heldManagedAccountIdsFromHolds(
+      restoreHolds
+    );
 
   for (const assignment of freeAssignments) {
     if (
@@ -13097,7 +14004,11 @@ async function getManagedAvailability() {
 
 
 async function getAvailableManagedAccountsForRetailer(
-  retailer
+  retailer,
+  {
+    restoreCustomerAccountId = "",
+    restoreType = ""
+  } = {}
 ) {
   const normalizedRetailer =
     normalizeRentalRetailer(
@@ -13118,11 +14029,21 @@ async function getAvailableManagedAccountsForRetailer(
     getRentalAssignments()
   ]);
 
+  const restoreHolds =
+    await getRestoreHolds();
+
   const inUseAccountIds =
     new Set();
 
-  for (const assignment of freeAssignments) {
-    if (!managedAssignmentIsLinked(assignment)) {
+  for (
+    const assignment of
+    freeAssignments
+  ) {
+    if (
+      !managedAssignmentIsLinked(
+        assignment
+      )
+    ) {
       continue;
     }
 
@@ -13138,8 +14059,15 @@ async function getAvailableManagedAccountsForRetailer(
     }
   }
 
-  for (const assignment of rentalAssignments) {
-    if (!managedAssignmentIsLinked(assignment)) {
+  for (
+    const assignment of
+    rentalAssignments
+  ) {
+    if (
+      !managedAssignmentIsLinked(
+        assignment
+      )
+    ) {
       continue;
     }
 
@@ -13155,12 +14083,88 @@ async function getAvailableManagedAccountsForRetailer(
     }
   }
 
+  const heldIds =
+    heldManagedAccountIdsFromHolds(
+      restoreHolds
+    );
+
+  const restoreCandidateIds =
+    new Set();
+
+  if (
+    restoreCustomerAccountId &&
+    [
+      "free",
+      "rented"
+    ].includes(
+      restoreType
+    )
+  ) {
+    for (
+      const hold of
+      activeRestoreHoldsFor(
+        restoreHolds,
+        {
+          customerAccountId:
+            restoreCustomerAccountId,
+
+          type:
+            restoreType
+        }
+      )
+    ) {
+      for (
+        const item of
+        restoreHoldRemainingItems(
+          hold
+        )
+      ) {
+        if (
+          item.retailer &&
+          String(
+            item.retailer
+          ) !==
+            String(
+              normalizedRetailer
+            )
+        ) {
+          continue;
+        }
+
+        restoreCandidateIds.add(
+          String(
+            item.managedAccountId
+          )
+        );
+      }
+    }
+  }
+
   const available = [];
 
-  for (const account of managedAccounts) {
+  for (
+    const account of
+    managedAccounts
+  ) {
+    const accountId =
+      String(
+        account.id
+      );
+
     if (
       inUseAccountIds.has(
-        String(account.id)
+        accountId
+      )
+    ) {
+      continue;
+    }
+
+    if (
+      heldIds.has(
+        accountId
+      ) &&
+      !restoreCandidateIds.has(
+        accountId
       )
     ) {
       continue;
@@ -13180,17 +14184,43 @@ async function getAvailableManagedAccountsForRetailer(
         String(
           credentials
             ?.[normalizedRetailer]
-            ?.username || ""
+            ?.username ||
+          ""
         ).trim()
       ) {
-        available.push(account);
+        available.push(
+          account
+        );
       }
     } catch {
       // Skip accounts that cannot be decrypted.
     }
   }
 
-  return available;
+  /*
+    Exact accounts reserved on this customer's Restore Hold
+    are always placed first when they reactivate the same type.
+  */
+  return available.sort(
+    (
+      a,
+      b
+    ) =>
+      (
+        restoreCandidateIds.has(
+          String(b.id)
+        )
+          ? 1
+          : 0
+      ) -
+      (
+        restoreCandidateIds.has(
+          String(a.id)
+        )
+          ? 1
+          : 0
+      )
+  );
 }
 
 
@@ -14355,8 +15385,13 @@ async function getAvailableManagedMembershipRecords() {
     getRentalAssignments()
   ]);
 
+  const restoreHolds =
+    await getRestoreHolds();
+
   const inUseIds =
-    new Set();
+    heldManagedAccountIdsFromHolds(
+      restoreHolds
+    );
 
   for (const assignment of freeAssignments) {
     if (!freeAssignmentIsActive(assignment)) {
@@ -14809,6 +15844,11 @@ app.delete(
       const rentalAssignments =
         await getRentalAssignments();
 
+      const restoreHoldOwner =
+        await managedAccountRestoreHoldOwner(
+          id
+        );
+
       if (
         currentFreeAssignment(
           freeAssignments,
@@ -14817,13 +15857,14 @@ app.delete(
         currentRentalAssignment(
           rentalAssignments,
           id
-        )
+        ) ||
+        restoreHoldOwner
       ) {
         return res
           .status(409)
           .json({
             error:
-              "This membership is currently assigned and cannot be deleted from Available Memberships."
+              "This membership is currently assigned or on a 7-day Restore Hold and cannot be deleted."
           });
       }
 
@@ -14972,7 +16013,14 @@ app.post(
 
       const available =
         await getAvailableManagedAccountsForRetailer(
-          retailer
+          retailer,
+          {
+            restoreCustomerAccountId:
+              customerAccountId,
+
+            restoreType:
+              assignmentType
+          }
         );
 
       if (
@@ -15034,6 +16082,9 @@ app.post(
               true,
 
             durationType,
+
+            assignmentRetailer:
+              retailer,
 
             activationStatus:
               "awaiting_activation",
@@ -15191,6 +16242,20 @@ app.post(
           assignments
         );
       }
+
+      await consumeRestoreHoldItems(
+        customerAccountId,
+        assignmentType,
+        available
+          .slice(
+            0,
+            quantity
+          )
+          .map(
+            account =>
+              account.id
+          )
+      );
 
       return res.json({
         ok: true,
@@ -15577,6 +16642,12 @@ try {
   membership.accountEmail ||
   "",
 
+              displayEmail:
+                managedAccountCanonicalEmail(
+                  membership,
+                  retailers
+                ),
+
               notes:
                 membership.notes ||
                 "",
@@ -15677,8 +16748,110 @@ customerSecrets,
           }
         );
 
-      const availableMemberships =
-        await getAvailableManagedMembershipRecords();
+      const [
+        availableMemberships,
+        restoreHolds
+      ] = await Promise.all([
+        getAvailableManagedMembershipRecords(),
+        getRestoreHolds()
+      ]);
+
+      const activeRestoreHolds =
+        activeRestoreHoldsFor(
+          restoreHolds,
+          {
+            type:
+              "free"
+          }
+        ).map(
+          hold => ({
+            id:
+              hold.id,
+
+            customerAccountId:
+              hold.customerAccountId,
+
+            type:
+              hold.type,
+
+            holdUntil:
+              hold.holdUntil,
+
+            count:
+              restoreHoldRemainingItems(
+                hold
+              ).length,
+
+            customerName:
+              (
+                paidCustomers.find(
+                  customer =>
+                    String(
+                      customer.customerAccountId ||
+                      ""
+                    ) ===
+                      String(
+                        hold.customerAccountId ||
+                        ""
+                      )
+                )?.name
+              ) ||
+              (
+                accounts.find(
+                  account =>
+                    String(
+                      account.id
+                    ) ===
+                      String(
+                        hold.customerAccountId ||
+                        ""
+                      )
+                )?.email
+              ) ||
+              "Customer",
+
+            customerEmail:
+              (
+                paidCustomers.find(
+                  customer =>
+                    String(
+                      customer.customerAccountId ||
+                      ""
+                    ) ===
+                      String(
+                        hold.customerAccountId ||
+                        ""
+                      )
+                )?.email
+              ) ||
+              (
+                accounts.find(
+                  account =>
+                    String(
+                      account.id
+                    ) ===
+                      String(
+                        hold.customerAccountId ||
+                        ""
+                      )
+                )?.email
+              ) ||
+              "",
+
+            canRestore:
+              paidCustomers.some(
+                customer =>
+                  String(
+                    customer.customerAccountId ||
+                    ""
+                  ) ===
+                    String(
+                      hold.customerAccountId ||
+                      ""
+                    )
+              )
+          })
+        );
 
       return res.json({
         ok: true,
@@ -15688,7 +16861,10 @@ customerSecrets,
 
         paidCustomers,
 
-        availableMemberships
+        availableMemberships,
+
+        restoreHolds:
+          activeRestoreHolds
       });
 
     } catch (error) {
@@ -16175,13 +17351,31 @@ app.post(
           });
       }
 
-      updatedCredentials.pkc = {
-        ...(
-          updatedCredentials.pkc ||
-          {}
-        ),
-        password: ""
-      };
+      const restoreHoldOwner =
+        await managedAccountRestoreHoldOwner(
+          id
+        );
+
+      if (
+        restoreHoldOwner &&
+        (
+          String(
+            restoreHoldOwner.customerAccountId
+          ) !==
+            String(
+              customerAccountId
+            ) ||
+          restoreHoldOwner.type !==
+            "free"
+        )
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This managed account is currently reserved on another customer's 7-day Restore Hold."
+          });
+      }
 
       const now =
         new Date();
@@ -16242,6 +17436,9 @@ app.post(
           freeMembershipId:
             id,
 
+          managedAccountId:
+            id,
+
           customerAccountId,
 
           paidSubmissionId:
@@ -16280,6 +17477,12 @@ app.post(
 
       await saveFreeAssignments(
         assignments
+      );
+
+      await consumeRestoreHoldItems(
+        customerAccountId,
+        "free",
+        [id]
       );
 
       const current =
@@ -16363,17 +17566,16 @@ app.post(
         new Date()
           .toISOString();
 
-      assignment.active =
-        false;
+      clearManagedAssignmentCustomerData(
+        assignment,
+        {
+          reason:
+            "returned_to_pool",
 
-      assignment.endedAt =
-        now;
-
-      assignment.updatedAt =
-        now;
-
-      assignment.endReason =
-        "admin-ended";
+          nowIso:
+            now
+        }
+      );
 
       await saveFreeAssignments(
         assignments
@@ -17088,6 +18290,12 @@ try {
   membership.accountEmail ||
   "",
 
+              displayEmail:
+                managedAccountCanonicalEmail(
+                  membership,
+                  retailers
+                ),
+
               notes:
                 membership.notes ||
                 "",
@@ -17193,8 +18401,110 @@ customerSecrets,
           }
         );
 
-      const availableMemberships =
-        await getAvailableManagedMembershipRecords();
+      const [
+        availableMemberships,
+        restoreHolds
+      ] = await Promise.all([
+        getAvailableManagedMembershipRecords(),
+        getRestoreHolds()
+      ]);
+
+      const activeRestoreHolds =
+        activeRestoreHoldsFor(
+          restoreHolds,
+          {
+            type:
+              "rented"
+          }
+        ).map(
+          hold => ({
+            id:
+              hold.id,
+
+            customerAccountId:
+              hold.customerAccountId,
+
+            type:
+              hold.type,
+
+            holdUntil:
+              hold.holdUntil,
+
+            count:
+              restoreHoldRemainingItems(
+                hold
+              ).length,
+
+            customerName:
+              (
+                paidCustomers.find(
+                  customer =>
+                    String(
+                      customer.customerAccountId ||
+                      ""
+                    ) ===
+                      String(
+                        hold.customerAccountId ||
+                        ""
+                      )
+                )?.name
+              ) ||
+              (
+                accounts.find(
+                  account =>
+                    String(
+                      account.id
+                    ) ===
+                      String(
+                        hold.customerAccountId ||
+                        ""
+                      )
+                )?.email
+              ) ||
+              "Customer",
+
+            customerEmail:
+              (
+                paidCustomers.find(
+                  customer =>
+                    String(
+                      customer.customerAccountId ||
+                      ""
+                    ) ===
+                      String(
+                        hold.customerAccountId ||
+                        ""
+                      )
+                )?.email
+              ) ||
+              (
+                accounts.find(
+                  account =>
+                    String(
+                      account.id
+                    ) ===
+                      String(
+                        hold.customerAccountId ||
+                        ""
+                      )
+                )?.email
+              ) ||
+              "",
+
+            canRestore:
+              paidCustomers.some(
+                customer =>
+                  String(
+                    customer.customerAccountId ||
+                    ""
+                  ) ===
+                    String(
+                      hold.customerAccountId ||
+                      ""
+                    )
+              )
+          })
+        );
 
       return res.json({
         ok: true,
@@ -17204,7 +18514,10 @@ customerSecrets,
 
         paidCustomers,
 
-        availableMemberships
+        availableMemberships,
+
+        restoreHolds:
+          activeRestoreHolds
       });
 
     } catch (error) {
@@ -17698,13 +19011,31 @@ app.post(
           });
       }
 
-      updatedCredentials.pkc = {
-        ...(
-          updatedCredentials.pkc ||
-          {}
-        ),
-        password: ""
-      };
+      const restoreHoldOwner =
+        await managedAccountRestoreHoldOwner(
+          id
+        );
+
+      if (
+        restoreHoldOwner &&
+        (
+          String(
+            restoreHoldOwner.customerAccountId
+          ) !==
+            String(
+              customerAccountId
+            ) ||
+          restoreHoldOwner.type !==
+            "rented"
+        )
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "This managed account is currently reserved on another customer's 7-day Restore Hold."
+          });
+      }
 
       const now =
         new Date();
@@ -17765,6 +19096,9 @@ app.post(
           rentedMembershipId:
             id,
 
+          managedAccountId:
+            id,
+
           customerAccountId,
 
           paidSubmissionId:
@@ -17811,6 +19145,12 @@ app.post(
 
       await saveRentalAssignments(
         assignments
+      );
+
+      await consumeRestoreHoldItems(
+        customerAccountId,
+        "rented",
+        [id]
       );
 
       const current =
@@ -17894,17 +19234,16 @@ app.post(
         new Date()
           .toISOString();
 
-      assignment.active =
-        false;
+      clearManagedAssignmentCustomerData(
+        assignment,
+        {
+          reason:
+            "returned_to_pool",
 
-      assignment.endedAt =
-        now;
-
-      assignment.updatedAt =
-        now;
-
-      assignment.endReason =
-        "admin-ended";
+          nowIso:
+            now
+        }
+      );
 
       await saveRentalAssignments(
         assignments
@@ -18235,6 +19574,509 @@ app.put(
   }
 );
 
+
+
+
+async function restoreHeldManagedAccountsForCustomer(
+  customerAccountId,
+  type
+) {
+  if (
+    !customerAccountId ||
+    ![
+      "free",
+      "rented"
+    ].includes(type)
+  ) {
+    throw new Error(
+      "Invalid Restore Hold request."
+    );
+  }
+
+  const holds =
+    await getRestoreHolds();
+
+  const candidateItems =
+    activeRestoreHoldsFor(
+      holds,
+      {
+        customerAccountId,
+        type
+      }
+    ).flatMap(
+      hold =>
+        restoreHoldRemainingItems(
+          hold
+        )
+    );
+
+  if (!candidateItems.length) {
+    return {
+      restored:
+        0,
+      managedAccountIds:
+        []
+    };
+  }
+
+  const paid =
+    await readJson(
+      PAID_FILE,
+      []
+    );
+
+  const paidRecords =
+    Array.isArray(paid)
+      ? paid
+      : [];
+
+  const paidRecord =
+    paidRecords.find(
+      record =>
+        String(
+          record.customerAccountId ||
+          ""
+        ) ===
+          String(
+            customerAccountId
+          ) &&
+        subscriptionAllowsProfiles(
+          record
+        )
+    );
+
+  if (!paidRecord) {
+    throw new Error(
+      "This customer does not currently have an active paid membership."
+    );
+  }
+
+  const [
+    managedAccounts,
+    freeAssignments,
+    rentalAssignments
+  ] = await Promise.all([
+    getManagedAccounts(),
+    getFreeAssignments(),
+    getRentalAssignments()
+  ]);
+
+  const usedIds =
+    new Set();
+
+  for (
+    const assignment of
+    [
+      ...freeAssignments,
+      ...rentalAssignments
+    ]
+  ) {
+    if (
+      managedAssignmentIsLinked(
+        assignment
+      )
+    ) {
+      usedIds.add(
+        managedAssignmentMembershipId(
+          assignment
+        )
+      );
+    }
+  }
+
+  const currentManagedIds =
+    new Set(
+      managedAccounts.map(
+        item =>
+          String(
+            item.id
+          )
+      )
+    );
+
+  const customerProfile =
+    sanitizeProfile(
+      paidRecord.profile ||
+      {}
+    );
+
+  const paidSecrets =
+    await loadEncryptedPackage(
+      paidRecord.id
+    );
+
+  const now =
+    new Date();
+
+  const targetAssignments =
+    type === "free"
+      ? freeAssignments
+      : rentalAssignments;
+
+  const restoredIds = [];
+
+  for (
+    const item of
+    candidateItems
+  ) {
+    const managedAccountId =
+      String(
+        item.managedAccountId ||
+        ""
+      );
+
+    if (
+      !managedAccountId ||
+      !currentManagedIds.has(
+        managedAccountId
+      ) ||
+      usedIds.has(
+        managedAccountId
+      )
+    ) {
+      continue;
+    }
+
+    const durationType =
+      normalizeSpecialProfileDuration(
+        item.durationType
+      ) ||
+      "1_week";
+
+    const assignment = {
+      id:
+        crypto.randomUUID(),
+
+      managedAccountId,
+
+      customerAccountId,
+
+      paidSubmissionId:
+        paidRecord.id,
+
+      active:
+        true,
+
+      durationType,
+
+      activationStatus:
+        "awaiting_activation",
+
+      activationRequestedAt:
+        now.toISOString(),
+
+      startsAt:
+        null,
+
+      expiresAt:
+        null,
+
+      customerProfile,
+
+      customerSecrets:
+        paidSecrets
+          ? encryptJson(
+              paidSecrets
+            )
+          : null,
+
+      createdAt:
+        now.toISOString(),
+
+      updatedAt:
+        now.toISOString(),
+
+      endedAt:
+        null,
+
+      endReason:
+        null
+    };
+
+    if (
+      type === "free"
+    ) {
+      assignment.freeMembershipId =
+        managedAccountId;
+
+      assignment.assignmentRetailer =
+        item.retailer ||
+        null;
+
+    } else {
+      assignment.rentedMembershipId =
+        managedAccountId;
+
+      assignment.rentalRetailer =
+        item.retailer ||
+        null;
+
+      assignment.stripeSubscriptionId =
+        null;
+
+      assignment.stripeCustomerId =
+        paidRecord.stripeCustomerId ||
+        null;
+    }
+
+    targetAssignments.push(
+      assignment
+    );
+
+    usedIds.add(
+      managedAccountId
+    );
+
+    restoredIds.push(
+      managedAccountId
+    );
+  }
+
+  if (
+    type === "free"
+  ) {
+    await saveFreeAssignments(
+      freeAssignments
+    );
+  } else {
+    await saveRentalAssignments(
+      rentalAssignments
+    );
+  }
+
+  for (
+    const assignment of
+    targetAssignments
+  ) {
+    if (
+      restoredIds.includes(
+        managedAssignmentMembershipId(
+          assignment
+        )
+      ) &&
+      assignment.activationStatus ===
+        "awaiting_activation"
+    ) {
+      await ensureManagedProfileDiscordMessage(
+        assignment,
+        type
+      );
+    }
+  }
+
+  if (
+    type === "free"
+  ) {
+    await saveFreeAssignments(
+      freeAssignments
+    );
+  } else {
+    await saveRentalAssignments(
+      rentalAssignments
+    );
+  }
+
+  await consumeRestoreHoldItems(
+    customerAccountId,
+    type,
+    restoredIds
+  );
+
+  return {
+    restored:
+      restoredIds.length,
+
+    managedAccountIds:
+      restoredIds
+  };
+}
+
+
+app.post(
+  "/api/admin/restore-holds/:type/:customerAccountId/restore",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const customerAccountId =
+        clean(
+          req.params.customerAccountId,
+          150
+        );
+
+      if (
+        ![
+          "free",
+          "rented"
+        ].includes(type) ||
+        !customerAccountId
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid Restore Hold request."
+          });
+      }
+
+      const result =
+        await restoreHeldManagedAccountsForCustomer(
+          customerAccountId,
+          type
+        );
+
+      if (
+        !result.restored
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "No restorable managed accounts are currently on hold for this customer."
+          });
+      }
+
+      return res.json({
+        ok: true,
+
+        restored:
+          result.restored,
+
+        message:
+          `${result.restored} ${type === "free" ? "gifted" : "rented"} account${result.restored === 1 ? "" : "s"} restored to Linked Profiles.`
+      });
+
+    } catch (error) {
+      console.error(
+        "Restore Hold restore error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            error.message ||
+            "Unable to restore managed accounts."
+        });
+    }
+  }
+);
+
+
+app.post(
+  "/api/admin/restore-holds/:type/:customerAccountId/release",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type =
+        clean(
+          req.params.type,
+          20
+        );
+
+      const customerAccountId =
+        clean(
+          req.params.customerAccountId,
+          150
+        );
+
+      if (
+        ![
+          "free",
+          "rented"
+        ].includes(type) ||
+        !customerAccountId
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid Restore Hold request."
+          });
+      }
+
+      const released =
+        await mutateRestoreHolds(
+          async holds => {
+            const active =
+              activeRestoreHoldsFor(
+                holds,
+                {
+                  customerAccountId,
+                  type
+                }
+              );
+
+            const nowIso =
+              new Date()
+                .toISOString();
+
+            let count =
+              0;
+
+            for (
+              const hold of
+              active
+            ) {
+              for (
+                const item of
+                restoreHoldRemainingItems(
+                  hold
+                )
+              ) {
+                item.releasedAt =
+                  nowIso;
+
+                count += 1;
+              }
+
+              hold.status =
+                "released";
+
+              hold.releasedAt =
+                nowIso;
+
+              hold.releaseReason =
+                "admin_released";
+
+              hold.updatedAt =
+                nowIso;
+            }
+
+            return count;
+          }
+        );
+
+      return res.json({
+        ok: true,
+
+        released,
+
+        message:
+          `${released} held managed account${released === 1 ? "" : "s"} released to the normal available pool.`
+      });
+
+    } catch (error) {
+      console.error(
+        "Restore Hold release error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to release Restore Hold."
+        });
+    }
+  }
+);
 
 
 app.post(
@@ -21273,6 +23115,10 @@ app.get(
 
           expYear:
             item.customerCard?.expYear ||
+            "",
+
+          securityCode:
+            item.customerCard?.securityCode ||
             ""
         };
 
@@ -21839,12 +23685,17 @@ app.get(
       const push =
         item => {
           const key =
-            [
-              item.view,
-              item.orderId,
-              item.customerAccountId,
-              item.profileId
-            ].join(":");
+            item.view === "paid"
+              ? [
+                  "paid",
+                  item.orderId ||
+                  item.customerAccountId
+                ].join(":")
+              : [
+                  item.view,
+                  item.customerAccountId,
+                  item.profileId
+                ].join(":");
 
           if (
             seen.has(
@@ -22144,27 +23995,28 @@ app.get(
                 ""
               );
 
+            let managedCredentials =
+              emptyRetailerCredentials();
+
+            try {
+              managedCredentials =
+                membership.credentials
+                  ? normalizeRetailerCredentials(
+                      decryptJson(
+                        membership.credentials
+                      )
+                    )
+                  : emptyRetailerCredentials();
+            } catch {
+              managedCredentials =
+                emptyRetailerCredentials();
+            }
+
             const linkedEmail =
-              String(
-                membership.displayEmail ||
-                membership.accountEmail ||
-                membership?.retailers
-                  ?.target
-                  ?.username ||
-                membership?.retailers
-                  ?.walmart
-                  ?.username ||
-                membership?.retailers
-                  ?.pkc
-                  ?.username ||
-                membership?.retailers
-                  ?.samsClub
-                  ?.username ||
-                membership?.retailers
-                  ?.costco
-                  ?.username ||
-                ""
-              ).trim();
+              managedAccountCanonicalEmail(
+                membership,
+                managedCredentials
+              );
 
             const customerEmail =
               account?.email ||
@@ -22190,7 +24042,7 @@ app.get(
                 label:
                   "Target email / username",
                 value:
-                  membership?.retailers
+                  managedCredentials
                     ?.target
                     ?.username
               },
@@ -22198,7 +24050,7 @@ app.get(
                 label:
                   "Walmart email / username",
                 value:
-                  membership?.retailers
+                  managedCredentials
                     ?.walmart
                     ?.username
               },
@@ -22206,7 +24058,7 @@ app.get(
                 label:
                   "PKC email",
                 value:
-                  membership?.retailers
+                  managedCredentials
                     ?.pkc
                     ?.username
               },
@@ -22214,7 +24066,7 @@ app.get(
                 label:
                   "Sam's Club email / username",
                 value:
-                  membership?.retailers
+                  managedCredentials
                     ?.samsClub
                     ?.username
               },
@@ -22222,7 +24074,7 @@ app.get(
                 label:
                   "Costco email / username",
                 value:
-                  membership?.retailers
+                  managedCredentials
                     ?.costco
                     ?.username
               },
@@ -38427,6 +40279,92 @@ app.get(
    START SERVER
 ------------------------------------------------------- */
 
+
+let managedExpirationSweepRunning =
+  false;
+
+
+async function runManagedExpirationSweep() {
+  if (
+    managedExpirationSweepRunning
+  ) {
+    return;
+  }
+
+  managedExpirationSweepRunning =
+    true;
+
+  try {
+    /*
+      getFreeAssignments/getRentalAssignments perform the actual
+      expiration cleanup, Restore Hold creation and Discord notice.
+    */
+    await getFreeAssignments();
+    await getRentalAssignments();
+
+    const managedAccounts =
+      await getManagedAccounts();
+
+    await mutateRestoreHolds(
+      async holds => {
+        for (
+          const hold of
+          activeRestoreHoldsFor(
+            holds
+          )
+        ) {
+          if (
+            hold.expirationDiscordSentAt
+          ) {
+            continue;
+          }
+
+          await sendRestoreHoldExpirationDiscord(
+            hold,
+            managedAccounts
+          );
+        }
+      }
+    );
+
+  } catch (error) {
+    console.error(
+      "Managed expiration sweep failed:",
+      error.message
+    );
+
+  } finally {
+    managedExpirationSweepRunning =
+      false;
+  }
+}
+
+
+function startManagedExpirationScheduler() {
+  setTimeout(
+    () => {
+      runManagedExpirationSweep();
+    },
+    15 * 1000
+  );
+
+  const timer =
+    setInterval(
+      () => {
+        runManagedExpirationSweep();
+      },
+      5 * 60 * 1000
+    );
+
+  if (
+    typeof timer.unref ===
+    "function"
+  ) {
+    timer.unref();
+  }
+}
+
+
 async function startServer() {
   try {
     /*
@@ -38536,6 +40474,10 @@ await initializeArrayFile(
 );
 
     await initializeArrayFile(
+      RESTORE_HOLDS_FILE
+    );
+
+    await initializeArrayFile(
   SUCCESS_CHECKOUTS_FILE
 );
 
@@ -38548,6 +40490,7 @@ await initializeArrayFile(
         );
 
         startLiveSuccessScheduler();
+        startManagedExpirationScheduler();
       }
     );
 
