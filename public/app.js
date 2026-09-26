@@ -14735,3 +14735,148 @@ processSecureLinks();
   restore();
 })();
 
+
+
+/* ======================================================
+   KEEP CUSTOMER IN THE SAME PAGE POSITION AFTER SAVE / SUBMIT
+====================================================== */
+(function setupCustomerStableActionPosition() {
+  const storageKey =
+    `sng-customer-action-position:${location.pathname}${location.hash}`;
+
+  let clearTimer =
+    null;
+
+  function remember() {
+    sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        y:
+          window.scrollY,
+
+        at:
+          Date.now()
+      })
+    );
+  }
+
+  function restore() {
+    let saved;
+
+    try {
+      saved =
+        JSON.parse(
+          sessionStorage.getItem(
+            storageKey
+          ) ||
+          "null"
+        );
+    } catch {
+      saved =
+        null;
+    }
+
+    if (
+      !saved ||
+      Date.now() -
+        Number(
+          saved.at ||
+          0
+        ) >
+        15000
+    ) {
+      return;
+    }
+
+    requestAnimationFrame(
+      () => {
+        window.scrollTo(
+          window.scrollX,
+          Number(
+            saved.y ||
+            0
+          )
+        );
+      }
+    );
+
+    clearTimeout(
+      clearTimer
+    );
+
+    clearTimer =
+      setTimeout(
+        () => {
+          sessionStorage.removeItem(
+            storageKey
+          );
+        },
+        900
+      );
+  }
+
+  document.addEventListener(
+    "submit",
+    remember,
+    true
+  );
+
+  document.addEventListener(
+    "click",
+    event => {
+      const button =
+        event.target.closest(
+          "button"
+        );
+
+      if (!button) {
+        return;
+      }
+
+      const label =
+        String(
+          button.textContent ||
+          ""
+        )
+          .replace(
+            /\s+/g,
+            " "
+          )
+          .trim()
+          .toUpperCase();
+
+      if (
+        /SAVE|SUBMIT|UPDATE|ADD PROFILE|DELETE|REMOVE|ACTIVATE|DEACTIVATE|EXTEND|RETURN TO POOL|LINK EXISTING|CLAIM|CLEAR CART|CHECKOUT|CONFIRM/.test(
+          label
+        )
+      ) {
+        remember();
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    "pageshow",
+    restore
+  );
+
+  const observer =
+    new MutationObserver(
+      () => {
+        restore();
+      }
+    );
+
+  observer.observe(
+    document.body,
+    {
+      childList:
+        true,
+
+      subtree:
+        true
+    }
+  );
+})();
+
