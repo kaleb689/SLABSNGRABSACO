@@ -4083,6 +4083,110 @@
     }
 
 
+
+    /* =========================================
+       LINKED BULK JIG / ATTACH PAYMENT
+    ========================================= */
+
+    .linked-profiles-bulk-toolbar {
+      display: grid;
+      gap: 8px;
+      padding: 14px 16px 0;
+    }
+
+    .linked-profiles-bulk-toolbar p {
+      margin: 0;
+      color: #8ea8b8;
+      font-size: 9px;
+      line-height: 1.5;
+    }
+
+    .linked-jig-attach-payment-button {
+      width: 100%;
+      min-height: 52px;
+      font-size: 12px !important;
+      letter-spacing: .5px;
+    }
+
+    .linked-active-status-button {
+      min-height: 48px !important;
+      padding: 0 18px !important;
+      font-size: 11px !important;
+      font-weight: 950 !important;
+      display: inline-flex !important;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border-color: #2ca56c !important;
+      background: #0a3525 !important;
+      color: #6cf1ac !important;
+      box-shadow: 0 0 18px rgba(77, 236, 156, .18);
+    }
+
+    .linked-active-light {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #55eca0;
+      box-shadow: 0 0 11px #55eca0;
+    }
+
+    .linked-visible-data-line {
+      display: grid;
+      grid-template-columns: minmax(100px, auto) minmax(0, 1fr);
+      gap: 9px;
+      align-items: center;
+      margin-top: 8px;
+      padding: 9px 10px;
+      border: 1px solid #19455a;
+      border-radius: 8px;
+      background: #06131d;
+    }
+
+    .linked-visible-data-line span {
+      color: #87a6b8;
+      font-size: 8px;
+      font-weight: 950;
+      letter-spacing: .6px;
+    }
+
+    .linked-visible-data-line strong {
+      color: #f1fbff;
+      font-size: 10px;
+      word-break: break-all;
+    }
+
+    .admin-saved-detail-source {
+      color: #62dfff !important;
+      font-size: 8px !important;
+      font-weight: 900;
+      letter-spacing: .4px;
+    }
+
+    .profile-export-select-row span {
+      display: grid !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      min-width: 0;
+    }
+
+    .profile-export-select-row strong {
+      display: block !important;
+      color: #effaff !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      font-size: 11px !important;
+    }
+
+    .profile-export-select-row small {
+      display: block !important;
+      color: #68dfff !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      font-size: 9px !important;
+    }
+
+
   </style>
 </head>
 
@@ -6202,6 +6306,20 @@ function renderOrder(x) {
     <span class="admin-collapsible-arrow">›</span>
   </summary>
 
+  <div class="linked-profiles-bulk-toolbar">
+    <button
+      type="button"
+      class="admin-save-button linked-jig-attach-payment-button"
+      data-jig-attach-payment="${escapeHtml(x.id)}"
+    >
+      JIG &amp; ATTACH PAYMENT
+    </button>
+
+    <p>
+      Evenly spreads every saved paid-profile/extra shipping address and card across this customer's linked Gifted/Rented profiles, using one address and one card per linked profile.
+    </p>
+  </div>
+
   <div
     class="admin-retailer-wrap"
     data-linked-profiles-container="${escapeHtml(x.id)}"
@@ -6218,7 +6336,7 @@ function renderOrder(x) {
     <div>
       <h3>Saved Shipping &amp; Payment</h3>
       <p>
-        Cycle through the customer's saved addresses and masked payment methods.
+        Every unique shipping address and card from all paid profiles plus any extra saved addresses/cards.
       </p>
     </div>
     <span class="admin-collapsible-arrow">›</span>
@@ -7613,41 +7731,18 @@ function linkedProfileDetailHtml(
                     )}
                   </p>
 
-                  <div class="linked-sensitive-line">
+                  <div class="linked-visible-data-line">
                     <span>
                       CARD NUMBER
                     </span>
 
-                    <strong
-                      data-linked-card-number
-                      data-full-value="${escapeHtml(
-                        card.cardNumber ||
-                        ""
-                      )}"
-                      data-masked-value="${escapeHtml(
-                        card.maskedNumber ||
-                        "Card saved"
-                      )}"
-                    >
+                    <strong>
                       ${escapeHtml(
+                        card.cardNumber ||
                         card.maskedNumber ||
                         "Card saved"
                       )}
                     </strong>
-
-                    ${
-                      card.cardNumber
-                        ? `
-                            <button
-                              type="button"
-                              class="linked-sensitive-toggle"
-                              data-linked-sensitive-toggle
-                            >
-                              Show
-                            </button>
-                          `
-                        : ""
-                    }
                   </div>
 
                   <p>
@@ -7666,27 +7761,16 @@ function linkedProfileDetailHtml(
                   ${
                     card.securityCode
                       ? `
-                          <div class="linked-sensitive-line">
+                          <div class="linked-visible-data-line">
                             <span>
                               SECURITY CODE
                             </span>
 
-                            <strong
-                              data-full-value="${escapeHtml(
+                            <strong>
+                              ${escapeHtml(
                                 card.securityCode
-                              )}"
-                              data-masked-value="••••••"
-                            >
-                              ••••••
+                              )}
                             </strong>
-
-                            <button
-                              type="button"
-                              class="linked-sensitive-toggle"
-                              data-linked-sensitive-toggle
-                            >
-                              Show
-                            </button>
                           </div>
                         `
                       : ""
@@ -7802,7 +7886,7 @@ function linkedProfileDetailHtml(
 
             <button
               type="button"
-              class="admin-save-button"
+              class="admin-save-button linked-active-status-button"
               data-linked-status-action="activate"
               data-linked-type="${escapeHtml(
                 membership.type
@@ -7812,6 +7896,7 @@ function linkedProfileDetailHtml(
                 membership.id
               )}"
             >
+              <span class="linked-active-light"></span>
               ACTIVE
             </button>
 
@@ -8119,25 +8204,13 @@ function linkedProfileDetailHtml(
             </div>
 
             <div class="admin-edit-field wide">
-              <div class="admin-sensitive-input-row">
-                <input
+              <input
                   name="acoCardNumber"
-                  type="password"
-                  value="${escapeHtml(
+                  type="text"                  value="${escapeHtml(
                     card.cardNumber ||
                     ""
                   )}"
-                  data-admin-sensitive-input
                 >
-
-                <button
-                  type="button"
-                  class="reveal-button"
-                  data-admin-sensitive-toggle
-                >
-                  Show
-                </button>
-              </div>
               <label>Card Number</label>
             </div>
 
@@ -8164,25 +8237,13 @@ function linkedProfileDetailHtml(
             </div>
 
             <div class="admin-edit-field wide">
-              <div class="admin-sensitive-input-row">
-                <input
+              <input
                   name="securityCode"
-                  type="password"
-                  value="${escapeHtml(
+                  type="text"                  value="${escapeHtml(
                     card.securityCode ||
                     ""
                   )}"
-                  data-admin-sensitive-input
                 >
-
-                <button
-                  type="button"
-                  class="reveal-button"
-                  data-admin-sensitive-toggle
-                >
-                  Show
-                </button>
-              </div>
               <label>Security Code</label>
             </div>
 
@@ -8729,7 +8790,7 @@ async function loadAdminSavedDetails(
         <div class="admin-saved-detail-card">
           <details>
             <summary>
-              EXTRA SHIPPING ADDRESSES
+              ALL SHIPPING ADDRESSES
             </summary>
 
             <div class="admin-saved-detail-body">
@@ -8764,7 +8825,7 @@ async function loadAdminSavedDetails(
         <div class="admin-saved-detail-card">
           <details>
             <summary>
-              EXTRA PAYMENTS
+              ALL PAYMENT CARDS
             </summary>
 
             <div class="admin-saved-detail-body">
@@ -8860,6 +8921,21 @@ async function loadAdminSavedDetails(
                     .join(", ")
                 )}
               </p>
+
+              <p class="admin-saved-detail-source">
+                SOURCE:
+                ${escapeHtml(
+                  String(
+                    item.source ||
+                    "saved"
+                  )
+                    .replace(
+                      /_/g,
+                      " "
+                    )
+                    .toUpperCase()
+                )}
+              </p>
             `
           : `<p class="admin-retailer-empty">No saved addresses.</p>`;
     };
@@ -8881,17 +8957,31 @@ async function loadAdminSavedDetails(
               <p>
                 <strong>
                   ${escapeHtml(
-                    item.cardholder ||
+                    item.cardLabel ||
+                    "Saved Card"
+                  )}
+                </strong>
+              </p>
+
+              <p>
+                ${escapeHtml(
+                  item.cardholder ||
+                  "—"
+                )}
+              </p>
+
+              <p>
+                CARD NUMBER:
+                <strong>
+                  ${escapeHtml(
+                    item.acoCardNumber ||
+                    item.cardNumber ||
+                    item.maskedNumber ||
                     "—"
                   )}
                 </strong>
               </p>
-              <p>
-                ${escapeHtml(
-                  item.maskedNumber ||
-                  "Card saved"
-                )}
-              </p>
+
               <p>
                 EXP:
                 ${escapeHtml(
@@ -8905,108 +8995,34 @@ async function loadAdminSavedDetails(
                 )}
               </p>
 
-              <div
-                class="admin-sensitive-row"
-                data-admin-security-code-row
-              >
-                <span>
-                  ACCOUNT SECURITY CODE:
-                </span>
-
-                <strong
-                  data-admin-security-code-value
-                  data-hidden-value="${escapeHtml(
+              <p>
+                SECURITY CODE:
+                <strong>
+                  ${escapeHtml(
+                    item.securityCode ||
                     item.accountSecurityCode ||
-                    ""
-                  )}"
-                >
-                  ${
-                    item.accountSecurityCode
-                      ? "••••••"
-                      : "Not entered"
-                  }
+                    "—"
+                  )}
                 </strong>
+              </p>
 
-                ${
-                  item.accountSecurityCode
-                    ? `
-                      <button
-                        type="button"
-                        class="admin-show-sensitive"
-                        data-toggle-account-security-code
-                      >
-                        Show
-                      </button>
-                    `
-                    : ""
-                }
-              </div>
+              <p class="admin-saved-detail-source">
+                SOURCE:
+                ${escapeHtml(
+                  String(
+                    item.source ||
+                    "saved"
+                  )
+                    .replace(
+                      /_/g,
+                      " "
+                    )
+                    .toUpperCase()
+                )}
+              </p>
             `
           : `<p class="admin-retailer-empty">No saved payment cards.</p>`;
-
-      paymentPreview
-        .querySelector(
-          "[data-toggle-account-security-code]"
-        )
-        ?.addEventListener(
-          "click",
-          event => {
-            const button =
-              event.currentTarget;
-
-            const value =
-              paymentPreview
-                .querySelector(
-                  "[data-admin-security-code-value]"
-                );
-
-            if (!value) {
-              return;
-            }
-
-            const revealed =
-              button.dataset
-                .revealed ===
-              "true";
-
-            if (revealed) {
-              value.textContent =
-                "••••••";
-
-              button.textContent =
-                "Show";
-
-              button.dataset
-                .revealed =
-                "false";
-            } else {
-              value.textContent =
-                value.dataset
-                  .hiddenValue ||
-                "Not entered";
-
-              button.textContent =
-                "Hide";
-
-              button.dataset
-                .revealed =
-                "true";
-            }
-          }
-        );
     };
-
-    addressSelect
-      ?.addEventListener(
-        "change",
-        renderAddress
-      );
-
-    paymentSelect
-      ?.addEventListener(
-        "change",
-        renderPayment
-      );
 
     renderAddress();
     renderPayment();
@@ -18189,14 +18205,25 @@ document.addEventListener(
                           <span>
                             <strong>
                               ${escapeHtml(
-                                option.label
+                                option.label ||
+                                option.accountEmail ||
+                                option.key ||
+                                "Profile"
                               )}
                             </strong>
 
                             <small>
                               ${escapeHtml(
-                                option.accountEmail ||
-                                option.type ||
+                                [
+                                  option.type
+                                    ? String(option.type).toUpperCase()
+                                    : "",
+                                  option.accountEmail ||
+                                  ""
+                                ]
+                                  .filter(Boolean)
+                                  .join(" • ") ||
+                                option.key ||
                                 ""
                               )}
                             </small>
@@ -19446,6 +19473,92 @@ document.addEventListener(
         "securityCode",
         item.securityCode
       );
+    }
+  },
+  true
+);
+
+
+
+/* =========================================
+   LINKED PROFILES — JIG & ATTACH PAYMENT
+========================================= */
+document.addEventListener(
+  "click",
+  async event => {
+    const button =
+      event.target.closest(
+        "[data-jig-attach-payment]"
+      );
+
+    if (!button) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const orderId =
+      button.dataset
+        .jigAttachPayment;
+
+    const oldText =
+      button.textContent;
+
+    try {
+      button.disabled =
+        true;
+
+      button.textContent =
+        "JIGGING & ATTACHING...";
+
+      const response =
+        await fetch(
+          `/api/admin/submissions/${encodeURIComponent(
+            orderId
+          )}/jig-attach-payment`,
+          {
+            method:
+              "POST",
+
+            credentials:
+              "same-origin"
+          }
+        );
+
+      const data =
+        await response
+          .json()
+          .catch(
+            () => ({})
+          );
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+          "Unable to JIG and attach payment."
+        );
+      }
+
+      await loadAdminLinkedProfiles(
+        orderId
+      );
+
+      alert(
+        `Updated ${data.updatedCount || 0} linked profile${Number(data.updatedCount || 0) === 1 ? "" : "s"}.`
+      );
+
+    } catch (error) {
+      alert(
+        error.message
+      );
+
+    } finally {
+      button.disabled =
+        false;
+
+      button.textContent =
+        oldText;
     }
   },
   true
