@@ -11208,12 +11208,37 @@ function managedMembershipCardHtml(
       membership
     );
 
+  /*
+    Use one exact managed email value everywhere on this row:
+    visible heading, search data, and search result.
+    This prevents the displayed email and searchable email from drifting.
+  */
+  const assignedManagedEmail =
+    managedDisplayEmail(
+      membership
+    );
+
+  const assignedGroupId =
+    String(
+      assignedCustomer
+        ?.customerAccountId ||
+      assignment
+        ?.customerAccountId ||
+      "unassigned"
+    );
+
   return `
   <details
     class="order-section admin-collapsible"
     data-managed-membership-card
     data-managed-membership-id="${escapeHtml(
       membership.id
+    )}"
+    data-managed-assigned-group="${escapeHtml(
+      assignedGroupId
+    )}"
+    data-managed-assigned-type="${escapeHtml(
+      type
     )}"
     data-managed-status="${
       active ||
@@ -11227,9 +11252,7 @@ function managedMembershipCardHtml(
     )}"
     data-managed-assigned-search-values="${escapeHtml(
       JSON.stringify([
-        managedDisplayEmail(
-          membership
-        ) || "",
+        assignedManagedEmail || "",
         membership.accountEmail || "",
         membership.displayEmail || "",
         membership?.retailers?.target?.username || "",
@@ -11257,20 +11280,14 @@ function managedMembershipCardHtml(
       ])
     )}"
     data-managed-assigned-label="${escapeHtml(
-      managedDisplayEmail(
-        membership
-      ) ||
+      assignedManagedEmail ||
       "Assigned Profile"
     )}"
     data-managed-assigned-email="${escapeHtml(
-      managedDisplayEmail(
-        membership
-      )
+      assignedManagedEmail
     )}"
     data-managed-assigned-canonical-email="${escapeHtml(
-      managedDisplayEmail(
-        membership
-      )
+      assignedManagedEmail
     )}"
     data-managed-assigned-customer-email="${escapeHtml(
       assignedCustomer?.email ||
@@ -11318,9 +11335,7 @@ function managedMembershipCardHtml(
 
           <strong>
             ${escapeHtml(
-              managedDisplayEmail(
-                membership
-              )
+              assignedManagedEmail
             )}
           </strong>
         </div>
@@ -21139,9 +21154,27 @@ document.addEventListener(
       return;
     }
 
+    const groupId =
+      String(
+        input.dataset
+          .managedAssignedSearch ||
+        ""
+      );
+
     const group =
       input.closest(
         "[data-managed-customer-group]"
+      );
+
+    const groupType =
+      String(
+        group
+          ?.closest(
+            "[data-managed-group-details]"
+          )
+          ?.dataset
+          ?.managedGroupType ||
+        ""
       );
 
     const resultBox =
@@ -21158,13 +21191,32 @@ document.addEventListener(
         .trim()
         .toLowerCase();
 
+    /*
+      Do not depend on browser-corrected template nesting here.
+      Find the cards by their explicit assignment group + type.
+      This keeps search working even if the cards are rendered outside
+      the nearest wrapper by HTML <details> parsing.
+    */
     const cards =
       Array.from(
-        group
-          ?.querySelectorAll(
-            "[data-managed-assigned-search-values]"
-          ) ||
-        []
+        document.querySelectorAll(
+          "[data-managed-assigned-search-values][data-managed-assigned-group]"
+        )
+      ).filter(
+        card =>
+          String(
+            card.dataset
+              .managedAssignedGroup ||
+            ""
+          ) === groupId &&
+          (
+            !groupType ||
+            String(
+              card.dataset
+                .managedAssignedType ||
+              ""
+            ) === groupType
+          )
       );
 
     const matches = [];
