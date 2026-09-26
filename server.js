@@ -7934,6 +7934,184 @@ async function saveRentedMemberships(
 }
 
 
+
+function managedAssignmentExpirationIsDue(
+  assignment,
+  now = Date.now()
+) {
+  if (
+    !assignment ||
+    !assignment.expiresAt
+  ) {
+    return false;
+  }
+
+  const expires =
+    new Date(
+      assignment.expiresAt
+    ).getTime();
+
+  return (
+    Number.isFinite(
+      expires
+    ) &&
+    expires <= now
+  );
+}
+
+
+function clearManagedAssignmentCustomerData(
+  assignment,
+  {
+    reason = "expired",
+    nowIso =
+      new Date().toISOString()
+  } = {}
+) {
+  if (!assignment) {
+    return false;
+  }
+
+  /*
+    The managed retailer account/login belongs to the managed pool
+    and is stored separately. Only customer-specific attached data
+    is cleared here.
+  */
+
+  assignment.active =
+    false;
+
+  assignment.activationStatus =
+    reason ===
+      "returned_to_pool"
+      ? "returned_to_pool"
+      : "expired";
+
+  assignment.endReason =
+    reason;
+
+  assignment.endedAt =
+    assignment.endedAt ||
+    nowIso;
+
+  if (
+    reason ===
+    "expired"
+  ) {
+    assignment.expiredAt =
+      assignment.expiredAt ||
+      nowIso;
+  }
+
+  if (
+    reason ===
+    "returned_to_pool"
+  ) {
+    assignment.returnedToPoolAt =
+      assignment.returnedToPoolAt ||
+      nowIso;
+  }
+
+  assignment.updatedAt =
+    nowIso;
+
+  /*
+    Remove everything belonging to the former customer before
+    this managed account is visible in the Available pool.
+  */
+  assignment.customerAccountId =
+    null;
+
+  delete assignment.customerProfile;
+  delete assignment.customerSecrets;
+  delete assignment.customerUpdatedAt;
+
+  delete assignment.selectedAddressId;
+  delete assignment.selectedPaymentId;
+  delete assignment.savedAddressId;
+  delete assignment.savedPaymentMethodId;
+
+  delete assignment.jigSourceKey;
+  delete assignment.jigSourceAddress;
+  delete assignment.jiggedAddress;
+  delete assignment.jigVariantIndex;
+  delete assignment.jigHistoryKeys;
+
+  delete assignment.paidSubmissionId;
+
+  delete assignment.activationRequestedAt;
+  delete assignment.startsAt;
+  delete assignment.activatedAt;
+  delete assignment.deactivatedAt;
+
+  delete assignment.discordProfileMessageId;
+  delete assignment.discordProfileMessageType;
+  delete assignment.discordProfileMessageUpdatedAt;
+
+  return true;
+}
+
+
+function cleanupExpiredManagedAssignments(
+  assignments
+) {
+  const now =
+    Date.now();
+
+  const nowIso =
+    new Date(
+      now
+    ).toISOString();
+
+  let changed =
+    false;
+
+  for (
+    const assignment of
+    assignments
+  ) {
+    if (
+      !managedAssignmentExpirationIsDue(
+        assignment,
+        now
+      )
+    ) {
+      continue;
+    }
+
+    /*
+      Clean even if another route already marked the assignment
+      expired but left customer data behind.
+    */
+    if (
+      assignment.customerAccountId ||
+      assignment.customerProfile ||
+      assignment.customerSecrets ||
+      String(
+        assignment.activationStatus ||
+        ""
+      ) !== "expired" ||
+      assignment.active ===
+        true
+    ) {
+      clearManagedAssignmentCustomerData(
+        assignment,
+        {
+          reason:
+            "expired",
+          nowIso
+        }
+      );
+
+      changed =
+        true;
+    }
+  }
+
+  return changed;
+}
+
+
 async function getRentalAssignments() {
   const records =
     await readJson(
@@ -7941,9 +8119,22 @@ async function getRentalAssignments() {
       []
     );
 
-  return Array.isArray(records)
-    ? records
-    : [];
+  const assignments =
+    Array.isArray(records)
+      ? records
+      : [];
+
+  if (
+    cleanupExpiredManagedAssignments(
+      assignments
+    )
+  ) {
+    await saveRentalAssignments(
+      assignments
+    );
+  }
+
+  return assignments;
 }
 
 
@@ -8008,9 +8199,22 @@ async function getFreeAssignments() {
       []
     );
 
-  return Array.isArray(records)
-    ? records
-    : [];
+  const assignments =
+    Array.isArray(records)
+      ? records
+      : [];
+
+  if (
+    cleanupExpiredManagedAssignments(
+      assignments
+    )
+  ) {
+    await saveFreeAssignments(
+      assignments
+    );
+  }
+
+  return assignments;
 }
 
 
@@ -9570,6 +9774,12 @@ function safeRetailerProfile(
 
     readiness,
 
+    ...exportReadinessPayload(
+      customerProfile ||
+        {},
+      customerSecrets
+    ),
+
     activationStatus:
       normalizeProfileActivationStatus(
         record.activationStatus,
@@ -9715,6 +9925,12 @@ function adminRetailerProfile(
 
     readiness,
 
+    ...exportReadinessPayload(
+      customerProfile ||
+        {},
+      customerSecrets
+    ),
+
     activationStatus:
       normalizeProfileActivationStatus(
         record.activationStatus,
@@ -9805,17 +10021,15 @@ app.get(
             assignment.activationStatus !==
             "expired"
           ) {
-            assignment.activationStatus =
-              "expired";
-
-            assignment.expiredAt =
-              now.toISOString();
-
-            assignment.updatedAt =
-              now.toISOString();
-
-            assignment.endReason =
-              "expired";
+            clearManagedAssignmentCustomerData(
+              assignment,
+              {
+                reason:
+                  "expired",
+                nowIso:
+                  now.toISOString()
+              }
+            );
 
             assignmentsChanged =
               true;
@@ -10124,17 +10338,15 @@ app.get(
             assignment.activationStatus !==
             "expired"
           ) {
-            assignment.activationStatus =
-              "expired";
-
-            assignment.expiredAt =
-              now.toISOString();
-
-            assignment.updatedAt =
-              now.toISOString();
-
-            assignment.endReason =
-              "expired";
+            clearManagedAssignmentCustomerData(
+              assignment,
+              {
+                reason:
+                  "expired",
+                nowIso:
+                  now.toISOString()
+              }
+            );
 
             assignmentsChanged =
               true;
@@ -14952,17 +15164,15 @@ app.get(
           expiresAt.getTime() <=
             now.getTime()
         ) {
-          assignment.active =
-            false;
-
-          assignment.activationStatus =
-            "expired";
-
-          assignment.endedAt =
-            now.toISOString();
-
-          assignment.endReason =
-            "expired";
+          clearManagedAssignmentCustomerData(
+            assignment,
+            {
+              reason:
+                "expired",
+              nowIso:
+                now.toISOString()
+            }
+          );
 
           assignmentsChanged =
             true;
@@ -16459,17 +16669,15 @@ app.get(
           expiresAt.getTime() <=
             now.getTime()
         ) {
-          assignment.active =
-            false;
-
-          assignment.activationStatus =
-            "expired";
-
-          assignment.endedAt =
-            now.toISOString();
-
-          assignment.endReason =
-            "expired";
+          clearManagedAssignmentCustomerData(
+            assignment,
+            {
+              reason:
+                "expired",
+              nowIso:
+                now.toISOString()
+            }
+          );
 
           assignmentsChanged =
             true;
@@ -18097,26 +18305,15 @@ app.post(
         new Date()
           .toISOString();
 
-      assignment.active =
-        false;
-
-      assignment.activationStatus =
-        "returned_to_pool";
-
-      assignment.returnedToPoolAt =
-        now;
-
-      assignment.endedAt =
-        now;
-
-      assignment.endReason =
-        "returned_to_pool";
-
-      assignment.updatedAt =
-        now;
-
-      assignment.customerAccountId =
-        null;
+      clearManagedAssignmentCustomerData(
+        assignment,
+        {
+          reason:
+            "returned_to_pool",
+          nowIso:
+            now
+        }
+      );
 
       if (type === "free") {
         await saveFreeAssignments(
@@ -18148,6 +18345,343 @@ app.post(
   }
 );
 
+
+
+
+function exportProfileMissingFields(
+  profile = {},
+  secrets = {}
+) {
+  const missing = [];
+
+  const requiredProfileFields = [
+    ["firstName", "first name"],
+    ["lastName", "last name"],
+    ["email", "email"],
+    ["phone", "phone"],
+    ["address", "street address"],
+    ["country", "country"],
+    ["state", "state"],
+    ["city", "city"],
+    ["zip", "ZIP code"]
+  ];
+
+  for (
+    const [
+      key,
+      label
+    ] of
+    requiredProfileFields
+  ) {
+    if (
+      !String(
+        profile?.[key] ||
+        ""
+      ).trim()
+    ) {
+      missing.push(
+        label
+      );
+    }
+  }
+
+  const digits =
+    String(
+      secrets?.acoCardNumber ||
+      secrets?.cardNumber ||
+      ""
+    ).replace(
+      /\D/g,
+      ""
+    );
+
+  if (
+    !/^\d{12,19}$/.test(
+      digits
+    )
+  ) {
+    missing.push(
+      "card number"
+    );
+  }
+
+  if (
+    !String(
+      secrets?.cardholder ||
+      ""
+    ).trim()
+  ) {
+    missing.push(
+      "cardholder name"
+    );
+  }
+
+  if (
+    !/^(0[1-9]|1[0-2])$/.test(
+      String(
+        secrets?.expMonth ||
+        ""
+      )
+    )
+  ) {
+    missing.push(
+      "expiration month"
+    );
+  }
+
+  if (
+    !/^\d{4}$/.test(
+      String(
+        secrets?.expYear ||
+        ""
+      )
+    )
+  ) {
+    missing.push(
+      "expiration year"
+    );
+  }
+
+  return missing;
+}
+
+
+function exportReadinessPayload(
+  profile,
+  secrets
+) {
+  const missingFields =
+    exportProfileMissingFields(
+      profile,
+      secrets
+    );
+
+  return {
+    exportReady:
+      missingFields.length ===
+      0,
+
+    missingFields
+  };
+}
+
+
+function retailerDisplayName(
+  retailer
+) {
+  return {
+    target:
+      "Target",
+
+    walmart:
+      "Walmart",
+
+    pkc:
+      "PKC",
+
+    samsClub:
+      "Sam's Club",
+
+    costco:
+      "Costco"
+  }[retailer] ||
+  retailer;
+}
+
+
+function recordRetailerKeys(
+  record
+) {
+  let credentials =
+    emptyRetailerCredentials();
+
+  try {
+    if (
+      record?.credentials
+    ) {
+      credentials =
+        normalizeRetailerCredentials(
+          decryptJson(
+            record.credentials
+          )
+        );
+    }
+  } catch {
+    credentials =
+      emptyRetailerCredentials();
+  }
+
+  return RETAILER_KEYS.filter(
+    retailer =>
+      Boolean(
+        String(
+          credentials?.[retailer]
+            ?.username ||
+          ""
+        ).trim()
+      )
+  );
+}
+
+
+function managedRetailerKeys(
+  membership
+) {
+  const credentials =
+    managedRetailerCredentialsForAdmin(
+      membership
+    );
+
+  return RETAILER_KEYS.filter(
+    retailer =>
+      Boolean(
+        String(
+          credentials?.[retailer]
+            ?.username ||
+          ""
+        ).trim()
+      )
+  );
+}
+
+
+function hayhaProfileHasExactShape(
+  item
+) {
+  if (
+    !item ||
+    typeof item !==
+      "object" ||
+    Array.isArray(item)
+  ) {
+    return false;
+  }
+
+  const topKeys =
+    Object.keys(item);
+
+  const requiredTopKeys = [
+    "name",
+    "shipping",
+    "cardInfo",
+    "sameAsBilling",
+    "groupId",
+    "id",
+    "encrypted"
+  ];
+
+  if (
+    JSON.stringify(topKeys) !==
+    JSON.stringify(
+      requiredTopKeys
+    )
+  ) {
+    return false;
+  }
+
+  const shippingKeys =
+    Object.keys(
+      item.shipping ||
+      {}
+    );
+
+  const requiredShippingKeys = [
+    "firstName",
+    "lastName",
+    "email",
+    "phone",
+    "address",
+    "address2",
+    "country",
+    "state",
+    "city",
+    "zipCode"
+  ];
+
+  if (
+    JSON.stringify(
+      shippingKeys
+    ) !==
+    JSON.stringify(
+      requiredShippingKeys
+    )
+  ) {
+    return false;
+  }
+
+  const cardKeys =
+    Object.keys(
+      item.cardInfo ||
+      {}
+    );
+
+  const requiredCardKeys = [
+    "cardNumber",
+    "holder",
+    "expMonth",
+    "expYear",
+    "cvv"
+  ];
+
+  return (
+    JSON.stringify(
+      cardKeys
+    ) ===
+      JSON.stringify(
+        requiredCardKeys
+      ) &&
+    item.sameAsBilling ===
+      true &&
+    item.encrypted ===
+      false
+  );
+}
+
+
+function linkedAssignmentRetailerKeys(
+  assignment,
+  memberships
+) {
+  const membershipId =
+    assignment.managedAccountId ||
+    assignment.freeMembershipId ||
+    assignment.rentedMembershipId ||
+    "";
+
+  const membership =
+    memberships.find(
+      item =>
+        String(item.id) ===
+        String(
+          membershipId
+        )
+    );
+
+  return membership
+    ? managedRetailerKeys(
+        membership
+      )
+    : [];
+}
+
+
+function decryptAssignmentSecrets(
+  assignment
+) {
+  try {
+    return assignment
+      ?.customerSecrets
+      ? (
+          decryptJson(
+            assignment.customerSecrets
+          ) ||
+          {}
+        )
+      : {};
+  } catch {
+    return {};
+  }
+}
 
 
 function hayhaProfileObject(
@@ -18281,6 +18815,26 @@ app.get(
           150
         );
 
+      const retailer =
+        clean(
+          req.query?.retailer,
+          30
+        );
+
+      if (
+        retailer &&
+        !RETAILER_KEYS.includes(
+          retailer
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Unsupported retailer."
+          });
+      }
+
       const paid =
         await readJson(
           PAID_FILE,
@@ -18345,8 +18899,8 @@ app.get(
 
       const options = [];
 
-      paidProfiles
-        .filter(
+      const paidRecords =
+        paidProfiles.filter(
           record =>
             String(
               record.customerAccountId ||
@@ -18355,28 +18909,152 @@ app.get(
               String(
                 order.customerAccountId
               )
-        )
-        .forEach(
-          (record, index) => {
-            options.push({
-              key:
-                `paid:${record.id}`,
-
-              type:
-                "paid",
-
-              label:
-                `${customerName} Paid Profile ${index + 1}`,
-
-              accountEmail:
-                record.customerProfile
-                  ?.email ||
-                ""
-            });
-          }
         );
 
-      let giftedIndex = 0;
+      let paidNumber = 0;
+
+      for (
+        const record of
+        paidRecords
+      ) {
+        const retailerKeys =
+          recordRetailerKeys(
+            record
+          );
+
+        if (
+          retailer &&
+          !retailerKeys.includes(
+            retailer
+          )
+        ) {
+          continue;
+        }
+
+        paidNumber += 1;
+
+        let secrets = {};
+
+        try {
+          secrets =
+            record.customerSecrets
+              ? (
+                  decryptJson(
+                    record.customerSecrets
+                  ) ||
+                  {}
+                )
+              : {};
+        } catch {
+          secrets = {};
+        }
+
+        const status =
+          exportReadinessPayload(
+            record.customerProfile ||
+              {},
+            secrets
+          );
+
+        options.push({
+          key:
+            `paid:${record.id}`,
+
+          type:
+            "paid",
+
+          retailerKeys,
+
+          label:
+            `${customerName} Paid Profile ${paidNumber}`,
+
+          accountEmail:
+            record.customerProfile
+              ?.email ||
+            "",
+
+          exportReady:
+            status.exportReady,
+
+          missingFields:
+            status.missingFields
+        });
+      }
+
+      const addLinked =
+        (
+          assignment,
+          type,
+          number
+        ) => {
+          const retailerKeys =
+            linkedAssignmentRetailerKeys(
+              assignment,
+              memberships
+            );
+
+          if (
+            retailer &&
+            !retailerKeys.includes(
+              retailer
+            )
+          ) {
+            return;
+          }
+
+          const membershipId =
+            assignment.managedAccountId ||
+            assignment.freeMembershipId ||
+            assignment.rentedMembershipId ||
+            assignment.id;
+
+          const membership =
+            memberships.find(
+              item =>
+                String(item.id) ===
+                String(
+                  membershipId
+                )
+            );
+
+          const secrets =
+            decryptAssignmentSecrets(
+              assignment
+            );
+
+          const status =
+            exportReadinessPayload(
+              assignment.customerProfile ||
+                {},
+              secrets
+            );
+
+          options.push({
+            key:
+              `${type}:${membershipId}`,
+
+            type,
+
+            retailerKeys,
+
+            label:
+              type === "free"
+                ? `${customerName} Gifted ${number}`
+                : `${customerName} Rented ${number}`,
+
+            accountEmail:
+              membership?.accountEmail ||
+              "",
+
+            exportReady:
+              status.exportReady,
+
+            missingFields:
+              status.missingFields
+          });
+        };
+
+      let giftedNumber = 0;
 
       for (
         const assignment of
@@ -18397,37 +19075,31 @@ app.get(
           continue;
         }
 
-        giftedIndex += 1;
-
-        const membershipId =
-          assignment.managedAccountId ||
-          assignment.freeMembershipId ||
-          assignment.id;
-
-        const membership =
-          memberships.find(
-            item =>
-              String(item.id) ===
-              String(membershipId)
+        const retailerKeys =
+          linkedAssignmentRetailerKeys(
+            assignment,
+            memberships
           );
 
-        options.push({
-          key:
-            `free:${membershipId}`,
+        if (
+          retailer &&
+          !retailerKeys.includes(
+            retailer
+          )
+        ) {
+          continue;
+        }
 
-          type:
-            "free",
+        giftedNumber += 1;
 
-          label:
-            `${customerName} Gifted ${giftedIndex}`,
-
-          accountEmail:
-            membership?.accountEmail ||
-            ""
-        });
+        addLinked(
+          assignment,
+          "free",
+          giftedNumber
+        );
       }
 
-      let rentedIndex = 0;
+      let rentedNumber = 0;
 
       for (
         const assignment of
@@ -18448,39 +19120,61 @@ app.get(
           continue;
         }
 
-        rentedIndex += 1;
-
-        const membershipId =
-          assignment.managedAccountId ||
-          assignment.rentedMembershipId ||
-          assignment.id;
-
-        const membership =
-          memberships.find(
-            item =>
-              String(item.id) ===
-              String(membershipId)
+        const retailerKeys =
+          linkedAssignmentRetailerKeys(
+            assignment,
+            memberships
           );
 
-        options.push({
-          key:
-            `rented:${membershipId}`,
+        if (
+          retailer &&
+          !retailerKeys.includes(
+            retailer
+          )
+        ) {
+          continue;
+        }
 
-          type:
-            "rented",
+        rentedNumber += 1;
 
-          label:
-            `${customerName} Rented ${rentedIndex}`,
-
-          accountEmail:
-            membership?.accountEmail ||
-            ""
-        });
+        addLinked(
+          assignment,
+          "rented",
+          rentedNumber
+        );
       }
 
       return res.json({
         ok: true,
+
         customerName,
+
+        retailer:
+          retailer ||
+          null,
+
+        retailerLabel:
+          retailer
+            ? retailerDisplayName(
+                retailer
+              )
+            : "All",
+
+        totalCount:
+          options.length,
+
+        exportReadyCount:
+          options.filter(
+            item =>
+              item.exportReady
+          ).length,
+
+        missingCount:
+          options.filter(
+            item =>
+              !item.exportReady
+          ).length,
+
         options
       });
 
@@ -18512,6 +19206,26 @@ app.post(
           150
         );
 
+      const retailer =
+        clean(
+          req.body?.retailer,
+          30
+        );
+
+      if (
+        !retailer ||
+        !RETAILER_KEYS.includes(
+          retailer
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Choose a supported retailer before exporting."
+          });
+      }
+
       const selected =
         Array.isArray(
           req.body?.selected
@@ -18540,8 +19254,7 @@ app.post(
         );
 
       if (
-        !order ||
-        !order.customerAccountId
+        !order?.customerAccountId
       ) {
         return res
           .status(404)
@@ -18588,185 +19301,277 @@ app.post(
       const groupId =
         crypto.randomUUID();
 
-      const output = [];
-      const options = [];
+      const candidates = [];
 
-      const paidRecords =
+      let paidNumber = 0;
+
+      for (
+        const record of
         paidProfiles.filter(
-          record =>
+          item =>
             String(
-              record.customerAccountId ||
+              item.customerAccountId ||
               ""
             ) ===
               String(
                 order.customerAccountId
               )
-        );
-
-      paidRecords.forEach(
-        (record, index) => {
-          let secrets = {};
-
-          try {
-            if (
-              record.customerSecrets
-            ) {
-              secrets =
-                decryptJson(
-                  record.customerSecrets
-                ) || {};
-            }
-          } catch {
-            secrets = {};
-          }
-
-          const key =
-            `paid:${record.id}`;
-
-          options.push({
-            key,
-            item:
-              hayhaProfileObject(
-                `${customerName} Paid Profile ${index + 1}`,
-                record.customerProfile ||
-                  {},
-                secrets,
-                groupId
-              )
-          });
+        )
+      ) {
+        if (
+          !recordRetailerKeys(
+            record
+          ).includes(
+            retailer
+          )
+        ) {
+          continue;
         }
-      );
 
-      const linkedFree =
-        freeAssignments.filter(
-          assignment =>
-            String(
-              assignment.customerAccountId ||
-              ""
-            ) ===
-              String(
-                order.customerAccountId
-              ) &&
-            managedAssignmentIsLinked(
-              assignment
+        paidNumber += 1;
+
+        let secrets = {};
+
+        try {
+          secrets =
+            record.customerSecrets
+              ? (
+                  decryptJson(
+                    record.customerSecrets
+                  ) ||
+                  {}
+                )
+              : {};
+        } catch {
+          secrets = {};
+        }
+
+        const missingFields =
+          exportProfileMissingFields(
+            record.customerProfile ||
+              {},
+            secrets
+          );
+
+        candidates.push({
+          key:
+            `paid:${record.id}`,
+
+          exportReady:
+            missingFields.length ===
+            0,
+
+          missingFields,
+
+          item:
+            hayhaProfileObject(
+              `${customerName} Paid Profile ${paidNumber}`,
+              record.customerProfile ||
+                {},
+              secrets,
+              groupId
             )
-        );
+        });
+      }
 
-      linkedFree.forEach(
-        (assignment, index) => {
-          let secrets = {};
-
-          try {
-            if (
-              assignment.customerSecrets
-            ) {
-              secrets =
-                decryptJson(
-                  assignment.customerSecrets
-                ) || {};
-            }
-          } catch {
-            secrets = {};
+      const addLinkedCandidate =
+        (
+          assignment,
+          type,
+          number
+        ) => {
+          if (
+            !linkedAssignmentRetailerKeys(
+              assignment,
+              memberships
+            ).includes(
+              retailer
+            )
+          ) {
+            return;
           }
 
           const membershipId =
             assignment.managedAccountId ||
             assignment.freeMembershipId ||
-            assignment.id;
-
-          options.push({
-            key:
-              `free:${membershipId}`,
-
-            item:
-              hayhaProfileObject(
-                `${customerName} Gifted ${index + 1}`,
-                assignment.customerProfile ||
-                  {},
-                secrets,
-                groupId
-              )
-          });
-        }
-      );
-
-      const linkedRented =
-        rentalAssignments.filter(
-          assignment =>
-            String(
-              assignment.customerAccountId ||
-              ""
-            ) ===
-              String(
-                order.customerAccountId
-              ) &&
-            managedAssignmentIsLinked(
-              assignment
-            )
-        );
-
-      linkedRented.forEach(
-        (assignment, index) => {
-          let secrets = {};
-
-          try {
-            if (
-              assignment.customerSecrets
-            ) {
-              secrets =
-                decryptJson(
-                  assignment.customerSecrets
-                ) || {};
-            }
-          } catch {
-            secrets = {};
-          }
-
-          const membershipId =
-            assignment.managedAccountId ||
             assignment.rentedMembershipId ||
             assignment.id;
 
-          options.push({
+          const secrets =
+            decryptAssignmentSecrets(
+              assignment
+            );
+
+          const missingFields =
+            exportProfileMissingFields(
+              assignment.customerProfile ||
+                {},
+              secrets
+            );
+
+          candidates.push({
             key:
-              `rented:${membershipId}`,
+              `${type}:${membershipId}`,
+
+            exportReady:
+              missingFields.length ===
+              0,
+
+            missingFields,
 
             item:
               hayhaProfileObject(
-                `${customerName} Rented ${index + 1}`,
+                type === "free"
+                  ? `${customerName} Gifted ${number}`
+                  : `${customerName} Rented ${number}`,
                 assignment.customerProfile ||
                   {},
                 secrets,
                 groupId
               )
           });
-        }
-      );
+        };
+
+      let giftedNumber = 0;
 
       for (
-        const option of
-        options
+        const assignment of
+        freeAssignments
       ) {
         if (
-          !selected.length ||
-          selected.includes(
-            option.key
+          String(
+            assignment.customerAccountId ||
+            ""
+          ) !==
+            String(
+              order.customerAccountId
+            ) ||
+          !managedAssignmentIsLinked(
+            assignment
+          ) ||
+          !linkedAssignmentRetailerKeys(
+            assignment,
+            memberships
+          ).includes(
+            retailer
           )
         ) {
-          output.push(
-            option.item
-          );
+          continue;
         }
+
+        giftedNumber += 1;
+
+        addLinkedCandidate(
+          assignment,
+          "free",
+          giftedNumber
+        );
+      }
+
+      let rentedNumber = 0;
+
+      for (
+        const assignment of
+        rentalAssignments
+      ) {
+        if (
+          String(
+            assignment.customerAccountId ||
+            ""
+          ) !==
+            String(
+              order.customerAccountId
+            ) ||
+          !managedAssignmentIsLinked(
+            assignment
+          ) ||
+          !linkedAssignmentRetailerKeys(
+            assignment,
+            memberships
+          ).includes(
+            retailer
+          )
+        ) {
+          continue;
+        }
+
+        rentedNumber += 1;
+
+        addLinkedCandidate(
+          assignment,
+          "rented",
+          rentedNumber
+        );
+      }
+
+      const chosen =
+        candidates.filter(
+          candidate =>
+            (
+              !selected.length ||
+              selected.includes(
+                candidate.key
+              )
+            ) &&
+            candidate.exportReady
+        );
+
+      if (!chosen.length) {
+        return res
+          .status(400)
+          .json({
+            error:
+              `No ${retailerDisplayName(
+                retailer
+              )} profiles are currently export ready.`
+          });
+      }
+
+      const output =
+        chosen.map(
+          candidate =>
+            candidate.item
+        );
+
+      /*
+        Never send an export unless every profile exactly matches
+        the .hayha object structure supplied by the user.
+      */
+      if (
+        !Array.isArray(
+          output
+        ) ||
+        !output.every(
+          hayhaProfileHasExactShape
+        )
+      ) {
+        return res
+          .status(500)
+          .json({
+            error:
+              "Export stopped because the generated file did not match the required .hayha profile format."
+          });
       }
 
       const fileName =
         `${safeExportFilePart(
           customerName
+        )} ${safeExportFilePart(
+          retailerDisplayName(
+            retailer
+          )
         )} Profiles.hayha`;
 
       res.setHeader(
         "Content-Type",
         "application/json; charset=utf-8"
+      );
+
+      res.setHeader(
+        "X-Export-Profile-Count",
+        String(
+          output.length
+        )
       );
 
       res.setHeader(
@@ -18792,11 +19597,13 @@ app.post(
         .status(500)
         .json({
           error:
+            error.message ||
             "Unable to export profiles."
         });
     }
   }
 );
+
 
 
 
@@ -19189,11 +19996,35 @@ app.post(
           });
       }
 
-      const details =
-        await adminCustomerSavedDetailsPayload(
+      const [
+        details,
+        retailerProfiles,
+        memberships,
+        freeAssignments,
+        rentalAssignments
+      ] = await Promise.all([
+        adminCustomerSavedDetailsPayload(
           account
-        );
+        ),
+        getRetailerProfiles(),
+        getManagedAccounts(),
+        getFreeAssignments(),
+        getRentalAssignments()
+      ]);
 
+      /*
+        CROSS-RETAILER ADDRESS / PAYMENT POOL
+
+        Shipping addresses and payment cards belong to the customer,
+        not to a specific retailer. An address/card originally entered
+        on a Target paid profile may therefore fill a Walmart/PKC/
+        Sam's Club/Costco profile, and vice versa.
+
+        Retailer login credentials are NEVER copied here. This route
+        does not edit paid record.credentials or managed-account pool
+        login credentials, so retailer usernames/emails/passwords stay
+        with their original retailer account.
+      */
       const addresses =
         (
           details.addresses ||
@@ -19258,33 +20089,19 @@ app.post(
           }
         );
 
-      if (!addresses.length) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "This customer does not have any complete saved shipping addresses."
-          });
-      }
+      const paidRecords =
+        retailerProfiles.filter(
+          record =>
+            String(
+              record.customerAccountId ||
+              ""
+            ) ===
+              String(
+                order.customerAccountId
+              )
+        );
 
-      if (!cards.length) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "This customer does not have any complete saved card information."
-          });
-      }
-
-      const [
-        freeAssignments,
-        rentalAssignments
-      ] = await Promise.all([
-        getFreeAssignments(),
-        getRentalAssignments()
-      ]);
-
-      const linked = [
+      const linkedAssignments = [
         ...freeAssignments
           .filter(
             assignment =>
@@ -19330,40 +20147,112 @@ app.post(
           )
       ];
 
-      if (!linked.length) {
+      const profileTargets = [];
+
+      for (
+        const record of
+        paidRecords
+      ) {
+        let secrets = {};
+
+        try {
+          secrets =
+            record.customerSecrets
+              ? (
+                  decryptJson(
+                    record.customerSecrets
+                  ) ||
+                  {}
+                )
+              : {};
+        } catch {
+          secrets = {};
+        }
+
+        profileTargets.push({
+          kind:
+            "paid",
+
+          record,
+
+          profile:
+            record.customerProfile ||
+            {},
+
+          secrets
+        });
+      }
+
+      for (
+        const entry of
+        linkedAssignments
+      ) {
+        profileTargets.push({
+          kind:
+            entry.type,
+
+          record:
+            entry.assignment,
+
+          profile:
+            entry.assignment
+              .customerProfile ||
+            {},
+
+          secrets:
+            decryptAssignmentSecrets(
+              entry.assignment
+            )
+        });
+      }
+
+      if (
+        !profileTargets.length
+      ) {
         return res
           .status(400)
           .json({
             error:
-              "This customer does not currently have any linked Gifted or Rented profiles."
+              "This customer does not have any paid or linked profiles to update."
           });
       }
 
-      const globallyUsed =
+      /*
+        Exact addresses already attached to profiles are reserved.
+        This prevents JIG & Attach Payment from creating a duplicate
+        line-for-line address already in use.
+      */
+      const usedAddressKeys =
         new Set();
 
       for (
-        const entry of
-        linked
+        const target of
+        profileTargets
       ) {
-        const assignment =
-          entry.assignment;
+        const profile =
+          target.profile ||
+          {};
 
         if (
-          assignment.jiggedAddress
+          String(
+            profile.address ||
+            ""
+          ).trim()
         ) {
-          globallyUsed.add(
+          usedAddressKeys.add(
             safeAddressVariantKey(
-              assignment.jiggedAddress
+              profile
             )
           );
         }
 
         const history =
           Array.isArray(
-            assignment.jigHistoryKeys
+            target.record
+              ?.jigHistoryKeys
           )
-            ? assignment.jigHistoryKeys
+            ? target.record
+                .jigHistoryKeys
             : [];
 
         for (
@@ -19371,207 +20260,309 @@ app.post(
           history
         ) {
           if (key) {
-            globallyUsed.add(
+            usedAddressKeys.add(
               String(key)
             );
           }
         }
       }
 
-      const updated = [];
+      /*
+        Build one global queue of every unique safe address variant
+        available from every customer-submitted/saved address.
+      */
+      const variantQueue = [];
 
       for (
-        let i = 0;
-        i < linked.length;
-        i += 1
+        const source of
+        addresses
       ) {
-        const {
-          assignment,
-          type
-        } =
-          linked[i];
+        const variants =
+          safeAddressVariants(
+            source
+          );
 
-        let selectedAddress =
-          null;
+        const sourceKey =
+          safeAddressVariantKey(
+            source
+          );
 
-        let selectedVariant =
-          null;
+        const changed =
+          variants.filter(
+            item =>
+              safeAddressVariantKey(
+                item
+              ) !==
+              sourceKey
+          );
 
-        let selectedVariantKey =
-          "";
+        const unchanged =
+          variants.filter(
+            item =>
+              safeAddressVariantKey(
+                item
+              ) ===
+              sourceKey
+          );
 
         for (
-          let addressOffset = 0;
-          addressOffset <
-            addresses.length;
-          addressOffset += 1
+          const variant of
+          [
+            ...changed,
+            ...unchanged
+          ]
         ) {
-          const addressIndex =
-            (
-              i +
-              addressOffset
-            ) %
-            addresses.length;
+          const key =
+            safeAddressVariantKey(
+              variant
+            );
 
-          const source =
-            addresses[
-              addressIndex
+          if (
+            !key ||
+            usedAddressKeys.has(
+              key
+            ) ||
+            variantQueue.some(
+              entry =>
+                entry.key ===
+                key
+            )
+          ) {
+            continue;
+          }
+
+          variantQueue.push({
+            source,
+            variant,
+            key
+          });
+        }
+      }
+
+      let variantCursor = 0;
+      let cardCursor = 0;
+
+      let shippingFilled = 0;
+      let cardsFilled = 0;
+
+      const profilesStillMissingShipping =
+        [];
+
+      const profilesStillMissingCard =
+        [];
+
+      for (
+        let index = 0;
+        index <
+          profileTargets.length;
+        index += 1
+      ) {
+        const target =
+          profileTargets[
+            index
+          ];
+
+        const record =
+          target.record;
+
+        let profile = {
+          ...(
+            target.profile ||
+            {}
+          )
+        };
+
+        let secrets = {
+          ...(
+            target.secrets ||
+            {}
+          )
+        };
+
+        const shippingReady =
+          [
+            "firstName",
+            "lastName",
+            "email",
+            "phone",
+            "address",
+            "country",
+            "state",
+            "city",
+            "zip"
+          ].every(
+            key =>
+              Boolean(
+                String(
+                  profile?.[key] ||
+                  ""
+                ).trim()
+              )
+          );
+
+        const currentCardMissing =
+          exportProfileMissingFields(
+            {
+              firstName: "x",
+              lastName: "x",
+              email: "x",
+              phone: "x",
+              address: "x",
+              country: "x",
+              state: "x",
+              city: "x",
+              zip: "x"
+            },
+            secrets
+          );
+
+        const cardReady =
+          !currentCardMissing.some(
+            item =>
+              [
+                "card number",
+                "cardholder name",
+                "expiration month",
+                "expiration year"
+              ].includes(
+                item
+              )
+          );
+
+        if (
+          !shippingReady
+        ) {
+          const entry =
+            variantQueue[
+              variantCursor
             ];
 
-          const variants =
-            safeAddressVariants(
-              source
-            );
+          if (entry) {
+            variantCursor += 1;
 
-          const sourceKey =
-            safeAddressVariantKey(
-              source
-            );
+            profile = {
+              ...profile,
 
-          const preferred =
-            variants.find(
-              item => {
-                const key =
-                  safeAddressVariantKey(
-                    item
-                  );
+              firstName:
+                entry.source
+                  .firstName ||
+                profile.firstName ||
+                "",
 
-                return (
-                  key !==
-                    sourceKey &&
-                  !globallyUsed.has(
-                    key
-                  )
-                );
-              }
-            );
+              lastName:
+                entry.source
+                  .lastName ||
+                profile.lastName ||
+                "",
 
-          const fallback =
-            preferred ||
-            variants.find(
-              item =>
-                !globallyUsed.has(
-                  safeAddressVariantKey(
-                    item
-                  )
+              email:
+                profile.email ||
+                account.email ||
+                "",
+
+              phone:
+                entry.source
+                  .phone ||
+                profile.phone ||
+                "",
+
+              address:
+                entry.variant
+                  .address ||
+                "",
+
+              address2:
+                entry.variant
+                  .address2 ||
+                "",
+
+              country:
+                entry.variant
+                  .country ||
+                entry.source
+                  .country ||
+                "US",
+
+              state:
+                entry.variant
+                  .state ||
+                "",
+
+              city:
+                entry.variant
+                  .city ||
+                "",
+
+              zip:
+                entry.variant
+                  .zip ||
+                ""
+            };
+
+            record.jigSourceKey =
+              String(
+                entry.source.id ||
+                safeAddressVariantKey(
+                  entry.source
                 )
-            );
-
-          if (fallback) {
-            selectedAddress =
-              source;
-
-            selectedVariant =
-              fallback;
-
-            selectedVariantKey =
-              safeAddressVariantKey(
-                fallback
               );
 
-            break;
+            record.jigSourceAddress = {
+              ...entry.source
+            };
+
+            record.jiggedAddress = {
+              ...entry.variant
+            };
+
+            record.jigHistoryKeys =
+              Array.from(
+                new Set([
+                  ...(
+                    Array.isArray(
+                      record.jigHistoryKeys
+                    )
+                      ? record
+                          .jigHistoryKeys
+                      : []
+                  ),
+                  entry.key
+                ])
+              );
+
+            record.selectedAddressId =
+              entry.source.id ||
+              record.selectedAddressId ||
+              null;
+
+            record.savedAddressId =
+              entry.source.id ||
+              record.savedAddressId ||
+              null;
+
+            shippingFilled += 1;
+
+          } else {
+            profilesStillMissingShipping.push(
+              index + 1
+            );
           }
         }
 
         if (
-          !selectedAddress ||
-          !selectedVariant
+          !cardReady &&
+          cards.length
         ) {
-          return res
-            .status(409)
-            .json({
-              error:
-                `No more unique safe JIGs are available for linked profile ${i + 1}. Add another valid shipping address or remove/replace a linked profile.`
-            });
-        }
+          const card =
+            cards[
+              cardCursor %
+              cards.length
+            ];
 
-        globallyUsed.add(
-          selectedVariantKey
-        );
+          cardCursor += 1;
 
-        const card =
-          cards[
-            i %
-            cards.length
-          ];
-
-        let existingSecrets = {};
-
-        try {
-          if (
-            assignment.customerSecrets
-          ) {
-            existingSecrets =
-              decryptJson(
-                assignment.customerSecrets
-              ) || {};
-          }
-        } catch {
-          existingSecrets = {};
-        }
-
-        assignment.customerProfile = {
-          ...(
-            assignment.customerProfile ||
-            {}
-          ),
-
-          firstName:
-            selectedAddress.firstName ||
-            assignment
-              .customerProfile
-              ?.firstName ||
-            "",
-
-          lastName:
-            selectedAddress.lastName ||
-            assignment
-              .customerProfile
-              ?.lastName ||
-            "",
-
-          phone:
-            selectedAddress.phone ||
-            assignment
-              .customerProfile
-              ?.phone ||
-            "",
-
-          email:
-            selectedAddress.email ||
-            assignment
-              .customerProfile
-              ?.email ||
-            "",
-
-          address:
-            selectedVariant.address ||
-            "",
-
-          address2:
-            selectedVariant.address2 ||
-            "",
-
-          city:
-            selectedVariant.city ||
-            "",
-
-          state:
-            selectedVariant.state ||
-            "",
-
-          zip:
-            selectedVariant.zip ||
-            "",
-
-          country:
-            selectedVariant.country ||
-            "US"
-        };
-
-        assignment.customerSecrets =
-          encryptJson({
-            ...existingSecrets,
+          secrets = {
+            ...secrets,
 
             cardLabel:
               card.cardLabel ||
@@ -19603,70 +20594,45 @@ app.post(
               card.securityCode ||
               card.accountSecurityCode ||
               ""
-          });
+          };
 
-        assignment.savedAddressId =
-          selectedAddress.id ||
-          null;
+          record.selectedPaymentId =
+            card.id ||
+            record.selectedPaymentId ||
+            null;
 
-        assignment.savedPaymentMethodId =
-          card.id ||
-          null;
+          record.savedPaymentMethodId =
+            card.id ||
+            record.savedPaymentMethodId ||
+            null;
 
-        assignment.jigSourceKey =
-          String(
-            selectedAddress.id ||
-            safeAddressVariantKey(
-              selectedAddress
-            )
+          cardsFilled += 1;
+
+        } else if (
+          !cardReady
+        ) {
+          profilesStillMissingCard.push(
+            index + 1
+          );
+        }
+
+        record.customerProfile =
+          profile;
+
+        record.customerSecrets =
+          encryptJson(
+            secrets
           );
 
-        assignment.jigSourceAddress = {
-          ...selectedAddress
-        };
-
-        assignment.jiggedAddress = {
-          ...selectedVariant
-        };
-
-        assignment.jigHistoryKeys =
-          Array.from(
-            new Set([
-              ...(
-                Array.isArray(
-                  assignment.jigHistoryKeys
-                )
-                  ? assignment.jigHistoryKeys
-                  : []
-              ),
-              selectedVariantKey
-            ])
-          );
-
-        assignment.updatedAt =
+        record.updatedAt =
           new Date()
             .toISOString();
-
-        updated.push({
-          id:
-            assignment.managedAccountId ||
-            assignment.freeMembershipId ||
-            assignment.rentedMembershipId ||
-            assignment.id,
-
-          type,
-
-          addressId:
-            selectedAddress.id ||
-            null,
-
-          paymentId:
-            card.id ||
-            null
-        });
       }
 
       await Promise.all([
+        saveRetailerProfiles(
+          retailerProfiles
+        ),
         saveFreeAssignments(
           freeAssignments
         ),
@@ -19679,11 +20645,65 @@ app.post(
         order.customerAccountId
       );
 
+      const exportReadyCount =
+        profileTargets.filter(
+          target => {
+            const record =
+              target.record;
+
+            let secrets = {};
+
+            try {
+              secrets =
+                record.customerSecrets
+                  ? (
+                      decryptJson(
+                        record.customerSecrets
+                      ) ||
+                      {}
+                    )
+                  : {};
+            } catch {
+              secrets = {};
+            }
+
+            return (
+              exportProfileMissingFields(
+                record.customerProfile ||
+                  {},
+                secrets
+              ).length ===
+              0
+            );
+          }
+        ).length;
+
       return res.json({
         ok: true,
-        updatedCount:
-          updated.length,
-        updated
+
+        profileCount:
+          profileTargets.length,
+
+        shippingFilled,
+
+        cardsFilled,
+
+        exportReadyCount,
+
+        stillMissingShippingCount:
+          profilesStillMissingShipping.length,
+
+        stillMissingCardCount:
+          profilesStillMissingCard.length,
+
+        crossRetailerAddressAndPaymentPool:
+          true,
+
+        retailerCredentialsPreserved:
+          true,
+
+        message:
+          `Saved updates. ${shippingFilled} profile(s) received a unique address JIG, ${cardsFilled} profile(s) received card information, and ${exportReadyCount} profile(s) are export ready. Address/card sources were shared across retailers while retailer login credentials stayed unchanged.`
       });
 
     } catch (error) {
@@ -19702,7 +20722,6 @@ app.post(
     }
   }
 );
-
 
 app.get(
   "/api/admin/submissions/:id/linked-memberships",
@@ -20023,28 +21042,43 @@ app.get(
         const item of
         active
       ) {
+        const exportSecrets = {
+          cardholder:
+            item.customerCard?.cardholder ||
+            "",
+
+          acoCardNumber:
+            item.customerCard?.cardNumber ||
+            "",
+
+          expMonth:
+            item.customerCard?.expMonth ||
+            "",
+
+          expYear:
+            item.customerCard?.expYear ||
+            ""
+        };
+
         item.readiness =
           managedProfileReadiness(
             item.customerProfile ||
             {},
-            {
-              cardholder:
-                item.customerCard?.cardholder ||
-                "",
-
-              acoCardNumber:
-                item.customerCard?.cardNumber ||
-                "",
-
-              expMonth:
-                item.customerCard?.expMonth ||
-                "",
-
-              expYear:
-                item.customerCard?.expYear ||
-                ""
-            }
+            exportSecrets
           );
+
+        const exportStatus =
+          exportReadinessPayload(
+            item.customerProfile ||
+              {},
+            exportSecrets
+          );
+
+        item.exportReady =
+          exportStatus.exportReady;
+
+        item.missingFields =
+          exportStatus.missingFields;
 
         const key =
           exactManagedAddressKey(
@@ -23240,18 +24274,19 @@ app.get(
                 assignment.activationStatus !==
                   "expired"
               ) {
-                assignment.activationStatus =
-                  "expired";
-
-                assignment.expiredAt =
+                const expiredAt =
                   new Date()
                     .toISOString();
 
-                assignment.endReason =
-                  "expired";
-
-                assignment.updatedAt =
-                  assignment.expiredAt;
+                clearManagedAssignmentCustomerData(
+                  assignment,
+                  {
+                    reason:
+                      "expired",
+                    nowIso:
+                      expiredAt
+                  }
+                );
 
                 changed =
                   true;
