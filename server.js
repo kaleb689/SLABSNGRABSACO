@@ -34470,6 +34470,60 @@ async function getSuccessCheckouts() {
     : [];
 }
 
+// Notify open dashboards immediately after a confirmed checkout is saved.
+const publicSuccessListeners = new Set();
+const customerSuccessListeners = new Map();
+
+function openSuccessEventStream(req, res, listeners) {
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  res.write(": connected\n\n");
+  listeners.add(res);
+  const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 25000);
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    listeners.delete(res);
+  });
+}
+
+function announceSuccessCheckout(accountId) {
+  for (const res of publicSuccessListeners) res.write("event: checkout\ndata: {}\n\n");
+  for (const res of customerSuccessListeners.get(String(accountId)) || []) {
+    res.write("event: checkout\ndata: {}\n\n");
+  }
+}
+
+app.get("/api/public/success/events", (req, res) => {
+  openSuccessEventStream(req, res, publicSuccessListeners);
+});
+
+app.get("/api/account/success/events", requireCustomer, (req, res) => {
+  const accountId = String(req.customerAccount.id);
+  if (!customerSuccessListeners.has(accountId)) customerSuccessListeners.set(accountId, new Set());
+  const listeners = customerSuccessListeners.get(accountId);
+  openSuccessEventStream(req, res, listeners);
+  req.on("close", () => {
+    if (!listeners.size) customerSuccessListeners.delete(accountId);
+  });
+});
+
+function isPublicSuccessProduct(name) {
+  return /pok[eé]mon|lorcana|magic\s*[:\-]?\s*the\s*gathering|\bmtg\b|nee[\s-]?doh|trading\s*card|\btcg\b|yu[\s-]?gi[\s-]?oh|one\s*piece\s*(?:card|tcg)|digimon|flesh\s*and\s*blood|dragon\s*ball\s*(?:card|tcg)/i.test(name);
+}
+
+function publicSuccessImageUrl(value) {
+  const safe = safeSuccessImageUrl(value);
+  if (!safe) return null;
+  const url = new URL(safe);
+  if (url.username || url.password) return null;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
 /* Public totals contain only aggregate values and product counts. */
 app.get(
   "/api/public/success",
@@ -34489,12 +34543,16 @@ app.get(
           const name = clean(item?.name, 120).replace(/\s+/g, " ").trim();
           // Product fields originate in retailer emails. Drop anything that
           // looks like personal or order information before public display.
-          if (!name || /@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name)) continue;
+          if (!name || !isPublicSuccessProduct(name) || /@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name)) continue;
           const quantity = Math.max(0, Math.floor(Number(item?.quantity) || 0));
           if (!quantity) continue;
           const key = name.toLowerCase();
           const prior = products.get(key);
-          products.set(key, { name: prior?.name || name, quantity: (prior?.quantity || 0) + quantity });
+          products.set(key, {
+            name: prior?.name || name,
+            quantity: (prior?.quantity || 0) + quantity,
+            imageUrl: prior?.imageUrl || publicSuccessImageUrl(item?.imageUrl) || null
+          });
         }
       }
 
@@ -34593,6 +34651,8 @@ async function recordSuccessCheckout(
   await saveSuccessCheckouts(
     records
   );
+
+  announceSuccessCheckout(storedRecord.customerAccountId);
 
   try {
     await sendDiscordSuccessNotification(
@@ -38448,7 +38508,7 @@ const LIVE_SUCCESS_SYNC_INTERVAL_MS =
     Number(
       process.env
         .SUCCESS_SYNC_INTERVAL_MS ||
-      5 * 60 * 1000
+      60 * 1000
     )
   );
 
@@ -38458,7 +38518,7 @@ const LIVE_SUCCESS_MIN_ACCOUNT_INTERVAL_MS =
     Number(
       process.env
         .SUCCESS_ACCOUNT_SYNC_THROTTLE_MS ||
-      2 * 60 * 1000
+      60 * 1000
     )
   );
 

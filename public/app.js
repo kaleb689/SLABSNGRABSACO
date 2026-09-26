@@ -24,6 +24,8 @@ const ADMIN_PREVIEW_MODE =
     "adminPreview"
   ) === "1";
 
+const SUCCESS_DEMO_MODE = ADMIN_PREVIEW_PARAMS.get("successDemo") === "1";
+
 const ADMIN_PREVIEW_TIER =
   Math.min(
     7,
@@ -13464,6 +13466,13 @@ function renderSuccessError(
 async function loadSuccessDashboard(
   force = false
 ) {
+  if (SUCCESS_DEMO_MODE) {
+    successState.data = homepageSampleSuccessData();
+    successState.loaded = true;
+    successState.loading = false;
+    renderSuccessDashboard(successState.data);
+    return;
+  }
   if (ADMIN_PREVIEW_MODE) {
     successState.data = adminPreviewSuccessData();
     successState.loaded = true;
@@ -14899,11 +14908,24 @@ function renderPublicSuccessProduct() {
 
   container.replaceChildren();
   if (product) {
+    const imageWrap = document.createElement("div");
+    imageWrap.className = "public-success-image";
+    if (product.imageUrl && /^https:\/\//i.test(product.imageUrl)) {
+      const img = document.createElement("img");
+      img.src = product.imageUrl;
+      img.alt = "";
+      img.loading = "lazy";
+      img.referrerPolicy = "no-referrer";
+      img.onerror = () => { imageWrap.textContent = "Image unavailable"; };
+      imageWrap.append(img);
+    } else {
+      imageWrap.textContent = "Image unavailable";
+    }
     const name = document.createElement("strong");
     name.textContent = product.name;
     const count = document.createElement("span");
     count.textContent = `×${formatSuccessNumber(product.quantity)}`;
-    container.append(name, count);
+    container.append(imageWrap, name, count);
   } else {
     container.textContent = "Purchased products will appear here after checkout data is detected.";
   }
@@ -14947,32 +14969,107 @@ setInterval(() => {
   if (document.visibilityState === "visible") refreshPublicSuccess();
 }, 45 * 1000);
 
-const sampleSuccessOrders = [
-  { retailer: "Target", product: "Pokémon booster bundle", quantity: 2, value: "$59.98", profile: "Profile 1" },
-  { retailer: "Walmart", product: "Pokémon elite trainer box", quantity: 3, value: "$149.97", profile: "Profile 2" },
-  { retailer: "Costco", product: "Trading card tin", quantity: 1, value: "$34.99", profile: "Profile 1" }
-];
-let sampleSuccessIndex = 0;
-
-function renderSampleSuccessOrder() {
-  const order = sampleSuccessOrders[sampleSuccessIndex];
-  const container = document.getElementById("home-success-order");
-  if (!container) return;
-  container.innerHTML = `
-    <div><span class="home-success-retailer">${order.retailer}</span><h4>Successful Checkout</h4><p>${order.profile} · Sample order</p></div>
-    <div class="home-success-order-product"><span>ITEM SECURED</span><strong>${order.product}</strong><small>×${order.quantity}</small></div>
-    <div class="home-success-order-value"><span>CHECKOUT VALUE</span><strong>${order.value}</strong></div>`;
-  document.getElementById("home-success-order-position").textContent = `${sampleSuccessIndex + 1} of ${sampleSuccessOrders.length}`;
-  document.getElementById("home-success-previous").disabled = sampleSuccessIndex === 0;
-  document.getElementById("home-success-next").disabled = sampleSuccessIndex === sampleSuccessOrders.length - 1;
+if (!SUCCESS_DEMO_MODE && typeof EventSource !== "undefined") {
+  const publicEvents = new EventSource("/api/public/success/events");
+  publicEvents.addEventListener("checkout", refreshPublicSuccess);
 }
 
-document.getElementById("home-success-previous")?.addEventListener("click", () => {
-  sampleSuccessIndex = Math.max(0, sampleSuccessIndex - 1);
-  renderSampleSuccessOrder();
+let customerSuccessEvents = null;
+function updateCustomerSuccessEvents() {
+  const panel = document.getElementById("account-tab-success");
+  const visible = !SUCCESS_DEMO_MODE && document.visibilityState === "visible" &&
+    panel && !panel.hidden && document.getElementById("my-profile")?.classList.contains("active");
+  if (!visible && customerSuccessEvents) {
+    customerSuccessEvents.close();
+    customerSuccessEvents = null;
+  } else if (visible && !customerSuccessEvents && typeof EventSource !== "undefined") {
+    customerSuccessEvents = new EventSource("/api/account/success/events");
+    customerSuccessEvents.addEventListener("checkout", () => loadSuccessDashboard(true));
+  }
+}
+
+document.querySelectorAll("[data-account-tab]").forEach(button => {
+  button.addEventListener("click", () => setTimeout(updateCustomerSuccessEvents, 0));
 });
-document.getElementById("home-success-next")?.addEventListener("click", () => {
-  sampleSuccessIndex = Math.min(sampleSuccessOrders.length - 1, sampleSuccessIndex + 1);
-  renderSampleSuccessOrder();
+document.querySelectorAll("[data-page]").forEach(button => {
+  button.addEventListener("click", () => setTimeout(updateCustomerSuccessEvents, 0));
 });
-renderSampleSuccessOrder();
+document.addEventListener("visibilitychange", () => {
+  updateCustomerSuccessEvents();
+  if (document.visibilityState === "visible") {
+    refreshPublicSuccess();
+    if (customerSuccessEvents) loadSuccessDashboard(true);
+  }
+});
+
+function homepageSampleSuccessData() {
+  const counts = [0, 1, 0, 2, 1, 0, 3, 1, 0, 2, 2, 1, 3, 2];
+  const products = ["Pokémon booster bundle", "Disney Lorcana starter deck", "Magic: The Gathering bundle"];
+  const retailers = ["Target", "Walmart", "Costco"];
+  const orders = [];
+  const activity = [];
+  const range = getSuccessRange();
+  const day = new Date(`${range.start}T12:00:00`);
+  const today = successDateInputValue(new Date());
+  let serial = 0;
+
+  for (let index = 0; index < 14; index += 1) {
+    const date = successDateInputValue(day);
+    const count = date <= today ? counts[index] : 0;
+    let value = 0;
+    for (let n = 0; n < count; n += 1) {
+      serial += 1;
+      const quantity = 1 + (serial % 3);
+      const total = 49.99 + quantity * 24.99;
+      value += total;
+      orders.push({
+        id: `SAMPLE-${serial}`,
+        retailer: retailers[serial % retailers.length],
+        orderNumber: `SAMPLE-${1000 + serial}`,
+        profileName: `Profile ${1 + serial % 2}`,
+        checkoutAt: `${date}T16:00:00.000Z`,
+        itemCount: quantity,
+        orderTotal: total,
+        items: [{ name: products[serial % products.length], quantity, imageUrl: null }]
+      });
+    }
+    activity.push({ date, count, value });
+    day.setDate(day.getDate() + 1);
+  }
+
+  const total = orders.reduce((sum, order) => sum + order.orderTotal, 0);
+  return {
+    ok: true,
+    sync: { status: "Preview connected", lastSyncedAt: new Date().toISOString() },
+    summary: {
+      totalCheckouts: orders.length,
+      totalItems: orders.reduce((sum, order) => sum + order.itemCount, 0),
+      checkoutValue: total,
+      bestDay: Math.max(...activity.map(item => item.count))
+    },
+    activity,
+    recentCheckouts: orders.reverse()
+  };
+}
+
+if (SUCCESS_DEMO_MODE) {
+  const panel = document.getElementById("account-tab-success");
+  const wrapper = document.createElement("main");
+  wrapper.id = "my-profile";
+  wrapper.className = "page active success-demo-only";
+  panel.hidden = false;
+  panel.classList.add("active");
+  wrapper.append(panel);
+  document.body.replaceChildren(wrapper);
+  document.body.classList.add("success-demo-body");
+  loadSuccessDashboard(true);
+  const resize = () => parent.postMessage({ type: "sng-success-demo-height", height: document.documentElement.scrollHeight }, location.origin);
+  new ResizeObserver(resize).observe(wrapper);
+  resize();
+} else {
+  window.addEventListener("message", event => {
+    if (event.origin !== location.origin || event.data?.type !== "sng-success-demo-height") return;
+    const iframe = document.getElementById("home-success-iframe");
+    if (iframe) iframe.style.height = `${Math.max(400, Math.min(2200, Number(event.data.height) || 0))}px`;
+  });
+}
