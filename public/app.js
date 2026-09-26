@@ -2985,7 +2985,7 @@ function ensureAdminPreviewBanner() {
   banner.id = "admin-user-preview-banner";
   banner.innerHTML = `
     <strong>ADMIN TEST CUSTOMER</strong>
-    <span>NO PAYMENT · ${escapeHtml(
+    <span>PAID TEST MEMBERSHIP · ${escapeHtml(
       state.membership?.planName ||
       PLANS[ADMIN_PREVIEW_TIER]?.name ||
       "Paid Member"
@@ -3028,7 +3028,7 @@ function ensureAdminPreviewBanner() {
         );
 
         window.location.href =
-          "/?adminPreview=1&adminPreviewTier=4#my-profile";
+          "/?adminPreview=1&adminPreviewTier=7#my-profile";
 
         window.location.reload();
       }
@@ -3045,7 +3045,12 @@ function ensureAdminPreviewBanner() {
 }
 
 function buildAdminPreviewProfile() {
-  const plan = PLANS[ADMIN_PREVIEW_TIER] || PLANS[4];
+  const previewTier =
+    7;
+
+  const plan =
+    PLANS[previewTier] ||
+    PLANS[7];
   const now = new Date().toISOString();
   const periodEnd = adminPreviewDateFromNow(30);
 
@@ -3056,7 +3061,7 @@ function buildAdminPreviewProfile() {
   };
 
   state.membership = {
-    tier: ADMIN_PREVIEW_TIER,
+    tier: previewTier,
     planName: plan.name,
     amount: plan.amount,
     profiles: plan.profiles,
@@ -3070,7 +3075,7 @@ function buildAdminPreviewProfile() {
   state.orders = [
     {
       orderNumber: "PREVIEW-1001",
-      tier: ADMIN_PREVIEW_TIER,
+      tier: previewTier,
       planName: plan.name,
       amount: plan.amount,
       profiles: plan.profiles,
@@ -7010,6 +7015,62 @@ function retailerFieldsHtml(
   const username =
     savedRetailer.username || "";
 
+  const isPkc =
+    retailer.key ===
+    "pkc";
+
+  if (isPkc) {
+    return `
+      <div
+        class="retailer-credential-card retailer-credential-card-pkc"
+        data-retailer="${escapeHtml(
+          retailer.key
+        )}"
+      >
+        <div class="retailer-credential-heading">
+          <div>
+            <h4>
+              ${escapeHtml(
+                retailer.name
+              )}
+            </h4>
+
+            <p>
+              Pokemon Center uses guest checkout.
+            </p>
+          </div>
+
+          <span class="retailer-password-status saved pkc-guest-checkout-badge">
+            NO PASSWORD NEEDED — PKC IS GUEST CHECKOUT
+          </span>
+        </div>
+
+        <div class="retailer-credential-fields">
+          <label>
+            Email
+
+            <input
+              type="email"
+              name="${escapeHtml(
+                retailer.key
+              )}Username"
+              value="${escapeHtml(
+                username
+              )}"
+              autocomplete="email"
+              maxlength="254"
+              placeholder="Pokemon Center guest checkout email"
+            >
+          </label>
+
+          <div class="pkc-guest-checkout-note">
+            NO PASSWORD NEEDED — PKC IS GUEST CHECKOUT
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   const savedPassword =
     String(
       savedRetailer.password ||
@@ -7120,7 +7181,6 @@ function retailerFieldsHtml(
     </div>
   `;
 }
-
 
 
 function profileActivationBadgeHtml(
