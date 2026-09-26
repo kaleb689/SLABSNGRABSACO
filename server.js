@@ -9273,13 +9273,24 @@ function currentFreeAssignment(
   assignments,
   freeMembershipId
 ) {
+  const wantedId =
+    String(
+      freeMembershipId ||
+      ""
+    );
+
   return (
     assignments.find(
       assignment =>
-        assignment
-          .freeMembershipId ===
-          freeMembershipId &&
-        freeAssignmentIsActive(
+        String(
+          assignment
+            .managedAccountId ||
+          assignment
+            .freeMembershipId ||
+          ""
+        ) ===
+          wantedId &&
+        managedAssignmentIsLinked(
           assignment
         )
     ) || null
@@ -9363,18 +9374,30 @@ function currentRentalAssignment(
   assignments,
   rentedMembershipId
 ) {
+  const wantedId =
+    String(
+      rentedMembershipId ||
+      ""
+    );
+
   return (
     assignments.find(
       assignment =>
-        assignment
-          .rentedMembershipId ===
-          rentedMembershipId &&
-        rentalAssignmentIsActive(
+        String(
+          assignment
+            .managedAccountId ||
+          assignment
+            .rentedMembershipId ||
+          ""
+        ) ===
+          wantedId &&
+        managedAssignmentIsLinked(
           assignment
         )
     ) || null
   );
 }
+
 
 function managedAssignmentIsLinked(
   assignment
@@ -13893,7 +13916,7 @@ async function getManagedAvailability() {
 
   for (const assignment of freeAssignments) {
     if (
-      !freeAssignmentIsActive(
+      !managedAssignmentIsLinked(
         assignment
       )
     ) {
@@ -13914,7 +13937,7 @@ async function getManagedAvailability() {
 
   for (const assignment of rentalAssignments) {
     if (
-      !rentalAssignmentIsActive(
+      !managedAssignmentIsLinked(
         assignment
       )
     ) {
@@ -15394,7 +15417,7 @@ async function getAvailableManagedMembershipRecords() {
     );
 
   for (const assignment of freeAssignments) {
-    if (!freeAssignmentIsActive(assignment)) {
+    if (!managedAssignmentIsLinked(assignment)) {
       continue;
     }
 
@@ -15409,7 +15432,7 @@ async function getAvailableManagedMembershipRecords() {
   }
 
   for (const assignment of rentalAssignments) {
-    if (!rentalAssignmentIsActive(assignment)) {
+    if (!managedAssignmentIsLinked(assignment)) {
       continue;
     }
 
