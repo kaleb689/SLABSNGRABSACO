@@ -10,11 +10,21 @@ import {
 } from "mailparser";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+
+/*
+  Render sits behind a trusted reverse proxy.
+  This makes req.ip and req.protocol use the first trusted proxy hop
+  instead of user-controlled forwarded values.
+*/
+app.set("trust proxy", 1);
+app.set("query parser", "simple");
+app.disable("x-powered-by");
 
 const PORT = process.env.PORT || 4242;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
@@ -107,11 +117,28 @@ const SUCCESS_CHECKOUTS_TEST_FILE =
     "success-checkouts-test.json"
   );
 
+const SECURITY_AUDIT_FILE =
+  path.join(
+    DATA_DIR,
+    "security-audit.jsonl"
+  );
+
 const CUSTOMER_SESSION_COOKIE =
   "sng_customer";
 
 const CUSTOMER_SESSION_MAX_AGE =
   30 * 24 * 60 * 60;
+
+const ADMIN_SESSION_MAX_AGE_MS =
+  8 * 60 * 60 * 1000;
+
+const ADMIN_SESSION_IDLE_MS =
+  2 * 60 * 60 * 1000;
+
+const SECURE_COOKIES =
+  String(BASE_URL)
+    .toLowerCase()
+    .startsWith("https://");
 
 const stripe = new Stripe(
   process.env.STRIPE_SECRET_KEY || "sk_test_missing"
@@ -279,23 +306,237 @@ function normalizeRentalRetailer(
 }
 
 /* -------------------------------------------------------
-   SECURITY HEADERS
+   SECURITY HEADERS / REQUEST IDENTIFIERS
 ------------------------------------------------------- */
 
-app.use((req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Referrer-Policy", "no-referrer");
+function requestIsHttps(req) {
+  return (
+    req.secure === true ||
+    String(
+      req.headers[
+        "x-forwarded-proto"
+      ] || ""
+    )
+      .split(",")[0]
+      .trim()
+      .toLowerCase() ===
+      "https"
+  );
+}
 
+
+let adminInlineScriptHashesCache =
+  null;
+
+
+function adminInlineScriptHashes() {
   if (
-    req.path === "/admin" ||
-    req.path.startsWith("/api/admin/")
+    adminInlineScriptHashesCache
   ) {
-    res.setHeader("Cache-Control", "no-store");
+    return adminInlineScriptHashesCache;
+  }
+
+  try {
+    const html =
+      fsSync.readFileSync(
+        path.join(
+          __dirname,
+          "public",
+          "admin.html"
+        ),
+        "utf8"
+      );
+
+    const hashes = [];
+
+    const pattern =
+      /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi;
+
+    let match;
+
+    while (
+      (
+        match =
+          pattern.exec(
+            html
+          )
+      )
+    ) {
+      const content =
+        match[1];
+
+      const hash =
+        crypto
+          .createHash(
+            "sha256"
+          )
+          .update(
+            content,
+            "utf8"
+          )
+          .digest(
+            "base64"
+          );
+
+      hashes.push(
+        `'sha256-${hash}'`
+      );
+    }
+
+    adminInlineScriptHashesCache =
+      hashes;
+
+    return hashes;
+
+  } catch (error) {
+    console.error(
+      "Unable to calculate Admin CSP script hash:",
+      error?.message ||
+      "csp_hash_error"
+    );
+
+    return [];
+  }
+}
+
+
+function contentSecurityPolicyFor(
+  req
+) {
+  const adminDocument =
+    req.path === "/admin" ||
+    req.path === "/admin.html";
+
+  const adminHashes =
+    adminDocument
+      ? adminInlineScriptHashes()
+      : [];
+
+  const scriptPolicy =
+    adminDocument
+      ? `script-src 'self' ${adminHashes.join(
+          " "
+        )}`
+      : "script-src 'self'";
+
+  const directives = [
+    "default-src 'self'",
+    scriptPolicy,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "media-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'"
+  ];
+
+  if (requestIsHttps(req)) {
+    directives.push(
+      "upgrade-insecure-requests"
+    );
+  }
+
+  return directives.join("; ");
+}
+
+
+app.use((req, res, next) => {
+  const requestId =
+    crypto
+      .randomBytes(12)
+      .toString("hex");
+
+  req.securityRequestId =
+    requestId;
+
+  res.setHeader(
+    "X-Request-ID",
+    requestId
+  );
+
+  res.setHeader(
+    "X-Content-Type-Options",
+    "nosniff"
+  );
+
+  res.setHeader(
+    "X-Frame-Options",
+    "DENY"
+  );
+
+  res.setHeader(
+    "Referrer-Policy",
+    "no-referrer"
+  );
+
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+  );
+
+  res.setHeader(
+    "Cross-Origin-Opener-Policy",
+    "same-origin"
+  );
+
+  res.setHeader(
+    "Cross-Origin-Resource-Policy",
+    "same-origin"
+  );
+
+  res.setHeader(
+    "X-Permitted-Cross-Domain-Policies",
+    "none"
+  );
+
+  res.setHeader(
+    "Content-Security-Policy",
+    contentSecurityPolicyFor(
+      req
+    )
+  );
+
+  if (requestIsHttps(req)) {
+    res.setHeader(
+      "Strict-Transport-Security",
+      "max-age=31536000"
+    );
+  }
+
+  const sensitivePath =
+    req.path === "/admin" ||
+    req.path === "/admin.html" ||
+    req.path.startsWith(
+      "/api/admin/"
+    ) ||
+    req.path.startsWith(
+      "/api/account/"
+    ) ||
+    req.path === "/api/my-profile";
+
+  if (sensitivePath) {
+    res.setHeader(
+      "Cache-Control",
+      "no-store, private, max-age=0"
+    );
+
+    res.setHeader(
+      "Pragma",
+      "no-cache"
+    );
+
+    res.setHeader(
+      "X-Robots-Tag",
+      "noindex, nofollow, noarchive"
+    );
   }
 
   next();
 });
+
 
 /* -------------------------------------------------------
    FILE HELPERS
@@ -312,17 +553,298 @@ async function readJson(file, fallback) {
 }
 
 async function writeJson(file, value) {
+  const directory =
+    path.dirname(file);
+
   await fs.mkdir(
-    path.dirname(file),
-    { recursive: true }
+    directory,
+    {
+      recursive: true,
+      mode: 0o700
+    }
   );
 
+  const temporaryFile =
+    `${file}.${process.pid}.${crypto
+      .randomBytes(6)
+      .toString("hex")}.tmp`;
+
   await fs.writeFile(
-    file,
-    JSON.stringify(value, null, 2),
-    "utf8"
+    temporaryFile,
+    JSON.stringify(
+      value,
+      null,
+      2
+    ),
+    {
+      encoding: "utf8",
+      mode: 0o600
+    }
   );
+
+  await fs.rename(
+    temporaryFile,
+    file
+  );
+
+  try {
+    await fs.chmod(
+      file,
+      0o600
+    );
+  } catch {
+    // Some mounted filesystems may not support chmod.
+  }
 }
+
+
+function auditHash(value) {
+  return crypto
+    .createHash("sha256")
+    .update(
+      String(
+        value ||
+        ""
+      )
+    )
+    .digest("hex")
+    .slice(0, 20);
+}
+
+
+async function appendSecurityAudit(
+  event = {}
+) {
+  try {
+    await fs.mkdir(
+      DATA_DIR,
+      {
+        recursive: true,
+        mode: 0o700
+      }
+    );
+
+    const entry = {
+      at:
+        new Date()
+          .toISOString(),
+
+      event:
+        String(
+          event.event ||
+          "security_event"
+        )
+          .slice(0, 100),
+
+      requestId:
+        String(
+          event.requestId ||
+          ""
+        )
+          .slice(0, 64),
+
+      method:
+        String(
+          event.method ||
+          ""
+        )
+          .slice(0, 12),
+
+      path:
+        String(
+          event.path ||
+          ""
+        )
+          .slice(0, 300),
+
+      status:
+        Number(
+          event.status ||
+          0
+        ) || undefined,
+
+      ipHash:
+        event.ip
+          ? auditHash(
+              event.ip
+            )
+          : "",
+
+      userAgentHash:
+        event.userAgent
+          ? auditHash(
+              event.userAgent
+            )
+          : "",
+
+      subjectHash:
+        event.subject
+          ? auditHash(
+              event.subject
+            )
+          : "",
+
+      detail:
+        event.detail
+          ? String(
+              event.detail
+            )
+              .slice(
+                0,
+                300
+              )
+          : ""
+    };
+
+    await fs.appendFile(
+      SECURITY_AUDIT_FILE,
+      `${JSON.stringify(
+        entry
+      )}\n`,
+      {
+        encoding: "utf8",
+        mode: 0o600
+      }
+    );
+
+    try {
+      await fs.chmod(
+        SECURITY_AUDIT_FILE,
+        0o600
+      );
+    } catch {
+      // Ignore chmod limitations on mounted filesystems.
+    }
+
+  } catch (error) {
+    console.error(
+      "Security audit write failed:",
+      error?.message ||
+      "audit_write_error"
+    );
+  }
+}
+
+
+function redactLogValue(
+  value,
+  depth = 0
+) {
+  if (
+    value == null ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return value
+      .replace(
+        /\b(?:\d[ -]*?){12,19}\b/g,
+        "[REDACTED_CARD]"
+      )
+      .replace(
+        /(password|security\s*code|authorization|cookie|token|secret)\s*[:=]\s*[^\s,;]+/gi,
+        "$1=[REDACTED]"
+      );
+  }
+
+  if (value instanceof Error) {
+    return {
+      name:
+        value.name,
+
+      message:
+        redactLogValue(
+          value.message,
+          depth + 1
+        )
+    };
+  }
+
+  if (
+    depth > 3 ||
+    typeof value !== "object"
+  ) {
+    return "[REDACTED_OBJECT]";
+  }
+
+  const output =
+    Array.isArray(value)
+      ? []
+      : {};
+
+  const sensitiveKeys =
+    new Set([
+      "password",
+      "pass",
+      "acopassword",
+      "cardnumber",
+      "acocardnumber",
+      "securitycode",
+      "cvv",
+      "cvc",
+      "authorization",
+      "cookie",
+      "token",
+      "rawtoken",
+      "secret",
+      "webhook",
+      "credentials"
+    ]);
+
+  for (
+    const [
+      key,
+      item
+    ] of Object.entries(value)
+  ) {
+    const normalized =
+      String(key)
+        .toLowerCase()
+        .replace(
+          /[^a-z0-9]/g,
+          ""
+        );
+
+    output[key] =
+      sensitiveKeys.has(
+        normalized
+      )
+        ? "[REDACTED]"
+        : redactLogValue(
+            item,
+            depth + 1
+          );
+  }
+
+  return output;
+}
+
+
+/*
+  Existing code has many defensive error logs. Sanitize those logs
+  centrally so a thrown provider/Stripe/mail error cannot accidentally
+  place credentials, cookies or full payment values into Render logs.
+*/
+const originalConsoleError =
+  console.error.bind(
+    console
+  );
+
+console.error = (
+  ...args
+) => {
+  originalConsoleError(
+    ...args.map(
+      value =>
+        redactLogValue(
+          value
+        )
+    )
+  );
+};
 
 
 function normalizeAddressTokenText(
@@ -3285,6 +3807,36 @@ const adminSessions = new Map();
 const loginAttempts = new Map();
 const customerAuthAttempts =
   new Map();
+const apiAbuseAttempts =
+  new Map();
+
+
+function adminSessionKey(
+  token
+) {
+  return crypto
+    .createHash("sha256")
+    .update(
+      String(
+        token ||
+        ""
+      )
+    )
+    .digest("hex");
+}
+
+
+function adminUserAgentHash(
+  req
+) {
+  return auditHash(
+    req.headers[
+      "user-agent"
+    ] ||
+    ""
+  );
+}
+
 function customerAuthRateLimit(
   req,
   res,
@@ -3355,6 +3907,478 @@ function customerAuthRateLimit(
 
   next();
 }
+
+
+function apiAbuseRateLimit(
+  req,
+  res,
+  next
+) {
+  /*
+    High ceiling for normal Admin dashboards, but still bounds
+    automated scraping / brute-force request floods from one IP.
+  */
+  const ip =
+    req.ip ||
+    "unknown";
+
+  const now =
+    Date.now();
+
+  const windowMs =
+    15 * 60 * 1000;
+
+  const mutating =
+    ![
+      "GET",
+      "HEAD",
+      "OPTIONS"
+    ].includes(
+      req.method
+    );
+
+  const maxRequests =
+    mutating
+      ? 300
+      : 1500;
+
+  const key =
+    `${ip}:${mutating ? "write" : "read"}`;
+
+  let record =
+    apiAbuseAttempts.get(
+      key
+    );
+
+  if (
+    !record ||
+    now >
+      record.reset
+  ) {
+    record = {
+      count: 0,
+      reset:
+        now +
+        windowMs
+    };
+  }
+
+  if (
+    record.count >=
+    maxRequests
+  ) {
+    const retryAfter =
+      Math.max(
+        1,
+        Math.ceil(
+          (
+            record.reset -
+            now
+          ) /
+          1000
+        )
+      );
+
+    res.setHeader(
+      "Retry-After",
+      String(
+        retryAfter
+      )
+    );
+
+    return res
+      .status(429)
+      .json({
+        error:
+          "Too many requests. Please try again shortly."
+      });
+  }
+
+  record.count +=
+    1;
+
+  apiAbuseAttempts.set(
+    key,
+    record
+  );
+
+  next();
+}
+
+
+function pruneRateLimitMaps() {
+  const now =
+    Date.now();
+
+  for (
+    const map of [
+      loginAttempts,
+      customerAuthAttempts,
+      apiAbuseAttempts
+    ]
+  ) {
+    for (
+      const [
+        key,
+        record
+      ] of map.entries()
+    ) {
+      if (
+        Number(
+          record?.reset ||
+          0
+        ) <=
+        now
+      ) {
+        map.delete(
+          key
+        );
+      }
+    }
+  }
+
+  for (
+    const [
+      key,
+      session
+    ] of adminSessions.entries()
+  ) {
+    if (
+      Number(
+        session?.absoluteExpires ||
+        0
+      ) <=
+      now
+    ) {
+      adminSessions.delete(
+        key
+      );
+    }
+  }
+}
+
+
+const rateLimitPruneTimer =
+  setInterval(
+    pruneRateLimitMaps,
+    10 * 60 * 1000
+  );
+
+if (
+  typeof rateLimitPruneTimer
+    .unref ===
+  "function"
+) {
+  rateLimitPruneTimer
+    .unref();
+}
+
+
+function requestExpectedOrigins(
+  req
+) {
+  const origins =
+    new Set();
+
+  try {
+    origins.add(
+      new URL(
+        BASE_URL
+      ).origin
+    );
+  } catch {
+    // Ignore malformed BASE_URL here; startup validation handles it.
+  }
+
+  const host =
+    String(
+      req.headers.host ||
+      ""
+    ).trim();
+
+  if (host) {
+    const protocol =
+      requestIsHttps(
+        req
+      )
+        ? "https"
+        : "http";
+
+    origins.add(
+      `${protocol}://${host}`
+    );
+  }
+
+  return origins;
+}
+
+
+function requireSameOriginMutation(
+  req,
+  res,
+  next
+) {
+  if (
+    [
+      "GET",
+      "HEAD",
+      "OPTIONS"
+    ].includes(
+      req.method
+    )
+  ) {
+    return next();
+  }
+
+  const expectedOrigins =
+    requestExpectedOrigins(
+      req
+    );
+
+  const origin =
+    String(
+      req.headers.origin ||
+      ""
+    ).trim();
+
+  const referer =
+    String(
+      req.headers.referer ||
+      ""
+    ).trim();
+
+  const fetchSite =
+    String(
+      req.headers[
+        "sec-fetch-site"
+      ] ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  /*
+    A browser that explicitly says this request is cross-site
+    is never allowed to mutate application state.
+  */
+  if (
+    fetchSite &&
+    ![
+      "same-origin",
+      "none"
+    ].includes(
+      fetchSite
+    )
+  ) {
+    return res
+      .status(403)
+      .json({
+        error:
+          "Cross-site request blocked."
+      });
+  }
+
+  if (
+    origin &&
+    !expectedOrigins.has(
+      origin
+    )
+  ) {
+    return res
+      .status(403)
+      .json({
+        error:
+          "Request origin is not allowed."
+      });
+  }
+
+  if (
+    !origin &&
+    referer
+  ) {
+    let refererOrigin =
+      "";
+
+    try {
+      refererOrigin =
+        new URL(
+          referer
+        ).origin;
+    } catch {
+      refererOrigin =
+        "";
+    }
+
+    if (
+      !refererOrigin ||
+      !expectedOrigins.has(
+        refererOrigin
+      )
+    ) {
+      return res
+        .status(403)
+        .json({
+          error:
+            "Request origin is not allowed."
+        });
+    }
+  }
+
+  /*
+    Authenticated browser mutations should always provide at least
+    Origin/Referer/Sec-Fetch-Site. Reject silent cookie-bearing
+    mutations that provide none of those signals.
+  */
+  const cookies =
+    parseCookies(
+      req
+    );
+
+  const hasSessionCookie =
+    Boolean(
+      cookies.sng_admin ||
+      cookies[
+        CUSTOMER_SESSION_COOKIE
+      ]
+    );
+
+  if (
+    hasSessionCookie &&
+    !origin &&
+    !referer &&
+    !fetchSite
+  ) {
+    return res
+      .status(403)
+      .json({
+        error:
+          "Unable to verify request origin."
+      });
+  }
+
+  return next();
+}
+
+
+function containsUnsafeObjectKey(
+  value,
+  depth = 0
+) {
+  if (
+    depth > 8 ||
+    value == null ||
+    typeof value !== "object"
+  ) {
+    return false;
+  }
+
+  for (
+    const [
+      key,
+      item
+    ] of Object.entries(
+      value
+    )
+  ) {
+    if (
+      [
+        "__proto__",
+        "prototype",
+        "constructor"
+      ].includes(
+        key
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      containsUnsafeObjectKey(
+        item,
+        depth + 1
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+
+function rejectUnsafeJsonKeys(
+  req,
+  res,
+  next
+) {
+  if (
+    req.body &&
+    containsUnsafeObjectKey(
+      req.body
+    )
+  ) {
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid request payload."
+      });
+  }
+
+  next();
+}
+
+
+function requireJsonForMutation(
+  req,
+  res,
+  next
+) {
+  if (
+    [
+      "GET",
+      "HEAD",
+      "OPTIONS"
+    ].includes(
+      req.method
+    )
+  ) {
+    return next();
+  }
+
+  const contentLength =
+    Number(
+      req.headers[
+        "content-length"
+      ] ||
+      0
+    );
+
+  /*
+    Empty POST/DELETE actions such as logout do not need JSON.
+  */
+  if (
+    !contentLength
+  ) {
+    return next();
+  }
+
+  if (
+    !req.is(
+      "application/json"
+    )
+  ) {
+    return res
+      .status(415)
+      .json({
+        error:
+          "JSON request body required."
+      });
+  }
+
+  next();
+}
+
 
 function parseCookies(req) {
   return Object.fromEntries(
@@ -3495,9 +4519,19 @@ function verifyCustomerSession(token) {
   }
 }
 
+function customerSessionVersion(
+  account
+) {
+  return Number(
+    account?.sessionVersion ||
+    0
+  );
+}
+
+
 function setCustomerSession(
   res,
-  accountId
+  account
 ) {
   const expires =
     Date.now() +
@@ -3506,30 +4540,42 @@ function setCustomerSession(
 
   const token =
     signCustomerSession({
-      accountId,
+      accountId:
+        account.id,
+
+      version:
+        customerSessionVersion(
+          account
+        ),
+
+      issuedAt:
+        Date.now(),
+
       expires
     });
 
   res.setHeader(
     "Set-Cookie",
-    `${CUSTOMER_SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${CUSTOMER_SESSION_MAX_AGE}${
-      BASE_URL.startsWith("https://")
+    `${CUSTOMER_SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${CUSTOMER_SESSION_MAX_AGE}; Priority=High${
+      SECURE_COOKIES
         ? "; Secure"
         : ""
     }`
   );
 }
 
+
 function clearCustomerSession(res) {
   res.setHeader(
     "Set-Cookie",
-    `${CUSTOMER_SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${
-      BASE_URL.startsWith("https://")
+    `${CUSTOMER_SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0; Priority=High${
+      SECURE_COOKIES
         ? "; Secure"
         : ""
     }`
   );
 }
+
 
 async function hashCustomerPassword(
   password,
@@ -3648,6 +4694,18 @@ async function getAuthenticatedCustomer(
   if (
     !account ||
     account.disabled === true
+  ) {
+    return null;
+  }
+
+  if (
+    Number(
+      session.version ||
+      0
+    ) !==
+    customerSessionVersion(
+      account
+    )
   ) {
     return null;
   }
@@ -5213,10 +6271,6 @@ function publicCustomerAccount(
       account.discordUsername ||
       "",
 
-    discordUserId:
-      account.discordUserId ||
-      "",
-
     notificationCount:
       notifications.length,
 
@@ -5431,30 +6485,75 @@ async function createEmailVerification(
 
 function requireAdmin(req, res, next) {
   const token =
-    parseCookies(req).sng_admin;
+    parseCookies(req)
+      .sng_admin;
+
+  const key =
+    token
+      ? adminSessionKey(
+          token
+        )
+      : "";
 
   const session =
-    token &&
-    adminSessions.get(token);
+    key
+      ? adminSessions.get(
+          key
+        )
+      : null;
 
-  if (
+  const now =
+    Date.now();
+
+  const invalid =
     !session ||
-    session.expires < Date.now()
-  ) {
-    if (token) {
-      adminSessions.delete(token);
+    Number(
+      session.absoluteExpires ||
+      0
+    ) <= now ||
+    Number(
+      session.idleExpires ||
+      0
+    ) <= now ||
+    !safeEqual(
+      String(
+        session.userAgentHash ||
+        ""
+      ),
+      adminUserAgentHash(
+        req
+      )
+    );
+
+  if (invalid) {
+    if (key) {
+      adminSessions.delete(
+        key
+      );
     }
 
     return res
       .status(401)
       .json({
-        error: "Unauthorized"
+        error:
+          "Unauthorized"
       });
   }
 
-  session.expires =
-    Date.now() +
-    8 * 60 * 60 * 1000;
+  session.idleExpires =
+    Math.min(
+      now +
+        ADMIN_SESSION_IDLE_MS,
+      session.absoluteExpires
+    );
+
+  req.adminSession = {
+    key,
+    createdAt:
+      session.createdAt,
+    absoluteExpires:
+      session.absoluteExpires
+  };
 
   next();
 }
@@ -5684,11 +6783,18 @@ app.post(
             .STRIPE_WEBHOOK_SECRET
         );
     } catch (error) {
+      console.error(
+        "Stripe webhook signature verification failed:",
+        error?.name ||
+        "stripe_webhook_signature_error"
+      );
+
       return res
         .status(400)
-        .send(
-          `Webhook signature verification failed: ${error.message}`
-        );
+        .json({
+          error:
+            "Webhook signature verification failed."
+        });
     }
 
     try {
@@ -6624,9 +7730,151 @@ app.post(
 
 app.use(
   express.json({
-    limit: "50kb"
+    limit: "50kb",
+    strict: true
   })
 );
+
+/*
+  The Stripe webhook route is intentionally declared before this
+  section so its signed raw body bypasses JSON/CSRF middleware.
+*/
+app.use(
+  "/api",
+  apiAbuseRateLimit
+);
+
+app.use(
+  "/api",
+  requireSameOriginMutation
+);
+
+app.use(
+  "/api",
+  requireJsonForMutation
+);
+
+app.use(
+  "/api",
+  rejectUnsafeJsonKeys
+);
+
+
+/*
+  Security audit entries never include request bodies or credentials.
+  The authenticated subject is detected after route middleware runs.
+*/
+app.use(
+  "/api/admin",
+  (req, res, next) => {
+    if (
+      ![
+        "GET",
+        "HEAD",
+        "OPTIONS"
+      ].includes(
+        req.method
+      )
+    ) {
+      res.on(
+        "finish",
+        () => {
+          if (
+            req.adminSession &&
+            req.path !==
+              "/login" &&
+            req.path !==
+              "/logout"
+          ) {
+            appendSecurityAudit({
+              event:
+                "admin_mutation",
+
+              requestId:
+                req.securityRequestId,
+
+              method:
+                req.method,
+
+              path:
+                req.path,
+
+              status:
+                res.statusCode,
+
+              ip:
+                req.ip,
+
+              userAgent:
+                req.headers[
+                  "user-agent"
+                ]
+            });
+          }
+        }
+      );
+    }
+
+    next();
+  }
+);
+
+
+app.use(
+  "/api/account",
+  (req, res, next) => {
+    if (
+      ![
+        "GET",
+        "HEAD",
+        "OPTIONS"
+      ].includes(
+        req.method
+      )
+    ) {
+      res.on(
+        "finish",
+        () => {
+          if (
+            req.customerAccount
+          ) {
+            appendSecurityAudit({
+              event:
+                "customer_mutation",
+
+              requestId:
+                req.securityRequestId,
+
+              method:
+                req.method,
+
+              path:
+                req.path,
+
+              status:
+                res.statusCode,
+
+              ip:
+                req.ip,
+
+              userAgent:
+                req.headers[
+                  "user-agent"
+                ],
+
+              subject:
+                req.customerAccount
+                  .id
+            });
+          }
+        }
+      );
+    }
+
+    next();
+  }
+);
+
 
 /* -------------------------------------------------------
    ADMIN PAGE
@@ -6637,7 +7885,12 @@ app.get(
   (req, res) => {
     res.set(
       "Cache-Control",
-      "no-store"
+      "no-store, private, max-age=0"
+    );
+
+    res.set(
+      "X-Robots-Tag",
+      "noindex, nofollow, noarchive"
     );
 
     res.sendFile(
@@ -6650,12 +7903,51 @@ app.get(
   }
 );
 
+
+app.get(
+  "/admin.html",
+  (req, res) => {
+    return res.redirect(
+      302,
+      "/admin"
+    );
+  }
+);
+
+
 app.use(
   express.static(
     path.join(
       __dirname,
       "public"
-    )
+    ),
+    {
+      dotfiles:
+        "deny",
+
+      fallthrough:
+        true,
+
+      index:
+        "index.html",
+
+      setHeaders:
+        (
+          res,
+          filePath
+        ) => {
+          if (
+            filePath.endsWith(
+              ".html"
+            )
+          ) {
+            res.setHeader(
+              "Cache-Control",
+              "no-cache"
+            );
+          }
+        }
+    }
   )
 );
 
@@ -6692,14 +7984,14 @@ app.post(
       }
 
       if (
-        password.length < 10 ||
+        password.length < 12 ||
         password.length > 200
       ) {
         return res
           .status(400)
           .json({
             error:
-              "Password must be at least 10 characters."
+              "Password must be at least 12 characters."
           });
       }
 
@@ -6743,15 +8035,6 @@ app.post(
             100
           ),
 
-        discordUserId:
-          clean(
-            req.body.discordUserId,
-            40
-          ).replace(
-            /\D/g,
-            ""
-          ),
-
         notifications: [],
 
         passwordSalt:
@@ -6771,6 +8054,9 @@ app.post(
 
         lastLoginAt:
           now,
+
+        sessionVersion:
+          1,
 
         disabled:
           false
@@ -6800,8 +8086,41 @@ app.post(
 
       setCustomerSession(
         res,
-        account.id
+        account
       );
+
+      customerAuthAttempts.delete(
+        req.ip ||
+        "unknown"
+      );
+
+      await appendSecurityAudit({
+        event:
+          "customer_registration_success",
+
+        requestId:
+          req.securityRequestId,
+
+        method:
+          req.method,
+
+        path:
+          req.path,
+
+        status:
+          201,
+
+        ip:
+          req.ip,
+
+        userAgent:
+          req.headers[
+            "user-agent"
+          ],
+
+        subject:
+          account.id
+      });
 
       return res
         .status(201)
@@ -6865,6 +8184,37 @@ app.post(
         !account ||
         account.disabled === true
       ) {
+        await appendSecurityAudit({
+          event:
+            "customer_login_failure",
+
+          requestId:
+            req.securityRequestId,
+
+          method:
+            req.method,
+
+          path:
+            req.path,
+
+          status:
+            401,
+
+          ip:
+            req.ip,
+
+          userAgent:
+            req.headers[
+              "user-agent"
+            ],
+
+          subject:
+            email,
+
+          detail:
+            "invalid_credentials"
+        });
+
         return res
           .status(401)
           .json({
@@ -6880,6 +8230,37 @@ app.post(
         );
 
       if (!passwordValid) {
+        await appendSecurityAudit({
+          event:
+            "customer_login_failure",
+
+          requestId:
+            req.securityRequestId,
+
+          method:
+            req.method,
+
+          path:
+            req.path,
+
+          status:
+            401,
+
+          ip:
+            req.ip,
+
+          userAgent:
+            req.headers[
+              "user-agent"
+            ],
+
+          subject:
+            email,
+
+          detail:
+            "invalid_credentials"
+        });
+
         return res
           .status(401)
           .json({
@@ -6901,8 +8282,41 @@ app.post(
 
       setCustomerSession(
         res,
-        account.id
+        account
       );
+
+      customerAuthAttempts.delete(
+        req.ip ||
+        "unknown"
+      );
+
+      await appendSecurityAudit({
+        event:
+          "customer_login_success",
+
+        requestId:
+          req.securityRequestId,
+
+        method:
+          req.method,
+
+        path:
+          req.path,
+
+        status:
+          200,
+
+        ip:
+          req.ip,
+
+        userAgent:
+          req.headers[
+            "user-agent"
+          ],
+
+        subject:
+          account.id
+      });
 
       return res.json({
         ok: true,
@@ -6931,8 +8345,54 @@ app.post(
 
 app.post(
   "/api/account/logout",
-  (req, res) => {
-    clearCustomerSession(res);
+  async (req, res) => {
+    try {
+      const account =
+        await getAuthenticatedCustomer(
+          req
+        );
+
+      if (account) {
+        const accounts =
+          await getCustomerAccounts();
+
+        const stored =
+          accounts.find(
+            item =>
+              String(
+                item.id
+              ) ===
+              String(
+                account.id
+              )
+          );
+
+        if (stored) {
+          stored.sessionVersion =
+            customerSessionVersion(
+              stored
+            ) + 1;
+
+          stored.updatedAt =
+            new Date()
+              .toISOString();
+
+          await saveCustomerAccounts(
+            accounts
+          );
+        }
+      }
+    } catch (error) {
+      console.error(
+        "Customer logout session revocation failed:",
+        error?.message ||
+        "logout_revocation_error"
+      );
+    }
+
+    clearCustomerSession(
+      res
+    );
 
     return res.json({
       ok: true
@@ -7016,14 +8476,11 @@ app.put(
           100
         );
 
-      account.discordUserId =
-        clean(
-          req.body?.discordUserId,
-          40
-        ).replace(
-          /\\D/g,
-          ""
-        );
+      /*
+        Only the Discord username is collected.
+        Numeric Discord User IDs are intentionally not retained.
+      */
+      delete account.discordUserId;
 
       account.updatedAt =
         new Date()
@@ -7522,14 +8979,14 @@ app.post(
       }
 
       if (
-        newPassword.length < 10 ||
+        newPassword.length < 12 ||
         newPassword.length > 200
       ) {
         return res
           .status(400)
           .json({
             error:
-              "Password must be at least 10 characters."
+              "Password must be at least 12 characters."
           });
       }
 
@@ -7607,6 +9064,15 @@ app.post(
       account.passwordHash =
         passwordData.hash;
 
+      /*
+        Revoke every previously issued customer session after a
+        password reset. A stolen old cookie can no longer be reused.
+      */
+      account.sessionVersion =
+        customerSessionVersion(
+          account
+        ) + 1;
+
       account.updatedAt =
         updatedAt;
 
@@ -7635,7 +9101,7 @@ app.post(
 
       setCustomerSession(
         res,
-        account.id
+        account
       );
 
       return res.json({
@@ -13042,6 +14508,36 @@ app.post(
         !passwordValid ||
         !codeValid
       ) {
+        await appendSecurityAudit({
+          event:
+            "admin_login_failure",
+
+          requestId:
+            req.securityRequestId,
+
+          method:
+            req.method,
+
+          path:
+            req.path,
+
+          status:
+            401,
+
+          ip:
+            req.ip,
+
+          userAgent:
+            req.headers[
+              "user-agent"
+            ],
+
+          detail:
+            !passwordValid
+              ? "invalid_password"
+              : "invalid_mfa"
+        });
+
         return res
           .status(401)
           .json({
@@ -13057,25 +14553,72 @@ app.post(
           .randomBytes(32)
           .toString("hex");
 
+      const createdAt =
+        Date.now();
+
+      const absoluteExpires =
+        createdAt +
+        ADMIN_SESSION_MAX_AGE_MS;
+
       adminSessions.set(
-        token,
+        adminSessionKey(
+          token
+        ),
         {
-          expires:
-            Date.now() +
-            8 * 60 * 60 * 1000
+          createdAt,
+
+          absoluteExpires,
+
+          idleExpires:
+            Math.min(
+              createdAt +
+                ADMIN_SESSION_IDLE_MS,
+              absoluteExpires
+            ),
+
+          userAgentHash:
+            adminUserAgentHash(
+              req
+            )
         }
       );
 
       res.setHeader(
         "Set-Cookie",
-        `sng_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${
-          BASE_URL.startsWith(
-            "https://"
-          )
+        `sng_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(
+          ADMIN_SESSION_MAX_AGE_MS /
+          1000
+        )}; Priority=High${
+          SECURE_COOKIES
             ? "; Secure"
             : ""
         }`
       );
+
+      await appendSecurityAudit({
+        event:
+          "admin_login_success",
+
+        requestId:
+          req.securityRequestId,
+
+        method:
+          req.method,
+
+        path:
+          req.path,
+
+        status:
+          200,
+
+        ip:
+          req.ip,
+
+        userAgent:
+          req.headers[
+            "user-agent"
+          ]
+      });
 
       return res.json({
         ok: true
@@ -13103,27 +14646,52 @@ app.post(
 
 app.post(
   "/api/admin/logout",
-  (req, res) => {
+  async (req, res) => {
     const token =
       parseCookies(req)
         .sng_admin;
 
     if (token) {
       adminSessions.delete(
-        token
+        adminSessionKey(
+          token
+        )
       );
     }
 
     res.setHeader(
       "Set-Cookie",
-      `sng_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${
-        BASE_URL.startsWith(
-          "https://"
-        )
+      `sng_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0; Priority=High${
+        SECURE_COOKIES
           ? "; Secure"
           : ""
       }`
     );
+
+    await appendSecurityAudit({
+      event:
+        "admin_logout",
+
+      requestId:
+        req.securityRequestId,
+
+      method:
+        req.method,
+
+      path:
+        req.path,
+
+      status:
+        200,
+
+      ip:
+        req.ip,
+
+      userAgent:
+        req.headers[
+          "user-agent"
+        ]
+    });
 
     return res.json({
       ok: true
@@ -13850,164 +15418,6 @@ app.get(
   }
 );
 
-async function importFreeTargetAccountsOnce() {
-  const memberships =
-    await getFreeMemberships();
-
-  const accounts = [
-    ["joan_west530@web.de", "h01G#g4ngyHo"],
-    ["jason941_castro@web.de", "wrFNm8rz%oxz"],
-    ["kimberly_hayes467@web.de", "^Zk@GvR76uWP"],
-    ["nancy_rodriguez721@web.de", "#CK9r55#iScQ"],
-    ["donna728_perez@web.de", "8ynghMp!a1J$"],
-    ["julie920_phillips@web.de", "I^T#qeQE0Ggax"],
-    ["xavier_gibson118@web.de", "Ot$QSesm35Yb"],
-    ["tyler_flores72@web.de", "wZwdUlakp$4!Z"],
-    ["linda948_morales@web.de", "SMbj@6xtivLu"],
-    ["frances73_aguilar@web.de", "sqBCd%6Vh@2i"],
-    ["amanda116_aguilar@web.de", "cq#oeczY3HLtH"],
-    ["diego868_gibson@web.de", "Rk#t9KKZ0WEK"],
-    ["betty585_gutierrez@web.de", "F0LL3xhFV$0W"],
-    ["dominic_reynolds67@web.de", "YxNr1h#Y^V@^U"],
-    ["chris40_myers@web.de", "HkP#gFVeYP3o"],
-    ["evan648_dixon@web.de", "6%cJWnI0jrnT"],
-    ["joe_foster614@web.de", "ClK^Sf9MXB4F"],
-    ["sara_bailey408@web.de", "0ZfQt1@UhUm8#"],
-    ["julie778_freeman@web.de", "fx^0t43pWcAoF"],
-    ["david_campbell323@web.de", "wwAakz7Hj!th"],
-    ["thomas_ford883@web.de", "ys@uH7!EI$Gy"],
-    ["thomas_perry443@web.de", "2Q9HCGOX@!ko"],
-    ["mark300_lee@web.de", "j6nq!%z$LZQ3"],
-    ["carter392_cooper@web.de", "E8SNw^3Unhg5"],
-    ["noah_clark569@web.de", "unbBH4w8WML!"],
-    ["maria_ross469@web.de", "X6LqfvJvky$Za"],
-    ["martha_rogers892@web.de", "D%7M9ImeDZ#jR"],
-    ["william_powell402@web.de", "SBVv%#a6296X"],
-    ["martha_bryant708@web.de", "#vW5lV9%a40T"],
-    ["maria_torres386@web.de", "nsD$c@C3h9LgM"],
-    ["hannah10_herrera@web.de", "^zzgAg599B4N"],
-    ["mary623_mendoza@web.de", "RLYydS0y9!tso"],
-    ["connor579_reynolds@web.de", "OeJ@6dmLZ1bWV"],
-    ["linda480_roberts@web.de", "#135f3CFvswi@"],
-    ["colin_wallace35@web.de", "5oJ%#vc7KQSOR"],
-    ["kevin_griffin119@web.de", "s2p8ZZ##Tw3IC"],
-    ["cynthia977_porter@web.de", "4iUgZW8B@cJ7"],
-    ["tim389_rivera@web.de", "VQ$yjH#85hpRa"],
-    ["nicholas159_evans@web.de", "0q$I^49N^ZiQm"],
-    ["eli259_jackson@web.de", "ZoRpv2#@ZRbC"],
-    ["laura837_west@web.de", "5btwyCE@L9Jw"],
-    ["chase_ross271@web.de", "VCH7b0JFGIT%"],
-    ["alexander_thomas404@web.de", "h2Hc1Peg^LuF"],
-    ["judith_guerrero433@web.de", "X9$^FY8ZZeyZ"],
-    ["landon_bryant874@web.de", "a$^3Wxh8e45l"],
-    ["janet617_ramos@web.de", "DQ8DoTZ!Pgef#"],
-    ["kevin_moore543@web.de", "5R9tdfjhkXN!"],
-    ["deborah_harris583@web.de", "WK9wfPcHz!uXb"],
-    ["judith_brooks580@web.de", "6MEgE!EO8mWc"],
-    ["xavier_rodriguez973@web.de", "%6Xle!EJ3q%XJ"]
-  ];
-
-  const existingTargetEmails =
-    new Set();
-
-  for (const membership of memberships) {
-    try {
-      if (!membership.credentials) {
-        continue;
-      }
-
-      const credentials =
-        decryptJson(
-          membership.credentials
-        );
-
-      const targetEmail =
-        String(
-          credentials?.target?.username ||
-          ""
-        )
-          .trim()
-          .toLowerCase();
-
-      if (targetEmail) {
-        existingTargetEmails.add(
-          targetEmail
-        );
-      }
-    } catch {
-      // Ignore memberships that cannot
-      // be decrypted during duplicate check.
-    }
-  }
-
-  const now =
-    new Date().toISOString();
-
-  let added = 0;
-
-  for (const [email, password] of accounts) {
-    const normalizedEmail =
-      email.trim().toLowerCase();
-
-    if (
-      existingTargetEmails.has(
-        normalizedEmail
-      )
-    ) {
-      continue;
-    }
-
-    const credentials =
-      emptyRetailerCredentials();
-
-    credentials.target = {
-      username: email,
-      password
-    };
-
-    memberships.push({
-      id:
-        crypto.randomUUID(),
-
-      profileName:
-        "FREE MEMBERSHIP",
-
-      accountEmail:
-        "",
-
-      notes:
-        "",
-
-      credentials:
-        encryptJson(
-          credentials
-        ),
-
-      createdAt:
-        now,
-
-      updatedAt:
-        now
-    });
-
-    existingTargetEmails.add(
-      normalizedEmail
-    );
-
-    added += 1;
-  }
-
-  if (added > 0) {
-    await saveFreeMemberships(
-      memberships
-    );
-  }
-
-  console.log(
-    `FREE Target import: ${added} account(s) added.`
-  );
-}
-
 async function migrateFreeAccountsToManagedPoolOnce() {
   const managedAccounts =
     await getManagedAccounts();
@@ -14170,523 +15580,6 @@ async function migrateFreeAccountsToManagedPoolOnce() {
     `Managed pool migration: ${added} account(s) added.`
   );
 }
-
-async function importWalmartManagedAccountsOnce() {
-  const managedAccounts =
-    await getManagedAccounts();
-
-  const accounts = [
-    ["thomas535_baker@web.de", "kIY^gjRRfl3B9"],
-    ["diego_myers291@web.de", "IwCiv4nR%^kp"],
-    ["anthony_webb331@web.de", "FQh8YuEoO@n^L"],
-    ["nicholas_walker18@web.de", "e5L#zwRI7FU5"],
-    ["nicholas_dixon663@web.de", "oFU#4gMC#g80w"],
-    ["robert_rodriguez718@web.de", "KvuNZKw^D!E6z"],
-    ["thomas_alvarez205@web.de", "V6gXHaCo2gvy^"],
-    ["emily161_parker@web.de", "Cgkj36n@t$nu"],
-    ["dorothy253_moreno@web.de", "zy8POninOOSR#"],
-    ["anthony_hernandez560@web.de", "0K^j!pIrKQ8hI"],
-    ["alex903_wallace@web.de", "PnChvEK^E1JL"],
-    ["miles155_hill@web.de", "I!VbTZ4QHaTXc"],
-    ["deborah_palmer832@web.de", "6%1#cB1sC#xB"],
-    ["marie_rodriguez696@web.de", "Usjks8^Wams7y"],
-    ["judith610_davis@web.de", "KuQ6Zi@zerl3"],
-    ["joe_jenkins683@web.de", "R@jlAoL1D$m#"],
-    ["owen505_vasquez@web.de", "5L@Mf@$8Ygbv2"],
-    ["martha519_barnes@web.de", "ba%!y^5DJO!9"],
-    ["cheryl333_roberts@web.de", "cUPv0ycg@3#5"],
-    ["chris688_moore@web.de", "dgk0Fx!Q3o7D"],
-    ["joseph_guerrero899@web.de", "355LnP8gLKgV^"],
-    ["christian_guerrero265@web.de", "5ABOi98G#bvn"],
-    ["dorothy_hill645@web.de", "$ZkXJ7rIq9kaw"],
-    ["alexander171_garcia@web.de", "hFkYS9DTNO^9"],
-    ["dorothy717_powell@web.de", "4hYd^GHA51Ud"],
-    ["mark_vasquez836@web.de", "#5k3mi$FYjA^"],
-    ["jack_hall116@web.de", "BY1h2eq%Qm$r"],
-    ["nathaniel706_wallace@web.de", "ViBIblhjF@g%3"],
-    ["andrea_wells291@web.de", "kCd8@qSFeZD$"],
-    ["anthony163_webb@web.de", "!^!%d0H84DTBV"],
-    ["brenda_aguilar985@web.de", "9zLHdhP%pX^g"],
-    ["jane_hayes306@web.de", "6V0ek!HGmtBq9"],
-    ["martha_evans495@web.de", "bnNEL#IvPP63k"],
-    ["jessica_hughes877@web.de", "Z!GSP8rq@MevW"],
-    ["nancy605_alvarez@web.de", "7jEp7CUj5@QvU"],
-    ["jason79_ross@web.de", "Vxb6FLRl2^mV"],
-    ["linda286_adams@web.de", "Kv#iq8Vl!zHa"],
-    ["william269_robinson@web.de", "ewUD4q%%BTGe"],
-    ["martha748_cook@web.de", "1I4LBnc8IU%D8"],
-    ["ruth_collins157@web.de", "b31@Lh6T!ikH"],
-    ["austin45_torres@web.de", "jPhhfG6b2JQ!"],
-    ["lisa_green714@web.de", "g4FSr%ErrXxT"],
-    ["jonathan147_reed@web.de", "75ppCVGn!t3E"],
-    ["deborah398_rogers@web.de", "Nk$LGwbFb34G"],
-    ["joshua_thompson225@web.de", "sp3H6fsCF#MN"],
-    ["jessica240_sanders@web.de", "6ksCDA5Z@FEi$"],
-    ["owen_gray843@web.de", "t@IvWIwtY6i3"],
-    ["laura_sullivan57@web.de", "hKWb0uWt^wG1N"],
-    ["hunter812_barnes@web.de", "!cha6qO!E62%"],
-    ["patricia365_webb@web.de", "KLy9%NF8#EBkd"]
-  ];
-
-  const existingWalmartEmails =
-    new Set();
-
-  for (const account of managedAccounts) {
-    try {
-      if (!account.credentials) {
-        continue;
-      }
-
-      const credentials =
-        decryptJson(
-          account.credentials
-        );
-
-      const walmartEmail =
-        String(
-          credentials?.walmart?.username ||
-          ""
-        )
-          .trim()
-          .toLowerCase();
-
-      if (walmartEmail) {
-        existingWalmartEmails.add(
-          walmartEmail
-        );
-      }
-    } catch {
-      // Ignore unreadable records
-      // during duplicate checking.
-    }
-  }
-
-  const now =
-    new Date().toISOString();
-
-  let added = 0;
-
-  for (const [email, password] of accounts) {
-    const normalizedEmail =
-      email.trim().toLowerCase();
-
-    if (
-      existingWalmartEmails.has(
-        normalizedEmail
-      )
-    ) {
-      continue;
-    }
-
-    const credentials =
-      emptyRetailerCredentials();
-
-    credentials.walmart = {
-      username: email,
-      password
-    };
-
-    managedAccounts.push({
-      id:
-        crypto.randomUUID(),
-
-      profileName:
-        "MANAGED WALMART ACCOUNT",
-
-      accountEmail:
-        "",
-
-      notes:
-        "",
-
-      credentials:
-        encryptJson(
-          credentials
-        ),
-
-      source:
-        "walmart-import",
-
-      createdAt:
-        now,
-
-      updatedAt:
-        now
-    });
-
-    existingWalmartEmails.add(
-      normalizedEmail
-    );
-
-    added += 1;
-  }
-
-  if (added > 0) {
-    await saveManagedAccounts(
-      managedAccounts
-    );
-  }
-
-  console.log(
-    `Walmart managed import: ${added} account(s) added.`
-  );
-}
-
-
-function managedExactCredentialKey(
-  retailer,
-  username,
-  password
-) {
-  const exactUsername =
-    String(
-      username ||
-      ""
-    ).trim();
-
-  const exactPassword =
-    String(
-      password ||
-      ""
-    );
-
-  if (
-    !retailer ||
-    !exactUsername ||
-    !exactPassword
-  ) {
-    return "";
-  }
-
-  return [
-    retailer,
-    exactUsername,
-    exactPassword
-  ].join(
-    "\u0000"
-  );
-}
-
-
-function managedCredentialPairsFromRecord(
-  record
-) {
-  let credentials =
-    emptyRetailerCredentials();
-
-  try {
-    credentials =
-      record?.credentials
-        ? normalizeRetailerCredentials(
-            decryptJson(
-              record.credentials
-            )
-          )
-        : emptyRetailerCredentials();
-  } catch {
-    return [];
-  }
-
-  const pairs =
-    [];
-
-  for (
-    const retailer of
-    RETAILER_KEYS
-  ) {
-    const username =
-      String(
-        credentials?.[retailer]
-          ?.username ||
-        ""
-      ).trim();
-
-    const password =
-      String(
-        credentials?.[retailer]
-          ?.password ||
-        ""
-      );
-
-    const key =
-      managedExactCredentialKey(
-        retailer,
-        username,
-        password
-      );
-
-    if (!key) {
-      continue;
-    }
-
-    pairs.push({
-      retailer,
-      username,
-      password,
-      key
-    });
-  }
-
-  return pairs;
-}
-
-
-function managedDuplicateCredentialState(
-  records,
-  preferredIds =
-    new Set()
-) {
-  const groups =
-    new Map();
-
-  for (
-    const record of
-    records
-  ) {
-    for (
-      const pair of
-      managedCredentialPairsFromRecord(
-        record
-      )
-    ) {
-      if (
-        !groups.has(
-          pair.key
-        )
-      ) {
-        groups.set(
-          pair.key,
-          []
-        );
-      }
-
-      groups
-        .get(
-          pair.key
-        )
-        .push({
-          record,
-          pair
-        });
-    }
-  }
-
-  const duplicateIds =
-    new Set();
-
-  const duplicateOf =
-    new Map();
-
-  for (
-    const items of
-    groups.values()
-  ) {
-    if (
-      items.length <
-      2
-    ) {
-      continue;
-    }
-
-    const ordered =
-      [...items]
-        .sort(
-          (
-            a,
-            b
-          ) => {
-            const aPreferred =
-              preferredIds.has(
-                String(
-                  a.record.id
-                )
-              )
-                ? 1
-                : 0;
-
-            const bPreferred =
-              preferredIds.has(
-                String(
-                  b.record.id
-                )
-              )
-                ? 1
-                : 0;
-
-            if (
-              aPreferred !==
-              bPreferred
-            ) {
-              return (
-                bPreferred -
-                aPreferred
-              );
-            }
-
-            const aTime =
-              new Date(
-                a.record
-                  .createdAt ||
-                0
-              ).getTime() ||
-              0;
-
-            const bTime =
-              new Date(
-                b.record
-                  .createdAt ||
-                0
-              ).getTime() ||
-              0;
-
-            return (
-              aTime -
-              bTime
-            ) ||
-            String(
-              a.record.id
-            ).localeCompare(
-              String(
-                b.record.id
-              )
-            );
-          }
-        );
-
-    const canonicalId =
-      String(
-        ordered[0]
-          .record
-          .id
-      );
-
-    for (
-      const item of
-      ordered.slice(1)
-    ) {
-      const duplicateId =
-        String(
-          item.record.id
-        );
-
-      duplicateIds.add(
-        duplicateId
-      );
-
-      duplicateOf.set(
-        duplicateId,
-        canonicalId
-      );
-    }
-  }
-
-  return {
-    duplicateIds,
-    duplicateOf
-  };
-}
-
-
-function managedCredentialConflict(
-  records,
-  candidateCredentials,
-  excludeId =
-    ""
-) {
-  const candidatePairs =
-    [];
-
-  for (
-    const retailer of
-    RETAILER_KEYS
-  ) {
-    const username =
-      String(
-        candidateCredentials
-          ?.[retailer]
-          ?.username ||
-        ""
-      ).trim();
-
-    const password =
-      String(
-        candidateCredentials
-          ?.[retailer]
-          ?.password ||
-        ""
-      );
-
-    const key =
-      managedExactCredentialKey(
-        retailer,
-        username,
-        password
-      );
-
-    if (key) {
-      candidatePairs.push({
-        retailer,
-        username,
-        key
-      });
-    }
-  }
-
-  if (
-    !candidatePairs.length
-  ) {
-    return null;
-  }
-
-  for (
-    const record of
-    records
-  ) {
-    if (
-      String(
-        record.id
-      ) ===
-      String(
-        excludeId ||
-        ""
-      )
-    ) {
-      continue;
-    }
-
-    const existingPairs =
-      managedCredentialPairsFromRecord(
-        record
-      );
-
-    for (
-      const candidate of
-      candidatePairs
-    ) {
-      if (
-        existingPairs.some(
-          item =>
-            item.key ===
-            candidate.key
-        )
-      ) {
-        return {
-          retailer:
-            candidate.retailer,
-
-          username:
-            candidate.username,
-
-          recordId:
-            record.id
-        };
-      }
-    }
-  }
-
-  return null;
-}
-
 
 async function getManagedAvailability() {
   const [
@@ -15094,6 +15987,109 @@ app.get(
         Boolean(
           config.host
         )
+    });
+  }
+);
+
+
+app.get(
+  "/api/admin/security-status",
+  requireAdmin,
+  async (req, res) => {
+    const status =
+      securityConfigurationSnapshot();
+
+    return res.json({
+      ok: true,
+
+      headers: {
+        contentSecurityPolicy:
+          true,
+
+        hstsWhenHttps:
+          true,
+
+        noSniff:
+          true,
+
+        frameProtection:
+          true,
+
+        permissionsPolicy:
+          true
+      },
+
+      sessions: {
+        adminHttpOnly:
+          true,
+
+        adminSameSiteStrict:
+          true,
+
+        adminAbsoluteHours:
+          Math.round(
+            ADMIN_SESSION_MAX_AGE_MS /
+            3600000
+          ),
+
+        adminIdleHours:
+          Math.round(
+            ADMIN_SESSION_IDLE_MS /
+            3600000
+          ),
+
+        customerHttpOnly:
+          true,
+
+        customerSameSiteLax:
+          true,
+
+        customerRevocationVersion:
+          true
+      },
+
+      protections: {
+        sameOriginMutations:
+          true,
+
+        apiRateLimiting:
+          true,
+
+        adminMfa:
+          status.adminMfaConfigured,
+
+        customerPasswordMinimum:
+          12,
+
+        encryptedSensitiveStorage:
+          status.encryptionKeyConfigured,
+
+        secureCookies:
+          status.secureCookies,
+
+        auditLogging:
+          true,
+
+        sensitiveLogRedaction:
+          true
+      },
+
+      configuration: {
+        baseUrlHttps:
+          status.baseUrlHttps,
+
+        customerSessionSecretStrong:
+          status.customerSessionSecretStrong,
+
+        adminPasswordStrong:
+          status.adminPasswordStrong,
+
+        stripeSecretConfigured:
+          status.stripeSecretConfigured,
+
+        stripeWebhookSecretConfigured:
+          status.stripeWebhookSecretConfigured
+      }
     });
   }
 );
@@ -41990,12 +42986,71 @@ app.get(
   "/api/health",
   (req, res) => {
     return res.json({
-      ok: true,
-      service:
-        "SLABSNGRABSACO"
+      ok: true
     });
   }
 );
+
+/* -------------------------------------------------------
+   FINAL API 404 / ERROR HANDLERS
+------------------------------------------------------- */
+
+app.use(
+  "/api",
+  (req, res) => {
+    return res
+      .status(404)
+      .json({
+        error:
+          "API endpoint not found."
+      });
+  }
+);
+
+
+app.use(
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
+    console.error(
+      "Unhandled request error:",
+      {
+        requestId:
+          req.securityRequestId,
+
+        method:
+          req.method,
+
+        path:
+          req.path,
+
+        error
+      }
+    );
+
+    if (
+      res.headersSent
+    ) {
+      return next(
+        error
+      );
+    }
+
+    return res
+      .status(500)
+      .json({
+        error:
+          "Unexpected server error.",
+
+        requestId:
+          req.securityRequestId
+      });
+  }
+);
+
 
 /* -------------------------------------------------------
    START SERVER
@@ -42087,8 +43142,274 @@ function startManagedExpirationScheduler() {
 }
 
 
+
+async function removeLegacyDiscordUserIds() {
+  const accounts =
+    await getCustomerAccounts();
+
+  let changed =
+    false;
+
+  for (
+    const account of
+    accounts
+  ) {
+    if (
+      Object.prototype
+        .hasOwnProperty.call(
+          account,
+          "discordUserId"
+        )
+    ) {
+      delete account.discordUserId;
+
+      changed =
+        true;
+    }
+  }
+
+  if (changed) {
+    await saveCustomerAccounts(
+      accounts
+    );
+  }
+}
+
+
+function securityConfigurationSnapshot() {
+  let baseUrlValid = false;
+  let baseUrlHttps = false;
+
+  try {
+    const parsed = new URL(BASE_URL);
+    baseUrlValid = Boolean(parsed.hostname);
+    baseUrlHttps = parsed.protocol === "https:";
+  } catch {
+    baseUrlValid = false;
+  }
+
+  return {
+    baseUrlValid,
+    baseUrlHttps,
+    secureCookies: SECURE_COOKIES,
+
+    customerSessionSecretStrong:
+      String(
+        process.env.CUSTOMER_SESSION_SECRET || ""
+      ).length >= 32,
+
+    encryptionKeyConfigured:
+      Boolean(
+        String(
+          process.env.SUBMISSION_ENCRYPTION_KEY || ""
+        )
+      ),
+
+    adminPasswordConfigured:
+      Boolean(
+        String(
+          process.env.ADMIN_PASSWORD || ""
+        )
+      ),
+
+    adminPasswordStrong:
+      String(
+        process.env.ADMIN_PASSWORD || ""
+      ).length >= 14,
+
+    adminMfaConfigured:
+      Boolean(
+        String(
+          process.env.ADMIN_2FA_SECRET || ""
+        )
+      ),
+
+    stripeSecretConfigured:
+      Boolean(
+        String(
+          process.env.STRIPE_SECRET_KEY || ""
+        )
+      ) &&
+      String(
+        process.env.STRIPE_SECRET_KEY || ""
+      ) !== "sk_test_missing",
+
+    stripeWebhookSecretConfigured:
+      Boolean(
+        String(
+          process.env.STRIPE_WEBHOOK_SECRET || ""
+        )
+      )
+  };
+}
+
+
+function validateCriticalSecurityConfiguration() {
+  const status =
+    securityConfigurationSnapshot();
+
+  const failures = [];
+
+  if (!status.baseUrlValid) {
+    failures.push("BASE_URL");
+  }
+
+  if (!status.customerSessionSecretStrong) {
+    failures.push("CUSTOMER_SESSION_SECRET");
+  }
+
+  if (!status.encryptionKeyConfigured) {
+    failures.push("SUBMISSION_ENCRYPTION_KEY");
+  }
+
+  if (!status.adminPasswordConfigured) {
+    failures.push("ADMIN_PASSWORD");
+  }
+
+  if (!status.adminMfaConfigured) {
+    failures.push("ADMIN_2FA_SECRET");
+  }
+
+  if (failures.length) {
+    throw new Error(
+      `Critical security configuration missing or invalid: ${failures.join(", ")}`
+    );
+  }
+
+  if (
+    SECURE_COOKIES &&
+    !status.baseUrlHttps
+  ) {
+    throw new Error(
+      "Secure cookies require an HTTPS BASE_URL."
+    );
+  }
+
+  if (!status.adminPasswordStrong) {
+    console.warn(
+      "SECURITY WARNING: ADMIN_PASSWORD should be at least 14 characters."
+    );
+  }
+
+  if (!status.stripeWebhookSecretConfigured) {
+    console.warn(
+      "SECURITY WARNING: STRIPE_WEBHOOK_SECRET is not configured."
+    );
+  }
+
+  if (!status.stripeSecretConfigured) {
+    console.warn(
+      "SECURITY WARNING: STRIPE_SECRET_KEY is not configured."
+    );
+  }
+}
+
+
+async function hardenStoragePermissions() {
+  const publicDirectory =
+    path.resolve(
+      __dirname,
+      "public"
+    );
+
+  const dataDirectory =
+    path.resolve(DATA_DIR);
+
+  if (
+    dataDirectory === publicDirectory ||
+    dataDirectory.startsWith(
+      `${publicDirectory}${path.sep}`
+    )
+  ) {
+    throw new Error(
+      "DATA_DIR must never be inside the public web directory."
+    );
+  }
+
+  for (
+    const directory of [
+      DATA_DIR,
+      SECRET_DIR
+    ]
+  ) {
+    try {
+      await fs.chmod(
+        directory,
+        0o700
+      );
+    } catch {
+      // Mounted filesystems may ignore chmod.
+    }
+  }
+
+  const files = [
+    PENDING_FILE,
+    PAID_FILE,
+    CUSTOMER_ACCOUNTS_FILE,
+    PASSWORD_RESET_FILE,
+    EMAIL_VERIFY_FILE,
+    ORDER_CLAIM_FILE,
+    RETAILER_PROFILES_FILE,
+    SPECIAL_PROFILES_FILE,
+    MANAGED_ACCOUNTS_FILE,
+    RENTED_MEMBERSHIPS_FILE,
+    RENTAL_ASSIGNMENTS_FILE,
+    FREE_MEMBERSHIPS_FILE,
+    FREE_ASSIGNMENTS_FILE,
+    RESTORE_HOLDS_FILE,
+    SUCCESS_CHECKOUTS_FILE,
+    SUCCESS_CHECKOUTS_TEST_FILE,
+    SECURITY_AUDIT_FILE
+  ];
+
+  for (const file of files) {
+    try {
+      await fs.chmod(
+        file,
+        0o600
+      );
+    } catch {
+      // File may not exist yet.
+    }
+  }
+
+  try {
+    const entries =
+      await fs.readdir(
+        SECRET_DIR,
+        {
+          withFileTypes: true
+        }
+      );
+
+    for (const entry of entries) {
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      try {
+        await fs.chmod(
+          path.join(
+            SECRET_DIR,
+            entry.name
+          ),
+          0o600
+        );
+      } catch {
+        // Ignore permission limitations.
+      }
+    }
+  } catch {
+    // SECRET_DIR may be empty/new.
+  }
+}
+
+
+
 async function startServer() {
   try {
+    validateCriticalSecurityConfiguration();
+
     /*
       Make sure all persistent storage locations
       exist before accepting requests.
@@ -42097,14 +43418,16 @@ async function startServer() {
     await fs.mkdir(
       DATA_DIR,
       {
-        recursive: true
+        recursive: true,
+        mode: 0o700
       }
     );
 
     await fs.mkdir(
       SECRET_DIR,
       {
-        recursive: true
+        recursive: true,
+        mode: 0o700
       }
     );
 
@@ -42204,6 +43527,10 @@ await initializeArrayFile(
 );
 
     
+    await removeLegacyDiscordUserIds();
+
+    await hardenStoragePermissions();
+
     app.listen(
       PORT,
       () => {
