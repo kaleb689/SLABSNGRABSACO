@@ -4677,6 +4677,95 @@
     }
 
 
+
+    /* =========================================
+       7-DAY MANAGED ACCOUNT RESTORE HOLD
+    ========================================= */
+    .managed-restore-hold-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin: 0 0 16px;
+      padding: 16px;
+      border: 1px solid #1b8fb7;
+      border-radius: 12px;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(9, 45, 64, .96),
+          rgba(7, 24, 35, .96)
+        );
+      box-shadow:
+        0 10px 24px rgba(0,0,0,.22);
+    }
+
+    .managed-restore-hold-copy {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .managed-restore-hold-copy strong {
+      color: #f4fcff;
+      font-size: 14px;
+      font-weight: 950;
+    }
+
+    .managed-restore-hold-copy small {
+      max-width: 820px;
+      color: #a7c8d9;
+      line-height: 1.55;
+    }
+
+    .managed-restore-hold-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 9px;
+      flex: 0 0 auto;
+    }
+
+    .managed-restore-button {
+      min-height: 42px;
+      font-weight: 950;
+    }
+
+    .managed-release-hold-button {
+      min-height: 42px;
+      padding: 0 14px;
+      border: 1px solid #8d5962;
+      border-radius: 8px;
+      background: #2d171b;
+      color: #ffbbc4;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .45px;
+      cursor: pointer;
+    }
+
+    .managed-release-hold-button:hover {
+      border-color: #d27a88;
+      background: #401d23;
+      color: #ffffff;
+    }
+
+    @media (max-width: 900px) {
+      .managed-restore-hold-banner {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .managed-restore-hold-actions {
+        justify-content: stretch;
+      }
+
+      .managed-restore-hold-actions button {
+        flex: 1 1 240px;
+      }
+    }
+
+
   </style>
 </head>
 
@@ -10794,6 +10883,21 @@ function managedDisplayEmail(
         ?.walmart?.username ||
       ""
     ).trim() ||
+    String(
+      membership?.retailers
+        ?.pkc?.username ||
+      ""
+    ).trim() ||
+    String(
+      membership?.retailers
+        ?.samsClub?.username ||
+      ""
+    ).trim() ||
+    String(
+      membership?.retailers
+        ?.costco?.username ||
+      ""
+    ).trim() ||
     "No retailer email entered"
   );
 }
@@ -11123,8 +11227,11 @@ function managedMembershipCardHtml(
     )}"
     data-managed-assigned-search-values="${escapeHtml(
       JSON.stringify([
-        membership.displayEmail || "",
+        managedDisplayEmail(
+          membership
+        ) || "",
         membership.accountEmail || "",
+        membership.displayEmail || "",
         membership?.retailers?.target?.username || "",
         membership?.retailers?.walmart?.username || "",
         membership?.retailers?.pkc?.username || "",
@@ -11156,6 +11263,11 @@ function managedMembershipCardHtml(
       "Assigned Profile"
     )}"
     data-managed-assigned-email="${escapeHtml(
+      managedDisplayEmail(
+        membership
+      )
+    )}"
+    data-managed-assigned-canonical-email="${escapeHtml(
       managedDisplayEmail(
         membership
       )
@@ -13006,6 +13118,13 @@ function renderManagedMembershipDashboard(
       ? data.availableMemberships
       : [];
 
+  const restoreHolds =
+    Array.isArray(
+      data?.restoreHolds
+    )
+      ? data.restoreHolds
+      : [];
+
   submissionCount.textContent =
     memberships.length === 1
       ? `1 active ${label.toLowerCase()}`
@@ -13041,6 +13160,53 @@ function renderManagedMembershipDashboard(
       }
     );
   }
+
+  /*
+    Keep customers with an active 7-day Restore Hold visible even if
+    they currently have zero assigned accounts or their paid membership
+    is temporarily inactive. This lets Admin restore or release the hold.
+  */
+  for (
+    const hold of
+    restoreHolds
+  ) {
+    const key =
+      String(
+        hold.customerAccountId ||
+        ""
+      );
+
+    if (
+      !key ||
+      groups.has(
+        key
+      )
+    ) {
+      continue;
+    }
+
+    groups.set(
+      key,
+      {
+        customer: {
+          customerAccountId:
+            key,
+
+          name:
+            hold.customerName ||
+            hold.customerEmail ||
+            "Customer",
+
+          email:
+            hold.customerEmail ||
+            ""
+        },
+
+        memberships: []
+      }
+    );
+  }
+
 
   for (
     const membership of
@@ -13140,6 +13306,29 @@ function renderManagedMembershipDashboard(
           managedOpenGroupKeys.has(
             groupKey
           );
+
+        const restoreHold =
+          restoreHolds.find(
+            hold =>
+              String(
+                hold.customerAccountId ||
+                ""
+              ) ===
+                String(
+                  groupId
+                )
+          ) ||
+          null;
+
+        const restoreCount =
+          Number(
+            restoreHold?.count ||
+            0
+          );
+
+        const restoreCanRestore =
+          restoreHold?.canRestore ===
+            true;
 
         const availableRowHtml =
           membership => `
@@ -13380,6 +13569,69 @@ function renderManagedMembershipDashboard(
                 groupId
               )}"
             >
+              ${
+                restoreCount
+                  ? `
+                      <div class="managed-restore-hold-banner">
+                        <div class="managed-restore-hold-copy">
+                          <span class="eyebrow">
+                            7-DAY RESTORE HOLD
+                          </span>
+
+                          <strong>
+                            ${restoreCount} previously used ${type === "free" ? "Gifted" : "Rented"} account${restoreCount === 1 ? "" : "s"} reserved
+                          </strong>
+
+                          <small>
+                            Held until ${escapeHtml(
+                              formatDateTime(
+                                restoreHold.holdUntil
+                              )
+                            )}. Restore reconnects the same managed account${restoreCount === 1 ? "" : "s"} to this customer's Linked Profiles. Release makes them available to other customers immediately.
+                            ${
+                              restoreCanRestore
+                                ? ""
+                                : " An active paid membership is required before these accounts can be restored."
+                            }
+                          </small>
+                        </div>
+
+                        <div class="managed-restore-hold-actions">
+                          <button
+                            type="button"
+                            class="admin-save-button managed-restore-button"
+                            data-managed-restore-hold="${escapeHtml(
+                              groupId
+                            )}"
+                            data-managed-restore-type="${escapeHtml(
+                              type
+                            )}"
+                            data-managed-restore-count="${restoreCount}"
+                            ${restoreCanRestore ? "" : "disabled"}
+                            title="${restoreCanRestore ? "Restore the held managed accounts" : "Customer needs an active paid membership before restore"}"
+                          >
+                            RESTORE ${restoreCount} ${type === "free" ? "GIFTED" : "RENTED"} ACCOUNT${restoreCount === 1 ? "" : "S"}
+                          </button>
+
+                          <button
+                            type="button"
+                            class="managed-release-hold-button"
+                            data-managed-release-hold="${escapeHtml(
+                              groupId
+                            )}"
+                            data-managed-release-type="${escapeHtml(
+                              type
+                            )}"
+                            data-managed-release-count="${restoreCount}"
+                          >
+                            RELEASE TO POOL NOW
+                          </button>
+                        </div>
+                      </div>
+                    `
+                  : ""
+              }
+
               <details
                 class="managed-add-remove-panel admin-collapsible"
                 data-managed-add-remove-panel="${escapeHtml(
@@ -13662,6 +13914,219 @@ function managedMembershipBody(
 function bindManagedMembershipDashboard(
   type
 ) {
+
+  document
+    .querySelectorAll(
+      "[data-managed-restore-hold]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async event => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const customerAccountId =
+            button.dataset
+              .managedRestoreHold;
+
+          const buttonType =
+            button.dataset
+              .managedRestoreType ||
+            type;
+
+          const count =
+            Number(
+              button.dataset
+                .managedRestoreCount ||
+              0
+            );
+
+          if (
+            !customerAccountId ||
+            !count
+          ) {
+            return;
+          }
+
+          const confirmed =
+            confirm(
+              `Restore ${count} previously used ${buttonType === "free" ? "Gifted" : "Rented"} account${count === 1 ? "" : "s"} to this customer's Linked Profiles?`
+            );
+
+          if (!confirmed) {
+            return;
+          }
+
+          managedOpenGroupKeys.add(
+            `${buttonType}:${customerAccountId}`
+          );
+
+          const originalText =
+            button.textContent;
+
+          button.disabled =
+            true;
+
+          button.textContent =
+            "RESTORING...";
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/restore-holds/${encodeURIComponent(
+                  buttonType
+                )}/${encodeURIComponent(
+                  customerAccountId
+                )}/restore`,
+                {
+                  method:
+                    "POST",
+
+                  credentials:
+                    "same-origin"
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to restore held accounts."
+              );
+            }
+
+            alert(
+              result.message ||
+              `${result.restored || count} account(s) restored.`
+            );
+
+            await load();
+
+          } catch (error) {
+            alert(
+              error.message
+            );
+
+            button.disabled =
+              false;
+
+            button.textContent =
+              originalText;
+          }
+        }
+      );
+    });
+
+
+  document
+    .querySelectorAll(
+      "[data-managed-release-hold]"
+    )
+    .forEach(button => {
+      button.addEventListener(
+        "click",
+        async event => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          const customerAccountId =
+            button.dataset
+              .managedReleaseHold;
+
+          const buttonType =
+            button.dataset
+              .managedReleaseType ||
+            type;
+
+          const count =
+            Number(
+              button.dataset
+                .managedReleaseCount ||
+              0
+            );
+
+          const confirmed =
+            confirm(
+              `Release ${count} held ${buttonType === "free" ? "Gifted" : "Rented"} account${count === 1 ? "" : "s"} to the normal pool now? They will no longer be reserved for this customer.`
+            );
+
+          if (!confirmed) {
+            return;
+          }
+
+          managedOpenGroupKeys.add(
+            `${buttonType}:${customerAccountId}`
+          );
+
+          const originalText =
+            button.textContent;
+
+          button.disabled =
+            true;
+
+          button.textContent =
+            "RELEASING...";
+
+          try {
+            const response =
+              await fetch(
+                `/api/admin/restore-holds/${encodeURIComponent(
+                  buttonType
+                )}/${encodeURIComponent(
+                  customerAccountId
+                )}/release`,
+                {
+                  method:
+                    "POST",
+
+                  credentials:
+                    "same-origin"
+                }
+              );
+
+            const result =
+              await response
+                .json()
+                .catch(
+                  () => ({})
+                );
+
+            if (!response.ok) {
+              throw new Error(
+                result.error ||
+                "Unable to release held accounts."
+              );
+            }
+
+            alert(
+              result.message ||
+              "Restore Hold released."
+            );
+
+            await load();
+
+          } catch (error) {
+            alert(
+              error.message
+            );
+
+            button.disabled =
+              false;
+
+            button.textContent =
+              originalText;
+          }
+        }
+      );
+    });
+
 
   document
     .querySelectorAll(
@@ -20712,7 +21177,20 @@ document.addEventListener(
             "managedAssignedSearchValues"
           );
 
+        const canonicalEmail =
+          String(
+            card.dataset
+              .managedAssignedCanonicalEmail ||
+            ""
+          )
+            .trim()
+            .toLowerCase();
+
         const match =
+          !query ||
+          canonicalEmail.startsWith(
+            query
+          ) ||
           adminSearchStartsWith(
             values,
             query
