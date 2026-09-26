@@ -4766,6 +4766,274 @@
     }
 
 
+
+    /* =========================================
+       MANAGED PROFILE QUICK WORKFLOW
+    ========================================= */
+
+    .linked-profile-detail {
+      position: sticky;
+      top: 14px;
+      align-self: start;
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      overscroll-behavior: contain;
+    }
+
+    .linked-retailer-profile-group {
+      border: 1px solid #153f56;
+      border-radius: 12px;
+      background: rgba(5, 18, 28, .82);
+      overflow: clip;
+    }
+
+    .linked-retailer-profile-group + .linked-retailer-profile-group {
+      margin-top: 10px;
+    }
+
+    .linked-retailer-profile-group > summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      background: #082030;
+      color: #70e7ff;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: .55px;
+      list-style: none;
+    }
+
+    .linked-retailer-profile-group > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .linked-retailer-profile-group > summary strong {
+      display: inline-flex;
+      min-width: 30px;
+      min-height: 26px;
+      align-items: center;
+      justify-content: center;
+      padding: 0 8px;
+      border: 1px solid #1f718f;
+      border-radius: 999px;
+      color: #dff9ff;
+      background: #071722;
+    }
+
+    .linked-retailer-profile-group-body {
+      display: grid;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .linked-profile-card-row {
+      display: grid;
+      gap: 8px;
+    }
+
+    .linked-profile-quick-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
+      padding: 9px;
+      border: 1px solid #173f55;
+      border-radius: 10px;
+      background: #06131e;
+    }
+
+    .linked-profile-quick-actions button,
+    .linked-profile-quick-actions select {
+      min-height: 35px;
+      border-radius: 8px;
+      font-size: 9px;
+      font-weight: 900;
+    }
+
+    .linked-quick-status-button {
+      border: 1px solid;
+      cursor: pointer;
+    }
+
+    .linked-quick-status-button.activated {
+      color: #58efa1;
+      border-color: #1f8c55;
+      background: #08291c;
+    }
+
+    .linked-quick-status-button.awaiting {
+      color: #ffd86a;
+      border-color: #977625;
+      background: #2b2208;
+    }
+
+    .linked-quick-status-button.inactive {
+      color: #ff7b7b;
+      border-color: #8b3232;
+      background: #2a0f12;
+    }
+
+    .linked-quick-extension-select {
+      border: 1px solid #246078;
+      background: #071b27;
+      color: #e8f9ff;
+      padding: 0 8px;
+    }
+
+    .linked-quick-extend-button {
+      border: 1px solid #2386a8;
+      background: #092a3a;
+      color: #6ce4ff;
+      cursor: pointer;
+    }
+
+    .linked-quick-return-button {
+      border: 1px solid #983d46;
+      background: #2b1014;
+      color: #ff8a92;
+      cursor: pointer;
+    }
+
+    .linked-profile-list-status {
+      display: inline-flex !important;
+      align-items: center;
+      width: fit-content;
+      min-height: 25px;
+      padding: 0 9px;
+      border: 1px solid;
+      border-radius: 999px;
+      font-size: 8px !important;
+      font-weight: 950;
+      letter-spacing: .45px;
+    }
+
+    .linked-profile-list-status.activated {
+      color: #56efa0 !important;
+      border-color: #23885a;
+      background: #08271b;
+    }
+
+    .linked-profile-list-status.awaiting {
+      color: #ffd45e !important;
+      border-color: #947420;
+      background: #2a2108;
+    }
+
+    .linked-profile-list-status.inactive {
+      color: #ff777f !important;
+      border-color: #87343d;
+      background: #2b0e13;
+    }
+
+    .linked-duplicate-login-warning {
+      display: inline-flex !important;
+      width: fit-content;
+      padding: 5px 8px;
+      border: 1px solid #a53642;
+      border-radius: 999px;
+      background: #351016;
+      color: #ff8b93 !important;
+      font-size: 8px !important;
+      font-weight: 950;
+      letter-spacing: .4px;
+    }
+
+    .customer-managed-profile-counts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 5px;
+    }
+
+    .customer-managed-count,
+    .managed-group-state-count {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 8px;
+      border: 1px solid;
+      border-radius: 999px;
+      font-size: 8px;
+      font-weight: 950;
+      letter-spacing: .35px;
+      white-space: nowrap;
+    }
+
+    .customer-managed-count.active,
+    .managed-group-state-count.active {
+      color: #5ff0a4;
+      border-color: #248758;
+      background: #08291c;
+    }
+
+    .customer-managed-count.inactive,
+    .managed-group-state-count.inactive {
+      color: #ffda68;
+      border-color: #957623;
+      background: #2c2207;
+    }
+
+    @media (max-width: 900px) {
+      .linked-profile-detail {
+        position: static;
+        max-height: none;
+      }
+
+      .linked-profile-quick-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+
+
+
+    .managed-assigned-retailer-group {
+      margin-top: 12px;
+      border: 1px solid #17445c;
+      border-radius: 12px;
+      background: rgba(4, 17, 27, .78);
+      overflow: clip;
+    }
+
+    .managed-assigned-retailer-group > summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 15px;
+      background: #082132;
+      color: #6de6ff;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: .55px;
+      list-style: none;
+    }
+
+    .managed-assigned-retailer-group > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .managed-assigned-retailer-group > summary strong {
+      min-width: 30px;
+      min-height: 26px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #23728e;
+      border-radius: 999px;
+      background: #071722;
+      color: #e4fbff;
+    }
+
+    .managed-assigned-retailer-body {
+      display: grid;
+      gap: 12px;
+      padding: 12px;
+    }
+
+
   </style>
 </head>
 
@@ -6128,6 +6396,18 @@ function renderOrder(x) {
       ? plan.profiles
       : "—";
 
+  const linkedActiveProfileCount =
+    Number(
+      x.linkedActiveProfileCount ||
+      0
+    );
+
+  const linkedInactiveProfileCount =
+    Number(
+      x.linkedInactiveProfileCount ||
+      0
+    );
+
     const subscriptionState =
     getSubscriptionState(
       x.subscriptionStatus,
@@ -6225,6 +6505,16 @@ function renderOrder(x) {
               profileCount
             )}
           </strong>
+
+          <div class="customer-managed-profile-counts">
+            <span class="customer-managed-count active">
+              ACTIVE ${linkedActiveProfileCount}
+            </span>
+
+            <span class="customer-managed-count inactive">
+              INACTIVE ${linkedInactiveProfileCount}
+            </span>
+          </div>
 
         </div>
 
@@ -9030,6 +9320,428 @@ function linkedProfileDetailHtml(
 }
 
 
+
+function linkedProfileRetailerMeta(
+  membership
+) {
+  const configured =
+    ADMIN_RETAILERS
+      .filter(
+        retailer =>
+          Boolean(
+            String(
+              membership?.retailers
+                ?.[retailer.key]
+                ?.username ||
+              ""
+            ).trim()
+          )
+      );
+
+  if (
+    configured.length >
+    1
+  ) {
+    return {
+      key:
+        "multi",
+
+      label:
+        configured
+          .map(
+            retailer =>
+              retailer.name
+          )
+          .join(" + ")
+    };
+  }
+
+  if (
+    configured.length ===
+    1
+  ) {
+    return {
+      key:
+        configured[0].key,
+
+      label:
+        configured[0].name
+    };
+  }
+
+  return {
+    key:
+      "other",
+
+    label:
+      "OTHER"
+  };
+}
+
+
+function linkedProfileStatusMeta(
+  membership
+) {
+  const status =
+    String(
+      membership?.activationStatus ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (
+    status ===
+      "activated" ||
+    status ===
+      "active"
+  ) {
+    return {
+      css:
+        "activated",
+
+      label:
+        "ACTIVATED",
+
+      action:
+        "inactive",
+
+      actionLabel:
+        "DEACTIVATE"
+    };
+  }
+
+  if (
+    status ===
+      "awaiting_activation" ||
+    status ===
+      "activating"
+  ) {
+    return {
+      css:
+        "awaiting",
+
+      label:
+        "AWAITING ACTIVATION",
+
+      action:
+        "activate",
+
+      actionLabel:
+        "ACTIVATE"
+    };
+  }
+
+  return {
+    css:
+      "inactive",
+
+    label:
+      "INACTIVE",
+
+    action:
+      "activate",
+
+    actionLabel:
+      "ACTIVATE"
+  };
+}
+
+
+function linkedProfileExtensionOptions(
+  membership
+) {
+  if (
+    membership.type ===
+    "free"
+  ) {
+    return `
+      <option value="1_week">1 WEEK</option>
+      <option value="1_month">1 MONTH</option>
+      <option value="indefinite">INDEFINITELY</option>
+    `;
+  }
+
+  return `
+    <option value="1_week">1 WEEK</option>
+    <option value="1_month">1 MONTH</option>
+  `;
+}
+
+
+function linkedProfileListCardHtml(
+  membership,
+  index,
+  selectedIndex
+) {
+  const status =
+    linkedProfileStatusMeta(
+      membership
+    );
+
+  return `
+    <div
+      class="linked-profile-card-row"
+      data-linked-card-id="${escapeHtml(
+        membership.id
+      )}"
+    >
+      <button
+        type="button"
+        class="linked-profile-button ${
+          index === selectedIndex
+            ? "active"
+            : ""
+        }"
+        data-linked-profile-index="${index}"
+        data-linked-profile-id="${escapeHtml(
+          membership.id
+        )}"
+      >
+        <span class="linked-profile-account-label">
+          ${escapeHtml(
+            membership.profileName ||
+            `Profile ${index + 1}`
+          )}
+        </span>
+
+        <strong class="linked-profile-account-email">
+          ${escapeHtml(
+            adminLinkedProfileEmail(
+              membership
+            )
+          )}
+        </strong>
+
+        <span
+          class="linked-profile-list-status ${status.css}"
+        >
+          ${escapeHtml(
+            status.label
+          )}
+        </span>
+
+        <span
+          class="linked-list-readiness ${
+            membership.exportReady
+              ? "ready"
+              : "missing"
+          }"
+        >
+          <span class="linked-list-readiness-light"></span>
+          ${
+            membership.exportReady
+              ? "EXPORT READY"
+              : "MISSING FIELD"
+          }
+        </span>
+
+        ${
+          membership.duplicateManagedLogin
+            ? `
+                <span class="linked-duplicate-login-warning">
+                  DUPLICATE MANAGED LOGIN
+                </span>
+              `
+            : ""
+        }
+
+        ${
+          membership.exportReady
+            ? ""
+            : `
+                <small class="linked-list-missing-fields">
+                  Missing:
+                  ${escapeHtml(
+                    Array.isArray(
+                      membership.missingFields
+                    ) &&
+                    membership.missingFields.length
+                      ? membership.missingFields.join(", ")
+                      : "required information"
+                  )}
+                </small>
+              `
+        }
+      </button>
+
+      <div
+        class="linked-profile-quick-actions"
+        data-linked-quick-actions="${escapeHtml(
+          membership.id
+        )}"
+      >
+        <button
+          type="button"
+          class="linked-quick-status-button ${status.css}"
+          data-linked-status-action="${escapeHtml(
+            status.action
+          )}"
+          data-linked-type="${escapeHtml(
+            membership.type
+          )}"
+          data-linked-id="${escapeHtml(
+            membership.assignmentId ||
+            membership.id
+          )}"
+        >
+          ${escapeHtml(
+            status.actionLabel
+          )}
+        </button>
+
+        <select
+          class="linked-quick-extension-select"
+          data-linked-quick-extension="${escapeHtml(
+            membership.id
+          )}"
+        >
+          ${linkedProfileExtensionOptions(
+            membership
+          )}
+        </select>
+
+        <button
+          type="button"
+          class="linked-quick-extend-button"
+          data-linked-quick-extend="${escapeHtml(
+            membership.id
+          )}"
+          data-linked-quick-type="${escapeHtml(
+            membership.type
+          )}"
+        >
+          EXTEND ${membership.type === "free" ? "GIFTED" : "RENTED"}
+        </button>
+
+        <button
+          type="button"
+          class="linked-quick-return-button"
+          data-return-linked-to-pool="${escapeHtml(
+            membership.id
+          )}"
+          data-return-linked-type="${escapeHtml(
+            membership.type
+          )}"
+        >
+          RETURN TO POOL
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+
+function linkedProfileRetailerGroupsHtml(
+  memberships,
+  selectedIndex
+) {
+  const groups =
+    new Map();
+
+  memberships.forEach(
+    (
+      membership,
+      index
+    ) => {
+      const retailer =
+        linkedProfileRetailerMeta(
+          membership
+        );
+
+      if (
+        !groups.has(
+          retailer.key
+        )
+      ) {
+        groups.set(
+          retailer.key,
+          {
+            label:
+              retailer.label,
+
+            items:
+              []
+          }
+        );
+      }
+
+      groups
+        .get(
+          retailer.key
+        )
+        .items
+        .push({
+          membership,
+          index
+        });
+    }
+  );
+
+  const retailerOrder = [
+    "target",
+    "walmart",
+    "pkc",
+    "samsClub",
+    "costco",
+    "multi",
+    "other"
+  ];
+
+  return retailerOrder
+    .filter(
+      key =>
+        groups.has(
+          key
+        )
+    )
+    .map(
+      key => {
+        const group =
+          groups.get(
+            key
+          );
+
+        return `
+          <details
+            class="linked-retailer-profile-group"
+            data-linked-retailer-group="${escapeHtml(
+              key
+            )}"
+            open
+          >
+            <summary>
+              <span>
+                ${escapeHtml(
+                  group.label
+                )} PROFILES
+              </span>
+
+              <strong>
+                ${group.items.length}
+              </strong>
+            </summary>
+
+            <div class="linked-retailer-profile-group-body">
+              ${group.items
+                .map(
+                  item =>
+                    linkedProfileListCardHtml(
+                      item.membership,
+                      item.index,
+                      selectedIndex
+                    )
+                )
+                .join("")}
+            </div>
+          </details>
+        `;
+      }
+    )
+    .join("");
+}
+
+
 async function loadAdminLinkedProfiles(
   orderId
 ) {
@@ -9043,6 +9755,16 @@ async function loadAdminLinkedProfiles(
   if (!container) {
     return;
   }
+
+  const previousSelectedId =
+    container.querySelector(
+      ".linked-profile-button.active"
+    )?.dataset
+      ?.linkedProfileId ||
+    "";
+
+  const previousScrollY =
+    window.scrollY;
 
   container.innerHTML = `
     <p class="admin-retailer-loading">
@@ -9102,94 +9824,46 @@ async function loadAdminLinkedProfiles(
       return;
     }
 
+    let selectedIndex =
+      memberships.findIndex(
+        item =>
+          String(
+            item.id
+          ) ===
+          String(
+            previousSelectedId
+          )
+      );
+
+    if (
+      selectedIndex <
+      0
+    ) {
+      selectedIndex =
+        0;
+    }
+
     container.innerHTML = `
       <div class="linked-profile-shell">
 
         <div class="linked-profile-list">
-          ${memberships
-            .map(
-              (membership, index) => `
-                <button
-                  type="button"
-                  class="linked-profile-button ${
-                    index === 0
-                      ? "active"
-                      : ""
-                  }"
-                  data-linked-profile-index="${index}"
-                >
-                  <span class="linked-profile-account-label">
-                    ${escapeHtml(
-                      membership.profileName ||
-                      `Profile ${index + 1}`
-                    )}
-                  </span>
-
-                  <strong class="linked-profile-account-email">
-                    ${escapeHtml(
-                      adminLinkedProfileEmail(
-                        membership
-                      )
-                    )}
-                  </strong>
-
-                  <span class="linked-profile-list-status">
-                    ${escapeHtml(
-                      String(
-                        membership.activationStatus ||
-                        "inactive"
-                      )
-                        .replace(/_/g, " ")
-                        .toUpperCase()
-                    )}
-                  </span>
-
-                  <span
-                    class="linked-list-readiness ${
-                      membership.exportReady
-                        ? "ready"
-                        : "missing"
-                    }"
-                  >
-                    <span class="linked-list-readiness-light"></span>
-                    ${
-                      membership.exportReady
-                        ? "EXPORT READY"
-                        : "MISSING FIELD"
-                    }
-                  </span>
-
-                  ${
-                    membership.exportReady
-                      ? ""
-                      : `
-                          <small class="linked-list-missing-fields">
-                            Missing:
-                            ${escapeHtml(
-                              Array.isArray(
-                                membership.missingFields
-                              ) &&
-                              membership.missingFields.length
-                                ? membership.missingFields.join(", ")
-                                : "required information"
-                            )}
-                          </small>
-                        `
-                  }
-                </button>
-              `
-            )
-            .join("")}
+          ${linkedProfileRetailerGroupsHtml(
+            memberships,
+            selectedIndex
+          )}
         </div>
 
         <div class="linked-profile-detail">
           ${linkedProfileDetailHtml(
-            memberships[0]
+            memberships[
+              selectedIndex
+            ]
           )}
         </div>
 
       </div>
     `;
+
 
     const detail =
       container.querySelector(
@@ -9226,10 +9900,22 @@ async function loadAdminLinkedProfiles(
                 linkedProfileDetailHtml(
                   memberships[index]
                 );
+
+              detail.scrollTop =
+                0;
             }
           }
         );
       });
+
+    requestAnimationFrame(
+      () => {
+        window.scrollTo(
+          window.scrollX,
+          previousScrollY
+        );
+      }
+    );
 
   } catch (error) {
     container.innerHTML = `
@@ -13103,6 +13789,115 @@ function managedAvailableRetailerLabel(
 }
 
 
+
+function managedAssignedRetailerGroupsHtml(
+  memberships,
+  type,
+  paidCustomers
+) {
+  const groups =
+    new Map();
+
+  for (
+    const membership of
+    memberships
+  ) {
+    const retailer =
+      linkedProfileRetailerMeta(
+        membership
+      );
+
+    if (
+      !groups.has(
+        retailer.key
+      )
+    ) {
+      groups.set(
+        retailer.key,
+        {
+          label:
+            retailer.label,
+
+          memberships:
+            []
+        }
+      );
+    }
+
+    groups
+      .get(
+        retailer.key
+      )
+      .memberships
+      .push(
+        membership
+      );
+  }
+
+  const retailerOrder = [
+    "target",
+    "walmart",
+    "pkc",
+    "samsClub",
+    "costco",
+    "multi",
+    "other"
+  ];
+
+  return retailerOrder
+    .filter(
+      key =>
+        groups.has(
+          key
+        )
+    )
+    .map(
+      key => {
+        const group =
+          groups.get(
+            key
+          );
+
+        return `
+          <details
+            class="managed-assigned-retailer-group"
+            data-managed-assigned-retailer="${escapeHtml(
+              key
+            )}"
+            open
+          >
+            <summary>
+              <span>
+                ${escapeHtml(
+                  group.label
+                )} ASSIGNED PROFILES
+              </span>
+
+              <strong>
+                ${group.memberships.length}
+              </strong>
+            </summary>
+
+            <div class="managed-assigned-retailer-body">
+              ${group.memberships
+                .map(
+                  membership =>
+                    managedMembershipCardHtml(
+                      membership,
+                      type,
+                      paidCustomers
+                    )
+                )
+                .join("")}
+            </div>
+          </details>
+        `;
+      }
+    )
+    .join("");
+}
+
+
 function renderManagedMembershipDashboard(
   data,
   type
@@ -13345,6 +14140,28 @@ function renderManagedMembershipDashboard(
           restoreHold?.canRestore ===
             true;
 
+        const groupActiveCount =
+          group.memberships
+            .filter(
+              membership =>
+                String(
+                  membership?.assignment
+                    ?.activationStatus ||
+                  ""
+                )
+                  .trim()
+                  .toLowerCase() ===
+                "activated"
+            )
+            .length;
+
+        const groupInactiveCount =
+          Math.max(
+            0,
+            group.memberships.length -
+              groupActiveCount
+          );
+
         const availableRowHtml =
           membership => `
             <label
@@ -13550,6 +14367,14 @@ function renderManagedMembershipDashboard(
                   ${group.memberships.length}
                 </span>
 
+                <span class="managed-group-state-count active">
+                  ACTIVE ${groupActiveCount}
+                </span>
+
+                <span class="managed-group-state-count inactive">
+                  INACTIVE ${groupInactiveCount}
+                </span>
+
                 <span
                   class="managed-group-active-badge ${
                     group.memberships.length
@@ -13561,12 +14386,12 @@ function renderManagedMembershipDashboard(
                     type === "free"
                       ? (
                           group.memberships.length
-                            ? "GIFTED ACTIVE"
+                            ? "GIFTED ACCOUNTS"
                             : "NO GIFTED ACTIVE"
                         )
                       : (
                           group.memberships.length
-                            ? "RENTED ACTIVE"
+                            ? "RENTED ACCOUNTS"
                             : "NO RENTED ACTIVE"
                         )
                   }
@@ -13829,16 +14654,11 @@ function renderManagedMembershipDashboard(
                         </strong>
                       </div>
 
-                      ${group.memberships
-                        .map(
-                          membership =>
-                            managedMembershipCardHtml(
-                              membership,
-                              type,
-                              paidCustomers
-                            )
-                        )
-                        .join("")}
+                      ${managedAssignedRetailerGroupsHtml(
+                        group.memberships,
+                        type,
+                        paidCustomers
+                      )}
                     `
                   : `
                       <div class="empty-admin managed-group-empty">
@@ -18882,6 +19702,150 @@ document
 
 
 /* =========================================
+   STAY AT THE SAME PAGE POSITION AFTER SAVE / EDIT / SUBMIT
+========================================= */
+(function setupAdminStableActionPosition() {
+  const storageKey =
+    `sng-admin-action-position:${location.pathname}`;
+
+  let clearTimer =
+    null;
+
+  function remember() {
+    sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        y:
+          window.scrollY,
+
+        at:
+          Date.now()
+      })
+    );
+  }
+
+  function restore() {
+    let saved;
+
+    try {
+      saved =
+        JSON.parse(
+          sessionStorage.getItem(
+            storageKey
+          ) ||
+          "null"
+        );
+    } catch {
+      saved =
+        null;
+    }
+
+    if (
+      !saved ||
+      Date.now() -
+        Number(
+          saved.at ||
+          0
+        ) >
+        15000
+    ) {
+      return;
+    }
+
+    requestAnimationFrame(
+      () => {
+        window.scrollTo(
+          window.scrollX,
+          Number(
+            saved.y ||
+            0
+          )
+        );
+      }
+    );
+
+    clearTimeout(
+      clearTimer
+    );
+
+    clearTimer =
+      setTimeout(
+        () => {
+          sessionStorage.removeItem(
+            storageKey
+          );
+        },
+        900
+      );
+  }
+
+  document.addEventListener(
+    "submit",
+    remember,
+    true
+  );
+
+  document.addEventListener(
+    "click",
+    event => {
+      const action =
+        event.target.closest(
+          `
+            [data-linked-status-action],
+            [data-linked-quick-extend],
+            [data-extend-gifted],
+            [data-return-linked-to-pool],
+            [data-linked-jig],
+            [data-linked-remove-jig],
+            [data-jig-attach-payment],
+            [data-managed-set-status],
+            [data-managed-group-add],
+            [data-managed-group-remove],
+            [data-managed-restore-hold],
+            [data-managed-release-hold],
+            [data-managed-delete],
+            [data-delete-available],
+            [data-notify-missing-info],
+            [data-message-customer],
+            [data-admin-card-save],
+            button[type="submit"]
+          `
+        );
+
+      if (action) {
+        remember();
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    "pageshow",
+    restore
+  );
+
+  const observer =
+    new MutationObserver(
+      () => {
+        restore();
+      }
+    );
+
+  observer.observe(
+    rows ||
+    document.body,
+    {
+      childList:
+        true,
+
+      subtree:
+        true
+    }
+  );
+})();
+
+
+/* =========================================
    INITIALIZE
 ========================================= */
 
@@ -20146,6 +21110,95 @@ document.addEventListener(
           throw new Error(
             data.error ||
             "Unable to update status."
+          );
+        }
+
+        await loadAdminLinkedProfiles(
+          order?.dataset?.id ||
+          ""
+        );
+
+      } catch (error) {
+        alert(
+          error.message
+        );
+      }
+
+      return;
+    }
+
+
+    const quickExtend =
+      event.target.closest(
+        "[data-linked-quick-extend]"
+      );
+
+    if (quickExtend) {
+      event.preventDefault();
+
+      const id =
+        quickExtend.dataset
+          .linkedQuickExtend;
+
+      const type =
+        quickExtend.dataset
+          .linkedQuickType;
+
+      const row =
+        quickExtend.closest(
+          ".linked-profile-card-row"
+        );
+
+      const select =
+        row?.querySelector(
+          "[data-linked-quick-extension]"
+        );
+
+      const order =
+        quickExtend.closest(
+          ".customer-order"
+        );
+
+      try {
+        const response =
+          await fetch(
+            `/api/admin/linked-memberships/${encodeURIComponent(
+              type
+            )}/${encodeURIComponent(
+              id
+            )}/extend`,
+            {
+              method:
+                "POST",
+
+              credentials:
+                "same-origin",
+
+              headers: {
+                "Content-Type":
+                  "application/json"
+              },
+
+              body:
+                JSON.stringify({
+                  extension:
+                    select?.value ||
+                    "1_week"
+                })
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            "Unable to extend managed profile."
           );
         }
 
