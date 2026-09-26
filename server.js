@@ -18582,6 +18582,17 @@ function exportProfileMissingFields(
     );
   }
 
+  if (
+    !String(
+      secrets?.securityCode ||
+      ""
+    ).trim()
+  ) {
+    missing.push(
+      "Security Code"
+    );
+  }
+
   return missing;
 }
 
@@ -18901,12 +18912,16 @@ function hayhaProfileObject(
         ) || "",
 
       /*
-        The source .hayha format requires a field named "cvv".
-        SLABSNGRABSACO stores a separate Security Code, not card CVV/CVC,
-        so do not silently relabel that value as CVV.
+        The .hayha schema names this field "cvv".
+        For this export format, populate that required schema field
+        from the customer's SLABSNGRABSACO Security Code.
+        The site UI continues to label the stored value Security Code.
       */
       cvv:
-        ""
+        String(
+          secrets?.securityCode ||
+          ""
+        ).trim()
     },
 
     sameAsBilling:
@@ -20359,16 +20374,30 @@ app.post(
 
       /*
         Exact addresses already attached to profiles are reserved.
-        This prevents JIG & Attach Payment from creating a duplicate
-        line-for-line address already in use.
+        If the same exact address is currently attached to more than
+        one profile, keep the first instance and mark the later
+        instances for repair when JIG & ATTACH PAYMENT is pressed.
       */
       const usedAddressKeys =
         new Set();
 
+      const seenCurrentAddressKeys =
+        new Set();
+
+      const duplicateShippingTargetIndexes =
+        new Set();
+
       for (
-        const target of
-        profileTargets
+        let index = 0;
+        index <
+          profileTargets.length;
+        index += 1
       ) {
+        const target =
+          profileTargets[
+            index
+          ];
+
         const profile =
           target.profile ||
           {};
@@ -20379,10 +20408,27 @@ app.post(
             ""
           ).trim()
         ) {
-          usedAddressKeys.add(
+          const key =
             safeAddressVariantKey(
               profile
+            );
+
+          if (
+            seenCurrentAddressKeys.has(
+              key
             )
+          ) {
+            duplicateShippingTargetIndexes.add(
+              index
+            );
+          } else {
+            seenCurrentAddressKeys.add(
+              key
+            );
+          }
+
+          usedAddressKeys.add(
+            key
           );
         }
 
@@ -20484,8 +20530,12 @@ app.post(
 
       let shippingFilled = 0;
       let cardsFilled = 0;
+      let duplicateAddressesRepaired = 0;
 
       const profilesStillMissingShipping =
+        [];
+
+      const duplicateAddressesRemaining =
         [];
 
       const profilesStillMissingCard =
@@ -20563,14 +20613,21 @@ app.post(
                 "card number",
                 "cardholder name",
                 "expiration month",
-                "expiration year"
+                "expiration year",
+                "Security Code"
               ].includes(
                 item
               )
           );
 
+        const duplicateShipping =
+          duplicateShippingTargetIndexes.has(
+            index
+          );
+
         if (
-          !shippingReady
+          !shippingReady ||
+          duplicateShipping
         ) {
           const entry =
             variantQueue[
@@ -20681,6 +20738,20 @@ app.post(
               null;
 
             shippingFilled += 1;
+
+            if (
+              duplicateShipping
+            ) {
+              duplicateAddressesRepaired +=
+                1;
+            }
+
+          } else if (
+            duplicateShipping
+          ) {
+            duplicateAddressesRemaining.push(
+              index + 1
+            );
 
           } else {
             profilesStillMissingShipping.push(
@@ -20833,6 +20904,11 @@ app.post(
         stillMissingShippingCount:
           profilesStillMissingShipping.length,
 
+        duplicateAddressesRepaired,
+
+        duplicateAddressesRemainingCount:
+          duplicateAddressesRemaining.length,
+
         stillMissingCardCount:
           profilesStillMissingCard.length,
 
@@ -20843,7 +20919,7 @@ app.post(
           true,
 
         message:
-          `Saved updates. ${shippingFilled} profile(s) received a unique address JIG, ${cardsFilled} profile(s) received card information, and ${exportReadyCount} profile(s) are export ready. Address/card sources were shared across retailers while retailer login credentials stayed unchanged.`
+          `Saved updates. ${shippingFilled} profile(s) received a unique address JIG, including ${duplicateAddressesRepaired} duplicate address repair(s). ${cardsFilled} profile(s) received card information, ${exportReadyCount} profile(s) are export ready, and ${duplicateAddressesRemaining.length} duplicate address(es) could not be replaced because no unused safe JIG remained.`
       });
 
     } catch (error) {
@@ -21646,6 +21722,7 @@ app.get(
           req.query?.q,
           120
         )
+          .trim()
           .toLowerCase();
 
       if (!query) {
@@ -21683,36 +21760,51 @@ app.get(
       const seen =
         new Set();
 
-      const matchScore =
-        values => {
-          const strings =
-            values
-              .filter(Boolean)
-              .map(
-                value =>
-                  String(value)
-                    .toLowerCase()
+      const normalized =
+        value =>
+          String(
+            value ||
+            ""
+          )
+            .trim()
+            .toLowerCase();
+
+      const prefixMatch =
+        entries => {
+          for (
+            const entry of
+            entries
+          ) {
+            const rawValue =
+              entry?.value;
+
+            const value =
+              normalized(
+                rawValue
               );
 
-          if (
-            strings.some(
-              value =>
-                value.startsWith(
-                  query
-                )
-            )
-          ) {
-            return 2;
-          }
-
-          return strings.some(
-            value =>
-              value.includes(
+            if (
+              value &&
+              value.startsWith(
                 query
               )
-          )
-            ? 1
-            : 0;
+            ) {
+              return {
+                label:
+                  entry.label ||
+                  "Matched field",
+
+                value:
+                  entry.display ||
+                  String(
+                    rawValue ||
+                    ""
+                  )
+              };
+            }
+          }
+
+          return null;
         };
 
       const paidOrderForAccount =
@@ -21722,6 +21814,20 @@ app.get(
               String(
                 record.customerAccountId ||
                 ""
+              ) ===
+                String(
+                  accountId ||
+                  ""
+                )
+          ) ||
+          null;
+
+      const accountForId =
+        accountId =>
+          accounts.find(
+            item =>
+              String(
+                item.id
               ) ===
                 String(
                   accountId ||
@@ -21757,12 +21863,22 @@ app.get(
           );
         };
 
+      /*
+        PAID RETAILER PROFILES
+
+        Search only actual customer/profile values:
+        emails/usernames, shipping information and card information.
+        Generic labels such as "Managed", "Paid Profile", retailer
+        names, etc. are deliberately not part of the searchable values.
+      */
       for (
         const record of
         retailerProfiles
       ) {
         let credentials =
           emptyRetailerCredentials();
+
+        let secrets = {};
 
         try {
           credentials =
@@ -21778,61 +21894,200 @@ app.get(
             emptyRetailerCredentials();
         }
 
-        const usernames =
-          RETAILER_KEYS.map(
-            retailer =>
-              credentials
-                ?.[retailer]
-                ?.username ||
-              ""
-          );
-
-        const score =
-          matchScore([
-            record.profileName,
-            record.customerProfile
-              ?.firstName,
-            record.customerProfile
-              ?.lastName,
-            record.customerProfile
-              ?.email,
-            ...usernames
-          ]);
-
-        if (!score) {
-          continue;
+        try {
+          secrets =
+            record.customerSecrets
+              ? (
+                  decryptJson(
+                    record.customerSecrets
+                  ) ||
+                  {}
+                )
+              : {};
+        } catch {
+          secrets = {};
         }
+
+        const account =
+          accountForId(
+            record.customerAccountId
+          );
 
         const order =
           paidOrderForAccount(
             record.customerAccountId
           );
 
+        const cardDigits =
+          String(
+            secrets.acoCardNumber ||
+            secrets.cardNumber ||
+            ""
+          ).replace(
+            /\D/g,
+            ""
+          );
+
+        const searchable = [
+          {
+            label:
+              "Customer email",
+            value:
+              account?.email
+          },
+          {
+            label:
+              "Profile email",
+            value:
+              record.customerProfile
+                ?.email
+          },
+          ...RETAILER_KEYS.map(
+            retailer => ({
+              label:
+                `${retailerDisplayName(
+                  retailer
+                )} email / username`,
+              value:
+                credentials
+                  ?.[retailer]
+                  ?.username
+            })
+          ),
+          {
+            label:
+              "First name",
+            value:
+              record.customerProfile
+                ?.firstName
+          },
+          {
+            label:
+              "Last name",
+            value:
+              record.customerProfile
+                ?.lastName
+          },
+          {
+            label:
+              "Phone",
+            value:
+              record.customerProfile
+                ?.phone
+          },
+          {
+            label:
+              "Shipping address",
+            value:
+              record.customerProfile
+                ?.address
+          },
+          {
+            label:
+              "Address line 2",
+            value:
+              record.customerProfile
+                ?.address2
+          },
+          {
+            label:
+              "City",
+            value:
+              record.customerProfile
+                ?.city
+          },
+          {
+            label:
+              "State",
+            value:
+              record.customerProfile
+                ?.state
+          },
+          {
+            label:
+              "ZIP",
+            value:
+              record.customerProfile
+                ?.zip
+          },
+          {
+            label:
+              "Cardholder",
+            value:
+              secrets.cardholder
+          },
+          {
+            label:
+              "Card label",
+            value:
+              secrets.cardLabel
+          },
+          {
+            label:
+              "Card number",
+            value:
+              cardDigits,
+            display:
+              cardDigits
+                ? `Card ending ${cardDigits.slice(-4)}`
+                : ""
+          }
+        ];
+
+        const matched =
+          prefixMatch(
+            searchable
+          );
+
+        if (!matched) {
+          continue;
+        }
+
+        const customerEmail =
+          account?.email ||
+          record.customerProfile
+            ?.email ||
+          order?.profile?.email ||
+          "";
+
         push({
-          score,
           view:
             "paid",
+
           orderId:
             order?.id ||
             "",
+
           customerAccountId:
             record.customerAccountId ||
             "",
+
           profileId:
             record.id,
+
+          customerEmail,
+
+          linkedEmail:
+            "",
+
+          matchedLabel:
+            matched.label,
+
+          matchedValue:
+            matched.value,
+
           label:
-            record.profileName ||
-            `Paid Profile ${record.slot || ""}`,
-          sublabel:
-            usernames
-              .filter(Boolean)
-              .join(" • ") ||
-            record.customerProfile
-              ?.email ||
-            ""
+            customerEmail ||
+            "Customer"
         });
       }
 
+      /*
+        LINKED GIFTED / RENTED PROFILES
+
+        Search only the actual linked/customer values. Do not search
+        generic "Managed", "Gifted", "Rented", "Account" labels.
+      */
       const addManaged =
         (
           assignments,
@@ -21865,61 +22120,239 @@ app.get(
                   )
               );
 
-            const score =
-              matchScore([
-                membership
-                  ?.profileName,
-                membership
-                  ?.accountEmail,
-                membership
-                  ?.retailers
-                  ?.target
-                  ?.username,
-                membership
-                  ?.retailers
-                  ?.walmart
-                  ?.username,
-                assignment
-                  ?.customerProfile
-                  ?.firstName,
-                assignment
-                  ?.customerProfile
-                  ?.lastName,
-                assignment
-                  ?.customerProfile
-                  ?.email
-              ]);
+            if (!membership) {
+              continue;
+            }
 
-            if (!score) {
+            const account =
+              accountForId(
+                assignment.customerAccountId
+              );
+
+            const secrets =
+              decryptAssignmentSecrets(
+                assignment
+              );
+
+            const cardDigits =
+              String(
+                secrets.acoCardNumber ||
+                secrets.cardNumber ||
+                ""
+              ).replace(
+                /\D/g,
+                ""
+              );
+
+            const linkedEmail =
+              String(
+                membership.displayEmail ||
+                membership.accountEmail ||
+                membership?.retailers
+                  ?.target
+                  ?.username ||
+                membership?.retailers
+                  ?.walmart
+                  ?.username ||
+                membership?.retailers
+                  ?.pkc
+                  ?.username ||
+                membership?.retailers
+                  ?.samsClub
+                  ?.username ||
+                membership?.retailers
+                  ?.costco
+                  ?.username ||
+                ""
+              ).trim();
+
+            const customerEmail =
+              account?.email ||
+              assignment
+                ?.customerProfile
+                ?.email ||
+              "";
+
+            const searchable = [
+              {
+                label:
+                  "Customer email",
+                value:
+                  customerEmail
+              },
+              {
+                label:
+                  "Linked profile email",
+                value:
+                  linkedEmail
+              },
+              {
+                label:
+                  "Target email / username",
+                value:
+                  membership?.retailers
+                    ?.target
+                    ?.username
+              },
+              {
+                label:
+                  "Walmart email / username",
+                value:
+                  membership?.retailers
+                    ?.walmart
+                    ?.username
+              },
+              {
+                label:
+                  "PKC email",
+                value:
+                  membership?.retailers
+                    ?.pkc
+                    ?.username
+              },
+              {
+                label:
+                  "Sam's Club email / username",
+                value:
+                  membership?.retailers
+                    ?.samsClub
+                    ?.username
+              },
+              {
+                label:
+                  "Costco email / username",
+                value:
+                  membership?.retailers
+                    ?.costco
+                    ?.username
+              },
+              {
+                label:
+                  "First name",
+                value:
+                  assignment
+                    ?.customerProfile
+                    ?.firstName
+              },
+              {
+                label:
+                  "Last name",
+                value:
+                  assignment
+                    ?.customerProfile
+                    ?.lastName
+              },
+              {
+                label:
+                  "Phone",
+                value:
+                  assignment
+                    ?.customerProfile
+                    ?.phone
+              },
+              {
+                label:
+                  "Shipping address",
+                value:
+                  assignment
+                    ?.customerProfile
+                    ?.address
+              },
+              {
+                label:
+                  "Address line 2",
+                value:
+                  assignment
+                    ?.customerProfile
+                    ?.address2
+              },
+              {
+                label:
+                  "City",
+                value:
+                  assignment
+                    ?.customerProfile
+                    ?.city
+              },
+              {
+                label:
+                  "State",
+                value:
+                  assignment
+                    ?.customerProfile
+                    ?.state
+              },
+              {
+                label:
+                  "ZIP",
+                value:
+                  assignment
+                    ?.customerProfile
+                    ?.zip
+              },
+              {
+                label:
+                  "Cardholder",
+                value:
+                  secrets.cardholder
+              },
+              {
+                label:
+                  "Card label",
+                value:
+                  secrets.cardLabel
+              },
+              {
+                label:
+                  "Card number",
+                value:
+                  cardDigits,
+                display:
+                  cardDigits
+                    ? `Card ending ${cardDigits.slice(-4)}`
+                    : ""
+              }
+            ];
+
+            const matched =
+              prefixMatch(
+                searchable
+              );
+
+            if (!matched) {
               continue;
             }
 
             push({
-              score,
               view:
                 type === "free"
                   ? "free-profile"
                   : "rented-profile",
+
               orderId:
                 "",
+
               customerAccountId:
                 assignment.customerAccountId ||
                 "",
+
               profileId:
                 membershipId,
+
+              customerEmail,
+
+              linkedEmail,
+
+              matchedLabel:
+                matched.label,
+
+              matchedValue:
+                matched.value,
+
               label:
-                membership?.accountEmail ||
-                membership?.profileName ||
-                (
-                  type === "free"
-                    ? "Gifted Profile"
-                    : "Rented Profile"
-                ),
-              sublabel:
-                assignment
-                  ?.customerProfile
-                  ?.email ||
-                ""
+                linkedEmail ||
+                customerEmail ||
+                "Linked Profile"
             });
           }
         };
@@ -21934,6 +22367,10 @@ app.get(
         "rented"
       );
 
+      /*
+        Customer-level paid order values remain searchable even if
+        the customer does not yet have a saved retailer profile.
+      */
       for (
         const account of
         accounts
@@ -21947,62 +22384,115 @@ app.get(
           continue;
         }
 
-        const score =
-          matchScore([
-            account.email,
-            account.discordUsername,
-            order?.profile?.firstName,
-            order?.profile?.lastName,
-            order?.profile?.email
-          ]);
+        const searchable = [
+          {
+            label:
+              "Customer email",
+            value:
+              account.email
+          },
+          {
+            label:
+              "Profile email",
+            value:
+              order?.profile?.email
+          },
+          {
+            label:
+              "First name",
+            value:
+              order?.profile?.firstName
+          },
+          {
+            label:
+              "Last name",
+            value:
+              order?.profile?.lastName
+          },
+          {
+            label:
+              "Phone",
+            value:
+              order?.profile?.phone
+          },
+          {
+            label:
+              "Shipping address",
+            value:
+              order?.profile?.address
+          },
+          {
+            label:
+              "Address line 2",
+            value:
+              order?.profile?.address2
+          },
+          {
+            label:
+              "City",
+            value:
+              order?.profile?.city
+          },
+          {
+            label:
+              "State",
+            value:
+              order?.profile?.state
+          },
+          {
+            label:
+              "ZIP",
+            value:
+              order?.profile?.zip
+          }
+        ];
 
-        if (!score) {
+        const matched =
+          prefixMatch(
+            searchable
+          );
+
+        if (!matched) {
           continue;
         }
 
         push({
-          score,
           view:
             "paid",
+
           orderId:
             order.id,
+
           customerAccountId:
             account.id,
+
           profileId:
             "",
+
+          customerEmail:
+            account.email ||
+            order?.profile?.email ||
+            "",
+
+          linkedEmail:
+            "",
+
+          matchedLabel:
+            matched.label,
+
+          matchedValue:
+            matched.value,
+
           label:
-            [
-              order?.profile?.firstName,
-              order?.profile?.lastName
-            ]
-              .filter(Boolean)
-              .join(" ") ||
-            account.email,
-          sublabel:
-            account.email
+            account.email ||
+            order?.profile?.email ||
+            "Customer"
         });
       }
 
-      results.sort(
-        (
-          a,
-          b
-        ) =>
-          b.score -
-            a.score ||
-          String(
-            a.label ||
-            ""
-          ).localeCompare(
-            String(
-              b.label ||
-              ""
-            )
-          )
-      );
-
       return res.json({
         ok: true,
+
         results:
           results.slice(
             0,
@@ -25068,8 +25558,9 @@ app.get(
             const assignment of assignments
           ) {
             if (
-              assignment.active !==
-              true
+              !managedAssignmentIsLinked(
+                assignment
+              )
             ) {
               continue;
             }
@@ -25123,11 +25614,21 @@ app.get(
                 discordChanged;
             }
 
+            const storedStatus =
+              String(
+                assignment.activationStatus ||
+                ""
+              )
+                .trim()
+                .toLowerCase();
+
             const status =
-              normalizeProfileActivationStatus(
-                assignment.activationStatus,
-                false
-              );
+              storedStatus ===
+                "expired"
+                ? "expired"
+                : managedAssignmentStatus(
+                    assignment
+                  );
 
             addProfile({
               id:
