@@ -409,60 +409,65 @@ function safeAddressVariants(
   ];
 
   const streetVariants =
-    new Set([street]);
+    new Set([
+      street
+    ]);
 
-  const firstPass =
-    Array.from(streetVariants);
+  const queue = [
+    street
+  ];
 
-  for (
-    const base of
-    firstPass
+  while (
+    queue.length &&
+    streetVariants.size < 30
   ) {
+    const base =
+      queue.shift();
+
     for (
-      const [pattern, replacement] of
-      replacements
+      const [
+        pattern,
+        replacement
+      ] of replacements
     ) {
       pattern.lastIndex = 0;
 
-      if (pattern.test(base)) {
-        pattern.lastIndex = 0;
+      if (
+        !pattern.test(base)
+      ) {
+        continue;
+      }
 
-        streetVariants.add(
-          normalizeAddressTokenText(
-            base.replace(
-              pattern,
-              replacement
-            )
+      pattern.lastIndex = 0;
+
+      const variant =
+        normalizeAddressTokenText(
+          base.replace(
+            pattern,
+            replacement
           )
+        );
+
+      if (
+        variant &&
+        !streetVariants.has(
+          variant
+        )
+      ) {
+        streetVariants.add(
+          variant
+        );
+
+        queue.push(
+          variant
         );
       }
-    }
-  }
 
-  const secondPass =
-    Array.from(streetVariants);
-
-  for (
-    const base of
-    secondPass
-  ) {
-    for (
-      const [pattern, replacement] of
-      replacements
-    ) {
-      pattern.lastIndex = 0;
-
-      if (pattern.test(base)) {
-        pattern.lastIndex = 0;
-
-        streetVariants.add(
-          normalizeAddressTokenText(
-            base.replace(
-              pattern,
-              replacement
-            )
-          )
-        );
+      if (
+        streetVariants.size >=
+        30
+      ) {
+        break;
       }
     }
   }
@@ -470,34 +475,49 @@ function safeAddressVariants(
   const seen =
     new Set();
 
-  return Array.from(streetVariants)
-    .map(variantStreet => ({
-      address:
-        variantStreet,
+  return Array.from(
+    streetVariants
+  )
+    .map(
+      variantStreet => ({
+        address:
+          variantStreet,
 
-      address2,
+        address2,
 
-      city,
+        city,
 
-      state,
+        state,
 
-      zip,
+        zip,
 
-      country
-    }))
+        country
+      })
+    )
     .filter(item => {
       const key =
-        JSON.stringify(item)
-          .toUpperCase();
+        JSON.stringify(
+          item
+        ).toUpperCase();
 
-      if (seen.has(key)) {
+      if (
+        seen.has(
+          key
+        )
+      ) {
         return false;
       }
 
-      seen.add(key);
+      seen.add(
+        key
+      );
+
       return true;
     })
-    .slice(0, 5);
+    .slice(
+      0,
+      25
+    );
 }
 
 
@@ -3995,6 +4015,45 @@ async function allCustomerSavedDetails(
       );
     }
   );
+
+  const paidOrders =
+    await readJson(
+      PAID_FILE,
+      []
+    );
+
+  (
+    Array.isArray(
+      paidOrders
+    )
+      ? paidOrders
+      : []
+  )
+    .filter(
+      record =>
+        String(
+          record.customerAccountId ||
+          ""
+        ) ===
+          String(
+            account.id
+          )
+    )
+    .forEach(
+      (
+        record,
+        index
+      ) => {
+        addAddress(
+          record.profile ||
+          record.customer ||
+          {},
+          `Checkout Address ${index + 1}`,
+          `paid-order-address:${record.id || index + 1}`,
+          "paid_order"
+        );
+      }
+    );
 
   const retailerProfiles =
     await getRetailerProfiles();
@@ -7661,6 +7720,14 @@ function normalizeRetailerCredentials(
     };
   }
 
+  normalized.pkc = {
+    ...(
+      normalized.pkc ||
+      {}
+    ),
+    password: ""
+  };
+
   return normalized;
 }
 
@@ -11094,6 +11161,55 @@ app.put(
         };
       }
 
+      updatedCredentials.pkc = {
+        ...(
+          updatedCredentials.pkc ||
+          {}
+        ),
+        password: ""
+      };
+
+      if (
+        !String(
+          updatedCredentials
+            .pkc
+            ?.username ||
+          ""
+        ).trim()
+      ) {
+        const guestEmail =
+          [
+            "target",
+            "walmart",
+            "samsClub",
+            "costco"
+          ]
+            .map(
+              retailer =>
+                String(
+                  updatedCredentials
+                    [retailer]
+                    ?.username ||
+                  ""
+                ).trim()
+            )
+            .find(Boolean) ||
+          String(
+            customerProfile.email ||
+            req.customerAccount.email ||
+            ""
+          ).trim();
+
+        if (guestEmail) {
+          updatedCredentials.pkc = {
+            username:
+              guestEmail,
+            password:
+              ""
+          };
+        }
+      }
+
       const now =
         new Date()
           .toISOString();
@@ -11430,6 +11546,14 @@ app.put(
             ""
         };
       }
+
+      updatedCredentials.pkc = {
+        ...(
+          updatedCredentials.pkc ||
+          {}
+        ),
+        password: ""
+      };
 
       const now =
         new Date()
@@ -16051,6 +16175,14 @@ app.post(
           });
       }
 
+      updatedCredentials.pkc = {
+        ...(
+          updatedCredentials.pkc ||
+          {}
+        ),
+        password: ""
+      };
+
       const now =
         new Date();
 
@@ -17565,6 +17697,14 @@ app.post(
               "This rented membership is already assigned to another customer."
           });
       }
+
+      updatedCredentials.pkc = {
+        ...(
+          updatedCredentials.pkc ||
+          {}
+        ),
+        password: ""
+      };
 
       const now =
         new Date();
@@ -21221,6 +21361,672 @@ app.get(
 );
 
 
+
+app.put(
+  "/api/admin/submissions/:id/saved-payment/:paymentId",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const orderId =
+        clean(
+          req.params.id,
+          150
+        );
+
+      const paymentId =
+        clean(
+          req.params.paymentId,
+          220
+        );
+
+      const paid =
+        await readJson(
+          PAID_FILE,
+          []
+        );
+
+      const order =
+        (
+          Array.isArray(paid)
+            ? paid
+            : []
+        ).find(
+          item =>
+            String(item.id) ===
+            String(orderId)
+        );
+
+      if (
+        !order?.customerAccountId
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Customer account could not be found."
+          });
+      }
+
+      const payload = {
+        cardLabel:
+          clean(
+            req.body?.cardLabel,
+            100
+          ),
+
+        cardholder:
+          clean(
+            req.body?.cardholder,
+            150
+          ),
+
+        acoCardNumber:
+          clean(
+            req.body?.acoCardNumber,
+            30
+          ).replace(
+            /\D/g,
+            ""
+          ),
+
+        expMonth:
+          clean(
+            req.body?.expMonth,
+            2
+          ),
+
+        expYear:
+          clean(
+            req.body?.expYear,
+            4
+          ),
+
+        securityCode:
+          clean(
+            req.body?.securityCode,
+            300
+          )
+      };
+
+      if (
+        !/^\d{12,19}$/.test(
+          payload.acoCardNumber
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a valid card number."
+          });
+      }
+
+      if (
+        !/^(0[1-9]|1[0-2])$/.test(
+          payload.expMonth
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a valid expiration month."
+          });
+      }
+
+      if (
+        !/^\d{4}$/.test(
+          payload.expYear
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a valid expiration year."
+          });
+      }
+
+      const now =
+        new Date()
+          .toISOString();
+
+      if (
+        paymentId.startsWith(
+          "paid-profile-card:"
+        )
+      ) {
+        const profileId =
+          paymentId.slice(
+            "paid-profile-card:"
+              .length
+          );
+
+        const profiles =
+          await getRetailerProfiles();
+
+        const record =
+          profiles.find(
+            item =>
+              String(item.id) ===
+                String(profileId) &&
+              String(
+                item.customerAccountId ||
+                ""
+              ) ===
+                String(
+                  order.customerAccountId
+                )
+          );
+
+        if (!record) {
+          return res
+            .status(404)
+            .json({
+              error:
+                "Paid profile card could not be found."
+            });
+        }
+
+        let secrets = {};
+
+        try {
+          secrets =
+            record.customerSecrets
+              ? (
+                  decryptJson(
+                    record.customerSecrets
+                  ) ||
+                  {}
+                )
+              : {};
+        } catch {
+          secrets = {};
+        }
+
+        record.customerSecrets =
+          encryptJson({
+            ...secrets,
+            ...payload
+          });
+
+        record.updatedAt =
+          now;
+
+        await saveRetailerProfiles(
+          profiles
+        );
+
+      } else {
+        const accounts =
+          await getCustomerAccounts();
+
+        const account =
+          accounts.find(
+            item =>
+              String(item.id) ===
+                String(
+                  order.customerAccountId
+                )
+          );
+
+        if (!account) {
+          return res
+            .status(404)
+            .json({
+              error:
+                "Customer account could not be found."
+            });
+        }
+
+        const vault =
+          await getCustomerVault(
+            account.id
+          );
+
+        const method =
+          vault.paymentMethods.find(
+            item =>
+              String(item.id) ===
+              String(paymentId)
+          );
+
+        if (!method) {
+          return res
+            .status(404)
+            .json({
+              error:
+                "Saved payment card could not be found."
+            });
+        }
+
+        Object.assign(
+          method,
+          payload,
+          {
+            updatedAt:
+              now
+          }
+        );
+
+        await saveCustomerVault(
+          account.id,
+          vault
+        );
+      }
+
+      return res.json({
+        ok: true
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin saved payment update error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to update saved payment card."
+        });
+    }
+  }
+);
+
+
+app.get(
+  "/api/admin/profile-search",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const query =
+        clean(
+          req.query?.q,
+          120
+        )
+          .toLowerCase();
+
+      if (!query) {
+        return res.json({
+          ok: true,
+          results: []
+        });
+      }
+
+      const [
+        paid,
+        accounts,
+        retailerProfiles,
+        memberships,
+        freeAssignments,
+        rentalAssignments
+      ] = await Promise.all([
+        readJson(
+          PAID_FILE,
+          []
+        ),
+        getCustomerAccounts(),
+        getRetailerProfiles(),
+        getManagedAccounts(),
+        getFreeAssignments(),
+        getRentalAssignments()
+      ]);
+
+      const paidRecords =
+        Array.isArray(paid)
+          ? paid
+          : [];
+
+      const results = [];
+      const seen =
+        new Set();
+
+      const matchScore =
+        values => {
+          const strings =
+            values
+              .filter(Boolean)
+              .map(
+                value =>
+                  String(value)
+                    .toLowerCase()
+              );
+
+          if (
+            strings.some(
+              value =>
+                value.startsWith(
+                  query
+                )
+            )
+          ) {
+            return 2;
+          }
+
+          return strings.some(
+            value =>
+              value.includes(
+                query
+              )
+          )
+            ? 1
+            : 0;
+        };
+
+      const paidOrderForAccount =
+        accountId =>
+          paidRecords.find(
+            record =>
+              String(
+                record.customerAccountId ||
+                ""
+              ) ===
+                String(
+                  accountId ||
+                  ""
+                )
+          ) ||
+          null;
+
+      const push =
+        item => {
+          const key =
+            [
+              item.view,
+              item.orderId,
+              item.customerAccountId,
+              item.profileId
+            ].join(":");
+
+          if (
+            seen.has(
+              key
+            )
+          ) {
+            return;
+          }
+
+          seen.add(
+            key
+          );
+
+          results.push(
+            item
+          );
+        };
+
+      for (
+        const record of
+        retailerProfiles
+      ) {
+        let credentials =
+          emptyRetailerCredentials();
+
+        try {
+          credentials =
+            record.credentials
+              ? normalizeRetailerCredentials(
+                  decryptJson(
+                    record.credentials
+                  )
+                )
+              : emptyRetailerCredentials();
+        } catch {
+          credentials =
+            emptyRetailerCredentials();
+        }
+
+        const usernames =
+          RETAILER_KEYS.map(
+            retailer =>
+              credentials
+                ?.[retailer]
+                ?.username ||
+              ""
+          );
+
+        const score =
+          matchScore([
+            record.profileName,
+            record.customerProfile
+              ?.firstName,
+            record.customerProfile
+              ?.lastName,
+            record.customerProfile
+              ?.email,
+            ...usernames
+          ]);
+
+        if (!score) {
+          continue;
+        }
+
+        const order =
+          paidOrderForAccount(
+            record.customerAccountId
+          );
+
+        push({
+          score,
+          view:
+            "paid",
+          orderId:
+            order?.id ||
+            "",
+          customerAccountId:
+            record.customerAccountId ||
+            "",
+          profileId:
+            record.id,
+          label:
+            record.profileName ||
+            `Paid Profile ${record.slot || ""}`,
+          sublabel:
+            usernames
+              .filter(Boolean)
+              .join(" • ") ||
+            record.customerProfile
+              ?.email ||
+            ""
+        });
+      }
+
+      const addManaged =
+        (
+          assignments,
+          type
+        ) => {
+          for (
+            const assignment of
+            assignments
+          ) {
+            if (
+              !managedAssignmentIsLinked(
+                assignment
+              )
+            ) {
+              continue;
+            }
+
+            const membershipId =
+              assignment.managedAccountId ||
+              assignment.freeMembershipId ||
+              assignment.rentedMembershipId ||
+              assignment.id;
+
+            const membership =
+              memberships.find(
+                item =>
+                  String(item.id) ===
+                  String(
+                    membershipId
+                  )
+              );
+
+            const score =
+              matchScore([
+                membership
+                  ?.profileName,
+                membership
+                  ?.accountEmail,
+                membership
+                  ?.retailers
+                  ?.target
+                  ?.username,
+                membership
+                  ?.retailers
+                  ?.walmart
+                  ?.username,
+                assignment
+                  ?.customerProfile
+                  ?.firstName,
+                assignment
+                  ?.customerProfile
+                  ?.lastName,
+                assignment
+                  ?.customerProfile
+                  ?.email
+              ]);
+
+            if (!score) {
+              continue;
+            }
+
+            push({
+              score,
+              view:
+                type === "free"
+                  ? "free-profile"
+                  : "rented-profile",
+              orderId:
+                "",
+              customerAccountId:
+                assignment.customerAccountId ||
+                "",
+              profileId:
+                membershipId,
+              label:
+                membership?.accountEmail ||
+                membership?.profileName ||
+                (
+                  type === "free"
+                    ? "Gifted Profile"
+                    : "Rented Profile"
+                ),
+              sublabel:
+                assignment
+                  ?.customerProfile
+                  ?.email ||
+                ""
+            });
+          }
+        };
+
+      addManaged(
+        freeAssignments,
+        "free"
+      );
+
+      addManaged(
+        rentalAssignments,
+        "rented"
+      );
+
+      for (
+        const account of
+        accounts
+      ) {
+        const order =
+          paidOrderForAccount(
+            account.id
+          );
+
+        if (!order) {
+          continue;
+        }
+
+        const score =
+          matchScore([
+            account.email,
+            account.discordUsername,
+            order?.profile?.firstName,
+            order?.profile?.lastName,
+            order?.profile?.email
+          ]);
+
+        if (!score) {
+          continue;
+        }
+
+        push({
+          score,
+          view:
+            "paid",
+          orderId:
+            order.id,
+          customerAccountId:
+            account.id,
+          profileId:
+            "",
+          label:
+            [
+              order?.profile?.firstName,
+              order?.profile?.lastName
+            ]
+              .filter(Boolean)
+              .join(" ") ||
+            account.email,
+          sublabel:
+            account.email
+        });
+      }
+
+      results.sort(
+        (
+          a,
+          b
+        ) =>
+          b.score -
+            a.score ||
+          String(
+            a.label ||
+            ""
+          ).localeCompare(
+            String(
+              b.label ||
+              ""
+            )
+          )
+      );
+
+      return res.json({
+        ok: true,
+        results:
+          results.slice(
+            0,
+            30
+          )
+      });
+
+    } catch (error) {
+      console.error(
+        "Admin profile search error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Unable to search profiles."
+        });
+    }
+  }
+);
+
+
 /* -------------------------------------------------------
    ADMIN RETAILER PROFILES
 ------------------------------------------------------- */
@@ -23895,6 +24701,14 @@ app.put(
         };
       }
 
+      updatedCredentials.pkc = {
+        ...(
+          updatedCredentials.pkc ||
+          {}
+        ),
+        password: ""
+      };
+
       const now =
         new Date()
           .toISOString();
@@ -25125,6 +25939,14 @@ if (!customerAccountId) {
         };
       }
 
+      updatedCredentials.pkc = {
+        ...(
+          updatedCredentials.pkc ||
+          {}
+        ),
+        password: ""
+      };
+
     const now =
   new Date();
 
@@ -25605,6 +26427,14 @@ app.put(
             );
         }
       }
+
+      updatedCredentials.pkc = {
+        ...(
+          updatedCredentials.pkc ||
+          {}
+        ),
+        password: ""
+      };
 
       const now =
         new Date()
