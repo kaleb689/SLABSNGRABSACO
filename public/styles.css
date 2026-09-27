@@ -1,10 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 @font-face {
-  font-family: "DynaPuff";
-  src: url('/fonts/DynaPuff-variable.ttf') format('truetype');
+  font-family: "Sedgwick Ave Display";
+  src: url('/fonts/SedgwickAveDisplay-Regular.ttf') format('truetype');
   font-style: normal;
-  font-weight: 400 700;
+  font-weight: 400;
   font-display: swap;
 }
 
@@ -3015,9 +3015,9 @@ select:focus {
 #home .public-success-heading .eyebrow { font-size: .75rem; }
 #home .public-success-heading h2 {
   display: flex; flex-wrap: wrap; align-items: center; column-gap: .48em; row-gap: .08em;
-  margin: 0; max-width: 100%; font-family: "DynaPuff", "Arial Rounded MT Bold", sans-serif;
-  font-size: clamp(1.12rem,2.35vw,1.95rem); font-weight: 700; line-height: 1.3;
-  letter-spacing: -.045em; text-transform: uppercase;
+  margin: 0; max-width: 100%; font-family: "Sedgwick Ave Display", "Arial Black", sans-serif;
+  font-size: clamp(1.28rem,2.6vw,2.12rem); font-weight: 400; line-height: 1.3;
+  letter-spacing: -.015em; text-transform: uppercase;
 }
 #home .public-success-brand, #home .public-success-title-tail { display: inline-block; max-width: 100%; }
 #home .public-success-brand { white-space: nowrap; }
@@ -3025,19 +3025,19 @@ select:focus {
   overflow-wrap: anywhere;
 }
 #home .public-success-heading h2 > span {
-  color: #ff67c8;
-  background: linear-gradient(165deg,#fff7ff 5%,#ffb6e9 25%,#ff69c8 52%,#e439ac 78%,#9b30b3 100%);
+  color: #db3eb1;
+  background: linear-gradient(165deg,#fff 4%,#d0d0d0 22%,#db3eb1 46%,#db3eb1 78%,#7c2168 100%);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  -webkit-text-stroke: 1.2px #1b0731;
-  filter: drop-shadow(1px 2px 0 #180c30) drop-shadow(2px 3px 0 #06cfe1)
-    drop-shadow(0 0 10px rgba(255,67,193,.52));
+  -webkit-text-stroke: 1.2px #000;
+  filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #41b6e6)
+    drop-shadow(0 0 10px rgba(219,62,177,.48));
 }
 #home .public-success-heading h2 > .public-success-title-tail {
-  color: #65f2ed;
-  background: linear-gradient(165deg,#f5ffff 5%,#b7ffff 25%,#5deeea 52%,#00c5db 78%,#8b57c8 100%);
+  color: #41b6e6;
+  background: linear-gradient(165deg,#fff 4%,#d0d0d0 22%,#41b6e6 46%,#41b6e6 78%,#166083 100%);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  filter: drop-shadow(1px 2px 0 #180c30) drop-shadow(2px 3px 0 #c234a5)
-    drop-shadow(0 0 10px rgba(35,229,236,.52));
+  filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #db3eb1)
+    drop-shadow(0 0 10px rgba(65,182,230,.48));
 }
 #home .public-success-live {
   display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
@@ -3099,7 +3099,7 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   #home .public-success-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   #home .public-success-heading > div { flex-wrap: wrap; gap: 10px; }
   #home .public-success-heading h2 { flex-wrap: wrap; }
-  #home .public-success-heading h2 { font-size: clamp(1.03rem,4.1vw,1.6rem); }
+  #home .public-success-heading h2 { font-size: clamp(1.13rem,4.5vw,1.7rem); }
   #home .home-success-preview { padding: 40px 0; }
 }
 @media (max-width: 420px) {
