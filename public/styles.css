@@ -3061,12 +3061,13 @@ select:focus {
 #home .public-success-heading .public-success-word { display: inline-flex; white-space: nowrap; margin-right: .34em; }
 #home .public-success-heading .public-success-letter {
   position: relative; display: inline-block; transform-origin: 50% 78%;
-  min-width: .58em; margin-inline: .018em; text-align: center;
+  min-width: .64em; margin-inline: .035em; text-align: center;
   color: #db3eb1;
   background: linear-gradient(165deg,#ffffff 3%,#d0d0d0 22%,#db3eb1 47%,#db3eb1 78%,#7c2168 100%);
   background-clip: text; -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  -webkit-text-stroke: .17em #db3eb1;
+  -webkit-text-stroke: .075em #0a0d15;
+  paint-order: stroke fill;
   text-shadow: .055em .055em 0 #11151b, -.055em .055em 0 #11151b,
     .055em -.055em 0 #11151b, -.055em -.055em 0 #11151b;
   animation: success-letter-melt var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
@@ -3075,7 +3076,7 @@ select:focus {
   color: #41b6e6;
   background: linear-gradient(165deg,#ffffff 3%,#d0d0d0 22%,#41b6e6 47%,#41b6e6 78%,#166083 100%);
   background-clip: text; -webkit-background-clip: text;
-  -webkit-text-stroke-color: #41b6e6;
+  -webkit-text-stroke-color: #0a0d15;
 }
 #home .public-success-letter[data-black-x]::before {
   content: attr(data-black-x); position: absolute; z-index: 1; left: 50%; top: 49%;
@@ -3153,6 +3154,9 @@ select:focus {
   border-radius: 100px; padding: 7px 12px; font-size: .8rem; font-weight: 700; letter-spacing: .04em; }
 #home .home-success-iframe { display: block; width: 100%; height: 900px; min-height: 900px; margin: 16px 0 10px; border: 0; background: transparent; opacity: 1; overflow: visible; }
 #home .home-success-iframe.is-ready { opacity: 1; }
+html.success-demo-loading body { visibility: hidden; background: transparent !important; }
+html.success-demo-loading body::before,
+html.success-demo-loading body::after { display: none !important; }
 body.success-demo-body { min-height: 0; background: transparent; overflow: visible; }
 body.success-demo-body #my-profile.success-demo-only { width: 100%; max-width: none; height: auto; min-height: 0; margin: 0; padding: 2px; background: transparent !important; overflow: visible; }
 body.success-demo-body #my-profile.success-demo-only .account-tab-panel { padding: 0; background: transparent !important; overflow: visible; }
@@ -3171,6 +3175,29 @@ body.success-demo-body #my-profile #success-checkouts .success-recent-shell {
 }
 body.success-demo-body #account-tab-success .success-activity-card,
 body.success-demo-body #account-tab-success .success-recent-card { background: transparent !important; }
+
+/* Give the signed-in header and its summary cards enough room to read at a glance. */
+#my-profile .account-topbar { min-height: 196px; padding: 30px 34px !important; }
+#my-profile .account-topbar > div:first-child { min-width: 300px; }
+#my-profile .account-topbar .eyebrow { font-size: 14px; letter-spacing: .22em; }
+#my-profile .account-identity-line h3 { font-size: clamp(2rem, 3vw, 3rem); line-height: 1.08; }
+#my-profile .account-identity-email { margin-top: 10px; font-size: 17px; }
+#my-profile .account-verification-row { margin-top: 12px; gap: 12px; }
+#my-profile #email-verification-status { min-height: 38px; padding: 8px 14px; font-size: 15px; }
+#my-profile .og-member-badge { min-height: 36px; padding: 7px 13px; font-size: 13px; letter-spacing: 1px; }
+#my-profile .member-lifetime-stats { grid-template-columns: repeat(3, minmax(170px, 1fr)); gap: 14px; }
+#my-profile .member-lifetime-stats > div { min-height: 94px; padding: 16px 19px; gap: 7px; }
+#my-profile .member-lifetime-stats span { font-size: 12px; letter-spacing: 1.1px; }
+#my-profile .member-lifetime-stats strong { font-size: 20px; }
+@media (max-width: 1050px) {
+  #my-profile .account-topbar { min-height: 0; }
+  #my-profile .member-lifetime-stats { grid-template-columns: repeat(3, minmax(130px, 1fr)); }
+}
+@media (max-width: 800px) {
+  #my-profile .account-topbar { padding: 24px 20px !important; }
+  #my-profile .account-topbar > div:first-child { min-width: 0; }
+  #my-profile .member-lifetime-stats { grid-template-columns: 1fr; }
+}
 @media (max-width: 850px) {
   #home .public-success-inner { grid-template-columns: 1fr; }
   #home .public-success-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }

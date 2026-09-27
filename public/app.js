@@ -14968,7 +14968,7 @@ if (communityHeading) {
         const glyph = document.createElement("span");
         glyph.className = "public-success-letter";
         glyph.textContent = character;
-        if (/[ABGOPQR]/.test(character)) glyph.dataset.blackX = "×";
+        if (/[AERBOPQ]/.test(character)) glyph.dataset.blackX = "×";
         const seed = (wordIndex * 17 + letterIndex * 23 + character.codePointAt(0) * 7) % 47;
         glyph.style.setProperty("--melt-delay", `${-(seed * .43).toFixed(2)}s`);
         glyph.style.setProperty("--melt-duration", `${(12 + seed % 7 * .55).toFixed(2)}s`);
@@ -15168,6 +15168,7 @@ if (SUCCESS_DEMO_MODE) {
   wrapper.append(panel);
   document.body.replaceChildren(wrapper);
   document.body.classList.add("success-demo-body");
+  document.documentElement.classList.remove("success-demo-loading");
   loadSuccessDashboard(true);
   const resize = () => parent.postMessage({ type: "sng-success-demo-height", height: Math.ceil(wrapper.getBoundingClientRect().height) + 6 }, location.origin);
   new ResizeObserver(resize).observe(wrapper);

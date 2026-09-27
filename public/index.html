@@ -17,6 +17,11 @@
   <link rel="apple-touch-icon" href="/slabsngrabs-aco-logo-transparent.png?v=20260924-3" />
 
   <link rel="stylesheet" href="/styles.css" />
+  <script>
+    if (new URLSearchParams(window.location.search).get("successDemo") === "1") {
+      document.documentElement.classList.add("success-demo-loading");
+    }
+  </script>
 </head>
 
 <body>
@@ -400,7 +405,7 @@
       </div>
       <div class="home-success-demo">
         <span class="home-success-sample">SAMPLE PREVIEW · EXAMPLE ORDERS</span>
-        <iframe class="home-success-iframe" id="home-success-iframe" title="Sample of the exact customer Success dashboard" src="/?successDemo=1" loading="lazy"></iframe>
+          <iframe class="home-success-iframe" id="home-success-iframe" title="Sample of the exact customer Success dashboard" src="/?successDemo=1" loading="eager"></iframe>
         <p class="home-success-footnote">Example orders are for illustration. Your account shows only checkouts linked to your profiles.</p>
       </div>
     </div>
@@ -3218,7 +3223,7 @@
               name="discordUsername"
               autocomplete="off"
               maxlength="100"
-              placeholder="Example: kaleb689"
+              placeholder="Example: cardfan"
             />
             <small>
               Used for action-needed Discord messages.
@@ -5043,7 +5048,7 @@
                 name="discordUsername"
                 maxlength="100"
                 autocomplete="off"
-                placeholder="Example: kaleb689"
+                placeholder="Example: cardfan"
               />
             </label>
 
