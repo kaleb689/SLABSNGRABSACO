@@ -295,6 +295,23 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     let chat = channels.find(item => item.type === 4 && normalizeName(item.name) === "chat") ||
       channels.find(item => item.id === existingOneOnOne?.parent_id && item.type === 4);
     if (!chat) chat = await api(`/guilds/${guildId}/channels`, "POST", { name: "Chat", type: 4 });
+    const questionsChannel = channels.find(item => item.type === 0 && normalizeName(item.name) === "questions");
+    const questionsCategory = channels.find(item => item.type === 4 &&
+      (normalizeName(item.name) === "questions" ||
+        (item.id === questionsChannel?.parent_id && /❓/.test(item.name))));
+    if (questionsChannel && questionsChannel.parent_id !== chat.id) {
+      await api(`/channels/${questionsChannel.id}`, "PATCH", {
+        parent_id: chat.id, permission_overwrites: questionsChannel.permission_overwrites || []
+      });
+    }
+    if (questionsCategory && questionsCategory.id !== chat.id) {
+      for (const child of channels.filter(item => item.parent_id === questionsCategory.id && item.id !== questionsChannel?.id)) {
+        await api(`/channels/${child.id}`, "PATCH", {
+          parent_id: chat.id, permission_overwrites: child.permission_overwrites || []
+        });
+      }
+      await api(`/channels/${questionsCategory.id}`, "DELETE");
+    }
     chatCategoryId = chat.id;
     let lobby = channels.find(item => item.type === 0 && item.parent_id === chat.id && normalizeName(item.name) === "1on1");
     if (!lobby) lobby = channels.find(item => item.type === 0 && normalizeName(item.name) === "1on1");
