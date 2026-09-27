@@ -34611,6 +34611,33 @@ function isPublicSuccessProduct(name) {
   return /pok[eé]mon|lorcana|magic\s*[:\-]?\s*the\s*gathering|\bmtg\b|nee[\s-]?doh|trading\s*card|\btcg\b|yu[\s-]?gi[\s-]?oh|one\s*piece\s*(?:card|tcg)|digimon|flesh\s*and\s*blood|dragon\s*ball\s*(?:card|tcg)/i.test(name);
 }
 
+function publicSuccessProductName(value) {
+  return clean(value, 120)
+    .replace(/&#(x[0-9a-f]+|\d+);/gi, (_match, code) => {
+      const point = code[0].toLowerCase() === "x" ? parseInt(code.slice(1), 16) : Number(code);
+      return point > 31 && point <= 0x10ffff ? String.fromCodePoint(point) : "";
+    })
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ").trim();
+}
+
+const verifiedPublicProductImages = [
+  {
+    match: /ascended heroes tin.*mega meganium ex/i,
+    retailer: "Target",
+    imageUrl: "https://target.scene7.com/is/image/Target/GUEST_d4830c25-748f-4052-ac1e-f87293a37d7c"
+  }
+];
+
+function publicSuccessProductImage(name, retailer, value) {
+  const verified = verifiedPublicProductImages.find(item =>
+    item.retailer.toLowerCase() === String(retailer || "").toLowerCase() && item.match.test(name)
+  );
+  if (verified) return verified.imageUrl;
+  const url = publicSuccessImageUrl(value);
+  return url && !/\/gray-bag(?:[?/#]|$)|\/no[-_]?image(?:[?/#]|$)/i.test(url) ? url : null;
+}
+
 function publicSuccessImageUrl(value) {
   const safe = safeSuccessImageUrl(value);
   if (!safe) return null;
@@ -34636,7 +34663,7 @@ app.get(
       for (const record of records) {
         if (!/^(confirmed|success|completed)$/i.test(String(record.status || "confirmed"))) continue;
         const eligibleItems = (Array.isArray(record.items) ? record.items : []).filter(item => {
-          const name = clean(item?.name, 120).replace(/\s+/g, " ").trim();
+          const name = publicSuccessProductName(item?.name);
           return name && isPublicSuccessProduct(name) && !/@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name) && Number(item?.quantity) > 0;
         });
         totalCheckouts += 1;
@@ -34644,7 +34671,7 @@ app.get(
         if (Number.isFinite(total) && total > 0) totalSpent += total;
 
         for (const item of eligibleItems) {
-          const name = clean(item?.name, 120).replace(/\s+/g, " ").trim();
+          const name = publicSuccessProductName(item?.name);
           const quantity = Math.max(0, Math.floor(Number(item?.quantity) || 0));
           if (!quantity) continue;
           const key = name.toLowerCase();
@@ -34652,7 +34679,7 @@ app.get(
           products.set(key, {
             name: prior?.name || name,
             quantity: (prior?.quantity || 0) + quantity,
-            imageUrl: prior?.imageUrl || publicSuccessImageUrl(item?.imageUrl) || null
+            imageUrl: prior?.imageUrl || publicSuccessProductImage(name, record.retailer, item?.imageUrl)
           });
         }
       }
@@ -36644,6 +36671,43 @@ function findTargetProductImage(
   return null;
 }
 
+const targetProductImageLookupCache = new Map();
+async function targetProductImageFromEmailLinks(productName, html) {
+  const ids = [...String(html || "").matchAll(/target\.com\/p\/[^"'<>\s]*?\/A-(\d{7,12})/gi)]
+    .map(match => match[1]);
+  const uniqueIds = [...new Set(ids)].slice(0, 5);
+  if (!uniqueIds.length) return null;
+  const wanted = normalizeTargetProductText(publicSuccessProductName(productName));
+  for (const id of uniqueIds) {
+    if (!targetProductImageLookupCache.has(id)) {
+      targetProductImageLookupCache.set(id, (async () => {
+        try {
+          const response = await fetch(`https://www.target.com/p/-/A-${id}`, {
+            signal: AbortSignal.timeout(5000),
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; SLABSNGRABSACO/1.0)" }
+          });
+          if (!response.ok) return null;
+          const page = (await response.text()).slice(0, 400000);
+          const metaContent = key => {
+            const tag = page.match(new RegExp(`<meta\\b[^>]*property=["']${key}["'][^>]*>`, "i"))?.[0] || "";
+            return tag.match(/content=["']([^"']+)/i)?.[1] || "";
+          };
+          const title = metaContent("og:title");
+          const image = metaContent("og:image");
+          return { title: publicSuccessProductName(title), imageUrl: safeSuccessImageUrl(image) };
+        } catch { return null; }
+      })());
+    }
+    const found = await targetProductImageLookupCache.get(id);
+    const title = normalizeTargetProductText(found?.title);
+    if (title && wanted && (title.includes(wanted) || wanted.includes(title)) &&
+        found?.imageUrl && !/\/gray-bag(?:[?/#]|$)/i.test(found.imageUrl)) {
+      return found.imageUrl;
+    }
+  }
+  return null;
+}
+
 function parseMoney(value) {
   const amount =
     Number(
@@ -37178,6 +37242,14 @@ async function parseTargetTestOrder({
     });
   }
 
+
+  // If the email contains a product link but only a placeholder thumbnail,
+  // check that item's official Target page before saving the checkout.
+  for (const item of items) {
+    if (!item.imageUrl || /\/gray-bag(?:[?/#]|$)/i.test(item.imageUrl)) {
+      item.imageUrl = await targetProductImageFromEmailLinks(item.name, decoded.html) || item.imageUrl;
+    }
+  }
 
   /* =====================================================
      TOTAL ITEM COUNT
@@ -39480,7 +39552,7 @@ const managedSuccessScanStatus = {
   parsedOrders: 0,
   savedOrders: 0,
   unmatchedOrders: 0,
-  progress: { phase: "idle", percent: 0, processed: 0, total: 0 }
+  progress: { phase: "idle", percent: 0, processed: 0, total: 0, recognized: 0, saved: 0 }
 };
 let managedSuccessScanPromise = null;
 
@@ -39602,7 +39674,7 @@ async function readRecentManagedWorkMailboxOrders(
         candidates
       ) {
         processed += 1;
-        onProgress({ phase: "checking", percent: 20 + Math.floor(60 * processed / Math.max(1, candidates.length)), processed, total: candidates.length });
+        onProgress({ phase: "checking", percent: 20 + Math.floor(60 * (processed - 1) / Math.max(1, candidates.length)), processed: processed - 1, total: candidates.length, recognized: orders.length, saved: 0 });
         const subject =
           String(
             candidate
@@ -39731,6 +39803,7 @@ async function readRecentManagedWorkMailboxOrders(
               )
           });
         }
+        onProgress({ phase: "checking", percent: 20 + Math.floor(60 * processed / Math.max(1, candidates.length)), processed, total: candidates.length, recognized: orders.length, saved: 0 });
       }
 
       return {
@@ -39943,23 +40016,20 @@ async function syncManagedProfileSuccessMailbox() {
     await managedAssignmentHistory();
 
   const totalOrders = result.orders.length;
-  managedSuccessScanStatus.progress = { phase: "saving", percent: 80, processed: 0, total: totalOrders };
+  managedSuccessScanStatus.progress = { phase: "saving", percent: 80, processed: 0, total: totalOrders, recognized: totalOrders, saved: 0 };
 
   let saved = 0;
   let unmatched = 0;
   let processedOrders = 0;
+  const updateSaveProgress = () => {
+    processedOrders += 1;
+    managedSuccessScanStatus.progress = { phase: "saving", percent: 80 + Math.floor(19 * processedOrders / Math.max(1, totalOrders)), processed: processedOrders, total: totalOrders, recognized: totalOrders, saved };
+  };
 
   for (
     const order of
     result.orders
   ) {
-    processedOrders += 1;
-    managedSuccessScanStatus.progress = {
-      phase: "saving",
-      percent: 80 + Math.floor(19 * processedOrders / Math.max(1, totalOrders)),
-      processed: processedOrders,
-      total: totalOrders
-    };
     const routingEmails =
       Array.isArray(
         order.routingEmails
@@ -39991,6 +40061,7 @@ async function syncManagedProfileSuccessMailbox() {
     if (!accountMatch) {
       unmatched += 1;
       if (await recordCommunitySuccessCheckout(order)) saved += 1;
+      updateSaveProgress();
       continue;
     }
 
@@ -40036,6 +40107,7 @@ async function syncManagedProfileSuccessMailbox() {
     if (!assignment) {
       unmatched += 1;
       if (await recordCommunitySuccessCheckout(order)) saved += 1;
+      updateSaveProgress();
       continue;
     }
 
@@ -40062,6 +40134,7 @@ async function syncManagedProfileSuccessMailbox() {
 
     if (!orderKey) {
       unmatched += 1;
+      updateSaveProgress();
       continue;
     }
 
@@ -40134,6 +40207,7 @@ async function syncManagedProfileSuccessMailbox() {
     if (wasSaved) {
       saved += 1;
     }
+    updateSaveProgress();
   }
 
   if (result.lastUid) {
@@ -40228,7 +40302,7 @@ function runManagedSuccessScan() {
   if (managedSuccessScanPromise) return managedSuccessScanPromise;
   managedSuccessScanStatus.lastAttemptAt = new Date().toISOString();
   managedSuccessScanStatus.lastError = null;
-  managedSuccessScanStatus.progress = { phase: "connecting", percent: 0, processed: 0, total: 0 };
+  managedSuccessScanStatus.progress = { phase: "connecting", percent: 0, processed: 0, total: 0, recognized: 0, saved: 0 };
   managedSuccessScanPromise = (async () => {
     try {
       const result = await syncManagedProfileSuccessMailbox();
@@ -40236,7 +40310,7 @@ function runManagedSuccessScan() {
       managedSuccessScanStatus.parsedOrders = result.scanned || 0;
       managedSuccessScanStatus.savedOrders = result.saved || 0;
       managedSuccessScanStatus.unmatchedOrders = result.unmatched || 0;
-      managedSuccessScanStatus.progress = { phase: "complete", percent: 100, processed: result.scanned || 0, total: result.scanned || 0 };
+      managedSuccessScanStatus.progress = { phase: "complete", percent: 100, processed: result.scanned || 0, total: result.scanned || 0, recognized: result.scanned || 0, saved: result.saved || 0 };
       return result;
     } catch (error) {
       managedSuccessScanStatus.lastError = error?.authenticationFailed ||

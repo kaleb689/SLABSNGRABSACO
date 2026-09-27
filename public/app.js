@@ -13281,6 +13281,75 @@ function renderSuccessAllOrders(
 }
 
 
+const successMetricTimers = new WeakMap();
+function rollSuccessMetric(id, value, currency = false) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  const numeric = Number(value) || 0;
+  const formatted = currency ? formatSuccessCurrency(numeric) : formatSuccessNumber(numeric);
+  const previous = element.dataset.successMetricValue;
+  if (previous === String(numeric) && element.dataset.successMetricCurrency === String(currency) && element.textContent.trim() !== "—") return;
+  const oldText = element.textContent.trim() === "—" ? "—" : (element.dataset.successMetricText || element.textContent.trim());
+  element.dataset.successMetricValue = String(numeric);
+  element.dataset.successMetricCurrency = String(currency);
+  element.dataset.successMetricText = formatted;
+  clearTimeout(successMetricTimers.get(element));
+  if (!previous || oldText === "—" || document.hidden || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    element.textContent = formatted;
+    element.removeAttribute("aria-label");
+    return;
+  }
+
+  element.replaceChildren();
+  element.setAttribute("aria-label", formatted);
+  const oldDigits = oldText.replace(/\D/g, "").split("");
+  const newDigits = formatted.replace(/\D/g, "").split("");
+  let digitIndex = 0;
+  const tracks = [];
+  for (const character of formatted) {
+    if (!/\d/.test(character)) {
+      const separator = document.createElement("span");
+      separator.textContent = character;
+      separator.setAttribute("aria-hidden", "true");
+      element.append(separator);
+      continue;
+    }
+    const oldDigit = Number(oldDigits[oldDigits.length - newDigits.length + digitIndex] ?? 0);
+    digitIndex += 1;
+    const targetDigit = Number(character);
+    const steps = (oldDigit - targetDigit + 10) % 10;
+    if (!steps) {
+      const digit = document.createElement("span");
+      digit.textContent = character;
+      digit.setAttribute("aria-hidden", "true");
+      element.append(digit);
+      continue;
+    }
+    const window = document.createElement("span");
+    window.className = "success-odometer-window";
+    window.setAttribute("aria-hidden", "true");
+    const track = document.createElement("span");
+    track.className = "success-odometer-track";
+    for (let step = 0; step <= steps; step += 1) {
+      const face = document.createElement("span");
+      face.textContent = String((oldDigit - step + 10) % 10);
+      track.append(face);
+    }
+    window.append(track);
+    element.append(window);
+    tracks.push({ track, steps });
+  }
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    tracks.forEach(({ track, steps }) => { track.style.transform = `translateY(-${steps * 1.15}em)`; });
+  }));
+  successMetricTimers.set(element, setTimeout(() => {
+    if (element.dataset.successMetricText === formatted) {
+      element.textContent = formatted;
+      element.removeAttribute("aria-label");
+    }
+  }, 1150));
+}
+
 function renderSuccessDashboard(
   data = {}
 ) {
@@ -13317,26 +13386,11 @@ function renderSuccessDashboard(
     data.bestDay ??
     null;
 
-  setSuccessText(
-    "success-total-checkouts",
-    formatSuccessNumber(
-      totalCheckouts
-    )
-  );
+  rollSuccessMetric("success-total-checkouts", totalCheckouts);
 
-  setSuccessText(
-    "success-total-items",
-    formatSuccessNumber(
-      itemsSecured
-    )
-  );
+  rollSuccessMetric("success-total-items", itemsSecured);
 
-  setSuccessText(
-    "success-total-value",
-    formatSuccessCurrency(
-      checkoutValue
-    )
-  );
+  rollSuccessMetric("success-total-value", checkoutValue, true);
 
   setSuccessText(
   "success-best-day",
@@ -14914,6 +14968,7 @@ if (communityHeading) {
         const glyph = document.createElement("span");
         glyph.className = "public-success-letter";
         glyph.textContent = character;
+        if (/[ABGOPQR]/.test(character)) glyph.dataset.blackX = "×";
         const seed = (wordIndex * 17 + letterIndex * 23 + character.codePointAt(0) * 7) % 47;
         glyph.style.setProperty("--melt-delay", `${-(seed * .43).toFixed(2)}s`);
         glyph.style.setProperty("--melt-duration", `${(12 + seed % 7 * .55).toFixed(2)}s`);
@@ -14925,7 +14980,7 @@ if (communityHeading) {
   }
 }
 
-const publicSuccessState = { products: [], index: 0, loading: false };
+const publicSuccessState = { products: [], index: 0, loading: false, shownQuantities: new Map() };
 
 function renderPublicSuccessProduct() {
   const { products } = publicSuccessState;
@@ -14951,8 +15006,20 @@ function renderPublicSuccessProduct() {
     const name = document.createElement("strong");
     name.textContent = product.name;
     const count = document.createElement("span");
-    count.textContent = `×${formatSuccessNumber(product.quantity)}`;
+    count.append(document.createTextNode("×"));
+    const quantity = document.createElement("b");
+    quantity.id = "public-success-product-quantity";
+    const previousQuantity = publicSuccessState.shownQuantities.get(product.name);
+    if (previousQuantity !== undefined) {
+      quantity.textContent = formatSuccessNumber(previousQuantity);
+      quantity.dataset.successMetricValue = String(previousQuantity);
+      quantity.dataset.successMetricCurrency = "false";
+      quantity.dataset.successMetricText = quantity.textContent;
+    }
+    count.append(quantity);
     container.append(imageWrap, name, count);
+    rollSuccessMetric("public-success-product-quantity", product.quantity);
+    publicSuccessState.shownQuantities.set(product.name, product.quantity);
   } else {
     container.textContent = "Purchased products will appear here after checkout data is detected.";
   }
@@ -14969,8 +15036,8 @@ async function refreshPublicSuccess() {
     const response = await fetch("/api/public/success", { cache: "no-store" });
     if (!response.ok) throw new Error("Totals unavailable");
     const data = await response.json();
-    document.getElementById("public-success-checkouts").textContent = formatSuccessNumber(data.totalCheckouts);
-    document.getElementById("public-success-spent").textContent = formatSuccessCurrency(data.totalSpent);
+    rollSuccessMetric("public-success-checkouts", data.totalCheckouts);
+    rollSuccessMetric("public-success-spent", data.totalSpent, true);
     publicSuccessState.products = Array.isArray(data.products) ? data.products : [];
     publicSuccessState.index = Math.min(publicSuccessState.index, Math.max(0, publicSuccessState.products.length - 1));
     renderPublicSuccessProduct();

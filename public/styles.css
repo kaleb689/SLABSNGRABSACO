@@ -3044,6 +3044,12 @@ select:focus {
   position: relative; display: inline-block; transform-origin: 50% 78%;
   animation: success-letter-melt var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
 }
+#home .public-success-letter[data-black-x]::before {
+  content: attr(data-black-x); position: absolute; z-index: 1; left: 50%; top: 49%;
+  transform: translate(-50%, -50%) rotate(-12deg); font: 900 .48em/1 Inter, sans-serif;
+  color: #06090e; -webkit-text-fill-color: #06090e; -webkit-text-stroke: 0;
+  letter-spacing: 0; pointer-events: none;
+}
 #home .public-success-heading .public-success-letter::after {
   content: ""; position: absolute; left: 43%; top: 74%; width: .11em; height: .24em;
   border-radius: 0 0 100% 100%; background: #db3eb1;
@@ -3074,8 +3080,14 @@ select:focus {
   min-width: 0; border: 1px solid rgba(142,197,222,.19); border-radius: 13px;
   background: rgba(2,13,23,.46); padding: 12px 15px;
 }
-#home .public-success-stats span, #home .public-success-products-head > span { display: block; color: #9eafc4; font-size: .78rem; }
-#home .public-success-stats strong { display: block; margin-top: 8px; font-size: clamp(1.45rem,2.3vw,2rem); color: #effaff; }
+#home .public-success-stats > div > span, #home .public-success-products-head > span {
+  display: block; color: #8ce8ff; font-size: .88rem; font-weight: 900;
+  letter-spacing: .075em; text-transform: uppercase;
+  text-shadow: 0 0 11px rgba(65,182,230,.65);
+}
+#home .public-success-products-head > span { color: #ff85dc; text-shadow: 0 0 11px rgba(219,62,177,.65); }
+#home .public-success-stats strong { display: block; margin-top: 8px; font-size: clamp(1.55rem,2.5vw,2.2rem); color: #effaff;
+  text-shadow: 0 0 14px rgba(65,182,230,.38); }
 #home .public-success-products-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 #home .public-success-controls { display: flex; align-items: center; gap: 7px; color: #b9cfe2; font-size: .78rem; white-space: nowrap; }
 #home .public-success-controls button {
@@ -3090,8 +3102,13 @@ select:focus {
 #home .public-success-image img { width: 100%; height: 100%; object-fit: contain; }
 #home .public-success-product strong { flex: 1; min-width: 0; font-size: .9rem; overflow-wrap: anywhere; }
 #home .public-success-product span { color: #5edbed; font-size: 1.15rem; font-weight: 800; white-space: nowrap; }
-#home .public-success-note, #home .home-success-footnote { color: #a2b9cb; font-size: .78rem; margin: 0; }
-#home .public-success-note { grid-column: 1 / -1; }
+#home .home-success-footnote { color: #a2b9cb; font-size: .78rem; margin: 0; }
+
+.success-odometer-window { display: inline-block; overflow: hidden; height: 1.15em; line-height: 1.15em;
+  vertical-align: -.17em; font-variant-numeric: tabular-nums; }
+.success-odometer-track { display: flex; flex-direction: column; transition: transform 950ms cubic-bezier(.22,.72,.25,1); }
+.success-odometer-track > span { display: block; height: 1.15em; line-height: 1.15em; font: inherit; }
+@media (prefers-reduced-motion: reduce) { .success-odometer-track { transition: none; } }
 
 #home .home-success-preview { padding: 55px 0 65px; background: transparent; }
 #home .home-success-preview-heading { max-width: 760px; margin-bottom: 25px; }
@@ -3116,7 +3133,6 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
 @media (max-width: 850px) {
   #home .public-success-inner { grid-template-columns: 1fr; }
   #home .public-success-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  #home .public-success-note { grid-column: 1; }
 }
 @media (max-width: 750px) {
   #home .public-success-inner, #home .home-success-demo { padding: 15px; border-radius: 16px; }

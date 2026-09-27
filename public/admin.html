@@ -23300,7 +23300,10 @@ async function refreshManagedSuccessMailboxStatus() {
       status.textContent = `Missing Render settings: ${missing.join(", ")}.`;
     } else if (data.running) {
       const phase = { connecting: "Connecting", searching: "Finding confirmations", loading: "Loading messages", checking: "Checking messages", saving: "Saving orders" }[data.progress?.phase] || "Scanning";
-      status.textContent = `${phase}${data.progress?.total ? ` · ${data.progress.processed || 0} of ${data.progress.total}` : ""}…`;
+      const examined = data.progress?.total ? ` · ${data.progress.processed || 0} of ${data.progress.total}` : "";
+      const found = data.progress?.phase === "checking" || data.progress?.phase === "saving" ? ` · ${data.progress.recognized || 0} recognized` : "";
+      const saved = data.progress?.phase === "saving" ? ` · ${data.progress.saved || 0} newly saved` : "";
+      status.textContent = `${phase}${examined}${found}${saved}…`;
     } else if (data.lastError) {
       status.textContent = data.lastError === "authentication_failed"
         ? "Configured, but mailbox authentication failed. Check the app password in Render."
@@ -23332,7 +23335,7 @@ document.getElementById("checkManagedSuccessMailbox")?.addEventListener("click",
 if (document.getElementById("managedSuccessScanProgress")) {
   setInterval(() => {
     if (!document.hidden) refreshManagedSuccessMailboxStatus();
-  }, 4000);
+  }, 2000);
 }
 
 document.getElementById("scanManagedSuccessMailbox")?.addEventListener("click", async event => {
