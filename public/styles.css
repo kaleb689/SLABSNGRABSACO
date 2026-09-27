@@ -3032,19 +3032,19 @@ select:focus {
 #home .public-success-heading > div { display: flex; align-items: center; gap: 22px; min-width: 0; }
 #home .public-success-heading .eyebrow { font-size: .75rem; }
 #home .public-success-heading h2 {
-  display: flex; flex-wrap: wrap; align-items: center; column-gap: .5em; row-gap: .08em;
+  display: flex; flex-wrap: nowrap; align-items: center; column-gap: .5em; row-gap: .08em;
   margin: 0; max-width: 100%; font-family: "Bavolen Reference", "Arial Rounded MT Bold", sans-serif;
   font-size: clamp(1.12rem,2.45vw,2.02rem); font-weight: 700; line-height: 1.48;
-  letter-spacing: -.015em; text-transform: uppercase;
+  letter-spacing: -.015em; text-transform: uppercase; white-space: nowrap;
 }
-#home .public-success-brand, #home .public-success-title-tail { display: inline-block; max-width: 100%; }
+#home .public-success-brand, #home .public-success-title-tail { display: inline-block; max-width: none; white-space: nowrap; }
 #home .public-success-brand { white-space: nowrap; }
 #home .public-success-title-tail {
   overflow-wrap: anywhere;
 }
 #home .public-success-heading h2 > span {
   color: #db3eb1;
-  background: linear-gradient(165deg,#fff 4%,#d0d0d0 22%,#db3eb1 46%,#db3eb1 78%,#7c2168 100%);
+  background: linear-gradient(165deg,#ff8fe8 0%,#db3eb1 50%,#7c2168 100%);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   -webkit-text-stroke: 1.45px #11151b;
   paint-order: stroke fill;
@@ -3053,7 +3053,7 @@ select:focus {
 }
 #home .public-success-heading h2 > .public-success-title-tail {
   color: #41b6e6;
-  background: linear-gradient(165deg,#fff 4%,#d0d0d0 22%,#41b6e6 46%,#41b6e6 78%,#166083 100%);
+  background: linear-gradient(165deg,#73f5ff 0%,#41b6e6 50%,#166083 100%);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #db3eb1)
     drop-shadow(0 0 10px rgba(65,182,230,.48));
@@ -3063,7 +3063,7 @@ select:focus {
   position: relative; display: inline-block; transform-origin: 50% 78%;
   min-width: .64em; margin-inline: .035em; text-align: center;
   color: #db3eb1;
-  background: linear-gradient(165deg,#ffffff 3%,#d0d0d0 22%,#db3eb1 47%,#db3eb1 78%,#7c2168 100%);
+  background: linear-gradient(165deg,#ff8fe8 0%,#db3eb1 50%,#7c2168 100%);
   background-clip: text; -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   -webkit-text-stroke: .075em #0a0d15;
@@ -3074,7 +3074,7 @@ select:focus {
 }
 #home .public-success-title-tail .public-success-letter {
   color: #41b6e6;
-  background: linear-gradient(165deg,#ffffff 3%,#d0d0d0 22%,#41b6e6 47%,#41b6e6 78%,#166083 100%);
+  background: linear-gradient(165deg,#73f5ff 0%,#41b6e6 50%,#166083 100%);
   background-clip: text; -webkit-background-clip: text;
   -webkit-text-stroke-color: #0a0d15;
 }
@@ -3179,10 +3179,13 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
 /* Give the signed-in header and its summary cards enough room to read at a glance. */
 #my-profile .account-topbar { min-height: 196px; padding: 30px 34px !important; }
 #my-profile .account-topbar > div:first-child { min-width: 300px; }
+#my-profile .account-topbar-right { flex: 0 0 auto; }
 #my-profile .account-topbar .eyebrow { font-size: 14px; letter-spacing: .22em; }
 #my-profile .account-identity-line h3 { font-size: clamp(2rem, 3vw, 3rem); line-height: 1.08; }
 #my-profile .account-identity-email { margin-top: 10px; font-size: 17px; }
 #my-profile .account-verification-row { margin-top: 12px; gap: 12px; }
+#my-profile .account-verification-row { display: flex; align-items: center; flex-wrap: wrap; }
+#my-profile .account-logout-inline { margin-left: 4px; }
 #my-profile #email-verification-status { min-height: 38px; padding: 8px 14px; font-size: 15px; }
 #my-profile .og-member-badge { min-height: 36px; padding: 7px 13px; font-size: 13px; letter-spacing: 1px; }
 #my-profile .member-lifetime-stats { grid-template-columns: repeat(3, minmax(170px, 1fr)); gap: 14px; }
@@ -3197,6 +3200,10 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   #my-profile .account-topbar { padding: 24px 20px !important; }
   #my-profile .account-topbar > div:first-child { min-width: 0; }
   #my-profile .member-lifetime-stats { grid-template-columns: 1fr; }
+}
+@media (max-width: 750px) {
+  #home .public-success-heading h2 { flex-wrap: wrap; white-space: normal; }
+  #home .public-success-brand, #home .public-success-title-tail { max-width: 100%; white-space: normal; }
 }
 @media (max-width: 850px) {
   #home .public-success-inner { grid-template-columns: 1fr; }
