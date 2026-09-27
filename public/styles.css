@@ -3052,8 +3052,17 @@ select:focus {
 #home .public-success-heading .public-success-letter {
   position: relative; display: inline-block; transform-origin: 50% 78%;
   min-width: .52em; text-align: center;
+  color: #db3eb1;
+  background: linear-gradient(165deg,#ffffff 3%,#d0d0d0 22%,#db3eb1 47%,#db3eb1 78%,#7c2168 100%);
+  background-clip: text; -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 1.45px #11151b;
   animation: success-letter-melt var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
+}
+#home .public-success-title-tail .public-success-letter {
+  color: #41b6e6;
+  background: linear-gradient(165deg,#ffffff 3%,#d0d0d0 22%,#41b6e6 47%,#41b6e6 78%,#166083 100%);
+  background-clip: text; -webkit-background-clip: text;
 }
 #home .public-success-letter[data-black-x]::before {
   content: attr(data-black-x); position: absolute; z-index: 1; left: 50%; top: 49%;
