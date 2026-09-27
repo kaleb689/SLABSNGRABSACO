@@ -134,12 +134,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       ...(ownerId ? [{ id: ownerId, type: 1, allow: "68608" }] : [])
     ];
   }
-  async function ensureReadOnly(channel, parentId) {
+  async function ensureReadOnly(channel) {
     const expected = readOnlyOverwrites();
-    if (!sameOverwrites(channel.permission_overwrites, expected) ||
-      (parentId !== undefined && channel.parent_id !== parentId)) {
+    if (!sameOverwrites(channel.permission_overwrites, expected)) {
       channel = await api(`/channels/${channel.id}`, "PATCH", {
-        ...(parentId !== undefined ? { parent_id: parentId } : {}),
         permission_overwrites: expected
       });
     }
@@ -161,9 +159,6 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!support && supportText?.parent_id) support = channels.find(item => item.id === supportText.parent_id && item.type === 4);
     if (!support) {
       support = await api(`/guilds/${guildId}/channels`, "POST", { name: "Support", type: 4 });
-      if (supportText && !supportText.parent_id) {
-        await api(`/channels/${supportText.id}`, "PATCH", { parent_id: support.id });
-      }
     }
     const askChannels = channels.filter(item => item.type === 0 && normalizeName(item.name) === "askai");
     let ask = askChannels.find(item => item.parent_id === support.id) || askChannels[0];
@@ -172,8 +167,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       name: "ask-ai", type: 0, parent_id: support.id,
       topic: askTopic
     });
-    else if (ask.topic !== askTopic || ask.parent_id !== support.id) {
-      ask = await api(`/channels/${ask.id}`, "PATCH", { topic: askTopic, parent_id: support.id });
+    else if (ask.topic !== askTopic) {
+      ask = await api(`/channels/${ask.id}`, "PATCH", { topic: askTopic });
     }
     askChannelId = ask.id;
     supportCategoryId = support.id;
@@ -204,7 +199,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       { id: appId, type: 1, allow: "68624" },
       ...(ownerId ? [{ id: ownerId, type: 1, allow: "68608" }] : [])
     ];
-    let alerts = channels.find(item => item.type === 0 && item.parent_id === support.id && item.name === "support-alerts" &&
+    let alerts = channels.find(item => item.type === 0 && ["supportalerts", "aisupportalerts"].includes(normalizeName(item.name)) &&
       item.permission_overwrites?.some(overwrite => overwrite.id === guildId && (BigInt(overwrite.deny || 0) & 1024n)));
     if (!alerts) alerts = await api(`/guilds/${guildId}/channels`, "POST", {
       name: channels.some(item => item.name === "support-alerts") ? "ai-support-alerts" : "support-alerts", type: 0, parent_id: support.id,
@@ -222,7 +217,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         name: "create-a-ticket", type: 0, parent_id: support.id,
         permission_overwrites: publicTicketOverwrites
       });
-      else lobby = await ensureReadOnly(lobby, support.id);
+      else lobby = await ensureReadOnly(lobby);
       ticketLobbyId = lobby.id;
       await setupTicketLobby();
       discordCommunityStatus.ticketLobbyReady = true;
@@ -246,16 +241,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       else if (!sameOverwrites(adminCategory.permission_overwrites, adminOverwrites)) {
         adminCategory = await api(`/channels/${adminCategory.id}`, "PATCH", { permission_overwrites: adminOverwrites });
       }
-      const oldCategories = channels.filter(item => item.type === 4 && adminNames.has(normalizeName(item.name)));
-      // Hide old category drop-downs before moving their children.
-      for (const category of oldCategories) {
-        if (!sameOverwrites(category.permission_overwrites, adminOverwrites)) {
-          await api(`/channels/${category.id}`, "PATCH", { permission_overwrites: adminOverwrites });
-        }
-      }
-      const oldIds = new Set(oldCategories.map(item => item.id));
       const adminChannels = channels.filter(item => item.type !== 4 &&
-        (adminNames.has(normalizeName(item.name)) || oldIds.has(item.parent_id) || item.parent_id === adminCategory.id));
+        (adminNames.has(normalizeName(item.name)) || item.parent_id === adminCategory.id));
       for (const adminChannel of adminChannels) {
         const expected = [2, 13].includes(adminChannel.type) ? [
           { id: guildId, type: 0, deny: "1024" },
@@ -263,9 +250,9 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           { id: appId, type: 1, allow: "3146768" },
           ...(ownerId ? [{ id: ownerId, type: 1, allow: "3146752" }] : [])
         ] : adminOverwrites;
-        if (adminChannel.parent_id !== adminCategory.id || !sameOverwrites(adminChannel.permission_overwrites, expected)) {
+        if (!sameOverwrites(adminChannel.permission_overwrites, expected)) {
           await api(`/channels/${adminChannel.id}`, "PATCH", {
-            parent_id: adminCategory.id, permission_overwrites: expected
+            permission_overwrites: expected
           });
         }
       }
@@ -276,7 +263,6 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       });
       await ensurePanel(actionNeeded.id, "action-needed",
         "**Action Needed** — When a customer account has an issue that needs staff attention, the owner or Support Staff will be pinged here. Review the issue and help the member in their private ticket. This channel is visible only to the owner and Support Staff.");
-      for (const category of oldCategories) await api(`/channels/${category.id}`, "DELETE");
       const foundNames = new Set(channels.filter(item => adminNames.has(normalizeName(item.name))).map(item => normalizeName(item.name)));
       foundNames.add(normalizeName(actionNeeded.name));
       discordCommunityStatus.adminChannelsReady = [...adminNames].every(name => foundNames.has(name));
@@ -295,12 +281,13 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     chatCategoryId = chat.id;
     let lobby = channels.find(item => item.type === 0 && item.parent_id === chat.id && item.name === "1-on-1");
     if (!lobby) lobby = channels.find(item => item.type === 0 && item.name === "1-on-1");
-    if (lobby) lobby = await ensureReadOnly(lobby, chat.id);
+    if (lobby) lobby = await ensureReadOnly(lobby);
     if (!lobby) lobby = await api(`/guilds/${guildId}/channels`, "POST", {
       name: "1-on-1", type: 0, parent_id: chat.id,
       permission_overwrites: readOnlyOverwrites(),
       topic: "Request a private 1-on-1 text and voice session. One session is active at a time; other requests wait in order."
     });
+    chatCategoryId = lobby.parent_id || chat.id;
     oneOnOneLobbyId = lobby.id;
     await setupOneOnOneLobby();
     discordCommunityStatus.oneOnOneReady = true;
@@ -315,25 +302,6 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const found = names.map(name => channels.find(item => [0, 5].includes(item.type) && normalizeName(item.name) === name));
       let important = channels.find(item => item.type === 4 && normalizeName(item.name) === "important");
       if (!important) important = await api(`/guilds/${guildId}/channels`, "POST", { name: "Important", type: 4 });
-      const chat = channels.find(item => item.id === chatCategoryId);
-      if (chat && important.position >= chat.position) {
-        await api(`/guilds/${guildId}/channels`, "PATCH", [
-          { id: important.id, position: chat.position }, { id: chat.id, position: chat.position + 1 }
-        ]);
-      }
-      for (const [index, channel] of found.entries()) {
-        if (!channel) continue;
-        if (channel.parent_id !== important.id || channel.position !== index) {
-          await api(`/channels/${channel.id}`, "PATCH", {
-            parent_id: important.id, position: index,
-            permission_overwrites: channel.permission_overwrites || []
-          });
-        }
-      }
-      const pinned = channels.find(item => item.type === 4 && normalizeName(item.name) === "pinnedchannels");
-      if (pinned && !channels.some(item => item.parent_id === pinned.id && !found.some(target => target?.id === item.id))) {
-        await api(`/channels/${pinned.id}`, "DELETE");
-      }
       discordCommunityStatus.importantReady = found.every(Boolean);
       if (!discordCommunityStatus.importantReady) {
         importantError = `Important: missing ${names.filter((name, index) => !found[index]).join(", ")}`;
@@ -355,9 +323,6 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       if (!introCategory) introCategory = await api(`/guilds/${guildId}/channels`, "POST", {
         name: "Intro", type: 4, position: 0
       });
-      else if (introCategory.position !== 0) {
-        introCategory = await api(`/channels/${introCategory.id}`, "PATCH", { position: 0 });
-      }
       const introNames = new Set(["introserver", "introservers", "introtodiscord", "introslabsngrabsaco", "serverintro", "intro"]);
       const introChannels = channels.filter(item => item.type === 0 &&
         (introNames.has(normalizeName(item.name)) || /^introserver\d+$/.test(normalizeName(item.name))));
@@ -383,11 +348,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         topic: "Start here for a guide to the server and its channels.",
         permission_overwrites: readOnlyOverwrites()
       });
-      else intro = await ensureReadOnly(intro, introCategory.id);
+      else intro = await ensureReadOnly(intro);
       introChannelId = intro.id;
-      if (intro.name !== "intro-slabsngrabsaco" || intro.position !== 0 || intro.parent_id !== introCategory.id) {
-        await api(`/channels/${intro.id}`, "PATCH", { name: "intro-slabsngrabsaco", position: 0,
-          parent_id: introCategory.id, permission_overwrites: readOnlyOverwrites() });
+      if (intro.name !== "intro-slabsngrabsaco") {
+        await api(`/channels/${intro.id}`, "PATCH", { name: "intro-slabsngrabsaco" });
       }
       let rules = channels.find(item => item.type === 0 && ["rules", "serverrules"].includes(normalizeName(item.name)));
       if (!rules) rules = await api(`/guilds/${guildId}/channels`, "POST", {
@@ -395,12 +359,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         topic: "Read the SLABSNGRABSACO community rules before joining the conversation.",
         permission_overwrites: readOnlyOverwrites()
       });
-      else rules = await ensureReadOnly(rules, introCategory.id);
+      else rules = await ensureReadOnly(rules);
       rulesChannelId = rules.id;
-      if (rules.position !== 1 || rules.parent_id !== introCategory.id) {
-        await api(`/channels/${rules.id}`, "PATCH", { position: 1, parent_id: introCategory.id,
-          permission_overwrites: readOnlyOverwrites() });
-      }
       let giveaway = channels.find(item => item.type === 0 && ["giveaway", "giveaways"].includes(normalizeName(item.name)));
       if (!giveaway) giveaway = await api(`/guilds/${guildId}/channels`, "POST", {
         name: "giveaways", type: 0, topic: "Enter active giveaways with the button. Winners are selected when each giveaway ends.",
@@ -419,11 +379,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         permission_overwrites: suggestionOverwrites
       });
       else if (suggestions.topic !== "Share suggestions for this Discord server or the website. Do not post private account information." ||
-        suggestions.parent_id !== introCategory.id || suggestions.position !== 2 ||
         !sameOverwrites(suggestions.permission_overwrites, suggestionOverwrites)) {
         suggestions = await api(`/channels/${suggestions.id}`, "PATCH", {
           topic: "Share suggestions for this Discord server or the website. Do not post private account information.",
-          parent_id: introCategory.id, position: 2, permission_overwrites: suggestionOverwrites
+          permission_overwrites: suggestionOverwrites
         });
       }
       suggestionChannelId = suggestions.id;
@@ -1049,13 +1008,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const { textId, voiceId } = state.active;
       let missing = false;
       for (const id of [textId, voiceId]) {
-        try {
-          const channel = await api(`/channels/${id}`);
-          if (channel.parent_id !== chatCategoryId && channel.permission_overwrites?.some(overwrite =>
-            overwrite.id === guildId && (BigInt(overwrite.deny || 0) & 1024n))) {
-            await api(`/channels/${id}`, "PATCH", { parent_id: chatCategoryId, permission_overwrites: channel.permission_overwrites });
-          }
-        }
+        try { await api(`/channels/${id}`); }
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; missing = true; }
       }
       if (missing) {
@@ -1117,7 +1070,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!aiKey) throw new Error("OPENAI_API_KEY is missing");
     const knowledge = `Use this published SLABSNGRABSACO help information and the current Discord setup. Website: https://slabsngrabsaco.com.
 Website FAQ: ACO means Auto Checkout. Members create retailer profiles and the service attempts checkout during supported drops; checkouts are never guaranteed. Stock, retailer traffic, restrictions, account status and other conditions affect results. Membership profiles currently support Target, Walmart, Sam's Club, Costco and PKC. Starter allows 1 profile, Intermediate 2, Advanced 3, Pro 5, High Volume 10, Power User 20, Elite 50. Current prices, availability and terms should be checked on the website's Plans section rather than guessed. The profile form requests the relevant shipping, billing, contact, retailer-login and sometimes email-connection information; do not ask for any of it here. Retailer login credentials are separate from IMAP email/app passwords. An IMAP app password is generated by the email provider; the website's Guide explains setup. My Profile lets a signed-in member view membership status and days remaining, manage their saved profiles, orders and account security. Discord linking is in My Profile using Discord authorization or a generated code with /link in Discord. Never claim to know a member's actual account state.
-Discord guide: #intro-slabsngrabsaco explains channels, #rules lists server rules, #general is open conversation, #questions accepts drop, TCG, website and Discord questions, #ask-ai answers public general questions, #success displays community success, #suggestions accepts website or server ideas. Important includes #upcoming-drops, #dropping-tonight and #announcements; consult those channels for live drop information rather than inventing a schedule. Under Support, #create-a-ticket has a button and private issue form; a ticket is visible only to that member, owner and Support Staff, who can close it. #support-alerts is private staff-only. Under Chat, #1-on-1 has buttons for a private text and voice session; only one runs at a time and others queue. In #giveaways, staff can create a timed giveaway; members enter on its button, and the bot mentions random winners when it ends. Public lobby, success, intro, rules and giveaway channels are read-only for members.
+Discord guide: #intro-slabsngrabsaco explains channels, #rules lists server rules, #general is open conversation, #questions accepts drop, TCG, website and Discord questions, #ask-ai answers public general questions, #success displays community success, #suggestions accepts website or server ideas. #upcoming-drops, #dropping-tonight and #announcements contain drop information; consult those channels for live details rather than inventing a schedule. #create-a-ticket has a button and private issue form; a ticket is visible only to that member, owner and Support Staff, who can close it. #support-alerts is private staff-only. #1-on-1 has buttons for a private text and voice session; only one runs at a time and others queue. In #giveaways, staff can create a timed giveaway; members enter on its button, and the bot mentions random winners when it ends. The owner may move channels between categories; use the current public channel directory for their locations. Public lobby, success, intro, rules and giveaway channels are read-only for members.
 Answer general navigation, feature, policy and channel-use questions directly when this information supports them. For live schedules, inventory, current pricing or account-specific outcomes you cannot verify, say you cannot confirm and set needsHuman to true if staff help is needed. Never invent private facts or claim to have inspected an account, order, ticket, giveaway or bot run.`;
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST", headers: { Authorization: `Bearer ${aiKey}`, "Content-Type": "application/json" },
