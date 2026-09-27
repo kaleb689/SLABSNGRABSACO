@@ -3148,22 +3148,29 @@ select:focus {
 #home .home-success-preview-heading h2 { font-size: clamp(1.75rem,4vw,2.75rem); line-height: 1.15; margin: 9px 0; }
 #home .home-success-preview-heading p { font-size: 1rem; line-height: 1.6; color: #b6c7d6; }
 #home .home-success-demo { border: 1px solid rgba(69,195,231,.24); border-radius: 23px; padding: 20px;
-  background: rgba(8,21,36,.40); box-shadow: 0 24px 60px rgba(0,0,0,.22); backdrop-filter: blur(7px); }
+  background: rgba(8,21,36,.40); box-shadow: 0 24px 60px rgba(0,0,0,.22); backdrop-filter: blur(7px); overflow: visible; }
 #home .home-success-sample { display: inline-block; color: #67dcef; border: 1px solid rgba(103,220,239,.4);
   border-radius: 100px; padding: 7px 12px; font-size: .8rem; font-weight: 700; letter-spacing: .04em; }
-#home .home-success-iframe { display: block; width: 100%; height: 600px; margin: 16px 0 10px; border: 0; background: transparent; opacity: 0; }
+#home .home-success-iframe { display: block; width: 100%; height: 900px; min-height: 900px; margin: 16px 0 10px; border: 0; background: transparent; opacity: 1; overflow: visible; }
 #home .home-success-iframe.is-ready { opacity: 1; }
-body.success-demo-body { min-height: 0; background: transparent; }
-body.success-demo-body #my-profile.success-demo-only { width: 100%; max-width: none; margin: 0; padding: 2px; background: transparent; }
-body.success-demo-body #my-profile.success-demo-only .account-tab-panel { padding: 0; }
-body.success-demo-body #my-profile.success-demo-only #account-tab-success { min-height: 0; }
-body.success-demo-body #my-profile.success-demo-only::before { background: transparent; }
+body.success-demo-body { min-height: 0; background: transparent; overflow: visible; }
+body.success-demo-body #my-profile.success-demo-only { width: 100%; max-width: none; height: auto; min-height: 0; margin: 0; padding: 2px; background: transparent !important; overflow: visible; }
+body.success-demo-body #my-profile.success-demo-only .account-tab-panel { padding: 0; background: transparent !important; overflow: visible; }
+body.success-demo-body #my-profile.success-demo-only #account-tab-success { min-height: 0; height: auto; background: transparent !important; overflow: visible; }
+body.success-demo-body #my-profile.success-demo-only::before { background: transparent !important; }
+body.success-demo-body #my-profile.success-demo-only .success-dashboard,
+body.success-demo-body #my-profile.success-demo-only .success-heading,
+body.success-demo-body #my-profile.success-demo-only .success-stats,
+body.success-demo-body #my-profile.success-demo-only .success-activity-card,
+body.success-demo-body #my-profile.success-demo-only .success-recent-card,
+body.success-demo-body #my-profile.success-demo-only .success-recent-shell,
+body.success-demo-body #my-profile.success-demo-only .success-checkouts { background: transparent !important; }
 body.success-demo-body #my-profile #success-checkouts .success-recent-shell {
   width: 100% !important; min-width: 0 !important;
-  background: transparent;
+  background: transparent !important;
 }
 body.success-demo-body #account-tab-success .success-activity-card,
-body.success-demo-body #account-tab-success .success-recent-card { background: transparent; }
+body.success-demo-body #account-tab-success .success-recent-card { background: transparent !important; }
 @media (max-width: 850px) {
   #home .public-success-inner { grid-template-columns: 1fr; }
   #home .public-success-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
