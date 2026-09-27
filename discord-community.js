@@ -103,7 +103,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
   });
 }
 
-export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
+export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
 export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, dataDir, aiKey }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(aiKey);
@@ -117,7 +117,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
     return response.status === 204 ? null : response.json();
   }
-  let guildId, askChannelId, supportCategoryId, alertsChannelId, oneOnOneLobbyId, chatCategoryId, ownerId, staffRoleId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, ownerId, staffRoleId, appId, roles = [];
   async function provision() {
     const channelId = await getChannelId();
     if (!/^\d{17,22}$/.test(String(channelId))) throw new Error("Set DISCORD_SUCCESS_CHANNEL_ID to a channel in the desired server.");
@@ -178,6 +178,74 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     });
     alertsChannelId = alerts.id;
     discordCommunityStatus.ticketSupportReady = true;
+    let ticketLobbyError = null;
+    try {
+      const publicTicketOverwrites = [
+        { id: guildId, type: 0, allow: "66560", deny: "2048" },
+        { id: appId, type: 1, allow: "68624" }
+      ];
+      let lobby = channels.find(item => item.type === 0 &&
+        ["createaticket", "createticket"].includes(item.name.toLowerCase().replace(/[^a-z0-9]/g, "")));
+      if (!lobby) lobby = await api(`/guilds/${guildId}/channels`, "POST", {
+        name: "create-a-ticket", type: 0, parent_id: support.id,
+        permission_overwrites: publicTicketOverwrites
+      });
+      else if (lobby.parent_id !== support.id ||
+        lobby.permission_overwrites?.length !== publicTicketOverwrites.length ||
+        !publicTicketOverwrites.every(expected => lobby.permission_overwrites?.some(actual =>
+          actual.id === expected.id && actual.type === expected.type &&
+          String(actual.allow || "0") === String(expected.allow || "0") &&
+          String(actual.deny || "0") === String(expected.deny || "0")))) {
+        lobby = await api(`/channels/${lobby.id}`, "PATCH", {
+          parent_id: support.id, permission_overwrites: publicTicketOverwrites
+        });
+      }
+      ticketLobbyId = lobby.id;
+      await setupTicketLobby();
+      discordCommunityStatus.ticketLobbyReady = true;
+    } catch (error) {
+      ticketLobbyError = `Create a Ticket setup: ${error.message}`;
+      console.error("Discord Create a Ticket setup:", error.message);
+    }
+    let adminError = null;
+    try {
+      const adminOverwrites = [
+        { id: guildId, type: 0, deny: "1024" },
+        { id: staffRoleId, type: 0, allow: "68608" },
+        { id: appId, type: 1, allow: "68624" },
+        ...(ownerId ? [{ id: ownerId, type: 1, allow: "68608" }] : [])
+      ];
+      const adminNames = new Set(["admin", "adminprofiles", "actionneeded"]);
+      const normalizeName = name => String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const sameOverwrites = overwrites =>
+        Array.isArray(overwrites) && overwrites.length === adminOverwrites.length &&
+        adminOverwrites.every(expected => overwrites.some(actual =>
+          actual.id === expected.id && actual.type === expected.type &&
+          String(actual.allow || "0") === String(expected.allow || "0") &&
+          String(actual.deny || "0") === String(expected.deny || "0")));
+      let adminCategory = channels.find(item => item.type === 4 && normalizeName(item.name) === "adminonly");
+      if (!adminCategory) adminCategory = await api(`/guilds/${guildId}/channels`, "POST", {
+        name: "Admin Only", type: 4, permission_overwrites: adminOverwrites
+      });
+      else if (!sameOverwrites(adminCategory.permission_overwrites)) {
+        adminCategory = await api(`/channels/${adminCategory.id}`, "PATCH", { permission_overwrites: adminOverwrites });
+      }
+      const adminChannels = channels.filter(item => item.type === 0 && adminNames.has(normalizeName(item.name)));
+      for (const adminChannel of adminChannels) {
+        if (adminChannel.parent_id !== adminCategory.id || !sameOverwrites(adminChannel.permission_overwrites)) {
+          await api(`/channels/${adminChannel.id}`, "PATCH", {
+            parent_id: adminCategory.id, permission_overwrites: adminOverwrites
+          });
+        }
+      }
+      discordCommunityStatus.adminChannelsReady = adminChannels.length === adminNames.size;
+      if (!discordCommunityStatus.adminChannelsReady) {
+        adminError = `Admin Only: found ${adminChannels.length} of 3 expected channels`;
+      }
+    } catch (error) {
+      adminError = `Admin Only setup: ${error.message}`;
+      console.error("Discord Admin Only setup:", error.message);
+    }
     let oneOnOneError = null;
     try {
     let chat = channels.find(item => item.type === 4 && item.name.replace(/[^a-z]/gi, "").toLowerCase() === "chat") ||
@@ -206,7 +274,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       { name: "ask", description: "Ask the support AI a website or botting question", options: [{ type: 3, name: "question", description: "Your question (no private account details)", required: true }] }
     ]) await api(`/applications/${appId}/guilds/${guildId}/commands`, "POST", command);
     discordCommunityStatus.rolesReady = roles.length === LEVELS.length;
-    discordCommunityStatus.error = oneOnOneError;
+    discordCommunityStatus.error = [ticketLobbyError, adminError, oneOnOneError].filter(Boolean).join("; ") || null;
     console.log(`Discord membership roles, #ask-ai and support tickets ready in guild ${guildId}`);
   }
   async function syncMember(userId, allowance) {
@@ -277,6 +345,22 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const { users = [], ...other } = extras;
     return api(`/channels/${channelId}/messages`, "POST", { content, allowed_mentions: { parse: [], users }, ...other });
   }
+  const ticketPanelFile = path.join(dataDir, "discord-ticket-panel.json");
+  async function setupTicketLobby() {
+    let panel = {};
+    try { panel = JSON.parse(await fs.readFile(ticketPanelFile, "utf8")); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (panel.guildId === guildId && panel.channelId === ticketLobbyId && panel.messageId) {
+      try { await api(`/channels/${ticketLobbyId}/messages/${panel.messageId}`); return; }
+      catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+    }
+    const message = await sendMessage(ticketLobbyId,
+      "Need assistance? Click **Create a Ticket** and describe your issue in the private form. A private ticket will be opened for you, the owner and Support Staff will be notified, and you can talk there until you or staff close it. Please do not post account details in this public channel.",
+      { components: [{ type: 1, components: [{ type: 2, style: 1, label: "Create a Ticket", custom_id: "ticket:lobby:create" }] }] });
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(ticketPanelFile, JSON.stringify({ guildId, channelId: ticketLobbyId, messageId: message.id }), { mode: 0o600 });
+    await api(`/channels/${ticketLobbyId}/pins/${message.id}`, "PUT").catch(error => console.error("Discord ticket pin:", error.message));
+  }
   async function alertStaff(userId, messageId) {
     if (!alertsChannelId) throw new Error("Private support alerts are not configured.");
     const ping = ownerId ? mention(ownerId) : "Support staff";
@@ -284,12 +368,16 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       `${ping} — ${mention(userId)} needs help beyond the AI assistant. They were offered a private ticket. https://discord.com/channels/${guildId}/${askChannelId}/${messageId}`,
       { users: [ownerId, userId].filter(Boolean) });
   }
-  async function openTicket(userId) {
+  async function openTicket(userId, issue = "") {
     return withTickets(async () => {
       const records = await readTickets();
       const existing = records.find(item => item.userId === userId && item.guildId === guildId);
       if (existing) {
-        try { await api(`/channels/${existing.channelId}`); return existing.channelId; }
+        try {
+          await api(`/channels/${existing.channelId}`);
+          if (issue) await sendMessage(existing.channelId, `${mention(userId)} added an issue:\n${issue}`, { users: [userId] });
+          return existing.channelId;
+        }
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
       }
       const channel = await api(`/guilds/${guildId}/channels`, "POST", {
@@ -305,13 +393,19 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       });
       try {
         await sendMessage(channel.id,
-          `${mention(userId)}, your private ticket is open. Describe the issue here without passwords, payment details, or verification codes. A support team member can help.`,
+          `${mention(userId)}, your private ticket is open. ${issue ? `Issue:\n${issue}\n\n` : "Describe the issue here. "}Please do not share passwords, payment details, or verification codes. The owner or Support Staff can help.`,
           { users: [userId], components: [{ type: 1, components: [{ type: 2, style: 4, label: "Close ticket", custom_id: `ticket:close:${channel.id}` }] }] });
         await writeTickets([...records.filter(item => item.userId !== userId || item.guildId !== guildId), { guildId, userId, channelId: channel.id }]);
       } catch (error) {
         await api(`/channels/${channel.id}`, "DELETE").catch(() => {});
         throw error;
       }
+      if (alertsChannelId) await sendMessage(alertsChannelId,
+        `${ownerId ? mention(ownerId) : "Support Staff"} — ${mention(userId)} opened a private support ticket: <#${channel.id}>.`,
+        { users: [ownerId].filter(Boolean) }).catch(error => {
+          discordCommunityStatus.error = `Ticket alert: ${error.message}`;
+          console.error("Discord ticket alert:", error.message);
+        });
       return channel.id;
     });
   }
@@ -595,6 +689,33 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         if (who === "user" && state.active.userId !== userId) return await reply("Only this session's customer can use I'm done.");
         await reply("Ending this 1-on-1 and inviting the next person in line.");
         return await finishOneOnOne(textId, userId, d.member, who === "staff");
+      }
+      if (d.type === 3 && d.data?.custom_id === "ticket:lobby:create") {
+        if (d.channel_id !== ticketLobbyId) return await reply("Use Create a Ticket under Support.");
+        return await api(callback, "POST", { type: 9, data: {
+          custom_id: "ticket:lobby:submit", title: "Create a support ticket",
+          components: [{ type: 1, components: [{
+            type: 4, custom_id: "issue", label: "What do you need help with?",
+            style: 2, min_length: 10, max_length: 1000, required: true
+          }] }]
+        } });
+      }
+      if (d.type === 5 && d.data?.custom_id === "ticket:lobby:submit") {
+        const issue = String(d.data.components?.[0]?.components?.find(item => item.custom_id === "issue")?.value || "").trim();
+        if (d.channel_id !== ticketLobbyId || issue.length < 10 || issue.length > 1000) {
+          return await reply("Please describe your issue in the Create a Ticket form under Support.");
+        }
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          const channelId = await openTicket(userId, issue);
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
+            content: `Your private ticket is ready: https://discord.com/channels/${guildId}/${channelId}`
+          });
+        } catch (error) {
+          console.error("Discord ticket form:", error.message);
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
+            content: "Your ticket could not be opened. Please contact Support Staff." });
+        }
       }
       if (d.type === 3 && /^ticket:create:\d{17,22}$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== askChannelId || d.data.custom_id.split(":")[2] !== userId) return await reply("Only the person who asked can open this private ticket.");
