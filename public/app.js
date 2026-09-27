@@ -1420,7 +1420,7 @@ function updateRentalPriceDisplay() {
 
     addButton.textContent =
       !membershipAllowed
-        ? "Paid Membership Required"
+        ? "Membership Required"
         : (
             available < quantity
               ? "Not Enough Accounts"
@@ -1434,7 +1434,7 @@ function addRentalToCart() {
     !hasActivePaidMembership()
   ) {
     showAccountMessage(
-      "An active paid membership is required before you can rent additional accounts.",
+      "An active paid or gifted membership is required before you can rent additional accounts.",
       "error"
     );
 
@@ -1523,7 +1523,7 @@ async function checkoutRentalCart() {
     updateCart();
 
     showAccountMessage(
-      "An active paid membership is required before you can purchase a rental package.",
+      "An active paid or gifted membership is required before you can purchase a rental package.",
       "error"
     );
 
@@ -15019,6 +15019,70 @@ if (communityHeading) {
 }
 
 const publicSuccessState = { products: [], index: 0, loading: false, shownQuantities: new Map() };
+
+/* Sitewide Admin announcement; dismissals survive page changes and reloads. */
+if (new URLSearchParams(location.search).get("successDemo") !== "1") {
+  const announcement = document.getElementById("siteAnnouncement");
+  const title = document.getElementById("siteAnnouncementTitle");
+  const message = document.getElementById("siteAnnouncementMessage");
+  let currentAnnouncementId = null;
+  let announcementRequestRunning = false;
+
+  const dismissedLocally = id => {
+    try { return localStorage.getItem(`sng_notice_dismissed_${id}`) === "1"; }
+    catch { return false; }
+  };
+
+  async function refreshSiteAnnouncement() {
+    if (!announcement || announcementRequestRunning) return;
+    announcementRequestRunning = true;
+    try {
+      const response = await fetch("/api/public/notification", {
+        credentials: "same-origin", cache: "no-store"
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const notice = data.notification;
+      if (!notice?.id || data.dismissed || dismissedLocally(notice.id)) {
+        announcement.hidden = true;
+        currentAnnouncementId = null;
+        return;
+      }
+      currentAnnouncementId = notice.id;
+      title.textContent = notice.title;
+      message.textContent = notice.message;
+      announcement.hidden = false;
+    } catch {
+      // Keep the current visible announcement during a temporary outage.
+    } finally {
+      announcementRequestRunning = false;
+    }
+  }
+
+  document.getElementById("siteAnnouncementClose")?.addEventListener("click", () => {
+    if (!currentAnnouncementId) return;
+    const id = currentAnnouncementId;
+    announcement.hidden = true;
+    currentAnnouncementId = null;
+    try { localStorage.setItem(`sng_notice_dismissed_${id}`, "1"); }
+    catch { /* Storage can be disabled in private browsing. */ }
+    if (state.customer) {
+      fetch(`/api/account/site-notification/${encodeURIComponent(id)}/dismiss`, {
+        method: "POST", credentials: "same-origin"
+      }).catch(() => {});
+    }
+  });
+
+  refreshSiteAnnouncement();
+  if (typeof EventSource !== "undefined") {
+    const updates = new EventSource("/api/public/notification/events");
+    updates.addEventListener("notification", refreshSiteAnnouncement);
+  }
+  setInterval(() => { if (!document.hidden) refreshSiteAnnouncement(); }, 12000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshSiteAnnouncement();
+  });
+}
 
 function renderPublicSuccessProduct() {
   const { products } = publicSuccessState;

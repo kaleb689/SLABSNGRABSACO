@@ -107,6 +107,9 @@ const GIFTED_MEMBERSHIPS_FILE =
 const DISCOUNT_CODES_FILE =
   path.join(DATA_DIR, "discount-codes.json");
 
+const SITE_NOTIFICATION_FILE =
+  path.join(DATA_DIR, "site-notification.json");
+
 const RESTORE_HOLDS_FILE =
   path.join(
     DATA_DIR,
@@ -11099,6 +11102,37 @@ async function saveGiftedMemberships(records) {
   await writeJson(GIFTED_MEMBERSHIPS_FILE, records);
 }
 
+async function activeMembershipRecordForCustomer(customerAccountId, paidRecords = []) {
+  const paid = paidRecords.find(record =>
+    String(record.customerAccountId) === String(customerAccountId) &&
+    subscriptionAllowsProfiles(record)
+  );
+  if (paid) return paid;
+  const now = Date.now();
+  const grants = await getGiftedMemberships();
+  const gift = grants.filter(item =>
+    String(item.customerAccountId) === String(customerAccountId) &&
+    new Date(item.startsAt).getTime() <= now &&
+    new Date(item.expiresAt).getTime() > now
+  ).sort((a, b) => Number(b.profiles) - Number(a.profiles))[0];
+  if (!gift) return null;
+  const account = (await getCustomerAccounts()).find(item => String(item.id) === String(customerAccountId));
+  if (!account) return null;
+  return {
+    id: `gift:${gift.id}`,
+    customerAccountId,
+    profile: { ...(account.adminProfile || {}), email: account.email },
+    subscriptionStatus: "gifted",
+    currentPeriodEnd: gift.expiresAt
+  };
+}
+
+function membershipEncryptedPackage(record) {
+  return String(record?.id || "").startsWith("gift:")
+    ? Promise.resolve(null)
+    : loadEncryptedPackage(record.id);
+}
+
 async function getDiscountCodes() {
   const records = await readJson(DISCOUNT_CODES_FILE, []);
   return Array.isArray(records) ? records : [];
@@ -14966,6 +15000,98 @@ app.patch("/api/admin/discount-codes/:id", requireAdmin, async (req, res) => {
   return res.json({ ok: true, discount: item });
 });
 
+/* One prominent announcement at a time, visible throughout the public site. */
+async function getSiteNotification() {
+  const record = await readJson(SITE_NOTIFICATION_FILE, null);
+  return record && typeof record === "object" && !Array.isArray(record) ? record : null;
+}
+
+const siteNotificationListeners = new Set();
+app.get("/api/public/notification/events", (req, res) => {
+  openSuccessEventStream(req, res, siteNotificationListeners);
+});
+function announceSiteNotificationChanged() {
+  for (const listener of siteNotificationListeners) {
+    listener.write("event: notification\ndata: {}\n\n");
+  }
+}
+
+app.get("/api/public/notification", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const record = await getSiteNotification();
+    const account = record?.active === true ? await getAuthenticatedCustomer(req) : null;
+    const dismissed = account && Array.isArray(account.dismissedSiteNotifications)
+      ? account.dismissedSiteNotifications.includes(record.id)
+      : false;
+    return res.json({ notification: record?.active === true
+      ? { id: record.id, title: record.title, message: record.message, createdAt: record.createdAt }
+      : null, dismissed });
+  } catch (error) {
+    console.error("Public notification read failed:", error?.message);
+    return res.status(503).json({ error: "Notification unavailable." });
+  }
+});
+
+app.get("/api/admin/site-notification", requireAdmin, async (_req, res) => {
+  return res.json({ notification: await getSiteNotification() });
+});
+
+app.post("/api/admin/site-notification", requireAdmin, async (req, res) => {
+  const title = clean(req.body?.title, 80);
+  const message = clean(req.body?.message, 400);
+  if (!title || !message) {
+    return res.status(400).json({ error: "Add a title and notification message." });
+  }
+  try {
+    const notification = {
+      id: crypto.randomUUID(), title, message,
+      active: true, createdAt: new Date().toISOString()
+    };
+    await writeJson(SITE_NOTIFICATION_FILE, notification);
+    announceSiteNotificationChanged();
+    return res.status(201).json({ ok: true, notification });
+  } catch (error) {
+    console.error("Publish notification failed:", error?.message);
+    return res.status(500).json({ error: "Could not publish the notification." });
+  }
+});
+
+app.post("/api/admin/site-notification/:id/retract", requireAdmin, async (req, res) => {
+  try {
+    const record = await getSiteNotification();
+    if (!record || record.id !== req.params.id || record.active !== true) {
+      return res.status(404).json({ error: "This notification is no longer active." });
+    }
+    const notification = { ...record, active: false, retractedAt: new Date().toISOString() };
+    await writeJson(SITE_NOTIFICATION_FILE, notification);
+    announceSiteNotificationChanged();
+    return res.json({ ok: true, notification });
+  } catch (error) {
+    console.error("Retract notification failed:", error?.message);
+    return res.status(500).json({ error: "Could not retract the notification." });
+  }
+});
+
+app.post("/api/account/site-notification/:id/dismiss", requireCustomer, async (req, res) => {
+  try {
+    const notification = await getSiteNotification();
+    if (!notification || notification.active !== true || notification.id !== req.params.id) {
+      return res.status(404).json({ error: "Notification is no longer active." });
+    }
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => String(item.id) === String(req.customerAccount.id));
+    if (!account) return res.status(401).json({ error: "Please sign in again." });
+    const dismissed = Array.isArray(account.dismissedSiteNotifications) ? account.dismissedSiteNotifications : [];
+    account.dismissedSiteNotifications = [...new Set([...dismissed, notification.id])].slice(-50);
+    await saveCustomerAccounts(accounts);
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("Dismiss notification failed:", error?.message);
+    return res.status(500).json({ error: "Could not save notification dismissal." });
+  }
+});
+
 app.get(
   "/api/admin/submissions",
   requireAdmin,
@@ -18171,28 +18297,11 @@ app.post(
           ? paid
           : [];
 
-      const paidRecord =
-        paidRecords.find(
-          record =>
-            String(
-              record.customerAccountId ||
-              ""
-            ) ===
-              String(
-                customerAccountId
-              ) &&
-            subscriptionAllowsProfiles(
-              record
-            )
-        );
-
+      const paidRecord = await activeMembershipRecordForCustomer(customerAccountId, paidRecords);
       if (!paidRecord) {
-        return res
-          .status(403)
-          .json({
-            error:
-              "Available memberships can only be assigned to an active paid customer."
-          });
+        return res.status(403).json({
+          error: "An active paid or gifted membership is required for managed profiles."
+        });
       }
 
       const available =
@@ -18228,10 +18337,7 @@ app.post(
           {}
         );
 
-      const paidSecrets =
-        await loadEncryptedPackage(
-          paidRecord.id
-        );
+      const paidSecrets = await membershipEncryptedPackage(paidRecord);
 
       if (
         assignmentType ===
@@ -18558,11 +18664,7 @@ app.get(
         );
       }
 
-      /*
-        Only active PAID subscriptions
-        can receive one of your managed
-        free giveaway profiles.
-      */
+      /* Paid and currently active gifted tiers can use managed profiles. */
 
       const paidCustomerMap =
         new Map();
@@ -18590,6 +18692,24 @@ app.get(
             record
           );
         }
+      }
+
+      const activeGifts = await getGiftedMemberships();
+      for (const gift of activeGifts) {
+        if (
+          paidCustomerMap.has(gift.customerAccountId) ||
+          new Date(gift.startsAt).getTime() > now.getTime() ||
+          new Date(gift.expiresAt).getTime() <= now.getTime()
+        ) continue;
+        const account = accounts.find(item => String(item.id) === String(gift.customerAccountId));
+        if (!account) continue;
+        paidCustomerMap.set(gift.customerAccountId, {
+          id: `gift:${gift.id}`,
+          customerAccountId: gift.customerAccountId,
+          profile: { ...(account.adminProfile || {}), email: account.email },
+          subscriptionStatus: "gifted",
+          currentPeriodEnd: gift.expiresAt
+        });
       }
 
       const paidCustomers =
@@ -19565,22 +19685,14 @@ app.post(
           ? paid
           : [];
 
-      const paidRecord =
-        paidRecords.find(
-          record =>
-            record.customerAccountId ===
-              customerAccountId &&
-            subscriptionAllowsProfiles(
-              record
-            )
-        );
+      const paidRecord = await activeMembershipRecordForCustomer(customerAccountId, paidRecords);
 
       if (!paidRecord) {
         return res
           .status(403)
           .json({
             error:
-              "Free managed memberships can only be attached to an active paid subscription."
+              "Free managed memberships require an active paid or gifted tier."
           });
       }
 
@@ -19942,22 +20054,14 @@ app.post(
           ? paid
           : [];
 
-      const paidRecord =
-        paidRecords.find(
-          record =>
-            record.customerAccountId ===
-              customerAccountId &&
-            subscriptionAllowsProfiles(
-              record
-            )
-        );
+      const paidRecord = await activeMembershipRecordForCustomer(customerAccountId, paidRecords);
 
       if (!paidRecord) {
         return res
           .status(404)
           .json({
             error:
-              "An active paid subscription could not be found for this customer."
+              "An active paid or gifted tier could not be found for this customer."
           });
       }
 
@@ -20061,10 +20165,7 @@ app.post(
         into the managed membership.
       */
 
-      const paidSecrets =
-        await loadEncryptedPackage(
-          paidRecord.id
-        );
+      const paidSecrets = await membershipEncryptedPackage(paidRecord);
 
       let memberships;
 
@@ -21315,22 +21416,14 @@ app.post(
           ? paid
           : [];
 
-      const paidRecord =
-        paidRecords.find(
-          record =>
-            record.customerAccountId ===
-              customerAccountId &&
-            subscriptionAllowsProfiles(
-              record
-            )
-        );
+      const paidRecord = await activeMembershipRecordForCustomer(customerAccountId, paidRecords);
 
       if (!paidRecord) {
         return res
           .status(403)
           .json({
             error:
-              "Rented memberships can only be assigned to an active paid subscription."
+              "Rented memberships require an active paid or gifted tier."
           });
       }
 
@@ -21994,24 +22087,11 @@ async function restoreHeldManagedAccountsForCustomer(
       ? paid
       : [];
 
-  const paidRecord =
-    paidRecords.find(
-      record =>
-        String(
-          record.customerAccountId ||
-          ""
-        ) ===
-          String(
-            customerAccountId
-          ) &&
-        subscriptionAllowsProfiles(
-          record
-        )
-    );
+  const paidRecord = await activeMembershipRecordForCustomer(customerAccountId, paidRecords);
 
   if (!paidRecord) {
     throw new Error(
-      "This customer does not currently have an active paid membership."
+      "This customer does not currently have an active paid or gifted tier."
     );
   }
 
@@ -22070,10 +22150,7 @@ async function restoreHeldManagedAccountsForCustomer(
       {}
     );
 
-  const paidSecrets =
-    await loadEncryptedPackage(
-      paidRecord.id
-    );
+  const paidSecrets = await membershipEncryptedPackage(paidRecord);
 
   const now =
     new Date();

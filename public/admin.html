@@ -2210,6 +2210,79 @@
       color: #ffcf67;
     }
 
+    .admin-feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin: 14px 0 20px;
+      align-items: start;
+    }
+    .admin-feature-panel {
+      min-width: 0;
+      border: 1px solid #1c536d;
+      border-radius: 16px;
+      background: linear-gradient(160deg, rgba(8,34,47,.96), rgba(5,18,29,.91));
+      box-shadow: 0 12px 28px rgba(0,0,0,.22), inset 0 1px rgba(93,224,255,.1);
+      overflow: hidden;
+    }
+    .admin-feature-panel > summary {
+      list-style: none;
+      cursor: pointer;
+      position: relative;
+      padding: 19px 45px 19px 20px;
+      color: #eafaff;
+      font-size: clamp(15px,1.4vw,18px);
+      font-weight: 900;
+      letter-spacing: .015em;
+    }
+    .admin-feature-panel > summary::-webkit-details-marker { display: none; }
+    .admin-feature-panel > summary::after {
+      content: "▾";
+      position: absolute;
+      right: 20px;
+      color: #5de0ff;
+      transition: transform .2s ease;
+    }
+    .admin-feature-panel[open] > summary::after { transform: rotate(180deg); }
+    .admin-feature-panel[open] > summary {
+      border-bottom: 1px solid rgba(93,224,255,.16);
+      background: rgba(18,201,255,.045);
+    }
+    .admin-feature-panel > :not(summary) { margin-left: 20px; margin-right: 20px; }
+    .admin-feature-panel > :last-child { margin-bottom: 20px; }
+    .admin-feature-panel p { color: #acc7d4; line-height: 1.5; }
+    .admin-feature-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: end;
+      margin-top: 18px;
+      margin-bottom: 18px;
+    }
+    .admin-feature-form label {
+      color: #b9d6e5;
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.6;
+    }
+    .admin-feature-form input:not([type="checkbox"]),
+    .admin-feature-form select {
+      min-height: 39px;
+      max-width: 100%;
+      padding: 7px 10px;
+      border: 1px solid rgba(93,224,255,.35);
+      border-radius: 9px;
+      color: #f2fbff;
+      background: #091a28;
+    }
+    .admin-feature-form [type="checkbox"] { accent-color: #5de0ff; }
+    #giftTierFeedback, #discountCodeFeedback { color: #79e6ff; font-weight: 700; }
+    #giftTierList p, #discountCodeList p { overflow-wrap: anywhere; }
+    #giftTierList button, #discountCodeList button { margin-left: 8px; }
+    @media (max-width: 900px) {
+      .admin-feature-grid { grid-template-columns: 1fr; }
+    }
+
 
 
     .admin-notifications {
@@ -2280,6 +2353,57 @@
       gap: 8px;
       padding: 10px;
       border-top: 1px solid rgba(255,255,255,.06);
+    }
+    .admin-broadcast-manager {
+      padding: 18px;
+      border-top: 1px solid rgba(93,224,255,.2);
+      background: linear-gradient(145deg, rgba(10,42,56,.65), rgba(8,22,36,.65));
+    }
+    .admin-broadcast-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .admin-broadcast-head strong, .admin-broadcast-current strong {
+      display: block;
+      color: #f3fbff;
+      font-size: 15px;
+    }
+    .admin-broadcast-head small { display: block; color: #b2c9d7; margin-top: 5px; }
+    .admin-broadcast-form {
+      display: grid;
+      grid-template-columns: minmax(180px,1fr) minmax(240px,2fr) auto;
+      align-items: end;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .admin-broadcast-form[hidden], .admin-broadcast-current[hidden] { display: none; }
+    .admin-broadcast-form label { display: grid; gap: 6px; color: #b7d6e5; font-size: 12px; font-weight: 750; }
+    .admin-broadcast-form input, .admin-broadcast-form textarea {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #257994;
+      border-radius: 9px;
+      background: #081a29;
+      color: #f3fbff;
+      font: inherit;
+    }
+    .admin-broadcast-form textarea { resize: vertical; min-height: 42px; }
+    .admin-broadcast-current {
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid rgba(93,224,255,.32);
+      border-radius: 12px;
+      background: rgba(1,13,25,.6);
+    }
+    .admin-broadcast-current strong { margin-top: 7px; }
+    .admin-broadcast-current p { color: #d4eaf4; overflow-wrap: anywhere; }
+    #adminBroadcastFeedback { color: #79e6ff; margin-bottom: 0; }
+    @media (max-width: 800px) {
+      .admin-broadcast-form { grid-template-columns: 1fr; }
     }
 
     .admin-notification-item {
@@ -5296,6 +5420,40 @@ PAID SUBSCRIPTIONS
 
 </div>
 
+<div class="admin-feature-grid">
+    <details class="admin-membership-tools admin-feature-panel">
+      <summary>Membership gifts and discount codes</summary>
+      <p>Gift a tier after a customer's current paid period, or create a Stripe code for memberships and optional rentals.</p>
+      <form id="giftTierForm" class="admin-feature-form">
+        <label>Customer<br><select name="customerAccountId" id="giftTierCustomer" required><option value="">Loading customers…</option></select></label>
+        <label>Tier<br><select name="tier" required><option value="1">Starter</option><option value="2">Intermediate</option><option value="3">Advanced</option><option value="4">Pro</option><option value="5">High Volume</option><option value="6">Power User</option><option value="7">Elite</option></select></label>
+        <label>Months<br><input type="number" name="months" min="1" max="12" value="1" required style="width:75px"></label>
+        <button type="submit" class="admin-edit-button">Gift tier</button>
+      </form>
+      <div id="giftTierFeedback" role="status"></div>
+      <div id="giftTierList"></div>
+      <hr style="border:0;border-top:1px solid rgba(65,182,230,.3);margin:20px 0">
+      <form id="discountCodeForm" class="admin-feature-form">
+        <label>Code<br><input name="code" required minlength="3" maxlength="40" pattern="[A-Za-z0-9]+" placeholder="CARD20"></label>
+        <label>Discount %<br><input name="percent" type="number" min="1" max="100" required style="width:75px"></label>
+        <label>Tier<br><select name="tier"><option value="all">All tiers</option><option value="1">Starter</option><option value="2">Intermediate</option><option value="3">Advanced</option><option value="4">Pro</option><option value="5">High Volume</option><option value="6">Power User</option><option value="7">Elite</option></select></label>
+        <label>Membership discount<br><select name="duration"><option value="once">First payment</option><option value="forever">Every renewal</option></select></label>
+        <label>Expires<br><input name="expiresAt" type="date"></label>
+        <label><input name="appliesToRentals" type="checkbox"> Include rentals</label>
+        <button type="submit" class="admin-edit-button">Create code</button>
+      </form>
+      <div id="discountCodeFeedback" role="status"></div>
+      <div id="discountCodeList"></div>
+    </details>
+
+    <details class="admin-feature-panel admin-discord-panel">
+      <summary>Discord success channel</summary>
+      <p>Reads confirmed trading card checkouts from your Discord success channel into the anonymous community tracker. It does not identify customers.</p>
+      <p id="discordSuccessStatus" role="status">Checking connection…</p>
+      <button id="discordSuccessScanButton" type="button" class="admin-edit-button">Scan success channel</button>
+    </details>
+</div>
+
 <div class="admin-mailbox-status">
   <strong>Managed Success mailbox</strong>
   <span id="managedSuccessMailboxStatus" role="status">Check configuration and latest order scan.</span>
@@ -5648,6 +5806,27 @@ PAID SUBSCRIPTIONS
           No profiles are awaiting activation.
         </div>
       </div>
+      <div class="admin-broadcast-manager">
+        <div class="admin-broadcast-head">
+          <div>
+            <strong>Notification for all visitors</strong>
+            <small>Shows in the top right across the site until someone closes it or you retract it.</small>
+          </div>
+          <button type="button" id="createNotificationForAll" class="admin-edit-button">Create notification for all</button>
+        </div>
+        <form id="adminBroadcastForm" class="admin-broadcast-form" hidden>
+          <label>Title <input name="title" maxlength="80" required placeholder="New update"></label>
+          <label>Message <textarea name="message" maxlength="400" rows="3" required placeholder="Your announcement"></textarea></label>
+          <button type="submit" class="admin-edit-button">Publish notification</button>
+        </form>
+        <div id="adminBroadcastCurrent" class="admin-broadcast-current" hidden>
+          <span class="eyebrow">CURRENT NOTIFICATION</span>
+          <strong id="adminBroadcastTitle"></strong>
+          <p id="adminBroadcastMessage"></p>
+          <button type="button" id="adminBroadcastRetract" class="admin-edit-button">Retract notification</button>
+        </div>
+        <p id="adminBroadcastFeedback" role="status" aria-live="polite"></p>
+      </div>
     </details>
 
     <section
@@ -5742,36 +5921,6 @@ PAID SUBSCRIPTIONS
       class="admin-orders"
     ></div>
 
-    <details class="admin-membership-tools" style="margin:24px 0;padding:18px;border:1px solid rgba(65,182,230,.45);border-radius:16px;background:rgba(5,22,37,.55)">
-      <summary style="cursor:pointer;font-weight:800;font-size:1.15rem">Membership gifts and discount codes</summary>
-      <p>Gift a tier after a customer's current paid period, or create a Stripe code for memberships and optional rentals.</p>
-      <form id="giftTierForm" style="display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:16px 0">
-        <label>Customer<br><select name="customerAccountId" id="giftTierCustomer" required><option value="">Loading customers…</option></select></label>
-        <label>Tier<br><select name="tier" required><option value="1">Starter</option><option value="2">Intermediate</option><option value="3">Advanced</option><option value="4">Pro</option><option value="5">High Volume</option><option value="6">Power User</option><option value="7">Elite</option></select></label>
-        <label>Months<br><input type="number" name="months" min="1" max="12" value="1" required style="width:75px"></label>
-        <button type="submit" class="admin-edit-button">Gift tier</button>
-      </form>
-      <div id="giftTierFeedback" role="status"></div>
-      <div id="giftTierList"></div>
-      <hr style="border:0;border-top:1px solid rgba(65,182,230,.3);margin:20px 0">
-      <form id="discountCodeForm" style="display:flex;flex-wrap:wrap;gap:10px;align-items:end">
-        <label>Code<br><input name="code" required minlength="3" maxlength="40" pattern="[A-Za-z0-9]+" placeholder="CARD20"></label>
-        <label>Discount %<br><input name="percent" type="number" min="1" max="100" required style="width:75px"></label>
-        <label>Tier<br><select name="tier"><option value="all">All tiers</option><option value="1">Starter</option><option value="2">Intermediate</option><option value="3">Advanced</option><option value="4">Pro</option><option value="5">High Volume</option><option value="6">Power User</option><option value="7">Elite</option></select></label>
-        <label>Membership discount<br><select name="duration"><option value="once">First payment</option><option value="forever">Every renewal</option></select></label>
-        <label>Expires<br><input name="expiresAt" type="date"></label>
-        <label><input name="appliesToRentals" type="checkbox"> Include rentals</label>
-        <button type="submit" class="admin-edit-button">Create code</button>
-      </form>
-      <div id="discountCodeFeedback" role="status"></div>
-      <div id="discountCodeList"></div>
-    </details>
-
-    <details style="margin:24px 0;padding:18px;border:1px solid rgba(65,182,230,.45);border-radius:16px;background:rgba(5,22,37,.55)">
-      <summary style="cursor:pointer;font-weight:800;font-size:1.15rem">Discord success channel</summary>
-      <p id="discordSuccessStatus" role="status">Checking connection…</p>
-      <button id="discordSuccessScanButton" type="button" class="admin-edit-button">Scan success channel</button>
-    </details>
 
   </section>
 
@@ -5794,6 +5943,8 @@ const dashboard =
   document.getElementById(
     "dashboard"
   );
+
+let currentBroadcastId = null;
 
 const msg =
   document.getElementById(
@@ -18765,6 +18916,7 @@ async function load() {
   await loadManagedAvailability();
   loadMembershipTools();
   refreshDiscordSuccessStatus();
+  refreshAdminBroadcast();
 
   await loadProfileActivationTracker();
 
@@ -23460,6 +23612,58 @@ async function refreshDiscordSuccessStatus() {
       : "Set DISCORD_BOT_TOKEN and DISCORD_SUCCESS_CHANNEL_ID in Render to connect the invited bot.";
   } catch (error) { label.textContent = error.message; }
 }
+async function refreshAdminBroadcast() {
+  const current = document.getElementById("adminBroadcastCurrent");
+  try {
+    const data = await membershipApi("/api/admin/site-notification");
+    const notice = data.notification;
+    currentBroadcastId = notice?.active ? notice.id : null;
+    current.hidden = !currentBroadcastId;
+    if (currentBroadcastId) {
+      document.getElementById("adminBroadcastTitle").textContent = notice.title;
+      document.getElementById("adminBroadcastMessage").textContent = notice.message;
+    }
+  } catch (error) {
+    document.getElementById("adminBroadcastFeedback").textContent = error.message;
+  }
+}
+document.getElementById("createNotificationForAll")?.addEventListener("click", () => {
+  const form = document.getElementById("adminBroadcastForm");
+  form.hidden = !form.hidden;
+  if (!form.hidden) form.querySelector('[name="title"]').focus();
+});
+document.getElementById("adminBroadcastForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('[type="submit"]');
+  const feedback = document.getElementById("adminBroadcastFeedback");
+  button.disabled = true;
+  try {
+    const fields = new FormData(form);
+    await membershipApi("/api/admin/site-notification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: fields.get("title"), message: fields.get("message") })
+    });
+    feedback.textContent = "Notification published for all visitors.";
+    form.reset();
+    form.hidden = true;
+    await refreshAdminBroadcast();
+  } catch (error) { feedback.textContent = error.message; }
+  finally { button.disabled = false; }
+});
+document.getElementById("adminBroadcastRetract")?.addEventListener("click", async event => {
+  if (!currentBroadcastId) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await membershipApi(`/api/admin/site-notification/${encodeURIComponent(currentBroadcastId)}/retract`, { method: "POST" });
+    document.getElementById("adminBroadcastFeedback").textContent = "Notification retracted from the site.";
+    await refreshAdminBroadcast();
+  } catch (error) {
+    document.getElementById("adminBroadcastFeedback").textContent = error.message;
+  } finally { button.disabled = false; }
+});
 document.getElementById("discordSuccessScanButton")?.addEventListener("click", async event => {
   const button = event.currentTarget;
   button.disabled = true;
