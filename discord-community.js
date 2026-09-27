@@ -500,6 +500,35 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       communityError = `Community channels: ${error.message}`;
       console.error("Discord community channels:", error.message);
     }
+    let diamondError = null;
+    try {
+      const current = await api(`/guilds/${guildId}/channels`);
+      const targets = [
+        ["general", "generalchat"], ["1on1"], ["questions"], ["slabsngrabsacohits"]
+      ];
+      const missing = [];
+      let changed = false;
+      const decorate = async target => {
+        const label = String(target.name).split(/[|│┃┊｜]/).pop()
+          .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").replace(/\s+/g, "-");
+        if (!label) return;
+        const formatted = `💎│${label}`;
+        if (target.name !== formatted) {
+          await api(`/channels/${target.id}`, "PATCH", { name: formatted });
+          changed = true;
+        }
+      };
+      for (const aliases of targets) {
+        const target = current.find(item => item.type === 0 && aliases.includes(normalizeName(item.name)));
+        if (!target) { missing.push(aliases[0]); continue; }
+        await decorate(target);
+      }
+      const introCategory = current.find(item => item.type === 4 && normalizeName(item.name) === "intro");
+      if (introCategory) for (const item of current.filter(channel =>
+        channel.parent_id === introCategory.id && [0, 2, 5, 13].includes(channel.type))) await decorate(item);
+      if (changed && introChannelId) await refreshIntro();
+      if (missing.length) diamondError = `Diamond channel names: missing ${missing.join(", ")}`;
+    } catch (error) { diamondError = `Diamond channel names: ${error.message}`; }
     for (const command of [
       { name: "link", description: "Link your website account to your Discord membership", options: [{ type: 3, name: "code", description: "Your private code from My Profile", required: true }] },
       { name: "ask", description: "Ask the support AI a website or botting question", options: [{ type: 3, name: "question", description: "Your question (no private account details)", required: true }] },
@@ -516,7 +545,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       console.error("Discord logo emoji:", emojiError);
     }
     discordCommunityStatus.rolesReady = roles.length === LEVELS.length;
-    discordCommunityStatus.error = [ticketLobbyError, adminError, oneOnOneError, importantError, communityError, emojiError].filter(Boolean).join("; ") || null;
+    discordCommunityStatus.error = [ticketLobbyError, adminError, oneOnOneError, importantError, communityError, diamondError, emojiError].filter(Boolean).join("; ") || null;
     console.log(`Discord membership roles, #ask-ai and support tickets ready in guild ${guildId}`);
   }
   async function syncMember(userId, allowance) {
