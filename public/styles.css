@@ -3279,6 +3279,30 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
 #my-profile .member-lifetime-stats > div { min-height: 94px; padding: 16px 19px; gap: 7px; }
 #my-profile .member-lifetime-stats span { font-size: 12px; letter-spacing: 1.1px; }
 #my-profile .member-lifetime-stats strong { font-size: 20px; }
+#my-profile .account-header-discord-button {
+  justify-self: start;
+  padding: 8px 12px;
+  border: 1px solid rgba(29, 214, 255, .58);
+  border-radius: 10px;
+  background: rgba(29, 214, 255, .11);
+  color: #c9f4ff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+#my-profile .account-header-discord-button:hover,
+#my-profile .account-header-discord-button:focus-visible {
+  background: rgba(29, 214, 255, .22);
+  border-color: #1dd6ff;
+}
+#my-profile .account-header-discord-status {
+  color: #45e68b;
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+#my-profile .account-header-discord-button[hidden],
+#my-profile .account-header-discord-status[hidden] { display: none; }
 @media (max-width: 1050px) {
   #my-profile .account-topbar { grid-template-columns: 1fr; min-height: 0; }
   #my-profile .member-lifetime-stats { grid-template-columns: repeat(2, minmax(130px, 1fr)); }

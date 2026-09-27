@@ -3484,6 +3484,9 @@ document.querySelector('#register-form [name="discordUsername"]')?.addEventListe
 document.querySelector('#discord-settings-form [name="discordUsername"]')?.addEventListener("click", () => {
   if (state.customer) openDiscordVerification("account");
 });
+document.getElementById("customer-header-discord-connect")?.addEventListener("click", () => {
+  if (state.customer) openDiscordVerification("account");
+});
 window.addEventListener("message", event => {
   if (event.origin !== window.location.origin || event.data?.type !== "slabsngrabsaco-discord") return;
   if (event.data.error) { showAccountMessage(event.data.error, "error"); return; }
@@ -3497,6 +3500,7 @@ window.addEventListener("message", event => {
     if (field) field.value = event.data.username;
     state.customer = { ...state.customer, discordUsername: event.data.username, discordLinked: true };
     renderCustomerDiscordSettings();
+    renderAccountHeader(state.customer);
   }
   showAccountMessage("Discord account verified and linked.", "success");
 });
@@ -4629,6 +4633,16 @@ function renderAccountHeader(
             : "—"
         )
   );
+
+  const discordConnectButton = document.getElementById("customer-header-discord-connect");
+  const discordStatus = document.getElementById("customer-header-discord-status");
+  if (discordConnectButton) discordConnectButton.hidden = Boolean(account?.discordLinked);
+  if (discordStatus) {
+    discordStatus.hidden = !account?.discordLinked;
+    discordStatus.textContent = account?.discordLinked
+      ? `Discord connected${account.discordUsername ? `: @${account.discordUsername}` : ""}`
+      : "";
+  }
 
   setText(
     "member-lifetime-spend",
