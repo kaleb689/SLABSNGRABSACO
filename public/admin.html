@@ -23607,15 +23607,17 @@ async function refreshDiscordSuccessStatus() {
   const label = document.getElementById("discordSuccessStatus");
   try {
     const status = await membershipApi("/api/admin/discord-success-status");
-    label.textContent = status.configured
+    label.textContent = status.configurationError || (status.configured
       ? `Channel ${status.channelId} · ${status.running ? "Scanning…" : status.error || (status.checkedAt ? "Last scan " + new Date(status.checkedAt).toLocaleString() + " · " + status.added + " added" : "Waiting for first scan")}`
-      : "Set DISCORD_BOT_TOKEN and DISCORD_SUCCESS_CHANNEL_ID in Render to connect the invited bot.";
+      : "Set DISCORD_BOT_TOKEN and DISCORD_SUCCESS_CHANNEL_ID in Render to connect the invited bot.");
+    document.getElementById("discordSuccessScanButton").disabled = !status.configured || status.running;
   } catch (error) { label.textContent = error.message; }
 }
 async function refreshAdminBroadcast() {
   const current = document.getElementById("adminBroadcastCurrent");
   try {
     const data = await membershipApi("/api/admin/site-notification");
+    document.getElementById("adminBroadcastFeedback").textContent = "";
     const notice = data.notification;
     currentBroadcastId = notice?.active ? notice.id : null;
     current.hidden = !currentBroadcastId;
@@ -23631,6 +23633,9 @@ document.getElementById("createNotificationForAll")?.addEventListener("click", (
   const form = document.getElementById("adminBroadcastForm");
   form.hidden = !form.hidden;
   if (!form.hidden) form.querySelector('[name="title"]').focus();
+});
+document.getElementById("adminNotifications")?.addEventListener("toggle", event => {
+  if (event.target.open) refreshAdminBroadcast();
 });
 document.getElementById("adminBroadcastForm")?.addEventListener("submit", async event => {
   event.preventDefault();

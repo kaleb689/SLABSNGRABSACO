@@ -34930,11 +34930,20 @@ async function scanDiscordSuccessChannel() {
 
 app.get("/api/admin/discord-success-status", requireAdmin, (_req, res) => {
   const config = discordSuccessConfig();
-  res.json({ configured: Boolean(config.token && config.channelId), channelId: config.channelId || null, ...discordSuccessScan });
+  const validChannelId = /^\d{17,22}$/.test(config.channelId);
+  res.json({
+    configured: Boolean(config.token && validChannelId),
+    configurationError: config.channelId && !validChannelId
+      ? "DISCORD_SUCCESS_CHANNEL_ID must be the numeric ID of your success text channel, not a webhook URL."
+      : null,
+    channelId: validChannelId ? config.channelId : null,
+    ...discordSuccessScan
+  });
 });
 app.post("/api/admin/discord-success-scan", requireAdmin, async (_req, res) => {
-  if (!discordSuccessConfig().token || !discordSuccessConfig().channelId) {
-    return res.status(400).json({ error: "Set DISCORD_BOT_TOKEN and DISCORD_SUCCESS_CHANNEL_ID in Render first." });
+  const { token, channelId } = discordSuccessConfig();
+  if (!token || !/^\d{17,22}$/.test(channelId)) {
+    return res.status(400).json({ error: "Set DISCORD_BOT_TOKEN and the numeric success text channel ID in Render first. A webhook URL cannot be used as the channel ID." });
   }
   if (discordSuccessScan.running) return res.status(409).json({ error: "Discord scan is already running." });
   const ok = await scanDiscordSuccessChannel();
