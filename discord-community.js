@@ -103,7 +103,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
   });
 }
 
-export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
+export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
 export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, dataDir, aiKey }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(aiKey);
@@ -117,7 +117,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
     return response.status === 204 ? null : response.json();
   }
-  let guildId, askChannelId, supportCategoryId, alertsChannelId, ownerId, staffRoleId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, oneOnOneLobbyId, generalCategoryId, ownerId, staffRoleId, appId, roles = [];
   async function provision() {
     const channelId = await getChannelId();
     if (!/^\d{17,22}$/.test(String(channelId))) throw new Error("Set DISCORD_SUCCESS_CHANNEL_ID to a channel in the desired server.");
@@ -178,6 +178,19 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     });
     alertsChannelId = alerts.id;
     discordCommunityStatus.ticketSupportReady = true;
+    let general = channels.find(item => item.type === 4 && /\bgeneral\b/i.test(item.name));
+    if (!general) general = await api(`/guilds/${guildId}/channels`, "POST", { name: "General", type: 4 });
+    generalCategoryId = general.id;
+    let lobby = channels.find(item => item.type === 0 && item.parent_id === general.id && item.name === "1-on-1" &&
+      !item.permission_overwrites?.some(overwrite => overwrite.id === guildId && (BigInt(overwrite.deny || 0) & 1024n)));
+    if (!lobby) lobby = await api(`/guilds/${guildId}/channels`, "POST", {
+      name: "1-on-1", type: 0, parent_id: general.id,
+      topic: "Request a private 1-on-1 text and voice session. One session is active at a time; other requests wait in order."
+    });
+    oneOnOneLobbyId = lobby.id;
+    await setupOneOnOneLobby();
+    discordCommunityStatus.oneOnOneReady = true;
+    await withSessions(async () => { const state = await readSessions(); await reconcileSessions(state); });
     for (const command of [
       { name: "link", description: "Link your website account to your Discord membership", options: [{ type: 3, name: "code", description: "Your private code from My Profile", required: true }] },
       { name: "ask", description: "Ask the support AI a website or botting question", options: [{ type: 3, name: "question", description: "Your question (no private account details)", required: true }] }
@@ -303,6 +316,149 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       await writeTickets(records.filter(item => item !== ticket));
     });
   }
+  const sessionFile = path.join(dataDir, "discord-one-on-one-queue.json");
+  let sessionQueue = Promise.resolve();
+  function withSessions(task) {
+    const next = sessionQueue.then(task);
+    sessionQueue = next.catch(() => {});
+    return next;
+  }
+  async function readSessions() {
+    try {
+      const data = JSON.parse(await fs.readFile(sessionFile, "utf8"));
+      return { lobbyMessageId: data.lobbyMessageId || null, active: data.active || null,
+        waiting: Array.isArray(data.waiting) ? [...new Set(data.waiting.filter(id => /^\d{17,22}$/.test(id)))] : [] };
+    } catch (error) { if (error.code === "ENOENT") return { lobbyMessageId: null, active: null, waiting: [] }; throw error; }
+  }
+  async function writeSessions(state) {
+    await fs.mkdir(dataDir, { recursive: true });
+    const temp = `${sessionFile}.${crypto.randomUUID()}.tmp`;
+    await fs.writeFile(temp, JSON.stringify(state), { mode: 0o600 });
+    await fs.rename(temp, sessionFile);
+    discordCommunityStatus.oneOnOneQueued = state.waiting.length;
+    discordCommunityStatus.oneOnOneActive = Boolean(state.active);
+  }
+  async function setupOneOnOneLobby() {
+    const state = await readSessions();
+    if (state.lobbyMessageId) {
+      try { await api(`/channels/${oneOnOneLobbyId}/messages/${state.lobbyMessageId}`); return; }
+      catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+    }
+    const message = await sendMessage(oneOnOneLobbyId,
+      "Need to speak with the owner or Support Staff? Request a private 1-on-1 below. You will get a private text room and voice room when it is your turn. Only one conversation is active at a time; everyone else waits in order. Please do not post account details here.",
+      { components: [{ type: 1, components: [
+        { type: 2, style: 1, label: "Request 1-on-1", custom_id: "oneonone:request" },
+        { type: 2, style: 2, label: "Check my place", custom_id: "oneonone:status" },
+        { type: 2, style: 2, label: "Leave queue", custom_id: "oneonone:leave" }
+      ] }] });
+    state.lobbyMessageId = message.id;
+    await writeSessions(state);
+    await api(`/channels/${oneOnOneLobbyId}/pins/${message.id}`, "PUT").catch(error => console.error("Discord 1-on-1 pin:", error.message));
+  }
+  function supportStaff(member, userId) {
+    return userId === ownerId || member?.roles?.includes(staffRoleId) || (BigInt(member?.permissions || "0") & 8n) === 8n;
+  }
+  async function startNextSession(state) {
+    if (state.active || !state.waiting.length) return;
+    const userId = state.waiting[0];
+    try { await api(`/guilds/${guildId}/members/${userId}`); }
+    catch (error) {
+      if (!/HTTP 404/.test(error.message)) throw error;
+      state.waiting.shift();
+      await writeSessions(state);
+      return startNextSession(state);
+    }
+    const suffix = userId.slice(-8);
+    const textOverwrites = [
+      { id: guildId, type: 0, deny: "1024" },
+      { id: userId, type: 1, allow: "68608" },
+      { id: staffRoleId, type: 0, allow: "68608" },
+      { id: appId, type: 1, allow: "68624" },
+      ...(ownerId && ownerId !== userId ? [{ id: ownerId, type: 1, allow: "68608" }] : [])
+    ];
+    const voiceOverwrites = [
+      { id: guildId, type: 0, deny: "1024" },
+      { id: userId, type: 1, allow: "3146752" },
+      { id: staffRoleId, type: 0, allow: "3146752" },
+      { id: appId, type: 1, allow: "3146768" },
+      ...(ownerId && ownerId !== userId ? [{ id: ownerId, type: 1, allow: "3146752" }] : [])
+    ];
+    let textChannel, voiceChannel;
+    try {
+      textChannel = await api(`/guilds/${guildId}/channels`, "POST", {
+        name: `one-on-one-${suffix}`, type: 0, parent_id: generalCategoryId,
+        topic: `Private 1-on-1 support session for Discord member ${userId}`,
+        permission_overwrites: textOverwrites
+      });
+      voiceChannel = await api(`/guilds/${guildId}/channels`, "POST", {
+        name: `1-on-1 voice ${suffix}`, type: 2, parent_id: generalCategoryId,
+        user_limit: 3, permission_overwrites: voiceOverwrites
+      });
+      await sendMessage(textChannel.id,
+        `${mention(userId)}, it is your turn. Chat here with the owner or Support Staff, or join <#${voiceChannel.id}> for voice. This room is private. Please avoid sending passwords, verification codes, or card information. Use a button below when the conversation is done.`,
+        { users: [userId], components: [{ type: 1, components: [
+          { type: 2, style: 2, label: "I'm done", custom_id: `oneonone:done:user:${textChannel.id}` },
+          { type: 2, style: 4, label: "We're done (staff)", custom_id: `oneonone:done:staff:${textChannel.id}` }
+        ] }] });
+      const next = { ...state, active: { userId, textId: textChannel.id, voiceId: voiceChannel.id }, waiting: state.waiting.slice(1) };
+      await writeSessions(next);
+      Object.assign(state, next);
+    } catch (error) {
+      if (voiceChannel) await api(`/channels/${voiceChannel.id}`, "DELETE").catch(() => {});
+      if (textChannel) await api(`/channels/${textChannel.id}`, "DELETE").catch(() => {});
+      discordCommunityStatus.error = `1-on-1 setup: ${error.message}`;
+      throw error;
+    }
+    if (alertsChannelId) await sendMessage(alertsChannelId,
+      `${ownerId ? mention(ownerId) : "Support Staff"} — a private 1-on-1 session is ready for ${mention(userId)}: <#${textChannel.id}> (voice: <#${voiceChannel.id}>).`,
+      { users: [ownerId].filter(Boolean) }).catch(error => console.error("Discord 1-on-1 alert:", error.message));
+  }
+  async function reconcileSessions(state) {
+    if (state.active) {
+      const { textId, voiceId } = state.active;
+      let missing = false;
+      for (const id of [textId, voiceId]) {
+        try { await api(`/channels/${id}`); }
+        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; missing = true; }
+      }
+      if (missing) {
+        for (const id of [textId, voiceId]) await api(`/channels/${id}`, "DELETE").catch(() => {});
+        state.active = null;
+        await writeSessions(state);
+      }
+    }
+    discordCommunityStatus.oneOnOneQueued = state.waiting.length;
+    discordCommunityStatus.oneOnOneActive = Boolean(state.active);
+    if (!state.active) await startNextSession(state);
+  }
+  async function requestOneOnOne(userId) {
+    return withSessions(async () => {
+      const state = await readSessions();
+      if (state.active?.userId === userId) return { active: state.active };
+      if (!state.waiting.includes(userId)) {
+        state.waiting.push(userId);
+        await writeSessions(state);
+      }
+      if (!state.active) await startNextSession(state);
+      return state.active?.userId === userId ? { active: state.active } : { position: state.waiting.indexOf(userId) + 1 };
+    });
+  }
+  async function finishOneOnOne(textId, userId, member, staffButton) {
+    return withSessions(async () => {
+      const state = await readSessions();
+      if (!state.active || state.active.textId !== textId) throw new Error("That 1-on-1 session is already closed.");
+      const staff = supportStaff(member, userId);
+      if (staffButton ? !staff : state.active.userId !== userId) throw new Error("Only the customer or support staff can end this session.");
+      const finished = state.active;
+      for (const id of [finished.voiceId, finished.textId]) {
+        try { await api(`/channels/${id}`, "DELETE"); }
+        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+      }
+      state.active = null;
+      await writeSessions(state);
+      await startNextSession(state);
+    });
+  }
   const recent = new Map();
   const privateReply = "I can't share or review customer information in this public channel. Please create a private ticket to follow up with your question.";
   function sensitiveQuestion(value) {
@@ -379,6 +535,51 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+      if (d.type === 3 && ["oneonone:request", "oneonone:status", "oneonone:leave"].includes(d.data?.custom_id)) {
+        if (d.channel_id !== oneOnOneLobbyId) return await reply("Use the 1-on-1 channel under General.");
+        if (d.data.custom_id === "oneonone:status") {
+          const state = await readSessions();
+          const position = state.waiting.indexOf(userId);
+          return await reply(state.active?.userId === userId
+            ? `Your private session is active: https://discord.com/channels/${guildId}/${state.active.textId}`
+            : position < 0 ? "You are not in the 1-on-1 queue. Click Request 1-on-1 to join."
+              : `You are #${position + 1} in the queue. The bot will mention you in a private text channel when it is your turn.`);
+        }
+        if (d.data.custom_id === "oneonone:leave") {
+          const removed = await withSessions(async () => {
+            const state = await readSessions();
+            if (state.active?.userId === userId) return false;
+            const before = state.waiting.length;
+            state.waiting = state.waiting.filter(id => id !== userId);
+            if (before !== state.waiting.length) await writeSessions(state);
+            return before !== state.waiting.length;
+          });
+          return await reply(removed ? "You have left the 1-on-1 queue." : "You are not waiting in the queue. If your session is active, use I'm done inside your private text room.");
+        }
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          const result = await requestOneOnOne(userId);
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
+            content: result.active
+              ? `Your private 1-on-1 is ready: https://discord.com/channels/${guildId}/${result.active.textId} · Voice: https://discord.com/channels/${guildId}/${result.active.voiceId}`
+              : `You are #${result.position} in the 1-on-1 queue. When it is your turn, the bot will mention you in your private text room. Use Check my place here any time.`
+          });
+        } catch (error) {
+          console.error("Discord 1-on-1 request:", error.message);
+          if (alertsChannelId) await sendMessage(alertsChannelId, `${ownerId ? mention(ownerId) : "Support Staff"} — a 1-on-1 request could not start. Please check bot channel permissions.`, { users: [ownerId].filter(Boolean) }).catch(() => {});
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: "Unable to open a 1-on-1 room right now. Your request was saved; please check back shortly." });
+        }
+      }
+      if (d.type === 3 && /^oneonone:done:(user|staff):\d{17,22}$/.test(d.data?.custom_id || "")) {
+        const [, , who, textId] = d.data.custom_id.split(":");
+        if (d.channel_id !== textId) return await reply("This button belongs to a different 1-on-1 room.");
+        const state = await readSessions();
+        if (!state.active || state.active.textId !== textId) return await reply("This session has already ended.");
+        if (who === "staff" && !supportStaff(d.member, userId)) return await reply("Only the owner or Support Staff can use We're done.");
+        if (who === "user" && state.active.userId !== userId) return await reply("Only this session's customer can use I'm done.");
+        await reply("Ending this 1-on-1 and inviting the next person in line.");
+        return await finishOneOnOne(textId, userId, d.member, who === "staff");
+      }
       if (d.type === 3 && /^ticket:create:\d{17,22}$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== askChannelId || d.data.custom_id.split(":")[2] !== userId) return await reply("Only the person who asked can open this private ticket.");
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
@@ -469,4 +670,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   }
   setTimeout(setup, 5000).unref?.();
   setInterval(syncAll, 60000).unref?.();
+  setInterval(() => {
+    if (!discordCommunityStatus.oneOnOneReady) return;
+    void withSessions(async () => reconcileSessions(await readSessions())).catch(error => {
+      discordCommunityStatus.error = `1-on-1 queue: ${error.message}`;
+      console.error("Discord 1-on-1 queue:", error.message);
+    });
+  }, 60000).unref?.();
 }
