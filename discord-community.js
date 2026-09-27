@@ -178,6 +178,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     });
     alertsChannelId = alerts.id;
     discordCommunityStatus.ticketSupportReady = true;
+    let oneOnOneError = null;
+    try {
     let general = channels.find(item => item.type === 4 && /\bgeneral\b/i.test(item.name));
     if (!general) general = await api(`/guilds/${guildId}/channels`, "POST", { name: "General", type: 4 });
     generalCategoryId = general.id;
@@ -191,12 +193,16 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     await setupOneOnOneLobby();
     discordCommunityStatus.oneOnOneReady = true;
     await withSessions(async () => { const state = await readSessions(); await reconcileSessions(state); });
+    } catch (error) {
+      oneOnOneError = `1-on-1 setup: ${error.message}`;
+      console.error("Discord 1-on-1 setup:", error.message);
+    }
     for (const command of [
       { name: "link", description: "Link your website account to your Discord membership", options: [{ type: 3, name: "code", description: "Your private code from My Profile", required: true }] },
       { name: "ask", description: "Ask the support AI a website or botting question", options: [{ type: 3, name: "question", description: "Your question (no private account details)", required: true }] }
     ]) await api(`/applications/${appId}/guilds/${guildId}/commands`, "POST", command);
     discordCommunityStatus.rolesReady = roles.length === LEVELS.length;
-    discordCommunityStatus.error = null;
+    discordCommunityStatus.error = oneOnOneError;
     console.log(`Discord membership roles, #ask-ai and support tickets ready in guild ${guildId}`);
   }
   async function syncMember(userId, allowance) {
