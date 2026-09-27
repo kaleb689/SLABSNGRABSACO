@@ -1,5 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
+@font-face {
+  font-family: "DynaPuff";
+  src: url('/fonts/DynaPuff-variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
 :root {
   --bg: #050a12;
   --panel: #09131f;
@@ -3006,25 +3014,23 @@ select:focus {
 #home .public-success-heading > div { display: flex; align-items: center; gap: 22px; min-width: 0; }
 #home .public-success-heading .eyebrow { font-size: .75rem; }
 #home .public-success-heading h2 {
-  display: inline-flex; align-items: center; gap: 12px; margin: 0; max-width: 100%;
+  display: flex; flex-wrap: wrap; align-items: center; column-gap: .48em; row-gap: .08em;
+  margin: 0; max-width: 100%; font-family: "DynaPuff", "Arial Rounded MT Bold", sans-serif;
+  font-size: clamp(1.12rem,2.35vw,1.95rem); font-weight: 700; line-height: 1.3;
+  letter-spacing: -.045em; text-transform: uppercase;
 }
-#home .public-success-brand {
-  display: block; flex: 0 0 195px; width: 195px; height: 62px;
-  background: url('/slabsngrabs-aco-logo-transparent.png') center -63px / 195px auto no-repeat;
-  filter: drop-shadow(0 0 8px rgba(18,201,255,.32));
-}
+#home .public-success-brand, #home .public-success-title-tail { display: inline-block; max-width: 100%; }
+#home .public-success-brand { white-space: nowrap; }
 #home .public-success-title-tail {
-  display: inline-block;
-  color: #eefaff; font-family: Impact, "Arial Black", sans-serif;
-  font-size: clamp(1.15rem,2.1vw,1.85rem); line-height: 1.16;
-  font-weight: 950; font-style: italic; letter-spacing: -.025em;
-  transform: skew(-8deg); text-transform: uppercase;
-  background: linear-gradient(164deg,#fff 5%,#f6fcff 31%,#8bb7d4 53%,#fff 67%,#2289c6 91%);
+  overflow-wrap: anywhere;
+}
+#home .public-success-heading h2 > span {
+  color: #5ee8ff;
+  background: linear-gradient(170deg,#f7fdff 6%,#a8f1ff 24%,#37cafa 47%,#00a3e8 72%,#0d6bbd 100%);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  -webkit-text-stroke: .45px #eefaff;
-  filter: drop-shadow(2px 2px 0 #030a13) drop-shadow(-2px 2px 0 #03bdff)
-    drop-shadow(2px -1px 0 #03bdff) drop-shadow(3px 4px 0 #07558c)
-    drop-shadow(0 0 8px rgba(18,201,255,.55));
+  -webkit-text-stroke: 1.2px #061522;
+  filter: drop-shadow(1px 2px 0 #000911) drop-shadow(2px 3px 0 #0874af)
+    drop-shadow(0 0 9px rgba(18,201,255,.45));
 }
 #home .public-success-live {
   display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
@@ -3086,7 +3092,7 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   #home .public-success-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   #home .public-success-heading > div { flex-wrap: wrap; gap: 10px; }
   #home .public-success-heading h2 { flex-wrap: wrap; }
-  #home .public-success-brand { flex-basis: 170px; width: 170px; height: 56px; background-size: 170px auto; background-position: center -55px; }
+  #home .public-success-heading h2 { font-size: clamp(1.03rem,4.1vw,1.6rem); }
   #home .home-success-preview { padding: 40px 0; }
 }
 @media (max-width: 420px) {
