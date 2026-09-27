@@ -3029,7 +3029,7 @@ select:focus {
   box-shadow: 0 16px 42px rgba(0,0,0,.22); backdrop-filter: blur(8px);
 }
 #home .public-success-heading { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-#home .public-success-heading > div { display: flex; align-items: center; gap: 22px; min-width: 0; }
+#home .public-success-heading > div { display: flex; align-items: center; gap: 12px; min-width: 0; }
 #home .public-success-heading .eyebrow { font-size: .75rem; }
 #home .public-success-heading h2 {
   display: flex; flex-wrap: nowrap; align-items: center; column-gap: .5em; row-gap: .08em;
@@ -3045,7 +3045,7 @@ select:focus {
 #home .public-success-heading h2 > span {
   color: #ff65d4;
   background: linear-gradient(165deg,#ff8fe8 0%,#db3eb1 50%,#7c2168 100%);
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: #ff65d4;
   -webkit-text-stroke: 1.45px #11151b;
   paint-order: stroke fill;
   filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #41b6e6)
@@ -3054,14 +3054,14 @@ select:focus {
 #home .public-success-heading h2 > .public-success-title-tail {
   color: #41b6e6;
   background: linear-gradient(165deg,#73f5ff 0%,#41b6e6 50%,#166083 100%);
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: #5de8ff;
   filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #db3eb1)
     drop-shadow(0 0 10px rgba(65,182,230,.48));
 }
-#home .public-success-heading .public-success-word { display: inline-flex; white-space: nowrap; margin-right: .34em; }
+#home .public-success-heading .public-success-word { display: inline-flex; white-space: nowrap; margin-right: .22em; }
 #home .public-success-heading .public-success-letter {
   position: relative; display: inline-block; transform-origin: 50% 78%;
-  min-width: .64em; margin-inline: .035em; text-align: center;
+  min-width: .64em; margin-inline: .012em; text-align: center;
   color: #db3eb1;
   background: linear-gradient(165deg,#ff8fe8 0%,#db3eb1 50%,#7c2168 100%);
   background-clip: text; -webkit-background-clip: text;

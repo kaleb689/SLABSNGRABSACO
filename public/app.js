@@ -7038,12 +7038,12 @@ function retailerFieldsHtml(
             </h4>
 
             <p>
-              Pokemon Center uses guest checkout.
+              Enter the Pokemon Center login used for this profile.
             </p>
           </div>
 
           <span class="retailer-password-status saved pkc-guest-checkout-badge">
-            NO PASSWORD NEEDED — PKC IS GUEST CHECKOUT
+            PASSWORD AVAILABLE FOR EXPORT
           </span>
         </div>
 
@@ -7065,9 +7065,30 @@ function retailerFieldsHtml(
             >
           </label>
 
-          <div class="pkc-guest-checkout-note">
-            NO PASSWORD NEEDED — PKC IS GUEST CHECKOUT
-          </div>
+          <label>
+            Password
+
+            <div class="retailer-password-input-wrap">
+              <input
+                type="password"
+                name="${escapeHtml(retailer.key)}Password"
+                value="${escapeHtml(String(savedRetailer.password || ""))}"
+                autocomplete="off"
+                maxlength="512"
+                placeholder="Enter Pokemon Center password"
+                data-customer-sensitive-input
+              >
+
+              <button
+                type="button"
+                class="retailer-password-toggle"
+                data-retailer-password-toggle
+                aria-label="Show password"
+              >
+                Show
+              </button>
+            </div>
+          </label>
         </div>
       </div>
     `;
