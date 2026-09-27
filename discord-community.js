@@ -304,13 +304,28 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     });
   }
   const recent = new Map();
+  const privateReply = "I can't share or review customer information in this public channel. Please create a private ticket to follow up with your question.";
+  function sensitiveQuestion(value) {
+    return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value) ||
+      /\b(?:password|passcode|one.time code|two.factor|2fa|otp|cvv|credit card|card number|billing|charged|charge|refund|invoice|tracking number|shipping address|home address|phone number|my account|my order|my checkout|my payment|my subscription|my email|my profile|my name|my address|my phone|my card|my discord)\b/i.test(value) ||
+      /\b(?:order|account|invoice|tracking|confirmation)\s*(?:#|number|id|:)\s*[A-Z0-9-]{4,}/i.test(value) ||
+      /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/.test(value) ||
+      /(?:\b\d[ -]*?){13,19}\b/.test(value);
+  }
+  function sensitiveOutput(value) {
+    return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value) ||
+      /\b(?:your|their|this customer's)\s+(?:order|account|billing|payment|card|email|address|phone|profile)\b/i.test(value) ||
+      /\b(?:order|account|invoice|tracking|confirmation)\s*(?:#|number|id|:)\s*[A-Z0-9-]{4,}/i.test(value) ||
+      /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/.test(value) ||
+      /(?:\b\d[ -]*?){13,19}\b/.test(value);
+  }
   async function aiAnswer(question) {
     if (!aiKey) throw new Error("OPENAI_API_KEY is missing");
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST", headers: { Authorization: `Bearer ${aiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: process.env.DISCORD_AI_MODEL || "gpt-4.1-mini", store: false, max_output_tokens: 360,
-        instructions: `You are the SLABSNGRABSACO Discord support assistant. Website: https://slabsngrabsaco.com. Tiers: Starter 1 managed profile, Intermediate 2, Advanced 3, Pro 5, High Volume 10, Power User 20, Elite 50. Members can use My Profile to see memberships, linked profiles and their own success checkouts; the public home tracker aggregates community checkouts without member identities. Discord linking is in My Profile: connect via Discord authorization or generate a code and use /link code in Discord. Paid and gifted tiers grant access during their active periods. Answer general website and botting setup questions cautiously; retailer checkouts are not guaranteed. Do not claim to have inspected an account, order, or bot run. Never ask for or repeat passwords, 2FA codes, payment details, or mailbox credentials. If an answer needs account access, a billing or order investigation, private details, or information you lack, set needsHuman to true and give a brief explanation without sensitive details. Otherwise answer helpfully and set needsHuman to false. Return ONLY a JSON object with keys "answer" (under 800 characters) and "needsHuman" (boolean).`,
+        instructions: `You are the SLABSNGRABSACO Discord support assistant answering in a PUBLIC channel. Website: https://slabsngrabsaco.com. Tiers: Starter 1 managed profile, Intermediate 2, Advanced 3, Pro 5, High Volume 10, Power User 20, Elite 50. Members can use My Profile to see memberships, linked profiles and their own success checkouts; the public home tracker aggregates community checkouts without member identities. Discord linking is in My Profile: connect via Discord authorization or generate a code and use /link code in Discord. Paid and gifted tiers grant access during their active periods. Answer general website and botting setup questions cautiously; retailer checkouts are not guaranteed. NEVER disclose, reproduce, infer, or request customer information: names, usernames, email addresses, addresses, phone numbers, orders, payments, linked accounts, profiles, credentials, verification codes. Never claim to have inspected an account, order, or bot run. If an answer needs account access, a billing or order investigation, private details, or information you lack, set needsHuman to true. Otherwise answer helpfully and set needsHuman to false. Return ONLY a JSON object with keys "answer" (under 800 characters) and "needsHuman" (boolean).`,
         input: question.slice(0, 900)
       }), signal: AbortSignal.timeout(25000)
     });
@@ -321,19 +336,26 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (typeof result.answer !== "string" || typeof result.needsHuman !== "boolean") throw new Error("AI service returned an invalid support decision");
     discordCommunityStatus.lastAnswerAt = new Date().toISOString();
     discordCommunityStatus.lastAiError = null;
-    return { answer: result.answer.slice(0, 800), needsHuman: result.needsHuman };
+    return result.needsHuman || sensitiveOutput(result.answer)
+      ? { answer: privateReply, needsHuman: true }
+      : { answer: result.answer.slice(0, 800), needsHuman: false };
   }
   async function answerInChannel(userId, question, messageId) {
     let answer;
-    try { answer = await aiAnswer(question); }
+    const privateQuestion = sensitiveQuestion(question);
+    if (privateQuestion) {
+      // Remove exposed customer information when the bot has Manage Messages.
+      if (messageId) await api(`/channels/${askChannelId}/messages/${messageId}`, "DELETE").catch(error => console.error("Discord private question removal:", error.message));
+      answer = { answer: privateReply, needsHuman: true };
+    } else try { answer = await aiAnswer(question); }
     catch (error) {
       discordCommunityStatus.lastAiError = error.message;
       console.error("Discord AI answer:", error.message);
-      answer = { answer: "I can't resolve this right now. Please open a private ticket so the support team can help.", needsHuman: true };
+      answer = { answer: privateReply, needsHuman: true };
     }
     const reply = await sendMessage(askChannelId, `${mention(userId)} ${answer.answer}`, {
       users: [userId],
-      ...(messageId ? { message_reference: { message_id: messageId, fail_if_not_exists: false } } : {}),
+      ...(messageId && !privateQuestion ? { message_reference: { message_id: messageId, fail_if_not_exists: false } } : {}),
       ...(answer.needsHuman ? { components: [{ type: 1, components: [{ type: 2, style: 1, label: "Create private ticket", custom_id: `ticket:create:${userId}` }] }] } : {})
     });
     if (answer.needsHuman) {
