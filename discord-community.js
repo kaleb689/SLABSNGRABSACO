@@ -351,6 +351,13 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       }
       const successChannel = channels.find(item => item.id === channelId);
       await ensureReadOnly(successChannel);
+      let introCategory = channels.find(item => item.type === 4 && normalizeName(item.name) === "intro");
+      if (!introCategory) introCategory = await api(`/guilds/${guildId}/channels`, "POST", {
+        name: "Intro", type: 4, position: 0
+      });
+      else if (introCategory.position !== 0) {
+        introCategory = await api(`/channels/${introCategory.id}`, "PATCH", { position: 0 });
+      }
       const introNames = new Set(["introserver", "introservers", "introtodiscord", "introslabsngrabsaco", "serverintro", "intro"]);
       const introChannels = channels.filter(item => item.type === 0 &&
         (introNames.has(normalizeName(item.name)) || /^introserver\d+$/.test(normalizeName(item.name))));
@@ -372,24 +379,28 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       }
       intro ||= introChannels.find(item => normalizeName(item.name) === "introserver") || introChannels[0];
       if (!intro) intro = await api(`/guilds/${guildId}/channels`, "POST", {
-        name: "intro-slabsngrabsaco", type: 0, position: 0,
+        name: "intro-slabsngrabsaco", type: 0, parent_id: introCategory.id, position: 0,
         topic: "Start here for a guide to the server and its channels.",
         permission_overwrites: readOnlyOverwrites()
       });
-      else intro = await ensureReadOnly(intro, null);
+      else intro = await ensureReadOnly(intro, introCategory.id);
       introChannelId = intro.id;
-      if (intro.name !== "intro-slabsngrabsaco" || intro.position !== 0 || intro.parent_id) {
-        await api(`/channels/${intro.id}`, "PATCH", { name: "intro-slabsngrabsaco", position: 0, parent_id: null });
+      if (intro.name !== "intro-slabsngrabsaco" || intro.position !== 0 || intro.parent_id !== introCategory.id) {
+        await api(`/channels/${intro.id}`, "PATCH", { name: "intro-slabsngrabsaco", position: 0,
+          parent_id: introCategory.id, permission_overwrites: readOnlyOverwrites() });
       }
       let rules = channels.find(item => item.type === 0 && ["rules", "serverrules"].includes(normalizeName(item.name)));
       if (!rules) rules = await api(`/guilds/${guildId}/channels`, "POST", {
-        name: "rules", type: 0, position: 1,
+        name: "rules", type: 0, parent_id: introCategory.id, position: 1,
         topic: "Read the SLABSNGRABSACO community rules before joining the conversation.",
         permission_overwrites: readOnlyOverwrites()
       });
-      else rules = await ensureReadOnly(rules, null);
+      else rules = await ensureReadOnly(rules, introCategory.id);
       rulesChannelId = rules.id;
-      if (rules.position !== 1 || rules.parent_id) await api(`/channels/${rules.id}`, "PATCH", { position: 1, parent_id: null });
+      if (rules.position !== 1 || rules.parent_id !== introCategory.id) {
+        await api(`/channels/${rules.id}`, "PATCH", { position: 1, parent_id: introCategory.id,
+          permission_overwrites: readOnlyOverwrites() });
+      }
       let giveaway = channels.find(item => item.type === 0 && ["giveaway", "giveaways"].includes(normalizeName(item.name)));
       if (!giveaway) giveaway = await api(`/guilds/${guildId}/channels`, "POST", {
         name: "giveaways", type: 0, topic: "Enter active giveaways with the button. Winners are selected when each giveaway ends.",
@@ -403,15 +414,16 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         { id: appId, type: 1, allow: "68624" }
       ];
       if (!suggestions) suggestions = await api(`/guilds/${guildId}/channels`, "POST", {
-        name: "suggestions", type: 0,
+        name: "suggestions", type: 0, parent_id: introCategory.id, position: 2,
         topic: "Share suggestions for this Discord server or the website. Do not post private account information.",
         permission_overwrites: suggestionOverwrites
       });
       else if (suggestions.topic !== "Share suggestions for this Discord server or the website. Do not post private account information." ||
-        suggestions.parent_id || !sameOverwrites(suggestions.permission_overwrites, suggestionOverwrites)) {
+        suggestions.parent_id !== introCategory.id || suggestions.position !== 2 ||
+        !sameOverwrites(suggestions.permission_overwrites, suggestionOverwrites)) {
         suggestions = await api(`/channels/${suggestions.id}`, "PATCH", {
           topic: "Share suggestions for this Discord server or the website. Do not post private account information.",
-          parent_id: null, permission_overwrites: suggestionOverwrites
+          parent_id: introCategory.id, position: 2, permission_overwrites: suggestionOverwrites
         });
       }
       suggestionChannelId = suggestions.id;
