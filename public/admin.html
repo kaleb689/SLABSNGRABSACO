@@ -5742,6 +5742,37 @@ PAID SUBSCRIPTIONS
       class="admin-orders"
     ></div>
 
+    <details class="admin-membership-tools" style="margin:24px 0;padding:18px;border:1px solid rgba(65,182,230,.45);border-radius:16px;background:rgba(5,22,37,.55)">
+      <summary style="cursor:pointer;font-weight:800;font-size:1.15rem">Membership gifts and discount codes</summary>
+      <p>Gift a tier after a customer's current paid period, or create a Stripe code for memberships and optional rentals.</p>
+      <form id="giftTierForm" style="display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:16px 0">
+        <label>Customer<br><select name="customerAccountId" id="giftTierCustomer" required><option value="">Loading customers…</option></select></label>
+        <label>Tier<br><select name="tier" required><option value="1">Starter</option><option value="2">Intermediate</option><option value="3">Advanced</option><option value="4">Pro</option><option value="5">High Volume</option><option value="6">Power User</option><option value="7">Elite</option></select></label>
+        <label>Months<br><input type="number" name="months" min="1" max="12" value="1" required style="width:75px"></label>
+        <button type="submit" class="admin-edit-button">Gift tier</button>
+      </form>
+      <div id="giftTierFeedback" role="status"></div>
+      <div id="giftTierList"></div>
+      <hr style="border:0;border-top:1px solid rgba(65,182,230,.3);margin:20px 0">
+      <form id="discountCodeForm" style="display:flex;flex-wrap:wrap;gap:10px;align-items:end">
+        <label>Code<br><input name="code" required minlength="3" maxlength="40" pattern="[A-Za-z0-9]+" placeholder="CARD20"></label>
+        <label>Discount %<br><input name="percent" type="number" min="1" max="100" required style="width:75px"></label>
+        <label>Tier<br><select name="tier"><option value="all">All tiers</option><option value="1">Starter</option><option value="2">Intermediate</option><option value="3">Advanced</option><option value="4">Pro</option><option value="5">High Volume</option><option value="6">Power User</option><option value="7">Elite</option></select></label>
+        <label>Membership discount<br><select name="duration"><option value="once">First payment</option><option value="forever">Every renewal</option></select></label>
+        <label>Expires<br><input name="expiresAt" type="date"></label>
+        <label><input name="appliesToRentals" type="checkbox"> Include rentals</label>
+        <button type="submit" class="admin-edit-button">Create code</button>
+      </form>
+      <div id="discountCodeFeedback" role="status"></div>
+      <div id="discountCodeList"></div>
+    </details>
+
+    <details style="margin:24px 0;padding:18px;border:1px solid rgba(65,182,230,.45);border-radius:16px;background:rgba(5,22,37,.55)">
+      <summary style="cursor:pointer;font-weight:800;font-size:1.15rem">Discord success channel</summary>
+      <p id="discordSuccessStatus" role="status">Checking connection…</p>
+      <button id="discordSuccessScanButton" type="button" class="admin-edit-button">Scan success channel</button>
+    </details>
+
   </section>
 
 </main>
@@ -18732,6 +18763,8 @@ document
 async function load() {
 
   await loadManagedAvailability();
+  loadMembershipTools();
+  refreshDiscordSuccessStatus();
 
   await loadProfileActivationTracker();
 
@@ -23355,6 +23388,125 @@ document.getElementById("scanManagedSuccessMailbox")?.addEventListener("click", 
     status.textContent = error.message;
     button.disabled = false;
   }
+});
+
+async function membershipApi(path, options) {
+  const response = await fetch(path, { credentials: "same-origin", cache: "no-store", ...options });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Request failed.");
+  return data;
+}
+
+async function loadMembershipTools() {
+  try {
+    const [customerData, giftData, discountData] = await Promise.all([
+      membershipApi("/api/admin/giftable-customers"),
+      membershipApi("/api/admin/gifted-memberships"),
+      membershipApi("/api/admin/discount-codes")
+    ]);
+    const customers = document.getElementById("giftTierCustomer");
+    customers.replaceChildren(new Option("Select customer", ""));
+    for (const customer of customerData.customers || []) customers.add(new Option(customer.email, customer.id));
+    const giftList = document.getElementById("giftTierList");
+    giftList.replaceChildren();
+    for (const gift of (giftData.memberships || []).slice().reverse()) {
+      const row = document.createElement("p");
+      row.textContent = `${gift.customerEmail} · ${gift.tierName} · ${gift.months} month(s) · ${new Date(gift.startsAt).toLocaleDateString()} – ${new Date(gift.expiresAt).toLocaleDateString()} `;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Revoke";
+      button.className = "admin-edit-button";
+      button.onclick = async () => {
+        try {
+          await membershipApi(`/api/admin/gifted-memberships/${encodeURIComponent(gift.id)}`, { method: "DELETE" });
+          loadMembershipTools();
+        } catch (error) { document.getElementById("giftTierFeedback").textContent = error.message; }
+      };
+      row.append(button);
+      giftList.append(row);
+    }
+    const discountList = document.getElementById("discountCodeList");
+    discountList.replaceChildren();
+    for (const discount of (discountData.codes || []).slice().reverse()) {
+      const row = document.createElement("p");
+      row.textContent = `${discount.code} · ${discount.percent}% · ${discount.tier === "all" ? "All tiers" : "Tier " + discount.tier} · ${discount.duration === "forever" ? "Every renewal" : "First payment"}${discount.appliesToRentals ? " + rentals" : ""} · ${discount.active ? "Active" : "Inactive"} `;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = discount.active ? "Deactivate" : "Activate";
+      button.className = "admin-edit-button";
+      button.onclick = async () => {
+        try {
+          await membershipApi(`/api/admin/discount-codes/${encodeURIComponent(discount.id)}`, {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ active: !discount.active })
+          });
+          loadMembershipTools();
+        } catch (error) { document.getElementById("discountCodeFeedback").textContent = error.message; }
+      };
+      row.append(button);
+      discountList.append(row);
+    }
+  } catch (error) {
+    document.getElementById("giftTierFeedback").textContent = error.message;
+  }
+}
+
+async function refreshDiscordSuccessStatus() {
+  const label = document.getElementById("discordSuccessStatus");
+  try {
+    const status = await membershipApi("/api/admin/discord-success-status");
+    label.textContent = status.configured
+      ? `Channel ${status.channelId} · ${status.running ? "Scanning…" : status.error || (status.checkedAt ? "Last scan " + new Date(status.checkedAt).toLocaleString() + " · " + status.added + " added" : "Waiting for first scan")}`
+      : "Set DISCORD_BOT_TOKEN and DISCORD_SUCCESS_CHANNEL_ID in Render to connect the invited bot.";
+  } catch (error) { label.textContent = error.message; }
+}
+document.getElementById("discordSuccessScanButton")?.addEventListener("click", async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try { await membershipApi("/api/admin/discord-success-scan", { method: "POST" }); }
+  catch (error) { document.getElementById("discordSuccessStatus").textContent = error.message; }
+  finally { button.disabled = false; refreshDiscordSuccessStatus(); }
+});
+setInterval(() => { if (!document.hidden && !document.getElementById("dashboard")?.hidden) refreshDiscordSuccessStatus(); }, 6000);
+
+document.getElementById("giftTierForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const feedback = document.getElementById("giftTierFeedback");
+  const button = form.querySelector('[type="submit"]');
+  button.disabled = true;
+  try {
+    const fields = new FormData(form);
+    const data = await membershipApi("/api/admin/gifted-memberships", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customerAccountId: fields.get("customerAccountId"), tier: Number(fields.get("tier")), months: Number(fields.get("months")) })
+    });
+    feedback.textContent = `Gift scheduled through ${new Date(data.membership.expiresAt).toLocaleDateString()}.`;
+    loadMembershipTools();
+  } catch (error) { feedback.textContent = error.message; }
+  finally { button.disabled = false; }
+});
+
+document.getElementById("discountCodeForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const feedback = document.getElementById("discountCodeFeedback");
+  const button = form.querySelector('[type="submit"]');
+  button.disabled = true;
+  try {
+    const fields = new FormData(form);
+    const data = await membershipApi("/api/admin/discount-codes", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: fields.get("code"), percent: Number(fields.get("percent")), tier: fields.get("tier"),
+        expiresAt: fields.get("expiresAt") || null, duration: fields.get("duration"), appliesToRentals: fields.has("appliesToRentals")
+      })
+    });
+    feedback.textContent = `${data.discount.code} is ready for Stripe Checkout.`;
+    form.reset();
+    loadMembershipTools();
+  } catch (error) { feedback.textContent = error.message; }
+  finally { button.disabled = false; }
 });
 
 /* =========================================

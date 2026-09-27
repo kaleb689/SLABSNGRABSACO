@@ -99,6 +99,14 @@ const FREE_ASSIGNMENTS_FILE =
     "free-assignments.json"
   );
 
+// Admin-issued membership grants and checkout discounts are kept separate
+// from Stripe records so a grant never mutates a customer's paid history.
+const GIFTED_MEMBERSHIPS_FILE =
+  path.join(DATA_DIR, "gifted-memberships.json");
+
+const DISCOUNT_CODES_FILE =
+  path.join(DATA_DIR, "discount-codes.json");
+
 const RESTORE_HOLDS_FILE =
   path.join(
     DATA_DIR,
@@ -6892,7 +6900,7 @@ app.post(
                   ? paid
                   : [];
 
-              const paidRecord =
+              let paidRecord =
                 paidRecords.find(
                   record =>
                     String(record.id) ===
@@ -6910,6 +6918,19 @@ app.post(
                       record
                     )
                 );
+
+              if (!paidRecord && String(paidSubmissionId).startsWith("gift:")) {
+                const giftId = String(paidSubmissionId).slice(5);
+                const grants = await getGiftedMemberships();
+                const now = Date.now();
+                const gift = grants.find(item =>
+                  String(item.id) === giftId &&
+                  String(item.customerAccountId) === String(customerAccountId) &&
+                  new Date(item.startsAt).getTime() <= now &&
+                  new Date(item.expiresAt).getTime() > now
+                );
+                if (gift) paidRecord = { id: paidSubmissionId, customerAccountId, profile: { email: gift.customerEmail } };
+              }
 
               if (!paidRecord) {
                 console.error(
@@ -6996,9 +7017,9 @@ app.post(
                     );
 
                   const paidSecrets =
-                    await loadEncryptedPackage(
-                      paidRecord.id
-                    );
+                    String(paidRecord.id).startsWith("gift:")
+                      ? null
+                      : await loadEncryptedPackage(paidRecord.id);
 
                   for (
                     const account of
@@ -11069,6 +11090,24 @@ async function saveFreeMemberships(
   );
 }
 
+async function getGiftedMemberships() {
+  const records = await readJson(GIFTED_MEMBERSHIPS_FILE, []);
+  return Array.isArray(records) ? records : [];
+}
+
+async function saveGiftedMemberships(records) {
+  await writeJson(GIFTED_MEMBERSHIPS_FILE, records);
+}
+
+async function getDiscountCodes() {
+  const records = await readJson(DISCOUNT_CODES_FILE, []);
+  return Array.isArray(records) ? records : [];
+}
+
+async function saveDiscountCodes(records) {
+  await writeJson(DISCOUNT_CODES_FILE, records);
+}
+
 
 async function getFreeAssignments() {
   const records =
@@ -12555,16 +12594,21 @@ async function getCustomerProfileAllowance(
         )
     );
 
-  if (!owned.length) {
-    return 0;
-  }
+  const paidAllowance = owned.length
+    ? Math.max(0, ...owned.map(profileAllowanceForRecord))
+    : 0;
 
-  return Math.max(
-    0,
-    ...owned.map(
-      profileAllowanceForRecord
+  const now = Date.now();
+  const gifted = await getGiftedMemberships();
+  const giftedAllowance = gifted
+    .filter(item =>
+      String(item.customerAccountId) === String(accountId) &&
+      (!item.startsAt || new Date(item.startsAt).getTime() <= now) &&
+      (!item.expiresAt || new Date(item.expiresAt).getTime() > now)
     )
-  );
+    .reduce((max, item) => Math.max(max, Number(item.profiles) || 0), 0);
+
+  return Math.max(paidAllowance, giftedAllowance);
 }
 
 function safeRetailerProfile(
@@ -14777,6 +14821,150 @@ app.post(
     }
   }
 );
+
+/* -------------------------------------------------------
+   ADMIN MEMBERSHIP GRANTS / DISCOUNT CODES
+------------------------------------------------------- */
+
+app.get("/api/admin/gifted-memberships", requireAdmin, async (req, res) => {
+  const records = await getGiftedMemberships();
+  return res.json({ memberships: records });
+});
+
+app.get("/api/admin/giftable-customers", requireAdmin, async (req, res) => {
+  const customers = await getCustomerAccounts();
+  return res.json({ customers: customers.map(item => ({ id: item.id, email: item.email })).filter(item => item.id && item.email) });
+});
+
+app.post("/api/admin/gifted-memberships", requireAdmin, async (req, res) => {
+  try {
+    const customerAccountId = String(req.body?.customerAccountId || "").trim();
+    const tier = Number(req.body?.tier);
+    const months = Number(req.body?.months);
+    if (!customerAccountId || !PLANS[tier] || !Number.isInteger(months) || months < 1 || months > 12) {
+      return res.status(400).json({ error: "Choose a customer, valid tier, and a duration from 1 to 12 months." });
+    }
+    const customers = await getCustomerAccounts();
+    const customer = customers.find(item => String(item.id) === customerAccountId);
+    if (!customer) return res.status(404).json({ error: "Customer account was not found." });
+
+    const paid = await readJson(PAID_FILE, []);
+    const activePaid = (Array.isArray(paid) ? paid : [])
+      .filter(item => String(item.customerAccountId) === customerAccountId && subscriptionAllowsProfiles(item));
+    const paidEnd = activePaid
+      .map(item => subscriptionEndIso(item))
+      .filter(Boolean)
+      .map(value => new Date(value).getTime())
+      .filter(Number.isFinite)
+      .reduce((max, value) => Math.max(max, value), Date.now());
+    const records = await getGiftedMemberships();
+    const priorGiftEnd = records
+      .filter(item => String(item.customerAccountId) === customerAccountId)
+      .map(item => new Date(item.expiresAt).getTime())
+      .filter(Number.isFinite)
+      .reduce((max, value) => Math.max(max, value), Date.now());
+    const startDate = new Date(Math.max(Date.now(), paidEnd, priorGiftEnd));
+    const startsAt = startDate.toISOString();
+    const endDate = new Date(startDate);
+    endDate.setUTCMonth(endDate.getUTCMonth() + months);
+    const expiresAt = endDate.toISOString();
+    const grant = {
+      id: crypto.randomUUID(),
+      customerAccountId,
+      customerEmail: customer.email || "",
+      tier,
+      tierName: PLANS[tier].name,
+      profiles: PLANS[tier].profiles,
+      months,
+      startsAt,
+      expiresAt,
+      createdAt: new Date().toISOString(),
+      createdBy: "admin"
+    };
+    records.push(grant);
+    await saveGiftedMemberships(records);
+    return res.status(201).json({ ok: true, membership: grant });
+  } catch (error) {
+    console.error("Gifted membership creation failed:", error);
+    return res.status(500).json({ error: "Unable to create gifted membership." });
+  }
+});
+
+app.delete("/api/admin/gifted-memberships/:id", requireAdmin, async (req, res) => {
+  const records = await getGiftedMemberships();
+  const next = records.filter(item => String(item.id) !== String(req.params.id));
+  if (next.length === records.length) return res.status(404).json({ error: "Gifted membership was not found." });
+  await saveGiftedMemberships(next);
+  return res.json({ ok: true });
+});
+
+app.get("/api/admin/discount-codes", requireAdmin, async (req, res) => {
+  return res.json({ codes: await getDiscountCodes() });
+});
+
+app.post("/api/admin/discount-codes", requireAdmin, async (req, res) => {
+  try {
+    const code = String(req.body?.code || "").trim().toUpperCase();
+    const percent = Number(req.body?.percent);
+    const tier = req.body?.tier === "all" || req.body?.tier === "" || req.body?.tier == null ? "all" : Number(req.body.tier);
+    const appliesToRentals = req.body?.appliesToRentals === true;
+    const duration = req.body?.duration === "forever" ? "forever" : "once";
+    const expiration = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
+    if (!/^[A-Z0-9]{3,40}$/.test(code) || !Number.isInteger(percent) || percent < 1 || percent > 100 ||
+        (tier !== "all" && !PLANS[tier]) || (expiration && (!Number.isFinite(expiration.getTime()) || expiration.getTime() <= Date.now()))) {
+      return res.status(400).json({ error: "Provide a valid code, discount percentage, tier and future expiration." });
+    }
+    if (!process.env.STRIPE_SECRET_KEY) return res.status(503).json({ error: "Stripe is not configured." });
+    const records = await getDiscountCodes();
+    if (records.some(item => item.code === code)) return res.status(409).json({ error: "That discount code already exists." });
+    const priceIds = [
+      ...(tier === "all" ? Object.values(PLANS).map(plan => plan.priceId) : [PLANS[tier].priceId]),
+      ...(appliesToRentals ? Object.values(RENTAL_PACKAGES).flatMap(packages => Object.values(packages).map(pack => pack.priceId)) : [])
+    ].filter(Boolean);
+    if (!priceIds.length) return res.status(400).json({ error: "No Stripe prices are configured for this selection." });
+    const prices = await Promise.all([...new Set(priceIds)].map(id => stripe.prices.retrieve(id)));
+    const productIds = [...new Set(prices.map(price => typeof price.product === "string" ? price.product : price.product?.id).filter(Boolean))];
+    const coupon = await stripe.coupons.create({
+      percent_off: percent,
+      duration,
+      applies_to: { products: productIds },
+      name: `SLABSNGRABSACO ${code}`
+    });
+    const promotion = await stripe.promotionCodes.create({
+      coupon: coupon.id,
+      code,
+      ...(expiration ? { expires_at: Math.floor(expiration.getTime() / 1000) } : {})
+    });
+    const discount = {
+      id: crypto.randomUUID(), code, percent, tier, appliesToRentals, duration,
+      expiresAt: expiration?.toISOString() || null,
+      active: true, stripeCouponId: coupon.id, stripePromotionCodeId: promotion.id,
+      createdAt: new Date().toISOString()
+    };
+    records.push(discount);
+    await saveDiscountCodes(records);
+    return res.status(201).json({ ok: true, discount });
+  } catch (error) {
+    console.error("Discount code creation failed:", error?.message);
+    return res.status(502).json({ error: "Could not create this promotion code in Stripe." });
+  }
+});
+
+app.patch("/api/admin/discount-codes/:id", requireAdmin, async (req, res) => {
+  const records = await getDiscountCodes();
+  const item = records.find(record => String(record.id) === String(req.params.id));
+  if (!item) return res.status(404).json({ error: "Discount code was not found." });
+  if (typeof req.body?.active !== "boolean") return res.status(400).json({ error: "Choose active or inactive." });
+  try {
+    if (item.stripePromotionCodeId) await stripe.promotionCodes.update(item.stripePromotionCodeId, { active: req.body.active });
+  } catch (error) {
+    console.error("Stripe promotion code update failed:", error?.message);
+    return res.status(502).json({ error: "Could not update this promotion code in Stripe." });
+  }
+  item.active = req.body.active;
+  await saveDiscountCodes(records);
+  return res.json({ ok: true, discount: item });
+});
 
 app.get(
   "/api/admin/submissions",
@@ -33536,7 +33724,14 @@ app.post(
             )
         );
 
-      if (!paidRecord) {
+      const activeGift = !paidRecord
+        ? (await getGiftedMemberships()).find(item =>
+            String(item.customerAccountId) === String(customerAccountId) &&
+            new Date(item.startsAt).getTime() <= Date.now() &&
+            new Date(item.expiresAt).getTime() > Date.now()
+          )
+        : null;
+      if (!paidRecord && !activeGift) {
         return res
           .status(403)
           .json({
@@ -33611,17 +33806,17 @@ app.post(
                 ),
               paid_submission_id:
                 String(
-                  paidRecord.id
+                  paidRecord?.id || `gift:${activeGift.id}`
                 )
             },
 
             customer_email:
               req.customerAccount.email ||
-              paidRecord.profile?.email ||
+              paidRecord?.profile?.email ||
               undefined,
 
             allow_promotion_codes:
-              false
+              true
           });
 
       return res.json({
@@ -34566,6 +34761,108 @@ async function getSuccessCheckouts() {
     ? records
     : [];
 }
+
+// Read-only Discord channel import. Message authors are never attached to
+// customer accounts; the channel contributes anonymous community totals.
+const discordSuccessScan = { running: false, checkedAt: null, added: 0, skipped: 0, error: null, newestMessageId: null };
+function discordSuccessConfig() {
+  return {
+    token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
+    channelId: String(process.env.DISCORD_SUCCESS_CHANNEL_ID || "").trim()
+  };
+}
+
+function discordCheckoutFromMessage(message, channelId) {
+  const embed = (message.embeds || []).find(item => /success|checkout|order confirm/i.test([item.title, item.description].join(" "))) || null;
+  const messageText = String(message.content || "");
+  if (!embed && !/success|checkout|order confirm/i.test(messageText)) return null;
+  if (/NEW CHECKOUT SUCCESS/i.test(embed?.title || "")) return null; // Already saved by this site's own webhook.
+  const body = [messageText, embed?.description || "", ...(embed?.fields || []).map(field => `${field.name}: ${field.value}`)].join("\n");
+  const items = [];
+  for (const line of body.split(/\n+/)) {
+    const match = line.match(/^\s*(?:[•*\-]\s*)?(.{5,120}?)\s*(?:[×xX]\s*(\d+)|\(\s*(\d+)\s*\))\s*$/);
+    if (!match) continue;
+    const name = publicSuccessProductName(match[1]);
+    if (isPublicSuccessProduct(name) && !/@|\b(?:address|email|phone|account|ship to)\b/i.test(name)) {
+      items.push({ name, quantity: Math.min(999, Number(match[2] || match[3])), imageUrl: publicSuccessImageUrl(embed?.thumbnail?.url || embed?.image?.url) });
+    }
+  }
+  if (!items.length) return null;
+  const retailer = (embed?.fields || []).find(field => /retailer|store/i.test(field.name || ""))?.value || "";
+  const totalField = (embed?.fields || []).find(field => /total|spent|amount/i.test(field.name || ""))?.value ||
+    body.match(/(?:total|spent|amount)\s*[:$]\s*\$?([\d,.]+)/i)?.[1] || "";
+  const totalMatch = String(totalField).match(/\$?([\d,]+\.\d{2})/);
+  return {
+    id: `discord:${channelId}:${message.id}`,
+    customerAccountId: null,
+    retailer: normalizeSuccessRetailer(retailer),
+    checkoutAt: message.timestamp || new Date().toISOString(),
+    orderTotal: totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : 0,
+    itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+    items, status: "confirmed"
+  };
+}
+
+async function scanDiscordSuccessChannel() {
+  const { token, channelId } = discordSuccessConfig();
+  if (!token || !/^\d{17,22}$/.test(channelId) || discordSuccessScan.running) return false;
+  discordSuccessScan.running = true;
+  discordSuccessScan.error = null;
+  let added = 0, skipped = 0, before = "", reachedPriorScan = false, newest = discordSuccessScan.newestMessageId;
+  try {
+    const existing = await getSuccessCheckouts();
+    const seen = new Set(existing.map(item => String(item.id)));
+    for (let page = 0; page < 10; page++) {
+      const url = `https://discord.com/api/v10/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`;
+      const response = await fetch(url, { headers: { Authorization: `Bot ${token}` }, signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw new Error(`Discord channel read failed (HTTP ${response.status}).`);
+      const messages = await response.json();
+      if (!Array.isArray(messages) || !messages.length) break;
+      if (!newest) newest = String(messages[0].id);
+      for (const message of messages) {
+        if (discordSuccessScan.newestMessageId && BigInt(message.id) <= BigInt(discordSuccessScan.newestMessageId)) {
+          reachedPriorScan = true;
+          break;
+        }
+        const order = discordCheckoutFromMessage(message, channelId);
+        if (!order || seen.has(order.id)) { skipped++; continue; }
+        existing.push(order);
+        seen.add(order.id);
+        added++;
+      }
+      if (reachedPriorScan || messages.length < 100) break;
+      before = messages[messages.length - 1].id;
+    }
+    if (added) {
+      await saveSuccessCheckouts(existing);
+      for (const listener of publicSuccessListeners) listener.write("event: checkout\ndata: {}\n\n");
+    }
+    discordSuccessScan.added = added;
+    discordSuccessScan.skipped = skipped;
+    discordSuccessScan.checkedAt = new Date().toISOString();
+    discordSuccessScan.newestMessageId = newest;
+    return true;
+  } catch (error) {
+    discordSuccessScan.error = error.message;
+    discordSuccessScan.checkedAt = new Date().toISOString();
+    return false;
+  } finally {
+    discordSuccessScan.running = false;
+  }
+}
+
+app.get("/api/admin/discord-success-status", requireAdmin, (_req, res) => {
+  const config = discordSuccessConfig();
+  res.json({ configured: Boolean(config.token && config.channelId), channelId: config.channelId || null, ...discordSuccessScan });
+});
+app.post("/api/admin/discord-success-scan", requireAdmin, async (_req, res) => {
+  if (!discordSuccessConfig().token || !discordSuccessConfig().channelId) {
+    return res.status(400).json({ error: "Set DISCORD_BOT_TOKEN and DISCORD_SUCCESS_CHANNEL_ID in Render first." });
+  }
+  if (discordSuccessScan.running) return res.status(409).json({ error: "Discord scan is already running." });
+  const ok = await scanDiscordSuccessChannel();
+  res.status(ok ? 200 : 502).json({ ok, ...discordSuccessScan });
+});
 
 // Notify open dashboards immediately after a confirmed checkout is saved.
 const publicSuccessListeners = new Set();
@@ -43354,6 +43651,29 @@ const ownedOrders =
         };
       }
 
+      if (!membership) {
+        const grants = await getGiftedMemberships();
+        const now = Date.now();
+        const activeGrant = grants
+          .filter(item => String(item.customerAccountId) === String(account.id) &&
+            new Date(item.startsAt).getTime() <= now &&
+            new Date(item.expiresAt).getTime() > now)
+          .sort((a, b) => Number(b.profiles) - Number(a.profiles))[0];
+        if (activeGrant) {
+          membership = {
+            name: activeGrant.tierName,
+            tier: activeGrant.tier,
+            profiles: activeGrant.profiles,
+            amount: 0,
+            status: "gifted",
+            currentPeriodStart: activeGrant.startsAt,
+            currentPeriodEnd: activeGrant.expiresAt,
+            subscriptionEndDate: activeGrant.expiresAt,
+            cancelAtPeriodEnd: false
+          };
+        }
+      }
+
       return res.json({
         ok: true,
 
@@ -43950,6 +44270,11 @@ await initializeArrayFile(
 
         startLiveSuccessScheduler();
         startManagedExpirationScheduler();
+        if (discordSuccessConfig().token && discordSuccessConfig().channelId) {
+          setTimeout(() => scanDiscordSuccessChannel(), 12000);
+          const discordTimer = setInterval(() => scanDiscordSuccessChannel(), 60 * 1000);
+          discordTimer.unref?.();
+        }
       }
     );
 

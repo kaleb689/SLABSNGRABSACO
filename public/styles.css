@@ -3086,6 +3086,17 @@ select:focus {
   -webkit-text-stroke-color: #0a0d15;
   -webkit-text-fill-color: currentColor !important;
 }
+#home .public-success-heading .filled-heading-ready .public-success-letter[style*="--filled-letter-width"] {
+  width: var(--filled-letter-width);
+  min-width: 0;
+  height: 1.15em;
+  overflow: visible;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+  background: var(--filled-letter-image) center / 100% 100% no-repeat !important;
+}
 #home .public-success-letter[data-black-x]::before {
   content: attr(data-black-x); position: absolute; z-index: 1; left: 50%; top: 49%;
   transform: translate(-50%, -50%) rotate(-12deg); font: 900 .48em/1 Inter, sans-serif;
