@@ -311,7 +311,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       if (!important) important = await api(`/guilds/${guildId}/channels`, "POST", { name: "Important", type: 4 });
       for (const [index, channel] of found.entries()) {
         if (!channel) continue;
-        const formatted = `❗️|${["upcoming-drops", "dropping-tonight", "announcements"][index]}`;
+        const formatted = `❗️│${["upcoming-drops", "dropping-tonight", "announcements"][index]}`;
         if (channel.name !== formatted) await api(`/channels/${channel.id}`, "PATCH", { name: formatted });
       }
       discordCommunityStatus.importantReady = found.every(Boolean);
@@ -375,13 +375,13 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       rulesChannelId = rules.id;
       let giveaway = channels.find(item => item.type === 0 && ["giveaway", "giveaways"].includes(normalizeName(item.name)));
       if (!giveaway) giveaway = await api(`/guilds/${guildId}/channels`, "POST", {
-        name: "❗️|giveaways", type: 0, topic: "Enter active giveaways with the button. Winners are selected when each giveaway ends.",
+        name: "❗️│giveaways", type: 0, topic: "Enter active giveaways with the button. Winners are selected when each giveaway ends.",
         permission_overwrites: readOnlyOverwrites()
       });
       else {
         giveaway = await ensureReadOnly(giveaway);
-        if (giveaway.name !== "❗️|giveaways") {
-          giveaway = await api(`/channels/${giveaway.id}`, "PATCH", { name: "❗️|giveaways" });
+        if (giveaway.name !== "❗️│giveaways") {
+          giveaway = await api(`/channels/${giveaway.id}`, "PATCH", { name: "❗️│giveaways" });
         }
       }
       giveawayChannelId = giveaway.id;
