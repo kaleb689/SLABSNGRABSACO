@@ -3044,22 +3044,22 @@ select:focus {
   position: relative; display: inline-block; transform-origin: 50% 78%;
   /* A tiny softening pass cleans the pixel edge without altering the graffiti glyph. */
   filter: blur(.45px);
-  animation: success-letter-melt var(--melt-duration, 6s) ease-in-out var(--melt-delay, 0s) infinite;
+  animation: success-letter-melt var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
 }
 #home .public-success-heading .public-success-letter::after {
   content: ""; position: absolute; left: 43%; top: 74%; width: .11em; height: .24em;
   border-radius: 0 0 100% 100%; background: #db3eb1;
   transform: scaleY(0); transform-origin: top; pointer-events: none;
-  animation: success-letter-drip var(--melt-duration, 6s) ease-in-out var(--melt-delay, 0s) infinite;
+  animation: success-letter-drip var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
 }
 #home .public-success-title-tail .public-success-letter::after { background: #41b6e6; }
 @keyframes success-letter-melt {
-  0%, 12%, 30%, 100% { transform: rotate(0deg); }
-  19% { transform: rotate(var(--melt-angle, 2deg)); }
+  0%, 12%, 42%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(var(--melt-angle, 2deg)); }
 }
 @keyframes success-letter-drip {
-  0%, 12%, 30%, 100% { transform: scaleY(0); opacity: 0; }
-  19%, 24% { transform: scaleY(.88); opacity: .9; }
+  0%, 12%, 42%, 100% { transform: scaleY(0); opacity: 0; }
+  28% { transform: scaleY(.88); opacity: .9; }
 }
 @media (prefers-reduced-motion: reduce) {
   #home .public-success-heading .public-success-letter,

@@ -14915,8 +14915,8 @@ if (communityHeading) {
         glyph.className = "public-success-letter";
         glyph.textContent = character;
         const seed = (wordIndex * 17 + letterIndex * 23 + character.codePointAt(0) * 7) % 47;
-        glyph.style.setProperty("--melt-delay", `${-(seed * .23).toFixed(2)}s`);
-        glyph.style.setProperty("--melt-duration", `${(5.4 + seed % 7 * .31).toFixed(2)}s`);
+        glyph.style.setProperty("--melt-delay", `${-(seed * .43).toFixed(2)}s`);
+        glyph.style.setProperty("--melt-duration", `${(12 + seed % 7 * .55).toFixed(2)}s`);
         glyph.style.setProperty("--melt-angle", `${seed % 2 ? 2 : -2}deg`);
         wrapper.append(glyph);
       }
