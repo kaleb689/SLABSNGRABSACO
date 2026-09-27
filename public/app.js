@@ -4636,11 +4636,16 @@ function renderAccountHeader(
 
   const discordConnectButton = document.getElementById("customer-header-discord-connect");
   const discordStatus = document.getElementById("customer-header-discord-status");
-  if (discordConnectButton) discordConnectButton.hidden = Boolean(account?.discordLinked);
+  const discordAction = document.getElementById("customer-header-discord-action");
+  if (discordConnectButton) {
+    discordConnectButton.disabled = Boolean(account?.discordLinked);
+    discordConnectButton.setAttribute("aria-label", account?.discordLinked ? "Discord connected" : "Connect to Discord");
+  }
+  if (discordAction) discordAction.textContent = account?.discordLinked ? "Connected" : "Connect to Discord";
   if (discordStatus) {
     discordStatus.hidden = !account?.discordLinked;
     discordStatus.textContent = account?.discordLinked
-      ? `Discord connected${account.discordUsername ? `: @${account.discordUsername}` : ""}`
+      ? (account.discordUsername ? `@${account.discordUsername}` : "Account verified")
       : "";
   }
 

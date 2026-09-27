@@ -3276,32 +3276,37 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
 #my-profile .member-lifetime-stats > div:nth-child(1) { grid-column: 1; grid-row: 1; align-self: start; }
 #my-profile .member-lifetime-stats > div:nth-child(2) { grid-column: 2; grid-row: 1; }
 #my-profile .member-lifetime-stats > div:nth-child(3) { grid-column: 2; grid-row: 2; }
-#my-profile .member-lifetime-stats > div { min-height: 94px; padding: 16px 19px; gap: 7px; }
+#my-profile .member-lifetime-stats > .discord-connect-stat { grid-column: 1; grid-row: 2; }
+#my-profile .member-lifetime-stats > div,
+#my-profile .member-lifetime-stats > .discord-connect-stat { min-height: 94px; padding: 16px 19px; gap: 7px; }
 #my-profile .member-lifetime-stats span { font-size: 12px; letter-spacing: 1.1px; }
 #my-profile .member-lifetime-stats strong { font-size: 20px; }
-#my-profile .account-header-discord-button {
-  justify-self: start;
-  padding: 8px 12px;
-  border: 1px solid rgba(29, 214, 255, .58);
-  border-radius: 10px;
-  background: rgba(29, 214, 255, .11);
-  color: #c9f4ff;
-  font-size: 13px;
-  font-weight: 800;
+#my-profile .member-lifetime-stats > .discord-connect-stat {
+  min-width: 0;
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(18, 201, 255, .19);
+  border-radius: 14px;
+  background: rgba(18, 201, 255, .035);
+  display: grid;
+  align-content: center;
   cursor: pointer;
 }
-#my-profile .account-header-discord-button:hover,
-#my-profile .account-header-discord-button:focus-visible {
-  background: rgba(29, 214, 255, .22);
+#my-profile .member-lifetime-stats > .discord-connect-stat:hover,
+#my-profile .member-lifetime-stats > .discord-connect-stat:focus-visible {
+  background: rgba(18, 201, 255, .11);
   border-color: #1dd6ff;
 }
+#my-profile .member-lifetime-stats > .discord-connect-stat:disabled { cursor: default; }
+#my-profile .discord-connect-stat-main { display: flex; align-items: center; gap: 9px; }
+#my-profile .discord-connect-stat-main svg { width: 24px; height: 24px; flex: none; color: #1dd6ff; }
+#my-profile .discord-connect-stat-main span { color: #eff9ff; font-size: clamp(14px, 1.25vw, 20px); letter-spacing: 0; line-height: 1.2; text-transform: none; }
 #my-profile .account-header-discord-status {
   color: #45e68b;
   font-size: 12px;
   font-weight: 800;
   overflow-wrap: anywhere;
 }
-#my-profile .account-header-discord-button[hidden],
 #my-profile .account-header-discord-status[hidden] { display: none; }
 @media (max-width: 1050px) {
   #my-profile .account-topbar { grid-template-columns: 1fr; min-height: 0; }
@@ -3312,6 +3317,7 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   #my-profile .account-topbar > div:first-child { min-width: 0; }
   #my-profile .member-lifetime-stats { grid-template-columns: 1fr; grid-template-rows: none; }
   #my-profile .member-lifetime-stats > div:nth-child(n) { grid-column: 1; grid-row: auto; }
+  #my-profile .member-lifetime-stats > .discord-connect-stat { grid-column: 1; grid-row: auto; }
 }
 @media (max-width: 750px) {
   #home .public-success-heading h2 { flex-wrap: wrap; white-space: normal; }
