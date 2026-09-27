@@ -15074,6 +15074,9 @@ if (SUCCESS_DEMO_MODE) {
   window.addEventListener("message", event => {
     if (event.origin !== location.origin || event.data?.type !== "sng-success-demo-height") return;
     const iframe = document.getElementById("home-success-iframe");
-    if (iframe) iframe.style.height = `${Math.max(400, Math.min(940, Number(event.data.height) || 0))}px`;
+    if (iframe && event.source === iframe.contentWindow) {
+      const height = Number(event.data.height);
+      if (Number.isFinite(height) && height > 0) iframe.style.height = `${Math.max(400, Math.ceil(height))}px`;
+    }
   });
 }
