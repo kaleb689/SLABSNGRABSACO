@@ -16063,10 +16063,13 @@ app.get(
         Boolean(
           config.email
         ),
+      passwordConfigured:
+        Boolean(config.password),
       hostConfigured:
         Boolean(
           config.host
-        )
+        ),
+      ...managedSuccessScanStatus
     });
   }
 );
@@ -39458,6 +39461,14 @@ function managedSuccessMailboxConfig() {
 
 
 let managedSuccessLastScannedUid = 0;
+const managedSuccessScanStatus = {
+  lastAttemptAt: null,
+  lastCompletedAt: null,
+  lastError: null,
+  parsedOrders: 0,
+  savedOrders: 0,
+  unmatchedOrders: 0
+};
 
 async function readRecentManagedWorkMailboxOrders(
   maxMessages = 120
@@ -40169,7 +40180,19 @@ async function syncAllActiveCustomerSuccess() {
       stays permanently attached to the customer who owned
       the profile when the checkout happened.
     */
-    await syncManagedProfileSuccessMailbox();
+    managedSuccessScanStatus.lastAttemptAt = new Date().toISOString();
+    try {
+      const result = await syncManagedProfileSuccessMailbox();
+      managedSuccessScanStatus.lastCompletedAt = new Date().toISOString();
+      managedSuccessScanStatus.lastError = null;
+      managedSuccessScanStatus.parsedOrders = result.scanned || 0;
+      managedSuccessScanStatus.savedOrders = result.saved || 0;
+      managedSuccessScanStatus.unmatchedOrders = result.unmatched || 0;
+    } catch (error) {
+      managedSuccessScanStatus.lastError = error?.authenticationFailed ||
+        error?.code === "AUTHENTICATIONFAILED" ? "authentication_failed" : "scan_failed";
+      throw error;
+    }
 
   } catch (error) {
     console.error(

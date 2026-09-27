@@ -328,6 +328,12 @@
 
     .admin-success-history-control { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
     .admin-success-history-control small { color: #99b5c6; line-height: 1.5; }
+    .admin-mailbox-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px;
+      margin: 0 0 18px; padding: 12px 15px; border: 1px solid #1a4d63; border-radius: 12px;
+      background: rgba(5,27,40,.72); color: #d1ecf6; font-size: 13px; }
+    .admin-mailbox-status strong { color: #55dafa; }
+    .admin-mailbox-status button { margin-left: auto; padding: 8px 12px; border: 1px solid #16749a;
+      border-radius: 8px; background: #092236; color: #ecfbff; cursor: pointer; }
 
     .managed-availability-tracker {
   margin: 22px 0 28px;
@@ -5284,6 +5290,12 @@ PAID SUBSCRIPTIONS
     class="admin-summary-count"
   ></span>
 
+</div>
+
+<div class="admin-mailbox-status">
+  <strong>Managed Success mailbox</strong>
+  <span id="managedSuccessMailboxStatus" role="status">Check configuration and latest order scan.</span>
+  <button type="button" id="checkManagedSuccessMailbox">Check mailbox status</button>
 </div>
 
 <div class="admin-global-profile-search">
@@ -23246,6 +23258,41 @@ document.addEventListener("click", async event => {
     button.textContent = `Full mailbox history: ${result.fullHistory ? "On" : "Off"}`;
   } catch (error) {
     window.alert(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+/* =========================================
+   MANAGED SUCCESS MAILBOX STATUS
+========================================= */
+document.getElementById("checkManagedSuccessMailbox")?.addEventListener("click", async event => {
+  const button = event.currentTarget;
+  const status = document.getElementById("managedSuccessMailboxStatus");
+  button.disabled = true;
+  status.textContent = "Checking mailbox status…";
+  try {
+    const response = await fetch("/api/admin/managed-success-mailbox-status", { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) throw new Error("Could not check mailbox status.");
+    const data = await response.json();
+    if (!data.configured) {
+      const missing = [
+        !data.emailConfigured && "MANAGED_SUCCESS_IMAP_EMAIL",
+        !data.passwordConfigured && "MANAGED_SUCCESS_IMAP_PASSWORD",
+        !data.hostConfigured && "MANAGED_SUCCESS_IMAP_HOST"
+      ].filter(Boolean);
+      status.textContent = `Missing Render settings: ${missing.join(", ")}.`;
+    } else if (data.lastError) {
+      status.textContent = data.lastError === "authentication_failed"
+        ? "Configured, but mailbox authentication failed. Check the app password in Render."
+        : "Configured, but the last scan failed. Check Render logs.";
+    } else if (!data.lastCompletedAt) {
+      status.textContent = "Configured. Waiting for the first automatic scan.";
+    } else {
+      status.textContent = `Connected · Last scan ${new Date(data.lastCompletedAt).toLocaleString()} · ${data.parsedOrders} recognized orders · ${data.savedOrders} newly saved.`;
+    }
+  } catch (error) {
+    status.textContent = error.message;
   } finally {
     button.disabled = false;
   }
