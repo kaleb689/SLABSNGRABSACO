@@ -118,7 +118,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     return response.status === 204 ? null : response.json();
   }
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, ownerId, staffRoleId, appId, roles = [];
-  const normalizeName = name => String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  // Channel names may have a Unicode emoji and divider before their functional name.
+  const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
   function sameOverwrites(actual, expected) {
     return Array.isArray(actual) && actual.length === expected.length && expected.every(wanted =>
       actual.some(item => item.id === wanted.id && Number(item.type) === wanted.type &&
@@ -154,9 +155,14 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const guild = await api(`/guilds/${guildId}`);
     ownerId = guild.owner_id;
     const channels = await api(`/guilds/${guildId}/channels`);
-    let support = channels.find(item => item.type === 4 && /\bsupport\b/i.test(item.name));
-    const supportText = channels.find(item => item.type === 0 && /\bsupport\b/i.test(item.name));
+    let support = channels.find(item => item.type === 4 && normalizeName(item.name) === "support");
+    const supportText = channels.find(item => item.type === 0 && normalizeName(item.name) === "support");
     if (!support && supportText?.parent_id) support = channels.find(item => item.id === supportText.parent_id && item.type === 4);
+    if (!support) {
+      const supportLobby = channels.find(item => item.type === 0 &&
+        ["askai", "createaticket", "createticket"].includes(normalizeName(item.name)) && item.parent_id);
+      support = channels.find(item => item.id === supportLobby?.parent_id && item.type === 4);
+    }
     if (!support) {
       support = await api(`/guilds/${guildId}/channels`, "POST", { name: "Support", type: 4 });
     }
@@ -212,7 +218,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     try {
       const publicTicketOverwrites = readOnlyOverwrites();
       let lobby = channels.find(item => item.type === 0 &&
-        ["createaticket", "createticket"].includes(item.name.toLowerCase().replace(/[^a-z0-9]/g, "")));
+        ["createaticket", "createticket"].includes(normalizeName(item.name)));
       if (!lobby) lobby = await api(`/guilds/${guildId}/channels`, "POST", {
         name: "create-a-ticket", type: 0, parent_id: support.id,
         permission_overwrites: publicTicketOverwrites
@@ -275,12 +281,13 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     }
     let oneOnOneError = null;
     try {
-    let chat = channels.find(item => item.type === 4 && item.name.replace(/[^a-z]/gi, "").toLowerCase() === "chat") ||
-      channels.find(item => item.type === 4 && /\bchat\b/i.test(item.name));
+    const existingOneOnOne = channels.find(item => item.type === 0 && normalizeName(item.name) === "1on1");
+    let chat = channels.find(item => item.type === 4 && normalizeName(item.name) === "chat") ||
+      channels.find(item => item.id === existingOneOnOne?.parent_id && item.type === 4);
     if (!chat) chat = await api(`/guilds/${guildId}/channels`, "POST", { name: "Chat", type: 4 });
     chatCategoryId = chat.id;
-    let lobby = channels.find(item => item.type === 0 && item.parent_id === chat.id && item.name === "1-on-1");
-    if (!lobby) lobby = channels.find(item => item.type === 0 && item.name === "1-on-1");
+    let lobby = channels.find(item => item.type === 0 && item.parent_id === chat.id && normalizeName(item.name) === "1on1");
+    if (!lobby) lobby = channels.find(item => item.type === 0 && normalizeName(item.name) === "1on1");
     if (lobby) lobby = await ensureReadOnly(lobby);
     if (!lobby) lobby = await api(`/guilds/${guildId}/channels`, "POST", {
       name: "1-on-1", type: 0, parent_id: chat.id,
@@ -302,6 +309,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const found = names.map(name => channels.find(item => [0, 5].includes(item.type) && normalizeName(item.name) === name));
       let important = channels.find(item => item.type === 4 && normalizeName(item.name) === "important");
       if (!important) important = await api(`/guilds/${guildId}/channels`, "POST", { name: "Important", type: 4 });
+      for (const [index, channel] of found.entries()) {
+        if (!channel) continue;
+        const formatted = `❗️|${["upcoming-drops", "dropping-tonight", "announcements"][index]}`;
+        if (channel.name !== formatted) await api(`/channels/${channel.id}`, "PATCH", { name: formatted });
+      }
       discordCommunityStatus.importantReady = found.every(Boolean);
       if (!discordCommunityStatus.importantReady) {
         importantError = `Important: missing ${names.filter((name, index) => !found[index]).join(", ")}`;
@@ -350,7 +362,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       });
       else intro = await ensureReadOnly(intro);
       introChannelId = intro.id;
-      if (intro.name !== "intro-slabsngrabsaco") {
+      if (normalizeName(intro.name) !== "introslabsngrabsaco") {
         await api(`/channels/${intro.id}`, "PATCH", { name: "intro-slabsngrabsaco" });
       }
       let rules = channels.find(item => item.type === 0 && ["rules", "serverrules"].includes(normalizeName(item.name)));
@@ -388,7 +400,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       suggestionChannelId = suggestions.id;
       await ensurePanel(suggestionChannelId, "suggestions",
         "Have a suggestion for our Discord server or website? Post it here. Ideas for channels, features, and improvements are welcome. Keep customer and payment details out of public chat.");
-      const general = channels.find(item => item.type === 0 && normalizeName(item.name) === "general");
+      const general = channels.find(item => item.type === 0 && ["general", "generalchat"].includes(normalizeName(item.name)));
       if (general) await ensurePanel(general.id, "general",
         "Welcome to #general. This is the place for everyday conversation: say hello, share what is on your mind, and talk with the community. Please keep private account and payment details out of public chat.");
       const questions = channels.find(item => item.type === 0 && normalizeName(item.name) === "questions");
