@@ -3044,17 +3044,17 @@ select:focus {
 }
 #home .public-success-heading h2 > span {
   color: #ff65d4;
-  background: linear-gradient(165deg,#ff8fe8 0%,#db3eb1 50%,#7c2168 100%);
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: #ff65d4;
+  background: none !important;
+  -webkit-background-clip: initial; background-clip: initial; -webkit-text-fill-color: #ff65d4 !important;
   -webkit-text-stroke: 1.45px #11151b;
   paint-order: stroke fill;
   filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #41b6e6)
     drop-shadow(0 0 10px rgba(219,62,177,.48));
 }
 #home .public-success-heading h2 > .public-success-title-tail {
-  color: #41b6e6;
-  background: linear-gradient(165deg,#73f5ff 0%,#41b6e6 50%,#166083 100%);
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: #5de8ff;
+  color: #5de8ff;
+  background: none !important;
+  -webkit-background-clip: initial; background-clip: initial; -webkit-text-fill-color: #5de8ff !important;
   filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #db3eb1)
     drop-shadow(0 0 10px rgba(65,182,230,.48));
 }
@@ -3062,10 +3062,10 @@ select:focus {
 #home .public-success-heading .public-success-letter {
   position: relative; display: inline-block; transform-origin: 50% 78%;
   min-width: .64em; margin-inline: .012em; text-align: center;
-  color: #db3eb1;
-  background: linear-gradient(165deg,#ff8fe8 0%,#db3eb1 50%,#7c2168 100%);
-  background-clip: text; -webkit-background-clip: text;
-  -webkit-text-fill-color: #ff65d4;
+  color: #ff65d4 !important;
+  background: none !important;
+  background-clip: initial; -webkit-background-clip: initial;
+  -webkit-text-fill-color: #ff65d4 !important;
   -webkit-text-stroke: .075em #0a0d15;
   paint-order: stroke fill;
   text-shadow: .055em .055em 0 #11151b, -.055em .055em 0 #11151b,
@@ -3073,9 +3073,9 @@ select:focus {
   animation: success-letter-melt var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
 }
 #home .public-success-title-tail .public-success-letter {
-  color: #5de8ff;
-  background: linear-gradient(165deg,#73f5ff 0%,#41b6e6 50%,#166083 100%);
-  background-clip: text; -webkit-background-clip: text;
+  color: #5de8ff !important;
+  background: none !important;
+  background-clip: initial; -webkit-background-clip: initial;
   -webkit-text-stroke-color: #0a0d15;
   -webkit-text-fill-color: #5de8ff;
 }
