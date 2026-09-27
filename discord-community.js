@@ -103,7 +103,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
   });
 }
 
-export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
+export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
 export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, dataDir, aiKey }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(aiKey);
@@ -143,6 +143,15 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       });
     }
     return channel;
+  }
+  async function ensureLogoEmoji() {
+    const emojis = await api(`/guilds/${guildId}/emojis`);
+    if (emojis.some(emoji => emoji.name?.toLowerCase() === "slabsngrabsaco")) return;
+    const bytes = await fs.readFile(new URL("./public/discord-emoji-sng.png", import.meta.url));
+    if (bytes.length > 256 * 1024) throw new Error("The logo emoji exceeds Discord's 256 KiB limit.");
+    await api(`/guilds/${guildId}/emojis`, "POST", {
+      name: "slabsngrabsaco", image: `data:image/png;base64,${bytes.toString("base64")}`
+    });
   }
   async function provision() {
     const channelId = await getChannelId();
@@ -500,8 +509,14 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         { type: 4, name: "winners", description: "How many winners to draw (1–20)", required: true, min_value: 1, max_value: 20 }
       ] }
     ]) await api(`/applications/${appId}/guilds/${guildId}/commands`, "POST", command);
+    let emojiError = null;
+    try { await ensureLogoEmoji(); discordCommunityStatus.emojiReady = true; }
+    catch (error) {
+      emojiError = `Logo emoji: ${error.message}${/HTTP 403/.test(error.message) ? " (grant the bot Create Expressions permission)" : ""}`;
+      console.error("Discord logo emoji:", emojiError);
+    }
     discordCommunityStatus.rolesReady = roles.length === LEVELS.length;
-    discordCommunityStatus.error = [ticketLobbyError, adminError, oneOnOneError, importantError, communityError].filter(Boolean).join("; ") || null;
+    discordCommunityStatus.error = [ticketLobbyError, adminError, oneOnOneError, importantError, communityError, emojiError].filter(Boolean).join("; ") || null;
     console.log(`Discord membership roles, #ask-ai and support tickets ready in guild ${guildId}`);
   }
   async function syncMember(userId, allowance) {
