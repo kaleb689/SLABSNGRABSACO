@@ -3043,18 +3043,23 @@ select:focus {
   overflow-wrap: anywhere;
 }
 #home .public-success-heading h2 > span {
-  color: #ff65d4;
-  background: none !important;
-  -webkit-background-clip: initial; background-clip: initial; -webkit-text-fill-color: #ff65d4 !important;
+  color: #ff65d4 !important;
+  background: transparent !important;
+  background-image: none !important;
+  -webkit-background-clip: border-box; background-clip: border-box;
+  -webkit-text-fill-color: currentColor !important;
+  opacity: 1;
   -webkit-text-stroke: 1.45px #11151b;
   paint-order: stroke fill;
   filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #41b6e6)
     drop-shadow(0 0 10px rgba(219,62,177,.48));
 }
 #home .public-success-heading h2 > .public-success-title-tail {
-  color: #5de8ff;
-  background: none !important;
-  -webkit-background-clip: initial; background-clip: initial; -webkit-text-fill-color: #5de8ff !important;
+  color: #5de8ff !important;
+  background: transparent !important;
+  background-image: none !important;
+  -webkit-background-clip: border-box; background-clip: border-box;
+  -webkit-text-fill-color: currentColor !important;
   filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #db3eb1)
     drop-shadow(0 0 10px rgba(65,182,230,.48));
 }
@@ -3063,9 +3068,10 @@ select:focus {
   position: relative; display: inline-block; transform-origin: 50% 78%;
   min-width: .64em; margin-inline: .012em; text-align: center;
   color: #ff65d4 !important;
-  background: none !important;
-  background-clip: initial; -webkit-background-clip: initial;
-  -webkit-text-fill-color: #ff65d4 !important;
+  background: transparent !important;
+  background-image: none !important;
+  background-clip: border-box; -webkit-background-clip: border-box;
+  -webkit-text-fill-color: currentColor !important;
   -webkit-text-stroke: .075em #0a0d15;
   paint-order: stroke fill;
   text-shadow: .055em .055em 0 #11151b, -.055em .055em 0 #11151b,
@@ -3074,10 +3080,11 @@ select:focus {
 }
 #home .public-success-title-tail .public-success-letter {
   color: #5de8ff !important;
-  background: none !important;
-  background-clip: initial; -webkit-background-clip: initial;
+  background: transparent !important;
+  background-image: none !important;
+  background-clip: border-box; -webkit-background-clip: border-box;
   -webkit-text-stroke-color: #0a0d15;
-  -webkit-text-fill-color: #5de8ff;
+  -webkit-text-fill-color: currentColor !important;
 }
 #home .public-success-letter[data-black-x]::before {
   content: attr(data-black-x); position: absolute; z-index: 1; left: 50%; top: 49%;
