@@ -127,9 +127,16 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const me = await api("/users/@me");
     appId = me.id;
     const channels = await api(`/guilds/${guildId}/channels`);
-    const support = channels.find(item => item.type === 4 && item.name.toLowerCase() === "support");
-    if (!support) throw new Error("The Support category was not found in this Discord server.");
-    let ask = channels.find(item => item.type === 0 && item.parent_id === support.id && item.name === "ask-ai");
+    let support = channels.find(item => item.type === 4 && /\bsupport\b/i.test(item.name));
+    const supportText = channels.find(item => item.type === 0 && /\bsupport\b/i.test(item.name));
+    if (!support && supportText?.parent_id) support = channels.find(item => item.id === supportText.parent_id && item.type === 4);
+    if (!support) {
+      support = await api(`/guilds/${guildId}/channels`, "POST", { name: "Support", type: 4 });
+      if (supportText && !supportText.parent_id) {
+        await api(`/channels/${supportText.id}`, "PATCH", { parent_id: support.id });
+      }
+    }
+    let ask = channels.find(item => item.type === 0 && item.parent_id === support.id && item.name.toLowerCase() === "ask-ai");
     if (!ask) ask = await api(`/guilds/${guildId}/channels`, "POST", {
       name: "ask-ai", type: 0, parent_id: support.id,
       topic: "Ask /ask about the website, your membership, or general botting questions. Never post passwords or payment details."
