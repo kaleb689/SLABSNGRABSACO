@@ -231,6 +231,16 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       ticketLobbyError = `Create a Ticket setup: ${error.message}`;
       console.error("Discord Create a Ticket setup:", error.message);
     }
+    // Decorate channels currently in Support without moving them or changing permissions.
+    for (const supportChannel of (await api(`/guilds/${guildId}/channels`)).filter(item =>
+      item.parent_id === support.id && [0, 2, 5, 13].includes(item.type))) {
+      const label = String(supportChannel.name).split(/[|│┃┊｜]/).pop()
+        .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").replace(/\s+/g, "-");
+      const formatted = `❕│${label}`;
+      if (label && supportChannel.name !== formatted) {
+        await api(`/channels/${supportChannel.id}`, "PATCH", { name: formatted });
+      }
+    }
     let adminError = null;
     try {
       const adminOverwrites = [
@@ -698,7 +708,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
       }
       const channel = await api(`/guilds/${guildId}/channels`, "POST", {
-        name: `ticket-${userId.slice(-8)}`, type: 0, parent_id: supportCategoryId,
+        name: `❕│ticket-${userId.slice(-8)}`, type: 0, parent_id: supportCategoryId,
         topic: `Private support ticket for Discord member ${userId}`,
         permission_overwrites: [
           { id: guildId, type: 0, deny: "1024" },
