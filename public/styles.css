@@ -3035,7 +3035,7 @@ select:focus {
   display: flex; flex-wrap: wrap; align-items: center; column-gap: .5em; row-gap: .08em;
   margin: 0; max-width: 100%; font-family: "Bavolen Reference", "Arial Rounded MT Bold", sans-serif;
   font-size: clamp(1.12rem,2.45vw,2.02rem); font-weight: 700; line-height: 1.48;
-  letter-spacing: -.06em; text-transform: uppercase;
+  letter-spacing: -.015em; text-transform: uppercase;
 }
 #home .public-success-brand, #home .public-success-title-tail { display: inline-block; max-width: 100%; }
 #home .public-success-brand { white-space: nowrap; }
@@ -3058,10 +3058,10 @@ select:focus {
   filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #db3eb1)
     drop-shadow(0 0 10px rgba(65,182,230,.48));
 }
-#home .public-success-heading .public-success-word { display: inline-flex; white-space: nowrap; margin-right: .23em; }
+#home .public-success-heading .public-success-word { display: inline-flex; white-space: nowrap; margin-right: .34em; }
 #home .public-success-heading .public-success-letter {
   position: relative; display: inline-block; transform-origin: 50% 78%;
-  min-width: .52em; text-align: center;
+  min-width: .58em; margin-inline: .018em; text-align: center;
   color: #db3eb1;
   background: linear-gradient(165deg,#ffffff 3%,#d0d0d0 22%,#db3eb1 47%,#db3eb1 78%,#7c2168 100%);
   background-clip: text; -webkit-background-clip: text;
@@ -3151,7 +3151,8 @@ select:focus {
   background: rgba(8,21,36,.40); box-shadow: 0 24px 60px rgba(0,0,0,.22); backdrop-filter: blur(7px); }
 #home .home-success-sample { display: inline-block; color: #67dcef; border: 1px solid rgba(103,220,239,.4);
   border-radius: 100px; padding: 7px 12px; font-size: .8rem; font-weight: 700; letter-spacing: .04em; }
-#home .home-success-iframe { display: block; width: 100%; height: 600px; margin: 16px 0 10px; border: 0; background: transparent; }
+#home .home-success-iframe { display: block; width: 100%; height: 600px; margin: 16px 0 10px; border: 0; background: transparent; opacity: 0; }
+#home .home-success-iframe.is-ready { opacity: 1; }
 body.success-demo-body { min-height: 0; background: transparent; }
 body.success-demo-body #my-profile.success-demo-only { width: 100%; max-width: none; margin: 0; padding: 2px; background: transparent; }
 body.success-demo-body #my-profile.success-demo-only .account-tab-panel { padding: 0; }

@@ -15150,6 +15150,14 @@ function homepageSampleSuccessData() {
   };
 }
 
+const siteBackToTop = document.getElementById("siteBackToTop");
+if (siteBackToTop) {
+  const updateBackToTop = () => { siteBackToTop.hidden = window.scrollY < 420; };
+  window.addEventListener("scroll", updateBackToTop, { passive: true });
+  siteBackToTop.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+  updateBackToTop();
+}
+
 if (SUCCESS_DEMO_MODE) {
   const panel = document.getElementById("account-tab-success");
   const wrapper = document.createElement("main");
@@ -15171,6 +15179,7 @@ if (SUCCESS_DEMO_MODE) {
     if (iframe && event.source === iframe.contentWindow) {
       const height = Number(event.data.height);
       if (Number.isFinite(height) && height > 0) iframe.style.height = `${Math.max(400, Math.ceil(height))}px`;
+      iframe.classList.add("is-ready");
     }
   });
 }
