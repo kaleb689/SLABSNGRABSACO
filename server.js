@@ -16069,8 +16069,22 @@ app.get(
         Boolean(
           config.host
         ),
+      running: Boolean(managedSuccessScanPromise),
       ...managedSuccessScanStatus
     });
+  }
+);
+
+app.post(
+  "/api/admin/managed-success-mailbox-scan",
+  requireAdmin,
+  (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!managedSuccessMailboxConfig().configured) {
+      return res.status(400).json({ error: "Complete the managed mailbox settings in Render first." });
+    }
+    runManagedSuccessScan().catch(() => {});
+    return res.status(202).json({ ok: true, running: true });
   }
 );
 
@@ -39469,6 +39483,7 @@ const managedSuccessScanStatus = {
   savedOrders: 0,
   unmatchedOrders: 0
 };
+let managedSuccessScanPromise = null;
 
 async function readRecentManagedWorkMailboxOrders(
   maxMessages = 120
@@ -40173,27 +40188,6 @@ async function syncAllActiveCustomerSuccess() {
       );
     }
 
-    /*
-      Managed Gifted/Rented profiles are routed from the
-      business work mailbox using the managed account email
-      plus the assignment time window. Historical Success
-      stays permanently attached to the customer who owned
-      the profile when the checkout happened.
-    */
-    managedSuccessScanStatus.lastAttemptAt = new Date().toISOString();
-    try {
-      const result = await syncManagedProfileSuccessMailbox();
-      managedSuccessScanStatus.lastCompletedAt = new Date().toISOString();
-      managedSuccessScanStatus.lastError = null;
-      managedSuccessScanStatus.parsedOrders = result.scanned || 0;
-      managedSuccessScanStatus.savedOrders = result.saved || 0;
-      managedSuccessScanStatus.unmatchedOrders = result.unmatched || 0;
-    } catch (error) {
-      managedSuccessScanStatus.lastError = error?.authenticationFailed ||
-        error?.code === "AUTHENTICATIONFAILED" ? "authentication_failed" : "scan_failed";
-      throw error;
-    }
-
   } catch (error) {
     console.error(
       "Live Success sync cycle failed:",
@@ -40208,6 +40202,33 @@ async function syncAllActiveCustomerSuccess() {
   }
 }
 
+/* Keep the managed mailbox on its own schedule so customer inbox scans
+   cannot delay its first run. Concurrent manual and scheduled scans share
+   one connection and one import pass. */
+function runManagedSuccessScan() {
+  if (managedSuccessScanPromise) return managedSuccessScanPromise;
+  managedSuccessScanStatus.lastAttemptAt = new Date().toISOString();
+  managedSuccessScanStatus.lastError = null;
+  managedSuccessScanPromise = (async () => {
+    try {
+      const result = await syncManagedProfileSuccessMailbox();
+      managedSuccessScanStatus.lastCompletedAt = new Date().toISOString();
+      managedSuccessScanStatus.parsedOrders = result.scanned || 0;
+      managedSuccessScanStatus.savedOrders = result.saved || 0;
+      managedSuccessScanStatus.unmatchedOrders = result.unmatched || 0;
+      return result;
+    } catch (error) {
+      managedSuccessScanStatus.lastError = error?.authenticationFailed ||
+        error?.code === "AUTHENTICATIONFAILED" ? "authentication_failed" : "scan_failed";
+      console.error("Managed Success mailbox scan failed:", error?.code || error?.name || "scan_error");
+      throw error;
+    } finally {
+      managedSuccessScanPromise = null;
+    }
+  })();
+  return managedSuccessScanPromise;
+}
+
 
 function startLiveSuccessScheduler() {
   /*
@@ -40219,6 +40240,7 @@ function startLiveSuccessScheduler() {
       () => {
         syncAllActiveCustomerSuccess()
           .catch(() => {});
+        runManagedSuccessScan().catch(() => {});
 
         reconcileLapsedMembershipNotifications()
           .catch(() => {});
@@ -40238,6 +40260,7 @@ function startLiveSuccessScheduler() {
       () => {
         syncAllActiveCustomerSuccess()
           .catch(() => {});
+        runManagedSuccessScan().catch(() => {});
 
         reconcileLapsedMembershipNotifications()
           .catch(() => {});

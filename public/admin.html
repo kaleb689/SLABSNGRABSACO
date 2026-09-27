@@ -5296,6 +5296,7 @@ PAID SUBSCRIPTIONS
   <strong>Managed Success mailbox</strong>
   <span id="managedSuccessMailboxStatus" role="status">Check configuration and latest order scan.</span>
   <button type="button" id="checkManagedSuccessMailbox">Check mailbox status</button>
+  <button type="button" id="scanManagedSuccessMailbox">Scan now</button>
 </div>
 
 <div class="admin-global-profile-search">
@@ -23266,11 +23267,8 @@ document.addEventListener("click", async event => {
 /* =========================================
    MANAGED SUCCESS MAILBOX STATUS
 ========================================= */
-document.getElementById("checkManagedSuccessMailbox")?.addEventListener("click", async event => {
-  const button = event.currentTarget;
+async function refreshManagedSuccessMailboxStatus() {
   const status = document.getElementById("managedSuccessMailboxStatus");
-  button.disabled = true;
-  status.textContent = "Checking mailbox status…";
   try {
     const response = await fetch("/api/admin/managed-success-mailbox-status", { credentials: "same-origin", cache: "no-store" });
     if (!response.ok) throw new Error("Could not check mailbox status.");
@@ -23282,6 +23280,8 @@ document.getElementById("checkManagedSuccessMailbox")?.addEventListener("click",
         !data.hostConfigured && "MANAGED_SUCCESS_IMAP_HOST"
       ].filter(Boolean);
       status.textContent = `Missing Render settings: ${missing.join(", ")}.`;
+    } else if (data.running) {
+      status.textContent = "Scanning the full mailbox history for order confirmations…";
     } else if (data.lastError) {
       status.textContent = data.lastError === "authentication_failed"
         ? "Configured, but mailbox authentication failed. Check the app password in Render."
@@ -23291,6 +23291,42 @@ document.getElementById("checkManagedSuccessMailbox")?.addEventListener("click",
     } else {
       status.textContent = `Connected · Last scan ${new Date(data.lastCompletedAt).toLocaleString()} · ${data.parsedOrders} recognized orders · ${data.savedOrders} newly saved.`;
     }
+    return data;
+  } catch (error) {
+    status.textContent = error.message;
+    return null;
+  }
+}
+
+document.getElementById("checkManagedSuccessMailbox")?.addEventListener("click", async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  document.getElementById("managedSuccessMailboxStatus").textContent = "Checking mailbox status…";
+  try {
+    await refreshManagedSuccessMailboxStatus();
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.getElementById("scanManagedSuccessMailbox")?.addEventListener("click", async event => {
+  const button = event.currentTarget;
+  const status = document.getElementById("managedSuccessMailboxStatus");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/admin/managed-success-mailbox-scan", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: "{}"
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not start the mailbox scan.");
+    status.textContent = "Scanning the full mailbox history for order confirmations…";
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const result = await refreshManagedSuccessMailboxStatus();
+      if (!result?.running) return;
+    }
+    status.textContent = "The scan is still running. Click Check mailbox status for its result.";
   } catch (error) {
     status.textContent = error.message;
   } finally {
