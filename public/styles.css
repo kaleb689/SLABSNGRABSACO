@@ -3073,7 +3073,7 @@ select:focus {
 }
 
 /* Community totals and the exact customer Success preview */
-#home .public-success { padding: 14px 0 0; margin-bottom: 42px; background: transparent; }
+#home .public-success { padding: 14px 0 0; margin-bottom: 12px; background: transparent; }
 #home .public-success-inner {
   display: grid; grid-template-columns: 1fr 1.15fr; column-gap: 16px; row-gap: 12px;
   padding: 16px 22px; border: 1px solid rgba(33,196,242,.33); border-radius: 20px;
@@ -3086,8 +3086,9 @@ select:focus {
 #home .public-success-heading h2 {
   display: flex; flex-wrap: nowrap; align-items: center; column-gap: .5em; row-gap: .08em;
   margin: 0; max-width: 100%; font-family: "Bavolen Reference", "Arial Rounded MT Bold", sans-serif;
-  font-size: clamp(1.12rem,2.45vw,2.02rem); font-weight: 700; line-height: 1.48;
+  font-size: clamp(1.25rem,2.8vw,2.28rem); font-weight: 700; line-height: 1.48;
   letter-spacing: -.015em; text-transform: uppercase; white-space: nowrap;
+  transform: translateY(4px);
 }
 #home .public-success-brand, #home .public-success-title-tail { display: inline-block; max-width: none; white-space: nowrap; }
 #home .public-success-brand { white-space: nowrap; }
@@ -3103,7 +3104,7 @@ select:focus {
   opacity: 1;
   -webkit-text-stroke: 1.45px #11151b;
   paint-order: stroke fill;
-  filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #41b6e6)
+  filter: drop-shadow(2px 3px 0 #061020) drop-shadow(4px 5px 0 #41b6e6)
     drop-shadow(0 0 10px rgba(219,62,177,.48));
 }
 #home .public-success-heading h2 > .public-success-title-tail {
@@ -3112,7 +3113,7 @@ select:focus {
   background-image: none !important;
   -webkit-background-clip: border-box; background-clip: border-box;
   -webkit-text-fill-color: currentColor !important;
-  filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #db3eb1)
+  filter: drop-shadow(2px 3px 0 #061020) drop-shadow(4px 5px 0 #db3eb1)
     drop-shadow(0 0 10px rgba(65,182,230,.48));
 }
 #home .public-success-heading .public-success-word { display: inline-flex; white-space: nowrap; margin-right: .22em; }
@@ -3156,7 +3157,7 @@ select:focus {
   letter-spacing: 0; pointer-events: none;
 }
 #home .public-success-heading .public-success-letter::after {
-  content: ""; position: absolute; left: 43%; top: 74%; width: .11em; height: .24em;
+  content: ""; position: absolute; left: 43%; top: 74%; width: .14em; height: .31em;
   border-radius: 0 0 100% 100%; background: #db3eb1;
   transform: scaleY(0); transform-origin: top; pointer-events: none;
   animation: success-letter-drip var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
@@ -3290,15 +3291,27 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   background: rgba(18, 201, 255, .035);
   display: grid;
   align-content: center;
-  cursor: pointer;
 }
 #my-profile .member-lifetime-stats > .discord-connect-stat:hover,
-#my-profile .member-lifetime-stats > .discord-connect-stat:focus-visible {
+#my-profile .member-lifetime-stats > .discord-connect-stat:focus-within {
   background: rgba(18, 201, 255, .11);
   border-color: #1dd6ff;
 }
-#my-profile .member-lifetime-stats > .discord-connect-stat:disabled { cursor: default; }
-#my-profile .discord-connect-stat-main { display: flex; align-items: center; gap: 9px; }
+#my-profile .discord-connect-stat-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+#my-profile .discord-connect-stat-main:disabled { cursor: default; }
+#my-profile .discord-connect-stat-main:focus-visible,
+#my-profile .discord-unlink-action:focus-visible { outline: 2px solid #1dd6ff; outline-offset: 3px; }
 #my-profile .discord-connect-stat-main svg { width: 24px; height: 24px; flex: none; color: #1dd6ff; }
 #my-profile .discord-connect-stat-main span { color: #eff9ff; font-size: clamp(14px, 1.25vw, 20px); letter-spacing: 0; line-height: 1.2; text-transform: none; }
 #my-profile .account-header-discord-status {
@@ -3308,6 +3321,20 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   overflow-wrap: anywhere;
 }
 #my-profile .account-header-discord-status[hidden] { display: none; }
+#my-profile .discord-unlink-action {
+  justify-self: start;
+  border: 0;
+  padding: 1px 0;
+  background: transparent;
+  color: #a5bed0;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+#my-profile .discord-unlink-action:hover { color: #ffb0d9; }
+#my-profile .discord-unlink-action[hidden] { display: none; }
+#my-profile #discord-link-button[hidden] { display: none; }
 @media (max-width: 1050px) {
   #my-profile .account-topbar { grid-template-columns: 1fr; min-height: 0; }
   #my-profile .member-lifetime-stats { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
@@ -3333,7 +3360,7 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   #home .public-success-heading > div { flex-wrap: wrap; gap: 6px; }
   #home .public-success-heading .eyebrow { flex-basis: auto; width: auto; }
   #home .public-success-heading h2 { flex-wrap: wrap; }
-  #home .public-success-heading h2 { font-size: clamp(1.05rem,4.2vw,1.6rem); }
+  #home .public-success-heading h2 { font-size: clamp(1.15rem,4.6vw,1.78rem); transform: translateY(2px); }
   #home .home-success-preview { padding: 40px 0; }
 }
 @media (max-width: 420px) {
@@ -3350,7 +3377,7 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
 .home-reference-hero {
   position: relative;
   min-height: 650px;
-  padding: 70px 0 75px;
+  padding: 36px 0 75px;
   display: flex;
   align-items: center;
   overflow: hidden;

@@ -40,7 +40,46 @@ export async function createDiscordLinkCode(dataDir, accountId) {
     return code;
   });
 }
-async function consumeCode(dataDir, code, userId, getAccounts, saveAccounts) {
+export async function revokeDiscordLinkCodes(dataDir, accountId) {
+  return withCodes(async () => {
+    const codes = await readCodes(dataDir);
+    await writeCodes(dataDir, codes.filter(item => item.accountId !== accountId && item.expiresAt > Date.now()));
+  });
+}
+
+const removalFile = dataDir => path.join(dataDir, "discord-role-removals.json");
+let removalQueue = Promise.resolve();
+let flushQueuedRemovals = async () => {};
+function withRemovals(task) {
+  const next = removalQueue.then(task);
+  removalQueue = next.catch(() => {});
+  return next;
+}
+async function readRemovals(dataDir) {
+  try {
+    const value = JSON.parse(await fs.readFile(removalFile(dataDir), "utf8"));
+    return Array.isArray(value) ? value : [];
+  } catch (error) { if (error.code === "ENOENT") return []; throw error; }
+}
+async function writeRemovals(dataDir, entries) {
+  const file = removalFile(dataDir);
+  await fs.mkdir(dataDir, { recursive: true });
+  const temp = `${file}.${crypto.randomUUID()}.tmp`;
+  await fs.writeFile(temp, JSON.stringify(entries), { mode: 0o600 });
+  await fs.rename(temp, file);
+}
+export async function queueDiscordRoleRemoval(dataDir, userId) {
+  if (!/^\d{17,22}$/.test(String(userId || ""))) return;
+  await withRemovals(async () => {
+    const pending = await readRemovals(dataDir);
+    if (!pending.includes(String(userId))) {
+      pending.push(String(userId));
+      await writeRemovals(dataDir, pending);
+    }
+  });
+  void flushQueuedRemovals().catch(error => console.error("Discord role removal:", error.message));
+}
+async function consumeCode(dataDir, code, userId, username, getAccounts, saveAccounts) {
   return withCodes(async () => {
     const entries = await readCodes(dataDir);
     const index = entries.findIndex(item => item.expiresAt > Date.now() &&
@@ -49,10 +88,12 @@ async function consumeCode(dataDir, code, userId, getAccounts, saveAccounts) {
     const accounts = await getAccounts();
     const account = accounts.find(item => String(item.id) === String(entries[index].accountId) && !item.disabled);
     if (!account) return "That customer account is unavailable.";
+    if (account.discordLinkedAt) return "Unlink your current Discord account on the website before connecting another one.";
     if (accounts.some(item => item.id !== account.id && String(item.discordUserId || "") === userId)) {
       return "This Discord account is already linked to another customer account. Contact support.";
     }
     account.discordUserId = userId;
+    account.discordUsername = username || account.discordUsername || "";
     account.discordLinkedAt = new Date().toISOString();
     account.updatedAt = account.discordLinkedAt;
     await saveAccounts(accounts);
@@ -62,7 +103,10 @@ async function consumeCode(dataDir, code, userId, getAccounts, saveAccounts) {
   });
 }
 
+export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, gatewayReady: false, aiConfigured: false, lastRoleSyncAt: null, error: null };
 export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, dataDir, aiKey }) {
+  discordCommunityStatus.configured = Boolean(token);
+  discordCommunityStatus.aiConfigured = Boolean(aiKey);
   if (!token) return;
   const headers = { Authorization: `Bot ${token}`, "Content-Type": "application/json" };
   async function api(route, method = "GET", payload) {
@@ -91,6 +135,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       topic: "Ask /ask about the website, your membership, or general botting questions. Never post passwords or payment details."
     });
     askChannelId = ask.id;
+    discordCommunityStatus.askChannelReady = true;
     const existing = await api(`/guilds/${guildId}/roles`);
     roles = [];
     for (const level of LEVELS) {
@@ -105,6 +150,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       { name: "link", description: "Link your website account to your Discord membership", options: [{ type: 3, name: "code", description: "Your private code from My Profile", required: true }] },
       { name: "ask", description: "Ask the support AI a website or botting question", options: [{ type: 3, name: "question", description: "Your question (no private account details)", required: true }] }
     ]) await api(`/applications/${appId}/guilds/${guildId}/commands`, "POST", command);
+    discordCommunityStatus.rolesReady = roles.length === LEVELS.length;
+    discordCommunityStatus.error = null;
     console.log(`Discord membership roles and #ask-ai ready in guild ${guildId}`);
   }
   async function syncMember(userId, allowance) {
@@ -119,17 +166,36 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       if (!has && role.id === wanted?.id) await api(`/guilds/${guildId}/members/${userId}/roles/${role.id}`, "PUT");
     }
   }
+  async function removeOldRoles() {
+    if (!guildId || roles.length !== LEVELS.length) return;
+    await withRemovals(async () => {
+      const pending = await readRemovals(dataDir);
+      if (!pending.length) return;
+      const accounts = await getAccounts();
+      const retry = [];
+      for (const userId of pending) {
+        // A customer who reconnected this identity keeps the role for their current tier.
+        if (accounts.some(account => account.discordLinkedAt && account.discordUserId === userId)) continue;
+        try { await syncMember(userId, 0); }
+        catch (error) { retry.push(userId); console.error("Discord role removal retry:", error.message); }
+      }
+      await writeRemovals(dataDir, retry);
+    });
+  }
+  flushQueuedRemovals = removeOldRoles;
   let syncing = false;
   async function syncAll() {
     if (syncing || !guildId) return;
     syncing = true;
     try {
+      await removeOldRoles();
       const accounts = await getAccounts();
       for (const account of accounts) {
         if (!account.discordLinkedAt || !/^\d{17,22}$/.test(String(account.discordUserId || ""))) continue;
         try { await syncMember(account.discordUserId, account.disabled ? 0 : await getAllowance(account.id)); }
         catch (error) { console.error("Discord tier sync:", error.message); }
       }
+      discordCommunityStatus.lastRoleSyncAt = new Date().toISOString();
     } finally { syncing = false; }
   }
   const recent = new Map();
@@ -156,7 +222,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     try {
       if (name === "link") {
         const code = String(d.data.options?.find(item => item.name === "code")?.value || "").trim().toUpperCase();
-        const message = await consumeCode(dataDir, code, userId, getAccounts, saveAccounts);
+        const message = await consumeCode(dataDir, code, userId, d.member?.user?.username, getAccounts, saveAccounts);
         if (message) return await reply(message);
         try { const account = (await getAccounts()).find(item => item.discordUserId === userId); await syncMember(userId, await getAllowance(account.id)); }
         catch (error) { console.error("Discord role after linking:", error.message); }
@@ -192,11 +258,12 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           }
           if (packet.op === 1 && socket.readyState === 1) socket.send(JSON.stringify({ op: 1, d: sequence }));
           if (packet.op === 7 || packet.op === 9) socket.close();
-          if (packet.t === "READY") reconnectDelay = 1000;
+          if (packet.t === "READY") { reconnectDelay = 1000; discordCommunityStatus.gatewayReady = true; }
           if (packet.t === "INTERACTION_CREATE") void interaction(packet);
         } catch (error) { console.error("Discord gateway packet:", error.message); }
       });
       socket.addEventListener("close", () => {
+        discordCommunityStatus.gatewayReady = false;
         clearInterval(heartbeat);
         setTimeout(connect, reconnectDelay).unref?.();
         reconnectDelay = Math.min(reconnectDelay * 2, 60000);
@@ -209,7 +276,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   }
   async function setup() {
     try { await provision(); await syncAll(); await connect(); }
-    catch (error) { console.error("Discord community setup:", error.message); setTimeout(setup, 60000).unref?.(); }
+    catch (error) { discordCommunityStatus.error = error.message; console.error("Discord community setup:", error.message); setTimeout(setup, 60000).unref?.(); }
   }
   setTimeout(setup, 5000).unref?.();
   setInterval(syncAll, 60000).unref?.();

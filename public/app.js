@@ -3508,10 +3508,33 @@ function openDiscordVerification(context) {
 }
 document.querySelector('#register-form [name="discordUsername"]')?.addEventListener("click", () => openDiscordVerification("signup"));
 document.querySelector('#discord-settings-form [name="discordUsername"]')?.addEventListener("click", () => {
-  if (state.customer) openDiscordVerification("account");
+  if (state.customer && !state.customer.discordLinked) openDiscordVerification("account");
 });
 document.getElementById("customer-header-discord-connect")?.addEventListener("click", () => {
   if (state.customer) openDiscordVerification("account");
+});
+document.getElementById("customer-header-discord-unlink")?.addEventListener("click", async event => {
+  const button = event.currentTarget;
+  if (!state.customer?.discordLinked || button.disabled) return;
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/account/discord-link", {
+      method: "DELETE", credentials: "same-origin"
+    });
+    const result = await readJson(response);
+    if (!response.ok) throw new Error(result.error || "Unable to unlink Discord.");
+    stopDiscordLinkPolling();
+    state.customer = { ...state.customer, ...result.account };
+    const instructions = document.getElementById("discord-link-instructions");
+    if (instructions) instructions.textContent = "";
+    renderAccountHeader(state.customer);
+    renderCustomerDiscordSettings();
+    showAccountMessage("Discord unlinked. You can connect the correct account now.", "success");
+  } catch (error) {
+    showAccountMessage(error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
 });
 function handleDiscordVerificationResult(result) {
   if (result?.type !== "slabsngrabsaco-discord") return;
@@ -4672,12 +4695,14 @@ function renderAccountHeader(
   );
 
   const discordConnectButton = document.getElementById("customer-header-discord-connect");
+  const discordUnlinkButton = document.getElementById("customer-header-discord-unlink");
   const discordStatus = document.getElementById("customer-header-discord-status");
   const discordAction = document.getElementById("customer-header-discord-action");
   if (discordConnectButton) {
     discordConnectButton.disabled = Boolean(account?.discordLinked);
     discordConnectButton.setAttribute("aria-label", account?.discordLinked ? "Discord connected" : "Connect to Discord");
   }
+  if (discordUnlinkButton) discordUnlinkButton.hidden = !account?.discordLinked;
   if (discordAction) discordAction.textContent = account?.discordLinked ? "Connected" : "Connect to Discord";
   if (discordStatus) {
     discordStatus.hidden = !account?.discordLinked;
@@ -14054,6 +14079,8 @@ function renderCustomerDiscordSettings() {
   if (roleStatus) roleStatus.textContent = state.customer?.discordLinked
     ? "Discord linked. Your role follows your active membership."
     : "Discord is not linked yet.";
+  const linkCodeButton = document.getElementById("discord-link-button");
+  if (linkCodeButton) linkCodeButton.hidden = Boolean(state.customer?.discordLinked);
 }
 
 document.getElementById("discord-link-button")?.addEventListener("click", async event => {

@@ -5171,6 +5171,13 @@
     }
 
 
+    .admin-discord-card { margin: 14px; background: rgba(5, 27, 43, .9); }
+    .admin-discord-fields { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+    .admin-discord-fields label { flex: 1 1 190px; color: #bceafb; font-size: 12px; }
+    .admin-discord-fields input { display: block; width: 100%; box-sizing: border-box; margin-top: 5px; padding: 10px; border: 1px solid #427e99; border-radius: 8px; background: #071823; color: #fff; }
+    .admin-discord-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .admin-discord-actions button { width: auto; min-width: 125px; }
+    .admin-discord-card small { display: block; margin-top: 10px; color: #a9cad7; }
   </style>
 </head>
 
@@ -7063,6 +7070,17 @@ function renderOrder(x) {
               </span>
             </summary>
 
+            ${x.customerAccountId ? `<section class="customer-action-card admin-discord-card" data-admin-discord-card="${escapeHtml(x.customerAccountId)}">
+              <span class="eyebrow">DISCORD ACCOUNT</span>
+              <h4>Customer Discord connection</h4>
+              <p>Enter their Discord username and verify the matching member in your server. A Discord User ID resolves ambiguous usernames.</p>
+              <div class="admin-discord-fields">
+                <label>Discord username <input data-discord-username autocomplete="off" placeholder="Username"></label>
+                <label>Discord User ID (if needed) <input data-discord-user-id inputmode="numeric" autocomplete="off" placeholder="Numeric Discord ID"></label>
+              </div>
+              <div class="admin-discord-actions"><button type="button" class="admin-save-button" data-admin-discord-save>Link or update</button><button type="button" class="admin-edit-button" data-admin-discord-unlink hidden>Unlink</button></div>
+              <small data-admin-discord-feedback>Loading Discord connection…</small>
+            </section>` : ""}
             <form
               class="admin-inline-edit-form"
               data-admin-inline-form="${escapeHtml(x.id)}"
@@ -23607,9 +23625,12 @@ async function refreshDiscordSuccessStatus() {
   const label = document.getElementById("discordSuccessStatus");
   try {
     const status = await membershipApi("/api/admin/discord-success-status");
+    const community = status.community || {};
+    const botState = community.error ? ` · Community bot: ${community.error}` :
+      ` · Tier roles: ${community.rolesReady ? "ready" : "pending"} · #ask-ai: ${community.askChannelReady ? "ready" : "pending"} · AI key: ${community.aiConfigured ? "set" : "missing"} · Bot connection: ${community.gatewayReady ? "online" : "pending"}`;
     label.textContent = status.configurationError || (status.configured
       ? `Channel ID ${status.channelId}${status.source === "webhook" ? " · Found through your webhook" : ""} · ${status.running ? "Scanning…" : status.error || (status.checkedAt ? "Last scan " + new Date(status.checkedAt).toLocaleString() + " · " + status.added + " added" : "Waiting for first scan")}`
-      : "Set DISCORD_BOT_TOKEN and DISCORD_SUCCESS_CHANNEL_ID in Render to connect the invited bot.");
+      + botState : "Set DISCORD_BOT_TOKEN and DISCORD_SUCCESS_CHANNEL_ID in Render to connect the invited bot.");
     document.getElementById("discordSuccessScanButton").disabled = !status.configured || status.running;
   } catch (error) { label.textContent = error.message; }
 }
@@ -23716,6 +23737,46 @@ document.getElementById("discountCodeForm")?.addEventListener("submit", async ev
     loadMembershipTools();
   } catch (error) { feedback.textContent = error.message; }
   finally { button.disabled = false; }
+});
+
+async function loadAdminDiscordCard(card) {
+  const feedback = card.querySelector("[data-admin-discord-feedback]");
+  try {
+    const data = await membershipApi(`/api/admin/customers/${encodeURIComponent(card.dataset.adminDiscordCard)}/discord`);
+    card.querySelector("[data-discord-username]").value = data.username || "";
+    card.querySelector("[data-discord-user-id]").value = data.userId || "";
+    card.querySelector("[data-admin-discord-unlink]").hidden = !data.linked;
+    feedback.textContent = data.linked ? `Linked to @${data.username} · membership role syncs automatically` : "No Discord account linked yet.";
+  } catch (error) { feedback.textContent = error.message; }
+}
+document.addEventListener("toggle", event => {
+  const section = event.target;
+  if (section.matches?.('[data-inline-admin-section="shipping"]') && section.open) {
+    const card = section.querySelector("[data-admin-discord-card]");
+    if (card) void loadAdminDiscordCard(card);
+  }
+}, true);
+document.addEventListener("click", async event => {
+  const action = event.target.closest("[data-admin-discord-save], [data-admin-discord-unlink]");
+  if (!action) return;
+  const card = action.closest("[data-admin-discord-card]");
+  const feedback = card.querySelector("[data-admin-discord-feedback]");
+  action.disabled = true;
+  feedback.textContent = "Verifying Discord member…";
+  try {
+    const unlink = action.hasAttribute("data-admin-discord-unlink");
+    const data = await membershipApi(`/api/admin/customers/${encodeURIComponent(card.dataset.adminDiscordCard)}/discord`, unlink
+      ? { method: "DELETE" }
+      : { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          username: card.querySelector("[data-discord-username]").value,
+          userId: card.querySelector("[data-discord-user-id]").value
+        }) });
+    card.querySelector("[data-discord-username]").value = data.username || "";
+    card.querySelector("[data-discord-user-id]").value = data.userId || "";
+    card.querySelector("[data-admin-discord-unlink]").hidden = !data.linked;
+    feedback.textContent = data.linked ? `Verified @${data.username} in your server. Tier role will sync automatically.` : "Discord account unlinked.";
+  } catch (error) { feedback.textContent = error.message; }
+  finally { action.disabled = false; }
 });
 
 /* =========================================

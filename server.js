@@ -13,7 +13,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { startDiscordCommunity, createDiscordLinkCode } from "./discord-community.js";
+import { startDiscordCommunity, discordCommunityStatus, createDiscordLinkCode, revokeDiscordLinkCodes, queueDiscordRoleRemoval } from "./discord-community.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -7996,6 +7996,7 @@ app.get("/api/discord/oauth/start", async (req, res) => {
     const context = req.query.context === "account" ? "account" : "signup";
     const account = context === "account" ? await getAuthenticatedCustomer(req) : null;
     if (context === "account" && !account) return res.status(401).send("Sign in before connecting Discord.");
+    if (account?.discordLinkedAt) return res.status(409).send("Unlink your current Discord account before connecting another one.");
     if (!discordOAuthClientId) {
       const response = await fetch("https://discord.com/api/v10/users/@me", {
         headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` }, signal: AbortSignal.timeout(10000)
@@ -8004,7 +8005,7 @@ app.get("/api/discord/oauth/start", async (req, res) => {
       discordOAuthClientId = (await response.json()).id;
     }
     const state = crypto.randomBytes(24).toString("hex");
-    discordOAuthStates.set(state, { context, accountId: account?.id, expiresAt: Date.now() + 600000 });
+    discordOAuthStates.set(state, { context, accountId: account?.id, linkVersion: Number(account?.discordLinkVersion || 0), expiresAt: Date.now() + 600000 });
     const url = new URL("https://discord.com/oauth2/authorize");
     url.search = new URLSearchParams({ client_id: discordOAuthClientId, response_type: "code", redirect_uri: discordRedirectUri, scope: "identify", state }).toString();
     res.redirect(url.toString());
@@ -8039,7 +8040,8 @@ app.get("/api/discord/oauth/callback", async (req, res) => {
       payload.error = "This Discord account is already linked to another website account.";
     } else if (pending.context === "account") {
       const signedIn = await getAuthenticatedCustomer(req);
-      if (!signedIn || signedIn.id !== pending.accountId) throw new Error("Customer session changed");
+      if (!signedIn || signedIn.id !== pending.accountId || signedIn.discordLinkedAt ||
+        Number(signedIn.discordLinkVersion || 0) !== pending.linkVersion) throw new Error("Customer session or Discord connection changed");
       const account = accounts.find(item => item.id === signedIn.id);
       account.discordUserId = identity.id;
       account.discordLinkedAt = new Date().toISOString();
@@ -8585,11 +8587,9 @@ app.put(
           });
       }
 
-      account.discordUsername =
-        clean(
-          req.body?.discordUsername,
-          100
-        );
+      if (!account.discordLinkedAt) {
+        account.discordUsername = clean(req.body?.discordUsername, 100);
+      }
 
       // Editing a display name never changes the verified Discord link.
 
@@ -8627,6 +8627,7 @@ app.put(
 
 app.post("/api/account/discord-link", requireCustomer, async (req, res) => {
   try {
+    if (req.customerAccount.discordLinkedAt) return res.status(409).json({ error: "Unlink your current Discord account first." });
     if (!process.env.DISCORD_BOT_TOKEN) return res.status(503).json({ error: "Discord linking is not configured yet." });
     const code = await createDiscordLinkCode(DATA_DIR, req.customerAccount.id);
     res.json({ code, expiresInSeconds: 600 });
@@ -8634,6 +8635,115 @@ app.post("/api/account/discord-link", requireCustomer, async (req, res) => {
     console.error("Discord link code error:", error);
     res.status(500).json({ error: "Unable to create a Discord link code." });
   }
+});
+
+app.delete("/api/account/discord-link", requireCustomer, async (req, res) => {
+  try {
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => String(item.id) === String(req.customerAccount.id));
+    if (!account) return res.status(404).json({ error: "Customer account could not be found." });
+    if (account.discordUserId && account.discordLinkedAt) {
+      const oldDiscordId = account.discordUserId;
+      account.discordLinkVersion = Number(account.discordLinkVersion || 0) + 1;
+      delete account.discordUserId;
+      delete account.discordLinkedAt;
+      account.discordUsername = "";
+      account.updatedAt = new Date().toISOString();
+      await saveCustomerAccounts(accounts);
+      await queueDiscordRoleRemoval(DATA_DIR, oldDiscordId);
+    }
+    await revokeDiscordLinkCodes(DATA_DIR, account.id);
+    for (const [state, pending] of discordOAuthStates) {
+      if (pending.accountId === account.id) discordOAuthStates.delete(state);
+    }
+    return res.json({ ok: true, account: publicCustomerAccount(account) });
+  } catch (error) {
+    console.error("Discord unlink error:", error.message);
+    return res.status(500).json({ error: "Unable to unlink Discord. Please try again." });
+  }
+});
+
+// Admin links are verified against the actual member of the configured server.
+async function discordServerMember(username, userId) {
+  const { token, channelId } = await resolvedDiscordSuccessConfig();
+  if (!token || !/^\d{17,22}$/.test(String(channelId))) throw new Error("Configure the Discord bot and success channel first.");
+  async function discordGet(route) {
+    const response = await fetch(`https://discord.com/api/v10${route}`, {
+      headers: { Authorization: `Bot ${token}` }, signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) throw new Error(response.status === 403 ? "Discord denied the lookup. Check the bot permissions or provide a numeric User ID." : `Discord lookup failed (HTTP ${response.status}).`);
+    return response.json();
+  }
+  const channel = await discordGet(`/channels/${channelId}`);
+  if (!/^\d{17,22}$/.test(String(channel.guild_id || ""))) throw new Error("The success channel has no Discord server.");
+  const guild = channel.guild_id;
+  let member;
+  if (userId) {
+    if (!/^\d{17,22}$/.test(userId)) throw new Error("Enter a valid numeric Discord User ID.");
+    member = await discordGet(`/guilds/${guild}/members/${userId}`);
+  } else {
+    if (!username || username.length < 2) throw new Error("Enter a Discord username or User ID.");
+    const matches = await discordGet(`/guilds/${guild}/members/search?query=${encodeURIComponent(username)}&limit=100`);
+    const exact = matches.filter(item => item.user?.username?.toLowerCase() === username.toLowerCase());
+    if (exact.length !== 1) throw new Error("Could not uniquely verify that username in your server. Enter the member's numeric Discord User ID.");
+    member = exact[0];
+  }
+  if (!/^\d{17,22}$/.test(String(member.user?.id || ""))) throw new Error("This Discord member could not be verified.");
+  if (username && member.user.username.toLowerCase() !== username.toLowerCase()) throw new Error("The username does not match that Discord User ID. Check the account before linking.");
+  return member.user;
+}
+
+app.get("/api/admin/customers/:id/discord", requireAdmin, async (req, res) => {
+  const account = (await getCustomerAccounts()).find(item => item.id === req.params.id);
+  if (!account) return res.status(404).json({ error: "Customer account not found." });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ username: account.discordUsername || "", userId: account.discordUserId || "", linked: Boolean(account.discordLinkedAt && account.discordUserId) });
+});
+
+app.put("/api/admin/customers/:id/discord", requireAdmin, async (req, res) => {
+  try {
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => item.id === req.params.id);
+    if (!account) return res.status(404).json({ error: "Customer account not found." });
+    const username = String(req.body.username || "").trim().replace(/^@/, "");
+    const userId = String(req.body.userId || "").trim();
+    if (username.length > 100) return res.status(400).json({ error: "Username is too long." });
+    const identity = await discordServerMember(username, userId);
+    if (accounts.some(item => item.id !== account.id && item.discordLinkedAt && item.discordUserId === identity.id)) {
+      return res.status(409).json({ error: "That Discord member is already linked to another customer." });
+    }
+    const previousId = account.discordUserId;
+    account.discordUserId = identity.id;
+    account.discordUsername = identity.username;
+    account.discordLinkedAt = new Date().toISOString();
+    account.discordLinkVersion = Number(account.discordLinkVersion || 0) + 1;
+    account.updatedAt = account.discordLinkedAt;
+    await saveCustomerAccounts(accounts);
+    await revokeDiscordLinkCodes(DATA_DIR, account.id);
+    if (previousId && previousId !== identity.id) await queueDiscordRoleRemoval(DATA_DIR, previousId);
+    res.json({ username: identity.username, userId: identity.id, linked: true });
+  } catch (error) {
+    console.error("Admin Discord link:", error.message);
+    res.status(/not found|username|User ID|member|denied|Configure/.test(error.message) ? 400 : 502).json({ error: error.message });
+  }
+});
+
+app.delete("/api/admin/customers/:id/discord", requireAdmin, async (req, res) => {
+  try {
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => item.id === req.params.id);
+    if (!account) return res.status(404).json({ error: "Customer account not found." });
+    const previousId = account.discordUserId;
+    account.discordLinkVersion = Number(account.discordLinkVersion || 0) + 1;
+    delete account.discordUserId;
+    delete account.discordLinkedAt;
+    account.discordUsername = "";
+    account.updatedAt = new Date().toISOString();
+    await saveCustomerAccounts(accounts);
+    await revokeDiscordLinkCodes(DATA_DIR, account.id);
+    if (previousId) await queueDiscordRoleRemoval(DATA_DIR, previousId);
+    res.json({ username: "", userId: "", linked: false });
+  } catch (error) { console.error("Admin Discord unlink:", error.message); res.status(500).json({ error: "Unable to unlink Discord." }); }
 });
 
 
@@ -35066,7 +35176,8 @@ app.get("/api/admin/discord-success-status", requireAdmin, async (_req, res) => 
       ? config.lookupError || "DISCORD_SUCCESS_CHANNEL_ID must be a numeric channel ID or a valid Discord webhook URL."
       : null,
     channelId: validChannelId ? config.channelId : null,
-    ...discordSuccessScan
+    ...discordSuccessScan,
+    community: discordCommunityStatus
   });
 });
 app.post("/api/admin/discord-success-scan", requireAdmin, async (_req, res) => {
