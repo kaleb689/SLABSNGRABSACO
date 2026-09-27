@@ -34608,7 +34608,7 @@ app.get("/api/account/success/events", requireCustomer, (req, res) => {
 });
 
 function isPublicSuccessProduct(name) {
-  return /pok[eé]mon|lorcana|magic\s*[:\-]?\s*the\s*gathering|\bmtg\b|trading\s*card|\btcg\b|yu[\s-]?gi[\s-]?oh|one\s*piece\s*(?:card|tcg)|digimon|flesh\s*and\s*blood|dragon\s*ball\s*(?:card|tcg)/i.test(name);
+  return /pok[eé]mon|lorcana|magic\s*[:\-]?\s*the\s*gathering|\bmtg\b|nee[\s-]?doh|trading\s*card|\btcg\b|yu[\s-]?gi[\s-]?oh|one\s*piece\s*(?:card|tcg)|digimon|flesh\s*and\s*blood|dragon\s*ball\s*(?:card|tcg)/i.test(name);
 }
 
 function publicSuccessImageUrl(value) {
@@ -34634,11 +34634,11 @@ app.get(
       let totalCheckouts = 0;
 
       for (const record of records) {
+        if (!/^(confirmed|success|completed)$/i.test(String(record.status || "confirmed"))) continue;
         const eligibleItems = (Array.isArray(record.items) ? record.items : []).filter(item => {
           const name = clean(item?.name, 120).replace(/\s+/g, " ").trim();
           return name && isPublicSuccessProduct(name) && !/@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name) && Number(item?.quantity) > 0;
         });
-        if (!eligibleItems.length) continue;
         totalCheckouts += 1;
         const total = Number(record.orderTotal);
         if (Number.isFinite(total) && total > 0) totalSpent += total;
@@ -34768,7 +34768,7 @@ async function recordSuccessCheckout(
 }
 
 /* Orders in the business mailbox without a customer assignment contribute
-   only trading card product totals to the community display. */
+   anonymous checkout totals. Only eligible product names enter the carousel. */
 async function recordCommunitySuccessCheckout(order) {
   const items = (Array.isArray(order?.items) ? order.items : [])
     .filter(item => {
@@ -34782,8 +34782,6 @@ async function recordCommunitySuccessCheckout(order) {
       quantity: Math.max(1, Math.floor(Number(item.quantity))),
       imageUrl: publicSuccessImageUrl(item.imageUrl)
     }));
-  if (!items.length) return false;
-
   const sourceId = String(order.messageId || order.mailboxUid || order.orderNumber || "");
   if (!sourceId) return false;
   const id = `community-mailbox:${crypto.createHash("sha256")
