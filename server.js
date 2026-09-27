@@ -34663,7 +34663,8 @@ async function saveSuccessCheckouts(
 
 
 async function recordSuccessCheckout(
-  record
+  record,
+  { notifyDiscord = true } = {}
 ) {
   const safeRecord =
     safeSuccessCheckout(
@@ -34738,17 +34739,57 @@ async function recordSuccessCheckout(
 
   announceSuccessCheckout(storedRecord.customerAccountId);
 
-  try {
-    await sendDiscordSuccessNotification(
-      storedRecord
-    );
-  } catch (error) {
-    console.error(
-      "Discord success notification failed:",
-      error.message
-    );
+  if (notifyDiscord) {
+    try {
+      await sendDiscordSuccessNotification(storedRecord);
+    } catch (error) {
+      console.error("Discord success notification failed:", error.message);
+    }
   }
 
+  return true;
+}
+
+/* Orders in the business mailbox without a customer assignment contribute
+   only trading card product totals to the community display. */
+async function recordCommunitySuccessCheckout(order) {
+  const items = (Array.isArray(order?.items) ? order.items : [])
+    .filter(item => {
+      const name = clean(item?.name, 120).replace(/\s+/g, " ").trim();
+      return name && isPublicSuccessProduct(name) &&
+        !/@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name) &&
+        Number(item?.quantity) > 0;
+    })
+    .map(item => ({
+      name: clean(item.name, 120),
+      quantity: Math.max(1, Math.floor(Number(item.quantity))),
+      imageUrl: publicSuccessImageUrl(item.imageUrl)
+    }));
+  if (!items.length) return false;
+
+  const sourceId = String(order.messageId || order.mailboxUid || order.orderNumber || "");
+  if (!sourceId) return false;
+  const id = `community-mailbox:${crypto.createHash("sha256")
+    .update(`${managedSuccessMailboxConfig().email}:${sourceId}`)
+    .digest("hex")}`;
+  const records = await getSuccessCheckouts();
+  if (records.some(record => record.id === id || (
+    order.orderNumber && record.orderNumber === order.orderNumber &&
+    record.retailer === normalizeSuccessRetailer(order.retailer)
+  ))) return false;
+
+  records.push({
+    id,
+    customerAccountId: null,
+    retailer: normalizeSuccessRetailer(order.retailer),
+    checkoutAt: order.checkoutAt || order.date || null,
+    orderTotal: Math.max(0, Number(order.orderTotal) || 0),
+    itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+    items,
+    status: "confirmed"
+  });
+  await saveSuccessCheckouts(records);
+  for (const res of publicSuccessListeners) res.write("event: checkout\ndata: {}\n\n");
   return true;
 }
 
@@ -39416,6 +39457,8 @@ function managedSuccessMailboxConfig() {
 }
 
 
+let managedSuccessLastScannedUid = 0;
+
 async function readRecentManagedWorkMailboxOrders(
   maxMessages = 120
 ) {
@@ -39493,7 +39536,7 @@ async function readRecentManagedWorkMailboxOrders(
         };
       }
 
-      const safeMax =
+      const batchSize =
         Math.min(
           250,
           Math.max(
@@ -39505,23 +39548,21 @@ async function readRecentManagedWorkMailboxOrders(
           )
         );
 
-      const start =
-        Math.max(
-          1,
-          total -
-            safeMax +
-            1
-        );
-
-      const candidates =
-        await client.fetchAll(
-          `${start}:*`,
-          {
-            uid: true,
-            envelope: true,
-            internalDate: true
-          }
-        );
+      const matchingUids = await client.search({ or: [
+        { subject: "order" }, { subject: "purchase" },
+        { subject: "receipt" }, { subject: "confirmation" }
+      ] }, { uid: true });
+      const pendingUids = matchingUids
+        .filter(uid => Number(uid) > managedSuccessLastScannedUid)
+        .sort((a, b) => Number(a) - Number(b));
+      const candidates = [];
+      for (let offset = 0; offset < pendingUids.length; offset += batchSize) {
+        candidates.push(...await client.fetchAll(
+          pendingUids.slice(offset, offset + batchSize),
+          { uid: true, envelope: true, internalDate: true },
+          { uid: true }
+        ));
+      }
 
       const orders = [];
 
@@ -39538,7 +39579,7 @@ async function readRecentManagedWorkMailboxOrders(
           );
 
         if (
-          !/order/i.test(
+          !/order|purchase|receipt|confirmation/i.test(
             subject
           )
         ) {
@@ -39662,7 +39703,8 @@ async function readRecentManagedWorkMailboxOrders(
       return {
         configured:
           true,
-        orders
+        orders,
+        lastUid: pendingUids.length ? Number(pendingUids.at(-1)) : 0
       };
 
     } finally {
@@ -39903,6 +39945,7 @@ async function syncManagedProfileSuccessMailbox() {
 
     if (!accountMatch) {
       unmatched += 1;
+      if (await recordCommunitySuccessCheckout(order)) saved += 1;
       continue;
     }
 
@@ -39947,6 +39990,7 @@ async function syncManagedProfileSuccessMailbox() {
 
     if (!assignment) {
       unmatched += 1;
+      if (await recordCommunitySuccessCheckout(order)) saved += 1;
       continue;
     }
 
@@ -40037,14 +40081,18 @@ async function syncManagedProfileSuccessMailbox() {
         `managed-work-mailbox-${retailerKey}`
     };
 
-    const wasSaved =
-      await recordSuccessCheckout(
-        successRecord
-      );
+    const checkoutAge = Date.now() - new Date(checkoutAt).getTime();
+    const wasSaved = await recordSuccessCheckout(successRecord, {
+      notifyDiscord: Number.isFinite(checkoutAge) && checkoutAge >= 0 && checkoutAge < 10 * 60 * 1000
+    });
 
     if (wasSaved) {
       saved += 1;
     }
+  }
+
+  if (result.lastUid) {
+    managedSuccessLastScannedUid = Math.max(managedSuccessLastScannedUid, result.lastUid);
   }
 
   return {
