@@ -351,7 +351,26 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       }
       const successChannel = channels.find(item => item.id === channelId);
       await ensureReadOnly(successChannel);
-      let intro = channels.find(item => item.type === 0 && ["introserver", "serverintro", "intro"].includes(normalizeName(item.name)));
+      const introNames = new Set(["introserver", "introservers", "serverintro", "intro"]);
+      const introChannels = channels.filter(item => item.type === 0 &&
+        (introNames.has(normalizeName(item.name)) || /^introserver\d+$/.test(normalizeName(item.name))));
+      let savedIntroId;
+      try { savedIntroId = JSON.parse(await fs.readFile(panelFile, "utf8")).intro?.channelId; }
+      catch (error) { if (error.code !== "ENOENT") console.error("Discord saved intro panel:", error.message); }
+      let intro = introChannels.find(item => item.id === savedIntroId);
+      if (!intro && introChannels.length > 1) {
+        for (const candidate of introChannels) {
+          let messages;
+          try { messages = await api(`/channels/${candidate.id}/messages?limit=50`); }
+          catch (error) { console.error("Discord intro history:", error.message); continue; }
+          if (messages.some(message => message.author?.id === appId && message.embeds?.some(embed =>
+            embed.title === "Welcome to SLABSNGRABSACO"))) {
+            intro = candidate;
+            break;
+          }
+        }
+      }
+      intro ||= introChannels.find(item => normalizeName(item.name) === "introserver") || introChannels[0];
       if (!intro) intro = await api(`/guilds/${guildId}/channels`, "POST", {
         name: "intro-server", type: 0, position: 0,
         topic: "Start here for a guide to the server and its channels.",
@@ -424,6 +443,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         }]
       });
       await refreshIntro();
+      // Only remove the extras once the kept channel has its live guide.
+      for (const duplicate of introChannels.filter(item => item.id !== introChannelId)) {
+        await api(`/channels/${duplicate.id}`, "DELETE");
+      }
+      if (introChannels.some(item => item.id !== introChannelId)) await refreshIntro();
       await cleanupClosedTickets();
       await cleanupOrphanedTicketAlerts().catch(error =>
         console.error("Discord old ticket alert cleanup:", error.message));
@@ -434,10 +458,14 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       discordCommunityStatus.suggestionsReady = true;
       try {
         const onboarding = await api(`/guilds/${guildId}/onboarding`);
-        if (onboarding.enabled && [introChannelId, rulesChannelId].some(id => !onboarding.default_channel_ids.includes(id))) {
+        const duplicateIntroIds = new Set(introChannels.filter(item => item.id !== introChannelId).map(item => item.id));
+        const defaultChannelIds = [...new Set([introChannelId, rulesChannelId,
+          ...onboarding.default_channel_ids.filter(id => !duplicateIntroIds.has(id))])];
+        if (onboarding.enabled && (defaultChannelIds.length !== onboarding.default_channel_ids.length ||
+          defaultChannelIds.some(id => !onboarding.default_channel_ids.includes(id)))) {
           await api(`/guilds/${guildId}/onboarding`, "PUT", {
             prompts: onboarding.prompts,
-            default_channel_ids: [...new Set([introChannelId, rulesChannelId, ...onboarding.default_channel_ids])],
+            default_channel_ids: defaultChannelIds,
             enabled: onboarding.enabled, mode: onboarding.mode
           });
         }
