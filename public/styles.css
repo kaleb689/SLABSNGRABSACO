@@ -3043,7 +3043,7 @@ select:focus {
   overflow-wrap: anywhere;
 }
 #home .public-success-heading h2 > span {
-  color: #db3eb1;
+  color: #ff65d4;
   background: linear-gradient(165deg,#ff8fe8 0%,#db3eb1 50%,#7c2168 100%);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   -webkit-text-stroke: 1.45px #11151b;
@@ -3065,7 +3065,7 @@ select:focus {
   color: #db3eb1;
   background: linear-gradient(165deg,#ff8fe8 0%,#db3eb1 50%,#7c2168 100%);
   background-clip: text; -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-text-fill-color: #ff65d4;
   -webkit-text-stroke: .075em #0a0d15;
   paint-order: stroke fill;
   text-shadow: .055em .055em 0 #11151b, -.055em .055em 0 #11151b,
@@ -3073,10 +3073,11 @@ select:focus {
   animation: success-letter-melt var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
 }
 #home .public-success-title-tail .public-success-letter {
-  color: #41b6e6;
+  color: #5de8ff;
   background: linear-gradient(165deg,#73f5ff 0%,#41b6e6 50%,#166083 100%);
   background-clip: text; -webkit-background-clip: text;
   -webkit-text-stroke-color: #0a0d15;
+  -webkit-text-fill-color: #5de8ff;
 }
 #home .public-success-letter[data-black-x]::before {
   content: attr(data-black-x); position: absolute; z-index: 1; left: 50%; top: 49%;
@@ -3177,29 +3178,46 @@ body.success-demo-body #account-tab-success .success-activity-card,
 body.success-demo-body #account-tab-success .success-recent-card { background: transparent !important; }
 
 /* Give the signed-in header and its summary cards enough room to read at a glance. */
-#my-profile .account-topbar { min-height: 196px; padding: 30px 34px !important; }
+#my-profile .account-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(520px, auto);
+  align-items: center;
+  gap: 34px;
+  min-height: 196px;
+  padding: 30px 34px !important;
+}
 #my-profile .account-topbar > div:first-child { min-width: 300px; }
 #my-profile .account-topbar-right { flex: 0 0 auto; }
 #my-profile .account-topbar .eyebrow { font-size: 14px; letter-spacing: .22em; }
 #my-profile .account-identity-line h3 { font-size: clamp(2rem, 3vw, 3rem); line-height: 1.08; }
 #my-profile .account-identity-email { margin-top: 10px; font-size: 17px; }
+#my-profile .account-email-line { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+#my-profile .account-email-line .account-identity-email { margin-bottom: 0; }
 #my-profile .account-verification-row { margin-top: 12px; gap: 12px; }
 #my-profile .account-verification-row { display: flex; align-items: center; flex-wrap: wrap; }
-#my-profile .account-logout-inline { margin-left: 4px; }
+#my-profile .account-logout-inline { margin-left: 0; }
 #my-profile #email-verification-status { min-height: 38px; padding: 8px 14px; font-size: 15px; }
 #my-profile .og-member-badge { min-height: 36px; padding: 7px 13px; font-size: 13px; letter-spacing: 1px; }
-#my-profile .member-lifetime-stats { grid-template-columns: repeat(3, minmax(170px, 1fr)); gap: 14px; }
+#my-profile .member-lifetime-stats {
+  grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr);
+  grid-template-rows: repeat(2, minmax(64px, 1fr));
+  gap: 14px;
+}
+#my-profile .member-lifetime-stats > div:nth-child(1) { grid-column: 1; grid-row: 1; align-self: start; }
+#my-profile .member-lifetime-stats > div:nth-child(2) { grid-column: 2; grid-row: 1; }
+#my-profile .member-lifetime-stats > div:nth-child(3) { grid-column: 2; grid-row: 2; }
 #my-profile .member-lifetime-stats > div { min-height: 94px; padding: 16px 19px; gap: 7px; }
 #my-profile .member-lifetime-stats span { font-size: 12px; letter-spacing: 1.1px; }
 #my-profile .member-lifetime-stats strong { font-size: 20px; }
 @media (max-width: 1050px) {
-  #my-profile .account-topbar { min-height: 0; }
-  #my-profile .member-lifetime-stats { grid-template-columns: repeat(3, minmax(130px, 1fr)); }
+  #my-profile .account-topbar { grid-template-columns: 1fr; min-height: 0; }
+  #my-profile .member-lifetime-stats { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
 }
 @media (max-width: 800px) {
   #my-profile .account-topbar { padding: 24px 20px !important; }
   #my-profile .account-topbar > div:first-child { min-width: 0; }
-  #my-profile .member-lifetime-stats { grid-template-columns: 1fr; }
+  #my-profile .member-lifetime-stats { grid-template-columns: 1fr; grid-template-rows: none; }
+  #my-profile .member-lifetime-stats > div:nth-child(n) { grid-column: 1; grid-row: auto; }
 }
 @media (max-width: 750px) {
   #home .public-success-heading h2 { flex-wrap: wrap; white-space: normal; }
