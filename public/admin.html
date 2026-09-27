@@ -334,6 +334,10 @@
     .admin-mailbox-status strong { color: #55dafa; }
     .admin-mailbox-status button { margin-left: auto; padding: 8px 12px; border: 1px solid #16749a;
       border-radius: 8px; background: #092236; color: #ecfbff; cursor: pointer; }
+    .admin-mailbox-status #scanManagedSuccessMailbox { margin-left: 0; }
+    .admin-scan-progress { display: inline-flex; align-items: center; gap: 8px; min-width: 150px; color: #bceefa; font-variant-numeric: tabular-nums; }
+    .admin-scan-progress[hidden] { display: none; }
+    .admin-scan-progress progress { width: 86px; height: 9px; accent-color: #41b6e6; }
 
     .managed-availability-tracker {
   margin: 22px 0 28px;
@@ -5297,6 +5301,7 @@ PAID SUBSCRIPTIONS
   <span id="managedSuccessMailboxStatus" role="status">Check configuration and latest order scan.</span>
   <button type="button" id="checkManagedSuccessMailbox">Check mailbox status</button>
   <button type="button" id="scanManagedSuccessMailbox">Scan now</button>
+  <span class="admin-scan-progress" id="managedSuccessScanProgress" role="status" aria-live="polite" hidden><progress id="managedSuccessScanBar" max="100" value="0"></progress><span id="managedSuccessScanPercent">0%</span></span>
 </div>
 
 <div class="admin-global-profile-search">
@@ -23273,6 +23278,19 @@ async function refreshManagedSuccessMailboxStatus() {
     const response = await fetch("/api/admin/managed-success-mailbox-status", { credentials: "same-origin", cache: "no-store" });
     if (!response.ok) throw new Error("Could not check mailbox status.");
     const data = await response.json();
+    const indicator = document.getElementById("managedSuccessScanProgress");
+    const bar = document.getElementById("managedSuccessScanBar");
+    const label = document.getElementById("managedSuccessScanPercent");
+    const percent = Number(data.progress?.percent);
+    indicator.hidden = !data.running && data.progress?.phase !== "complete";
+    if (Number.isFinite(percent) && data.progress?.percent !== null) {
+      bar.value = Math.min(100, Math.max(0, percent));
+      label.textContent = `${bar.value}%`;
+    } else {
+      bar.removeAttribute("value");
+      label.textContent = "Scanning…";
+    }
+    document.getElementById("scanManagedSuccessMailbox").disabled = Boolean(data.running);
     if (!data.configured) {
       const missing = [
         !data.emailConfigured && "MANAGED_SUCCESS_IMAP_EMAIL",
@@ -23281,7 +23299,8 @@ async function refreshManagedSuccessMailboxStatus() {
       ].filter(Boolean);
       status.textContent = `Missing Render settings: ${missing.join(", ")}.`;
     } else if (data.running) {
-      status.textContent = "Scanning the full mailbox history for order confirmations…";
+      const phase = { connecting: "Connecting", searching: "Finding confirmations", loading: "Loading messages", checking: "Checking messages", saving: "Saving orders" }[data.progress?.phase] || "Scanning";
+      status.textContent = `${phase}${data.progress?.total ? ` · ${data.progress.processed || 0} of ${data.progress.total}` : ""}…`;
     } else if (data.lastError) {
       status.textContent = data.lastError === "authentication_failed"
         ? "Configured, but mailbox authentication failed. Check the app password in Render."
@@ -23309,6 +23328,13 @@ document.getElementById("checkManagedSuccessMailbox")?.addEventListener("click",
   }
 });
 
+// Keep the indicator current during scheduled scans as well as manual ones.
+if (document.getElementById("managedSuccessScanProgress")) {
+  setInterval(() => {
+    if (!document.hidden) refreshManagedSuccessMailboxStatus();
+  }, 4000);
+}
+
 document.getElementById("scanManagedSuccessMailbox")?.addEventListener("click", async event => {
   const button = event.currentTarget;
   const status = document.getElementById("managedSuccessMailboxStatus");
@@ -23321,15 +23347,9 @@ document.getElementById("scanManagedSuccessMailbox")?.addEventListener("click", 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Could not start the mailbox scan.");
     status.textContent = "Scanning the full mailbox history for order confirmations…";
-    for (let attempt = 0; attempt < 150; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      const result = await refreshManagedSuccessMailboxStatus();
-      if (!result?.running) return;
-    }
-    status.textContent = "The scan is still running. Click Check mailbox status for its result.";
+    await refreshManagedSuccessMailboxStatus();
   } catch (error) {
     status.textContent = error.message;
-  } finally {
     button.disabled = false;
   }
 });

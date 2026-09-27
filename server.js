@@ -39479,12 +39479,14 @@ const managedSuccessScanStatus = {
   lastError: null,
   parsedOrders: 0,
   savedOrders: 0,
-  unmatchedOrders: 0
+  unmatchedOrders: 0,
+  progress: { phase: "idle", percent: 0, processed: 0, total: 0 }
 };
 let managedSuccessScanPromise = null;
 
 async function readRecentManagedWorkMailboxOrders(
-  maxMessages = 120
+  maxMessages = 120,
+  onProgress = () => {}
 ) {
   const config =
     managedSuccessMailboxConfig();
@@ -39535,6 +39537,7 @@ async function readRecentManagedWorkMailboxOrders(
     });
 
   try {
+    onProgress({ phase: "connecting", percent: 2, processed: 0, total: 0 });
     await client.connect();
 
     const lock =
@@ -39572,6 +39575,7 @@ async function readRecentManagedWorkMailboxOrders(
           )
         );
 
+      onProgress({ phase: "searching", percent: 5, processed: 0, total: 0 });
       const matchingUids = await client.search({ or: [
         { subject: "order" }, { subject: "purchase" },
         { subject: "receipt" }, { subject: "confirmation" }
@@ -39579,6 +39583,7 @@ async function readRecentManagedWorkMailboxOrders(
       const pendingUids = matchingUids
         .filter(uid => Number(uid) > managedSuccessLastScannedUid)
         .sort((a, b) => Number(a) - Number(b));
+      onProgress({ phase: "loading", percent: 10, processed: 0, total: pendingUids.length });
       const candidates = [];
       for (let offset = 0; offset < pendingUids.length; offset += batchSize) {
         candidates.push(...await client.fetchAll(
@@ -39586,14 +39591,18 @@ async function readRecentManagedWorkMailboxOrders(
           { uid: true, envelope: true, internalDate: true },
           { uid: true }
         ));
+        onProgress({ phase: "loading", percent: pendingUids.length ? 10 + Math.floor(10 * Math.min(candidates.length, pendingUids.length) / pendingUids.length) : 20, processed: 0, total: pendingUids.length });
       }
 
       const orders = [];
+      let processed = 0;
 
       for (
         const candidate of
         candidates
       ) {
+        processed += 1;
+        onProgress({ phase: "checking", percent: 20 + Math.floor(60 * processed / Math.max(1, candidates.length)), processed, total: candidates.length });
         const subject =
           String(
             candidate
@@ -39910,7 +39919,8 @@ async function managedAssignmentHistory() {
 async function syncManagedProfileSuccessMailbox() {
   const result =
     await readRecentManagedWorkMailboxOrders(
-      180
+      180,
+      progress => { managedSuccessScanStatus.progress = progress; }
     );
 
   if (
@@ -39932,13 +39942,24 @@ async function syncManagedProfileSuccessMailbox() {
   const assignments =
     await managedAssignmentHistory();
 
+  const totalOrders = result.orders.length;
+  managedSuccessScanStatus.progress = { phase: "saving", percent: 80, processed: 0, total: totalOrders };
+
   let saved = 0;
   let unmatched = 0;
+  let processedOrders = 0;
 
   for (
     const order of
     result.orders
   ) {
+    processedOrders += 1;
+    managedSuccessScanStatus.progress = {
+      phase: "saving",
+      percent: 80 + Math.floor(19 * processedOrders / Math.max(1, totalOrders)),
+      processed: processedOrders,
+      total: totalOrders
+    };
     const routingEmails =
       Array.isArray(
         order.routingEmails
@@ -40207,6 +40228,7 @@ function runManagedSuccessScan() {
   if (managedSuccessScanPromise) return managedSuccessScanPromise;
   managedSuccessScanStatus.lastAttemptAt = new Date().toISOString();
   managedSuccessScanStatus.lastError = null;
+  managedSuccessScanStatus.progress = { phase: "connecting", percent: 0, processed: 0, total: 0 };
   managedSuccessScanPromise = (async () => {
     try {
       const result = await syncManagedProfileSuccessMailbox();
@@ -40214,10 +40236,12 @@ function runManagedSuccessScan() {
       managedSuccessScanStatus.parsedOrders = result.scanned || 0;
       managedSuccessScanStatus.savedOrders = result.saved || 0;
       managedSuccessScanStatus.unmatchedOrders = result.unmatched || 0;
+      managedSuccessScanStatus.progress = { phase: "complete", percent: 100, processed: result.scanned || 0, total: result.scanned || 0 };
       return result;
     } catch (error) {
       managedSuccessScanStatus.lastError = error?.authenticationFailed ||
         error?.code === "AUTHENTICATIONFAILED" ? "authentication_failed" : "scan_failed";
+      managedSuccessScanStatus.progress = { ...managedSuccessScanStatus.progress, phase: "failed", percent: null };
       console.error("Managed Success mailbox scan failed:", error?.code || error?.name || "scan_error");
       throw error;
     } finally {

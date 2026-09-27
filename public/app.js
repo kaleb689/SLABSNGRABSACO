@@ -14898,6 +14898,33 @@ processSecureLinks();
 })();
 
 /* Public aggregate Success display; this response never includes customer data. */
+// Give each rounded letter its own short, contained melt cycle. Keep the
+// original heading as its accessible name while the visual letters animate.
+const communityHeading = document.getElementById("public-success-title");
+if (communityHeading) {
+  communityHeading.setAttribute("aria-label", [...communityHeading.children].map(section => section.textContent.trim()).join(" "));
+  for (const section of communityHeading.children) {
+    const words = section.textContent.trim().split(/\s+/);
+    section.replaceChildren();
+    section.setAttribute("aria-hidden", "true");
+    words.forEach((word, wordIndex) => {
+      const wrapper = document.createElement("span");
+      wrapper.className = "public-success-word";
+      for (const [letterIndex, character] of [...word].entries()) {
+        const glyph = document.createElement("span");
+        glyph.className = "public-success-letter";
+        glyph.textContent = character;
+        const seed = (wordIndex * 17 + letterIndex * 23 + character.codePointAt(0) * 7) % 47;
+        glyph.style.setProperty("--melt-delay", `${-(seed * .23).toFixed(2)}s`);
+        glyph.style.setProperty("--melt-duration", `${(5.4 + seed % 7 * .31).toFixed(2)}s`);
+        glyph.style.setProperty("--melt-angle", `${seed % 2 ? 2 : -2}deg`);
+        wrapper.append(glyph);
+      }
+      section.append(wrapper);
+    });
+  }
+}
+
 const publicSuccessState = { products: [], index: 0, loading: false };
 
 function renderPublicSuccessProduct() {

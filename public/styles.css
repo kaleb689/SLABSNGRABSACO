@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 @font-face {
   font-family: "Rubik Bubbles";
@@ -3015,9 +3015,9 @@ select:focus {
 #home .public-success-heading .eyebrow { font-size: .75rem; }
 #home .public-success-heading h2 {
   display: flex; flex-wrap: wrap; align-items: center; column-gap: .5em; row-gap: .08em;
-  margin: 0; max-width: 100%; font-family: "Rubik Bubbles", "Arial Rounded MT Bold", sans-serif;
-  font-size: clamp(1.12rem,2.45vw,2.02rem); font-weight: 400; line-height: 1.3;
-  letter-spacing: -.045em; text-transform: uppercase;
+  margin: 0; max-width: 100%; font-family: "Fredoka", "Arial Rounded MT Bold", sans-serif;
+  font-size: clamp(1.12rem,2.45vw,2.02rem); font-weight: 700; line-height: 1.48;
+  letter-spacing: -.025em; text-transform: uppercase;
 }
 #home .public-success-brand, #home .public-success-title-tail { display: inline-block; max-width: 100%; }
 #home .public-success-brand { white-space: nowrap; }
@@ -3038,6 +3038,30 @@ select:focus {
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   filter: drop-shadow(1px 2px 0 #000) drop-shadow(2px 3px 0 #db3eb1)
     drop-shadow(0 0 10px rgba(65,182,230,.48));
+}
+#home .public-success-heading .public-success-word { display: inline-flex; white-space: nowrap; margin-right: .23em; }
+#home .public-success-heading .public-success-letter {
+  position: relative; display: inline-block; transform-origin: 50% 78%;
+  animation: success-letter-melt var(--melt-duration, 6s) ease-in-out var(--melt-delay, 0s) infinite;
+}
+#home .public-success-heading .public-success-letter::after {
+  content: ""; position: absolute; left: 43%; top: 74%; width: .11em; height: .24em;
+  border-radius: 0 0 100% 100%; background: #db3eb1;
+  transform: scaleY(0); transform-origin: top; pointer-events: none;
+  animation: success-letter-drip var(--melt-duration, 6s) ease-in-out var(--melt-delay, 0s) infinite;
+}
+#home .public-success-title-tail .public-success-letter::after { background: #41b6e6; }
+@keyframes success-letter-melt {
+  0%, 12%, 30%, 100% { transform: rotate(0deg); }
+  19% { transform: rotate(var(--melt-angle, 2deg)); }
+}
+@keyframes success-letter-drip {
+  0%, 12%, 30%, 100% { transform: scaleY(0); opacity: 0; }
+  19%, 24% { transform: scaleY(.88); opacity: .9; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #home .public-success-heading .public-success-letter,
+  #home .public-success-heading .public-success-letter::after { animation: none; }
 }
 #home .public-success-live {
   display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
