@@ -14752,6 +14752,32 @@ app.post(
    ADMIN UPDATE SUBMISSION
 ------------------------------------------------------- */
 
+app.post(
+  "/api/admin/customer-accounts/:id/success-history",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      if (typeof req.body?.fullHistory !== "boolean") {
+        return res.status(400).json({ error: "Choose whether to scan complete mailbox history." });
+      }
+      const accounts = await getCustomerAccounts();
+      const account = accounts.find(item => String(item.id) === String(req.params.id));
+      if (!account) return res.status(404).json({ error: "Customer account was not found." });
+      account.successFullHistory = req.body.fullHistory;
+      account.updatedAt = new Date().toISOString();
+      await saveCustomerAccounts(accounts);
+      liveSuccessLastSyncByAccount.delete(String(account.id));
+      for (const key of liveSuccessMailboxScanSince.keys()) {
+        if (key.startsWith(`${account.id}:`)) liveSuccessMailboxScanSince.delete(key);
+      }
+      return res.json({ ok: true, fullHistory: account.successFullHistory });
+    } catch (error) {
+      console.error("Admin Success history setting failed:", error?.code || error?.name || "setting_error");
+      return res.status(500).json({ error: "Could not update mailbox history setting." });
+    }
+  }
+);
+
 app.get(
   "/api/admin/submissions",
   requireAdmin,
@@ -14769,6 +14795,8 @@ app.get(
           : [];
 
       const result = [];
+      const customerAccounts = await getCustomerAccounts();
+      const customerAccountMap = new Map(customerAccounts.map(account => [String(account.id), account]));
 
       let paidChanged =
         false;
@@ -14995,6 +15023,9 @@ if (
 
         result.push({
           ...record,
+
+          successFullHistory:
+            customerAccountMap.get(String(record.customerAccountId))?.successFullHistory === true,
 
           ogMember,
 
@@ -34560,7 +34591,7 @@ app.get("/api/account/success/events", requireCustomer, (req, res) => {
 });
 
 function isPublicSuccessProduct(name) {
-  return /pok[eé]mon|lorcana|magic\s*[:\-]?\s*the\s*gathering|\bmtg\b|nee[\s-]?doh|trading\s*card|\btcg\b|yu[\s-]?gi[\s-]?oh|one\s*piece\s*(?:card|tcg)|digimon|flesh\s*and\s*blood|dragon\s*ball\s*(?:card|tcg)/i.test(name);
+  return /pok[eé]mon|lorcana|magic\s*[:\-]?\s*the\s*gathering|\bmtg\b|trading\s*card|\btcg\b|yu[\s-]?gi[\s-]?oh|one\s*piece\s*(?:card|tcg)|digimon|flesh\s*and\s*blood|dragon\s*ball\s*(?:card|tcg)/i.test(name);
 }
 
 function publicSuccessImageUrl(value) {
@@ -34583,16 +34614,20 @@ app.get(
       const records = await getSuccessCheckouts();
       const products = new Map();
       let totalSpent = 0;
+      let totalCheckouts = 0;
 
       for (const record of records) {
+        const eligibleItems = (Array.isArray(record.items) ? record.items : []).filter(item => {
+          const name = clean(item?.name, 120).replace(/\s+/g, " ").trim();
+          return name && isPublicSuccessProduct(name) && !/@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name) && Number(item?.quantity) > 0;
+        });
+        if (!eligibleItems.length) continue;
+        totalCheckouts += 1;
         const total = Number(record.orderTotal);
         if (Number.isFinite(total) && total > 0) totalSpent += total;
 
-        for (const item of Array.isArray(record.items) ? record.items : []) {
+        for (const item of eligibleItems) {
           const name = clean(item?.name, 120).replace(/\s+/g, " ").trim();
-          // Product fields originate in retailer emails. Drop anything that
-          // looks like personal or order information before public display.
-          if (!name || !isPublicSuccessProduct(name) || /@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name)) continue;
           const quantity = Math.max(0, Math.floor(Number(item?.quantity) || 0));
           if (!quantity) continue;
           const key = name.toLowerCase();
@@ -34606,7 +34641,7 @@ app.get(
       }
 
       res.json({
-        totalCheckouts: records.length,
+        totalCheckouts,
         totalSpent: Math.round(totalSpent * 100) / 100,
         products: [...products.values()].sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name))
       });
@@ -38574,6 +38609,8 @@ const LIVE_SUCCESS_MIN_ACCOUNT_INTERVAL_MS =
 const liveSuccessLastSyncByAccount =
   new Map();
 
+const liveSuccessMailboxScanSince = new Map();
+
 const liveSuccessAccountLocks =
   new Set();
 
@@ -38682,9 +38719,14 @@ async function readRecentRetailerOrders(
       const signupDate = Number.isFinite(signupTime) && signupTime > 0
         ? new Date(signupTime)
         : null;
-      const matchingUids = signupDate
-        ? await client.search({ since: signupDate, subject: "order" }, { uid: true })
-        : [];
+      const confirmationSubjects = { or: [
+        { subject: "order" }, { subject: "purchase" },
+        { subject: "receipt" }, { subject: "confirmation" }
+      ] };
+      const matchingUids = await client.search(
+        signupDate ? { ...confirmationSubjects, since: signupDate } : confirmationSubjects,
+        { uid: true }
+      );
 
       const candidates = [];
       for (let offset = 0; offset < matchingUids.length; offset += safeMax) {
@@ -38734,7 +38776,7 @@ async function readRecentRetailerOrders(
           contain the retailer name.
         */
         if (
-          !/order/i.test(
+          !/order|purchase|receipt|confirmation/i.test(
             subject
           )
         ) {
@@ -38966,9 +39008,10 @@ async function getCustomerSuccessMailboxes(
   customerAccountId
 ) {
   const accounts = await getCustomerAccounts();
-  const signedUpAt = accounts.find(account =>
+  const owner = accounts.find(account =>
     String(account.id) === String(customerAccountId)
-  )?.createdAt || null;
+  );
+  const signedUpAt = owner?.createdAt || null;
   const paid =
     await readJson(
       PAID_FILE,
@@ -39065,7 +39108,9 @@ async function getCustomerSuccessMailboxes(
     mailboxes.push({
       email,
       password,
-      signedUpAt: signedUpAt || order.paidAt || order.createdAt || null,
+      signedUpAt: owner?.successFullHistory === true
+        ? null
+        : signedUpAt || order.paidAt || order.createdAt || null,
 
       profileSlot:
         Number.isInteger(
@@ -39170,12 +39215,21 @@ async function syncCustomerTargetSuccess(
       mailboxes
     ) {
       try {
+        const mailboxKey = `${accountId}:${mailbox.email.toLowerCase()}`;
+        const previousScan = liveSuccessMailboxScanSince.get(mailboxKey) || 0;
+        // Revisit recent mail to catch late deliveries without rescanning the
+        // complete historical inbox on every refresh.
+        const recentStart = previousScan ? previousScan - 7 * 24 * 60 * 60 * 1000 : 0;
+        const originalStart = new Date(mailbox.signedUpAt || 0).getTime();
+        const searchSince = recentStart
+          ? new Date(Math.max(recentStart, originalStart || 0)).toISOString()
+          : mailbox.signedUpAt;
         const result =
           await readRecentRetailerOrders(
             mailbox.email,
             mailbox.password,
             60,
-            mailbox.signedUpAt
+            searchSince
           );
 
         for (
@@ -39184,7 +39238,7 @@ async function syncCustomerTargetSuccess(
         ) {
           const checkoutTime = new Date(order.checkoutAt || order.date || 0).getTime();
           const signupTime = new Date(mailbox.signedUpAt || 0).getTime();
-          if (!Number.isFinite(checkoutTime) || checkoutTime < signupTime) continue;
+          if (!Number.isFinite(checkoutTime) || (mailbox.signedUpAt && checkoutTime < signupTime)) continue;
           parsedOrders += 1;
 
           /*
@@ -39271,6 +39325,8 @@ async function syncCustomerTargetSuccess(
             duplicates += 1;
           }
         }
+
+        liveSuccessMailboxScanSince.set(mailboxKey, Date.now());
 
       } catch (error) {
         /*

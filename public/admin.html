@@ -326,6 +326,9 @@
       font-size: 13px;
     }
 
+    .admin-success-history-control { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .admin-success-history-control small { color: #99b5c6; line-height: 1.5; }
+
     .managed-availability-tracker {
   margin: 22px 0 28px;
 
@@ -6689,6 +6692,15 @@ function renderOrder(x) {
 </div>
 
             </div>
+
+            ${x.customerAccountId ? `
+              <div class="admin-success-history-control">
+                <button type="button" class="admin-edit-button" data-success-history-toggle="${escapeHtml(x.customerAccountId)}" data-full-history="${x.successFullHistory ? "true" : "false"}">
+                  ${x.successFullHistory ? "Full mailbox history: On" : "Full mailbox history: Off"}
+                </button>
+                <small>Enable for your own linked inboxes to include order confirmations from before signup. Other customers begin at signup.</small>
+              </div>
+            ` : ""}
 
           </section>
 
@@ -23213,6 +23225,31 @@ document.addEventListener(
   true
 );
 
+
+/* =========================================
+   PERSONAL MAILBOX HISTORY
+========================================= */
+document.addEventListener("click", async event => {
+  const button = event.target.closest("[data-success-history-toggle]");
+  if (!button) return;
+  const next = button.dataset.fullHistory !== "true";
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/admin/customer-accounts/${encodeURIComponent(button.dataset.successHistoryToggle)}/success-history`, {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fullHistory: next })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Could not update mailbox history.");
+    button.dataset.fullHistory = String(result.fullHistory);
+    button.textContent = `Full mailbox history: ${result.fullHistory ? "On" : "Off"}`;
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 /* =========================================
    BACK TO TOP
