@@ -23254,19 +23254,10 @@ document.addEventListener("click", async event => {
 /* =========================================
    BACK TO TOP
 ========================================= */
-document
-  .getElementById(
-    "adminBackToTop"
-  )
-  ?.addEventListener(
-    "click",
-    () => {
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth"
-      });
-    }
-  );
+document.addEventListener("click", event => {
+  if (!event.target.closest("#adminBackToTop")) return;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
 
 </script>
 
