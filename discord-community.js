@@ -103,7 +103,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
   });
 }
 
-export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, gatewayReady: false, aiConfigured: false, lastRoleSyncAt: null, error: null };
+export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
 export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, dataDir, aiKey }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(aiKey);
@@ -117,7 +117,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
     return response.status === 204 ? null : response.json();
   }
-  let guildId, askChannelId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, ownerId, staffRoleId, appId, roles = [];
   async function provision() {
     const channelId = await getChannelId();
     if (!/^\d{17,22}$/.test(String(channelId))) throw new Error("Set DISCORD_SUCCESS_CHANNEL_ID to a channel in the desired server.");
@@ -126,6 +126,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!guildId) throw new Error("The success channel does not belong to a server.");
     const me = await api("/users/@me");
     appId = me.id;
+    const guild = await api(`/guilds/${guildId}`);
+    ownerId = guild.owner_id;
     const channels = await api(`/guilds/${guildId}/channels`);
     let support = channels.find(item => item.type === 4 && /\bsupport\b/i.test(item.name));
     const supportText = channels.find(item => item.type === 0 && /\bsupport\b/i.test(item.name));
@@ -137,11 +139,14 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       }
     }
     let ask = channels.find(item => item.type === 0 && item.parent_id === support.id && item.name.toLowerCase() === "ask-ai");
+    const askTopic = "Type your question here for an AI reply. If it needs a person, open a private ticket from the bot's reply. Do not share passwords or payment information.";
     if (!ask) ask = await api(`/guilds/${guildId}/channels`, "POST", {
       name: "ask-ai", type: 0, parent_id: support.id,
-      topic: "Ask /ask about the website, your membership, or general botting questions. Never post passwords or payment details."
+      topic: askTopic
     });
+    else if (ask.topic !== askTopic) await api(`/channels/${ask.id}`, "PATCH", { topic: askTopic });
     askChannelId = ask.id;
+    supportCategoryId = support.id;
     discordCommunityStatus.askChannelReady = true;
     const existing = await api(`/guilds/${guildId}/roles`);
     roles = [];
@@ -153,13 +158,33 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       else if (role.color !== level.color) role = await api(`/guilds/${guildId}/roles/${role.id}`, "PATCH", { color: level.color });
       roles.push({ ...level, id: role.id });
     }
+    let staff = existing.find(item => item.name.toLowerCase() === "support staff" && !item.managed);
+    if (!staff) staff = await api(`/guilds/${guildId}/roles`, "POST", {
+      name: "Support Staff", color: 0x41b6e6, permissions: "0", mentionable: false, hoist: false
+    });
+    staffRoleId = staff.id;
+    const ticketOverwrites = [
+      { id: guildId, type: 0, deny: "1024" },
+      { id: staffRoleId, type: 0, allow: "68608" },
+      { id: appId, type: 1, allow: "68624" },
+      ...(ownerId ? [{ id: ownerId, type: 1, allow: "68608" }] : [])
+    ];
+    let alerts = channels.find(item => item.type === 0 && item.parent_id === support.id && item.name === "support-alerts" &&
+      item.permission_overwrites?.some(overwrite => overwrite.id === guildId && (BigInt(overwrite.deny || 0) & 1024n)));
+    if (!alerts) alerts = await api(`/guilds/${guildId}/channels`, "POST", {
+      name: channels.some(item => item.name === "support-alerts") ? "ai-support-alerts" : "support-alerts", type: 0, parent_id: support.id,
+      permission_overwrites: ticketOverwrites,
+      topic: "Private alerts for questions that need a person. Give trusted helpers the Support Staff role."
+    });
+    alertsChannelId = alerts.id;
+    discordCommunityStatus.ticketSupportReady = true;
     for (const command of [
       { name: "link", description: "Link your website account to your Discord membership", options: [{ type: 3, name: "code", description: "Your private code from My Profile", required: true }] },
       { name: "ask", description: "Ask the support AI a website or botting question", options: [{ type: 3, name: "question", description: "Your question (no private account details)", required: true }] }
     ]) await api(`/applications/${appId}/guilds/${guildId}/commands`, "POST", command);
     discordCommunityStatus.rolesReady = roles.length === LEVELS.length;
     discordCommunityStatus.error = null;
-    console.log(`Discord membership roles and #ask-ai ready in guild ${guildId}`);
+    console.log(`Discord membership roles, #ask-ai and support tickets ready in guild ${guildId}`);
   }
   async function syncMember(userId, allowance) {
     if (!guildId || roles.length !== LEVELS.length) return;
@@ -205,28 +230,153 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       discordCommunityStatus.lastRoleSyncAt = new Date().toISOString();
     } finally { syncing = false; }
   }
+  const ticketFile = path.join(dataDir, "discord-support-tickets.json");
+  let ticketQueue = Promise.resolve();
+  function withTickets(task) {
+    const next = ticketQueue.then(task);
+    ticketQueue = next.catch(() => {});
+    return next;
+  }
+  async function readTickets() {
+    try {
+      const records = JSON.parse(await fs.readFile(ticketFile, "utf8"));
+      return Array.isArray(records) ? records : [];
+    } catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  }
+  async function writeTickets(records) {
+    await fs.mkdir(dataDir, { recursive: true });
+    const temp = `${ticketFile}.${crypto.randomUUID()}.tmp`;
+    await fs.writeFile(temp, JSON.stringify(records), { mode: 0o600 });
+    await fs.rename(temp, ticketFile);
+  }
+  const mention = id => `<@${id}>`;
+  async function sendMessage(channelId, content, extras = {}) {
+    const { users = [], ...other } = extras;
+    return api(`/channels/${channelId}/messages`, "POST", { content, allowed_mentions: { parse: [], users }, ...other });
+  }
+  async function alertStaff(userId, messageId) {
+    if (!alertsChannelId) throw new Error("Private support alerts are not configured.");
+    const ping = ownerId ? mention(ownerId) : "Support staff";
+    await sendMessage(alertsChannelId,
+      `${ping} — ${mention(userId)} needs help beyond the AI assistant. They were offered a private ticket. https://discord.com/channels/${guildId}/${askChannelId}/${messageId}`,
+      { users: [ownerId, userId].filter(Boolean) });
+  }
+  async function openTicket(userId) {
+    return withTickets(async () => {
+      const records = await readTickets();
+      const existing = records.find(item => item.userId === userId && item.guildId === guildId);
+      if (existing) {
+        try { await api(`/channels/${existing.channelId}`); return existing.channelId; }
+        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+      }
+      const channel = await api(`/guilds/${guildId}/channels`, "POST", {
+        name: `ticket-${userId.slice(-8)}`, type: 0, parent_id: supportCategoryId,
+        topic: `Private support ticket for Discord member ${userId}`,
+        permission_overwrites: [
+          { id: guildId, type: 0, deny: "1024" },
+          { id: userId, type: 1, allow: "68608" },
+          { id: staffRoleId, type: 0, allow: "68608" },
+          { id: appId, type: 1, allow: "68624" },
+          ...(ownerId && ownerId !== userId ? [{ id: ownerId, type: 1, allow: "68608" }] : [])
+        ]
+      });
+      try {
+        await sendMessage(channel.id,
+          `${mention(userId)}, your private ticket is open. Describe the issue here without passwords, payment details, or verification codes. A support team member can help.`,
+          { users: [userId], components: [{ type: 1, components: [{ type: 2, style: 4, label: "Close ticket", custom_id: `ticket:close:${channel.id}` }] }] });
+        await writeTickets([...records.filter(item => item.userId !== userId || item.guildId !== guildId), { guildId, userId, channelId: channel.id }]);
+      } catch (error) {
+        await api(`/channels/${channel.id}`, "DELETE").catch(() => {});
+        throw error;
+      }
+      return channel.id;
+    });
+  }
+  async function closeTicket(channelId, userId, member) {
+    return withTickets(async () => {
+      const records = await readTickets();
+      const ticket = records.find(item => item.channelId === channelId && item.guildId === guildId);
+      if (!ticket) throw new Error("This support ticket is already closed.");
+      const staff = member?.roles?.includes(staffRoleId) || userId === ownerId || (BigInt(member?.permissions || "0") & 8n) === 8n;
+      if (ticket.userId !== userId && !staff) throw new Error("Only this ticket's customer or support staff can close it.");
+      await api(`/channels/${channelId}`, "DELETE");
+      await writeTickets(records.filter(item => item !== ticket));
+    });
+  }
   const recent = new Map();
   async function aiAnswer(question) {
-    if (!aiKey) return "AI support is being configured. For now, please use the support channel for help.";
+    if (!aiKey) throw new Error("OPENAI_API_KEY is missing");
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST", headers: { Authorization: `Bearer ${aiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: process.env.DISCORD_AI_MODEL || "gpt-4.1-mini", store: false, max_output_tokens: 360,
-        instructions: `You are the SLABSNGRABSACO Discord support assistant. Website: https://slabsngrabsaco.com. Tiers: Starter 1 managed profile, Intermediate 2, Advanced 3, Pro 5, High Volume 10, Power User 20, Elite 50. Members can use My Profile to see memberships, linked profiles and their own success checkouts; the public home tracker aggregates community checkouts without member identities. Discord role linking: sign in, open My Profile > Discord Notifications, generate a code, then use /link code in Discord. Paid and gifted tiers grant access during their active periods. Answer general botting setup and troubleshooting questions cautiously; checkout success is never guaranteed and retailer terms apply. For account-specific issues, charges, missing orders or personal data, direct users to the human support channel. Never ask for or repeat passwords, 2FA codes, card numbers, mailbox credentials, or account secrets. Do not claim to have looked up orders or accounts. If uncertain say so. Keep replies under 900 characters.`,
+        instructions: `You are the SLABSNGRABSACO Discord support assistant. Website: https://slabsngrabsaco.com. Tiers: Starter 1 managed profile, Intermediate 2, Advanced 3, Pro 5, High Volume 10, Power User 20, Elite 50. Members can use My Profile to see memberships, linked profiles and their own success checkouts; the public home tracker aggregates community checkouts without member identities. Discord linking is in My Profile: connect via Discord authorization or generate a code and use /link code in Discord. Paid and gifted tiers grant access during their active periods. Answer general website and botting setup questions cautiously; retailer checkouts are not guaranteed. Do not claim to have inspected an account, order, or bot run. Never ask for or repeat passwords, 2FA codes, payment details, or mailbox credentials. If an answer needs account access, a billing or order investigation, private details, or information you lack, set needsHuman to true and give a brief explanation without sensitive details. Otherwise answer helpfully and set needsHuman to false. Return ONLY a JSON object with keys "answer" (under 800 characters) and "needsHuman" (boolean).`,
         input: question.slice(0, 900)
       }), signal: AbortSignal.timeout(25000)
     });
     if (!response.ok) throw new Error(`AI service HTTP ${response.status}`);
     const body = await response.json();
-    return (body.output_text || body.output?.flatMap(item => item.content || []).filter(item => item.type === "output_text").map(item => item.text).join("\n") || "Please ask the support team.").slice(0, 1400);
+    const output = body.output_text || body.output?.flatMap(item => item.content || []).filter(item => item.type === "output_text").map(item => item.text).join("\n") || "";
+    const result = JSON.parse(output.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+    if (typeof result.answer !== "string" || typeof result.needsHuman !== "boolean") throw new Error("AI service returned an invalid support decision");
+    discordCommunityStatus.lastAnswerAt = new Date().toISOString();
+    discordCommunityStatus.lastAiError = null;
+    return { answer: result.answer.slice(0, 800), needsHuman: result.needsHuman };
+  }
+  async function answerInChannel(userId, question, messageId) {
+    let answer;
+    try { answer = await aiAnswer(question); }
+    catch (error) {
+      discordCommunityStatus.lastAiError = error.message;
+      console.error("Discord AI answer:", error.message);
+      answer = { answer: "I can't resolve this right now. Please open a private ticket so the support team can help.", needsHuman: true };
+    }
+    const reply = await sendMessage(askChannelId, `${mention(userId)} ${answer.answer}`, {
+      users: [userId],
+      ...(messageId ? { message_reference: { message_id: messageId, fail_if_not_exists: false } } : {}),
+      ...(answer.needsHuman ? { components: [{ type: 1, components: [{ type: 2, style: 1, label: "Create private ticket", custom_id: `ticket:create:${userId}` }] }] } : {})
+    });
+    if (answer.needsHuman) {
+      try { await alertStaff(userId, reply.id); }
+      catch (error) { discordCommunityStatus.error = `Support alert: ${error.message}`; console.error("Discord support alert:", error.message); }
+    }
+    return reply;
+  }
+  async function onQuestionMessage(d) {
+    if (d.channel_id !== askChannelId || d.guild_id !== guildId || d.author?.bot || d.webhook_id) return;
+    const userId = d.author?.id;
+    const question = String(d.content || "").replace(new RegExp(`<@!?${appId}>`, "g"), "").trim();
+    if (!/^\d{17,22}$/.test(String(userId)) || !question) return;
+    try { await answerInChannel(userId, question.slice(0, 900), d.id); }
+    catch (error) { discordCommunityStatus.lastAiError = error.message; console.error("Discord question:", error.message); }
   }
   async function interaction(payload) {
-    if (payload.t !== "INTERACTION_CREATE" || payload.d?.type !== 2 || payload.d.guild_id !== guildId) return;
+    if (payload.t !== "INTERACTION_CREATE" || payload.d?.guild_id !== guildId) return;
     const d = payload.d, name = d.data?.name, userId = d.member?.user?.id;
-    if (!["link", "ask"].includes(name) || !userId) return;
+    if (!userId) return;
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+      if (d.type === 3 && /^ticket:create:\d{17,22}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== askChannelId || d.data.custom_id.split(":")[2] !== userId) return await reply("Only the person who asked can open this private ticket.");
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          const channelId = await openTicket(userId);
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: `Your private ticket is ready: https://discord.com/channels/${guildId}/${channelId}` });
+        } catch (error) {
+          console.error("Discord ticket create:", error.message);
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: "Unable to open a private ticket. Please ask in the support channel." });
+        }
+      }
+      if (d.type === 3 && /^ticket:close:\d{17,22}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== d.data.custom_id.split(":")[2]) return await reply("This ticket button is not in the right channel.");
+        const ticket = (await readTickets()).find(item => item.channelId === d.channel_id);
+        const staff = d.member?.roles?.includes(staffRoleId) || userId === ownerId || (BigInt(d.member?.permissions || "0") & 8n) === 8n;
+        if (!ticket || (ticket.userId !== userId && !staff)) return await reply("Only the customer or support staff can close this ticket.");
+        await reply("Closing this support ticket.");
+        return await closeTicket(d.channel_id, userId, d.member);
+      }
+      if (d.type !== 2 || !["link", "ask"].includes(name)) return;
       if (name === "link") {
         const code = String(d.data.options?.find(item => item.name === "code")?.value || "").trim().toUpperCase();
         const message = await consumeCode(dataDir, code, userId, d.member?.user?.username, getAccounts, saveAccounts);
@@ -238,16 +388,14 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       if (d.channel_id !== askChannelId) return await reply("Please use /ask in #ask-ai.");
       const question = String(d.data.options?.find(item => item.name === "question")?.value || "").trim();
       if (!question || question.length > 900) return await reply("Please enter a question under 900 characters.");
-      if (Date.now() - (recent.get(userId) || 0) < 20000) return await reply("Please wait 20 seconds before asking another question.");
+      if (Date.now() - (recent.get(userId) || 0) < 4000) return await reply("Please wait a few seconds before asking another question.");
       recent.set(userId, Date.now());
       await api(callback, "POST", { type: 5, data: { flags: 64 } });
-      let answer;
-      try { answer = await aiAnswer(question); }
-      catch (error) { console.error("Discord AI answer:", error.message); answer = "Support is temporarily unavailable. Please ask in the support channel."; }
-      await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: answer, allowed_mentions: { parse: [] } });
+      const posted = await answerInChannel(userId, question);
+      await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: `I replied to you in <#${askChannelId}>: https://discord.com/channels/${guildId}/${askChannelId}/${posted.id}` });
     } catch (error) { console.error("Discord interaction:", error.message); }
   }
-  let socket, sequence = null, heartbeat, reconnectDelay = 1000, closed = false;
+  let socket, sequence = null, heartbeat, reconnectDelay = 1000, closed = false, contentIntentEnabled = true;
   async function connect() {
     if (closed) return;
     try {
@@ -261,16 +409,28 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
             clearInterval(heartbeat);
             heartbeat = setInterval(() => socket.readyState === 1 && socket.send(JSON.stringify({ op: 1, d: sequence })), packet.d.heartbeat_interval);
             heartbeat.unref?.();
-            socket.send(JSON.stringify({ op: 2, d: { token, intents: 1, properties: { os: "linux", browser: "slabsngrabsaco", device: "slabsngrabsaco" } } }));
+            socket.send(JSON.stringify({ op: 2, d: { token, intents: 1 | 512 | (contentIntentEnabled ? 32768 : 0), properties: { os: "linux", browser: "slabsngrabsaco", device: "slabsngrabsaco" } } }));
           }
           if (packet.op === 1 && socket.readyState === 1) socket.send(JSON.stringify({ op: 1, d: sequence }));
           if (packet.op === 7 || packet.op === 9) socket.close();
-          if (packet.t === "READY") { reconnectDelay = 1000; discordCommunityStatus.gatewayReady = true; }
+          if (packet.t === "READY") {
+            reconnectDelay = 1000;
+            discordCommunityStatus.gatewayReady = true;
+            discordCommunityStatus.messageContentReady = contentIntentEnabled;
+          }
           if (packet.t === "INTERACTION_CREATE") void interaction(packet);
+          if (packet.t === "MESSAGE_CREATE") void onQuestionMessage(packet.d);
         } catch (error) { console.error("Discord gateway packet:", error.message); }
       });
-      socket.addEventListener("close", () => {
+      socket.addEventListener("close", event => {
         discordCommunityStatus.gatewayReady = false;
+        discordCommunityStatus.messageContentReady = false;
+        if (event.code === 4014 && contentIntentEnabled) {
+          contentIntentEnabled = false;
+          discordCommunityStatus.error = "Enable Message Content Intent in the Discord Developer Portal → Bot → Privileged Gateway Intents, then redeploy the service. /ask still works until then.";
+        } else if (event.code === 4013) {
+          discordCommunityStatus.error = "Discord rejected gateway intents (4013). Check the bot application settings.";
+        }
         clearInterval(heartbeat);
         setTimeout(connect, reconnectDelay).unref?.();
         reconnectDelay = Math.min(reconnectDelay * 2, 60000);

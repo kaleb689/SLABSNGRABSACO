@@ -3149,6 +3149,11 @@ select:focus {
   -webkit-text-stroke: 0;
   text-shadow: none;
   background: var(--filled-letter-image) center / 100% 100% no-repeat !important;
+  /* Apply the second Miami Vice color to the opaque shape of each image glyph. */
+  filter: drop-shadow(.17em .15em 0 #52dff9) drop-shadow(.035em .04em 0 #091824);
+}
+#home .public-success-heading .filled-heading-ready .public-success-title-tail .public-success-letter[style*="--filled-letter-width"] {
+  filter: drop-shadow(.17em .15em 0 #fb59cf) drop-shadow(.035em .04em 0 #091824);
 }
 #home .public-success-letter[data-black-x]::before {
   content: attr(data-black-x); position: absolute; z-index: 1; left: 50%; top: 49%;

@@ -23626,8 +23626,7 @@ async function refreshDiscordSuccessStatus() {
   try {
     const status = await membershipApi("/api/admin/discord-success-status");
     const community = status.community || {};
-    const botState = community.error ? ` · Community bot: ${community.error}` :
-      ` · Tier roles: ${community.rolesReady ? "ready" : "pending"} · #ask-ai: ${community.askChannelReady ? "ready" : "pending"} · AI key: ${community.aiConfigured ? "set" : "missing"} · Bot connection: ${community.gatewayReady ? "online" : "pending"}`;
+    const botState = ` · Tier roles: ${community.rolesReady ? "ready" : "pending"} · #ask-ai: ${community.askChannelReady ? "ready" : "pending"} · Support tickets: ${community.ticketSupportReady ? "ready" : "pending"} · AI key: ${community.aiConfigured ? "set" : "missing"} · Bot connection: ${community.gatewayReady ? "online" : "pending"} · Normal messages: ${community.messageContentReady ? "enabled" : "pending"}${community.lastAiError ? ` · Last AI error: ${community.lastAiError}` : ""}${community.error ? ` · Bot error: ${community.error}` : ""}`;
     label.textContent = status.configurationError || (status.configured
       ? `Channel ID ${status.channelId}${status.source === "webhook" ? " · Found through your webhook" : ""} · ${status.running ? "Scanning…" : status.error || (status.checkedAt ? "Last scan " + new Date(status.checkedAt).toLocaleString() + " · " + status.added + " added" : "Waiting for first scan")}`
       + botState : "Set DISCORD_BOT_TOKEN and DISCORD_SUCCESS_CHANNEL_ID in Render to connect the invited bot.");
