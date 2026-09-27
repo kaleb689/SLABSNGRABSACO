@@ -11119,12 +11119,8 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   z-index: -1;
   pointer-events: none;
 
-  background:
-    linear-gradient(
-      180deg,
-      rgba(5,10,18,.94),
-      rgba(7,16,27,.94)
-    );
+  /* Keep the profile backing clear so the site's watermark layer remains visible. */
+  background: transparent;
 }
 
 
