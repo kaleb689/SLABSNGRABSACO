@@ -42686,8 +42686,6 @@ app.get(
         accountId
       );
 
-      await syncManagedProfileSuccessMailbox();
-
       /*
         Success records are always filtered
         server-side by the authenticated

@@ -1,8 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 @font-face {
-  font-family: "Sedgwick Ave Display";
-  src: url('/fonts/SedgwickAveDisplay-Regular.ttf') format('truetype');
+  font-family: "Rubik Bubbles";
+  src: url('/fonts/RubikBubbles-Regular.ttf') format('truetype');
   font-style: normal;
   font-weight: 400;
   font-display: swap;
@@ -3014,10 +3014,10 @@ select:focus {
 #home .public-success-heading > div { display: flex; align-items: center; gap: 22px; min-width: 0; }
 #home .public-success-heading .eyebrow { font-size: .75rem; }
 #home .public-success-heading h2 {
-  display: flex; flex-wrap: wrap; align-items: center; column-gap: .48em; row-gap: .08em;
-  margin: 0; max-width: 100%; font-family: "Sedgwick Ave Display", "Arial Black", sans-serif;
-  font-size: clamp(1.28rem,2.6vw,2.12rem); font-weight: 400; line-height: 1.3;
-  letter-spacing: -.015em; text-transform: uppercase;
+  display: flex; flex-wrap: wrap; align-items: center; column-gap: .5em; row-gap: .08em;
+  margin: 0; max-width: 100%; font-family: "Rubik Bubbles", "Arial Rounded MT Bold", sans-serif;
+  font-size: clamp(1.12rem,2.45vw,2.02rem); font-weight: 400; line-height: 1.3;
+  letter-spacing: -.045em; text-transform: uppercase;
 }
 #home .public-success-brand, #home .public-success-title-tail { display: inline-block; max-width: 100%; }
 #home .public-success-brand { white-space: nowrap; }
@@ -3099,7 +3099,7 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   #home .public-success-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   #home .public-success-heading > div { flex-wrap: wrap; gap: 10px; }
   #home .public-success-heading h2 { flex-wrap: wrap; }
-  #home .public-success-heading h2 { font-size: clamp(1.13rem,4.5vw,1.7rem); }
+  #home .public-success-heading h2 { font-size: clamp(1.05rem,4.2vw,1.6rem); }
   #home .home-success-preview { padding: 40px 0; }
 }
 @media (max-width: 420px) {
