@@ -1,4 +1,12 @@
-@import url('https://fonts.googleapis.com/css2?family=DynaPuff:wght@700&family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+@font-face {
+  font-family: "Bavolen Reference";
+  src: url('/fonts/IT-Bavolen-Demo-Bold.otf') format('opentype');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
 
 @font-face {
   font-family: "Rubik Bubbles";
@@ -3015,7 +3023,7 @@ select:focus {
 #home .public-success-heading .eyebrow { font-size: .75rem; }
 #home .public-success-heading h2 {
   display: flex; flex-wrap: wrap; align-items: center; column-gap: .5em; row-gap: .08em;
-  margin: 0; max-width: 100%; font-family: "DynaPuff", "Arial Rounded MT Bold", sans-serif;
+  margin: 0; max-width: 100%; font-family: "Bavolen Reference", "Arial Rounded MT Bold", sans-serif;
   font-size: clamp(1.12rem,2.45vw,2.02rem); font-weight: 700; line-height: 1.48;
   letter-spacing: -.06em; text-transform: uppercase;
 }
