@@ -3072,10 +3072,10 @@ body.success-demo-body #my-profile.success-demo-only #account-tab-success { min-
 body.success-demo-body #my-profile.success-demo-only::before { background: transparent; }
 body.success-demo-body #my-profile #success-checkouts .success-recent-shell {
   width: 100% !important; min-width: 0 !important;
-  background: rgba(7,24,38,.48);
+  background: transparent;
 }
 body.success-demo-body #account-tab-success .success-activity-card,
-body.success-demo-body #account-tab-success .success-recent-card { background: rgba(7,24,38,.46); }
+body.success-demo-body #account-tab-success .success-recent-card { background: transparent; }
 @media (max-width: 850px) {
   #home .public-success-inner { grid-template-columns: 1fr; }
   #home .public-success-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
