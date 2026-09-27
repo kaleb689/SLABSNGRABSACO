@@ -375,10 +375,15 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       rulesChannelId = rules.id;
       let giveaway = channels.find(item => item.type === 0 && ["giveaway", "giveaways"].includes(normalizeName(item.name)));
       if (!giveaway) giveaway = await api(`/guilds/${guildId}/channels`, "POST", {
-        name: "giveaways", type: 0, topic: "Enter active giveaways with the button. Winners are selected when each giveaway ends.",
+        name: "❗️|giveaways", type: 0, topic: "Enter active giveaways with the button. Winners are selected when each giveaway ends.",
         permission_overwrites: readOnlyOverwrites()
       });
-      else giveaway = await ensureReadOnly(giveaway);
+      else {
+        giveaway = await ensureReadOnly(giveaway);
+        if (giveaway.name !== "❗️|giveaways") {
+          giveaway = await api(`/channels/${giveaway.id}`, "PATCH", { name: "❗️|giveaways" });
+        }
+      }
       giveawayChannelId = giveaway.id;
       let suggestions = channels.find(item => item.type === 0 && ["suggestion", "suggestions"].includes(normalizeName(item.name)));
       const suggestionOverwrites = [
