@@ -165,17 +165,23 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         await api(`/channels/${supportText.id}`, "PATCH", { parent_id: support.id });
       }
     }
-    let ask = channels.find(item => item.type === 0 && item.parent_id === support.id && item.name.toLowerCase() === "ask-ai");
+    const askChannels = channels.filter(item => item.type === 0 && normalizeName(item.name) === "askai");
+    let ask = askChannels.find(item => item.parent_id === support.id) || askChannels[0];
     const askTopic = "Ask anything about the SLABSNGRABSACO website or this Discord server. Type normally; the AI bot will @mention you with its answer. If it cannot answer safely, use its private ticket button. Never post account, payment, or login details here.";
     if (!ask) ask = await api(`/guilds/${guildId}/channels`, "POST", {
       name: "ask-ai", type: 0, parent_id: support.id,
       topic: askTopic
     });
-    else if (ask.topic !== askTopic) await api(`/channels/${ask.id}`, "PATCH", { topic: askTopic });
+    else if (ask.topic !== askTopic || ask.parent_id !== support.id) {
+      ask = await api(`/channels/${ask.id}`, "PATCH", { topic: askTopic, parent_id: support.id });
+    }
     askChannelId = ask.id;
     supportCategoryId = support.id;
     await ensurePanel(askChannelId, "ask-ai",
       "**Ask the AI assistant here.** Type any question about the website or this Discord server at any time. The bot replies to each person with an @mention, even when several people ask at once. If an answer needs private account details or the bot cannot answer reliably, it will offer a private ticket for the owner or Support Staff. Please keep passwords, payment information, and personal details out of public chat.");
+    for (const duplicate of askChannels.filter(item => item.id !== askChannelId)) {
+      await api(`/channels/${duplicate.id}`, "DELETE");
+    }
     discordCommunityStatus.askChannelReady = true;
     const existing = await api(`/guilds/${guildId}/roles`);
     roles = [];
@@ -263,8 +269,16 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           });
         }
       }
+      let actionNeeded = adminChannels.find(item => item.type === 0 && normalizeName(item.name) === "actionneeded");
+      if (!actionNeeded) actionNeeded = await api(`/guilds/${guildId}/channels`, "POST", {
+        name: "action-needed", type: 0, parent_id: adminCategory.id,
+        permission_overwrites: adminOverwrites
+      });
+      await ensurePanel(actionNeeded.id, "action-needed",
+        "**Action Needed** — When a customer account has an issue that needs staff attention, the owner or Support Staff will be pinged here. Review the issue and help the member in their private ticket. This channel is visible only to the owner and Support Staff.");
       for (const category of oldCategories) await api(`/channels/${category.id}`, "DELETE");
       const foundNames = new Set(channels.filter(item => adminNames.has(normalizeName(item.name))).map(item => normalizeName(item.name)));
+      foundNames.add(normalizeName(actionNeeded.name));
       discordCommunityStatus.adminChannelsReady = [...adminNames].every(name => foundNames.has(name));
       if (!discordCommunityStatus.adminChannelsReady) {
         adminError = `Admin Only: missing ${[...adminNames].filter(name => !foundNames.has(name)).join(", ")}`;
@@ -392,7 +406,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         await ensurePanel(questions.id, "questions", questionText);
       }
       await ensurePanel(giveawayChannelId, "giveaways",
-        "Giveaways appear here. Click **Enter Giveaway** on an active post to join; members cannot type in this channel. The bot draws the configured number of winners when the timer ends and mentions them in a result post. The owner or Support Staff can use Create Giveaway below.",
+        "Giveaways appear here. Click **Enter Giveaway** on an active post to join.",
         { components: [{ type: 1, components: [{ type: 2, style: 2,
           label: "Create Giveaway (staff)", custom_id: "giveaway:create" }] }] });
       await ensurePanel(rulesChannelId, "rules", "Please read these rules before joining the conversation.", {
@@ -411,6 +425,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       });
       await refreshIntro();
       await cleanupClosedTickets();
+      await cleanupOrphanedTicketAlerts().catch(error =>
+        console.error("Discord old ticket alert cleanup:", error.message));
       await finishDueGiveaways();
       discordCommunityStatus.introReady = true;
       discordCommunityStatus.rulesReady = true;
@@ -711,12 +727,78 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       await api(`/channels/${channelId}`, "DELETE");
       ticket.closed = true;
       await writeTickets(records);
-      for (const id of [ticket.alertMessageId, ...(ticket.alertMessageIds || [])].filter(Boolean)) {
-        try { await api(`/channels/${alertsChannelId}/messages/${id}`, "DELETE"); }
-        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
-      }
+      await removeTicketAlerts(ticket);
       await writeTickets(records.filter(item => item !== ticket));
     });
+  }
+  async function removeTicketAlerts(ticket) {
+    if (!alertsChannelId) return;
+    const known = new Set([ticket.alertMessageId, ...(ticket.alertMessageIds || [])].filter(Boolean));
+    const channels = await api(`/guilds/${guildId}/channels`);
+    const alertChannels = [...new Set([alertsChannelId, ...channels.filter(item => item.type === 0 &&
+      ["supportalerts", "aisupportalerts"].includes(normalizeName(item.name))).map(item => item.id)])];
+    for (const channelId of alertChannels) {
+      let before = null;
+      for (let page = 0; page < 5; page++) {
+        let messages;
+        try {
+          messages = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
+        } catch (error) {
+          if (channelId !== alertsChannelId && /HTTP 403|HTTP 404/.test(error.message)) break;
+          throw error;
+        }
+        if (!Array.isArray(messages) || !messages.length) break;
+        for (const message of messages) {
+          if (message.author?.id !== appId) continue;
+          const content = String(message.content || "");
+          const linked = content.includes(mention(ticket.userId)) && (
+            (content.includes("opened a private support ticket") && content.includes(ticket.channelId)) ||
+            content.includes("needs help beyond the AI assistant")
+          );
+          if (!known.has(message.id) && !linked) continue;
+          try { await api(`/channels/${channelId}/messages/${message.id}`, "DELETE"); }
+          catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+          known.delete(message.id);
+        }
+        if (messages.length < 100) break;
+        before = messages[messages.length - 1].id;
+      }
+    }
+    for (const id of known) {
+      try { await api(`/channels/${alertsChannelId}/messages/${id}`, "DELETE"); }
+      catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+    }
+  }
+  async function cleanupOrphanedTicketAlerts() {
+    if (!alertsChannelId) return;
+    const channels = await api(`/guilds/${guildId}/channels`);
+    const activeIds = new Set(channels.map(item => item.id));
+    const alertIds = [...new Set([alertsChannelId, ...channels.filter(item => item.type === 0 &&
+      ["supportalerts", "aisupportalerts"].includes(normalizeName(item.name))).map(item => item.id)])];
+    for (const channelId of alertIds) {
+      let before = null;
+      for (let page = 0; page < 5; page++) {
+        let messages;
+        try {
+          messages = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
+        } catch (error) {
+          if (channelId !== alertsChannelId && /HTTP 403|HTTP 404/.test(error.message)) break;
+          throw error;
+        }
+        if (!Array.isArray(messages) || !messages.length) break;
+        for (const message of messages) {
+          if (message.author?.id !== appId || !message.content?.includes("opened a private support ticket")) continue;
+          const ticketId = message.content.match(/<#(\d{17,22})>/)?.[1] ||
+            message.content.match(/discord\.com\/channels\/\d{17,22}\/(\d{17,22})/)?.[1];
+          if (ticketId && !activeIds.has(ticketId)) {
+            await api(`/channels/${channelId}/messages/${message.id}`, "DELETE")
+              .catch(error => { if (!/HTTP 404/.test(error.message)) throw error; });
+          }
+        }
+        if (messages.length < 100) break;
+        before = messages[messages.length - 1].id;
+      }
+    }
   }
   async function cleanupClosedTickets() {
     if (!alertsChannelId) return;
@@ -725,12 +807,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const keep = [];
       for (const ticket of records) {
         if (!ticket.closed || ticket.guildId !== guildId) { keep.push(ticket); continue; }
-        let failure = false;
-        for (const id of [ticket.alertMessageId, ...(ticket.alertMessageIds || [])].filter(Boolean)) {
-          try { await api(`/channels/${alertsChannelId}/messages/${id}`, "DELETE"); }
-          catch (error) { if (!/HTTP 404/.test(error.message)) failure = true; }
-        }
-        if (failure) keep.push(ticket);
+        try { await removeTicketAlerts(ticket); }
+        catch (error) { keep.push(ticket); console.error("Discord ticket alert cleanup:", error.message); }
       }
       if (keep.length !== records.length) await writeTickets(keep);
     });
@@ -1178,28 +1256,32 @@ Answer general navigation, feature, policy and channel-use questions directly wh
         if (d.channel_id !== ticketLobbyId || issue.length < 10 || issue.length > 1000) {
           return await reply("Please describe your issue in the Create a Ticket form under Support.");
         }
-        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        // Modal came from the lobby button: acknowledge without creating a
+        // temporary message in the public ticket channel.
+        await api(callback, "POST", { type: 6 });
         try {
           await openTicket(userId, issue);
-          // The member is mentioned inside the new private room. Remove the
-          // private acknowledgement from the public button channel.
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "DELETE")
-            .catch(error => console.error("Discord ticket acknowledgement cleanup:", error.message));
+          return;
         } catch (error) {
           console.error("Discord ticket form:", error.message);
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
-            content: "Your ticket could not be opened. Please contact Support Staff." });
+          return await api(`/webhooks/${appId}/${d.token}`, "POST", {
+            content: "Your ticket could not be opened. Please contact Support Staff.", flags: 64,
+            allowed_mentions: { parse: [] }
+          });
         }
       }
       if (d.type === 3 && /^ticket:create:\d{17,22}$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== askChannelId || d.data.custom_id.split(":")[2] !== userId) return await reply("Only the person who asked can open this private ticket.");
-        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        await api(callback, "POST", { type: 6 });
         try {
-          const channelId = await openTicket(userId);
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: `Your private ticket is ready: https://discord.com/channels/${guildId}/${channelId}` });
+          await openTicket(userId);
+          return;
         } catch (error) {
           console.error("Discord ticket create:", error.message);
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: "Unable to open a private ticket. Please ask in the support channel." });
+          return await api(`/webhooks/${appId}/${d.token}`, "POST", {
+            content: "Unable to open a private ticket. Please ask in the support channel.",
+            flags: 64, allowed_mentions: { parse: [] }
+          });
         }
       }
       if (d.type === 3 && /^ticket:close:\d{17,22}$/.test(d.data?.custom_id || "")) {
@@ -1310,4 +1392,6 @@ Answer general navigation, feature, policy and channel-use questions directly wh
   }, 15000).unref?.();
   setInterval(() => void refreshIntro().catch(error =>
     console.error("Discord intro refresh:", error.message)), 10 * 60000).unref?.();
+  setInterval(() => void cleanupOrphanedTicketAlerts().catch(error =>
+    console.error("Discord old ticket alert cleanup:", error.message)), 10 * 60000).unref?.();
 }
