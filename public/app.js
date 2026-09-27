@@ -15004,7 +15004,11 @@ document.addEventListener("visibilitychange", () => {
 
 function homepageSampleSuccessData() {
   const counts = [0, 1, 0, 2, 1, 0, 3, 1, 0, 2, 2, 1, 3, 2];
-  const products = ["Pokémon booster bundle", "Disney Lorcana starter deck", "Magic: The Gathering bundle"];
+  const products = [
+    { name: "Pokémon Paldean Fates Booster Bundle", imageUrl: "https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/series/incrementals/2024/sv045-booster-bundle/sv045-booster-bundle-169-en.png" },
+    { name: "Disney Lorcana The First Chapter Starter Deck", imageUrl: "https://ravensburger.cloud/cms/gallery/s1-starter-decks.png" },
+    { name: "Magic: The Gathering Edge of Eternities Bundle", imageUrl: "https://images.ctfassets.net/s5n2t79q9icq/28GuqPir1hdMac5Mh2BUSj/95e924e7f2b58d2be380f9cb17cb0eb3/EOE-003_NJASJASAJHD_Bundle_EN.png" }
+  ];
   const retailers = ["Target", "Walmart", "Costco"];
   const orders = [];
   const activity = [];
@@ -15030,7 +15034,7 @@ function homepageSampleSuccessData() {
         checkoutAt: `${date}T16:00:00.000Z`,
         itemCount: quantity,
         orderTotal: total,
-        items: [{ name: products[serial % products.length], quantity, imageUrl: null }]
+        items: [{ ...products[serial % products.length], quantity }]
       });
     }
     activity.push({ date, count, value });
@@ -15063,7 +15067,7 @@ if (SUCCESS_DEMO_MODE) {
   document.body.replaceChildren(wrapper);
   document.body.classList.add("success-demo-body");
   loadSuccessDashboard(true);
-  const resize = () => parent.postMessage({ type: "sng-success-demo-height", height: document.documentElement.scrollHeight }, location.origin);
+  const resize = () => parent.postMessage({ type: "sng-success-demo-height", height: Math.ceil(wrapper.getBoundingClientRect().height) + 6 }, location.origin);
   new ResizeObserver(resize).observe(wrapper);
   resize();
 } else {

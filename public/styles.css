@@ -2995,7 +2995,7 @@ select:focus {
 }
 
 /* Community totals and the exact customer Success preview */
-#home .public-success { padding: 14px 0 0; background: transparent; }
+#home .public-success { padding: 14px 0 0; margin-bottom: 42px; background: transparent; }
 #home .public-success-inner {
   display: grid; grid-template-columns: 1fr 1.15fr; column-gap: 16px; row-gap: 12px;
   padding: 16px 22px; border: 1px solid rgba(33,196,242,.33); border-radius: 20px;
@@ -3005,13 +3005,17 @@ select:focus {
 #home .public-success-heading { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 #home .public-success-heading .eyebrow { font-size: .75rem; }
 #home .public-success-heading h2 {
-  display: inline-block; margin: 3px 0 0; max-width: 100%;
-  color: #9eefff; font-size: clamp(1.2rem,2.35vw,1.9rem); line-height: 1.14;
-  font-weight: 950; font-style: italic; letter-spacing: -.045em;
-  transform: skew(-5deg); text-transform: uppercase;
-  background: linear-gradient(175deg,#fff 8%,#91eaff 36%,#229ade 62%,#dcecff 90%);
+  display: inline-block; margin: 5px 0 0; max-width: 100%;
+  color: #eefaff; font-family: Impact, "Arial Black", sans-serif;
+  font-size: clamp(1.2rem,2.3vw,1.9rem); line-height: 1.16;
+  font-weight: 950; font-style: italic; letter-spacing: -.025em;
+  transform: skew(-8deg); text-transform: uppercase;
+  background: linear-gradient(164deg,#fff 5%,#f6fcff 31%,#8bb7d4 53%,#fff 67%,#2289c6 91%);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  filter: drop-shadow(1px 2px 0 #0a5c9a) drop-shadow(0 0 9px rgba(18,201,255,.35));
+  -webkit-text-stroke: .45px #eefaff;
+  filter: drop-shadow(2px 2px 0 #030a13) drop-shadow(-2px 2px 0 #03bdff)
+    drop-shadow(2px -1px 0 #03bdff) drop-shadow(3px 4px 0 #07558c)
+    drop-shadow(0 0 8px rgba(18,201,255,.55));
 }
 #home .public-success-live {
   display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
@@ -3055,6 +3059,7 @@ select:focus {
 body.success-demo-body { min-height: 0; background: transparent; }
 body.success-demo-body #my-profile.success-demo-only { width: 100%; max-width: none; margin: 0; padding: 2px; background: transparent; }
 body.success-demo-body #my-profile.success-demo-only .account-tab-panel { padding: 0; }
+body.success-demo-body #my-profile.success-demo-only #account-tab-success { min-height: 0; }
 @media (max-width: 850px) {
   #home .public-success-inner { grid-template-columns: 1fr; }
   #home .public-success-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }

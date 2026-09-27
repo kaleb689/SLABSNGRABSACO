@@ -19923,6 +19923,10 @@ load();
       )
       .forEach(
         (detail, index) => {
+          if (detail.matches('[data-inline-admin-section="shipping"]')) {
+            detail.open = false;
+            return;
+          }
           const stored =
             sessionStorage.getItem(
               detailKey(
@@ -19956,6 +19960,8 @@ load();
       ) {
         return;
       }
+
+      if (detail.matches('[data-inline-admin-section="shipping"]')) return;
 
       const all =
         Array.from(
@@ -20216,6 +20222,10 @@ document.addEventListener(
       const detail of
       details
     ) {
+      if (detail.matches('[data-inline-admin-section="shipping"]')) {
+        detail.open = false;
+        continue;
+      }
       const state =
         sessionStorage.getItem(
           detailsKey(
@@ -20247,6 +20257,8 @@ document.addEventListener(
       ) {
         return;
       }
+
+      if (detail.matches('[data-inline-admin-section="shipping"]')) return;
 
       sessionStorage.setItem(
         detailsKey(

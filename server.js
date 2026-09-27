@@ -9660,6 +9660,54 @@ function normalizeRetailerCredentials(
   return normalized;
 }
 
+// One retailer login cannot be offered to two different managed profiles.
+// Compare complete username/password pairs; empty credentials do not identify an account.
+function managedCredentialPairs(credentials) {
+  const pairs = [];
+  const normalized = normalizeRetailerCredentials(credentials);
+  for (const retailer of RETAILER_KEYS) {
+    const username = String(normalized[retailer]?.username || "").trim().toLowerCase();
+    const password = String(normalized[retailer]?.password || "");
+    if (username && password) pairs.push({ retailer, key: JSON.stringify([retailer, username, password]) });
+  }
+  return pairs;
+}
+
+function managedCredentialConflict(accounts, credentials, excludeId = "") {
+  const proposed = new Map(managedCredentialPairs(credentials).map(pair => [pair.key, pair.retailer]));
+  for (const account of accounts || []) {
+    if (String(account.id) === String(excludeId) || !account.credentials) continue;
+    let existing;
+    try { existing = decryptJson(account.credentials); } catch { continue; }
+    for (const pair of managedCredentialPairs(existing)) {
+      if (proposed.has(pair.key)) return { retailer: pair.retailer };
+    }
+  }
+  return null;
+}
+
+function managedDuplicateCredentialState(accounts, inUseIds = new Set()) {
+  const groups = new Map();
+  const duplicateIds = new Set();
+  for (const account of accounts || []) {
+    if (!account.credentials) continue;
+    let credentials;
+    try { credentials = decryptJson(account.credentials); } catch { continue; }
+    for (const pair of managedCredentialPairs(credentials)) {
+      const ids = groups.get(pair.key) || [];
+      ids.push(String(account.id));
+      groups.set(pair.key, ids);
+    }
+  }
+  for (const ids of groups.values()) {
+    if (ids.length < 2) continue;
+    const assigned = ids.filter(id => inUseIds.has(id));
+    const keeper = assigned.length === 1 ? assigned[0] : assigned.length ? null : ids[0];
+    for (const id of ids) if (id !== keeper) duplicateIds.add(id);
+  }
+  return { duplicateIds };
+}
+
 /* -------------------------------------------------------
    SPECIAL PROFILE HELPERS
 ------------------------------------------------------- */
