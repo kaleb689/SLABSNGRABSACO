@@ -15126,6 +15126,10 @@ if (communityHeading) {
         const glyph = document.createElement("span");
         glyph.className = "public-success-letter";
         glyph.textContent = character;
+        const shadowDrip = document.createElement("span");
+        shadowDrip.className = "public-success-shadow-drip";
+        shadowDrip.setAttribute("aria-hidden", "true");
+        glyph.append(shadowDrip);
         const colorway = section.classList.contains("public-success-title-tail") ? "cyan" : "pink";
         const imagePath = `/images/filled-heading/${colorway}-${character}.png`;
         glyph.style.setProperty("--filled-letter-image", `url("${imagePath}")`);

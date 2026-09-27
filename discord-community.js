@@ -117,7 +117,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
     return response.status === 204 ? null : response.json();
   }
-  let guildId, askChannelId, supportCategoryId, alertsChannelId, oneOnOneLobbyId, generalCategoryId, ownerId, staffRoleId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, oneOnOneLobbyId, chatCategoryId, ownerId, staffRoleId, appId, roles = [];
   async function provision() {
     const channelId = await getChannelId();
     if (!/^\d{17,22}$/.test(String(channelId))) throw new Error("Set DISCORD_SUCCESS_CHANNEL_ID to a channel in the desired server.");
@@ -180,13 +180,17 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     discordCommunityStatus.ticketSupportReady = true;
     let oneOnOneError = null;
     try {
-    let general = channels.find(item => item.type === 4 && /\bgeneral\b/i.test(item.name));
-    if (!general) general = await api(`/guilds/${guildId}/channels`, "POST", { name: "General", type: 4 });
-    generalCategoryId = general.id;
-    let lobby = channels.find(item => item.type === 0 && item.parent_id === general.id && item.name === "1-on-1" &&
+    let chat = channels.find(item => item.type === 4 && item.name.replace(/[^a-z]/gi, "").toLowerCase() === "chat") ||
+      channels.find(item => item.type === 4 && /\bchat\b/i.test(item.name));
+    if (!chat) chat = await api(`/guilds/${guildId}/channels`, "POST", { name: "Chat", type: 4 });
+    chatCategoryId = chat.id;
+    let lobby = channels.find(item => item.type === 0 && item.parent_id === chat.id && item.name === "1-on-1" &&
       !item.permission_overwrites?.some(overwrite => overwrite.id === guildId && (BigInt(overwrite.deny || 0) & 1024n)));
+    if (!lobby) lobby = channels.find(item => item.type === 0 && item.name === "1-on-1" &&
+      !item.permission_overwrites?.some(overwrite => overwrite.id === guildId && (BigInt(overwrite.deny || 0) & 1024n)));
+    if (lobby && lobby.parent_id !== chat.id) lobby = await api(`/channels/${lobby.id}`, "PATCH", { parent_id: chat.id });
     if (!lobby) lobby = await api(`/guilds/${guildId}/channels`, "POST", {
-      name: "1-on-1", type: 0, parent_id: general.id,
+      name: "1-on-1", type: 0, parent_id: chat.id,
       topic: "Request a private 1-on-1 text and voice session. One session is active at a time; other requests wait in order."
     });
     oneOnOneLobbyId = lobby.id;
@@ -392,12 +396,12 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     let textChannel, voiceChannel;
     try {
       textChannel = await api(`/guilds/${guildId}/channels`, "POST", {
-        name: `one-on-one-${suffix}`, type: 0, parent_id: generalCategoryId,
+        name: `one-on-one-${suffix}`, type: 0, parent_id: chatCategoryId,
         topic: `Private 1-on-1 support session for Discord member ${userId}`,
         permission_overwrites: textOverwrites
       });
       voiceChannel = await api(`/guilds/${guildId}/channels`, "POST", {
-        name: `1-on-1 voice ${suffix}`, type: 2, parent_id: generalCategoryId,
+        name: `1-on-1 voice ${suffix}`, type: 2, parent_id: chatCategoryId,
         user_limit: 3, permission_overwrites: voiceOverwrites
       });
       await sendMessage(textChannel.id,
@@ -424,7 +428,13 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const { textId, voiceId } = state.active;
       let missing = false;
       for (const id of [textId, voiceId]) {
-        try { await api(`/channels/${id}`); }
+        try {
+          const channel = await api(`/channels/${id}`);
+          if (channel.parent_id !== chatCategoryId && channel.permission_overwrites?.some(overwrite =>
+            overwrite.id === guildId && (BigInt(overwrite.deny || 0) & 1024n))) {
+            await api(`/channels/${id}`, "PATCH", { parent_id: chatCategoryId, permission_overwrites: channel.permission_overwrites });
+          }
+        }
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; missing = true; }
       }
       if (missing) {
@@ -542,7 +552,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
       if (d.type === 3 && ["oneonone:request", "oneonone:status", "oneonone:leave"].includes(d.data?.custom_id)) {
-        if (d.channel_id !== oneOnOneLobbyId) return await reply("Use the 1-on-1 channel under General.");
+        if (d.channel_id !== oneOnOneLobbyId) return await reply("Use the 1-on-1 channel under Chat.");
         if (d.data.custom_id === "oneonone:status") {
           const state = await readSessions();
           const position = state.waiting.indexOf(userId);
