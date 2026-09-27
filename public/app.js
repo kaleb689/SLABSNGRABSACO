@@ -3476,9 +3476,35 @@ const registerForm =
   );
 
 let pendingDiscordSignupTicket = "";
+let discordLinkPollTimer = null;
+let discordLinkPollDeadline = 0;
+function stopDiscordLinkPolling() {
+  if (discordLinkPollTimer) clearInterval(discordLinkPollTimer);
+  discordLinkPollTimer = null;
+}
+async function refreshVerifiedDiscordLink() {
+  if (!discordLinkPollTimer || !state.customer) return;
+  if (Date.now() > discordLinkPollDeadline) { stopDiscordLinkPolling(); return; }
+  try {
+    const response = await fetch("/api/account/session", { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (!data.account?.discordLinked) return;
+    state.customer = { ...state.customer, ...data.account };
+    renderCustomerDiscordSettings();
+    renderAccountHeader(state.customer);
+    showAccountMessage("Discord account verified and linked.", "success");
+    stopDiscordLinkPolling();
+  } catch { /* The next poll can recover from a transient connection error. */ }
+}
 function openDiscordVerification(context) {
   const popup = window.open(`/api/discord/oauth/start?context=${context}`, "discord-verification", "popup=yes,width=540,height=760");
   if (!popup) showAccountMessage("Allow popups for this site to verify your Discord account.", "error");
+  if (popup && context === "account") {
+    stopDiscordLinkPolling();
+    discordLinkPollDeadline = Date.now() + 10 * 60 * 1000;
+    discordLinkPollTimer = setInterval(refreshVerifiedDiscordLink, 3000);
+  }
 }
 document.querySelector('#register-form [name="discordUsername"]')?.addEventListener("click", () => openDiscordVerification("signup"));
 document.querySelector('#discord-settings-form [name="discordUsername"]')?.addEventListener("click", () => {
@@ -3487,22 +3513,33 @@ document.querySelector('#discord-settings-form [name="discordUsername"]')?.addEv
 document.getElementById("customer-header-discord-connect")?.addEventListener("click", () => {
   if (state.customer) openDiscordVerification("account");
 });
-window.addEventListener("message", event => {
-  if (event.origin !== window.location.origin || event.data?.type !== "slabsngrabsaco-discord") return;
-  if (event.data.error) { showAccountMessage(event.data.error, "error"); return; }
-  if (event.data.ticket) {
-    pendingDiscordSignupTicket = event.data.ticket;
+function handleDiscordVerificationResult(result) {
+  if (result?.type !== "slabsngrabsaco-discord") return;
+  if (result.error) { showAccountMessage(result.error, "error"); stopDiscordLinkPolling(); return; }
+  if (result.ticket) {
+    pendingDiscordSignupTicket = result.ticket;
     const field = document.querySelector('#register-form [name="discordUsername"]');
-    if (field) field.value = event.data.username;
+    if (field) field.value = result.username;
   }
-  if (event.data.linked) {
+  if (result.linked) {
     const field = document.querySelector('#discord-settings-form [name="discordUsername"]');
-    if (field) field.value = event.data.username;
-    state.customer = { ...state.customer, discordUsername: event.data.username, discordLinked: true };
+    if (field) field.value = result.username;
+    state.customer = { ...state.customer, discordUsername: result.username, discordLinked: true };
     renderCustomerDiscordSettings();
     renderAccountHeader(state.customer);
+    stopDiscordLinkPolling();
   }
   showAccountMessage("Discord account verified and linked.", "success");
+}
+window.addEventListener("message", event => {
+  if (event.origin === window.location.origin) handleDiscordVerificationResult(event.data);
+});
+if (typeof BroadcastChannel !== "undefined") {
+  const discordLinkChannel = new BroadcastChannel("slabsngrabsaco-discord-connection");
+  discordLinkChannel.addEventListener("message", event => handleDiscordVerificationResult(event.data));
+}
+window.addEventListener("focus", () => {
+  if (discordLinkPollTimer) void refreshVerifiedDiscordLink();
 });
 
 

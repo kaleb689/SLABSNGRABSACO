@@ -8055,10 +8055,9 @@ app.get("/api/discord/oauth/callback", async (req, res) => {
   } catch (error) {
     console.error("Discord authorization callback:", error.message);
   }
-  const origin = new URL(BASE_URL).origin;
   const safePayload = JSON.stringify(payload).replace(/</g, "\\u003c");
   res.setHeader("Cache-Control", "no-store");
-  res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Discord connection</title><p>You can close this window and return to SLABSNGRABSACO.</p><script>if(window.opener){window.opener.postMessage(${safePayload},${JSON.stringify(origin)});window.close()}</script>`);
+  res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Discord connection</title><p id="discord-callback-message">Returning to SLABSNGRABSACO…</p><script id="discord-callback-payload" type="application/json">${safePayload}</script><script src="/discord-oauth-callback.js" defer></script>`);
 });
 
 app.post(
