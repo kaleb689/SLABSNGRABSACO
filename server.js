@@ -38628,7 +38628,8 @@ function extractRoutingEmailsFromSource(
 async function readRecentRetailerOrders(
   email,
   password,
-  maxMessages = 60
+  maxMessages = 60,
+  sinceAt = null
 ) {
   const {
     provider,
@@ -38675,23 +38676,24 @@ async function readRecentRetailerOrders(
           )
         );
 
-      const startSequence =
-        Math.max(
-          1,
-          totalMessages -
-            safeMax +
-            1
-        );
+      // Search by signup date so an already connected mailbox can backfill
+      // confirmations after registration, even if the inbox has grown.
+      const signupTime = new Date(sinceAt || 0).getTime();
+      const signupDate = Number.isFinite(signupTime) && signupTime > 0
+        ? new Date(signupTime)
+        : null;
+      const matchingUids = signupDate
+        ? await client.search({ since: signupDate, subject: "order" }, { uid: true })
+        : [];
 
-      const candidates =
-        await client.fetchAll(
-          `${startSequence}:*`,
-          {
-            uid: true,
-            envelope: true,
-            internalDate: true
-          }
-        );
+      const candidates = [];
+      for (let offset = 0; offset < matchingUids.length; offset += safeMax) {
+        candidates.push(...await client.fetchAll(
+          matchingUids.slice(offset, offset + safeMax),
+          { uid: true, envelope: true, internalDate: true },
+          { uid: true }
+        ));
+      }
 
       /*
         Process oldest -> newest so Success history
@@ -38703,6 +38705,8 @@ async function readRecentRetailerOrders(
         const candidate of
         candidates
       ) {
+        const receivedAt = new Date(candidate.internalDate || candidate.envelope?.date || 0).getTime();
+        if (signupDate && (!Number.isFinite(receivedAt) || receivedAt < signupTime)) continue;
         const subject =
           String(
             candidate
@@ -38961,6 +38965,10 @@ async function readRecentRetailerOrders(
 async function getCustomerSuccessMailboxes(
   customerAccountId
 ) {
+  const accounts = await getCustomerAccounts();
+  const signedUpAt = accounts.find(account =>
+    String(account.id) === String(customerAccountId)
+  )?.createdAt || null;
   const paid =
     await readJson(
       PAID_FILE,
@@ -39057,6 +39065,7 @@ async function getCustomerSuccessMailboxes(
     mailboxes.push({
       email,
       password,
+      signedUpAt: signedUpAt || order.paidAt || order.createdAt || null,
 
       profileSlot:
         Number.isInteger(
@@ -39165,13 +39174,17 @@ async function syncCustomerTargetSuccess(
           await readRecentRetailerOrders(
             mailbox.email,
             mailbox.password,
-            60
+            60,
+            mailbox.signedUpAt
           );
 
         for (
           const order of
           result.orders
         ) {
+          const checkoutTime = new Date(order.checkoutAt || order.date || 0).getTime();
+          const signupTime = new Date(mailbox.signedUpAt || 0).getTime();
+          if (!Number.isFinite(checkoutTime) || checkoutTime < signupTime) continue;
           parsedOrders += 1;
 
           /*
