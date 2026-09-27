@@ -23608,7 +23608,7 @@ async function refreshDiscordSuccessStatus() {
   try {
     const status = await membershipApi("/api/admin/discord-success-status");
     label.textContent = status.configurationError || (status.configured
-      ? `Channel ${status.channelId} · ${status.running ? "Scanning…" : status.error || (status.checkedAt ? "Last scan " + new Date(status.checkedAt).toLocaleString() + " · " + status.added + " added" : "Waiting for first scan")}`
+      ? `Channel ID ${status.channelId}${status.source === "webhook" ? " · Found through your webhook" : ""} · ${status.running ? "Scanning…" : status.error || (status.checkedAt ? "Last scan " + new Date(status.checkedAt).toLocaleString() + " · " + status.added + " added" : "Waiting for first scan")}`
       : "Set DISCORD_BOT_TOKEN and DISCORD_SUCCESS_CHANNEL_ID in Render to connect the invited bot.");
     document.getElementById("discordSuccessScanButton").disabled = !status.configured || status.running;
   } catch (error) { label.textContent = error.message; }

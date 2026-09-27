@@ -34849,6 +34849,37 @@ function discordSuccessConfig() {
   };
 }
 
+let discordSuccessChannelLookup = null;
+async function resolvedDiscordSuccessConfig() {
+  const config = discordSuccessConfig();
+  if (/^\d{17,22}$/.test(config.channelId)) return config;
+  let webhookUrl;
+  try { webhookUrl = new URL(config.channelId); } catch { return config; }
+  if (webhookUrl.protocol !== "https:" ||
+      !["discord.com", "discordapp.com"].includes(webhookUrl.hostname) ||
+      webhookUrl.port || webhookUrl.search || webhookUrl.hash) return config;
+  const match = webhookUrl.pathname.match(/^\/api(?:\/v\d+)?\/webhooks\/(\d{17,22})\/([A-Za-z0-9._-]+)\/?$/);
+  if (!match) return config;
+  if (!discordSuccessChannelLookup) {
+    discordSuccessChannelLookup = (async () => {
+      const response = await fetch(`https://discord.com/api/v10/webhooks/${match[1]}/${match[2]}`, {
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!response.ok) throw new Error(`Discord webhook lookup failed (HTTP ${response.status}).`);
+      const webhook = await response.json();
+      if (!/^\d{17,22}$/.test(String(webhook.channel_id || ""))) {
+        throw new Error("The configured Discord webhook has no text channel ID.");
+      }
+      return String(webhook.channel_id);
+    })();
+  }
+  try {
+    return { ...config, channelId: await discordSuccessChannelLookup, source: "webhook" };
+  } catch (error) {
+    return { ...config, lookupError: error.message };
+  }
+}
+
 function discordCheckoutFromMessage(message, channelId) {
   const embed = (message.embeds || []).find(item => /success|checkout|order confirm/i.test([item.title, item.description].join(" "))) || null;
   const messageText = String(message.content || "");
@@ -34881,7 +34912,7 @@ function discordCheckoutFromMessage(message, channelId) {
 }
 
 async function scanDiscordSuccessChannel() {
-  const { token, channelId } = discordSuccessConfig();
+  const { token, channelId } = await resolvedDiscordSuccessConfig();
   if (!token || !/^\d{17,22}$/.test(channelId) || discordSuccessScan.running) return false;
   discordSuccessScan.running = true;
   discordSuccessScan.error = null;
@@ -34928,22 +34959,23 @@ async function scanDiscordSuccessChannel() {
   }
 }
 
-app.get("/api/admin/discord-success-status", requireAdmin, (_req, res) => {
-  const config = discordSuccessConfig();
+app.get("/api/admin/discord-success-status", requireAdmin, async (_req, res) => {
+  const config = await resolvedDiscordSuccessConfig();
   const validChannelId = /^\d{17,22}$/.test(config.channelId);
   res.json({
     configured: Boolean(config.token && validChannelId),
+    source: config.source || null,
     configurationError: config.channelId && !validChannelId
-      ? "DISCORD_SUCCESS_CHANNEL_ID must be the numeric ID of your success text channel, not a webhook URL."
+      ? config.lookupError || "DISCORD_SUCCESS_CHANNEL_ID must be a numeric channel ID or a valid Discord webhook URL."
       : null,
     channelId: validChannelId ? config.channelId : null,
     ...discordSuccessScan
   });
 });
 app.post("/api/admin/discord-success-scan", requireAdmin, async (_req, res) => {
-  const { token, channelId } = discordSuccessConfig();
+  const { token, channelId } = await resolvedDiscordSuccessConfig();
   if (!token || !/^\d{17,22}$/.test(channelId)) {
-    return res.status(400).json({ error: "Set DISCORD_BOT_TOKEN and the numeric success text channel ID in Render first. A webhook URL cannot be used as the channel ID." });
+    return res.status(400).json({ error: "Set DISCORD_BOT_TOKEN and a numeric channel ID or valid Discord webhook URL in Render first." });
   }
   if (discordSuccessScan.running) return res.status(409).json({ error: "Discord scan is already running." });
   const ok = await scanDiscordSuccessChannel();
