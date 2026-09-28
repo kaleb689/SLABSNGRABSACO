@@ -591,6 +591,11 @@ function pricingCardsHtml() {
             at each supported retailer.
           </p>
 
+          <p class="plan-login-note">
+            Have ${plan.profiles} unique retailer ${plan.profiles === 1 ? "login" : "logins"}
+            for each retailer you plan to use, or check available rentals.
+          </p>
+
           <ul class="features">
 
             <li>
@@ -1409,6 +1414,21 @@ function updateRentalPriceDisplay() {
       quantity,
       durationType
     );
+
+  const planningSummary = document.getElementById("rental-planning-summary");
+  if (planningSummary) {
+    const retailerLabel = rentalRetailerLabel(retailer);
+    const addressMinimum = Math.ceil(quantity / 5);
+    const addressMaximum = Math.ceil(quantity / 4);
+    const addressEstimate = addressMinimum === addressMaximum
+      ? String(addressMinimum)
+      : `${addressMinimum}–${addressMaximum}`;
+    planningSummary.textContent =
+      `${quantity} ${retailerLabel} ${quantity === 1 ? "rental supplies its own retailer login" : "rentals supply their own retailer logins"}. ` +
+      `Plan ${quantity} payment ${quantity === 1 ? "card" : "cards"} (one per account recommended) ` +
+      `and roughly ${addressEstimate} shipping ${addressMaximum === 1 ? "address" : "addresses"} for these accounts. ` +
+      "Some retailers may allow a card on more than one account. Your other profiles need their own retailer logins and setup details.";
+  }
 
   const display =
     document.getElementById(
