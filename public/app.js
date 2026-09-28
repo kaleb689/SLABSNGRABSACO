@@ -9153,6 +9153,8 @@ async function applyManagedSavedInfo(
       managedGroupOpen
     );
 
+    await loadCustomerNotifications({ showPopup: false });
+
     const managedCardMessage =
       card?.querySelector(
         "[data-managed-form-message]"
@@ -14384,10 +14386,12 @@ function customerNotificationCardHtml(
 
 const MISSING_FIELD_NAMES = {
   "first name": "firstName", "last name": "lastName",
+  email: "email", phone: "phone",
   "street address": "address", city: "city", state: "state",
   "ZIP code": "zip", country: "country",
   "cardholder name": "cardholder", "card number": "acoCardNumber",
-  "expiration month": "expMonth", "expiration year": "expYear"
+  "expiration month": "expMonth", "expiration year": "expYear",
+  "Security Code": "securityCode"
 };
 
 function markMissingControl(input) {
@@ -14427,7 +14431,13 @@ function applyMissingInformationMarkers() {
       const retailer = RETAILERS.find(item => field === `${item.name} username / email` || field === `${item.name} password`);
       if (retailer) name = `${retailer.key}${field.endsWith("password") ? "Password" : "Username"}`;
     }
-    const control = name && [...card.querySelectorAll("[name]")].find(input => input.name === name);
+    const control = type === "Paid"
+      ? name && [...card.querySelectorAll("[name]")].find(input => input.name === name)
+      : card.querySelector(
+          ["firstName", "lastName", "email", "phone", "address", "city", "state", "zip", "country"].includes(name)
+            ? "[data-managed-shipping-select]"
+            : "[data-managed-card-select]"
+        );
     if (control) {
       markMissingControl(control);
       control.closest(".paid-profile-subsection, .retailer-credential-card")?.classList.add("missing-information-section");
@@ -14449,7 +14459,7 @@ document.getElementById("customer-notifications-list")?.addEventListener("click"
   const group = card.closest(".profile-group-dropdown");
   if (group) group.open = true;
   if (type === "Paid") reopenPaidProfile(number);
-  const firstMissing = card.querySelector(".missing-information-field input");
+  const firstMissing = card.querySelector(".missing-information-field input, .missing-information-field select");
   firstMissing?.closest("details")?.setAttribute("open", "");
   (firstMissing || card).scrollIntoView({ behavior: "smooth", block: "center" });
   firstMissing?.focus({ preventScroll: true });

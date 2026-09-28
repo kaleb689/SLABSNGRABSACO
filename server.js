@@ -12418,6 +12418,8 @@ function profileMissingFieldLabels(
   const shippingFields = [
     ["firstName", "first name"],
     ["lastName", "last name"],
+    ["email", "email"],
+    ["phone", "phone"],
     ["address", "street address"],
     ["city", "city"],
     ["state", "state"],
@@ -12498,6 +12500,10 @@ function profileMissingFieldLabels(
     missing.push(
       `${label}: expiration year`
     );
+  }
+
+  if (!String(secrets?.securityCode || "").trim()) {
+    missing.push(`${label}: Security Code`);
   }
 
   return missing;
