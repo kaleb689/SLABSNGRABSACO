@@ -9209,6 +9209,58 @@ app.post(
   }
 );
 
+// Signed-in customers may receive a clear delivery error without exposing
+// whether another person's email has an account.
+app.post("/api/account/send-password-reset", requireCustomer, async (req, res) => {
+  try {
+    const rawToken = createSecureToken();
+    const records = await readJson(PASSWORD_RESET_FILE, []);
+    const now = Date.now();
+    const active = (Array.isArray(records) ? records : []).filter(item =>
+      Number(item.expiresAt) > now && item.accountId !== req.customerAccount.id
+    );
+    active.push({
+      id: crypto.randomUUID(),
+      accountId: req.customerAccount.id,
+      tokenHash: hashSecureToken(rawToken),
+      createdAt: new Date(now).toISOString(),
+      expiresAt: now + 15 * 60 * 1000
+    });
+    await writeJson(PASSWORD_RESET_FILE, active);
+    await sendPasswordResetEmail(req.customerAccount.email, rawToken);
+    return res.json({ ok: true, message: "Password reset email sent to your account email." });
+  } catch (error) {
+    console.error("Signed-in password reset email failed:", error.message);
+    return res.status(502).json({ error: "The password reset email could not be sent. Please try again or change your password below." });
+  }
+});
+
+app.post("/api/account/change-password", requireCustomer, customerAuthRateLimit, async (req, res) => {
+  try {
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+    if (newPassword.length < 12 || newPassword.length > 200) {
+      return res.status(400).json({ error: "Your new password must be at least 12 characters." });
+    }
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => item.id === req.customerAccount.id && item.disabled !== true);
+    if (!account || !await verifyCustomerPassword(currentPassword, account)) {
+      return res.status(400).json({ error: "Your current password is incorrect." });
+    }
+    const passwordData = await hashCustomerPassword(newPassword);
+    account.passwordSalt = passwordData.salt;
+    account.passwordHash = passwordData.hash;
+    account.sessionVersion = customerSessionVersion(account) + 1;
+    account.updatedAt = new Date().toISOString();
+    await saveCustomerAccounts(accounts);
+    setCustomerSession(res, account);
+    return res.json({ ok: true, message: "Your password has been changed. Other sessions have been signed out." });
+  } catch (error) {
+    console.error("Customer password change failed:", error.message);
+    return res.status(500).json({ error: "Your password could not be changed. Please try again." });
+  }
+});
+
 app.post(
   "/api/account/reset-password",
   async (req, res) => {
@@ -15343,6 +15395,23 @@ app.get(
 
       let paidChanged =
         false;
+
+      // Repair older guest checkouts only when the purchase email belongs
+      // to a verified website account. Never overwrite an existing owner.
+      const verifiedAccountsByEmail = new Map(
+        customerAccounts
+          .filter(account => account.emailVerifiedAt && account.disabled !== true)
+          .map(account => [normalizeEmail(account.email), account])
+      );
+      for (const record of records) {
+        if (record.customerAccountId) continue;
+        const account = verifiedAccountsByEmail.get(normalizeEmail(record?.profile?.email));
+        if (!account) continue;
+        record.customerAccountId = account.id;
+        record.customerLinkedAt = new Date().toISOString();
+        record.customerLinkedBy = "verified-email";
+        paidChanged = true;
+      }
 
       const [
         freeAssignmentsForAdmin,
@@ -34152,6 +34221,7 @@ app.post(
 
 app.post(
   "/api/create-checkout-session",
+  requireCustomer,
   async (req, res) => {
     try {
       const tier =
@@ -34214,11 +34284,6 @@ app.post(
       }
 
 
-      const authenticatedAccount =
-        await getAuthenticatedCustomer(
-          req
-        );
-
       const id =
         crypto.randomUUID();
 
@@ -34248,9 +34313,7 @@ app.post(
         profile,
 
         customerAccountId:
-          authenticatedAccount
-            ?.id ||
-          null,
+          req.customerAccount.id,
         
 
         createdAt:
@@ -34291,13 +34354,17 @@ app.post(
 
             metadata: {
               submission_id:
-                id
+                id,
+              customer_account_id:
+                String(req.customerAccount.id)
             },
 
             subscription_data: {
               metadata: {
                 submission_id:
-                  id
+                  id,
+                customer_account_id:
+                  String(req.customerAccount.id)
               }
             },
 
