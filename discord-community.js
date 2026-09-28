@@ -1278,10 +1278,12 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         const error = await response.json();
         code = String(error.error?.code || error.error?.type || "unknown").replace(/[^a-z0-9_]/gi, "").slice(0, 60);
       } catch {}
-      const reason = `AI service HTTP ${response.status} (${code})`;
+      const reason = code === "credit_balance_exhausted" || code === "insufficient_quota"
+        ? "OpenAI API credit balance exhausted. Add credit to the API account that owns OPENAI_API_KEY."
+        : `AI service HTTP ${response.status} (${code})`;
       if (response.status === 429) {
         aiUnavailableReason = reason;
-        aiUnavailableUntil = Date.now() + (code === "insufficient_quota" ? 10 * 60000 : 60000);
+        aiUnavailableUntil = Date.now() + (["insufficient_quota", "credit_balance_exhausted"].includes(code) ? 10 * 60000 : 60000);
       }
       throw new Error(reason);
     }
