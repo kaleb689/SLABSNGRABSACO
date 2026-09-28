@@ -104,7 +104,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, dataDir, aiKey }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(aiKey);
   if (!token) return;
@@ -117,7 +117,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
     return response.status === 204 ? null : response.json();
   }
-  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, ownerId, staffRoleId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   // Channel names may have a Unicode emoji and divider before their functional name.
   const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
   function sameOverwrites(actual, expected) {
@@ -208,6 +208,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       name: "Support Staff", color: 0x41b6e6, permissions: "0", mentionable: false, hoist: false
     });
     staffRoleId = staff.id;
+    let ogRole = existing.find(item => item.name.toLowerCase() === "og member" && !item.managed);
+    if (!ogRole) ogRole = await api(`/guilds/${guildId}/roles`, "POST", {
+      name: "OG Member", color: 0xffd83d, permissions: "0", mentionable: false, hoist: false
+    });
+    ogRoleId = ogRole.id;
     const ticketOverwrites = [
       { id: guildId, type: 0, deny: "1024" },
       { id: staffRoleId, type: 0, allow: "68608" },
@@ -548,7 +553,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     discordCommunityStatus.error = [ticketLobbyError, adminError, oneOnOneError, importantError, communityError, diamondError, emojiError].filter(Boolean).join("; ") || null;
     console.log(`Discord membership roles, #ask-ai and support tickets ready in guild ${guildId}`);
   }
-  async function syncMember(userId, allowance) {
+  async function syncMember(userId, allowance, ogMember = false) {
     if (!guildId || roles.length !== LEVELS.length) return;
     const wanted = [...roles].reverse().find(level => allowance >= level.profiles);
     let member;
@@ -558,6 +563,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const has = member.roles.includes(role.id);
       if (has && role.id !== wanted?.id) await api(`/guilds/${guildId}/members/${userId}/roles/${role.id}`, "DELETE");
       if (!has && role.id === wanted?.id) await api(`/guilds/${guildId}/members/${userId}/roles/${role.id}`, "PUT");
+    }
+    if (ogRoleId) {
+      const hasOg = member.roles.includes(ogRoleId);
+      if (hasOg && !ogMember) await api(`/guilds/${guildId}/members/${userId}/roles/${ogRoleId}`, "DELETE");
+      if (!hasOg && ogMember) await api(`/guilds/${guildId}/members/${userId}/roles/${ogRoleId}`, "PUT");
     }
   }
   async function removeOldRoles() {
@@ -586,7 +596,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const accounts = await getAccounts();
       for (const account of accounts) {
         if (!account.discordLinkedAt || !/^\d{17,22}$/.test(String(account.discordUserId || ""))) continue;
-        try { await syncMember(account.discordUserId, account.disabled ? 0 : await getAllowance(account.id)); }
+        try { await syncMember(account.discordUserId, account.disabled ? 0 : await getAllowance(account.id), !account.disabled && await getOgStatus(account.id)); }
         catch (error) { console.error("Discord tier sync:", error.message); }
       }
       discordCommunityStatus.lastRoleSyncAt = new Date().toISOString();
@@ -1394,7 +1404,7 @@ Answer general navigation, feature, policy and channel-use questions directly wh
         const code = String(d.data.options?.find(item => item.name === "code")?.value || "").trim().toUpperCase();
         const message = await consumeCode(dataDir, code, userId, d.member?.user?.username, getAccounts, saveAccounts);
         if (message) return await reply(message);
-        try { const account = (await getAccounts()).find(item => item.discordUserId === userId); await syncMember(userId, await getAllowance(account.id)); }
+        try { const account = (await getAccounts()).find(item => item.discordUserId === userId); await syncMember(userId, await getAllowance(account.id), await getOgStatus(account.id)); }
         catch (error) { console.error("Discord role after linking:", error.message); }
         return await reply("Your Discord account is linked. Your membership role will update automatically.");
       }

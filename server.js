@@ -7503,7 +7503,9 @@ app.post(
                   );
 
               record.ogMember =
-                customerHasOgMemberStatus(
+                (await getCustomerAccounts()).some(account =>
+                  String(account.id) === String(record.customerAccountId) && account.ogMemberGrantedAt
+                ) || customerHasOgMemberStatus(
                   [
                     ...customerPaidRecords,
                     record
@@ -8891,12 +8893,13 @@ async function discordServerMember(username, userId) {
   } else {
     if (!username || username.length < 2) throw new Error("Enter a Discord username or User ID.");
     const matches = await discordGet(`/guilds/${guild}/members/search?query=${encodeURIComponent(username)}&limit=100`);
-    const exact = matches.filter(item => item.user?.username?.toLowerCase() === username.toLowerCase());
+    const exact = matches.filter(item => [item.user?.username, item.user?.global_name, item.nick]
+      .some(value => value?.toLowerCase() === username.toLowerCase()));
     if (exact.length !== 1) throw new Error("Could not uniquely verify that username in your server. Enter the member's numeric Discord User ID.");
     member = exact[0];
   }
   if (!/^\d{17,22}$/.test(String(member.user?.id || ""))) throw new Error("This Discord member could not be verified.");
-  if (username && member.user.username.toLowerCase() !== username.toLowerCase()) throw new Error("The username does not match that Discord User ID. Check the account before linking.");
+  // The numeric ID identifies the member; display names and usernames can change.
   return member.user;
 }
 
@@ -8913,7 +8916,7 @@ app.put("/api/admin/customers/:id/discord", requireAdmin, async (req, res) => {
     const account = accounts.find(item => item.id === req.params.id);
     if (!account) return res.status(404).json({ error: "Customer account not found." });
     const username = String(req.body.username || "").trim().replace(/^@/, "");
-    const userId = String(req.body.userId || "").trim();
+    const userId = String(req.body.userId || "").trim().replace(/^<@!?(\d{17,22})>$/, "$1");
     if (username.length > 100) return res.status(400).json({ error: "Username is too long." });
     const identity = await discordServerMember(username, userId);
     if (accounts.some(item => item.id !== account.id && item.discordLinkedAt && item.discordUserId === identity.id)) {
@@ -10219,6 +10222,7 @@ function managedCredentialConflict(accounts, credentials, excludeId = "") {
 function managedDuplicateCredentialState(accounts, inUseIds = new Set()) {
   const groups = new Map();
   const duplicateIds = new Set();
+  const duplicateOf = new Map();
   for (const account of accounts || []) {
     if (!account.credentials) continue;
     let credentials;
@@ -10233,9 +10237,12 @@ function managedDuplicateCredentialState(accounts, inUseIds = new Set()) {
     if (ids.length < 2) continue;
     const assigned = ids.filter(id => inUseIds.has(id));
     const keeper = assigned.length === 1 ? assigned[0] : assigned.length ? null : ids[0];
-    for (const id of ids) if (id !== keeper) duplicateIds.add(id);
+    for (const id of ids) if (id !== keeper) {
+      duplicateIds.add(id);
+      if (keeper) duplicateOf.set(id, keeper);
+    }
   }
-  return { duplicateIds };
+  return { duplicateIds, duplicateOf };
 }
 
 /* -------------------------------------------------------
@@ -15446,6 +15453,25 @@ app.get("/api/admin/discount-codes", requireAdmin, async (req, res) => {
   return res.json({ codes: await getDiscountCodes() });
 });
 
+app.put("/api/admin/customers/:id/og-status", requireAdmin, async (req, res) => {
+  try {
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => String(item.id) === String(req.params.id));
+    if (!account) return res.status(404).json({ error: "Customer account not found." });
+    const paid = await readJson(PAID_FILE, []);
+    const customerPaid = (Array.isArray(paid) ? paid : []).filter(item =>
+      String(item.customerAccountId || "") === String(account.id) && item.paidAt);
+    if (!customerPaid.length) return res.status(400).json({ error: "OG status can only be granted to paid customers." });
+    account.ogMemberGrantedAt ||= new Date().toISOString();
+    account.updatedAt = new Date().toISOString();
+    await saveCustomerAccounts(accounts);
+    return res.json({ ok: true, ogMember: true });
+  } catch (error) {
+    console.error("Admin OG grant:", error);
+    return res.status(500).json({ error: "Unable to grant OG status." });
+  }
+});
+
 app.post("/api/admin/discount-codes", requireAdmin, async (req, res) => {
   try {
     const code = String(req.body?.code || "").trim().toUpperCase();
@@ -15847,7 +15873,8 @@ if (
             : [record];
 
         const ogMember =
-          customerHasOgMemberStatus(
+          customerAccountMap.get(String(record.customerAccountId))?.ogMemberGrantedAt
+          ? true : customerHasOgMemberStatus(
             customerPaidRecords
           );
 
@@ -44181,7 +44208,7 @@ const ownedOrders =
           profileDisplayName,
 
         ogMember:
-          customerHasOgMemberStatus(
+          account.ogMemberGrantedAt ? true : customerHasOgMemberStatus(
             ownedOrders
           ),
 
@@ -44919,6 +44946,13 @@ await initializeArrayFile(
           getAccounts: getCustomerAccounts,
           saveAccounts: saveCustomerAccounts,
           getAllowance: getCustomerProfileAllowance,
+          getOgStatus: async accountId => {
+            const account = (await getCustomerAccounts()).find(item => String(item.id) === String(accountId));
+            if (account?.ogMemberGrantedAt) return true;
+            const paid = await readJson(PAID_FILE, []);
+            return customerHasOgMemberStatus((Array.isArray(paid) ? paid : []).filter(item =>
+              String(item.customerAccountId || "") === String(accountId)));
+          },
           dataDir: DATA_DIR,
           aiKey: String(process.env.OPENAI_API_KEY || "").trim()
         });

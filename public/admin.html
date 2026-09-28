@@ -7073,13 +7073,21 @@ function renderOrder(x) {
             ${x.customerAccountId ? `<section class="customer-action-card admin-discord-card" data-admin-discord-card="${escapeHtml(x.customerAccountId)}">
               <span class="eyebrow">DISCORD ACCOUNT</span>
               <h4>Customer Discord connection</h4>
-              <p>Enter their Discord username and verify the matching member in your server. A Discord User ID resolves ambiguous usernames.</p>
+              <p>Enter their Discord username or server display name. For a reliable match, enter their numeric Discord User ID; the verified account name will be filled in automatically.</p>
               <div class="admin-discord-fields">
                 <label>Discord username <input data-discord-username autocomplete="off" placeholder="Username"></label>
                 <label>Discord User ID (if needed) <input data-discord-user-id inputmode="numeric" autocomplete="off" placeholder="Numeric Discord ID"></label>
               </div>
               <div class="admin-discord-actions"><button type="button" class="admin-save-button" data-admin-discord-save>Link or update</button><button type="button" class="admin-edit-button" data-admin-discord-unlink hidden>Unlink</button></div>
               <small data-admin-discord-feedback>Loading Discord connection…</small>
+            </section>` : ""}
+
+            ${x.customerAccountId && x.paidAt ? `<section class="customer-action-card" data-admin-og-account="${escapeHtml(x.customerAccountId)}">
+              <span class="eyebrow">OG MEMBER</span>
+              <h4>OG status</h4>
+              <p>Grant this paid customer OG status for their profile and Discord role.</p>
+              <button type="button" class="admin-save-button" data-admin-og-grant ${x.ogMember ? "disabled" : ""}>${x.ogMember ? "OG status active" : "Grant OG status"}</button>
+              <small data-admin-og-feedback role="status"></small>
             </section>` : ""}
 
             ${x.customerAccountId ? `<section class="customer-action-card" data-admin-password-account="${escapeHtml(x.customerAccountId)}">
@@ -23786,6 +23794,21 @@ document.addEventListener("click", async event => {
     feedback.textContent = data.linked ? `Verified @${data.username} in your server. Tier role will sync automatically.` : "Discord account unlinked.";
   } catch (error) { feedback.textContent = error.message; }
   finally { action.disabled = false; }
+});
+
+document.addEventListener("click", async event => {
+  const button = event.target.closest("[data-admin-og-grant]");
+  if (!button) return;
+  const card = button.closest("[data-admin-og-account]");
+  const feedback = card.querySelector("[data-admin-og-feedback]");
+  button.disabled = true;
+  feedback.textContent = "Granting OG status…";
+  try {
+    await membershipApi(`/api/admin/customers/${encodeURIComponent(card.dataset.adminOgAccount)}/og-status`, { method: "PUT" });
+    button.textContent = "OG status active";
+    feedback.textContent = "Saved. The profile badge is active; Discord role syncs automatically for linked members.";
+    void loadMembershipTools();
+  } catch (error) { button.disabled = false; feedback.textContent = error.message; }
 });
 
 document.addEventListener("submit", async event => {
