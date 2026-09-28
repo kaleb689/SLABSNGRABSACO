@@ -5114,6 +5114,21 @@
             Send Password Reset Email
           </button>
 
+          <h3>Change Password</h3>
+          <p class="account-muted">If you know your current password, change it here without waiting for an email.</p>
+          <form id="security-change-password-form">
+            <label>Current Password
+              <input type="password" name="currentPassword" autocomplete="current-password" required />
+            </label>
+            <label>New Password
+              <input type="password" name="newPassword" autocomplete="new-password" minlength="12" required />
+            </label>
+            <label>Confirm New Password
+              <input type="password" name="confirmPassword" autocomplete="new-password" minlength="12" required />
+            </label>
+            <button type="submit" class="secondary account-action-button">Change Password</button>
+          </form>
+
         </div>
 
       </div>
