@@ -893,7 +893,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         }
         if (!Array.isArray(messages) || !messages.length) break;
         for (const message of messages) {
-          if (message.author?.id !== appId || !message.content?.includes("opened a private support ticket")) continue;
+          if (message.author?.id !== appId) continue;
+          const ticketAlert = message.content?.includes("opened a private support ticket");
+          const sessionAlert = message.content?.includes("a private 1-on-1 session is ready");
+          if (!ticketAlert && !sessionAlert) continue;
           const ticketId = message.content.match(/<#(\d{17,22})>/)?.[1] ||
             message.content.match(/discord\.com\/channels\/\d{17,22}\/(\d{17,22})/)?.[1];
           if (ticketId && !activeIds.has(ticketId)) {
@@ -1022,8 +1025,9 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     try {
       const data = JSON.parse(await fs.readFile(sessionFile, "utf8"));
       return { lobbyMessageId: data.lobbyMessageId || null, active: data.active || null,
+        pendingAlertMessageIds: Array.isArray(data.pendingAlertMessageIds) ? data.pendingAlertMessageIds : [],
         waiting: Array.isArray(data.waiting) ? [...new Set(data.waiting.filter(id => /^\d{17,22}$/.test(id)))] : [] };
-    } catch (error) { if (error.code === "ENOENT") return { lobbyMessageId: null, active: null, waiting: [] }; throw error; }
+    } catch (error) { if (error.code === "ENOENT") return { lobbyMessageId: null, active: null, pendingAlertMessageIds: [], waiting: [] }; throw error; }
   }
   async function writeSessions(state) {
     await fs.mkdir(dataDir, { recursive: true });
@@ -1104,11 +1108,32 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       discordCommunityStatus.error = `1-on-1 setup: ${error.message}`;
       throw error;
     }
-    if (alertsChannelId) await sendMessage(alertsChannelId,
-      `${ownerId ? mention(ownerId) : "Support Staff"} — a private 1-on-1 session is ready for ${mention(userId)}: <#${textChannel.id}> (voice: <#${voiceChannel.id}>).`,
-      { users: [ownerId].filter(Boolean) }).catch(error => console.error("Discord 1-on-1 alert:", error.message));
+    if (alertsChannelId) {
+      try {
+        const alert = await sendMessage(alertsChannelId,
+          `${ownerId ? mention(ownerId) : "Support Staff"} — a private 1-on-1 session is ready for ${mention(userId)}: <#${textChannel.id}> (voice: <#${voiceChannel.id}>).`,
+          { users: [ownerId].filter(Boolean) });
+        state.active.alertMessageId = alert.id;
+        await writeSessions(state);
+      } catch (error) { console.error("Discord 1-on-1 alert:", error.message); }
+    }
+  }
+  async function clearSessionAlerts(state) {
+    if (!alertsChannelId || !state.pendingAlertMessageIds?.length) return;
+    for (const id of [...state.pendingAlertMessageIds]) {
+      try {
+        await api(`/channels/${alertsChannelId}/messages/${id}`, "DELETE");
+        state.pendingAlertMessageIds = state.pendingAlertMessageIds.filter(item => item !== id);
+        await writeSessions(state);
+      } catch (error) {
+        if (!/HTTP 404/.test(error.message)) throw error;
+        state.pendingAlertMessageIds = state.pendingAlertMessageIds.filter(item => item !== id);
+        await writeSessions(state);
+      }
+    }
   }
   async function reconcileSessions(state) {
+    await clearSessionAlerts(state).catch(error => console.error("Discord 1-on-1 alert cleanup retry:", error.message));
     if (state.active) {
       const { textId, voiceId } = state.active;
       let missing = false;
@@ -1118,8 +1143,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       }
       if (missing) {
         for (const id of [textId, voiceId]) await api(`/channels/${id}`, "DELETE").catch(() => {});
+        if (state.active.alertMessageId) state.pendingAlertMessageIds.push(state.active.alertMessageId);
         state.active = null;
         await writeSessions(state);
+        await clearSessionAlerts(state).catch(error => console.error("Discord 1-on-1 alert cleanup retry:", error.message));
       }
     }
     discordCommunityStatus.oneOnOneQueued = state.waiting.length;
@@ -1149,8 +1176,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         try { await api(`/channels/${id}`, "DELETE"); }
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
       }
+      if (finished.alertMessageId) state.pendingAlertMessageIds.push(finished.alertMessageId);
       state.active = null;
       await writeSessions(state);
+      await clearSessionAlerts(state).catch(error => console.error("Discord 1-on-1 alert cleanup:", error.message));
       await startNextSession(state);
     });
   }
