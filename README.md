@@ -11,7 +11,7 @@ A modern membership website with:
 
 ## Important security design
 
-The profile form intentionally does **not** collect full card numbers, expiration dates, or CVVs. Customers enter payment details directly on Stripe's hosted checkout page.
+Stripe's hosted checkout collects the membership payment. Separately, the ACO profile currently collects a full card number and expiration date. It must never collect a card CVV. The separate ACO account security code is not a card CVV. See [the VGS rollout plan](docs/vgs-rollout.md) before changing how these cards are stored or displaying a VGS security claim.
 
 Do not put your Stripe secret key in browser code, HTML, or a public repository.
 

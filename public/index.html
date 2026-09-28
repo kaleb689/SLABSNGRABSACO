@@ -600,6 +600,11 @@
 
   </section>
 
+  <div id="vgs-home-security-stamp" class="vgs-security-stamp" hidden>
+    <strong>Card details protected with VGS</strong>
+    <span>Your ACO card is stored in a secure vault. Membership payments are processed separately by Stripe.</span>
+  </div>
+
 </section>
 
 
@@ -1075,19 +1080,20 @@
 
 
         <label>
-  Security Code *
+  ACO Account Security Code *
 
   <input
     required
     type="password"
     name="securityCode"
-    inputmode="numeric"
-    autocomplete="cc-csc"
+    inputmode="text"
+    autocomplete="off"
     minlength="3"
-    maxlength="4"
-    pattern="[0-9]{3,4}"
-    placeholder="3 or 4 digit code"
+    maxlength="32"
+    pattern="[A-Za-z0-9_-]{3,32}"
+    placeholder="Separate account code (not card CVV)"
   />
+  <small class="fine">This is your separate ACO account code. Never enter the CVV/CVC printed on a payment card.</small>
 </label>
 
 
@@ -5286,6 +5292,7 @@
 </button>
 
 
+<script src="/card-security-notices.js"></script>
 <script src="/app.js"></script>
 
 </body>

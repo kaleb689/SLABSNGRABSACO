@@ -11979,3 +11979,40 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   letter-spacing: .5px;
   text-align: center;
 }
+
+/* Shown only after the ACO card flow has moved to the VGS vault. */
+.vgs-security-stamp {
+  max-width: 820px;
+  margin: 24px auto 34px;
+  padding: 18px 22px;
+  border: 1px solid rgba(57, 215, 231, .55);
+  border-radius: 14px;
+  background: rgba(6, 34, 48, .92);
+  color: #e8fbff;
+  text-align: center;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+}
+
+.vgs-security-stamp strong,
+.vgs-security-stamp span {
+  display: block;
+}
+
+.vgs-security-stamp strong {
+  font-size: 15px;
+  letter-spacing: .03em;
+}
+
+.vgs-security-stamp span {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.vgs-card-security-note {
+  display: block;
+  margin-top: 7px;
+  color: #a2edf2;
+  font-size: 12px;
+  line-height: 1.45;
+}

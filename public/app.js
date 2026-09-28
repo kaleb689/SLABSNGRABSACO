@@ -2047,12 +2047,12 @@ function profileFieldErrorMessage(
   if (
     name ===
     "securityCode" &&
-    !/^\d{3,4}$/.test(
+    !/^[A-Za-z0-9_-]{3,32}$/.test(
       rawValue
     )
   ) {
     return (
-      "Security Code must be 3 or 4 digits."
+      "Enter your separate ACO account code (3–32 letters, digits, underscores, or hyphens). Do not enter a card CVV."
     );
   }
 
