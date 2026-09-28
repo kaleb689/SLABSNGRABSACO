@@ -2593,6 +2593,7 @@ profileForm?.addEventListener(
 
     delete profile.confirm;
     delete profile.acknowledgeAcoOutcome;
+    delete profile.referredByDiscord;
 
     if (message) {
       message.textContent =
@@ -2618,6 +2619,7 @@ profileForm?.addEventListener(
   tier: state.tier,
   profile,
   secrets,
+  referredByDiscord: String(all.referredByDiscord || "").trim(),
   acknowledgeAcoOutcome: all.acknowledgeAcoOutcome === "on"
 })
           }

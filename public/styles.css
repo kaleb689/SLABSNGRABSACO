@@ -11649,6 +11649,35 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   line-height: 1.45 !important;
 }
 
+/* Keep the two checkout acknowledgements readable and beside their boxes. */
+#profile-form label.consent {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start !important;
+  gap: 12px;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+#profile-form label.consent > input[type="checkbox"] {
+  order: 0 !important;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  accent-color: #41b6e6;
+}
+
+#profile-form label.consent > span {
+  order: 1 !important;
+  margin: 0 !important;
+  display: block;
+  flex: 1;
+}
+
 
 
 /* =====================================================
