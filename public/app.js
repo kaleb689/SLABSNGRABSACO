@@ -15474,6 +15474,7 @@ processSecureLinks();
 const communityHeading = document.getElementById("public-success-title");
 if (communityHeading) {
   communityHeading.setAttribute("aria-label", [...communityHeading.children].map(section => section.textContent.trim()).join(" "));
+  const filledHeadingImages = new Map();
   for (const section of communityHeading.children) {
     const words = section.textContent.trim().split(/\s+/);
     section.replaceChildren();
@@ -15489,6 +15490,11 @@ if (communityHeading) {
         shadowDrip.className = "public-success-shadow-drip";
         shadowDrip.setAttribute("aria-hidden", "true");
         glyph.append(shadowDrip);
+        const colorway = section.classList.contains("public-success-title-tail") ? "cyan" : "pink";
+        const imagePath = `/images/filled-heading/${colorway}-${character}.png`;
+        glyph.style.setProperty("--filled-letter-image", `url("${imagePath}")`);
+        if (!filledHeadingImages.has(imagePath)) filledHeadingImages.set(imagePath, []);
+        filledHeadingImages.get(imagePath).push(glyph);
         const seed = (wordIndex * 17 + letterIndex * 23 + character.codePointAt(0) * 7) % 47;
         glyph.style.setProperty("--melt-delay", `${-(seed * .43).toFixed(2)}s`);
         glyph.style.setProperty("--melt-duration", `${(12 + seed % 7 * .55).toFixed(2)}s`);
@@ -15498,6 +15504,17 @@ if (communityHeading) {
       section.append(wrapper);
     });
   }
+  Promise.all([...filledHeadingImages.keys()].map(src => new Promise(resolve => {
+    const image = new Image();
+    image.onload = () => {
+      for (const glyph of filledHeadingImages.get(src)) {
+        glyph.style.setProperty("--filled-letter-width", `${(image.width / 200).toFixed(3)}em`);
+      }
+      resolve();
+    };
+    image.onerror = resolve;
+    image.src = src;
+  }))).then(() => communityHeading.classList.add("filled-heading-ready"));
 }
 
 const publicSuccessState = { products: [], index: 0, loading: false, shownQuantities: new Map() };
