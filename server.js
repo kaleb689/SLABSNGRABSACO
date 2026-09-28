@@ -9105,7 +9105,8 @@ app.get(
 
       return res.json({
         ok: true,
-        notifications
+        notifications,
+        checklist: sync.checklist
       });
 
     } catch (error) {
@@ -12545,16 +12546,91 @@ function paidProfileMissingItems(
     credentials = emptyRetailerCredentials();
   }
   // Only show field names. Never put retailer login values in notifications.
-  for (const retailer of ["target", "walmart", "pkc", "samsClub", "costco"]) {
+  for (const retailer of ["target", "walmart"]) {
     const label = retailerDisplayName(retailer);
     if (!String(credentials[retailer]?.username || "").trim()) {
       missing.push(`Paid Profile ${index}: ${label} username / email`);
     }
-    if (retailer !== "pkc" && !String(credentials[retailer]?.password || "").trim()) {
+    if (!String(credentials[retailer]?.password || "").trim()) {
       missing.push(`Paid Profile ${index}: ${label} password`);
     }
   }
   return missing;
+}
+
+const PROFILE_SETUP_FIELDS = [
+  "first name", "last name", "email", "phone", "street address",
+  "city", "state", "ZIP code", "country", "cardholder name",
+  "card number", "expiration month", "expiration year", "Security Code"
+];
+
+// Return statuses and field names only. Checkout and retailer secrets never leave the server.
+async function customerSetupChecklist(account) {
+  const missing = new Set(await customerMissingInformation(account.id));
+  const tasks = [];
+  const add = (label, target, complete = !missing.has(label)) => {
+    tasks.push({ label, target, complete: Boolean(complete) });
+  };
+
+  const allowance = Math.min(50, await getCustomerProfileAllowance(account.id));
+  for (let slot = 1; slot <= allowance; slot += 1) {
+    const label = `Paid Profile ${slot}`;
+    for (const field of PROFILE_SETUP_FIELDS) add(`${label}: ${field}`, { type: "paid", slot });
+    for (const retailer of ["Target", "Walmart"]) {
+      add(`${label}: ${retailer} username / email`, { type: "paid", slot });
+      add(`${label}: ${retailer} password`, { type: "paid", slot });
+    }
+  }
+
+  const [freeAssignments, rentalAssignments] = await Promise.all([
+    getFreeAssignments(), getRentalAssignments()
+  ]);
+  for (const [assignments, type, label] of [
+    [freeAssignments, "free", "Gifted"], [rentalAssignments, "rented", "Rented"]
+  ]) {
+    let number = 0;
+    for (const assignment of assignments) {
+      if (String(assignment.customerAccountId || "") !== String(account.id) ||
+          !managedAssignmentIsLinked(assignment)) continue;
+      number += 1;
+      for (const field of PROFILE_SETUP_FIELDS) {
+        add(`${label} Profile ${number}: ${field}`, { type, number });
+      }
+    }
+  }
+
+  if (tasks.length) {
+    const details = await customerSavedDetailsPayload(account);
+    const hasAddress = details.addresses.some(address =>
+      ["firstName", "lastName", "address", "city", "state", "zip", "country"]
+        .every(key => String(address[key] || "").trim()));
+    const hasCard = details.paymentMethods.some(card =>
+      Boolean(String(card.cardholder || "").trim()) &&
+      /^\d{12,19}$/.test(String(card.acoCardNumber || "").replace(/\D/g, "")) &&
+      /^(0[1-9]|1[0-2])$/.test(String(card.expMonth || "")) &&
+      /^\d{4}$/.test(String(card.expYear || "")));
+    add("Account: one shipping address", { type: "shipping" }, hasAddress);
+    add("Account: one payment card", { type: "payment" }, hasCard);
+  }
+
+  if (allowance) {
+    const paid = await readJson(PAID_FILE, []);
+    const order = (Array.isArray(paid) ? paid : [])
+      .filter(record => String(record.customerAccountId || "") === String(account.id) &&
+        subscriptionAllowsProfiles(record))
+      .sort((a, b) => new Date(b.paidAt || b.createdAt || 0) -
+        new Date(a.paidAt || a.createdAt || 0))[0];
+    if (order) {
+      const secrets = await loadEncryptedPackage(order.id) || {};
+      const target = { type: "order", orderNumber: order.orderNumber || order.submissionNumber || order.id };
+      add("Order: IMAP / host email", target,
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(secrets.acoEmail || "")));
+      add("Order: IMAP / host app password", target,
+        String(secrets.acoPassword || "").length >= 6);
+    }
+  }
+
+  return tasks;
 }
 
 async function customerMissingInformation(
@@ -12716,7 +12792,8 @@ async function syncCustomerMissingNotification(
   if (!account) {
     return {
       account: null,
-      missing: []
+      missing: [],
+      checklist: []
     };
   }
 
@@ -12725,10 +12802,8 @@ async function syncCustomerMissingNotification(
       account
     );
 
-  const missing =
-    await customerMissingInformation(
-      customerAccountId
-    );
+  const checklist = await customerSetupChecklist(account);
+  const missing = checklist.filter(item => !item.complete).map(item => item.label);
 
   const existing =
     notifications.find(
@@ -12742,9 +12817,15 @@ async function syncCustomerMissingNotification(
       if (
         existing.discordMessageId
       ) {
-        await deleteActionNeededDiscordMessage(
+        const removed = await deleteActionNeededDiscordMessage(
           existing.discordMessageId
         );
+        if (!removed) {
+          existing.message = "All required fields are complete. The Discord alert is awaiting removal.";
+          existing.missingItems = [];
+          await saveCustomerAccounts(accounts);
+          return { account, missing, checklist };
+        }
       }
 
       account.notifications =
@@ -12753,6 +12834,16 @@ async function syncCustomerMissingNotification(
             item.id !==
             existing.id
         );
+
+      if (checklist.length) {
+        account.notifications.unshift({
+          id: crypto.randomUUID(),
+          kind: "setup_complete",
+          title: "All Necessary Fields Completed",
+          message: "All necessary fields have been completed. Your Action Needed message has been removed from Discord.",
+          createdAt: new Date().toISOString()
+        });
+      }
 
       account.updatedAt =
         new Date()
@@ -12763,6 +12854,7 @@ async function syncCustomerMissingNotification(
       );
 
       try {
+        if (!checklist.length) return { account, missing, checklist };
         const retailerProfiles =
           await getRetailerProfiles();
 
@@ -12822,8 +12914,14 @@ async function syncCustomerMissingNotification(
 
     return {
       account,
-      missing
+      missing,
+      checklist
     };
+  }
+
+  // A new missing field supersedes an earlier completion notice.
+  for (let i = notifications.length - 1; i >= 0; i -= 1) {
+    if (notifications[i].kind === "setup_complete") notifications.splice(i, 1);
   }
 
   const message =
@@ -12881,7 +12979,8 @@ async function syncCustomerMissingNotification(
 
   return {
     account,
-    missing
+    missing,
+    checklist
   };
 }
 
