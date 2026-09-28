@@ -4750,7 +4750,7 @@ async function notifyReferralSignup(account) {
 }
 
 async function notifyReferralAward(account, referrer) {
-  await sendPrivateReferralNotice(`Referral confirmed: ${account.email} was referred by @${referrer.discordUsername} (${referrer.discordUserId}). 1 free profile credited to the referrer.`);
+  await sendPrivateReferralNotice(`Referral confirmed: ${account.email} was referred by @${referrer.discordUsername} (${referrer.discordUserId}). A one-month gifted profile reward was granted.`);
 }
 
 async function announceReferralReward(referrer) {
@@ -4762,12 +4762,70 @@ async function announceReferralReward(referrer) {
     signal: AbortSignal.timeout(12000)
   });
   if (!member.ok) throw new Error(`Referral member is not currently available in Discord (HTTP ${member.status}).`);
-  await sendDiscordReferralMessage(general.id, `<@${referrer.discordUserId}> earned 1 free profile for a referral!`, [String(referrer.discordUserId)]);
+  await sendDiscordReferralMessage(general.id, `<@${referrer.discordUserId}> Thank you for the referral. You have received your free profile for 1 month`, [String(referrer.discordUserId)]);
+}
+
+const REFERRAL_REWARD_MESSAGE = "Thank you for the referral. You have received your free profile for 1 month";
+
+async function assignReferralRewardProfiles(referralId) {
+  const gifts = await getGiftedMemberships();
+  const grant = gifts.find(item => item.referralSourceAccountId === referralId);
+  if (!grant) return;
+  const assignments = await getFreeAssignments();
+  if (new Date(grant.expiresAt).getTime() <= Date.now()) {
+    let changed = false;
+    for (const item of assignments) {
+      if (item.referralGiftId !== grant.id || !managedAssignmentIsLinked(item)) continue;
+      item.active = false;
+      item.activationStatus = "expired";
+      item.endReason = "expired";
+      item.endedAt = new Date().toISOString();
+      item.updatedAt = item.endedAt;
+      changed = true;
+    }
+    if (changed) await saveFreeAssignments(assignments);
+    return;
+  }
+  const already = new Set(assignments.filter(item => item.referralGiftId === grant.id).map(item => item.referralRetailer));
+  const targets = await getAvailableManagedAccountsForRetailer("target");
+  const walmart = await getAvailableManagedAccountsForRetailer("walmart");
+  const pokemon = await getAvailableManagedAccountsForRetailer("pokemoncenter");
+  const username = item => {
+    try { return normalizeEmail(normalizeRetailerCredentials(decryptJson(item.credentials))?.target?.username); }
+    catch { return ""; }
+  };
+  const pokemonUsername = item => {
+    try { return normalizeEmail(normalizeRetailerCredentials(decryptJson(item.credentials))?.pokemoncenter?.username); }
+    catch { return ""; }
+  };
+  const existingTarget = assignments.find(item => item.referralGiftId === grant.id && item.referralRetailer === "target");
+  const assignedTarget = existingTarget && (await getManagedAccounts()).find(item => String(item.id) === String(existingTarget.managedAccountId));
+  const target = assignedTarget || targets.find(item => pokemon.some(other => pokemonUsername(other) === username(item))) || targets[0];
+  const matchingPokemon = pokemon.find(item => target && pokemonUsername(item) === username(target));
+  const choices = { target: assignedTarget ? null : target, walmart: walmart[0], pokemoncenter: matchingPokemon || pokemon[0] };
+  const now = new Date().toISOString();
+  let changed = false;
+  for (const [retailer, item] of Object.entries(choices)) {
+    if (!item || already.has(retailer) || assignments.some(record => String(record.managedAccountId) === String(item.id) && managedAssignmentIsLinked(record))) continue;
+    assignments.push({ id: crypto.randomUUID(), freeMembershipId: item.id,
+      managedAccountId: item.id, customerAccountId: grant.customerAccountId,
+      referralGiftId: grant.id, referralRetailer: retailer, active: true,
+      durationType: "1_month", activationStatus: "incomplete", activationRequestedAt: null,
+      startsAt: null, expiresAt: null, createdAt: now, updatedAt: now,
+      endedAt: null, endReason: null });
+    already.add(retailer);
+    changed = true;
+  }
+  if (changed) await saveFreeAssignments(assignments);
 }
 
 async function processPendingReferrals() {
   const accounts = await getCustomerAccounts();
   for (const account of accounts) {
+    if (account.referralAwardedAt) {
+      try { await assignReferralRewardProfiles(account.id); }
+      catch (error) { console.error("Referral managed profile assignment:", error.message); }
+    }
     if (account.referralRecordedAt && account.referredByAccountId && account.referredByDiscord && !account.referralSignupAlertAt) {
       try {
         await notifyReferralSignup(account);
@@ -4808,8 +4866,23 @@ async function awardVerifiedReferral(account) {
   const referred = accounts.find(item => item.id === account.id);
   const referrer = accounts.find(item => item.id === account.referredByAccountId && item.discordLinkedAt && item.discordUserId && item.disabled !== true);
   if (!referred || !referrer || referred.id === referrer.id || referred.referralAwardedAt) return false;
-  referrer.referralBonusProfiles = Math.max(0, Number(referrer.referralBonusProfiles) || 0) + 1;
-  referred.referralAwardedAt = new Date().toISOString();
+  const grants = await getGiftedMemberships();
+  if (grants.some(item => item.referralSourceAccountId === referred.id)) return false;
+  const now = new Date();
+  const end = new Date(now);
+  end.setUTCMonth(end.getUTCMonth() + 1);
+  grants.push({ id: crypto.randomUUID(), customerAccountId: referrer.id,
+    customerEmail: referrer.email || "", tier: 1, tierName: "Referral reward",
+    profiles: 3, months: 1, startsAt: now.toISOString(), expiresAt: end.toISOString(),
+    createdAt: now.toISOString(), createdBy: "referral", referralSourceAccountId: referred.id });
+  await saveGiftedMemberships(grants);
+  const notes = customerNotifications(referrer);
+  if (!notes.some(item => item.kind === "referral_reward" && item.referralSourceAccountId === referred.id)) {
+    notes.push({ id: crypto.randomUUID(), kind: "referral_reward", title: "Referral reward",
+      message: REFERRAL_REWARD_MESSAGE, referralSourceAccountId: referred.id,
+      createdAt: now.toISOString(), updatedAt: now.toISOString() });
+  }
+  referred.referralAwardedAt = now.toISOString();
   await saveCustomerAccounts(accounts);
   void processPendingReferrals().catch(error => console.error("Referral announcement:", error.message));
   return true;
@@ -13301,15 +13374,20 @@ async function getCustomerProfileAllowance(
 
   const now = Date.now();
   const gifted = await getGiftedMemberships();
-  const giftedAllowance = gifted
+  const activeGifts = gifted
     .filter(item =>
       String(item.customerAccountId) === String(accountId) &&
       (!item.startsAt || new Date(item.startsAt).getTime() <= now) &&
       (!item.expiresAt || new Date(item.expiresAt).getTime() > now)
-    )
+    );
+  const giftedAllowance = activeGifts
+    .filter(item => item.createdBy !== "referral")
     .reduce((max, item) => Math.max(max, Number(item.profiles) || 0), 0);
 
-  const baseAllowance = Math.max(paidAllowance, giftedAllowance);
+  const referralAllowance = activeGifts
+    .filter(item => item.createdBy === "referral")
+    .reduce((sum, item) => sum + Math.max(0, Number(item.profiles) || 0), 0);
+  const baseAllowance = Math.max(paidAllowance, giftedAllowance) + referralAllowance;
   if (!baseAllowance) return 0;
   const customer = (await getCustomerAccounts()).find(item => String(item.id) === String(accountId));
   const bonus = Math.max(0, Number(customer?.referralBonusProfiles) || 0);
