@@ -778,6 +778,36 @@ p {
   align-items: stretch;
 }
 
+.tier-planning-notice {
+  margin: 20px 0 24px;
+  padding: 20px 24px;
+  border: 1px solid #1b6b87;
+  border-radius: 10px;
+  background: linear-gradient(125deg, #0d2634, #091721);
+  color: #c6e6f0;
+  line-height: 1.55;
+}
+
+.tier-planning-notice strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #f2fbff;
+  font-size: 16px;
+}
+
+.tier-planning-notice p + p {
+  margin-top: 10px;
+}
+
+.plan-login-note {
+  padding: 9px 10px;
+  border-left: 3px solid #12c9ff;
+  background: rgba(18, 201, 255, .08);
+  color: #d5f1f9;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .plan {
   position: relative;
 
@@ -8845,6 +8875,17 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
 
 .rental-purchase-heading {
   margin-bottom: 18px;
+}
+
+.rental-planning-summary {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border: 1px solid #1b6b87;
+  border-radius: 9px;
+  background: rgba(18, 201, 255, .07);
+  color: #d5f1f9;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .rental-purchase-bar {
