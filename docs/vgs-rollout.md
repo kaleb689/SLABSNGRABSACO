@@ -13,6 +13,22 @@ Stripe Checkout remains the membership payment processor. VGS is the separate va
 - The first ACO profile's account-security-code field no longer advertises itself as browser card CVV autofill; it is labeled explicitly and accepts a separate account code.
 - None of these changes enable VGS or claim that current cards are vaulted.
 
+## Multiple cards and reveal contract
+
+The existing customer saved-card endpoints are `POST /api/account/payment-methods`, `PUT /api/account/payment-methods/:id`, and `DELETE /api/account/payment-methods/:id`; they currently allow up to **20 cards per customer**. Preserve that limit and each saved card's stable ID so linked orders, retailer profiles, and autofill selections keep working. On add or replacement, VGS Collect should create a distinct persistent PAN alias for that card. The account vault should keep only the alias, vault environment, last four, card brand, cardholder, expiration, label, and separate ACO account code. Updating a label or account code must not require re-entering the card; replacing a number must create a new alias and retire the old one under the retention policy.
+
+For each card row, provide a **Reveal card** action. After customer ownership or admin authorization is checked against the saved card ID, render the full number and expiration in VGS Show's isolated field for a short on-demand session. Do not place raw PAN in HTML attributes, ordinary JavaScript variables, JSON responses, logs, exports, or a general-purpose read credential sent to the browser. Customer and admin reveal must both work for the initial ACO card and every extra card. The separate account security code remains readable through its existing authenticated view; card CVV is not retained or revealed later.
+
+| Existing entry or reuse path | Cutover requirement |
+| --- | --- |
+| Initial ACO profile in `public/index.html` and its submit handler | Collect first card through hosted fields; save alias and masked metadata. |
+| Customer saved-card form and the three `/api/account/payment-methods` endpoints | Add, edit, remove, and reveal any of the 20 cards; maintain ownership checks. |
+| Order card replacement and linked saved-card selection in `public/app.js` | Use an alias for replacement; preserve the selected card ID for order reuse. |
+| Admin saved-card edits, submission edits, and retailer/special profiles in `public/admin.html` | Accept aliases and metadata; reveal only after admin authorization; preserve linked card IDs. |
+| Server projections, encrypted customer vaults, order secrets, and exports in `server.js` | Remove raw PAN from all new writes and responses; migrate historical values before the security stamp appears. |
+
+The Sandbox `aco-sbx-write` account cannot read aliases. A separate reveal configuration with the minimum required permissions must be created and tested before enabling Show. Keep Sandbox and Live credentials separate; never point the deployed site at Sandbox for real customer cards.
+
 ## Required implementation before activation
 
 1. In Sandbox, configure VGS Collect hosted fields for card number and expiration, plus an inbound route and narrowly scoped authentication. Use test card data only. The form must send the primary account number directly to VGS, never through this site's DOM, JavaScript value, API request body, logs, or email.
