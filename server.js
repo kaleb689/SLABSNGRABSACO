@@ -35017,6 +35017,35 @@ app.post(
           });
       }
 
+      const referredByDiscord = referralDiscordValue(req.body.referredByDiscord);
+      if (referredByDiscord === null) {
+        return res.status(400).json({ error: "Enter a valid Discord @username for the person who referred you." });
+      }
+      if (referredByDiscord) {
+        const accounts = await getCustomerAccounts();
+        const account = accounts.find(item => item.id === req.customerAccount.id);
+        if (!account) return res.status(401).json({ error: "Please sign in again." });
+        const referrer = findLinkedReferrer(accounts, referredByDiscord);
+        if (!referrer) {
+          return res.status(400).json({ error: "We could not find that referral. Ask the member to connect Discord in My Profile." });
+        }
+        if (referrer.id === account.id) {
+          return res.status(400).json({ error: "You cannot refer yourself." });
+        }
+        if (account.referredByAccountId && account.referredByAccountId !== referrer.id) {
+          return res.status(409).json({ error: "A different referral is already linked to your account." });
+        }
+        if (!account.referredByAccountId) {
+          account.referredByDiscord = referredByDiscord;
+          account.referredByAccountId = referrer.id;
+          account.referralRecordedAt = new Date().toISOString();
+          account.updatedAt = account.referralRecordedAt;
+          await saveCustomerAccounts(accounts);
+          if (account.emailVerifiedAt) await awardVerifiedReferral(account);
+          void processPendingReferrals().catch(error => console.error("Referral notification:", error.message));
+        }
+      }
+
 
       const id =
         crypto.randomUUID();

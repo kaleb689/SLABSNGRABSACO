@@ -9,14 +9,6 @@
 }
 
 @font-face {
-  font-family: "Bavolen No X";
-  src: url('/fonts/IT-Bavolen-No-X-Bold.otf') format('opentype');
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-}
-
-@font-face {
   font-family: "Rubik Bubbles";
   src: url('/fonts/RubikBubbles-Regular.ttf') format('truetype');
   font-style: normal;
@@ -3123,7 +3115,7 @@ select:focus {
 #home .public-success-heading .eyebrow { flex: 0 0 112px; width: 112px; font-size: .75rem; }
 #home .public-success-heading h2 {
   display: flex; flex-wrap: nowrap; align-items: center; column-gap: .5em; row-gap: .08em;
-  margin: 0; max-width: 100%; font-family: "Bavolen No X", "Arial Rounded MT Bold", sans-serif;
+  margin: 0; max-width: 100%; font-family: "Bavolen Reference", "Arial Rounded MT Bold", sans-serif;
   font-size: clamp(1.25rem,2.8vw,2.28rem); font-weight: 700; line-height: 1.48;
   letter-spacing: -.015em; text-transform: uppercase; white-space: nowrap;
   transform: translateY(4px);
@@ -3160,11 +3152,10 @@ select:focus {
   background-image: none !important;
   background-clip: border-box; -webkit-background-clip: border-box;
   -webkit-text-fill-color: currentColor !important;
-  /* The outline font needs a little fill; only the opposite color is offset. */
-  -webkit-text-stroke: .075em currentColor;
+  -webkit-text-stroke: .075em #0a0d15;
   paint-order: stroke fill;
-  text-shadow: none;
-  filter: drop-shadow(.13em .12em 0 #52dff9);
+  text-shadow: .055em .055em 0 #11151b, -.055em .055em 0 #11151b,
+    .055em -.055em 0 #11151b, -.055em -.055em 0 #11151b;
   animation: success-letter-melt var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
 }
 #home .public-success-title-tail .public-success-letter {
@@ -3172,9 +3163,24 @@ select:focus {
   background: transparent !important;
   background-image: none !important;
   background-clip: border-box; -webkit-background-clip: border-box;
-  -webkit-text-stroke-color: currentColor;
+  -webkit-text-stroke-color: #0a0d15;
   -webkit-text-fill-color: currentColor !important;
-  filter: drop-shadow(.13em .12em 0 #fb59cf);
+}
+#home .public-success-heading .filled-heading-ready .public-success-letter[style*="--filled-letter-width"] {
+  width: var(--filled-letter-width);
+  min-width: 0;
+  height: 1.15em;
+  overflow: visible;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+  background: var(--filled-letter-image) center / 100% 100% no-repeat !important;
+  /* Apply the second Miami Vice color to the opaque shape of each image glyph. */
+  filter: drop-shadow(.17em .15em 0 #52dff9);
+}
+#home .public-success-heading .filled-heading-ready .public-success-title-tail .public-success-letter[style*="--filled-letter-width"] {
+  filter: drop-shadow(.17em .15em 0 #fb59cf);
 }
 #home .public-success-heading .public-success-letter::after {
   content: ""; position: absolute; left: 43%; top: 74%; width: .14em; height: .31em;
@@ -11641,6 +11647,35 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   font-size: 13px !important;
   font-weight: 950 !important;
   line-height: 1.45 !important;
+}
+
+/* Keep the two checkout acknowledgements readable and beside their boxes. */
+#profile-form label.consent {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start !important;
+  gap: 12px;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+#profile-form label.consent > input[type="checkbox"] {
+  order: 0 !important;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  accent-color: #41b6e6;
+}
+
+#profile-form label.consent > span {
+  order: 1 !important;
+  margin: 0 !important;
+  display: block;
+  flex: 1;
 }
 
 
