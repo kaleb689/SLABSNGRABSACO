@@ -7121,6 +7121,7 @@ app.post(
                   session.id
                 );
               } else {
+                const rentalOrderNumber = newCustomerOrderNumber();
                 const rawAvailableAccounts =
                   await getAvailableManagedAccountsForRetailer(
                     retailer,
@@ -7254,6 +7255,8 @@ app.post(
                       stripeSessionId:
                         session.id,
 
+                      orderNumber: rentalOrderNumber,
+
                       stripePaymentIntentId:
                         typeof session
                           .payment_intent ===
@@ -7317,6 +7320,18 @@ app.post(
                   await saveRentalAssignments(
                     assignments
                   );
+
+                  try {
+                    await sendPaidOrderConfirmation(customerAccountId, {
+                      id: session.id,
+                      orderNumber: rentalOrderNumber,
+                      plan: { name: `${quantity} ${retailer === "walmart" ? "Walmart" : "Target"} rental profiles` },
+                      paidAt: new Date().toISOString()
+                    }, session.amount_total != null ? Number(session.amount_total) / 100 : expectedPrice,
+                    `Rental duration: ${durationType === "1_month" ? "1 Month" : durationType === "1_week" ? "1 Week" : "1 Drop"}\nLinked membership order: ${customerOrderNumber(paidRecord)}`);
+                  } catch (error) {
+                    console.error("Customer rental confirmation:", error.message);
+                  }
 
                   await consumeRestoreHoldItems(
                     customerAccountId,
@@ -7450,6 +7465,8 @@ app.post(
           if (entry) {
             const record = {
               id,
+
+              orderNumber: entry.orderNumber || newCustomerOrderNumber(),
 
               plan: entry.plan,
               profile: entry.profile,
@@ -7591,6 +7608,8 @@ app.post(
             if (
               existingIndex >= 0
             ) {
+              record.orderNumber = paid[existingIndex].orderNumber || record.orderNumber;
+              record.customerConfirmationSentAt = paid[existingIndex].customerConfirmationSentAt || null;
               paid[existingIndex] =
                 record;
             } else {
@@ -7601,6 +7620,26 @@ app.post(
               PAID_FILE,
               paid
             );
+
+            if (!record.customerConfirmationSentAt) {
+              try {
+                await sendPaidOrderConfirmation(
+                  record.customerAccountId,
+                  record,
+                  session.amount_total != null ? Number(session.amount_total) / 100 : Number(record.plan?.amount || 0),
+                  `Membership tier: ${record.plan?.name || "Membership"}\nProfiles: ${Number(record.plan?.profiles || 0)}\nBilling: Monthly`
+                );
+                record.customerConfirmationSentAt = new Date().toISOString();
+                const latest = await readJson(PAID_FILE, []);
+                const current = latest.find(item => item.id === record.id);
+                if (current) {
+                  current.customerConfirmationSentAt = record.customerConfirmationSentAt;
+                  await writeJson(PAID_FILE, latest);
+                }
+              } catch (error) {
+                console.error("Customer membership confirmation:", error.message);
+              }
+            }
 
             delete pending[id];
 
@@ -9710,6 +9749,28 @@ function customerOrderNumber(
   ).trim();
 }
 
+function newCustomerOrderNumber() {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return `SNG-${date}-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
+}
+
+async function sendPaidOrderConfirmation(accountId, order, amount, details = "") {
+  if (!process.env.RESEND_API_KEY) throw new Error("Email service is not configured.");
+  const account = (await getCustomerAccounts()).find(item => String(item.id) === String(accountId));
+  if (!account?.email) throw new Error("Customer sign-in email is unavailable.");
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
+      to: [account.email],
+      subject: `Your SLABSNGRABSACO order confirmation — ${customerOrderNumber(order)}`,
+      text: `Your order is confirmed.\n\nOrder number: ${customerOrderNumber(order)}\nOrder ID: ${order.id}\nItem: ${order.plan?.name || "Membership"}\n${details ? `${details}\n` : ""}Price paid: $${(Number(amount) || 0).toFixed(2)} USD\nPaid: ${order.paidAt || new Date().toISOString()}\nStatus: Paid\n\nThis order is linked to your website account. Sign in at ${BASE_URL}/#my-profile to view it. If you need to claim an order, enter either the order number or order ID and verify the purchase email in My Profile. For help with an order, open a private support ticket in Discord. Never post your order details in #ask-ai.\n\nNo passwords, card numbers, or verification codes are included.`
+    })
+  });
+  if (!response.ok) throw new Error(`Order confirmation email HTTP ${response.status}`);
+}
+
 async function sendOrderClaimEmail(
   email,
   token,
@@ -9820,10 +9881,8 @@ app.post(
 
       const record =
         paid.find(item =>
-          customerOrderNumber(
-            item
-          ).toLowerCase() ===
-          orderNumber.toLowerCase()
+          [customerOrderNumber(item), String(item.id || "")]
+            .some(value => value.toLowerCase() === orderNumber.toLowerCase())
         );
 
       const genericResponse = {
@@ -34585,6 +34644,8 @@ app.post(
 
       pending[id] = {
         id,
+
+        orderNumber: newCustomerOrderNumber(),
 
         plan: {
           tier,
