@@ -1222,6 +1222,53 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   }
   function publishedHelpAnswer(question) {
     const q = String(question || "").toLowerCase();
+    // A public help reply must never imply that the bot inspected a member's account.
+    if (/\b(?:why|what happened to|what is|what's|how many|where is|when will|can you|check|look up|investigate|fix|refund|cancel|charge|charged|activate|activated|approve|approved)\b/.test(q) &&
+      /\b(?:my|mine|our)\b/.test(q) &&
+      /\b(?:order|purchase|payment|card|account|membership|profile|rental|referral|checkout|shipment|package|ticket|activation)\b/.test(q))
+      return null;
+    if (/\b(?:sign up|signup|register|create an? account|join the website)\b/.test(q))
+      return "Open the website and choose Sign Up to create your account. Verify the email if prompted, then sign in and open My Profile for setup. A new account can show Awaiting Activation until staff finish setup. Choose a plan on the website if you want a membership; use a private ticket if your own signup is stuck.";
+    if (/\b(?:missing|incomplete|required|action needed|red exclamation|checklist|tasks? complete|progress bar)\b/.test(q) &&
+      /\b(?:field|fields|information|info|profile|setup|notification|notice|discord|task|tasks|checklist|complete|exclamation|action needed)\b/.test(q))
+      return "Open My Profile and use the setup checklist at the top right. It shows the exact missing fields, tasks completed, and progress; select a task to go to its form. Missing fields have red markers. At least one shipping address and card profile, Target and Walmart login details for a paid profile, and the required IMAP email/app password must be saved. When complete, the website confirms it and the linked Discord Action Needed message is removed.";
+    if (/\b(?:discord|action needed|notification|notice|alert)\b/.test(q) &&
+      /\b(?:missing|incomplete|complete|completed|clear|remove|disappear|profile|information)\b/.test(q))
+      return "If your website profile needs information, My Profile shows a checklist and your linked Discord account can receive an Action Needed notice. Select checklist tasks to find and fill the fields. Once every required field is complete, the site sends a completion notice and removes its Action Needed Discord message. If yours remains, open a private ticket.";
+    if (/\b(?:required|need|needs|missing|fill|complete|set up|setup)\b/.test(q) &&
+      /\b(?:target|walmart|retailer|profile|address|card|imap)\b/.test(q))
+      return "For a paid retailer profile, complete its contact and shipping details, Target and Walmart login email/username and password, and the IMAP email and app password requested on the order. Save at least one shipping address and one card profile in My Profile. The top-right checklist lists your exact missing fields and opens each form; the website Guide explains retailer and IMAP setup.";
+    if (/\b(?:different|multiple|more than one|several|extra|additional)\b/.test(q) &&
+      /\b(?:address|addresses|card|cards|payment method|shipping)\b/.test(q))
+      return "You can save multiple shipping addresses and payment profiles in My Profile. If you use several retailer accounts, additional legitimate addresses you can receive packages at and different cards you can use are recommended to reduce retailer order cancellations. At least one saved address and one card profile are required for setup.";
+    if (/\b(?:retailer|stores?|supported|pokemon|pokémon|pkc|costco|sam.s club|target|walmart)\b/.test(q) &&
+      /\b(?:which|what|support|available|work|offer|membership)\b/.test(q))
+      return "Membership retailer profiles include Target, Walmart, Sam's Club, Costco and PKC. Rentals are separate by retailer and currently list Target, Walmart and Pokémon Center; check My Profile → Rental Availability for live stock. See Plans for current membership terms and prices.";
+    if (/\b(?:rent|rental|rentals|rented|renter)\b/.test(q))
+      return "Open My Profile → Rental Availability to see current Target, Walmart and Pokémon Center rental stock. Choose a retailer, 5, 10 or 15 accounts, and a 1 Drop, 1 Week or 1 Month term; the website shows the price before checkout. Rental accounts are retailer-specific and need your shipping and payment information. Stock and outcomes are not guaranteed; use a private ticket for a specific rental.";
+    if (/\b(?:referrals?|refer|referred|gifted|free profile)\b/.test(q))
+      return "If someone uses your linked Discord username as a referral, eligible available profiles can be assigned as a one-month gift. Check My Profile and your Discord messages for the notice. An exact retailer set depends on available accounts; for a question about your own referral, open a private ticket.";
+    if (/\b(?:awaiting activation|activate|activation|active)\b/.test(q) &&
+      /\b(?:signup|sign up|new|profile|account|status|membership|when)\b/.test(q))
+      return "A new website account may show Awaiting Activation while staff finish setup. Staff activate it after the required work is done. My Profile shows your current status; for a delay or issue with your own activation, open a private ticket.";
+    if (/\b(?:email verification|verify email|verification email|confirm email)\b/.test(q))
+      return "Check the inbox and spam/junk folder for the website verification email. Use the latest valid link. For a missing or expired link, use the website's resend option if shown or open a private ticket. Do not share verification links or codes in Discord.";
+    if (/\b(?:order number|submission number|order id|purchase confirmation|receipt)\b/.test(q) &&
+      /\b(?:where|find|locate|see|get|email)\b/.test(q))
+      return "A paid website order has an order number and an internal order ID. Check the confirmation sent to your website sign-in email and My Profile → Orders. To link an older order, use My Profile → Orders → Link an Existing Order. Do not post an order number, receipt or purchase email in public Discord.";
+    if (/\b(?:cancel|refund|chargeback|billing dispute|invoice|payment failed|declined)\b/.test(q))
+      return "For a billing, cancellation, refund or declined payment question, review the website's current terms and your order in My Profile → Orders, then open a private support ticket. Staff need to review the specific order privately; do not post card or order information here.";
+    if (/\b(?:price|cost|discount|coupon|promo|pay|buy|checkout membership)\b/.test(q) &&
+      /\b(?:plan|membership|rental|tier|profile|website|subscription|month)\b/.test(q))
+      return "Open Plans on the website for current membership prices and limits. My Profile → Rental Availability calculates a rental price after you choose a retailer, quantity and term. Review the total and terms on the website before paying; the bot cannot confirm a personal charge or an unpublished discount.";
+    if (/\b(?:rules|intro|welcome|guide|channel|where to post)\b/.test(q) &&
+      /\b(?:discord|server|read|find|where|which|what)\b/.test(q))
+      return "Start with #intro-slabsngrabsaco and #rules. Use #questions for general help, #ask-ai for public questions, #general for conversation, #suggestions for ideas, and #create-a-ticket for private support. Announcements, upcoming drops, dropping tonight, success and giveaways have their own channels. The website Guide covers account setup.";
+    if (/\b(?:suggestion|suggest|feedback|idea)\b/.test(q))
+      return "Post general ideas in Discord #suggestions. For a personal issue or account detail, open a private ticket in #create-a-ticket instead.";
+    if (/\b(?:pokemon|pokémon|tcg|drop|release|stock|inventory)\b/.test(q) &&
+      /\b(?:when|tonight|tomorrow|next|schedule|available|in stock|time)\b/.test(q))
+      return "Check Discord #upcoming-drops, #dropping-tonight and #announcements for posted release information. Rental stock appears in My Profile → Rental Availability. Schedules and stock can change, and checkout during a drop is never guaranteed.";
     if (/\b(?:login|log in|sign in|signing in|access my account)\b/.test(q) &&
       /\b(?:fail|error|wrong|cannot|can't|unable|help|how|problem|password)\b/.test(q))
       return "For website sign-in trouble, check that you are using the email address associated with your website account and use Forgot Password on the sign-in form to request a fresh reset link. Check spam/junk for the email. If it still fails or no reset email arrives, open a private ticket so staff can investigate; do not post your email or password here.";
@@ -1339,15 +1386,16 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const privateQuestion = containsSensitiveData(question);
     if (privateQuestion) {
       answer = { answer: privateReply, needsHuman: true };
-    } else try { answer = await aiAnswer(question); }
-    catch (error) {
-      discordCommunityStatus.aiReady = false;
-      discordCommunityStatus.lastAiError = error.message;
-      console.error("Discord AI answer:", error.message);
+    } else {
       const published = publishedHelpAnswer(question);
-      answer = published && !sensitiveOutput(published)
-        ? { answer: published, needsHuman: false }
-        : { answer: unknownReply, needsHuman: true };
+      if (published && !sensitiveOutput(published)) answer = { answer: published, needsHuman: false };
+      else try { answer = await aiAnswer(question); }
+      catch (error) {
+        discordCommunityStatus.aiReady = false;
+        discordCommunityStatus.lastAiError = error.message;
+        console.error("Discord AI answer:", error.message);
+        answer = { answer: unknownReply, needsHuman: true };
+      }
     }
     const reply = await sendMessage(askChannelId, `${mention(userId)} ${answer.answer}`, {
       users: [userId],
