@@ -34978,6 +34978,12 @@ app.post(
           });
       }
 
+      if (req.body.acknowledgeAcoOutcome !== true) {
+        return res.status(400).json({
+          error: "Please acknowledge that ACO does not guarantee a checkout before continuing."
+        });
+      }
+
       const profile =
         sanitizeProfile(
           req.body.profile || {}

@@ -2004,7 +2004,9 @@ const PROFILE_FIELD_LABELS = {
   securityCode:
     "Security Code",
   confirm:
-    "Information Confirmation"
+    "Information Confirmation",
+  acknowledgeAcoOutcome:
+    "ACO Checkout Acknowledgement"
 };
 
 
@@ -2039,7 +2041,9 @@ function profileFieldErrorMessage(
       "checkbox"
     ) {
       return (
-        "Please confirm that the information above is accurate."
+        name === "acknowledgeAcoOutcome"
+          ? "Please acknowledge that ACO does not guarantee a checkout."
+          : "Please confirm that the information above is accurate."
       );
     }
 
@@ -2588,6 +2592,7 @@ profileForm?.addEventListener(
     });
 
     delete profile.confirm;
+    delete profile.acknowledgeAcoOutcome;
 
     if (message) {
       message.textContent =
@@ -2612,7 +2617,8 @@ profileForm?.addEventListener(
             body: JSON.stringify({
   tier: state.tier,
   profile,
-  secrets
+  secrets,
+  acknowledgeAcoOutcome: all.acknowledgeAcoOutcome === "on"
 })
           }
         );
