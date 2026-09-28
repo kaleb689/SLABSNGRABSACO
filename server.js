@@ -2827,36 +2827,30 @@ async function deleteDiscordAdminProfileWorkflowNotification(
       ""
     ).trim();
 
-  if (
-    !webhookUrl ||
-    !id
-  ) {
-    return false;
+  if (!id) return false;
+
+  if (webhookUrl) {
+    try {
+      const response = await fetch(`${webhookUrl.split("?")[0]}/messages/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (response.ok || response.status === 404) return true;
+    } catch (error) {
+      console.error("Admin profile webhook cleanup:", error.message);
+    }
   }
 
-  const cleanWebhookUrl =
-    webhookUrl.split("?")[0];
-
-  const response =
-    await fetch(
-      `${cleanWebhookUrl}/messages/${encodeURIComponent(
-        id
-      )}`,
-      {
-        method: "DELETE"
-      }
-    );
-
-  if (
-    !response.ok &&
-    response.status !== 404
-  ) {
-    throw new Error(
-      `Unable to delete admin profile Discord message (${response.status}).`
-    );
+  const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
+  if (token) {
+    const channels = await referralDiscordChannels();
+    const channel = channels.find(item => item.type === 0 && discordChannelLabel(item.name) === "adminprofiles");
+    if (channel) {
+      const response = await fetch(`https://discord.com/api/v10/channels/${channel.id}/messages/${encodeURIComponent(id)}`, {
+        method: "DELETE", headers: { Authorization: `Bot ${token}` }, signal: AbortSignal.timeout(12000)
+      });
+      if (response.ok || response.status === 404) return true;
+      throw new Error(`Discord bot could not remove admin profile alert (HTTP ${response.status}).`);
+    }
   }
-
-  return true;
+  throw new Error("Admin profile alert cleanup is not configured.");
 }
 
 
@@ -4751,7 +4745,8 @@ async function sendPrivateReferralNotice(content) {
 }
 
 async function notifyReferralSignup(account) {
-  await sendPrivateReferralNotice(`New website signup — referral field: ${account.referredByDiscord || "(none entered)"}`);
+  if (!account.referredByAccountId || !account.referredByDiscord) return;
+  await sendPrivateReferralNotice(`New website signup — referral field: ${account.referredByDiscord}`);
 }
 
 async function notifyReferralAward(account, referrer) {
@@ -4773,7 +4768,7 @@ async function announceReferralReward(referrer) {
 async function processPendingReferrals() {
   const accounts = await getCustomerAccounts();
   for (const account of accounts) {
-    if (account.referralRecordedAt && !account.referralSignupAlertAt) {
+    if (account.referralRecordedAt && account.referredByAccountId && account.referredByDiscord && !account.referralSignupAlertAt) {
       try {
         await notifyReferralSignup(account);
         account.referralSignupAlertAt = new Date().toISOString();
@@ -8401,7 +8396,7 @@ app.post(
 
         referredByAccountId: referrer?.id || null,
 
-        referralRecordedAt: new Date().toISOString(),
+        referralRecordedAt: referrer ? now : null,
 
         discordUsername:
           verifiedDiscord?.expiresAt > Date.now() ? verifiedDiscord.username : clean(req.body.discordUsername, 100),
@@ -8444,12 +8439,14 @@ app.post(
       );
       if (verifiedDiscord) discordPendingIdentities.delete(discordTicket);
 
-      try {
-        await notifyReferralSignup(account);
-        account.referralSignupAlertAt = new Date().toISOString();
-        await saveCustomerAccounts(accounts);
-      } catch (error) {
-        console.error("Private referral signup notification:", error.message);
+      if (referrer) {
+        try {
+          await notifyReferralSignup(account);
+          account.referralSignupAlertAt = new Date().toISOString();
+          await saveCustomerAccounts(accounts);
+        } catch (error) {
+          console.error("Private referral signup notification:", error.message);
+        }
       }
 
       const autoLinkResult =
@@ -10949,6 +10946,9 @@ function clearManagedAssignmentCustomerData(
   delete assignment.activatedAt;
   delete assignment.deactivatedAt;
 
+  if (assignment.discordProfileMessageId) {
+    assignment.pendingDiscordProfileMessageId = assignment.discordProfileMessageId;
+  }
   delete assignment.discordProfileMessageId;
   delete assignment.discordProfileMessageType;
   delete assignment.discordProfileMessageUpdatedAt;
@@ -11657,6 +11657,22 @@ async function saveRentalAssignments(
     RENTAL_ASSIGNMENTS_FILE,
     records
   );
+  await clearPendingManagedProfileAlerts(records, RENTAL_ASSIGNMENTS_FILE);
+}
+
+async function clearPendingManagedProfileAlerts(records, file) {
+  let changed = false;
+  for (const assignment of records) {
+    if (!assignment.pendingDiscordProfileMessageId) continue;
+    try {
+      await deleteDiscordAdminProfileWorkflowNotification(assignment.pendingDiscordProfileMessageId);
+      delete assignment.pendingDiscordProfileMessageId;
+      changed = true;
+    } catch (error) {
+      console.error("Managed profile Discord cleanup retry:", error.message);
+    }
+  }
+  if (changed) await writeJson(file, records);
 }
 
 async function getManagedAccounts() {
@@ -11827,6 +11843,7 @@ async function saveFreeAssignments(
     FREE_ASSIGNMENTS_FILE,
     records
   );
+  await clearPendingManagedProfileAlerts(records, FREE_ASSIGNMENTS_FILE);
 }
 
 
@@ -31177,6 +31194,17 @@ app.get(
           for (
             const assignment of assignments
           ) {
+            // Reconcile alerts left by older versions after activation or removal.
+            if (assignment.discordProfileMessageId && (
+              !managedAssignmentIsLinked(assignment) ||
+              ["activated", "deactivated", "returned_to_pool"].includes(assignment.activationStatus)
+            )) {
+              assignment.pendingDiscordProfileMessageId = assignment.discordProfileMessageId;
+              delete assignment.discordProfileMessageId;
+              delete assignment.discordProfileMessageType;
+              changed = true;
+            }
+            if (assignment.pendingDiscordProfileMessageId) changed = true;
             if (
               !managedAssignmentIsLinked(
                 assignment
@@ -31636,6 +31664,7 @@ app.post(
         action !==
           "activating"
       ) {
+        if (discordMessageId) assignment.pendingDiscordProfileMessageId = discordMessageId;
         assignment.discordProfileMessageId =
           null;
 
@@ -31651,23 +31680,6 @@ app.post(
         await saveRentalAssignments(
           assignments
         );
-      }
-
-      if (
-        discordMessageId &&
-        action !==
-          "activating"
-      ) {
-        try {
-          await deleteDiscordAdminProfileWorkflowNotification(
-            discordMessageId
-          );
-        } catch (error) {
-          console.error(
-            "Managed profile Discord message delete failed:",
-            error.message
-          );
-        }
       }
 
       if (
