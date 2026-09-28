@@ -21100,7 +21100,7 @@ document.addEventListener(
             data.discordSent
               ? (
                   data.discordUsernameConfigured
-                    ? "Action-needed notification saved and Discord username referenced."
+                    ? "Action-needed notification saved and linked customer mentioned in Discord."
                     : "Action-needed notification saved and Discord webhook sent."
                 )
               : `Action-needed notification saved to the customer account. ${
@@ -21108,8 +21108,14 @@ document.addEventListener(
                   "Discord webhook was not sent."
                 }`;
 
+          if (data.discordSent && data.discordUsernameConfigured && !data.discordDmSent) {
+            message.textContent += ` Customer DM was not delivered. ${data.discordError || ""}`;
+          }
+
           message.className =
-            "admin-edit-message success";
+            data.discordSent && (!data.discordUsernameConfigured || data.discordDmSent)
+              ? "admin-edit-message success"
+              : "admin-edit-message error";
         }
 
       } catch (error) {
