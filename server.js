@@ -2928,7 +2928,7 @@ async function ensurePaidProfileDiscordAwaitingMessage(
         title:
           "🟡 PAID PROFILE ACTIVATING",
         description:
-          "A customer completed a paid ACO profile. Open Admin and activate it when setup is complete.",
+          "A customer submitted a paid ACO profile. Check any missing information in Admin and activate it when external setup is complete.",
         customerName:
           customer.name,
         customerEmail:
@@ -14812,14 +14812,9 @@ app.put(
         );
 
       const activationStatus =
-        readiness.ready
-          ? (
-              previousActivationStatus ===
-                "activated"
-                ? "activated"
-                : "awaiting_activation"
-            )
-          : "incomplete";
+        previousActivationStatus === "activated" && readiness.ready
+          ? "activated"
+          : "awaiting_activation";
 
       const record = {
         id:
@@ -44539,6 +44534,12 @@ const ownedOrders =
               .cancelAtPeriodEnd ===
             true
         };
+        // Subscription billing can be active before the owner has finished
+        // setting up any of this customer's ACO profiles.
+        const customerProfiles = (await getRetailerProfiles()).filter(profile =>
+          String(profile.customerAccountId || "") === String(account.id));
+        membership.activationStatus = customerProfiles.some(profile =>
+          profile.activationStatus === "activated") ? "activated" : "awaiting_activation";
       }
 
       if (!membership) {

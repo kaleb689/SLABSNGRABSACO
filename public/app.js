@@ -5251,6 +5251,7 @@ if (membershipStatusElement) {
     hasActivePaidMembership(
       membership
     );
+  const awaitingSetup = isActive && membership.activationStatus === "awaiting_activation";
 
   membershipStatusElement.classList.remove(
     "status-green",
@@ -5268,7 +5269,10 @@ if (membershipStatusElement) {
     );
   }
 
-  if (isActive) {
+  if (awaitingSetup) {
+    membershipStatusElement.classList.add("status-yellow");
+    membershipStatusElement.textContent = "● AWAITING ACTIVATION";
+  } else if (isActive) {
 
     const tierStatusClass =
       customerTierStatusClass(
@@ -7404,7 +7408,7 @@ function profileActivationBadgeHtml(
           "awaiting_activation"
         ? {
             cls: "awaiting",
-            title: "ACTIVATING",
+            title: "AWAITING ACTIVATION",
             detail:
               "Awaiting admin activation"
           }
@@ -7503,7 +7507,9 @@ function retailerProfileCardHtml(
     );
 
   const countdown =
-    profileCountdownInfo({
+    savedProfile && savedProfile.activationStatus !== "activated" && paidActive
+      ? { className: "warning", label: "AWAITING ACTIVATION", detail: "Admin setup pending" }
+      : profileCountdownInfo({
       expiresAt:
         paidPeriodEnd,
       daysRemaining:
@@ -7513,7 +7519,7 @@ function retailerProfileCardHtml(
       indefinite:
         !paidPeriodEnd &&
         paidActive
-    });
+      });
 
   const hasSavedCard =
     Boolean(
@@ -9869,7 +9875,7 @@ function renderRetailerProfiles() {
     active.
   */
 
-  const activeProfiles =
+  const savedProfiles =
     state.retailerProfiles.filter(
       profile => {
 
@@ -9885,6 +9891,11 @@ function renderRetailerProfiles() {
       }
     ).length;
 
+  const activeProfiles = state.retailerProfiles.filter(profile => {
+    const slot = Number(profile?.slot) || 0;
+    return slot >= 1 && slot <= allowance && profile.activationStatus === "activated";
+  }).length;
+
 
   /*
     Calculate the number of unused
@@ -9894,7 +9905,7 @@ function renderRetailerProfiles() {
   const availableProfiles =
     Math.max(
       0,
-      allowance - activeProfiles
+      allowance - savedProfiles
     );
 
 
