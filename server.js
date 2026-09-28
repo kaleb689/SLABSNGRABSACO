@@ -12288,7 +12288,8 @@ async function deleteActionNeededDiscordMessage(
 
 async function sendActionNeededDiscordMessage(
   account,
-  message
+  message,
+  { missingInfo = false } = {}
 ) {
   const webhookUrl =
     actionNeededWebhookUrl();
@@ -12299,15 +12300,10 @@ async function sendActionNeededDiscordMessage(
     );
   }
 
-  const discordUsername =
-    clean(
-      account?.discordUsername,
-      100
-    );
-
-  const usernameReference =
-    discordUsername
-      ? `@${discordUsername} `
+  const discordId =
+    account?.discordLinkedAt &&
+    /^\d{17,22}$/.test(String(account?.discordUserId || ""))
+      ? String(account.discordUserId)
       : "";
 
   const websiteUrl =
@@ -12340,11 +12336,12 @@ async function sendActionNeededDiscordMessage(
               "SLABS N GRABS ACO Action Needed",
 
             allowed_mentions: {
-              parse: []
+              parse: [],
+              users: discordId ? [discordId] : []
             },
 
             content:
-              `${usernameReference}ACTION NEEDED — please check your profile page: ${websiteUrl}`,
+              `${discordId ? `<@${discordId}> ` : ""}ACTION NEEDED — please check your profile page${missingInfo ? " because information is missing" : ""}: ${websiteUrl}`,
 
             embeds: [
               {
@@ -12352,11 +12349,9 @@ async function sendActionNeededDiscordMessage(
                   "Action Needed",
 
                 description:
-                  clean(
-                    message,
-                    3500
-                  ) ||
-                  "Please check your profile page and complete the requested information.",
+                  missingInfo
+                    ? "Please open your profile on the website to see which information is missing. Do not post account or payment details in Discord."
+                    : clean(message, 3500) || "Please check your profile page.",
 
                 url:
                   websiteUrl,
@@ -12387,6 +12382,31 @@ async function sendActionNeededDiscordMessage(
     null;
 }
 
+async function sendCustomerMissingInfoDiscordDm(account) {
+  const discordId = account?.discordLinkedAt &&
+    /^\d{17,22}$/.test(String(account?.discordUserId || ""))
+      ? String(account.discordUserId) : "";
+  if (!discordId) return false;
+  const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
+  if (!token) throw new Error("Discord bot is not configured to message the customer.");
+  const headers = { Authorization: `Bot ${token}`, "Content-Type": "application/json" };
+  const channelResponse = await fetch("https://discord.com/api/v10/users/@me/channels", {
+    method: "POST", headers, body: JSON.stringify({ recipient_id: discordId }),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!channelResponse.ok) throw new Error(`Discord could not open the customer DM (HTTP ${channelResponse.status}).`);
+  const channel = await channelResponse.json();
+  const response = await fetch(`https://discord.com/api/v10/channels/${channel.id}/messages`, {
+    method: "POST", headers,
+    body: JSON.stringify({
+      content: `Action needed: information is missing from your profile. Please check your notifications and complete the listed fields: ${BASE_URL}/#my-profile`,
+      allowed_mentions: { parse: [] }
+    }), signal: AbortSignal.timeout(12000)
+  });
+  if (!response.ok) throw new Error(`Discord could not send the customer DM (HTTP ${response.status}).`);
+  return true;
+}
+
 
 function profileMissingFieldLabels(
   profile,
@@ -12398,6 +12418,8 @@ function profileMissingFieldLabels(
   const shippingFields = [
     ["firstName", "first name"],
     ["lastName", "last name"],
+    ["email", "email"],
+    ["phone", "phone"],
     ["address", "street address"],
     ["city", "city"],
     ["state", "state"],
@@ -12480,6 +12502,10 @@ function profileMissingFieldLabels(
     );
   }
 
+  if (!String(secrets?.securityCode || "").trim()) {
+    missing.push(`${label}: Security Code`);
+  }
+
   return missing;
 }
 
@@ -12507,11 +12533,28 @@ function paidProfileMissingItems(
     secrets = {};
   }
 
-  return profileMissingFieldLabels(
+  const missing = profileMissingFieldLabels(
     profile,
     secrets,
     `Paid Profile ${index}`
   );
+  let credentials = emptyRetailerCredentials();
+  try {
+    if (record?.credentials) credentials = normalizeRetailerCredentials(decryptJson(record.credentials));
+  } catch {
+    credentials = emptyRetailerCredentials();
+  }
+  // Only show field names. Never put retailer login values in notifications.
+  for (const retailer of ["target", "walmart", "pkc", "samsClub", "costco"]) {
+    const label = retailerDisplayName(retailer);
+    if (!String(credentials[retailer]?.username || "").trim()) {
+      missing.push(`Paid Profile ${index}: ${label} username / email`);
+    }
+    if (retailer !== "pkc" && !String(credentials[retailer]?.password || "").trim()) {
+      missing.push(`Paid Profile ${index}: ${label} password`);
+    }
+  }
+  return missing;
 }
 
 async function customerMissingInformation(
@@ -12541,16 +12584,12 @@ async function customerMissingInformation(
           )
     );
 
-  paid.forEach(
-    (record, index) => {
-      missing.push(
-        ...paidProfileMissingItems(
-          record,
-          index + 1
-        )
-      );
-    }
-  );
+  const paidAllowance = Math.min(50, await getCustomerProfileAllowance(customerAccountId));
+  const paidBySlot = new Map(paid.map(record => [Number(record.slot), record]));
+  for (let slot = 1; slot <= paidAllowance; slot += 1) {
+    const record = paidBySlot.get(slot);
+    missing.push(...paidProfileMissingItems(record, slot));
+  }
 
   const inspectManaged =
     (
@@ -12788,8 +12827,8 @@ async function syncCustomerMissingNotification(
   }
 
   const message =
-    `Important information is missing:\\n• ${missing.join(
-      "\\n• "
+    `Important information is missing:\n• ${missing.join(
+      "\n• "
     )}`;
 
   if (existing) {
@@ -25264,14 +25303,14 @@ app.post(
       let discordError =
         "";
 
+      let discordDmSent = false;
+
       try {
         messageId =
           await sendActionNeededDiscordMessage(
             account,
-            notification?.message ||
-            `Important information is missing:\\n• ${sync.missing.join(
-              "\\n• "
-            )}`
+            notification?.message || "",
+            { missingInfo: true }
           );
 
         if (notification) {
@@ -25293,18 +25332,26 @@ app.post(
           "Discord notification could not be sent.";
       }
 
+      try {
+        discordDmSent = await sendCustomerMissingInfoDiscordDm(account);
+      } catch (error) {
+        discordError = [discordError, error.message].filter(Boolean).join(" ");
+      }
+
       return res.json({
         ok: true,
 
         discordUsernameConfigured:
           Boolean(
-            account.discordUsername
+            account.discordLinkedAt && account.discordUserId
           ),
 
         discordSent:
           Boolean(
             messageId
           ),
+
+        discordDmSent,
 
         discordError
       });

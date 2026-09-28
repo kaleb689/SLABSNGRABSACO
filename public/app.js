@@ -9153,6 +9153,8 @@ async function applyManagedSavedInfo(
       managedGroupOpen
     );
 
+    await loadCustomerNotifications({ showPopup: false });
+
     const managedCardMessage =
       card?.querySelector(
         "[data-managed-form-message]"
@@ -10066,6 +10068,9 @@ const specialCards =
   bindManagedAutofill();
   bindPersonalProfileAutofill();
 
+
+  applyMissingInformationMarkers();
+
   if (mainMessage) {
     setMessage(
       mainMessage,
@@ -10301,6 +10306,7 @@ container.innerHTML = `
 
   bindPersonalProfileAutofill();
 
+  applyMissingInformationMarkers();
 
   if (mainMessage) {
 
@@ -14368,9 +14374,96 @@ function customerNotificationCardHtml(
           "<br>"
         )}
       </p>
+      ${notification?.kind === "missing_info" ? `
+        <div class="missing-info-links">
+          ${[...new Set((notification.missingItems || []).map(item => String(item).split(":")[0]))]
+            .map(label => `<button type="button" class="missing-info-link" data-missing-profile="${escapeHtml(label)}">View ${escapeHtml(label)}</button>`).join("")}
+        </div>
+      ` : ""}
     </article>
   `;
 }
+
+const MISSING_FIELD_NAMES = {
+  "first name": "firstName", "last name": "lastName",
+  email: "email", phone: "phone",
+  "street address": "address", city: "city", state: "state",
+  "ZIP code": "zip", country: "country",
+  "cardholder name": "cardholder", "card number": "acoCardNumber",
+  "expiration month": "expMonth", "expiration year": "expYear",
+  "Security Code": "securityCode"
+};
+
+function markMissingControl(input) {
+  if (!input || input.closest(".missing-information-field")) return;
+  const label = input.closest("label");
+  if (!label) return;
+  label.classList.add("missing-information-field");
+  input.setAttribute("aria-invalid", "true");
+  const marker = document.createElement("span");
+  marker.className = "missing-information-marker";
+  marker.textContent = "!";
+  marker.setAttribute("aria-label", "Missing information");
+  label.insertBefore(marker, input.closest(".retailer-password-input-wrap") || input);
+}
+
+function applyMissingInformationMarkers() {
+  const root = document.getElementById("retailer-profiles");
+  if (!root) return;
+  root.querySelectorAll(".missing-information-marker").forEach(item => item.remove());
+  root.querySelectorAll(".missing-information-field").forEach(item => item.classList.remove("missing-information-field"));
+  root.querySelectorAll('[aria-invalid="true"]').forEach(item => item.removeAttribute("aria-invalid"));
+  root.querySelectorAll(".missing-information-section").forEach(item => item.classList.remove("missing-information-section"));
+
+  const items = state.customerNotifications?.find(item => item.kind === "missing_info")?.missingItems || [];
+  for (const item of items) {
+    const match = /^(Paid|Gifted|Rented) Profile (\d+): (.+)$/.exec(item);
+    if (!match) continue;
+    const [, type, number, field] = match;
+    const card = type === "Paid"
+      ? root.querySelector(`[data-retailer-profile="${number}"]`)
+      : root.querySelectorAll(`[data-managed-membership="${type === "Gifted" ? "free" : "rented"}"]`)[Number(number) - 1];
+    if (!card) continue;
+    card.classList.add("missing-information-section");
+    card.closest(".profile-group-dropdown")?.classList.add("missing-information-section");
+    let name = MISSING_FIELD_NAMES[field];
+    if (!name) {
+      const retailer = RETAILERS.find(item => field === `${item.name} username / email` || field === `${item.name} password`);
+      if (retailer) name = `${retailer.key}${field.endsWith("password") ? "Password" : "Username"}`;
+    }
+    const control = type === "Paid"
+      ? name && [...card.querySelectorAll("[name]")].find(input => input.name === name)
+      : card.querySelector(
+          ["firstName", "lastName", "email", "phone", "address", "city", "state", "zip", "country"].includes(name)
+            ? "[data-managed-shipping-select]"
+            : "[data-managed-card-select]"
+        );
+    if (control) {
+      markMissingControl(control);
+      control.closest(".paid-profile-subsection, .retailer-credential-card")?.classList.add("missing-information-section");
+    }
+  }
+}
+
+document.getElementById("customer-notifications-list")?.addEventListener("click", event => {
+  const button = event.target.closest("[data-missing-profile]");
+  if (!button) return;
+  const match = /^(Paid|Gifted|Rented) Profile (\d+)$/.exec(button.dataset.missingProfile || "");
+  if (!match) return;
+  switchAccountTab("edit-profile");
+  const [, type, number] = match;
+  const card = type === "Paid"
+    ? document.querySelector(`[data-retailer-profile="${number}"]`)
+    : document.querySelectorAll(`[data-managed-membership="${type === "Gifted" ? "free" : "rented"}"]`)[Number(number) - 1];
+  if (!card) return;
+  const group = card.closest(".profile-group-dropdown");
+  if (group) group.open = true;
+  if (type === "Paid") reopenPaidProfile(number);
+  const firstMissing = card.querySelector(".missing-information-field input, .missing-information-field select");
+  firstMissing?.closest("details")?.setAttribute("open", "");
+  (firstMissing || card).scrollIntoView({ behavior: "smooth", block: "center" });
+  firstMissing?.focus({ preventScroll: true });
+});
 
 
 function updateCustomerNotificationIndicator(
@@ -14470,6 +14563,18 @@ function showCustomerNotificationPopup(
       );
   }
 
+  const openProfile = document.getElementById("customer-notification-open-profile");
+  if (openProfile) {
+    openProfile.onclick = () => {
+      if (notification.kind !== "missing_info") return;
+      switchAccountTab("edit-profile");
+      const first = String(notification.missingItems?.[0] || "").split(":")[0];
+      setTimeout(() => {
+        document.querySelector(`#customer-notifications-list [data-missing-profile="${CSS.escape(first)}"]`)?.click();
+      }, 100);
+    };
+  }
+
   popup.hidden =
     false;
 }
@@ -14520,6 +14625,8 @@ async function loadCustomerNotifications(
 
     state.customerNotifications =
       notifications;
+
+    applyMissingInformationMarkers();
 
     updateCustomerNotificationIndicator(
       notifications.length
