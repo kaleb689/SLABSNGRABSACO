@@ -1186,17 +1186,28 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   const recent = new Map();
   const privateReply = "I can't share or review personal information here. This requires a private ticket with the admin or Support Staff. Click Create private ticket below to follow up.";
   const unknownReply = "I don't have a reliable answer to that yet. Please create a private ticket so the owner or Support Staff can help.";
-  function sensitiveQuestion(value) {
-    const generalHowTo = /\b(?:how|where|steps|instructions|guide|what do i need|can i)\b/i.test(value) &&
-      /\b(?:link|claim|connect|find|view|receive|change|update|reset|set up|create|enter|use|join|request|close|cancel|submit|verify|manage)\b/i.test(value) &&
-      !/\b(?:failed|error|wrong|not working|isn't working|can't access|cannot access|unable to access|someone else|my status|my balance)\b/i.test(value);
-    return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value) ||
-      /<@!?\d{17,22}>|\bSNG-\d{8}-[A-F0-9]{12}\b|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/i.test(value) ||
-      (!generalHowTo && /\b(?:password|passcode|one.time code|two.factor|2fa|otp|cvv|credit card|card number|billing|charged|charge|refund|invoice|tracking number|shipping address|home address|phone number|my checkout|my payment|my email|my name|my address|my phone|my card|my profile|my membership|my account status|my order|my account|my purchase|my receipt|my delivery)\b/i.test(value)) ||
-      /\b(?:order|account|invoice|tracking|confirmation|receipt)\s*(?:#|number|id|:)\s*:?\s*(?=[A-Z0-9-]*\d)[A-Z0-9-]{4,}/i.test(value) ||
-      /\b\d{1,6}\s+[\w ]+\s+(?:street|st|avenue|ave|road|rd|lane|ln|drive|dr)\b/i.test(value) ||
-      /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/.test(value) ||
-      /(?:\b\d[ -]*?){13,19}\b/.test(value);
+  function containsSensitiveData(value) {
+    const text = String(value || "");
+    const cardCandidates = text.match(/(?:\b\d[ -]?){13,19}\b/g) || [];
+    const validCard = cardCandidates.some(candidate => {
+      const digits = candidate.replace(/\D/g, "");
+      if (digits.length < 13 || digits.length > 19 || /^(\d)\1+$/.test(digits)) return false;
+      let sum = 0;
+      for (let i = digits.length - 1, double = false; i >= 0; i--, double = !double) {
+        let n = Number(digits[i]);
+        if (double && (n *= 2) > 9) n -= 9;
+        sum += n;
+      }
+      return sum % 10 === 0;
+    });
+    return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text) ||
+      /\bSNG-\d{8}-[A-F0-9]{12}\b|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/i.test(text) ||
+      /\b(?:order|account|invoice|tracking|confirmation|receipt)\s*(?:#|number|id|:)\s*(?:is\s+|:\s*)?(?=[A-Z0-9-]*\d)[A-Z0-9-]{4,}/i.test(text) ||
+      /\b(?:my\s+)?(?:password|passcode|app password|pin|cvv|cvc|security code|verification code|otp)\s*(?:is|=|:)\s*\S{3,}/i.test(text) ||
+      /\b(?:card|credit card|debit card|routing|bank account)\s*(?:number|#|is|:|=)\s*\d[\d\s-]{5,}\d\b/i.test(text) ||
+      /\b\d{1,6}\s+(?:[\w.'-]+\s+){0,5}(?:street|st|avenue|ave|road|rd|lane|ln|drive|dr|boulevard|blvd|court|ct|way)\b/i.test(text) ||
+      /\b(?:shipping|billing|home)\s+address\s*(?:is|:|=)\s*\d+\b/i.test(text) ||
+      /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/.test(text) || validCard;
   }
   function sensitiveOutput(value) {
     return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value) ||
@@ -1256,7 +1267,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   async function answerInChannel(userId, question, messageId) {
     let answer;
-    const privateQuestion = sensitiveQuestion(question);
+    const privateQuestion = containsSensitiveData(question);
     if (privateQuestion) {
       answer = { answer: privateReply, needsHuman: true };
     } else try { answer = await aiAnswer(question); }
@@ -1265,10 +1276,6 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       discordCommunityStatus.lastAiError = error.message;
       console.error("Discord AI answer:", error.message);
       answer = { answer: unknownReply, needsHuman: true };
-    }
-    if (answer.needsHuman && messageId) {
-      await api(`/channels/${askChannelId}/messages/${messageId}`, "DELETE")
-        .catch(error => console.error("Discord private question removal:", error.message));
     }
     const reply = await sendMessage(askChannelId, `${mention(userId)} ${answer.answer}`, {
       users: [userId],
@@ -1280,6 +1287,61 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       catch (error) { discordCommunityStatus.error = `Support alert: ${error.message}`; console.error("Discord support alert:", error.message); }
     }
     return reply;
+  }
+  const channelVisibility = new Map();
+  async function publiclyVisibleChannel(channelId) {
+    const cached = channelVisibility.get(channelId);
+    if (cached && cached.until > Date.now()) return cached.visible;
+    const channel = await api(`/channels/${channelId}`);
+    if (![0, 5, 11, 12].includes(channel.type) || channel.type === 12 || channel.guild_id !== guildId) return false;
+    const deniesEveryone = item => (item.permission_overwrites || []).some(overwrite =>
+      overwrite.id === guildId && (BigInt(overwrite.deny || "0") & 1024n) !== 0n);
+    const allowsEveryone = item => (item.permission_overwrites || []).some(overwrite =>
+      overwrite.id === guildId && (BigInt(overwrite.allow || "0") & 1024n) !== 0n);
+    let visible = !deniesEveryone(channel);
+    if (visible && channel.parent_id) {
+      const parent = await api(`/channels/${channel.parent_id}`);
+      if (parent.type === 4) visible = allowsEveryone(channel) || !deniesEveryone(parent);
+      else if (channel.type === 11) visible = await publiclyVisibleChannel(parent.id);
+    }
+    channelVisibility.set(channelId, { visible, until: Date.now() + 60000 });
+    return visible;
+  }
+  async function onPublicMessage(d) {
+    if (d.guild_id !== guildId || d.author?.id === appId || !d.content ||
+      !containsSensitiveData(d.content) || !await publiclyVisibleChannel(d.channel_id)) return false;
+    try {
+      await api(`/channels/${d.channel_id}/messages/${d.id}`, "DELETE");
+    } catch (error) {
+      if (/HTTP 403/.test(error.message)) {
+        try {
+          const channel = await api(`/channels/${d.channel_id}`);
+          const botOverwrite = (channel.permission_overwrites || []).find(item => item.id === appId);
+          await api(`/channels/${d.channel_id}/permissions/${appId}`, "PUT", {
+            type: 1,
+            allow: (BigInt(botOverwrite?.allow || "0") | 8192n | 1024n).toString(),
+            deny: (BigInt(botOverwrite?.deny || "0") & ~8192n).toString()
+          });
+          await api(`/channels/${d.channel_id}/messages/${d.id}`, "DELETE");
+        } catch (retryError) {
+          discordCommunityStatus.error = `Public message privacy cleanup: ${retryError.message}`;
+          console.error("Discord public privacy cleanup:", retryError.message);
+          return true;
+        }
+      } else {
+        discordCommunityStatus.error = `Public message privacy cleanup: ${error.message}`;
+        console.error("Discord public privacy cleanup:", error.message);
+        return true;
+      }
+    }
+    const userId = String(d.author?.id || "");
+    if (/^\d{17,22}$/.test(userId)) {
+      await sendMessage(d.channel_id,
+        `${mention(userId)} your message was removed because it contained sensitive information. Please share those details only in a private ticket with the owner or Support Staff. You can still ask general questions here without posting the actual details.`,
+        { users: [userId], components: [{ type: 1, components: [{ type: 2, style: 1, label: "Create private ticket", custom_id: `ticket:moderation:${userId}` }] }] })
+        .catch(error => console.error("Discord public privacy notice:", error.message));
+    }
+    return true;
   }
   async function onQuestionMessage(d) {
     if (d.channel_id !== askChannelId || d.guild_id !== guildId || d.author?.bot || d.webhook_id) return;
@@ -1422,6 +1484,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           });
         }
       }
+      if (d.type === 3 && /^ticket:moderation:\d{17,22}$/.test(d.data?.custom_id || "")) {
+        if (d.data.custom_id.split(":")[2] !== userId || !await publiclyVisibleChannel(d.channel_id))
+          return await reply("Only the person whose message was removed can open this ticket.");
+        await api(callback, "POST", { type: 6 });
+        try { await openTicket(userId); }
+        catch (error) { console.error("Discord private ticket from moderation:", error.message); }
+        return;
+      }
       if (d.type === 3 && /^ticket:close:\d{17,22}$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== d.data.custom_id.split(":")[2]) return await reply("This ticket button is not in the right channel.");
         const ticket = (await readTickets()).find(item => item.channelId === d.channel_id);
@@ -1487,9 +1557,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             discordCommunityStatus.messageContentReady = contentIntentEnabled;
           }
           if (packet.t === "INTERACTION_CREATE") void interaction(packet);
-          if (packet.t === "MESSAGE_CREATE") void onQuestionMessage(packet.d);
+          if (packet.t === "MESSAGE_CREATE") void (async () => {
+            if (!await onPublicMessage(packet.d)) await onQuestionMessage(packet.d);
+          })().catch(error => console.error("Discord public message handling:", error.message));
           if (["CHANNEL_CREATE", "CHANNEL_UPDATE", "CHANNEL_DELETE"].includes(packet.t) &&
-            packet.d?.guild_id === guildId) scheduleIntroRefresh();
+            packet.d?.guild_id === guildId) { channelVisibility.clear(); scheduleIntroRefresh(); }
         } catch (error) { console.error("Discord gateway packet:", error.message); }
       });
       socket.addEventListener("close", event => {
