@@ -716,7 +716,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       return (aParent?.position ?? -1) - (bParent?.position ?? -1) ||
         (a.parent_id || "").localeCompare(b.parent_id || "") || a.position - b.position;
     });
-    const lines = ["Welcome to the server. Choose a channel below to get started:"];
+    const lines = [
+      "Welcome to the server. Choose a channel below to get started:",
+      "If information is missing on the website, check My Profile for the exact private checklist. Linked Discord members also receive a message. Once all required fields are complete, the Action Needed channel message is removed and the website shows a completion notification. Never post account details in Discord."
+    ];
     let lastCategory = "";
     for (const channel of visible) {
       const category = categories.get(channel.parent_id)?.name || "Main";

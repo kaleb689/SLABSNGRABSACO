@@ -187,6 +187,8 @@ const state = {
 
   customer: null,
 
+  customerChecklist: [],
+
   membership: null,
 
   upgradeMode: false,
@@ -456,6 +458,9 @@ function go(page) {
     });
 
   target.classList.add("active");
+
+  const checklistPanel = document.getElementById("setup-checklist-panel");
+  if (checklistPanel) checklistPanel.hidden = page !== "my-profile" || !state.customer || !state.customerChecklist?.length;
 
   document
     .querySelectorAll(
@@ -3317,6 +3322,9 @@ const passwordChangeRequiredPanel =
 
 function showSignedOut() {
   state.customer = null;
+  state.customerChecklist = [];
+  const setupPanel = document.getElementById("setup-checklist-panel");
+  if (setupPanel) setupPanel.hidden = true;
 state.membership = null;
 state.upgradeMode = false;
 state.orders = [];
@@ -6204,6 +6212,7 @@ document.getElementById("saved-address-form")
 
     form.hidden = true;
     await loadSavedDetails();
+    await loadCustomerNotifications({ showPopup: false });
     setMessage(message, data.message || "Address saved.", "success");
   });
 
@@ -6237,6 +6246,7 @@ document.getElementById("saved-payment-form")
 
     form.hidden = true;
     await loadSavedDetails();
+    await loadCustomerNotifications({ showPopup: false });
     setMessage(message, data.message || "Payment card saved.", "success");
   });
 
@@ -6259,6 +6269,7 @@ document.getElementById("delete-saved-address")
     }
 
     await loadSavedDetails();
+    await loadCustomerNotifications({ showPopup: false });
     setMessage(message, data.message || "Address deleted.", "success");
   });
 
@@ -6281,6 +6292,7 @@ document.getElementById("delete-saved-payment")
     }
 
     await loadSavedDetails();
+    await loadCustomerNotifications({ showPopup: false });
     setMessage(message, data.message || "Payment card deleted.", "success");
   });
 
@@ -13988,6 +14000,7 @@ async function loadMemberProfile(
     state.customer
   ) {
     showSignedIn();
+    await loadCustomerNotifications({ showPopup: false });
     return;
   }
 
@@ -14404,7 +14417,9 @@ function markMissingControl(input) {
   marker.className = "missing-information-marker";
   marker.textContent = "!";
   marker.setAttribute("aria-label", "Missing information");
-  label.insertBefore(marker, input.closest(".retailer-password-input-wrap") || input);
+  let child = input;
+  while (child.parentElement && child.parentElement !== label) child = child.parentElement;
+  label.insertBefore(marker, child);
 }
 
 function applyMissingInformationMarkers() {
@@ -14445,24 +14460,105 @@ function applyMissingInformationMarkers() {
   }
 }
 
-document.getElementById("customer-notifications-list")?.addEventListener("click", event => {
-  const button = event.target.closest("[data-missing-profile]");
-  if (!button) return;
-  const match = /^(Paid|Gifted|Rented) Profile (\d+)$/.exec(button.dataset.missingProfile || "");
-  if (!match) return;
-  switchAccountTab("edit-profile");
-  const [, type, number] = match;
-  const card = type === "Paid"
-    ? document.querySelector(`[data-retailer-profile="${number}"]`)
-    : document.querySelectorAll(`[data-managed-membership="${type === "Gifted" ? "free" : "rented"}"]`)[Number(number) - 1];
+async function openSetupTask(task) {
+  const target = task?.target;
+  if (!target) return;
+  switchAccountTab(target.type === "order" ? "orders" : "edit-profile");
+  if (target.type === "order") {
+    const select = document.getElementById("edit-order-select");
+    if (select) {
+      select.value = target.orderNumber || "";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    const field = task.label?.includes("app password") ? "acoPassword" : "acoEmail";
+    const input = document.querySelector(`#edit-order-form [name="${field}"]`);
+    markMissingControl(input);
+    (input || select)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    input?.focus({ preventScroll: true });
+    return;
+  }
+
+  await loadSavedDetails();
+  await loadManagedMemberships();
+  await loadRetailerProfiles();
+
+  if (["shipping", "payment"].includes(target.type)) {
+    const button = document.getElementById(target.type === "shipping" ? "add-saved-address" : "add-saved-payment");
+    const panel = button?.closest(".saved-detail-panel");
+    if (panel && !panel.classList.contains("expanded")) panel.querySelector(".saved-detail-head")?.click();
+    button?.click();
+    (document.getElementById(target.type === "shipping" ? "saved-address-form" : "saved-payment-form") || button)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+
+  const card = target.type === "paid"
+    ? document.querySelector(`[data-retailer-profile="${Number(target.slot)}"]`)
+    : document.querySelectorAll(`[data-managed-membership="${target.type === "free" ? "free" : "rented"}"]`)[Number(target.number) - 1];
   if (!card) return;
   const group = card.closest(".profile-group-dropdown");
   if (group) group.open = true;
-  if (type === "Paid") reopenPaidProfile(number);
-  const firstMissing = card.querySelector(".missing-information-field input, .missing-information-field select");
-  firstMissing?.closest("details")?.setAttribute("open", "");
-  (firstMissing || card).scrollIntoView({ behavior: "smooth", block: "center" });
-  firstMissing?.focus({ preventScroll: true });
+  if (target.type === "paid") reopenPaidProfile(target.slot);
+  const field = String(task.label || "").split(": ").slice(1).join(": ");
+  const retailer = RETAILERS.find(item => field === `${item.name} username / email` || field === `${item.name} password`);
+  const fieldName = retailer
+    ? `${retailer.key}${field.endsWith("password") ? "Password" : "Username"}`
+    : MISSING_FIELD_NAMES[field];
+  const control = target.type === "paid"
+    ? [...card.querySelectorAll("[name]")].find(item => item.name === fieldName)
+    : card.querySelector(["firstName", "lastName", "email", "phone", "address", "city", "state", "zip", "country"].includes(fieldName)
+      ? "[data-managed-shipping-select]" : "[data-managed-card-select]");
+  control?.closest("details")?.setAttribute("open", "");
+  (control || card).scrollIntoView({ behavior: "smooth", block: "center" });
+  control?.focus({ preventScroll: true });
+}
+
+function renderSetupChecklist() {
+  const panel = document.getElementById("setup-checklist-panel");
+  if (!panel) return;
+  const tasks = state.customerChecklist || [];
+  panel.hidden = !state.customer || !tasks.length || !document.getElementById("my-profile")?.classList.contains("active");
+  if (panel.hidden) return;
+  const complete = tasks.filter(item => item.complete).length;
+  const percent = Math.round(complete / tasks.length * 100);
+  panel.classList.toggle("complete", complete === tasks.length);
+  document.getElementById("setup-checklist-count").textContent = `${complete}/${tasks.length} tasks complete`;
+  document.getElementById("setup-checklist-percent").textContent = `${percent}% complete`;
+  document.getElementById("setup-checklist-progress-fill").style.width = `${percent}%`;
+  panel.querySelector("[role=progressbar]").setAttribute("aria-valuenow", String(percent));
+  for (const [type, formId] of [["shipping", "saved-address-form"], ["payment", "saved-payment-form"]]) {
+    const savedPanel = document.getElementById(formId)?.closest(".saved-detail-panel");
+    savedPanel?.classList.toggle("missing-information-section", tasks.some(item => item.target?.type === type && !item.complete));
+  }
+  if (!tasks.some(item => item.target?.type === "order" && !item.complete)) {
+    document.querySelectorAll("#edit-order-form .missing-information-marker").forEach(item => item.remove());
+    document.querySelectorAll("#edit-order-form .missing-information-field").forEach(item => item.classList.remove("missing-information-field"));
+    document.querySelectorAll('#edit-order-form [aria-invalid="true"]').forEach(item => item.removeAttribute("aria-invalid"));
+  }
+  const list = document.getElementById("setup-checklist-tasks");
+  list.innerHTML = tasks.map((item, index) => `
+    <button type="button" class="setup-checklist-task ${item.complete ? "done" : "pending"}"
+      data-setup-task="${index}" ${item.complete ? "disabled" : ""}>
+      <span aria-hidden="true">${item.complete ? "✓" : "!"}</span>
+      <span>${escapeHtml(item.label)}</span>
+    </button>
+  `).join("");
+  if (!panel.dataset.initialized) {
+    panel.open = complete !== tasks.length;
+    panel.dataset.initialized = "true";
+  }
+}
+
+document.getElementById("setup-checklist-tasks")?.addEventListener("click", event => {
+  const button = event.target.closest("[data-setup-task]");
+  if (button) void openSetupTask(state.customerChecklist[Number(button.dataset.setupTask)]);
+});
+
+document.getElementById("customer-notifications-list")?.addEventListener("click", event => {
+  const button = event.target.closest("[data-missing-profile]");
+  if (!button) return;
+  const item = state.customerChecklist.find(item => !item.complete && item.label.startsWith(`${button.dataset.missingProfile}:`));
+  if (item) void openSetupTask(item);
 });
 
 
@@ -14623,8 +14719,13 @@ async function loadCustomerNotifications(
         ? data.notifications
         : [];
 
+    const hadMissingInfo = state.customerNotifications?.some(item => item.kind === "missing_info");
+
     state.customerNotifications =
       notifications;
+
+    state.customerChecklist = Array.isArray(data.checklist) ? data.checklist : [];
+    renderSetupChecklist();
 
     applyMissingInformationMarkers();
 
@@ -14652,12 +14753,10 @@ async function loadCustomerNotifications(
             `;
     }
 
-    if (
-      showPopup &&
-      notifications.length
-    ) {
+    if ((showPopup && notifications.length) ||
+        (hadMissingInfo && notifications.some(item => item.kind === "setup_complete"))) {
       showCustomerNotificationPopup(
-        notifications[0]
+        notifications.find(item => item.kind === "setup_complete") || notifications[0]
       );
     }
 
