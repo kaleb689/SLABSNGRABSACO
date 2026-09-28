@@ -17232,6 +17232,9 @@ app.get(
         walmart:
           availability.walmart,
 
+        pokemoncenter:
+          availability.pokemoncenter,
+
         updatedAt:
           new Date()
             .toISOString()
