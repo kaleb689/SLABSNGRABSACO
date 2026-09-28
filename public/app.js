@@ -2571,6 +2571,15 @@ profileForm?.addEventListener(
       const data =
         await readJson(response);
 
+      if (response.status === 401) {
+        const instruction =
+          "Create an account or sign in before choosing your membership. Your checkout details will stay on this page; return to the form after signing in.";
+        if (message) message.textContent = instruction;
+        go("my-profile");
+        showAccountMessage(instruction, "error");
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(
           data.error ||
@@ -4272,7 +4281,7 @@ document
       try {
         const response =
           await fetch(
-            "/api/account/request-password-reset",
+            "/api/account/send-password-reset",
             {
               method: "POST",
 
@@ -4282,12 +4291,7 @@ document
               },
 
               credentials:
-                "same-origin",
-
-              body:
-                JSON.stringify({
-                  email
-                })
+                "same-origin"
             }
           );
 
@@ -4317,6 +4321,34 @@ document
       }
     }
   );
+
+document.getElementById("security-change-password-form")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
+  const values = Object.fromEntries(new FormData(form));
+  if (values.newPassword !== values.confirmPassword) {
+    showAccountMessage("Your new passwords do not match.", "error");
+    return;
+  }
+  try {
+    setButtonBusy(button, true, "Changing Password…");
+    const response = await fetch("/api/account/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ currentPassword: values.currentPassword, newPassword: values.newPassword })
+    });
+    const result = await readJson(response);
+    if (!response.ok) throw new Error(result.error || "Unable to change your password.");
+    form.reset();
+    showAccountMessage(result.message || "Your password has been changed.", "success");
+  } catch (error) {
+    showAccountMessage(error.message, "error");
+  } finally {
+    setButtonBusy(button, false);
+  }
+});
 
 
 /* =====================================================
