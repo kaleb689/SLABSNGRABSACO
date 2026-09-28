@@ -3237,6 +3237,20 @@
             </small>
           </label>
 
+          <label>
+            Who Referred You? (Discord @)
+            <input
+              type="text"
+              name="referredByDiscord"
+              autocomplete="off"
+              maxlength="100"
+              placeholder="@their_discord_username"
+            />
+            <small>
+              Optional. Enter the Discord @ of the member who referred you. They must have connected Discord to their website account to receive a free profile after you verify your email.
+            </small>
+          </label>
+
           
 
           <button
@@ -3354,6 +3368,25 @@
 
       </form>
 
+    </div>
+
+    <div id="password-change-required-panel" class="account-card account-narrow" hidden>
+      <span class="eyebrow">ACCOUNT SECURITY</span>
+      <h3>Change Your Temporary Password</h3>
+      <p class="account-muted">Your account was reset by support. Enter the temporary password they gave you, then choose your own password to continue.</p>
+      <form id="required-password-change-form">
+        <label>Temporary Password
+          <input type="password" name="currentPassword" autocomplete="current-password" required>
+        </label>
+        <label>New Password
+          <input type="password" name="newPassword" autocomplete="new-password" minlength="12" required>
+        </label>
+        <label>Confirm New Password
+          <input type="password" name="confirmPassword" autocomplete="new-password" minlength="12" required>
+        </label>
+        <button type="submit" class="primary full">Save New Password</button>
+      </form>
+      <button id="temporary-password-signout" type="button" class="text-button">Use another account</button>
     </div>
 
   </div>

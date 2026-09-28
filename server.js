@@ -4676,6 +4676,151 @@ async function saveCustomerAccounts(
   );
 }
 
+function referralDiscordValue(value) {
+  const input = String(value || "").trim();
+  if (!input) return "";
+  if (/^<@!?\d{17,22}>$/.test(input)) return input;
+  if (/^@?[a-z0-9_.]{2,32}$/i.test(input)) return input.startsWith("@") ? input : `@${input}`;
+  return null;
+}
+
+function findLinkedReferrer(accounts, input) {
+  if (!input) return null;
+  const mention = input.match(/^<@!?(\d{17,22})>$/);
+  const username = input.replace(/^@/, "").toLowerCase();
+  const matches = accounts.filter(item =>
+    item.disabled !== true && item.discordLinkedAt && /^\d{17,22}$/.test(String(item.discordUserId || "")) &&
+    (mention ? String(item.discordUserId) === mention[1] : String(item.discordUsername || "").toLowerCase() === username)
+  );
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function discordChannelLabel(name) {
+  return String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+async function sendDiscordReferralMessage(channelId, content, allowedUsers = []) {
+  const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
+  if (!token) throw new Error("Discord bot is not configured.");
+  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ content, allowed_mentions: { parse: [], users: allowedUsers } }),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!response.ok) throw new Error(`Discord referral message HTTP ${response.status}`);
+}
+
+async function referralDiscordChannels() {
+  const { token, channelId } = await resolvedDiscordSuccessConfig();
+  if (!token || !/^\d{17,22}$/.test(channelId)) throw new Error("Discord community channel is not configured.");
+  const headers = { Authorization: `Bot ${token}` };
+  const source = await fetch(`https://discord.com/api/v10/channels/${channelId}`, { headers, signal: AbortSignal.timeout(12000) });
+  if (!source.ok) throw new Error(`Discord community lookup HTTP ${source.status}`);
+  const guildId = (await source.json()).guild_id;
+  if (!/^\d{17,22}$/.test(String(guildId || ""))) throw new Error("Discord community has no server ID.");
+  const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, { headers, signal: AbortSignal.timeout(12000) });
+  if (!response.ok) throw new Error(`Discord channel lookup HTTP ${response.status}`);
+  return await response.json();
+}
+
+async function sendPrivateReferralNotice(content) {
+  try {
+    const channels = await referralDiscordChannels();
+    const adminCategory = channels.find(item => item.type === 4 && discordChannelLabel(item.name) === "adminonly");
+    const adminProfiles = channels.find(item => item.type === 0 && item.parent_id === adminCategory?.id && discordChannelLabel(item.name) === "adminprofiles");
+    if (!adminProfiles) throw new Error("Private Admin Profiles channel is unavailable.");
+    const guild = await fetch(`https://discord.com/api/v10/guilds/${adminProfiles.guild_id}`, {
+      headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` }, signal: AbortSignal.timeout(12000)
+    });
+    if (!guild.ok) throw new Error(`Discord owner lookup HTTP ${guild.status}`);
+    const ownerId = (await guild.json()).owner_id;
+    await sendDiscordReferralMessage(adminProfiles.id, `${ownerId ? `<@${ownerId}> — ` : ""}${content}`, ownerId ? [String(ownerId)] : []);
+    return;
+  } catch (error) {
+    const webhook = String(process.env.DISCORD_ADMIN_PROFILE_WEBHOOK_URL || "").trim();
+    if (!webhook) throw error;
+    const response = await fetch(webhook, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, allowed_mentions: { parse: [] } }), signal: AbortSignal.timeout(12000)
+    });
+    if (!response.ok) throw new Error(`Private signup webhook HTTP ${response.status}`);
+  }
+}
+
+async function notifyReferralSignup(account) {
+  await sendPrivateReferralNotice(`New website signup — referral field: ${account.referredByDiscord || "(none entered)"}`);
+}
+
+async function notifyReferralAward(account, referrer) {
+  await sendPrivateReferralNotice(`Referral confirmed: ${account.email} was referred by @${referrer.discordUsername} (${referrer.discordUserId}). 1 free profile credited to the referrer.`);
+}
+
+async function announceReferralReward(referrer) {
+  const channels = await referralDiscordChannels();
+  const general = channels.find(item => item.type === 0 && discordChannelLabel(item.name) === "general");
+  if (!general) throw new Error("Discord General channel is unavailable.");
+  const member = await fetch(`https://discord.com/api/v10/guilds/${general.guild_id}/members/${referrer.discordUserId}`, {
+    headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!member.ok) throw new Error(`Referral member is not currently available in Discord (HTTP ${member.status}).`);
+  await sendDiscordReferralMessage(general.id, `<@${referrer.discordUserId}> earned 1 free profile for a referral!`, [String(referrer.discordUserId)]);
+}
+
+async function processPendingReferrals() {
+  const accounts = await getCustomerAccounts();
+  for (const account of accounts) {
+    if (account.referralRecordedAt && !account.referralSignupAlertAt) {
+      try {
+        await notifyReferralSignup(account);
+        account.referralSignupAlertAt = new Date().toISOString();
+        await saveCustomerAccounts(accounts);
+      } catch (error) {
+        console.error("Private referral signup notification:", error.message);
+      }
+    }
+    if (account.referralAwardedAt && account.referredByAccountId && (!account.referralAnnouncementAt || !account.referralRewardAlertAt)) {
+      const referrer = accounts.find(item => item.id === account.referredByAccountId && item.discordLinkedAt && item.discordUserId);
+      if (!referrer) continue;
+      if (!account.referralRewardAlertAt) {
+        try {
+          await notifyReferralAward(account, referrer);
+          account.referralRewardAlertAt = new Date().toISOString();
+          await saveCustomerAccounts(accounts);
+        } catch (error) {
+          console.error("Private referral reward notification:", error.message);
+        }
+      }
+      if (!account.referralAnnouncementAt) {
+        try {
+          await announceReferralReward(referrer);
+          account.referralAnnouncementAt = new Date().toISOString();
+          await saveCustomerAccounts(accounts);
+        } catch (error) {
+          console.error("Referral reward announcement:", error.message);
+        }
+      }
+    }
+  }
+}
+
+async function awardVerifiedReferral(account) {
+  if (!account.emailVerifiedAt || !account.referredByAccountId || account.referralAwardedAt) return false;
+  const accounts = await getCustomerAccounts();
+  const referred = accounts.find(item => item.id === account.id);
+  const referrer = accounts.find(item => item.id === account.referredByAccountId && item.discordLinkedAt && item.discordUserId && item.disabled !== true);
+  if (!referred || !referrer || referred.id === referrer.id || referred.referralAwardedAt) return false;
+  referrer.referralBonusProfiles = Math.max(0, Number(referrer.referralBonusProfiles) || 0) + 1;
+  referred.referralAwardedAt = new Date().toISOString();
+  await saveCustomerAccounts(accounts);
+  void processPendingReferrals().catch(error => console.error("Referral announcement:", error.message));
+  return true;
+}
+
+setInterval(() => void processPendingReferrals().catch(error =>
+  console.error("Referral notifications:", error.message)), 5 * 60 * 1000).unref?.();
+
 async function getAuthenticatedCustomer(
   req
 ) {
@@ -4749,6 +4894,13 @@ async function requireCustomer(
 
     req.customerAccount =
       account;
+
+    if (account.mustChangePassword && req.path !== "/api/account/change-password") {
+      return res.status(403).json({
+        error: "Change your temporary password to continue.",
+        passwordChangeRequired: true
+      });
+    }
 
     next();
 
@@ -6280,6 +6432,9 @@ function publicCustomerAccount(
 
     email:
       account.email,
+
+    passwordChangeRequired:
+      account.mustChangePassword === true,
 
     discordUsername:
       account.discordUsername ||
@@ -8144,6 +8299,15 @@ app.post(
           });
       }
 
+      const referredByDiscord = referralDiscordValue(req.body.referredByDiscord);
+      if (referredByDiscord === null) {
+        return res.status(400).json({ error: "Enter a Discord @username or a Discord user mention for the person who referred you." });
+      }
+      const referrer = findLinkedReferrer(accounts, referredByDiscord);
+      if (referredByDiscord && !referrer) {
+        return res.status(400).json({ error: "We could not find that referral. Ask the member to connect Discord in My Profile, or leave the referral field blank." });
+      }
+
       const passwordData =
         await hashCustomerPassword(
           password
@@ -8156,6 +8320,9 @@ app.post(
         accounts.some(item => item.discordUserId === verifiedDiscord.id)) {
         return res.status(409).json({ error: "This Discord account is already linked to another website account." });
       }
+      if (referrer && verifiedDiscord?.id === referrer.discordUserId) {
+        return res.status(400).json({ error: "You cannot refer yourself." });
+      }
 
       const now =
         new Date().toISOString();
@@ -8165,6 +8332,12 @@ app.post(
           crypto.randomUUID(),
 
         email,
+
+        referredByDiscord,
+
+        referredByAccountId: referrer?.id || null,
+
+        referralRecordedAt: new Date().toISOString(),
 
         discordUsername:
           verifiedDiscord?.expiresAt > Date.now() ? verifiedDiscord.username : clean(req.body.discordUsername, 100),
@@ -8206,6 +8379,14 @@ app.post(
         accounts
       );
       if (verifiedDiscord) discordPendingIdentities.delete(discordTicket);
+
+      try {
+        await notifyReferralSignup(account);
+        account.referralSignupAlertAt = new Date().toISOString();
+        await saveCustomerAccounts(accounts);
+      } catch (error) {
+        console.error("Private referral signup notification:", error.message);
+      }
 
       const autoLinkResult =
   await autoLinkVerifiedCustomerOrders(
@@ -8360,6 +8541,10 @@ app.post(
             error:
               "Incorrect email or password."
           });
+      }
+
+      if (account.mustChangePassword && Date.parse(account.temporaryPasswordExpiresAt || "") <= Date.now()) {
+        return res.status(401).json({ error: "Your temporary password has expired. Ask support to reset it again." });
       }
 
       const passwordValid =
@@ -9028,6 +9213,8 @@ const autoLinkResult =
     account
   );
 
+await awardVerifiedReferral(account);
+
 const remaining =
         (
           Array.isArray(records)
@@ -9251,6 +9438,8 @@ app.post("/api/account/change-password", requireCustomer, customerAuthRateLimit,
     account.passwordSalt = passwordData.salt;
     account.passwordHash = passwordData.hash;
     account.sessionVersion = customerSessionVersion(account) + 1;
+    account.mustChangePassword = false;
+    account.temporaryPasswordExpiresAt = null;
     account.updatedAt = new Date().toISOString();
     await saveCustomerAccounts(accounts);
     setCustomerSession(res, account);
@@ -9258,6 +9447,39 @@ app.post("/api/account/change-password", requireCustomer, customerAuthRateLimit,
   } catch (error) {
     console.error("Customer password change failed:", error.message);
     return res.status(500).json({ error: "Your password could not be changed. Please try again." });
+  }
+});
+
+app.post("/api/admin/customers/:id/reset-password", requireAdmin, async (req, res) => {
+  try {
+    const customerAccountId = clean(req.params.id, 150);
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => String(item.id) === customerAccountId && item.disabled !== true);
+    if (!account) return res.status(404).json({ error: "Linked website account was not found." });
+    const passwordData = await hashCustomerPassword("password123");
+    const resets = await readJson(PASSWORD_RESET_FILE, []);
+    await writeJson(PASSWORD_RESET_FILE, (Array.isArray(resets) ? resets : [])
+      .filter(item => item.accountId !== account.id && Number(item.expiresAt) > Date.now()));
+    account.passwordSalt = passwordData.salt;
+    account.passwordHash = passwordData.hash;
+    account.sessionVersion = customerSessionVersion(account) + 1;
+    account.mustChangePassword = true;
+    account.temporaryPasswordExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    account.updatedAt = new Date().toISOString();
+    await saveCustomerAccounts(accounts);
+    try {
+      await appendSecurityAudit({
+        event: "admin_customer_password_reset", requestId: req.securityRequestId,
+        method: req.method, path: req.path, status: 200, ip: req.ip,
+        userAgent: req.headers["user-agent"], subject: account.id
+      });
+    } catch (auditError) {
+      console.error("Admin password reset audit failed:", auditError.message);
+    }
+    return res.json({ ok: true, message: "Temporary website password set to password123 for one hour. Existing sessions were signed out; the customer must choose a new password after signing in." });
+  } catch (error) {
+    console.error("Admin customer password reset failed:", error.message);
+    return res.status(500).json({ error: "Unable to update the customer's website password." });
   }
 });
 
@@ -9378,6 +9600,9 @@ app.post(
         customerSessionVersion(
           account
         ) + 1;
+
+      account.mustChangePassword = false;
+      account.temporaryPasswordExpiresAt = null;
 
       account.updatedAt =
         updatedAt;
@@ -12923,7 +13148,11 @@ async function getCustomerProfileAllowance(
     )
     .reduce((max, item) => Math.max(max, Number(item.profiles) || 0), 0);
 
-  return Math.max(paidAllowance, giftedAllowance);
+  const baseAllowance = Math.max(paidAllowance, giftedAllowance);
+  if (!baseAllowance) return 0;
+  const customer = (await getCustomerAccounts()).find(item => String(item.id) === String(accountId));
+  const bonus = Math.max(0, Number(customer?.referralBonusProfiles) || 0);
+  return Math.min(100, baseAllowance + bonus);
 }
 
 function safeRetailerProfile(
@@ -13941,7 +14170,7 @@ app.put(
       if (
         !Number.isInteger(slot) ||
         slot < 1 ||
-        slot > 50
+        slot > 100
       ) {
         return res
           .status(400)
@@ -30184,7 +30413,7 @@ app.put(
       if (
         !Number.isInteger(slot) ||
         slot < 1 ||
-        slot > 50
+        slot > 100
       ) {
         return res
           .status(400)
@@ -31852,7 +32081,7 @@ app.put(
       if (
         !Number.isInteger(slot) ||
         slot < 1 ||
-        slot > 50
+        slot > 100
       ) {
         return res
           .status(400)
@@ -44029,9 +44258,7 @@ const ownedOrders =
             null,
 
           profiles:
-            profileAllowanceForRecord(
-              selected
-            ),
+            profileAllowance,
 
           amount:
             Number(

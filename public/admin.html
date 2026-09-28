@@ -7081,6 +7081,16 @@ function renderOrder(x) {
               <div class="admin-discord-actions"><button type="button" class="admin-save-button" data-admin-discord-save>Link or update</button><button type="button" class="admin-edit-button" data-admin-discord-unlink hidden>Unlink</button></div>
               <small data-admin-discord-feedback>Loading Discord connection…</small>
             </section>` : ""}
+
+            ${x.customerAccountId ? `<section class="customer-action-card" data-admin-password-account="${escapeHtml(x.customerAccountId)}">
+              <span class="eyebrow">CUSTOMER WEBSITE LOGIN</span>
+              <h4>Reset Customer Password</h4>
+              <p>Use this if the customer cannot receive a reset email. Their temporary password will be <strong>password123</strong> for one hour. They must change it after signing in. Existing logins will be signed out.</p>
+              <form data-admin-customer-password-form>
+                <button type="submit" class="admin-save-button">Reset to password123</button>
+              </form>
+              <small data-admin-customer-password-feedback role="status"></small>
+            </section>` : `<section class="customer-action-card"><span class="eyebrow">CUSTOMER WEBSITE LOGIN</span><h4>Reset Customer Password</h4><p>This order is not linked to a website account yet. The customer must create and verify an account with the purchase email before a login password can be set here.</p></section>`}
             <form
               class="admin-inline-edit-form"
               data-admin-inline-form="${escapeHtml(x.id)}"
@@ -23776,6 +23786,28 @@ document.addEventListener("click", async event => {
     feedback.textContent = data.linked ? `Verified @${data.username} in your server. Tier role will sync automatically.` : "Discord account unlinked.";
   } catch (error) { feedback.textContent = error.message; }
   finally { action.disabled = false; }
+});
+
+document.addEventListener("submit", async event => {
+  const form = event.target.closest("[data-admin-customer-password-form]");
+  if (!form) return;
+  event.preventDefault();
+  const card = form.closest("[data-admin-password-account]");
+  const feedback = card.querySelector("[data-admin-customer-password-feedback]");
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  feedback.textContent = "Saving new website login password…";
+  try {
+    const data = await membershipApi(`/api/admin/customers/${encodeURIComponent(card.dataset.adminPasswordAccount)}/reset-password`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
+    });
+    form.reset();
+    feedback.textContent = `${data.message} Share the new password with the customer privately and ask them to change it in My Profile.`;
+  } catch (error) {
+    feedback.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 });
 
 /* =========================================

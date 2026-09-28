@@ -3313,6 +3313,9 @@ const passwordResetPanel =
     "password-reset-panel"
   );
 
+const passwordChangeRequiredPanel =
+  document.getElementById("password-change-required-panel");
+
 
 function showSignedOut() {
   state.customer = null;
@@ -3361,10 +3364,12 @@ updatePricingUpgradeButtons();
   if (passwordResetPanel) {
     passwordResetPanel.hidden = true;
   }
+  if (passwordChangeRequiredPanel) passwordChangeRequiredPanel.hidden = true;
 }
 
 
 function showSignedIn() {
+  if (passwordChangeRequiredPanel) passwordChangeRequiredPanel.hidden = true;
   if (accountAuth) {
     accountAuth.hidden = true;
   }
@@ -3407,6 +3412,7 @@ function showForgotPassword() {
 
 function showNormalAuth() {
   clearAccountMessage();
+  if (passwordChangeRequiredPanel) passwordChangeRequiredPanel.hidden = true;
 
   if (loginPanel) {
     loginPanel.hidden = false;
@@ -3427,6 +3433,7 @@ function showNormalAuth() {
 
 
 function showPasswordReset() {
+  if (passwordChangeRequiredPanel) passwordChangeRequiredPanel.hidden = true;
   if (accountAuth) {
     accountAuth.hidden = false;
   }
@@ -3452,6 +3459,17 @@ function showPasswordReset() {
   }
 
   go("my-profile");
+}
+
+function showPasswordChangeRequired() {
+  if (accountAuth) accountAuth.hidden = false;
+  if (customerDashboard) customerDashboard.hidden = true;
+  if (loginPanel) loginPanel.hidden = true;
+  if (registerPanel) registerPanel.hidden = true;
+  if (forgotPasswordPanel) forgotPasswordPanel.hidden = true;
+  if (passwordResetPanel) passwordResetPanel.hidden = true;
+  if (passwordChangeRequiredPanel) passwordChangeRequiredPanel.hidden = false;
+  showAccountMessage("For your security, choose a new password before using your account.", "error");
 }
 
 
@@ -3653,6 +3671,12 @@ registerForm?.addEventListener(
               discordUsername:
                 String(
                   data.discordUsername ||
+                  ""
+                ).trim(),
+
+              referredByDiscord:
+                String(
+                  data.referredByDiscord ||
                   ""
                 ).trim(),
 
@@ -4322,7 +4346,7 @@ document
     }
   );
 
-document.getElementById("security-change-password-form")?.addEventListener("submit", async event => {
+document.querySelectorAll("#security-change-password-form, #required-password-change-form").forEach(passwordForm => passwordForm.addEventListener("submit", async event => {
   event.preventDefault();
   const form = event.currentTarget;
   const button = form.querySelector('button[type="submit"]');
@@ -4342,12 +4366,22 @@ document.getElementById("security-change-password-form")?.addEventListener("subm
     const result = await readJson(response);
     if (!response.ok) throw new Error(result.error || "Unable to change your password.");
     form.reset();
+    if (form.id === "required-password-change-form") {
+      state.profileLoaded = false;
+      await loadMemberProfile(true);
+    }
     showAccountMessage(result.message || "Your password has been changed.", "success");
   } catch (error) {
     showAccountMessage(error.message, "error");
   } finally {
     setButtonBusy(button, false);
   }
+}));
+
+document.getElementById("temporary-password-signout")?.addEventListener("click", async () => {
+  await fetch("/api/account/logout", { method: "POST", credentials: "same-origin" });
+  showSignedOut();
+  showNormalAuth();
 });
 
 
@@ -10864,7 +10898,7 @@ async function saveRetailerProfile(
   if (
     !Number.isInteger(slot) ||
     slot < 1 ||
-    slot > 50
+    slot > 100
   ) {
     setMessage(
       message,
@@ -13962,6 +13996,21 @@ async function loadMemberProfile(
       await readJson(
         response
       );
+
+    if (response.status === 403 && data.passwordChangeRequired) {
+      const sessionResponse = await fetch("/api/account/session", {
+        credentials: "same-origin", cache: "no-store"
+      });
+      const session = await readJson(sessionResponse);
+      if (!sessionResponse.ok || !session.authenticated) {
+        showSignedOut();
+        return;
+      }
+      state.customer = session.account;
+      state.profileLoaded = false;
+      showPasswordChangeRequired();
+      return;
+    }
 
     if (!response.ok) {
       throw new Error(
