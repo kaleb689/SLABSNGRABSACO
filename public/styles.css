@@ -11650,6 +11650,18 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
 }
 
 /* Keep the two checkout acknowledgements readable and beside their boxes. */
+@media (min-width: 981px) {
+  #profile-form .fields {
+    display: flex;
+    flex-direction: column;
+  }
+
+  #profile-form .profile-referral {
+    margin-top: auto;
+    margin-bottom: 11rem;
+  }
+}
+
 #profile-form label.consent {
   display: flex !important;
   flex-direction: row !important;
