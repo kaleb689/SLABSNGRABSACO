@@ -360,9 +360,9 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     }
     let communityError = null;
     try {
-      // Leave other system-message settings intact while suppressing join posts.
-      if (!(Number(guild.system_channel_flags || 0) & 1)) {
-        await api(`/guilds/${guildId}`, "PATCH", { system_channel_flags: Number(guild.system_channel_flags || 0) | 1 })
+      // Leave other system-message settings intact while showing join posts.
+      if (Number(guild.system_channel_flags || 0) & 1) {
+        await api(`/guilds/${guildId}`, "PATCH", { system_channel_flags: Number(guild.system_channel_flags || 0) & ~1 })
           .catch(error => console.error("Discord join announcement setting:", error.message));
       }
       const successChannel = channels.find(item => item.id === channelId);
