@@ -1217,8 +1217,48 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/.test(value) ||
       /(?:\b\d[ -]*?){13,19}\b/.test(value);
   }
+  function publishedHelpAnswer(question) {
+    const q = String(question || "").toLowerCase();
+    if (/\b(?:login|log in|sign in|signing in|access my account)\b/.test(q) &&
+      /\b(?:fail|error|wrong|cannot|can't|unable|help|how|problem|password)\b/.test(q))
+      return "For website sign-in trouble, check that you are using the email address associated with your website account and use Forgot Password on the sign-in form to request a fresh reset link. Check spam/junk for the email. If it still fails or no reset email arrives, open a private ticket so staff can investigate; do not post your email or password here.";
+    if (/\b(?:link|claim|connect)\b/.test(q) && /\b(?:order|purchase|confirmation|email|account)\b/.test(q) &&
+      !/\b(?:imap|discord|retailer)\b/.test(q))
+      return "Sign in on the website and open My Profile → Orders → Link an Existing Order. Enter the order confirmation number or order ID under Order / Submission Number, add the purchase email or phone in that private form, then click Verify & Link Order. Open the verification link sent to the purchase email. Never post those details in Discord.";
+    if (/\b(?:imap|app password|connect (?:my |an? )?email|link (?:my |an? )?email)\b/.test(q))
+      return "For retailer email access, open the website Guide → Chapter 02 (Email, IMAP & App Passwords). Generate an app password with the email provider and enter the IMAP email and app password in the retailer profile form. The app password differs from your normal email login password. For linking a past website purchase, use My Profile → Orders → Link an Existing Order instead.";
+    if (/\b(?:reset|forgot|change)\b/.test(q) && /\bpassword\b/.test(q))
+      return "For a forgotten website password, use Forgot Password on the sign-in form and follow the reset link sent to the account email. If already signed in, open My Profile → Security to change the password. If the reset email does not arrive, create a private ticket; do not post a password here.";
+    if (/\b(?:discord|server)\b/.test(q) && /\b(?:link|connect|role|membership)\b/.test(q))
+      return "Sign in on the website, open My Profile → Security, and use the Discord link option. Follow its instructions to authorize Discord or use the generated code with /link in Discord. Membership roles then update from the linked website account. For a link error, open a private ticket.";
+    if (/\b(?:ticket|support|contact staff|contact admin)\b/.test(q))
+      return "Go to Support → Create a Ticket, click Create a Ticket, and describe the issue in the private form. Your ticket is visible to you, the owner, and Support Staff. You or staff can close it when resolved.";
+    if (/\b(?:1.on.1|one.on.one|voice chat|private chat)\b/.test(q))
+      return "Open Chat → 1-on-1 and click Request 1-on-1. When your turn arrives, a private text room and voice room open for you and Support Staff. Use the Done button when finished; requests waiting in the queue then advance.";
+    if (/\b(?:giveaway|giveaways)\b/.test(q))
+      return "Open Giveaways and click Enter on an active giveaway. When its timer ends, the bot selects the configured number of winners and mentions them in the results post.";
+    if (/\b(?:shipped|shipping|delivered|delivery|tracking|package|packages)\b/.test(q) &&
+      /\b(?:receive|arrive|ship|sent|where|home|address|how|who|directly|tracking)\b/.test(q))
+      return "A successful ACO purchase is placed directly with the retailer using the shipping information in the retailer profile; the retailer ships the package to that address. Checkout is not guaranteed, and shipping or tracking depends on the retailer's order. For a specific package or tracking update, use a private ticket rather than posting order details here.";
+    if (/\b(?:updates?|notify|notifications?|announcements?|drops?|releases?|tonight|schedule)\b/.test(q) &&
+      /\b(?:when|where|how|receive|find|see|get|will|about)\b/.test(q))
+      return "Watch the Discord Upcoming Drops, Dropping Tonight, and Announcements channels for posted release news. My Profile → Notifications shows account messages; paid order confirmations are sent to the website sign-in email. Check My Profile → Success for detected checkouts. There is no guaranteed update time or checkout on every drop; use a private ticket for a specific account or order.";
+    if (/\b(?:success|checkout|checkouts|aco result|order confirmation)\b/.test(q) &&
+      /\b(?:see|find|where|how|notify|know|track|result)\b/.test(q))
+      return "Sign in and open My Profile → Success to see checkout activity detected through a connected ACO email. My Profile → Orders shows website orders; paid order confirmations go to the website sign-in email. Discord Success shows community activity. For a specific checkout or retailer order, open a private ticket.";
+    if (/\b(?:aco|auto checkout)\b/.test(q))
+      return "ACO means Auto Checkout. After choosing a membership, set up retailer profiles with the information requested in the private website form. During supported drops, the service attempts purchases through the retailer at the retailer's price using those profiles. A successful retailer order is shipped to the profile's delivery address. Stock, retailer traffic, restrictions, and profile readiness affect results; checkout is never guaranteed. See the website Guide for setup.";
+    if (/\b(?:membership|tier|plan|profile limit)\b/.test(q))
+      return "The membership tiers offer Starter (1 profile), Intermediate (2), Advanced (3), Pro (5), High Volume (10), Power User (20), and Elite (50). See the website Plans section for current prices and availability; My Profile shows an existing membership.";
+    if (/\b(?:profile|shipping|payment)\b/.test(q) && /\b(?:create|set up|add|edit|update|manage|where|how)\b/.test(q))
+      return "Sign in on the website and open My Profile to manage your retailer profiles. The website form lets you enter the required retailer, contact, shipping, billing, and any email-connection details privately. Follow the Guide for setup, and never post those values in a public Discord channel.";
+    return null;
+  }
+  let aiUnavailableUntil = 0;
+  let aiUnavailableReason = "";
   async function aiAnswer(question, { probe = false } = {}) {
     if (!aiKey) throw new Error("OPENAI_API_KEY is missing");
+    if (Date.now() < aiUnavailableUntil) throw new Error(aiUnavailableReason);
     const knowledge = `Use this published SLABSNGRABSACO help information and the current Discord setup. Website: https://slabsngrabsaco.com.
 Website FAQ: ACO means Auto Checkout. Members create retailer profiles and the service attempts checkout during supported drops; checkouts are never guaranteed. Stock, retailer traffic, restrictions, account status and other conditions affect results. Membership profiles currently support Target, Walmart, Sam's Club, Costco and PKC. Starter allows 1 profile, Intermediate 2, Advanced 3, Pro 5, High Volume 10, Power User 20, Elite 50. Current prices, availability and terms should be checked on the website's Plans section rather than guessed. The profile form requests the relevant shipping, billing, contact, retailer-login and sometimes email-connection information; do not ask for any of it here. Retailer login credentials are separate from IMAP email/app passwords. An IMAP app password is generated by the email provider; the website's Guide explains setup. My Profile lets a signed-in member view membership status and days remaining, manage their saved profiles, orders and account security. Discord linking is in My Profile using Discord authorization or a generated code with /link in Discord. Never claim to know a member's actual account state.
 Discord guide: #intro-slabsngrabsaco explains channels, #rules lists server rules, #general is open conversation, #questions accepts drop, TCG, website and Discord questions, #ask-ai answers public general questions, #success displays community success, #suggestions accepts website or server ideas. #upcoming-drops, #dropping-tonight and #announcements contain drop information; consult those channels for live details rather than inventing a schedule. #create-a-ticket has a button and private issue form; a ticket is visible only to that member, owner and Support Staff, who can close it. #support-alerts is private staff-only. #1-on-1 has buttons for a private text and voice session; only one runs at a time and others queue. In #giveaways, staff can create a timed giveaway; members enter on its button, and the bot mentions random winners when it ends. The owner may move channels between categories; use the current public channel directory for their locations. Public lobby, success, intro, rules and giveaway channels are read-only for members.
@@ -1232,7 +1272,19 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         input: question.slice(0, 900)
       }), signal: AbortSignal.timeout(25000)
     });
-    if (!response.ok) throw new Error(`AI service HTTP ${response.status}`);
+    if (!response.ok) {
+      let code = "unknown";
+      try {
+        const error = await response.json();
+        code = String(error.error?.code || error.error?.type || "unknown").replace(/[^a-z0-9_]/gi, "").slice(0, 60);
+      } catch {}
+      const reason = `AI service HTTP ${response.status} (${code})`;
+      if (response.status === 429) {
+        aiUnavailableReason = reason;
+        aiUnavailableUntil = Date.now() + (code === "insufficient_quota" ? 10 * 60000 : 60000);
+      }
+      throw new Error(reason);
+    }
     const body = await response.json();
     const output = body.output_text || body.output?.flatMap(item => item.content || []).filter(item => item.type === "output_text").map(item => item.text).join("\n") || "";
     const result = JSON.parse(output.replace(/^```(?:json)?\s*|\s*```$/g, ""));
@@ -1275,7 +1327,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       discordCommunityStatus.aiReady = false;
       discordCommunityStatus.lastAiError = error.message;
       console.error("Discord AI answer:", error.message);
-      answer = { answer: unknownReply, needsHuman: true };
+      const published = publishedHelpAnswer(question);
+      answer = published && !sensitiveOutput(published)
+        ? { answer: published, needsHuman: false }
+        : { answer: unknownReply, needsHuman: true };
     }
     const reply = await sendMessage(askChannelId, `${mention(userId)} ${answer.answer}`, {
       users: [userId],
