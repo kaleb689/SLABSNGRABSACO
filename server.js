@@ -118,6 +118,8 @@ const RESTORE_HOLDS_FILE =
     "managed-restore-holds.json"
   );
 
+const DELETED_MANAGED_LOGINS_FILE = path.join(DATA_DIR, "managed-deleted-logins.json");
+
 const SUCCESS_CHECKOUTS_FILE =
   path.join(
     DATA_DIR,
@@ -10200,6 +10202,7 @@ app.post(
 const RETAILER_KEYS = [
   "target",
   "walmart",
+  "pokemoncenter",
   "pkc",
   "samsClub",
   "costco"
@@ -10213,6 +10216,11 @@ function emptyRetailerCredentials() {
     },
 
     walmart: {
+      username: "",
+      password: ""
+    },
+
+    pokemoncenter: {
       username: "",
       password: ""
     },
@@ -11658,9 +11666,16 @@ async function getManagedAccounts() {
       []
     );
 
-  return Array.isArray(records)
-    ? records
-    : [];
+  if (!Array.isArray(records)) return [];
+  const deleted = await deletedManagedLogins();
+  if (!deleted.size) return records;
+  return records.filter(record => {
+    try {
+      const credentials = record.credentials ? normalizeRetailerCredentials(decryptJson(record.credentials)) : null;
+      return !RETAILER_KEYS.some(retailer => credentials?.[retailer]?.username &&
+        deleted.has(managedLoginFingerprint(retailer, credentials[retailer].username)));
+    } catch { return true; }
+  });
 }
 
 
@@ -11671,6 +11686,39 @@ async function saveManagedAccounts(
     MANAGED_ACCOUNTS_FILE,
     records
   );
+}
+
+function managedLoginFingerprint(retailer, username) {
+  return crypto.createHash("sha256")
+    .update(`${retailer}:${normalizeEmail(username)}`).digest("hex");
+}
+
+async function deletedManagedLogins() {
+  const hashes = await readJson(DELETED_MANAGED_LOGINS_FILE, []);
+  return new Set(Array.isArray(hashes) ? hashes : []);
+}
+
+async function excludeDeletedManagedLogins(accounts) {
+  const deleted = await deletedManagedLogins();
+  for (const account of accounts) {
+    let credentials;
+    try { credentials = account.credentials ? normalizeRetailerCredentials(decryptJson(account.credentials)) : null; }
+    catch { continue; }
+    for (const retailer of RETAILER_KEYS) {
+      const username = credentials?.[retailer]?.username;
+      if (username) deleted.add(managedLoginFingerprint(retailer, username));
+    }
+  }
+  await writeJson(DELETED_MANAGED_LOGINS_FILE, [...deleted]);
+}
+
+async function rejectDeletedManagedLogins(retailer, accounts) {
+  const deleted = await deletedManagedLogins();
+  if (accounts.some(item => deleted.has(managedLoginFingerprint(retailer, item.email)))) {
+    const error = new Error("This account was permanently deleted from the pool and cannot be imported again.");
+    error.status = 409;
+    throw error;
+  }
 }
 
 async function getFreeMemberships() {
@@ -16456,6 +16504,7 @@ app.get(
 );
 
 async function migrateFreeAccountsToManagedPoolOnce() {
+  const deletedLogins = await deletedManagedLogins();
   const managedAccounts =
     await getManagedAccounts();
 
@@ -16526,6 +16575,11 @@ async function migrateFreeAccountsToManagedPoolOnce() {
       );
 
     if (!hasAnyRetailer) {
+      continue;
+    }
+
+    if (RETAILER_KEYS.some(retailer => credentials[retailer]?.username &&
+      deletedLogins.has(managedLoginFingerprint(retailer, credentials[retailer].username)))) {
       continue;
     }
 
@@ -16698,6 +16752,13 @@ async function getManagedAvailability() {
       available: 0,
       inUse: 0,
       duplicates: 0
+    },
+
+    pokemoncenter: {
+      total: 0,
+      available: 0,
+      inUse: 0,
+      duplicates: 0
     }
   };
 
@@ -16724,7 +16785,8 @@ async function getManagedAvailability() {
 
     for (const retailer of [
       "target",
-      "walmart"
+      "walmart",
+      "pokemoncenter"
     ]) {
       const username =
         String(
@@ -16781,7 +16843,7 @@ async function getAvailableManagedAccountsForRetailer(
   } = {}
 ) {
   const normalizedRetailer =
-    normalizeRentalRetailer(
+    normalizeManagedPoolRetailer(
       retailer
     );
 
@@ -17204,7 +17266,8 @@ function normalizeManagedPoolRetailer(
 
   return [
     "target",
-    "walmart"
+    "walmart",
+    "pokemoncenter"
   ].includes(retailer)
     ? retailer
     : null;
@@ -17353,6 +17416,8 @@ app.post(
         parseManagedPoolAccounts(
           req.body?.accounts
         );
+
+      await rejectDeletedManagedLogins(retailer, parsed);
 
       if (!parsed.length) {
         return res
@@ -17508,6 +17573,8 @@ app.post(
         parseManagedPoolAccounts(
           req.body?.accounts
         );
+
+      await rejectDeletedManagedLogins(retailer, parsed);
 
       if (!parsed.length) {
         return res
@@ -17738,6 +17805,7 @@ app.post(
         await getManagedAccounts();
 
       const next = [];
+      const removedAccounts = [];
       let deleted = 0;
 
       for (
@@ -17786,6 +17854,8 @@ app.post(
           password: ""
         };
 
+        removedAccounts.push(record);
+
         deleted += 1;
 
         const hasOther =
@@ -17815,6 +17885,7 @@ app.post(
         }
       }
 
+      await excludeDeletedManagedLogins(removedAccounts);
       await saveManagedAccounts(next);
 
       const availability =
@@ -18379,6 +18450,8 @@ async function getAvailableManagedMembershipRecords() {
           254
         );
 
+      const pokemoncenterEmail = clean(retailers?.pokemoncenter?.username, 254);
+
       const displayEmail =
         clean(
           account.accountEmail,
@@ -18386,6 +18459,7 @@ async function getAvailableManagedMembershipRecords() {
         ) ||
         targetEmail ||
         walmartEmail ||
+        pokemoncenterEmail ||
         "";
 
       return {
@@ -18528,6 +18602,11 @@ app.post(
           memberships,
           credentials
         );
+
+      for (const retailer of RETAILER_KEYS) {
+        const username = credentials[retailer]?.username;
+        if (username) await rejectDeletedManagedLogins(retailer, [{ email: username }]);
+      }
 
       if (
         duplicateCredential
@@ -18842,6 +18921,8 @@ app.delete(
           });
       }
 
+      await excludeDeletedManagedLogins(memberships.filter(item => String(item.id) === id));
+
       await saveManagedAccounts(next);
 
       return res.json({
@@ -18879,7 +18960,7 @@ app.post(
         );
 
       const retailer =
-        normalizeRentalRetailer(
+        normalizeManagedPoolRetailer(
           req.body?.retailer
         );
 
@@ -20139,6 +20220,13 @@ for (
           credentials,
           id
         );
+
+      for (const retailer of RETAILER_KEYS) {
+        const username = credentials[retailer]?.username;
+        if (username && normalizeEmail(username) !== normalizeEmail(existingCredentials[retailer]?.username)) {
+          await rejectDeletedManagedLogins(retailer, [{ email: username }]);
+        }
+      }
 
       if (
         duplicateCredential
@@ -26848,6 +26936,33 @@ app.get(
     }
   }
 );
+
+app.post("/api/admin/submissions/:id/link-customer", requireAdmin, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!email) return res.status(400).json({ error: "Enter the customer's website sign-in email." });
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => normalizeEmail(item.email) === email && !item.disabled);
+    if (!account) return res.status(404).json({ error: "No active website account has that sign-in email." });
+    if (!account.emailVerifiedAt) return res.status(409).json({ error: "The customer must verify their sign-in email first." });
+    const paid = await readJson(PAID_FILE, []);
+    const order = (Array.isArray(paid) ? paid : []).find(item =>
+      String(item.id) === String(req.params.id) || customerOrderNumber(item).toLowerCase() === String(req.params.id).toLowerCase());
+    if (!order) return res.status(404).json({ error: "Paid order not found." });
+    if (order.customerAccountId && String(order.customerAccountId) !== String(account.id)) {
+      return res.status(409).json({ error: "This order is already linked to a different customer. Contact support before changing its owner." });
+    }
+    if (order.customerAccountId === account.id) return res.json({ ok: true, alreadyLinked: true });
+    order.customerAccountId = account.id;
+    order.customerLinkedAt = new Date().toISOString();
+    order.customerLinkedBy = "admin";
+    await writeJson(PAID_FILE, paid);
+    return res.json({ ok: true, orderId: order.id, accountId: account.id });
+  } catch (error) {
+    console.error("Admin customer order link:", error);
+    return res.status(500).json({ error: "Unable to link this order." });
+  }
+});
 
 async function adminOrderCustomerAccount(
   orderId

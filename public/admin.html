@@ -1600,7 +1600,7 @@
     ========================================= */
 
     .admin-submission-filter {
-      min-width: 270px !important;
+      min-width: 320px !important;
       min-height: 52px !important;
       padding: 0 42px 0 16px !important;
       border-radius: 11px !important;
@@ -1625,7 +1625,7 @@
     [data-managed-duration],
     [data-managed-customer] {
       width: 100%;
-      min-width: 180px;
+      min-width: 220px;
     }
 
     .available-membership-grid {
@@ -1659,6 +1659,29 @@
       box-shadow:
         0 0 28px
           rgba(18, 201, 255, .12);
+    }
+
+    .available-membership-card > summary {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      list-style: none;
+      cursor: pointer;
+    }
+
+    .available-membership-card > summary .inventory-select-wrap {
+      position: static;
+      min-height: 28px;
+      margin-bottom: 4px;
+      flex: 0 0 auto;
+    }
+
+    .available-membership-card > summary .eyebrow,
+    .available-membership-card > summary h3,
+    .available-membership-card > summary p {
+      display: block;
+      margin: 0;
     }
 
     .available-membership-card h3 {
@@ -1867,7 +1890,7 @@
 
     .available-retailer-columns {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
       margin-top: 16px;
     }
@@ -2106,7 +2129,8 @@
       grid-template-columns: minmax(0,1fr) auto auto;
       gap: 10px;
       align-items: center;
-      padding: 12px 13px;
+      padding: 17px 18px;
+      min-height: 68px;
     }
 
     .activation-group > summary::-webkit-details-marker {
@@ -4909,12 +4933,11 @@
     ========================================= */
 
     .linked-profile-detail {
-      position: sticky;
-      top: 14px;
+      position: relative;
+      top: auto;
       align-self: start;
-      max-height: calc(100vh - 32px);
-      overflow: auto;
-      overscroll-behavior: contain;
+      max-height: none;
+      overflow: visible;
     }
 
     .linked-retailer-profile-group {
@@ -5513,7 +5536,7 @@ PAID SUBSCRIPTIONS
           </span>
 
           <h2>
-            Target &amp; Walmart Account Manager
+            Target, Walmart &amp; Pokemon Center Account Manager
           </h2>
 
           <p>
@@ -5672,6 +5695,22 @@ PAID SUBSCRIPTIONS
           </div>
         </details>
 
+        <details class="admin-target-pool-import" data-pool-manager="pokemoncenter">
+          <summary><div><span class="eyebrow">POKEMON CENTER INVENTORY</span>
+            <strong>Manage Pokemon Center Accounts</strong>
+            <small>Add, replace, or delete selected Pokemon Center accounts.</small></div><span>OPEN ▾</span></summary>
+          <div class="admin-target-pool-import-body">
+            <input type="file" data-pool-file="pokemoncenter" accept=".txt,text/plain">
+            <textarea data-pool-accounts="pokemoncenter" rows="8" placeholder="email:password&#10;email:password"></textarea>
+            <div class="admin-target-pool-import-actions">
+              <button type="button" class="admin-save-button" data-pool-action="add" data-pool-retailer="pokemoncenter">Add Accounts</button>
+              <button type="button" class="admin-edit-button" data-pool-action="replace" data-pool-retailer="pokemoncenter">Replace Entire Pokemon Center Pool</button>
+              <button type="button" class="delete-submission" data-pool-action="delete-selected" data-pool-retailer="pokemoncenter">Delete Selected Pokemon Center Accounts</button>
+            </div>
+            <span class="pool-manager-status" data-pool-status="pokemoncenter"></span>
+          </div>
+        </details>
+
       </div>
     </section>
 
@@ -5769,6 +5808,16 @@ PAID SUBSCRIPTIONS
           </strong>
           Total
         </span>
+      </div>
+    </div>
+
+    <div class="managed-availability-card">
+      <span class="eyebrow">POKEMON CENTER</span>
+      <strong id="pokemoncenterAvailableCount" class="managed-availability-number">—</strong>
+      <span>Available</span>
+      <div class="managed-availability-details">
+        <span><strong id="pokemoncenterInUseCount">—</strong> In Use</span>
+        <span><strong id="pokemoncenterTotalCount">—</strong> Total</span>
       </div>
     </div>
 
@@ -6067,6 +6116,10 @@ const walmartTotalCount =
   document.getElementById(
     "walmartTotalCount"
   );
+
+const pokemoncenterAvailableCount = document.getElementById("pokemoncenterAvailableCount");
+const pokemoncenterInUseCount = document.getElementById("pokemoncenterInUseCount");
+const pokemoncenterTotalCount = document.getElementById("pokemoncenterTotalCount");
 
 const managedAvailabilityUpdated =
   document.getElementById(
@@ -7070,6 +7123,17 @@ function renderOrder(x) {
               </span>
             </summary>
 
+            <section class="customer-action-card" data-admin-order-link="${escapeHtml(x.id)}">
+              <span class="eyebrow">WEBSITE ACCOUNT</span>
+              <h4>Link this order to a customer</h4>
+              <p>Enter the customer's verified website sign-in email. This connects the paid order to their My Profile. Orders already owned by another account cannot be reassigned here.</p>
+              <form data-admin-order-link-form class="admin-feature-form">
+                <label>Sign-in email <input type="email" name="email" autocomplete="off" value="${escapeHtml(x.customerAccountId ? "" : profile.email || "")}" required></label>
+                <button type="submit" class="admin-save-button">Link order</button>
+              </form>
+              <small data-admin-order-link-feedback role="status">${x.customerAccountId ? "This order is currently linked to a website account." : "No website account linked yet."}</small>
+            </section>
+
             ${x.customerAccountId ? `<section class="customer-action-card admin-discord-card" data-admin-discord-card="${escapeHtml(x.customerAccountId)}">
               <span class="eyebrow">DISCORD ACCOUNT</span>
               <h4>Customer Discord connection</h4>
@@ -7463,6 +7527,7 @@ function renderOrder(x) {
           <option value="walmart">
             WALMART
           </option>
+          <option value="pokemoncenter">POKEMON CENTER</option>
         </select>
       </label>
 
@@ -7979,6 +8044,10 @@ const ADMIN_RETAILERS = [
   {
     key: "walmart",
     name: "Walmart"
+  },
+  {
+    key: "pokemoncenter",
+    name: "Pokemon Center"
   },
   {
     key: "pkc",
@@ -8805,6 +8874,8 @@ function adminLinkedProfileEmail(
     String(
       membership?.retailers
         ?.walmart?.username ||
+      membership?.retailers
+        ?.pokemoncenter?.username ||
       ""
     ).trim() ||
     "No retailer email"
@@ -12192,6 +12263,7 @@ function managedMembershipCardHtml(
         membership.displayEmail || "",
         membership?.retailers?.target?.username || "",
         membership?.retailers?.walmart?.username || "",
+        membership?.retailers?.pokemoncenter?.username || "",
         membership?.retailers?.pkc?.username || "",
         membership?.retailers?.samsClub?.username || "",
         membership?.retailers?.costco?.username || "",
@@ -13258,12 +13330,17 @@ function availableMembershipCardHtml(
       ""
     ).trim();
 
+  const pokemoncenterEmail = String(membership?.retailers?.pokemoncenter?.username || "").trim();
+
   const retailerPills = [
     targetEmail
       ? `<span class="available-retailer-pill">TARGET</span>`
       : "",
     walmartEmail
       ? `<span class="available-retailer-pill">WALMART</span>`
+      : "",
+    pokemoncenterEmail
+      ? `<span class="available-retailer-pill">POKEMON CENTER</span>`
       : ""
   ]
     .filter(Boolean)
@@ -13288,6 +13365,7 @@ function availableMembershipCardHtml(
             )}"
             data-inventory-has-target="${targetEmail ? "true" : "false"}"
             data-inventory-has-walmart="${walmartEmail ? "true" : "false"}"
+            data-inventory-has-pokemoncenter="${pokemoncenterEmail ? "true" : "false"}"
           >
           <span>
             SELECT
@@ -13444,6 +13522,9 @@ function renderAvailableMembershipDashboard(
         )
     );
 
+  const pokemoncenterMemberships = memberships.filter(membership =>
+    Boolean(String(membership?.retailers?.pokemoncenter?.username || "").trim()));
+
   submissionCount.textContent =
     memberships.length === 1
       ? "1 available membership"
@@ -13465,7 +13546,7 @@ function renderAvailableMembershipDashboard(
             .join("")
         : `
             <div class="empty-admin">
-              No available ${retailerKey === "target" ? "Target" : "Walmart"} accounts.
+              No available ${retailerKey === "target" ? "Target" : retailerKey === "walmart" ? "Walmart" : "Pokemon Center"} accounts.
             </div>
           `;
 
@@ -13481,7 +13562,7 @@ function renderAvailableMembershipDashboard(
             Add Available Membership
           </h3>
           <p>
-            Add unused Target or Walmart inventory.
+            Add unused Target, Walmart, or Pokemon Center inventory.
             This form stays closed until you need it.
           </p>
         </div>
@@ -13578,6 +13659,11 @@ function renderAvailableMembershipDashboard(
             "walmart"
           )}
         </div>
+      </details>
+      <details class="available-retailer-column">
+        <summary><div><span class="eyebrow">POKEMON CENTER</span><h3>Available Pokemon Center Accounts</h3></div>
+          <span class="available-retailer-count">${pokemoncenterMemberships.length}</span></summary>
+        <div class="available-retailer-body">${compactCards(pokemoncenterMemberships, "pokemoncenter")}</div>
       </details>
     </div>
   `;
@@ -14033,6 +14119,10 @@ function managedAvailableRetailerLabel(
     );
   }
 
+  if (String(membership?.retailers?.pokemoncenter?.username || "").trim()) {
+    retailers.push("POKEMON CENTER");
+  }
+
   return retailers.join(" + ") ||
     "MANAGED";
 }
@@ -14477,10 +14567,13 @@ function renderManagedMembershipDashboard(
               )
           );
 
+        const pokemoncenterAvailable = availableMemberships.filter(membership =>
+          /pokemon center/i.test(managedAvailableRetailerLabel(membership)));
+
         const otherAvailable =
           availableMemberships.filter(
             membership =>
-              !/target|walmart/i.test(
+              !/target|walmart|pokemon center/i.test(
                 managedAvailableRetailerLabel(
                   membership
                 )
@@ -14550,6 +14643,14 @@ function renderManagedMembershipDashboard(
                             .join("")
                         : `<div class="empty-admin managed-group-empty">No Walmart accounts available.</div>`
                     }
+                  </div>
+                </details>
+
+                <details class="managed-retailer-available-group" open>
+                  <summary><span>POKEMON CENTER ACCOUNTS</span><strong>${pokemoncenterAvailable.length}</strong></summary>
+                  <div class="managed-retailer-available-body">
+                    ${pokemoncenterAvailable.length ? pokemoncenterAvailable.map(availableRowHtml).join("") :
+                      `<div class="empty-admin managed-group-empty">No Pokemon Center accounts available.</div>`}
                   </div>
                 </details>
 
@@ -17814,6 +17915,10 @@ function bindManagedMembershipDashboard(
     walmartTotalCount.textContent =
       data.walmart?.total ?? "—";
 
+    pokemoncenterAvailableCount.textContent = data.pokemoncenter?.available ?? "—";
+    pokemoncenterInUseCount.textContent = data.pokemoncenter?.inUse ?? "—";
+    pokemoncenterTotalCount.textContent = data.pokemoncenter?.total ?? "—";
+
     managedAvailabilityUpdated.textContent =
       "Updated just now";
 
@@ -17881,33 +17986,26 @@ async function loadProfileActivationTracker() {
       );
     }
 
+    const selectedType = submissionTypeFilter?.value || "paid";
+    const profileType = selectedType === "free-profile" ? "gifted" :
+      selectedType === "rented-profile" ? "rented" : "paid";
+    document.getElementById("profileActivationTracker").hidden = selectedType === "available-memberships";
+    const customers = (Array.isArray(data.customers) ? data.customers : [])
+      .map(group => ({ ...group, profiles: group.profiles.filter(profile => profile.type === profileType &&
+        (profileType === "paid" || ["activated", "awaiting_activation"].includes(profile.status))) }))
+      .filter(group => group.profiles.length);
+    const visibleProfiles = customers.flatMap(group => group.profiles);
     awaitingActivationCount
       .textContent =
-        String(
-          data.awaitingCount ||
-          0
-        );
+        String(visibleProfiles.filter(profile => profile.status === "awaiting_activation").length);
 
     activatedProfileCount
       .textContent =
-        String(
-          data.activatedCount ||
-          0
-        );
+        String(visibleProfiles.filter(profile => profile.status === "activated").length);
 
     expiredProfileCount
       .textContent =
-        String(
-          data.expiredCount ||
-          0
-        );
-
-    const customers =
-      Array.isArray(
-        data.customers
-      )
-        ? data.customers
-        : [];
+        String(visibleProfiles.filter(profile => profile.status === "expired").length);
 
     const awaitingProfiles =
       customers.flatMap(
@@ -18752,9 +18850,9 @@ document
                     ? checkbox.dataset
                         .inventoryHasTarget ===
                       "true"
-                    : checkbox.dataset
-                        .inventoryHasWalmart ===
-                      "true"
+                    : retailer === "walmart"
+                      ? checkbox.dataset.inventoryHasWalmart === "true"
+                      : checkbox.dataset.inventoryHasPokemoncenter === "true"
               )
               .map(
                 checkbox =>
@@ -23809,6 +23907,26 @@ document.addEventListener("click", async event => {
     feedback.textContent = "Saved. The profile badge is active; Discord role syncs automatically for linked members.";
     void loadMembershipTools();
   } catch (error) { button.disabled = false; feedback.textContent = error.message; }
+});
+
+document.addEventListener("submit", async event => {
+  const form = event.target.closest("[data-admin-order-link-form]");
+  if (!form) return;
+  event.preventDefault();
+  const card = form.closest("[data-admin-order-link]");
+  const button = form.querySelector('button[type="submit"]');
+  const feedback = card.querySelector("[data-admin-order-link-feedback]");
+  button.disabled = true;
+  feedback.textContent = "Checking the customer and paid order…";
+  try {
+    const data = await membershipApi(`/api/admin/submissions/${encodeURIComponent(card.dataset.adminOrderLink)}/link-customer`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: form.elements.email.value.trim() })
+    });
+    feedback.textContent = data.alreadyLinked ? "Already linked to this customer." : "Order linked. Refreshing customer details…";
+    await load();
+  } catch (error) { feedback.textContent = error.message; }
+  finally { button.disabled = false; }
 });
 
 document.addEventListener("submit", async event => {
