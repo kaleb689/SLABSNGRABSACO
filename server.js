@@ -14,6 +14,7 @@ import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startDiscordCommunity, discordCommunityStatus, createDiscordLinkCode, revokeDiscordLinkCodes, queueDiscordRoleRemoval } from "./discord-community.js";
+import { getCommunityInvite } from "./discord-invite.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -7987,6 +7988,27 @@ const discordOAuthStates = new Map();
 const discordPendingIdentities = new Map();
 const discordRedirectUri = `${BASE_URL.replace(/\/$/, "")}/api/discord/oauth/callback`;
 let discordOAuthClientId;
+let communityInviteCache = null;
+let communityInviteRequest = null;
+
+app.get("/join-discord", async (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    if (!communityInviteCache || communityInviteCache.expiresAt <= Date.now()) {
+      communityInviteRequest ||= (async () => {
+        const config = await resolvedDiscordSuccessConfig();
+        const url = await getCommunityInvite(config);
+        communityInviteCache = { url, expiresAt: Date.now() + 5 * 60 * 1000 };
+        return url;
+      })().finally(() => { communityInviteRequest = null; });
+      await communityInviteRequest;
+    }
+    return res.redirect(302, communityInviteCache.url);
+  } catch (error) {
+    console.error("Discord community invite:", error.message);
+    return res.status(503).send("The Discord invite is temporarily unavailable. Please try again shortly.");
+  }
+});
 
 app.get("/api/discord/oauth/start", async (req, res) => {
   try {
