@@ -103,7 +103,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
   });
 }
 
-export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
+export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, memberJoinReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
 export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, dataDir, aiKey }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(aiKey);
@@ -117,7 +117,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
     return response.status === 204 ? null : response.json();
   }
-  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, ownerId, staffRoleId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, ownerId, staffRoleId, appId, logoEmojiId, roles = [];
   // Channel names may have a Unicode emoji and divider before their functional name.
   const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
   function sameOverwrites(actual, expected) {
@@ -146,12 +146,14 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   }
   async function ensureLogoEmoji() {
     const emojis = await api(`/guilds/${guildId}/emojis`);
-    if (emojis.some(emoji => emoji.name?.toLowerCase() === "slabsngrabsaco")) return;
+    const existing = emojis.find(emoji => emoji.name?.toLowerCase() === "slabsngrabsaco");
+    if (existing) { logoEmojiId = existing.id; return; }
     const bytes = await fs.readFile(new URL("./public/discord-emoji-sng.png", import.meta.url));
     if (bytes.length > 256 * 1024) throw new Error("The logo emoji exceeds Discord's 256 KiB limit.");
-    await api(`/guilds/${guildId}/emojis`, "POST", {
+    const created = await api(`/guilds/${guildId}/emojis`, "POST", {
       name: "slabsngrabsaco", image: `data:image/png;base64,${bytes.toString("base64")}`
     });
+    logoEmojiId = created.id;
   }
   async function provision() {
     const channelId = await getChannelId();
@@ -539,11 +541,18 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       ] }
     ]) await api(`/applications/${appId}/guilds/${guildId}/commands`, "POST", command);
     let emojiError = null;
-    try { await ensureLogoEmoji(); discordCommunityStatus.emojiReady = true; }
+    try {
+      await ensureLogoEmoji();
+      discordCommunityStatus.emojiReady = true;
+    }
     catch (error) {
       emojiError = `Logo emoji: ${error.message}${/HTTP 403/.test(error.message) ? " (grant the bot Create Expressions permission)" : ""}`;
       console.error("Discord logo emoji:", emojiError);
     }
+    if (introChannelId) await refreshWelcome().catch(error => {
+      communityError = [communityError, `Welcome message: ${error.message}`].filter(Boolean).join("; ");
+      console.error("Discord welcome message:", error.message);
+    });
     discordCommunityStatus.rolesReady = roles.length === LEVELS.length;
     discordCommunityStatus.error = [ticketLobbyError, adminError, oneOnOneError, importantError, communityError, diamondError, emojiError].filter(Boolean).join("; ") || null;
     console.log(`Discord membership roles, #ask-ai and support tickets ready in guild ${guildId}`);
@@ -662,6 +671,30 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       await api(`/channels/${channelId}/pins/${message.id}`, "PUT").catch(error => console.error("Discord panel pin:", error.message));
       return message.id;
     });
+  }
+  function welcomeMessage() {
+    const logo = logoEmojiId ? `<:slabsngrabsaco:${logoEmojiId}> ` : "";
+    return `${logo}**Welcome to SLABSNGRABSACO!**\n\n` +
+      "This Discord is your place for updates, giveaways, support, and help with our website. " +
+      "The site offers memberships, checkout tools, profile management, and a dashboard where you can track your successes.\n\n" +
+      `**Start here:** Please read <#${rulesChannelId}> and <#${introChannelId}> before exploring the server. ` +
+      "They explain how the community works and where to find what you need.\n\n" +
+      `If you have a question, use <#${askChannelId}> or open a ticket in <#${ticketLobbyId}>. We're glad you're here!`;
+  }
+  async function refreshWelcome() {
+    if (introChannelId && rulesChannelId && askChannelId && ticketLobbyId) {
+      await ensurePanel(introChannelId, "welcome", welcomeMessage());
+    }
+  }
+  async function welcomeNewMember(member) {
+    if (member.guild_id !== guildId || member.user?.bot || !member.user?.id) return;
+    try {
+      const dm = await api("/users/@me/channels", "POST", { recipient_id: member.user.id });
+      await sendMessage(dm.id, welcomeMessage());
+    } catch (error) {
+      // Members can block server DMs. The pinned intro message is still available.
+      console.error("Discord member welcome DM:", error.message);
+    }
   }
   let introRefreshTimer;
   let publicChannelGuide = "";
@@ -1408,7 +1441,7 @@ Answer general navigation, feature, policy and channel-use questions directly wh
       await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: `I replied to you in <#${askChannelId}>: https://discord.com/channels/${guildId}/${askChannelId}/${posted.id}` });
     } catch (error) { console.error("Discord interaction:", error.message); }
   }
-  let socket, sequence = null, heartbeat, reconnectDelay = 1000, closed = false, contentIntentEnabled = true;
+  let socket, sequence = null, heartbeat, reconnectDelay = 1000, closed = false, contentIntentEnabled = true, memberIntentEnabled = true;
   async function connect() {
     if (closed) return;
     try {
@@ -1422,25 +1455,31 @@ Answer general navigation, feature, policy and channel-use questions directly wh
             clearInterval(heartbeat);
             heartbeat = setInterval(() => socket.readyState === 1 && socket.send(JSON.stringify({ op: 1, d: sequence })), packet.d.heartbeat_interval);
             heartbeat.unref?.();
-            socket.send(JSON.stringify({ op: 2, d: { token, intents: 1 | 512 | (contentIntentEnabled ? 32768 : 0), properties: { os: "linux", browser: "slabsngrabsaco", device: "slabsngrabsaco" } } }));
+            socket.send(JSON.stringify({ op: 2, d: { token, intents: 1 | 512 | (memberIntentEnabled ? 2 : 0) | (contentIntentEnabled ? 32768 : 0), properties: { os: "linux", browser: "slabsngrabsaco", device: "slabsngrabsaco" } } }));
           }
           if (packet.op === 1 && socket.readyState === 1) socket.send(JSON.stringify({ op: 1, d: sequence }));
           if (packet.op === 7 || packet.op === 9) socket.close();
           if (packet.t === "READY") {
             reconnectDelay = 1000;
             discordCommunityStatus.gatewayReady = true;
+            discordCommunityStatus.memberJoinReady = memberIntentEnabled;
             discordCommunityStatus.messageContentReady = contentIntentEnabled;
           }
           if (packet.t === "INTERACTION_CREATE") void interaction(packet);
           if (packet.t === "MESSAGE_CREATE") void onQuestionMessage(packet.d);
+          if (packet.t === "GUILD_MEMBER_ADD") void welcomeNewMember(packet.d);
           if (["CHANNEL_CREATE", "CHANNEL_UPDATE", "CHANNEL_DELETE"].includes(packet.t) &&
             packet.d?.guild_id === guildId) scheduleIntroRefresh();
         } catch (error) { console.error("Discord gateway packet:", error.message); }
       });
       socket.addEventListener("close", event => {
         discordCommunityStatus.gatewayReady = false;
+        discordCommunityStatus.memberJoinReady = false;
         discordCommunityStatus.messageContentReady = false;
-        if (event.code === 4014 && contentIntentEnabled) {
+        if (event.code === 4014 && memberIntentEnabled) {
+          memberIntentEnabled = false;
+          discordCommunityStatus.error = "Enable Server Members Intent in the Discord Developer Portal → Bot → Privileged Gateway Intents for welcome DMs. The pinned welcome remains in the intro channel.";
+        } else if (event.code === 4014 && contentIntentEnabled) {
           contentIntentEnabled = false;
           discordCommunityStatus.error = "Enable Message Content Intent in the Discord Developer Portal → Bot → Privileged Gateway Intents, then redeploy the service. /ask still works until then.";
         } else if (event.code === 4013) {
