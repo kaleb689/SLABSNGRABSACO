@@ -45175,7 +45175,8 @@ await initializeArrayFile(
               String(item.customerAccountId || "") === String(accountId)));
           },
           dataDir: DATA_DIR,
-          aiKey: String(process.env.OPENAI_API_KEY || "").trim()
+          aiKey: String(process.env.OPENAI_API_KEY || "").trim(),
+          geminiKey: String(process.env.GEMINI_API_KEY || "").trim()
         });
         if (discordSuccessConfig().token && discordSuccessConfig().channelId) {
           setTimeout(() => scanDiscordSuccessChannel(), 12000);
