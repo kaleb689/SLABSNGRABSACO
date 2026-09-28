@@ -1375,10 +1375,8 @@
             Rentals are retailer-specific
           </strong>
           <p>
-            Target and Walmart rentals are separate. A Target
-            rental account cannot be used as a Walmart account,
-            and a Walmart rental account cannot be used as a
-            Target account.
+            Target, Walmart, and Pokémon Center rentals are separate.
+            Each account works with its own retailer.
           </p>
         </div>
 
@@ -1388,7 +1386,7 @@
             <h4>Choose your retailer</h4>
             <p>
               Open My Profile → Rental Availability and choose
-              Target or Walmart.
+              Target, Walmart, or Pokémon Center.
             </p>
           </div>
         </div>
@@ -4856,6 +4854,20 @@
             </div>
           </article>
 
+          <article class="rental-stock-card" data-rental-stock-card="pokemoncenter">
+            <div class="rental-stock-head">
+              <span class="rental-stock-light"></span>
+              <span class="rental-stock-status" data-rental-stock-status="pokemoncenter">CHECKING</span>
+            </div>
+            <span class="eyebrow">POKÉMON CENTER</span>
+            <strong id="customer-pokemoncenter-available" class="rental-stock-number">—</strong>
+            <span class="rental-stock-label">accounts available</span>
+            <div class="rental-stock-meta">
+              <span><strong id="customer-pokemoncenter-in-use">—</strong> in use</span>
+              <span><strong id="customer-pokemoncenter-total">—</strong> total</span>
+            </div>
+          </article>
+
         </div>
 
         <div class="rental-purchase-card">
@@ -4874,6 +4886,7 @@
               <select id="rental-retailer">
                 <option value="target">Target</option>
                 <option value="walmart">Walmart</option>
+                <option value="pokemoncenter">Pokémon Center</option>
               </select>
             </label>
 

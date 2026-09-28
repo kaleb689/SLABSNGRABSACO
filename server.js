@@ -314,7 +314,8 @@ function normalizeRentalRetailer(
 
   return [
     "target",
-    "walmart"
+    "walmart",
+    "pokemoncenter"
   ].includes(retailer)
     ? retailer
     : null;
@@ -7395,7 +7396,7 @@ app.post(
                     await sendPaidOrderConfirmation(customerAccountId, {
                       id: session.id,
                       orderNumber: rentalOrderNumber,
-                      plan: { name: `${quantity} ${retailer === "walmart" ? "Walmart" : "Target"} rental profiles` },
+                      plan: { name: `${quantity} ${retailerDisplayName(retailer)} rental profiles` },
                       paidAt: new Date().toISOString()
                     }, session.amount_total != null ? Number(session.amount_total) / 100 : expectedPrice,
                     `Rental duration: ${durationType === "1_month" ? "1 Month" : durationType === "1_week" ? "1 Week" : "1 Drop"}\nLinked membership order: ${customerOrderNumber(paidRecord)}`);
@@ -7418,11 +7419,7 @@ app.post(
                   );
 
                   try {
-                    const retailerLabel =
-                      retailer ===
-                      "walmart"
-                        ? "Walmart"
-                        : "Target";
+                    const retailerLabel = retailerDisplayName(retailer);
 
                     const durationLabel =
                       durationType ===
@@ -23939,6 +23936,9 @@ function retailerDisplayName(
     walmart:
       "Walmart",
 
+    pokemoncenter:
+      "Pokemon Center",
+
     pkc:
       "PKC",
 
@@ -34676,14 +34676,11 @@ app.post(
           .status(409)
           .json({
             error:
-              `Only ${availableAccounts.length} ${retailer === "walmart" ? "Walmart" : "Target"} rental account(s) are currently available.`
+              `Only ${availableAccounts.length} ${retailerDisplayName(retailer)} rental account(s) are currently available.`
           });
       }
 
-      const retailerLabel =
-        retailer === "walmart"
-          ? "Walmart"
-          : "Target";
+      const retailerLabel = retailerDisplayName(retailer);
 
       const durationLabel =
         durationType === "1_week"

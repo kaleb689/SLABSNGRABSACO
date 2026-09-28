@@ -1254,9 +1254,7 @@ function updateCart() {
 
   if (rental) {
     const retailerLabel =
-      rental.retailer === "walmart"
-        ? "Walmart"
-        : "Target";
+      rentalRetailerLabel(rental.retailer);
 
     const durationLabel =
       rental.durationType === "1_week"
@@ -1547,11 +1545,7 @@ async function checkoutRentalCart() {
         now
       );
 
-    const retailerLabel =
-      rental.retailer ===
-        "walmart"
-        ? "Walmart"
-        : "Target";
+    const retailerLabel = rentalRetailerLabel(rental.retailer);
 
     const existing =
       adminTestReadRentals();
@@ -1799,6 +1793,10 @@ function updateRentalStockCard(
 
   status.textContent =
     stock.label;
+}
+
+function rentalRetailerLabel(retailer) {
+  return { target: "Target", walmart: "Walmart", pokemoncenter: "Pokémon Center" }[retailer] || "Target";
 }
 
 function openCart() {
@@ -10748,7 +10746,13 @@ async function loadManagedAvailabilityCustomer() {
       "customer-walmart-in-use":
         data.walmart?.inUse,
       "customer-walmart-total":
-        data.walmart?.total
+        data.walmart?.total,
+      "customer-pokemoncenter-available":
+        data.pokemoncenter?.available,
+      "customer-pokemoncenter-in-use":
+        data.pokemoncenter?.inUse,
+      "customer-pokemoncenter-total":
+        data.pokemoncenter?.total
     };
 
     for (
@@ -10778,6 +10782,11 @@ async function loadManagedAvailabilityCustomer() {
     updateRentalStockCard(
       "walmart",
       data.walmart
+    );
+
+    updateRentalStockCard(
+      "pokemoncenter",
+      data.pokemoncenter
     );
 
     updateRentalPriceDisplay();
