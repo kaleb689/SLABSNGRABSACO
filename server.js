@@ -215,6 +215,20 @@ const PLANS = {
 };
 
 const RENTAL_PACKAGES = {
+  1: {
+    "1_drop": {
+      amount: null,
+      priceId: "price_1UKg5ZAgnoiOBmXPp9n8sw3B"
+    },
+    "1_week": {
+      amount: null,
+      priceId: "price_1UKg3sAgnoiOBmXPXhO2BFWZ"
+    },
+    "1_month": {
+      amount: null,
+      priceId: "price_1UKg80AgnoiOBmXPLWkkSYkm"
+    }
+  },
   5: {
     "1_drop": {
       amount: 10,
@@ -302,6 +316,19 @@ function rentalPriceIdFor(
       durationType
     )?.priceId || null
   );
+}
+
+async function rentalAmountFor(quantity, durationType) {
+  const rentalPackage = rentalPackageFor(quantity, durationType);
+  if (!rentalPackage?.priceId) return null;
+  if (rentalPackage.amount != null) return rentalPackage.amount;
+
+  const price = await stripe.prices.retrieve(rentalPackage.priceId);
+  if (!price.active || price.currency !== "usd" || price.type !== "one_time" ||
+      !Number.isInteger(price.unit_amount) || price.unit_amount <= 0) {
+    throw new Error(`Rental Stripe price is invalid: ${rentalPackage.priceId}`);
+  }
+  return price.unit_amount / 100;
 }
 
 function normalizeRentalRetailer(
@@ -7109,14 +7136,13 @@ app.post(
             );
 
           const expectedPrice =
-            rentalPriceFor(
-              quantity,
-              durationType
-            );
+            quantity === 1
+              ? Number(session.metadata?.rental_price)
+              : rentalPriceFor(quantity, durationType);
 
           if (
             retailer &&
-            [5, 10, 15].includes(
+            [1, 5, 10, 15].includes(
               quantity
             ) &&
             [
@@ -7124,7 +7150,7 @@ app.post(
               "1_week",
               "1_month"
             ].includes(durationType) &&
-            expectedPrice != null &&
+            Number.isFinite(expectedPrice) && expectedPrice > 0 &&
             customerAccountId &&
             paidSubmissionId
           ) {
@@ -34708,6 +34734,17 @@ await writeJson(
    CREATE RENTAL CHECKOUT SESSION
 ------------------------------------------------------- */
 
+app.get("/api/rental-single-prices", async (_req, res) => {
+  try {
+    const durations = ["1_drop", "1_week", "1_month"];
+    const amounts = await Promise.all(durations.map(duration => rentalAmountFor(1, duration)));
+    return res.json({ prices: Object.fromEntries(durations.map((duration, index) => [duration, amounts[index]])) });
+  } catch (error) {
+    console.error("Single account rental prices unavailable:", error?.message);
+    return res.status(503).json({ error: "Single account rental prices are temporarily unavailable." });
+  }
+});
+
 app.post(
   "/api/create-rental-checkout-session",
   requireCustomer,
@@ -34729,7 +34766,7 @@ app.post(
         );
 
       const price =
-        rentalPriceFor(
+        await rentalAmountFor(
           quantity,
           durationType
         );
@@ -34742,7 +34779,7 @@ app.post(
 
       if (
         !retailer ||
-        ![5, 10, 15].includes(
+        ![1, 5, 10, 15].includes(
           quantity
         ) ||
         ![

@@ -9,6 +9,7 @@ const PLANS = {
 };
 
 const RENTAL_PRICING = {
+  1: {},
   5: { "1_drop": 10, "1_week": 25, "1_month": 60 },
   10: { "1_drop": 20, "1_week": 50, "1_month": 120 },
   15: { "1_drop": 30, "1_week": 75, "1_month": 180 }
@@ -1290,7 +1291,7 @@ function updateCart() {
         </strong>
 
         <p>
-          ${escapeHtml(rental.quantity)} accounts •
+          ${escapeHtml(rental.quantity)} ${Number(rental.quantity) === 1 ? "account" : "accounts"} •
           ${escapeHtml(durationLabel)}
         </p>
       </div>
@@ -1364,6 +1365,27 @@ function rentalPrice(
   );
 }
 
+async function loadSingleRentalPrices() {
+  try {
+    const response = await fetch("/api/rental-single-prices", { cache: "no-store" });
+    if (!response.ok) throw new Error("Rental prices unavailable");
+    const data = await readJson(response);
+    for (const duration of ["1_drop", "1_week", "1_month"]) {
+      const amount = Number(data.prices?.[duration]);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("Invalid rental price");
+      RENTAL_PRICING[1][duration] = amount;
+    }
+    if (state.rentalCart?.quantity === 1) {
+      state.rentalCart.price = rentalPrice(1, state.rentalCart.durationType);
+      localStorage.setItem("sng_rental_cart", JSON.stringify(state.rentalCart));
+      updateCart();
+    }
+  } catch (error) {
+    console.error("Single account rental prices unavailable:", error);
+  }
+  updateRentalPriceDisplay();
+}
+
 function updateRentalPriceDisplay() {
   const retailer =
     document.getElementById(
@@ -1374,7 +1396,7 @@ function updateRentalPriceDisplay() {
     Number(
       document.getElementById(
         "rental-account-quantity"
-      )?.value || 5
+      )?.value || 1
     );
 
   const durationType =
@@ -1425,7 +1447,9 @@ function updateRentalPriceDisplay() {
       !membershipAllowed
         ? "Membership Required"
         : (
-            available < quantity
+            price == null
+              ? "Price Unavailable"
+              : available < quantity
               ? "Not Enough Accounts"
               : "Add to Cart"
           );
@@ -1457,7 +1481,7 @@ function addRentalToCart() {
     Number(
       document.getElementById(
         "rental-account-quantity"
-      )?.value || 5
+      )?.value || 1
     );
 
   const durationType =
@@ -1483,7 +1507,9 @@ function addRentalToCart() {
     available < quantity
   ) {
     showAccountMessage(
-      "There are not enough accounts available for that rental package.",
+      price == null
+        ? "The price for this rental is temporarily unavailable. Please try again shortly."
+        : "There are not enough accounts available for that rental package.",
       "error"
     );
     return;
@@ -10722,6 +10748,7 @@ async function loadManagedMemberships() {
 
 
 async function loadManagedAvailabilityCustomer() {
+  loadSingleRentalPrices();
   const updated =
     document.getElementById(
       "customer-availability-updated"
