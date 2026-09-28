@@ -6534,6 +6534,27 @@ If you did not create this account, you can ignore this email.`
   }
 }
 
+async function sendSignupOrderConfirmation(account) {
+  const orders = await getCustomerOwnedOrders(account.id);
+  if (!orders.length || !process.env.RESEND_API_KEY) return false;
+  const lines = orders.map(order => {
+    const amount = Number(order.plan?.amount || 0);
+    return `Order number: ${customerOrderNumber(order)}\nMembership tier: ${order.plan?.name || "Membership"}\nPrice: $${amount.toFixed(2)}${order.plan?.period ? `/${order.plan.period}` : " per month"}`;
+  });
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
+      to: [account.email],
+      subject: "Your SLABSNGRABSACO account and membership confirmation",
+      text: `Welcome to SLABSNGRABSACO. Your email is verified and your membership order is linked to your website account.\n\n${lines.join("\n\n")}\n\nYour order should appear automatically in My Profile. If it does not, use the order number above and the purchase email to claim it in My Profile, or open a private support ticket.\n\nVisit ${BASE_URL}/#my-profile to access your account. No password or payment card details are included in this email.`
+    })
+  });
+  if (!response.ok) throw new Error(`Signup confirmation email HTTP ${response.status}`);
+  return true;
+}
+
 async function sendPasswordResetEmail(
   email,
   token
@@ -9215,6 +9236,15 @@ const autoLinkResult =
   await autoLinkVerifiedCustomerOrders(
     account
   );
+
+try {
+  if (!account.signupOrderConfirmationAt && await sendSignupOrderConfirmation(account)) {
+    account.signupOrderConfirmationAt = new Date().toISOString();
+    await saveCustomerAccounts(accounts);
+  }
+} catch (error) {
+  console.error("Signup order confirmation email:", error.message);
+}
 
 await awardVerifiedReferral(account);
 
