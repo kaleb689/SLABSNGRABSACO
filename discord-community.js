@@ -118,6 +118,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     return response.status === 204 ? null : response.json();
   }
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
+  let dropChannelIds = new Set();
   // Channel names may have a Unicode emoji and divider before their functional name.
   const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
   function sameOverwrites(actual, expected) {
@@ -355,12 +356,24 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     try {
       const names = ["upcomingdrops", "droppingtonight", "announcements"];
       const found = names.map(name => channels.find(item => [0, 5].includes(item.type) && normalizeName(item.name) === name));
+      dropChannelIds = new Set(found.slice(0, 2).filter(Boolean).map(channel => channel.id));
       let important = channels.find(item => item.type === 4 && normalizeName(item.name) === "important");
       if (!important) important = await api(`/guilds/${guildId}/channels`, "POST", { name: "Important", type: 4 });
       for (const [index, channel] of found.entries()) {
         if (!channel) continue;
         const formatted = `❗️│${["upcoming-drops", "dropping-tonight", "announcements"][index]}`;
         if (channel.name !== formatted) await api(`/channels/${channel.id}`, "PATCH", { name: formatted });
+        if (index < 2) {
+          const botOverwrite = (channel.permission_overwrites || []).find(item => item.id === appId);
+          if ((BigInt(botOverwrite?.allow || "0") & 8192n) === 0n ||
+            (BigInt(botOverwrite?.deny || "0") & 8192n) !== 0n) {
+            await api(`/channels/${channel.id}/permissions/${appId}`, "PUT", {
+              type: 1,
+              allow: (BigInt(botOverwrite?.allow || "0") | 8192n | 1024n).toString(),
+              deny: (BigInt(botOverwrite?.deny || "0") & ~8192n).toString()
+            });
+          }
+        }
       }
       discordCommunityStatus.importantReady = found.every(Boolean);
       if (!discordCommunityStatus.importantReady) {
@@ -1428,7 +1441,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     return visible;
   }
   async function onPublicMessage(d) {
-    if (d.guild_id !== guildId || d.author?.id === appId || !d.content ||
+    if (d.guild_id !== guildId || supportStaff(d.member, String(d.author?.id || "")) ||
+      d.author?.id === appId || !d.content ||
       !containsSensitiveData(d.content) || !await publiclyVisibleChannel(d.channel_id)) return false;
     try {
       await api(`/channels/${d.channel_id}/messages/${d.id}`, "DELETE");
@@ -1462,6 +1476,18 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         .catch(error => console.error("Discord public privacy notice:", error.message));
     }
     return true;
+  }
+  async function onDropPost(d) {
+    if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) ||
+      !d.id || (d.type !== undefined && d.type !== 0)) return;
+    try {
+      const history = await api(`/channels/${d.channel_id}/messages?before=${d.id}&limit=100`);
+      const previous = history.find(message => !message.pinned && message.type === 0);
+      if (previous) await api(`/channels/${d.channel_id}/messages/${previous.id}`, "DELETE");
+    } catch (error) {
+      discordCommunityStatus.error = `Drop message cleanup: ${error.message}`;
+      console.error("Discord drop message cleanup:", error.message);
+    }
   }
   async function onQuestionMessage(d) {
     if (d.channel_id !== askChannelId || d.guild_id !== guildId || d.author?.bot || d.webhook_id) return;
@@ -1678,6 +1704,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           }
           if (packet.t === "INTERACTION_CREATE") void interaction(packet);
           if (packet.t === "MESSAGE_CREATE") void (async () => {
+            await onDropPost(packet.d);
             if (!await onPublicMessage(packet.d)) await onQuestionMessage(packet.d);
           })().catch(error => console.error("Discord public message handling:", error.message));
           if (["CHANNEL_CREATE", "CHANNEL_UPDATE", "CHANNEL_DELETE"].includes(packet.t) &&
