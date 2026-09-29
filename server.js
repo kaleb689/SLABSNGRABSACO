@@ -1,4 +1,5 @@
 import express from "express";
+import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
 import Stripe from "stripe";
 import { authenticator } from "otplib";
 import {
@@ -36197,7 +36198,7 @@ function createCustomerImapClient(
     provider,
 
     client:
-      new ImapFlow({
+      protectImapClient(new ImapFlow({
         host:
           provider.host,
 
@@ -36212,7 +36213,7 @@ function createCustomerImapClient(
             normalizeEmail(email),
 
           pass:
-            String(password || "")
+            normalizeImapPassword(email, password)
         },
 
         /*
@@ -36234,7 +36235,7 @@ function createCustomerImapClient(
 
         disableAutoIdle:
           true
-      })
+      }))
   };
 }
 
@@ -40669,7 +40670,9 @@ async function readRecentRetailerOrders(
     );
 
   try {
+    client.successSyncPhase = "connecting";
     await client.connect();
+    client.successSyncPhase = "opening_inbox";
 
     const lock =
       await client.getMailboxLock(
@@ -40714,11 +40717,13 @@ async function readRecentRetailerOrders(
         { subject: "order" }, { subject: "purchase" },
         { subject: "receipt" }, { subject: "confirmation" }
       ] };
+      client.successSyncPhase = "searching";
       const matchingUids = await client.search(
         signupDate ? { ...confirmationSubjects, since: signupDate } : confirmationSubjects,
         { uid: true }
       );
 
+      client.successSyncPhase = "fetching_headers";
       const candidates = [];
       for (let offset = 0; offset < matchingUids.length; offset += safeMax) {
         candidates.push(...await client.fetchAll(
@@ -40774,6 +40779,7 @@ async function readRecentRetailerOrders(
           continue;
         }
 
+        client.successSyncPhase = "fetching_message";
         const message =
           await client.fetchOne(
             candidate.uid,
@@ -40838,6 +40844,7 @@ async function readRecentRetailerOrders(
               : null
         };
 
+        client.successSyncPhase = "parsing_message";
         let parsed =
           null;
 
@@ -40982,6 +40989,10 @@ async function readRecentRetailerOrders(
       lock.release();
     }
 
+  } catch (error) {
+    const failure = client.successMailboxError || error;
+    failure.mailboxPhase = client.successSyncPhase || "connecting";
+    throw failure;
   } finally {
     if (client.usable) {
       try {
@@ -41046,7 +41057,11 @@ async function getCustomerSuccessMailboxes(
   const seen =
     new Set();
 
-  const mailboxes = [];
+  // The most recently saved app-password entry takes precedence over an old
+  // copy on an order; scan each inbox once for this customer.
+  const mailboxes = customerOrders.length ? savedSuccessMailboxes(savedImapEntries(owner),
+    owner?.successFullHistory === true ? null : signedUpAt) : [];
+  for (const mailbox of mailboxes) seen.add(mailbox.email);
 
   for (
     const order of
@@ -41200,6 +41215,7 @@ async function syncCustomerTargetSuccess(
     let saved = 0;
     let duplicates = 0;
     let parsedOrders = 0;
+    let failedMailboxes = 0;
 
     for (
       const mailbox of
@@ -41324,12 +41340,12 @@ async function syncCustomerTargetSuccess(
           Do not expose mailbox credentials or raw
           provider responses in production logs.
         */
-        console.error(
-          "Live retailer Success mailbox sync failed:",
-          error?.code ||
-          error?.name ||
-          "target_success_sync_error"
-        );
+        failedMailboxes++;
+        console.error("Live retailer Success mailbox sync failed:", JSON.stringify({
+          reason: mailboxFailureReason(error),
+          phase: error?.mailboxPhase || "configuration",
+          provider: getImapProvider(mailbox.email)?.name || "unsupported"
+        }));
       }
     }
 
@@ -41339,7 +41355,13 @@ async function syncCustomerTargetSuccess(
         Date.now()
       );
 
+    if (mailboxes.length) console.log("Live retailer Success sync completed:", JSON.stringify({
+      checked: mailboxes.length, connected: mailboxes.length - failedMailboxes,
+      failed: failedMailboxes, saved, duplicates
+    }));
     return {
+      failedMailboxes,
+      connectedMailboxes: mailboxes.length - failedMailboxes,
       scanned:
         true,
 
@@ -41437,7 +41459,7 @@ async function readRecentManagedWorkMailboxOrders(
   }
 
   const client =
-    new ImapFlow({
+    protectImapClient(new ImapFlow({
       host:
         config.host,
 
@@ -41452,7 +41474,7 @@ async function readRecentManagedWorkMailboxOrders(
           config.email,
 
         pass:
-          config.password
+          normalizeImapPassword(config.email, config.password)
       },
 
       logger:
@@ -41469,7 +41491,7 @@ async function readRecentManagedWorkMailboxOrders(
 
       disableAutoIdle:
         true
-    });
+    }));
 
   try {
     onProgress({ phase: "connecting", percent: 2, processed: 0, total: 0 });
