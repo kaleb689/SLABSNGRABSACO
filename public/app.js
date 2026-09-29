@@ -533,6 +533,24 @@ window.addEventListener(
    PRICING CARDS
 ===================================================== */
 
+let membershipSales = {};
+function membershipPriceHtml(tier, plan) {
+  const sale = membershipSales[tier];
+  if (!sale) return `$${plan.amount}<small>/month</small>`;
+  const price = (Math.round(plan.amount * 100 * (1 - sale.percent / 100)) / 100).toFixed(2);
+  return `<del style="font-size:.55em;opacity:.65">$${plan.amount}</del> $${price}<small>/month · ${Number(sale.percent)}% off · ${sale.duration === "forever" ? "Every renewal" : "First payment"}</small>`;
+}
+async function refreshMembershipSales() {
+  try {
+    const response = await fetch("/api/public/membership-discounts", { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    membershipSales = data.discounts || {};
+    renderPricing();
+    updateSelectedPlan();
+  } catch {}
+}
+
 function pricingCardsHtml() {
   return Object.entries(PLANS)
     .map(([tier, plan]) => {
@@ -572,8 +590,7 @@ function pricingCardsHtml() {
           </span>
 
           <div class="plan-price">
-            $${plan.amount}
-            <small>/month</small>
+            ${membershipPriceHtml(tier, plan)}
           </div>
 
           <h3>
@@ -1107,8 +1124,7 @@ function updateSelectedPlan() {
   const plan =
     PLANS[state.tier];
 
-  selected.textContent =
-    `${plan.name} — $${plan.amount}/month`;
+  selected.innerHTML = `${escapeHtml(plan.name)} — ${membershipPriceHtml(state.tier, plan)}`;
 }
 
 
@@ -1965,6 +1981,50 @@ const profileForm =
     "profile-form"
   );
 
+const purchaseConsentFlowId = crypto.randomUUID();
+const purchaseConsentNames = ["confirm", "acknowledgeAcoOutcome", "authorizeRequestedPurchases"];
+const purchaseConsentStates = new Map();
+let purchaseConsentSendChain = Promise.resolve();
+function sendPurchaseConsentEvent(name, consentState) {
+  const send = purchaseConsentSendChain.then(async () => {
+    if (!state.customer) return false;
+    const response = await fetch("/api/account/purchase-consent-event", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        flowId: purchaseConsentFlowId, checkbox: name,
+        checked: consentState.checked, clientClickedAt: consentState.clientClickedAt
+      })
+    });
+    consentState.sent = response.ok;
+    return response.ok;
+  });
+  purchaseConsentSendChain = send.catch(() => false);
+  return send;
+}
+profileForm?.addEventListener("change", event => {
+  const input = event.target;
+  if (!input || !purchaseConsentNames.includes(input.name)) return;
+  const state = { checked: input.checked, clientClickedAt: new Date().toISOString(), sent: false };
+  purchaseConsentStates.set(input.name, state);
+  void sendPurchaseConsentEvent(input.name, state).catch(() => {});
+});
+async function ensurePurchaseConsentEvents(form) {
+  await purchaseConsentSendChain;
+  for (const name of purchaseConsentNames) {
+    const input = form.elements[name];
+    if (!input?.checked) throw new Error("Please check each consent box before checkout.");
+    let state = purchaseConsentStates.get(name);
+    if (!state || !state.checked) {
+      state = { checked: true, clientClickedAt: null, sent: false };
+      purchaseConsentStates.set(name, state);
+    }
+    if (!state.sent && !await sendPurchaseConsentEvent(name, state)) {
+      throw new Error("Unable to record your consent right now. Please try again.");
+    }
+  }
+}
+
 
 const PROFILE_FIELD_LABELS = {
   profileName:
@@ -2599,6 +2659,7 @@ profileForm?.addEventListener(
     delete profile.acknowledgeAcoOutcome;
     delete profile.authorizeRequestedPurchases;
     delete profile.referredByDiscord;
+    delete profile.discountCode;
 
     if (message) {
       message.textContent =
@@ -2606,6 +2667,7 @@ profileForm?.addEventListener(
     }
 
     try {
+      if (state.customer) await ensurePurchaseConsentEvents(form);
       const response =
         await fetch(
           "/api/create-checkout-session",
@@ -2625,6 +2687,9 @@ profileForm?.addEventListener(
   profile,
   secrets,
   referredByDiscord: String(all.referredByDiscord || "").trim(),
+  consentFlowId: purchaseConsentFlowId,
+  discountCode: String(all.discountCode || "").trim(),
+  confirm: all.confirm === "on",
   acknowledgeAcoOutcome: all.acknowledgeAcoOutcome === "on",
   authorizeRequestedPurchases: all.authorizeRequestedPurchases === "on"
 })
@@ -14935,6 +15000,8 @@ async function processSecureLinks() {
 ===================================================== */
 
 renderPricing();
+void refreshMembershipSales();
+setInterval(() => { if (!document.hidden) void refreshMembershipSales(); }, 60000);
 
 updateSelectedPlan();
 

@@ -5585,6 +5585,8 @@ PAID SUBSCRIPTIONS
       <div id="giftTierList"></div>
       <hr style="border:0;border-top:1px solid rgba(65,182,230,.3);margin:20px 0">
       <form id="discountCodeForm" class="admin-feature-form">
+        <label>Visibility<br><select name="audience"><option value="code">Shareable code</option><option value="private">One user's code</option><option value="sitewide">Sitewide membership sale</option></select></label>
+        <label>User's account email (for one user's code)<br><input name="recipientEmail" type="email" placeholder="user@example.com"></label>
         <label>Code<br><input name="code" required minlength="3" maxlength="40" pattern="[A-Za-z0-9]+" placeholder="CARD20"></label>
         <label>Discount %<br><input name="percent" type="number" min="1" max="100" required style="width:75px"></label>
         <label>Tier<br><select name="tier"><option value="all">All tiers</option><option value="1">Starter</option><option value="2">Intermediate</option><option value="3">Advanced</option><option value="4">Pro</option><option value="5">High Volume</option><option value="6">Power User</option><option value="7">Elite</option></select></label>
@@ -5602,6 +5604,15 @@ PAID SUBSCRIPTIONS
       <p>Reads confirmed trading card checkouts from your Discord success channel into the anonymous community tracker. It does not identify customers.</p>
       <p id="discordSuccessStatus" role="status">Checking connection…</p>
       <button id="discordSuccessScanButton" type="button" class="admin-edit-button">Scan success channel</button>
+    </details>
+
+    <details class="admin-feature-panel" id="signupConsentPanel">
+      <summary>Signup &amp; purchase consent log</summary>
+      <p>Account signups and membership checkout choices are stored separately. Times shown are UTC; browser-reported click times are identified as such.</p>
+      <button id="loadSignupConsentLog" type="button" class="admin-edit-button">View log</button>
+      <p id="signupConsentReceiptStatus" role="status"></p>
+      <div id="signupConsentLog" role="status"></div>
+      <button id="moreSignupConsentLog" type="button" class="admin-edit-button" hidden>Older entries</button>
     </details>
 </div>
 
@@ -6311,6 +6322,40 @@ function escapeHtml(value) {
       "&#039;"
     );
 }
+
+let signupConsentOffset = 0;
+async function loadSignupConsentLog(append = false) {
+  const output = document.getElementById("signupConsentLog");
+  const more = document.getElementById("moreSignupConsentLog");
+  if (!append) { signupConsentOffset = 0; output.textContent = "Loading…"; }
+  try {
+    const response = await fetch(`/api/admin/signup-consent-log?limit=50&offset=${signupConsentOffset}`, {
+      credentials: "same-origin", cache: "no-store"
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to load the consent log.");
+    document.getElementById("signupConsentReceiptStatus").textContent =
+      `Email copies go to ${data.receiptEmail}. Pending delivery: ${data.pendingEmailReceipts}.`;
+    const html = data.entries.map(item => {
+      const heading = item.type === "signup_completed" ? "Account signup" :
+        item.type === "checkout_consent" ? "Checkout choices" :
+        item.type === "checkout_payment_confirmed" ? "Stripe payment confirmed" : "Checkbox change";
+      const choices = item.checkboxes ? Object.entries(item.checkboxes).map(([key, choice]) =>
+        `<p><strong>${escapeHtml(key)}</strong>: ${escapeHtml(choice.text)}<br>Server click receipt: ${escapeHtml(choice.serverReceivedAt)}<br>Browser-reported click: ${escapeHtml(choice.clientReportedClickAt || "not available")}</p>`
+      ).join("") : "";
+      return `<details class="admin-feature-panel" style="margin:8px 0;padding:12px"><summary>${escapeHtml(heading)} · ${escapeHtml(item.recordedAt)} · ${escapeHtml(item.email || item.signupEmail || item.accountId || "")}</summary>
+        <p>Record: ${escapeHtml(item.id)}<br>Account: ${escapeHtml(item.accountId)}<br>Submission: ${escapeHtml(item.submissionId || "—")}<br>Consent version: ${escapeHtml(item.consentVersion || "—")}</p>
+        ${item.type === "checkbox_event" ? `<p>${escapeHtml(item.checkbox)}: ${item.checked ? "checked" : "unchecked"}<br>Server receipt: ${escapeHtml(item.recordedAt)}<br>Browser-reported click: ${escapeHtml(item.clientReportedClickAt || "not available")}</p>` : ""}
+        ${choices}</details>`;
+    }).join("");
+    if (append) output.insertAdjacentHTML("beforeend", html);
+    else output.innerHTML = html || "No signup or consent events have been recorded yet.";
+    signupConsentOffset += data.entries.length;
+    more.hidden = signupConsentOffset >= data.total;
+  } catch (error) { output.textContent = error.message; }
+}
+document.getElementById("loadSignupConsentLog")?.addEventListener("click", () => void loadSignupConsentLog());
+document.getElementById("moreSignupConsentLog")?.addEventListener("click", () => void loadSignupConsentLog(true));
 
 
 function adminSearchValues(
@@ -24021,7 +24066,7 @@ async function loadMembershipTools() {
     discountList.replaceChildren();
     for (const discount of (discountData.codes || []).slice().reverse()) {
       const row = document.createElement("p");
-      row.textContent = `${discount.code} · ${discount.percent}% · ${discount.tier === "all" ? "All tiers" : "Tier " + discount.tier} · ${discount.duration === "forever" ? "Every renewal" : "First payment"}${discount.appliesToRentals ? " + rentals" : ""} · ${discount.active ? "Active" : "Inactive"} `;
+      row.textContent = `${discount.code} · ${discount.percent}% · ${discount.sitewide ? "Sitewide sale" : discount.recipientEmail ? "Only " + discount.recipientEmail : "Shareable code"} · ${discount.tier === "all" ? "All tiers" : "Tier " + discount.tier} · ${discount.duration === "forever" ? "Every renewal" : "First payment"}${discount.appliesToRentals ? " + rentals" : ""} · ${discount.active ? "Active" : "Inactive"} `;
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = discount.active ? "Deactivate" : "Activate";
@@ -24146,10 +24191,13 @@ document.getElementById("discountCodeForm")?.addEventListener("submit", async ev
   button.disabled = true;
   try {
     const fields = new FormData(form);
+    if (fields.get("audience") === "private" && !String(fields.get("recipientEmail") || "").trim()) throw new Error("Enter the user's account email for their private code.");
     const data = await membershipApi("/api/admin/discount-codes", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         code: fields.get("code"), percent: Number(fields.get("percent")), tier: fields.get("tier"),
+        sitewide: fields.get("audience") === "sitewide",
+        recipientEmail: fields.get("audience") === "private" ? fields.get("recipientEmail") : null,
         expiresAt: fields.get("expiresAt") || null, duration: fields.get("duration"), appliesToRentals: fields.has("appliesToRentals")
       })
     });

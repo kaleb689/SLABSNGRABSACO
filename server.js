@@ -15,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startDiscordCommunity, discordCommunityStatus, createDiscordLinkCode, revokeDiscordLinkCodes, queueDiscordRoleRemoval } from "./discord-community.js";
 import { getCommunityInvite } from "./discord-invite.js";
+import { membershipDiscountOptions, activeSitewideDiscount } from "./checkout-discounts.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -35,6 +36,11 @@ const DATA_DIR = process.env.DATA_DIR || "/var/data/slabsngrabsaco";
 const PENDING_FILE = path.join(DATA_DIR, "pending-submissions.json");
 const PAID_FILE = path.join(DATA_DIR, "paid-submissions.json");
 const SECRET_DIR = path.join(DATA_DIR, "secure-packages");
+// Separate from customer records so routine account cleanup cannot erase
+// signup and checkout consent evidence. Each line is encrypted and chained.
+const CONSENT_LEDGER_FILE = path.join(SECRET_DIR, "signup-consent-ledger.jsonl");
+const CONSENT_EMAIL_QUEUE_FILE = path.join(SECRET_DIR, "consent-email-queue.json");
+const CONSENT_RECEIPT_EMAIL = "Kaleb@slabsngrabs.com";
 // Customer-owned address variants remain here when a rented or gifted
 // managed account expires and its customer details are cleared.
 const CUSTOMER_JIG_POOL_DIR = path.join(SECRET_DIR, "jig-pools");
@@ -2148,6 +2154,113 @@ function decryptJson(payload) {
       decipher.final()
     ]).toString("utf8")
   );
+}
+
+const PURCHASE_CONSENT_VERSION = "membership-checkout-2026-09-29";
+const PURCHASE_CONSENT_TEXT = Object.freeze({
+  confirm: "I confirm that the information above is accurate.",
+  acknowledgeAcoOutcome: "I ACKNOWLEDGE THAT USING ACO DOES NOT GUARANTEE A CHECKOUT, HOWEVER IT DOES INCREASE MY CHANCES EXPONENTIALLY",
+  authorizeRequestedPurchases: "I AGREE TO ALLOW SLABSNGRABSACO TO MAKE PURCHASES ON MY BEHALF FOR ITEMS I HAVE AGREED UPON BEFORE A DROP. SLABSNGRABSACO IS NOT ACCOUNTABLE FOR THE MONEY SPENT ON THE ITEMS I HAVE REQUESTED BEFOREHAND."
+});
+const PURCHASE_CONSENT_KEYS = Object.keys(PURCHASE_CONSENT_TEXT);
+let consentLedgerQueue = Promise.resolve();
+let consentLedgerTail = null;
+let consentReceiptQueue = Promise.resolve();
+
+function consentDigest(previousHash, payload) {
+  return crypto.createHmac("sha256", encryptionKey())
+    .update(previousHash).update("\n").update(JSON.stringify(payload)).digest("hex");
+}
+async function readConsentLedger() {
+  let raw;
+  try { raw = await fs.readFile(CONSENT_LEDGER_FILE, "utf8"); }
+  catch (error) { if (error.code === "ENOENT") return { entries: [], tail: "" }; throw error; }
+  const entries = [];
+  let previous = "";
+  for (const line of raw.split("\n").filter(Boolean)) {
+    const item = JSON.parse(line);
+    if (item.previousHash !== previous || item.hash !== consentDigest(previous, item.payload)) {
+      throw new Error("Consent ledger integrity check failed.");
+    }
+    entries.push(decryptJson(item.payload));
+    previous = item.hash;
+  }
+  return { entries, tail: previous };
+}
+function appendConsentRecord(record) {
+  const next = consentLedgerQueue.then(async () => {
+    if (consentLedgerTail === null) consentLedgerTail = (await readConsentLedger()).tail;
+    await fs.mkdir(SECRET_DIR, { recursive: true, mode: 0o700 });
+    const payload = encryptJson({ id: crypto.randomUUID(), recordedAt: new Date().toISOString(), ...record });
+    const hash = consentDigest(consentLedgerTail, payload);
+    const line = JSON.stringify({ previousHash: consentLedgerTail, hash, payload }) + "\n";
+    const file = await fs.open(CONSENT_LEDGER_FILE, "a", 0o600);
+    try { await file.writeFile(line); await file.sync(); }
+    finally { await file.close(); }
+    consentLedgerTail = hash;
+    return decryptJson(payload);
+  });
+  consentLedgerQueue = next.catch(() => {});
+  return next;
+}
+function withConsentReceipts(task) {
+  const next = consentReceiptQueue.then(task);
+  consentReceiptQueue = next.catch(() => {});
+  return next;
+}
+async function readConsentEmailQueue() {
+  const stored = await readJson(CONSENT_EMAIL_QUEUE_FILE, null);
+  if (!stored) return [];
+  // Accept the initial array format if one was written during an upgrade.
+  return Array.isArray(stored) ? stored : decryptJson(stored);
+}
+async function writeConsentEmailQueue(pending) {
+  await writeJson(CONSENT_EMAIL_QUEUE_FILE, encryptJson(pending));
+}
+async function flushConsentReceipts() {
+  return withConsentReceipts(async () => {
+    if (!process.env.RESEND_API_KEY) return;
+    const pending = await readConsentEmailQueue();
+    while (pending.length) {
+      const item = pending[0];
+      try {
+        const response = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
+            to: [CONSENT_RECEIPT_EMAIL], subject: item.subject, text: item.text
+          }),
+          signal: AbortSignal.timeout(15000)
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      } catch (error) {
+        console.error("Owner consent receipt email pending:", error?.code || error?.message || "email_error");
+        break;
+      }
+      pending.shift();
+      await writeConsentEmailQueue(pending);
+    }
+  });
+}
+async function queueConsentReceipt(subject, text) {
+  await withConsentReceipts(async () => {
+    const pending = await readConsentEmailQueue();
+    pending.push({ subject, text });
+    await writeConsentEmailQueue(pending);
+  });
+  void flushConsentReceipts().catch(error => console.error("Owner consent receipt queue:", error.message));
+}
+setInterval(() => void flushConsentReceipts().catch(error =>
+  console.error("Owner consent receipt retry:", error.message)), 5 * 60 * 1000).unref?.();
+setTimeout(() => void flushConsentReceipts().catch(error =>
+  console.error("Owner consent receipt startup retry:", error.message)), 2000).unref?.();
+
+function consentRequestMetadata(req) {
+  return {
+    ip: String(req.ip || "").slice(0, 80),
+    userAgent: String(req.get("user-agent") || "").slice(0, 300)
+  };
 }
 
 async function saveEncryptedPackage(
@@ -7746,6 +7859,9 @@ app.post(
               purchaseAuthorizationAcceptedAt:
                 entry.purchaseAuthorizationAcceptedAt || null,
 
+              consentRecordId:
+                entry.consentRecordId || null,
+
               paidAt:
                 new Date()
                   .toISOString(),
@@ -7883,6 +7999,14 @@ app.post(
               PAID_FILE,
               paid
             );
+
+            if (existingIndex < 0 && record.consentRecordId) {
+              await appendConsentRecord({
+                type: "checkout_payment_confirmed", accountId: record.customerAccountId,
+                submissionId: id, consentRecordId: record.consentRecordId,
+                stripeSessionId: session.id, paidAt: record.paidAt
+              });
+            }
 
             if (!record.customerConfirmationSentAt) {
               try {
@@ -8705,6 +8829,18 @@ app.post(
       );
       if (verifiedDiscord) discordPendingIdentities.delete(discordTicket);
 
+      // Registration has no card-consent checkboxes. Record that distinction
+      // explicitly; purchase authorization is recorded at membership checkout.
+      const signupRecord = await appendConsentRecord({
+        type: "signup_completed", accountId: account.id, email: account.email,
+        emailVerifiedAt: null, cardPurchaseConsentAtSignup: false,
+        ...consentRequestMetadata(req)
+      });
+      await queueConsentReceipt(
+        `New website signup — ${account.email}`,
+        `Website account created\n\nAccount ID: ${account.id}\nEmail: ${account.email}\nServer signup time (UTC): ${signupRecord.recordedAt}\nAudit record ID: ${signupRecord.id}\n\nNo card or purchase authorization checkbox is presented during account registration. Those choices are recorded separately when a member starts a membership checkout. No card number or security code is included.`
+      ).catch(error => console.error("Signup owner email queue:", error.message));
+
       if (referrer) {
         try {
           await notifyReferralSignup(account);
@@ -8993,6 +9129,47 @@ app.post(
     }
   }
 );
+
+app.post("/api/account/purchase-consent-event", requireCustomer, async (req, res) => {
+  try {
+    const flowId = String(req.body?.flowId || "");
+    const checkbox = String(req.body?.checkbox || "");
+    if (!/^[0-9a-f-]{36}$/i.test(flowId) || !PURCHASE_CONSENT_KEYS.includes(checkbox) ||
+      typeof req.body?.checked !== "boolean") {
+      return res.status(400).json({ error: "Invalid consent event." });
+    }
+    const clientTime = Date.parse(String(req.body?.clientClickedAt || ""));
+    const event = await appendConsentRecord({
+      type: "checkbox_event", accountId: req.customerAccount.id, flowId,
+      checkbox, checked: req.body.checked, consentVersion: PURCHASE_CONSENT_VERSION,
+      displayedText: PURCHASE_CONSENT_TEXT[checkbox],
+      clientReportedClickAt: Number.isFinite(clientTime) && Math.abs(Date.now() - clientTime) < 24 * 60 * 60 * 1000
+        ? new Date(clientTime).toISOString() : null,
+      ...consentRequestMetadata(req)
+    });
+    return res.json({ ok: true, id: event.id, receivedAt: event.recordedAt });
+  } catch (error) {
+    console.error("Consent checkbox record failed:", error.message);
+    return res.status(503).json({ error: "Unable to record consent right now. Please try again." });
+  }
+});
+
+app.get("/api/admin/signup-consent-log", requireAdmin, async (req, res) => {
+  try {
+    await consentLedgerQueue;
+    const { entries } = await readConsentLedger();
+    const pendingReceipts = await readConsentEmailQueue();
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+    const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
+    return res.json({ ok: true, total: entries.length, offset,
+      pendingEmailReceipts: Array.isArray(pendingReceipts) ? pendingReceipts.length : 0,
+      receiptEmail: CONSENT_RECEIPT_EMAIL,
+      entries: entries.slice(Math.max(0, entries.length - offset - limit), Math.max(0, entries.length - offset)).reverse() });
+  } catch (error) {
+    console.error("Consent ledger read failed:", error.message);
+    return res.status(503).json({ error: "Consent ledger is unavailable or failed its integrity check." });
+  }
+});
 
 app.post(
   "/api/account/logout",
@@ -16019,6 +16196,17 @@ app.get("/api/admin/discount-codes", requireAdmin, async (req, res) => {
   return res.json({ codes: await getDiscountCodes() });
 });
 
+app.get("/api/public/membership-discounts", async (req, res) => {
+  const records = await getDiscountCodes();
+  const discounts = {};
+  for (const tier of Object.keys(PLANS)) {
+    const sale = activeSitewideDiscount(records, tier);
+    if (sale) discounts[tier] = { percent: sale.percent, duration: sale.duration };
+  }
+  res.set("Cache-Control", "no-store");
+  return res.json({ discounts });
+});
+
 app.put("/api/admin/customers/:id/og-status", requireAdmin, async (req, res) => {
   try {
     const accounts = await getCustomerAccounts();
@@ -16045,6 +16233,11 @@ app.post("/api/admin/discount-codes", requireAdmin, async (req, res) => {
     const tier = req.body?.tier === "all" || req.body?.tier === "" || req.body?.tier == null ? "all" : Number(req.body.tier);
     const appliesToRentals = req.body?.appliesToRentals === true;
     const duration = req.body?.duration === "forever" ? "forever" : "once";
+    const sitewide = req.body?.sitewide === true;
+    const recipientEmail = String(req.body?.recipientEmail || "").trim().toLowerCase();
+    if ((sitewide && recipientEmail) || (recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail))) {
+      return res.status(400).json({ error: "Choose a sitewide sale or enter a valid recipient email for a private code." });
+    }
     const expiration = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
     if (!/^[A-Z0-9]{3,40}$/.test(code) || !Number.isInteger(percent) || percent < 1 || percent > 100 ||
         (tier !== "all" && !PLANS[tier]) || (expiration && (!Number.isFinite(expiration.getTime()) || expiration.getTime() <= Date.now()))) {
@@ -16066,7 +16259,9 @@ app.post("/api/admin/discount-codes", requireAdmin, async (req, res) => {
       applies_to: { products: productIds },
       name: `SLABSNGRABSACO ${code}`
     });
-    const promotion = await stripe.promotionCodes.create({
+    // Private codes are redeemed only through our authenticated endpoint.
+    // Do not create a public Stripe promotion code that bypasses recipient checks.
+    const promotion = recipientEmail ? null : await stripe.promotionCodes.create({
       coupon: coupon.id,
       code,
       ...(expiration ? { expires_at: Math.floor(expiration.getTime() / 1000) } : {})
@@ -16074,7 +16269,8 @@ app.post("/api/admin/discount-codes", requireAdmin, async (req, res) => {
     const discount = {
       id: crypto.randomUUID(), code, percent, tier, appliesToRentals, duration,
       expiresAt: expiration?.toISOString() || null,
-      active: true, stripeCouponId: coupon.id, stripePromotionCodeId: promotion.id,
+      active: true, sitewide, recipientEmail: recipientEmail || null,
+      stripeCouponId: coupon.id, stripePromotionCodeId: promotion?.id || null,
       createdAt: new Date().toISOString()
     };
     records.push(discount);
@@ -35507,6 +35703,38 @@ app.post(
           error: "Please agree to the requested purchase authorization before continuing."
         });
       }
+      if (req.body.confirm !== true) {
+        return res.status(400).json({ error: "Please confirm that the checkout information is accurate." });
+      }
+
+      const consentFlowId = String(req.body.consentFlowId || "");
+      let discountOptions;
+      try {
+        discountOptions = membershipDiscountOptions(await getDiscountCodes(), req.body.discountCode, tier, Date.now(), req.customerAccount.email);
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (!/^[0-9a-f-]{36}$/i.test(consentFlowId)) {
+        return res.status(400).json({ error: "Please check the consent boxes again before checkout." });
+      }
+      await consentLedgerQueue;
+      const consentEvents = (await readConsentLedger()).entries.filter(item =>
+        item.type === "checkbox_event" && item.accountId === req.customerAccount.id &&
+        item.flowId === consentFlowId && item.consentVersion === PURCHASE_CONSENT_VERSION
+      );
+      const accepted = {};
+      for (const checkbox of PURCHASE_CONSENT_KEYS) {
+        const latest = consentEvents.filter(item => item.checkbox === checkbox).at(-1);
+        if (!latest?.checked || Date.now() - Date.parse(latest.recordedAt) > 24 * 60 * 60 * 1000) {
+          return res.status(400).json({ error: "Please check each consent box again before checkout." });
+        }
+        accepted[checkbox] = {
+          text: PURCHASE_CONSENT_TEXT[checkbox],
+          serverReceivedAt: latest.recordedAt,
+          clientReportedClickAt: latest.clientReportedClickAt,
+          checkboxEventId: latest.id
+        };
+      }
 
       const profile =
         sanitizeProfile(
@@ -35578,6 +35806,21 @@ app.post(
         new Date()
           .toISOString();
 
+      const consentRecord = await appendConsentRecord({
+        type: "checkout_consent", accountId: req.customerAccount.id,
+        signupEmail: req.customerAccount.email, purchaseEmail: profile.email,
+        submissionId: id, planName: plan.name, consentVersion: PURCHASE_CONSENT_VERSION,
+        checkboxes: accepted, checkoutStartedAt: now,
+        paymentConfirmed: false, ...consentRequestMetadata(req)
+      });
+      const checkboxLines = PURCHASE_CONSENT_KEYS.map(key =>
+        `${key}\nText: ${accepted[key].text}\nServer received click (UTC): ${accepted[key].serverReceivedAt}\nBrowser-reported click (UTC, unverified): ${accepted[key].clientReportedClickAt || "not available"}`
+      ).join("\n\n");
+      await queueConsentReceipt(
+        `Membership checkout consent — ${req.customerAccount.email}`,
+        `Membership checkout consent recorded\n\nAccount ID: ${req.customerAccount.id}\nAccount email: ${req.customerAccount.email}\nCheckout contact email: ${profile.email}\nSubmission ID: ${id}\nPlan: ${plan.name}\nServer checkout time (UTC): ${now}\nConsent version: ${PURCHASE_CONSENT_VERSION}\nAudit record ID: ${consentRecord.id}\n\n${checkboxLines}\n\nThis records choices before Stripe Checkout. It does not state that payment completed or authorize unspecified future items. No card number or security code is included.`
+      );
+
       const pending =
         await readJson(
           PENDING_FILE,
@@ -35606,6 +35849,9 @@ app.post(
 
         purchaseAuthorizationAcceptedAt:
           now,
+
+        consentRecordId:
+          consentRecord.id,
 
         createdAt:
           now
@@ -35665,8 +35911,7 @@ app.post(
             billing_address_collection:
               "auto",
 
-            allow_promotion_codes:
-              true
+            ...discountOptions
           });
 
       return res.json({
