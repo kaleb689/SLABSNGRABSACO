@@ -4473,6 +4473,20 @@
       background: #2c1014;
     }
 
+    .admin-export-ready-tag.jig-needed,
+    .linked-list-readiness.jig-needed {
+      color: #ffd965 !important;
+      border-color: #ae8624;
+      background: #30240b;
+    }
+
+    .admin-export-ready-tag.failed,
+    .linked-list-readiness.failed {
+      color: #ff737a !important;
+      border-color: #913b41;
+      background: #2d1115;
+    }
+
     .admin-export-ready-light {
       width: 8px;
       height: 8px;
@@ -4605,6 +4619,24 @@
       background: currentColor;
       box-shadow: 0 0 9px currentColor;
     }
+
+    .jig-modal[hidden] { display: none !important; }
+    .jig-modal { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center;
+      padding: 20px; background: rgba(0, 8, 17, .82); }
+    .jig-modal-panel { width: min(760px, 100%); max-height: 88vh; overflow: auto; position: relative;
+      padding: 24px; border: 1px solid #316481; border-radius: 16px; background: #081b2a; color: #e8f7ff; }
+    .jig-modal-close { position: absolute; right: 14px; top: 12px; border: 0; background: transparent;
+      color: #fff; font-size: 28px; cursor: pointer; }
+    .jig-source { border: 1px solid #31516a; border-radius: 12px; padding: 15px; margin: 14px 0; }
+    .jig-source strong, .jig-source small { display: block; margin: 5px 0; }
+    .jig-variant-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 9px 0; border-top: 1px solid #254356; }
+    .jig-variant-row span { min-width: 0; overflow-wrap: anywhere; }
+    .jig-edit-form { display: grid; gap: 10px; margin-top: 15px; padding: 16px;
+      border: 1px solid #467388; border-radius: 10px; }
+    .jig-edit-form[hidden] { display: none; }
+    .jig-edit-form label { display: grid; gap: 5px; }
+    .jig-edit-form input { width: 100%; padding: 9px; }
 
     .linked-list-missing-fields {
       display: block;
@@ -7709,9 +7741,28 @@ function renderOrder(x) {
       JIG &amp; ATTACH PAYMENT
     </button>
 
+    <button type="button" class="admin-edit-button" data-show-jigs="${escapeHtml(x.id)}">Show Jigs</button>
+
     <p>
       Fills only profiles that are missing shipping/card information. Uses every unique saved/customer-submitted address to create as many non-duplicated safe JIGs as possible, and rotates saved cards evenly across profiles that need card information. Partial results are saved when unique JIGs run out.
     </p>
+  </div>
+
+  <div class="jig-modal" data-jig-modal="${escapeHtml(x.id)}" hidden>
+    <div class="jig-modal-panel" role="dialog" aria-modal="true" aria-label="Customer address JIGs">
+      <button type="button" class="jig-modal-close" data-close-jigs aria-label="Close JIGs">×</button>
+      <h3>Main Addresses &amp; JIGs</h3>
+      <p>Submitted main addresses stay unchanged. Edit or add only a truthful formatting variant; house, street, unit number, city, state and ZIP stay the same.</p>
+      <div data-jig-sources>Loading...</div>
+      <form class="jig-edit-form" data-jig-edit-form hidden>
+        <h4 data-jig-form-title>Add JIG</h4>
+        <label>Street address <input name="address" required maxlength="240"></label>
+        <label>Apartment / unit <input name="address2" maxlength="160"></label>
+        <p data-jig-fixed-address></p>
+        <button type="submit" class="admin-save-button">Save JIG</button>
+        <span data-jig-form-message role="status"></span>
+      </form>
+    </div>
   </div>
 
   <div
@@ -8157,6 +8208,8 @@ const ADMIN_RETAILERS = [
 function adminExportReadinessHtml(
   item
 ) {
+  const attempted = item?.exportAttemptStatus && item?.exportAttemptedAt &&
+    (!item?.updatedAt || Date.parse(item.exportAttemptedAt) >= Date.parse(item.updatedAt));
   const ready =
     item?.exportReady ===
     true;
@@ -8172,21 +8225,21 @@ function adminExportReadinessHtml(
     <div class="admin-export-readiness">
       <span
         class="admin-export-ready-tag ${
-          ready
-            ? "ready"
-            : "missing"
+          attempted
+            ? item.exportAttemptStatus === "success" ? "ready" : "failed"
+            : item?.jigNeeded ? "jig-needed" : ready ? "ready" : "missing"
         }"
       >
         <span class="admin-export-ready-light"></span>
         ${
-          ready
-            ? "EXPORT READY"
-            : "MISSING FIELD"
+          attempted
+            ? item.exportAttemptStatus === "success" ? "EXPORT SUCCESSFUL" : "UNSUCCESSFUL EXPORT"
+            : item?.jigNeeded ? "JIG NEEDED" : ready ? "EXPORT READY" : "MISSING FIELD"
         }
       </span>
 
       ${
-        ready
+        ready && !item?.jigNeeded
           ? ""
           : `
               <small>
@@ -9931,17 +9984,13 @@ function linkedProfileListCardHtml(
         </span>
 
         <span
-          class="linked-list-readiness ${
-            membership.exportReady
-              ? "ready"
-              : "missing"
-          }"
+          class="linked-list-readiness ${membership.exportAttemptStatus && membership.exportAttemptedAt && (!membership.updatedAt || Date.parse(membership.exportAttemptedAt) >= Date.parse(membership.updatedAt)) ? (membership.exportAttemptStatus === "success" ? "ready" : "failed") : membership.jigNeeded ? "jig-needed" : membership.exportReady ? "ready" : "missing"}"
         >
           <span class="linked-list-readiness-light"></span>
           ${
-            membership.exportReady
-              ? "EXPORT READY"
-              : "MISSING FIELD"
+            membership.exportAttemptStatus && membership.exportAttemptedAt && (!membership.updatedAt || Date.parse(membership.exportAttemptedAt) >= Date.parse(membership.updatedAt))
+              ? membership.exportAttemptStatus === "success" ? "EXPORT SUCCESSFUL" : "UNSUCCESSFUL EXPORT"
+              : membership.jigNeeded ? "JIG NEEDED" : membership.exportReady ? "EXPORT READY" : "MISSING FIELD"
           }
         </span>
 
@@ -20998,6 +21047,11 @@ async function adminConfirmRetailerExport(
     )
   );
 
+  await Promise.all([
+    loadAdminRetailerProfiles(orderId),
+    loadAdminLinkedProfiles(orderId)
+  ]);
+
   return true;
 }
 
@@ -22452,6 +22506,99 @@ document.addEventListener(
 /* =========================================
    LINKED PROFILES — JIG & ATTACH PAYMENT
 ========================================= */
+async function loadAdminJigModal(modal, orderId) {
+  const area = modal.querySelector("[data-jig-sources]");
+  area.textContent = "Loading addresses...";
+  const response = await fetch(`/api/admin/submissions/${encodeURIComponent(orderId)}/jigs`, {
+    credentials: "same-origin", cache: "no-store"
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Unable to load JIGs.");
+  modal._jigSources = data.sources || [];
+  const line = address => [address.address, address.address2, address.city, address.state, address.zip]
+    .filter(Boolean).join(", ");
+  area.innerHTML = modal._jigSources.length ? modal._jigSources.map(source => `
+    <section class="jig-source">
+      <h4>${escapeHtml(source.label || "Main address")}</h4>
+      <strong>Main address (unchanged): ${escapeHtml(line(source.original))}</strong>
+      ${(source.variants || []).length ? source.variants.map(variant => `
+        <div class="jig-variant-row">
+          <span>${escapeHtml(line(variant.address))}
+            <small>${variant.assignedProfiles?.length ? `Linked to ${escapeHtml(variant.assignedProfiles.join(", "))}` : "Available"}</small>
+          </span>
+          <button type="button" class="admin-edit-button" data-edit-jig="${escapeHtml(variant.id)}"
+            data-jig-source-id="${escapeHtml(source.id)}">Edit</button>
+        </div>`).join("") : "<p>No JIGs saved yet.</p>"}
+      <button type="button" class="admin-edit-button" data-add-jig="${escapeHtml(source.id)}">Edit or Add JIGs</button>
+    </section>`).join("") : "<p>No main addresses have been submitted yet.</p>";
+}
+
+document.addEventListener("click", async event => {
+  const open = event.target.closest("[data-show-jigs]");
+  const close = event.target.closest("[data-close-jigs]");
+  const edit = event.target.closest("[data-edit-jig], [data-add-jig]");
+  if (open) {
+    const modal = document.querySelector(`[data-jig-modal="${CSS.escape(open.dataset.showJigs)}"]`);
+    if (!modal) return;
+    modal.hidden = false;
+    modal._orderId = open.dataset.showJigs;
+    try { await loadAdminJigModal(modal, modal._orderId); }
+    catch (error) { modal.querySelector("[data-jig-sources]").textContent = error.message; }
+    return;
+  }
+  if (close) {
+    const modal = close.closest("[data-jig-modal]");
+    modal.hidden = true;
+    modal.querySelector("[data-jig-edit-form]").hidden = true;
+    return;
+  }
+  if (edit) {
+    const modal = edit.closest("[data-jig-modal]");
+    const source = modal._jigSources?.find(item => item.id === (edit.dataset.jigSourceId || edit.dataset.addJig));
+    if (!source) return;
+    const variant = source.variants?.find(item => item.id === edit.dataset.editJig);
+    const form = modal.querySelector("[data-jig-edit-form]");
+    form.dataset.sourceId = source.id;
+    form.dataset.variantId = variant?.id || "";
+    form.querySelector("[name=address]").value = variant?.address?.address || source.original.address || "";
+    form.querySelector("[name=address2]").value = variant?.address?.address2 || source.original.address2 || "";
+    form.querySelector("[data-jig-form-title]").textContent = variant ? "Edit JIG" : "Add JIG";
+    form.querySelector("[data-jig-fixed-address]").textContent =
+      `Main address: ${[source.original.address, source.original.address2, source.original.city, source.original.state, source.original.zip].filter(Boolean).join(", ")}`;
+    form.querySelector("[data-jig-form-message]").textContent = "";
+    form.hidden = false;
+    form.scrollIntoView({ block: "nearest" });
+  }
+});
+
+document.addEventListener("submit", async event => {
+  const form = event.target.closest("[data-jig-edit-form]");
+  if (!form) return;
+  event.preventDefault();
+  const modal = form.closest("[data-jig-modal]");
+  const source = modal._jigSources?.find(item => item.id === form.dataset.sourceId);
+  if (!source) return;
+  const message = form.querySelector("[data-jig-form-message]");
+  const path = `/api/admin/submissions/${encodeURIComponent(modal._orderId)}/jigs/${encodeURIComponent(source.id)}` +
+    (form.dataset.variantId ? `/${encodeURIComponent(form.dataset.variantId)}` : "");
+  try {
+    const response = await fetch(path, {
+      method: form.dataset.variantId ? "PUT" : "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address: {
+        address: form.elements.address.value, address2: form.elements.address2.value,
+        city: source.original.city, state: source.original.state,
+        zip: source.original.zip, country: source.original.country
+      } })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to save JIG.");
+    form.hidden = true;
+    await loadAdminJigModal(modal, modal._orderId);
+    await Promise.all([loadAdminLinkedProfiles(modal._orderId), loadAdminRetailerProfiles(modal._orderId)]);
+  } catch (error) { message.textContent = error.message; }
+});
+
 document.addEventListener(
   "click",
   async event => {
