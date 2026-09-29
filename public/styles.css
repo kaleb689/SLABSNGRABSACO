@@ -11690,6 +11690,25 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   flex: 1;
 }
 
+#profile-form label.purchase-authorization-consent {
+  padding: 18px;
+  border: 2px solid #28cfff;
+  border-radius: 12px;
+  background: rgba(10, 50, 72, .72);
+  box-shadow: 0 0 22px rgba(18, 201, 255, .18);
+  color: #f5fbff;
+  font-size: clamp(18px, 2vw, 22px);
+  font-weight: 950;
+  line-height: 1.45;
+}
+
+#profile-form label.purchase-authorization-consent > input[type="checkbox"] {
+  flex-basis: 28px;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
 
 
 /* =====================================================

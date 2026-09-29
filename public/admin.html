@@ -2729,6 +2729,55 @@
       border-top: 1px solid #17384e;
     }
 
+    .managed-assigned-section {
+      min-width: 0;
+      padding: 14px;
+      border: 1px solid #24536c;
+      border-radius: 12px;
+      background: linear-gradient(145deg, #092032, #071520);
+    }
+
+    .managed-assigned-section-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .managed-assigned-section-heading h4 {
+      margin: 5px 0;
+      color: #f1fbff;
+      font-size: 18px;
+    }
+
+    .managed-assigned-section-heading p {
+      margin: 0;
+      color: #9fb7c7;
+      font-size: 11px;
+    }
+
+    .managed-assigned-section-heading > strong {
+      display: grid;
+      place-items: center;
+      min-width: 38px;
+      min-height: 38px;
+      border: 1px solid #3489a8;
+      border-radius: 999px;
+      color: #79e5ff;
+    }
+
+    .managed-assigned-section .managed-group-select {
+      color: #eaf9ff;
+      font-size: 11px;
+    }
+
+    .managed-assigned-section .managed-assigned-list-head {
+      margin-top: 10px;
+      border: 1px solid #24536c;
+      border-radius: 9px;
+      background: #0a2638;
+    }
+
     .managed-group-list {
       display: grid;
       gap: 12px;
@@ -2993,6 +3042,46 @@
       border-radius: 8px;
       background: #06101a;
       cursor: pointer;
+    }
+
+    .managed-available-entry {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .managed-available-entry .managed-available-select-row {
+      flex: 1;
+    }
+
+    .managed-available-entry button {
+      flex: 0 0 auto;
+      min-height: 40px;
+      padding: 8px 12px;
+      border: 1px solid #279dc4;
+      border-radius: 8px;
+      background: #0a405b;
+      color: #edfbff;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .managed-assign-new-button {
+      justify-self: start;
+      min-height: 42px;
+      padding: 10px 14px;
+      border: 1px solid #27a4cf;
+      border-radius: 9px;
+      background: #0b3b55;
+      color: #f2fbff;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    @media (max-width: 620px) {
+      .managed-available-entry { flex-wrap: wrap; }
+      .managed-available-entry button { width: 100%; }
     }
 
     .managed-available-select-row input {
@@ -14503,8 +14592,8 @@ function renderManagedMembershipDashboard(
 
         const availableRowHtml =
           membership => `
-            <label
-              class="managed-available-select-row managed-available-large-row"
+            <div
+              class="managed-available-entry"
               data-managed-available-search-values="${escapeHtml(
                 JSON.stringify([
                   membership.displayEmail || "",
@@ -14517,6 +14606,7 @@ function renderManagedMembershipDashboard(
                 ])
               )}"
             >
+              <label class="managed-available-select-row managed-available-large-row">
               <input
                 type="checkbox"
                 data-managed-available-select="${escapeHtml(
@@ -14544,7 +14634,15 @@ function renderManagedMembershipDashboard(
                   )}
                 </small>
               </span>
-            </label>
+              </label>
+              <button
+                type="button"
+                data-managed-assign-one="${escapeHtml(membership.id)}"
+                data-managed-assign-group="${escapeHtml(groupId)}"
+                data-managed-assign-type="${escapeHtml(type)}"
+                aria-label="Assign ${escapeHtml(managedAvailableAccountEmail(membership))} to ${escapeHtml(username)}"
+              >Assign</button>
+            </div>
           `;
 
         const targetAvailable =
@@ -14822,6 +14920,12 @@ function renderManagedMembershipDashboard(
                   : ""
               }
 
+              <button
+                type="button"
+                class="managed-assign-new-button"
+                data-managed-open-assign="${escapeHtml(groupId)}"
+              >Assign New ${type === "free" ? "Gifted" : "Rented"} Account</button>
+
               <details
                 class="managed-add-remove-panel admin-collapsible"
                 data-managed-add-remove-panel="${escapeHtml(
@@ -14837,11 +14941,11 @@ function renderManagedMembershipDashboard(
                     </span>
 
                     <h4>
-                      Add / Remove Accounts
+                      Assign / Remove Accounts
                     </h4>
 
                     <p>
-                      Select accounts, choose a package, then add or remove in bulk.
+                      Search the available pool, assign one account, or select several to assign or remove in bulk.
                     </p>
                   </div>
 
@@ -14853,11 +14957,11 @@ function renderManagedMembershipDashboard(
                 <div class="managed-group-bulk-toolbar">
                   <div class="managed-group-bulk-title">
                     <strong>
-                      ADD / REMOVE ACCOUNTS
+                      ASSIGN / REMOVE ACCOUNTS
                     </strong>
 
                     <small>
-                      Add selected available accounts or remove selected assigned accounts.
+                      Assign selected available accounts or remove selected assigned accounts.
                     </small>
                   </div>
 
@@ -14895,7 +14999,7 @@ function renderManagedMembershipDashboard(
                     type
                   )}"
                 >
-                  Add Selected
+                  Assign Selected
                 </button>
 
                 <button
@@ -14942,9 +15046,17 @@ function renderManagedMembershipDashboard(
                   ${availableRows}
                 </div>
               </details>
-                </div>
               </details>
 
+              <section class="managed-assigned-section" aria-label="Assigned ${type === "free" ? "gifted" : "rented"} profiles for ${escapeHtml(username)}">
+                <div class="managed-assigned-section-heading">
+                  <div>
+                    <span class="eyebrow">${type === "free" ? "GIFTED" : "RENTED"} ACCOUNTS</span>
+                    <h4>Assigned Profiles</h4>
+                    <p>Search and select profiles assigned to this user.</p>
+                  </div>
+                  <strong>${group.memberships.length}</strong>
+                </div>
               ${
                 group.memberships.length
                   ? `
@@ -14958,7 +15070,8 @@ function renderManagedMembershipDashboard(
                           data-managed-assigned-search="${escapeHtml(
                             groupId
                           )}"
-                          placeholder="Search assigned ${type === "free" ? "gifted" : "rented"} email, shipping, or card information..."
+                          placeholder="Search this user's ${type === "free" ? "gifted" : "rented"} profiles..."
+                          aria-label="Search ${type === "free" ? "gifted" : "rented"} profiles assigned to ${escapeHtml(username)}"
                           autocomplete="off"
                         >
 
@@ -14995,12 +15108,12 @@ function renderManagedMembershipDashboard(
                           >
 
                           <span>
-                            SELECT ALL ASSIGNED
+                            SELECT ALL THIS USER'S PROFILES
                           </span>
                         </label>
 
                         <strong>
-                          ASSIGNED ACCOUNTS
+                          ${group.memberships.length} ASSIGNED
                         </strong>
                       </div>
 
@@ -15012,10 +15125,11 @@ function renderManagedMembershipDashboard(
                     `
                   : `
                       <div class="empty-admin managed-group-empty">
-                        This customer does not currently have any ${type === "free" ? "gifted" : "rented"} accounts.
+                        This user does not currently have any assigned ${type === "free" ? "gifted" : "rented"} profiles.
                       </div>
                     `
               }
+              </section>
             </div>
           </details>
         `;
@@ -16694,6 +16808,45 @@ function bindManagedMembershipDashboard(
       );
     });
 
+  document.querySelectorAll("[data-managed-open-assign]").forEach(button => {
+    button.addEventListener("click", () => {
+      const group = button.closest("[data-managed-customer-group]");
+      const editor = group?.querySelector("[data-managed-add-remove-panel]");
+      const pool = editor?.querySelector(".managed-group-available-list");
+      if (editor) editor.open = true;
+      if (pool) pool.open = true;
+      group?.querySelector("[data-managed-available-search]")?.focus();
+    });
+  });
+
+  document.querySelectorAll("[data-managed-assign-one]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const id = button.dataset.managedAssignOne;
+      const customerAccountId = button.dataset.managedAssignGroup;
+      const buttonType = button.dataset.managedAssignType;
+      const group = button.closest("[data-managed-customer-group]");
+      const durationType = group?.querySelector("[data-managed-group-duration]")?.value || "1_drop";
+      if (!id || !customerAccountId || !buttonType) return;
+      managedOpenGroupKeys.add(`${buttonType}:${customerAccountId}`);
+      button.disabled = true;
+      button.textContent = "Assigning…";
+      try {
+        const response = await fetch(
+          `/api/admin/${buttonType}-memberships/${encodeURIComponent(id)}/assign`,
+          { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ customerAccountId, durationType }) }
+        );
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || "Unable to assign this account.");
+        await load();
+      } catch (error) {
+        alert(error.message);
+        button.disabled = false;
+        button.textContent = "Assign";
+      }
+    });
+  });
+
 
   document
     .querySelectorAll(
@@ -16730,7 +16883,7 @@ function bindManagedMembershipDashboard(
 
           if (!ids.length) {
             alert(
-              "Select at least one available account to add."
+              "Select at least one available account to assign."
             );
             return;
           }
@@ -16751,7 +16904,7 @@ function bindManagedMembershipDashboard(
             true;
 
           button.textContent =
-            "Adding...";
+            "Assigning...";
 
           try {
             for (
@@ -16792,7 +16945,7 @@ function bindManagedMembershipDashboard(
               if (!response.ok) {
                 throw new Error(
                   result.error ||
-                  `Unable to add account ${id}.`
+                  `Unable to assign account ${id}.`
                 );
               }
             }
@@ -16808,7 +16961,7 @@ function bindManagedMembershipDashboard(
               false;
 
             button.textContent =
-              "Add Selected";
+              "Assign Selected";
           }
         }
       );
