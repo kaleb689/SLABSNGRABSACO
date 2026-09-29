@@ -42,6 +42,16 @@ test("admin discount edit, rollback, deactivation and deletion stay synchronized
       password: "synthetic-admin-password-123456789", code: authenticator.generate(adminSecret)
     });
     assert.equal(admin.status, 200);
+    const customer = await request("/api/account/register", "POST", { email: "jigs@example.test", password: "synthetic-password-123" });
+    assert.equal(customer.status, 201);
+    const accounts = JSON.parse(await fs.readFile(path.join(dataDir, "customer-accounts.json"), "utf8"));
+    const main = { address: "8275 Oceanus drive", address2: "", city: "boca raton", state: "Florida", zip: "33496", country: "US" };
+    await fs.writeFile(path.join(dataDir, "paid-submissions.json"), JSON.stringify([{ id: "jig-order", customerAccountId: accounts[0].id, profile: main }]));
+    const jigPool = await request("/api/admin/submissions/jig-order/jigs", "GET", null, admin.cookie);
+    assert.equal(jigPool.status, 200);
+    assert.equal(jigPool.data.sources[0].original.address, main.address);
+    assert.ok(jigPool.data.sources[0].variants.some(item => item.address.address === "8275 Oceanus DR"));
+    assert.ok(jigPool.data.sources[0].variants.length <= 4);
     const settings = { code: "SAVE20", percent: 20, tier: "all", sitewide: true, duration: "forever" };
     assert.equal((await request("/api/admin/discount-codes", "POST", settings)).status, 401);
     const created = await request("/api/admin/discount-codes", "POST", settings, admin.cookie);
