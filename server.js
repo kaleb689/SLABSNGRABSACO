@@ -901,6 +901,10 @@ console.error = (
 };
 
 
+function normalizeAddressTokenText(value = "") {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
 function customerJigPoolPath(accountId) {
   return path.join(CUSTOMER_JIG_POOL_DIR, `customer-${String(accountId)}.encrypted.json`);
 }
