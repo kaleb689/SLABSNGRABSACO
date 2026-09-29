@@ -3183,20 +3183,12 @@ select:focus {
   filter: drop-shadow(.17em .15em 0 #fb59cf);
 }
 #home .public-success-heading .public-success-letter::after {
-  content: ""; position: absolute; left: 43%; top: 74%; width: .14em; height: .31em;
-  border-radius: 0 0 100% 100%; background: #db3eb1;
+  content: ""; position: absolute; left: var(--drip-left, 43%); top: 67%;
+  width: .13em; height: .39em; border-radius: 0 0 60% 60%; background: #ff65d4;
   transform: scaleY(0); transform-origin: top; pointer-events: none;
   animation: success-letter-drip var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
 }
-#home .public-success-title-tail .public-success-letter::after { background: #41b6e6; }
-#home .public-success-heading .public-success-shadow-drip {
-  position: absolute; left: calc(43% + .17em); top: calc(74% + .15em);
-  width: .14em; height: .34em; border-radius: 0 0 100% 100%;
-  background: #52dff9; pointer-events: none;
-  transform: scaleY(0); transform-origin: top;
-  animation: success-letter-drip var(--melt-duration, 12s) ease-in-out var(--melt-delay, 0s) infinite;
-}
-#home .public-success-title-tail .public-success-shadow-drip { background: #fb59cf; }
+#home .public-success-title-tail .public-success-letter::after { background: #5de8ff; }
 @keyframes success-letter-melt {
   0%, 12%, 42%, 100% { transform: rotate(0deg); }
   25% { transform: rotate(var(--melt-angle, 2deg)); }
@@ -3207,8 +3199,7 @@ select:focus {
 }
 @media (prefers-reduced-motion: reduce) {
   #home .public-success-heading .public-success-letter,
-  #home .public-success-heading .public-success-letter::after,
-  #home .public-success-heading .public-success-shadow-drip { animation: none; }
+  #home .public-success-heading .public-success-letter::after { animation: none; }
 }
 #home .public-success-live {
   display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
