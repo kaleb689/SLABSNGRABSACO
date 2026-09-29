@@ -1,0 +1,74 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import crypto from "node:crypto";
+import { spawn } from "node:child_process";
+import { authenticator } from "otplib";
+
+test("admin discount edit, rollback, deactivation and deletion stay synchronized with Stripe", async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "signup-consent-test-"));
+  const port = 46000 + Math.floor(Math.random() * 4000);
+  const base = `http://127.0.0.1:${port}`;
+  const adminSecret = authenticator.generateSecret();
+  const serverOptions = {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    env: {
+      ...process.env, DATA_DIR: dataDir, PORT: String(port), BASE_URL: base,
+      RESEND_API_KEY: "", STRIPE_SECRET_KEY: "sk_test_missing", STRIPE_TIER1_PRICE_ID: "price_test",
+      CUSTOMER_SESSION_SECRET: "synthetic-session-secret-123456789",
+      SUBMISSION_ENCRYPTION_KEY: "synthetic-ledger-key-123456789",
+      ADMIN_PASSWORD: "synthetic-admin-password-123456789", ADMIN_2FA_SECRET: adminSecret
+    },
+    stdio: "ignore"
+  };
+  let server = spawn("node", ["--import", "./test/fixtures/stripe-discounts.mjs", "server.js"], serverOptions);
+  const request = async (route, method = "GET", body, cookie = "") => {
+    const response = await fetch(base + route, {
+      method, headers: { Origin: base, Cookie: cookie, "Content-Type": "application/json" },
+      body: body && JSON.stringify(body)
+    });
+    return { status: response.status, data: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
+  };
+  try {
+    let ready = false;
+    for (let i = 0; i < 60; i++) {
+      try { await fetch(base); ready = true; break; }
+      catch { await new Promise(resolve => setTimeout(resolve, 100)); }
+    }
+    assert.ok(ready, "test server started");
+    const admin = await request("/api/admin/login", "POST", {
+      password: "synthetic-admin-password-123456789", code: authenticator.generate(adminSecret)
+    });
+    assert.equal(admin.status, 200);
+    const settings = { code: "SAVE20", percent: 20, tier: "all", sitewide: true, duration: "forever" };
+    assert.equal((await request("/api/admin/discount-codes", "POST", settings)).status, 401);
+    const created = await request("/api/admin/discount-codes", "POST", settings, admin.cookie);
+    assert.equal(created.status, 201);
+    const id = created.data.discount.id;
+    const url = `/api/admin/discount-codes/${id}`;
+    const edited = await request(url, "PUT", { ...settings, percent: 30 }, admin.cookie);
+    assert.equal(edited.status, 200);
+    assert.equal(edited.data.discount.id, id);
+    assert.notEqual(edited.data.discount.stripeCouponId, created.data.discount.stripeCouponId);
+    assert.equal((await request("/api/public/membership-discounts")).data.discounts[1].percent, 30);
+    const rejected = await request(url, "PUT", { ...settings, code: "FAIL20" }, admin.cookie);
+    assert.equal(rejected.status, 502);
+    assert.equal((await request("/api/admin/discount-codes", "GET", null, admin.cookie)).data.codes[0].percent, 30);
+    assert.equal((await request(url, "PATCH", { active: false }, admin.cookie)).status, 200);
+    assert.deepEqual((await request("/api/public/membership-discounts")).data.discounts, {});
+    assert.equal((await request(url, "PATCH", { active: true }, admin.cookie)).status, 200);
+    assert.equal((await request(url, "DELETE", null, admin.cookie)).status, 200);
+    assert.deepEqual((await request("/api/admin/discount-codes", "GET", null, admin.cookie)).data.codes, []);
+    assert.deepEqual((await request("/api/public/membership-discounts")).data.discounts, {});
+    assert.equal((await request(url, "PUT", settings, admin.cookie)).status, 404);
+    const privateCode = await request("/api/admin/discount-codes", "POST", { ...settings, sitewide: false, recipientEmail: "mike@example.test" }, admin.cookie);
+    assert.equal(privateCode.status, 201);
+    assert.equal(privateCode.data.discount.stripePromotionCodeId, null);
+    assert.equal((await request(`/api/admin/discount-codes/${privateCode.data.discount.id}`, "DELETE", null, admin.cookie)).status, 200);
+  } finally {
+    server.kill();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
