@@ -23,7 +23,7 @@ test("direction, avenue and suite variants form combinations while unit A2 stays
   ]) assert.ok(variants.some(item => item.address === street && item.address2 === unit), `${street}, ${unit}`);
   for (const item of variants) {
     assert.match(item.address, /^3350 /);
-    assert.match(item.address2, /^(?:(?:STE|SUITE|APT|APARTMENT|UNIT) |#)A2$/i);
+    assert.match(item.address2, /^(?:(?:STE|SUITE|APT|APARTMENT|UNIT) |# ?)A2$/i);
     for (const field of ["city", "state", "zip", "country"]) assert.equal(item[field], original[field]);
   }
 });
@@ -41,4 +41,14 @@ test("an inline suite preserves the unit while allowing the street suffix to var
   const variants = safeAddressVariants({ address: "3350 NW 2ND AVE, SUITE A2", city: "Boca raton", state: "FL", zip: "33431", country: "US" });
   assert.ok(variants.some(item => item.address === "3350 NORTHWEST 2ND AVENUE" && item.address2 === "STE A2"));
   assert.ok(variants.every(item => /A2/.test(`${item.address} ${item.address2}`)));
+});
+
+test("four defaults combine directions, numbered streets, suffixes, and distinct unit labels", () => {
+  const main = { address: "3350 NW 2ND AVE", address2: "Ste A2", city: "Boca raton", state: "FL", zip: "33431", country: "US" };
+  const jigs = defaultJigVariants(main);
+  assert.equal(jigs.length, 4);
+  assert.ok(jigs.some(item => item.address === "3350 NORTHWEST 2 AVENUE" && item.address2 === "# A2"));
+  assert.ok(jigs.some(item => item.address === "3350 NORTHWEST second AVE" && item.address2 === "UNIT A2"));
+  assert.equal(new Set(jigs.map(item => item.address2)).size, 4);
+  assert.ok(jigs.every(item => item.address2.endsWith("A2") && item.address.startsWith("3350 ")));
 });

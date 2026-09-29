@@ -12253,6 +12253,14 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   #account-tab-edit-profile > .profile-support-card { grid-column: 1; }
 }
 
+/* Frame customer account notifications so the section is easy to find. */
+#account-tab-notifications .customer-notifications-card {
+  box-sizing: border-box;
+  border: 2px solid rgba(18, 201, 255, .65);
+  border-radius: 16px;
+  padding: 24px;
+}
+
 /* Keep paid profile names and controls clear of the three status badges. */
 #account-tab-edit-profile .paid-profile-card .profile-compact-main {
   grid-template-columns: minmax(0, 1fr);
