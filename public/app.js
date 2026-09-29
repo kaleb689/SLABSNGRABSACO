@@ -5827,6 +5827,9 @@ function savedPaymentById(id) {
   ) || null;
 }
 
+let activePaidProfileSlot = 1;
+let savedImapEntries = [];
+
 function renderSavedDetailsManager() {
   const addresses = Array.isArray(state.savedDetails?.addresses)
     ? state.savedDetails.addresses
@@ -5874,6 +5877,8 @@ function renderSavedDetailsManager() {
 
   renderSavedAddressPreview();
   renderSavedPaymentPreview();
+  updateSavedPosition("address");
+  updateSavedPosition("payment");
 }
 
 function renderSavedAddressPreview() {
@@ -5930,6 +5935,46 @@ function renderSavedPaymentPreview() {
   if (actions) actions.hidden = false;
 }
 
+function updateSavedPosition(type) {
+  const select = document.getElementById(`saved-${type}-select`);
+  const entries = type === "address" ? state.savedDetails?.addresses || []
+    : type === "payment" ? state.savedDetails?.paymentMethods || [] : savedImapEntries;
+  const index = entries.findIndex(item => String(item.id) === select?.value);
+  const noun = type === "address" ? "Address" : type === "payment" ? "Card" : "Login";
+  setText(`saved-${type}-position`, `${noun} ${index < 0 ? 0 : index + 1} of ${entries.length}`);
+  document.querySelectorAll(`[data-saved-nav^="${type}:"]`).forEach(button => {
+    button.disabled = !entries.length || (button.dataset.savedNav.endsWith(":-1") ? index <= 0 : index >= entries.length - 1);
+  });
+}
+
+function renderSavedImapManager(preferredId = "") {
+  const select = document.getElementById("saved-imap-select");
+  if (!select) return;
+  const current = preferredId || select.value;
+  select.innerHTML = savedImapEntries.length
+    ? savedImapEntries.map((item, index) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.email || `Login ${index + 1}`)}</option>`).join("")
+    : '<option value="">No saved logins</option>';
+  if (savedImapEntries.some(item => String(item.id) === current)) select.value = current;
+  const item = savedImapEntries.find(entry => String(entry.id) === select.value);
+  setText("saved-imap-count", savedImapEntries.length);
+  document.getElementById("saved-imap-preview").innerHTML = item
+    ? `<p><strong>${escapeHtml(item.email)}</strong></p><p>App password saved securely</p>`
+    : '<p class="account-muted">No IMAP logins saved yet.</p>';
+  document.getElementById("saved-imap-existing-actions").hidden = !item;
+  updateSavedPosition("imap");
+}
+
+async function loadSavedImap(preferredId = "") {
+  if (!state.customer || ADMIN_PREVIEW_MODE) { renderSavedImapManager(preferredId); return; }
+  try {
+    const response = await fetch("/api/account/imap-credentials", { credentials: "same-origin", cache: "no-store" });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.error || "Unable to load IMAP logins.");
+    savedImapEntries = Array.isArray(data.entries) ? data.entries : [];
+    renderSavedImapManager(preferredId);
+  } catch (error) { setMessage(document.getElementById("saved-details-message"), error.message, "error"); }
+}
+
 function fillSavedAddressForm(item = null) {
   const form = document.getElementById("saved-address-form");
   if (!form) return;
@@ -5971,193 +6016,7 @@ function fillSavedPaymentForm(item = null) {
 
 
 function setupSavedDetailsAccordions() {
-  document
-    .querySelectorAll(
-      ".saved-details-manager .saved-detail-panel"
-    )
-    .forEach(
-      (
-        panel,
-        index
-      ) => {
-        if (
-          panel.dataset
-            .accordionReady ===
-          "true"
-        ) {
-          return;
-        }
-
-        panel.dataset
-          .accordionReady =
-          "true";
-
-        const head =
-          panel.querySelector(
-            ".saved-detail-head"
-          );
-
-        if (!head) {
-          return;
-        }
-
-        const title =
-          head.querySelector(
-            "h4"
-          );
-
-        if (title) {
-          title.textContent =
-            index === 0
-              ? "Extra Shipping Addresses"
-              : "Extra Payments";
-        }
-
-        const body =
-          document.createElement(
-            "div"
-          );
-
-        body.className =
-          "saved-detail-accordion-body";
-
-        body.hidden = true;
-
-        let node =
-          head.nextSibling;
-
-        while (node) {
-          const next =
-            node.nextSibling;
-
-          body.appendChild(
-            node
-          );
-
-          node = next;
-        }
-
-        panel.appendChild(
-          body
-        );
-
-        head.classList.add(
-          "saved-detail-toggle"
-        );
-
-        head.setAttribute(
-          "role",
-          "button"
-        );
-
-        head.setAttribute(
-          "tabindex",
-          "0"
-        );
-
-        head.setAttribute(
-          "aria-expanded",
-          "false"
-        );
-
-        const openHint =
-          document.createElement(
-            "span"
-          );
-
-        openHint.className =
-          "saved-detail-open-hint";
-
-        openHint.textContent =
-          index === 0
-            ? "OPEN SHIPPING"
-            : "OPEN PAYMENTS";
-
-        const rightControl =
-          document.createElement(
-            "span"
-          );
-
-        rightControl.className =
-          "saved-detail-right-control";
-
-        rightControl.appendChild(
-          openHint
-        );
-
-        const chevron =
-          document.createElement(
-            "span"
-          );
-
-        chevron.className =
-          "saved-detail-chevron";
-
-        chevron.textContent =
-          "▾";
-
-        rightControl.appendChild(
-          chevron
-        );
-
-        head.appendChild(
-          rightControl
-        );
-
-        const toggle = () => {
-          const opening =
-            body.hidden;
-
-          body.hidden =
-            !opening;
-
-          panel.classList.toggle(
-            "expanded",
-            opening
-          );
-
-          head.setAttribute(
-            "aria-expanded",
-            opening
-              ? "true"
-              : "false"
-          );
-
-          openHint.textContent =
-            index === 0
-              ? (
-                  opening
-                    ? "CLOSE SHIPPING"
-                    : "OPEN SHIPPING"
-                )
-              : (
-                  opening
-                    ? "CLOSE PAYMENTS"
-                    : "OPEN PAYMENTS"
-                );
-        };
-
-        head.addEventListener(
-          "click",
-          toggle
-        );
-
-        head.addEventListener(
-          "keydown",
-          event => {
-            if (
-              event.key ===
-                "Enter" ||
-              event.key ===
-                " "
-            ) {
-              event.preventDefault();
-              toggle();
-            }
-          }
-        );
-      }
-    );
+  // Saved entries remain visible; their forms open when Add or Edit is selected.
 }
 
 
@@ -6168,6 +6027,7 @@ async function loadSavedDetails() {
     ADMIN_PREVIEW_MODE
   ) {
     renderSavedDetailsManager();
+    renderSavedImapManager();
     setupSavedDetailsAccordions();
     renderRetailerProfiles();
     return;
@@ -6191,6 +6051,7 @@ async function loadSavedDetails() {
     };
 
     renderSavedDetailsManager();
+    await loadSavedImap();
 
     setupSavedDetailsAccordions();
 
@@ -6201,10 +6062,56 @@ async function loadSavedDetails() {
 }
 
 document.getElementById("saved-address-select")
-  ?.addEventListener("change", renderSavedAddressPreview);
+  ?.addEventListener("change", () => { renderSavedAddressPreview(); updateSavedPosition("address"); });
 
 document.getElementById("saved-payment-select")
-  ?.addEventListener("change", renderSavedPaymentPreview);
+  ?.addEventListener("change", () => { renderSavedPaymentPreview(); updateSavedPosition("payment"); });
+
+document.querySelectorAll("[data-saved-nav]").forEach(button => button.addEventListener("click", () => {
+  const [type, offset] = button.dataset.savedNav.split(":");
+  const select = document.getElementById(`saved-${type}-select`);
+  if (!select) return;
+  const next = select.selectedIndex + Number(offset);
+  if (next < 0 || next >= select.options.length) return;
+  select.selectedIndex = next;
+  select.dispatchEvent(new Event("change"));
+}));
+document.getElementById("saved-imap-select")?.addEventListener("change", () => renderSavedImapManager());
+document.getElementById("add-saved-imap")?.addEventListener("click", () => {
+  const form = document.getElementById("saved-imap-form"); form.reset(); form.elements.id.value = "";
+  form.elements.password.required = true; form.elements.password.placeholder = "App password"; form.hidden = false;
+});
+document.getElementById("edit-saved-imap")?.addEventListener("click", () => {
+  const form = document.getElementById("saved-imap-form");
+  const item = savedImapEntries.find(entry => entry.id === document.getElementById("saved-imap-select")?.value);
+  if (!item) return;
+  form.elements.id.value = item.id; form.elements.email.value = item.email;
+  form.elements.password.value = ""; form.elements.password.required = false;
+  form.elements.password.placeholder = "Leave blank to keep saved app password"; form.hidden = false;
+});
+document.getElementById("cancel-saved-imap")?.addEventListener("click", () => { document.getElementById("saved-imap-form").hidden = true; });
+document.getElementById("saved-imap-form")?.addEventListener("submit", async event => {
+  event.preventDefault(); const form = event.currentTarget;
+  const id = form.elements.id.value; const message = document.getElementById("saved-details-message");
+  try {
+    const response = await fetch(id ? `/api/account/imap-credentials/${encodeURIComponent(id)}` : "/api/account/imap-credentials", {
+      method: id ? "PUT" : "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: form.elements.email.value, password: form.elements.password.value })
+    });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.error || "Unable to save IMAP login.");
+    form.reset(); form.hidden = true; await loadSavedImap(data.entry?.id || id);
+    setMessage(message, "IMAP login saved.", "success");
+  } catch (error) { setMessage(message, error.message, "error"); }
+});
+document.getElementById("delete-saved-imap")?.addEventListener("click", async () => {
+  const id = document.getElementById("saved-imap-select")?.value;
+  if (!id || !confirm("Delete this saved IMAP login?")) return;
+  const response = await fetch(`/api/account/imap-credentials/${encodeURIComponent(id)}`, { method: "DELETE", credentials: "same-origin" });
+  const data = await readJson(response); const message = document.getElementById("saved-details-message");
+  if (!response.ok) { setMessage(message, data.error || "Unable to delete IMAP login.", "error"); return; }
+  await loadSavedImap(); setMessage(message, "IMAP login deleted.", "success");
+});
 
 document.getElementById("add-saved-address")
   ?.addEventListener("click", () => fillSavedAddressForm());
@@ -6266,6 +6173,11 @@ document.getElementById("saved-address-form")
 
     form.hidden = true;
     await loadSavedDetails();
+    const selectedAddress = document.getElementById("saved-address-select");
+    if (selectedAddress && (data.id || id)) {
+      selectedAddress.value = data.id || id;
+      selectedAddress.dispatchEvent(new Event("change"));
+    }
     await loadCustomerNotifications({ showPopup: false });
     setMessage(message, data.message || "Address saved.", "success");
   });
@@ -6300,6 +6212,11 @@ document.getElementById("saved-payment-form")
 
     form.hidden = true;
     await loadSavedDetails();
+    const selectedPayment = document.getElementById("saved-payment-select");
+    if (selectedPayment && (data.id || id)) {
+      selectedPayment.value = data.id || id;
+      selectedPayment.dispatchEvent(new Event("change"));
+    }
     await loadCustomerNotifications({ showPopup: false });
     setMessage(message, data.message || "Payment card saved.", "success");
   });
@@ -7585,16 +7502,6 @@ function retailerProfileCardHtml(
         paidActive
       });
 
-  const hasSavedCard =
-    Boolean(
-      customerCard
-        ?.acoCardNumber ||
-      customerCard
-        ?.cardNumber ||
-      customerCard
-        ?.maskedNumber
-    );
-
   return `
     <article
       class="retailer-profile-card compact-profile-card paid-profile-card ${
@@ -7838,13 +7745,12 @@ function retailerProfileCardHtml(
                         maxlength="80"
                         placeholder="Example: Personal"
                         required
-                      >
+                        >
                     </label>
                   </section>
 
                   <details
-                    class="paid-profile-section paid-profile-subsection"
-                   open>
+                    class="paid-profile-section paid-profile-subsection">
                     <summary
                       class="paid-profile-subsection-summary"
                     >
@@ -7900,7 +7806,6 @@ function retailerProfileCardHtml(
                               .firstName ||
                             ""
                           )}"
-                          required
                         >
                       </label>
 
@@ -7913,7 +7818,6 @@ function retailerProfileCardHtml(
                               .lastName ||
                             ""
                           )}"
-                          required
                         >
                       </label>
                     </div>
@@ -7931,7 +7835,6 @@ function retailerProfileCardHtml(
                               ?.email ||
                             ""
                           )}"
-                          required
                         >
                       </label>
 
@@ -7957,8 +7860,7 @@ function retailerProfileCardHtml(
                             .address ||
                           ""
                         )}"
-                        required
-                      >
+                        >
                     </label>
 
                     <label>
@@ -7983,7 +7885,6 @@ function retailerProfileCardHtml(
                               .city ||
                             ""
                           )}"
-                          required
                         >
                       </label>
 
@@ -7996,7 +7897,6 @@ function retailerProfileCardHtml(
                               .state ||
                             ""
                           )}"
-                          required
                         >
                       </label>
                     </div>
@@ -8011,7 +7911,6 @@ function retailerProfileCardHtml(
                               .zip ||
                             ""
                           )}"
-                          required
                         >
                       </label>
 
@@ -8024,7 +7923,6 @@ function retailerProfileCardHtml(
                               .country ||
                             "US"
                           )}"
-                          required
                         >
                       </label>
                     </div>
@@ -8032,8 +7930,7 @@ function retailerProfileCardHtml(
                   </details>
 
                   <details
-                    class="paid-profile-section paid-profile-subsection"
-                   open>
+                    class="paid-profile-section paid-profile-subsection">
                     <summary
                       class="paid-profile-subsection-summary"
                     >
@@ -8102,7 +7999,6 @@ function retailerProfileCardHtml(
                               .cardholder ||
                             ""
                           )}"
-                          required
                         >
                       </label>
                     </div>
@@ -8119,11 +8015,6 @@ function retailerProfileCardHtml(
                           customerCard.cardNumber ||
                           ""
                         )}"
-                        ${
-                          hasSavedCard
-                            ? ""
-                            : "required"
-                        }
                         placeholder="Enter card number"
                       >
                     </label>
@@ -8141,7 +8032,6 @@ function retailerProfileCardHtml(
                             ""
                           )}"
                           placeholder="MM"
-                          required
                         >
                       </label>
 
@@ -8157,7 +8047,6 @@ function retailerProfileCardHtml(
                             ""
                           )}"
                           placeholder="YYYY"
-                          required
                         >
                       </label>
                     </div>
@@ -9885,6 +9774,26 @@ function bindSpecialProfileForms() {
     });
 }
 
+function showPaidProfileSlot(slot) {
+  const cards = [...document.querySelectorAll("#retailer-profiles .paid-profile-card")];
+  if (!cards.length) return;
+  activePaidProfileSlot = Math.max(1, Math.min(cards.length, Number(slot) || 1));
+  cards.forEach(card => { card.hidden = Number(card.dataset.retailerProfile) !== activePaidProfileSlot; });
+  reopenPaidProfile(activePaidProfileSlot);
+  const position = document.querySelector("[data-paid-position]");
+  if (position) position.textContent = `Profile ${activePaidProfileSlot} of ${cards.length}`;
+  document.querySelectorAll("[data-paid-nav]").forEach(button => {
+    button.disabled = button.dataset.paidNav === "-1" ? activePaidProfileSlot <= 1 : activePaidProfileSlot >= cards.length;
+  });
+}
+
+function bindPaidProfileNavigation() {
+  document.querySelectorAll("[data-paid-nav]").forEach(button => button.addEventListener("click", () => {
+    showPaidProfileSlot(activePaidProfileSlot + Number(button.dataset.paidNav));
+  }));
+  showPaidProfileSlot(activePaidProfileSlot);
+}
+
 function renderRetailerProfiles() {
 
   const container =
@@ -10148,38 +10057,8 @@ const specialCards =
 }
 
 
-  /*
-    Normally we display the customer's
-    current allowance.
-
-    If they previously had a larger
-    membership, saved profiles above
-    their current allowance are also
-    displayed as locked so their data
-    is never silently lost.
-  */
-
-  const highestSavedSlot =
-    state.retailerProfiles.reduce(
-      (highest, profile) =>
-        Math.max(
-          highest,
-          Number(
-            profile.slot
-          ) || 0
-        ),
-      0
-    );
-
-
-  const totalSlots =
-    Math.min(
-      50,
-      Math.max(
-        allowance,
-        highestSavedSlot
-      )
-    );
+  // Show only the slots available in the current paid tier.
+  const totalSlots = Math.min(100, allowance);
 
 
   const cards = [];
@@ -10265,6 +10144,7 @@ container.innerHTML = `
       ? `
           <details
             class="profile-group-dropdown"
+            open
           >
             <summary>
               <div>
@@ -10308,6 +10188,11 @@ container.innerHTML = `
             <div
               class="profile-group-dropdown-body"
             >
+              <nav class="paid-profile-navigation" aria-label="Paid profile navigation">
+                <button type="button" class="secondary" data-paid-nav="-1" aria-label="Previous paid profile">‹</button>
+                <strong data-paid-position>Profile 1 of ${allowance}</strong>
+                <button type="button" class="secondary" data-paid-nav="1" aria-label="Next paid profile">›</button>
+              </nav>
               ${cards.join("")}
             </div>
           </details>
@@ -10357,6 +10242,7 @@ container.innerHTML = `
   bindRetailerPasswordToggles();
 
   bindRetailerProfileForms();
+  bindPaidProfileNavigation();
 
   bindSpecialProfileForms();
 
@@ -11434,6 +11320,7 @@ async function saveRetailerProfile(
     const paidGroupOpen =
       paidProfilesGroupIsOpen();
 
+    activePaidProfileSlot = slot;
     renderRetailerProfiles();
 
     restorePaidProfilesGroupOpen(
@@ -11547,6 +11434,7 @@ async function saveRetailerProfile(
     const paidGroupOpen =
       paidProfilesGroupIsOpen();
 
+    activePaidProfileSlot = slot;
     renderRetailerProfiles();
 
     restorePaidProfilesGroupOpen(

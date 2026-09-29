@@ -12202,3 +12202,43 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   letter-spacing: .5px;
   text-align: center;
 }
+
+/* Profile setup: one paid slot beside reusable checkout details. */
+#account-tab-edit-profile {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
+  align-items: start;
+  gap: 20px;
+}
+#account-tab-edit-profile[hidden] { display: none !important; }
+#account-tab-edit-profile > .retailer-profile-manager,
+#account-tab-edit-profile > .saved-details-manager { min-width: 0; margin-top: 0; }
+#account-tab-edit-profile > .profile-support-card { grid-column: 1 / -1; }
+#account-tab-edit-profile .saved-details-grid { grid-template-columns: minmax(0, 1fr); }
+#account-tab-edit-profile .saved-detail-panel:nth-child(2) { order: 1; }
+#account-tab-edit-profile .saved-detail-panel:nth-child(1) { order: 2; }
+#account-tab-edit-profile .imap-detail-panel { order: 3; }
+#account-tab-edit-profile .saved-detail-panel { padding: 17px; }
+#account-tab-edit-profile .saved-detail-selector-row {
+  display: flex; align-items: center; gap: 9px;
+}
+#account-tab-edit-profile .saved-detail-selector-row select[hidden] { display: none; }
+#account-tab-edit-profile .saved-detail-selector-row button,
+#account-tab-edit-profile .paid-profile-navigation button { min-width: 44px; min-height: 44px; font-size: 24px; line-height: 1; }
+#account-tab-edit-profile .saved-position { flex: 1; text-align: center; color: #eff9ff; font-weight: 800; }
+#account-tab-edit-profile .saved-add-button { width: 100%; margin: 0 0 14px; }
+#account-tab-edit-profile .saved-detail-form[hidden],
+#account-tab-edit-profile .saved-detail-actions[hidden],
+#account-tab-edit-profile .paid-profile-card[hidden] { display: none !important; }
+#account-tab-edit-profile .paid-profile-navigation {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 12px 16px; margin-bottom: 15px;
+  border: 1px solid rgba(18, 201, 255, .24); border-radius: 12px;
+  background: rgba(18, 201, 255, .06);
+}
+#account-tab-edit-profile .paid-profile-navigation strong { color: #f2fbff; text-align: center; }
+#account-tab-edit-profile .paid-profile-card .profile-compact-title small { font-size: 12px; }
+@media (max-width: 1100px) {
+  #account-tab-edit-profile { grid-template-columns: minmax(0, 1fr); }
+  #account-tab-edit-profile > .profile-support-card { grid-column: 1; }
+}
