@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { startDiscordCommunity, discordCommunityStatus, createDiscordLinkCode, revokeDiscordLinkCodes, queueDiscordRoleRemoval } from "./discord-community.js";
 import { getCommunityInvite } from "./discord-invite.js";
 import { membershipDiscountOptions, activeSitewideDiscount } from "./checkout-discounts.js";
+import { safeAddressVariants, safeAddressVariantKey, defaultJigVariants } from "./address-jigs.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -900,646 +901,6 @@ console.error = (
 };
 
 
-function normalizeAddressTokenText(
-  value = ""
-) {
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-
-function safeAddressVariants(
-  address = {}
-) {
-  const street =
-    normalizeAddressTokenText(
-      address.address ||
-      ""
-    );
-
-  const address2 =
-    normalizeAddressTokenText(
-      address.address2 ||
-      ""
-    );
-
-  const city =
-    normalizeAddressTokenText(
-      address.city ||
-      ""
-    );
-
-  const state =
-    normalizeAddressTokenText(
-      address.state ||
-      ""
-    );
-
-  const zip =
-    normalizeAddressTokenText(
-      address.zip ||
-      ""
-    );
-
-  const country =
-    normalizeAddressTokenText(
-      address.country ||
-      ""
-    );
-
-  if (!street) {
-    return [];
-  }
-
-  /*
-    Safe JIG boundary:
-    We only create truthful formatting variants of the exact address
-    the customer supplied. Never change house number, unit number,
-    city, state, ZIP, country, or the actual street-name words.
-
-    USPS Publication 28 supports standardized directional/suffix/unit
-    abbreviations and omission of nonessential punctuation. We use
-    those formatting equivalences only.
-  */
-  const directionals = [
-    ["NORTHWEST", "NW"],
-    ["SOUTHWEST", "SW"],
-    ["NORTHEAST", "NE"],
-    ["SOUTHEAST", "SE"],
-    ["NORTH", "N"],
-    ["SOUTH", "S"],
-    ["EAST", "E"],
-    ["WEST", "W"]
-  ];
-
-  const suffixes = [
-    ["ALLEY", "ALY"],
-    ["ANNEX", "ANX"],
-    ["ARCADE", "ARC"],
-    ["AVENUE", "AVE"],
-    ["BAYOU", "BYU"],
-    ["BEACH", "BCH"],
-    ["BEND", "BND"],
-    ["BLUFF", "BLF"],
-    ["BLUFFS", "BLFS"],
-    ["BOTTOM", "BTM"],
-    ["BOULEVARD", "BLVD"],
-    ["BRANCH", "BR"],
-    ["BRIDGE", "BRG"],
-    ["BROOK", "BRK"],
-    ["BROOKS", "BRKS"],
-    ["BURG", "BG"],
-    ["BURGS", "BGS"],
-    ["BYPASS", "BYP"],
-    ["CAMP", "CP"],
-    ["CANYON", "CYN"],
-    ["CAPE", "CPE"],
-    ["CAUSEWAY", "CSWY"],
-    ["CENTER", "CTR"],
-    ["CENTERS", "CTRS"],
-    ["CIRCLE", "CIR"],
-    ["CIRCLES", "CIRS"],
-    ["CLIFF", "CLF"],
-    ["CLIFFS", "CLFS"],
-    ["CLUB", "CLB"],
-    ["COMMON", "CMN"],
-    ["COMMONS", "CMNS"],
-    ["CORNER", "COR"],
-    ["CORNERS", "CORS"],
-    ["COURSE", "CRSE"],
-    ["COURT", "CT"],
-    ["COURTS", "CTS"],
-    ["COVE", "CV"],
-    ["CREEK", "CRK"],
-    ["CRESCENT", "CRES"],
-    ["CREST", "CRST"],
-    ["CROSSING", "XING"],
-    ["CROSSROAD", "XRD"],
-    ["CURVE", "CURV"],
-    ["DALE", "DL"],
-    ["DAM", "DM"],
-    ["DIVIDE", "DV"],
-    ["DRIVE", "DR"],
-    ["DRIVES", "DRS"],
-    ["ESTATE", "EST"],
-    ["ESTATES", "ESTS"],
-    ["EXPRESSWAY", "EXPY"],
-    ["EXTENSION", "EXT"],
-    ["EXTENSIONS", "EXTS"],
-    ["FALLS", "FLS"],
-    ["FERRY", "FRY"],
-    ["FIELD", "FLD"],
-    ["FIELDS", "FLDS"],
-    ["FLAT", "FLT"],
-    ["FLATS", "FLTS"],
-    ["FORD", "FRD"],
-    ["FORDS", "FRDS"],
-    ["FOREST", "FRST"],
-    ["FORGE", "FRG"],
-    ["FORGES", "FRGS"],
-    ["FORK", "FRK"],
-    ["FORKS", "FRKS"],
-    ["FORT", "FT"],
-    ["FREEWAY", "FWY"],
-    ["GARDEN", "GDN"],
-    ["GARDENS", "GDNS"],
-    ["GATEWAY", "GTWY"],
-    ["GLEN", "GLN"],
-    ["GLENS", "GLNS"],
-    ["GREEN", "GRN"],
-    ["GREENS", "GRNS"],
-    ["GROVE", "GRV"],
-    ["GROVES", "GRVS"],
-    ["HARBOR", "HBR"],
-    ["HARBORS", "HBRS"],
-    ["HAVEN", "HVN"],
-    ["HEIGHTS", "HTS"],
-    ["HIGHWAY", "HWY"],
-    ["HILL", "HL"],
-    ["HILLS", "HLS"],
-    ["HOLLOW", "HOLW"],
-    ["INLET", "INLT"],
-    ["ISLAND", "IS"],
-    ["ISLANDS", "ISS"],
-    ["JUNCTION", "JCT"],
-    ["JUNCTIONS", "JCTS"],
-    ["KEY", "KY"],
-    ["KEYS", "KYS"],
-    ["KNOLL", "KNL"],
-    ["KNOLLS", "KNLS"],
-    ["LAKE", "LK"],
-    ["LAKES", "LKS"],
-    ["LANDING", "LNDG"],
-    ["LANE", "LN"],
-    ["LIGHT", "LGT"],
-    ["LIGHTS", "LGTS"],
-    ["LOCK", "LCK"],
-    ["LOCKS", "LCKS"],
-    ["LODGE", "LDG"],
-    ["MANOR", "MNR"],
-    ["MANORS", "MNRS"],
-    ["MEADOW", "MDW"],
-    ["MEADOWS", "MDWS"],
-    ["MILL", "ML"],
-    ["MILLS", "MLS"],
-    ["MISSION", "MSN"],
-    ["MOTORWAY", "MTWY"],
-    ["MOUNT", "MT"],
-    ["MOUNTAIN", "MTN"],
-    ["MOUNTAINS", "MTNS"],
-    ["NECK", "NCK"],
-    ["ORCHARD", "ORCH"],
-    ["OVERPASS", "OPAS"],
-    ["PARKWAY", "PKWY"],
-    ["PASSAGE", "PSGE"],
-    ["PINE", "PNE"],
-    ["PINES", "PNES"],
-    ["PLACE", "PL"],
-    ["PLAIN", "PLN"],
-    ["PLAINS", "PLNS"],
-    ["PLAZA", "PLZ"],
-    ["POINT", "PT"],
-    ["POINTS", "PTS"],
-    ["PORT", "PRT"],
-    ["PORTS", "PRTS"],
-    ["PRAIRIE", "PR"],
-    ["RAPID", "RPD"],
-    ["RAPIDS", "RPDS"],
-    ["REST", "RST"],
-    ["RIDGE", "RDG"],
-    ["RIDGES", "RDGS"],
-    ["RIVER", "RIV"],
-    ["ROAD", "RD"],
-    ["ROADS", "RDS"],
-    ["ROUTE", "RTE"],
-    ["SHOAL", "SHL"],
-    ["SHOALS", "SHLS"],
-    ["SHORE", "SHR"],
-    ["SHORES", "SHRS"],
-    ["SKYWAY", "SKWY"],
-    ["SPRING", "SPG"],
-    ["SPRINGS", "SPGS"],
-    ["SQUARE", "SQ"],
-    ["SQUARES", "SQS"],
-    ["STATION", "STA"],
-    ["STREAM", "STRM"],
-    ["STREET", "ST"],
-    ["STREETS", "STS"],
-    ["SUMMIT", "SMT"],
-    ["TERRACE", "TER"],
-    ["THROUGHWAY", "TRWY"],
-    ["TRACE", "TRCE"],
-    ["TRACK", "TRAK"],
-    ["TRAFFICWAY", "TRFY"],
-    ["TRAIL", "TRL"],
-    ["TRAILER", "TRLR"],
-    ["TUNNEL", "TUNL"],
-    ["TURNPIKE", "TPKE"],
-    ["UNDERPASS", "UPAS"],
-    ["UNION", "UN"],
-    ["UNIONS", "UNS"],
-    ["VALLEY", "VLY"],
-    ["VALLEYS", "VLYS"],
-    ["VIADUCT", "VIA"],
-    ["VIEW", "VW"],
-    ["VIEWS", "VWS"],
-    ["VILLAGE", "VLG"],
-    ["VILLAGES", "VLGS"],
-    ["VILLE", "VL"],
-    ["VISTA", "VIS"],
-    ["WELL", "WL"],
-    ["WELLS", "WLS"]
-  ];
-
-  const unitDesignators = [
-    ["APARTMENT", "APT"],
-    ["UNIT", "APT"],
-    ["BUILDING", "BLDG"],
-    ["FLOOR", "FL"],
-    ["SUITE", "STE"],
-    ["ROOM", "RM"],
-    ["DEPARTMENT", "DEPT"]
-  ];
-
-  const streetVariants =
-    new Set([
-      street
-    ]);
-
-  const inlineUnit = !address2 && street.match(/^(.*\S)\s+(APT|APARTMENT|UNIT|#)\s*([A-Z0-9-]+)$/i);
-  if (inlineUnit) streetVariants.add(inlineUnit[1]);
-
-  const addStreet =
-    value => {
-      const normalized =
-        normalizeAddressTokenText(
-          value
-        );
-
-      if (normalized) {
-        streetVariants.add(
-          normalized
-        );
-      }
-    };
-
-  /*
-    Predirectional: immediately after the primary house number.
-    Postdirectional: final token.
-  */
-  for (
-    const [
-      full,
-      abbr
-    ] of directionals
-  ) {
-    const escapedFull =
-      full.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&"
-      );
-
-    const escapedAbbr =
-      abbr.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&"
-      );
-
-    for (
-      const base of
-      Array.from(
-        streetVariants
-      )
-    ) {
-      addStreet(
-        base.replace(
-          new RegExp(
-            `^(\\s*\\d+[A-Z0-9\\-/]*\\s+)${escapedFull}\\b`,
-            "i"
-          ),
-          `$1${abbr}`
-        )
-      );
-
-      addStreet(
-        base.replace(
-          new RegExp(
-            `^(\\s*\\d+[A-Z0-9\\-/]*\\s+)${escapedAbbr}\\b`,
-            "i"
-          ),
-          `$1${full}`
-        )
-      );
-
-      addStreet(
-        base.replace(
-          new RegExp(
-            `\\b${escapedFull}$`,
-            "i"
-          ),
-          abbr
-        )
-      );
-
-      addStreet(
-        base.replace(
-          new RegExp(
-            `\\b${escapedAbbr}$`,
-            "i"
-          ),
-          full
-        )
-      );
-    }
-  }
-
-  /*
-    Street suffix: only transform the final suffix token, or the token
-    directly before a valid postdirectional. This avoids rewriting a
-    street-name word that merely happens to look like a suffix.
-  */
-  for (
-    const [
-      full,
-      abbr
-    ] of suffixes
-  ) {
-    const fullPattern =
-      full.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&"
-      );
-
-    const abbrPattern =
-      abbr.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&"
-      );
-
-    const postDirectional =
-      "(?:N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)";
-
-    for (
-      const base of
-      Array.from(
-        streetVariants
-      )
-    ) {
-      addStreet(
-        base.replace(
-          new RegExp(
-            `\\b${fullPattern}\\b(?=(?:\\s+${postDirectional})?$)`,
-            "i"
-          ),
-          abbr
-        )
-      );
-
-      addStreet(
-        base.replace(
-          new RegExp(
-            `\\b${abbrPattern}\\b(?=(?:\\s+${postDirectional})?$)`,
-            "i"
-          ),
-          full
-        )
-      );
-    }
-  }
-
-  /*
-    Keep punctuation that can be significant to delivery, including
-    periods, slashes, hyphens, and apostrophes. Only omit a comma,
-    which does not change the delivery-address components.
-  */
-  for (
-    const base of
-    Array.from(
-      streetVariants
-    )
-  ) {
-    addStreet(
-      base.replace(
-        /,/g,
-        ""
-      )
-    );
-  }
-
-  for (const base of Array.from(streetVariants)) {
-    if (/\bST$/i.test(base)) addStreet(`${base}.`);
-    if (/\bST\.$/i.test(base)) addStreet(base.slice(0, -1));
-  }
-
-  // Only the street-name ordinal may change; the leading house number
-  // never participates in this substitution.
-  const ordinalWords = ["", "FIRST", "SECOND", "THIRD", "FOURTH", "FIFTH", "SIXTH", "SEVENTH", "EIGHTH", "NINTH"];
-  const tensWords = ["", "TENTH", "TWENTIETH", "THIRTIETH", "FORTIETH", "FIFTIETH", "SIXTIETH", "SEVENTIETH", "EIGHTIETH", "NINETIETH"];
-  const tens = ["", "TEN", "TWENTY", "THIRTY", "FORTY", "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY"];
-  for (const base of Array.from(streetVariants)) {
-    const match = base.match(/^(\d+[A-Z0-9\-/]*\s+(?:(?:N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\s+)?)(\d{1,2})(ST|ND|RD|TH)\b/i);
-    if (!match) continue;
-    const value = Number(match[2]);
-    if (value < 1 || value > 99) continue;
-    let words = "";
-    if (value <= 9) words = ordinalWords[value];
-    else if (value === 10) words = "TENTH";
-    else if (value < 20) words = ["ELEVENTH", "TWELFTH", "THIRTEENTH", "FOURTEENTH", "FIFTEENTH", "SIXTEENTH", "SEVENTEENTH", "EIGHTEENTH", "NINETEENTH"][value - 11];
-    else words = value % 10 ? `${tens[Math.floor(value / 10)]}-${ordinalWords[value % 10]}` : tensWords[Math.floor(value / 10)];
-    const ordinal = `${match[2]}${match[3]}`;
-    addStreet(base.replace(new RegExp(`\\b${ordinal}\\b`, "i"), words.toLowerCase()));
-    addStreet(base.replace(new RegExp(`\\b${ordinal}\\b`, "i"), match[2]));
-  }
-
-  const unitVariants =
-    new Set([
-      address2,
-      ...(inlineUnit ? [`${inlineUnit[2]} ${inlineUnit[3]}`] : [])
-    ]);
-
-  const addUnit =
-    value => {
-      const normalized =
-        normalizeAddressTokenText(
-          value
-        );
-
-      unitVariants.add(
-        normalized
-      );
-    };
-
-  if (address2 || inlineUnit) {
-    for (
-      const [
-        full,
-        abbr
-      ] of unitDesignators
-    ) {
-      const fullPattern =
-        full.replace(
-          /[.*+?^${}()|[\]\\]/g,
-          "\\$&"
-        );
-
-      const abbrPattern =
-        abbr.replace(
-          /[.*+?^${}()|[\]\\]/g,
-          "\\$&"
-        );
-
-      for (
-        const base of
-        Array.from(
-          unitVariants
-        )
-      ) {
-        addUnit(
-          base.replace(
-            new RegExp(
-              `^${fullPattern}\\b`,
-              "i"
-            ),
-            abbr
-          )
-        );
-
-        addUnit(
-          base.replace(
-            new RegExp(
-              `^${abbrPattern}\\b`,
-              "i"
-            ),
-            full
-          )
-        );
-
-        addUnit(
-          base.replace(
-            /,/g,
-            ""
-          )
-        );
-      }
-    }
-    const unitMatch = (address2 || `${inlineUnit[2]} ${inlineUnit[3]}`).match(/^(?:APT|APARTMENT|UNIT|#)\s*([A-Z0-9-]+)$/i);
-    if (unitMatch) {
-      for (const label of ["APT", "APARTMENT", "UNIT", "#"]) {
-        addUnit(`${label === "#" ? "#" : `${label} `}${unitMatch[1]}`);
-      }
-    }
-  }
-
-  const seen =
-    new Set();
-
-  const variants =
-    [];
-
-  for (
-    const variantStreet of
-    streetVariants
-  ) {
-    for (
-      const variantUnit of
-      unitVariants
-    ) {
-      if (inlineUnit && variantStreet.includes(inlineUnit[2]) && variantUnit) continue;
-      if (inlineUnit && !variantStreet.includes(inlineUnit[2]) && !variantUnit) continue;
-      const item = {
-        address:
-          variantStreet,
-
-        address2:
-          variantUnit,
-
-        city,
-
-        state,
-
-        zip,
-
-        country
-      };
-
-      const key =
-        JSON.stringify(
-          item
-        )
-          .toUpperCase();
-
-      if (
-        seen.has(
-          key
-        )
-      ) {
-        continue;
-      }
-
-      seen.add(
-        key
-      );
-
-      variants.push(
-        item
-      );
-
-      if (
-        variants.length >=
-        120
-      ) {
-        return variants;
-      }
-    }
-  }
-
-  return variants;
-}
-
-
-function safeAddressVariantKey(
-  address = {}
-) {
-  return JSON.stringify({
-    address:
-      normalizeAddressTokenText(
-        address.address ||
-        ""
-      ).toUpperCase(),
-
-    address2:
-      normalizeAddressTokenText(
-        address.address2 ||
-        ""
-      ).toUpperCase(),
-
-    city:
-      normalizeAddressTokenText(
-        address.city ||
-        ""
-      ).toUpperCase(),
-
-    state:
-      normalizeAddressTokenText(
-        address.state ||
-        ""
-      ).toUpperCase(),
-
-    zip:
-      normalizeAddressTokenText(
-        address.zip ||
-        ""
-      ).toUpperCase(),
-
-    country:
-      normalizeAddressTokenText(
-        address.country ||
-        ""
-      ).toUpperCase()
-  });
-}
-
 function customerJigPoolPath(accountId) {
   return path.join(CUSTOMER_JIG_POOL_DIR, `customer-${String(accountId)}.encrypted.json`);
 }
@@ -1586,6 +947,23 @@ async function customerJigPoolWithSources(account, order, paidProfiles) {
     pool.sources.push({ id: crypto.randomUUID(), label: input.label, original, variants: [] });
     changed = true;
   }
+  // Save available variants for every source, even before a profile uses it.
+  // Generate once so a manually edited variant is not regenerated afterward.
+  for (const source of pool.sources) {
+    if (source.generatedSafeVariantsAt) continue;
+    source.variants ||= [];
+    const existingKeys = new Set(source.variants.map(item => safeAddressVariantKey(item.address)));
+    const originalKey = safeAddressVariantKey(source.original);
+    for (const address of defaultJigVariants(source.original)) {
+      if (source.variants.length >= 4) break;
+      const key = safeAddressVariantKey(address);
+      if (key === originalKey || existingKeys.has(key)) continue;
+      source.variants.push({ id: crypto.randomUUID(), address });
+      existingKeys.add(key);
+    }
+    source.generatedSafeVariantsAt = new Date().toISOString();
+    changed = true;
+  }
   if (changed) await saveCustomerJigPool(account.id, pool);
   return pool;
 }
@@ -1613,8 +991,7 @@ async function prepareNewManagedAssignment(assignment, membership, account, orde
   let selected = null;
   for (const source of sources) {
     const variants = [
-      ...(source.variants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id })),
-      ...safeAddressVariants(source.original)
+      ...(source.variants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id }))
     ];
     selected = variants.find(item => !reserved.has(safeAddressVariantKey(item)))
       ? { source, variant: variants.find(item => !reserved.has(safeAddressVariantKey(item))) } : null;
@@ -16226,7 +15603,7 @@ app.put("/api/admin/customers/:id/og-status", requireAdmin, async (req, res) => 
   }
 });
 
-app.post("/api/admin/discount-codes", requireAdmin, async (req, res) => {
+async function saveAdminDiscount(req, res, existingId = null) {
   try {
     const code = String(req.body?.code || "").trim().toUpperCase();
     const percent = Number(req.body?.percent);
@@ -16245,7 +15622,9 @@ app.post("/api/admin/discount-codes", requireAdmin, async (req, res) => {
     }
     if (!process.env.STRIPE_SECRET_KEY) return res.status(503).json({ error: "Stripe is not configured." });
     const records = await getDiscountCodes();
-    if (records.some(item => item.code === code)) return res.status(409).json({ error: "That discount code already exists." });
+    const existing = existingId ? records.find(item => item.id === existingId) : null;
+    if (existingId && !existing) return res.status(404).json({ error: "Discount code was not found." });
+    if (records.some(item => item.code === code && item.id !== existingId)) return res.status(409).json({ error: "That discount code already exists." });
     const priceIds = [
       ...(tier === "all" ? Object.values(PLANS).map(plan => plan.priceId) : [PLANS[tier].priceId]),
       ...(appliesToRentals ? Object.values(RENTAL_PACKAGES).flatMap(packages => Object.values(packages).map(pack => pack.priceId)) : [])
@@ -16259,30 +15638,97 @@ app.post("/api/admin/discount-codes", requireAdmin, async (req, res) => {
       applies_to: { products: productIds },
       name: `SLABSNGRABSACO ${code}`
     });
-    // Private codes are redeemed only through our authenticated endpoint.
-    // Do not create a public Stripe promotion code that bypasses recipient checks.
-    const promotion = recipientEmail ? null : await stripe.promotionCodes.create({
-      coupon: coupon.id,
-      code,
-      ...(expiration ? { expires_at: Math.floor(expiration.getTime() / 1000) } : {})
-    });
+    let promotion;
+    let oldPromotionDisabled = false;
+    try {
+      if (existing?.stripePromotionCodeId) {
+        await stripe.promotionCodes.update(existing.stripePromotionCodeId, { active: false });
+        oldPromotionDisabled = true;
+      }
+      // Private codes are redeemed only through the authenticated endpoint.
+      promotion = recipientEmail ? null : await stripe.promotionCodes.create({
+        coupon: coupon.id, code, active: existing ? existing.active : true,
+        ...(expiration ? { expires_at: Math.floor(expiration.getTime() / 1000) } : {})
+      });
+    } catch (error) {
+      await stripe.coupons.del(coupon.id).catch(() => {});
+      if (oldPromotionDisabled && existing.active) {
+        try { await stripe.promotionCodes.update(existing.stripePromotionCodeId, { active: true }); }
+        catch {
+          existing.active = false;
+          await saveDiscountCodes(records);
+        }
+      }
+      throw error;
+    }
     const discount = {
-      id: crypto.randomUUID(), code, percent, tier, appliesToRentals, duration,
+      id: existing?.id || crypto.randomUUID(), code, percent, tier, appliesToRentals, duration,
       expiresAt: expiration?.toISOString() || null,
-      active: true, sitewide, recipientEmail: recipientEmail || null,
+      active: existing ? existing.active : true, sitewide, recipientEmail: recipientEmail || null,
       stripeCouponId: coupon.id, stripePromotionCodeId: promotion?.id || null,
-      createdAt: new Date().toISOString()
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
-    records.push(discount);
-    await saveDiscountCodes(records);
-    return res.status(201).json({ ok: true, discount });
+    if (existing) records[records.indexOf(existing)] = discount;
+    else records.push(discount);
+    try { await saveDiscountCodes(records); }
+    catch (error) {
+      if (promotion?.id) await stripe.promotionCodes.update(promotion.id, { active: false }).catch(() => {});
+      await stripe.coupons.del(coupon.id).catch(() => {});
+      if (existing?.active && existing.stripePromotionCodeId) {
+        await stripe.promotionCodes.update(existing.stripePromotionCodeId, { active: true }).catch(() => {});
+      }
+      throw error;
+    }
+    if (existing?.stripeCouponId) {
+      // Retire the old coupon for new checkouts; existing discounts stay intact.
+      await stripe.coupons.del(existing.stripeCouponId).catch(error =>
+        console.error("Old discount coupon cleanup failed:", error?.type || "Stripe error"));
+    }
+    return res.status(existing ? 200 : 201).json({ ok: true, discount });
   } catch (error) {
     console.error("Discount code creation failed:", error?.message);
-    return res.status(502).json({ error: "Could not create this promotion code in Stripe." });
+    return res.status(502).json({ error: error?.statusCode === 403
+      ? "Stripe permission denied. Enable Coupons Write and Promotion codes Write on the website's restricted API key."
+      : "Could not save this discount in Stripe. The previous code was kept if this was an edit." });
   }
-});
+}
 
-app.patch("/api/admin/discount-codes/:id", requireAdmin, async (req, res) => {
+// Serialize discount mutations to prevent concurrent edits overwriting one another.
+let discountMutationQueue = Promise.resolve();
+function queueDiscountMutation(handler) {
+  return (req, res, next) => {
+    const task = discountMutationQueue.then(() => handler(req, res));
+    discountMutationQueue = task.catch(() => {});
+    task.catch(next);
+  };
+}
+app.post("/api/admin/discount-codes", requireAdmin, queueDiscountMutation((req, res) => saveAdminDiscount(req, res)));
+app.put("/api/admin/discount-codes/:id", requireAdmin, queueDiscountMutation((req, res) => saveAdminDiscount(req, res, req.params.id)));
+
+app.delete("/api/admin/discount-codes/:id", requireAdmin, queueDiscountMutation(async (req, res) => {
+  const records = await getDiscountCodes();
+  const item = records.find(record => record.id === req.params.id);
+  if (!item) return res.status(404).json({ error: "Discount code was not found." });
+  try {
+    if (item.stripePromotionCodeId) await stripe.promotionCodes.update(item.stripePromotionCodeId, { active: false });
+    if (item.stripeCouponId) {
+      try { await stripe.coupons.del(item.stripeCouponId); }
+      catch (error) { if (error?.code !== "resource_missing") throw error; }
+    }
+    await saveDiscountCodes(records.filter(record => record.id !== item.id));
+    return res.json({ ok: true });
+  } catch (error) {
+    // Reflect a successfully disabled promotion even if coupon deletion failed.
+    if (item.stripePromotionCodeId) {
+      const promotion = await stripe.promotionCodes.retrieve(item.stripePromotionCodeId).catch(() => null);
+      if (promotion?.active === false) { item.active = false; await saveDiscountCodes(records); }
+    }
+    return res.status(502).json({ error: "Could not delete this discount in Stripe. Check Coupons Write and Promotion codes Write permissions, then retry." });
+  }
+}));
+
+app.patch("/api/admin/discount-codes/:id", requireAdmin, queueDiscountMutation(async (req, res) => {
   const records = await getDiscountCodes();
   const item = records.find(record => String(record.id) === String(req.params.id));
   if (!item) return res.status(404).json({ error: "Discount code was not found." });
@@ -16296,7 +15742,7 @@ app.patch("/api/admin/discount-codes/:id", requireAdmin, async (req, res) => {
   item.active = req.body.active;
   await saveDiscountCodes(records);
   return res.json({ ok: true, discount: item });
-});
+}));
 
 /* One prominent announcement at a time, visible throughout the public site. */
 async function getSiteNotification() {
@@ -26636,8 +26082,7 @@ app.post(
         addresses
       ) {
         const variants = [
-          ...(source.savedVariants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id })),
-          ...safeAddressVariants(source)
+          ...(source.savedVariants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id }))
         ];
 
         const sourceKey =
@@ -26760,7 +26205,6 @@ app.post(
           1;
       }
 
-      let variantCursor = 0;
       let paidCardCursor = 0;
 
       let shippingFilled = 0;
@@ -26872,7 +26316,8 @@ app.post(
         */
         // An address already attached to a profile is never replaced by
         // another bulk JIG run. Flag collisions for a deliberate edit.
-        const shouldAssignShipping = !profile.address || !profile.city || !profile.state || !profile.zip;
+        const hasShippingAddress = !!(profile.address && profile.city && profile.state && profile.zip);
+        const shouldAssignShipping = !hasShippingAddress || !record.jiggedAddress;
 
         if (!profile.email && isLinkedProfile) {
           const managed = memberships.find(item => String(item.id) === String(record.managedAccountId || record.freeMembershipId || record.rentedMembershipId));
@@ -26882,13 +26327,14 @@ app.post(
         if (
           shouldAssignShipping
         ) {
-          const entry =
-            variantQueue[
-              variantCursor
-            ];
+          // A complete submitted address gets a formatting variant of itself.
+          // Only profiles missing an address may draw from any source.
+          const entryIndex = hasShippingAddress ? variantQueue.findIndex(candidate =>
+            safeAddressVariantKey(candidate.source) === safeAddressVariantKey(profile)
+          ) : 0;
+          const entry = entryIndex >= 0 ? variantQueue.splice(entryIndex, 1)[0] : null;
 
           if (entry) {
-            variantCursor += 1;
 
             profile = {
               ...profile,
@@ -30086,10 +29532,7 @@ app.post(
       );
       if (!poolSource) return res.status(400).json({ error: "Choose one of this customer's unchanged main addresses." });
 
-      const variants =
-        safeAddressVariants(
-          sourceAddress
-        );
+      const variants = (poolSource.variants || []).map(item => item.address);
 
       if (!variants.length) {
         return res
