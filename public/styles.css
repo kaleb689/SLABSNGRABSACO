@@ -12242,3 +12242,53 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   #account-tab-edit-profile { grid-template-columns: minmax(0, 1fr); }
   #account-tab-edit-profile > .profile-support-card { grid-column: 1; }
 }
+
+/* Keep paid profile names and controls clear of the three status badges. */
+#account-tab-edit-profile .paid-profile-card .profile-compact-main {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  padding: 18px;
+}
+#account-tab-edit-profile .paid-profile-card .profile-open-button {
+  grid-column: 1;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  min-width: 0;
+  width: 100%;
+}
+#account-tab-edit-profile .paid-profile-card .profile-compact-title {
+  min-width: 0;
+}
+#account-tab-edit-profile .paid-profile-card .profile-compact-title strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+#account-tab-edit-profile .paid-profile-card .profile-compact-title .eyebrow,
+#account-tab-edit-profile .paid-profile-card .profile-compact-title small {
+  white-space: normal;
+  overflow-wrap: normal;
+  line-height: 1.35;
+}
+#account-tab-edit-profile .paid-profile-card .profile-status-stack {
+  grid-column: 1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+  width: 100%;
+}
+#account-tab-edit-profile .paid-profile-card .profile-status-stack > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  #account-tab-edit-profile .paid-profile-card .profile-status-stack {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #account-tab-edit-profile .paid-profile-card .profile-open-button {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+  #account-tab-edit-profile .paid-profile-card .profile-open-control {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}
