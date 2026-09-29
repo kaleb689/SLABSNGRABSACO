@@ -33599,6 +33599,91 @@ app.delete(
    CUSTOMER SAVED SHIPPING / PAYMENT METHODS
 ------------------------------------------------------- */
 
+function savedImapEntries(account) {
+  try {
+    const entries = account?.savedImapCredentials
+      ? decryptJson(account.savedImapCredentials) : [];
+    return Array.isArray(entries) ? entries : [];
+  } catch {
+    return [];
+  }
+}
+
+app.get("/api/account/imap-credentials", requireCustomer, async (req, res) => {
+  const entries = savedImapEntries(req.customerAccount);
+  res.json({ ok: true, entries: entries.map(({ id, email, createdAt, updatedAt }) => ({
+    id, email, passwordConfigured: true, createdAt, updatedAt
+  })) });
+});
+
+app.post("/api/account/imap-credentials", requireCustomer, async (req, res) => {
+  try {
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => item.id === req.customerAccount.id);
+    if (!account) return res.status(404).json({ error: "Customer account not found." });
+    const entries = savedImapEntries(account);
+    if (entries.length >= 100) return res.status(400).json({ error: "You can save up to 100 IMAP logins." });
+    const email = clean(req.body?.email, 254).toLowerCase();
+    const password = String(req.body?.password || "");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 6 || password.length > 512) {
+      return res.status(400).json({ error: "Enter a valid IMAP email and app password (6–512 characters)." });
+    }
+    if (entries.some(item => item.email === email)) return res.status(409).json({ error: "This IMAP email is already saved. Edit its entry instead." });
+    const now = new Date().toISOString();
+    const entry = { id: crypto.randomUUID(), email, password, createdAt: now, updatedAt: now };
+    entries.push(entry);
+    account.savedImapCredentials = encryptJson(entries);
+    await saveCustomerAccounts(accounts);
+    return res.json({ ok: true, entry: { id: entry.id, email, passwordConfigured: true } });
+  } catch (error) {
+    console.error("Save IMAP credentials error:", error);
+    return res.status(500).json({ error: "Unable to save IMAP login." });
+  }
+});
+
+app.put("/api/account/imap-credentials/:id", requireCustomer, async (req, res) => {
+  try {
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => item.id === req.customerAccount.id);
+    if (!account) return res.status(404).json({ error: "Customer account not found." });
+    const entries = savedImapEntries(account);
+    const entry = entries.find(item => item.id === req.params.id);
+    if (!entry) return res.status(404).json({ error: "IMAP login not found." });
+    const email = clean(req.body?.email, 254).toLowerCase();
+    const password = String(req.body?.password || "");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length > 512 || (password && password.length < 6)) {
+      return res.status(400).json({ error: "Enter a valid IMAP email and app password (at least 6 characters)." });
+    }
+    if (entries.some(item => item.id !== entry.id && item.email === email)) return res.status(409).json({ error: "This IMAP email is already saved." });
+    entry.email = email;
+    if (password) entry.password = password;
+    entry.updatedAt = new Date().toISOString();
+    account.savedImapCredentials = encryptJson(entries);
+    await saveCustomerAccounts(accounts);
+    return res.json({ ok: true, entry: { id: entry.id, email, passwordConfigured: true } });
+  } catch (error) {
+    console.error("Update IMAP credentials error:", error);
+    return res.status(500).json({ error: "Unable to update IMAP login." });
+  }
+});
+
+app.delete("/api/account/imap-credentials/:id", requireCustomer, async (req, res) => {
+  try {
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => item.id === req.customerAccount.id);
+    if (!account) return res.status(404).json({ error: "Customer account not found." });
+    const entries = savedImapEntries(account);
+    const remaining = entries.filter(item => item.id !== req.params.id);
+    if (remaining.length === entries.length) return res.status(404).json({ error: "IMAP login not found." });
+    account.savedImapCredentials = encryptJson(remaining);
+    await saveCustomerAccounts(accounts);
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("Delete IMAP credentials error:", error);
+    return res.status(500).json({ error: "Unable to delete IMAP login." });
+  }
+});
+
 app.get(
   "/api/account/saved-details",
   requireCustomer,

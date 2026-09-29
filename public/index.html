@@ -3140,7 +3140,7 @@
   </div>
 
 </section>
-  
+
 <!-- =====================================================
      MY PROFILE / CUSTOMER ACCOUNT
 ===================================================== -->
@@ -3346,7 +3346,7 @@
             </small>
           </label>
 
-          
+
 
           <button
             type="submit"
@@ -3975,7 +3975,7 @@
   </div>
 
 </div>
-    
+
     <!-- MY ORDERS -->
 
     <div
@@ -4227,10 +4227,9 @@
         <div class="account-card-heading">
           <div>
             <span class="eyebrow">SAVED CHECKOUT DETAILS</span>
-            <h3>Saved Shipping Addresses &amp; Payment Cards for Gifted/Rented Profiles</h3>
+            <h3>Saved Cards, Addresses &amp; IMAP Logins</h3>
             <p class="account-muted">
-              Save multiple shipping addresses and payment cards for Gifted/Rented profiles,
-              then switch between them without opening every record at once.
+              Save checkout details and IMAP logins for your profiles. Move between saved entries with the arrows.
             </p>
 
             <p class="saved-details-important-note">
@@ -4262,19 +4261,17 @@
                 <span class="eyebrow">SHIPPING</span>
                 <h4>Saved Shipping Addresses</h4>
               </div>
-              <span class="saved-detail-open-static">OPEN SHIPPING</span>
+
               <span id="saved-address-count" class="saved-detail-count">0</span>
             </div>
 
             <div class="saved-detail-selector-row">
-              <select id="saved-address-select">
-                <option value="">No saved addresses</option>
-              </select>
-
-              <button type="button" id="add-saved-address" class="secondary">
-                Add Another Address
-              </button>
+              <button type="button" class="secondary saved-prev" data-saved-nav="address:-1" aria-label="Previous address">‹</button>
+              <span id="saved-address-position" class="saved-position">Address 0 of 0</span>
+              <button type="button" class="secondary saved-next" data-saved-nav="address:1" aria-label="Next address">›</button>
+              <select id="saved-address-select" aria-label="Select address" hidden><option value="">No saved addresses</option></select>
             </div>
+            <button type="button" id="add-saved-address" class="secondary saved-add-button">Add Another Address</button>
 
             <form id="saved-address-form" class="saved-detail-form" hidden>
               <input type="hidden" name="id" />
@@ -4355,19 +4352,17 @@
                 <span class="eyebrow">EXTRA PAYMENTS</span>
                 <h4>Saved Payment Cards</h4>
               </div>
-              <span class="saved-detail-open-static">OPEN PAYMENTS</span>
+
               <span id="saved-payment-count" class="saved-detail-count">0</span>
             </div>
 
             <div class="saved-detail-selector-row">
-              <select id="saved-payment-select">
-                <option value="">No saved cards</option>
-              </select>
-
-              <button type="button" id="add-saved-payment" class="secondary">
-                Add Extra Payment
-              </button>
+              <button type="button" class="secondary saved-prev" data-saved-nav="payment:-1" aria-label="Previous card">‹</button>
+              <span id="saved-payment-position" class="saved-position">Card 0 of 0</span>
+              <button type="button" class="secondary saved-next" data-saved-nav="payment:1" aria-label="Next card">›</button>
+              <select id="saved-payment-select" aria-label="Select card" hidden><option value="">No saved cards</option></select>
             </div>
+            <button type="button" id="add-saved-payment" class="secondary saved-add-button">Add Another Card</button>
 
             <form id="saved-payment-form" class="saved-detail-form" hidden>
               <input type="hidden" name="id" />
@@ -4416,7 +4411,7 @@
               </label>
 
               <div class="saved-detail-actions">
-                <button type="submit" class="primary">Save Payment</button>
+                <button type="submit" class="primary">Save Card</button>
                 <button type="button" id="cancel-saved-payment" class="secondary">Cancel</button>
               </div>
             </form>
@@ -4431,6 +4426,25 @@
             </div>
           </section>
 
+          <section class="saved-detail-panel imap-detail-panel">
+            <div class="saved-detail-head"><div><span class="eyebrow">EMAIL CONNECTION</span><h4>IMAP Email &amp; App Password</h4></div><span id="saved-imap-count" class="saved-detail-count">0</span></div>
+            <p class="account-muted">Use the app password from your email provider, not your regular email password. See Chapter 2 in the guide.</p>
+            <div class="saved-detail-selector-row">
+              <button type="button" class="secondary saved-prev" data-saved-nav="imap:-1" aria-label="Previous IMAP login">‹</button>
+              <span id="saved-imap-position" class="saved-position">Login 0 of 0</span>
+              <button type="button" class="secondary saved-next" data-saved-nav="imap:1" aria-label="Next IMAP login">›</button>
+              <select id="saved-imap-select" aria-label="Select IMAP login" hidden><option value="">No saved logins</option></select>
+            </div>
+            <button type="button" id="add-saved-imap" class="secondary saved-add-button">Add Another IMAP Login</button>
+            <form id="saved-imap-form" class="saved-detail-form" hidden>
+              <input type="hidden" name="id" />
+              <label>IMAP / Host Email *<input type="email" name="email" maxlength="254" autocomplete="off" required /></label>
+              <label>IMAP / Host App Password *<input type="password" name="password" minlength="6" maxlength="512" autocomplete="new-password" required /></label>
+              <div class="saved-detail-actions"><button type="submit" class="primary">Save IMAP Login</button><button type="button" id="cancel-saved-imap" class="secondary">Cancel</button></div>
+            </form>
+            <div id="saved-imap-preview" class="saved-detail-preview"><p class="account-muted">No IMAP logins saved yet.</p></div>
+            <div id="saved-imap-existing-actions" class="saved-detail-actions" hidden><button type="button" id="edit-saved-imap" class="secondary">Edit Login</button><button type="button" id="delete-saved-imap" class="secondary danger-button">Delete Login</button></div>
+          </section>
         </div>
 
         <p id="saved-details-message" class="form-message"></p>
@@ -5227,7 +5241,7 @@
               />
             </label>
 
-            
+
 
             <button
               type="submit"
