@@ -7800,6 +7800,19 @@ function renderOrder(x) {
       <button type="button" class="jig-modal-close" data-close-jigs aria-label="Close JIGs">×</button>
       <h3>Main Addresses &amp; JIGs</h3>
       <p>Submitted main addresses stay unchanged. Edit or add only a truthful formatting variant; house, street, unit number, city, state and ZIP stay the same.</p>
+      <button type="button" class="admin-save-button" data-add-main-address>Add Main Address</button>
+      <form class="jig-edit-form" data-main-address-form hidden>
+        <h4>Add Main Address</h4>
+        <label>Address label <input name="label" maxlength="100" placeholder="Additional Main address"></label>
+        <label>Street address <input name="address" required maxlength="240"></label>
+        <label>Apartment / unit <input name="address2" maxlength="160"></label>
+        <label>City <input name="city" required maxlength="100"></label>
+        <label>State <input name="state" required maxlength="100"></label>
+        <label>ZIP code <input name="zip" required maxlength="30"></label>
+        <label>Country <input name="country" value="US" required maxlength="100"></label>
+        <button type="submit" class="admin-save-button">Save Main Address</button>
+        <span data-main-form-message role="status"></span>
+      </form>
       <div data-jig-sources>Loading...</div>
       <form class="jig-edit-form" data-jig-edit-form hidden>
         <h4 data-jig-form-title>Add JIG</h4>
@@ -22584,6 +22597,13 @@ async function loadAdminJigModal(modal, orderId) {
 }
 
 document.addEventListener("click", async event => {
+  const addMain = event.target.closest("[data-add-main-address]");
+  if (addMain) {
+    const form = addMain.closest("[data-jig-modal]").querySelector("[data-main-address-form]");
+    form.hidden = !form.hidden;
+    if (!form.hidden) form.scrollIntoView({ block: "nearest" });
+    return;
+  }
   const jigAction = event.target.closest("[data-jig-action]");
   if (jigAction) {
     const modal = jigAction.closest("[data-jig-modal]");
@@ -22644,6 +22664,29 @@ document.addEventListener("click", async event => {
 });
 
 document.addEventListener("submit", async event => {
+  const mainForm = event.target.closest("[data-main-address-form]");
+  if (mainForm) {
+    event.preventDefault();
+    const modal = mainForm.closest("[data-jig-modal]");
+    const button = mainForm.querySelector("[type=submit]");
+    const message = mainForm.querySelector("[data-main-form-message]");
+    button.disabled = true;
+    message.textContent = "";
+    try {
+      const values = Object.fromEntries(new FormData(mainForm));
+      const response = await fetch(`/api/admin/submissions/${encodeURIComponent(modal._orderId)}/jigs/main`, {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: values.label, address: values })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to add Main address.");
+      mainForm.reset();
+      mainForm.hidden = true;
+      await loadAdminJigModal(modal, modal._orderId);
+    } catch (error) { message.textContent = error.message; }
+    finally { button.disabled = false; }
+    return;
+  }
   const form = event.target.closest("[data-jig-edit-form]");
   if (!form) return;
   event.preventDefault();

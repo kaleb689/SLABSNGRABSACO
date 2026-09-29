@@ -24403,6 +24403,27 @@ app.get("/api/admin/submissions/:id/jigs", requireAdmin, async (req, res) => {
   }
 });
 
+app.post("/api/admin/submissions/:id/jigs/main", requireAdmin, async (req, res) => {
+  try {
+    const context = await adminJigContext(req.params.id);
+    if (!context) return res.status(404).json({ error: "Customer not found." });
+    const original = jigSourceAddress(req.body?.address || {});
+    if (![original.address, original.city, original.state, original.zip].every(Boolean)) {
+      return res.status(400).json({ error: "Street address, city, state and ZIP are required." });
+    }
+    const key = safeAddressVariantKey(original);
+    if (context.pool.sources.some(source => safeAddressVariantKey(source.original) === key || jigVariantAllowed(source.original, original))) {
+      return res.status(409).json({ error: "This address already has a Main address and JIG pool. Use its existing pool." });
+    }
+    const source = { id: crypto.randomUUID(), label: clean(req.body?.label, 100) || "Admin-added Main address", original,
+      variants: defaultJigVariants(original, 4).map(address => ({ id: crypto.randomUUID(), address })),
+      generatedSafeVariantsAt: new Date().toISOString(), addedBy: "admin" };
+    context.pool.sources.push(source);
+    await saveCustomerJigPool(context.account.id, context.pool);
+    return res.json({ ok: true, source });
+  } catch (error) { return res.status(500).json({ error: "Unable to add Main address." }); }
+});
+
 app.post("/api/admin/submissions/:id/jigs/:sourceId", requireAdmin, async (req, res) => {
   return saveAdminJigVariant(req, res, false);
 });

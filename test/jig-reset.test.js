@@ -90,6 +90,17 @@ test("startup reset replaces legacy jigs, caps each Main at four, flags overflow
     assert.equal(refreshed.data.sources[0].variants.length, 3);
     const second = refreshed.data.sources[0].variants[0];
     assert.equal((await request(`/api/admin/submissions/seed-order/jigs/${source.id}/${second.id}`, "DELETE", {}, admin.cookie)).status, 200);
+    const mainUrl = "/api/admin/submissions/seed-order/jigs/main";
+    const extraMain = { address: "123 SW 81st St", address2: "APT 2", city: "Fort Lauderdale", state: "FL", zip: "33330", country: "US" };
+    assert.equal((await request(mainUrl, "POST", { address: extraMain })).status, 401);
+    const addedMain = await request(mainUrl, "POST", { address: extraMain, label: "Second Main" }, admin.cookie);
+    assert.equal(addedMain.status, 200);
+    assert.equal(addedMain.data.source.original.address, extraMain.address);
+    assert.equal(addedMain.data.source.original.address2, extraMain.address2);
+    assert.equal(addedMain.data.source.variants.length, 4);
+    assert.equal((await request(mainUrl, "POST", { address: extraMain }, admin.cookie)).status, 409);
+    assert.equal((await request(mainUrl, "POST", { address: addedMain.data.source.variants[0].address }, admin.cookie)).status, 409);
+    assert.equal((await request(mainUrl, "POST", { address: { address: "Incomplete" } }, admin.cookie)).status, 400);
     const profilesAfterActions = JSON.parse(await fs.readFile(path.join(dataDir, "retailer-profiles.json"), "utf8"));
     assert.equal(profilesAfterActions[0].jigNeeded, true);
     assert.equal(profilesAfterActions[0].customerProfile.address, main.address);
