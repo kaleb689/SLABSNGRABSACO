@@ -22575,12 +22575,37 @@ async function loadAdminJigModal(modal, orderId) {
           </span>
           <button type="button" class="admin-edit-button" data-edit-jig="${escapeHtml(variant.id)}"
             data-jig-source-id="${escapeHtml(source.id)}">Edit</button>
+          <button type="button" class="admin-edit-button" data-jig-action="rejig" data-variant-id="${escapeHtml(variant.id)}" data-source-id="${escapeHtml(source.id)}">Rejig</button>
+          <button type="button" class="admin-edit-button" data-jig-action="delete" data-variant-id="${escapeHtml(variant.id)}" data-source-id="${escapeHtml(source.id)}">Delete</button>
+          <button type="button" class="admin-edit-button" data-jig-action="block" data-variant-id="${escapeHtml(variant.id)}" data-source-id="${escapeHtml(source.id)}">Remove from jig pool</button>
         </div>`).join("") : "<p>No JIGs saved yet.</p>"}
       <button type="button" class="admin-edit-button" data-add-jig="${escapeHtml(source.id)}" ${(source.variants || []).length >= 4 ? "disabled" : ""}>Add JIG</button>
     </section>`).join("") : "<p>No main addresses have been submitted yet.</p>";
 }
 
 document.addEventListener("click", async event => {
+  const jigAction = event.target.closest("[data-jig-action]");
+  if (jigAction) {
+    const modal = jigAction.closest("[data-jig-modal]");
+    const action = jigAction.dataset.jigAction;
+    if (action !== "rejig" && !confirm(action === "block"
+      ? "Remove this exact JIG from the pool permanently? Profiles using it will need another JIG."
+      : "Delete this JIG? Profiles using it will need another JIG.")) return;
+    jigAction.disabled = true;
+    try {
+      const url = `/api/admin/submissions/${encodeURIComponent(modal._orderId)}/jigs/${encodeURIComponent(jigAction.dataset.sourceId)}/${encodeURIComponent(jigAction.dataset.variantId)}`;
+      const response = await fetch(url + (action === "rejig" ? "/rejig" : ""), {
+        method: action === "rejig" ? "POST" : "DELETE", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ block: action === "block" })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to update JIG.");
+      await loadAdminJigModal(modal, modal._orderId);
+      await Promise.all([loadAdminLinkedProfiles(modal._orderId), loadAdminRetailerProfiles(modal._orderId)]);
+    } catch (error) { alert(error.message); }
+    finally { jigAction.disabled = false; }
+    return;
+  }
   const open = event.target.closest("[data-show-jigs]");
   const close = event.target.closest("[data-close-jigs]");
   const edit = event.target.closest("[data-edit-jig], [data-add-jig]");

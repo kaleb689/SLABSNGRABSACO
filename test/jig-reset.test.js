@@ -74,6 +74,25 @@ test("startup reset replaces legacy jigs, caps each Main at four, flags overflow
     assert.equal(add.status, 409);
     const badUnit = await request(`/api/admin/submissions/seed-order/jigs/${source.id}/${source.variants[0].id}`, "PUT", { address: { ...main, address2: "UNIT B2" } }, admin.cookie);
     assert.equal(badUnit.status, 400);
+    const first = source.variants[0];
+    const firstUrl = `/api/admin/submissions/seed-order/jigs/${source.id}/${first.id}`;
+    const rejig = await request(firstUrl + "/rejig", "POST", {}, admin.cookie);
+    assert.equal(rejig.status, 200);
+    assert.notDeepEqual(rejig.data.variant.address, first.address);
+    const updated = JSON.parse(await fs.readFile(path.join(dataDir, "retailer-profiles.json"), "utf8"));
+    assert.deepEqual(updated[0].jiggedAddress, rejig.data.variant.address);
+    assert.equal((await request(firstUrl, "PUT", { address: first.address }, admin.cookie)).status, 409);
+    const remove = await request(firstUrl, "DELETE", { block: true }, admin.cookie);
+    assert.equal(remove.status, 200);
+    assert.equal(remove.data.updatedProfiles, 1);
+    assert.equal((await request(`/api/admin/submissions/seed-order/jigs/${source.id}`, "POST", { address: rejig.data.variant.address }, admin.cookie)).status, 409);
+    const refreshed = await request("/api/admin/submissions/seed-order/jigs", "GET", null, admin.cookie);
+    assert.equal(refreshed.data.sources[0].variants.length, 3);
+    const second = refreshed.data.sources[0].variants[0];
+    assert.equal((await request(`/api/admin/submissions/seed-order/jigs/${source.id}/${second.id}`, "DELETE", {}, admin.cookie)).status, 200);
+    const profilesAfterActions = JSON.parse(await fs.readFile(path.join(dataDir, "retailer-profiles.json"), "utf8"));
+    assert.equal(profilesAfterActions[0].jigNeeded, true);
+    assert.equal(profilesAfterActions[0].customerProfile.address, main.address);
     const backups = await fs.readdir(path.join(dataDir, "secure-packages", "jig-reset-backups"));
     assert.equal(backups.length, 1);
     const backup = await fs.readFile(path.join(dataDir, "secure-packages", "jig-reset-backups", backups[0]), "utf8");
@@ -84,7 +103,7 @@ test("startup reset replaces legacy jigs, caps each Main at four, flags overflow
     let readyAgain = false;
     for (let i = 0; i < 60; i++) { try { await fetch(base); readyAgain = true; break; } catch { await new Promise(resolve => setTimeout(resolve, 100)); } }
     assert.ok(readyAgain);
-    assert.deepEqual(JSON.parse(await fs.readFile(path.join(dataDir, "retailer-profiles.json"), "utf8")), profiles);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(dataDir, "retailer-profiles.json"), "utf8")), profilesAfterActions);
     assert.equal((await fs.readdir(path.join(dataDir, "secure-packages", "jig-reset-backups"))).length, 1);
   } finally {
     server.kill();

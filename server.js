@@ -958,7 +958,7 @@ async function customerJigPoolWithSources(account, order, paidProfiles) {
     source.variants ||= [];
     const existingKeys = new Set(source.variants.map(item => safeAddressVariantKey(item.address)));
     const originalKey = safeAddressVariantKey(source.original);
-    for (const address of defaultJigVariants(source.original)) {
+    for (const address of defaultJigVariants(source.original, 4, new Set(source.excludedVariantKeys || []))) {
       if (source.variants.length >= 4) break;
       const key = safeAddressVariantKey(address);
       if (key === originalKey || existingKeys.has(key)) continue;
@@ -24305,7 +24305,7 @@ async function resetCustomerJigs(context) {
       (!record.jigSourceAddress && (oldVariants.has(safeAddressVariantKey(record.customerProfile || {})) ||
         safeAddressVariantKey(record.customerProfile || {}) === originalKey))
     ));
-    source.variants = defaultJigVariants(source.original).map(address => ({ id: crypto.randomUUID(), address }));
+    source.variants = defaultJigVariants(source.original, 4, new Set(source.excludedVariantKeys || [])).map(address => ({ id: crypto.randomUUID(), address }));
     source.generatedSafeVariantsAt = now;
     for (const [index, record] of assigned.entries()) {
       claimed.add(record);
@@ -24338,6 +24338,9 @@ async function resetCustomerJigs(context) {
 }
 
 async function migrateCustomerJigs() {
+  const migrationFile = path.join(SECRET_DIR, "jig-rules-migration.json");
+  const completed = await readJson(migrationFile, null);
+  if (completed?.version === JIG_RULES_VERSION) return;
   let resetCustomers = 0, updatedProfiles = 0, needsAddress = 0;
   for (const account of await getCustomerAccounts()) {
     const context = await adminJigContext(account.id);
@@ -24347,6 +24350,7 @@ async function migrateCustomerJigs() {
     updatedProfiles += result.updatedProfiles;
     needsAddress += result.needsAddress;
   }
+  await writeJson(migrationFile, { version: JIG_RULES_VERSION, completedAt: new Date().toISOString() });
   console.log("Combined four-JIG reset:", JSON.stringify({ resetCustomers, updatedProfiles, needsAddress }));
 }
 
@@ -24406,6 +24410,66 @@ app.put("/api/admin/submissions/:id/jigs/:sourceId/:variantId", requireAdmin, as
   return saveAdminJigVariant(req, res, true);
 });
 
+function jigDeliveryAddress(address) {
+  return Object.fromEntries(["address", "address2", "city", "state", "zip", "country"].map(field => [field, address[field] || ""]));
+}
+async function saveJigContext(context) {
+  await saveRetailerProfiles(context.paidProfiles);
+  await saveFreeAssignments(context.freeAssignments);
+  await saveRentalAssignments(context.rentalAssignments);
+  await saveCustomerJigPool(context.account.id, context.pool);
+}
+app.delete("/api/admin/submissions/:id/jigs/:sourceId/:variantId", requireAdmin, async (req, res) => {
+  try {
+    const context = await adminJigContext(req.params.id);
+    const source = context?.pool.sources.find(item => item.id === req.params.sourceId);
+    const variant = source?.variants.find(item => item.id === req.params.variantId);
+    if (!variant) return res.status(404).json({ error: "JIG not found." });
+    const key = safeAddressVariantKey(variant.address);
+    if (req.body?.block === true) source.excludedVariantKeys = [...new Set([...(source.excludedVariantKeys || []), key])];
+    const assigned = jigAssignedRecords(context, variant.address, source);
+    source.variants = source.variants.filter(item => item.id !== variant.id);
+    for (const record of assigned) {
+      record.customerProfile = { ...record.customerProfile, ...jigDeliveryAddress(source.original) };
+      record.jiggedAddress = null;
+      record.jigPoolVariantId = null;
+      record.jigVariantIndex = null;
+      record.jigNeeded = true;
+      record.jigNeededReason = "The assigned JIG was removed. Choose an available JIG or add another Main address.";
+      record.exportAttemptStatus = null;
+      record.updatedAt = new Date().toISOString();
+    }
+    await saveJigContext(context);
+    return res.json({ ok: true, updatedProfiles: assigned.length, blocked: req.body?.block === true });
+  } catch (error) { return res.status(500).json({ error: "Unable to remove JIG." }); }
+});
+app.post("/api/admin/submissions/:id/jigs/:sourceId/:variantId/rejig", requireAdmin, async (req, res) => {
+  try {
+    const context = await adminJigContext(req.params.id);
+    const source = context?.pool.sources.find(item => item.id === req.params.sourceId);
+    const variant = source?.variants.find(item => item.id === req.params.variantId);
+    if (!variant) return res.status(404).json({ error: "JIG not found." });
+    const excluded = new Set([...(source.excludedVariantKeys || []), ...source.variants.map(item => safeAddressVariantKey(item.address))]);
+    const replacement = defaultJigVariants(source.original, 1, excluded,
+      source.variants.filter(item => item !== variant).map(item => item.address))[0];
+    if (!replacement) return res.status(409).json({ error: "No unused permitted combination remains. Edit the JIG or add another Main address." });
+    const assigned = jigAssignedRecords(context, variant.address, source);
+    source.excludedVariantKeys = [...new Set([...(source.excludedVariantKeys || []), safeAddressVariantKey(variant.address)])];
+    variant.address = replacement;
+    for (const record of assigned) {
+      record.customerProfile = { ...record.customerProfile, ...replacement };
+      record.jiggedAddress = { ...replacement };
+      record.jigHistoryKeys = [...new Set([...(record.jigHistoryKeys || []), safeAddressVariantKey(replacement)])];
+      record.jigNeeded = false;
+      record.jigNeededReason = null;
+      record.exportAttemptStatus = null;
+      record.updatedAt = new Date().toISOString();
+    }
+    await saveJigContext(context);
+    return res.json({ ok: true, variant, updatedProfiles: assigned.length });
+  } catch (error) { return res.status(500).json({ error: "Unable to rejig this address." }); }
+});
+
 async function saveAdminJigVariant(req, res, editing) {
   try {
     const context = await adminJigContext(req.params.id);
@@ -24424,6 +24488,9 @@ async function saveAdminJigVariant(req, res, editing) {
     }
     if (!editing && (source.variants || []).length >= 4) {
       return res.status(409).json({ error: "This Main address has four JIGs. Edit an existing JIG or add a different Main address." });
+    }
+    if ((source.excludedVariantKeys || []).includes(safeAddressVariantKey(address))) {
+      return res.status(409).json({ error: "This exact JIG was removed from the pool and cannot be used again." });
     }
     const variantId = req.params.variantId;
     const old = editing && (source.variants || []).find(item => item.id === variantId);

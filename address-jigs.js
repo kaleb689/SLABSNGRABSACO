@@ -645,10 +645,10 @@ export function safeAddressVariantKey(
 }
 
 
-export function defaultJigVariants(original, limit = 4) {
+export function defaultJigVariants(original, limit = 4, excluded = new Set(), anchors = []) {
   const mainKey = safeAddressVariantKey(original);
   const hasUnit = /^(?:STE|SUITE|APT|APARTMENT|UNIT|#)\s*[A-Z0-9-]+$/i.test(original.address2 || "");
-  const choices = safeAddressVariants(original).filter(item => safeAddressVariantKey(item) !== mainKey &&
+  const choices = safeAddressVariants(original).filter(item => safeAddressVariantKey(item) !== mainKey && !excluded.has(safeAddressVariantKey(item)) &&
     (!hasUnit || /^(?:APT|APARTMENT|UNIT|#)\s*[A-Z0-9-]+$/i.test(item.address2)));
   const features = item => {
     const street = item.address.toUpperCase().split(/\s+/).slice(1);
@@ -656,8 +656,8 @@ export function defaultJigVariants(original, limit = 4) {
     return [direction, street.slice(0, -1).join(" "), street.at(-1), String(item.address2 || "").toUpperCase().replace(/\s*[A-Z0-9-]+$/, "").trim()];
   };
   const distance = (a, b) => features(a).reduce((sum, value, index) => sum + (value !== features(b)[index] ? [2, 3, 2, 3][index] : 0), 0);
-  const selected = [];
-  while (choices.length && selected.length < limit) {
+  const selected = [...anchors];
+  while (choices.length && selected.length < limit + anchors.length) {
     let bestIndex = 0, bestScore = -Infinity;
     for (let index = 0; index < choices.length; index++) {
       const item = choices[index], parts = features(item);
@@ -669,5 +669,5 @@ export function defaultJigVariants(original, limit = 4) {
     }
     selected.push(choices.splice(bestIndex, 1)[0]);
   }
-  return selected;
+  return selected.slice(anchors.length);
 }
