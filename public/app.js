@@ -1990,7 +1990,7 @@ const PROFILE_FIELD_LABELS = {
   acoEmail:
     "IMAP / Host Email",
   acoPassword:
-    "IMAP / Host App Password",
+    "EMAIL (APP PASSWORD)",
   cardLabel:
     "Card Label",
   cardholder:
@@ -2072,7 +2072,7 @@ function profileFieldErrorMessage(
     rawValue.length < 6
   ) {
     return (
-      "IMAP / Host App Password must be at least 6 characters."
+      "EMAIL (APP PASSWORD) must be at least 6 characters."
     );
   }
 
@@ -6079,7 +6079,8 @@ document.querySelectorAll("[data-saved-nav]").forEach(button => button.addEventL
 document.getElementById("saved-imap-select")?.addEventListener("change", () => renderSavedImapManager());
 document.getElementById("add-saved-imap")?.addEventListener("click", () => {
   const form = document.getElementById("saved-imap-form"); form.reset(); form.elements.id.value = "";
-  form.elements.password.required = true; form.elements.password.placeholder = "App password"; form.hidden = false;
+  form.elements.password.required = true; form.elements.password.placeholder = "App password";
+  form.querySelector('button[type="submit"]').textContent = "Save Email"; form.hidden = false;
 });
 document.getElementById("edit-saved-imap")?.addEventListener("click", () => {
   const form = document.getElementById("saved-imap-form");
@@ -6087,7 +6088,9 @@ document.getElementById("edit-saved-imap")?.addEventListener("click", () => {
   if (!item) return;
   form.elements.id.value = item.id; form.elements.email.value = item.email;
   form.elements.password.value = ""; form.elements.password.required = false;
-  form.elements.password.placeholder = "Leave blank to keep saved app password"; form.hidden = false;
+  form.elements.password.placeholder = "Leave blank to keep saved app password";
+  form.querySelector('button[type="submit"]').textContent = "Save Changes"; form.hidden = false;
+  form.elements.password.focus();
 });
 document.getElementById("cancel-saved-imap")?.addEventListener("click", () => { document.getElementById("saved-imap-form").hidden = true; });
 document.getElementById("saved-imap-form")?.addEventListener("submit", async event => {
@@ -6502,6 +6505,7 @@ function populateEditOrderSelect(
     if (form) {
       form.hidden = true;
     }
+    document.getElementById("edit-order-imap-form")?.setAttribute("hidden", "");
 
     return;
   }
@@ -6530,6 +6534,10 @@ function populateEditOrderSelect(
       option
     );
   });
+
+  if (select.options.length > 1) select.selectedIndex = 1;
+  const passwordForm = document.getElementById("edit-order-imap-form");
+  if (passwordForm) { passwordForm.hidden = select.selectedIndex < 1; passwordForm.reset(); }
 }
 
 
@@ -6630,8 +6638,45 @@ document
       fillEditOrderForm(
         findOrder(orderNumber)
       );
+      const passwordForm = document.getElementById("edit-order-imap-form");
+      if (passwordForm) { passwordForm.hidden = !orderNumber; passwordForm.reset(); }
+      setMessage(document.getElementById("edit-order-imap-message"), "");
     }
   );
+
+document.getElementById("edit-selected-order")?.addEventListener("click", () => {
+  const orderNumber = document.getElementById("edit-order-select")?.value;
+  fillEditOrderForm(findOrder(orderNumber));
+  document.getElementById("edit-order-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+document.getElementById("edit-order-imap-form")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const orderNumber = document.getElementById("edit-order-select")?.value;
+  const message = document.getElementById("edit-order-imap-message");
+  const button = form.querySelector('button[type="submit"]');
+  if (!orderNumber || !findOrder(orderNumber)) {
+    setMessage(message, "Select an order first.", "error");
+    return;
+  }
+  try {
+    setButtonBusy(button, true, "Saving…");
+    setMessage(message, "");
+    const response = await fetch(`/api/account/orders/${encodeURIComponent(orderNumber)}`, {
+      method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile: {}, secrets: { acoPassword: form.elements.acoPassword.value } })
+    });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.error || "Unable to save your app password.");
+    form.reset();
+    setMessage(message, "App password updated for this order.", "success");
+  } catch (error) {
+    setMessage(message, error.message, "error");
+  } finally {
+    setButtonBusy(button, false);
+  }
+});
 
 
 /* =====================================================

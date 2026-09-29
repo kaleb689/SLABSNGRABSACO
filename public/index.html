@@ -982,7 +982,7 @@
 
 
 <label>
-  IMAP / Host App Password *
+  EMAIL (APP PASSWORD) *
 
   <div class="password-row">
 
@@ -4427,7 +4427,7 @@
           </section>
 
           <section class="saved-detail-panel imap-detail-panel">
-            <div class="saved-detail-head"><div><span class="eyebrow">EMAIL CONNECTION</span><h4>IMAP Email &amp; App Password</h4></div><span id="saved-imap-count" class="saved-detail-count">0</span></div>
+            <div class="saved-detail-head"><div><span class="eyebrow">EMAIL CONNECTION</span><h4>EMAIL (APP PASSWORD)</h4></div><span id="saved-imap-count" class="saved-detail-count">0</span></div>
             <p class="account-muted">Use the app password from your email provider, not your regular email password. See Chapter 2 in the guide.</p>
             <div class="saved-detail-selector-row">
               <button type="button" class="secondary saved-prev" data-saved-nav="imap:-1" aria-label="Previous IMAP login">‹</button>
@@ -4439,11 +4439,11 @@
             <form id="saved-imap-form" class="saved-detail-form" hidden>
               <input type="hidden" name="id" />
               <label>IMAP / Host Email *<input type="email" name="email" maxlength="254" autocomplete="off" required /></label>
-              <label>IMAP / Host App Password *<input type="password" name="password" minlength="6" maxlength="512" autocomplete="new-password" required /></label>
-              <div class="saved-detail-actions"><button type="submit" class="primary">Save IMAP Login</button><button type="button" id="cancel-saved-imap" class="secondary">Cancel</button></div>
+              <label>EMAIL (APP PASSWORD) *<input type="password" name="password" minlength="6" maxlength="512" autocomplete="new-password" required /></label>
+              <div class="saved-detail-actions"><button type="submit" class="primary">Save Email</button><button type="button" id="cancel-saved-imap" class="secondary">Cancel</button></div>
             </form>
             <div id="saved-imap-preview" class="saved-detail-preview"><p class="account-muted">No IMAP logins saved yet.</p></div>
-            <div id="saved-imap-existing-actions" class="saved-detail-actions" hidden><button type="button" id="edit-saved-imap" class="secondary">Edit Login</button><button type="button" id="delete-saved-imap" class="secondary danger-button">Delete Login</button></div>
+            <div id="saved-imap-existing-actions" class="saved-detail-actions" hidden><button type="button" id="edit-saved-imap" class="secondary">Edit Email (App Password)</button><button type="button" id="delete-saved-imap" class="secondary danger-button">Delete Login</button></div>
           </section>
         </div>
 
@@ -4537,6 +4537,16 @@
   </div>
 
 </div>
+
+        <form id="edit-order-imap-form" class="account-form-section" hidden>
+          <h4>EMAIL (APP PASSWORD)</h4>
+          <p class="account-muted">Change the app password you submitted for the selected order. Your current password is never displayed.</p>
+          <label>New EMAIL (APP PASSWORD)
+            <input type="password" name="acoPassword" minlength="6" maxlength="300" autocomplete="new-password" required />
+          </label>
+          <button type="submit" class="primary account-action-button">Save App Password</button>
+          <p id="edit-order-imap-message" class="form-message" role="status"></p>
+        </form>
 
 
         <form
@@ -4724,7 +4734,7 @@
             </label>
 
             <label>
-              IMAP / Host App Password
+              EMAIL (APP PASSWORD)
 
               <input
                 type="password"
