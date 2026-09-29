@@ -4272,16 +4272,18 @@
 
         <div class="saved-details-grid">
 
-          <section class="saved-detail-panel">
-            <div class="saved-detail-head">
+          <details class="saved-detail-panel saved-detail-disclosure" id="saved-shipping-box">
+            <summary class="saved-detail-head">
               <div>
                 <span class="eyebrow">SHIPPING</span>
                 <h4>Saved Shipping Addresses</h4>
               </div>
 
               <span id="saved-address-count" class="saved-detail-count">0</span>
-            </div>
+            <span class="saved-detail-toggle" aria-hidden="true"><span class="saved-detail-open-label">Open</span><span class="saved-detail-close-label">Close</span><span class="saved-detail-chevron">⌄</span></span>
+            </summary>
 
+            <div class="saved-detail-disclosure-body">
             <div class="saved-detail-selector-row">
               <button type="button" class="secondary saved-prev" data-saved-nav="address:-1" aria-label="Previous address">‹</button>
               <span id="saved-address-position" class="saved-position">Address 0 of 0</span>
@@ -4361,18 +4363,21 @@
               <button type="button" id="edit-saved-address" class="secondary">Edit Address</button>
               <button type="button" id="delete-saved-address" class="secondary danger-button">Delete Address</button>
             </div>
-          </section>
+            </div>
+          </details>
 
-          <section class="saved-detail-panel">
-            <div class="saved-detail-head">
+          <details class="saved-detail-panel saved-detail-disclosure" id="saved-payments-box">
+            <summary class="saved-detail-head">
               <div>
                 <span class="eyebrow">EXTRA PAYMENTS</span>
                 <h4>Saved Payment Cards</h4>
               </div>
 
               <span id="saved-payment-count" class="saved-detail-count">0</span>
-            </div>
+            <span class="saved-detail-toggle" aria-hidden="true"><span class="saved-detail-open-label">Open</span><span class="saved-detail-close-label">Close</span><span class="saved-detail-chevron">⌄</span></span>
+            </summary>
 
+            <div class="saved-detail-disclosure-body">
             <div class="saved-detail-selector-row">
               <button type="button" class="secondary saved-prev" data-saved-nav="payment:-1" aria-label="Previous card">‹</button>
               <span id="saved-payment-position" class="saved-position">Card 0 of 0</span>
@@ -4441,7 +4446,8 @@
               <button type="button" id="edit-saved-payment" class="secondary">Edit Payment</button>
               <button type="button" id="delete-saved-payment" class="secondary danger-button">Delete Payment</button>
             </div>
-          </section>
+            </div>
+          </details>
 
           <section class="saved-detail-panel imap-detail-panel">
             <div class="saved-detail-head"><div><span class="eyebrow">EMAIL CONNECTION</span><h4>EMAIL (APP PASSWORD)</h4></div><span id="saved-imap-count" class="saved-detail-count">0</span></div>
@@ -4478,49 +4484,6 @@
         </div>
 
         <p id="saved-details-message" class="form-message"></p>
-      </div>
-
-
-      <!-- SUPPORT -->
-
-      <div class="account-card profile-support-card">
-
-        <div class="profile-support-icon">
-          ✉
-        </div>
-
-        <div class="profile-support-copy">
-
-          <span class="eyebrow">
-            NEED HELP?
-          </span>
-
-          <h3>
-            Issue with an order/account?
-          </h3>
-
-          <p class="account-muted">
-            Having trouble with an order, your account,
-            membership, or one of your retailer profiles?
-            Email me and I'll help you get it sorted out.
-          </p>
-
-          <a
-            href="mailto:Kaleb@slabsngrabsaco.com?subject=SLABS%20N%20GRABS%20ACO%20Support"
-            class="profile-support-email"
-          >
-            Kaleb@slabsngrabsaco.com
-          </a>
-
-        </div>
-
-        <a
-          class="primary profile-support-button"
-          href="mailto:Kaleb@slabsngrabsaco.com?subject=SLABS%20N%20GRABS%20ACO%20Support"
-        >
-          Email Kaleb
-        </a>
-
       </div>
 
 
@@ -4885,6 +4848,48 @@
           ></p>
 
         </form>
+
+      </div>
+
+      <!-- SUPPORT -->
+
+      <div class="account-card profile-support-card">
+
+        <div class="profile-support-icon">
+          ✉
+        </div>
+
+        <div class="profile-support-copy">
+
+          <span class="eyebrow">
+            NEED HELP?
+          </span>
+
+          <h3>
+            Issue with an order/account?
+          </h3>
+
+          <p class="account-muted">
+            Having trouble with an order, your account,
+            membership, or one of your retailer profiles?
+            Email me and I'll help you get it sorted out.
+          </p>
+
+          <a
+            href="mailto:Kaleb@slabsngrabsaco.com?subject=SLABS%20N%20GRABS%20ACO%20Support"
+            class="profile-support-email"
+          >
+            Kaleb@slabsngrabsaco.com
+          </a>
+
+        </div>
+
+        <a
+          class="primary profile-support-button"
+          href="mailto:Kaleb@slabsngrabsaco.com?subject=SLABS%20N%20GRABS%20ACO%20Support"
+        >
+          Email Kaleb
+        </a>
 
       </div>
 
