@@ -2006,7 +2006,9 @@ const PROFILE_FIELD_LABELS = {
   confirm:
     "Information Confirmation",
   acknowledgeAcoOutcome:
-    "ACO Checkout Acknowledgement"
+    "ACO Checkout Acknowledgement",
+  authorizeRequestedPurchases:
+    "Purchase Authorization"
 };
 
 
@@ -2043,6 +2045,8 @@ function profileFieldErrorMessage(
       return (
         name === "acknowledgeAcoOutcome"
           ? "Please acknowledge that ACO does not guarantee a checkout."
+          : name === "authorizeRequestedPurchases"
+          ? "Please agree to the requested purchase authorization before continuing."
           : "Please confirm that the information above is accurate."
       );
     }
@@ -2593,6 +2597,7 @@ profileForm?.addEventListener(
 
     delete profile.confirm;
     delete profile.acknowledgeAcoOutcome;
+    delete profile.authorizeRequestedPurchases;
     delete profile.referredByDiscord;
 
     if (message) {
@@ -2620,7 +2625,8 @@ profileForm?.addEventListener(
   profile,
   secrets,
   referredByDiscord: String(all.referredByDiscord || "").trim(),
-  acknowledgeAcoOutcome: all.acknowledgeAcoOutcome === "on"
+  acknowledgeAcoOutcome: all.acknowledgeAcoOutcome === "on",
+  authorizeRequestedPurchases: all.authorizeRequestedPurchases === "on"
 })
           }
         );

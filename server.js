@@ -7576,6 +7576,9 @@ app.post(
               createdAt:
                 entry.createdAt,
 
+              purchaseAuthorizationAcceptedAt:
+                entry.purchaseAuthorizationAcceptedAt || null,
+
               paidAt:
                 new Date()
                   .toISOString(),
@@ -35069,6 +35072,12 @@ app.post(
         });
       }
 
+      if (req.body.authorizeRequestedPurchases !== true) {
+        return res.status(400).json({
+          error: "Please agree to the requested purchase authorization before continuing."
+        });
+      }
+
       const profile =
         sanitizeProfile(
           req.body.profile || {}
@@ -35164,7 +35173,9 @@ app.post(
 
         customerAccountId:
           req.customerAccount.id,
-        
+
+        purchaseAuthorizationAcceptedAt:
+          now,
 
         createdAt:
           now
