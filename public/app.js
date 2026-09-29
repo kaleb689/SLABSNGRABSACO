@@ -14557,7 +14557,8 @@ async function openSetupTask(task) {
   if (["shipping", "payment"].includes(target.type)) {
     const button = document.getElementById(target.type === "shipping" ? "add-saved-address" : "add-saved-payment");
     const panel = button?.closest(".saved-detail-panel");
-    if (panel && !panel.classList.contains("expanded")) panel.querySelector(".saved-detail-head")?.click();
+    if (panel?.tagName === "DETAILS") panel.open = true;
+    else if (panel && !panel.classList.contains("expanded")) panel.querySelector(".saved-detail-head")?.click();
     button?.click();
     (document.getElementById(target.type === "shipping" ? "saved-address-form" : "saved-payment-form") || button)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });

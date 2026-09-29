@@ -12310,3 +12310,36 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
     justify-self: end;
   }
 }
+
+/* Consolidate saved checkout details and keep order setup above support. */
+#account-tab-edit-profile > .existing-profile-information {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+#account-tab-edit-profile .saved-detail-disclosure > summary {
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+  gap: 12px;
+}
+#account-tab-edit-profile .saved-detail-disclosure > summary::-webkit-details-marker { display: none; }
+#account-tab-edit-profile .saved-detail-disclosure > summary:focus-visible {
+  outline: 2px solid #12c9ff;
+  outline-offset: 5px;
+  border-radius: 6px;
+}
+#account-tab-edit-profile .saved-detail-disclosure .saved-detail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #63e0ff;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+#account-tab-edit-profile .saved-detail-disclosure .saved-detail-close-label { display: none; }
+#account-tab-edit-profile .saved-detail-disclosure[open] .saved-detail-open-label { display: none; }
+#account-tab-edit-profile .saved-detail-disclosure[open] .saved-detail-close-label { display: inline; }
+#account-tab-edit-profile .saved-detail-disclosure[open] .saved-detail-chevron { transform: rotate(180deg); }
+#account-tab-edit-profile .saved-detail-disclosure-body { padding-top: 16px; }
+#account-tab-edit-profile .saved-detail-disclosure > summary > div { min-width: 0; flex: 1; }
