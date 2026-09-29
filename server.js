@@ -35,6 +35,9 @@ const DATA_DIR = process.env.DATA_DIR || "/var/data/slabsngrabsaco";
 const PENDING_FILE = path.join(DATA_DIR, "pending-submissions.json");
 const PAID_FILE = path.join(DATA_DIR, "paid-submissions.json");
 const SECRET_DIR = path.join(DATA_DIR, "secure-packages");
+// Customer-owned address variants remain here when a rented or gifted
+// managed account expires and its customer details are cleared.
+const CUSTOMER_JIG_POOL_DIR = path.join(SECRET_DIR, "jig-pools");
 const CUSTOMER_ACCOUNTS_FILE =
   path.join(
     DATA_DIR,
@@ -1145,6 +1148,7 @@ function safeAddressVariants(
 
   const unitDesignators = [
     ["APARTMENT", "APT"],
+    ["UNIT", "APT"],
     ["BUILDING", "BLDG"],
     ["FLOOR", "FL"],
     ["SUITE", "STE"],
@@ -1156,6 +1160,9 @@ function safeAddressVariants(
     new Set([
       street
     ]);
+
+  const inlineUnit = !address2 && street.match(/^(.*\S)\s+(APT|APARTMENT|UNIT|#)\s*([A-Z0-9-]+)$/i);
+  if (inlineUnit) streetVariants.add(inlineUnit[1]);
 
   const addStreet =
     value => {
@@ -1314,9 +1321,35 @@ function safeAddressVariants(
     );
   }
 
+  for (const base of Array.from(streetVariants)) {
+    if (/\bST$/i.test(base)) addStreet(`${base}.`);
+    if (/\bST\.$/i.test(base)) addStreet(base.slice(0, -1));
+  }
+
+  // Only the street-name ordinal may change; the leading house number
+  // never participates in this substitution.
+  const ordinalWords = ["", "FIRST", "SECOND", "THIRD", "FOURTH", "FIFTH", "SIXTH", "SEVENTH", "EIGHTH", "NINTH"];
+  const tensWords = ["", "TENTH", "TWENTIETH", "THIRTIETH", "FORTIETH", "FIFTIETH", "SIXTIETH", "SEVENTIETH", "EIGHTIETH", "NINETIETH"];
+  const tens = ["", "TEN", "TWENTY", "THIRTY", "FORTY", "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY"];
+  for (const base of Array.from(streetVariants)) {
+    const match = base.match(/^(\d+[A-Z0-9\-/]*\s+(?:(?:N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\s+)?)(\d{1,2})(ST|ND|RD|TH)\b/i);
+    if (!match) continue;
+    const value = Number(match[2]);
+    if (value < 1 || value > 99) continue;
+    let words = "";
+    if (value <= 9) words = ordinalWords[value];
+    else if (value === 10) words = "TENTH";
+    else if (value < 20) words = ["ELEVENTH", "TWELFTH", "THIRTEENTH", "FOURTEENTH", "FIFTEENTH", "SIXTEENTH", "SEVENTEENTH", "EIGHTEENTH", "NINETEENTH"][value - 11];
+    else words = value % 10 ? `${tens[Math.floor(value / 10)]}-${ordinalWords[value % 10]}` : tensWords[Math.floor(value / 10)];
+    const ordinal = `${match[2]}${match[3]}`;
+    addStreet(base.replace(new RegExp(`\\b${ordinal}\\b`, "i"), words.toLowerCase()));
+    addStreet(base.replace(new RegExp(`\\b${ordinal}\\b`, "i"), match[2]));
+  }
+
   const unitVariants =
     new Set([
-      address2
+      address2,
+      ...(inlineUnit ? [`${inlineUnit[2]} ${inlineUnit[3]}`] : [])
     ]);
 
   const addUnit =
@@ -1331,7 +1364,7 @@ function safeAddressVariants(
       );
     };
 
-  if (address2) {
+  if (address2 || inlineUnit) {
     for (
       const [
         full,
@@ -1384,6 +1417,12 @@ function safeAddressVariants(
         );
       }
     }
+    const unitMatch = (address2 || `${inlineUnit[2]} ${inlineUnit[3]}`).match(/^(?:APT|APARTMENT|UNIT|#)\s*([A-Z0-9-]+)$/i);
+    if (unitMatch) {
+      for (const label of ["APT", "APARTMENT", "UNIT", "#"]) {
+        addUnit(`${label === "#" ? "#" : `${label} `}${unitMatch[1]}`);
+      }
+    }
   }
 
   const seen =
@@ -1400,6 +1439,8 @@ function safeAddressVariants(
       const variantUnit of
       unitVariants
     ) {
+      if (inlineUnit && variantStreet.includes(inlineUnit[2]) && variantUnit) continue;
+      if (inlineUnit && !variantStreet.includes(inlineUnit[2]) && !variantUnit) continue;
       const item = {
         address:
           variantStreet,
@@ -1491,6 +1532,128 @@ function safeAddressVariantKey(
         ""
       ).toUpperCase()
   });
+}
+
+function customerJigPoolPath(accountId) {
+  return path.join(CUSTOMER_JIG_POOL_DIR, `customer-${String(accountId)}.encrypted.json`);
+}
+
+async function getCustomerJigPool(accountId) {
+  const encrypted = await readJson(customerJigPoolPath(accountId), null);
+  if (!encrypted) return { sources: [] };
+  const pool = decryptJson(encrypted);
+  return { sources: Array.isArray(pool?.sources) ? pool.sources : [] };
+}
+
+async function saveCustomerJigPool(accountId, pool) {
+  await writeJson(customerJigPoolPath(accountId), encryptJson({ sources: pool.sources }));
+}
+
+function jigSourceAddress(item = {}) {
+  return {
+    firstName: clean(item.firstName, 100), lastName: clean(item.lastName, 100),
+    phone: clean(item.phone, 50), address: normalizeAddressTokenText(item.address),
+    address2: normalizeAddressTokenText(item.address2), city: normalizeAddressTokenText(item.city),
+    state: normalizeAddressTokenText(item.state), zip: normalizeAddressTokenText(item.zip),
+    country: normalizeAddressTokenText(item.country || "US")
+  };
+}
+
+async function customerJigPoolWithSources(account, order, paidProfiles) {
+  const pool = await getCustomerJigPool(account.id);
+  const sourceInputs = [
+    { label: "Main address", address: order?.profile },
+    { label: "Account address", address: account.adminProfile },
+    ...(Array.isArray(account.shippingAddresses) ? account.shippingAddresses : []).map((address, index) => ({
+      label: address.label || `Saved address ${index + 1}`, address
+    })),
+    ...paidProfiles.map((record, index) => ({
+      label: `Paid profile ${index + 1}`, address: record.jigSourceAddress || record.customerProfile
+    }))
+  ];
+  let changed = false;
+  for (const input of sourceInputs) {
+    const original = jigSourceAddress(input.address);
+    if (!original.address || !original.city || !original.state || !original.zip) continue;
+    const key = safeAddressVariantKey(original);
+    if (pool.sources.some(source => safeAddressVariantKey(source.original) === key)) continue;
+    pool.sources.push({ id: crypto.randomUUID(), label: input.label, original, variants: [] });
+    changed = true;
+  }
+  if (changed) await saveCustomerJigPool(account.id, pool);
+  return pool;
+}
+
+function jigVariantAllowed(original, candidate) {
+  const key = safeAddressVariantKey(candidate);
+  return safeAddressVariants(original).some(variant => safeAddressVariantKey(variant) === key);
+}
+
+async function prepareNewManagedAssignment(assignment, membership, account, order, reserved = new Set()) {
+  if (!account || !assignment) return;
+  const paidProfiles = (await getRetailerProfiles()).filter(item =>
+    String(item.customerAccountId || "") === String(account.id)
+  );
+  const pool = await customerJigPoolWithSources(account, order, paidProfiles);
+  const [free, rented, details] = await Promise.all([
+    getFreeAssignments(), getRentalAssignments(), adminCustomerSavedDetailsPayload(account)
+  ]);
+  for (const record of [...paidProfiles, ...free, ...rented]) {
+    if (record === assignment || String(record.customerAccountId || "") !== String(account.id)) continue;
+    if (record.customerProfile?.address) reserved.add(safeAddressVariantKey(record.customerProfile));
+    for (const key of record.jigHistoryKeys || []) reserved.add(key);
+  }
+  const sources = pool.sources;
+  let selected = null;
+  for (const source of sources) {
+    const variants = [
+      ...(source.variants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id })),
+      ...safeAddressVariants(source.original)
+    ];
+    selected = variants.find(item => !reserved.has(safeAddressVariantKey(item)))
+      ? { source, variant: variants.find(item => !reserved.has(safeAddressVariantKey(item))) } : null;
+    if (selected) break;
+  }
+  const email = String(membership?.accountEmail || managedAccountCanonicalEmail(membership) || "").trim();
+  assignment.customerProfile = {
+    ...(assignment.customerProfile || {}),
+    email,
+    ...(selected ? { ...selected.source.original, ...selected.variant, email } : {
+      address: "", address2: "", city: "", state: "", zip: ""
+    })
+  };
+  assignment.jigNeeded = !selected;
+  if (selected) {
+    const key = safeAddressVariantKey(selected.variant);
+    reserved.add(key);
+    let savedVariant = (selected.source.variants || []).find(item => safeAddressVariantKey(item.address) === key);
+    if (!savedVariant) {
+      savedVariant = { id: crypto.randomUUID(), address: {
+        address: selected.variant.address, address2: selected.variant.address2,
+        city: selected.variant.city, state: selected.variant.state,
+        zip: selected.variant.zip, country: selected.variant.country
+      } };
+      selected.source.variants.push(savedVariant);
+      await saveCustomerJigPool(account.id, pool);
+    }
+    assignment.jigSourceKey = selected.source.id;
+    assignment.jigSourceAddress = { ...selected.source.original };
+    assignment.jiggedAddress = { ...savedVariant.address };
+    assignment.jigPoolVariantId = savedVariant.id;
+    assignment.jigHistoryKeys = [...new Set([...(assignment.jigHistoryKeys || []), key])];
+  }
+  const cards = details.paymentMethods || [];
+  const card = cards[reserved.size % (cards.length || 1)];
+  if (card?.acoCardNumber) {
+    assignment.customerSecrets = encryptJson({
+      cardLabel: card.cardLabel || "", cardholder: card.cardholder || "",
+      acoCardNumber: card.acoCardNumber, expMonth: card.expMonth || "",
+      expYear: card.expYear || "", securityCode: card.securityCode || ""
+    });
+    assignment.savedPaymentMethodId = card.id || null;
+  } else {
+    assignment.customerSecrets = null;
+  }
 }
 
 
@@ -7302,6 +7465,9 @@ app.post(
                       ? null
                       : await loadEncryptedPackage(paidRecord.id);
 
+                  const rentalCustomer = (await getCustomerAccounts()).find(item => String(item.id) === String(customerAccountId));
+                  const reservedRentalJigs = new Set();
+
                   for (
                     const account of
                     availableAccounts.slice(
@@ -7390,6 +7556,7 @@ app.post(
 
                       endReason: null
                     });
+                    await prepareNewManagedAssignment(assignments.at(-1), account, rentalCustomer, paidRecord, reservedRentalJigs);
                   }
 
                   for (
@@ -13673,6 +13840,10 @@ function safeRetailerProfile(
       customerSecrets
     ),
 
+    jigNeeded: record.jigNeeded === true,
+    exportAttemptStatus: record.exportAttemptStatus || null,
+    exportAttemptedAt: record.exportAttemptedAt || null,
+
     activationStatus:
       normalizeProfileActivationStatus(
         record.activationStatus,
@@ -13823,6 +13994,10 @@ function adminRetailerProfile(
         {},
       customerSecrets
     ),
+
+    jigNeeded: record.jigNeeded === true,
+    exportAttemptStatus: record.exportAttemptStatus || null,
+    exportAttemptedAt: record.exportAttemptedAt || null,
 
     activationStatus:
       normalizeProfileActivationStatus(
@@ -19319,6 +19494,8 @@ app.post(
         );
 
       const paidSecrets = await membershipEncryptedPackage(paidRecord);
+      const customerAccount = (await getCustomerAccounts()).find(item => String(item.id) === String(customerAccountId));
+      const reservedNewJigs = new Set();
 
       if (
         assignmentType ===
@@ -19390,6 +19567,7 @@ app.post(
             endReason:
               null
           });
+          await prepareNewManagedAssignment(assignments.at(-1), account, customerAccount, paidRecord, reservedNewJigs);
         }
 
         for (
@@ -19489,6 +19667,7 @@ app.post(
             endReason:
               null
           });
+          await prepareNewManagedAssignment(assignments.at(-1), account, customerAccount, paidRecord, reservedNewJigs);
         }
 
         for (
@@ -20847,6 +21026,8 @@ app.post(
           endReason:
             null
         });
+        const customerAccount = (await getCustomerAccounts()).find(item => String(item.id) === String(customerAccountId));
+        await prepareNewManagedAssignment(assignments.at(-1), membership, customerAccount, paidRecord);
       }
 
       await saveFreeAssignments(
@@ -22586,6 +22767,8 @@ app.post(
           endReason:
             null
         });
+        const customerAccount = (await getCustomerAccounts()).find(item => String(item.id) === String(customerAccountId));
+        await prepareNewManagedAssignment(assignments.at(-1), membership, customerAccount, paidRecord);
       }
 
       await saveRentalAssignments(
@@ -24436,6 +24619,127 @@ function safeExportFilePart(
     "Customer";
 }
 
+async function adminJigContext(orderId) {
+  const orders = await readJson(PAID_FILE, []);
+  let order = (Array.isArray(orders) ? orders : []).find(item => String(item.id) === String(orderId));
+  const account = (await getCustomerAccounts()).find(item =>
+    String(item.id) === String(order?.customerAccountId || orderId)
+  );
+  if (!account) return null;
+  if (!order) order = { id: orderId, customerAccountId: account.id, profile: account.adminProfile || {} };
+  const [paidProfiles, freeAssignments, rentalAssignments] = await Promise.all([
+    getRetailerProfiles(), getFreeAssignments(), getRentalAssignments()
+  ]);
+  const paid = paidProfiles.filter(item => String(item.customerAccountId || "") === String(account.id));
+  const linked = [...freeAssignments, ...rentalAssignments].filter(item =>
+    String(item.customerAccountId || "") === String(account.id) && managedAssignmentIsLinked(item)
+  );
+  const pool = await customerJigPoolWithSources(account, order, paid);
+  return { account, order, pool, paid, linked, paidProfiles, freeAssignments, rentalAssignments };
+}
+
+function jigAssignedRecords(context, variant, source) {
+  const key = safeAddressVariantKey(variant);
+  const originalKey = safeAddressVariantKey(source.original);
+  return [...context.paid, ...context.linked].filter(record =>
+    record.jiggedAddress && safeAddressVariantKey(record.jiggedAddress) === key &&
+    safeAddressVariantKey(record.jigSourceAddress || {}) === originalKey
+  );
+}
+
+app.get("/api/admin/submissions/:id/jigs", requireAdmin, async (req, res) => {
+  try {
+    const context = await adminJigContext(req.params.id);
+    if (!context) return res.status(404).json({ error: "Customer not found." });
+    const sources = context.pool.sources.map(source => {
+      const variants = [...(source.variants || [])];
+      for (const record of [...context.paid, ...context.linked]) {
+        if (!record.jiggedAddress || safeAddressVariantKey(record.jigSourceAddress || {}) !== safeAddressVariantKey(source.original)) continue;
+        if (!variants.some(item => safeAddressVariantKey(item.address) === safeAddressVariantKey(record.jiggedAddress))) {
+          variants.push({ id: `assigned:${record.id}`, address: record.jiggedAddress });
+        }
+      }
+      return {
+        id: source.id, label: source.label, original: source.original,
+        variants: variants.map(variant => ({
+          ...variant,
+          assignedProfiles: jigAssignedRecords(context, variant.address, source).map(record =>
+            record.customerProfile?.profileName || record.profileName || record.id
+          )
+        }))
+      };
+    });
+    return res.json({ ok: true, sources });
+  } catch (error) {
+    console.error("Admin JIG pool load error:", error);
+    return res.status(500).json({ error: "Unable to load address JIGs." });
+  }
+});
+
+app.post("/api/admin/submissions/:id/jigs/:sourceId", requireAdmin, async (req, res) => {
+  return saveAdminJigVariant(req, res, false);
+});
+app.put("/api/admin/submissions/:id/jigs/:sourceId/:variantId", requireAdmin, async (req, res) => {
+  return saveAdminJigVariant(req, res, true);
+});
+
+async function saveAdminJigVariant(req, res, editing) {
+  try {
+    const context = await adminJigContext(req.params.id);
+    if (!context) return res.status(404).json({ error: "Customer not found." });
+    const source = context.pool.sources.find(item => item.id === req.params.sourceId);
+    if (!source) return res.status(404).json({ error: "Main address not found." });
+    const candidate = jigSourceAddress(req.body?.address);
+    // City, state, ZIP and country always come from the submitted main address.
+    const address = {
+      address: candidate.address, address2: candidate.address2,
+      city: source.original.city, state: source.original.state,
+      zip: source.original.zip, country: source.original.country
+    };
+    if (!jigVariantAllowed(source.original, address)) {
+      return res.status(400).json({ error: "Use only truthful formatting of the original street and unit. House number, street name, unit number, city, state and ZIP must stay the same." });
+    }
+    const variantId = req.params.variantId;
+    const old = editing && (source.variants || []).find(item => item.id === variantId);
+    const assignedRecord = editing && variantId?.startsWith("assigned:")
+      ? [...context.paid, ...context.linked].find(item => String(item.id) === variantId.slice(9)) : null;
+    if (editing && !old && !assignedRecord) return res.status(404).json({ error: "JIG not found." });
+    const oldAddress = old?.address || assignedRecord?.jiggedAddress;
+    const key = safeAddressVariantKey(address);
+    const duplicate = context.pool.sources.some(item => (item.variants || []).some(variant =>
+      variant.id !== variantId && safeAddressVariantKey(variant.address) === key
+    )) || [...context.paid, ...context.linked].some(record =>
+      record !== assignedRecord && safeAddressVariantKey(record.jiggedAddress || {}) === key &&
+      (!oldAddress || safeAddressVariantKey(record.jiggedAddress) !== safeAddressVariantKey(oldAddress))
+    );
+    if (duplicate) return res.status(409).json({ error: "That JIG is already used or saved for this customer." });
+    const now = new Date().toISOString();
+    const assigned = oldAddress ? jigAssignedRecords(context, oldAddress, source) : [];
+    if (assignedRecord && !assigned.includes(assignedRecord)) assigned.push(assignedRecord);
+    const variant = old || { id: crypto.randomUUID() };
+    variant.address = address;
+    if (!old) source.variants.push(variant);
+    for (const record of assigned) {
+      record.jiggedAddress = { ...address };
+      record.jigPoolVariantId = variant.id;
+      record.customerProfile = { ...record.customerProfile, ...address };
+      record.exportAttemptStatus = null;
+      record.jigNeeded = false;
+      record.updatedAt = now;
+    }
+    await Promise.all([
+      saveCustomerJigPool(context.account.id, context.pool),
+      saveRetailerProfiles(context.paidProfiles),
+      saveFreeAssignments(context.freeAssignments),
+      saveRentalAssignments(context.rentalAssignments)
+    ]);
+    return res.json({ ok: true, variant, updatedProfiles: assigned.length });
+  } catch (error) {
+    console.error("Admin JIG pool save error:", error);
+    return res.status(500).json({ error: "Unable to save JIG." });
+  }
+}
+
 
 
 app.get(
@@ -24630,7 +24934,7 @@ app.get(
           retailerKeys,
 
           label:
-            `${customerName} Paid Profile ${paidNumber}`,
+            `${customerName} ${options.length + 1}`,
 
           accountEmail:
             record.customerProfile
@@ -24641,7 +24945,18 @@ app.get(
             status.exportReady,
 
           missingFields:
-            status.missingFields
+            status.missingFields,
+
+          exportAttemptStatus:
+            record.exportAttemptStatus || null,
+
+          exportAttemptedAt:
+            record.exportAttemptedAt || null,
+
+          updatedAt: record.updatedAt || null,
+
+          jigNeeded:
+            record.jigNeeded === true
         });
       }
 
@@ -24729,19 +25044,28 @@ app.get(
             retailerKeys,
 
             label:
-              type === "free"
-                ? `${customerName} Gifted ${number}`
-                : `${customerName} Rented ${number}`,
+              `${customerName} ${options.length + 1}`,
 
             accountEmail:
-              membership?.accountEmail ||
+              assignment.customerProfile?.email ||
               "",
 
             exportReady:
               status.exportReady,
 
             missingFields:
-              status.missingFields
+              status.missingFields,
+
+            exportAttemptStatus:
+              assignment.exportAttemptStatus || null,
+
+            exportAttemptedAt:
+              assignment.exportAttemptedAt || null,
+
+            updatedAt: assignment.updatedAt || null,
+
+            jigNeeded:
+              assignment.jigNeeded === true
           });
         };
 
@@ -24833,6 +25157,17 @@ app.get(
           "rented",
           rentedNumber
         );
+      }
+
+      const seenExportEmails = new Set();
+      for (const option of options) {
+        const email = String(option.accountEmail || "").trim().toLowerCase();
+        if (email && seenExportEmails.has(email)) {
+          option.exportReady = false;
+          option.missingFields = [...option.missingFields, "unique profile email"];
+        } else if (email && option.exportReady) {
+          seenExportEmails.add(email);
+        }
       }
 
       return res.json({
@@ -25078,6 +25413,11 @@ app.post(
           key:
             `paid:${record.id}`,
 
+          record,
+
+          email:
+            String(record.customerProfile?.email || "").trim().toLowerCase(),
+
           exportReady:
             missingFields.length ===
             0,
@@ -25086,7 +25426,7 @@ app.post(
 
           item:
             hayhaProfileObject(
-              `${customerName} Paid Profile ${paidNumber}`,
+              "",
               record.customerProfile ||
                 {},
               secrets,
@@ -25148,6 +25488,11 @@ app.post(
             key:
               `${type}:${membershipId}`,
 
+            record: assignment,
+
+            email:
+              String(assignment.customerProfile?.email || "").trim().toLowerCase(),
+
             exportReady:
               missingFields.length ===
               0,
@@ -25156,9 +25501,7 @@ app.post(
 
             item:
               hayhaProfileObject(
-                type === "free"
-                  ? `${customerName} Gifted ${number}`
-                  : `${customerName} Rented ${number}`,
+                "",
                 assignment.customerProfile ||
                   {},
                 secrets,
@@ -25239,19 +25582,34 @@ app.post(
         );
       }
 
-      const chosen =
-        candidates.filter(
-          candidate =>
-            (
-              !selected.length ||
-              selected.includes(
-                candidate.key
-              )
-            ) &&
-            candidate.exportReady
-        );
+      const attempted = candidates.filter(candidate =>
+        !selected.length || selected.includes(candidate.key)
+      );
+      const usedEmails = new Set();
+      const chosen = [];
+      for (const candidate of attempted) {
+        if (!candidate.exportReady) continue;
+        if (!candidate.email || usedEmails.has(candidate.email)) {
+          candidate.exportReady = false;
+          candidate.missingFields.push("unique profile email");
+          continue;
+        }
+        usedEmails.add(candidate.email);
+        chosen.push(candidate);
+      }
 
       if (!chosen.length) {
+        const attemptedAt = new Date().toISOString();
+        for (const candidate of attempted) {
+          candidate.record.exportAttemptStatus = "failed";
+          candidate.record.exportAttemptedAt = attemptedAt;
+          candidate.record.updatedAt = attemptedAt;
+        }
+        await Promise.all([
+          saveRetailerProfiles(paidProfiles),
+          saveFreeAssignments(freeAssignments),
+          saveRentalAssignments(rentalAssignments)
+        ]);
         return res
           .status(400)
           .json({
@@ -25263,10 +25621,10 @@ app.post(
       }
 
       const output =
-        chosen.map(
-          candidate =>
-            candidate.item
-        );
+        chosen.map((candidate, index) => ({
+          ...candidate.item,
+          name: `${customerName} ${index + 1}`
+        }));
 
       /*
         Never send an export unless every profile exactly matches
@@ -25280,6 +25638,17 @@ app.post(
           hayhaProfileHasExactShape
         )
       ) {
+        const attemptedAt = new Date().toISOString();
+        for (const candidate of attempted) {
+          candidate.record.exportAttemptStatus = "failed";
+          candidate.record.exportAttemptedAt = attemptedAt;
+          candidate.record.updatedAt = attemptedAt;
+        }
+        await Promise.all([
+          saveRetailerProfiles(paidProfiles),
+          saveFreeAssignments(freeAssignments),
+          saveRentalAssignments(rentalAssignments)
+        ]);
         return res
           .status(500)
           .json({
@@ -25287,6 +25656,19 @@ app.post(
               "Export stopped because the generated file did not match the required .hayha profile format."
           });
       }
+
+      const exportedAt = new Date().toISOString();
+      for (const candidate of attempted) {
+        candidate.record.exportAttemptStatus =
+          chosen.includes(candidate) ? "success" : "failed";
+        candidate.record.exportAttemptedAt = exportedAt;
+        candidate.record.updatedAt = exportedAt;
+      }
+      await Promise.all([
+        saveRetailerProfiles(paidProfiles),
+        saveFreeAssignments(freeAssignments),
+        saveRentalAssignments(rentalAssignments)
+      ]);
 
       const fileName =
         `${safeExportFilePart(
@@ -25768,29 +26150,14 @@ app.post(
         login credentials, so retailer usernames/emails/passwords stay
         with their original retailer account.
       */
-      const addresses =
-        (
-          details.addresses ||
-          []
-        ).filter(
-          item =>
-            String(
-              item.address ||
-              ""
-            ).trim() &&
-            String(
-              item.city ||
-              ""
-            ).trim() &&
-            String(
-              item.state ||
-              ""
-            ).trim() &&
-            String(
-              item.zip ||
-              ""
-            ).trim()
-        );
+      const jigPool = await customerJigPoolWithSources(
+        account, order,
+        retailerProfiles.filter(record => String(record.customerAccountId || "") === String(account.id))
+      );
+      const addresses = jigPool.sources.map(source => ({
+        ...source.original, id: source.id, label: source.label,
+        savedVariants: source.variants || []
+      }));
 
       const cards =
         (
@@ -26072,10 +26439,10 @@ app.post(
         const source of
         addresses
       ) {
-        const variants =
-          safeAddressVariants(
-            source
-          );
+        const variants = [
+          ...(source.savedVariants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id })),
+          ...safeAddressVariants(source)
+        ];
 
         const sourceKey =
           safeAddressVariantKey(
@@ -26307,10 +26674,14 @@ app.post(
           redistributed every time JIG & ATTACH PAYMENT runs so the full
           customer address/card pool is actually used.
         */
-        const shouldAssignShipping =
-          isLinkedProfile ||
-          !shippingReady ||
-          duplicateShipping;
+        // An address already attached to a profile is never replaced by
+        // another bulk JIG run. Flag collisions for a deliberate edit.
+        const shouldAssignShipping = !profile.address || !profile.city || !profile.state || !profile.zip;
+
+        if (!profile.email && isLinkedProfile) {
+          const managed = memberships.find(item => String(item.id) === String(record.managedAccountId || record.freeMembershipId || record.rentedMembershipId));
+          profile.email = managed?.accountEmail || managedAccountCanonicalEmail(managed) || "";
+        }
 
         if (
           shouldAssignShipping
@@ -26340,7 +26711,7 @@ app.post(
 
               email:
                 profile.email ||
-                account.email ||
+                (() => { const managed = memberships.find(item => String(item.id) === String(record.managedAccountId || record.freeMembershipId || record.rentedMembershipId)); return managed?.accountEmail || managedAccountCanonicalEmail(managed); })() ||
                 "",
 
               phone:
@@ -26394,9 +26765,20 @@ app.post(
               ...entry.source
             };
 
-            record.jiggedAddress = {
-              ...entry.variant
-            };
+            const poolSource = jigPool.sources.find(item => item.id === entry.source.id);
+            let poolVariant = (poolSource?.variants || []).find(item => safeAddressVariantKey(item.address) === entry.key);
+            if (poolSource && !poolVariant) {
+              poolVariant = { id: crypto.randomUUID(), address: {
+                address: entry.variant.address, address2: entry.variant.address2,
+                city: entry.variant.city, state: entry.variant.state,
+                zip: entry.variant.zip, country: entry.variant.country
+              } };
+              poolSource.variants.push(poolVariant);
+            }
+            record.jiggedAddress = { ...(poolVariant?.address || entry.variant) };
+            record.jigPoolVariantId = poolVariant?.id || null;
+            record.jigNeeded = false;
+            record.exportAttemptStatus = null;
 
             record.jigHistoryKeys =
               Array.from(
@@ -26439,17 +26821,25 @@ app.post(
               index + 1
             );
 
+            record.jigNeeded = true;
+
           } else if (
-            !shippingReady
+            shouldAssignShipping
           ) {
             profilesStillMissingShipping.push(
               index + 1
             );
+
+            record.jigNeeded = true;
           }
+        } else if (duplicateShipping) {
+          duplicateAddressesRemaining.push(index + 1);
+          record.jigNeeded = true;
         }
 
         if (
           isLinkedProfile &&
+          !cardReady &&
           cards.length
         ) {
           /*
@@ -26594,6 +26984,7 @@ app.post(
       }
 
       await Promise.all([
+        saveCustomerJigPool(account.id, jigPool),
         saveRetailerProfiles(
           retailerProfiles
         ),
@@ -26609,6 +27000,7 @@ app.post(
         order.customerAccountId
       );
 
+      const countedEmails = new Set();
       const exportReadyCount =
         profileTargets.filter(
           target => {
@@ -26631,14 +27023,14 @@ app.post(
               secrets = {};
             }
 
-            return (
-              exportProfileMissingFields(
+            const email = String(record.customerProfile?.email || "").trim().toLowerCase();
+            const ready = exportProfileMissingFields(
                 record.customerProfile ||
                   {},
                 secrets
-              ).length ===
-              0
-            );
+              ).length === 0 && email && !countedEmails.has(email);
+            if (ready) countedEmails.add(email);
+            return ready;
           }
         ).length;
 
@@ -26874,6 +27266,11 @@ app.get(
             assignment.customerProfile ||
             {},
 
+          jigNeeded: assignment.jigNeeded === true,
+          exportAttemptStatus: assignment.exportAttemptStatus || null,
+          exportAttemptedAt: assignment.exportAttemptedAt || null,
+          updatedAt: assignment.updatedAt || null,
+
           customerCard:
             (() => {
               let secrets = {};
@@ -27024,6 +27421,11 @@ app.get(
           customerProfile:
             assignment.customerProfile ||
             {},
+
+          jigNeeded: assignment.jigNeeded === true,
+          exportAttemptStatus: assignment.exportAttemptStatus || null,
+          exportAttemptedAt: assignment.exportAttemptedAt || null,
+          updatedAt: assignment.updatedAt || null,
 
           customerCard:
             (() => {
@@ -29353,6 +29755,11 @@ app.post(
           });
       }
 
+      if (assignment.jiggedAddress) {
+        return res.json({ ok: true, variant: assignment.jiggedAddress,
+          message: "This profile already has a JIG. Use Show Jigs to edit it without changing the main address." });
+      }
+
       const accounts =
         await getCustomerAccounts();
 
@@ -29472,6 +29879,17 @@ app.post(
           });
       }
 
+      const orders = await readJson(PAID_FILE, []);
+      const customerOrder = (Array.isArray(orders) ? orders : []).find(item =>
+        String(item.customerAccountId || "") === String(account.id)
+      );
+      const paidProfiles = (await getRetailerProfiles()).filter(item => String(item.customerAccountId || "") === String(account.id));
+      const pool = await customerJigPoolWithSources(account, customerOrder, paidProfiles);
+      const poolSource = pool.sources.find(item =>
+        safeAddressVariantKey(item.original) === safeAddressVariantKey(sourceAddress)
+      );
+      if (!poolSource) return res.status(400).json({ error: "Choose one of this customer's unchanged main addresses." });
+
       const variants =
         safeAddressVariants(
           sourceAddress
@@ -29575,6 +29993,9 @@ app.post(
         );
 
       if (!chosen) {
+        assignment.jigNeeded = true;
+        if (type === "free") await saveFreeAssignments(assignments);
+        else await saveRentalAssignments(assignments);
         return res
           .status(409)
           .json({
@@ -29668,6 +30089,15 @@ app.post(
       assignment.jiggedAddress = {
         ...chosen
       };
+      let poolVariant = poolSource.variants.find(item => safeAddressVariantKey(item.address) === chosenKey);
+      if (!poolVariant) {
+        poolVariant = { id: crypto.randomUUID(), address: { ...chosen } };
+        poolSource.variants.push(poolVariant);
+      }
+      assignment.jigPoolVariantId = poolVariant.id;
+      assignment.jigNeeded = false;
+      assignment.exportAttemptStatus = null;
+      await saveCustomerJigPool(account.id, pool);
 
       assignment.customerProfile = {
         ...(
