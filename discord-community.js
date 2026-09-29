@@ -148,7 +148,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     return response.status === 204 ? null : response.json();
   }
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
-  let dropChannelIds = new Set();
+  let dropChannelIds = new Set(), tonightChannelId;
   // Channel names may have a Unicode emoji and divider before their functional name.
   const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
   function sameOverwrites(actual, expected) {
@@ -414,6 +414,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const names = ["upcomingdrops", "droppingtonight", "announcements"];
       const found = names.map(name => channels.find(item => [0, 5].includes(item.type) && normalizeName(item.name) === name));
       dropChannelIds = new Set(found.slice(0, 2).filter(Boolean).map(channel => channel.id));
+      tonightChannelId = found[1]?.id;
       let important = channels.find(item => item.type === 4 && normalizeName(item.name) === "important");
       if (!important) important = await api(`/guilds/${guildId}/channels`, "POST", { name: "Important", type: 4 });
       for (const [index, channel] of found.entries()) {
@@ -1552,33 +1553,61 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     await fs.writeFile(temp, JSON.stringify(value), { mode: 0o600 });
     await fs.rename(temp, file);
   }
+  const tonightDate = () => new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(new Date());
+  function skuMenuRows(sourceId, products, offset, tonight) {
+    const rows = [];
+    for (let index = offset; index < Math.min(offset + 15, products.length); index += 5) {
+      rows.push({ type: 1, components: products.slice(index, index + 5).map((item, position) => ({
+        type: 2, style: 2, label: `Run this SKU · ${item.sku}`.slice(0, 80),
+        custom_id: `sku:pick:${sourceId}:${index + position}`
+      })) });
+    }
+    rows.push({ type: 1, components: [
+      { type: 2, style: 1, label: "Run all SKUs", custom_id: `sku:pick:${sourceId}:all` },
+      ...(tonight ? [{ type: 2, style: 4, label: "Don't run my profiles tonight", custom_id: `sku:skip:${sourceId}` }] : [])
+    ] });
+    return rows;
+  }
   async function ensureSkuControls(message) {
     if (!dropChannelIds.has(message.channel_id) || message.author?.bot || message.webhook_id) return;
     const products = parseDropSkus(message);
-    if (!products.length) return;
     await withSkuQueue(async () => {
       const menus = await readSkuFile(skuMenusFile);
       const sent = menus[message.id] || [];
-      for (let offset = sent.length * 15; offset < products.length; offset += 15) {
-        const rows = [];
-        for (let index = offset; index < Math.min(offset + 15, products.length); index += 5) {
-          rows.push({ type: 1, components: products.slice(index, index + 5).map((item, position) => ({
-            type: 2, style: 2, label: `Run this SKU · ${item.sku}`.slice(0, 80),
-            custom_id: `sku:pick:${message.id}:${index + position}`
-          })) });
-        }
-        rows.push({ type: 1, components: [{
-          type: 2, style: 1, label: "Run all SKUs", custom_id: `sku:pick:${message.id}:all`
-        }] });
-        const menu = await sendMessage(message.channel_id,
-          `Select a SKU below, then choose Qty: 1 or Qty: 2. ${offset ? `More SKUs from the post above (${offset + 1}–${Math.min(offset + 15, products.length)}).` : ""}`.trim(), {
-            message_reference: { message_id: message.id, fail_if_not_exists: false },
-            components: rows
+      const count = Math.ceil(products.length / 15);
+      for (let page = 0; page < count; page++) {
+        const offset = page * 15;
+        const payload = {
+          content: `Select a SKU below, then choose Qty: 1 or Qty: 2. ${offset ? `More SKUs from the post above (${offset + 1}–${Math.min(offset + 15, products.length)}).` : ""}`.trim(),
+          components: skuMenuRows(message.id, products, offset, message.channel_id === tonightChannelId)
+        };
+        if (sent[page]) {
+          try { await api(`/channels/${message.channel_id}/messages/${sent[page]}`, "PATCH", payload); }
+          catch (error) {
+            if (!/HTTP 404/.test(error.message)) throw error;
+            const menu = await sendMessage(message.channel_id, payload.content, {
+              message_reference: { message_id: message.id, fail_if_not_exists: false }, components: payload.components
+            });
+            sent[page] = menu.id;
+          }
+        } else {
+          const menu = await sendMessage(message.channel_id, payload.content, {
+            message_reference: { message_id: message.id, fail_if_not_exists: false }, components: payload.components
           });
-        sent.push(menu.id);
-        // Save each menu so a retry after a partial failure does not post the
-        // same control message again.
+          sent.push(menu.id);
+        }
         menus[message.id] = sent;
+        await writeSkuFile(skuMenusFile, menus);
+      }
+      for (const id of sent.slice(count)) {
+        try { await api(`/channels/${message.channel_id}/messages/${id}`, "DELETE"); }
+        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+      }
+      if (sent.length !== count) {
+        if (count) menus[message.id] = sent.slice(0, count);
+        else delete menus[message.id];
         await writeSkuFile(skuMenusFile, menus);
       }
     });
@@ -1622,6 +1651,56 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     }
     await ensureSkuControls(d);
   }
+  async function onDropEdit(d) {
+    if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id || d.author?.bot) return;
+    // Gateway edits can contain only changed fields. Fetch the complete post.
+    const message = await api(`/channels/${d.channel_id}/messages/${d.id}`);
+    if (!message.author?.bot && !message.webhook_id) await ensureSkuControls(message);
+  }
+  async function postSkuRecord(userId, record) {
+    const safe = value => String(value || "").replace(/[\r\n<>*_`~|]/g, " ").trim();
+    const lines = record.items.map(item =>
+      `**${safe(item.name).slice(0, 70)}**\nSKU: \`${safe(item.sku).slice(0, 80)}\` · Qty: ${item.quantity}`);
+    const groups = ["", ""];
+    for (const line of lines) {
+      const index = groups[0].length + line.length < 3000 ? 0 : 1;
+      groups[index] += `${groups[index] ? "\n\n" : ""}${line}`;
+    }
+    const skipping = record.skipTonightDate === tonightDate();
+    const payload = {
+      content: `${mention(ownerId)} · ${mention(userId)} (${safe(record.username).slice(0, 70)}) ${skipping ? "DO NOT RUN MY PROFILES TONIGHT" : "selected SKUs"}`,
+      allowed_mentions: { parse: [], users: [ownerId] },
+      embeds: [
+        ...(skipping ? [{ title: "Do not run profiles tonight", description: `Requested for ${record.skipTonightDate} (New York time).`, color: 0xe74c3c }] : []),
+        ...groups.filter(Boolean).map((description, index) => ({
+          title: index ? "More selected products" : "Products to run", description, color: 0x41b6e6
+        }))
+      ]
+    };
+    let posted;
+    if (record.messageId) {
+      try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
+      catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+    }
+    if (!posted) posted = await api(`/channels/${skuRequestsChannelId}/messages`, "POST", payload);
+    record.messageId = posted.id;
+  }
+  async function skipTonight(userId, username, sourceId, channelId) {
+    if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
+    if (channelId !== tonightChannelId) throw new Error("This option is only available in Dropping Tonight.");
+    const source = await api(`/channels/${channelId}/messages/${sourceId}`);
+    if (source.author?.bot || source.webhook_id) throw new Error("The original drop post is unavailable.");
+    return withSkuQueue(async () => {
+      const selections = await readSkuFile(skuSelectionsFile);
+      const record = selections[userId] || { username, messageId: null, items: [] };
+      record.username = username;
+      record.items = record.items.filter(item => !item.key.startsWith(`${channelId}:`));
+      record.skipTonightDate = tonightDate();
+      await postSkuRecord(userId, record);
+      selections[userId] = record;
+      await writeSkuFile(skuSelectionsFile, selections);
+    });
+  }
   async function recordSkuSelection(userId, username, sourceId, target, quantity, channelId) {
     if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
     const source = await api(`/channels/${channelId}/messages/${sourceId}`);
@@ -1633,6 +1712,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };
       record.username = username;
+      if (channelId === tonightChannelId) delete record.skipTonightDate;
       for (const product of chosen) {
         const key = `${channelId}:${sourceId}:${product.sku}`;
         const current = record.items.find(item => item.key === key);
@@ -1640,29 +1720,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         else record.items.push({ key, name: product.name, sku: product.sku, quantity });
       }
       if (record.items.length > 30) throw new Error("You have reached 30 selected SKUs. Ask the owner to clear older selections.");
-      const safe = value => String(value || "").replace(/[\r\n<>*_`~|]/g, " ").trim();
-      const lines = record.items.map(item =>
-        `**${safe(item.name).slice(0, 70)}**\nSKU: \`${safe(item.sku).slice(0, 80)}\` · Qty: ${item.quantity}`);
-      const groups = ["", ""];
-      for (const line of lines) {
-        const index = groups[0].length + line.length < 3000 ? 0 : 1;
-        groups[index] += `${groups[index] ? "\n\n" : ""}${line}`;
-      }
-      const payload = {
-        content: `${mention(ownerId)} · ${mention(userId)} (${safe(username).slice(0, 70)}) selected SKUs`,
-        allowed_mentions: { parse: [], users: [ownerId] },
-        embeds: groups.filter(Boolean).map((description, index) => ({
-          title: index ? "More selected products" : "Products to run",
-          description, color: 0x41b6e6
-        }))
-      };
-      let posted;
-      if (record.messageId) {
-        try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
-        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
-      }
-      if (!posted) posted = await api(`/channels/${skuRequestsChannelId}/messages`, "POST", payload);
-      record.messageId = posted.id;
+      await postSkuRecord(userId, record);
       selections[userId] = record;
       await writeSkuFile(skuSelectionsFile, selections);
       return chosen.length;
@@ -1683,6 +1741,21 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+      if (d.type === 3 && /^sku:skip:\d{17,22}$/.test(d.data?.custom_id || "")) {
+        const sourceId = d.data.custom_id.split(":")[2];
+        if (d.channel_id !== tonightChannelId) return await reply("This option is only available in Dropping Tonight.");
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          await skipTonight(userId, d.member?.user?.global_name || d.member?.user?.username || userId,
+            sourceId, d.channel_id);
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
+            content: "Saved: do not run my profiles tonight. The owner has been notified. Choosing a SKU tonight will replace this request."
+          });
+        } catch (error) {
+          console.error("Discord tonight opt out:", error.message);
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message });
+        }
+      }
       if (d.type === 3 && /^sku:pick:\d{17,22}:(?:\d{1,3}|all)$/.test(d.data?.custom_id || "")) {
         if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU control belongs in a drop channel.");
         const [, , sourceId, target] = d.data.custom_id.split(":");
@@ -1933,6 +2006,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             await onDropPost(packet.d);
             if (!await onPublicMessage(packet.d)) await onQuestionMessage(packet.d);
           })().catch(error => console.error("Discord public message handling:", error.message));
+          if (packet.t === "MESSAGE_UPDATE") void onDropEdit(packet.d).catch(error =>
+            console.error("Discord drop menu update:", error.message));
           if (["CHANNEL_CREATE", "CHANNEL_UPDATE", "CHANNEL_DELETE"].includes(packet.t) &&
             packet.d?.guild_id === guildId) { channelVisibility.clear(); scheduleIntroRefresh(); }
         } catch (error) { console.error("Discord gateway packet:", error.message); }
