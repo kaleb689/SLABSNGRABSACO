@@ -4429,6 +4429,19 @@
           <section class="saved-detail-panel imap-detail-panel">
             <div class="saved-detail-head"><div><span class="eyebrow">EMAIL CONNECTION</span><h4>EMAIL (APP PASSWORD)</h4></div><span id="saved-imap-count" class="saved-detail-count">0</span></div>
             <p class="account-muted">Use the app password from your email provider, not your regular email password. See Chapter 2 in the guide.</p>
+            <form id="edit-order-imap-form" class="saved-detail-form" hidden>
+              <h4>Update Submitted App Password</h4>
+              <p class="account-muted">Choose the order you submitted this email for. Your current app password is never displayed.</p>
+              <label>Order
+                <select id="edit-order-imap-select" required><option value="">Select an order</option></select>
+              </label>
+              <label>EMAIL (APP PASSWORD)
+                <input type="password" name="acoPassword" minlength="6" maxlength="300" autocomplete="new-password" placeholder="New app password" required />
+              </label>
+              <button type="submit" class="primary">Save App Password</button>
+              <p id="edit-order-imap-message" class="form-message" role="status"></p>
+            </form>
+            <p class="account-muted">Additional email logins</p>
             <div class="saved-detail-selector-row">
               <button type="button" class="secondary saved-prev" data-saved-nav="imap:-1" aria-label="Previous IMAP login">‹</button>
               <span id="saved-imap-position" class="saved-position">Login 0 of 0</span>
@@ -4537,17 +4550,6 @@
   </div>
 
 </div>
-
-        <form id="edit-order-imap-form" class="account-form-section" hidden>
-          <h4>EMAIL (APP PASSWORD)</h4>
-          <p class="account-muted">Change the app password you submitted for the selected order. Your current password is never displayed.</p>
-          <label>New EMAIL (APP PASSWORD)
-            <input type="password" name="acoPassword" minlength="6" maxlength="300" autocomplete="new-password" required />
-          </label>
-          <button type="submit" class="primary account-action-button">Save App Password</button>
-          <p id="edit-order-imap-message" class="form-message" role="status"></p>
-        </form>
-
 
         <form
           id="edit-order-form"

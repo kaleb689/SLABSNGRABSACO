@@ -6505,7 +6505,8 @@ function populateEditOrderSelect(
     if (form) {
       form.hidden = true;
     }
-    document.getElementById("edit-order-imap-form")?.setAttribute("hidden", "");
+    const passwordForm = document.getElementById("edit-order-imap-form");
+    if (passwordForm) passwordForm.hidden = true;
 
     return;
   }
@@ -6537,7 +6538,16 @@ function populateEditOrderSelect(
 
   if (select.options.length > 1) select.selectedIndex = 1;
   const passwordForm = document.getElementById("edit-order-imap-form");
-  if (passwordForm) { passwordForm.hidden = select.selectedIndex < 1; passwordForm.reset(); }
+  const passwordSelect = document.getElementById("edit-order-imap-select");
+  if (passwordForm && passwordSelect) {
+    const previouslySelected = passwordSelect.value;
+    passwordSelect.innerHTML = select.innerHTML;
+    passwordForm.reset();
+    passwordSelect.value = [...passwordSelect.options].some(option => option.value === previouslySelected)
+      ? previouslySelected : select.value;
+    passwordForm.hidden = passwordSelect.selectedIndex < 1;
+    setMessage(document.getElementById("edit-order-imap-message"), "");
+  }
 }
 
 
@@ -6638,11 +6648,14 @@ document
       fillEditOrderForm(
         findOrder(orderNumber)
       );
-      const passwordForm = document.getElementById("edit-order-imap-form");
-      if (passwordForm) { passwordForm.hidden = !orderNumber; passwordForm.reset(); }
-      setMessage(document.getElementById("edit-order-imap-message"), "");
     }
   );
+
+document.getElementById("edit-order-imap-select")?.addEventListener("change", () => {
+  const form = document.getElementById("edit-order-imap-form");
+  form.elements.acoPassword.value = "";
+  setMessage(document.getElementById("edit-order-imap-message"), "");
+});
 
 document.getElementById("edit-selected-order")?.addEventListener("click", () => {
   const orderNumber = document.getElementById("edit-order-select")?.value;
@@ -6653,7 +6666,7 @@ document.getElementById("edit-selected-order")?.addEventListener("click", () => 
 document.getElementById("edit-order-imap-form")?.addEventListener("submit", async event => {
   event.preventDefault();
   const form = event.currentTarget;
-  const orderNumber = document.getElementById("edit-order-select")?.value;
+  const orderNumber = document.getElementById("edit-order-imap-select")?.value;
   const message = document.getElementById("edit-order-imap-message");
   const button = form.querySelector('button[type="submit"]');
   if (!orderNumber || !findOrder(orderNumber)) {
