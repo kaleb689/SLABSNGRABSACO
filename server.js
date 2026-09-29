@@ -913,11 +913,11 @@ async function getCustomerJigPool(accountId) {
   const encrypted = await readJson(customerJigPoolPath(accountId), null);
   if (!encrypted) return { sources: [] };
   const pool = decryptJson(encrypted);
-  return { sources: Array.isArray(pool?.sources) ? pool.sources : [] };
+  return { ...pool, sources: Array.isArray(pool?.sources) ? pool.sources : [] };
 }
 
 async function saveCustomerJigPool(accountId, pool) {
-  await writeJson(customerJigPoolPath(accountId), encryptJson({ sources: pool.sources }));
+  await writeJson(customerJigPoolPath(accountId), encryptJson(pool));
 }
 
 function jigSourceAddress(item = {}) {
@@ -24284,6 +24284,83 @@ async function adminJigContext(orderId) {
   return { account, order, pool, paid, linked, paidProfiles, freeAssignments, rentalAssignments };
 }
 
+const JIG_RULES_VERSION = "combined-four-2026-09-29";
+async function resetCustomerJigs(context) {
+  const { pool } = context;
+  const now = new Date().toISOString();
+  const records = [...context.paid, ...context.linked];
+  const backup = { pool, records: records.map(record => ({
+    id: record.id, customerProfile: record.customerProfile, jiggedAddress: record.jiggedAddress,
+    jigSourceAddress: record.jigSourceAddress, jigPoolVariantId: record.jigPoolVariantId,
+    jigHistoryKeys: record.jigHistoryKeys, jigNeeded: record.jigNeeded
+  })) };
+  await writeJson(path.join(SECRET_DIR, "jig-reset-backups", `${context.account.id}-${crypto.randomUUID()}.encrypted.json`), encryptJson(backup));
+  let updatedProfiles = 0, needsAddress = 0;
+  const claimed = new Set();
+  for (const source of pool.sources) {
+    const oldVariants = new Set((source.variants || []).map(item => safeAddressVariantKey(item.address)));
+    const originalKey = safeAddressVariantKey(source.original);
+    const assigned = records.filter(record => !claimed.has(record) && (
+      safeAddressVariantKey(record.jigSourceAddress || {}) === originalKey ||
+      (!record.jigSourceAddress && (oldVariants.has(safeAddressVariantKey(record.customerProfile || {})) ||
+        safeAddressVariantKey(record.customerProfile || {}) === originalKey))
+    ));
+    source.variants = defaultJigVariants(source.original).map(address => ({ id: crypto.randomUUID(), address }));
+    source.generatedSafeVariantsAt = now;
+    for (const [index, record] of assigned.entries()) {
+      claimed.add(record);
+      const variant = source.variants[index];
+      const deliveryAddress = variant?.address || Object.fromEntries(
+        ["address", "address2", "city", "state", "zip", "country"].map(field => [field, source.original[field] || ""])
+      );
+      record.customerProfile = { ...record.customerProfile, ...deliveryAddress };
+      record.jigSourceAddress = { ...source.original };
+      record.jigSourceKey = source.id;
+      record.jiggedAddress = variant ? { ...variant.address } : null;
+      record.jigPoolVariantId = variant?.id || null;
+      record.jigVariantIndex = variant ? index + 1 : null;
+      record.jigHistoryKeys = variant ? [safeAddressVariantKey(variant.address)] : [];
+      record.jigNeeded = !variant;
+      record.jigNeededReason = variant ? null : "Four JIGs are already assigned for this Main address. Add another Main address.";
+      record.exportAttemptStatus = null;
+      record.updatedAt = now;
+      updatedProfiles++;
+      if (!variant) needsAddress++;
+    }
+  }
+  await saveRetailerProfiles(context.paidProfiles);
+  await saveFreeAssignments(context.freeAssignments);
+  await saveRentalAssignments(context.rentalAssignments);
+  pool.rulesVersion = JIG_RULES_VERSION;
+  pool.resetAt = now;
+  await saveCustomerJigPool(context.account.id, pool);
+  return { updatedProfiles, needsAddress };
+}
+
+async function migrateCustomerJigs() {
+  let resetCustomers = 0, updatedProfiles = 0, needsAddress = 0;
+  for (const account of await getCustomerAccounts()) {
+    const context = await adminJigContext(account.id);
+    if (!context?.pool.sources.length || context.pool.rulesVersion === JIG_RULES_VERSION) continue;
+    const result = await resetCustomerJigs(context);
+    resetCustomers++;
+    updatedProfiles += result.updatedProfiles;
+    needsAddress += result.needsAddress;
+  }
+  console.log("Combined four-JIG reset:", JSON.stringify({ resetCustomers, updatedProfiles, needsAddress }));
+}
+
+app.post("/api/admin/submissions/:id/jigs-reset", requireAdmin, async (req, res) => {
+  try {
+    const context = await adminJigContext(req.params.id);
+    if (!context) return res.status(404).json({ error: "Customer not found." });
+    return res.json({ ok: true, ...await resetCustomerJigs(context) });
+  } catch (error) {
+    console.error("Customer JIG reset failed:", error?.name);
+    return res.status(500).json({ error: "Unable to reset JIGs." });
+  }
+});
+
 function jigAssignedRecords(context, variant, source) {
   const key = safeAddressVariantKey(variant);
   const originalKey = safeAddressVariantKey(source.original);
@@ -24344,6 +24421,9 @@ async function saveAdminJigVariant(req, res, editing) {
     };
     if (!jigVariantAllowed(source.original, address)) {
       return res.status(400).json({ error: "Use only truthful formatting of the original street and unit. House number, street name, unit number, city, state and ZIP must stay the same." });
+    }
+    if (!editing && (source.variants || []).length >= 4) {
+      return res.status(409).json({ error: "This Main address has four JIGs. Edit an existing JIG or add a different Main address." });
     }
     const variantId = req.params.variantId;
     const old = editing && (source.variants || []).find(item => item.id === variantId);
@@ -45660,6 +45740,8 @@ await initializeArrayFile(
 
     
     await removeLegacyDiscordUserIds();
+
+    await migrateCustomerJigs();
 
     await hardenStoragePermissions();
 

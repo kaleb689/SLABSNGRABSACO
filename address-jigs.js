@@ -529,8 +529,9 @@ export function safeAddressVariants(
     const unitMatch = (address2 || `${inlineUnit[2]} ${inlineUnit[3]}`).match(/^(?:APT|APARTMENT|UNIT|SUITE|STE|#)\s*([A-Z0-9-]+)$/i);
     if (unitMatch) {
       for (const label of ["SUITE", "STE", "APT", "APARTMENT", "UNIT", "#"]) {
-        addUnit(`${label === "#" ? "#" : `${label} `}${unitMatch[1]}`);
+        addUnit(`${label} ${unitMatch[1]}`);
       }
+      addUnit(`#${unitMatch[1]}`);
     }
   }
 
@@ -646,19 +647,27 @@ export function safeAddressVariantKey(
 
 export function defaultJigVariants(original, limit = 4) {
   const mainKey = safeAddressVariantKey(original);
-  const choices = safeAddressVariants(original).filter(item => safeAddressVariantKey(item) !== mainKey);
-  const selected = [], streets = new Set();
-  // Favor different street renderings before filling with unit-label variants.
-  for (const item of choices) {
-    const street = item.address.toUpperCase();
-    if (streets.has(street)) continue;
-    selected.push(item); streets.add(street);
-    if (selected.length === limit) return selected;
-  }
-  for (const item of choices) {
-    if (selected.some(saved => safeAddressVariantKey(saved) === safeAddressVariantKey(item))) continue;
-    selected.push(item);
-    if (selected.length === limit) break;
+  const hasUnit = /^(?:STE|SUITE|APT|APARTMENT|UNIT|#)\s*[A-Z0-9-]+$/i.test(original.address2 || "");
+  const choices = safeAddressVariants(original).filter(item => safeAddressVariantKey(item) !== mainKey &&
+    (!hasUnit || /^(?:APT|APARTMENT|UNIT|#)\s*[A-Z0-9-]+$/i.test(item.address2)));
+  const features = item => {
+    const street = item.address.toUpperCase().split(/\s+/).slice(1);
+    const direction = /^(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST|NORTHWEST|NORTHEAST|SOUTHWEST|SOUTHEAST)$/.test(street[0]) ? street.shift() : "";
+    return [direction, street.slice(0, -1).join(" "), street.at(-1), String(item.address2 || "").toUpperCase().replace(/\s*[A-Z0-9-]+$/, "").trim()];
+  };
+  const distance = (a, b) => features(a).reduce((sum, value, index) => sum + (value !== features(b)[index] ? [2, 3, 2, 3][index] : 0), 0);
+  const selected = [];
+  while (choices.length && selected.length < limit) {
+    let bestIndex = 0, bestScore = -Infinity;
+    for (let index = 0; index < choices.length; index++) {
+      const item = choices[index], parts = features(item);
+      const diversity = selected.length ? Math.min(...selected.map(saved => distance(item, saved))) : 0;
+      const coverage = parts.reduce((sum, part, column) => sum + (!selected.some(saved => features(saved)[column] === part) ? [2, 3, 2, 3][column] : 0), 0);
+      const score = diversity * 100 + coverage * 10 + distance(item, original) +
+        (/^\d+$/.test(parts[1]) ? .2 : 0) + (item.address2.startsWith("# ") ? .1 : 0) + (parts[0].length > 2 && parts[1] === "SECOND" && parts[3] === "UNIT" ? .05 : 0);
+      if (score > bestScore) { bestScore = score; bestIndex = index; }
+    }
+    selected.push(choices.splice(bestIndex, 1)[0]);
   }
   return selected;
 }

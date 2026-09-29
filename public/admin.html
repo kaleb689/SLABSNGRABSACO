@@ -22567,7 +22567,7 @@ async function loadAdminJigModal(modal, orderId) {
   area.innerHTML = modal._jigSources.length ? modal._jigSources.map(source => `
     <section class="jig-source">
       <h4>${escapeHtml(source.label || "Main address")}</h4>
-      <div style="border:2px solid #41b6e6;border-radius:10px;padding:14px;margin:12px 0"><strong>MAIN — master address</strong><p style="margin:8px 0 0">${escapeHtml(line(source.original))}</p><small>Up to 4 automatic JIGs per Main. Add more manually below. The master address stays unchanged.</small></div>
+      <div style="border:2px solid #41b6e6;border-radius:10px;padding:14px;margin:12px 0"><strong>MAIN — master address</strong><p style="margin:8px 0 0">${escapeHtml(line(source.original))}</p><small>Maximum 4 JIGs per Main. Edit a JIG to change its formatting. The master address stays unchanged.</small></div>
       ${(source.variants || []).length ? source.variants.map(variant => `
         <div class="jig-variant-row">
           <span>${escapeHtml(line(variant.address))}
@@ -22576,7 +22576,7 @@ async function loadAdminJigModal(modal, orderId) {
           <button type="button" class="admin-edit-button" data-edit-jig="${escapeHtml(variant.id)}"
             data-jig-source-id="${escapeHtml(source.id)}">Edit</button>
         </div>`).join("") : "<p>No JIGs saved yet.</p>"}
-      <button type="button" class="admin-edit-button" data-add-jig="${escapeHtml(source.id)}">Add JIG</button>
+      <button type="button" class="admin-edit-button" data-add-jig="${escapeHtml(source.id)}" ${(source.variants || []).length >= 4 ? "disabled" : ""}>Add JIG</button>
     </section>`).join("") : "<p>No main addresses have been submitted yet.</p>";
 }
 
