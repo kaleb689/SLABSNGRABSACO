@@ -36634,6 +36634,24 @@ function publicSuccessProductName(value) {
 }
 
 const verifiedPublicProductImages = [
+  { match: /ascended heroes tin.*mega f(?:eraligatr|raligatr) ex/i, retailer: "Target",
+    imageUrl: "https://target.scene7.com/is/image/Target/GUEST_9e3e1626-502a-42d0-b3eb-e8901ae0d162" },
+  { match: /30th celebration tin/i, retailer: "Target",
+    imageUrl: "https://target.scene7.com/is/image/Target/GUEST_d9d7ff82-a91c-4587-9dac-b9aaa88e8b33" },
+  { match: /first partner illustration.*series 3/i, retailer: "Target",
+    imageUrl: "https://target.scene7.com/is/image/Target/GUEST_8b8616a3-c1cb-4db9-9821-c6514376f967" },
+  { match: /30th celebration.*sylveon ex box/i, retailer: "Target",
+    imageUrl: "https://target.scene7.com/is/image/Target/GUEST_65085291-1d03-4b66-8c88-729c7ac7b66b" },
+
+  { match: /delta reign.*elite trainer box/i, retailer: "PKC",
+    imageUrl: "https://www.pokemoncenter.com/images/DAMRoot/High/10060/P11222_10-10438-112_01.jpg" },
+  { match: /delta reign.*booster (?:display )?box/i, retailer: "PKC",
+    imageUrl: "https://www.pokemoncenter.com/images/DAMRoot/High/10060/P11222_10-10446-120_01.jpg" },
+  { match: /delta reign.*booster bundle/i, retailer: "PKC",
+    imageUrl: "https://www.pokemoncenter.com/images/DAMRoot/High/10060/P11222_10-10439-109_01.jpg" },
+  { match: /ascended heroes tin.*mega emboar ex/i, retailer: "Target",
+    imageUrl: "https://target.scene7.com/is/image/Target/GUEST_bcb2529f-51fb-4b09-88a0-a1bcc00ee5d2" },
+
   {
     match: /30th celebration.*elite trainer box/i,
     retailer: "Target",
@@ -36694,11 +36712,11 @@ async function refreshSuccessRetailerImages() {
 
 function publicSuccessProductImage(name, retailer, value) {
   const catalog = successRetailerCatalog.find(item => item.retailer === retailer && item.match.test(name));
-  if (catalog && successRetailerImages[catalog.key]) return successRetailerImages[catalog.key];
   const verified = verifiedPublicProductImages.find(item =>
     item.retailer.toLowerCase() === String(retailer || "").toLowerCase() && item.match.test(name)
   );
   if (verified) return verified.imageUrl;
+  if (catalog && successRetailerImages[catalog.key]) return successRetailerImages[catalog.key];
   const url = publicSuccessImageUrl(value);
   return url && !/\/gray-bag(?:[?/#]|$)|\/no[-_]?image(?:[?/#]|$)/i.test(url) ? url : null;
 }
