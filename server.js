@@ -1,4 +1,5 @@
 import express from "express";
+import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
 import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
 import Stripe from "stripe";
@@ -16109,7 +16110,7 @@ if (
             linkedProfileCount,
 
           secrets:
-            secrets || null
+            effectiveAdminImap(secrets, savedImapEntries(customerAccountMap.get(String(record.customerAccountId)))) || null
         });
       }
 
@@ -16299,7 +16300,7 @@ app.get(
     },
 
     secrets:
-      secrets || null,
+      effectiveAdminImap(secrets, savedImapEntries(account)) || null,
 
     subscriptionStatus:
       "none",
@@ -33532,6 +33533,12 @@ app.put(
           paidRecords
         );
 
+        if (secretsBody.acoEmail || secretsBody.acoPassword) {
+          nextSecrets.imapUpdatedAt = new Date().toISOString();
+          nextSecrets.imapConnectionStatus = await testSubmittedImap(nextSecrets.acoEmail, nextSecrets.acoPassword);
+          await synchronizeStoredImapCopies(record.customerAccountId, existingSecrets.acoEmail,
+            nextSecrets.acoEmail, nextSecrets.acoPassword, nextSecrets.imapUpdatedAt, nextSecrets.imapConnectionStatus);
+        }
         await saveEncryptedPackage(
           id,
           nextSecrets
@@ -33685,6 +33692,12 @@ app.put(
           ...profileBody
         });
 
+      if (secretsBody.acoEmail || secretsBody.acoPassword) {
+        nextSecrets.imapUpdatedAt = new Date().toISOString();
+        nextSecrets.imapConnectionStatus = await testSubmittedImap(nextSecrets.acoEmail, nextSecrets.acoPassword);
+        await synchronizeImapCopies(account, existingSecrets.acoEmail, nextSecrets.acoEmail,
+          nextSecrets.acoPassword, nextSecrets.imapUpdatedAt, nextSecrets.imapConnectionStatus);
+      }
       account.adminSecrets =
         encryptJson(
           nextSecrets
@@ -33832,6 +33845,44 @@ app.delete(
    CUSTOMER SAVED SHIPPING / PAYMENT METHODS
 ------------------------------------------------------- */
 
+async function testSubmittedImap(email, password) {
+  const checkedAt = new Date().toISOString();
+  try { await verifyCustomerImap(email, password); return { connected: true, checkedAt, reason: null }; }
+  catch (error) { return { connected: false, checkedAt, reason: mailboxFailureReason(error) }; }
+}
+async function synchronizeImapCopies(account, previousEmail, email, password, updatedAt = new Date().toISOString(), connectionStatus = null) {
+  const orders = await readJson(PAID_FILE, []);
+  for (const order of orders) {
+    if (String(order.customerAccountId || "") !== String(account.id)) continue;
+    const secrets = await loadEncryptedPackage(order.id);
+    const next = updateMatchingImap(secrets, previousEmail, email, password, updatedAt, connectionStatus);
+    if (next) await saveEncryptedPackage(order.id, next);
+  }
+  if (account.adminSecrets) {
+    const next = updateMatchingImap(decryptJson(account.adminSecrets), previousEmail, email, password, updatedAt, connectionStatus);
+    if (next) account.adminSecrets = encryptJson(next);
+  }
+  const entries = savedImapEntries(account);
+  let changed = false;
+  for (const entry of entries) {
+    if (![normalizeEmail(previousEmail), normalizeEmail(email)].includes(normalizeEmail(entry.email))) continue;
+    entry.email = normalizeEmail(email);
+    if (password) entry.password = password;
+    entry.updatedAt = updatedAt;
+    entry.connectionStatus = connectionStatus;
+    changed = true;
+  }
+  if (changed) account.savedImapCredentials = encryptJson(entries);
+}
+async function synchronizeStoredImapCopies(accountId, previousEmail, email, password, updatedAt, connectionStatus) {
+  const accounts = await getCustomerAccounts();
+  const account = accounts.find(item => String(item.id) === String(accountId));
+  if (!account || !email) return;
+  await synchronizeImapCopies(account, previousEmail, email, password, updatedAt, connectionStatus);
+  await saveCustomerAccounts(accounts);
+  liveSuccessLastSyncByAccount.delete(String(accountId));
+}
+
 function savedImapEntries(account) {
   try {
     const entries = account?.savedImapCredentials
@@ -33844,8 +33895,8 @@ function savedImapEntries(account) {
 
 app.get("/api/account/imap-credentials", requireCustomer, async (req, res) => {
   const entries = savedImapEntries(req.customerAccount);
-  res.json({ ok: true, entries: entries.map(({ id, email, createdAt, updatedAt }) => ({
-    id, email, passwordConfigured: true, createdAt, updatedAt
+  res.json({ ok: true, entries: entries.map(({ id, email, createdAt, updatedAt, connectionStatus }) => ({
+    id, email, passwordConfigured: true, createdAt, updatedAt, connectionStatus
   })) });
 });
 
@@ -33864,10 +33915,13 @@ app.post("/api/account/imap-credentials", requireCustomer, async (req, res) => {
     if (entries.some(item => item.email === email)) return res.status(409).json({ error: "This IMAP email is already saved. Edit its entry instead." });
     const now = new Date().toISOString();
     const entry = { id: crypto.randomUUID(), email, password, createdAt: now, updatedAt: now };
+    entry.connectionStatus = await testSubmittedImap(email, password);
     entries.push(entry);
     account.savedImapCredentials = encryptJson(entries);
+    await synchronizeImapCopies(account, email, email, password, now, entry.connectionStatus);
     await saveCustomerAccounts(accounts);
-    return res.json({ ok: true, entry: { id: entry.id, email, passwordConfigured: true } });
+    liveSuccessLastSyncByAccount.delete(String(account.id));
+    return res.json({ ok: true, entry: { id: entry.id, email, passwordConfigured: true, connectionStatus: entry.connectionStatus } });
   } catch (error) {
     console.error("Save IMAP credentials error:", error);
     return res.status(500).json({ error: "Unable to save IMAP login." });
@@ -33888,12 +33942,16 @@ app.put("/api/account/imap-credentials/:id", requireCustomer, async (req, res) =
       return res.status(400).json({ error: "Enter a valid IMAP email and app password (at least 6 characters)." });
     }
     if (entries.some(item => item.id !== entry.id && item.email === email)) return res.status(409).json({ error: "This IMAP email is already saved." });
+    const previousEmail = entry.email;
     entry.email = email;
     if (password) entry.password = password;
     entry.updatedAt = new Date().toISOString();
+    entry.connectionStatus = await testSubmittedImap(email, entry.password);
     account.savedImapCredentials = encryptJson(entries);
+    await synchronizeImapCopies(account, previousEmail, email, entry.password, entry.updatedAt, entry.connectionStatus);
     await saveCustomerAccounts(accounts);
-    return res.json({ ok: true, entry: { id: entry.id, email, passwordConfigured: true } });
+    liveSuccessLastSyncByAccount.delete(String(account.id));
+    return res.json({ ok: true, entry: { id: entry.id, email, passwordConfigured: true, connectionStatus: entry.connectionStatus } });
   } catch (error) {
     console.error("Update IMAP credentials error:", error);
     return res.status(500).json({ error: "Unable to update IMAP login." });
@@ -34759,7 +34817,7 @@ app.put(
         }
       }
 
-      if (!validProfile(
+      if (Object.keys(profileBody).length && !validProfile(
         nextProfile
       )) {
         return res
@@ -35005,6 +35063,13 @@ record.updatedBy =
   "customer";
 
 
+if (secretsBody.acoEmail || replacementAcoPassword) {
+  nextSecrets.imapUpdatedAt = updatedAt;
+  nextSecrets.imapConnectionStatus = await testSubmittedImap(nextSecrets.acoEmail, nextSecrets.acoPassword);
+  await synchronizeStoredImapCopies(record.customerAccountId, existingSecrets.acoEmail,
+    nextSecrets.acoEmail, nextSecrets.acoPassword, updatedAt, nextSecrets.imapConnectionStatus);
+}
+
 /* Save updated encrypted ACO information */
 
 await saveEncryptedPackage(
@@ -35022,6 +35087,7 @@ await writeJson(
 
       return res.json({
         ok: true,
+        imapConnectionStatus: nextSecrets.imapConnectionStatus || null,
 
         message:
           "Your profile information has been updated.",

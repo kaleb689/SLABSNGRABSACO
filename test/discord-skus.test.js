@@ -52,3 +52,11 @@ test("private SKU summary shows quantities and exposes all 30 selections within 
   assert.match(empty.content, /no selected SKUs/);
   assert.deepEqual(empty.embeds, []);
 });
+
+import { dropChannelKind } from '../discord-community.js';
+test('upcoming drop channels use the same controls with singular, plural, or decorated names', () => {
+  assert.equal(dropChannelKind('❗️│upcoming-drops'), 'upcomingdrops');
+  assert.equal(dropChannelKind('upcoming-drop'), 'upcomingdrops');
+  assert.equal(dropChannelKind('❗️│dropping-tonight'), 'droppingtonight');
+  assert.equal(dropChannelKind('sku-requests'), 'skurequests');
+});
