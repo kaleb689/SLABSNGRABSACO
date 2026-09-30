@@ -240,6 +240,29 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     appId = me.id;
     discordCommunityStatus.bot = { id: me.id, username: me.username };
     console.log("Discord website bot identity:", JSON.stringify(discordCommunityStatus.bot));
+    try {
+      const successes = JSON.parse(await fs.readFile(path.join(dataDir, "success-checkouts.json"), "utf8"));
+      const groups = new Map();
+      for (const record of successes) {
+        const source = String(record.id || "").startsWith("discord:") ? String(record.id).split(":").slice(0, 2).join(":")
+          : String(record.id || "").startsWith("community-mailbox:") ? "community-mailbox" : "customer-email";
+        const key = source + "|" + record.retailer;
+        const summary = groups.get(key) || { source, retailer: record.retailer, count: 0, missingOrderNumber: 0, attributed: 0 };
+        summary.count++;
+        if (!record.orderNumber) summary.missingOrderNumber++;
+        if (record.customerAccountId) summary.attributed++;
+        groups.set(key, summary);
+      }
+      const numbered = new Map();
+      for (const record of successes.filter(item => item.orderNumber)) {
+        const key = record.retailer + "|" + String(record.orderNumber).replace(/^#/, "").trim().toLowerCase();
+        numbered.set(key, (numbered.get(key) || 0) + 1);
+      }
+      console.log("Success source reconciliation audit:", JSON.stringify({
+        groups: [...groups.values()], repeatedOrderNumbers: [...numbered.values()].filter(count => count > 1).length
+      }));
+    } catch (error) { console.error("Success source reconciliation audit unavailable:", error.code || error.name); }
+
     const checkoutSourceId = String(process.env.DISCORD_CHECKOUT_SOURCE_CHANNEL_ID || "").trim();
     if (/^\d{17,22}$/.test(checkoutSourceId)) {
       try {
