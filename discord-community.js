@@ -1610,10 +1610,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function ensureSkuControls(message) {
     if (!dropChannelIds.has(message.channel_id) || message.author?.bot || message.webhook_id) return;
     const products = parseDropSkus(message);
+    const upcomingWithoutSkus = message.channel_id !== tonightChannelId &&
+      isNewDropPost(message) && (message.type ?? 0) === 0;
+    const pageCount = Math.max(Math.ceil(products.length / 15), upcomingWithoutSkus ? 1 : 0);
     await withSkuQueue(async () => {
       const menus = await readSkuFile(skuMenusFile);
       const sent = menus[message.id] || [];
-      for (let offset = 0; offset < products.length; offset += 15) {
+      for (let page = 0; page < pageCount; page++) {
+        const offset = page * 15;
         const rows = [];
         for (let index = offset; index < Math.min(offset + 15, products.length); index += 5) {
           rows.push({ type: 1, components: products.slice(index, index + 5).map((item, position) => ({
@@ -1621,12 +1625,15 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             custom_id: `sku:pick:${message.id}:${index + position}`
           })) });
         }
-        rows.push({ type: 1, components: [{
+        rows.push({ type: 1, components: [...(products.length ? [{
           type: 2, style: 1, label: "Run all SKUs", custom_id: `sku:pick:${message.id}:all`
-        }, { type: 2, style: 2, label: "My selected SKUs", custom_id: "sku:view" },
-        ...(message.channel_id === tonightChannelId ? [{ type: 2, style: 4,
-          label: "Don't run my profiles tonight", custom_id: `sku:skip:${message.id}` }] : [])] });
-        const content = `Select a SKU below, then choose Qty: 1 or Qty: 2. Use My selected SKUs to review, remove, or change your selections. ${offset ? `More SKUs from the post above (${offset + 1}–${Math.min(offset + 15, products.length)}).` : ""}`.trim();
+        }] : []), { type: 2, style: 2, label: "My selected SKUs", custom_id: "sku:view" },
+        { type: 2, style: 4, label: message.channel_id === tonightChannelId
+          ? "Don't run my profiles tonight" : "Don't run my profiles for this upcoming drop",
+          custom_id: `sku:skip:${message.id}` }] });
+        const content = products.length
+          ? `Select a SKU below, then choose Qty: 1 or Qty: 2. Use My selected SKUs to review, remove, or change your selections. ${offset ? `More SKUs from the post above (${offset + 1}–${Math.min(offset + 15, products.length)}).` : ""}`.trim()
+          : "Choose whether to skip this upcoming drop below.";
         let menu;
         const existingId = sent[offset / 15];
         if (existingId) {
@@ -1642,7 +1649,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         menus[message.id] = sent;
         await writeSkuFile(skuMenusFile, menus);
       }
-      const count = Math.ceil(products.length / 15);
+      const count = pageCount;
       for (const id of sent.slice(count)) {
         try { await api(`/channels/${message.channel_id}/messages/${id}`, "DELETE"); }
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
@@ -1658,7 +1665,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function backfillDropMenus() {
     for (const channelId of dropChannelIds) {
       const active = [];
-      let before = "", foundMain = false;
+      let before = "", foundMain = false, keptUpcomingMain = false;
       for (let page = 0; page < 20 && !foundMain; page++) {
         const history = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
         for (const message of history) {
@@ -1667,7 +1674,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             foundMain = true;
             break;
           }
-          if (!message.author?.bot && (message.type === 0 || message.type === 19)) active.push(message);
+          if (!message.author?.bot && !message.webhook_id && (message.type === 0 || message.type === 19)) {
+            if (parseDropSkus(message).length) active.push(message);
+            else if (channelId !== tonightChannelId && isNewDropPost(message) && !keptUpcomingMain) {
+              active.push(message);
+              keptUpcomingMain = true;
+            }
+          }
         }
         if (history.length < 100) break;
         before = history.at(-1).id;
@@ -1704,7 +1717,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     }
     await ensureSkuControls(d);
   }
-  function ownerSkuPayload(userId, username, items, change, skipTonightDate) {
+  function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = []) {
     const view = skuSelectionView(items);
     const skipping = skipTonightDate === tonightDate();
     return {
@@ -1712,28 +1725,37 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       allowed_mentions: { parse: [], users: [ownerId] },
       embeds: [
         ...(skipping ? [{ title: "Do not run profiles tonight", description: `Requested for ${skipTonightDate} (New York time).`, color: 0xe74c3c }] : []),
+        ...(skippedUpcomingDrops.length ? [{ title: "Do not run profiles for these upcoming drops",
+          description: skippedUpcomingDrops.map(drop => `[Upcoming drop](https://discord.com/channels/${guildId}/${drop.channelId}/${drop.sourceId})`).join("\n"), color: 0xe74c3c }] : []),
         ...(view.embeds.length ? view.embeds.map(embed => ({ ...embed, title: "Products to run" })) : [{ title: "Products to run", description: "No SKUs selected.", color: 0x41b6e6 }])
       ]
     };
   }
-  async function skipTonight(userId, username, sourceId, channelId) {
+  async function skipDrop(userId, username, sourceId, channelId) {
     if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
-    if (channelId !== tonightChannelId) throw new Error("This option is only available in Dropping Tonight.");
+    if (!dropChannelIds.has(channelId)) throw new Error("This option is only available in a drop channel.");
     const source = await api(`/channels/${channelId}/messages/${sourceId}`);
     if (source.author?.bot || source.webhook_id) throw new Error("The original drop post is unavailable.");
     return withSkuQueue(async () => {
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };
-      const next = record.items.filter(item => !item.key.startsWith(`${channelId}:`));
-      const date = tonightDate();
-      const payload = ownerSkuPayload(userId, username, next, "Requested: do not run profiles tonight", date);
+      const tonight = channelId === tonightChannelId;
+      const next = record.items.filter(item => !item.key.startsWith(tonight ? `${channelId}:` : `${channelId}:${sourceId}:`));
+      const date = tonight ? tonightDate() : record.skipTonightDate;
+      const skipped = [...(record.skippedUpcomingDrops || [])];
+      if (!tonight && !skipped.some(drop => drop.channelId === channelId && drop.sourceId === sourceId)) {
+        if (skipped.length >= 30) throw new Error("You have reached 30 upcoming drop opt-outs.");
+        skipped.push({ channelId, sourceId });
+      }
+      const payload = ownerSkuPayload(userId, username, next,
+        tonight ? "Requested: do not run profiles tonight" : "Requested: do not run profiles for this upcoming drop", date, skipped);
       let posted;
       if (record.messageId) {
         try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
       }
       if (!posted) posted = await api(`/channels/${skuRequestsChannelId}/messages`, "POST", payload);
-      Object.assign(record, { username, items: next, skipTonightDate: date, messageId: posted.id, updatedAt: new Date().toISOString() });
+      Object.assign(record, { username, items: next, skipTonightDate: date, skippedUpcomingDrops: skipped, messageId: posted.id, updatedAt: new Date().toISOString() });
       selections[userId] = record;
       await writeSkuFile(skuSelectionsFile, selections);
     });
@@ -1748,7 +1770,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const next = record.items.map(item => ({ ...item }));
       if (!quantity) next.splice(next.findIndex(item => skuItemToken(item.key) === token), 1);
       else next.find(item => skuItemToken(item.key) === token).quantity = quantity;
-      const payload = ownerSkuPayload(userId, record.username, next, quantity ? `Changed ${skuSafeText(item.sku)} to Qty: ${quantity}` : `Removed ${skuSafeText(item.sku)}`, record.skipTonightDate);
+      const payload = ownerSkuPayload(userId, record.username, next, quantity ? `Changed ${skuSafeText(item.sku)} to Qty: ${quantity}` : `Removed ${skuSafeText(item.sku)}`, record.skipTonightDate, record.skippedUpcomingDrops);
       let posted;
       if (record.messageId) {
         try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
@@ -1773,8 +1795,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       record.username = username;
       record.items = changeSkuItems(record.items, chosen, sourceId, channelId, quantity);
       if (channelId === tonightChannelId && quantity) delete record.skipTonightDate;
+      if (channelId !== tonightChannelId && quantity) record.skippedUpcomingDrops =
+        (record.skippedUpcomingDrops || []).filter(drop => drop.channelId !== channelId || drop.sourceId !== sourceId);
       record.updatedAt = new Date().toISOString();
-      const payload = ownerSkuPayload(userId, username, record.items, quantity ? `Selected ${chosen.length} SKU(s) at Qty: ${quantity}` : `Removed ${chosen.length} SKU(s)`, record.skipTonightDate);
+      const payload = ownerSkuPayload(userId, username, record.items, quantity ? `Selected ${chosen.length} SKU(s) at Qty: ${quantity}` : `Removed ${chosen.length} SKU(s)`, record.skipTonightDate, record.skippedUpcomingDrops);
       let posted;
       if (record.messageId) {
         try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
@@ -1803,16 +1827,18 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
       if (d.type === 3 && /^sku:skip:\d{17,22}$/.test(d.data?.custom_id || "")) {
-        if (d.channel_id !== tonightChannelId) return await reply("This option is only available in Dropping Tonight.");
+        if (!dropChannelIds.has(d.channel_id)) return await reply("This option is only available in a drop channel.");
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         try {
-          await skipTonight(userId, d.member?.user?.global_name || d.member?.user?.username || userId,
+          await skipDrop(userId, d.member?.user?.global_name || d.member?.user?.username || userId,
             d.data.custom_id.split(":")[2], d.channel_id);
           return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
-            content: "Saved: do not run my profiles tonight. The owner has been notified. Choosing a SKU tonight will replace this request."
+            content: d.channel_id === tonightChannelId
+              ? "Saved: do not run my profiles tonight. The owner has been notified. Choosing a SKU tonight will replace this request."
+              : "Saved: do not run my profiles for this upcoming drop. The owner has been notified. Choosing a SKU from this drop will replace this request."
           });
         } catch (error) {
-          console.error("Discord tonight opt out:", error.message);
+          console.error("Discord drop opt out:", error.message);
           return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message });
         }
       }
