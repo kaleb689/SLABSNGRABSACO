@@ -36753,6 +36753,7 @@ app.get(
         const total = Number(record.orderTotal);
         if (Number.isFinite(total) && total > 0) totalSpent += total;
 
+        const purchasedAt = new Date(record.checkoutAt || record.updatedAt || record.createdAt || 0).getTime();
         for (const item of eligibleItems) {
           const name = publicSuccessProductName(item?.name);
           const quantity = Math.max(0, Math.floor(Number(item?.quantity) || 0));
@@ -36762,15 +36763,24 @@ app.get(
           products.set(key, {
             name: prior?.name || name,
             quantity: (prior?.quantity || 0) + quantity,
-            imageUrl: prior?.imageUrl || publicSuccessProductImage(name, record.retailer, item?.imageUrl)
+            imageUrl: prior?.imageUrl || publicSuccessProductImage(name, record.retailer, item?.imageUrl),
+            latestPurchasedAt: Math.max(prior?.latestPurchasedAt || 0, Number.isFinite(purchasedAt) ? purchasedAt : 0)
           });
         }
       }
 
+      const orderedProducts = [...products.values()]
+        .sort((a, b) =>
+          b.latestPurchasedAt - a.latestPurchasedAt ||
+          b.quantity - a.quantity ||
+          a.name.localeCompare(b.name)
+        )
+        .map(({ latestPurchasedAt, ...product }) => product);
+
       res.json({
         totalCheckouts,
         totalSpent: Math.round(totalSpent * 100) / 100,
-        products: [...products.values()].sort((a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name))
+        products: orderedProducts
       });
     } catch (error) {
       console.error("Public Success totals failed:", error?.code || error?.name || "success_totals_error");
