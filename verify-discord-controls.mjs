@@ -33,7 +33,7 @@ const deps={fs,path,crypto,dataDir,tonightChannelId,dropChannelIds:new Set([upco
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),discordCommunityStatus:{}};
-const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipTonight,recordSkuSelection,manageSkuSelection};`);
+const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection};`);
 const controls=make(deps);
 try {
   assert.equal(dropChannelKind('❗️│upcoming-drop'),'upcomingdrops');
@@ -41,12 +41,16 @@ try {
   await controls.backfillDropMenus();
   let menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
   assert.ok(menus[upPost.id], 'Upcoming SKU post behind chatter must get controls');
+  assert.ok(menus[chatter.id], 'Upcoming opt-out must work without SKUs');
+  const upcomingRows=messages.get(menus[chatter.id][0]).components;
+  assert.ok(upcomingRows.at(-1).components.some(c=>c.label==="Don't run my profiles for this upcoming drop"));
+  assert.ok(!upcomingRows.at(-1).components.some(c=>c.label==='Run all SKUs'));
   const rows=messages.get(menus[nightPost.id][0]).components;
   assert.ok(rows.at(-1).components.some(c=>c.label==="Don't run my profiles tonight"));
   assert.ok(rows.at(-1).components.some(c=>c.label==='My selected SKUs'));
   await controls.recordSkuSelection(owner,'member',nightPost.id,'all',2,tonightChannelId);
   await controls.recordSkuSelection(owner,'member',upPost.id,'all',1,upcoming);
-  await controls.skipTonight(owner,'member',nightPost.id,tonightChannelId);
+  await controls.skipDrop(owner,'member',nightPost.id,tonightChannelId);
   let record=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[owner];
   assert.equal(record.items.length,1);assert.ok(record.items[0].key.startsWith(upcoming));
   assert.match(messages.get(record.messageId).content,/DO NOT RUN MY PROFILES TONIGHT/);
@@ -57,6 +61,24 @@ try {
   record=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[owner];
   assert.equal(record.skipTonightDate,undefined);
   assert.doesNotMatch(messages.get(record.messageId).content,/DO NOT RUN/);
+  const otherUp=post('1551070928039845940',upcoming,'Another drop\nSKU: OTHER123');
+  messages.set(otherUp.id,otherUp);
+  await controls.recordSkuSelection(owner,'member',otherUp.id,'all',1,upcoming);
+  await controls.skipDrop(owner,'member',upPost.id,upcoming);
+  record=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[owner];
+  assert.equal(record.items.length,2,'Upcoming opt-out preserves tonight and other upcoming drops');
+  assert.ok(!record.items.some(item=>item.key.startsWith(`${upcoming}:${upPost.id}:`)));
+  assert.deepEqual(record.skippedUpcomingDrops,[{channelId:upcoming,sourceId:upPost.id}]);
+  assert.ok(messages.get(record.messageId).embeds.some(e=>e.title.includes('these upcoming drops') && e.description.includes(upPost.id)));
+  await controls.skipDrop(owner,'member',upPost.id,upcoming);
+  record=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[owner];
+  assert.equal(record.skippedUpcomingDrops.length,1,'Repeated upcoming opt-out is idempotent');
+  await controls.recordSkuSelection(owner,'member',upPost.id,'all',1,upcoming);
+  record=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[owner];
+  assert.equal(record.skippedUpcomingDrops.length,0,'Selecting this upcoming drop cancels its opt-out');
+  await controls.skipDrop(owner,'member',chatter.id,upcoming);
+  record=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[owner];
+  assert.equal(record.skippedUpcomingDrops[0].sourceId,chatter.id,'A post with no SKUs can be skipped');
   nightPost.content=Array.from({length:16},(_,i)=>`Product ${i}\nSKU: ABC${i}`).join('\n');
   await controls.ensureSkuControls(nightPost);
   menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
@@ -67,5 +89,5 @@ try {
   nightPost.content='No products';await controls.ensureSkuControls(nightPost);
   menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
   assert.equal(menus[nightPost.id],undefined);
-  console.log('PASS: channel aliases, existing Upcoming controls, tonight opt-out and reversal, owner notifications, preserved Upcoming selections, menu growth and stale-control cleanup');
+  console.log('PASS: channel aliases, existing Upcoming controls, tonight and per-post Upcoming opt-out/reversal, no-SKU opt-out, owner notifications, preserved other-drop selections, idempotency, menu growth and stale-control cleanup');
 } finally { await fs.rm(dataDir,{recursive:true,force:true}); }
