@@ -30,6 +30,12 @@ export function parseDropSkus(message) {
   }
   return products.slice(0, 100);
 }
+export function dropChannelKind(name) {
+  const key = String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (["upcomingdrop", "upcomingdrops"].includes(key)) return "upcomingdrops";
+  if (["droppingtonight", "dropstonight"].includes(key)) return "droppingtonight";
+  return key;
+}
 export function isNewDropPost(message) {
   return !message?.message_reference?.message_id && message?.type !== 19;
 }
@@ -452,7 +458,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     let importantError = null;
     try {
       const names = ["upcomingdrops", "droppingtonight", "announcements"];
-      const found = names.map(name => channels.find(item => [0, 5].includes(item.type) && normalizeName(item.name) === name));
+      const found = names.map(name => channels.find(item => [0, 5].includes(item.type) && dropChannelKind(item.name) === name));
       dropChannelIds = new Set(found.slice(0, 2).filter(Boolean).map(channel => channel.id));
       let important = channels.find(item => item.type === 4 && normalizeName(item.name) === "important");
       if (!important) important = await api(`/guilds/${guildId}/channels`, "POST", { name: "Important", type: 4 });
@@ -1630,14 +1636,20 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   async function backfillDropMenus() {
     for (const channelId of dropChannelIds) {
-      const history = await api(`/channels/${channelId}/messages?limit=100`);
       const active = [];
-      for (const message of history) {
-        if (!message.message_reference?.message_id && message.type === 0 && !message.author?.bot) {
-          active.push(message);
-          break;
+      let before = "", foundMain = false;
+      for (let page = 0; page < 20 && !foundMain; page++) {
+        const history = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
+        for (const message of history) {
+          if (!message.message_reference?.message_id && message.type === 0 && !message.author?.bot) {
+            active.push(message);
+            foundMain = true;
+            break;
+          }
+          if (!message.author?.bot && (message.type === 0 || message.type === 19)) active.push(message);
         }
-        if (!message.author?.bot && (message.type === 0 || message.type === 19)) active.push(message);
+        if (history.length < 100) break;
+        before = history.at(-1).id;
       }
       for (const message of active.reverse()) await ensureSkuControls(message);
     }
@@ -2016,6 +2028,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             await onDropPost(packet.d);
             if (!await onPublicMessage(packet.d)) await onQuestionMessage(packet.d);
           })().catch(error => console.error("Discord public message handling:", error.message));
+          if (packet.t === "MESSAGE_UPDATE" && packet.d?.guild_id === guildId && dropChannelIds.has(packet.d.channel_id)) {
+            void api(`/channels/${packet.d.channel_id}/messages/${packet.d.id}`)
+              .then(ensureSkuControls).catch(error => console.error("Discord edited drop controls:", error.message));
+          }
           if (["CHANNEL_CREATE", "CHANNEL_UPDATE", "CHANNEL_DELETE"].includes(packet.t) &&
             packet.d?.guild_id === guildId) { channelVisibility.clear(); scheduleIntroRefresh(); }
         } catch (error) { console.error("Discord gateway packet:", error.message); }

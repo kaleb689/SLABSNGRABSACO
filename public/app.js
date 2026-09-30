@@ -6029,7 +6029,7 @@ function renderSavedImapManager(preferredId = "") {
   const item = savedImapEntries.find(entry => String(entry.id) === select.value);
   setText("saved-imap-count", savedImapEntries.length);
   document.getElementById("saved-imap-preview").innerHTML = item
-    ? `<p><strong>${escapeHtml(item.email)}</strong></p><p>App password saved securely</p>`
+    ? `<p><strong>${escapeHtml(item.email)}</strong></p><p>App password saved securely</p>${item.connectionStatus ? `<p style="color:${item.connectionStatus.connected ? '#61e6a3' : '#ff707e'};font-weight:800">${item.connectionStatus.connected ? 'Connection successful' : 'Connection unsuccessful'}</p>` : '<p class="account-muted">Connection not yet tested</p>'}`
     : '<p class="account-muted">No IMAP logins saved yet.</p>';
   document.getElementById("saved-imap-existing-actions").hidden = !item;
   updateSavedPosition("imap");
@@ -6167,7 +6167,10 @@ document.getElementById("cancel-saved-imap")?.addEventListener("click", () => { 
 document.getElementById("saved-imap-form")?.addEventListener("submit", async event => {
   event.preventDefault(); const form = event.currentTarget;
   const id = form.elements.id.value; const message = document.getElementById("saved-details-message");
+  const button = form.querySelector('button[type="submit"]');
   try {
+    setButtonBusy(button, true, "Saving and testing…");
+    setMessage(message, "Checking the IMAP connection…");
     const response = await fetch(id ? `/api/account/imap-credentials/${encodeURIComponent(id)}` : "/api/account/imap-credentials", {
       method: id ? "PUT" : "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: form.elements.email.value, password: form.elements.password.value })
@@ -6175,8 +6178,9 @@ document.getElementById("saved-imap-form")?.addEventListener("submit", async eve
     const data = await readJson(response);
     if (!response.ok) throw new Error(data.error || "Unable to save IMAP login.");
     form.reset(); form.hidden = true; await loadSavedImap(data.entry?.id || id);
-    setMessage(message, "IMAP login saved.", "success");
+    setMessage(message, data.entry?.connectionStatus?.connected ? "Saved. Connection successful." : "Saved. Connection unsuccessful—check the email and provider-generated app password.", data.entry?.connectionStatus?.connected ? "success" : "error");
   } catch (error) { setMessage(message, error.message, "error"); }
+  finally { setButtonBusy(button, false); }
 });
 document.getElementById("delete-saved-imap")?.addEventListener("click", async () => {
   const id = document.getElementById("saved-imap-select")?.value;
@@ -6725,6 +6729,7 @@ document
 document.getElementById("edit-order-imap-select")?.addEventListener("change", () => {
   const form = document.getElementById("edit-order-imap-form");
   form.elements.acoPassword.value = "";
+  form.elements.acoEmail.value = "";
   setMessage(document.getElementById("edit-order-imap-message"), "");
 });
 
@@ -6744,17 +6749,21 @@ document.getElementById("edit-order-imap-form")?.addEventListener("submit", asyn
     setMessage(message, "Select an order first.", "error");
     return;
   }
+  if (!form.elements.acoEmail.value.trim() && !form.elements.acoPassword.value) {
+    setMessage(message, "Enter an IMAP email or a new app password.", "error");
+    return;
+  }
   try {
-    setButtonBusy(button, true, "Saving…");
-    setMessage(message, "");
+    setButtonBusy(button, true, "Saving and testing…");
+    setMessage(message, "Checking the IMAP connection…");
     const response = await fetch(`/api/account/orders/${encodeURIComponent(orderNumber)}`, {
       method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: {}, secrets: { acoPassword: form.elements.acoPassword.value } })
+      body: JSON.stringify({ profile: {}, secrets: { acoEmail: form.elements.acoEmail.value.trim(), acoPassword: form.elements.acoPassword.value } })
     });
     const data = await readJson(response);
     if (!response.ok) throw new Error(data.error || "Unable to save your app password.");
     form.reset();
-    setMessage(message, "App password updated for this order.", "success");
+    setMessage(message, data.imapConnectionStatus?.connected ? "IMAP information updated. Connection successful." : "IMAP information saved. Connection unsuccessful—check the email and provider-generated app password.", data.imapConnectionStatus?.connected ? "success" : "error");
   } catch (error) {
     setMessage(message, error.message, "error");
   } finally {
@@ -6986,9 +6995,10 @@ editOrderForm?.addEventListener(
 
       setMessage(
         message,
-        result.message ||
-        "Your order information has been updated.",
-        "success"
+        (secrets.acoEmail || secrets.acoPassword)
+          ? (result.imapConnectionStatus?.connected ? "IMAP information updated. Connection successful." : "IMAP information saved. Connection unsuccessful—check the email and provider-generated app password.")
+          : (result.message || "Your order information has been updated."),
+        (secrets.acoEmail || secrets.acoPassword) && !result.imapConnectionStatus?.connected ? "error" : "success"
       );
 
       await loadMemberProfile(

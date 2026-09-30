@@ -7522,6 +7522,9 @@ function renderOrder(x) {
               data-admin-inline-form="${escapeHtml(x.id)}"
               data-admin-inline-section="imap"
             >
+              <p style="color:${secrets.imapConnectionStatus?.connected === true ? '#61e6a3' : secrets.imapConnectionStatus?.connected === false ? '#ff707e' : '#ffd166'};font-weight:800">
+                ${secrets.imapConnectionStatus?.connected === true ? 'Connection successful' : secrets.imapConnectionStatus?.connected === false ? 'Connection unsuccessful' : 'Connection not yet tested'}
+              </p>
               <div class="admin-inline-section-actions">
                 <button
                   type="button"
