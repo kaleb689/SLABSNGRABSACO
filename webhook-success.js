@@ -46,3 +46,18 @@ export function uniqueCheckoutOwner(candidates) {
   const ids = new Set(candidates.map(item => item.customerAccountId).filter(Boolean));
   return ids.size === 1 ? candidates.find(item => item.customerAccountId === [...ids][0]) : null;
 }
+
+export function reconcileEmailCheckoutIdentity(records, emailOrder) {
+  const prior = records.find(record => record.id === emailOrder.id || (record.sourceIds || []).includes(emailOrder.id));
+  if (!prior || !emailOrder.orderNumber || prior.retailer !== emailOrder.retailer) return { changed: false };
+  const normalize = value => String(value || '').replace(/^#/, '').trim().toLowerCase();
+  if (prior.orderNumber && normalize(prior.orderNumber) !== normalize(emailOrder.orderNumber)) return { changed: false, conflict: true };
+  const missing = !prior.orderNumber;
+  if (missing) prior.orderNumber = emailOrder.orderNumber;
+  const webhook = records.find(record => record !== prior && record.priceSource === 'checkout_webhook' && sameCheckout(record, prior));
+  if (webhook) {
+    const merged = reconcileWebhookCheckout(records, webhook);
+    return { ...merged, changed: missing || merged.changed };
+  }
+  return { changed: missing, record: prior };
+}
