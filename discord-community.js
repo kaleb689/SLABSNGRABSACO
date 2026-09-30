@@ -259,7 +259,17 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         numbered.set(key, (numbered.get(key) || 0) + 1);
       }
       console.log("Success source reconciliation audit:", JSON.stringify({
-        groups: [...groups.values()], repeatedOrderNumbers: [...numbered.values()].filter(count => count > 1).length
+        groups: [...groups.values()], repeatedOrderNumbers: [...numbered.values()].filter(count => count > 1).length,
+        anniversaryTins: successes.reduce((summary, record) => {
+          const tins = (record.items || []).filter(item => /30th celebration tin/i.test(item.name || ""));
+          if (tins.length) {
+            const quantity = tins.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+            summary.checkouts++; summary.tins += quantity;
+            summary.quantities[quantity] = (summary.quantities[quantity] || 0) + 1;
+          }
+          return summary;
+        }, { checkouts: 0, tins: 0, quantities: {} })
+
       }));
     } catch (error) { console.error("Success source reconciliation audit unavailable:", error.code || error.name); }
 
