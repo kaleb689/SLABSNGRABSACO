@@ -1,5 +1,5 @@
 import express from "express";
-import { sameCheckout, reconcileWebhookCheckout, uniqueCheckoutOwner } from "./webhook-success.js";
+import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
 import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
@@ -36379,7 +36379,7 @@ function discordCheckoutFromMessage(message, channelId) {
     const priceField = fields.find(field => /^(price|unit price)$/i.test(fieldLabel(field.name)));
     const quantityField = fields.find(field => /^quantity$/i.test(fieldLabel(field.name)));
     numbered.set("1", { product: priceMatch ? rawItem.slice(0, priceMatch.index) : rawItem,
-      quantity: fieldValue(quantityField?.value), price: priceMatch?.[1] || fieldValue(priceField?.value) });
+      quantity: fieldValue(quantityField?.value), price: priceMatch?.[1] || fieldValue(priceField?.value), priceIsLineTotal: Boolean(priceMatch) });
   }
   let subtotalCents = 0, completePrices = numbered.size > 0;
   for (const entry of numbered.values()) {
@@ -36394,8 +36394,8 @@ function discordCheckoutFromMessage(message, channelId) {
     const validPrice = /^\d+(?:\.\d{1,2})?$/.test(money);
     const priceCents = validPrice ? Math.round(Number(money) * 100) : null;
     if (priceCents === null || !Number.isSafeInteger(priceCents)) completePrices = false;
-    else subtotalCents += priceCents * quantity;
-    items.push({ name, quantity, price: priceCents === null ? 0 : priceCents / 100,
+    else subtotalCents += entry.priceIsLineTotal ? priceCents : priceCents * quantity;
+    items.push({ name, quantity, price: priceCents === null ? 0 : priceCents / 100 / (entry.priceIsLineTotal ? quantity : 1),
       imageUrl: publicSuccessImageUrl(embed?.thumbnail?.url || embed?.image?.url) });
   }
   for (const line of numbered.size ? [] : body.split(/\n+/)) {
@@ -36429,7 +36429,7 @@ function discordCheckoutIdentity(message) {
   const value = pattern => String(fields.find(field => pattern.test(String(field.name).replace(/[*_`]/g, '').trim()))?.value || '').replace(/[*_`|]/g, '').trim();
   return {
     orderNumber: clean(value(/^order\s*(id|number|#)$/i).replace(/^#/, ''), 150),
-    email: normalizeEmail(value(/^(email|account email|checkout email)$/i)),
+    email: normalizeEmail(value(/^(email|account email|checkout email|account)$/i)),
     profileName: clean(value(/^profile(?: name)?$/i), 100)
   };
 }
@@ -36898,6 +36898,18 @@ async function recordCommunitySuccessCheckoutUnlocked(order) {
     .update(`${managedSuccessMailboxConfig().email}:${sourceId}`)
     .digest("hex")}`;
   const records = await getSuccessCheckouts();
+  const original = JSON.stringify(records);
+  const backfilled = reconcileEmailCheckoutIdentity(records, {
+    id, retailer: normalizeSuccessRetailer(order.retailer), orderNumber: clean(order.orderNumber, 150)
+  });
+  if (backfilled.changed) {
+    await fs.writeFile(path.join(DATA_DIR, 'success-before-email-order-backfill.json'), original, { flag: 'wx', mode: 0o600 }).catch(error => {
+      if (error.code !== 'EEXIST') throw error;
+    });
+    await saveSuccessCheckouts(records);
+    for (const res of publicSuccessListeners) res.write("event: checkout\ndata: {}\n\n");
+    return true;
+  }
   if (records.some(record => sameCheckout(record, { ...order, id, retailer: normalizeSuccessRetailer(order.retailer) }))) return false;
 
   records.push({
@@ -36927,7 +36939,9 @@ function normalizeSuccessRetailer(
 
   const retailers = {
     target: "Target",
+    targetgo: "Target",
     walmart: "Walmart",
+    walmartgo: "Walmart",
     "sam's club": "Sam's Club",
     "sams club": "Sam's Club",
     samsclub: "Sam's Club",
@@ -42416,6 +42430,7 @@ function runManagedSuccessScan() {
       managedSuccessScanStatus.parsedOrders = result.scanned || 0;
       managedSuccessScanStatus.savedOrders = result.saved || 0;
       managedSuccessScanStatus.unmatchedOrders = result.unmatched || 0;
+      console.log("Managed Success mailbox reconciliation:", JSON.stringify({ configured: result.configured, parsed: result.scanned || 0, saved: result.saved || 0, unmatched: result.unmatched || 0 }));
       managedSuccessScanStatus.progress = { phase: "complete", percent: 100, processed: result.scanned || 0, total: result.scanned || 0, recognized: result.scanned || 0, saved: result.saved || 0 };
       return result;
     } catch (error) {
