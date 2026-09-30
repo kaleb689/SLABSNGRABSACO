@@ -41788,6 +41788,7 @@ async function readRecentManagedWorkMailboxOrders(
 
       const orders = [];
       let processed = 0;
+      let sourceBatch = new Map();
 
       for (
         const candidate of
@@ -41811,19 +41812,14 @@ async function readRecentManagedWorkMailboxOrders(
           continue;
         }
 
-        const message =
-          await client.fetchOne(
-            candidate.uid,
-            {
-              uid: true,
-              envelope: true,
-              internalDate: true,
-              source: true
-            },
-            {
-              uid: true
-            }
-          );
+        if (!sourceBatch.has(Number(candidate.uid))) {
+          const batchUids = candidates.slice(processed - 1, processed - 1 + 25).map(item => item.uid);
+          const messages = await client.fetchAll(batchUids, {
+            uid: true, envelope: true, internalDate: true, source: true
+          }, { uid: true });
+          sourceBatch = new Map(messages.map(item => [Number(item.uid), item]));
+        }
+        const message = sourceBatch.get(Number(candidate.uid));
 
         if (
           !message?.source
