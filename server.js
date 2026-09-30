@@ -1,4 +1,5 @@
 import express from "express";
+import { correctedMembershipPrice } from "./membership-prices.js";
 import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
 import Stripe from "stripe";
 import { authenticator } from "otplib";
@@ -206,21 +207,21 @@ const PLANS = {
   5: {
     name: "High Volume",
     profiles: 10,
-    amount: 70,
+    amount: 80,
     priceId: process.env.STRIPE_TIER5_PRICE_ID
   },
 
   6: {
     name: "Power User",
     profiles: 20,
-    amount: 100,
+    amount: 150,
     priceId: process.env.STRIPE_TIER6_PRICE_ID
   },
 
   7: {
     name: "Elite",
     profiles: 50,
-    amount: 215,
+    amount: 290,
     priceId: process.env.STRIPE_TIER7_PRICE_ID
   }
 };
@@ -316,6 +317,33 @@ function rentalPriceFor(
     )?.amount ?? null
   );
 }
+
+async function synchronizeMembershipPrices() {
+  const file = path.join(SECRET_DIR, "membership-stripe-prices.json");
+  const cached = await readJson(file, {});
+  for (const tier of [5, 6, 7]) {
+    const plan = PLANS[tier];
+    if (!plan.priceId) continue;
+    const originalId = plan.priceId;
+    try {
+      const result = await correctedMembershipPrice(stripe, tier, plan, cached[tier]);
+      plan.legacyPrices = { [originalId]: result.original.unit_amount / 100 };
+      plan.priceId = result.price.id;
+      cached[tier] = result.price.id;
+      console.log("Membership Stripe price verified:", JSON.stringify({ tier, profiles: plan.profiles, amount: result.price.unit_amount / 100 }));
+    } catch (error) {
+      plan.legacyPrices = { [originalId]: { 5: 70, 6: 100, 7: 215 }[tier] };
+      plan.priceId = null;
+      console.error("Membership price verification failed:", JSON.stringify({ tier, reason: error?.code || "price_configuration_error" }));
+    }
+  }
+  await writeJson(file, cached);
+}
+
+app.get("/api/public/membership-prices", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ tiers: Object.entries(PLANS).map(([tier, plan]) => ({ tier: Number(tier), profiles: plan.profiles, amount: plan.amount, checkoutReady: Boolean(plan.priceId) })) });
+});
 
 function rentalPriceIdFor(
   quantity,
@@ -1222,11 +1250,8 @@ function planForStripePriceId(
     )
   ) {
     if (
-      plan.priceId &&
-      String(
-        plan.priceId
-      ) ===
-        normalizedPriceId
+      (String(plan.priceId || "") === normalizedPriceId ||
+        Object.hasOwn(plan.legacyPrices || {}, normalizedPriceId))
     ) {
       return {
         tier:
@@ -1241,7 +1266,7 @@ function planForStripePriceId(
           plan.profiles,
 
         amount:
-          plan.amount,
+          String(plan.priceId || "") === normalizedPriceId ? plan.amount : plan.legacyPrices[normalizedPriceId],
 
         priceId:
           plan.priceId
@@ -2743,46 +2768,9 @@ async function ensureManagedProfileDiscordMessage(
 }
 
 
-function membershipPlanFromStripePriceId(
-  priceId
-) {
-  const wanted =
-    String(
-      priceId ||
-      ""
-    );
-
-  if (!wanted) {
-    return null;
-  }
-
-  for (
-    const [
-      tier,
-      plan
-    ] of
-    Object.entries(
-      PLANS
-    )
-  ) {
-    if (
-      String(
-        plan?.priceId ||
-        ""
-      ) ===
-      wanted
-    ) {
-      return {
-        tier:
-          Number(tier),
-        ...plan
-      };
-    }
-  }
-
-  return null;
+function membershipPlanFromStripePriceId(priceId) {
+  return planForStripePriceId(priceId);
 }
-
 
 
 const adminUpgradeNotificationInProgress =
@@ -45852,6 +45840,8 @@ await initializeArrayFile(
     await removeLegacyDiscordUserIds();
 
     await migrateCustomerJigs();
+
+    await synchronizeMembershipPrices();
 
     await hardenStoragePermissions();
 
