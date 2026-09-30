@@ -238,6 +238,30 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!guildId) throw new Error("The success channel does not belong to a server.");
     const me = await api("/users/@me");
     appId = me.id;
+    discordCommunityStatus.bot = { id: me.id, username: me.username };
+    console.log("Discord website bot identity:", JSON.stringify(discordCommunityStatus.bot));
+    const checkoutSourceId = String(process.env.DISCORD_CHECKOUT_SOURCE_CHANNEL_ID || "").trim();
+    if (/^\d{17,22}$/.test(checkoutSourceId)) {
+      try {
+        const source = await api(`/channels/${checkoutSourceId}`);
+        const history = await api(`/channels/${checkoutSourceId}/messages?limit=1`);
+        discordCommunityStatus.checkoutSource = {
+          channelId: checkoutSourceId, guildId: source.guild_id, name: source.name,
+          readable: true, recentMessages: history.length
+        };
+      } catch (error) {
+        discordCommunityStatus.checkoutSource = {
+          channelId: checkoutSourceId, readable: false, error: error.message
+        };
+      }
+      console.log("Discord checkout source access:", JSON.stringify(discordCommunityStatus.checkoutSource));
+      try {
+        const memberships = await api("/users/@me/guilds");
+        console.log("Discord website bot servers:", JSON.stringify(memberships.map(item => ({ id: item.id, name: item.name }))));
+      } catch (error) {
+        console.error("Discord website bot membership check:", error.message);
+      }
+    }
     const guild = await api(`/guilds/${guildId}`);
     ownerId = guild.owner_id;
     const channels = await api(`/guilds/${guildId}/channels`);
