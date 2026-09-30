@@ -42458,6 +42458,14 @@ function startLiveSuccessScheduler() {
         syncAllActiveCustomerSuccess()
           .catch(() => {});
         runManagedSuccessScan().catch(() => {});
+        for (const delay of [30000, 90000, 180000]) {
+          const progressLog = setTimeout(() => console.log("Managed Success mailbox scan progress:", JSON.stringify({
+            running: Boolean(managedSuccessScanPromise), progress: managedSuccessScanStatus.progress,
+            lastError: managedSuccessScanStatus.lastError, parsedOrders: managedSuccessScanStatus.parsedOrders,
+            savedOrders: managedSuccessScanStatus.savedOrders
+          })), delay);
+          progressLog.unref?.();
+        }
 
         reconcileLapsedMembershipNotifications()
           .catch(() => {});
