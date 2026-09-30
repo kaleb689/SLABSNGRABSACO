@@ -1,4 +1,5 @@
 import express from "express";
+import { sameCheckout, reconcileWebhookCheckout, uniqueCheckoutOwner } from "./webhook-success.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
 import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
@@ -36326,6 +36327,33 @@ async function resolvedDiscordSuccessConfig() {
   }
 }
 
+let checkoutSourceChannelsCache = null;
+async function discordCheckoutSourceChannels() {
+  const config = await resolvedDiscordSuccessConfig();
+  const explicit = String(process.env.DISCORD_CHECKOUT_SOURCE_CHANNEL_ID || '').trim();
+  if (/^\d{17,22}$/.test(explicit)) return { token: config.token, channels: [...new Set([config.channelId, explicit].filter(id => /^\d{17,22}$/.test(id)))] };
+  if (checkoutSourceChannelsCache) return { token: config.token, ...checkoutSourceChannelsCache };
+  const channels = /^\d{17,22}$/.test(config.channelId) ? [config.channelId] : [];
+  if (!config.token) return { token: '', channels };
+  const get = async route => {
+    const response = await fetch('https://discord.com/api/v10' + route,
+      { headers: { Authorization: `Bot ${config.token}` }, signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error(`Discord checkout source lookup failed (HTTP ${response.status}).`);
+    return response.json();
+  };
+  const found = [];
+  for (const guild of await get('/users/@me/guilds')) {
+    const list = await get(`/guilds/${guild.id}/channels`);
+    for (const channel of list) {
+      if (channel.type === 0 && String(channel.name || '').toLowerCase().replace(/[^a-z]/g, '') === 'successwebhooks') found.push(channel.id);
+    }
+  }
+  if (found.length === 1) channels.push(found[0]);
+  else console.error('Checkout source channel discovery:', found.length ? 'multiple_success_webhooks_channels_set_explicit_id' : 'success_webhooks_channel_not_accessible_to_bot');
+  checkoutSourceChannelsCache = { channels: [...new Set(channels)], webhookSourceFound: found.length === 1 };
+  return { token: config.token, ...checkoutSourceChannelsCache };
+}
+
 function discordCheckoutFromMessage(message, channelId) {
   const embed = (message.embeds || []).find(item => /success|checkout|order confirm/i.test([item.title, item.description].join(" "))) || null;
   const messageText = String(message.content || "");
@@ -36386,6 +36414,7 @@ function discordCheckoutFromMessage(message, channelId) {
   return {
     id: `discord:${channelId}:${message.id}`,
     customerAccountId: null,
+    orderNumber: discordCheckoutIdentity(message).orderNumber,
     retailer: normalizeSuccessRetailer(retailer),
     checkoutAt: message.timestamp || new Date().toISOString(),
     orderTotal: totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : completePrices ? subtotalCents / 100 : 0,
@@ -36395,16 +36424,83 @@ function discordCheckoutFromMessage(message, channelId) {
   };
 }
 
+function discordCheckoutIdentity(message) {
+  const fields = (message.embeds || []).flatMap(embed => embed.fields || []);
+  const value = pattern => String(fields.find(field => pattern.test(String(field.name).replace(/[*_`]/g, '').trim()))?.value || '').replace(/[*_`|]/g, '').trim();
+  return {
+    orderNumber: clean(value(/^order\s*(id|number|#)$/i).replace(/^#/, ''), 150),
+    email: normalizeEmail(value(/^(email|account email|checkout email)$/i)),
+    profileName: clean(value(/^profile(?: name)?$/i), 100)
+  };
+}
+
+async function discordCheckoutOwners() {
+  const [profiles, paid, managed, assignments] = await Promise.all([
+    getRetailerProfiles(), readJson(PAID_FILE, []), getManagedAccounts(), managedAssignmentHistory()
+  ]);
+  const candidates = [];
+  for (const profile of profiles) {
+    let credentials = {};
+    try { credentials = normalizeRetailerCredentials(decryptJson(profile.credentials)); } catch { continue; }
+    for (const [key, login] of Object.entries(credentials)) {
+      if (!login?.username) continue;
+      candidates.push({ customerAccountId: profile.customerAccountId, retailer: normalizeSuccessRetailer(key),
+        email: normalizeEmail(login.username), profileName: profile.profileName, profileSlot: profile.slot });
+    }
+  }
+  // Primary ACO profile email is also used by guest checkouts.
+  for (const order of Array.isArray(paid) ? paid : []) {
+    if (!order.customerAccountId) continue;
+    candidates.push({ customerAccountId: order.customerAccountId, email: normalizeEmail(order.profile?.email),
+      profileName: order.profile?.profileName, profileSlot: order.profile?.slot, createdAt: order.createdAt });
+  }
+  for (const account of managed) {
+    let credentials = {};
+    try { credentials = normalizeRetailerCredentials(decryptJson(account.credentials)); } catch { continue; }
+    for (const assignment of assignments.filter(item => String(item.managedAccountId) === String(account.id))) {
+      for (const [key, login] of Object.entries(credentials)) {
+        if (!login?.username) continue;
+        candidates.push({ customerAccountId: assignment.customerAccountId, retailer: normalizeSuccessRetailer(key),
+          email: normalizeEmail(login.username), profileName: account.profileName,
+          managedAccountId: account.id, managedAssignmentId: assignment.id,
+          managedAssignmentType: assignment.assignmentType, assignment });
+      }
+    }
+  }
+  return candidates;
+}
+
+function discordCheckoutAttribution(order, identity, candidates) {
+  const eligible = candidates.filter(item => item.customerAccountId &&
+    (!item.retailer || item.retailer === order.retailer) &&
+    (!item.assignment || assignmentTimeContainsCheckout(item.assignment, order.checkoutAt)) &&
+    (!item.createdAt || new Date(item.createdAt) <= new Date(order.checkoutAt)));
+  const byEmail = identity.email ? eligible.filter(item => item.email === identity.email) : [];
+  const byName = identity.profileName ? eligible.filter(item =>
+    String(item.profileName || '').toLowerCase() === identity.profileName.toLowerCase()) : [];
+  const match = uniqueCheckoutOwner(byEmail.length ? byEmail : byName);
+  if (!match) return null;
+  // Only attribution IDs and display labels enter the Success store, never credentials.
+  return Object.fromEntries(['customerAccountId', 'profileName', 'profileSlot', 'managedAccountId',
+    'managedAssignmentId', 'managedAssignmentType'].filter(key => match[key] != null).map(key => [key, match[key]]));
+}
+
 async function scanDiscordSuccessChannel() {
-  const { token, channelId } = await resolvedDiscordSuccessConfig();
-  if (!token || !/^\d{17,22}$/.test(channelId) || discordSuccessScan.running) return false;
+  if (discordSuccessScan.running) return false;
   discordSuccessScan.running = true;
   discordSuccessScan.error = null;
-  let added = 0, skipped = 0, before = "", reachedPriorScan = false, newest = discordSuccessScan.newestMessageId;
+  let added = 0, updated = 0, attributed = 0, skipped = 0, before = "", newest = null;
   try {
-    const existing = await getSuccessCheckouts();
-    const seen = new Set(existing.map(item => String(item.id)));
-    for (let page = 0; page < 10; page++) {
+    const { token, channels, webhookSourceFound } = await discordCheckoutSourceChannels();
+    if (!token || !channels.length) throw new Error('Checkout source channel is not configured.');
+    discordSuccessScan.sourceChannels = channels;
+    discordSuccessScan.webhookSourceFound = webhookSourceFound ?? true;
+    const candidates = await discordCheckoutOwners();
+    await refreshSuccessRetailerImages();
+    const imports = [];
+    for (const channelId of channels) {
+      before = '';
+      for (let page = 0; page < 10; page++) {
       const url = `https://discord.com/api/v10/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`;
       const response = await fetch(url, { headers: { Authorization: `Bot ${token}` }, signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new Error(`Discord channel read failed (HTTP ${response.status}).`);
@@ -36412,29 +36508,45 @@ async function scanDiscordSuccessChannel() {
       if (!Array.isArray(messages) || !messages.length) break;
       if (!newest) newest = String(messages[0].id);
       for (const message of messages) {
-        if (discordSuccessScan.newestMessageId && BigInt(message.id) <= BigInt(discordSuccessScan.newestMessageId)) {
-          reachedPriorScan = true;
-          break;
-        }
         const order = discordCheckoutFromMessage(message, channelId);
-        if (!order || seen.has(order.id)) { skipped++; continue; }
-        existing.push(order);
-        seen.add(order.id);
-        added++;
+        if (!order) { skipped++; continue; }
+        order.items = order.items.map(item => ({ ...item,
+          imageUrl: publicSuccessProductImage(item.name, order.retailer, item.imageUrl) }));
+        imports.push({ order, attribution: discordCheckoutAttribution(order, discordCheckoutIdentity(message), candidates) });
       }
-      if (reachedPriorScan || messages.length < 100) break;
+      if (messages.length < 100) break;
       before = messages[messages.length - 1].id;
+      }
     }
-    if (added) {
-      await saveSuccessCheckouts(existing);
-      for (const listener of publicSuccessListeners) listener.write("event: checkout\ndata: {}\n\n");
-    }
+    await withSuccessStoreLock(async () => {
+      const existing = await getSuccessCheckouts();
+      const original = JSON.stringify(existing);
+      for (const { order, attribution } of imports.reverse()) {
+        const result = reconcileWebhookCheckout(existing, order, attribution);
+        if (!result.changed) { skipped++; continue; }
+        if (result.added) added++; else updated++;
+        if (result.record.customerAccountId) attributed++;
+      }
+      if (added || updated) {
+        // Keep a restorable snapshot before correcting existing checkout values.
+        if (updated) await fs.writeFile(path.join(DATA_DIR, 'success-before-webhook-reconciliation.json'), original, { flag: 'wx', mode: 0o600 }).catch(error => {
+          if (error.code !== 'EEXIST') throw error;
+        });
+        await saveSuccessCheckouts(existing);
+        for (const accountId of new Set(existing.map(record => record.customerAccountId).filter(Boolean))) announceSuccessCheckout(accountId);
+        if (!attributed) for (const listener of publicSuccessListeners) listener.write("event: checkout\ndata: {}\n\n");
+      }
+    });
     discordSuccessScan.added = added;
+    discordSuccessScan.updated = updated;
+    discordSuccessScan.attributed = attributed;
     discordSuccessScan.skipped = skipped;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped }));
     return true;
   } catch (error) {
+    console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
     discordSuccessScan.error = error.message;
     discordSuccessScan.checkedAt = new Date().toISOString();
     return false;
@@ -36523,13 +36635,66 @@ function publicSuccessProductName(value) {
 
 const verifiedPublicProductImages = [
   {
+    match: /30th celebration.*elite trainer box/i,
+    retailer: "Target",
+    imageUrl: "https://target.scene7.com/is/image/Target/GUEST_40ed4d44-2adc-4cfe-a27b-0ce8b6e73cba"
+  },
+  {
     match: /ascended heroes tin.*mega meganium ex/i,
     retailer: "Target",
     imageUrl: "https://target.scene7.com/is/image/Target/GUEST_d4830c25-748f-4052-ac1e-f87293a37d7c"
   }
 ];
 
+const successRetailerCatalog = [
+  { key: 'delta-reign-pkc-etb', match: /delta reign.*elite trainer box/i, retailer: 'PKC',
+    productUrl: 'https://www.pokemoncenter.com/product/10-10438-112' },
+  { key: 'delta-reign-bundle', match: /delta reign.*booster bundle/i, retailer: 'PKC',
+    productUrl: 'https://www.pokemoncenter.com/product/10-10439-109' },
+  { key: 'delta-reign-display', match: /delta reign.*booster (?:display )?box/i, retailer: 'PKC',
+    productUrl: 'https://www.pokemoncenter.com/product/10-10446-120' }
+];
+let successRetailerImages = {};
+let lastSuccessRetailerImageRefresh = 0;
+function isRetailerStockImage(value, retailer) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password &&
+      (retailer === 'PKC' ? /(^|\.)pokemoncenter\.com$/.test(url.hostname)
+        : retailer === 'Target' ? url.hostname === 'target.scene7.com' : false);
+  } catch { return false; }
+}
+async function refreshSuccessRetailerImages() {
+  if (Date.now() - lastSuccessRetailerImageRefresh < 60 * 60 * 1000) return;
+  lastSuccessRetailerImageRefresh = Date.now();
+  successRetailerImages = await readJson(path.join(DATA_DIR, 'success-retailer-images.json'), {});
+  const records = await getSuccessCheckouts();
+  for (const product of successRetailerCatalog) {
+    if (successRetailerImages[product.key]) continue;
+    // Use stock assets already supplied in retailer confirmations when available.
+    for (const record of records.filter(record => record.retailer === product.retailer)) {
+      const item = (record.items || []).find(item => product.match.test(item.name) && isRetailerStockImage(item.imageUrl, product.retailer));
+      if (item) { successRetailerImages[product.key] = publicSuccessImageUrl(item.imageUrl); break; }
+    }
+    if (successRetailerImages[product.key]) continue;
+    try {
+      const response = await fetch(product.productUrl, { signal: AbortSignal.timeout(8000), redirect: 'error' });
+      if (!response.ok) continue;
+      const html = await response.text();
+      for (const tag of html.match(/<meta\b[^>]+>/gi) || []) {
+        if (!/\b(?:property|name)=["']og:image["']/i.test(tag)) continue;
+        const image = tag.match(/\bcontent=["']([^"']+)["']/i)?.[1]?.replace(/&amp;/g, '&');
+        if (isRetailerStockImage(image, product.retailer)) successRetailerImages[product.key] = publicSuccessImageUrl(image);
+      }
+    } catch { /* The retailer may temporarily restrict public metadata access. */ }
+  }
+  await writeJson(path.join(DATA_DIR, 'success-retailer-images.json'), successRetailerImages);
+  console.log('Success retailer stock images:', JSON.stringify({ available: Object.keys(successRetailerImages).length, expected: successRetailerCatalog.length }));
+}
+
 function publicSuccessProductImage(name, retailer, value) {
+  const catalog = successRetailerCatalog.find(item => item.retailer === retailer && item.match.test(name));
+  if (catalog && successRetailerImages[catalog.key]) return successRetailerImages[catalog.key];
   const verified = verifiedPublicProductImages.find(item =>
     item.retailer.toLowerCase() === String(retailer || "").toLowerCase() && item.match.test(name)
   );
@@ -36610,6 +36775,17 @@ async function recordSuccessCheckout(
   record,
   { notifyDiscord = true } = {}
 ) {
+  return withSuccessStoreLock(() => recordSuccessCheckoutUnlocked(record, { notifyDiscord }));
+}
+
+let successStoreMutation = Promise.resolve();
+function withSuccessStoreLock(operation) {
+  const result = successStoreMutation.then(operation);
+  successStoreMutation = result.catch(() => {});
+  return result;
+}
+
+async function recordSuccessCheckoutUnlocked(record, { notifyDiscord = true } = {}) {
   const safeRecord =
     safeSuccessCheckout(
       record
@@ -36627,14 +36803,18 @@ async function recordSuccessCheckout(
   const records =
     await getSuccessCheckouts();
 
-  const duplicate =
-    records.some(
-      item =>
-        String(item.id) ===
-        String(safeRecord.id)
-    );
+  const duplicate = records.find(item => sameCheckout(item, safeRecord));
 
   if (duplicate) {
+    if (!duplicate.customerAccountId) {
+      duplicate.customerAccountId = String(record.customerAccountId);
+      for (const key of ['profileName', 'profileSlot', 'managedAccountId', 'managedAssignmentId', 'managedAssignmentType']) {
+        if (record[key] != null) duplicate[key] = record[key];
+      }
+      duplicate.sourceIds = [...new Set([...(duplicate.sourceIds || []), safeRecord.id])];
+      await saveSuccessCheckouts(records);
+      announceSuccessCheckout(duplicate.customerAccountId);
+    }
     return false;
   }
 
@@ -36697,6 +36877,9 @@ async function recordSuccessCheckout(
 /* Orders in the business mailbox without a customer assignment contribute
    anonymous checkout totals. Only eligible product names enter the carousel. */
 async function recordCommunitySuccessCheckout(order) {
+  return withSuccessStoreLock(() => recordCommunitySuccessCheckoutUnlocked(order));
+}
+async function recordCommunitySuccessCheckoutUnlocked(order) {
   const items = (Array.isArray(order?.items) ? order.items : [])
     .filter(item => {
       const name = clean(item?.name, 120).replace(/\s+/g, " ").trim();
@@ -36715,19 +36898,17 @@ async function recordCommunitySuccessCheckout(order) {
     .update(`${managedSuccessMailboxConfig().email}:${sourceId}`)
     .digest("hex")}`;
   const records = await getSuccessCheckouts();
-  if (records.some(record => record.id === id || (
-    order.orderNumber && record.orderNumber === order.orderNumber &&
-    record.retailer === normalizeSuccessRetailer(order.retailer)
-  ))) return false;
+  if (records.some(record => sameCheckout(record, { ...order, id, retailer: normalizeSuccessRetailer(order.retailer) }))) return false;
 
   records.push({
     id,
     customerAccountId: null,
     retailer: normalizeSuccessRetailer(order.retailer),
+    orderNumber: clean(order.orderNumber, 150),
     checkoutAt: order.checkoutAt || order.date || null,
     orderTotal: Math.max(0, Number(order.orderTotal) || 0),
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
-    items,
+    items: items.map(item => ({ ...item, imageUrl: publicSuccessProductImage(item.name, normalizeSuccessRetailer(order?.retailer), item.imageUrl) })),
     status: "confirmed"
   });
   await saveSuccessCheckouts(records);
@@ -36850,9 +37031,10 @@ function safeSuccessCheckout(
 
   const items =
     Array.isArray(record?.items)
-      ? record.items.map(
-          safeSuccessItem
-        )
+      ? record.items.map(item => {
+          const safe = safeSuccessItem(item);
+          return { ...safe, imageUrl: publicSuccessProductImage(safe.name, normalizeSuccessRetailer(record.retailer), safe.imageUrl) };
+        })
       : [];
 
   let itemCount =
@@ -45923,7 +46105,7 @@ await initializeArrayFile(
           aiKey: String(process.env.OPENAI_API_KEY || "").trim(),
           geminiKey: String(process.env.GEMINI_API_KEY || "").trim()
         });
-        if (discordSuccessConfig().token && discordSuccessConfig().channelId) {
+        if (discordSuccessConfig().token) {
           setTimeout(() => scanDiscordSuccessChannel(), 12000);
           const discordTimer = setInterval(() => scanDiscordSuccessChannel(), 60 * 1000);
           discordTimer.unref?.();
