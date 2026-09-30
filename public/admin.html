@@ -7522,7 +7522,7 @@ function renderOrder(x) {
               data-admin-inline-form="${escapeHtml(x.id)}"
               data-admin-inline-section="imap"
             >
-              <p style="color:${secrets.imapConnectionStatus?.connected === true ? '#61e6a3' : secrets.imapConnectionStatus?.connected === false ? '#ff707e' : '#ffd166'};font-weight:800">
+              <p data-imap-connection-status role="status" style="color:${secrets.imapConnectionStatus?.connected === true ? '#61e6a3' : secrets.imapConnectionStatus?.connected === false ? '#ff707e' : '#ffd166'};font-weight:800">
                 ${secrets.imapConnectionStatus?.connected === true ? 'Connection successful' : secrets.imapConnectionStatus?.connected === false ? 'Connection unsuccessful' : 'Connection not yet tested'}
               </p>
               <div class="admin-inline-section-actions">
@@ -8133,12 +8133,18 @@ function bindAdminEditButtons() {
             );
           }
 
+          const connectionStatus = section === "imap"
+            ? form.querySelector("[data-imap-connection-status]") : null;
+          if (connectionStatus) {
+            connectionStatus.textContent = "Testing connection...";
+            connectionStatus.style.color = "#ffd166";
+          }
           if (saveButton) {
             saveButton.disabled =
               true;
 
             saveButton.textContent =
-              "Saving...";
+              section === "imap" ? "Testing connection..." : "Saving...";
           }
 
           if (message) {
@@ -8185,13 +8191,25 @@ function bindAdminEditButtons() {
               );
             }
 
+            const imapStatus = section === "imap" ? result.imapConnectionStatus : null;
+            if (connectionStatus) {
+              connectionStatus.textContent = imapStatus?.connected === true
+                ? "Connection successful" : imapStatus?.connected === false
+                ? "Connection unsuccessful" : "Connection test result unavailable. Refresh and retry.";
+              connectionStatus.style.color = imapStatus?.connected === true ? "#61e6a3" : "#ff707e";
+            }
             if (message) {
               message.textContent =
-                result.message ||
+                section === "imap"
+                  ? (imapStatus?.connected === true ? "Saved. Connection successful."
+                    : imapStatus?.connected === false ? "Saved. Connection unsuccessful—check the email and provider-generated app password."
+                    : "Saved, but the connection test result was unavailable. Refresh and retry.")
+                  : result.message ||
                 "Changes saved.";
 
               message.className =
-                "admin-edit-message success";
+                section === "imap" && imapStatus?.connected !== true
+                  ? "admin-edit-message error" : "admin-edit-message success";
             }
 
             /*
@@ -8206,6 +8224,10 @@ function bindAdminEditButtons() {
             );
 
           } catch (error) {
+            if (connectionStatus) {
+              connectionStatus.textContent = "Unable to complete connection test. Retry Save.";
+              connectionStatus.style.color = "#ff707e";
+            }
             if (message) {
               message.textContent =
                 error.message;
