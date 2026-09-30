@@ -27,7 +27,7 @@ test("Stellara numbered products pair quantities and prices without exposing oth
 test("Hayha separate item, price suffix, quantity, and encoded product name", () => {
  const order=context.discordCheckoutFromMessage(message([field("Site","Target"),field("Item","Pok&#233;mon Trading Card Game: 30th Celebration Elite Trainer Box - $139.98"),field("Quantity",2),field("Profile Name","private-profile")]),"456");
  assert.equal(order.items[0].name,"Pokémon Trading Card Game: 30th Celebration Elite Trainer Box");
- assert.equal(order.itemCount,2); assert.equal(order.orderTotal,279.96);
+ assert.equal(order.itemCount,2); assert.equal(order.orderTotal,139.98);
  assert.ok(!JSON.stringify(order).includes("private-profile"));
 });
 test("single numbered product and invalid quantity handling", () => {
@@ -58,4 +58,12 @@ test("longest-linked available accounts first, including gifted history, with st
  const sorted=context.preferPreviouslyAssignedManagedAccounts(available,history,"user","target");
  assert.equal(sorted.map(x=>x.id).join(","),"gift,long,short,new,new2");
  assert.equal(available[0].id,"new");
+});
+
+test("explicit single-item unit price still multiplies quantity, and checkout aliases normalize", () => {
+ const fields=[field("Site","targetgo"),field("Item","Pokemon TCG Elite Trainer Box"),field("Unit Price","$69.99"),field("Quantity",2),field("Account","customer@example.test")];
+ const result=context.discordCheckoutFromMessage(message(fields),"456");
+ assert.equal(result.orderTotal,139.98);assert.equal(result.retailer,"Target");
+ assert.equal(context.discordCheckoutIdentity(message(fields)).email,"customer@example.test");
+ assert.equal(context.normalizeSuccessRetailer("walmartgo"),"Walmart");
 });
