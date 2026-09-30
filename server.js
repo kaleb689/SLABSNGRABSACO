@@ -6598,103 +6598,37 @@ function customerHasOgMemberStatus(
 
 
 
-function preferPreviouslyAssignedManagedAccounts(
-  availableAccounts,
-  rentalAssignments,
-  customerAccountId,
-  retailer
-) {
-  const previousIds =
-    [];
-
-  for (
-    const assignment of
-    rentalAssignments
-      .filter(
-        item =>
-          String(
-            item.customerAccountId ||
-            ""
-          ) ===
-            String(
-              customerAccountId
-            ) &&
-          String(
-            item.rentalRetailer ||
-            ""
-          ) ===
-            String(
-              retailer
-            )
-      )
-      .sort(
-        (a,b) =>
-          new Date(
-            b.endedAt ||
-            b.updatedAt ||
-            b.createdAt ||
-            0
-          ).getTime() -
-          new Date(
-            a.endedAt ||
-            a.updatedAt ||
-            a.createdAt ||
-            0
-          ).getTime()
-      )
-  ) {
-    const id =
-      String(
-        assignment.managedAccountId ||
-        assignment.rentedMembershipId ||
-        ""
-      );
-
-    if (
-      id &&
-      !previousIds.includes(id)
-    ) {
-      previousIds.push(id);
-    }
+function preferPreviouslyAssignedManagedAccounts(availableAccounts, assignmentHistory, customerAccountId, retailer) {
+  const intervals = new Map();
+  for (const assignment of assignmentHistory) {
+    if (String(assignment.customerAccountId || "") !== String(customerAccountId)) continue;
+    const priorRetailer = assignment.rentalRetailer || assignment.assignmentRetailer || "";
+    if (priorRetailer && String(priorRetailer) !== String(retailer)) continue;
+    const id = String(assignment.managedAccountId || assignment.rentedMembershipId || assignment.freeMembershipId || "");
+    if (!id) continue;
+    const start = Date.parse(assignment.createdAt || assignment.startsAt || "");
+    const end = Date.parse(assignment.endedAt || assignment.updatedAt || assignment.expiresAt || "");
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) continue;
+    const ranges = intervals.get(id) || [];
+    ranges.push([start, end]);
+    intervals.set(id, ranges);
   }
-
-  const preference =
-    new Map(
-      previousIds.map(
-        (id,index) => [
-          id,
-          index
-        ]
-      )
-    );
-
-  return [
-    ...availableAccounts
-  ].sort(
-    (a,b) => {
-      const ai =
-        preference.has(
-          String(a.id)
-        )
-          ? preference.get(
-              String(a.id)
-            )
-          : Number.MAX_SAFE_INTEGER;
-
-      const bi =
-        preference.has(
-          String(b.id)
-        )
-          ? preference.get(
-              String(b.id)
-            )
-          : Number.MAX_SAFE_INTEGER;
-
-      return ai - bi;
+  const scores = new Map();
+  for (const [id, ranges] of intervals) {
+    ranges.sort((a, b) => a[0] - b[0]);
+    let duration = 0, start = ranges[0][0], end = ranges[0][1];
+    for (const range of ranges.slice(1)) {
+      if (range[0] <= end) end = Math.max(end, range[1]);
+      else { duration += end - start; [start, end] = range; }
     }
-  );
+    scores.set(id, { duration: duration + end - start, recent: end });
+  }
+  return [...availableAccounts].sort((a, b) => {
+    const ai = scores.get(String(a.id)), bi = scores.get(String(b.id));
+    if (!ai || !bi) return Number(Boolean(bi)) - Number(Boolean(ai));
+    return bi.duration - ai.duration || bi.recent - ai.recent;
+  });
 }
-
 
 /* -------------------------------------------------------
    STRIPE WEBHOOK
@@ -6878,8 +6812,10 @@ app.post(
                     }
                   );
 
-                const rentalHistory =
-                  await getRentalAssignments();
+                const rentalHistory = [
+                  ...await getRentalAssignments(),
+                  ...await getFreeAssignments()
+                ];
 
                 const availableAccounts =
                   preferPreviouslyAssignedManagedAccounts(
@@ -19096,7 +19032,7 @@ app.post(
         });
       }
 
-      const available =
+      let available =
         await getAvailableManagedAccountsForRetailer(
           retailer,
           {
@@ -19107,6 +19043,12 @@ app.post(
               assignmentType
           }
         );
+
+      if (assignmentType === "rented") {
+        available = preferPreviouslyAssignedManagedAccounts(available,
+          [...await getRentalAssignments(), ...await getFreeAssignments()],
+          customerAccountId, retailer);
+      }
 
       if (
         available.length <
@@ -33546,6 +33488,7 @@ app.put(
 
         return res.json({
           ok: true,
+        imapConnectionStatus: nextSecrets.imapConnectionStatus || null,
 
           message:
             "Customer information updated."
@@ -33720,6 +33663,7 @@ app.put(
 
       return res.json({
         ok: true,
+        imapConnectionStatus: nextSecrets.imapConnectionStatus || null,
 
         message:
           "Customer information updated."
@@ -36389,7 +36333,44 @@ function discordCheckoutFromMessage(message, channelId) {
   if (/NEW CHECKOUT SUCCESS/i.test(embed?.title || "")) return null; // Already saved by this site's own webhook.
   const body = [messageText, embed?.description || "", ...(embed?.fields || []).map(field => `${field.name}: ${field.value}`)].join("\n");
   const items = [];
-  for (const line of body.split(/\n+/)) {
+  const fields = embed?.fields || [];
+  const numbered = new Map();
+  const fieldLabel = value => String(value || "").replace(/[*_`]/g, "").trim();
+  const fieldValue = value => String(value || "").replace(/[*_`]/g, "").trim();
+  for (const field of fields) {
+    const match = fieldLabel(field.name).match(/^(product|price|quantity)\s*\((\d+)\)$/i);
+    if (!match) continue;
+    const entry = numbered.get(match[2]) || {};
+    entry[match[1].toLowerCase()] = fieldValue(field.value);
+    numbered.set(match[2], entry);
+  }
+  const itemField = fields.find(field => /^(item|product)$/i.test(fieldLabel(field.name)));
+  if (!numbered.size && itemField) {
+    const rawItem = fieldValue(itemField.value);
+    const priceMatch = rawItem.match(/\s*[-–]\s*\$([\d,]+(?:\.\d{1,2})?)\s*$/);
+    const priceField = fields.find(field => /^(price|unit price)$/i.test(fieldLabel(field.name)));
+    const quantityField = fields.find(field => /^quantity$/i.test(fieldLabel(field.name)));
+    numbered.set("1", { product: priceMatch ? rawItem.slice(0, priceMatch.index) : rawItem,
+      quantity: fieldValue(quantityField?.value), price: priceMatch?.[1] || fieldValue(priceField?.value) });
+  }
+  let subtotalCents = 0, completePrices = numbered.size > 0;
+  for (const entry of numbered.values()) {
+    const name = publicSuccessProductName(entry.product);
+    const quantity = Number(entry.quantity);
+    if (!name || !isPublicSuccessProduct(name) || /@|\b(?:address|email|phone|account|ship to)\b/i.test(name) ||
+        !Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
+      completePrices = false;
+      continue;
+    }
+    const money = String(entry.price || "").replace(/[$,\s]/g, "");
+    const validPrice = /^\d+(?:\.\d{1,2})?$/.test(money);
+    const priceCents = validPrice ? Math.round(Number(money) * 100) : null;
+    if (priceCents === null || !Number.isSafeInteger(priceCents)) completePrices = false;
+    else subtotalCents += priceCents * quantity;
+    items.push({ name, quantity, price: priceCents === null ? 0 : priceCents / 100,
+      imageUrl: publicSuccessImageUrl(embed?.thumbnail?.url || embed?.image?.url) });
+  }
+  for (const line of numbered.size ? [] : body.split(/\n+/)) {
     const match = line.match(/^\s*(?:[•*\-]\s*)?(.{5,120}?)\s*(?:[×xX]\s*(\d+)|\(\s*(\d+)\s*\))\s*$/);
     if (!match) continue;
     const name = publicSuccessProductName(match[1]);
@@ -36398,7 +36379,7 @@ function discordCheckoutFromMessage(message, channelId) {
     }
   }
   if (!items.length) return null;
-  const retailer = (embed?.fields || []).find(field => /retailer|store/i.test(field.name || ""))?.value || "";
+  const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(field.name || ""))?.value || "";
   const totalField = (embed?.fields || []).find(field => /total|spent|amount/i.test(field.name || ""))?.value ||
     body.match(/(?:total|spent|amount)\s*[:$]\s*\$?([\d,.]+)/i)?.[1] || "";
   const totalMatch = String(totalField).match(/\$?([\d,]+\.\d{2})/);
@@ -36407,7 +36388,8 @@ function discordCheckoutFromMessage(message, channelId) {
     customerAccountId: null,
     retailer: normalizeSuccessRetailer(retailer),
     checkoutAt: message.timestamp || new Date().toISOString(),
-    orderTotal: totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : 0,
+    orderTotal: totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : completePrices ? subtotalCents / 100 : 0,
+    orderTotalBasis: totalMatch ? "order_total" : completePrices ? "item_subtotal" : "unknown",
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
     items, status: "confirmed"
   };
@@ -36769,7 +36751,10 @@ function normalizeSuccessRetailer(
     "sams club": "Sam's Club",
     samsclub: "Sam's Club",
     costco: "Costco",
-    pkc: "PKC"
+    pkc: "PKC",
+    "pokemon center us": "PKC",
+    "pokemon center": "PKC",
+    pokemoncenter: "PKC"
   };
 
   return (
