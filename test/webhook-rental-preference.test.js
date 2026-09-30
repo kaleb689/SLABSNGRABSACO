@@ -2,9 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { uniqueCheckoutOwner } from '../webhook-success.js';
 const source = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
 const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
-const context = { clean: (v,n) => String(v || "").slice(0,n), publicSuccessImageUrl: () => null };
+const context = { clean: (v,n) => String(v || "").slice(0,n), normalizeEmail: v => String(v || '').trim().toLowerCase(), publicSuccessImageUrl: () => null, uniqueCheckoutOwner,
+ assignmentTimeContainsCheckout: (a,t) => new Date(t) >= new Date(a.startsAt) && (!a.endedAt || new Date(t) <= new Date(a.endedAt)) };
 vm.createContext(context);
 vm.runInContext(section("function isPublicSuccessProduct", "const verifiedPublicProductImages") +
  section("function normalizeSuccessRetailer", "function safeSuccessImageUrl") +
@@ -33,6 +35,16 @@ test("single numbered product and invalid quantity handling", () => {
  assert.equal(context.discordCheckoutFromMessage(message(fields),"456").orderTotal,26.94);
  fields[2].value="0";
  assert.equal(context.discordCheckoutFromMessage(message(fields),"456"),null);
+});
+test('checkout routing uses exact email and assignment at checkout, refusing ambiguous matches', () => {
+ const order={retailer:'PKC',checkoutAt:'2026-09-30T17:00:00Z'};
+ const candidates=[{customerAccountId:'previous',retailer:'PKC',email:'pool@example.test',assignment:{startsAt:'2026-09-01',endedAt:'2026-09-29'}},
+ {customerAccountId:'correct',retailer:'PKC',email:'pool@example.test',profileName:'Profile One',assignment:{startsAt:'2026-09-30T00:00:00Z'}}];
+ const routed=context.discordCheckoutAttribution(order,{email:'pool@example.test',profileName:''},candidates);
+ assert.equal(routed.customerAccountId,'correct');assert.ok(!JSON.stringify(routed).includes('pool@example.test'));
+ candidates.push({customerAccountId:'other',retailer:'PKC',email:'pool@example.test'});
+ assert.equal(context.discordCheckoutAttribution(order,{email:'pool@example.test'},candidates),null);
+ assert.equal(context.discordCheckoutAttribution(order,{email:'missing@example.test'},candidates),null);
 });
 test("longest-linked available accounts first, including gifted history, with stable fallback", () => {
  const available=[{id:"new"},{id:"short"},{id:"long"},{id:"gift"},{id:"new2"}];
