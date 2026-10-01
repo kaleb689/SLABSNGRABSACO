@@ -36527,8 +36527,14 @@ function discordCheckoutFromMessage(message, channelId) {
     const priceCents = validPrice ? Math.round(Number(money) * 100) : null;
     if (priceCents === null || !Number.isSafeInteger(priceCents)) completePrices = false;
     else subtotalCents += entry.priceIsLineTotal ? priceCents : priceCents * quantity;
-    items.push({ name, quantity, price: priceCents === null ? 0 : priceCents / 100 / (entry.priceIsLineTotal ? quantity : 1),
-      imageUrl: publicSuccessImageUrl(embed?.thumbnail?.url || embed?.image?.url) });
+    items.push({
+      name,
+      quantity,
+      price: priceCents === null ? 0 : priceCents / 100 / (entry.priceIsLineTotal ? quantity : 1),
+      sourcePrice: validPrice ? money : "",
+      sourceQuantity: String(entry.quantity || quantity),
+      imageUrl: publicSuccessImageUrl(embed?.thumbnail?.url || embed?.image?.url)
+    });
   }
   for (const line of numbered.size ? [] : body.split(/\n+/)) {
     const match = line.match(/^\s*(?:[•*\-]\s*)?(.{5,120}?)\s*(?:[×xX]\s*(\d+)|\(\s*(\d+)\s*\))\s*$/);
@@ -36539,7 +36545,7 @@ function discordCheckoutFromMessage(message, channelId) {
     }
   }
   if (!items.length) return null;
-  const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(field.name || ""))?.value || "";
+  const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(fieldLabel(field.name)))?.value || "";
   const totalField = (embed?.fields || []).find(field => /total|spent|amount/i.test(field.name || ""))?.value ||
     body.match(/(?:total|spent|amount)\s*[:$]\s*\$?([\d,.]+)/i)?.[1] || "";
   const totalMatch = String(totalField).match(/\$?([\d,]+\.\d{2})/);
@@ -36548,6 +36554,7 @@ function discordCheckoutFromMessage(message, channelId) {
     customerAccountId: null,
     orderNumber: discordCheckoutIdentity(message).orderNumber,
     retailer: normalizeSuccessRetailer(retailer),
+    sourceSite: fieldValue(retailer),
     checkoutAt: message.timestamp || new Date().toISOString(),
     orderTotal: totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : completePrices ? subtotalCents / 100 : 0,
     orderTotalBasis: totalMatch ? "order_total" : completePrices ? "item_subtotal" : "unknown",
@@ -36558,7 +36565,7 @@ function discordCheckoutFromMessage(message, channelId) {
 
 
 const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
-const DISCORD_HIT_MIRROR_VERSION = 4;
+const DISCORD_HIT_MIRROR_VERSION = 5;
 let discordHitsChannelIdCache = null;
 let discordHitMirrorMutation = Promise.resolve();
 
@@ -36616,46 +36623,40 @@ function publicDiscordHitPayload(order) {
     .map(item => ({
       name: publicSuccessProductName(item?.name),
       quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
-      price: Math.max(0, Number(item?.price) || 0),
-      imageUrl: publicSuccessProductImage(item?.name, order?.retailer, item?.imageUrl)
+      sourceQuantity: clean(item?.sourceQuantity, 30),
+      sourcePrice: clean(item?.sourcePrice, 30),
+      price: Math.max(0, Number(item?.price) || 0)
     }))
-    .filter(item => item.name && !/@|\b(?:order|address|phone|email|account|password|card|ship(?:ping)? to|username|mode)\b/i.test(item.name));
+    .filter(item => item.name &&
+      !/@|\b(?:order|address|phone|email|account|password|card|ship(?:ping)? to|username|mode)\b/i.test(item.name));
 
   if (!items.length) return null;
 
-  const total = Number(order?.orderTotal);
-  const site = order?.retailer === "PKC" ? "Pokemon Center US" : (order?.retailer || "Retailer");
-  const quantity = items.reduce((sum, item) => sum + item.quantity, 0);
-  const productText = items.slice(0, 10).map(item => item.name).join("\n").slice(0, 1024);
+  const site = clean(order?.sourceSite, 200) ||
+    (order?.retailer === "PKC" ? "Pokemon Center US" : clean(order?.retailer, 200) || "Retailer");
 
-  const primary = {
-    title: "Successful Checkout!",
-    color: 0x00ff00,
-    fields: [
-      { name: "Site", value: String(site).slice(0, 1024), inline: false },
-      { name: items.length === 1 ? "Product (1)" : "Product", value: productText || "Item", inline: false },
-      { name: items.length === 1 ? "Price (1)" : "Price", value: Number.isFinite(total) && total >= 0 ? total.toFixed(2) : "0.00", inline: false },
-      { name: items.length === 1 ? "Quantity (1)" : "Quantity", value: String(quantity), inline: false }
-    ]
-  };
+  const fields = [{ name: "Site", value: site.slice(0, 1024), inline: false }];
 
-  // Discord allows up to 10 embeds per message. Keep the primary checkout
-  // card plus up to nine unique product thumbnails so multi-item checkouts
-  // stay in one message without repeating the same product image.
-  const seenImageUrls = new Set();
-  const imageEmbeds = [];
-  for (const item of items) {
-    const imageUrl = String(item.imageUrl || "").trim();
-    if (!imageUrl || seenImageUrls.has(imageUrl)) continue;
-    seenImageUrls.add(imageUrl);
-    imageEmbeds.push({
+  items.slice(0, 9).forEach((item, index) => {
+    const number = index + 1;
+    const suffix = items.length === 1 ? " (1)" : ` (${number})`;
+    const price = item.sourcePrice || item.price.toFixed(2);
+    const quantity = item.sourceQuantity || String(item.quantity);
+    fields.push(
+      { name: `Product${suffix}`, value: item.name.slice(0, 1024), inline: false },
+      { name: `Price${suffix}`, value: String(price).slice(0, 1024), inline: false },
+      { name: `Quantity${suffix}`, value: String(quantity).slice(0, 1024), inline: false }
+    );
+  });
+
+  return {
+    embeds: [{
+      title: "Successful Checkout!",
       color: 0x00ff00,
-      thumbnail: { url: imageUrl }
-    });
-    if (imageEmbeds.length >= 9) break;
-  }
-
-  return { embeds: [primary, ...imageEmbeds], allowed_mentions: { parse: [] } };
+      fields: fields.slice(0, 25)
+    }],
+    allowed_mentions: { parse: [] }
+  };
 }
 
 async function postDiscordHit(token, channelId, order) {
@@ -36689,19 +36690,65 @@ async function clearBotHitMessages(token, channelId) {
 // Checkout mirroring to #slabsngrabsaco-hits is intentionally disabled.
 // Keep the source webhook/site reconciliation active, but never create hit posts.
 // The cleanup is idempotent and removes only checkout messages generated by this bot.
-async function mirrorDiscordCheckoutHits(_imports, token) {
-  if (!token) return;
+async function mirrorDiscordCheckoutHits(imports, token) {
+  if (!token || !Array.isArray(imports) || !imports.length) return;
   await discordHitMirrorState(async () => {
     const channelId = await resolveDiscordHitsChannelId(token);
     const state = await readJson(DISCORD_HIT_MIRROR_FILE, {});
-    if (Number(state.version || 0) === DISCORD_HIT_MIRROR_VERSION && state.disabled === true) return;
-    await clearBotHitMessages(token, channelId);
-    await writeJson(DISCORD_HIT_MIRROR_FILE, {
-      version: DISCORD_HIT_MIRROR_VERSION,
-      disabled: true,
-      disabledAt: new Date().toISOString(),
-      sent: {}
-    });
+
+    if (Number(state.version || 0) !== DISCORD_HIT_MIRROR_VERSION) {
+      await clearBotHitMessages(token, channelId);
+
+      const pokemon = [...imports]
+        .filter(entry => entry?.order?.retailer === "PKC" &&
+          /^\d{17,22}$/.test(String(entry?.sourceMessageId || "")))
+        .sort((a, b) => new Date(b.order.checkoutAt || 0) - new Date(a.order.checkoutAt || 0))
+        .filter((entry, index, list) =>
+          list.findIndex(other => String(other.sourceMessageId) === String(entry.sourceMessageId)) === index)
+        .slice(0, 11)
+        .reverse();
+
+      state.version = DISCORD_HIT_MIRROR_VERSION;
+      state.startedAt = new Date().toISOString();
+      state.sent = {};
+
+      for (const entry of pokemon) {
+        const posted = await postDiscordHit(token, channelId, entry.order);
+        if (!posted) continue;
+        state.sent[String(entry.sourceMessageId)] = {
+          messageId: String(posted.id || ""),
+          checkoutAt: entry.order.checkoutAt || null,
+          retailer: entry.order.retailer || null
+        };
+        await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+      }
+
+      await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+      return;
+    }
+
+    if (!state.startedAt) state.startedAt = new Date().toISOString();
+    if (!state.sent || typeof state.sent !== "object" || Array.isArray(state.sent)) state.sent = {};
+    const startedAt = new Date(state.startedAt).getTime();
+
+    for (const entry of [...imports].sort((a, b) =>
+      new Date(a?.order?.checkoutAt || 0) - new Date(b?.order?.checkoutAt || 0))) {
+      const sourceMessageId = String(entry?.sourceMessageId || "");
+      const order = entry?.order;
+      if (!/^\d{17,22}$/.test(sourceMessageId) || !order || state.sent[sourceMessageId]) continue;
+
+      const checkoutTime = new Date(order.checkoutAt || 0).getTime();
+      if (!Number.isFinite(checkoutTime) || checkoutTime < startedAt) continue;
+
+      const posted = await postDiscordHit(token, channelId, order);
+      if (!posted) continue;
+      state.sent[sourceMessageId] = {
+        messageId: String(posted.id || ""),
+        checkoutAt: order.checkoutAt || null,
+        retailer: order.retailer || null
+      };
+      await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+    }
   });
 }
 
