@@ -15729,6 +15729,50 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+/*
+  Keep signed-in customer data synchronized in place. This deliberately
+  reuses the existing render/load functions instead of navigating or
+  reloading, so the active page, account tab, scroll position and open
+  controls remain where the customer left them.
+*/
+let customerLiveRefreshTimer = null;
+let customerLiveRefreshRunning = false;
+
+async function refreshCustomerViewInPlace() {
+  if (!state.customer || document.visibilityState !== "visible" || customerLiveRefreshRunning) return;
+
+  customerLiveRefreshRunning = true;
+  const activeTab =
+    document.querySelector("[data-account-tab].active")?.dataset?.accountTab ||
+    "overview";
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+
+  try {
+    await loadMemberProfile(true);
+    switchAccountTab(activeTab);
+
+    if (activeTab === "success") {
+      await loadSuccessDashboard(true);
+    }
+  } finally {
+    requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+    customerLiveRefreshRunning = false;
+  }
+}
+
+function scheduleCustomerLiveRefresh() {
+  clearTimeout(customerLiveRefreshTimer);
+  customerLiveRefreshTimer = setTimeout(() => {
+    void refreshCustomerViewInPlace();
+  }, 180);
+}
+
+if (!ADMIN_PREVIEW_MODE && typeof EventSource !== "undefined") {
+  const customerLiveEvents = new EventSource("/api/account/live/events");
+  customerLiveEvents.addEventListener("data-change", scheduleCustomerLiveRefresh);
+}
+
 function homepageSampleSuccessData() {
   const counts = [0, 1, 0, 2, 1, 0, 3, 1, 0, 2, 2, 1, 3, 2];
   const products = [
