@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startDiscordCommunity, discordCommunityStatus, createDiscordLinkCode, revokeDiscordLinkCodes, queueDiscordRoleRemoval } from "./discord-community.js";
 import { getCommunityInvite } from "./discord-invite.js";
+import { startCheckoutDmSummaryScheduler } from "./checkout-dm-summary.js";
 import { membershipDiscountOptions, activeSitewideDiscount } from "./checkout-discounts.js";
 import { safeAddressVariants, safeAddressVariantKey, defaultJigVariants } from "./address-jigs.js";
 
@@ -46621,6 +46622,11 @@ await initializeArrayFile(
 
         startLiveSuccessScheduler();
         startManagedExpirationScheduler();
+        startCheckoutDmSummaryScheduler({
+          dataDir: DATA_DIR,
+          token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
+          getAccounts: getCustomerAccounts
+        });
         startDiscordCommunity({
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
           channelId: String(process.env.DISCORD_SUCCESS_CHANNEL_ID || "").trim(),
