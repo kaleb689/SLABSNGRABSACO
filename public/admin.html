@@ -20483,6 +20483,55 @@ document
 
 
 /* =========================================
+   LIVE ADMIN DATA
+   Refresh data in place after admin/customer changes while preserving
+   the current filter, open panels and scroll position.
+========================================= */
+let adminLiveRefreshTimer = null;
+let adminLiveRefreshRunning = false;
+
+async function refreshAdminInPlace() {
+  if (
+    adminLiveRefreshRunning ||
+    document.hidden ||
+    dashboard.hidden
+  ) {
+    return;
+  }
+
+  adminLiveRefreshRunning = true;
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  const filterValue = submissionTypeFilter?.value || "paid";
+
+  try {
+    await load();
+    if (submissionTypeFilter) submissionTypeFilter.value = filterValue;
+  } catch (error) {
+    console.error("Admin live refresh:", error);
+  } finally {
+    requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+    adminLiveRefreshRunning = false;
+  }
+}
+
+function scheduleAdminLiveRefresh() {
+  clearTimeout(adminLiveRefreshTimer);
+  adminLiveRefreshTimer = setTimeout(() => {
+    void refreshAdminInPlace();
+  }, 180);
+}
+
+if (typeof EventSource !== "undefined") {
+  const adminLiveEvents = new EventSource("/api/admin/live/events");
+  adminLiveEvents.addEventListener("data-change", scheduleAdminLiveRefresh);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && !dashboard.hidden) scheduleAdminLiveRefresh();
+});
+
+/* =========================================
    INITIALIZE
 ========================================= */
 
