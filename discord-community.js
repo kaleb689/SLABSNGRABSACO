@@ -698,10 +698,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       if (hitsChannel) {
         try {
           const recent = await api(`/channels/${hitsChannel.id}/messages?limit=100`);
-          let header = recent.find(message => String(message.content || "").trim() === "ALL USERS HITS");
+          let header = recent.find(message => /ALL USERS HITS/i.test(String(message.content || "")));
           if (!header) {
             header = await api(`/channels/${hitsChannel.id}/messages`, "POST", {
-              content: "ALL USERS HITS",
+              content: "💎  **ALL USERS HITS**  💎\n━━━━━━━━━━━━━━━━━━━━",
               allowed_mentions: { parse: [] }
             });
           }
