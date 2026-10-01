@@ -36286,6 +36286,87 @@ async function getSuccessCheckouts() {
     : [];
 }
 
+const REMOVED_SUCCESS_PRODUCT =
+  "Pokemon Mega Evolution Chaos Rising Booster Box 36CT";
+
+function isDiscordSuccessRecord(record) {
+  if (String(record?.source || "") === "discord_success") {
+    return true;
+  }
+
+  const ids = [
+    record?.id,
+    ...(Array.isArray(record?.sourceIds) ? record.sourceIds : [])
+  ];
+
+  return ids.some(id =>
+    String(id || "").startsWith("discord:")
+  );
+}
+
+function visibleDiscordSuccessRecords(records) {
+  return (Array.isArray(records) ? records : [])
+    .filter(isDiscordSuccessRecord)
+    .map(record => {
+      const originalItems =
+        Array.isArray(record?.items)
+          ? record.items
+          : [];
+
+      const removedItems =
+        originalItems.filter(item =>
+          String(item?.name || "").trim().toLowerCase() ===
+            REMOVED_SUCCESS_PRODUCT.toLowerCase() &&
+          Number(item?.quantity || 0) === 1
+        );
+
+      if (!removedItems.length) {
+        return record;
+      }
+
+      const items =
+        originalItems.filter(item =>
+          !(
+            String(item?.name || "").trim().toLowerCase() ===
+              REMOVED_SUCCESS_PRODUCT.toLowerCase() &&
+            Number(item?.quantity || 0) === 1
+          )
+        );
+
+      if (!items.length) {
+        return null;
+      }
+
+      const removedValue =
+        removedItems.reduce(
+          (sum, item) =>
+            sum +
+            Math.max(0, Number(item?.price || 0)) *
+              Math.max(0, Number(item?.quantity || 0)),
+          0
+        );
+
+      const orderTotal =
+        removedValue > 0
+          ? Math.max(0, Number(record?.orderTotal || 0) - removedValue)
+          : Number(record?.orderTotal || 0);
+
+      return {
+        ...record,
+        items,
+        itemCount:
+          items.reduce(
+            (sum, item) =>
+              sum +
+              Math.max(0, Math.floor(Number(item?.quantity || 0))),
+            0
+          ),
+        orderTotal
+      };
+    })
+    .filter(Boolean);
+}
+
 // Read-only Discord channel import. Message authors are never attached to
 // customer accounts; the channel contributes anonymous community totals.
 const discordSuccessScan = { running: false, checkedAt: null, added: 0, skipped: 0, error: null, newestMessageId: null };
@@ -36738,7 +36819,10 @@ app.get(
     res.setHeader("Cache-Control", "no-store");
 
     try {
-      const records = await getSuccessCheckouts();
+      const records =
+        visibleDiscordSuccessRecords(
+          await getSuccessCheckouts()
+        );
       const products = new Map();
       let totalSpent = 0;
       let totalCheckouts = 0;
@@ -44972,14 +45056,10 @@ app.get(
         req.customerAccount.id;
 
       /*
-        Pull in any newly detected Target order
-        confirmations before building the dashboard.
-        This uses the same production record writer
-        that sends the privacy-safe Discord webhook.
+        Success is sourced only from the configured Discord
+        success channel. Customer mailbox scanning no longer
+        updates the customer-facing Success dashboard.
       */
-      await syncCustomerTargetSuccess(
-        accountId
-      );
 
       /*
         Success records are always filtered
@@ -44990,7 +45070,9 @@ app.get(
       */
 
       const records =
-        await getSuccessCheckouts();
+        visibleDiscordSuccessRecords(
+          await getSuccessCheckouts()
+        );
 
       const ownedRecords =
         records.filter(
