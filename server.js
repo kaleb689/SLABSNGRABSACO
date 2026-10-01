@@ -36565,7 +36565,7 @@ function discordCheckoutFromMessage(message, channelId) {
 
 
 const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
-const DISCORD_HIT_MIRROR_VERSION = 5;
+const DISCORD_HIT_MIRROR_VERSION = 6;
 let discordHitsChannelIdCache = null;
 let discordHitMirrorMutation = Promise.resolve();
 
@@ -36696,34 +36696,46 @@ async function mirrorDiscordCheckoutHits(imports, token) {
     const channelId = await resolveDiscordHitsChannelId(token);
     const state = await readJson(DISCORD_HIT_MIRROR_FILE, {});
 
+    // A version change is a one-time rebuild only. After this succeeds, the
+    // persisted source Discord message IDs are the permanent dedupe keys.
     if (Number(state.version || 0) !== DISCORD_HIT_MIRROR_VERSION) {
       await clearBotHitMessages(token, channelId);
 
-      const pokemon = [...imports]
-        .filter(entry => entry?.order?.retailer === "PKC" &&
-          /^\d{17,22}$/.test(String(entry?.sourceMessageId || "")))
+      const uniqueBySource = new Map();
+      for (const entry of imports) {
+        const sourceMessageId = String(entry?.sourceMessageId || "");
+        if (!/^\d{17,22}$/.test(sourceMessageId) || !entry?.order) continue;
+        if (!uniqueBySource.has(sourceMessageId)) uniqueBySource.set(sourceMessageId, entry);
+      }
+
+      const pokemon = [...uniqueBySource.values()]
+        .filter(entry => entry.order.retailer === "PKC")
         .sort((a, b) => new Date(b.order.checkoutAt || 0) - new Date(a.order.checkoutAt || 0))
-        .filter((entry, index, list) =>
-          list.findIndex(other => String(other.sourceMessageId) === String(entry.sourceMessageId)) === index)
         .slice(0, 11)
         .reverse();
 
-      state.version = DISCORD_HIT_MIRROR_VERSION;
-      state.startedAt = new Date().toISOString();
-      state.sent = {};
+      const rebuilt = {
+        version: DISCORD_HIT_MIRROR_VERSION,
+        startedAt: new Date().toISOString(),
+        sent: {}
+      };
+
+      // Persist the initialized state BEFORE posting. If a scan is retried,
+      // it cannot mistake the rebuild for a fresh historical import.
+      await writeJson(DISCORD_HIT_MIRROR_FILE, rebuilt);
 
       for (const entry of pokemon) {
+        const sourceMessageId = String(entry.sourceMessageId);
+        if (rebuilt.sent[sourceMessageId]) continue;
         const posted = await postDiscordHit(token, channelId, entry.order);
         if (!posted) continue;
-        state.sent[String(entry.sourceMessageId)] = {
+        rebuilt.sent[sourceMessageId] = {
           messageId: String(posted.id || ""),
           checkoutAt: entry.order.checkoutAt || null,
           retailer: entry.order.retailer || null
         };
-        await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+        await writeJson(DISCORD_HIT_MIRROR_FILE, rebuilt);
       }
-
-      await writeJson(DISCORD_HIT_MIRROR_FILE, state);
       return;
     }
 
@@ -36731,23 +36743,47 @@ async function mirrorDiscordCheckoutHits(imports, token) {
     if (!state.sent || typeof state.sent !== "object" || Array.isArray(state.sent)) state.sent = {};
     const startedAt = new Date(state.startedAt).getTime();
 
-    for (const entry of [...imports].sort((a, b) =>
-      new Date(a?.order?.checkoutAt || 0) - new Date(b?.order?.checkoutAt || 0))) {
+    const uniqueBySource = new Map();
+    for (const entry of imports) {
       const sourceMessageId = String(entry?.sourceMessageId || "");
-      const order = entry?.order;
-      if (!/^\d{17,22}$/.test(sourceMessageId) || !order || state.sent[sourceMessageId]) continue;
+      if (!/^\d{17,22}$/.test(sourceMessageId) || !entry?.order || state.sent[sourceMessageId]) continue;
+      if (!uniqueBySource.has(sourceMessageId)) uniqueBySource.set(sourceMessageId, entry);
+    }
 
-      const checkoutTime = new Date(order.checkoutAt || 0).getTime();
-      if (!Number.isFinite(checkoutTime) || checkoutTime < startedAt) continue;
+    for (const entry of [...uniqueBySource.values()].sort((a, b) =>
+      new Date(a.order.checkoutAt || 0) - new Date(b.order.checkoutAt || 0))) {
+      const sourceMessageId = String(entry.sourceMessageId);
+      const checkoutTime = new Date(entry.order.checkoutAt || 0).getTime();
+      if (!Number.isFinite(checkoutTime) || checkoutTime < startedAt || state.sent[sourceMessageId]) continue;
 
-      const posted = await postDiscordHit(token, channelId, order);
-      if (!posted) continue;
+      // Reserve this exact source ID before the POST. This prevents repeated
+      // scanner invocations from creating a second public hit for one webhook.
       state.sent[sourceMessageId] = {
-        messageId: String(posted.id || ""),
-        checkoutAt: order.checkoutAt || null,
-        retailer: order.retailer || null
+        messageId: "",
+        checkoutAt: entry.order.checkoutAt || null,
+        retailer: entry.order.retailer || null,
+        posting: true
       };
       await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+
+      try {
+        const posted = await postDiscordHit(token, channelId, entry.order);
+        if (!posted) {
+          delete state.sent[sourceMessageId];
+          await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+          continue;
+        }
+        state.sent[sourceMessageId] = {
+          messageId: String(posted.id || ""),
+          checkoutAt: entry.order.checkoutAt || null,
+          retailer: entry.order.retailer || null
+        };
+        await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+      } catch (error) {
+        delete state.sent[sourceMessageId];
+        await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+        throw error;
+      }
     }
   });
 }
