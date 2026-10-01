@@ -36558,7 +36558,7 @@ function discordCheckoutFromMessage(message, channelId) {
 
 
 const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
-const DISCORD_HIT_MIRROR_VERSION = 2;
+const DISCORD_HIT_MIRROR_VERSION = 3;
 let discordHitsChannelIdCache = null;
 let discordHitMirrorMutation = Promise.resolve();
 
@@ -36639,13 +36639,21 @@ function publicDiscordHitPayload(order) {
     ]
   };
 
-  const imageEmbeds = items
-    .filter(item => item.imageUrl)
-    .slice(0, 9)
-    .map(item => ({
+  // Discord allows up to 10 embeds per message. Keep the primary checkout
+  // card plus up to nine unique product thumbnails so multi-item checkouts
+  // stay in one message without repeating the same product image.
+  const seenImageUrls = new Set();
+  const imageEmbeds = [];
+  for (const item of items) {
+    const imageUrl = String(item.imageUrl || "").trim();
+    if (!imageUrl || seenImageUrls.has(imageUrl)) continue;
+    seenImageUrls.add(imageUrl);
+    imageEmbeds.push({
       color: 0x00ff00,
-      thumbnail: { url: item.imageUrl }
-    }));
+      thumbnail: { url: imageUrl }
+    });
+    if (imageEmbeds.length >= 9) break;
+  }
 
   return { embeds: [primary, ...imageEmbeds], allowed_mentions: { parse: [] } };
 }
