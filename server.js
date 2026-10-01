@@ -36355,9 +36355,28 @@ function isDiscordSuccessRecord(record) {
   );
 }
 
-function visibleDiscordSuccessRecords(records) {
+function discordRecordChannelId(record) {
+  const ids = [
+    record?.id,
+    ...(Array.isArray(record?.sourceIds) ? record.sourceIds : [])
+  ];
+  for (const id of ids) {
+    const match = String(id || "").match(/^discord:(\d{17,22}):/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function visibleDiscordSuccessRecords(records, excludedChannelId = null) {
+  const excluded = /^\d{17,22}$/.test(String(excludedChannelId || ""))
+    ? String(excludedChannelId)
+    : null;
+
   return (Array.isArray(records) ? records : [])
-    .filter(isDiscordSuccessRecord)
+    .filter(record =>
+      isDiscordSuccessRecord(record) &&
+      (!excluded || discordRecordChannelId(record) !== excluded)
+    )
     .map(record => {
       const originalItems =
         Array.isArray(record?.items)
@@ -36482,7 +36501,18 @@ async function discordCheckoutSourceChannels() {
   }
   if (found.length === 1) channels.push(found[0]);
   else console.error('Checkout source channel discovery:', found.length ? 'multiple_success_webhooks_channels_set_explicit_id' : 'success_webhooks_channel_not_accessible_to_bot');
-  checkoutSourceChannelsCache = { channels: [...new Set(channels)], webhookSourceFound: found.length === 1 };
+
+  let hitsChannelId = null;
+  try {
+    hitsChannelId = await resolveDiscordHitsChannelId(config.token);
+  } catch {
+    hitsChannelId = null;
+  }
+
+  checkoutSourceChannelsCache = {
+    channels: [...new Set(channels)].filter(id => !hitsChannelId || String(id) !== String(hitsChannelId)),
+    webhookSourceFound: found.length === 1
+  };
   return { token: config.token, ...checkoutSourceChannelsCache };
 }
 
@@ -37176,9 +37206,18 @@ app.get(
     res.setHeader("Cache-Control", "no-store");
 
     try {
+      let hitsChannelId = null;
+      try {
+        const token = discordSuccessConfig().token;
+        if (token) hitsChannelId = await resolveDiscordHitsChannelId(token);
+      } catch {
+        hitsChannelId = null;
+      }
+
       const records =
         visibleDiscordSuccessRecords(
-          await getSuccessCheckouts()
+          await getSuccessCheckouts(),
+          hitsChannelId
         );
       const products = new Map();
       let totalSpent = 0;
@@ -45426,9 +45465,18 @@ app.get(
         The browser never supplies an account ID.
       */
 
+      let hitsChannelId = null;
+      try {
+        const token = discordSuccessConfig().token;
+        if (token) hitsChannelId = await resolveDiscordHitsChannelId(token);
+      } catch {
+        hitsChannelId = null;
+      }
+
       const records =
         visibleDiscordSuccessRecords(
-          await getSuccessCheckouts()
+          await getSuccessCheckouts(),
+          hitsChannelId
         );
 
       const ownedRecords =
