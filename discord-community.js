@@ -180,7 +180,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -2174,6 +2174,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           }
           if (packet.t === "INTERACTION_CREATE") void interaction(packet);
           if (packet.t === "MESSAGE_CREATE") void (async () => {
+            const successChannelId = String(await getChannelId());
+            const checkoutSourceId = String(process.env.DISCORD_CHECKOUT_SOURCE_CHANNEL_ID || "").trim();
+            if (
+              typeof onSuccessMessage === "function" &&
+              [successChannelId, checkoutSourceId].includes(String(packet.d?.channel_id || ""))
+            ) {
+              onSuccessMessage(packet.d);
+            }
             await onDropPost(packet.d);
             if (!await onPublicMessage(packet.d)) await onQuestionMessage(packet.d);
           })().catch(error => console.error("Discord public message handling:", error.message));
