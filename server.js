@@ -36558,6 +36558,7 @@ function discordCheckoutFromMessage(message, channelId) {
 
 
 const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
+const DISCORD_HIT_MIRROR_VERSION = 2;
 let discordHitsChannelIdCache = null;
 let discordHitMirrorMutation = Promise.resolve();
 
@@ -36567,19 +36568,36 @@ function discordHitMirrorState(task) {
   return next;
 }
 
+async function discordBotJson(token, route, options = {}, retries = 5) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const response = await fetch(`https://discord.com/api/v10${route}`, {
+      ...options,
+      headers: {
+        Authorization: `Bot ${token}`,
+        ...(options.headers || {})
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+    if (response.status === 429 && attempt < retries) {
+      const limited = await response.json().catch(() => ({}));
+      const delay = Math.max(350, Math.ceil(Number(limited.retry_after || 0.5) * 1000) + 100);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      continue;
+    }
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`Discord request failed (HTTP ${response.status}) ${detail.slice(0, 200)}`);
+    }
+    return response.status === 204 ? null : response.json();
+  }
+  throw new Error("Discord request remained rate limited.");
+}
+
 async function resolveDiscordHitsChannelId(token) {
   if (discordHitsChannelIdCache) return discordHitsChannelIdCache;
-  const get = async route => {
-    const response = await fetch(`https://discord.com/api/v10${route}`, {
-      headers: { Authorization: `Bot ${token}` },
-      signal: AbortSignal.timeout(10000)
-    });
-    if (!response.ok) throw new Error(`Discord hits channel lookup failed (HTTP ${response.status}).`);
-    return response.json();
-  };
   const found = [];
-  for (const guild of await get("/users/@me/guilds")) {
-    for (const channel of await get(`/guilds/${guild.id}/channels`)) {
+  for (const guild of await discordBotJson(token, "/users/@me/guilds")) {
+    for (const channel of await discordBotJson(token, `/guilds/${guild.id}/channels`)) {
       const normalized = String(channel.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
       if (channel.type === 0 && normalized === "slabsngrabsacohits") found.push(String(channel.id));
     }
@@ -36607,26 +36625,81 @@ function publicDiscordHitPayload(order) {
   const total = Number(order?.orderTotal);
   const firstImage = items.find(item => item.imageUrl)?.imageUrl || null;
   const embed = {
+    color: 0x2ecc71,
     fields: [
       { name: "Product", value: items.slice(0, 10).map(item => item.name).join("\n").slice(0, 1024) || "Item", inline: false },
       { name: "Item Count", value: String(itemCount), inline: true },
-      { name: "Price Paid", value: Number.isFinite(total) && total >= 0 ? `${total.toFixed(2)}` : "$0.00", inline: true }
+      { name: "Price Paid", value: Number.isFinite(total) && total >= 0 ? `$${total.toFixed(2)}` : "$0.00", inline: true }
     ]
   };
   if (firstImage) embed.image = { url: firstImage };
   return { embeds: [embed], allowed_mentions: { parse: [] } };
 }
 
+async function postDiscordHit(token, channelId, order) {
+  const payload = publicDiscordHitPayload(order);
+  if (!payload) return null;
+  return discordBotJson(token, `/channels/${channelId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function clearBotHitMessages(token, channelId) {
+  const me = await discordBotJson(token, "/users/@me");
+  let before = "";
+  for (let page = 0; page < 10; page++) {
+    const messages = await discordBotJson(token,
+      `/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
+    if (!Array.isArray(messages) || !messages.length) break;
+    for (const message of messages) {
+      const isBotHit = String(message.author?.id || "") === String(me.id) &&
+        String(message.content || "").trim() !== "ALL USERS HITS";
+      if (!isBotHit) continue;
+      await discordBotJson(token, `/channels/${channelId}/messages/${message.id}`, { method: "DELETE" });
+    }
+    if (messages.length < 100) break;
+    before = messages[messages.length - 1].id;
+  }
+}
+
 async function mirrorDiscordCheckoutHits(imports, token) {
   if (!token || !Array.isArray(imports) || !imports.length) return;
   await discordHitMirrorState(async () => {
+    const channelId = await resolveDiscordHitsChannelId(token);
     const state = await readJson(DISCORD_HIT_MIRROR_FILE, {});
+
+    if (Number(state.version || 0) !== DISCORD_HIT_MIRROR_VERSION) {
+      await clearBotHitMessages(token, channelId);
+      state.version = DISCORD_HIT_MIRROR_VERSION;
+      state.startedAt = new Date().toISOString();
+      state.sent = {};
+
+      const latestPokemon = [...imports]
+        .filter(entry => entry?.order?.retailer === "PKC" && /^\d{17,22}$/.test(String(entry?.sourceMessageId || "")))
+        .sort((a, b) => new Date(b.order.checkoutAt || 0) - new Date(a.order.checkoutAt || 0))
+        .filter((entry, index, list) =>
+          list.findIndex(other => String(other.sourceMessageId) === String(entry.sourceMessageId)) === index)
+        .slice(0, 11)
+        .reverse();
+
+      for (const entry of latestPokemon) {
+        const posted = await postDiscordHit(token, channelId, entry.order);
+        if (!posted) continue;
+        state.sent[String(entry.sourceMessageId)] = {
+          messageId: String(posted.id || ""),
+          checkoutAt: entry.order.checkoutAt || null,
+          retailer: entry.order.retailer || null
+        };
+        await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+      }
+      return;
+    }
+
     if (!state.startedAt) state.startedAt = new Date().toISOString();
     if (!state.sent || typeof state.sent !== "object" || Array.isArray(state.sent)) state.sent = {};
     const startedAt = new Date(state.startedAt).getTime();
-    const latestPokemonBackfillCutoff = startedAt - (72 * 60 * 60 * 1000);
-    const channelId = await resolveDiscordHitsChannelId(token);
-    let changed = false;
 
     for (const entry of imports) {
       const sourceMessageId = String(entry?.sourceMessageId || "");
@@ -36634,36 +36707,15 @@ async function mirrorDiscordCheckoutHits(imports, token) {
       if (!/^\d{17,22}$/.test(sourceMessageId) || !order || state.sent[sourceMessageId]) continue;
 
       const checkoutTime = new Date(order.checkoutAt || 0).getTime();
-      const isFutureFeed = Number.isFinite(checkoutTime) && checkoutTime >= startedAt - (5 * 60 * 1000);
-      const isLatestPokemonBackfill =
-        order.retailer === "PKC" &&
-        Number.isFinite(checkoutTime) &&
-        checkoutTime >= latestPokemonBackfillCutoff;
+      if (!Number.isFinite(checkoutTime) || checkoutTime < startedAt - (5 * 60 * 1000)) continue;
 
-      if (!isFutureFeed && !isLatestPokemonBackfill) continue;
-
-      const payload = publicDiscordHitPayload(order);
-      if (!payload) continue;
-      const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-        method: "POST",
-        headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(15000)
-      });
-      if (!response.ok) {
-        const detail = await response.text().catch(() => "");
-        throw new Error(`Discord hits post failed (HTTP ${response.status}) ${detail.slice(0, 200)}`);
-      }
-      const posted = await response.json();
+      const posted = await postDiscordHit(token, channelId, order);
+      if (!posted) continue;
       state.sent[sourceMessageId] = {
         messageId: String(posted.id || ""),
         checkoutAt: order.checkoutAt || null,
         retailer: order.retailer || null
       };
-      changed = true;
-    }
-
-    if (changed || !await fs.access(DISCORD_HIT_MIRROR_FILE).then(() => true).catch(() => false)) {
       await writeJson(DISCORD_HIT_MIRROR_FILE, state);
     }
   });
