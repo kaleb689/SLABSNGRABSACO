@@ -36527,14 +36527,8 @@ function discordCheckoutFromMessage(message, channelId) {
     const priceCents = validPrice ? Math.round(Number(money) * 100) : null;
     if (priceCents === null || !Number.isSafeInteger(priceCents)) completePrices = false;
     else subtotalCents += entry.priceIsLineTotal ? priceCents : priceCents * quantity;
-    items.push({
-      name,
-      quantity,
-      price: priceCents === null ? 0 : priceCents / 100 / (entry.priceIsLineTotal ? quantity : 1),
-      sourcePrice: validPrice ? money : "",
-      sourceQuantity: String(entry.quantity || quantity),
-      imageUrl: publicSuccessImageUrl(embed?.thumbnail?.url || embed?.image?.url)
-    });
+    items.push({ name, quantity, price: priceCents === null ? 0 : priceCents / 100 / (entry.priceIsLineTotal ? quantity : 1),
+      imageUrl: publicSuccessImageUrl(embed?.thumbnail?.url || embed?.image?.url) });
   }
   for (const line of numbered.size ? [] : body.split(/\n+/)) {
     const match = line.match(/^\s*(?:[•*\-]\s*)?(.{5,120}?)\s*(?:[×xX]\s*(\d+)|\(\s*(\d+)\s*\))\s*$/);
@@ -36545,7 +36539,7 @@ function discordCheckoutFromMessage(message, channelId) {
     }
   }
   if (!items.length) return null;
-  const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(fieldLabel(field.name)))?.value || "";
+  const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(field.name || ""))?.value || "";
   const totalField = (embed?.fields || []).find(field => /total|spent|amount/i.test(field.name || ""))?.value ||
     body.match(/(?:total|spent|amount)\s*[:$]\s*\$?([\d,.]+)/i)?.[1] || "";
   const totalMatch = String(totalField).match(/\$?([\d,]+\.\d{2})/);
@@ -36554,7 +36548,6 @@ function discordCheckoutFromMessage(message, channelId) {
     customerAccountId: null,
     orderNumber: discordCheckoutIdentity(message).orderNumber,
     retailer: normalizeSuccessRetailer(retailer),
-    sourceSite: fieldValue(retailer),
     checkoutAt: message.timestamp || new Date().toISOString(),
     orderTotal: totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : completePrices ? subtotalCents / 100 : 0,
     orderTotalBasis: totalMatch ? "order_total" : completePrices ? "item_subtotal" : "unknown",
@@ -36562,6 +36555,7 @@ function discordCheckoutFromMessage(message, channelId) {
     items, status: "confirmed"
   };
 }
+
 
 
 const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
