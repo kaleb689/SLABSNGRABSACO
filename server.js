@@ -25,6 +25,57 @@ import { safeAddressVariants, safeAddressVariantKey, defaultJigVariants } from "
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+const adminLiveDataListeners = new Set();
+const customerLiveDataListeners = new Set();
+
+function sendLiveDataEvent(listeners, detail = "data") {
+  const payload = JSON.stringify({
+    detail,
+    at: new Date().toISOString()
+  });
+
+  for (const response of listeners) {
+    try {
+      response.write(`event: data-change\ndata: ${payload}\n\n`);
+    } catch {
+      listeners.delete(response);
+    }
+  }
+}
+
+function broadcastLiveDataChange(detail = "data") {
+  sendLiveDataEvent(adminLiveDataListeners, detail);
+  sendLiveDataEvent(customerLiveDataListeners, detail);
+}
+
+/*
+  Any successful customer/admin mutation should become visible in other
+  open sessions without a full page reload. Read requests never emit an
+  update, which prevents dashboard refresh loops.
+*/
+app.use((req, res, next) => {
+  const method = String(req.method || "").toUpperCase();
+  const mutation =
+    !["GET", "HEAD", "OPTIONS"].includes(method) &&
+    (
+      req.path.startsWith("/api/admin/") ||
+      req.path.startsWith("/api/account/") ||
+      req.path === "/webhook" ||
+      req.path.startsWith("/api/webhook") ||
+      req.path.startsWith("/stripe")
+    );
+
+  if (mutation) {
+    res.once("finish", () => {
+      if (res.statusCode >= 200 && res.statusCode < 400) {
+        broadcastLiveDataChange(`${method} ${req.path}`);
+      }
+    });
+  }
+
+  next();
+});
+
 /*
   Render sits behind a trusted reverse proxy.
   This makes req.ip and req.protocol use the first trusted proxy hop
@@ -36566,6 +36617,26 @@ function discordCheckoutAttribution(order, identity, candidates) {
     'managedAssignmentId', 'managedAssignmentType'].filter(key => match[key] != null).map(key => [key, match[key]]));
 }
 
+let discordSuccessScanQueued = false;
+
+function queueDiscordSuccessScan(delay = 75) {
+  if (discordSuccessScanQueued) return;
+  discordSuccessScanQueued = true;
+
+  const timer = setTimeout(async () => {
+    discordSuccessScanQueued = false;
+
+    if (discordSuccessScan.running) {
+      queueDiscordSuccessScan(350);
+      return;
+    }
+
+    await scanDiscordSuccessChannel();
+  }, Math.max(0, Number(delay) || 0));
+
+  timer.unref?.();
+}
+
 async function scanDiscordSuccessChannel() {
   if (discordSuccessScan.running) return false;
   discordSuccessScan.running = true;
@@ -36616,6 +36687,7 @@ async function scanDiscordSuccessChannel() {
         await saveSuccessCheckouts(existing);
         for (const accountId of new Set(existing.map(record => record.customerAccountId).filter(Boolean))) announceSuccessCheckout(accountId);
         if (!attributed) for (const listener of publicSuccessListeners) listener.write("event: checkout\ndata: {}\n\n");
+        broadcastLiveDataChange("discord-success");
       }
     });
     discordSuccessScan.added = added;
@@ -36698,6 +36770,14 @@ app.get("/api/account/success/events", requireCustomer, (req, res) => {
   req.on("close", () => {
     if (!listeners.size) customerSuccessListeners.delete(accountId);
   });
+});
+
+app.get("/api/account/live/events", requireCustomer, (req, res) => {
+  openSuccessEventStream(req, res, customerLiveDataListeners);
+});
+
+app.get("/api/admin/live/events", requireAdmin, (req, res) => {
+  openSuccessEventStream(req, res, adminLiveDataListeners);
 });
 
 function isPublicSuccessProduct(name) {
@@ -46232,7 +46312,8 @@ await initializeArrayFile(
           },
           dataDir: DATA_DIR,
           aiKey: String(process.env.OPENAI_API_KEY || "").trim(),
-          geminiKey: String(process.env.GEMINI_API_KEY || "").trim()
+          geminiKey: String(process.env.GEMINI_API_KEY || "").trim(),
+          onSuccessMessage: () => queueDiscordSuccessScan(50)
         });
         if (discordSuccessConfig().token) {
           setTimeout(() => scanDiscordSuccessChannel(), 12000);
