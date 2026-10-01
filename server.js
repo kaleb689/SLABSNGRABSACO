@@ -36556,6 +36556,119 @@ function discordCheckoutFromMessage(message, channelId) {
   };
 }
 
+
+const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
+let discordHitsChannelIdCache = null;
+let discordHitMirrorMutation = Promise.resolve();
+
+function discordHitMirrorState(task) {
+  const next = discordHitMirrorMutation.then(task);
+  discordHitMirrorMutation = next.catch(() => {});
+  return next;
+}
+
+async function resolveDiscordHitsChannelId(token) {
+  if (discordHitsChannelIdCache) return discordHitsChannelIdCache;
+  const get = async route => {
+    const response = await fetch(`https://discord.com/api/v10${route}`, {
+      headers: { Authorization: `Bot ${token}` },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) throw new Error(`Discord hits channel lookup failed (HTTP ${response.status}).`);
+    return response.json();
+  };
+  const found = [];
+  for (const guild of await get("/users/@me/guilds")) {
+    for (const channel of await get(`/guilds/${guild.id}/channels`)) {
+      const normalized = String(channel.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (channel.type === 0 && normalized === "slabsngrabsacohits") found.push(String(channel.id));
+    }
+  }
+  if (found.length !== 1) {
+    throw new Error(found.length
+      ? "Multiple slabsngrabsaco-hits channels are visible to the bot."
+      : "The slabsngrabsaco-hits channel is not visible to the bot.");
+  }
+  discordHitsChannelIdCache = found[0];
+  return found[0];
+}
+
+function publicDiscordHitPayload(order) {
+  const items = (Array.isArray(order?.items) ? order.items : [])
+    .map(item => ({
+      name: publicSuccessProductName(item?.name),
+      quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
+      imageUrl: publicSuccessProductImage(item?.name, order?.retailer, item?.imageUrl)
+    }))
+    .filter(item => item.name && !/@|\b(?:order|address|phone|email|account|password|card|ship(?:ping)? to|username)\b/i.test(item.name));
+
+  if (!items.length) return null;
+  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+  const total = Number(order?.orderTotal);
+  const firstImage = items.find(item => item.imageUrl)?.imageUrl || null;
+  const embed = {
+    fields: [
+      { name: "Product", value: items.slice(0, 10).map(item => item.name).join("\n").slice(0, 1024) || "Item", inline: false },
+      { name: "Item Count", value: String(itemCount), inline: true },
+      { name: "Price Paid", value: Number.isFinite(total) && total >= 0 ? `${total.toFixed(2)}` : "$0.00", inline: true }
+    ]
+  };
+  if (firstImage) embed.image = { url: firstImage };
+  return { embeds: [embed], allowed_mentions: { parse: [] } };
+}
+
+async function mirrorDiscordCheckoutHits(imports, token) {
+  if (!token || !Array.isArray(imports) || !imports.length) return;
+  await discordHitMirrorState(async () => {
+    const state = await readJson(DISCORD_HIT_MIRROR_FILE, {});
+    if (!state.startedAt) state.startedAt = new Date().toISOString();
+    if (!state.sent || typeof state.sent !== "object" || Array.isArray(state.sent)) state.sent = {};
+    const startedAt = new Date(state.startedAt).getTime();
+    const latestPokemonBackfillCutoff = startedAt - (72 * 60 * 60 * 1000);
+    const channelId = await resolveDiscordHitsChannelId(token);
+    let changed = false;
+
+    for (const entry of imports) {
+      const sourceMessageId = String(entry?.sourceMessageId || "");
+      const order = entry?.order;
+      if (!/^\d{17,22}$/.test(sourceMessageId) || !order || state.sent[sourceMessageId]) continue;
+
+      const checkoutTime = new Date(order.checkoutAt || 0).getTime();
+      const isFutureFeed = Number.isFinite(checkoutTime) && checkoutTime >= startedAt - (5 * 60 * 1000);
+      const isLatestPokemonBackfill =
+        order.retailer === "PKC" &&
+        Number.isFinite(checkoutTime) &&
+        checkoutTime >= latestPokemonBackfillCutoff;
+
+      if (!isFutureFeed && !isLatestPokemonBackfill) continue;
+
+      const payload = publicDiscordHitPayload(order);
+      if (!payload) continue;
+      const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000)
+      });
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        throw new Error(`Discord hits post failed (HTTP ${response.status}) ${detail.slice(0, 200)}`);
+      }
+      const posted = await response.json();
+      state.sent[sourceMessageId] = {
+        messageId: String(posted.id || ""),
+        checkoutAt: order.checkoutAt || null,
+        retailer: order.retailer || null
+      };
+      changed = true;
+    }
+
+    if (changed || !await fs.access(DISCORD_HIT_MIRROR_FILE).then(() => true).catch(() => false)) {
+      await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+    }
+  });
+}
+
 function discordCheckoutIdentity(message) {
   const fields = (message.embeds || []).flatMap(embed => embed.fields || []);
   const value = pattern => String(fields.find(field => pattern.test(String(field.name).replace(/[*_`]/g, '').trim()))?.value || '').replace(/[*_`|]/g, '').trim();
@@ -36664,7 +36777,7 @@ async function scanDiscordSuccessChannel() {
         if (!order) { skipped++; continue; }
         order.items = order.items.map(item => ({ ...item,
           imageUrl: publicSuccessProductImage(item.name, order.retailer, item.imageUrl) }));
-        imports.push({ order, attribution: discordCheckoutAttribution(order, discordCheckoutIdentity(message), candidates) });
+        imports.push({ order, sourceMessageId: String(message.id), attribution: discordCheckoutAttribution(order, discordCheckoutIdentity(message), candidates) });
       }
       if (messages.length < 100) break;
       before = messages[messages.length - 1].id;
@@ -36689,6 +36802,10 @@ async function scanDiscordSuccessChannel() {
         if (!attributed) for (const listener of publicSuccessListeners) listener.write("event: checkout\ndata: {}\n\n");
         broadcastLiveDataChange("discord-success");
       }
+    });
+    await mirrorDiscordCheckoutHits(imports, token).catch(error => {
+      console.error("Discord hits mirror failed:", error?.message || error?.code || "discord_hits_mirror_error");
+      discordSuccessScan.hitsError = error?.message || "Discord hits mirror failed.";
     });
     discordSuccessScan.added = added;
     discordSuccessScan.updated = updated;
