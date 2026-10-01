@@ -694,6 +694,24 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     let diamondError = null;
     try {
       const current = await api(`/guilds/${guildId}/channels`);
+      const hitsChannel = current.find(item => item.type === 0 && normalizeName(item.name) === "slabsngrabsacohits");
+      if (hitsChannel) {
+        try {
+          const recent = await api(`/channels/${hitsChannel.id}/messages?limit=100`);
+          let header = recent.find(message => String(message.content || "").trim() === "ALL USERS HITS");
+          if (!header) {
+            header = await api(`/channels/${hitsChannel.id}/messages`, "POST", {
+              content: "ALL USERS HITS",
+              allowed_mentions: { parse: [] }
+            });
+          }
+          if (!header.pinned) {
+            await api(`/channels/${hitsChannel.id}/pins/${header.id}`, "PUT");
+          }
+        } catch (error) {
+          console.error("Discord hits pinned header:", error.message);
+        }
+      }
       const targets = [
         ["general", "generalchat"], ["1on1"], ["questions"], ["slabsngrabsacohits"]
       ];
