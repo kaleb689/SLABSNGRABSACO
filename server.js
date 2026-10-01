@@ -36616,24 +36616,38 @@ function publicDiscordHitPayload(order) {
     .map(item => ({
       name: publicSuccessProductName(item?.name),
       quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
+      price: Math.max(0, Number(item?.price) || 0),
       imageUrl: publicSuccessProductImage(item?.name, order?.retailer, item?.imageUrl)
     }))
-    .filter(item => item.name && !/@|\b(?:order|address|phone|email|account|password|card|ship(?:ping)? to|username)\b/i.test(item.name));
+    .filter(item => item.name && !/@|\b(?:order|address|phone|email|account|password|card|ship(?:ping)? to|username|mode)\b/i.test(item.name));
 
   if (!items.length) return null;
-  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+
   const total = Number(order?.orderTotal);
-  const firstImage = items.find(item => item.imageUrl)?.imageUrl || null;
-  const embed = {
-    color: 0x2ecc71,
+  const site = order?.retailer === "PKC" ? "Pokemon Center US" : (order?.retailer || "Retailer");
+  const quantity = items.reduce((sum, item) => sum + item.quantity, 0);
+  const productText = items.slice(0, 10).map(item => item.name).join("\n").slice(0, 1024);
+
+  const primary = {
+    title: "Successful Checkout!",
+    color: 0x00ff00,
     fields: [
-      { name: "Product", value: items.slice(0, 10).map(item => item.name).join("\n").slice(0, 1024) || "Item", inline: false },
-      { name: "Item Count", value: String(itemCount), inline: true },
-      { name: "Price Paid", value: Number.isFinite(total) && total >= 0 ? `$${total.toFixed(2)}` : "$0.00", inline: true }
+      { name: "Site", value: String(site).slice(0, 1024), inline: false },
+      { name: items.length === 1 ? "Product (1)" : "Product", value: productText || "Item", inline: false },
+      { name: items.length === 1 ? "Price (1)" : "Price", value: Number.isFinite(total) && total >= 0 ? total.toFixed(2) : "0.00", inline: false },
+      { name: items.length === 1 ? "Quantity (1)" : "Quantity", value: String(quantity), inline: false }
     ]
   };
-  if (firstImage) embed.image = { url: firstImage };
-  return { embeds: [embed], allowed_mentions: { parse: [] } };
+
+  const imageEmbeds = items
+    .filter(item => item.imageUrl)
+    .slice(0, 9)
+    .map(item => ({
+      color: 0x00ff00,
+      thumbnail: { url: item.imageUrl }
+    }));
+
+  return { embeds: [primary, ...imageEmbeds], allowed_mentions: { parse: [] } };
 }
 
 async function postDiscordHit(token, channelId, order) {
