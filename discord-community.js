@@ -1625,41 +1625,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     return visible;
   }
   async function onPublicMessage(d) {
-    if (d.guild_id !== guildId || supportStaff(d.member, String(d.author?.id || "")) ||
-      d.author?.id === appId || !d.content ||
-      !containsSensitiveData(d.content) || !await publiclyVisibleChannel(d.channel_id)) return false;
-    try {
-      await api(`/channels/${d.channel_id}/messages/${d.id}`, "DELETE");
-    } catch (error) {
-      if (/HTTP 403/.test(error.message)) {
-        try {
-          const channel = await api(`/channels/${d.channel_id}`);
-          const botOverwrite = (channel.permission_overwrites || []).find(item => item.id === appId);
-          await api(`/channels/${d.channel_id}/permissions/${appId}`, "PUT", {
-            type: 1,
-            allow: (BigInt(botOverwrite?.allow || "0") | 8192n | 1024n).toString(),
-            deny: (BigInt(botOverwrite?.deny || "0") & ~8192n).toString()
-          });
-          await api(`/channels/${d.channel_id}/messages/${d.id}`, "DELETE");
-        } catch (retryError) {
-          discordCommunityStatus.error = `Public message privacy cleanup: ${retryError.message}`;
-          console.error("Discord public privacy cleanup:", retryError.message);
-          return true;
-        }
-      } else {
-        discordCommunityStatus.error = `Public message privacy cleanup: ${error.message}`;
-        console.error("Discord public privacy cleanup:", error.message);
-        return true;
-      }
-    }
-    const userId = String(d.author?.id || "");
-    if (/^\d{17,22}$/.test(userId)) {
-      await sendMessage(d.channel_id,
-        `${mention(userId)} your message was removed because it contained sensitive information. Please share those details only in a private ticket with the owner or Support Staff. You can still ask general questions here without posting the actual details.`,
-        { users: [userId], components: [{ type: 1, components: [{ type: 2, style: 1, label: "Create private ticket", custom_id: `ticket:moderation:${userId}` }] }] })
-        .catch(error => console.error("Discord public privacy notice:", error.message));
-    }
-    return true;
+    // Public message deletion is disabled. Discord users may post all message content.
+    return false;
   }
   const skuMenusFile = path.join(dataDir, "discord-sku-controls.json");
   const skuSelectionsFile = path.join(dataDir, "discord-sku-selections.json");
