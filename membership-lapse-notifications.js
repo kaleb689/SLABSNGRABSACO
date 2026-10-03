@@ -27,7 +27,7 @@ function fmt(value) {
 function discordId(account) {
   return String(account?.discordUserId || account?.discordId || "").trim();
 }
-async function dm(token, userId, embed) {
+async function dm(token, userId, embed, components = []) {
   if (!token || !/^\d{17,22}$/.test(userId)) return false;
   const headers = { Authorization: `Bot ${token}`, "Content-Type": "application/json" };
   const opened = await fetch(`${API}/users/@me/channels`, {
@@ -38,7 +38,7 @@ async function dm(token, userId, embed) {
   const channel = await opened.json();
   const sent = await fetch(`${API}/channels/${channel.id}/messages`, {
     method: "POST", headers,
-    body: JSON.stringify({ embeds: [embed], allowed_mentions: { parse: [] } }),
+    body: JSON.stringify({ embeds: [embed], components, allowed_mentions: { parse: [] } }),
     signal: AbortSignal.timeout(10000)
   });
   if (!sent.ok) throw new Error(`DM send HTTP ${sent.status}`);
@@ -67,7 +67,7 @@ function reminder(kind, item, end, stage) {
   };
 }
 
-export function startMembershipLapseNotificationScheduler({ dataDir, token, adminWebhookUrl = "" }) {
+export function startMembershipLapseNotificationScheduler({ dataDir, token, adminWebhookUrl = "", getRentalExtensionPrices = null }) {
   token = String(token || "").trim();
   adminWebhookUrl = String(adminWebhookUrl || "").trim();
   if (!token && !adminWebhookUrl) return;
@@ -131,7 +131,16 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
             const notice = `${base}:${end.toISOString()}:${stage}`;
             if (!state[notice]) {
               try {
-                if (await dm(token, discordId(account), reminder(kind, label(record, kind), end, stage))) {
+                let components = [];
+                if (kind === "rented" && typeof getRentalExtensionPrices === "function") {
+                  const prices = await getRentalExtensionPrices();
+                  const managedId = String(record?.managedAccountId || record?.rentedMembershipId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+                  components = [{ type: 1, components: [
+                    { type: 2, style: 1, label: `Extend 1 Week — ${Number(prices.week).toFixed(2)}`, custom_id: `renew:quote:rented:${managedId}:1_week:${Number(prices.week).toFixed(2)}` },
+                    { type: 2, style: 1, label: `Extend 1 Month — ${Number(prices.month).toFixed(2)}`, custom_id: `renew:quote:rented:${managedId}:1_month:${Number(prices.month).toFixed(2)}` }
+                  ] }];
+                }
+                if (await dm(token, discordId(account), reminder(kind, label(record, kind), end, stage), components)) {
                   state[notice] = new Date().toISOString(); changed = true;
                 }
               } catch (e) { console.error(`${kind} lapse DM:`, e.message); }

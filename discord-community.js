@@ -41,12 +41,10 @@ export async function sendDiscordLapseChecklistAlert({
       }],
       components: [{
         type: 1,
-        components: [{
-          type: 2,
-          style: 3,
-          label: "Close Notification",
-          custom_id: `lapse:close:${String(trackingId || "done").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 60)}`
-        }]
+        components: [
+          { type: 2, style: 1, label: "Extend Access", custom_id: `lapse:extend:${String(trackingId || "done").replace(/[^a-zA-Z0-9:_-]/g, "").slice(0, 70)}` },
+          { type: 2, style: 3, label: "Close Notification", custom_id: `lapse:close:${String(trackingId || "done").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 60)}` }
+        ]
       }]
     }
   );
@@ -229,7 +227,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onExtendLapsedProfile, onCreateRentalExtensionCheckout }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -242,25 +240,32 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
     return response.status === 204 ? null : response.json();
   }
-  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   async function cleanupLegacyLapseAlerts() {
-    if (!adminChannelId) return 0;
-    let removed = 0, before = "";
-    for (let page = 0; page < 10; page += 1) {
-      const messages = await api(`/channels/${adminChannelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
-      if (!Array.isArray(messages) || !messages.length) break;
-      for (const message of messages) {
-        const embed = (message.embeds || []).find(item => String(item?.title || "").includes("LAPSED ACCOUNT"));
-        if (!embed) continue;
-        const fields = new Map((embed.fields || []).map(item => [String(item?.name || ""), String(item?.value || "")]));
-        const hasClose = (message.components || []).some(row =>
-          (row.components || []).some(item => String(item?.custom_id || "").startsWith("lapse:close:")));
-        if (hasClose && fields.get("Customer") !== "Unknown" && fields.get("Customer Email") !== "Not available") continue;
-        try { await api(`/channels/${adminChannelId}/messages/${message.id}`, "DELETE"); removed += 1; }
-        catch (error) { if (!/HTTP 404/.test(error.message)) console.error("Legacy lapse cleanup:", error.message); }
+    let removed = 0;
+    for (const channelId of [adminChannelId, adminProfilesChannelId].filter(Boolean)) {
+      let before = "";
+      for (let page = 0; page < 10; page += 1) {
+        const messages = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
+        if (!Array.isArray(messages) || !messages.length) break;
+        for (const message of messages) {
+          const embed = (message.embeds || []).find(item => {
+            const title = String(item?.title || "");
+            return title.includes("LAPSED ACCOUNT") || /(?:GIFTED|RENTED).*(?:ACCOUNT|PROFILE).*EXPIRED/i.test(title);
+          });
+          if (!embed) continue;
+          const fields = new Map((embed.fields || []).map(item => [String(item?.name || ""), String(item?.value || "")]));
+          const hasClose = (message.components || []).some(row =>
+            (row.components || []).some(item => String(item?.custom_id || "").startsWith("lapse:close:")));
+          const isValidNewChecklist = channelId === adminProfilesChannelId && hasClose &&
+            fields.get("Customer") !== "Unknown" && fields.get("Customer Email") !== "Not available";
+          if (isValidNewChecklist) continue;
+          try { await api(`/channels/${channelId}/messages/${message.id}`, "DELETE"); removed += 1; }
+          catch (error) { if (!/HTTP 404/.test(error.message)) console.error("Legacy lapse cleanup:", error.message); }
+        }
+        before = String(messages.at(-1)?.id || "");
+        if (messages.length < 100) break;
       }
-      before = String(messages.at(-1)?.id || "");
-      if (messages.length < 100) break;
     }
     if (removed) console.log(`Removed ${removed} legacy lapse Discord alert(s).`);
     return removed;
@@ -487,7 +492,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const adminChannels = channels.filter(item => item.type !== 4 &&
         (adminNames.has(normalizeName(item.name)) || item.parent_id === adminCategory.id));
       adminChannelId = adminChannels.find(item => item.type === 0 && normalizeName(item.name) === "admin")?.id || null;
-      lapseChecklistRuntime = { api, adminChannelId };
+      adminProfilesChannelId = adminChannels.find(item => item.type === 0 && normalizeName(item.name) === "adminprofiles")?.id || null;
+      lapseChecklistRuntime = { api, adminChannelId: adminProfilesChannelId || adminChannelId };
       for (const adminChannel of adminChannels) {
         const expected = [2, 13].includes(adminChannel.type) ? [
           { id: guildId, type: 0, deny: "1024" },
@@ -2034,7 +2040,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         }
       }
       if (d.type === 3 && /^lapse:close:[a-zA-Z0-9_-]{1,60}$/.test(d.data?.custom_id || "")) {
-        if (d.channel_id !== adminChannelId || !supportStaff(d.member, userId)) {
+        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) {
           return await reply("Only the owner or Support Staff can close this notification.");
         }
         await api(callback, "POST", { type: 6 });
@@ -2043,6 +2049,63 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         });
         return;
       }
+      if (d.type === 3 && /^lapse:extend:(free|rented):[a-zA-Z0-9_-]{1,70}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) return await reply("Only the owner or Support Staff can extend this profile.");
+        const [, , type, managedAccountId] = d.data.custom_id.split(":");
+        return await api(callback, "POST", { type: 9, data: {
+          custom_id: `lapse:extend:submit:${type}:${managedAccountId}`, title: "Extend Profile Access",
+          components: [
+            { type: 1, components: [{ type: 4, custom_id: "amount", label: "Amount", style: 1, min_length: 1, max_length: 4, required: true, placeholder: "Example: 12" }] },
+            { type: 1, components: [{ type: 4, custom_id: "unit", label: "Unit (hours or days)", style: 1, min_length: 4, max_length: 5, required: true, placeholder: "hours or days" }] }
+          ]
+        } });
+      }
+      if (d.type === 5 && /^lapse:extend:submit:(free|rented):[a-zA-Z0-9_-]{1,70}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) return await reply("Only the owner or Support Staff can extend this profile.");
+        const [, , , type, managedAccountId] = d.data.custom_id.split(":");
+        const fields = d.data.components?.flatMap(row => row.components || []) || [];
+        const amount = Number(String(fields.find(item => item.custom_id === "amount")?.value || "").trim());
+        const unit = String(fields.find(item => item.custom_id === "unit")?.value || "").trim().toLowerCase();
+        if (!Number.isInteger(amount) || amount < 1 || amount > 999 || !["hour","hours","day","days"].includes(unit)) return await reply("Enter a whole number from 1 to 999 and use hours or days.");
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          if (typeof onExtendLapsedProfile !== "function") throw new Error("Profile extension is not configured.");
+          const result = await onExtendLapsedProfile({ type, managedAccountId, amount, unit });
+          await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
+            content: `Extended this profile by ${amount} ${unit} as gifted/free access. New expiration: ${result.expiresAt}.`, components: []
+          });
+          if (d.message?.id) await api(`/channels/${d.channel_id}/messages/${d.message.id}`, "DELETE").catch(() => {});
+          return;
+        } catch (error) {
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message || "Unable to extend this profile.", components: [] });
+        }
+      }
+      if (d.type === 3 && /^renew:quote:(free|rented):[a-zA-Z0-9_-]{1,70}:(1_week|1_month):\d+(?:\.\d{1,2})?$/.test(d.data?.custom_id || "")) {
+        const [, , type, managedAccountId, durationType, price] = d.data.custom_id.split(":");
+        return await api(callback, "POST", { type: 4, data: {
+          content: `Extension price: **${Number(price).toFixed(2)}** for **${durationType === "1_week" ? "1 Week" : "1 Month"}**. Nothing has been charged. Press Confirm & Pay to continue to Stripe Checkout.`,
+          flags: 64,
+          components: [{ type: 1, components: [
+            { type: 2, style: 3, label: `Confirm & Pay ${Number(price).toFixed(2)}`, custom_id: `renew:confirm:${type}:${managedAccountId}:${durationType}:${price}` },
+            { type: 2, style: 2, label: "Cancel", custom_id: "renew:cancel" }
+          ] }]
+        } });
+      }
+      if (d.type === 3 && /^renew:confirm:(free|rented):[a-zA-Z0-9_-]{1,70}:(1_week|1_month):\d+(?:\.\d{1,2})?$/.test(d.data?.custom_id || "")) {
+        const [, , type, managedAccountId, durationType] = d.data.custom_id.split(":");
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          if (typeof onCreateRentalExtensionCheckout !== "function") throw new Error("Paid extension checkout is not configured.");
+          const result = await onCreateRentalExtensionCheckout({ discordUserId: userId, type, managedAccountId, durationType });
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
+            content: `Final step: complete Stripe Checkout to extend this profile. You will not be charged unless you finish checkout.`,
+            components: [{ type: 1, components: [{ type: 2, style: 5, label: `Open Stripe Checkout — ${Number(result.price).toFixed(2)}`, url: result.url }] }]
+          });
+        } catch (error) {
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message || "Unable to start extension checkout.", components: [] });
+        }
+      }
+      if (d.type === 3 && d.data?.custom_id === "renew:cancel") return await reply("Extension cancelled. No charge was made.");
       if (d.type === 3 && d.data?.custom_id === "giveaway:create") {
         if (d.channel_id !== giveawayChannelId || !supportStaff(d.member, userId)) {
           return await reply("Only the owner or Support Staff can create a giveaway in #giveaways.");
