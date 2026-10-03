@@ -7245,6 +7245,7 @@ function renderOrder(x) {
           data-customer-message-input="${escapeHtml(x.id)}"
           placeholder="Type the message the customer should see..."
         ></textarea>
+        <small>Your message is checked for grammar before it is sent. The text is processed by the configured AI service.</small>
 
         <button
           type="button"
@@ -21568,7 +21569,7 @@ document.addEventListener(
 
         if (status) {
           status.textContent =
-            data.discordSent
+            (data.discordSent
               ? (
                   data.discordUsernameConfigured
                     ? "Customer message saved and Discord username referenced."
@@ -21577,7 +21578,7 @@ document.addEventListener(
               : `Customer message saved to the website. ${
                   data.discordError ||
                   "Discord webhook was not sent."
-                }`;
+                }`) + ` Final message: ${data.message || text}`;
 
           status.className =
             "admin-edit-message success";

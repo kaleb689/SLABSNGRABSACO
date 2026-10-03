@@ -18,6 +18,7 @@ import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startDiscordCommunity, discordCommunityStatus, createDiscordLinkCode, revokeDiscordLinkCodes, queueDiscordRoleRemoval } from "./discord-community.js";
+import { polishCustomerMessage } from "./customer-message-grammar.js";
 import { getCommunityInvite } from "./discord-invite.js";
 import { startCheckoutDmSummaryScheduler } from "./checkout-dm-summary.js";
 import { startMembershipLapseNotificationScheduler } from "./membership-lapse-notifications.js";
@@ -25776,13 +25777,13 @@ app.post(
           150
         );
 
-      const message =
+      const draftMessage =
         clean(
           req.body?.message,
           3500
         );
 
-      if (!message) {
+      if (!draftMessage) {
         return res
           .status(400)
           .json({
@@ -25839,6 +25840,12 @@ app.post(
               "Customer account could not be found."
           });
       }
+
+      // Polish before either the account notification or Discord alert is sent.
+      const message = await polishCustomerMessage(draftMessage, {
+        apiKey: String(process.env.OPENAI_API_KEY || "").trim(),
+        model: process.env.CUSTOMER_MESSAGE_GRAMMAR_MODEL || "gpt-4.1-mini"
+      });
 
       const notifications =
         customerNotifications(
@@ -25909,6 +25916,8 @@ app.post(
 
       return res.json({
         ok: true,
+
+        message,
 
         discordUsernameConfigured:
           Boolean(
