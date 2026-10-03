@@ -2484,12 +2484,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }],
       components: [
         { type: 1, components: [
-          { type: 2, style: 2, label: "Keep 5", custom_id: "preview:keep5", disabled: true },
-          { type: 2, style: 2, label: "Keep 10", custom_id: "preview:keep10", disabled: true },
-          { type: 2, style: 1, label: "Keep All 20", custom_id: "preview:keepall", disabled: true }
+          { type: 2, style: 1, label: "Renew All 20", custom_id: "preview:keepall", disabled: true },
+          { type: 2, style: 2, label: "Choose by Retailer", custom_id: "preview:retailers", disabled: true }
         ] },
         { type: 1, components: [
-          { type: 2, style: 2, label: "Choose Amount", custom_id: "preview:custom", disabled: true }
+          { type: 2, style: 2, label: "Target / Walmart / Pokémon quantities", custom_id: "preview:custom", disabled: true }
         ] }
       ]
     });
