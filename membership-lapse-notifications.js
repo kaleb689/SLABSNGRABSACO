@@ -68,7 +68,7 @@ function reminder(kind, item, end, stage) {
   };
 }
 
-export function startMembershipLapseNotificationScheduler({ dataDir, token, adminWebhookUrl = "", getRentalExtensionPrices = null }) {
+export function startMembershipLapseNotificationScheduler({ dataDir, token, adminWebhookUrl = "", getRentalExtensionPrices = null, onRtpFinalReminderExpired = null }) {
   token = String(token || "").trim();
   adminWebhookUrl = String(adminWebhookUrl || "").trim();
   if (!token && !adminWebhookUrl) return;
@@ -79,7 +79,8 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
     rented: path.join(dataDir, "rental-assignments.json"),
     gifted: path.join(dataDir, "free-assignments.json"),
     state: path.join(dataDir, "membership-lapse-discord-state.json"),
-    batches: path.join(dataDir, "discord-renewal-batches.json")
+    batches: path.join(dataDir, "discord-renewal-batches.json"),
+    rtpFinal: path.join(dataDir, "rtp-final-reminders.json")
   };
   let running = false;
 
@@ -87,8 +88,8 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
     if (running) return;
     running = true;
     try {
-      const [accountsRaw, paidRaw, rentedRaw, giftedRaw, stateRaw] = await Promise.all([
-        read(paths.accounts), read(paths.paid), read(paths.rented), read(paths.gifted), read(paths.state, {})
+      const [accountsRaw, paidRaw, rentedRaw, giftedRaw, stateRaw, rtpFinalRaw] = await Promise.all([
+        read(paths.accounts), read(paths.paid), read(paths.rented), read(paths.gifted), read(paths.state, {}), read(paths.rtpFinal, [])
       ]);
       const accounts = new Map(list(accountsRaw).map(a => [String(a?.id || ""), a]));
       const state = stateRaw && typeof stateRaw === "object" ? stateRaw : {};
@@ -96,6 +97,8 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
       const now = Date.now();
       const renewalGroups = new Map();
       const renewalBatches = {};
+      const rtpFinal = list(rtpFinalRaw);
+      let rtpFinalChanged = false;
 
       for (const record of list(paidRaw)) {
         if (record?.cancelAtPeriodEnd !== true) continue;
@@ -162,6 +165,147 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           }
         }
       }
+
+      // Admin-triggered RTP FINAL REMINDER queue. A single combined DM is sent
+      // per customer for all profiles currently queued for the one-hour return.
+      const rtpGroups = new Map();
+      for (const item of rtpFinal) {
+        if (!item || item.status !== "pending") continue;
+        const customerAccountId = String(item.customerAccountId || "");
+        const account = accounts.get(customerAccountId);
+        const type = item.type === "free" ? "free" : "rented";
+        const records = type === "free" ? list(giftedRaw) : list(rentedRaw);
+        const record = records.find(record => {
+          const managedId = String(record?.managedAccountId || record?.rentedMembershipId || record?.freeMembershipId || "");
+          return managedId === String(item.managedAccountId || "") &&
+            String(record?.customerAccountId || "") === customerAccountId &&
+            record?.active === true;
+        });
+
+        if (!record) {
+          item.status = "cancelled";
+          item.cancelledAt = new Date().toISOString();
+          item.cancelReason = "no_longer_linked";
+          rtpFinalChanged = true;
+          continue;
+        }
+
+        const originalExpiresAt = String(item.originalExpiresAt || "");
+        const currentExpiresAt = String(record?.expiresAt || "");
+        const renewedAfterReminder =
+          Date.parse(record?.updatedAt || "") > Date.parse(item.triggeredAt || "") &&
+          currentExpiresAt &&
+          currentExpiresAt !== originalExpiresAt &&
+          Date.parse(currentExpiresAt) > Date.parse(item.returnAt || "");
+
+        if (renewedAfterReminder) {
+          item.status = "reactivated";
+          item.reactivatedAt = new Date().toISOString();
+          rtpFinalChanged = true;
+          continue;
+        }
+
+        const dueAt = date(item.returnAt);
+        if (!dueAt) {
+          item.status = "cancelled";
+          item.cancelledAt = new Date().toISOString();
+          item.cancelReason = "invalid_deadline";
+          rtpFinalChanged = true;
+          continue;
+        }
+
+        if (dueAt.getTime() <= now) {
+          try {
+            if (typeof onRtpFinalReminderExpired === "function") {
+              const released = await onRtpFinalReminderExpired({
+                type,
+                managedAccountId: String(item.managedAccountId || ""),
+                customerAccountId
+              });
+              if (released !== false) {
+                item.status = "returned";
+                item.returnedAt = new Date().toISOString();
+                rtpFinalChanged = true;
+              }
+            }
+          } catch (e) {
+            console.error("RTP final reminder return:", e.message);
+          }
+          continue;
+        }
+
+        if (!account || item.sentAt) continue;
+        const groupKey = String(account.id);
+        if (!rtpGroups.has(groupKey)) rtpGroups.set(groupKey, { account, items: [] });
+        rtpGroups.get(groupKey).items.push({ item, record, type, dueAt });
+      }
+
+      for (const group of rtpGroups.values()) {
+        const sorted = group.items.sort((a, b) => a.dueAt - b.dueAt);
+        const rentedItems = sorted.filter(entry => entry.type === "rented");
+        const retailerCounts = {};
+        const retailerManagedAccountIds = {};
+        const lines = sorted.map(entry => {
+          const retailerRaw = String(entry.record?.rentalRetailer || entry.record?.assignmentRetailer || entry.record?.referralRetailer || entry.record?.retailer || "Other");
+          const retailerKey = retailerRaw.toLowerCase();
+          const retailerLabel = retailerKey.includes("pokemon") ? "Pokémon Center" :
+            retailerKey.includes("walmart") ? "Walmart" :
+            retailerKey.includes("target") ? "Target" : retailerRaw;
+          const profile = String(entry.record?.customerProfile?.profileName || entry.record?.profileName || entry.record?.customerProfile?.email || "Linked profile");
+          if (entry.type === "rented") {
+            retailerCounts[retailerKey] = (retailerCounts[retailerKey] || 0) + 1;
+            if (!retailerManagedAccountIds[retailerKey]) retailerManagedAccountIds[retailerKey] = [];
+            retailerManagedAccountIds[retailerKey].push(String(entry.item.managedAccountId || ""));
+          }
+          return `• **${retailerLabel}** — ${profile}`;
+        }).join("\n");
+
+        let components = [];
+        if (rentedItems.length) {
+          const tokenValue = crypto.createHash("sha256")
+            .update(`rtp-final|${group.account.id}|${sorted.map(entry => entry.item.managedAccountId).join(",")}|${sorted[0].item.triggeredAt}`)
+            .digest("hex").slice(0, 16);
+          const prices = typeof getRentalExtensionPrices === "function" ? await getRentalExtensionPrices() : null;
+          renewalBatches[tokenValue] = {
+            token: tokenValue,
+            customerAccountId: String(group.account.id),
+            discordUserId: discordId(group.account),
+            kind: "rented",
+            stage: "rtp_final",
+            expiresAt: sorted[0].item.returnAt,
+            managedAccountIds: rentedItems.map(entry => String(entry.item.managedAccountId || "")).filter(Boolean),
+            retailerCounts,
+            retailerManagedAccountIds,
+            prices,
+            createdAt: new Date().toISOString()
+          };
+          components = [{ type: 1, components: [
+            { type: 2, style: 1, label: `Reactivate All ${rentedItems.length}`, custom_id: `renewbatch:all:${tokenValue}` },
+            { type: 2, style: 2, label: "Choose by Retailer", custom_id: `renewbatch:retailers:${tokenValue}` }
+          ] }];
+        }
+
+        const embed = {
+          title: "🚨 RTP FINAL REMINDER — 1 HOUR",
+          description:
+            `The linked profile${sorted.length === 1 ? "" : "s"} below ${sorted.length === 1 ? "is" : "are"} scheduled to go inactive and return to the retailer pool in about **1 hour** unless reactivated.\n\n${lines}\n\nScheduled return: **${fmt(sorted[0].dueAt)}**\n\n${rentedItems.length ? "Use the buttons below to reactivate rented profiles. Completing the renewal before the deadline cancels their automatic return." : "These profiles will be unlinked automatically at the deadline unless they are reactivated before then."}`,
+          color: 0xe74c3c,
+          footer: { text: "SLABSNGRABSACO final return-to-pool reminder" },
+          timestamp: new Date().toISOString()
+        };
+
+        try {
+          if (await dm(token, discordId(group.account), embed, components)) {
+            for (const entry of sorted) {
+              entry.item.sentAt = new Date().toISOString();
+              rtpFinalChanged = true;
+            }
+          }
+        } catch (e) {
+          console.error("RTP final reminder DM:", e.message);
+        }
+      }
+
       for (const group of renewalGroups.values()) {
         const sorted = [...group.records].sort((a, b) => {
           const aStart = Date.parse(a?.startsAt || a?.createdAt || "") || 0;
@@ -232,6 +376,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
         }
       }
       await save(paths.batches, renewalBatches);
+      if (rtpFinalChanged) await save(paths.rtpFinal, rtpFinal);
       if (changed) await save(paths.state, state);
     } catch (e) { console.error("Membership lapse notification scheduler:", e.message); }
     finally { running = false; }
