@@ -5170,6 +5170,17 @@
       cursor: pointer;
     }
 
+    .rtp-final-reminder-button {
+      grid-column: 1 / -1;
+      display: block !important;
+      width: 100%;
+      min-height: 38px !important;
+      border: 1px solid #d69a2d !important;
+      background: #332407 !important;
+      color: #ffd86a !important;
+      cursor: pointer;
+    }
+
     .linked-quick-return-button {
       border: 1px solid #983d46;
       background: #2b1014;
@@ -9571,7 +9582,7 @@ function linkedProfileDetailHtml(
 
             <button
               type="button"
-              class="admin-cancel-button"
+              class="admin-cancel-button rtp-final-reminder-button"
               data-rtp-final-reminder="${escapeHtml(
                 membership.id
               )}"
