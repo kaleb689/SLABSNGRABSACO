@@ -3,6 +3,52 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const API = "https://discord.com/api/v10";
+let lapseChecklistRuntime = null;
+
+export async function sendDiscordLapseChecklistAlert({
+  customerName = "Unknown",
+  customerEmail = "Not available",
+  retailer = "Unknown",
+  retailerAccountEmail = "Not available",
+  profileType = "Managed account",
+  expiresAt = null,
+  trackingId = ""
+} = {}) {
+  if (!lapseChecklistRuntime?.api || !lapseChecklistRuntime?.adminChannelId) return false;
+  const clean = value => String(value ?? "").slice(0, 900);
+  const message = await lapseChecklistRuntime.api(
+    `/channels/${lapseChecklistRuntime.adminChannelId}/messages`,
+    "POST",
+    {
+      allowed_mentions: { parse: [] },
+      embeds: [{
+        title: "❌ LAPSED ACCOUNT — REMOVE FROM OTHER PROGRAMS",
+        description: "This account expired automatically and should be removed from any external programs where it is still loaded.",
+        color: 0xe74c3c,
+        fields: [
+          { name: "Customer", value: clean(customerName || "Unknown"), inline: false },
+          { name: "Customer Email", value: clean(customerEmail || "Not available"), inline: false },
+          { name: "Retailer", value: clean(retailer || "Unknown"), inline: true },
+          { name: "Retailer Account Email", value: clean(retailerAccountEmail || "Not available"), inline: false },
+          { name: "Type", value: clean(profileType || "Managed account"), inline: true },
+          { name: "Expired", value: expiresAt ? clean(new Date(expiresAt).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" })) : "Not available", inline: false }
+        ],
+        footer: { text: "Remove it from the other program, then close this notification." },
+        timestamp: new Date().toISOString()
+      }],
+      components: [{
+        type: 1,
+        components: [{
+          type: 2,
+          style: 3,
+          label: "Close Notification",
+          custom_id: `lapse:close:${String(trackingId || "done").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 60)}`
+        }]
+      }]
+    }
+  );
+  return message?.id || true;
+}
 // A SKU is taken only from an explicit SKU label. The closest product line
 // above it is the title shown to the owner; never infer SKUs from other text.
 export function parseDropSkus(message) {
@@ -193,7 +239,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
     return response.status === 204 ? null : response.json();
   }
-  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   let dropChannelIds = new Set(), tonightChannelId;
   // Channel names may have a Unicode emoji and divider before their functional name.
   const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -414,6 +460,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       }
       const adminChannels = channels.filter(item => item.type !== 4 &&
         (adminNames.has(normalizeName(item.name)) || item.parent_id === adminCategory.id));
+      adminChannelId = adminChannels.find(item => item.type === 0 && normalizeName(item.name) === "admin")?.id || null;
+      lapseChecklistRuntime = { api, adminChannelId };
       for (const adminChannel of adminChannels) {
         const expected = [2, 13].includes(adminChannel.type) ? [
           { id: guildId, type: 0, deny: "1024" },
@@ -1958,6 +2006,16 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             content: error.message, components: []
           });
         }
+      }
+      if (d.type === 3 && /^lapse:close:[a-zA-Z0-9_-]{1,60}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== adminChannelId || !supportStaff(d.member, userId)) {
+          return await reply("Only the owner or Support Staff can close this notification.");
+        }
+        await api(callback, "POST", { type: 6 });
+        await api(`/channels/${d.channel_id}/messages/${d.message.id}`, "DELETE").catch(error => {
+          if (!/HTTP 404/.test(error.message)) throw error;
+        });
+        return;
       }
       if (d.type === 3 && d.data?.custom_id === "giveaway:create") {
         if (d.channel_id !== giveawayChannelId || !supportStaff(d.member, userId)) {
