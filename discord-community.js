@@ -242,23 +242,30 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   }
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   async function cleanupLegacyLapseAlerts() {
-    if (!adminChannelId) return 0;
-    let removed = 0, before = "";
-    for (let page = 0; page < 10; page += 1) {
-      const messages = await api(`/channels/${adminChannelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
-      if (!Array.isArray(messages) || !messages.length) break;
-      for (const message of messages) {
-        const embed = (message.embeds || []).find(item => String(item?.title || "").includes("LAPSED ACCOUNT"));
-        if (!embed) continue;
-        const fields = new Map((embed.fields || []).map(item => [String(item?.name || ""), String(item?.value || "")]));
-        const hasClose = (message.components || []).some(row =>
-          (row.components || []).some(item => String(item?.custom_id || "").startsWith("lapse:close:")));
-        if (hasClose && fields.get("Customer") !== "Unknown" && fields.get("Customer Email") !== "Not available") continue;
-        try { await api(`/channels/${adminChannelId}/messages/${message.id}`, "DELETE"); removed += 1; }
-        catch (error) { if (!/HTTP 404/.test(error.message)) console.error("Legacy lapse cleanup:", error.message); }
+    let removed = 0;
+    for (const channelId of [adminChannelId, adminProfilesChannelId].filter(Boolean)) {
+      let before = "";
+      for (let page = 0; page < 10; page += 1) {
+        const messages = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
+        if (!Array.isArray(messages) || !messages.length) break;
+        for (const message of messages) {
+          const embed = (message.embeds || []).find(item => {
+            const title = String(item?.title || "");
+            return title.includes("LAPSED ACCOUNT") || /(?:GIFTED|RENTED).*(?:ACCOUNT|PROFILE).*EXPIRED/i.test(title);
+          });
+          if (!embed) continue;
+          const fields = new Map((embed.fields || []).map(item => [String(item?.name || ""), String(item?.value || "")]));
+          const hasClose = (message.components || []).some(row =>
+            (row.components || []).some(item => String(item?.custom_id || "").startsWith("lapse:close:")));
+          const isValidNewChecklist = channelId === adminProfilesChannelId && hasClose &&
+            fields.get("Customer") !== "Unknown" && fields.get("Customer Email") !== "Not available";
+          if (isValidNewChecklist) continue;
+          try { await api(`/channels/${channelId}/messages/${message.id}`, "DELETE"); removed += 1; }
+          catch (error) { if (!/HTTP 404/.test(error.message)) console.error("Legacy lapse cleanup:", error.message); }
+        }
+        before = String(messages.at(-1)?.id || "");
+        if (messages.length < 100) break;
       }
-      before = String(messages.at(-1)?.id || "");
-      if (messages.length < 100) break;
     }
     if (removed) console.log(`Removed ${removed} legacy lapse Discord alert(s).`);
     return removed;
