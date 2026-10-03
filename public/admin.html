@@ -9571,6 +9571,19 @@ function linkedProfileDetailHtml(
 
             <button
               type="button"
+              class="admin-cancel-button"
+              data-rtp-final-reminder="${escapeHtml(
+                membership.id
+              )}"
+              data-rtp-final-type="${escapeHtml(
+                membership.type
+              )}"
+            >
+              RTP FINAL REMINDER
+            </button>
+
+            <button
+              type="button"
               class="delete-submission"
               data-return-linked-to-pool="${escapeHtml(
                 membership.id
@@ -10155,6 +10168,19 @@ function linkedProfileListCardHtml(
           )}"
         >
           EXTEND ${membership.type === "free" ? "GIFTED" : "RENTED"}
+        </button>
+
+        <button
+          type="button"
+          class="admin-cancel-button"
+          data-rtp-final-reminder="${escapeHtml(
+            membership.id
+          )}"
+          data-rtp-final-type="${escapeHtml(
+            membership.type
+          )}"
+        >
+          RTP FINAL REMINDER
         </button>
 
         <button
@@ -24499,6 +24525,54 @@ document.addEventListener("click", event => {
   if (!event.target.closest("#adminBackToTop")) return;
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
+
+
+  document.addEventListener("click", async event => {
+    const button = event.target.closest("[data-rtp-final-reminder]");
+    if (!button) return;
+
+    const id = button.dataset.rtpFinalReminder || "";
+    const type = button.dataset.rtpFinalType || "";
+
+    if (!id || !["free", "rented"].includes(type)) return;
+
+    const confirmed = window.confirm(
+      "Send the RTP FINAL REMINDER? This profile will be scheduled to return to its retailer pool in 1 hour unless the user reactivates it."
+    );
+    if (!confirmed) return;
+
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = "QUEUING...";
+
+    try {
+      const response = await fetch(
+        `/api/admin/linked-memberships/${encodeURIComponent(type)}/${encodeURIComponent(id)}/rtp-final-reminder`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        }
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        if (handleAdminUnauthorized(response)) return;
+        throw new Error(result.error || "Unable to queue RTP final reminder.");
+      }
+
+      button.textContent = "RTP IN 1 HOUR";
+      button.classList.add("success");
+      window.alert(result.message || "RTP FINAL REMINDER queued.");
+    } catch (error) {
+      button.textContent = originalText;
+      window.alert(error.message || "Unable to queue RTP final reminder.");
+    } finally {
+      button.disabled = false;
+    }
+  });
 
 </script>
 
