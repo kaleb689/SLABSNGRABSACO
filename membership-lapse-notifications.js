@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { sendDiscordLapseChecklistAlert } from "./discord-community.js";
 
 const API = "https://discord.com/api/v10";
 const DAY = 86400000;
@@ -43,16 +44,7 @@ async function dm(token, userId, embed) {
   if (!sent.ok) throw new Error(`DM send HTTP ${sent.status}`);
   return true;
 }
-async function admin(webhook, embed) {
-  if (!webhook) return false;
-  const response = await fetch(webhook, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "SLABS N GRABS ACO Admin", embeds: [embed], allowed_mentions: { parse: [] } }),
-    signal: AbortSignal.timeout(10000)
-  });
-  if (!response.ok) throw new Error(`Admin webhook HTTP ${response.status}`);
-  return true;
-}
+async function admin() { return false; }
 function label(record, kind) {
   const retailer = String(record?.retailerLabel || record?.retailer || "").trim();
   const profile = String(record?.profileName || record?.customerProfile?.profileName || record?.managedAccountName || "").trim();
@@ -128,6 +120,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
               name: String(account?.displayName || account?.name || account?.email || "Member"),
               email: String(account?.email || ""),
               item: label(record, kind),
+              retailerAccountEmail: String(record?.customerProfile?.email || ""),
               expiresAt: end.toISOString()
             };
             changed = true;
@@ -144,22 +137,23 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
               } catch (e) { console.error(`${kind} lapse DM:`, e.message); }
             }
           }
-          if (remaining <= 0 && adminWebhookUrl) {
+          const manuallyReturned = ["returned_to_pool", "returned", "released", "admin_returned"].includes(String(record?.endReason || "").toLowerCase());
+          if (remaining <= 0 && !manuallyReturned) {
             const notice = `${base}:${end.toISOString()}:admin`, snap = state[snapshotKey] || {};
-            if (!state[notice]) {
+            // Never backfill historical assignments that no longer have a known owner.
+            // A snapshot is created while the assignment is active, before it expires.
+            if (!state[notice] && snap.customerAccountId && snap.email) {
               try {
-                if (await admin(adminWebhookUrl, {
-                  title: "❌ LAPSED ACCOUNT — REMOVE FROM OTHER PROGRAMS",
-                  description: "This account has expired and should be removed from any external programs where it is still loaded.",
-                  color: 0xe74c3c,
-                  fields: [
-                    { name: "Customer", value: String(snap.name || account?.email || "Unknown"), inline: false },
-                    { name: "Customer Email", value: String(snap.email || account?.email || "Not available"), inline: false },
-                    { name: "Type", value: kind === "rented" ? "Rented account" : "Gifted account", inline: true },
-                    { name: "Account", value: String(snap.item || label(record, kind)), inline: true },
-                    { name: "Expired", value: fmt(date(snap.expiresAt) || end), inline: false }
-                  ],
-                  footer: { text: "Admin action required" }, timestamp: new Date().toISOString()
+                const retailer = String(record?.rentalRetailer || record?.assignmentRetailer || record?.referralRetailer || record?.retailer || "Unknown");
+                const retailerAccountEmail = String(record?.customerProfile?.email || snap.retailerAccountEmail || "Not available");
+                if (await sendDiscordLapseChecklistAlert({
+                  customerName: snap.name,
+                  customerEmail: snap.email,
+                  retailer,
+                  retailerAccountEmail,
+                  profileType: kind === "rented" ? "Rented account" : "Gifted account",
+                  expiresAt: snap.expiresAt || end.toISOString(),
+                  trackingId: base
                 })) { state[notice] = new Date().toISOString(); changed = true; }
               } catch (e) { console.error(`${kind} lapse admin alert:`, e.message); }
             }
