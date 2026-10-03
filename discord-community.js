@@ -2084,73 +2084,113 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message || "Unable to extend this profile.", components: [] });
         }
       }
-      if (d.type === 3 && /^renewbatch:custom:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+      if (d.type === 3 && /^renewbatch:retailers:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
         const batchToken = d.data.custom_id.split(":")[2];
+        const batches = await readJsonSafe(path.join(dataDir, "discord-renewal-batches.json"), {});
+        const batch = batches?.[batchToken];
+        if (!batch || String(batch.discordUserId) !== String(userId) || batch.kind !== "rented") return await reply("That renewal batch is no longer available.");
+        const counts = batch.retailerCounts || {};
+        const retailerCount = key => Object.entries(counts).filter(([name]) => {
+          const n = String(name).toLowerCase();
+          if (key === "target") return n.includes("target");
+          if (key === "walmart") return n.includes("walmart");
+          return n.includes("pokemon") || n.includes("pokémon");
+        }).reduce((sum, [, count]) => sum + Number(count || 0), 0);
+        const targetMax = retailerCount("target"), walmartMax = retailerCount("walmart"), pokemonMax = retailerCount("pokemon");
         return await api(callback, "POST", { type: 9, data: {
-          custom_id: `renewbatch:customsubmit:${batchToken}`, title: "Choose Profiles to Keep",
-          components: [{ type: 1, components: [{ type: 4, custom_id: "quantity", label: "Number of profiles to keep", style: 1, min_length: 1, max_length: 3, required: true, placeholder: "Example: 12" }] }]
+          custom_id: `renewbatch:retailersubmit:${batchToken}`,
+          title: "Choose Profiles by Retailer",
+          components: [
+            { type: 1, components: [{ type: 4, custom_id: "target", label: `Target quantity (0-${targetMax})`, style: 1, min_length: 1, max_length: 3, required: true, value: "0" }] },
+            { type: 1, components: [{ type: 4, custom_id: "walmart", label: `Walmart quantity (0-${walmartMax})`, style: 1, min_length: 1, max_length: 3, required: true, value: "0" }] },
+            { type: 1, components: [{ type: 4, custom_id: "pokemon", label: `Pokémon Center quantity (0-${pokemonMax})`, style: 1, min_length: 1, max_length: 3, required: true, value: "0" }] }
+          ]
         } });
       }
-      if (d.type === 5 && /^renewbatch:customsubmit:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+      if (d.type === 5 && /^renewbatch:retailersubmit:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
         const batchToken = d.data.custom_id.split(":")[2];
-        const quantity = Number(String(d.data.components?.flatMap(row => row.components || []).find(item => item.custom_id === "quantity")?.value || "").trim());
-        if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) return await reply("Enter a whole number of profiles to keep.");
         const batches = await readJsonSafe(path.join(dataDir, "discord-renewal-batches.json"), {});
         const batch = batches?.[batchToken];
         if (!batch || String(batch.discordUserId) !== String(userId) || batch.kind !== "rented") return await reply("That renewal batch is no longer available.");
-        if (quantity > batch.managedAccountIds.length) return await reply(`You only have ${batch.managedAccountIds.length} profiles in this expiration batch.`);
+        const fields = d.data.components?.flatMap(row => row.components || []) || [];
+        const chosen = {
+          target: Number(String(fields.find(item => item.custom_id === "target")?.value || "0").trim()),
+          walmart: Number(String(fields.find(item => item.custom_id === "walmart")?.value || "0").trim()),
+          pokemon: Number(String(fields.find(item => item.custom_id === "pokemon")?.value || "0").trim())
+        };
+        const maxFor = key => Object.entries(batch.retailerCounts || {}).filter(([name]) => {
+          const n = String(name).toLowerCase();
+          if (key === "target") return n.includes("target");
+          if (key === "walmart") return n.includes("walmart");
+          return n.includes("pokemon") || n.includes("pokémon");
+        }).reduce((sum, [, count]) => sum + Number(count || 0), 0);
+        for (const key of ["target", "walmart", "pokemon"]) {
+          if (!Number.isInteger(chosen[key]) || chosen[key] < 0 || chosen[key] > maxFor(key)) return await reply(`Choose a valid ${key === "pokemon" ? "Pokémon Center" : key} quantity.`);
+        }
+        const quantity = chosen.target + chosen.walmart + chosen.pokemon;
+        if (quantity < 1) return await reply("Choose at least one profile to renew.");
+        const selection = `t${chosen.target}w${chosen.walmart}p${chosen.pokemon}`;
         const weekTotal = Number(batch.prices?.week || 0) * quantity;
         const monthTotal = Number(batch.prices?.month || 0) * quantity;
         return await api(callback, "POST", { type: 4, data: {
           flags: 64,
-          content: `You chose **${quantity} of ${batch.managedAccountIds.length} profiles** to keep. Choose an extension below. Nothing has been charged.`,
+          content: `**Your renewal selection**\nTarget: **${chosen.target}**\nWalmart: **${chosen.walmart}**\nPokémon Center: **${chosen.pokemon}**\nTotal profiles: **${quantity}**\n\nChoose an extension below. Nothing has been charged.`,
           components: [{ type: 1, components: [
-            { type: 2, style: 1, label: `1 Week — $${weekTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${quantity}:1_week` },
-            { type: 2, style: 1, label: `1 Month — $${monthTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${quantity}:1_month` }
+            { type: 2, style: 1, label: `1 Week — $${weekTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${selection}:1_week` },
+            { type: 2, style: 1, label: `1 Month — $${monthTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${selection}:1_month` }
           ] }]
         } });
       }
-      if (d.type === 3 && /^renewbatch:qty:[a-f0-9]{16}:(?:all|\d{1,3})$/.test(d.data?.custom_id || "")) {
-        const [, , batchToken, rawQuantity] = d.data.custom_id.split(":");
+      if (d.type === 3 && /^renewbatch:all:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        const batchToken = d.data.custom_id.split(":")[2];
         const batches = await readJsonSafe(path.join(dataDir, "discord-renewal-batches.json"), {});
         const batch = batches?.[batchToken];
         if (!batch || String(batch.discordUserId) !== String(userId) || batch.kind !== "rented") return await reply("That renewal batch is no longer available.");
-        const quantity = rawQuantity === "all" ? batch.managedAccountIds.length : Number(rawQuantity);
-        if (!Number.isInteger(quantity) || quantity < 1 || quantity > batch.managedAccountIds.length) return await reply("Choose a valid number of profiles.");
+        const getCount = key => Object.entries(batch.retailerCounts || {}).filter(([name]) => {
+          const n = String(name).toLowerCase();
+          if (key === "target") return n.includes("target");
+          if (key === "walmart") return n.includes("walmart");
+          return n.includes("pokemon") || n.includes("pokémon");
+        }).reduce((sum, [, count]) => sum + Number(count || 0), 0);
+        const selection = `t${getCount("target")}w${getCount("walmart")}p${getCount("pokemon")}`;
+        const quantity = batch.managedAccountIds.length;
         const weekTotal = Number(batch.prices?.week || 0) * quantity;
         const monthTotal = Number(batch.prices?.month || 0) * quantity;
         return await api(callback, "POST", { type: 4, data: {
           flags: 64,
-          content: `You chose **${quantity} of ${batch.managedAccountIds.length} profiles** to keep. Choose an extension below. Nothing has been charged.`,
+          content: `You chose to renew **all ${quantity} profiles**. Choose an extension below. Nothing has been charged.`,
           components: [{ type: 1, components: [
-            { type: 2, style: 1, label: `1 Week — $${weekTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${quantity}:1_week` },
-            { type: 2, style: 1, label: `1 Month — $${monthTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${quantity}:1_month` }
+            { type: 2, style: 1, label: `1 Week — $${weekTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${selection}:1_week` },
+            { type: 2, style: 1, label: `1 Month — $${monthTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${selection}:1_month` }
           ] }]
         } });
       }
-      if (d.type === 3 && /^renewbatch:duration:[a-f0-9]{16}:\d{1,3}:(1_week|1_month)$/.test(d.data?.custom_id || "")) {
-        const [, , batchToken, rawQuantity, durationType] = d.data.custom_id.split(":");
+      if (d.type === 3 && /^renewbatch:duration:[a-f0-9]{16}:t\d{1,3}w\d{1,3}p\d{1,3}:(1_week|1_month)$/.test(d.data?.custom_id || "")) {
+        const [, , batchToken, selection, durationType] = d.data.custom_id.split(":");
+        const match = /^t(\d+)w(\d+)p(\d+)$/.exec(selection);
+        const quantity = Number(match[1]) + Number(match[2]) + Number(match[3]);
         const batches = await readJsonSafe(path.join(dataDir, "discord-renewal-batches.json"), {});
         const batch = batches?.[batchToken];
-        const quantity = Number(rawQuantity);
-        if (!batch || String(batch.discordUserId) !== String(userId) || quantity < 1 || quantity > batch.managedAccountIds.length) return await reply("That renewal selection is no longer available.");
+        if (!batch || String(batch.discordUserId) !== String(userId) || quantity < 1) return await reply("That renewal selection is no longer available.");
         const total = Number(durationType === "1_week" ? batch.prices?.week : batch.prices?.month) * quantity;
         return await api(callback, "POST", { type: 4, data: {
           flags: 64,
           content: `Confirm **${quantity} profiles** for **${durationType === "1_week" ? "1 Week" : "1 Month"}** at **$${total.toFixed(2)} total**. Nothing has been charged yet.`,
           components: [{ type: 1, components: [
-            { type: 2, style: 3, label: `Confirm & Pay $${total.toFixed(2)}`, custom_id: `renewbatch:confirm:${batchToken}:${quantity}:${durationType}` },
+            { type: 2, style: 3, label: `Confirm & Pay $${total.toFixed(2)}`, custom_id: `renewbatch:confirm:${batchToken}:${selection}:${durationType}` },
             { type: 2, style: 2, label: "Cancel", custom_id: "renew:cancel" }
           ] }]
         } });
       }
-      if (d.type === 3 && /^renewbatch:confirm:[a-f0-9]{16}:\d{1,3}:(1_week|1_month)$/.test(d.data?.custom_id || "")) {
-        const [, , batchToken, rawQuantity, durationType] = d.data.custom_id.split(":");
-        const quantity = Number(rawQuantity);
+      if (d.type === 3 && /^renewbatch:confirm:[a-f0-9]{16}:t\d{1,3}w\d{1,3}p\d{1,3}:(1_week|1_month)$/.test(d.data?.custom_id || "")) {
+        const [, , batchToken, selection, durationType] = d.data.custom_id.split(":");
+        const match = /^t(\d+)w(\d+)p(\d+)$/.exec(selection);
+        const retailerQuantities = { target: Number(match[1]), walmart: Number(match[2]), pokemon: Number(match[3]) };
+        const quantity = retailerQuantities.target + retailerQuantities.walmart + retailerQuantities.pokemon;
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         try {
           if (typeof onCreateRentalBatchExtensionCheckout !== "function") throw new Error("Batch extension checkout is not configured.");
-          const result = await onCreateRentalBatchExtensionCheckout({ discordUserId: userId, batchToken, quantity, durationType });
+          const result = await onCreateRentalBatchExtensionCheckout({ discordUserId: userId, batchToken, quantity, retailerQuantities, durationType });
           return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
             content: `Final step: complete Stripe Checkout to keep **${quantity} profiles**. You will not be charged unless you finish checkout.`,
             components: [{ type: 1, components: [{ type: 2, style: 5, label: `Open Stripe Checkout — $${Number(result.total).toFixed(2)}`, url: result.url }] }]
