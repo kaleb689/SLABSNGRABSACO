@@ -5,6 +5,7 @@ import { sendDiscordLapseChecklistAlert, sendDiscordRtpReturnSummary } from "./d
 
 const API = "https://discord.com/api/v10";
 const DAY = 86400000;
+const RTP_GROUP_WINDOW_MS = 10 * 60 * 1000;
 
 async function read(file, fallback = []) {
   try { return JSON.parse(await fs.readFile(file, "utf8")); }
@@ -253,6 +254,11 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
       }
 
       for (const group of rtpGroups.values()) {
+        const oldestTriggeredAt = Math.min(
+          ...group.items.map(entry => Date.parse(entry.item?.triggeredAt || "") || now)
+        );
+        if (now - oldestTriggeredAt < RTP_GROUP_WINDOW_MS) continue;
+
         const sorted = group.items.sort((a, b) => a.dueAt - b.dueAt);
         const rentedItems = sorted.filter(entry => entry.type === "rented");
         const retailerCounts = {};
@@ -415,7 +421,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
     finally { running = false; }
   };
   void run();
-  const timer = setInterval(() => void run(), 15 * 60 * 1000);
+  const timer = setInterval(() => void run(), 60 * 1000);
   timer.unref?.();
   console.log("Membership lapse Discord notifications enabled.");
 }
