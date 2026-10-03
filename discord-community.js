@@ -232,6 +232,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
   const headers = { Authorization: `Bot ${token}`, "Content-Type": "application/json" };
+  async function readJsonSafe(file, fallback = {}) {
+    try { return JSON.parse(await fs.readFile(file, "utf8")); }
+    catch (error) { if (error?.code === "ENOENT") return fallback; throw error; }
+  }
   async function api(route, method = "GET", payload) {
     const response = await fetch(`${API}${route}`, {
       method, headers, body: payload === undefined ? undefined : JSON.stringify(payload),
