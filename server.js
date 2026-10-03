@@ -185,6 +185,12 @@ const RESTORE_HOLDS_FILE =
     "managed-restore-holds.json"
   );
 
+const RTP_FINAL_REMINDERS_FILE =
+  path.join(
+    DATA_DIR,
+    "rtp-final-reminders.json"
+  );
+
 const DELETED_MANAGED_LOGINS_FILE = path.join(DATA_DIR, "managed-deleted-logins.json");
 
 const SUCCESS_CHECKOUTS_FILE =
@@ -23410,6 +23416,110 @@ app.post(
           error:
             "Unable to release Restore Hold."
         });
+    }
+  }
+);
+
+
+
+app.post(
+  "/api/admin/linked-memberships/:type/:id/rtp-final-reminder",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type = clean(req.params.type, 20);
+      const id = clean(req.params.id, 150);
+
+      if (!["free", "rented"].includes(type)) {
+        return res.status(400).json({ error: "Invalid linked profile type." });
+      }
+
+      const assignments = type === "free" ? await getFreeAssignments() : await getRentalAssignments();
+      const assignment = type === "free" ? linkedFreeAssignment(assignments, id) : linkedRentalAssignment(assignments, id);
+
+      if (!assignment || assignment.active !== true || !assignment.customerAccountId) {
+        return res.status(404).json({ error: "This linked profile is no longer actively assigned." });
+      }
+
+      const managedAccountId = String(
+        assignment.managedAccountId ||
+        assignment.rentedMembershipId ||
+        assignment.freeMembershipId ||
+        id
+      );
+
+      const accounts = await getCustomerAccounts();
+      const account = accounts.find(item => String(item.id) === String(assignment.customerAccountId));
+
+      if (!account) {
+        return res.status(404).json({ error: "The customer account for this linked profile could not be found." });
+      }
+
+      const now = new Date();
+      const returnAt = new Date(now.getTime() + 60 * 60 * 1000);
+      const remindersRaw = await readJson(RTP_FINAL_REMINDERS_FILE, []);
+      const reminders = Array.isArray(remindersRaw) ? remindersRaw : [];
+
+      let reminder = reminders.find(item =>
+        item?.status === "pending" &&
+        item?.type === type &&
+        String(item?.managedAccountId || "") === managedAccountId
+      );
+
+      const retailer = String(
+        assignment.rentalRetailer ||
+        assignment.assignmentRetailer ||
+        assignment.referralRetailer ||
+        assignment.retailer ||
+        ""
+      );
+
+      if (!reminder) {
+        reminder = {
+          id: crypto.randomUUID(),
+          type,
+          assignmentId: String(assignment.id || ""),
+          managedAccountId,
+          customerAccountId: String(assignment.customerAccountId),
+          discordUserId: String(account.discordUserId || account.discordId || ""),
+          retailer,
+          originalExpiresAt: assignment.expiresAt || null,
+          triggeredAt: now.toISOString(),
+          returnAt: returnAt.toISOString(),
+          sentAt: null,
+          status: "pending",
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString()
+        };
+        reminders.push(reminder);
+      } else {
+        reminder.customerAccountId = String(assignment.customerAccountId);
+        reminder.discordUserId = String(account.discordUserId || account.discordId || "");
+        reminder.retailer = retailer;
+        reminder.originalExpiresAt = assignment.expiresAt || null;
+        reminder.triggeredAt = now.toISOString();
+        reminder.returnAt = returnAt.toISOString();
+        reminder.sentAt = null;
+        reminder.updatedAt = now.toISOString();
+      }
+
+      assignment.rtpFinalReminderAt = now.toISOString();
+      assignment.rtpFinalReminderReturnAt = returnAt.toISOString();
+      assignment.updatedAt = now.toISOString();
+
+      await Promise.all([
+        writeJson(RTP_FINAL_REMINDERS_FILE, reminders),
+        type === "free" ? saveFreeAssignments(assignments) : saveRentalAssignments(assignments)
+      ]);
+
+      return res.json({
+        ok: true,
+        returnAt: returnAt.toISOString(),
+        message: "RTP FINAL REMINDER queued. The customer will receive the grouped Discord reminder and this profile will return to its retailer pool in 1 hour unless reactivated."
+      });
+    } catch (error) {
+      console.error("RTP final reminder error:", error);
+      return res.status(500).json({ error: "Unable to queue the RTP final reminder." });
     }
   }
 );
@@ -46683,6 +46793,10 @@ await initializeArrayFile(
     );
 
     await initializeArrayFile(
+      RTP_FINAL_REMINDERS_FILE
+    );
+
+    await initializeArrayFile(
   SUCCESS_CHECKOUTS_FILE
 );
 
@@ -46716,7 +46830,32 @@ await initializeArrayFile(
           getRentalExtensionPrices: async () => ({
             week: await rentalAmountFor(1, "1_week"),
             month: await rentalAmountFor(1, "1_month")
-          })
+          }),
+          onRtpFinalReminderExpired: async ({ type, managedAccountId, customerAccountId }) => {
+            if (!["free", "rented"].includes(type)) return false;
+
+            const assignments = type === "free" ? await getFreeAssignments() : await getRentalAssignments();
+            const assignment = assignments.find(item =>
+              String(managedAssignmentMembershipId(item)) === String(managedAccountId) &&
+              String(item.customerAccountId || "") === String(customerAccountId) &&
+              item.active === true
+            );
+
+            if (!assignment) return true;
+
+            const nowIso = new Date().toISOString();
+            clearManagedAssignmentCustomerData(assignment, {
+              reason: "rtp_final_reminder_expired",
+              nowIso
+            });
+            assignment.rtpFinalReminderReturnedAt = nowIso;
+            assignment.updatedAt = nowIso;
+
+            if (type === "free") await saveFreeAssignments(assignments);
+            else await saveRentalAssignments(assignments);
+
+            return true;
+          }
         });
         startDiscordCommunity({
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
