@@ -6736,6 +6736,43 @@ app.post(
         const session =
           event.data.object;
 
+        if (session.metadata?.purchase_type === "rental_extension") {
+          const customerAccountId = clean(session.metadata?.customer_account_id, 150);
+          const managedAccountId = clean(session.metadata?.managed_account_id, 150);
+          const durationType = normalizeSpecialProfileDuration(session.metadata?.duration_type);
+          if (customerAccountId && managedAccountId && ["1_week", "1_month"].includes(durationType)) {
+            let assignments = await getRentalAssignments();
+            let assignment = assignments.find(item =>
+              String(managedAssignmentMembershipId(item)) === String(managedAccountId) &&
+              String(item.customerAccountId || "") === String(customerAccountId));
+            if (!assignment) {
+              const restored = await restoreHeldManagedAccountsForCustomer(customerAccountId, "rented");
+              if (restored.managedAccountIds.map(String).includes(String(managedAccountId))) {
+                assignments = await getRentalAssignments();
+                assignment = assignments.find(item =>
+                  String(managedAssignmentMembershipId(item)) === String(managedAccountId) &&
+                  String(item.customerAccountId || "") === String(customerAccountId));
+              }
+            }
+            if (assignment && String(assignment.extensionStripeSessionId || "") !== String(session.id)) {
+              const now = new Date();
+              const current = assignment.expiresAt ? new Date(assignment.expiresAt) : now;
+              const base = Number.isFinite(current.getTime()) && current > now ? current : now;
+              if (durationType === "1_week") base.setDate(base.getDate() + 7);
+              else base.setMonth(base.getMonth() + 1);
+              assignment.expiresAt = base.toISOString();
+              assignment.startsAt = assignment.startsAt || now.toISOString();
+              assignment.activationStatus = "activated";
+              assignment.activatedAt = assignment.activatedAt || now.toISOString();
+              assignment.active = true;
+              assignment.durationType = durationType;
+              assignment.extensionStripeSessionId = session.id;
+              assignment.updatedAt = now.toISOString();
+              await saveRentalAssignments(assignments);
+            }
+          }
+        }
+
         if (
           session.metadata
             ?.purchase_type ===
@@ -46637,7 +46674,11 @@ await initializeArrayFile(
         startMembershipLapseNotificationScheduler({
           dataDir: DATA_DIR,
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
-          adminWebhookUrl: String(process.env.DISCORD_ADMIN_PAYMENT_WEBHOOK_URL || "").trim()
+          adminWebhookUrl: String(process.env.DISCORD_ADMIN_PAYMENT_WEBHOOK_URL || "").trim(),
+          getRentalExtensionPrices: async () => ({
+            week: await rentalAmountFor(1, "1_week"),
+            month: await rentalAmountFor(1, "1_month")
+          })
         });
         startDiscordCommunity({
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
