@@ -6736,6 +6736,44 @@ app.post(
         const session =
           event.data.object;
 
+        if (session.metadata?.purchase_type === "rental_batch_extension") {
+          const customerAccountId = clean(session.metadata?.customer_account_id, 150);
+          const ids = String(session.metadata?.managed_account_ids || "").split(",").map(value => clean(value, 150)).filter(Boolean);
+          const durationType = normalizeSpecialProfileDuration(session.metadata?.duration_type);
+          if (customerAccountId && ids.length && ["1_week", "1_month"].includes(durationType)) {
+            let assignments = await getRentalAssignments();
+            const existingIds = new Set(assignments.filter(item => String(item.customerAccountId || "") === String(customerAccountId))
+              .map(item => String(managedAssignmentMembershipId(item))));
+            const missing = ids.filter(id => !existingIds.has(String(id)));
+            if (missing.length) {
+              await restoreHeldManagedAccountsForCustomer(customerAccountId, "rented");
+              assignments = await getRentalAssignments();
+            }
+            const now = new Date();
+            let changed = false;
+            for (const managedAccountId of ids) {
+              const assignment = assignments.find(item =>
+                String(managedAssignmentMembershipId(item)) === String(managedAccountId) &&
+                String(item.customerAccountId || "") === String(customerAccountId));
+              if (!assignment || String(assignment.extensionStripeSessionId || "") === String(session.id)) continue;
+              const current = assignment.expiresAt ? new Date(assignment.expiresAt) : now;
+              const base = Number.isFinite(current.getTime()) && current > now ? current : new Date(now);
+              if (durationType === "1_week") base.setDate(base.getDate() + 7);
+              else base.setMonth(base.getMonth() + 1);
+              assignment.expiresAt = base.toISOString();
+              assignment.startsAt = assignment.startsAt || now.toISOString();
+              assignment.activationStatus = "activated";
+              assignment.activatedAt = assignment.activatedAt || now.toISOString();
+              assignment.active = true;
+              assignment.durationType = durationType;
+              assignment.extensionStripeSessionId = session.id;
+              assignment.updatedAt = now.toISOString();
+              changed = true;
+            }
+            if (changed) await saveRentalAssignments(assignments);
+          }
+        }
+
         if (session.metadata?.purchase_type === "rental_extension") {
           const customerAccountId = clean(session.metadata?.customer_account_id, 150);
           const managedAccountId = clean(session.metadata?.managed_account_id, 150);
@@ -46753,6 +46791,37 @@ await initializeArrayFile(
               }
             });
             return { url: session.url, price };
+          },
+          onCreateRentalBatchExtensionCheckout: async ({ discordUserId, batchToken, quantity, durationType }) => {
+            const account = (await getCustomerAccounts()).find(item => String(item.discordUserId || "") === String(discordUserId));
+            if (!account) throw new Error("Your Discord account is not linked to a website account.");
+            const batches = await readJson(path.join(DATA_DIR, "discord-renewal-batches.json"), {});
+            const batch = batches?.[batchToken];
+            if (!batch || batch.kind !== "rented" || String(batch.customerAccountId) !== String(account.id) ||
+                String(batch.discordUserId) !== String(discordUserId)) throw new Error("That renewal batch is no longer available.");
+            if (!Number.isInteger(quantity) || quantity < 1 || quantity > batch.managedAccountIds.length) throw new Error("Choose a valid number of profiles.");
+            if (!["1_week", "1_month"].includes(durationType)) throw new Error("Choose 1 week or 1 month.");
+            const unitPrice = await rentalAmountFor(1, durationType);
+            const priceId = rentalPriceIdFor(1, durationType);
+            if (!(unitPrice > 0) || !priceId) throw new Error("This extension price is not configured.");
+            const selectedIds = batch.managedAccountIds.slice(0, quantity).map(String);
+            const session = await stripe.checkout.sessions.create({
+              mode: "payment",
+              line_items: [{ price: priceId, quantity }],
+              success_url: `${BASE_URL}/?rental_extension=success#my-profile`,
+              cancel_url: `${BASE_URL}/?rental_extension=cancelled#my-profile`,
+              customer_email: account.email || undefined,
+              metadata: {
+                purchase_type: "rental_batch_extension",
+                customer_account_id: String(account.id),
+                renewal_batch_token: String(batchToken),
+                managed_account_ids: selectedIds.join(","),
+                account_quantity: String(quantity),
+                duration_type: durationType,
+                rental_unit_price: String(unitPrice)
+              }
+            });
+            return { url: session.url, total: unitPrice * quantity };
           }
         });
         if (discordSuccessConfig().token) {
