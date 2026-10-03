@@ -2772,6 +2772,9 @@ async function ensureManagedProfileDiscordMessage(
       activationStatus ===
       "expired";
 
+    // Expirations use the single closeable #admin-profiles lapse checklist.
+    if (expired) return false;
+
     const messageId =
       await sendDiscordAdminProfileWorkflowNotification({
         title:
@@ -10766,6 +10769,9 @@ async function sendRestoreHoldExpirationDiscord(
   hold,
   managedAccounts
 ) {
+  // Restore Holds remain active for account reuse, but no longer create
+  // a second Discord expiration message.
+  return false;
   if (
     !hold ||
     hold.expirationDiscordSentAt
@@ -46650,7 +46656,63 @@ await initializeArrayFile(
           dataDir: DATA_DIR,
           aiKey: String(process.env.OPENAI_API_KEY || "").trim(),
           geminiKey: String(process.env.GEMINI_API_KEY || "").trim(),
-          onSuccessMessage: () => queueDiscordSuccessScan(50)
+          onSuccessMessage: () => queueDiscordSuccessScan(50),
+          onExtendLapsedProfile: async ({ type, managedAccountId, amount, unit }) => {
+            if (!["free", "rented"].includes(type)) throw new Error("Invalid profile type.");
+            const holds = await getRestoreHolds();
+            const hold = activeRestoreHoldsFor(holds).find(item =>
+              item.type === type && restoreHoldRemainingItems(item).some(entry => String(entry.managedAccountId) === String(managedAccountId)));
+            if (!hold) throw new Error("This expired profile is no longer on Restore Hold.");
+            const customerAccountId = hold.customerAccountId;
+            const restored = await restoreHeldManagedAccountsForCustomer(customerAccountId, type);
+            if (!restored.managedAccountIds.map(String).includes(String(managedAccountId))) throw new Error("Unable to restore this profile for extension.");
+            const assignments = type === "free" ? await getFreeAssignments() : await getRentalAssignments();
+            const assignment = assignments.find(item => String(managedAssignmentMembershipId(item)) === String(managedAccountId) && String(item.customerAccountId) === String(customerAccountId));
+            if (!assignment) throw new Error("Restored profile assignment was not found.");
+            const now = new Date();
+            const ms = amount * (unit.startsWith("day") ? 86400000 : 3600000);
+            assignment.startsAt = now.toISOString();
+            assignment.expiresAt = new Date(now.getTime() + ms).toISOString();
+            assignment.activationStatus = "activated";
+            assignment.activatedAt = now.toISOString();
+            assignment.active = true;
+            assignment.durationType = `gifted_${amount}_${unit.startsWith("day") ? "days" : "hours"}`;
+            assignment.adminGiftedExtension = true;
+            assignment.updatedAt = now.toISOString();
+            if (type === "free") await saveFreeAssignments(assignments); else await saveRentalAssignments(assignments);
+            return { expiresAt: assignment.expiresAt, retailer: assignment.assignmentRetailer || assignment.rentalRetailer || "Profile" };
+          },
+          onCreateRentalExtensionCheckout: async ({ discordUserId, type, managedAccountId, durationType }) => {
+            if (type !== "rented") throw new Error("Only rented profiles have paid extensions.");
+            const account = (await getCustomerAccounts()).find(item => String(item.discordUserId || "") === String(discordUserId));
+            if (!account) throw new Error("Your Discord account is not linked to a website account.");
+            const price = await rentalAmountFor(1, durationType);
+            const priceId = rentalPriceIdFor(1, durationType);
+            if (!(price > 0) || !priceId) throw new Error("This extension price is not configured.");
+            const assignments = await getRentalAssignments();
+            let assignment = assignments.find(item => String(managedAssignmentMembershipId(item)) === String(managedAccountId) && String(item.customerAccountId) === String(account.id));
+            if (!assignment) {
+              const holds = await getRestoreHolds();
+              const hold = activeRestoreHoldsFor(holds, { customerAccountId: account.id, type: "rented" }).find(item =>
+                restoreHoldRemainingItems(item).some(entry => String(entry.managedAccountId) === String(managedAccountId)));
+              if (!hold) throw new Error("This rental is no longer available to extend.");
+            }
+            const session = await stripe.checkout.sessions.create({
+              mode: "payment",
+              line_items: [{ price: priceId, quantity: 1 }],
+              success_url: `${BASE_URL}/?rental_extension=success#my-profile`,
+              cancel_url: `${BASE_URL}/?rental_extension=cancelled#my-profile`,
+              customer_email: account.email || undefined,
+              metadata: {
+                purchase_type: "rental_extension",
+                customer_account_id: String(account.id),
+                managed_account_id: String(managedAccountId),
+                duration_type: durationType,
+                rental_price: String(price)
+              }
+            });
+            return { url: session.url, price };
+          }
         });
         if (discordSuccessConfig().token) {
           setTimeout(() => scanDiscordSuccessChannel(), 12000);
