@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { sendDiscordLapseChecklistAlert } from "./discord-community.js";
@@ -77,7 +78,8 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
     paid: path.join(dataDir, "paid-submissions.json"),
     rented: path.join(dataDir, "rental-assignments.json"),
     gifted: path.join(dataDir, "free-assignments.json"),
-    state: path.join(dataDir, "membership-lapse-discord-state.json")
+    state: path.join(dataDir, "membership-lapse-discord-state.json"),
+    batches: path.join(dataDir, "discord-renewal-batches.json")
   };
   let running = false;
 
@@ -92,6 +94,8 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
       const state = stateRaw && typeof stateRaw === "object" ? stateRaw : {};
       let changed = false;
       const now = Date.now();
+      const renewalGroups = new Map();
+      const renewalBatches = {};
 
       for (const record of list(paidRaw)) {
         if (record?.cancelAtPeriodEnd !== true) continue;
@@ -128,23 +132,12 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           const remaining = end.getTime() - now;
           if (remaining > 0 && remaining <= 3 * DAY && record?.active === true && account) {
             const stage = remaining <= DAY ? "1d" : "3d";
-            const notice = `${base}:${end.toISOString()}:${stage}`;
-            if (!state[notice]) {
-              try {
-                let components = [];
-                if (kind === "rented" && typeof getRentalExtensionPrices === "function") {
-                  const prices = await getRentalExtensionPrices();
-                  const managedId = String(record?.managedAccountId || record?.rentedMembershipId || "").replace(/[^a-zA-Z0-9_-]/g, "");
-                  components = [{ type: 1, components: [
-                    { type: 2, style: 1, label: `Extend 1 Week — ${Number(prices.week).toFixed(2)}`, custom_id: `renew:quote:rented:${managedId}:1_week:${Number(prices.week).toFixed(2)}` },
-                    { type: 2, style: 1, label: `Extend 1 Month — ${Number(prices.month).toFixed(2)}`, custom_id: `renew:quote:rented:${managedId}:1_month:${Number(prices.month).toFixed(2)}` }
-                  ] }];
-                }
-                if (await dm(token, discordId(account), reminder(kind, label(record, kind), end, stage), components)) {
-                  state[notice] = new Date().toISOString(); changed = true;
-                }
-              } catch (e) { console.error(`${kind} lapse DM:`, e.message); }
+            const hourBucket = end.toISOString().slice(0, 13);
+            const groupKey = `${account.id}:${kind}:${stage}:${hourBucket}`;
+            if (!renewalGroups.has(groupKey)) {
+              renewalGroups.set(groupKey, { account, kind, stage, end, records: [] });
             }
+            renewalGroups.get(groupKey).records.push(record);
           }
           const manuallyReturned = ["returned_to_pool", "returned", "released", "admin_returned"].includes(String(record?.endReason || "").toLowerCase());
           if (remaining <= 0 && !manuallyReturned) {
@@ -169,6 +162,73 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           }
         }
       }
+      for (const group of renewalGroups.values()) {
+        const sorted = [...group.records].sort((a, b) => {
+          const aStart = Date.parse(a?.startsAt || a?.createdAt || "") || 0;
+          const bStart = Date.parse(b?.startsAt || b?.createdAt || "") || 0;
+          if (aStart !== bStart) return aStart - bStart;
+          return (Date.parse(b?.updatedAt || "") || 0) - (Date.parse(a?.updatedAt || "") || 0);
+        });
+        const ids = sorted.map(record => String(record?.managedAccountId || record?.rentedMembershipId || record?.freeMembershipId || "")).filter(Boolean);
+        if (!ids.length) continue;
+        const tokenValue = crypto.createHash("sha256")
+          .update(`${group.account.id}|${group.kind}|${group.stage}|${group.end.toISOString().slice(0,13)}`)
+          .digest("hex").slice(0, 16);
+        const notice = `batch:${tokenValue}:${group.stage}`;
+        const retailerCounts = {};
+        for (const record of sorted) {
+          const retailer = String(record?.rentalRetailer || record?.assignmentRetailer || record?.referralRetailer || record?.retailer || "Other");
+          retailerCounts[retailer] = (retailerCounts[retailer] || 0) + 1;
+        }
+        let prices = null;
+        if (group.kind === "rented" && typeof getRentalExtensionPrices === "function") {
+          prices = await getRentalExtensionPrices();
+        }
+        renewalBatches[tokenValue] = {
+          token: tokenValue,
+          customerAccountId: String(group.account.id),
+          discordUserId: discordId(group.account),
+          kind: group.kind,
+          stage: group.stage,
+          expiresAt: group.end.toISOString(),
+          managedAccountIds: ids,
+          retailerCounts,
+          prices,
+          createdAt: new Date().toISOString()
+        };
+        if (state[notice]) continue;
+        const breakdown = Object.entries(retailerCounts)
+          .map(([retailer, count]) => `• ${retailer === "pokemoncenter" ? "Pokémon Center" : retailer.charAt(0).toUpperCase() + retailer.slice(1)}: **${count}**`)
+          .join("\n");
+        const count = ids.length;
+        const embed = {
+          title: `${group.stage === "1d" ? "⚠️" : "⏰"} ${count} ${group.kind === "rented" ? "rental" : "gifted"} profile${count === 1 ? "" : "s"} expiring soon`,
+          description: `You have **${count}** ${group.kind === "rented" ? "rental" : "gifted"} profile${count === 1 ? "" : "s"} expiring **${fmt(group.end)}**.\n\n${breakdown}\n\n${group.kind === "rented" ? "Choose how many profiles you want to keep. You will see the total price before any payment step." : "This is one combined reminder so you are not sent a separate message for every profile."}`,
+          color: group.stage === "1d" ? 0xe67e22 : 0xf1c40f,
+          footer: { text: "SLABSNGRABSACO renewal reminder" },
+          timestamp: new Date().toISOString()
+        };
+        let components = [];
+        if (group.kind === "rented") {
+          const quick = [];
+          if (count >= 5) quick.push({ type: 2, style: 2, label: "Keep 5", custom_id: `renewbatch:qty:${tokenValue}:5` });
+          if (count >= 10) quick.push({ type: 2, style: 2, label: "Keep 10", custom_id: `renewbatch:qty:${tokenValue}:10` });
+          quick.push({ type: 2, style: 1, label: `Keep All ${count}`, custom_id: `renewbatch:qty:${tokenValue}:all` });
+          components = [
+            { type: 1, components: quick.slice(0, 5) },
+            { type: 1, components: [{ type: 2, style: 2, label: "Choose Amount", custom_id: `renewbatch:custom:${tokenValue}` }] }
+          ];
+        }
+        try {
+          if (await dm(token, discordId(group.account), embed, components)) {
+            state[notice] = new Date().toISOString();
+            changed = true;
+          }
+        } catch (e) {
+          console.error(`${group.kind} grouped lapse DM:`, e.message);
+        }
+      }
+      await save(paths.batches, renewalBatches);
       if (changed) await save(paths.state, state);
     } catch (e) { console.error("Membership lapse notification scheduler:", e.message); }
     finally { running = false; }
