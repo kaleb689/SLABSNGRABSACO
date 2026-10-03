@@ -17132,6 +17132,13 @@ async function getAvailableManagedAccountsForRetailer(
       );
 
     if (
+      account?.needsRepair === true ||
+      String(account?.repairStatus || "").toLowerCase() === "needs_repair"
+    ) {
+      continue;
+    }
+
+    if (
       inUseAccountIds.has(
         accountId
       ) ||
@@ -23869,6 +23876,196 @@ app.post(
 );
 
 
+
+app.post(
+  "/api/admin/linked-memberships/:type/:id/rtp-fill-spot",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const type = clean(req.params.type, 20);
+      const id = clean(req.params.id, 150);
+
+      if (!["free", "rented"].includes(type)) {
+        return res.status(400).json({ error: "Invalid linked profile type." });
+      }
+
+      const assignments =
+        type === "free"
+          ? await getFreeAssignments()
+          : await getRentalAssignments();
+
+      const assignment =
+        type === "free"
+          ? linkedFreeAssignment(assignments, id)
+          : linkedRentalAssignment(assignments, id);
+
+      if (!assignment || assignment.active !== true || !assignment.customerAccountId) {
+        return res.status(404).json({ error: "This linked profile is no longer actively assigned." });
+      }
+
+      const oldManagedAccountId = String(
+        assignment.managedAccountId ||
+        assignment.freeMembershipId ||
+        assignment.rentedMembershipId ||
+        id
+      );
+
+      const managedAccounts = await getManagedAccounts();
+      const oldManagedAccount = managedAccounts.find(
+        item => String(item.id) === oldManagedAccountId
+      );
+
+      if (!oldManagedAccount) {
+        return res.status(404).json({ error: "The managed account being replaced could not be found." });
+      }
+
+      let retailer = normalizeManagedPoolRetailer(
+        assignment.rentalRetailer ||
+        assignment.assignmentRetailer ||
+        assignment.referralRetailer ||
+        ""
+      );
+
+      if (!retailer) {
+        const credentials = managedRetailerCredentialsForAdmin(oldManagedAccount);
+        retailer = RETAILER_KEYS.find(key =>
+          Boolean(String(credentials?.[key]?.username || "").trim())
+        ) || "";
+      }
+
+      if (!retailer) {
+        return res.status(409).json({ error: "Unable to determine which retailer pool this profile belongs to." });
+      }
+
+      const available = (await getAvailableManagedAccountsForRetailer(retailer))
+        .filter(item =>
+          String(item.id) !== oldManagedAccountId &&
+          item?.needsRepair !== true &&
+          String(item?.repairStatus || "").toLowerCase() !== "needs_repair"
+        );
+
+      if (!available.length) {
+        return res.status(409).json({
+          error: `No replacement profile is currently available in the ${retailerDisplayName(retailer)} pool. The existing linked profile was left unchanged.`
+        });
+      }
+
+      const replacement = available[0];
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const customerAccountId = String(assignment.customerAccountId);
+      const paidSubmissionId = assignment.paidSubmissionId || null;
+
+      oldManagedAccount.needsRepair = true;
+      oldManagedAccount.repairStatus = "needs_repair";
+      oldManagedAccount.repairReason = "RTP and fill spot — account reported invalid or not working";
+      oldManagedAccount.repairFlaggedAt = nowIso;
+      oldManagedAccount.updatedAt = nowIso;
+
+      const replacementAssignment = {
+        id: crypto.randomUUID(),
+        managedAccountId: replacement.id,
+        customerAccountId,
+        paidSubmissionId,
+        active: true,
+        durationType: assignment.durationType || "1_week",
+        activationStatus: "awaiting_activation",
+        activationRequestedAt: nowIso,
+        startsAt: assignment.startsAt || null,
+        expiresAt: assignment.expiresAt || null,
+        customerProfile: assignment.customerProfile || {},
+        customerSecrets: assignment.customerSecrets || null,
+        selectedAddressId: assignment.selectedAddressId || null,
+        selectedPaymentId: assignment.selectedPaymentId || null,
+        savedPaymentMethodId: assignment.savedPaymentMethodId || null,
+        jiggedAddress: assignment.jiggedAddress || null,
+        jigVariantIndex: assignment.jigVariantIndex ?? null,
+        jigSourceKey: assignment.jigSourceKey || null,
+        jigSourceAddress: assignment.jigSourceAddress || null,
+        jigHistoryKeys: Array.isArray(assignment.jigHistoryKeys) ? assignment.jigHistoryKeys : [],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        endedAt: null,
+        endReason: null,
+        replacementForManagedAccountId: oldManagedAccountId,
+        replacementReason: "rtp_fill_spot"
+      };
+
+      if (type === "free") {
+        replacementAssignment.freeMembershipId = replacement.id;
+        replacementAssignment.assignmentRetailer = retailer;
+      } else {
+        replacementAssignment.rentedMembershipId = replacement.id;
+        replacementAssignment.rentalRetailer = retailer;
+        replacementAssignment.stripeSubscriptionId = assignment.stripeSubscriptionId || null;
+        replacementAssignment.stripeCustomerId = assignment.stripeCustomerId || null;
+      }
+
+      clearManagedAssignmentCustomerData(assignment, {
+        reason: "rtp_fill_spot_needs_repair",
+        nowIso
+      });
+      assignment.replacedByManagedAccountId = replacement.id;
+      assignment.repairFlaggedAt = nowIso;
+      assignment.updatedAt = nowIso;
+
+      assignments.push(replacementAssignment);
+
+      if (type === "free") {
+        await saveFreeAssignments(assignments);
+      } else {
+        await saveRentalAssignments(assignments);
+      }
+
+      await saveManagedAccounts(managedAccounts);
+
+      try {
+        const remindersRaw = await readJson(RTP_FINAL_REMINDERS_FILE, []);
+        const reminders = Array.isArray(remindersRaw) ? remindersRaw : [];
+        let remindersChanged = false;
+        for (const reminder of reminders) {
+          if (
+            reminder?.status === "pending" &&
+            reminder?.type === type &&
+            String(reminder?.managedAccountId || "") === oldManagedAccountId
+          ) {
+            reminder.status = "replaced";
+            reminder.replacedAt = nowIso;
+            reminder.replacedByManagedAccountId = String(replacement.id);
+            remindersChanged = true;
+          }
+        }
+        if (remindersChanged) await writeJson(RTP_FINAL_REMINDERS_FILE, reminders);
+      } catch (error) {
+        console.error("RTP fill spot reminder cleanup:", error.message);
+      }
+
+      try {
+        await ensureManagedProfileDiscordMessage(replacementAssignment, type);
+        if (type === "free") await saveFreeAssignments(assignments);
+        else await saveRentalAssignments(assignments);
+      } catch (error) {
+        console.error("Replacement linked profile Discord message:", error.message);
+      }
+
+      return res.json({
+        ok: true,
+        retailer,
+        replacementManagedAccountId: replacement.id,
+        replacementProfileName: replacement.profileName || "Managed account",
+        message:
+          `Old profile flagged NEEDS REPAIR and returned. A replacement from the ${retailerDisplayName(retailer)} pool was linked into this user's spot.`
+      });
+    } catch (error) {
+      console.error("RTP and fill spot error:", error);
+      return res.status(500).json({
+        error: error.message || "Unable to RTP this profile and fill the spot."
+      });
+    }
+  }
+);
+
+
 app.post(
   "/api/admin/linked-memberships/:type/:id/return-to-pool",
   requireAdmin,
@@ -27261,6 +27458,8 @@ app.get(
           exportAttemptStatus: assignment.exportAttemptStatus || null,
           exportAttemptedAt: assignment.exportAttemptedAt || null,
           updatedAt: assignment.updatedAt || null,
+          rtpFinalReminderAt: assignment.rtpFinalReminderAt || null,
+          rtpFinalReminderReturnAt: assignment.rtpFinalReminderReturnAt || null,
 
           customerCard:
             (() => {
@@ -27417,6 +27616,8 @@ app.get(
           exportAttemptStatus: assignment.exportAttemptStatus || null,
           exportAttemptedAt: assignment.exportAttemptedAt || null,
           updatedAt: assignment.updatedAt || null,
+          rtpFinalReminderAt: assignment.rtpFinalReminderAt || null,
+          rtpFinalReminderReturnAt: assignment.rtpFinalReminderReturnAt || null,
 
           customerCard:
             (() => {
