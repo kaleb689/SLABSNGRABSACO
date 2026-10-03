@@ -2423,9 +2423,45 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       setTimeout(connect, 30000).unref?.();
     }
   }
+  async function sendOwnerRenewalPreview() {
+    if (!ownerId) return false;
+    const markerFile = path.join(dataDir, "discord-renewal-preview-v1.json");
+    try {
+      const existing = JSON.parse(await fs.readFile(markerFile, "utf8"));
+      if (existing?.sentAt) return false;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    const dmChannel = await api("/users/@me/channels", "POST", { recipient_id: String(ownerId) });
+    await api(`/channels/${dmChannel.id}/messages`, "POST", {
+      allowed_mentions: { parse: [] },
+      embeds: [{
+        title: "⏰ 20 rental profiles expiring soon — PREVIEW",
+        description: "You have **20 rental profiles** expiring **October 6, 2026 at 8:00 PM EDT**.\n\n• Target: **8**\n• Walmart: **7**\n• Pokémon Center: **5**\n\nChoose how many profiles you want to keep. You will see the total price before any payment step.\n\n**Preview only — these buttons are disabled.**",
+        color: 0xf1c40f,
+        footer: { text: "SLABSNGRABSACO renewal reminder preview" },
+        timestamp: new Date().toISOString()
+      }],
+      components: [
+        { type: 1, components: [
+          { type: 2, style: 2, label: "Keep 5", custom_id: "preview:keep5", disabled: true },
+          { type: 2, style: 2, label: "Keep 10", custom_id: "preview:keep10", disabled: true },
+          { type: 2, style: 1, label: "Keep All 20", custom_id: "preview:keepall", disabled: true }
+        ] },
+        { type: 1, components: [
+          { type: 2, style: 2, label: "Choose Amount", custom_id: "preview:custom", disabled: true }
+        ] }
+      ]
+    });
+    await fs.writeFile(markerFile, JSON.stringify({ sentAt: new Date().toISOString(), ownerId }, null, 2), { mode: 0o600 });
+    console.log("Sent owner grouped renewal DM layout preview.");
+    return true;
+  }
+
   async function setup() {
     try {
       await provision();
+      await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
       await syncAll(); await connect(); void verifyAiConnection();
