@@ -5175,10 +5175,29 @@
       display: block !important;
       width: 100%;
       min-height: 38px !important;
-      border: 1px solid #d69a2d !important;
-      background: #332407 !important;
-      color: #ffd86a !important;
+      border: 1px solid #f1c40f !important;
+      background: #f1c40f !important;
+      color: #171100 !important;
       cursor: pointer;
+      font-weight: 950 !important;
+    }
+
+    .rtp-final-reminder-button.rtp-sent {
+      background: #8a7410 !important;
+      border-color: #c9aa16 !important;
+      color: #fff3a0 !important;
+    }
+
+    .rtp-fill-spot-button {
+      grid-column: 1 / -1;
+      display: block !important;
+      width: 100%;
+      min-height: 38px !important;
+      border: 1px solid #f39c12 !important;
+      background: #4b2c05 !important;
+      color: #ffd596 !important;
+      cursor: pointer;
+      font-weight: 950 !important;
     }
 
     .linked-quick-return-button {
@@ -9582,7 +9601,7 @@ function linkedProfileDetailHtml(
 
             <button
               type="button"
-              class="admin-cancel-button rtp-final-reminder-button"
+              class="admin-cancel-button rtp-final-reminder-button ${membership.rtpFinalReminderAt ? "rtp-sent" : ""}"
               data-rtp-final-reminder="${escapeHtml(
                 membership.id
               )}"
@@ -9590,7 +9609,20 @@ function linkedProfileDetailHtml(
                 membership.type
               )}"
             >
-              RTP FINAL REMINDER
+              ${membership.rtpFinalReminderAt ? "RTP SENT" : "RTP FINAL REMINDER"}
+            </button>
+
+            <button
+              type="button"
+              class="rtp-fill-spot-button"
+              data-rtp-fill-spot="${escapeHtml(
+                membership.id
+              )}"
+              data-rtp-fill-type="${escapeHtml(
+                membership.type
+              )}"
+            >
+              RTP AND FILL SPOT
             </button>
 
             <button
@@ -10192,6 +10224,19 @@ function linkedProfileListCardHtml(
           )}"
         >
           RTP FINAL REMINDER
+        </button>
+
+        <button
+          type="button"
+          class="rtp-fill-spot-button"
+          data-rtp-fill-spot="${escapeHtml(
+            membership.id
+          )}"
+          data-rtp-fill-type="${escapeHtml(
+            membership.type
+          )}"
+        >
+          RTP AND FILL SPOT
         </button>
 
         <button
@@ -20469,6 +20514,8 @@ document
             [data-linked-quick-extend],
             [data-extend-gifted],
             [data-return-linked-to-pool],
+            [data-rtp-final-reminder],
+            [data-rtp-fill-spot],
             [data-linked-jig],
             [data-linked-remove-jig],
             [data-jig-attach-payment],
@@ -24542,19 +24589,31 @@ document.addEventListener("click", event => {
     const button = event.target.closest("[data-rtp-final-reminder]");
     if (!button) return;
 
+    event.preventDefault();
+    event.stopPropagation();
+
     const id = button.dataset.rtpFinalReminder || "";
     const type = button.dataset.rtpFinalType || "";
-
     if (!id || !["free", "rented"].includes(type)) return;
+
+    if (button.textContent.trim() === "RTP SENT") {
+      return;
+    }
+
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
 
     const confirmed = window.confirm(
       "Send the RTP FINAL REMINDER? This profile will be scheduled to return to its retailer pool in 1 hour unless the user reactivates it."
     );
-    if (!confirmed) return;
+    if (!confirmed) {
+      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+      return;
+    }
 
     const originalText = button.textContent;
     button.disabled = true;
-    button.textContent = "QUEUING...";
+    button.textContent = "SENDING...";
 
     try {
       const response = await fetch(
@@ -24574,16 +24633,74 @@ document.addEventListener("click", event => {
         throw new Error(result.error || "Unable to queue RTP final reminder.");
       }
 
-      button.textContent = "RTP IN 1 HOUR";
-      button.classList.add("success");
-      window.alert(result.message || "RTP FINAL REMINDER queued.");
+      button.textContent = "RTP SENT";
+      button.classList.add("rtp-sent");
+      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
     } catch (error) {
       button.textContent = originalText;
       window.alert(error.message || "Unable to queue RTP final reminder.");
+      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
     } finally {
       button.disabled = false;
     }
   });
+
+  document.addEventListener("click", async event => {
+    const button = event.target.closest("[data-rtp-fill-spot]");
+    if (!button) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const id = button.dataset.rtpFillSpot || "";
+    const type = button.dataset.rtpFillType || "";
+    if (!id || !["free", "rented"].includes(type)) return;
+
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+
+    const confirmed = window.confirm(
+      "RTP this account and fill its spot? The current account will be flagged NEEDS REPAIR and a replacement will be pulled from the same retailer pool."
+    );
+    if (!confirmed) {
+      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+      return;
+    }
+
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = "REPLACING...";
+
+    try {
+      const response = await fetch(
+        `/api/admin/linked-memberships/${encodeURIComponent(type)}/${encodeURIComponent(id)}/rtp-fill-spot`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        }
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        if (handleAdminUnauthorized(response)) return;
+        throw new Error(result.error || "Unable to RTP and fill this spot.");
+      }
+
+      button.textContent = "SPOT FILLED";
+      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+    } catch (error) {
+      button.textContent = originalText;
+      window.alert(error.message || "Unable to RTP and fill this spot.");
+      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+
 
 </script>
 
