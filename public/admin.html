@@ -5182,10 +5182,25 @@
       font-weight: 950 !important;
     }
 
+    .rtp-final-reminder-button::before,
+    .rtp-final-reminder-button::after {
+      content: "!";
+      color: #ff2d2d;
+      font-weight: 1000;
+      font-size: 15px;
+      margin: 0 7px;
+    }
+
     .rtp-final-reminder-button.rtp-sent {
       background: #8a7410 !important;
       border-color: #c9aa16 !important;
       color: #fff3a0 !important;
+    }
+
+    .rtp-final-reminder-button.rtp-sent::before,
+    .rtp-final-reminder-button.rtp-sent::after {
+      content: "";
+      margin: 0;
     }
 
     .rtp-fill-spot-button {
@@ -9609,7 +9624,7 @@ function linkedProfileDetailHtml(
                 membership.type
               )}"
             >
-              ${membership.rtpFinalReminderAt ? "RTP SENT" : "RTP FINAL REMINDER"}
+              ${membership.rtpFinalReminderAt ? "RTP SENT" : "RTP IN 1 HOUR"}
             </button>
 
             <button
@@ -10215,7 +10230,7 @@ function linkedProfileListCardHtml(
 
         <button
           type="button"
-          class="admin-cancel-button"
+          class="admin-cancel-button rtp-final-reminder-button ${membership.rtpFinalReminderAt ? "rtp-sent" : ""}"
           data-rtp-final-reminder="${escapeHtml(
             membership.id
           )}"
@@ -10223,7 +10238,7 @@ function linkedProfileListCardHtml(
             membership.type
           )}"
         >
-          RTP FINAL REMINDER
+          ${membership.rtpFinalReminderAt ? "RTP SENT" : "RTP IN 1 HOUR"}
         </button>
 
         <button
@@ -24604,7 +24619,7 @@ document.addEventListener("click", event => {
     const scrollY = window.scrollY;
 
     const confirmed = window.confirm(
-      "Send the RTP FINAL REMINDER? This profile will be scheduled to return to its retailer pool in 1 hour unless the user reactivates it."
+      "Mark this profile for RTP in 1 hour? The customer notification will be grouped and sent about 10 minutes after your first RTP selection."
     );
     if (!confirmed) {
       requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
