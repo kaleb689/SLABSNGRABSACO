@@ -16,14 +16,17 @@ export async function sendDiscordLapseChecklistAlert({
 } = {}) {
   if (!lapseChecklistRuntime?.api || !lapseChecklistRuntime?.adminChannelId) return false;
   const clean = value => String(value ?? "").slice(0, 900);
+  const retailerName = String(retailer || "Unknown").trim();
+  const removalProgram = /target/i.test(retailerName) ? "Shikari" :
+    /(walmart|pokemon|pokémon)/i.test(retailerName) ? "Valor" : "the appropriate external program";
   const message = await lapseChecklistRuntime.api(
     `/channels/${lapseChecklistRuntime.adminChannelId}/messages`,
     "POST",
     {
       allowed_mentions: { parse: [] },
       embeds: [{
-        title: "❌ LAPSED ACCOUNT — REMOVE FROM OTHER PROGRAMS",
-        description: "This account expired automatically and should be removed from any external programs where it is still loaded.",
+        title: `❌ LAPSED ACCOUNT — REMOVE FROM ${removalProgram.toUpperCase()}`,
+        description: `This account expired automatically. **Remove this profile from ${removalProgram}**, then close this notification.`,
         color: 0xe74c3c,
         fields: [
           { name: "Customer", value: clean(customerName || "Unknown"), inline: false },
@@ -33,7 +36,7 @@ export async function sendDiscordLapseChecklistAlert({
           { name: "Type", value: clean(profileType || "Managed account"), inline: true },
           { name: "Expired", value: expiresAt ? clean(new Date(expiresAt).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" })) : "Not available", inline: false }
         ],
-        footer: { text: "Remove it from the other program, then close this notification." },
+        footer: { text: `Remove from ${removalProgram}, then close this notification.` },
         timestamp: new Date().toISOString()
       }],
       components: [{
@@ -240,6 +243,29 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     return response.status === 204 ? null : response.json();
   }
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
+  async function cleanupLegacyLapseAlerts() {
+    if (!adminChannelId) return 0;
+    let removed = 0, before = "";
+    for (let page = 0; page < 10; page += 1) {
+      const messages = await api(`/channels/${adminChannelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
+      if (!Array.isArray(messages) || !messages.length) break;
+      for (const message of messages) {
+        const embed = (message.embeds || []).find(item => String(item?.title || "").includes("LAPSED ACCOUNT"));
+        if (!embed) continue;
+        const fields = new Map((embed.fields || []).map(item => [String(item?.name || ""), String(item?.value || "")]));
+        const hasClose = (message.components || []).some(row =>
+          (row.components || []).some(item => String(item?.custom_id || "").startsWith("lapse:close:")));
+        if (hasClose && fields.get("Customer") !== "Unknown" && fields.get("Customer Email") !== "Not available") continue;
+        try { await api(`/channels/${adminChannelId}/messages/${message.id}`, "DELETE"); removed += 1; }
+        catch (error) { if (!/HTTP 404/.test(error.message)) console.error("Legacy lapse cleanup:", error.message); }
+      }
+      before = String(messages.at(-1)?.id || "");
+      if (messages.length < 100) break;
+    }
+    if (removed) console.log(`Removed ${removed} legacy lapse Discord alert(s).`);
+    return removed;
+  }
+
   let dropChannelIds = new Set(), tonightChannelId;
   // Channel names may have a Unicode emoji and divider before their functional name.
   const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -2258,6 +2284,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function setup() {
     try {
       await provision();
+      await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
       await syncAll(); await connect(); void verifyAiConnection();
     }
