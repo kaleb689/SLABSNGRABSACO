@@ -46792,7 +46792,7 @@ await initializeArrayFile(
             });
             return { url: session.url, price };
           },
-          onCreateRentalBatchExtensionCheckout: async ({ discordUserId, batchToken, quantity, durationType }) => {
+          onCreateRentalBatchExtensionCheckout: async ({ discordUserId, batchToken, quantity, retailerQuantities, durationType }) => {
             const account = (await getCustomerAccounts()).find(item => String(item.discordUserId || "") === String(discordUserId));
             if (!account) throw new Error("Your Discord account is not linked to a website account.");
             const batches = await readJson(path.join(DATA_DIR, "discord-renewal-batches.json"), {});
@@ -46804,7 +46804,22 @@ await initializeArrayFile(
             const unitPrice = await rentalAmountFor(1, durationType);
             const priceId = rentalPriceIdFor(1, durationType);
             if (!(unitPrice > 0) || !priceId) throw new Error("This extension price is not configured.");
-            const selectedIds = batch.managedAccountIds.slice(0, quantity).map(String);
+            const retailerBuckets = { target: [], walmart: [], pokemon: [] };
+            for (const [retailer, ids] of Object.entries(batch.retailerManagedAccountIds || {})) {
+              const key = /target/i.test(retailer) ? "target" : /walmart/i.test(retailer) ? "walmart" : /pokemon|pokémon/i.test(retailer) ? "pokemon" : null;
+              if (key) retailerBuckets[key].push(...ids.map(String));
+            }
+            const requested = retailerQuantities || {};
+            for (const key of ["target", "walmart", "pokemon"]) {
+              const amount = Number(requested[key] || 0);
+              if (!Number.isInteger(amount) || amount < 0 || amount > retailerBuckets[key].length) throw new Error(`Invalid ${key} renewal quantity.`);
+            }
+            const selectedIds = [
+              ...retailerBuckets.target.slice(0, Number(requested.target || 0)),
+              ...retailerBuckets.walmart.slice(0, Number(requested.walmart || 0)),
+              ...retailerBuckets.pokemon.slice(0, Number(requested.pokemon || 0))
+            ];
+            if (selectedIds.length !== quantity || !selectedIds.length) throw new Error("The retailer renewal selection is invalid.");
             const session = await stripe.checkout.sessions.create({
               mode: "payment",
               line_items: [{ price: priceId, quantity }],
@@ -46817,6 +46832,9 @@ await initializeArrayFile(
                 renewal_batch_token: String(batchToken),
                 managed_account_ids: selectedIds.join(","),
                 account_quantity: String(quantity),
+                target_quantity: String(Number(requested.target || 0)),
+                walmart_quantity: String(Number(requested.walmart || 0)),
+                pokemon_quantity: String(Number(requested.pokemon || 0)),
                 duration_type: durationType,
                 rental_unit_price: String(unitPrice)
               }

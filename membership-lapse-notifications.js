@@ -176,9 +176,13 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           .digest("hex").slice(0, 16);
         const notice = `batch:${tokenValue}:${group.stage}`;
         const retailerCounts = {};
+        const retailerManagedAccountIds = {};
         for (const record of sorted) {
-          const retailer = String(record?.rentalRetailer || record?.assignmentRetailer || record?.referralRetailer || record?.retailer || "Other");
+          const retailer = String(record?.rentalRetailer || record?.assignmentRetailer || record?.referralRetailer || record?.retailer || "other").toLowerCase();
+          const managedId = String(record?.managedAccountId || record?.rentedMembershipId || record?.freeMembershipId || "");
           retailerCounts[retailer] = (retailerCounts[retailer] || 0) + 1;
+          if (!retailerManagedAccountIds[retailer]) retailerManagedAccountIds[retailer] = [];
+          if (managedId) retailerManagedAccountIds[retailer].push(managedId);
         }
         let prices = null;
         if (group.kind === "rented" && typeof getRentalExtensionPrices === "function") {
@@ -193,6 +197,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           expiresAt: group.end.toISOString(),
           managedAccountIds: ids,
           retailerCounts,
+          retailerManagedAccountIds,
           prices,
           createdAt: new Date().toISOString()
         };
@@ -210,13 +215,11 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
         };
         let components = [];
         if (group.kind === "rented") {
-          const quick = [];
-          if (count >= 5) quick.push({ type: 2, style: 2, label: "Keep 5", custom_id: `renewbatch:qty:${tokenValue}:5` });
-          if (count >= 10) quick.push({ type: 2, style: 2, label: "Keep 10", custom_id: `renewbatch:qty:${tokenValue}:10` });
-          quick.push({ type: 2, style: 1, label: `Keep All ${count}`, custom_id: `renewbatch:qty:${tokenValue}:all` });
           components = [
-            { type: 1, components: quick.slice(0, 5) },
-            { type: 1, components: [{ type: 2, style: 2, label: "Choose Amount", custom_id: `renewbatch:custom:${tokenValue}` }] }
+            { type: 1, components: [
+              { type: 2, style: 1, label: `Renew All ${count}`, custom_id: `renewbatch:all:${tokenValue}` },
+              { type: 2, style: 2, label: "Choose by Retailer", custom_id: `renewbatch:retailers:${tokenValue}` }
+            ] }
           ];
         }
         try {
