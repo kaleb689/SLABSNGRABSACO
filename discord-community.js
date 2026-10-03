@@ -50,6 +50,47 @@ export async function sendDiscordLapseChecklistAlert({
   );
   return message?.id || true;
 }
+export async function sendDiscordRtpReturnSummary({
+  userCount = 0,
+  profileCount = 0,
+  poolCounts = {}
+} = {}) {
+  if (!lapseChecklistRuntime?.api || !lapseChecklistRuntime?.adminChannelId) return false;
+
+  const labelFor = retailer => {
+    const value = String(retailer || "other").toLowerCase();
+    if (value.includes("target")) return "Target";
+    if (value.includes("walmart")) return "Walmart";
+    if (value.includes("pokemon") || value.includes("pokémon")) return "Pokémon Center";
+    return String(retailer || "Other");
+  };
+
+  const poolLines = Object.entries(poolCounts || {})
+    .filter(([, count]) => Number(count) > 0)
+    .map(([retailer, count]) =>
+      `• **${labelFor(retailer)} pool:** ${Number(count)} profile${Number(count) === 1 ? "" : "s"}`
+    )
+    .join("\n") || "• No retailer pool breakdown was available.";
+
+  const message = await lapseChecklistRuntime.api(
+    `/channels/${lapseChecklistRuntime.adminChannelId}/messages`,
+    "POST",
+    {
+      allowed_mentions: { parse: [] },
+      embeds: [{
+        title: "✅ RTP RETURN SUMMARY",
+        description:
+          `**${Number(userCount)} user${Number(userCount) === 1 ? "" : "s"}** had **${Number(profileCount)} profile${Number(profileCount) === 1 ? "" : "s"}** returned back to retailer pools.\n\n${poolLines}`,
+        color: 0xf1c40f,
+        footer: { text: "SLABSNGRABSACO automatic RTP summary" },
+        timestamp: new Date().toISOString()
+      }]
+    }
+  );
+
+  return message?.id || true;
+}
+
 // A SKU is taken only from an explicit SKU label. The closest product line
 // above it is the title shown to the owner; never infer SKUs from other text.
 export function parseDropSkus(message) {
