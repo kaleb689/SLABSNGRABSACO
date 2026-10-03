@@ -227,11 +227,15 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onExtendLapsedProfile, onCreateRentalExtensionCheckout }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
   const headers = { Authorization: `Bot ${token}`, "Content-Type": "application/json" };
+  async function readJsonSafe(file, fallback = {}) {
+    try { return JSON.parse(await fs.readFile(file, "utf8")); }
+    catch (error) { if (error?.code === "ENOENT") return fallback; throw error; }
+  }
   async function api(route, method = "GET", payload) {
     const response = await fetch(`${API}${route}`, {
       method, headers, body: payload === undefined ? undefined : JSON.stringify(payload),
@@ -2078,6 +2082,81 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           return;
         } catch (error) {
           return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message || "Unable to extend this profile.", components: [] });
+        }
+      }
+      if (d.type === 3 && /^renewbatch:custom:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        const batchToken = d.data.custom_id.split(":")[2];
+        return await api(callback, "POST", { type: 9, data: {
+          custom_id: `renewbatch:customsubmit:${batchToken}`, title: "Choose Profiles to Keep",
+          components: [{ type: 1, components: [{ type: 4, custom_id: "quantity", label: "Number of profiles to keep", style: 1, min_length: 1, max_length: 3, required: true, placeholder: "Example: 12" }] }]
+        } });
+      }
+      if (d.type === 5 && /^renewbatch:customsubmit:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        const batchToken = d.data.custom_id.split(":")[2];
+        const quantity = Number(String(d.data.components?.flatMap(row => row.components || []).find(item => item.custom_id === "quantity")?.value || "").trim());
+        if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) return await reply("Enter a whole number of profiles to keep.");
+        const batches = await readJsonSafe(path.join(dataDir, "discord-renewal-batches.json"), {});
+        const batch = batches?.[batchToken];
+        if (!batch || String(batch.discordUserId) !== String(userId) || batch.kind !== "rented") return await reply("That renewal batch is no longer available.");
+        if (quantity > batch.managedAccountIds.length) return await reply(`You only have ${batch.managedAccountIds.length} profiles in this expiration batch.`);
+        const weekTotal = Number(batch.prices?.week || 0) * quantity;
+        const monthTotal = Number(batch.prices?.month || 0) * quantity;
+        return await api(callback, "POST", { type: 4, data: {
+          flags: 64,
+          content: `You chose **${quantity} of ${batch.managedAccountIds.length} profiles** to keep. Choose an extension below. Nothing has been charged.`,
+          components: [{ type: 1, components: [
+            { type: 2, style: 1, label: `1 Week — $${weekTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${quantity}:1_week` },
+            { type: 2, style: 1, label: `1 Month — $${monthTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${quantity}:1_month` }
+          ] }]
+        } });
+      }
+      if (d.type === 3 && /^renewbatch:qty:[a-f0-9]{16}:(?:all|\d{1,3})$/.test(d.data?.custom_id || "")) {
+        const [, , batchToken, rawQuantity] = d.data.custom_id.split(":");
+        const batches = await readJsonSafe(path.join(dataDir, "discord-renewal-batches.json"), {});
+        const batch = batches?.[batchToken];
+        if (!batch || String(batch.discordUserId) !== String(userId) || batch.kind !== "rented") return await reply("That renewal batch is no longer available.");
+        const quantity = rawQuantity === "all" ? batch.managedAccountIds.length : Number(rawQuantity);
+        if (!Number.isInteger(quantity) || quantity < 1 || quantity > batch.managedAccountIds.length) return await reply("Choose a valid number of profiles.");
+        const weekTotal = Number(batch.prices?.week || 0) * quantity;
+        const monthTotal = Number(batch.prices?.month || 0) * quantity;
+        return await api(callback, "POST", { type: 4, data: {
+          flags: 64,
+          content: `You chose **${quantity} of ${batch.managedAccountIds.length} profiles** to keep. Choose an extension below. Nothing has been charged.`,
+          components: [{ type: 1, components: [
+            { type: 2, style: 1, label: `1 Week — $${weekTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${quantity}:1_week` },
+            { type: 2, style: 1, label: `1 Month — $${monthTotal.toFixed(2)}`, custom_id: `renewbatch:duration:${batchToken}:${quantity}:1_month` }
+          ] }]
+        } });
+      }
+      if (d.type === 3 && /^renewbatch:duration:[a-f0-9]{16}:\d{1,3}:(1_week|1_month)$/.test(d.data?.custom_id || "")) {
+        const [, , batchToken, rawQuantity, durationType] = d.data.custom_id.split(":");
+        const batches = await readJsonSafe(path.join(dataDir, "discord-renewal-batches.json"), {});
+        const batch = batches?.[batchToken];
+        const quantity = Number(rawQuantity);
+        if (!batch || String(batch.discordUserId) !== String(userId) || quantity < 1 || quantity > batch.managedAccountIds.length) return await reply("That renewal selection is no longer available.");
+        const total = Number(durationType === "1_week" ? batch.prices?.week : batch.prices?.month) * quantity;
+        return await api(callback, "POST", { type: 4, data: {
+          flags: 64,
+          content: `Confirm **${quantity} profiles** for **${durationType === "1_week" ? "1 Week" : "1 Month"}** at **$${total.toFixed(2)} total**. Nothing has been charged yet.`,
+          components: [{ type: 1, components: [
+            { type: 2, style: 3, label: `Confirm & Pay $${total.toFixed(2)}`, custom_id: `renewbatch:confirm:${batchToken}:${quantity}:${durationType}` },
+            { type: 2, style: 2, label: "Cancel", custom_id: "renew:cancel" }
+          ] }]
+        } });
+      }
+      if (d.type === 3 && /^renewbatch:confirm:[a-f0-9]{16}:\d{1,3}:(1_week|1_month)$/.test(d.data?.custom_id || "")) {
+        const [, , batchToken, rawQuantity, durationType] = d.data.custom_id.split(":");
+        const quantity = Number(rawQuantity);
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          if (typeof onCreateRentalBatchExtensionCheckout !== "function") throw new Error("Batch extension checkout is not configured.");
+          const result = await onCreateRentalBatchExtensionCheckout({ discordUserId: userId, batchToken, quantity, durationType });
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
+            content: `Final step: complete Stripe Checkout to keep **${quantity} profiles**. You will not be charged unless you finish checkout.`,
+            components: [{ type: 1, components: [{ type: 2, style: 5, label: `Open Stripe Checkout — $${Number(result.total).toFixed(2)}`, url: result.url }] }]
+          });
+        } catch (error) {
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message || "Unable to start renewal checkout.", components: [] });
         }
       }
       if (d.type === 3 && /^renew:quote:(free|rented):[a-zA-Z0-9_-]{1,70}:(1_week|1_month):\d+(?:\.\d{1,2})?$/.test(d.data?.custom_id || "")) {
