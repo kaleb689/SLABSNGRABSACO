@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { sendDiscordLapseChecklistAlert } from "./discord-community.js";
+import { sendDiscordLapseChecklistAlert, sendDiscordRtpReturnSummary } from "./discord-community.js";
 
 const API = "https://discord.com/api/v10";
 const DAY = 86400000;
@@ -99,6 +99,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
       const renewalBatches = {};
       const rtpFinal = list(rtpFinalRaw);
       let rtpFinalChanged = false;
+      const rtpReturned = [];
 
       for (const record of list(paidRaw)) {
         if (record?.cancelAtPeriodEnd !== true) continue;
@@ -225,6 +226,17 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
               if (released !== false) {
                 item.status = "returned";
                 item.returnedAt = new Date().toISOString();
+                rtpReturned.push({
+                  customerAccountId,
+                  retailer: String(
+                    record?.rentalRetailer ||
+                    record?.assignmentRetailer ||
+                    record?.referralRetailer ||
+                    record?.retailer ||
+                    item?.retailer ||
+                    "other"
+                  )
+                });
                 rtpFinalChanged = true;
               }
             }
@@ -377,6 +389,27 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
       }
       await save(paths.batches, renewalBatches);
       if (rtpFinalChanged) await save(paths.rtpFinal, rtpFinal);
+
+      if (rtpReturned.length) {
+        const userCount = new Set(
+          rtpReturned.map(item => String(item.customerAccountId || "")).filter(Boolean)
+        ).size;
+        const poolCounts = {};
+        for (const item of rtpReturned) {
+          const retailer = String(item.retailer || "other").toLowerCase();
+          poolCounts[retailer] = (poolCounts[retailer] || 0) + 1;
+        }
+        try {
+          await sendDiscordRtpReturnSummary({
+            userCount,
+            profileCount: rtpReturned.length,
+            poolCounts
+          });
+        } catch (e) {
+          console.error("RTP grouped admin summary:", e.message);
+        }
+      }
+
       if (changed) await save(paths.state, state);
     } catch (e) { console.error("Membership lapse notification scheduler:", e.message); }
     finally { running = false; }
