@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { startDiscordCommunity, discordCommunityStatus, createDiscordLinkCode, revokeDiscordLinkCodes, queueDiscordRoleRemoval } from "./discord-community.js";
 import { getCommunityInvite } from "./discord-invite.js";
 import { startCheckoutDmSummaryScheduler } from "./checkout-dm-summary.js";
+import { startMembershipLapseNotificationScheduler } from "./membership-lapse-notifications.js";
 import { membershipDiscountOptions, activeSitewideDiscount } from "./checkout-discounts.js";
 import { safeAddressVariants, safeAddressVariantKey, defaultJigVariants } from "./address-jigs.js";
 
@@ -46626,6 +46627,11 @@ await initializeArrayFile(
           dataDir: DATA_DIR,
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
           getAccounts: getCustomerAccounts
+        });
+        startMembershipLapseNotificationScheduler({
+          dataDir: DATA_DIR,
+          token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
+          adminWebhookUrl: String(process.env.DISCORD_ADMIN_PAYMENT_WEBHOOK_URL || "").trim()
         });
         startDiscordCommunity({
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
