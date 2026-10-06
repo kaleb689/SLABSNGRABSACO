@@ -47084,6 +47084,38 @@ await initializeArrayFile(
           aiKey: String(process.env.OPENAI_API_KEY || "").trim(),
           geminiKey: String(process.env.GEMINI_API_KEY || "").trim(),
           onSuccessMessage: () => queueDiscordSuccessScan(50),
+          onRtpLapsedProfiles: async ({ selections }) => {
+            const parsed = (Array.isArray(selections) ? selections : []).map(value => {
+              const [rawType, ...idParts] = String(value || "").split(":");
+              return { type: rawType === "rented" ? "rented" : "free", managedAccountId: idParts.join(":") };
+            }).filter(item => item.managedAccountId);
+            const returnedIds = [];
+            const failedIds = [];
+            await mutateRestoreHolds(async holds => {
+              const nowIso = new Date().toISOString();
+              for (const selection of parsed) {
+                let matched = false;
+                for (const hold of activeRestoreHoldsFor(holds, { type: selection.type })) {
+                  for (const item of restoreHoldRemainingItems(hold)) {
+                    if (String(item.managedAccountId || "") !== String(selection.managedAccountId)) continue;
+                    matched = true;
+                    item.releasedAt = nowIso;
+                    item.releaseReason = "discord_rtp";
+                    returnedIds.push(`${selection.type}:${selection.managedAccountId}`);
+                  }
+                  const remaining = restoreHoldRemainingItems(hold);
+                  hold.status = remaining.length ? "partial" : "released";
+                  if (!remaining.length) {
+                    hold.releasedAt = nowIso;
+                    hold.releaseReason = "discord_rtp";
+                  }
+                  hold.updatedAt = nowIso;
+                }
+                if (!matched) failedIds.push(`${selection.type}:${selection.managedAccountId}`);
+              }
+            });
+            return { returnedIds, failedIds };
+          },
           onRestoreLapsedProfiles: async ({ selections }) => {
             const parsed = (Array.isArray(selections) ? selections : []).map(value => {
               const [rawType, ...idParts] = String(value || "").split(":");
