@@ -336,31 +336,37 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   }
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   async function cleanupLegacyLapseAlerts() {
-    let removed = 0;
+    let removed = 0, scanned = 0, matched = 0;
     for (const channelId of [adminChannelId, adminProfilesChannelId].filter(Boolean)) {
       let before = "";
-      for (let page = 0; page < 10; page += 1) {
+      for (let page = 0; page < 20; page += 1) {
         const messages = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
         if (!Array.isArray(messages) || !messages.length) break;
         for (const message of messages) {
-          const embed = (message.embeds || []).find(item => {
+          scanned += 1;
+          const customIds = (message.components || []).flatMap(row => row.components || [])
+            .map(item => String(item?.custom_id || ""));
+          const hasBulkRestore = customIds.some(id => id.startsWith("lapse:bulk:select:"));
+          const hasLegacyControl = customIds.some(id => id.startsWith("lapse:extend:") || id.startsWith("lapse:close:"));
+          const hasLegacyTitle = (message.embeds || []).some(item => {
             const title = String(item?.title || "");
             return title.includes("LAPSED ACCOUNT") || /(?:GIFTED|RENTED).*(?:ACCOUNT|PROFILE).*EXPIRED/i.test(title);
           });
-          if (!embed) continue;
-          const fields = new Map((embed.fields || []).map(item => [String(item?.name || ""), String(item?.value || "")]));
-          const hasBulkRestore = (message.components || []).some(row =>
-            (row.components || []).some(item => String(item?.custom_id || "").startsWith("lapse:bulk:select:")));
-          const isValidNewChecklist = channelId === adminProfilesChannelId && hasBulkRestore;
-          if (isValidNewChecklist) continue;
-          try { await api(`/channels/${channelId}/messages/${message.id}`, "DELETE"); removed += 1; }
-          catch (error) { if (!/HTTP 404/.test(error.message)) console.error("Legacy lapse cleanup:", error.message); }
+          if (hasBulkRestore) continue;
+          if (!hasLegacyControl && !hasLegacyTitle) continue;
+          matched += 1;
+          try {
+            await api(`/channels/${channelId}/messages/${message.id}`, "DELETE");
+            removed += 1;
+          } catch (error) {
+            if (!/HTTP 404/.test(error.message)) console.error("Legacy lapse cleanup delete:", message.id, error.message);
+          }
         }
         before = String(messages.at(-1)?.id || "");
         if (messages.length < 100) break;
       }
     }
-    if (removed) console.log(`Removed ${removed} legacy lapse Discord alert(s).`);
+    console.log(`Legacy lapse cleanup scanned=${scanned} matched=${matched} removed=${removed}`);
     return removed;
   }
 
@@ -2164,6 +2170,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       if (d.type === 3 && /^lapse:bulk:select:\d+$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) return await reply("Only the owner or Support Staff can manage these profiles.");
         const selected = Array.isArray(d.data?.values) ? d.data.values.map(String) : [];
+        console.log("Discord lapse bulk selection:", JSON.stringify({ userId, channelId: d.channel_id, messageId: d.message?.id || null, selected }));
         if (!selected.length) return await reply("Select at least one profile.");
         const selectionKey = crypto.randomBytes(8).toString("hex");
         lapseBulkSelections.set(selectionKey, { selected, channelId: d.channel_id, messageId: d.message.id, createdAt: Date.now() });
