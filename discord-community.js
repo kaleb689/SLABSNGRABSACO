@@ -316,7 +316,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -2159,6 +2159,56 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
             content: error.message, components: []
           });
+        }
+      }
+      if (d.type === 3 && /^lapse:bulk:select:\d+$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) {
+          return await reply("Only the owner or Support Staff can restore these profiles.");
+        }
+        const selected = Array.isArray(d.data?.values) ? d.data.values.map(String) : [];
+        if (!selected.length) return await reply("Select at least one profile to restore.");
+        if (typeof onRestoreLapsedProfiles !== "function") return await reply("Bulk restore is not available right now.");
+
+        await api(callback, "POST", { type: 6 });
+        try {
+          const result = await onRestoreLapsedProfiles({ selections: selected });
+          const restored = new Set((result?.restoredIds || []).map(String));
+          if (!restored.size) return;
+
+          const message = await api(`/channels/${d.channel_id}/messages/${d.message.id}`);
+          const remainingOptions = (message.components || []).flatMap(row => row.components || [])
+            .filter(component => component.type === 3 && String(component.custom_id || "").startsWith("lapse:bulk:select:"))
+            .flatMap(component => component.options || [])
+            .filter(option => !restored.has(String(option.value)));
+
+          if (!remainingOptions.length) {
+            await api(`/channels/${d.channel_id}/messages/${d.message.id}`, "DELETE").catch(error => {
+              if (!/HTTP 404/.test(error.message)) throw error;
+            });
+            return;
+          }
+
+          const components = [];
+          for (let offset = 0; offset < remainingOptions.length; offset += 25) {
+            const options = remainingOptions.slice(offset, offset + 25);
+            components.push({ type: 1, components: [{
+              type: 3,
+              custom_id: `lapse:bulk:select:${offset}`,
+              placeholder: "Select remaining accounts to restore",
+              min_values: 1,
+              max_values: options.length,
+              options
+            }] });
+          }
+          const embeds = Array.isArray(message.embeds) ? message.embeds.map((embed, index) => index ? embed : {
+            ...embed,
+            description: `**Remaining profiles: ${remainingOptions.length}**\n\nSelect one or more accounts below to restore them in bulk. Successfully restored accounts have been removed from this notice. Any account still listed has **not** been restored.`
+          }) : [];
+          await api(`/channels/${d.channel_id}/messages/${d.message.id}`, "PATCH", { embeds, components });
+          return;
+        } catch (error) {
+          console.error("Discord bulk lapse restore:", error.message);
+          return;
         }
       }
       if (d.type === 3 && d.data?.custom_id === "rtp:return-summary:ack") {
