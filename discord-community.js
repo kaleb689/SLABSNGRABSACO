@@ -2127,7 +2127,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         });
         return;
       }
-      if (d.type === 3 && /^lapse:close:[a-zA-Z0-9_-]{1,60}$/.test(d.data?.custom_id || "")) {
+      if (d.type === 3 && String(d.data?.custom_id || "").startsWith("lapse:close:")) {
         if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) {
           return await reply("Only the owner or Support Staff can close this notification.");
         }
@@ -2137,9 +2137,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         });
         return;
       }
-      if (d.type === 3 && /^lapse:extend:(free|rented):[a-zA-Z0-9_-]{1,70}$/.test(d.data?.custom_id || "")) {
+      if (d.type === 3 && /^lapse:extend:(free|gifted|rented):[a-zA-Z0-9_-]{1,70}$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) return await reply("Only the owner or Support Staff can extend this profile.");
-        const [, , type, managedAccountId] = d.data.custom_id.split(":");
+        const [, , rawType, managedAccountId] = d.data.custom_id.split(":");
+        const type = rawType === "gifted" ? "free" : rawType;
         return await api(callback, "POST", { type: 9, data: {
           custom_id: `lapse:extend:submit:${type}:${managedAccountId}`, title: "Extend Profile Access",
           components: [
