@@ -22933,7 +22933,8 @@ app.put(
 
 async function restoreHeldManagedAccountsForCustomer(
   customerAccountId,
-  type
+  type,
+  requestedManagedAccountIds = null
 ) {
   if (
     !customerAccountId ||
@@ -22964,7 +22965,14 @@ async function restoreHeldManagedAccountsForCustomer(
         )
     );
 
-  if (!candidateItems.length) {
+  const requestedIdSet = Array.isArray(requestedManagedAccountIds) && requestedManagedAccountIds.length
+    ? new Set(requestedManagedAccountIds.map(String))
+    : null;
+  const selectedCandidateItems = requestedIdSet
+    ? candidateItems.filter(item => requestedIdSet.has(String(item.managedAccountId || "")))
+    : candidateItems;
+
+  if (!selectedCandidateItems.length) {
     return {
       restored:
         0,
@@ -23061,7 +23069,7 @@ async function restoreHeldManagedAccountsForCustomer(
 
   for (
     const item of
-    candidateItems
+    selectedCandidateItems
   ) {
     const managedAccountId =
       String(
@@ -47076,6 +47084,35 @@ await initializeArrayFile(
           aiKey: String(process.env.OPENAI_API_KEY || "").trim(),
           geminiKey: String(process.env.GEMINI_API_KEY || "").trim(),
           onSuccessMessage: () => queueDiscordSuccessScan(50),
+          onRestoreLapsedProfiles: async ({ selections }) => {
+            const parsed = (Array.isArray(selections) ? selections : []).map(value => {
+              const [rawType, ...idParts] = String(value || "").split(":");
+              return { type: rawType === "rented" ? "rented" : "free", managedAccountId: idParts.join(":") };
+            }).filter(item => item.managedAccountId);
+            const restoredIds = [];
+            const failedIds = [];
+            for (const type of ["free", "rented"]) {
+              const ids = parsed.filter(item => item.type === type).map(item => item.managedAccountId);
+              if (!ids.length) continue;
+              const holds = await getRestoreHolds();
+              const customerIds = [...new Set(activeRestoreHoldsFor(holds, { type }).filter(hold =>
+                restoreHoldRemainingItems(hold).some(entry => ids.includes(String(entry.managedAccountId || "")))
+              ).map(hold => String(hold.customerAccountId)))];
+              for (const customerAccountId of customerIds) {
+                const wanted = ids.filter(id => activeRestoreHoldsFor(holds, { customerAccountId, type }).some(hold =>
+                  restoreHoldRemainingItems(hold).some(entry => String(entry.managedAccountId || "") === String(id))));
+                if (!wanted.length) continue;
+                try {
+                  const result = await restoreHeldManagedAccountsForCustomer(customerAccountId, type, wanted);
+                  restoredIds.push(...result.managedAccountIds.map(id => `${type}:${id}`));
+                  for (const id of wanted) if (!result.managedAccountIds.map(String).includes(String(id))) failedIds.push(`${type}:${id}`);
+                } catch {
+                  failedIds.push(...wanted.map(id => `${type}:${id}`));
+                }
+              }
+            }
+            return { restoredIds, failedIds };
+          },
           onExtendLapsedProfile: async ({ type, managedAccountId, amount, unit }) => {
             if (!["free", "rented"].includes(type)) throw new Error("Invalid profile type.");
 
