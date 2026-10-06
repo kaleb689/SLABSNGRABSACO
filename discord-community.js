@@ -320,6 +320,35 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     return removed;
   }
 
+  async function repairRtpReturnSummaryButtons() {
+    if (!adminProfilesChannelId) return 0;
+    let repaired = 0;
+    let before = "";
+    for (let page = 0; page < 10; page += 1) {
+      const messages = await api(`/channels/${adminProfilesChannelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
+      if (!Array.isArray(messages) || !messages.length) break;
+      for (const message of messages) {
+        const summary = (message.embeds || []).some(embed => String(embed?.title || "") === "✅ RTP RETURN SUMMARY");
+        if (!summary) continue;
+        const hasAck = (message.components || []).some(row =>
+          (row.components || []).some(item => item.custom_id === "rtp:return-summary:ack"));
+        if (hasAck) continue;
+        try {
+          await api(`/channels/${adminProfilesChannelId}/messages/${message.id}`, "PATCH", {
+            components: [{ type: 1, components: [{ type: 2, style: 3, label: "Acknowledge", custom_id: "rtp:return-summary:ack" }] }]
+          });
+          repaired += 1;
+        } catch (error) {
+          if (!/HTTP 404/.test(error.message)) console.error("RTP summary button repair:", error.message);
+        }
+      }
+      before = String(messages.at(-1)?.id || "");
+      if (messages.length < 100) break;
+    }
+    if (repaired) console.log(`Repaired ${repaired} RTP return summary button(s).`);
+    return repaired;
+  }
+
   let dropChannelIds = new Set(), tonightChannelId;
   // Channel names may have a Unicode emoji and divider before their functional name.
   const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -2557,6 +2586,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await provision();
       await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
+      await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
       await syncAll(); await connect(); void verifyAiConnection();
     }
