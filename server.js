@@ -16828,10 +16828,13 @@ async function getManagedAvailability() {
   const restoreHolds =
     await getRestoreHolds();
 
-  const inUseAccountIds =
+  const heldIds =
     heldManagedAccountIdsFromHolds(
       restoreHolds
     );
+
+  const inUseAccountIds =
+    new Set();
 
   for (const assignment of freeAssignments) {
     if (
@@ -16885,6 +16888,7 @@ async function getManagedAvailability() {
     target: {
       total: 0,
       available: 0,
+      held: 0,
       inUse: 0,
       duplicates: 0
     },
@@ -16892,6 +16896,7 @@ async function getManagedAvailability() {
     walmart: {
       total: 0,
       available: 0,
+      held: 0,
       inUse: 0,
       duplicates: 0
     },
@@ -16899,6 +16904,7 @@ async function getManagedAvailability() {
     pokemoncenter: {
       total: 0,
       available: 0,
+      held: 0,
       inUse: 0,
       duplicates: 0
     }
@@ -16969,6 +16975,12 @@ async function getManagedAvailability() {
         availability[
           retailer
         ].available += 1;
+
+        if (heldIds.has(String(account.id))) {
+          availability[
+            retailer
+          ].held += 1;
+        }
       }
     }
   }
@@ -17151,17 +17163,6 @@ async function getAvailableManagedAccountsForRetailer(
       continue;
     }
 
-    if (
-      heldIds.has(
-        accountId
-      ) &&
-      !restoreCandidateIds.has(
-        accountId
-      )
-    ) {
-      continue;
-    }
-
     try {
       const credentials =
         account.credentials
@@ -17190,29 +17191,19 @@ async function getAvailableManagedAccountsForRetailer(
   }
 
   /*
-    Exact accounts reserved on this customer's Restore Hold
-    are always placed first when they reactivate the same type.
+    Pool priority:
+    1) This customer's own held accounts, when they rent the same type again.
+    2) Normal unheld pool inventory.
+    3) Held accounts belonging to someone else, used only as last-resort inventory.
   */
-  return available.sort(
-    (
-      a,
-      b
-    ) =>
-      (
-        restoreCandidateIds.has(
-          String(b.id)
-        )
-          ? 1
-          : 0
-      ) -
-      (
-        restoreCandidateIds.has(
-          String(a.id)
-        )
-          ? 1
-          : 0
-      )
-  );
+  const poolPriority = account => {
+    const id = String(account?.id || "");
+    if (restoreCandidateIds.has(id)) return 0;
+    if (heldIds.has(id)) return 2;
+    return 1;
+  };
+
+  return available.sort((a, b) => poolPriority(a) - poolPriority(b));
 }
 
 
@@ -18514,10 +18505,13 @@ async function getAvailableManagedMembershipRecords() {
   const restoreHolds =
     await getRestoreHolds();
 
-  const inUseIds =
+  const heldIds =
     heldManagedAccountIdsFromHolds(
       restoreHolds
     );
+
+  const inUseIds =
+    new Set();
 
   for (const assignment of freeAssignments) {
     if (!managedAssignmentIsLinked(assignment)) {
@@ -18640,9 +18634,15 @@ async function getAvailableManagedMembershipRecords() {
           account.updatedAt ||
           null,
 
-        retailers
+        retailers,
+
+        restoreHold:
+          heldIds.has(
+            String(account.id)
+          )
       };
-    });
+    })
+    .sort((a, b) => Number(a.restoreHold === true) - Number(b.restoreHold === true));
 }
 
 
