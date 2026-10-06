@@ -84,6 +84,10 @@ export async function sendDiscordRtpReturnSummary({
         color: 0xf1c40f,
         footer: { text: "SLABSNGRABSACO automatic RTP summary" },
         timestamp: new Date().toISOString()
+      }],
+      components: [{
+        type: 1,
+        components: [{ type: 2, style: 3, label: "Acknowledge", custom_id: "rtp:return-summary:ack" }]
       }]
     }
   );
@@ -2083,6 +2087,16 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             content: error.message, components: []
           });
         }
+      }
+      if (d.type === 3 && d.data?.custom_id === "rtp:return-summary:ack") {
+        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) {
+          return await reply("Only the owner or Support Staff can acknowledge this notification.");
+        }
+        await api(callback, "POST", { type: 6 });
+        await api(`/channels/${d.channel_id}/messages/${d.message.id}`, "DELETE").catch(error => {
+          if (!/HTTP 404/.test(error.message)) throw error;
+        });
+        return;
       }
       if (d.type === 3 && /^lapse:close:[a-zA-Z0-9_-]{1,60}$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) {
