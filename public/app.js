@@ -2133,10 +2133,12 @@ function profileFieldErrorMessage(
 
   if (
     name === "acoPassword" &&
-    rawValue.length < 6
+    !/^[A-Za-z]{4}( [A-Za-z]{4}){3}$/.test(
+      rawValue
+    )
   ) {
     return (
-      "EMAIL (APP PASSWORD) must be at least 6 characters."
+      "EMAIL (APP PASSWORD) must be exactly 16 letters formatted as xxxx xxxx xxxx xxxx."
     );
   }
 
@@ -2865,6 +2867,196 @@ showPass?.addEventListener(
         : "Show";
   }
 );
+
+/* =====================================================
+   SIGNUP APP PASSWORD FORMAT + GUIDE POPUP
+===================================================== */
+
+const signupAppPasswordInput =
+  document.querySelector(
+    '#profile-form [name="acoPassword"]'
+  );
+
+function formatSignupAppPassword(
+  value
+) {
+  const letters =
+    String(value || "")
+      .replace(/[^A-Za-z]/g, "")
+      .slice(0, 16);
+
+  return (
+    letters
+      .match(/.{1,4}/g)
+      ?.join(" ") || ""
+  );
+}
+
+signupAppPasswordInput
+  ?.addEventListener(
+    "input",
+    () => {
+      const formatted =
+        formatSignupAppPassword(
+          signupAppPasswordInput.value
+        );
+
+      if (
+        signupAppPasswordInput.value !==
+        formatted
+      ) {
+        signupAppPasswordInput.value =
+          formatted;
+      }
+
+      showSignupAppPasswordGuide();
+    }
+  );
+
+let signupAppPasswordGuideDismissed =
+  false;
+
+function findAppPasswordGuideContent() {
+  const cards =
+    Array.from(
+      document.querySelectorAll(
+        "#guide .guide-card"
+      )
+    );
+
+  const chapter =
+    cards.find(card =>
+      /chapter\s*02|email,\s*imap.*app passwords/i.test(
+        card.querySelector("summary")
+          ?.textContent || ""
+      )
+    );
+
+  return chapter
+    ?.querySelector(
+      ".guide-content"
+    ) || null;
+}
+
+function ensureSignupAppPasswordGuide() {
+  let popup =
+    document.getElementById(
+      "signup-app-password-guide"
+    );
+
+  if (popup) return popup;
+
+  const guideContent =
+    findAppPasswordGuideContent();
+
+  if (!guideContent) return null;
+
+  popup =
+    document.createElement(
+      "aside"
+    );
+
+  popup.id =
+    "signup-app-password-guide";
+
+  popup.className =
+    "signup-app-password-guide";
+
+  popup.hidden = true;
+
+  popup.setAttribute(
+    "role",
+    "dialog"
+  );
+
+  popup.setAttribute(
+    "aria-modal",
+    "false"
+  );
+
+  popup.setAttribute(
+    "aria-label",
+    "App password setup guide"
+  );
+
+  popup.innerHTML = `
+    <div class="signup-app-password-guide-head">
+      <div>
+        <span class="eyebrow">APP PASSWORD HELP</span>
+        <h3>Set up your app password</h3>
+      </div>
+      <button
+        type="button"
+        class="signup-app-password-guide-close"
+        aria-label="Close app password guide"
+        title="Close"
+      >×</button>
+    </div>
+    <p class="signup-app-password-guide-note">
+      Follow instructions in pop up to set up app password.
+    </p>
+    <div class="signup-app-password-guide-scroll"></div>
+  `;
+
+  const scroll =
+    popup.querySelector(
+      ".signup-app-password-guide-scroll"
+    );
+
+  if (scroll) {
+    scroll.appendChild(
+      guideContent.cloneNode(true)
+    );
+  }
+
+  popup
+    .querySelector(
+      ".signup-app-password-guide-close"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        signupAppPasswordGuideDismissed =
+          true;
+        popup.hidden = true;
+        signupAppPasswordInput
+          ?.focus({
+            preventScroll: true
+          });
+      }
+    );
+
+  document.body.appendChild(
+    popup
+  );
+
+  return popup;
+}
+
+function showSignupAppPasswordGuide() {
+  if (
+    signupAppPasswordGuideDismissed
+  ) {
+    return;
+  }
+
+  const popup =
+    ensureSignupAppPasswordGuide();
+
+  if (!popup) return;
+
+  popup.hidden = false;
+}
+
+signupAppPasswordInput
+  ?.addEventListener(
+    "focus",
+    () => {
+      signupAppPasswordGuideDismissed =
+        false;
+      showSignupAppPasswordGuide();
+    }
+  );
 
 /* =====================================================
    GLOBAL CUSTOMER SHOW / HIDE
