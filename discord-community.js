@@ -5,6 +5,71 @@ import path from "node:path";
 const API = "https://discord.com/api/v10";
 let lapseChecklistRuntime = null;
 
+function lapseItemKey(item = {}) {
+  return `${item.type === "rented" ? "rented" : "free"}:${String(item.managedAccountId || "").trim()}`;
+}
+function lapseGroupPayload(group = {}) {
+  const items = Array.isArray(group.items) ? group.items.filter(item => item?.managedAccountId) : [];
+  const lines = items.map((item, index) => {
+    const retailer = String(item.retailer || "Unknown");
+    const email = String(item.retailerAccountEmail || item.profileLabel || "Profile");
+    const program = /target/i.test(retailer) ? "Shikari" : /(walmart|pokemon|pokémon)/i.test(retailer) ? "Valor" : "external program";
+    const typeLabel = item.type === "rented" ? "Rented" : "Gifted";
+    return `**${index + 1}. ${retailer} — ${email}**\n${typeLabel} · Remove from ${program}`;
+  });
+  const components = [];
+  for (let offset = 0; offset < items.length; offset += 25) {
+    const chunk = items.slice(offset, offset + 25);
+    components.push({
+      type: 1,
+      components: [{
+        type: 3,
+        custom_id: `lapse:bulk:select:${offset}`,
+        placeholder: chunk.length === items.length ? "Select accounts to restore" : `Select accounts ${offset + 1}-${offset + chunk.length}`,
+        min_values: 1,
+        max_values: chunk.length,
+        options: chunk.map(item => ({
+          label: `${String(item.retailer || "Retailer")} — ${String(item.retailerAccountEmail || item.profileLabel || "Profile")}`.slice(0, 100),
+          description: `${item.type === "rented" ? "Rented" : "Gifted"} account`.slice(0, 100),
+          value: lapseItemKey(item)
+        }))
+      }]
+    });
+  }
+  return {
+    allowed_mentions: { parse: [] },
+    embeds: [{
+      title: "❌ LAPSED PROFILES — ACTION NEEDED",
+      description: `**${String(group.customerName || group.customerEmail || "Customer")}**\n${String(group.customerEmail || "")}\n\n${lines.join("\n\n") || "No profiles remain to restore."}\n\nSelect one or more accounts below to restore them in bulk. Successfully restored accounts disappear from this notice; failed accounts stay listed.`,
+      color: 0xe74c3c,
+      footer: { text: "SLABSNGRABSACO bulk restore checklist" },
+      timestamp: new Date().toISOString()
+    }],
+    components
+  };
+}
+export async function sendDiscordLapseChecklistGroup(group = {}) {
+  if (!lapseChecklistRuntime?.api || !lapseChecklistRuntime?.adminChannelId) return false;
+  const payload = lapseGroupPayload(group);
+  if (group.messageId) {
+    try {
+      const patched = await lapseChecklistRuntime.api(
+        `/channels/${lapseChecklistRuntime.adminChannelId}/messages/${group.messageId}`,
+        "PATCH",
+        payload
+      );
+      return patched?.id || group.messageId;
+    } catch (error) {
+      if (!/HTTP 404/.test(error.message)) throw error;
+    }
+  }
+  const posted = await lapseChecklistRuntime.api(
+    `/channels/${lapseChecklistRuntime.adminChannelId}/messages`,
+    "POST",
+    payload
+  );
+  return posted?.id || true;
+}
 export async function sendDiscordLapseChecklistAlert({
   customerName = "Unknown",
   customerEmail = "Not available",
@@ -14,41 +79,20 @@ export async function sendDiscordLapseChecklistAlert({
   expiresAt = null,
   trackingId = ""
 } = {}) {
-  if (!lapseChecklistRuntime?.api || !lapseChecklistRuntime?.adminChannelId) return false;
-  const clean = value => String(value ?? "").slice(0, 900);
-  const retailerName = String(retailer || "Unknown").trim();
-  const removalProgram = /target/i.test(retailerName) ? "Shikari" :
-    /(walmart|pokemon|pokémon)/i.test(retailerName) ? "Valor" : "the appropriate external program";
-  const message = await lapseChecklistRuntime.api(
-    `/channels/${lapseChecklistRuntime.adminChannelId}/messages`,
-    "POST",
-    {
-      allowed_mentions: { parse: [] },
-      embeds: [{
-        title: `❌ LAPSED ACCOUNT — REMOVE FROM ${removalProgram.toUpperCase()}`,
-        description: `This account expired automatically. **Remove this profile from ${removalProgram}**, then close this notification.`,
-        color: 0xe74c3c,
-        fields: [
-          { name: "Customer", value: clean(customerName || "Unknown"), inline: false },
-          { name: "Customer Email", value: clean(customerEmail || "Not available"), inline: false },
-          { name: "Retailer", value: clean(retailer || "Unknown"), inline: true },
-          { name: "Retailer Account Email", value: clean(retailerAccountEmail || "Not available"), inline: false },
-          { name: "Type", value: clean(profileType || "Managed account"), inline: true },
-          { name: "Expired", value: expiresAt ? clean(new Date(expiresAt).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" })) : "Not available", inline: false }
-        ],
-        footer: { text: `Remove from ${removalProgram}, then close this notification.` },
-        timestamp: new Date().toISOString()
-      }],
-      components: [{
-        type: 1,
-        components: [
-          { type: 2, style: 1, label: "Extend Access", custom_id: `lapse:extend:${String(trackingId || "done").replace(/[^a-zA-Z0-9:_-]/g, "").slice(0, 70)}` },
-          { type: 2, style: 3, label: "Close Notification", custom_id: `lapse:close:${String(trackingId || "done").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 60)}` }
-        ]
-      }]
-    }
-  );
-  return message?.id || true;
+  const [rawType, rawId] = String(trackingId || "").split(":");
+  return sendDiscordLapseChecklistGroup({
+    customerName,
+    customerEmail,
+    items: [{
+      type: rawType === "rented" ? "rented" : "free",
+      managedAccountId: rawId || trackingId,
+      retailer,
+      retailerAccountEmail,
+      profileLabel: retailerAccountEmail,
+      profileType,
+      expiresAt
+    }]
+  });
 }
 export async function sendDiscordRtpReturnSummary({
   userCount = 0,
