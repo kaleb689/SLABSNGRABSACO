@@ -4,6 +4,7 @@ import path from "node:path";
 
 const API = "https://discord.com/api/v10";
 let lapseChecklistRuntime = null;
+const lapseBulkSelections = new Map();
 
 function lapseItemKey(item = {}) {
   return `${item.type === "rented" ? "rented" : "free"}:${String(item.managedAccountId || "").trim()}`;
@@ -316,7 +317,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -2161,54 +2162,67 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         }
       }
       if (d.type === 3 && /^lapse:bulk:select:\d+$/.test(d.data?.custom_id || "")) {
-        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) {
-          return await reply("Only the owner or Support Staff can restore these profiles.");
-        }
+        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) return await reply("Only the owner or Support Staff can manage these profiles.");
         const selected = Array.isArray(d.data?.values) ? d.data.values.map(String) : [];
-        if (!selected.length) return await reply("Select at least one profile to restore.");
-        if (typeof onRestoreLapsedProfiles !== "function") return await reply("Bulk restore is not available right now.");
-
-        await api(callback, "POST", { type: 6 });
-        try {
-          const result = await onRestoreLapsedProfiles({ selections: selected });
-          const restored = new Set((result?.restoredIds || []).map(String));
-          if (!restored.size) return;
-
-          const message = await api(`/channels/${d.channel_id}/messages/${d.message.id}`);
-          const remainingOptions = (message.components || []).flatMap(row => row.components || [])
-            .filter(component => component.type === 3 && String(component.custom_id || "").startsWith("lapse:bulk:select:"))
-            .flatMap(component => component.options || [])
-            .filter(option => !restored.has(String(option.value)));
-
-          if (!remainingOptions.length) {
-            await api(`/channels/${d.channel_id}/messages/${d.message.id}`, "DELETE").catch(error => {
-              if (!/HTTP 404/.test(error.message)) throw error;
-            });
-            return;
-          }
-
-          const components = [];
-          for (let offset = 0; offset < remainingOptions.length; offset += 25) {
-            const options = remainingOptions.slice(offset, offset + 25);
-            components.push({ type: 1, components: [{
-              type: 3,
-              custom_id: `lapse:bulk:select:${offset}`,
-              placeholder: "Select remaining accounts to restore",
-              min_values: 1,
-              max_values: options.length,
-              options
-            }] });
-          }
-          const embeds = Array.isArray(message.embeds) ? message.embeds.map((embed, index) => index ? embed : {
-            ...embed,
-            description: `**Remaining profiles: ${remainingOptions.length}**\n\nSelect one or more accounts below to restore them in bulk. Successfully restored accounts have been removed from this notice. Any account still listed has **not** been restored.`
-          }) : [];
-          await api(`/channels/${d.channel_id}/messages/${d.message.id}`, "PATCH", { embeds, components });
-          return;
-        } catch (error) {
-          console.error("Discord bulk lapse restore:", error.message);
-          return;
+        if (!selected.length) return await reply("Select at least one profile.");
+        const selectionKey = crypto.randomBytes(8).toString("hex");
+        lapseBulkSelections.set(selectionKey, { selected, channelId: d.channel_id, messageId: d.message.id, createdAt: Date.now() });
+        return await api(callback, "POST", { type: 4, data: { flags: 64,
+          content: "Selected **" + selected.length + "** account(s). Choose what to do:",
+          components: [{ type: 1, components: [
+            { type: 2, style: 1, label: "Extend", custom_id: "lapse:bulk:extend:" + selectionKey },
+            { type: 2, style: 4, label: "Return to Pool", custom_id: "lapse:bulk:rtp:" + selectionKey }
+          ]}]
+        }});
+      }
+      if (d.type === 3 && /^lapse:bulk:extend:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        const selectionKey = d.data.custom_id.split(":").at(-1), selection = lapseBulkSelections.get(selectionKey);
+        if (!selection) return await reply("That selection expired. Select the accounts again.");
+        return await api(callback, "POST", { type: 9, data: { custom_id: "lapse:bulk:extend-submit:" + selectionKey, title: "Extend Selected Accounts",
+          components: [
+            { type: 1, components: [{ type: 4, custom_id: "amount", label: "Amount", style: 1, min_length: 1, max_length: 4, required: true, placeholder: "Example: 12" }] },
+            { type: 1, components: [{ type: 4, custom_id: "unit", label: "Unit (hours or days)", style: 1, min_length: 4, max_length: 5, required: true, placeholder: "hours or days" }] }
+          ] }});
+      }
+      if (d.type === 5 && /^lapse:bulk:extend-submit:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        const selectionKey = d.data.custom_id.split(":").at(-1), selection = lapseBulkSelections.get(selectionKey);
+        if (!selection) return await reply("That selection expired. Select the accounts again.");
+        const fields = Object.fromEntries((d.data.components || []).flatMap(row => row.components || []).map(item => [item.custom_id, item.value]));
+        const amount = Number.parseInt(String(fields.amount || ""), 10), unit = String(fields.unit || "").trim().toLowerCase();
+        if (!Number.isInteger(amount) || amount < 1 || amount > 9999 || !["hour","hours","day","days"].includes(unit)) return await reply("Enter a valid amount and use hours or days.");
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        let succeeded = 0; const failed = [];
+        for (const value of selection.selected) {
+          const parts = value.split(":"), type = parts.shift(), managedAccountId = parts.join(":");
+          try { await onExtendLapsedProfile({ type, managedAccountId, amount, unit }); succeeded += 1; } catch { failed.push(value); }
         }
+        lapseBulkSelections.delete(selectionKey);
+        return await api("/webhooks/" + d.application_id + "/" + d.token + "/messages/@original", "PATCH", { content: "Extended **" + succeeded + "** account(s)." + (failed.length ? " **" + failed.length + "** failed and remain unresolved." : "") });
+      }
+      if (d.type === 3 && /^lapse:bulk:rtp:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        const selectionKey = d.data.custom_id.split(":").at(-1), selection = lapseBulkSelections.get(selectionKey);
+        if (!selection) return await reply("That selection expired. Select the accounts again.");
+        return await api(callback, "POST", { type: 4, data: { flags: 64,
+          content: "Return **" + selection.selected.length + "** selected account(s) to their retailer pool? Their Restore Hold preference will remain.",
+          components: [{ type: 1, components: [
+            { type: 2, style: 4, label: "Commit RTP", custom_id: "lapse:bulk:rtp-confirm:" + selectionKey },
+            { type: 2, style: 2, label: "Cancel", custom_id: "lapse:bulk:cancel:" + selectionKey }
+          ]}]
+        }});
+      }
+      if (d.type === 3 && /^lapse:bulk:rtp-confirm:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        const selectionKey = d.data.custom_id.split(":").at(-1), selection = lapseBulkSelections.get(selectionKey);
+        if (!selection) return await reply("That selection expired. Select the accounts again.");
+        if (typeof onRtpLapsedProfiles !== "function") return await reply("Return to Pool is not available right now.");
+        await api(callback, "POST", { type: 6 });
+        const result = await onRtpLapsedProfiles({ selections: selection.selected });
+        lapseBulkSelections.delete(selectionKey);
+        const returned = (result?.returnedIds || []).length, failed = (result?.failedIds || []).length;
+        return await api("/channels/" + d.channel_id + "/messages/" + d.message.id, "PATCH", { content: "RTP complete: **" + returned + "** returned" + (failed ? "; **" + failed + "** failed and remain unresolved." : "."), components: [] }).catch(() => {});
+      }
+      if (d.type === 3 && /^lapse:bulk:cancel:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        lapseBulkSelections.delete(d.data.custom_id.split(":").at(-1));
+        return await api(callback, "POST", { type: 6 });
       }
       if (d.type === 3 && d.data?.custom_id === "rtp:return-summary:ack") {
         if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) {
