@@ -12343,3 +12343,131 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
 #account-tab-edit-profile .saved-detail-disclosure[open] .saved-detail-chevron { transform: rotate(180deg); }
 #account-tab-edit-profile .saved-detail-disclosure-body { padding-top: 16px; }
 #account-tab-edit-profile .saved-detail-disclosure > summary > div { min-width: 0; flex: 1; }
+
+
+/* ======================================================
+   SIGNUP APP PASSWORD GUIDE POPUP
+====================================================== */
+
+.app-password-guide-prompt,
+.app-password-format-note {
+  display: block;
+  margin-top: 7px;
+  line-height: 1.4;
+}
+
+.app-password-guide-prompt {
+  color: #7ee8ff;
+  font-weight: 850;
+}
+
+.app-password-format-note {
+  color: rgba(235, 249, 255, .82);
+  font-weight: 700;
+}
+
+.signup-app-password-guide {
+  position: fixed;
+  z-index: 10050;
+  top: 50%;
+  right: clamp(14px, 2.5vw, 36px);
+  width: min(520px, calc(50vw - 40px));
+  max-height: min(84vh, 820px);
+  transform: translateY(-50%);
+  border: 1px solid rgba(46, 207, 255, .55);
+  border-radius: 18px;
+  background: rgba(5, 15, 24, .98);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, .55),
+    0 0 32px rgba(29, 214, 255, .16);
+  color: #f5fbff;
+  overflow: hidden;
+}
+
+.signup-app-password-guide[hidden] {
+  display: none !important;
+}
+
+.signup-app-password-guide-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 18px 13px;
+  border-bottom: 1px solid rgba(126, 232, 255, .18);
+  background: rgba(7, 22, 33, .98);
+}
+
+.signup-app-password-guide-head h3 {
+  margin: 4px 0 0;
+  font-size: clamp(20px, 2vw, 27px);
+}
+
+.signup-app-password-guide-close {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .32);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .08);
+  color: #fff;
+  font-size: 27px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.signup-app-password-guide-close:hover,
+.signup-app-password-guide-close:focus-visible {
+  border-color: #7ee8ff;
+  background: rgba(126, 232, 255, .13);
+  outline: none;
+}
+
+.signup-app-password-guide-note {
+  margin: 0;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(126, 232, 255, .16);
+  background: rgba(13, 66, 87, .42);
+  color: #dff9ff;
+  font-weight: 850;
+}
+
+.signup-app-password-guide-scroll {
+  max-height: calc(min(84vh, 820px) - 118px);
+  padding: 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.signup-app-password-guide-scroll .guide-content {
+  padding: 0;
+}
+
+.signup-app-password-guide-scroll .guide-example-image {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (max-width: 980px) {
+  .signup-app-password-guide {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: 78vh;
+    transform: none;
+  }
+
+  .signup-app-password-guide-scroll {
+    max-height: calc(78vh - 118px);
+  }
+}
