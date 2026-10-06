@@ -146,7 +146,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           const manuallyReturned = ["returned_to_pool", "returned", "released", "admin_returned"].includes(String(record?.endReason || "").toLowerCase());
           if (remaining <= 0 && !manuallyReturned) {
             const notice = `${base}:${end.toISOString()}:admin`, snap = state[snapshotKey] || {};
-            if (!state[notice] && snap.customerAccountId && snap.email) {
+            if (snap.customerAccountId && snap.email) {
               const groupKey = String(snap.customerAccountId);
               if (!lapseGroups.has(groupKey)) lapseGroups.set(groupKey, {
                 customerAccountId: groupKey,
