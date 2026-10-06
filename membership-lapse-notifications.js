@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { sendDiscordLapseChecklistAlert, sendDiscordRtpReturnSummary } from "./discord-community.js";
+import { sendDiscordLapseChecklistGroup, sendDiscordRtpReturnSummary } from "./discord-community.js";
 
 const API = "https://discord.com/api/v10";
 const DAY = 86400000;
@@ -117,6 +117,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
         } catch (e) { console.error("Membership lapse DM:", e.message); }
       }
 
+      const lapseGroups = new Map();
       for (const [kind, records] of [["rented", list(rentedRaw)], ["gifted", list(giftedRaw)]]) {
         for (const record of records) {
           const base = key(record, kind), end = date(record?.expiresAt);
@@ -139,33 +140,44 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
             const stage = remaining <= DAY ? "1d" : "3d";
             const hourBucket = end.toISOString().slice(0, 13);
             const groupKey = `${account.id}:${kind}:${stage}:${hourBucket}`;
-            if (!renewalGroups.has(groupKey)) {
-              renewalGroups.set(groupKey, { account, kind, stage, end, records: [] });
-            }
+            if (!renewalGroups.has(groupKey)) renewalGroups.set(groupKey, { account, kind, stage, end, records: [] });
             renewalGroups.get(groupKey).records.push(record);
           }
           const manuallyReturned = ["returned_to_pool", "returned", "released", "admin_returned"].includes(String(record?.endReason || "").toLowerCase());
           if (remaining <= 0 && !manuallyReturned) {
             const notice = `${base}:${end.toISOString()}:admin`, snap = state[snapshotKey] || {};
-            // Never backfill historical assignments that no longer have a known owner.
-            // A snapshot is created while the assignment is active, before it expires.
             if (!state[notice] && snap.customerAccountId && snap.email) {
-              try {
-                const retailer = String(record?.rentalRetailer || record?.assignmentRetailer || record?.referralRetailer || record?.retailer || "Unknown");
-                const retailerAccountEmail = String(record?.customerProfile?.email || snap.retailerAccountEmail || "Not available");
-                if (await sendDiscordLapseChecklistAlert({
-                  customerName: snap.name,
-                  customerEmail: snap.email,
-                  retailer,
-                  retailerAccountEmail,
-                  profileType: kind === "rented" ? "Rented account" : "Gifted account",
-                  expiresAt: snap.expiresAt || end.toISOString(),
-                  trackingId: `${kind}:${String(record?.managedAccountId || record?.rentedMembershipId || record?.freeMembershipId || record?.assignmentId || record?.id || "").trim()}`
-                })) { state[notice] = new Date().toISOString(); changed = true; }
-              } catch (e) { console.error(`${kind} lapse admin alert:`, e.message); }
+              const groupKey = String(snap.customerAccountId);
+              if (!lapseGroups.has(groupKey)) lapseGroups.set(groupKey, {
+                customerAccountId: groupKey,
+                customerName: snap.name,
+                customerEmail: snap.email,
+                items: [],
+                notices: []
+              });
+              lapseGroups.get(groupKey).items.push({
+                type: kind === "rented" ? "rented" : "free",
+                managedAccountId: String(record?.managedAccountId || record?.rentedMembershipId || record?.freeMembershipId || record?.assignmentId || record?.id || "").trim(),
+                retailer: String(record?.rentalRetailer || record?.assignmentRetailer || record?.referralRetailer || record?.retailer || "Unknown"),
+                retailerAccountEmail: String(record?.customerProfile?.email || snap.retailerAccountEmail || "Not available"),
+                profileLabel: label(record, kind),
+                expiresAt: snap.expiresAt || end.toISOString()
+              });
+              lapseGroups.get(groupKey).notices.push(notice);
             }
           }
         }
+      }
+      for (const group of lapseGroups.values()) {
+        try {
+          const groupStateKey = `lapse-group:${group.customerAccountId}`;
+          const messageId = await sendDiscordLapseChecklistGroup({ ...group, messageId: state[groupStateKey]?.messageId || "" });
+          if (messageId) {
+            state[groupStateKey] = { messageId: String(messageId), updatedAt: new Date().toISOString() };
+            for (const notice of group.notices) state[notice] = new Date().toISOString();
+            changed = true;
+          }
+        } catch (e) { console.error("Grouped lapse admin alert:", e.message); }
       }
 
       // Admin-triggered RTP FINAL REMINDER queue. A single combined DM is sent
