@@ -47078,15 +47078,27 @@ await initializeArrayFile(
           onSuccessMessage: () => queueDiscordSuccessScan(50),
           onExtendLapsedProfile: async ({ type, managedAccountId, amount, unit }) => {
             if (!["free", "rented"].includes(type)) throw new Error("Invalid profile type.");
+
+            // Backward compatibility for lapse alerts posted before the
+            // Discord control fix. Those messages stored assignment.id in
+            // the button custom_id instead of the managed account id.
+            const existingAssignments = type === "free" ? await getFreeAssignments() : await getRentalAssignments();
+            const legacyAssignment = existingAssignments.find(item =>
+              String(item?.id || "") === String(managedAccountId)
+            );
+            const resolvedManagedAccountId = legacyAssignment
+              ? managedAssignmentMembershipId(legacyAssignment)
+              : String(managedAccountId || "");
+
             const holds = await getRestoreHolds();
             const hold = activeRestoreHoldsFor(holds).find(item =>
-              item.type === type && restoreHoldRemainingItems(item).some(entry => String(entry.managedAccountId) === String(managedAccountId)));
+              item.type === type && restoreHoldRemainingItems(item).some(entry => String(entry.managedAccountId) === String(resolvedManagedAccountId)));
             if (!hold) throw new Error("This expired profile is no longer on Restore Hold.");
             const customerAccountId = hold.customerAccountId;
             const restored = await restoreHeldManagedAccountsForCustomer(customerAccountId, type);
-            if (!restored.managedAccountIds.map(String).includes(String(managedAccountId))) throw new Error("Unable to restore this profile for extension.");
+            if (!restored.managedAccountIds.map(String).includes(String(resolvedManagedAccountId))) throw new Error("Unable to restore this profile for extension.");
             const assignments = type === "free" ? await getFreeAssignments() : await getRentalAssignments();
-            const assignment = assignments.find(item => String(managedAssignmentMembershipId(item)) === String(managedAccountId) && String(item.customerAccountId) === String(customerAccountId));
+            const assignment = assignments.find(item => String(managedAssignmentMembershipId(item)) === String(resolvedManagedAccountId) && String(item.customerAccountId) === String(customerAccountId));
             if (!assignment) throw new Error("Restored profile assignment was not found.");
             const now = new Date();
             const ms = amount * (unit.startsWith("day") ? 86400000 : 3600000);
