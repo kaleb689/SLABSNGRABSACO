@@ -160,7 +160,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
                   retailerAccountEmail,
                   profileType: kind === "rented" ? "Rented account" : "Gifted account",
                   expiresAt: snap.expiresAt || end.toISOString(),
-                  trackingId: base
+                  trackingId: `${kind}:${String(record?.managedAccountId || record?.rentedMembershipId || record?.freeMembershipId || record?.assignmentId || record?.id || "").trim()}`
                 })) { state[notice] = new Date().toISOString(); changed = true; }
               } catch (e) { console.error(`${kind} lapse admin alert:`, e.message); }
             }
