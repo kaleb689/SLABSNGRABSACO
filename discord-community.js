@@ -84,7 +84,10 @@ export async function sendDiscordRtpReturnSummary({
         color: 0xf1c40f,
         footer: { text: "SLABSNGRABSACO automatic RTP summary" },
         timestamp: new Date().toISOString()
-      }]
+      }],
+      components: [{ type: 1, components: [
+        { type: 2, style: 3, label: "Acknowledge", custom_id: "rtp:return:ack" }
+      ] }]
     }
   );
 
@@ -2084,6 +2087,16 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           });
         }
       }
+      if (d.type === 3 && d.data?.custom_id === "rtp:return:ack") {
+        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) {
+          return await reply("Only the owner or Support Staff can acknowledge this notification.");
+        }
+        await api(callback, "POST", { type: 6 });
+        await api(`/channels/${d.channel_id}/messages/${d.message.id}`, "DELETE").catch(error => {
+          if (!/HTTP 404/.test(error.message)) throw error;
+        });
+        return;
+      }
       if (d.type === 3 && /^lapse:close:[a-zA-Z0-9_-]{1,60}$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) {
           return await reply("Only the owner or Support Staff can close this notification.");
@@ -2094,9 +2107,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         });
         return;
       }
-      if (d.type === 3 && /^lapse:extend:(free|rented):[a-zA-Z0-9_-]{1,70}$/.test(d.data?.custom_id || "")) {
+      if (d.type === 3 && String(d.data?.custom_id || "").startsWith("lapse:extend:") && !String(d.data?.custom_id || "").startsWith("lapse:extend:submit:")) {
         if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) return await reply("Only the owner or Support Staff can extend this profile.");
-        const [, , type, managedAccountId] = d.data.custom_id.split(":");
+        const match = /^lapse:extend:(free|rented):(.+)$/.exec(String(d.data.custom_id || ""));
+        if (!match) return await reply("This extension button is invalid. Please use a newer notification.");
+        const type = match[1];
+        const managedAccountId = match[2];
+        if (!managedAccountId || managedAccountId.length > 70) return await reply("This extension button is invalid. Please use a newer notification.");
         return await api(callback, "POST", { type: 9, data: {
           custom_id: `lapse:extend:submit:${type}:${managedAccountId}`, title: "Extend Profile Access",
           components: [
