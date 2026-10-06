@@ -348,10 +348,9 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           });
           if (!embed) continue;
           const fields = new Map((embed.fields || []).map(item => [String(item?.name || ""), String(item?.value || "")]));
-          const hasClose = (message.components || []).some(row =>
-            (row.components || []).some(item => String(item?.custom_id || "").startsWith("lapse:close:")));
-          const isValidNewChecklist = channelId === adminProfilesChannelId && hasClose &&
-            fields.get("Customer") !== "Unknown" && fields.get("Customer Email") !== "Not available";
+          const hasBulkRestore = (message.components || []).some(row =>
+            (row.components || []).some(item => String(item?.custom_id || "").startsWith("lapse:bulk:select:")));
+          const isValidNewChecklist = channelId === adminProfilesChannelId && hasBulkRestore;
           if (isValidNewChecklist) continue;
           try { await api(`/channels/${channelId}/messages/${message.id}`, "DELETE"); removed += 1; }
           catch (error) { if (!/HTTP 404/.test(error.message)) console.error("Legacy lapse cleanup:", error.message); }
