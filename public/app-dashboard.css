@@ -121,3 +121,93 @@
 .app-dashboard[data-app-theme="day"] #customer-dashboard h2,.app-dashboard[data-app-theme="day"] #customer-dashboard h3,.app-dashboard[data-app-theme="day"] #customer-dashboard label,.app-dashboard[data-app-theme="day"] #customer-dashboard .account-muted { color:#354260; }
 @media(max-width:420px) { .app-dashboard .sng-app-brand img { width:32px; height:32px; }.app-dashboard .sng-app-brand { gap:6px; }.app-dashboard .sng-app-brand strong { font-size:11px; }.app-dashboard .sng-app-header-actions button { width:34px; padding:6px; }.app-dashboard .sng-metrics.three { gap:7px; }.app-dashboard .sng-metrics.three .sng-metric { padding:14px 9px; }.app-dashboard .sng-metric > span { font-size:8px; flex-wrap:wrap; }.app-dashboard .sng-breakdown { gap:12px; }.app-dashboard .sng-donut { width:110px; height:110px; }.app-dashboard .sng-donut > div { width:84px; height:84px; } }
 .app-dashboard .sng-detail-product { display:flex; align-items:center; gap:12px; }.app-dashboard .sng-detail-product .sng-product-image { flex-shrink:0; width:40px; height:40px; }
+
+
+/* Brighter app palette + persistent tab accents, especially in day mode. */
+.app-dashboard .sng-app-nav button[data-app-view="home"] svg { color:#8b5cff; }
+.app-dashboard .sng-app-nav button[data-app-view="tracking"] svg { color:#00c8ff; }
+.app-dashboard .sng-app-nav button[data-app-view="products"] svg { color:#ff4db8; }
+.app-dashboard .sng-app-nav button[data-app-view="profile"] svg { color:#24d6a3; }
+.app-dashboard .sng-app-nav button[data-app-view="history"] svg { color:#ff9d2e; }
+.app-dashboard .sng-app-nav button.active { box-shadow:inset 0 0 0 1px currentColor,0 0 18px color-mix(in srgb,currentColor 24%,transparent); }
+.app-dashboard .sng-app-nav button.active span { color:inherit; }
+.app-dashboard .sng-profile-menu button:nth-child(1) { border-color:#8b5cff; color:#c6a7ff; }
+.app-dashboard .sng-profile-menu button:nth-child(2) { border-color:#00c8ff; color:#6bddff; }
+.app-dashboard .sng-profile-menu button:nth-child(3) { border-color:#ff4db8; color:#ff8ed3; }
+.app-dashboard .sng-profile-menu button:nth-child(4) { border-color:#24d6a3; color:#68e7c2; }
+.app-dashboard .sng-profile-menu button[aria-pressed="true"] { box-shadow:0 0 18px currentColor; }
+
+.app-dashboard .sng-metric { box-shadow:inset 0 0 0 1px rgba(255,255,255,.02); }
+.app-dashboard .sng-metric:nth-child(4n+1) { border-color:#7e55ff; }
+.app-dashboard .sng-metric:nth-child(4n+2) { border-color:#00bff3; }
+.app-dashboard .sng-metric:nth-child(4n+3) { border-color:#19d99b; }
+.app-dashboard .sng-metric:nth-child(4n+4) { border-color:#ff4daf; }
+.app-dashboard .sng-rank { color:#d06cff; text-shadow:0 0 16px rgba(208,108,255,.5); }
+.app-dashboard .sng-progress span { background:linear-gradient(90deg,#00d6ff,#1de3a7); }
+.app-dashboard .sng-bar { background:linear-gradient(180deg,#ff4fd8,#9a48ff 45%,#36cfff); }
+.app-dashboard .sng-section-title button,.app-dashboard .sng-order-details a { color:#35d8ff; }
+
+.app-dashboard[data-app-theme="day"].app-signed-in {
+  background:
+    radial-gradient(circle at 12% 8%,rgba(80,214,255,.28),transparent 34%),
+    radial-gradient(circle at 88% 12%,rgba(255,88,193,.20),transparent 34%),
+    radial-gradient(circle at 50% 100%,rgba(122,83,255,.16),transparent 38%),
+    #f7f9ff;
+}
+.app-dashboard[data-app-theme="day"] .sng-app-nav {
+  background:rgba(255,255,255,.96);
+  border-color:#cfd7ea;
+  box-shadow:0 14px 38px rgba(64,74,120,.20);
+}
+.app-dashboard[data-app-theme="day"] .sng-app-nav button { color:#66708a; }
+.app-dashboard[data-app-theme="day"] .sng-app-nav button[data-app-view="home"] { color:#7547ff; }
+.app-dashboard[data-app-theme="day"] .sng-app-nav button[data-app-view="tracking"] { color:#009fd5; }
+.app-dashboard[data-app-theme="day"] .sng-app-nav button[data-app-view="products"] { color:#e92a9b; }
+.app-dashboard[data-app-theme="day"] .sng-app-nav button[data-app-view="profile"] { color:#07986f; }
+.app-dashboard[data-app-theme="day"] .sng-app-nav button[data-app-view="history"] { color:#d96d00; }
+.app-dashboard[data-app-theme="day"] .sng-app-nav button.active {
+  background:color-mix(in srgb,currentColor 13%,white);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 38%,white),0 4px 18px color-mix(in srgb,currentColor 22%,transparent);
+}
+.app-dashboard[data-app-theme="day"] .sng-app-nav button span { color:currentColor; opacity:.88; }
+.app-dashboard[data-app-theme="day"] .sng-app-nav button.active span { opacity:1; font-weight:850; }
+
+.app-dashboard[data-app-theme="day"] .sng-metric {
+  background:linear-gradient(145deg,#ffffff,#f8faff);
+  box-shadow:0 8px 22px rgba(57,70,120,.08);
+}
+.app-dashboard[data-app-theme="day"] .sng-metric:nth-child(4n+1) { border-color:#8a5cff; }
+.app-dashboard[data-app-theme="day"] .sng-metric:nth-child(4n+2) { border-color:#00b8ec; }
+.app-dashboard[data-app-theme="day"] .sng-metric:nth-child(4n+3) { border-color:#11c88e; }
+.app-dashboard[data-app-theme="day"] .sng-metric:nth-child(4n+4) { border-color:#ef3ca8; }
+.app-dashboard[data-app-theme="day"] .sng-metric.green strong { color:#04986d; }
+.app-dashboard[data-app-theme="day"] .sng-metric.cyan strong { color:#008fbd; }
+.app-dashboard[data-app-theme="day"] .sng-rank { color:#8f38f3; }
+.app-dashboard[data-app-theme="day"] .sng-section-title button,.app-dashboard[data-app-theme="day"] .sng-order-details a { color:#007fae; font-weight:800; }
+.app-dashboard[data-app-theme="day"] .sng-status-filters [aria-pressed="true"] { background:#dff7ff; border-color:#00a6d8; color:#007ba1; }
+.app-dashboard[data-app-theme="day"] .sng-range [aria-pressed="true"] { background:linear-gradient(135deg,#7a4cff,#b048ff); color:#fff; border-color:#7a4cff; box-shadow:0 5px 16px rgba(122,76,255,.25); }
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button:nth-child(1) { border-color:#7b4dff; color:#6331d7; background:#f0eaff; }
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button:nth-child(2) { border-color:#00aee0; color:#007fa7; background:#e5f9ff; }
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button:nth-child(3) { border-color:#e93ca8; color:#be1f82; background:#fff0f8; }
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button:nth-child(4) { border-color:#0ab681; color:#087f5d; background:#e8fff7; }
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button[aria-pressed="true"] { color:#fff; box-shadow:0 5px 18px currentColor; }
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button:nth-child(1)[aria-pressed="true"] { background:#7b4dff; }
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button:nth-child(2)[aria-pressed="true"] { background:#00aee0; }
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button:nth-child(3)[aria-pressed="true"] { background:#e93ca8; }
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button:nth-child(4)[aria-pressed="true"] { background:#0ab681; }
+.app-dashboard[data-app-theme="day"] .sng-chart-card,
+.app-dashboard[data-app-theme="day"] .sng-product-row,
+.app-dashboard[data-app-theme="day"] .sng-order-card,
+.app-dashboard[data-app-theme="day"] .sng-settings-list button {
+  box-shadow:0 8px 22px rgba(57,70,120,.07);
+}
+.app-dashboard[data-app-theme="day"] .sng-order-card.stage-ordered { border-left-color:#f0b400; }
+.app-dashboard[data-app-theme="day"] .sng-order-card.stage-shipped { border-left-color:#8a4cff; }
+.app-dashboard[data-app-theme="day"] .sng-order-card.stage-in_transit { border-left-color:#00aee0; }
+.app-dashboard[data-app-theme="day"] .sng-order-card.stage-out_for_delivery { border-left-color:#ff7a1a; }
+.app-dashboard[data-app-theme="day"] .sng-order-card.stage-delivered { border-left-color:#08b77d; }
+.app-dashboard[data-app-theme="day"] .stage-ordered .sng-stage { color:#b27b00; font-weight:800; }
+.app-dashboard[data-app-theme="day"] .stage-shipped .sng-stage { color:#6f32d8; font-weight:800; }
+.app-dashboard[data-app-theme="day"] .stage-in_transit .sng-stage { color:#007fa7; font-weight:800; }
+.app-dashboard[data-app-theme="day"] .stage-out_for_delivery .sng-stage { color:#c65000; font-weight:800; }
+.app-dashboard[data-app-theme="day"] .stage-delivered .sng-stage { color:#087e59; font-weight:800; }
