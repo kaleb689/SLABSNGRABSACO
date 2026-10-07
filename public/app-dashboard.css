@@ -87,3 +87,37 @@
 .app-dashboard.app-signed-in:not([data-app-view="profile"]) .setup-checklist-panel { display:none!important; }
 .app-dashboard .account-topbar-right { width:100%; }.app-dashboard .account-topbar { gap:20px; }.app-dashboard .member-lifetime-stats { width:100%; grid-template-columns:repeat(2,minmax(0,1fr)); }
 @media(max-width:380px) { .app-dashboard .sng-range > span { display:none; }.app-dashboard .sng-metric { padding:17px 12px; }.app-dashboard .sng-product-row,.app-dashboard .sng-order-card summary { gap:9px; padding:13px; }.app-dashboard .sng-row-value { max-width:80px; }.app-dashboard .sng-product-image { width:40px; height:40px; } }
+/* App insights and display preferences. */
+.app-dashboard .sng-app-nav { grid-template-columns:repeat(5,minmax(0,1fr)); }
+.app-dashboard .sng-range { overflow-x:auto; max-width:100%; gap:6px; margin-bottom:5px; scrollbar-width:none; }
+.app-dashboard .sng-range button { padding:10px 13px; }
+.app-dashboard .sng-period-label { font-size:11px; color:#a7abba; margin:0 0 16px; }
+.app-dashboard .sng-hero { background:linear-gradient(110deg,#7b35ff,#08baff,#06e8ae); }
+.app-dashboard .sng-hero.orange { background:linear-gradient(110deg,#ff386d,#ff8c25,#ffce30); }
+.app-dashboard .sng-hero.pink { background:linear-gradient(110deg,#8d39ff,#ee35bf,#ff61aa); }
+.app-dashboard .sng-hero.insights { background:linear-gradient(105deg,#ffdf24,#ff8d68 35%,#fa4caf 65%,#cd49ff); }
+.app-dashboard .sng-metric > span { color:#adb3c3; display:flex; align-items:center; gap:6px; letter-spacing:.5px; }
+.app-dashboard .sng-metric > span svg { width:19px; height:19px; flex-shrink:0; }
+.app-dashboard .sng-delta { display:block; color:#67e5b7; font-size:10px; line-height:1.5; margin-top:9px; }
+.app-dashboard .sng-rank { color:#ba8cff; font-size:16px; min-width:12px; }
+.app-dashboard .sng-breakdown { display:flex; align-items:center; gap:22px; margin:20px 0; }
+.app-dashboard .sng-donut { width:140px; height:140px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; }
+.app-dashboard .sng-donut > div { width:108px; height:108px; border-radius:50%; background:#12151d; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.app-dashboard .sng-donut strong { font-size:25px; }.app-dashboard .sng-donut small { color:#9ba3b5; font-size:9px; margin-top:5px; }
+.app-dashboard .sng-legend { flex:1; min-width:0; }.app-dashboard .sng-legend p { display:flex; gap:7px; align-items:center; font-size:11px; }
+.app-dashboard .sng-legend i { width:7px; height:7px; border-radius:50%; flex-shrink:0; }.app-dashboard .sng-legend span { flex:1; overflow-wrap:anywhere; }
+.app-dashboard .sng-breakdown-row { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; font-size:11px; padding:10px 0; }.app-dashboard .sng-breakdown-row .sng-progress { width:100%; }
+.app-dashboard .sng-settings-list { display:grid; gap:12px; }.app-dashboard .sng-settings-list button { border:1px solid #343b50; background:#151a28; color:#f6f7ff; border-radius:18px; padding:20px; display:flex; align-items:center; gap:14px; text-align:left; }
+.app-dashboard.app-signed-in:not([data-profile-tab="membership"]) .account-topbar { display:none!important; }
+.app-dashboard[data-app-theme="day"].app-signed-in { background:radial-gradient(at top left,#dbf7ff,transparent 55%),#f4f5fc; color:#172038; }
+.app-dashboard[data-app-theme="day"] .sng-metric,.app-dashboard[data-app-theme="day"] .sng-product-row,.app-dashboard[data-app-theme="day"] .sng-order-card,.app-dashboard[data-app-theme="day"] .sng-chart-card,.app-dashboard[data-app-theme="day"] .sng-settings-list button,.app-dashboard[data-app-theme="day"] .sng-donut > div,.app-dashboard[data-app-theme="day"] #my-profile .account-card { background:#fff; border-color:#dce2ee; color:#172038; }
+.app-dashboard[data-app-theme="day"] .sng-app-nav { background:#fffefc; border-color:#dce2ee; box-shadow:0 10px 35px #66779c33; }
+.app-dashboard[data-app-theme="day"] .sng-app-header-actions button,.app-dashboard[data-app-theme="day"] .sng-section-title h2,.app-dashboard[data-app-theme="day"] .sng-page-intro h1,.app-dashboard[data-app-theme="day"] .sng-product-row strong,.app-dashboard[data-app-theme="day"] .sng-order-card strong { color:#172038; }
+.app-dashboard[data-app-theme="day"] .sng-range button,.app-dashboard[data-app-theme="day"] .sng-profile-menu button,.app-dashboard[data-app-theme="day"] .sng-status-filters button,.app-dashboard[data-app-theme="day"] .sng-search input { background:#fff; border-color:#dce2ee; color:#4c5871; }
+.app-dashboard[data-app-theme="day"] .sng-range [aria-pressed="true"],.app-dashboard[data-app-theme="day"] .sng-app-nav button.active { background:#e9dfff; color:#5b2ac3; }
+.app-dashboard[data-app-theme="day"] .sng-metric > span,.app-dashboard[data-app-theme="day"] .sng-row-main small,.app-dashboard[data-app-theme="day"] .sng-period-label,.app-dashboard[data-app-theme="day"] .sng-page-intro p { color:#58657c; }
+.app-dashboard[data-app-theme="day"] .sng-delta { color:#087b53; }
+.app-dashboard[data-app-theme="day"] #customer-dashboard { --text:#172038; --muted:#596680; color:#172038; }
+.app-dashboard[data-app-theme="day"] #customer-dashboard h2,.app-dashboard[data-app-theme="day"] #customer-dashboard h3,.app-dashboard[data-app-theme="day"] #customer-dashboard label,.app-dashboard[data-app-theme="day"] #customer-dashboard .account-muted { color:#354260; }
+@media(max-width:420px) { .app-dashboard .sng-app-brand img { width:32px; height:32px; }.app-dashboard .sng-app-brand { gap:6px; }.app-dashboard .sng-app-brand strong { font-size:11px; }.app-dashboard .sng-app-header-actions button { width:34px; padding:6px; }.app-dashboard .sng-metrics.three { gap:7px; }.app-dashboard .sng-metrics.three .sng-metric { padding:14px 9px; }.app-dashboard .sng-metric > span { font-size:8px; flex-wrap:wrap; }.app-dashboard .sng-breakdown { gap:12px; }.app-dashboard .sng-donut { width:110px; height:110px; }.app-dashboard .sng-donut > div { width:84px; height:84px; } }
+.app-dashboard .sng-detail-product { display:flex; align-items:center; gap:12px; }.app-dashboard .sng-detail-product .sng-product-image { flex-shrink:0; width:40px; height:40px; }

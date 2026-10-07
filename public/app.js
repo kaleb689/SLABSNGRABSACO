@@ -15154,6 +15154,23 @@ function updateCustomerNotificationIndicator(
 }
 
 
+const shownCustomerNotifications = new Map();
+function claimCustomerNotification(notification) {
+  const key = `sng-notices:${state.customer?.id}`;
+  let seen = shownCustomerNotifications.get(key);
+  if (!seen) {
+    try { seen = JSON.parse(localStorage.getItem(key) || '[]'); } catch { seen = []; }
+    if (!Array.isArray(seen)) seen = [];
+    shownCustomerNotifications.set(key, seen);
+  }
+  const fingerprint = JSON.stringify([notification.id, notification.kind, notification.title, notification.message,
+    [...(notification.missingItems || [])].sort()]);
+  if (seen.includes(fingerprint)) return false;
+  seen.push(fingerprint); if (seen.length > 200) seen.splice(0, seen.length - 200);
+  try { localStorage.setItem(key, JSON.stringify(seen)); } catch {}
+  return true;
+}
+
 function showCustomerNotificationPopup(
   notification
 ) {
@@ -15164,7 +15181,7 @@ function showCustomerNotificationPopup(
 
   if (
     !popup ||
-    !notification
+    !notification || !claimCustomerNotification(notification)
   ) {
     return;
   }
