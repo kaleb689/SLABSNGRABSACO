@@ -20,8 +20,8 @@ export function orderEvents(record, previous) {
   if (!record.customerAccountId || !next.eligible) return [];
   const events = [];
   const label = `${String(record.retailer || "Retailer").slice(0, 80)} order${record.orderNumber ? ` #${String(record.orderNumber).slice(0, 80)}` : ""}`;
-  if (!previous) events.push({ kind: "order_confirmed", title: "Order confirmed", message: `${label} was placed successfully.`, tab: "success" });
-  if (shippingLabels[record.shipping?.status] && (!previous || previous.shipping !== next.shipping)) {
+  if (!previous || !previous.eligible) events.push({ kind: "order_confirmed", title: "Order confirmed", message: `${label} was placed successfully.`, tab: "success" });
+  if (shippingLabels[record.shipping?.status] && (!previous || !previous.eligible || previous.shipping !== next.shipping)) {
     events.push({ kind: "shipping_update", title: shippingLabels[record.shipping.status],
       message: `${label}: ${shippingLabels[record.shipping.status].toLowerCase()}.${record.shipping.estimatedDelivery ? ` Estimated delivery: ${String(record.shipping.estimatedDelivery).slice(0, 80)}.` : ""}`, tab: "success" });
   }

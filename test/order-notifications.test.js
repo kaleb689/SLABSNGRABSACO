@@ -65,3 +65,12 @@ test('shared-device subscriptions change owner and logout removes pending delive
   f.records.push(order('b-order', { customerAccountId: 'b' })); await f.service.reconcile(f.records);
   await f.service.unsubscribe('b', subscription.endpoint); await f.service.tick(); assert.equal(f.sent.length, 0);
 });
+
+test('an order first seen pending alerts when confirmation arrives', async t => {
+  const f = await fixture(t, [order('pending', { status: 'pending' })]);
+  await f.service.subscribe('a', subscription);
+  await f.service.tick(); assert.equal(f.sent.length, 0);
+  f.records[0].status = 'confirmed'; await f.service.tick();
+  assert.equal(f.sent.length, 1); assert.equal(f.sent[0].title, 'Order confirmed');
+  await f.service.tick(); assert.equal(f.sent.length, 1);
+});
