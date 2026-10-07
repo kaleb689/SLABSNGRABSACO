@@ -543,11 +543,25 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const existing = await api(`/guilds/${guildId}/roles`);
     roles = [];
     for (const level of LEVELS) {
-      let role = existing.find(item => item.name === level.name && !item.managed);
-      if (!role) role = await api(`/guilds/${guildId}/roles`, "POST", {
-        name: level.name, color: level.color, permissions: "0", mentionable: false, hoist: false
-      });
-      else if (role.color !== level.color) role = await api(`/guilds/${guildId}/roles/${role.id}`, "PATCH", { color: level.color });
+      // Reuse the pre-crown Ultimate role instead of creating a ninth
+      // membership role, then rename/recolor it in place.
+      let role = existing.find(item =>
+        !item.managed &&
+        (
+          item.name === level.name ||
+          (level.profiles === 100 && item.name === "Ultimate")
+        )
+      );
+      if (!role) {
+        role = await api(`/guilds/${guildId}/roles`, "POST", {
+          name: level.name, color: level.color, permissions: "0", mentionable: false, hoist: false
+        });
+      } else if (role.name !== level.name || role.color !== level.color) {
+        role = await api(`/guilds/${guildId}/roles/${role.id}`, "PATCH", {
+          name: level.name,
+          color: level.color
+        });
+      }
       roles.push({ ...level, id: role.id });
     }
     let staff = existing.find(item => item.name.toLowerCase() === "support staff" && !item.managed);
