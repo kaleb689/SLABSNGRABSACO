@@ -12924,3 +12924,8 @@ body.installed-app{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
 .app-notification-dialog label { display:flex; align-items:center; gap:12px; font-size:14px; }
 .app-notification-dialog input[type="checkbox"] { width:20px; height:20px; flex:0 0 20px; accent-color:#12c9ff; }
 #app-notification-settings { white-space:normal; }
+
+@media (max-width:620px) {
+  /* Keep dense daily bars legible; totals remain visible in the summary cards. */
+  #my-profile .success-chart-value { display:none; }
+}
