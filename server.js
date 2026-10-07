@@ -38041,7 +38041,20 @@ function safeSuccessCheckout(
         record?.status ||
         "confirmed",
         50
-      )
+      ),
+
+    shipping:
+      record?.shipping && typeof record.shipping === "object"
+        ? {
+            status: clean(record.shipping.status, 40) || null,
+            enRouteAt: record.shipping.enRouteAt || null,
+            estimatedDelivery: clean(record.shipping.estimatedDelivery, 80) || null,
+            deliveredAt: record.shipping.deliveredAt || null,
+            trackingUrl: safeSuccessImageUrl(record.shipping.trackingUrl),
+            address: record.shipping.address ? compactShippingAddress(record.shipping.address) : null,
+            updatedAt: record.shipping.updatedAt || null
+          }
+        : null
   };
 }
 
@@ -42289,6 +42302,256 @@ async function getCustomerSuccessMailboxes(
   return mailboxes;
 }
 
+
+
+const SHIPPING_SCAN_INTERVAL_MS = 15 * 60 * 1000;
+let shippingTrackerRunning = false;
+
+function normalizedShippingText(value = "") {
+  return String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function shippingStatusFromMessage(subject = "", text = "") {
+  const value = \`\${subject}\n\${text}\`.toLowerCase();
+  if (/\bdelivered\b|delivery complete|has been delivered/.test(value)) return "delivered";
+  if (/\bout for delivery\b|out-for-delivery/.test(value)) return "out_for_delivery";
+  if (/\bin transit\b|\bon the way\b|\ben route\b/.test(value)) return "in_transit";
+  if (/\bshipped\b|has shipped|shipment confirmation|your order is on its way/.test(value)) return "shipped";
+  return null;
+}
+
+function shippingEstimateFromText(text = "") {
+  const value = normalizedShippingText(text);
+  const match = value.match(/(?:estimated delivery|estimated arrival|arrives? by|expected delivery|delivery date)\s*[:\-]?\s*((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?([A-Z][a-z]{2,8}\s+\d{1,2}(?:,\s+\d{4})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i);
+  return match ? clean(\`\${match[1] || ""}\${match[2] || ""}\`.trim(), 80) : null;
+}
+
+function shippingTrackingUrl(html = "", text = "") {
+  const all = \`\${html}\n\${text}\`;
+  const urls = all.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+  const preferred = urls.find(url => /(?:ups\.com|fedex\.com|usps\.com|tracking|track(?:ing)?[?/=])/i.test(url));
+  if (!preferred) return null;
+  try {
+    const parsed = new URL(preferred.replace(/&amp;/gi, "&"));
+    if (!/^https:$/.test(parsed.protocol) || parsed.username || parsed.password) return null;
+    return clean(parsed.toString(), 2000);
+  } catch {
+    return null;
+  }
+}
+
+function compactShippingAddress(address = {}) {
+  const first = clean(address.firstName || address.first || "", 60);
+  const last = clean(address.lastName || address.last || "", 60);
+  return {
+    name: clean([first, last].filter(Boolean).join(" "), 120),
+    address: clean(address.address || address.street || address.line1 || "", 120),
+    address2: clean(address.address2 || address.line2 || "", 120),
+    city: clean(address.city || "", 80),
+    state: clean(address.state || "", 50),
+    zip: clean(address.zip || address.postalCode || "", 20),
+    country: clean(address.country || "US", 40)
+  };
+}
+
+function shippingAddressLabel(address = {}) {
+  const value = compactShippingAddress(address);
+  const lines = [
+    value.name,
+    [value.address, value.address2].filter(Boolean).join(" "),
+    [value.city, value.state, value.zip].filter(Boolean).join(", ").replace(/,\s*,/g, ",")
+  ].filter(Boolean);
+  return clean(lines.join("\n"), 300);
+}
+
+function matchCustomerShippingAddress(account, messageText) {
+  const text = normalizedShippingText(messageText).toLowerCase();
+  const candidates = [
+    ...(Array.isArray(account?.shippingAddresses) ? account.shippingAddresses : []),
+    account?.adminProfile || null
+  ].filter(Boolean).map(compactShippingAddress);
+
+  for (const address of candidates) {
+    const street = normalizedShippingText(address.address).toLowerCase();
+    const zip = normalizedShippingText(address.zip).toLowerCase();
+    if (street && zip && text.includes(street) && text.includes(zip)) return address;
+    if (street && street.length >= 8 && text.includes(street)) return address;
+  }
+  return null;
+}
+
+function shippingStatusRank(status) {
+  return ({ shipped: 1, in_transit: 2, out_for_delivery: 3, delivered: 4 })[status] || 0;
+}
+
+async function sendShippingDiscordDm(account, record, shipping) {
+  const discordId = account?.discordLinkedAt && /^\d{17,22}$/.test(String(account?.discordUserId || ""))
+    ? String(account.discordUserId) : "";
+  const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
+  if (!discordId || !token) return false;
+
+  const headers = { Authorization: \`Bot \${token}\`, "Content-Type": "application/json" };
+  const channelResponse = await fetch("https://discord.com/api/v10/users/@me/channels", {
+    method: "POST", headers, body: JSON.stringify({ recipient_id: discordId }),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!channelResponse.ok) throw new Error(\`Discord shipping DM channel HTTP \${channelResponse.status}\`);
+  const channel = await channelResponse.json();
+
+  const statusLabel = shipping.status === "delivered" ? "DELIVERED" :
+    shipping.status === "out_for_delivery" ? "OUT FOR DELIVERY" :
+    shipping.status === "in_transit" ? "IN TRANSIT" : "SHIPPED";
+  const product = clean(record?.items?.[0]?.name || "Your order", 120);
+  const address = shippingAddressLabel(shipping.address);
+  const lines = [
+    \`📦 **\${statusLabel} — \${record.retailer || "Retailer"}**\`,
+    product,
+    record.orderNumber ? \`Order: \${record.orderNumber}\` : "",
+    shipping.enRouteAt ? \`En route: \${new Date(shipping.enRouteAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}\` : "",
+    shipping.estimatedDelivery ? \`Estimated delivery: \${shipping.estimatedDelivery}\` : "",
+    shipping.deliveredAt ? \`Delivered: \${new Date(shipping.deliveredAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}\` : "",
+    address ? \`Ship to:\n\${address}\` : "",
+    shipping.trackingUrl ? \`Track package: \${shipping.trackingUrl}\` : "",
+    \`View your Success page: \${BASE_URL}/#my-profile\`
+  ].filter(Boolean);
+
+  const response = await fetch(\`https://discord.com/api/v10/channels/\${channel.id}/messages\`, {
+    method: "POST", headers,
+    body: JSON.stringify({ content: lines.join("\n"), allowed_mentions: { parse: [] } }),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!response.ok) throw new Error(\`Discord shipping DM HTTP \${response.status}\`);
+  return true;
+}
+
+async function scanMailboxForShipping(mailbox, records, account) {
+  const { client } = createCustomerImapClient(mailbox.email, mailbox.password);
+  let changed = false;
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock("INBOX", { readOnly: true });
+    try {
+      const oldestCheckout = records.reduce((min, record) => {
+        const time = new Date(record.checkoutAt || 0).getTime();
+        return Number.isFinite(time) && time > 0 ? Math.min(min, time) : min;
+      }, Date.now());
+      const since = new Date(Math.max(oldestCheckout - 2 * 24 * 60 * 60 * 1000, Date.now() - 45 * 24 * 60 * 60 * 1000));
+      const uids = await client.search({
+        since,
+        or: [
+          { subject: "shipped" }, { subject: "shipping" }, { subject: "delivery" },
+          { subject: "delivered" }, { subject: "on the way" }, { subject: "tracking" }
+        ]
+      }, { uid: true });
+      const recentUids = uids.slice(-120);
+      const candidates = recentUids.length ? await client.fetchAll(
+        recentUids,
+        { uid: true, envelope: true, internalDate: true, source: true },
+        { uid: true }
+      ) : [];
+
+      for (const message of candidates) {
+        const subject = String(message.envelope?.subject || "");
+        const decoded = await decodeImapMessage(message.source);
+        const combined = normalizedShippingText(\`\${subject}\n\${decoded.text}\n\${decoded.html}\`);
+        const status = shippingStatusFromMessage(subject, combined);
+        if (!status) continue;
+
+        const matching = records.filter(record => {
+          const orderNumber = String(record.orderNumber || "").trim();
+          if (orderNumber && combined.toLowerCase().includes(orderNumber.toLowerCase())) return true;
+          const retailer = String(record.retailer || "").toLowerCase();
+          const itemName = String(record.items?.[0]?.name || "").toLowerCase();
+          return retailer && combined.toLowerCase().includes(retailer) &&
+            itemName && combined.toLowerCase().includes(itemName.slice(0, Math.min(24, itemName.length)));
+        });
+        if (matching.length !== 1) continue;
+
+        const record = matching[0];
+        const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
+        const prior = record.shipping && typeof record.shipping === "object" ? record.shipping : {};
+        if (shippingStatusRank(status) < shippingStatusRank(prior.status)) continue;
+
+        const next = {
+          status,
+          enRouteAt: prior.enRouteAt || (status !== "delivered" ? messageAt : null),
+          estimatedDelivery: shippingEstimateFromText(combined) || prior.estimatedDelivery || null,
+          deliveredAt: status === "delivered" ? messageAt : prior.deliveredAt || null,
+          trackingUrl: shippingTrackingUrl(decoded.html, decoded.text) || prior.trackingUrl || null,
+          address: matchCustomerShippingAddress(account, combined) || prior.address || null,
+          updatedAt: messageAt,
+          source: "retailer_email"
+        };
+
+        const notify = prior.status !== next.status &&
+          (next.status === "shipped" || next.status === "in_transit" || next.status === "out_for_delivery" || next.status === "delivered");
+        record.shipping = next;
+        changed = true;
+
+        if (notify) {
+          try { await sendShippingDiscordDm(account, record, next); }
+          catch (error) { console.error("Shipping Discord DM failed:", error?.message || "shipping_dm_error"); }
+        }
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    if (client.usable) {
+      try { await client.logout(); } catch { client.close(); }
+    } else client.close();
+  }
+  return changed;
+}
+
+async function syncShippingTrackers() {
+  if (shippingTrackerRunning) return;
+  shippingTrackerRunning = true;
+  try {
+    const accounts = await getCustomerAccounts();
+    const records = await getSuccessCheckouts();
+    let changed = false;
+    for (const account of accounts) {
+      if (account.disabled === true) continue;
+      const owned = records.filter(record =>
+        String(record.customerAccountId || "") === String(account.id) &&
+        record.orderNumber &&
+        shippingStatusRank(record.shipping?.status) < 4
+      );
+      if (!owned.length) continue;
+      let mailboxes = [];
+      try { mailboxes = await getCustomerSuccessMailboxes(account.id); }
+      catch { continue; }
+      for (const mailbox of mailboxes) {
+        try {
+          if (await scanMailboxForShipping(mailbox, owned, account)) changed = true;
+        } catch (error) {
+          console.error("Shipping tracker mailbox scan:", mailboxFailureReason(error));
+        }
+      }
+    }
+    if (changed) {
+      await saveSuccessCheckouts(records);
+      for (const account of accounts) announceSuccessCheckout(account.id);
+    }
+  } catch (error) {
+    console.error("Shipping tracker:", error?.message || "shipping_tracker_error");
+  } finally {
+    shippingTrackerRunning = false;
+  }
+}
+
+function startShippingTrackerScheduler() {
+  setTimeout(() => void syncShippingTrackers(), 45_000);
+  const timer = setInterval(() => void syncShippingTrackers(), SHIPPING_SCAN_INTERVAL_MS);
+  timer.unref?.();
+  console.log("Shipping tracker scheduler ready.");
+}
 
 async function syncCustomerTargetSuccess(
   customerAccountId,
@@ -47027,6 +47290,7 @@ await initializeArrayFile(
 
         startLiveSuccessScheduler();
         startManagedExpirationScheduler();
+        startShippingTrackerScheduler();
         startCheckoutDmSummaryScheduler({
           dataDir: DATA_DIR,
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
