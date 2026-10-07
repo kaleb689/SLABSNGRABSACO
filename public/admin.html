@@ -5505,11 +5505,11 @@
             id="adminUserView"
             type="button"
           >
-            TEST CUSTOMER ↗
+            TEST SANDBOX ↗
           </button>
 
           <span class="admin-user-view-note">
-            Fully paid customer sandbox
+            Generic paid customer sandbox
           </span>
         </div>
 
@@ -7367,6 +7367,7 @@ function renderOrder(x) {
               <small data-admin-og-feedback role="status"></small>
             </section>` : ""}
 
+            ${x.customerAccountId ? `<section class="customer-action-card"><span class="eyebrow">CUSTOMER VIEW</span><h4>View as User</h4><p>Open this customer's real page exactly as their account currently appears. Preview mode is read-only.</p><button type="button" class="admin-save-button" data-view-as-user="${escapeHtml(x.customerAccountId)}">View as User ↗</button><small data-view-as-user-feedback role="status"></small></section>` : ""}
             ${x.customerAccountId ? `<section class="customer-action-card" data-admin-password-account="${escapeHtml(x.customerAccountId)}">
               <span class="eyebrow">CUSTOMER WEBSITE LOGIN</span>
               <h4>Reset Customer Password</h4>
@@ -24590,6 +24591,40 @@ document.addEventListener("submit", async event => {
     button.disabled = false;
   }
 });
+
+document.addEventListener("click", async event => {
+  const button = event.target.closest("[data-view-as-user]");
+  if (!button) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const feedback = button.parentElement?.querySelector("[data-view-as-user-feedback]");
+  const customerId = button.dataset.viewAsUser;
+  const originalText = button.textContent;
+
+  button.disabled = true;
+  button.textContent = "OPENING...";
+  if (feedback) feedback.textContent = "Preparing secure customer preview...";
+
+  try {
+    const response = await fetch(
+      `/api/admin/customers/${encodeURIComponent(customerId)}/view-as-user`,
+      { method: "POST", credentials: "same-origin" }
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Unable to open customer preview.");
+
+    if (feedback) feedback.textContent = "Preview opened in a new tab.";
+    window.open(data.url || "/?adminCustomerPreview=1#my-profile", "_blank", "noopener,noreferrer");
+  } catch (error) {
+    if (feedback) feedback.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+});
+
 
 /* =========================================
    BACK TO TOP
