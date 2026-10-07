@@ -2606,13 +2606,7 @@ profileForm?.addEventListener(
 
     const secretKeys = [
   "acoEmail",
-  "acoPassword",
-  "cardLabel",
-  "cardholder",
-  "acoCardNumber",
-  "expMonth",
-  "expYear",
-  "securityCode"
+  "acoPassword"
 ];
 
     const secrets =
