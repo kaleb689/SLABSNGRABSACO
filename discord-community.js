@@ -840,21 +840,28 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         { id: guildId, type: 0, allow: "68608" },
         { id: appId, type: 1, allow: "68624" }
       ];
+      const questionsForPosition = channels.find(item => item.type === 0 && normalizeName(item.name) === "questions");
+      const suggestionTopic = "Share suggestions for the SLABSNGRABSACO Discord, website, or app. Do not post private account information.";
       if (!suggestions) suggestions = await api(`/guilds/${guildId}/channels`, "POST", {
-        name: "suggestions", type: 0, parent_id: introCategory.id, position: 2,
-        topic: "Share suggestions for this Discord server or the website. Do not post private account information.",
+        name: "suggestions", type: 0, parent_id: chat.id,
+        position: Number(questionsForPosition?.position || 0) + 1,
+        topic: suggestionTopic,
         permission_overwrites: suggestionOverwrites
       });
-      else if (suggestions.topic !== "Share suggestions for this Discord server or the website. Do not post private account information." ||
-        !sameOverwrites(suggestions.permission_overwrites, suggestionOverwrites)) {
+      else if (suggestions.parent_id !== chat.id ||
+        suggestions.topic !== suggestionTopic ||
+        !sameOverwrites(suggestions.permission_overwrites, suggestionOverwrites) ||
+        (questionsForPosition && Number(suggestions.position) !== Number(questionsForPosition.position) + 1)) {
         suggestions = await api(`/channels/${suggestions.id}`, "PATCH", {
-          topic: "Share suggestions for this Discord server or the website. Do not post private account information.",
+          parent_id: chat.id,
+          position: Number(questionsForPosition?.position || 0) + 1,
+          topic: suggestionTopic,
           permission_overwrites: suggestionOverwrites
         });
       }
       suggestionChannelId = suggestions.id;
       await ensurePanel(suggestionChannelId, "suggestions",
-        "Have a suggestion for our Discord server or website? Post it here. Ideas for channels, features, and improvements are welcome. Keep customer and payment details out of public chat.");
+        "Have a suggestion for SLABSNGRABSACO? Post ideas for the Discord server, website, or app here. Feature requests, channel ideas, usability improvements, and other feedback are welcome. Keep customer, login, shipping, and payment details out of public chat.");
       const general = channels.find(item => item.type === 0 && ["general", "generalchat"].includes(normalizeName(item.name)));
       if (general) await ensurePanel(general.id, "general",
         "Welcome to #general. This is the place for everyday conversation: say hello, share what is on your mind, and talk with the community. Please keep private account and payment details out of public chat.");
@@ -876,7 +883,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
             "• Do not advertise other servers, products, or services without permission. No spam or self-promotion.\n\n" +
             "• Keep passwords, verification codes, payment details, addresses, and other private information out of public channels. Use a private support ticket when account help is needed.\n\n" +
             "• Follow the policies on [our website](https://slabsngrabsaco.com) and the rules for any retailer or platform you use.\n\n" +
-            "• Keep conversations helpful and on topic. Use #questions for drops, TCG items, site, or Discord questions; share suggestions in #suggestions.\n\n" +
+            "• Keep conversations helpful and on topic. Use #questions for drops, TCG items, site, app, or Discord questions; share Discord, website, and app suggestions in #suggestions.\n\n" +
             "**Moderation:** Rule violations may lead to a warning, removal of content, a kick, or a ban.",
           color: 0xf258b5,
           thumbnail: { url: "https://slabsngrabsaco.com/slabsngrabs-aco-logo.png" }
@@ -1128,7 +1135,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       droppingtonight: "See what is dropping tonight.",
       announcements: "Read important server announcements.",
       giveaways: "Enter active giveaways with their buttons and see winners.",
-      suggestions: "Share ideas for the Discord server or website."
+      suggestions: "Share ideas and feature suggestions for the Discord server, website, or app."
     };
     const visible = channels.filter(item => [0, 5].includes(item.type) && !hidden(item));
     visible.sort((a, b) => {
