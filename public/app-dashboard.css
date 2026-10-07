@@ -4,6 +4,7 @@
 .app-dashboard.app-signed-in #my-profile > .section-heading { display:none; }
 .app-dashboard.app-signed-in:not([data-app-view="profile"]):not([data-app-view="notifications"]) #customer-dashboard { display:none!important; }
 .app-dashboard.app-signed-in:not([data-app-view="profile"]) .account-topbar { display:none!important; }
+.app-dashboard.app-signed-in:not([data-app-view="profile"]) #account-message { display:none!important; }
 .app-dashboard.app-signed-in .account-tabs { display:none!important; }
 .app-dashboard.app-signed-in #my-profile .account-card { background:#12151d; border:1px solid #272a34; border-radius:22px; box-shadow:none; }
 .app-dashboard #app-dashboard[hidden] { display:none; }
@@ -53,6 +54,8 @@
 .app-dashboard .sng-product-row,.app-dashboard .sng-order-card summary { display:flex; align-items:center; gap:12px; padding:16px; }
 .app-dashboard .sng-order-card summary { list-style:none; cursor:pointer; min-height:74px; }
 .app-dashboard .sng-order-card summary::-webkit-details-marker { display:none; }
+.app-dashboard .sng-order-card summary::after { content:'⌄'; color:#8d91a0; font-size:18px; flex-shrink:0; }
+.app-dashboard .sng-order-card[open] summary::after { transform:rotate(180deg); }
 .app-dashboard .sng-product-image { display:flex; align-items:center; justify-content:center; width:49px; height:49px; flex-shrink:0; background:#1c202b; border:1px solid #2c303b; border-radius:14px; overflow:hidden; }
 .app-dashboard .sng-product-image img { width:100%; height:100%; object-fit:contain; }.app-dashboard .sng-image-placeholder { font-size:30px; color:#737a8a; }
 .app-dashboard .sng-row-main { flex:1; min-width:0; }
