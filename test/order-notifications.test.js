@@ -85,7 +85,7 @@ test('an order first seen pending alerts when confirmation arrives', async t => 
   await f.service.subscribe('a', subscription);
   await f.service.tick(); assert.equal(f.sent.length, 0);
   f.records[0].status = 'confirmed'; await f.service.tick();
-  assert.equal(f.sent.length, 1); assert.equal(f.sent[0].title, 'Order confirmed');
+  assert.equal(f.sent.length, 1); assert.equal(f.sent[0].title, 'Target order confirmed');
   await f.service.tick(); assert.equal(f.sent.length, 1);
 });
 test('Action Needed pushes ignore timestamp churn and notify only on content changes, including after restart', async t => {
