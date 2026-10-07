@@ -19281,6 +19281,11 @@ app.post(
         });
       }
 
+      const customerAccountForMatch =
+        (await getCustomerAccounts()).find(
+          item => String(item.id) === String(customerAccountId)
+        );
+
       let available =
         await getAvailableManagedAccountsForRetailer(
           retailer,
@@ -19298,6 +19303,12 @@ app.post(
           [...await getRentalAssignments(), ...await getFreeAssignments()],
           customerAccountId, retailer);
       }
+
+      available = preferManagedAccountsMatchingCustomerEmail(
+        available,
+        paidRecord?.profile?.email || customerAccountForMatch?.email || "",
+        retailer
+      );
 
       if (
         available.length <
