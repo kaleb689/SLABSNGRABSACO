@@ -3598,6 +3598,7 @@ updatePricingUpgradeButtons();
     passwordResetPanel.hidden = true;
   }
   if (passwordChangeRequiredPanel) passwordChangeRequiredPanel.hidden = true;
+  document.dispatchEvent(new CustomEvent("account-session-changed"));
 }
 
 
@@ -3622,6 +3623,7 @@ function showSignedIn() {
   switchAccountTab(
     previousTab || "membership"
   );
+  document.dispatchEvent(new CustomEvent("account-session-changed"));
 }
 
 
@@ -16214,10 +16216,31 @@ function scheduleCustomerLiveRefresh() {
   }, 180);
 }
 
-if (!ADMIN_PREVIEW_MODE && typeof EventSource !== "undefined") {
-  const customerLiveEvents = new EventSource("/api/account/live/events");
+let customerLiveEvents = null;
+
+function updateCustomerLiveEvents() {
+  const enabled = !ADMIN_PREVIEW_MODE && typeof EventSource !== "undefined" &&
+    state.customer && document.visibilityState === "visible";
+  if (!enabled) {
+    customerLiveEvents?.close();
+    customerLiveEvents = null;
+    return;
+  }
+  if (customerLiveEvents) return;
+  customerLiveEvents = new EventSource("/api/account/live/events");
   customerLiveEvents.addEventListener("data-change", scheduleCustomerLiveRefresh);
+  // Catch changes made while the app was suspended or the connection was lost.
+  customerLiveEvents.addEventListener("open", scheduleCustomerLiveRefresh);
 }
+
+document.addEventListener("account-session-changed", updateCustomerLiveEvents);
+document.addEventListener("visibilitychange", updateCustomerLiveEvents);
+window.addEventListener("pageshow", updateCustomerLiveEvents);
+window.addEventListener("pagehide", () => {
+  customerLiveEvents?.close();
+  customerLiveEvents = null;
+});
+updateCustomerLiveEvents();
 
 function homepageSampleSuccessData() {
   const counts = [0, 1, 0, 2, 1, 0, 3, 1, 0, 2, 2, 1, 3, 2];

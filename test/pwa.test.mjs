@@ -7,7 +7,10 @@ function surface({ installed = true, frame = false, signedIn = true, search = ''
   const timers = [], observers = [];
   const classes = () => { const values = new Set(); return { add: value => values.add(value), contains: value => values.has(value), toggle: (value, yes) => yes ? values.add(value) : values.delete(value) }; };
   function element(tag) {
-    return { tag, hidden: false, dataset: {}, children: [], attributes: {}, events: {}, classList: classes(),
+    return { tag, _hidden: false, hiddenWrites: 0,
+      get hidden() { return this._hidden; },
+      set hidden(value) { this.hiddenWrites++; this._hidden = value; if (this.observeHidden) timers.push(this.observeHidden); },
+      dataset: {}, children: [], attributes: {}, events: {}, classList: classes(),
       setAttribute(k,v) { this.attributes[k]=v; }, removeAttribute(k) { delete this.attributes[k]; },
       append(...children) { this.children.push(...children); }, addEventListener(k,f) { this.events[k]=f; },
       querySelectorAll() { return this.children.filter(child=>child.tag==='a'); },
@@ -26,8 +29,8 @@ function surface({ installed = true, frame = false, signedIn = true, search = ''
     getElementById(id) { return { 'customer-dashboard': dashboard, 'account-install-app': installButton }[id] || null; },
     querySelector(selector) { return tabs[selector.match(/data-account-tab="([^"]+)"/)?.[1]]; } };
   vm.runInNewContext(source,{ window,document,location,navigator:{userAgent:'Browser'},URLSearchParams,
-    MutationObserver: class { constructor(callback) { observers.push(callback); } observe() {} }, setTimeout: f=>timers.push(f) });
-  return {body,window,document,location,tabs,installButton,dashboard,observe:()=>observers.forEach(f=>f()),flush:()=>{while(timers.length)timers.shift()();}};
+    MutationObserver: class { constructor(callback) { this.callback = callback; observers.push(callback); } observe() { installButton.observeHidden = this.callback; } }, setTimeout: f=>timers.push(f) });
+  return {body,window,document,location,tabs,installButton,dashboard,observe:()=>observers.forEach(f=>f()),flush:()=>{let delivered=0; while(timers.length) { if (++delivered>200) throw new Error("Account observer did not settle"); timers.shift()(); }}};
 }
 test('public website has no app navigation or visible install button',()=>{
  const s=surface({installed:false,signedIn:false});assert.equal(s.body.children.length,0);assert.equal(s.installButton.hidden,true);
@@ -58,4 +61,17 @@ test('stored native install prompt is triggered by Add button and only once',asy
 });
 test('notification deep links select the correct account tab',()=>{
  const s=surface({search:'?appTab=notifications'});s.flush();assert.equal(s.tabs.notifications.classList.contains('active'),true);
+});
+
+test('installed and signed-out account observers settle without an attribute feedback loop', () => {
+  for (const installed of [true, false]) for (const signedIn of [true, false]) {
+    const s = surface({ installed, signedIn });
+    s.flush();
+    const writes = s.installButton.hiddenWrites;
+    for (let i = 0; i < 20; i++) { s.observe(); s.flush(); }
+    assert.equal(s.installButton.hiddenWrites, writes);
+    s.dashboard.hidden = !s.dashboard.hidden;
+    s.observe(); s.flush();
+    assert.equal(s.installButton.hidden, installed || s.dashboard.hidden);
+  }
 });

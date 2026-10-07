@@ -198,7 +198,8 @@
     document.body.append(nav);
   }
   function sync() {
-    if (installButton) installButton.hidden = !signedIn() || appInstalled;
+    const hideInstall = !signedIn() || appInstalled;
+    if (installButton && installButton.hidden !== hideInstall) installButton.hidden = hideInstall;
     if (!signedIn() && dialog) dialog.close();
     if (!signedIn() && settingsDialog) settingsDialog.close();
     if (signedIn() && !initialAppTabApplied) {
@@ -207,7 +208,7 @@
       if (["success", "membership", "notifications"].includes(tab)) setTimeout(() => document.querySelector(`button[data-account-tab="${tab}"]`)?.click(), 0);
     }
     if (!nav) return;
-    nav.hidden = !signedIn();
+    if (nav.hidden !== !signedIn()) nav.hidden = !signedIn();
     for (const link of nav.querySelectorAll("a")) {
       const tab = document.querySelector(`button[data-account-tab="${link.dataset.appTab}"]`);
       const active = location.hash === "#my-profile" && tab?.classList.contains("active");
