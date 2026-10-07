@@ -888,82 +888,9 @@
         </div>
 
 
-        <label>
-          Address *
-          <input
-            required
-            name="address"
-          />
-        </label>
-
-
-        <label>
-          Address 2
-          <input
-            name="address2"
-            placeholder="Apt. / Suite"
-          />
-        </label>
-
-
-        <div class="two">
-
-          <label>
-            Country *
-
-            <select
-              required
-              name="country"
-            >
-              <option value="">
-                Select country
-              </option>
-
-              <option>
-                United States
-              </option>
-
-              <option>
-                Canada
-              </option>
-
-              <option>
-                Other
-              </option>
-            </select>
-
-          </label>
-
-
-          <label>
-            State *
-            <input
-              required
-              name="state"
-            />
-          </label>
-
-        </div>
-
-
-        <div class="two">
-
-          <label>
-            City *
-            <input
-              required
-              name="city"
-            />
-          </label>
-
-          <label>
-            Zipcode *
-            <input
-              required
-              name="zip"
-            />
-          </label>
-
+        <div class="profile-saved-details-note">
+          Shipping addresses are added securely in My Profile after account creation.
+          Your saved address will be used for membership setup.
         </div>
 
         <label class="profile-referral">
@@ -1075,125 +1002,10 @@
 
         <div class="secure-divider"></div>
 
-
-        <p class="secure-copy">
-          The following card is for the ACO profile
-          you are asking SLABSNGRABSACO to configure.
-          It is separate from the Stripe card used
-          to pay your membership.
-        </p>
-
-
-        <label>
-          Card Label *
-
-          <input
-            required
-            name="cardLabel"
-            placeholder="e.g. Personal Visa"
-          />
-        </label>
-
-
-        <label>
-          Cardholder Name *
-
-          <input
-            required
-            name="cardholder"
-            autocomplete="off"
-          />
-        </label>
-
-
-        <label>
-          Card Number *
-
-          <input
-            required
-            name="acoCardNumber"
-            inputmode="numeric"
-            autocomplete="off"
-            maxlength="23"
-            placeholder="0000 0000 0000 0000"
-          />
-        </label>
-
-
-        <div class="two">
-
-          <label>
-            Exp. Month *
-
-            <select
-              required
-              name="expMonth"
-            >
-              <option value="">Month</option>
-              <option>01</option>
-              <option>02</option>
-              <option>03</option>
-              <option>04</option>
-              <option>05</option>
-              <option>06</option>
-              <option>07</option>
-              <option>08</option>
-              <option>09</option>
-              <option>10</option>
-              <option>11</option>
-              <option>12</option>
-            </select>
-
-          </label>
-
-
-          <label>
-            Exp. Year *
-
-            <select
-              required
-              name="expYear"
-            >
-              <option value="">Year</option>
-            </select>
-
-          </label>
-
+        <div class="profile-saved-details-note">
+          Payment cards are added securely in My Profile after account creation.
+          Your saved card will be used for membership setup.
         </div>
-
-
-        <label>
-  Security Code *
-
-  <input
-    required
-    type="password"
-    name="securityCode"
-    inputmode="numeric"
-    autocomplete="cc-csc"
-    minlength="3"
-    maxlength="4"
-    pattern="[0-9]{3,4}"
-    placeholder="3 or 4 digit code"
-  />
-</label>
-
-
-        <div class="guide-alert warning compact">
-
-          <strong>
-            Sensitive information
-          </strong>
-
-          <p>
-            This information is encrypted server-side
-            and is not included in ordinary notification
-            emails. Stripe separately handles your
-            SLABSNGRABSACO membership payment.
-          </p>
-
-        </div>
-
 
         <label>
           Discount code (optional)
@@ -1227,16 +1039,7 @@
           </span>
         </label>
 
-        <label class="consent purchase-authorization-consent">
-          <input
-            required
-            type="checkbox"
-            name="authorizeRequestedPurchases"
-          />
-          <span>
-            I AGREE TO ALLOW SLABSNGRABSACO TO MAKE PURCHASES ON MY BEHALF FOR ITEMS I HAVE AGREED UPON BEFORE A DROP. SLABSNGRABSACO IS NOT ACCOUNTABLE FOR THE MONEY SPENT ON THE ITEMS I HAVE REQUESTED BEFOREHAND.
-          </span>
-        </label>
+
 
 
         <button
@@ -5222,6 +5025,101 @@
 
 
 <script src="/app.js"></script>
+
+
+<!-- =====================================================
+     NEW ACCOUNT CHECKOUT DETAILS ONBOARDING
+===================================================== -->
+<div id="account-onboarding-backdrop" class="account-onboarding-backdrop" hidden></div>
+
+<section id="account-address-onboarding" class="account-onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="account-address-onboarding-title" hidden>
+  <div class="account-onboarding-head">
+    <div>
+      <span class="eyebrow">ACCOUNT SETUP · STEP 1 OF 2</span>
+      <h2 id="account-address-onboarding-title">Add your shipping addresses</h2>
+    </div>
+    <button type="button" class="account-onboarding-close" data-onboarding-close="address" aria-label="Close shipping address setup">×</button>
+  </div>
+  <p class="account-onboarding-intro">
+    <strong>Add all addresses you are able to receive packages at to minimize risk of order cancellation.</strong>
+    Please remember 1 address can be used for roughly 3–4 profiles. Keep that in mind with your profile allowance.
+  </p>
+  <form id="account-address-onboarding-form" class="account-onboarding-form">
+    <label>Address Label *<input name="label" maxlength="80" placeholder="Home, Office, Address 2..." required></label>
+    <div class="two">
+      <label>First Name *<input name="firstName" maxlength="100" required></label>
+      <label>Last Name *<input name="lastName" maxlength="100" required></label>
+    </div>
+    <label>Address *<input name="address" maxlength="300" required></label>
+    <label>Address 2<input name="address2" maxlength="300" placeholder="Apt. / Suite"></label>
+    <div class="two">
+      <label>City *<input name="city" maxlength="100" required></label>
+      <label>State *<input name="state" maxlength="100" required></label>
+    </div>
+    <div class="two">
+      <label>Zipcode *<input name="zip" maxlength="30" required></label>
+      <label>Country *
+        <select name="country" required>
+          <option value="">Select country</option>
+          <option>United States</option>
+          <option>Canada</option>
+          <option>Other</option>
+        </select>
+      </label>
+    </div>
+    <div class="account-onboarding-actions">
+      <button type="submit" class="primary">Save Address</button>
+      <button type="button" class="secondary" id="account-onboarding-add-address" hidden>Add Another Address</button>
+      <button type="button" class="secondary" id="account-onboarding-address-next" hidden>Continue to Card Setup →</button>
+    </div>
+    <p id="account-address-onboarding-message" class="form-message" role="status"></p>
+  </form>
+</section>
+
+<section id="account-card-onboarding" class="account-onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="account-card-onboarding-title" hidden>
+  <div class="account-onboarding-head">
+    <div>
+      <span class="eyebrow">ACCOUNT SETUP · STEP 2 OF 2</span>
+      <h2 id="account-card-onboarding-title">Add your payment cards</h2>
+    </div>
+    <button type="button" class="account-onboarding-close" data-onboarding-close="card" aria-label="Close payment card setup">×</button>
+  </div>
+  <p class="account-onboarding-intro">
+    Add the card or cards you want available for your ACO profiles. After at least one card is saved, you can close this window or continue adding more cards. You can edit, add, or remove saved cards later from My Profile.
+  </p>
+  <form id="account-card-onboarding-form" class="account-onboarding-form">
+    <label>Card Label *<input name="cardLabel" maxlength="100" placeholder="Payment 1, Personal Visa..." required></label>
+    <label>Cardholder Name *<input name="cardholder" maxlength="150" required></label>
+    <label>Card Number *<input name="acoCardNumber" inputmode="numeric" autocomplete="off" maxlength="23" placeholder="0000 0000 0000 0000" required></label>
+    <div class="two">
+      <label>Exp. Month *
+        <select name="expMonth" required>
+          <option value="">Month</option>
+          <option>01</option><option>02</option><option>03</option><option>04</option>
+          <option>05</option><option>06</option><option>07</option><option>08</option>
+          <option>09</option><option>10</option><option>11</option><option>12</option>
+        </select>
+      </label>
+      <label>Exp. Year *<input name="expYear" inputmode="numeric" maxlength="4" placeholder="YYYY" required></label>
+    </div>
+    <label>Security Code *
+      <input type="password" name="securityCode" autocomplete="off" maxlength="32" required placeholder="Enter account security code">
+      <small class="fine">This is the separate ACO/account security code requested for your profile setup, not the CVV/CVC printed on your card.</small>
+    </label>
+
+    <label class="consent purchase-authorization-consent account-onboarding-consent">
+      <input required type="checkbox" name="authorizeRequestedPurchases">
+      <span>I AGREE TO ALLOW SLABSNGRABSACO TO MAKE PURCHASES ON MY BEHALF FOR ITEMS I HAVE AGREED UPON BEFORE A DROP. SLABSNGRABSACO IS NOT ACCOUNTABLE FOR THE MONEY SPENT ON THE ITEMS I HAVE REQUESTED BEFOREHAND.</span>
+    </label>
+
+    <div class="account-onboarding-actions">
+      <button type="submit" class="primary">Save Card</button>
+      <button type="button" class="secondary" id="account-onboarding-add-card" hidden>Add Another Card</button>
+      <button type="button" class="secondary" id="account-onboarding-finish" hidden>Finish Setup</button>
+    </div>
+    <p id="account-card-onboarding-message" class="form-message" role="status"></p>
+  </form>
+</section>
 
 </body>
 </html>
