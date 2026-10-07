@@ -957,31 +957,6 @@ function updatePricingUpgradeButtons() {
       0
     );
 
-  if (ADMIN_PREVIEW_MODE && targetPlan) {
-    state.membership = {
-      ...(state.membership || {}),
-      tier,
-      planName: targetPlan.name,
-      amount: targetPlan.amount,
-      profiles: targetPlan.profiles,
-      status: "active"
-    };
-    state.retailerAllowance = targetPlan.profiles;
-
-    localStorage.setItem(
-      ADMIN_TEST_TIER_KEY,
-      String(tier)
-    );
-
-    renderMembership(state.membership);
-    renderRetailerProfiles();
-    updatePricingUpgradeButtons();
-    showAccountMessage(
-      `Preview switched to ${targetPlan.name}. No Stripe charge was created.`,
-      "success"
-    );
-    return;
-  }
 
   document
     .querySelectorAll(
@@ -2803,44 +2778,13 @@ document
    SHOW / HIDE ACO PASSWORD
 ===================================================== */
 
-const showPass =
-  document.getElementById(
-    "show-pass"
-  );
-
-
-showPass?.addEventListener(
-  "click",
-  () => {
-    const input =
-      document.querySelector(
-        '#profile-form [name="acoPassword"]'
-      );
-
-    if (!input) return;
-
-    const show =
-      input.type === "password";
-
-    input.type =
-      show
-        ? "text"
-        : "password";
-
-    showPass.textContent =
-      show
-        ? "Hide"
-        : "Show";
-  }
-);
-
 /* =====================================================
    SIGNUP APP PASSWORD FORMAT + GUIDE POPUP
 ===================================================== */
 
 const signupAppPasswordInput =
   document.querySelector(
-    '#profile-form [name="acoPassword"]'
+    '#account-imap-onboarding-form [name="acoPassword"]'
   );
 
 function formatSignupAppPassword(
@@ -2875,7 +2819,6 @@ signupAppPasswordInput
           formatted;
       }
 
-      showSignupAppPasswordGuide();
     }
   );
 
@@ -3014,9 +2957,9 @@ function showSignupAppPasswordGuide() {
   popup.hidden = false;
 }
 
-signupAppPasswordInput
+document.getElementById("onboarding-imap-help")
   ?.addEventListener(
-    "focus",
+    "click",
     () => {
       signupAppPasswordGuideDismissed =
         false;
@@ -3604,6 +3547,7 @@ const passwordChangeRequiredPanel =
 
 
 function showSignedOut() {
+  setAccountOnboardingVisibility("");
   state.customer = null;
   state.customerChecklist = [];
   const setupPanel = document.getElementById("setup-checklist-panel");
@@ -3658,6 +3602,9 @@ updatePricingUpgradeButtons();
 
 
 function showSignedIn() {
+  const previousTab = customerDashboard && !customerDashboard.hidden
+    ? document.querySelector('button[data-account-tab].active')?.dataset.accountTab
+    : "membership";
   if (passwordChangeRequiredPanel) passwordChangeRequiredPanel.hidden = true;
   if (accountAuth) {
     accountAuth.hidden = true;
@@ -3673,7 +3620,7 @@ function showSignedIn() {
   }
 
   switchAccountTab(
-    "membership"
+    previousTab || "membership"
   );
 }
 
@@ -4134,6 +4081,7 @@ document
       clearAccountMessage();
 
       try {
+        await window.disconnectAccountPush?.();
         const response =
           await fetch(
             "/api/account/logout",
@@ -4674,6 +4622,7 @@ document.querySelectorAll("#security-change-password-form, #required-password-ch
 }));
 
 document.getElementById("temporary-password-signout")?.addEventListener("click", async () => {
+  await window.disconnectAccountPush?.();
   await fetch("/api/account/logout", { method: "POST", credentials: "same-origin" });
   showSignedOut();
   showNormalAuth();
@@ -6514,40 +6463,79 @@ document.getElementById("delete-saved-payment")
 
 function setAccountOnboardingVisibility(step = "") {
   const backdrop = document.getElementById("account-onboarding-backdrop");
-  const addressModal = document.getElementById("account-address-onboarding");
-  const cardModal = document.getElementById("account-card-onboarding");
-  if (!backdrop || !addressModal || !cardModal) return;
-
-  const open = step === "address" || step === "card";
-  backdrop.hidden = !open;
-  addressModal.hidden = step !== "address";
-  cardModal.hidden = step !== "card";
+  const steps = ["address", "card", "imap"];
+  const open = steps.includes(step);
+  if (backdrop) backdrop.hidden = !open;
+  for (const name of steps) {
+    const modal = document.getElementById(`account-${name}-onboarding`);
+    if (modal) modal.hidden = name !== step;
+  }
   document.documentElement.classList.toggle("account-onboarding-open", open);
+  const guide = document.getElementById("signup-app-password-guide");
+  if (guide) guide.hidden = true;
+  if (open) document.getElementById(`account-${step}-onboarding`)?.querySelector("input, button")?.focus({ preventScroll: true });
 }
 
 function openAccountCheckoutOnboarding(step = "address") {
   if (!state.customer || ADMIN_PREVIEW_MODE) return;
-  const hasAddress = (state.savedDetails?.addresses || []).length > 0;
-  const hasCard = (state.savedDetails?.paymentMethods || []).length > 0;
-
-  if (step === "address" && hasAddress) step = "card";
-  if (step === "card" && hasCard) {
+  if (step === "address" && state.savedDetails?.addresses?.length) step = "card";
+  if (step === "card" && state.savedDetails?.paymentMethods?.length) step = "imap";
+  if (step === "imap" && (state.customer.imapOnboardingCompletedAt || savedImapEntries.length)) {
     setAccountOnboardingVisibility("");
     return;
   }
-
   setAccountOnboardingVisibility(step);
 }
+
+function finishImapOnboarding() {
+  state.customer.imapOnboardingCompletedAt = new Date().toISOString();
+  setAccountOnboardingVisibility("");
+  document.dispatchEvent(new CustomEvent("account-install-request"));
+}
+
+document.getElementById("account-imap-onboarding-form")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
+  const message = document.getElementById("account-imap-onboarding-message");
+  try {
+    setButtonBusy(button, true, "Connecting…");
+    const response = await fetch("/api/account/imap-credentials", {
+      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: form.elements.acoEmail.value.trim(), password: form.elements.acoPassword.value })
+    });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.error || "Unable to save IMAP information.");
+    await loadSavedImap(data.entry?.id);
+    form.reset();
+    if (!data.entry?.connectionStatus?.connected) {
+      setMessage(message, "Saved, but the email connection could not be verified. Check your login in My Profile → Profiles; you can continue for now.", "error");
+      document.getElementById("account-onboarding-imap-skip").textContent = "Continue for now";
+      state.customer.imapOnboardingCompletedAt = new Date().toISOString();
+    } else finishImapOnboarding();
+  } catch (error) { setMessage(message, error.message, "error"); }
+  finally { setButtonBusy(button, false); }
+});
+
+document.getElementById("account-onboarding-imap-skip")?.addEventListener("click", async event => {
+  const button = event.currentTarget;
+  try {
+    setButtonBusy(button, true, "Continuing…");
+    const response = await fetch("/api/account/imap-onboarding/skip", { method: "POST", credentials: "same-origin" });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.error || "Unable to continue. Please try again.");
+    finishImapOnboarding();
+  } catch (error) { setMessage(document.getElementById("account-imap-onboarding-message"), error.message, "error"); }
+  finally { setButtonBusy(button, false); }
+});
 
 document.addEventListener("click", event => {
   const close = event.target.closest("[data-onboarding-close]");
   if (!close) return;
   const type = close.dataset.onboardingClose;
-  const hasAddress = (state.savedDetails?.addresses || []).length > 0;
-  const hasCard = (state.savedDetails?.paymentMethods || []).length > 0;
-  if (type === "address" && !hasAddress) return;
-  if (type === "card" && !hasCard) return;
-  setAccountOnboardingVisibility("");
+  if (type === "address" && !state.savedDetails?.addresses?.length) return;
+  if (type === "card" && !state.savedDetails?.paymentMethods?.length) return;
+  openAccountCheckoutOnboarding(type === "address" ? "card" : "imap");
 });
 
 document.getElementById("account-onboarding-address-next")?.addEventListener("click", () => {
@@ -6567,7 +6555,10 @@ document.getElementById("account-onboarding-add-card")?.addEventListener("click"
 });
 
 document.getElementById("account-onboarding-finish")?.addEventListener("click", () => {
-  setAccountOnboardingVisibility("");
+  if (state.customer?.imapOnboardingCompletedAt || savedImapEntries.length) {
+    setAccountOnboardingVisibility("");
+    document.dispatchEvent(new CustomEvent("account-install-request"));
+  } else openAccountCheckoutOnboarding("imap");
 });
 
 document.getElementById("account-address-onboarding-form")?.addEventListener("submit", async event => {
@@ -7344,6 +7335,32 @@ async function upgradeMembershipToTier(
     );
 
   if (!targetPlan) {
+    return;
+  }
+
+  if (ADMIN_PREVIEW_MODE && targetPlan) {
+    state.membership = {
+      ...(state.membership || {}),
+      tier,
+      planName: targetPlan.name,
+      amount: targetPlan.amount,
+      profiles: targetPlan.profiles,
+      status: "active"
+    };
+    state.retailerAllowance = targetPlan.profiles;
+
+    localStorage.setItem(
+      ADMIN_TEST_TIER_KEY,
+      String(tier)
+    );
+
+    renderMembership(state.membership);
+    renderRetailerProfiles();
+    updatePricingUpgradeButtons();
+    showAccountMessage(
+      `Preview switched to ${targetPlan.name}. No Stripe charge was created.`,
+      "success"
+    );
     return;
   }
 
@@ -14621,7 +14638,7 @@ await loadSavedDetails();
 
 if (
   state.customer &&
-  !state.customer.checkoutOnboardingComplete &&
+  (!state.customer.checkoutOnboardingComplete || !state.customer.imapOnboardingCompletedAt) &&
   !ADMIN_PREVIEW_MODE
 ) {
   const hasAddress =
@@ -14633,6 +14650,8 @@ if (
     openAccountCheckoutOnboarding("address");
   } else if (!hasCard) {
     openAccountCheckoutOnboarding("card");
+  } else {
+    openAccountCheckoutOnboarding("imap");
   }
 }
 
@@ -16288,3 +16307,11 @@ if (SUCCESS_DEMO_MODE) {
     }
   });
 }
+
+let appNotificationRefreshRunning = false;
+setInterval(async () => {
+  if (!state.customer || ADMIN_PREVIEW_MODE || document.hidden || appNotificationRefreshRunning) return;
+  appNotificationRefreshRunning = true;
+  try { await loadCustomerNotifications({ showPopup: false }); }
+  finally { appNotificationRefreshRunning = false; }
+}, 30000);

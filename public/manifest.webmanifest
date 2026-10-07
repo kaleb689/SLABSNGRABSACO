@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Slabs N Grabs ACO",
-  "short_name": "Slabs N Grabs",
-  "start_url": "/",
+  "name": "SLABSNGRABSACO",
+  "short_name": "SLABSNGRABSACO",
+  "start_url": "/#my-profile",
   "scope": "/",
   "display": "standalone",
   "background_color": "#020914",
