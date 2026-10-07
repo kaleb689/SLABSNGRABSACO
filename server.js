@@ -42317,7 +42317,7 @@ function normalizedShippingText(value = "") {
 }
 
 function shippingStatusFromMessage(subject = "", text = "") {
-  const value = \`\${subject}\n\${text}\`.toLowerCase();
+  const value = `${subject}\n${text}`.toLowerCase();
   if (/\bdelivered\b|delivery complete|has been delivered/.test(value)) return "delivered";
   if (/\bout for delivery\b|out-for-delivery/.test(value)) return "out_for_delivery";
   if (/\bin transit\b|\bon the way\b|\ben route\b/.test(value)) return "in_transit";
@@ -42328,11 +42328,11 @@ function shippingStatusFromMessage(subject = "", text = "") {
 function shippingEstimateFromText(text = "") {
   const value = normalizedShippingText(text);
   const match = value.match(/(?:estimated delivery|estimated arrival|arrives? by|expected delivery|delivery date)\s*[:\-]?\s*((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?([A-Z][a-z]{2,8}\s+\d{1,2}(?:,\s+\d{4})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i);
-  return match ? clean(\`\${match[1] || ""}\${match[2] || ""}\`.trim(), 80) : null;
+  return match ? clean(`${match[1] || ""}${match[2] || ""}`.trim(), 80) : null;
 }
 
 function shippingTrackingUrl(html = "", text = "") {
-  const all = \`\${html}\n\${text}\`;
+  const all = `${html}\n${text}`;
   const urls = all.match(/https?:\/\/[^\s"'<>]+/gi) || [];
   const preferred = urls.find(url => /(?:ups\.com|fedex\.com|usps\.com|tracking|track(?:ing)?[?/=])/i.test(url));
   if (!preferred) return null;
@@ -42395,12 +42395,12 @@ async function sendShippingDiscordDm(account, record, shipping) {
   const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
   if (!discordId || !token) return false;
 
-  const headers = { Authorization: \`Bot \${token}\`, "Content-Type": "application/json" };
+  const headers = { Authorization: `Bot ${token}`, "Content-Type": "application/json" };
   const channelResponse = await fetch("https://discord.com/api/v10/users/@me/channels", {
     method: "POST", headers, body: JSON.stringify({ recipient_id: discordId }),
     signal: AbortSignal.timeout(12000)
   });
-  if (!channelResponse.ok) throw new Error(\`Discord shipping DM channel HTTP \${channelResponse.status}\`);
+  if (!channelResponse.ok) throw new Error(`Discord shipping DM channel HTTP ${channelResponse.status}`);
   const channel = await channelResponse.json();
 
   const statusLabel = shipping.status === "delivered" ? "DELIVERED" :
@@ -42409,23 +42409,23 @@ async function sendShippingDiscordDm(account, record, shipping) {
   const product = clean(record?.items?.[0]?.name || "Your order", 120);
   const address = shippingAddressLabel(shipping.address);
   const lines = [
-    \`📦 **\${statusLabel} — \${record.retailer || "Retailer"}**\`,
+    `📦 **${statusLabel} — ${record.retailer || "Retailer"}**`,
     product,
-    record.orderNumber ? \`Order: \${record.orderNumber}\` : "",
-    shipping.enRouteAt ? \`En route: \${new Date(shipping.enRouteAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}\` : "",
-    shipping.estimatedDelivery ? \`Estimated delivery: \${shipping.estimatedDelivery}\` : "",
-    shipping.deliveredAt ? \`Delivered: \${new Date(shipping.deliveredAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}\` : "",
-    address ? \`Ship to:\n\${address}\` : "",
-    shipping.trackingUrl ? \`Track package: \${shipping.trackingUrl}\` : "",
-    \`View your Success page: \${BASE_URL}/#my-profile\`
+    record.orderNumber ? `Order: ${record.orderNumber}` : "",
+    shipping.enRouteAt ? `En route: ${new Date(shipping.enRouteAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}` : "",
+    shipping.estimatedDelivery ? `Estimated delivery: ${shipping.estimatedDelivery}` : "",
+    shipping.deliveredAt ? `Delivered: ${new Date(shipping.deliveredAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}` : "",
+    address ? `Ship to:\n${address}` : "",
+    shipping.trackingUrl ? `Track package: ${shipping.trackingUrl}` : "",
+    `View your Success page: ${BASE_URL}/#my-profile`
   ].filter(Boolean);
 
-  const response = await fetch(\`https://discord.com/api/v10/channels/\${channel.id}/messages\`, {
+  const response = await fetch(`https://discord.com/api/v10/channels/${channel.id}/messages`, {
     method: "POST", headers,
     body: JSON.stringify({ content: lines.join("\n"), allowed_mentions: { parse: [] } }),
     signal: AbortSignal.timeout(12000)
   });
-  if (!response.ok) throw new Error(\`Discord shipping DM HTTP \${response.status}\`);
+  if (!response.ok) throw new Error(`Discord shipping DM HTTP ${response.status}`);
   return true;
 }
 
@@ -42458,7 +42458,7 @@ async function scanMailboxForShipping(mailbox, records, account) {
       for (const message of candidates) {
         const subject = String(message.envelope?.subject || "");
         const decoded = await decodeImapMessage(message.source);
-        const combined = normalizedShippingText(\`\${subject}\n\${decoded.text}\n\${decoded.html}\`);
+        const combined = normalizedShippingText(`${subject}\n${decoded.text}\n${decoded.html}`);
         const status = shippingStatusFromMessage(subject, combined);
         if (!status) continue;
 
