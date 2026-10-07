@@ -6315,7 +6315,10 @@ function publicCustomerAccount(
 
     lastLoginAt:
       account.lastLoginAt ||
-      null
+      null,
+
+    checkoutOnboardingComplete:
+      account.checkoutOnboardingComplete === true
   };
 }
 
@@ -6741,6 +6744,31 @@ function preferPreviouslyAssignedManagedAccounts(availableAccounts, assignmentHi
     if (!ai || !bi) return Number(Boolean(bi)) - Number(Boolean(ai));
     return bi.duration - ai.duration || bi.recent - ai.recent;
   });
+}
+
+function preferManagedAccountsMatchingCustomerEmail(availableAccounts, customerEmail, retailer) {
+  const wanted = normalizeEmail(customerEmail);
+  if (!wanted) return [...availableAccounts];
+
+  const emailFor = item => {
+    try {
+      const credentials = item.credentials
+        ? normalizeRetailerCredentials(decryptJson(item.credentials))
+        : emptyRetailerCredentials();
+      return normalizeEmail(
+        item.accountEmail ||
+        item.displayEmail ||
+        credentials?.[retailer]?.username ||
+        ""
+      );
+    } catch {
+      return "";
+    }
+  };
+
+  return [...availableAccounts].sort((a, b) =>
+    Number(emailFor(b) === wanted) - Number(emailFor(a) === wanted)
+  );
 }
 
 /* -------------------------------------------------------
@@ -34783,6 +34811,12 @@ app.post(
   requireCustomer,
   async (req, res) => {
     try {
+      if (req.body?.authorizeRequestedPurchases !== true) {
+        return res.status(400).json({
+          error: "Please agree to the requested purchase authorization before saving a card."
+        });
+      }
+
       const vault =
         await getCustomerVault(
           req.customerAccount.id
@@ -34826,6 +34860,25 @@ app.post(
         req.customerAccount.id,
         vault
       );
+
+      const accounts = await getCustomerAccounts();
+      const account = accounts.find(item => item.id === req.customerAccount.id);
+      if (account) {
+        const now = new Date().toISOString();
+        account.purchaseAuthorizationAcceptedAt = account.purchaseAuthorizationAcceptedAt || now;
+        account.checkoutOnboardingComplete = true;
+        account.updatedAt = now;
+        await saveCustomerAccounts(accounts);
+        await appendConsentRecord({
+          type: "saved_card_purchase_authorization",
+          accountId: account.id,
+          email: account.email,
+          consentVersion: PURCHASE_CONSENT_VERSION,
+          text: PURCHASE_CONSENT_TEXT.authorizeRequestedPurchases,
+          acceptedAt: now,
+          ...consentRequestMetadata(req)
+        });
+      }
 
       return res.json({
         ok: true,
@@ -35845,11 +35898,6 @@ app.post(
         });
       }
 
-      if (req.body.authorizeRequestedPurchases !== true) {
-        return res.status(400).json({
-          error: "Please agree to the requested purchase authorization before continuing."
-        });
-      }
       if (req.body.confirm !== true) {
         return res.status(400).json({ error: "Please confirm that the checkout information is accurate." });
       }
@@ -35870,7 +35918,7 @@ app.post(
         item.flowId === consentFlowId && item.consentVersion === PURCHASE_CONSENT_VERSION
       );
       const accepted = {};
-      for (const checkbox of PURCHASE_CONSENT_KEYS) {
+      for (const checkbox of ["confirm", "acknowledgeAcoOutcome"]) {
         const latest = consentEvents.filter(item => item.checkbox === checkbox).at(-1);
         if (!latest?.checked || Date.now() - Date.parse(latest.recordedAt) > 24 * 60 * 60 * 1000) {
           return res.status(400).json({ error: "Please check each consent box again before checkout." });
@@ -35883,15 +35931,53 @@ app.post(
         };
       }
 
+      accepted.authorizeRequestedPurchases = {
+        text: PURCHASE_CONSENT_TEXT.authorizeRequestedPurchases,
+        serverReceivedAt: req.customerAccount.purchaseAuthorizationAcceptedAt || req.customerAccount.updatedAt || req.customerAccount.createdAt,
+        clientReportedClickAt: null,
+        checkboxEventId: null
+      };
+
+      const savedDetails = await customerSavedDetailsPayload(req.customerAccount);
+      const savedAddress = savedDetails.addresses?.[0] || null;
+      const vault = await getCustomerVault(req.customerAccount.id);
+      const savedPayment = vault.paymentMethods?.[0] || null;
+
+      if (!savedAddress) {
+        return res.status(400).json({
+          error: "Add at least one shipping address in My Profile before starting membership checkout."
+        });
+      }
+
+      if (!savedPayment) {
+        return res.status(400).json({
+          error: "Add at least one payment card in My Profile before starting membership checkout."
+        });
+      }
+
       const profile =
-        sanitizeProfile(
-          req.body.profile || {}
-        );
+        sanitizeProfile({
+          ...(req.body.profile || {}),
+          firstName: savedAddress.firstName,
+          lastName: savedAddress.lastName,
+          address: savedAddress.address,
+          address2: savedAddress.address2,
+          country: savedAddress.country,
+          state: savedAddress.state,
+          city: savedAddress.city,
+          zip: savedAddress.zip
+        });
 
       const secrets =
-        sanitizeSecrets(
-          req.body.secrets || {}
-        );
+        sanitizeSecrets({
+          ...(req.body.secrets || {}),
+          cardLabel: savedPayment.cardLabel,
+          cardholder: savedPayment.cardholder,
+          acoCardNumber: savedPayment.acoCardNumber,
+          expMonth: savedPayment.expMonth,
+          expYear: savedPayment.expYear,
+          securityCode: savedPayment.securityCode
+        });
 
 
       if (
