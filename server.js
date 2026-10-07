@@ -35942,6 +35942,12 @@ app.post(
         };
       }
 
+      if (!req.customerAccount.purchaseAuthorizationAcceptedAt) {
+        return res.status(400).json({
+          error: "Save at least one payment card and accept the purchase authorization in My Profile before checkout."
+        });
+      }
+
       accepted.authorizeRequestedPurchases = {
         text: PURCHASE_CONSENT_TEXT.authorizeRequestedPurchases,
         serverReceivedAt: req.customerAccount.purchaseAuthorizationAcceptedAt || req.customerAccount.updatedAt || req.customerAccount.createdAt,
