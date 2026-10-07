@@ -12566,13 +12566,13 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
 }
 .plan[data-tier="8"] .plan-name,
 .customer-tier-color-8 {
-  background: linear-gradient(105deg, #ffffff 5%, #9deaff 23%, #ffffff 40%, #b9d7ff 57%, #ffffff 72%, #8de9ff 92%);
+  background: linear-gradient(105deg, #fff7bf 5%, #ffd76a 22%, #fff1a6 40%, #d9a928 58%, #fff3a8 74%, #ffcf4a 92%);
   background-size: 220% auto;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent !important;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 18px rgba(183,239,255,.45);
+  text-shadow: 0 0 18px rgba(255,205,74,.42);
   font-weight: 950;
   letter-spacing: 1.2px;
 }
@@ -12582,9 +12582,9 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
 .ultimate-crown {
   display: inline-block;
   margin-right: 7px;
-  color: #f8fdff;
-  -webkit-text-fill-color: #f8fdff;
-  text-shadow: 0 0 8px #fff, 0 0 18px #91eaff;
+  color: #ffd76a;
+  -webkit-text-fill-color: #ffd76a;
+  text-shadow: 0 0 8px #fff0a3, 0 0 18px #d9a928;
   transform: translateY(-1px);
 }
 .membership-status.customer-tier-status-8 {
