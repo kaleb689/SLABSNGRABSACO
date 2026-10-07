@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
-  <title>SLABS N GRABS ACO</title>
+  <title>SLABSNGRABSACO</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#020914">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Slabs N Grabs">
+  <meta name="apple-mobile-web-app-title" content="SLABSNGRABSACO">
   <script src="/pwa.js" defer></script>
 
   <meta
@@ -939,72 +939,7 @@
 
         <div class="secure-divider"></div>
 
-<h3>
-  IMAP / Host Email Information
-</h3>
-
-        <p class="secure-copy">
-          Use the dedicated email created
-          for this ACO service.
-        </p>
-
-        <p class="imap-critical-note">
-          PLEASE FOLLOW CHAP 2 IN GUIDE FOR IMAP PASSWORD THIS IS VERY IMPORTANT
-        </p>
-
-
-        <label>
-          IMAP / Host Email *
-
-          <input
-            required
-            type="email"
-            name="acoEmail"
-            autocomplete="off"
-          />
-        </label>
-
-
-<label>
-  EMAIL (APP PASSWORD) *
-
-  <div class="password-row">
-
-    <input
-      required
-      type="password"
-      name="acoPassword"
-      autocomplete="new-password"
-      inputmode="text"
-      minlength="19"
-      maxlength="19"
-      pattern="[A-Za-z]{4}( [A-Za-z]{4}){3}"
-      placeholder="xxxx xxxx xxxx xxxx"
-      aria-describedby="signup-app-password-format"
-    />
-
-    <button
-      type="button"
-      class="show-pass"
-      id="show-pass"
-    >
-      Show
-    </button>
-
-  </div>
-
-  <small class="fine app-password-note critical">
-    THIS IS NOT YOUR EMAIL PASSWORD
-  </small>
-  <small class="fine app-password-guide-prompt">
-    Follow instructions in pop up to set up app password.
-  </small>
-  <small class="fine app-password-format-note" id="signup-app-password-format">
-    Enter the 16-letter app password. It will format automatically as xxxx xxxx xxxx xxxx. You can also paste it.
-  </small>
-
-</label>
-
+<p class="secure-copy">IMAP setup is optional and available in My Profile after signup.</p>
 
         <div class="secure-divider"></div>
 
@@ -3337,6 +3272,8 @@
       </div>
 
       <div class="account-topbar-right">
+        <button type="button" class="secondary account-action-button" id="account-notification-settings">Notification Settings</button>
+        <button type="button" class="secondary account-action-button" id="account-install-app" hidden>Add app to Home Screen</button>
 
         <div class="member-lifetime-stats">
           <div>
@@ -4673,7 +4610,7 @@
             <span class="eyebrow">ACCOUNT NOTIFICATIONS</span>
             <h3>Notifications</h3>
             <p class="account-muted">
-              Important profile requests and direct messages from SLABS N GRABS ACO appear here.
+              Order confirmations, shipping updates, profile requests and messages from SLABSNGRABSACO appear here.
             </p>
           </div>
 
@@ -4687,6 +4624,11 @@
               No notifications
             </strong>
           </div>
+        </div>
+
+        <div class="app-notification-controls">
+          <button type="button" class="secondary account-action-button" id="app-notification-settings">Notification Settings</button>
+          <p class="account-muted" id="app-notification-permission" aria-live="polite">Enable phone alerts for new orders and shipping updates.</p>
         </div>
 
         <div
@@ -5038,6 +4980,83 @@
 ===================================================== -->
 <div id="account-onboarding-backdrop" class="account-onboarding-backdrop" hidden></div>
 
+<section id="account-imap-onboarding" class="account-onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="account-imap-onboarding-title" hidden>
+  <div class="account-onboarding-head"><div><span class="eyebrow">OPTIONAL EMAIL SETUP</span><h2 id="account-imap-onboarding-title">Connect your IMAP email</h2></div></div>
+  <p class="account-onboarding-intro">Connect your checkout email to detect your orders and shipments. You can skip this and add it later under My Profile → Profiles.</p>
+  <form id="account-imap-onboarding-form" class="account-onboarding-form">
+<h3>
+  IMAP / Host Email Information
+</h3>
+
+        <p class="secure-copy">
+          Use the dedicated email created
+          for this ACO service.
+        </p>
+
+        <p class="imap-critical-note">
+          PLEASE FOLLOW CHAP 2 IN GUIDE FOR IMAP PASSWORD THIS IS VERY IMPORTANT
+        </p>
+
+
+        <label>
+          IMAP / Host Email *
+
+          <input
+            required
+            type="email"
+            name="acoEmail"
+            autocomplete="off"
+          />
+        </label>
+
+
+<label>
+  EMAIL (APP PASSWORD) *
+
+  <div class="password-row">
+
+    <input
+      required
+      type="password"
+      name="acoPassword"
+      autocomplete="new-password"
+      inputmode="text"
+      minlength="19"
+      maxlength="19"
+      pattern="[A-Za-z]{4}( [A-Za-z]{4}){3}"
+      placeholder="xxxx xxxx xxxx xxxx"
+      aria-describedby="signup-app-password-format"
+    />
+
+    <button
+      type="button"
+      class="show-pass"
+      id="show-pass"
+    >
+      Show
+    </button>
+
+  </div>
+
+  <small class="fine app-password-note critical">
+    THIS IS NOT YOUR EMAIL PASSWORD
+  </small>
+  <small class="fine app-password-guide-prompt">
+    Use an app password, not your email account password.
+  </small>
+  <small class="fine app-password-format-note" id="signup-app-password-format">
+    Enter the 16-letter app password. It will format automatically as xxxx xxxx xxxx xxxx. You can also paste it.
+  </small>
+
+</label>
+
+
+    <button type="button" class="text-button" id="onboarding-imap-help">App password help</button>
+    <div class="account-onboarding-actions"><button type="submit">Save IMAP &amp; Continue</button><button type="button" class="secondary" id="account-onboarding-imap-skip">Skip for now</button></div>
+    <p id="account-imap-onboarding-message" class="form-message" aria-live="polite"></p>
+  </form>
+</section>
+
 <section id="account-address-onboarding" class="account-onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="account-address-onboarding-title" hidden>
   <div class="account-onboarding-head">
     <div>
@@ -5121,7 +5140,7 @@
     <div class="account-onboarding-actions">
       <button type="submit" class="primary">Save Card</button>
       <button type="button" class="secondary" id="account-onboarding-add-card" hidden>Add Another Card</button>
-      <button type="button" class="secondary" id="account-onboarding-finish" hidden>Finish Setup</button>
+      <button type="button" class="secondary" id="account-onboarding-finish" hidden>Continue to IMAP Setup →</button>
     </div>
     <p id="account-card-onboarding-message" class="form-message" role="status"></p>
   </form>

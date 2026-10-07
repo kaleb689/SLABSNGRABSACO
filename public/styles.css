@@ -12874,3 +12874,53 @@ body.installed-app{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
 .pwa-bottom-nav a span{font-size:20px;line-height:1;color:#55dfff}
 .pwa-bottom-nav a.active{color:#fff}
 .pwa-bottom-nav a:focus-visible{outline:2px solid #12c9ff;outline-offset:2px;border-radius:8px}
+
+/* Account app: six profile destinations, account-only installation. */
+.installed-app .pwa-bottom-nav { grid-template-columns:repeat(6,minmax(0,1fr)); left:6px; right:6px; padding:5px 2px; }
+.installed-app .pwa-bottom-nav[hidden] { display:none; }
+.pwa-bottom-nav a { min-width:0; font-size:clamp(8px,2.35vw,11px); min-height:48px; gap:6px; }
+.pwa-bottom-nav .has-notifications span { position:relative; }
+.pwa-bottom-nav .has-notifications span::after { content:""; position:absolute; top:0; right:-6px; width:7px; height:7px; border-radius:50%; background:#ff5284; }
+.installed-app #my-profile .account-tabs { display:none; }
+.installed-app #home > :not(.public-success) { display:none; }
+.installed-app .main-nav > :not([data-page="home"]):not([data-page="my-profile"]) { display:none; }
+.installed-app .site-footer { display:none; }
+#account-install-app[hidden] { display:none; }
+#account-install-app { white-space:normal; }
+.account-onboarding-modal { box-sizing:border-box; max-height:88dvh; }
+#account-imap-onboarding .password-row input { min-width:0; }
+.pwa-install-dialog button { min-height:44px; }
+@media (max-width:620px) {
+  #my-profile .wrap { width:100%; max-width:100%; box-sizing:border-box; padding-inline:12px; }
+  #my-profile .customer-dashboard,
+  #my-profile .account-tab-panel,
+  #my-profile .account-dashboard-grid,
+  #my-profile .account-card,
+  #my-profile .success-chart,
+  #my-profile .success-shipping-panel { min-width:0; max-width:100%; box-sizing:border-box; }
+  #my-profile .account-dashboard-grid { grid-template-columns:minmax(0,1fr); }
+  #my-profile .account-topbar,
+  #my-profile .account-topbar-right { flex-wrap:wrap; min-width:0; }
+  #my-profile .account-identity-email,
+  #my-profile .success-shipping-details strong { overflow-wrap:anywhere; }
+  #my-profile .success-chart-layout { grid-template-columns:36px minmax(0,1fr) !important; padding:18px 6px 12px; overflow:visible; }
+  #my-profile .success-chart-plot { min-width:0; }
+  #my-profile .success-chart-columns { grid-template-columns:repeat(auto-fit,minmax(0,1fr)); gap:3px; }
+  #my-profile .success-chart-column > span { font-size:8px; overflow-wrap:anywhere; }
+  #my-profile .success-chart-value { font-size:9px; }
+  #my-profile .success-chart-controls { max-width:100%; min-width:0; }
+  #my-profile .success-chart-controls > * { min-width:0; max-width:100%; }
+  #my-profile .success-date-picker { min-width:0; box-sizing:border-box; }
+  #my-profile .success-shipping-showcase { grid-template-columns:minmax(0,1fr); }
+  #my-profile .success-shipping-panel-head { flex-wrap:wrap; }
+  #my-profile .success-shipping-timeline { grid-template-columns:repeat(5,minmax(0,1fr)); gap:2px; }
+  #my-profile .success-shipping-step { min-width:0; font-size:8px; overflow-wrap:anywhere; }
+  #my-profile input, #my-profile select, #my-profile textarea { min-width:0; max-width:100%; box-sizing:border-box; }
+  .account-onboarding-actions > button { flex:1 1 150px; }
+  .installed-app .site-header { flex-wrap:wrap; }
+}
+.app-notification-dialog fieldset { border:0; padding:8px 0; margin:16px 0; display:grid; gap:16px; }
+.app-notification-dialog legend { color:#a9bac8; margin-bottom:12px; }
+.app-notification-dialog label { display:flex; align-items:center; gap:12px; font-size:14px; }
+.app-notification-dialog input[type="checkbox"] { width:20px; height:20px; flex:0 0 20px; accent-color:#12c9ff; }
+#app-notification-settings { white-space:normal; }

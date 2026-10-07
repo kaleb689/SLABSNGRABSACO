@@ -1,4 +1,5 @@
 import express from "express";
+import { createOrderNotifications, cancelledOrder } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
@@ -6341,7 +6342,9 @@ function publicCustomerAccount(
       null,
 
     checkoutOnboardingComplete:
-      account.checkoutOnboardingComplete === true
+      account.checkoutOnboardingComplete === true,
+
+    imapOnboardingCompletedAt: account.imapOnboardingCompletedAt || null
   };
 }
 
@@ -9076,6 +9079,31 @@ app.delete("/api/admin/customers/:id/discord", requireAdmin, async (req, res) =>
 });
 
 
+const appOrderNotifications = createOrderNotifications({
+  dataDir: DATA_DIR, baseUrl: BASE_URL, getRecords: getSuccessCheckouts, getAccounts: getCustomerAccounts,
+  getAccountUpdates: () => readJson(PAID_FILE, [])
+});
+app.get("/api/account/push-preferences", requireCustomer, async (req, res) => {
+  try { res.set("Cache-Control", "no-store"); res.json({ preferences: await appOrderNotifications.preferences(String(req.customerAccount.id)) }); }
+  catch { res.status(500).json({ error: "Unable to load notification settings." }); }
+});
+app.put("/api/account/push-preferences", requireCustomer, async (req, res) => {
+  try { res.json({ preferences: await appOrderNotifications.setPreferences(String(req.customerAccount.id), req.body) }); }
+  catch { res.status(500).json({ error: "Unable to save notification settings." }); }
+});
+app.get("/api/account/push-key", requireCustomer, (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ publicKey: appOrderNotifications.publicKey() });
+});
+app.post("/api/account/push-subscriptions", requireCustomer, async (req, res) => {
+  try { await appOrderNotifications.subscribe(String(req.customerAccount.id), req.body); res.json({ ok: true }); }
+  catch { res.status(400).json({ error: "Unable to save this device’s notification subscription." }); }
+});
+app.delete("/api/account/push-subscriptions", requireCustomer, async (req, res) => {
+  try { await appOrderNotifications.unsubscribe(String(req.customerAccount.id), String(req.body?.endpoint || "")); res.json({ ok: true }); }
+  catch { res.status(500).json({ error: "Unable to disable notifications. Please try again." }); }
+});
+
 app.get(
   "/api/account/notifications",
   requireCustomer,
@@ -9095,7 +9123,8 @@ app.get(
 
       return res.json({
         ok: true,
-        notifications,
+        notifications: [...notifications, ...await appOrderNotifications.list(String(req.customerAccount.id))]
+          .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
         checklist: sync.checklist
       });
 
@@ -9160,6 +9189,7 @@ app.delete(
         }
       }
 
+      await appOrderNotifications.clear(String(account.id));
       account.notifications = [];
       account.updatedAt =
         new Date()
@@ -34486,6 +34516,20 @@ app.get("/api/account/imap-credentials", requireCustomer, async (req, res) => {
   })) });
 });
 
+app.post("/api/account/imap-onboarding/skip", requireCustomer, async (req, res) => {
+  try {
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => item.id === req.customerAccount.id);
+    if (!account) return res.status(404).json({ error: "Customer account not found." });
+    account.imapOnboardingCompletedAt = account.imapOnboardingCompletedAt || new Date().toISOString();
+    await saveCustomerAccounts(accounts);
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("IMAP onboarding skip error:", error);
+    return res.status(500).json({ error: "Unable to skip IMAP setup. Please try again." });
+  }
+});
+
 app.post("/api/account/imap-credentials", requireCustomer, async (req, res) => {
   try {
     const accounts = await getCustomerAccounts();
@@ -34503,6 +34547,7 @@ app.post("/api/account/imap-credentials", requireCustomer, async (req, res) => {
     const entry = { id: crypto.randomUUID(), email, password, createdAt: now, updatedAt: now };
     entry.connectionStatus = await testSubmittedImap(email, password);
     entries.push(entry);
+    account.imapOnboardingCompletedAt = now;
     account.savedImapCredentials = encryptJson(entries);
     await synchronizeImapCopies(account, email, email, password, now, entry.connectionStatus);
     await saveCustomerAccounts(accounts);
@@ -36069,10 +36114,13 @@ app.post(
 
       // ACO cards saved in My Profile are never used to pay for membership.
       // Stripe Checkout collects the customer's membership payment method directly.
-      const secrets =
-        sanitizeSecrets(
-          req.body.secrets || {}
-        );
+      const submittedSecrets = req.body.secrets || {};
+      const savedImap = savedImapEntries(req.customerAccount)[0];
+      const secrets = sanitizeSecrets({
+        ...submittedSecrets,
+        acoEmail: submittedSecrets.acoEmail || savedImap?.email || "",
+        acoPassword: submittedSecrets.acoPassword || savedImap?.password || ""
+      });
 
 
       if (
@@ -36087,14 +36135,15 @@ app.post(
       }
 
       if (
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(secrets.acoEmail) ||
-        secrets.acoPassword.length < 6
+        (secrets.acoEmail || secrets.acoPassword) &&
+        (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(secrets.acoEmail) ||
+        secrets.acoPassword.length < 6)
       ) {
         return res
           .status(400)
           .json({
             error:
-              "Please complete the required IMAP email and app password information."
+              "Please check your saved IMAP email and app password in My Profile, or remove the login to set it up later."
           });
       }
 
@@ -37939,6 +37988,8 @@ async function saveSuccessCheckouts(
     SUCCESS_CHECKOUTS_FILE,
     records
   );
+  try { await appOrderNotifications.reconcile(records); }
+  catch (error) { console.error("Order alert persistence:", error.code || error.name); }
 }
 
 
@@ -42706,7 +42757,7 @@ async function scanMailboxForShipping(mailbox, records, account) {
         since,
         or: [
           { subject: "shipped" }, { subject: "shipping" }, { subject: "delivery" },
-          { subject: "delivered" }, { subject: "on the way" }, { subject: "tracking" }
+          { subject: "delivered" }, { subject: "on the way" }, { subject: "tracking" }, { subject: "cancel" }
         ]
       }, { uid: true });
       const recentUids = uids.slice(-120);
@@ -42720,12 +42771,14 @@ async function scanMailboxForShipping(mailbox, records, account) {
         const subject = String(message.envelope?.subject || "");
         const decoded = await decodeImapMessage(message.source);
         const combined = normalizedShippingText(`${subject}\n${decoded.text}\n${decoded.html}`);
-        const status = shippingStatusFromMessage(subject, combined);
+        const cancellation = /(?:your|the|this) order(?:\s*#?\s*[\w-]+)? (?:has been |was |is )cancel(?:led|ed)|order cancel(?:lation|led|ed)/i.test(subject);
+        const status = cancellation ? "cancelled" : shippingStatusFromMessage(subject, combined);
         if (!status) continue;
 
         const matching = records.filter(record => {
           const orderNumber = String(record.orderNumber || "").trim();
           if (orderNumber && combined.toLowerCase().includes(orderNumber.toLowerCase())) return true;
+          if (cancellation) return false;
           const retailer = String(record.retailer || "").toLowerCase();
           const itemName = String(record.items?.[0]?.name || "").toLowerCase();
           return retailer && combined.toLowerCase().includes(retailer) &&
@@ -42735,6 +42788,11 @@ async function scanMailboxForShipping(mailbox, records, account) {
 
         const record = matching[0];
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
+        if (cancellation) {
+          if (!cancelledOrder(record)) { record.status = "cancelled"; record.cancelledAt = messageAt; changed = true; }
+          continue;
+        }
+        if (cancelledOrder(record)) continue;
         const prior = record.shipping && typeof record.shipping === "object" ? record.shipping : {};
         if (shippingStatusRank(status) < shippingStatusRank(prior.status)) continue;
 
@@ -42781,7 +42839,7 @@ async function syncShippingTrackers() {
       if (account.disabled === true) continue;
       const owned = records.filter(record =>
         String(record.customerAccountId || "") === String(account.id) &&
-        record.orderNumber &&
+        record.orderNumber && !cancelledOrder(record) &&
         shippingStatusRank(record.shipping?.status) < 4
       );
       if (!owned.length) continue;
@@ -47540,6 +47598,8 @@ await initializeArrayFile(
 
     await synchronizeMembershipPrices();
 
+    await appOrderNotifications.initialize();
+
     await hardenStoragePermissions();
 
     app.listen(
@@ -47549,6 +47609,7 @@ await initializeArrayFile(
           `SLABSNGRABSACO server running on port ${PORT}`
         );
 
+        appOrderNotifications.start();
         startLiveSuccessScheduler();
         startManagedExpirationScheduler();
         startShippingTrackerScheduler();
