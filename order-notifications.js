@@ -19,11 +19,23 @@ export function orderEvents(record, previous) {
   const next = orderSnapshot(record);
   if (!record.customerAccountId || !next.eligible) return [];
   const events = [];
-  const label = `${String(record.retailer || "Retailer").slice(0, 80)} order${record.orderNumber ? ` #${String(record.orderNumber).slice(0, 80)}` : ""}`;
-  if (!previous || !previous.eligible) events.push({ kind: "order_confirmed", title: "Order confirmed", message: `${label} was placed successfully.`, tab: "success" });
+  const retailer = String(record.retailer || "Retailer").slice(0, 50);
+  const product = String(record.items?.[0]?.name || record.productName || "Your order").slice(0, 110);
+  const orderNumber = record.orderNumber ? `Order #${String(record.orderNumber).slice(0, 50)}` : "Order placed";
+  if (!previous || !previous.eligible) events.push({
+    kind: "order_confirmed",
+    title: `${retailer} order confirmed`,
+    message: `${product} • ${orderNumber}`,
+    tab: "success"
+  });
   if (shippingLabels[record.shipping?.status] && (!previous || !previous.eligible || previous.shipping !== next.shipping)) {
-    events.push({ kind: "shipping_update", title: shippingLabels[record.shipping.status],
-      message: `${label}: ${shippingLabels[record.shipping.status].toLowerCase()}.${record.shipping.estimatedDelivery ? ` Estimated delivery: ${String(record.shipping.estimatedDelivery).slice(0, 80)}.` : ""}`, tab: "success" });
+    const status = shippingLabels[record.shipping.status];
+    events.push({
+      kind: "shipping_update",
+      title: `${retailer} order ${status.toLowerCase()}`,
+      message: `${product} • ${orderNumber}${record.shipping.estimatedDelivery ? ` • Est. delivery ${String(record.shipping.estimatedDelivery).slice(0, 80)}` : ""}`,
+      tab: "success"
+    });
   }
   return events;
 }
