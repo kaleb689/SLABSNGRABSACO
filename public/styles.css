@@ -12554,3 +12554,24 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   #my-profile .success-shipping-timeline { overflow-x:auto; grid-template-columns:repeat(5,minmax(90px,1fr)); padding-bottom:5px; }
   #my-profile .success-shipping-details { grid-template-columns:1fr; }
 }
+
+/* Native-app mobile shell */
+.native-mobile-nav{display:none}
+@media (max-width:760px){
+  body{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+  .site-header{padding-top:env(safe-area-inset-top)}
+  .native-mobile-nav{
+    position:fixed;z-index:10000;left:10px;right:10px;bottom:max(8px,env(safe-area-inset-bottom));
+    display:grid;grid-template-columns:repeat(5,1fr);min-height:60px;padding:5px;
+    border:1px solid rgba(18,201,255,.24);border-radius:18px;
+    background:rgba(2,9,20,.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+    box-shadow:0 12px 40px rgba(0,0,0,.45)
+  }
+  .native-mobile-nav a{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    min-width:0;color:#a9bac8;text-decoration:none;font-size:9px;font-weight:850;letter-spacing:.02em
+  }
+  .native-mobile-nav a span{font-size:19px;line-height:1;color:#55dfff}
+  .native-mobile-nav a.active,.native-mobile-nav a:focus{color:#fff}
+  .native-mobile-nav a.active span{color:#fff;text-shadow:0 0 14px rgba(18,201,255,.85)}
+}
