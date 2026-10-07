@@ -110,7 +110,7 @@ if (appEnabled) {
     if (location.hash !== '#my-profile') go('my-profile');
     if (view === 'notifications') document.querySelector('button[data-account-tab="notifications"]')?.click();
     if (view === 'profile') document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click();
-    render(); window.scrollTo({ top: 0, behavior: 'instant' });
+    render(); window.scrollTo({ top: 0, behavior: 'auto' });
   }
   root.addEventListener('click', event => {
     const button = event.target.closest('button'); if (!button) return;
