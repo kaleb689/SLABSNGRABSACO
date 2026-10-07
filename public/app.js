@@ -610,7 +610,7 @@ function pricingCardsHtml() {
 
           <p class="plan-login-note">
             Have ${plan.profiles} unique retailer ${plan.profiles === 1 ? "login" : "logins"}
-            for each retailer you plan to use, or check available rentals.
+            for each retailer you plan to use.
           </p>
 
           <ul class="features">
@@ -9183,7 +9183,7 @@ function restoreManagedProfilesGroupOpen(
     label.textContent =
       label.dataset
         .hideText ||
-      "HIDE ALL GIFTED & RENTED PROFILES";
+      "HIDE ALL GIFTED PROFILES";
   }
 }
 
@@ -10266,20 +10266,8 @@ if (allowance <= 0) {
     )
     .filter(Boolean);
 
-const rentedCards =
-  state.rentedMemberships
-    .map(
-      membership =>
-        managedMembershipCardHtml(
-          membership
-        )
-    )
-    .filter(Boolean);
-
-const specialCards =
-  [
-    ...freeCards,
-    ...rentedCards
+const specialCards = [
+    ...freeCards
   ];
 
   container.innerHTML = `
@@ -10296,17 +10284,17 @@ const specialCards =
                   </span>
 
                   <strong>
-                    Gifted Profiles &amp; Rented Profiles
+                    Gifted Profiles
                   </strong>
                 </div>
 
                 <span
                   class="profile-group-open"
                   data-profile-group-label
-                  data-show-text="SHOW ALL GIFTED & RENTED PROFILES"
-                  data-hide-text="HIDE ALL GIFTED & RENTED PROFILES"
+                  data-show-text="SHOW ALL GIFTED PROFILES"
+                  data-hide-text="HIDE ALL GIFTED PROFILES"
                 >
-                  SHOW ALL GIFTED &amp; RENTED PROFILES
+                  SHOW ALL GIFTED PROFILES
                 </span>
               </summary>
 
@@ -10454,19 +10442,8 @@ const specialCards =
       )
       .filter(Boolean);
 
-  const rentedManagedCards =
-    state.rentedMemberships
-      .map(
-        membership =>
-          managedMembershipCardHtml(
-            membership
-          )
-      )
-      .filter(Boolean);
-
   const specialCards = [
-    ...freeManagedCards,
-    ...rentedManagedCards
+    ...freeManagedCards
   ];
 
 container.innerHTML = `
@@ -10544,17 +10521,17 @@ container.innerHTML = `
                 </span>
 
                 <strong>
-                  Gifted Profiles &amp; Rented Profiles
+                  Gifted Profiles
                 </strong>
               </div>
 
               <span
                 class="profile-group-open"
                 data-profile-group-label
-                data-show-text="SHOW ALL GIFTED & RENTED PROFILES"
-                data-hide-text="HIDE ALL GIFTED & RENTED PROFILES"
+                data-show-text="SHOW ALL GIFTED PROFILES"
+                data-hide-text="HIDE ALL GIFTED PROFILES"
               >
-                SHOW ALL GIFTED &amp; RENTED PROFILES
+                SHOW ALL GIFTED PROFILES
               </span>
             </summary>
 
@@ -10993,7 +10970,6 @@ async function loadManagedMemberships() {
 
 
 async function loadManagedAvailabilityCustomer() {
-  loadSingleRentalPrices();
   const updated =
     document.getElementById(
       "customer-availability-updated"
