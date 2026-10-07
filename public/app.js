@@ -1,11 +1,11 @@
 const PLANS = {
-  1: { name: "Starter", profiles: 1, amount: 10 },
-  2: { name: "Intermediate", profiles: 2, amount: 15 },
-  3: { name: "Advanced", profiles: 3, amount: 25 },
-  4: { name: "Pro", profiles: 5, amount: 45 },
-  5: { name: "High Volume", profiles: 10, amount: 80 },
-  6: { name: "Power User", profiles: 20, amount: 150 },
-  7: { name: "Elite", profiles: 50, amount: 290 }
+  1: { name: "Starter", profiles: 1, amount: 15 },
+  2: { name: "Intermediate", profiles: 2, amount: 25 },
+  3: { name: "Advanced", profiles: 3, amount: 40 },
+  4: { name: "Pro", profiles: 5, amount: 70 },
+  5: { name: "High Volume", profiles: 10, amount: 120 },
+  6: { name: "Power User", profiles: 20, amount: 225 },
+  7: { name: "Elite", profiles: 50, amount: 435 }
 };
 
 const RENTAL_PRICING = {
