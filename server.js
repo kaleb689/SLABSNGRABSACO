@@ -4322,6 +4322,27 @@ function setCustomerSession(
 }
 
 
+function setAdminCustomerPreviewSession(
+  res,
+  account
+) {
+  const maxAgeSeconds = 15 * 60;
+  const expires = Date.now() + maxAgeSeconds * 1000;
+  const token = signCustomerSession({
+    accountId: account.id,
+    version: customerSessionVersion(account),
+    issuedAt: Date.now(),
+    expires,
+    adminPreview: true
+  });
+
+  res.setHeader(
+    "Set-Cookie",
+    `${CUSTOMER_SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}; Priority=High${SECURE_COOKIES ? "; Secure" : ""}`
+  );
+}
+
+
 function clearCustomerSession(res) {
   res.setHeader(
     "Set-Cookie",
@@ -4711,6 +4732,26 @@ async function requireCustomer(
 
     req.customerAccount =
       account;
+
+    const sessionToken =
+      parseCookies(req)[CUSTOMER_SESSION_COOKIE];
+
+    const sessionPayload =
+      sessionToken
+        ? verifyCustomerSession(sessionToken)
+        : null;
+
+    req.customerAdminPreview =
+      sessionPayload?.adminPreview === true;
+
+    if (
+      req.customerAdminPreview &&
+      !["GET", "HEAD", "OPTIONS"].includes(req.method)
+    ) {
+      return res.status(403).json({
+        error: "Admin View as User is read-only."
+      });
+    }
 
     if (account.mustChangePassword && req.path !== "/api/account/change-password") {
       return res.status(403).json({
@@ -8858,6 +8899,29 @@ async function discordServerMember(username, userId) {
   // The numeric ID identifies the member; display names and usernames can change.
   return member.user;
 }
+
+app.post("/api/admin/customers/:id/view-as-user", requireAdmin, async (req, res) => {
+  const accounts = await getCustomerAccounts();
+  const account = accounts.find(item => String(item.id) === String(req.params.id));
+
+  if (!account || account.disabled === true) {
+    return res.status(404).json({ error: "Customer account not found." });
+  }
+
+  setAdminCustomerPreviewSession(res, account);
+  res.setHeader("Cache-Control", "no-store");
+
+  return res.json({
+    ok: true,
+    customer: {
+      id: account.id,
+      name: account.name || account.displayName || "Customer",
+      email: account.email || ""
+    },
+    url: "/?adminCustomerPreview=1#my-profile"
+  });
+});
+
 
 app.get("/api/admin/customers/:id/discord", requireAdmin, async (req, res) => {
   const account = (await getCustomerAccounts()).find(item => item.id === req.params.id);
