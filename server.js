@@ -4558,19 +4558,42 @@ async function assignReferralRewardProfiles(referralId) {
   const targets = await getAvailableManagedAccountsForRetailer("target");
   const walmart = await getAvailableManagedAccountsForRetailer("walmart");
   const pokemon = await getAvailableManagedAccountsForRetailer("pokemoncenter");
-  const username = item => {
-    try { return normalizeEmail(normalizeRetailerCredentials(decryptJson(item.credentials))?.target?.username); }
-    catch { return ""; }
+  const targetEmail = item => managedRetailerEmailExact(item, "target");
+  const walmartEmail = item => managedRetailerEmailExact(item, "walmart");
+  const pokemonEmail = item => managedRetailerEmailExact(item, "pokemoncenter");
+
+  const existingTarget = assignments.find(
+    item => item.referralGiftId === grant.id && item.referralRetailer === "target"
+  );
+  const assignedTarget = existingTarget &&
+    (await getManagedAccounts()).find(
+      item => String(item.id) === String(existingTarget.managedAccountId)
+    );
+
+  const target =
+    assignedTarget ||
+    targets.find(item => {
+      const email = targetEmail(item);
+      return email && (
+        walmart.some(other => walmartEmail(other) === email) ||
+        pokemon.some(other => pokemonEmail(other) === email)
+      );
+    }) ||
+    targets[0];
+
+  const emailToMatch = target ? targetEmail(target) : "";
+  const matchingWalmart = walmart.find(
+    item => emailToMatch && walmartEmail(item) === emailToMatch
+  );
+  const matchingPokemon = pokemon.find(
+    item => emailToMatch && pokemonEmail(item) === emailToMatch
+  );
+
+  const choices = {
+    target: assignedTarget ? null : target,
+    walmart: matchingWalmart || walmart[0],
+    pokemoncenter: matchingPokemon || pokemon[0]
   };
-  const pokemonUsername = item => {
-    try { return normalizeEmail(normalizeRetailerCredentials(decryptJson(item.credentials))?.pokemoncenter?.username); }
-    catch { return ""; }
-  };
-  const existingTarget = assignments.find(item => item.referralGiftId === grant.id && item.referralRetailer === "target");
-  const assignedTarget = existingTarget && (await getManagedAccounts()).find(item => String(item.id) === String(existingTarget.managedAccountId));
-  const target = assignedTarget || targets.find(item => pokemon.some(other => pokemonUsername(other) === username(item))) || targets[0];
-  const matchingPokemon = pokemon.find(item => target && pokemonUsername(item) === username(target));
-  const choices = { target: assignedTarget ? null : target, walmart: walmart[0], pokemoncenter: matchingPokemon || pokemon[0] };
   const now = new Date().toISOString();
   let changed = false;
   for (const [retailer, item] of Object.entries(choices)) {
@@ -6746,29 +6769,77 @@ function preferPreviouslyAssignedManagedAccounts(availableAccounts, assignmentHi
   });
 }
 
-function preferManagedAccountsMatchingCustomerEmail(availableAccounts, customerEmail, retailer) {
-  const wanted = normalizeEmail(customerEmail);
-  if (!wanted) return [...availableAccounts];
+function managedRetailerEmailExact(account, retailer) {
+  try {
+    const credentials = account?.credentials
+      ? normalizeRetailerCredentials(decryptJson(account.credentials))
+      : emptyRetailerCredentials();
 
-  const emailFor = item => {
-    try {
-      const credentials = item.credentials
-        ? normalizeRetailerCredentials(decryptJson(item.credentials))
-        : emptyRetailerCredentials();
-      return normalizeEmail(
-        item.accountEmail ||
-        item.displayEmail ||
-        credentials?.[retailer]?.username ||
-        ""
-      );
-    } catch {
-      return "";
+    return String(
+      credentials?.[retailer]?.username ||
+      account?.accountEmail ||
+      account?.displayEmail ||
+      ""
+    ).trim();
+  } catch {
+    return "";
+  }
+}
+
+function preferManagedAccountsMatchingAssignedPoolEmails(
+  availableAccounts,
+  customerAccountId,
+  retailer,
+  assignmentHistory,
+  managedAccounts
+) {
+  const assignedEmails = new Set();
+
+  for (const assignment of assignmentHistory) {
+    if (
+      String(assignment?.customerAccountId || "") !== String(customerAccountId) ||
+      !managedAssignmentIsLinked(assignment)
+    ) {
+      continue;
     }
-  };
 
-  return [...availableAccounts].sort((a, b) =>
-    Number(emailFor(b) === wanted) - Number(emailFor(a) === wanted)
-  );
+    const managedId = managedAssignmentMembershipId(assignment);
+    const managed = managedAccounts.find(
+      item => String(item.id) === String(managedId)
+    );
+    if (!managed) continue;
+
+    const assignedRetailer = normalizeManagedPoolRetailer(
+      assignment.assignmentRetailer ||
+      assignment.rentalRetailer ||
+      assignment.referralRetailer ||
+      ""
+    );
+
+    if (assignedRetailer) {
+      const email = managedRetailerEmailExact(managed, assignedRetailer);
+      if (email) assignedEmails.add(email);
+      continue;
+    }
+
+    for (const sourceRetailer of ["target", "walmart", "pokemoncenter"]) {
+      const email = managedRetailerEmailExact(managed, sourceRetailer);
+      if (email) assignedEmails.add(email);
+    }
+  }
+
+  if (!assignedEmails.size) {
+    return [...availableAccounts];
+  }
+
+  return [...availableAccounts].sort((a, b) => {
+    const aEmail = managedRetailerEmailExact(a, retailer);
+    const bEmail = managedRetailerEmailExact(b, retailer);
+    return (
+      Number(assignedEmails.has(bEmail)) -
+      Number(assignedEmails.has(aEmail))
+    );
+  });
 }
 
 /* -------------------------------------------------------
@@ -19281,11 +19352,6 @@ app.post(
         });
       }
 
-      const customerAccountForMatch =
-        (await getCustomerAccounts()).find(
-          item => String(item.id) === String(customerAccountId)
-        );
-
       let available =
         await getAvailableManagedAccountsForRetailer(
           retailer,
@@ -19304,10 +19370,18 @@ app.post(
           customerAccountId, retailer);
       }
 
-      available = preferManagedAccountsMatchingCustomerEmail(
+      const assignmentHistoryForMatch = [
+        ...await getFreeAssignments(),
+        ...await getRentalAssignments()
+      ];
+      const managedAccountsForMatch = await getManagedAccounts();
+
+      available = preferManagedAccountsMatchingAssignedPoolEmails(
         available,
-        paidRecord?.profile?.email || customerAccountForMatch?.email || "",
-        retailer
+        customerAccountId,
+        retailer,
+        assignmentHistoryForMatch,
+        managedAccountsForMatch
       );
 
       if (
@@ -35957,18 +36031,10 @@ app.post(
 
       const savedDetails = await customerSavedDetailsPayload(req.customerAccount);
       const savedAddress = savedDetails.addresses?.[0] || null;
-      const vault = await getCustomerVault(req.customerAccount.id);
-      const savedPayment = vault.paymentMethods?.[0] || null;
 
       if (!savedAddress) {
         return res.status(400).json({
           error: "Add at least one shipping address in My Profile before starting membership checkout."
-        });
-      }
-
-      if (!savedPayment) {
-        return res.status(400).json({
-          error: "Add at least one payment card in My Profile before starting membership checkout."
         });
       }
 
@@ -35985,16 +36051,12 @@ app.post(
           zip: savedAddress.zip
         });
 
+      // ACO cards saved in My Profile are never used to pay for membership.
+      // Stripe Checkout collects the customer's membership payment method directly.
       const secrets =
-        sanitizeSecrets({
-          ...(req.body.secrets || {}),
-          cardLabel: savedPayment.cardLabel,
-          cardholder: savedPayment.cardholder,
-          acoCardNumber: savedPayment.acoCardNumber,
-          expMonth: savedPayment.expMonth,
-          expYear: savedPayment.expYear,
-          securityCode: savedPayment.securityCode
-        });
+        sanitizeSecrets(
+          req.body.secrets || {}
+        );
 
 
       if (
@@ -36009,13 +36071,14 @@ app.post(
       }
 
       if (
-        !validSecrets(secrets)
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(secrets.acoEmail) ||
+        secrets.acoPassword.length < 6
       ) {
         return res
           .status(400)
           .json({
             error:
-              "Please complete all required ACO and card information."
+              "Please complete the required IMAP email and app password information."
           });
       }
 
