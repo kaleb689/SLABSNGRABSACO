@@ -1676,8 +1676,6 @@ async function checkoutRentalCart() {
             "",
           zip:
             "",
-          country:
-            "US"
         },
         customerCard:
           null,
@@ -1980,7 +1978,7 @@ const profileForm =
   );
 
 const purchaseConsentFlowId = crypto.randomUUID();
-const purchaseConsentNames = ["confirm", "acknowledgeAcoOutcome", "authorizeRequestedPurchases"];
+const purchaseConsentNames = ["confirm", "acknowledgeAcoOutcome"];
 const purchaseConsentStates = new Map();
 let purchaseConsentSendChain = Promise.resolve();
 function sendPurchaseConsentEvent(name, consentState) {
@@ -2035,38 +2033,16 @@ const PROFILE_FIELD_LABELS = {
     "Email",
   phone:
     "Phone",
-  address:
-    "Address",
   country:
     "Country",
-  state:
-    "State",
-  city:
-    "City",
-  zip:
-    "Zipcode",
   acoEmail:
     "IMAP / Host Email",
   acoPassword:
     "EMAIL (APP PASSWORD)",
-  cardLabel:
-    "Card Label",
-  cardholder:
-    "Cardholder Name",
-  acoCardNumber:
-    "Card Number",
-  expMonth:
-    "Exp. Month",
-  expYear:
-    "Exp. Year",
-  securityCode:
-    "Security Code",
   confirm:
     "Information Confirmation",
   acknowledgeAcoOutcome:
     "ACO Checkout Acknowledgement",
-  authorizeRequestedPurchases:
-    "Purchase Authorization"
 };
 
 
@@ -2657,8 +2633,7 @@ profileForm?.addEventListener(
 
     delete profile.confirm;
     delete profile.acknowledgeAcoOutcome;
-    delete profile.authorizeRequestedPurchases;
-    delete profile.referredByDiscord;
+     delete profile.referredByDiscord;
     delete profile.discountCode;
 
     if (message) {
@@ -2691,8 +2666,7 @@ profileForm?.addEventListener(
   discountCode: String(all.discountCode || "").trim(),
   confirm: all.confirm === "on",
   acknowledgeAcoOutcome: all.acknowledgeAcoOutcome === "on",
-  authorizeRequestedPurchases: all.authorizeRequestedPurchases === "on"
-})
+ })
           }
         );
 
@@ -4027,6 +4001,12 @@ registerForm?.addEventListener(
 
       await loadMemberProfile(
         true
+      );
+
+      go("my-profile");
+      window.setTimeout(
+        () => openAccountCheckoutOnboarding("address"),
+        150
       );
 
     } catch (error) {
@@ -6418,6 +6398,7 @@ document.getElementById("saved-address-form")
     const id = String(form.elements.id?.value || "").trim();
     const body = Object.fromEntries(new FormData(form).entries());
     delete body.id;
+    body.authorizeRequestedPurchases = true;
 
     const response = await fetch(
       id
@@ -6534,6 +6515,130 @@ document.getElementById("delete-saved-payment")
     await loadCustomerNotifications({ showPopup: false });
     setMessage(message, data.message || "Payment card deleted.", "success");
   });
+
+
+
+function setAccountOnboardingVisibility(step = "") {
+  const backdrop = document.getElementById("account-onboarding-backdrop");
+  const addressModal = document.getElementById("account-address-onboarding");
+  const cardModal = document.getElementById("account-card-onboarding");
+  if (!backdrop || !addressModal || !cardModal) return;
+
+  const open = step === "address" || step === "card";
+  backdrop.hidden = !open;
+  addressModal.hidden = step !== "address";
+  cardModal.hidden = step !== "card";
+  document.documentElement.classList.toggle("account-onboarding-open", open);
+}
+
+function openAccountCheckoutOnboarding(step = "address") {
+  if (!state.customer || ADMIN_PREVIEW_MODE) return;
+  const hasAddress = (state.savedDetails?.addresses || []).length > 0;
+  const hasCard = (state.savedDetails?.paymentMethods || []).length > 0;
+
+  if (step === "address" && hasAddress) step = "card";
+  if (step === "card" && hasCard) {
+    setAccountOnboardingVisibility("");
+    return;
+  }
+
+  setAccountOnboardingVisibility(step);
+}
+
+document.addEventListener("click", event => {
+  const close = event.target.closest("[data-onboarding-close]");
+  if (!close) return;
+  const type = close.dataset.onboardingClose;
+  const hasAddress = (state.savedDetails?.addresses || []).length > 0;
+  const hasCard = (state.savedDetails?.paymentMethods || []).length > 0;
+  if (type === "address" && !hasAddress) return;
+  if (type === "card" && !hasCard) return;
+  setAccountOnboardingVisibility("");
+});
+
+document.getElementById("account-onboarding-address-next")?.addEventListener("click", () => {
+  openAccountCheckoutOnboarding("card");
+});
+
+document.getElementById("account-onboarding-add-address")?.addEventListener("click", () => {
+  const form = document.getElementById("account-address-onboarding-form");
+  form?.reset();
+  form?.querySelector("[name=label]")?.focus();
+});
+
+document.getElementById("account-onboarding-add-card")?.addEventListener("click", () => {
+  const form = document.getElementById("account-card-onboarding-form");
+  form?.reset();
+  form?.querySelector("[name=cardLabel]")?.focus();
+});
+
+document.getElementById("account-onboarding-finish")?.addEventListener("click", () => {
+  setAccountOnboardingVisibility("");
+});
+
+document.getElementById("account-address-onboarding-form")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const message = document.getElementById("account-address-onboarding-message");
+  const button = form.querySelector('button[type="submit"]');
+
+  try {
+    setButtonBusy(button, true, "Saving Address…");
+    const response = await fetch("/api/account/shipping-addresses", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.fromEntries(new FormData(form).entries()))
+    });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.error || "Unable to save address.");
+
+    await loadSavedDetails();
+    form.reset();
+    document.getElementById("account-onboarding-add-address").hidden = false;
+    document.getElementById("account-onboarding-address-next").hidden = false;
+    if (message) message.textContent = "Address saved. Add another address or continue to card setup.";
+  } catch (error) {
+    if (message) message.textContent = error.message;
+  } finally {
+    setButtonBusy(button, false);
+  }
+});
+
+document.getElementById("account-card-onboarding-form")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const message = document.getElementById("account-card-onboarding-message");
+  const button = form.querySelector('button[type="submit"]');
+  const body = Object.fromEntries(new FormData(form).entries());
+  body.authorizeRequestedPurchases = form.elements.authorizeRequestedPurchases?.checked === true;
+
+  try {
+    setButtonBusy(button, true, "Saving Card…");
+    const response = await fetch("/api/account/payment-methods", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.error || "Unable to save payment card.");
+
+    await loadSavedDetails();
+    form.reset();
+    document.getElementById("account-onboarding-add-card").hidden = false;
+    document.getElementById("account-onboarding-finish").hidden = false;
+    if (message) message.textContent = "Card saved. Add another card or finish setup.";
+  } catch (error) {
+    if (message) message.textContent = error.message;
+  } finally {
+    setButtonBusy(button, false);
+  }
+});
+
+bindCardFormatting(
+  document.querySelector('#account-card-onboarding-form [name="acoCardNumber"]')
+);
 
 
 function renderOrders(
