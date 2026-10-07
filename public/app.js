@@ -13194,6 +13194,31 @@ function renderSuccessCheckouts(
       checkout
     );
 
+  const shipping =
+    checkout.shipping && typeof checkout.shipping === "object"
+      ? checkout.shipping
+      : null;
+
+  const shippingStatusLabel =
+    shipping?.status === "delivered"
+      ? "Delivered"
+      : shipping?.status === "out_for_delivery"
+        ? "Out for delivery"
+        : shipping?.status === "in_transit"
+          ? "In transit"
+          : shipping?.status === "shipped"
+            ? "Shipped"
+            : "Awaiting shipment";
+
+  const shippingAddress =
+    shipping?.address
+      ? [
+          shipping.address.name,
+          [shipping.address.address, shipping.address.address2].filter(Boolean).join(" "),
+          [shipping.address.city, shipping.address.state, shipping.address.zip].filter(Boolean).join(", ")
+        ].filter(Boolean).join(" · ")
+      : "";
+
 
   /*
     Recent Success intentionally shows
@@ -13359,6 +13384,36 @@ function renderSuccessCheckouts(
             : ""
         }
 
+      </div>
+
+
+      <div class="success-checkout-summary success-shipping-tracker">
+        <div>
+          <span>SHIPPING STATUS</span>
+          <strong>${escapeHtml(shippingStatusLabel)}</strong>
+        </div>
+        <div>
+          <span>EN ROUTE</span>
+          <strong>${shipping?.enRouteAt ? escapeHtml(formatSuccessDate(shipping.enRouteAt)) : "—"}</strong>
+        </div>
+        <div>
+          <span>ESTIMATED DELIVERY</span>
+          <strong>${shipping?.estimatedDelivery ? escapeHtml(shipping.estimatedDelivery) : "—"}</strong>
+        </div>
+        ${shipping?.deliveredAt ? `
+          <div>
+            <span>DELIVERED</span>
+            <strong>${escapeHtml(formatSuccessDate(shipping.deliveredAt))}</strong>
+          </div>` : ""}
+        ${shippingAddress ? `
+          <div style="grid-column:1/-1">
+            <span>SHIPPED TO</span>
+            <strong>${escapeHtml(shippingAddress)}</strong>
+          </div>` : ""}
+        ${shipping?.trackingUrl ? `
+          <div style="grid-column:1/-1">
+            <a href="${escapeHtml(shipping.trackingUrl)}" target="_blank" rel="noopener noreferrer">TRACK PACKAGE →</a>
+          </div>` : ""}
       </div>
 
 
