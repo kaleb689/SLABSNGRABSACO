@@ -1049,29 +1049,21 @@ p {
   min-height: 42px;
 }
 
-/* Center the final three cards like approved mockup */
+/* Eight-tier pricing grid: two clean rows of four. */
 
-.plan:nth-child(5) {
-  grid-column: 1 / 2;
-  transform: translateX(52%);
+.pricing-grid:not(.membership-carousel-track) {
+  grid-auto-rows: 1fr;
+  justify-content: center;
 }
 
-.plan:nth-child(6) {
-  grid-column: 2 / 3;
-  transform: translateX(52%);
+.pricing-grid:not(.membership-carousel-track) > .plan {
+  height: 100%;
+  grid-column: auto;
+  transform: none;
 }
 
-.plan:nth-child(7) {
-  grid-column: 3 / 4;
-  transform: translateX(52%);
-}
-
-.plan:nth-child(5):hover,
-.plan:nth-child(6):hover,
-.plan:nth-child(7):hover {
-  transform:
-    translateX(52%)
-    translateY(-5px);
+.pricing-grid:not(.membership-carousel-track) > .plan:hover {
+  transform: translateY(-5px);
 }
 
 
