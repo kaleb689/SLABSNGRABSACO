@@ -27,6 +27,7 @@
     actions.className = "account-onboarding-actions";
     const add = document.createElement("button");
     add.type = "button";
+    add.className = "primary";
     add.textContent = "Add to Home Screen";
     const skip = document.createElement("button");
     skip.type = "button";
@@ -120,13 +121,13 @@
     settingsDialog.innerHTML = `<h2 id="notification-settings-title">Notification Settings</h2>
       <p>Choose your alerts from SLABSNGRABSACO.</p>
       <p class="fine" data-push-status aria-live="polite">Loading your settings…</p>
-      <div class="account-onboarding-actions"><button type="button" data-enable-push>Enable phone notifications</button><button type="button" class="secondary" data-phone-settings>Phone settings help</button></div>
+      <div class="account-onboarding-actions"><button type="button" class="primary" data-enable-push>Enable phone notifications</button><button type="button" class="secondary" data-phone-settings>Phone settings help</button></div>
       <form><fieldset disabled><legend>Send me notifications for</legend>
         <label><input type="checkbox" name="orders"> Order confirmations</label>
         <label><input type="checkbox" name="shipping"> Shipping and delivery updates</label>
         <label><input type="checkbox" name="messages"> Messages and information needed</label>
         <label><input type="checkbox" name="account"> Account and membership updates</label>
-        <button type="submit">Save notification preferences</button></fieldset></form>
+        <button type="submit" class="primary">Save notification preferences</button></fieldset></form>
       <div class="account-onboarding-actions"><button type="button" class="text-button" data-disable-push>Disable on this device</button><button type="button" class="secondary" data-close-settings>Done</button></div>`;
     const current = settingsDialog;
     const opener = event.currentTarget;
