@@ -47,9 +47,11 @@ if (appEnabled) {
     return `<section class="sng-hero ${tone}"><div>${e(label)}</div><strong>${e(value)}</strong><p>${e(note)}</p><svg viewBox="0 0 300 55" preserveAspectRatio="none" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="2"/></svg></section>`;
   };
   const image = product => {
+    const fallback = '/slabsngrabs-aco-logo-transparent.png';
     const url = String(product?.imageUrl || '');
     const safe = /^(https:\/\/|\/(?!\/))/.test(url);
-    return safe ? `<img src="${e(url)}" alt="" loading="lazy">` : '<span class="sng-image-placeholder">◇</span>';
+    const src = safe ? url : fallback;
+    return `<img src="${e(src)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${fallback}'">`;
   };
   const productRows = (products, ranked = false) => products.map((product, index) => `<article class="sng-product-row">${ranked ? `<b class="sng-rank">${index + 1}</b>` : ''}<div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong>${money(product.value)}</strong><small>VALUE</small></div></article>`).join('') || '<p class="sng-empty">No products in this date range.</p>';
   function orderRows(records, tracking = false) {
