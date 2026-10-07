@@ -39011,7 +39011,8 @@ function buildSuccessActivity(
 function buildSuccessSummary(
   records,
   startDate = null,
-  endDate = null
+  endDate = null,
+  includeOrders = false
 ) {
   const safeRecords =
     records.map(
@@ -39130,6 +39131,8 @@ function buildSuccessSummary(
       ),
 
     bestDay,
+
+    ...(includeOrders ? { checkouts: rangeRecords } : {}),
 
     activity:
       buildSuccessActivity(
@@ -46669,7 +46672,8 @@ const summary =
   buildSuccessSummary(
     ownedRecords,
     rangeStart,
-    rangeEnd
+    rangeEnd,
+    req.query.appView === "1"
   );
 
 summary.range = {

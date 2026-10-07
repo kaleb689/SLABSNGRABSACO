@@ -64,7 +64,7 @@ export function demoSuccess(data, query = {}) {
     summary: { totalCheckouts: records.length, totalItems: records.reduce((sum, r) => sum + r.itemCount, 0),
       checkoutValue: Math.round(records.reduce((sum, r) => sum + r.orderTotal, 0) * 100) / 100,
       bestDay: Math.max(0, ...[...days.values()].map(day => day.count)) },
-    activity: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)), recentCheckouts: records };
+    activity: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)), recentCheckouts: records, checkouts: records };
 }
 
 export function createDemoMiddleware({ authenticate, verifyPassword, setSession, clearSession, loginRateLimit, sendTestNotification }) {
