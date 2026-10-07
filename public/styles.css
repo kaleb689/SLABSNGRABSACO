@@ -12554,3 +12554,43 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   #my-profile .success-shipping-timeline { overflow-x:auto; grid-template-columns:repeat(5,minmax(90px,1fr)); padding-bottom:5px; }
   #my-profile .success-shipping-details { grid-template-columns:1fr; }
 }
+
+
+/* Ultimate membership — diamond + crown treatment */
+.plan[data-tier="8"] {
+  border-color: rgba(202, 244, 255, .85);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255,255,255,.16), transparent 32%),
+    linear-gradient(145deg, #081722, #0c2633 48%, #061019);
+  box-shadow: inset 0 0 34px rgba(171,239,255,.08), 0 0 24px rgba(148,226,255,.18);
+}
+.plan[data-tier="8"] .plan-name,
+.customer-tier-color-8 {
+  background: linear-gradient(105deg, #ffffff 5%, #9deaff 23%, #ffffff 40%, #b9d7ff 57%, #ffffff 72%, #8de9ff 92%);
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 18px rgba(183,239,255,.45);
+  font-weight: 950;
+  letter-spacing: 1.2px;
+}
+.plan[data-tier="8"] .plan-name {
+  font-size: 17px;
+}
+.ultimate-crown {
+  display: inline-block;
+  margin-right: 7px;
+  color: #f8fdff;
+  -webkit-text-fill-color: #f8fdff;
+  text-shadow: 0 0 8px #fff, 0 0 18px #91eaff;
+  transform: translateY(-1px);
+}
+.membership-status.customer-tier-status-8 {
+  color: #eaffff !important;
+  border-color: #a9eaff !important;
+  background: linear-gradient(135deg, #10232d, #07131b) !important;
+  box-shadow: inset 0 0 14px rgba(181,239,255,.12), 0 0 14px rgba(130,224,255,.18);
+  text-shadow: 0 0 10px rgba(210,248,255,.7);
+}
