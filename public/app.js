@@ -9,6 +9,8 @@ const PLANS = {
   8: { name: "Ultimate", profiles: 100, amount: 800 }
 };
 
+const CUSTOMER_RENTALS_ENABLED = false;
+
 const RENTAL_PRICING = {
   1: {},
   5: { "1_drop": 10, "1_week": 25, "1_month": 60 },
@@ -30,7 +32,7 @@ const SUCCESS_DEMO_MODE = ADMIN_PREVIEW_PARAMS.get("successDemo") === "1";
 
 const ADMIN_PREVIEW_TIER =
   Math.min(
-    7,
+    8,
     Math.max(
       1,
       Number(
@@ -229,22 +231,16 @@ accountStats: {
 }
 };
 
-try {
-  const savedRentalCart =
-    JSON.parse(
-      localStorage.getItem(
-        "sng_rental_cart"
-      ) || "null"
-    );
-
-  if (savedRentalCart) {
-    state.rentalCart =
-      savedRentalCart;
+if (!CUSTOMER_RENTALS_ENABLED) {
+  state.rentalCart = null;
+  localStorage.removeItem("sng_rental_cart");
+} else {
+  try {
+    const savedRentalCart = JSON.parse(localStorage.getItem("sng_rental_cart") || "null");
+    if (savedRentalCart) state.rentalCart = savedRentalCart;
+  } catch {
+    localStorage.removeItem("sng_rental_cart");
   }
-} catch {
-  localStorage.removeItem(
-    "sng_rental_cart"
-  );
 }
 
 /* =====================================================
@@ -1178,7 +1174,9 @@ function updateCart() {
       : null;
 
   const rental =
-    state.rentalCart;
+    CUSTOMER_RENTALS_ENABLED
+      ? state.rentalCart
+      : null;
 
   const itemCount =
     (plan ? 1 : 0) +
@@ -10950,6 +10948,7 @@ async function loadManagedMemberships() {
         : [];
 
     state.rentedMemberships =
+      CUSTOMER_RENTALS_ENABLED &&
       Array.isArray(
         rentedData.memberships
       )
