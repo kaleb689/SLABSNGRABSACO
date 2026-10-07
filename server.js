@@ -1,4 +1,5 @@
 import express from "express";
+import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
@@ -4702,6 +4703,8 @@ async function getAuthenticatedCustomer(
     return null;
   }
 
+  if (session.accountId === DEMO_ID) return session.version === 1 ? demoAccount() : null;
+
   const accounts =
     await getCustomerAccounts();
 
@@ -7988,6 +7991,13 @@ app.use(
   "/api",
   rejectUnsafeJsonKeys
 );
+
+app.use(createDemoMiddleware({
+  authenticate: getAuthenticatedCustomer, verifyPassword: verifyCustomerPassword,
+  setSession: setCustomerSession, clearSession: clearCustomerSession,
+  loginRateLimit: customerAuthRateLimit,
+  sendTestNotification: (id, note) => appOrderNotifications.sendDemoNotification(id, note)
+}));
 
 
 /*

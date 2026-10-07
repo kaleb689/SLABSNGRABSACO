@@ -12253,6 +12253,11 @@ body.success-demo-body #account-tab-success .success-recent-card { background: t
   padding: 24px;
 }
 
+#app-demo-tools { padding: 20px; margin-bottom: 20px; border: 1px solid #19caff; border-radius: 16px; background: rgba(8, 23, 35, .9); overflow-wrap: anywhere; }
+#app-demo-tools p { color: #bcd0dc; }
+.app-demo-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.app-demo-actions button { max-width: 100%; }
+
 /* Keep paid profile names and controls clear of the three status badges. */
 #account-tab-edit-profile .paid-profile-card .profile-compact-main {
   grid-template-columns: minmax(0, 1fr);

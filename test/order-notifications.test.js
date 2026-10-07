@@ -15,6 +15,20 @@ async function fixture(t, original = []) {
   f.service = createOrderNotifications(f.options); await f.service.initialize();
   return f;
 }
+test('demo pushes reach only demo subscribers and respect notification categories', async t => {
+  const f = await fixture(t);
+  await f.service.subscribe('a', subscription);
+  const demoSubscription = { ...subscription, endpoint: 'https://fcm.googleapis.com/fcm/send/demo' };
+  await f.service.subscribe('APP-DEMO-CUSTOMER', demoSubscription);
+  const note = { id: 'demo-note', kind: 'order_confirmed', title: 'Demo order', message: 'Sample only.' };
+  await assert.rejects(f.service.sendDemoNotification('a', note));
+  assert.equal((await f.service.sendDemoNotification('APP-DEMO-CUSTOMER', note)).sent, 1);
+  assert.equal(f.sent[0].endpoint, demoSubscription.endpoint);
+  assert.equal((await f.service.list('a')).length, 0);
+  await f.service.setPreferences('APP-DEMO-CUSTOMER', { orders: false });
+  assert.equal((await f.service.sendDemoNotification('APP-DEMO-CUSTOMER', note)).sent, 0);
+  assert.equal(f.sent.length, 1);
+});
 test('cancelled orders and non-successful attempts never create alerts', () => {
   for (const override of [{ status: 'cancelled' }, { status: 'canceled' }, { cancelledAt: 'today' }, { status: 'pending' }, { status: 'failed' }]) {
     assert.deepEqual(orderEvents(order('one', { ...override, shipping: { status: 'shipped' } })), []);
