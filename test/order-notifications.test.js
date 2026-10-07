@@ -88,3 +88,11 @@ test('an order first seen pending alerts when confirmation arrives', async t => 
   assert.equal(f.sent.length, 1); assert.equal(f.sent[0].title, 'Order confirmed');
   await f.service.tick(); assert.equal(f.sent.length, 1);
 });
+test('Action Needed pushes ignore timestamp churn and notify only on content changes, including after restart', async t => {
+  const f = await fixture(t); await f.service.subscribe('a',subscription);
+  const note={id:'action',kind:'missing_info',title:'Action Needed',message:'Add address',missingItems:['Address'],updatedAt:'one'};
+  f.accounts[0].notifications.push(note);await f.service.tick();assert.equal(f.sent.length,1);
+  note.updatedAt='two';await f.service.tick();assert.equal(f.sent.length,1);
+  f.service=createOrderNotifications(f.options);await f.service.initialize();note.updatedAt='three';await f.service.tick();assert.equal(f.sent.length,1);
+  note.message='Add payment card';note.missingItems=['Card'];await f.service.tick();assert.equal(f.sent.length,2);
+});

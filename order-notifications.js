@@ -46,6 +46,9 @@ export function notificationCategory(event) {
   if (/admin_message|missing|action_needed|setup_complete/.test(event.kind || "")) return "messages";
   return "account";
 }
+export function accountNoticeFingerprint(event) {
+  return 'content:' + JSON.stringify([event.kind, event.title, event.message, [...(event.missingItems || [])].sort()]);
+}
 export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAccounts, getAccountUpdates = async () => [], sendPush = webpush.sendNotification.bind(webpush) }) {
   const storePath = path.join(dataDir, "app-order-notifications.json");
   const keysPath = path.join(dataDir, "app-push-vapid.json");
@@ -85,7 +88,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
     }
   }
   function accountEventSnapshot(account) {
-    return { notices: Object.fromEntries((account.notifications || []).map(event => [event.id, event.updatedAt || event.createdAt])),
+    return { notices: Object.fromEntries((account.notifications || []).map(event => [event.id, accountNoticeFingerprint(event)])),
       verified: Boolean(account.emailVerifiedAt), disabled: Boolean(account.disabled) };
   }
   function membershipSnapshot(item) {
@@ -103,7 +106,9 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         const next = accountEventSnapshot(account);
         if (previous) {
           for (const notification of account.notifications || []) {
-            if (previous.notices[notification.id] === (notification.updatedAt || notification.createdAt)) continue;
+            const old = previous.notices[notification.id];
+            // Migrate old timestamp snapshots without replaying existing alerts.
+            if (old === accountNoticeFingerprint(notification) || (old && !old.startsWith('content:'))) continue;
             enqueue(account.id, { ...notification, tab: "notifications" });
           }
           if (previous.verified !== next.verified) {

@@ -53,3 +53,24 @@ test('app data includes orders beyond the legacy 20-item carousel limit', () => 
   assert.equal(sandbox.legacy.checkouts, undefined);
   assert.equal(sandbox.app.checkouts.length, 35);
 });
+test('24 hours is rolling and YTD includes January while excluding future and cancelled orders', () => {
+  const orders = ['2026-10-06T11:59:59Z','2026-10-06T12:00:00Z','2026-10-07T11:00:00Z','2026-01-01T12:00:00Z','2025-12-31T12:00:00Z','2026-10-08T00:00:00Z'].map((checkoutAt,i) => ({id:i,checkoutAt,status:'confirmed',orderTotal:10}));
+  assert.equal(selectedOrders(orders,1,now).length,2);
+  assert.equal(selectedOrders(orders,'ytd',now).length,4);
+  for (const period of [1,'ytd']) {
+    const records = selectedOrders(orders,period,now);
+    assert.equal(dashboardActivity(records,period,now).reduce((sum,b) => sum+b.count,0),records.length);
+  }
+});
+test('popup deduplication survives reloads and is scoped to customer and meaningful content', () => {
+  const source = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const segment = source.slice(source.indexOf('const shownCustomerNotifications'),source.indexOf('function showCustomerNotificationPopup('));
+  const saved = new Map();
+  const sandbox = {state:{customer:{id:'a'}},localStorage:{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)}};
+  const note = {id:'one',kind:'missing_info',message:'Add address',missingItems:['Address']};
+  sandbox.note=note;vm.runInNewContext(segment+';first=claimCustomerNotification(note);second=claimCustomerNotification({...note,updatedAt:"changed"});',sandbox);
+  assert.equal(sandbox.first,true);assert.equal(sandbox.second,false);
+  const reloaded={...sandbox};vm.runInNewContext(segment+';again=claimCustomerNotification(note);',reloaded);assert.equal(reloaded.again,false);
+  sandbox.state.customer.id='b';vm.runInNewContext('other=claimCustomerNotification(note);',sandbox);assert.equal(sandbox.other,true);
+  sandbox.note={...note,message:'Add card'};vm.runInNewContext('changed=claimCustomerNotification(note);',sandbox);assert.equal(sandbox.changed,true);
+});

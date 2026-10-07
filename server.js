@@ -12993,6 +12993,9 @@ async function syncCustomerMissingNotification(
       "\n• "
     )}`;
 
+  if (existing && existing.message === message && JSON.stringify(existing.missingItems) === JSON.stringify(missing)) {
+    return { account, missing, checklist };
+  }
   if (existing) {
     existing.message =
       message;
@@ -46658,13 +46661,13 @@ const rangeDays =
 */
 if (
   rangeDays < 1 ||
-  rangeDays > 180
+  rangeDays > (req.query.appView === "1" ? 366 : 180)
 ) {
   return res
     .status(400)
     .json({
       error:
-        "Choose a date range of 180 days or less."
+        `Choose a date range of ${req.query.appView === "1" ? 366 : 180} days or less.`
     });
 }
 
