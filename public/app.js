@@ -5,7 +5,8 @@ const PLANS = {
   4: { name: "Pro", profiles: 5, amount: 70 },
   5: { name: "High Volume", profiles: 10, amount: 120 },
   6: { name: "Power User", profiles: 20, amount: 225 },
-  7: { name: "Elite", profiles: 50, amount: 435 }
+  7: { name: "Elite", profiles: 50, amount: 435 },
+  8: { name: "Ultimate", profiles: 100, amount: 800 }
 };
 
 const RENTAL_PRICING = {
@@ -586,6 +587,7 @@ function pricingCardsHtml() {
           }
 
           <span class="plan-name">
+            ${tierNumber === 8 ? '<span class="ultimate-crown" aria-hidden="true">♛</span>' : ""}
             ${escapeHtml(plan.name)}
           </span>
 
@@ -599,13 +601,11 @@ function pricingCardsHtml() {
           </h3>
 
           <p class="plan-description">
-            ${plan.profiles}
-            ${
-              plan.profiles === 1
-                ? "profile"
-                : "profiles"
-            }
-            at each supported retailer.
+            ${tierNumber === 7
+              ? "50 Walmart, Target and PKC profiles are automatically added to users profile page."
+              : tierNumber === 8
+                ? "100 Walmart, Target and PKC profiles are automatically added to users profile page."
+                : `${plan.profiles} ${plan.profiles === 1 ? "profile" : "profiles"} at each supported retailer.`}
           </p>
 
           <p class="plan-login-note">
