@@ -14619,6 +14619,23 @@ await loadManagedAvailabilityCustomer();
 
 await loadSavedDetails();
 
+if (
+  state.customer &&
+  !state.customer.checkoutOnboardingComplete &&
+  !ADMIN_PREVIEW_MODE
+) {
+  const hasAddress =
+    (state.savedDetails?.addresses || []).length > 0;
+  const hasCard =
+    (state.savedDetails?.paymentMethods || []).length > 0;
+
+  if (!hasAddress) {
+    openAccountCheckoutOnboarding("address");
+  } else if (!hasCard) {
+    openAccountCheckoutOnboarding("card");
+  }
+}
+
 renderOrders(
   state.orders
 );
