@@ -14667,6 +14667,8 @@ renderOrders(
       state.orders
     );
 
+    document.dispatchEvent(new CustomEvent("account-data-updated"));
+
 } catch (error) {
   state.profileLoaded =
     false;
@@ -15050,7 +15052,9 @@ function renderSetupChecklist() {
   const panel = document.getElementById("setup-checklist-panel");
   if (!panel) return;
   const tasks = state.customerChecklist || [];
-  panel.hidden = !state.customer || !tasks.length || !document.getElementById("my-profile")?.classList.contains("active");
+  const incomplete = tasks.some(item => !item.complete);
+  const appProfileVisible = !document.body.classList.contains("app-dashboard") || document.body.dataset.appView === "profile";
+  panel.hidden = !state.customer || !incomplete || !appProfileVisible || !document.getElementById("my-profile")?.classList.contains("active");
   if (panel.hidden) return;
   const complete = tasks.filter(item => item.complete).length;
   const percent = Math.round(complete / tasks.length * 100);
@@ -15265,6 +15269,8 @@ async function loadCustomerNotifications(
     updateCustomerNotificationIndicator(
       notifications.length
     );
+
+    document.dispatchEvent(new CustomEvent("account-notifications-updated"));
 
     const list =
       document.getElementById(

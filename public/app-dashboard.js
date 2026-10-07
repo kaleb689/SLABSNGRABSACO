@@ -1,0 +1,161 @@
+import { shippingStage, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity } from './app-dashboard-data.js';
+
+const appEnabled = window.self === window.top && (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true ||
+  (new URLSearchParams(location.search).get('appPreview') === '1' && ADMIN_PREVIEW_MODE));
+if (appEnabled) {
+  const icons = {
+    home: '<path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z"/>',
+    tracking: '<path d="m5 5-3 7v8h3v-3h14v3h3v-8l-3-7zM2 12h20M6 14h1m10 0h1"/>',
+    notifications: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="m2 6 10 8L22 6"/>',
+    products: '<rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V3h8v4M3 12h18"/>',
+    history: '<path d="M3 21h18M5 21V12h3v9m3 0V5h3v16m3 0V8h3v13"/>',
+    profile: '<circle cx="12" cy="7" r="4"/><path d="M4 22v-3a8 8 0 0 1 16 0v3"/>',
+    settings: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/>'
+  };
+  const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
+  const labels = { home: 'Home', tracking: 'Tracking', notifications: 'Notifications', products: 'Products', history: 'History', profile: 'Profile' };
+  const stageLabels = { ordered: 'Ordered', shipped: 'Shipped', in_transit: 'In transit', out_for_delivery: 'Out for delivery', delivered: 'Delivered', cancelled: 'Cancelled' };
+  const e = value => escapeHtml(String(value ?? ''));
+  const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) || 0);
+  const dateLabel = value => value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Pending';
+  let view = ({ success: 'home', membership: 'profile', notifications: 'notifications' })[new URLSearchParams(location.search).get('appTab')] || 'home';
+  let days = 30, status = 'all', query = '', orders = [], busy = false, queued = false, error = '', accountId = null;
+  let profileTab = 'membership', stream = null;
+  const expanded = new Set();
+  const root = document.createElement('div');
+  root.id = 'app-dashboard'; root.hidden = true;
+  root.innerHTML = `<header class="sng-app-header"><div class="sng-app-brand"><img src="/slabsngrabs-aco-logo-transparent.png" alt=""><div><strong>SLABSNGRABSACO</strong><span id="sng-app-title"></span></div></div>
+    <div class="sng-app-header-actions"><button type="button" data-app-settings aria-label="Notification settings">${icon('settings')}</button><button type="button" data-app-view="notifications" aria-label="Notifications">${icon('notifications')}<span id="sng-app-unread" hidden></span></button></div></header>
+    <div id="sng-app-content"></div><nav class="sng-app-nav" aria-label="App navigation">${Object.entries(labels).map(([id, label]) => `<button type="button" data-app-view="${id}" aria-label="${label}">${icon(id)}<span>${label}</span></button>`).join('')}</nav>`;
+  document.getElementById('customer-dashboard').before(root);
+  document.body.classList.add('app-dashboard');
+  document.body.dataset.appView = view;
+
+  const rangeButtons = () => `<div class="sng-range" role="group" aria-label="Date range">${[7, 30, 90, 180].map(n => `<button type="button" data-app-days="${n}" aria-pressed="${n === days}">${n === 180 ? '6M' : `${n}D`}</button>`).join('')}<span>Last ${days} days</span></div>`;
+  const metric = (label, value, tone = '') => `<div class="sng-metric ${tone}"><span>${e(label)}</span><strong>${e(value)}</strong></div>`;
+  const hero = (label, value, note, tone = '') => {
+    const activity = dashboardActivity(selectedOrders(orders, days), days);
+    const max = Math.max(1, ...activity.map(day => day.value));
+    const path = activity.map((day, i) => `${i ? 'L' : 'M'}${i / Math.max(1, activity.length - 1) * 300} ${50 - day.value / max * 43}`).join(' ');
+    return `<section class="sng-hero ${tone}"><div>${e(label)}</div><strong>${e(value)}</strong><p>${e(note)}</p><svg viewBox="0 0 300 55" preserveAspectRatio="none" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="2"/></svg></section>`;
+  };
+  const image = product => {
+    const url = String(product?.imageUrl || '');
+    const safe = /^(https:\/\/|\/(?!\/))/.test(url);
+    return safe ? `<img src="${e(url)}" alt="" loading="lazy">` : '<span class="sng-image-placeholder">◇</span>';
+  };
+  const productRows = products => products.map((product, index) => `<article class="sng-product-row"><div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong>${money(product.value)}</strong><small>VALUE</small></div></article>`).join('') || '<p class="sng-empty">No products in this date range.</p>';
+  function orderRows(records, tracking = false) {
+    return records.map(order => {
+      const stage = shippingStage(order), item = order.items?.[0] || {}, shipping = order.shipping || {};
+      const steps = ['ordered', 'shipped', 'in_transit', 'delivered'];
+      const step = stage === 'out_for_delivery' ? 2 : steps.indexOf(stage);
+      const address = shipping.address || {};
+      const trackingUrl = /^https:\/\//i.test(shipping.trackingUrl || '') ? shipping.trackingUrl : '';
+      return `<details class="sng-order-card stage-${stage}" data-order-id="${e(order.id || order.orderNumber)}" ${expanded.has(order.id || order.orderNumber) ? 'open' : ''}>
+        <summary><div class="sng-product-image">${image(item)}</div><div class="sng-row-main"><strong>${e(item.name || `${order.retailer} order`)}</strong><small>${e(order.retailer)} · ${dateLabel(order.checkoutAt)} · ${Number(order.itemCount) || 0} items</small></div><div class="sng-row-value"><strong>${money(order.orderTotal)}</strong><small class="sng-stage">● ${stageLabels[stage]}</small></div></summary>
+        ${tracking ? `<div class="sng-shipping-steps">${steps.map((s, i) => `<span class="${i <= step ? 'done' : ''}">${stageLabels[s]}</span>`).join('')}</div><p class="sng-delivery">${stage === 'delivered' ? 'Delivered' : 'Expected delivery'} · ${e(shipping.estimatedDelivery || 'Waiting for carrier update')}</p>` : ''}
+        <div class="sng-order-details"><span>Order ${e(order.orderNumber || '—')}</span>${(order.items || []).map(product => `<p>${e(product.name)} × ${Number(product.quantity) || 1}</p>`).join('')}
+        <p>${e(shipping.carrier || 'Carrier pending')}${shipping.trackingNumber ? ` · ${e(shipping.trackingNumber)}` : ''}</p>
+        ${trackingUrl ? `<a href="${e(trackingUrl)}" target="_blank" rel="noopener noreferrer">Track with carrier ↗</a>` : ''}
+        ${address.address ? `<p>${e([address.name, address.address, address.address2, address.city, address.state, address.zip].filter(Boolean).join(', '))}</p>` : ''}</div></details>`;
+    }).join('') || '<p class="sng-empty">No orders match this view.</p>';
+  }
+  function bars(records) {
+    const activity = dashboardActivity(records, days);
+    const max = Math.max(1, ...activity.map(day => day.value));
+    return `<div class="sng-bar-chart" role="img" aria-label="Order value over the last ${days} days">${activity.map(day => `<div class="sng-bar-column" title="${e(day.date)}: ${day.count} orders, ${money(day.value)}"><div class="sng-bar" style="height:${Math.max(day.value ? 4 : 0, day.value / max * 100)}%"></div></div>`).join('')}</div><div class="sng-chart-axis"><span>${dateLabel(activity[0]?.date + 'T12:00:00')}</span><span>${dateLabel(activity.at(-1)?.date + 'T12:00:00')}</span></div>`;
+  }
+  function render() {
+    if (!state.customer) { root.hidden = true; document.body.classList.remove('app-signed-in'); orders = []; accountId = null; stream?.close(); stream = null; return; }
+    root.hidden = false; document.body.classList.add('app-signed-in'); document.body.dataset.appView = view;
+    document.getElementById('sng-app-title').textContent = labels[view].toUpperCase();
+    const unread = state.customerNotifications?.length || 0;
+    const badge = document.getElementById('sng-app-unread'); badge.hidden = !unread; badge.textContent = unread;
+    root.querySelectorAll('[data-app-view]').forEach(button => {
+      button.classList.toggle('active', button.dataset.appView === view);
+      button.setAttribute('aria-pressed', String(button.dataset.appView === view));
+    });
+    const records = selectedOrders(orders, days), totals = dashboardTotals(records), products = dashboardProducts(records);
+    const content = document.getElementById('sng-app-content');
+    const currentFocus = document.activeElement?.id, cursor = document.activeElement?.selectionStart;
+    const common = rangeButtons() + (state.customer.demo || ADMIN_PREVIEW_MODE ? '<div class="sng-demo-label">DEMO · Sample account</div>' : '') + (error ? `<p class="sng-error" role="status">${e(error)} <button type="button" data-app-refresh>Retry</button></p>` : '') + (busy && !accountId ? '<p class="sng-demo-label" role="status">Loading your checkout data…</p>' : '');
+    let html = '';
+    if (view === 'home') html = common + hero('TOTAL CHECKOUT VALUE', money(totals.spend), `${totals.orders} orders · ${totals.items} items secured · ${state.membership?.name || state.membership?.planName || 'Member'}`) +
+      `<button class="sng-arrival" type="button" data-app-view="tracking">${icon('tracking')}<span><strong>${records.filter(r => shippingStage(r) === 'out_for_delivery').length} packages out for delivery</strong><small>View your shipping tracker</small></span><b>›</b></button>` +
+      `<div class="sng-metrics three">${metric('ORDERS', totals.orders)}${metric('IN TRANSIT', totals.transit, 'cyan')}${metric('DELIVERED', totals.delivered, 'green')}</div><div class="sng-section-title"><h2>Top products</h2><button type="button" data-app-view="products">View all</button></div>${productRows(products.slice(0, 3))}<div class="sng-section-title"><h2>Recent orders</h2><button type="button" data-app-view="tracking">Track all</button></div>${orderRows(records.slice(0, 5))}`;
+    if (view === 'tracking') html = common + hero('IN TRANSIT', `${totals.transit} packages`, `${totals.awaiting} awaiting shipment · ${totals.delivered} delivered`, 'orange') +
+      `<label class="sng-search">Search retailer, product or tracking number<input id="sng-search" value="${e(query)}" placeholder="Search packages" type="search"></label><div class="sng-status-filters" role="group" aria-label="Shipping status">${['all', 'ordered', 'shipped', 'in_transit', 'out_for_delivery', 'delivered'].map(s => `<button type="button" data-app-status="${s}" aria-pressed="${s === status}">${s === 'all' ? 'All' : stageLabels[s]} <span>${s === 'all' ? records.length : records.filter(r => shippingStage(r) === s).length}</span></button>`).join('')}</div><div class="sng-section-title"><h2>Packages</h2><span>Live updates</span></div><div id="sng-search-results"></div>`;
+    if (view === 'products') html = common + `<div class="sng-segment-label">PRODUCTS SECURED</div>` + hero('PRODUCT VALUE', money(totals.spend), `${totals.items} items · ${products.length} products`, 'pink') +
+      `<div class="sng-section-title"><h2>Metrics</h2></div><div class="sng-metrics">${metric('TOTAL QUANTITY', totals.items)}${metric('DELIVERED ORDERS', totals.delivered)}${metric('IN TRANSIT', totals.transit)}${metric('AWAITING SHIPMENT', totals.awaiting)}${metric('ORDER VALUE', money(totals.spend))}${metric('PRODUCTS', products.length)}</div><label class="sng-search">Search products<input id="sng-search" value="${e(query)}" placeholder="Search products" type="search"></label><div class="sng-section-title"><h2>Products <span>${products.length}</span></h2></div><div id="sng-search-results"></div>`;
+    if (view === 'history') html = common + hero('ORDER HISTORY', money(totals.spend), `${totals.orders} successful checkouts`, 'violet') +
+      `<div class="sng-metrics">${metric('ITEMS SECURED', totals.items)}${metric('AVERAGE ORDER', money(totals.orders ? totals.spend / totals.orders : 0))}</div><section class="sng-chart-card"><div class="sng-section-title"><h2>Checkout value</h2><span>${days > 30 ? 'Grouped by period' : 'Daily'}</span></div>${bars(records)}</section><div class="sng-section-title"><h2>Order history</h2></div>${orderRows(records)}`;
+    if (view === 'home') html += `<div class="sng-section-title"><h2>Community checkouts</h2><span>SLABSNGRABSACO</span></div><div class="sng-metrics">${metric('TOTAL CHECKOUTS', document.getElementById('public-success-checkouts')?.textContent || '—')}${metric('CHECKOUT VALUE', document.getElementById('public-success-spent')?.textContent || '—')}</div>`;
+    if (view === 'notifications') html = `<div class="sng-page-intro"><h1>Notifications</h1><p>Orders, shipping and messages from SLABSNGRABSACO.</p></div>`;
+    if (view === 'profile') html = `<div class="sng-page-intro"><h1>My profile</h1><p>Your tier, saved information and account settings.</p></div><div class="sng-profile-menu" role="group" aria-label="Profile sections">${[['membership', 'Membership'], ['edit-profile', 'Saved info'], ['orders', 'Billing orders'], ['security', 'Security']].map(([id, label]) => `<button type="button" data-profile-tab="${id}" aria-pressed="${profileTab === id}">${label}</button>`).join('')}</div>`;
+    content.innerHTML = html;
+    renderSearch();
+    if (currentFocus === 'sng-search') { const input = document.getElementById(currentFocus); input?.focus({ preventScroll: true }); if (input && cursor !== null) input.setSelectionRange(cursor, cursor); }
+    renderSetupChecklist();
+  }
+  function renderSearch() {
+    const target = document.getElementById('sng-search-results'); if (!target) return;
+    const records = selectedOrders(orders, days), needle = query.toLowerCase();
+    target.innerHTML = view === 'products' ? productRows(dashboardProducts(records).filter(p => `${p.name} ${p.retailer}`.toLowerCase().includes(needle))) :
+      orderRows(records.filter(order => (status === 'all' || shippingStage(order) === status) && `${order.retailer} ${order.orderNumber} ${order.shipping?.trackingNumber || ''} ${(order.items || []).map(p => p.name).join(' ')}`.toLowerCase().includes(needle)), true);
+  }
+  function setView(next) {
+    if (!labels[next]) return;
+    view = next; query = ''; document.body.dataset.appView = view;
+    if (location.hash !== '#my-profile') go('my-profile');
+    if (view === 'notifications') document.querySelector('button[data-account-tab="notifications"]')?.click();
+    if (view === 'profile') document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click();
+    render(); window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+  root.addEventListener('click', event => {
+    const button = event.target.closest('button'); if (!button) return;
+    if (button.dataset.appView) setView(button.dataset.appView);
+    if (button.dataset.appDays) { days = Number(button.dataset.appDays); render(); }
+    if (button.dataset.appStatus) { status = button.dataset.appStatus; render(); }
+    if (button.dataset.profileTab) { profileTab = button.dataset.profileTab; document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click(); render(); }
+    if (button.hasAttribute('data-app-settings')) document.getElementById('account-notification-settings')?.click();
+    if (button.hasAttribute('data-app-refresh')) void refresh();
+  });
+  root.addEventListener('input', event => { if (event.target.id === 'sng-search') { query = event.target.value; renderSearch(); } });
+  root.addEventListener('toggle', event => { if (event.target.matches('details[data-order-id]')) { const id = event.target.dataset.orderId; event.target.open ? expanded.add(id) : expanded.delete(id); } }, true);
+  async function refresh() {
+    if (!state.customer || document.hidden) return render();
+    if (busy) { queued = true; return; }
+    const id = state.customer.id; busy = true;
+    try {
+      if (ADMIN_PREVIEW_MODE) orders = adminPreviewSuccessData().recentCheckouts;
+      else {
+        const end = new Date(), start = new Date(); start.setUTCDate(start.getUTCDate() - 179);
+        const response = await fetch(`/api/account/success?appView=1&start=${start.toISOString().slice(0, 10)}&end=${end.toISOString().slice(0, 10)}`, { credentials: 'same-origin', cache: 'no-store' });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || 'Unable to refresh order data.');
+        if (state.customer?.id !== id) return;
+        orders = Array.isArray(data.checkouts) ? data.checkouts : data.recentCheckouts || [];
+      }
+      error = ''; accountId = id;
+    } catch (failure) { error = failure.message; }
+    finally { busy = false; render(); if (queued) { queued = false; void refresh(); } }
+  }
+  function connect() {
+    if (!state.customer || document.hidden || ADMIN_PREVIEW_MODE) { stream?.close(); stream = null; return; }
+    if (stream) return;
+    stream = new EventSource('/api/account/success/events');
+    stream.addEventListener('checkout', () => void refresh());
+    stream.addEventListener('open', () => void refresh());
+  }
+  document.addEventListener('account-session-changed', () => { render(); connect(); if (state.customer && state.customer.id !== accountId) void refresh(); });
+  document.addEventListener('account-data-updated', () => { render(); void refresh(); });
+  document.addEventListener('account-notifications-updated', render);
+  document.addEventListener('visibilitychange', () => { connect(); if (!document.hidden) void refresh(); });
+  window.addEventListener('pageshow', () => { connect(); void refresh(); });
+  window.addEventListener('pagehide', () => { stream?.close(); stream = null; });
+  document.getElementById('app-demo-tools')?.addEventListener('click', () => setTimeout(() => void refresh(), 800));
+  document.addEventListener('click', event => { if (event.target.closest('[data-demo-event]')) setTimeout(() => void refresh(), 800); });
+  setInterval(() => { if (!document.hidden && state.customer) void refresh(); }, 30000);
+  render(); connect(); void refresh();
+}
