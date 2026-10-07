@@ -6965,7 +6965,7 @@ function renderOrder(x) {
                 `
                 : ""
             }
-            ${x.customerAccountId ? `<button type="button" class="admin-view-customer-button" data-view-as-user="${escapeHtml(x.customerAccountId)}" title="Open this customer's page">VIEW CUSTOMER PAGE ↗</button>` : ""}
+            ${`<button type="button" class="admin-view-customer-button" data-view-as-user="${escapeHtml(x.customerAccountId || x.id)}" title="Open this customer's page">VIEW CUSTOMER PAGE ↗</button>`}
           </div>
 
           <small>
@@ -7387,7 +7387,7 @@ function renderOrder(x) {
               <small data-admin-og-feedback role="status"></small>
             </section>` : ""}
 
-            ${x.customerAccountId ? `<section class="customer-action-card"><span class="eyebrow">CUSTOMER VIEW</span><h4>View as User</h4><p>Open this customer's real page exactly as their account currently appears. Preview mode is read-only.</p><button type="button" class="admin-save-button" data-view-as-user="${escapeHtml(x.customerAccountId)}">View as User ↗</button><small data-view-as-user-feedback role="status"></small></section>` : ""}
+            ${`<section class="customer-action-card"><span class="eyebrow">CUSTOMER VIEW</span><h4>View as User</h4><p>Open this customer's real page exactly as their account currently appears. Preview mode is read-only.</p><button type="button" class="admin-save-button" data-view-as-user="${escapeHtml(x.customerAccountId || x.id)}">VIEW CUSTOMER PAGE ↗</button><small data-view-as-user-feedback role="status"></small></section>`}
             ${x.customerAccountId ? `<section class="customer-action-card" data-admin-password-account="${escapeHtml(x.customerAccountId)}">
               <span class="eyebrow">CUSTOMER WEBSITE LOGIN</span>
               <h4>Reset Customer Password</h4>

@@ -9001,10 +9001,41 @@ async function discordServerMember(username, userId) {
 
 app.post("/api/admin/customers/:id/view-as-user", requireAdmin, async (req, res) => {
   const accounts = await getCustomerAccounts();
-  const account = accounts.find(item => String(item.id) === String(req.params.id));
+  let account = accounts.find(item =>
+    String(item.id) === String(req.params.id) &&
+    item.disabled !== true
+  );
 
-  if (!account || account.disabled === true) {
-    return res.status(404).json({ error: "Customer account not found." });
+  // Admin cards may represent legacy orders created before customerAccountId
+  // existed. Resolve those by the order's exact purchase/account email.
+  if (!account) {
+    const paid = await readJson(PAID_FILE, []);
+    const order = (Array.isArray(paid) ? paid : []).find(item =>
+      String(item.id) === String(req.params.id)
+    );
+
+    if (order?.customerAccountId) {
+      account = accounts.find(item =>
+        String(item.id) === String(order.customerAccountId) &&
+        item.disabled !== true
+      );
+    }
+
+    if (!account) {
+      const email = normalizeEmail(order?.profile?.email);
+      const matches = accounts.filter(item =>
+        item.disabled !== true &&
+        email &&
+        normalizeEmail(item.email) === email
+      );
+      if (matches.length === 1) account = matches[0];
+    }
+  }
+
+  if (!account) {
+    return res.status(404).json({
+      error: "No website account could be matched to this customer yet."
+    });
   }
 
   setAdminCustomerPreviewSession(res, account);
@@ -16104,20 +16135,34 @@ app.get(
       let paidChanged =
         false;
 
-      // Repair older guest checkouts only when the purchase email belongs
-      // to a verified website account. Never overwrite an existing owner.
-      const verifiedAccountsByEmail = new Map(
+      // Resolve the website account for every admin order. Keep an existing
+      // valid linked account first; older records fall back to an exact
+      // website-account email match. This powers the real read-only customer
+      // preview and never uses the generic ADMIN-PREVIEW sandbox.
+      const enabledAccountsById = new Map(
         customerAccounts
-          .filter(account => account.emailVerifiedAt && account.disabled !== true)
-          .map(account => [normalizeEmail(account.email), account])
+          .filter(account => account.disabled !== true)
+          .map(account => [String(account.id), account])
       );
+      const enabledAccountsByEmail = new Map();
+      for (const account of customerAccounts.filter(account => account.disabled !== true)) {
+        const email = normalizeEmail(account.email);
+        if (!email) continue;
+        const matches = enabledAccountsByEmail.get(email) || [];
+        matches.push(account);
+        enabledAccountsByEmail.set(email, matches);
+      }
       for (const record of records) {
-        if (record.customerAccountId) continue;
-        const account = verifiedAccountsByEmail.get(normalizeEmail(record?.profile?.email));
-        if (!account) continue;
-        record.customerAccountId = account.id;
-        record.customerLinkedAt = new Date().toISOString();
-        record.customerLinkedBy = "verified-email";
+        const linkedAccount = enabledAccountsById.get(String(record.customerAccountId || ""));
+        if (linkedAccount) continue;
+
+        const email = normalizeEmail(record?.profile?.email);
+        const matches = enabledAccountsByEmail.get(email) || [];
+        if (matches.length !== 1) continue;
+
+        record.customerAccountId = matches[0].id;
+        record.customerLinkedAt = record.customerLinkedAt || new Date().toISOString();
+        record.customerLinkedBy = record.customerLinkedBy || "matching-account-email";
         paidChanged = true;
       }
 
