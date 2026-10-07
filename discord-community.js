@@ -224,7 +224,7 @@ const LEVELS = [
   { name: "High Volume", profiles: 10, color: 0xff943d },
   { name: "Power User", profiles: 20, color: 0x45e68b },
   { name: "Elite", profiles: 50, color: 0xff5aa8 },
-  { name: "Ultimate", profiles: 100, color: 0xffd700 }
+  { name: "👑 Ultimate", profiles: 100, color: 0xffd700 }
 ];
 const codeHash = value => crypto.createHash("sha256").update(value).digest("hex");
 const linkFile = dataDir => path.join(dataDir, "discord-link-codes.json");
