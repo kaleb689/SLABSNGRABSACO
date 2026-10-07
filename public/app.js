@@ -16197,3 +16197,33 @@ if (SUCCESS_DEMO_MODE) {
     }
   });
 }
+
+
+// Mobile app shell navigation: keeps the existing single-page routing and customer data intact.
+function syncNativeMobileNav() {
+  const hash = (window.location.hash || "#home").replace("#", "") || "home";
+  document.querySelectorAll(".native-mobile-nav a").forEach(link => {
+    const page = link.dataset.page || "";
+    const successLink = link.dataset.mobileSuccess === "1";
+    const active = successLink
+      ? page === "my-profile" && document.querySelector('[data-account-tab="success"]')?.classList.contains("active")
+      : page === hash && !(page === "my-profile" && document.querySelector('[data-account-tab="success"]')?.classList.contains("active"));
+    link.classList.toggle("active", Boolean(active));
+  });
+}
+
+document.querySelectorAll(".native-mobile-nav a").forEach(link => {
+  link.addEventListener("click", () => {
+    if (link.dataset.mobileSuccess === "1") {
+      window.setTimeout(() => {
+        const successTab = document.querySelector('[data-account-tab="success"]');
+        if (successTab instanceof HTMLElement) successTab.click();
+        syncNativeMobileNav();
+      }, 80);
+    } else {
+      window.setTimeout(syncNativeMobileNav, 80);
+    }
+  });
+});
+window.addEventListener("hashchange", syncNativeMobileNav);
+window.addEventListener("load", syncNativeMobileNav);
