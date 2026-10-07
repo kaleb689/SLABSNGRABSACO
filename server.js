@@ -15854,8 +15854,9 @@ async function saveAdminDiscount(req, res, existingId = null) {
     const appliesToRentals = req.body?.appliesToRentals === true;
     const duration = req.body?.duration === "forever" ? "forever" : "once";
     const sitewide = req.body?.sitewide === true;
+    const ogOnly = req.body?.ogOnly === true;
     const recipientEmail = String(req.body?.recipientEmail || "").trim().toLowerCase();
-    if ((sitewide && recipientEmail) || (recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail))) {
+    if ((sitewide && ogOnly) || ((sitewide || ogOnly) && recipientEmail) || (recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail))) {
       return res.status(400).json({ error: "Choose a sitewide sale or enter a valid recipient email for a private code." });
     }
     const expiration = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
@@ -15888,8 +15889,9 @@ async function saveAdminDiscount(req, res, existingId = null) {
         await stripe.promotionCodes.update(existing.stripePromotionCodeId, { active: false });
         oldPromotionDisabled = true;
       }
-      // Private codes are redeemed only through the authenticated endpoint.
-      promotion = recipientEmail ? null : await stripe.promotionCodes.create({
+      // Private and OG-only discounts are redeemed only through authenticated checkout.
+      // No public Stripe promotion code is created for either restricted audience.
+      promotion = (recipientEmail || ogOnly) ? null : await stripe.promotionCodes.create({
         coupon: coupon.id, code, active: existing ? existing.active : true,
         ...(expiration ? { expires_at: Math.floor(expiration.getTime() / 1000) } : {})
       });
@@ -15907,7 +15909,7 @@ async function saveAdminDiscount(req, res, existingId = null) {
     const discount = {
       id: existing?.id || crypto.randomUUID(), code, percent, tier, appliesToRentals, duration,
       expiresAt: expiration?.toISOString() || null,
-      active: existing ? existing.active : true, sitewide, recipientEmail: recipientEmail || null,
+      active: existing ? existing.active : true, sitewide, ogOnly, recipientEmail: recipientEmail || null,
       stripeCouponId: coupon.id, stripePromotionCodeId: promotion?.id || null,
       createdAt: existing?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -35990,7 +35992,21 @@ app.post(
       const consentFlowId = String(req.body.consentFlowId || "");
       let discountOptions;
       try {
-        discountOptions = membershipDiscountOptions(await getDiscountCodes(), req.body.discountCode, tier, Date.now(), req.customerAccount.email);
+        const paidForOgCheck = await readJson(PAID_FILE, []);
+        const customerPaidForOgCheck = (Array.isArray(paidForOgCheck) ? paidForOgCheck : [])
+          .filter(item => String(item.customerAccountId || "") === String(req.customerAccount.id));
+        const isOgMember =
+          Boolean(req.customerAccount.ogMemberGrantedAt) ||
+          customerHasOgMemberStatus(customerPaidForOgCheck);
+
+        discountOptions = membershipDiscountOptions(
+          await getDiscountCodes(),
+          req.body.discountCode,
+          tier,
+          Date.now(),
+          req.customerAccount.email,
+          isOgMember
+        );
       } catch (error) {
         return res.status(400).json({ error: error.message });
       }
