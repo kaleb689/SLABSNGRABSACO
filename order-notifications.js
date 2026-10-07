@@ -185,6 +185,24 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
   }
   return {
     initialize, reconcile, tick,
+    // The isolated demo uses the same subscriptions and category preferences,
+    // without inserting fake records into the production order event queue.
+    sendDemoNotification: (accountId, notification) => locked(async () => {
+      if (accountId !== "APP-DEMO-CUSTOMER") throw new Error("Demo account required.");
+      if ((state.preferences[accountId] || notificationDefaults)[notificationCategory(notification)] === false) return { sent: 0 };
+      let sent = 0;
+      for (const subscription of state.subscriptions[accountId] || []) {
+        try {
+          await sendPush(subscription, JSON.stringify({ title: notification.title, body: notification.message,
+            tag: notification.id, tab: "success" }), { TTL: 300, timeout: 5000 });
+          sent++;
+        } catch (error) {
+          if ([404, 410].includes(error.statusCode)) state.subscriptions[accountId] = state.subscriptions[accountId].filter(sub => sub.endpoint !== subscription.endpoint);
+        }
+      }
+      await save();
+      return { sent };
+    }),
     publicKey: () => keys.publicKey,
     preferences: accountId => locked(() => ({ ...notificationDefaults, ...state.preferences[accountId] })),
     setPreferences: (accountId, input) => locked(async () => {

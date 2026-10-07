@@ -14572,6 +14572,8 @@ async function loadMemberProfile(
     state.customer =
       data.account || null;
 
+    renderAppDemoTools();
+
     renderCustomerDiscordSettings();
 
     await loadCustomerNotifications();
@@ -16328,6 +16330,37 @@ if (SUCCESS_DEMO_MODE) {
       if (Number.isFinite(height) && height > 0) iframe.style.height = `${Math.max(400, Math.ceil(height))}px`;
       iframe.classList.add("is-ready");
     }
+  });
+}
+
+function renderAppDemoTools() {
+  let panel = document.getElementById("app-demo-tools");
+  if (!state.customer?.demo) { panel?.remove(); return; }
+  if (panel) return;
+  panel = document.createElement("section");
+  panel.id = "app-demo-tools";
+  panel.className = "account-notification-box";
+  panel.innerHTML = `<strong>DEMO CUSTOMER · Sample information</strong>
+    <p>Your tier, profiles, cards, orders and shipments are fictional. Use these buttons to check live updates and enabled phone alerts.</p>
+    <div class="app-demo-actions"><button type="button" class="primary" data-demo-event="order">Test new order</button>
+    <button type="button" class="primary" data-demo-event="shipping">Test shipping update</button></div>
+    <p id="app-demo-status" role="status"></p>`;
+  document.getElementById("account-tab-notifications")?.prepend(panel);
+  panel.addEventListener("click", async event => {
+    const button = event.target.closest("[data-demo-event]");
+    if (!button || button.disabled) return;
+    button.disabled = true;
+    const status = document.getElementById("app-demo-status");
+    try {
+      const response = await fetch("/api/account/demo/simulate", { method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event: button.dataset.demoEvent }) });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || "Unable to run demo.");
+      status.textContent = data.message;
+      await loadCustomerNotifications({ showPopup: false });
+      if (successState.loaded) await loadSuccessDashboard(true);
+    } catch (error) { status.textContent = error.message; }
+    finally { button.disabled = false; }
   });
 }
 
