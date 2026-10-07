@@ -240,49 +240,49 @@ const PLANS = {
   1: {
     name: "Starter",
     profiles: 1,
-    amount: 10,
+    amount: 15,
     priceId: process.env.STRIPE_TIER1_PRICE_ID
   },
 
   2: {
     name: "Intermediate",
     profiles: 2,
-    amount: 15,
+    amount: 25,
     priceId: process.env.STRIPE_TIER2_PRICE_ID
   },
 
   3: {
     name: "Advanced",
     profiles: 3,
-    amount: 25,
+    amount: 40,
     priceId: process.env.STRIPE_TIER3_PRICE_ID
   },
 
   4: {
     name: "Pro",
     profiles: 5,
-    amount: 45,
+    amount: 70,
     priceId: process.env.STRIPE_TIER4_PRICE_ID
   },
 
   5: {
     name: "High Volume",
     profiles: 10,
-    amount: 80,
+    amount: 120,
     priceId: process.env.STRIPE_TIER5_PRICE_ID
   },
 
   6: {
     name: "Power User",
     profiles: 20,
-    amount: 150,
+    amount: 225,
     priceId: process.env.STRIPE_TIER6_PRICE_ID
   },
 
   7: {
     name: "Elite",
     profiles: 50,
-    amount: 290,
+    amount: 435,
     priceId: process.env.STRIPE_TIER7_PRICE_ID
   }
 };
@@ -382,7 +382,7 @@ function rentalPriceFor(
 async function synchronizeMembershipPrices() {
   const file = path.join(SECRET_DIR, "membership-stripe-prices.json");
   const cached = await readJson(file, {});
-  for (const tier of [5, 6, 7]) {
+  for (const tier of [1, 2, 3, 4, 5, 6, 7]) {
     const plan = PLANS[tier];
     if (!plan.priceId) continue;
     const originalId = plan.priceId;
