@@ -13080,6 +13080,60 @@ function renderSuccessProductPreview(
 }
 
 
+let successViewMode = "products";
+
+function successShippingRank(status) {
+  return ({ shipped: 1, in_transit: 2, out_for_delivery: 3, delivered: 4 })[status] || 0;
+}
+
+function renderShippingTimeline(shipping = null) {
+  const rank = successShippingRank(shipping?.status);
+  const steps = [
+    ["Order Placed", 0],
+    ["Processing", 0],
+    ["Shipped", 1],
+    ["Out for Delivery", 3],
+    ["Delivered", 4]
+  ];
+  return `
+    <div class="success-shipping-timeline">
+      ${steps.map(([label, needed], index) => {
+        const active = index < 2 || rank >= needed;
+        const current = (label === "Shipped" && rank >= 1 && rank < 3) ||
+          (label === "Out for Delivery" && rank === 3) ||
+          (label === "Delivered" && rank === 4);
+        return `
+          <div class="success-shipping-step ${active ? "is-complete" : ""} ${current ? "is-current" : ""}">
+            <i>${active ? "✓" : ""}</i>
+            <span>${label}</span>
+          </div>`;
+      }).join("")}
+    </div>`;
+}
+
+function bindSuccessModeTabs(checkouts) {
+  const products = document.getElementById("success-products-tab");
+  const shipping = document.getElementById("success-shipping-tab");
+  const sync = () => {
+    products?.classList.toggle("is-active", successViewMode === "products");
+    shipping?.classList.toggle("is-active", successViewMode === "shipping");
+    products?.setAttribute("aria-selected", String(successViewMode === "products"));
+    shipping?.setAttribute("aria-selected", String(successViewMode === "shipping"));
+  };
+  products?.addEventListener("click", () => {
+    successViewMode = "products";
+    sync();
+    renderSuccessCheckouts(checkouts);
+  });
+  shipping?.addEventListener("click", () => {
+    successViewMode = "shipping";
+    sync();
+    renderSuccessCheckouts(checkouts);
+  });
+  sync();
+}
+
+
 function renderSuccessCheckouts(
   checkouts = []
 ) {
@@ -13230,6 +13284,12 @@ function renderSuccessCheckouts(
       3
     );
 
+  const primaryItem = items[0] || {};
+  const primaryName = primaryItem.name || primaryItem.productName || "Successful Checkout";
+  const primaryImage = getSuccessItemImage(primaryItem);
+  const shippingRank = successShippingRank(shipping?.status);
+  const statusTone = shippingRank === 4 ? "delivered" : shippingRank ? "transit" : "waiting";
+
 
   const hiddenProducts =
     Math.max(
@@ -13309,11 +13369,37 @@ function renderSuccessCheckouts(
       </div>
 
 
-      <div class="success-product-previews">
-
-        ${productPreviewHtml}
-
-      </div>
+      ${successViewMode === "products" ? `
+        <div class="success-product-previews">
+          ${productPreviewHtml}
+        </div>
+      ` : `
+        <div class="success-shipping-showcase">
+          <div class="success-shipping-product">
+            <div class="success-shipping-main-image ${primaryImage ? "" : "success-product-placeholder"}">
+              ${primaryImage ? `<img src="${escapeHtml(primaryImage)}" alt="${escapeHtml(primaryName)}" loading="lazy" referrerpolicy="no-referrer" />` : "<span>ITEM</span>"}
+            </div>
+            <div>
+              <span class="success-checkout-retailer">${escapeHtml(retailer)}</span>
+              <h4>${escapeHtml(primaryName)}</h4>
+              <p>×${formatSuccessNumber(Math.max(1, Number(primaryItem.quantity || 1)))} · ${escapeHtml(formatSuccessCurrency(value))}</p>
+            </div>
+          </div>
+          <div class="success-shipping-panel">
+            <div class="success-shipping-panel-head">
+              <strong>Shipping Status</strong>
+              <span class="success-shipping-badge ${statusTone}">${escapeHtml(shippingStatusLabel)}</span>
+            </div>
+            ${renderShippingTimeline(shipping)}
+            <div class="success-shipping-details">
+              <div><span>EN ROUTE</span><strong>${shipping?.enRouteAt ? escapeHtml(formatSuccessDate(shipping.enRouteAt)) : "—"}</strong></div>
+              <div><span>ESTIMATED DELIVERY</span><strong>${shipping?.estimatedDelivery ? escapeHtml(shipping.estimatedDelivery) : "—"}</strong></div>
+              <div><span>SHIPPED TO</span><strong>${shippingAddress ? escapeHtml(shippingAddress) : "Waiting for retailer update"}</strong></div>
+            </div>
+            ${shipping?.trackingUrl ? `<a class="success-track-package" href="${escapeHtml(shipping.trackingUrl)}" target="_blank" rel="noopener noreferrer">Track Package ↗</a>` : ""}
+          </div>
+        </div>
+      `}
 
 
       ${
@@ -13462,6 +13548,9 @@ function renderSuccessCheckouts(
 
     </div>
   `;
+
+
+  bindSuccessModeTabs(checkouts);
 
 
   document
