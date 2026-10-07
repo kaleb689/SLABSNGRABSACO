@@ -284,6 +284,13 @@ const PLANS = {
     profiles: 50,
     amount: 435,
     priceId: process.env.STRIPE_TIER7_PRICE_ID
+  },
+
+  8: {
+    name: "Ultimate",
+    profiles: 100,
+    amount: 800,
+    priceId: process.env.STRIPE_TIER8_PRICE_ID
   }
 };
 
@@ -382,7 +389,7 @@ function rentalPriceFor(
 async function synchronizeMembershipPrices() {
   const file = path.join(SECRET_DIR, "membership-stripe-prices.json");
   const cached = await readJson(file, {});
-  for (const tier of [1, 2, 3, 4, 5, 6, 7]) {
+  for (const tier of [1, 2, 3, 4, 5, 6, 7, 8]) {
     const plan = PLANS[tier];
     if (!plan.priceId) continue;
     const originalId = plan.priceId;
