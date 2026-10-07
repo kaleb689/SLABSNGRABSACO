@@ -2043,6 +2043,25 @@
       min-width: 0;
     }
 
+    .admin-view-customer-button {
+      min-height: 31px;
+      padding: 6px 11px;
+      border: 1px solid rgba(18, 201, 255, .62);
+      border-radius: 8px;
+      background: rgba(18, 201, 255, .10);
+      color: #bff5ff;
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .7px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .admin-view-customer-button:hover {
+      background: rgba(18, 201, 255, .18);
+      box-shadow: 0 0 18px rgba(18, 201, 255, .12);
+    }
+
     .admin-og-member-badge {
       display: inline-flex;
       align-items: center;
@@ -5630,7 +5649,7 @@ PAID SUBSCRIPTIONS
       <div id="giftTierList"></div>
       <hr style="border:0;border-top:1px solid rgba(65,182,230,.3);margin:20px 0">
       <form id="discountCodeForm" class="admin-feature-form">
-        <label>Visibility<br><select name="audience"><option value="code">Shareable code</option><option value="private">One user's code</option><option value="sitewide">Sitewide membership sale</option></select></label>
+        <label>Visibility<br><select name="audience"><option value="code">Shareable code</option><option value="private">One user's code</option><option value="og">All OG Members</option><option value="sitewide">Sitewide membership sale</option></select></label>
         <label>User's account email (for one user's code)<br><input name="recipientEmail" type="email" placeholder="user@example.com"></label>
         <label>Code<br><input name="code" required minlength="3" maxlength="40" pattern="[A-Za-z0-9]+" placeholder="CARD20"></label>
         <label>Discount %<br><input name="percent" type="number" min="1" max="100" required style="width:75px"></label>
@@ -6946,6 +6965,7 @@ function renderOrder(x) {
                 `
                 : ""
             }
+            ${x.customerAccountId ? `<button type="button" class="admin-view-customer-button" data-view-as-user="${escapeHtml(x.customerAccountId)}" title="Open this customer's page">VIEW CUSTOMER PAGE ↗</button>` : ""}
           </div>
 
           <small>
@@ -24310,7 +24330,7 @@ async function loadMembershipTools() {
     discountList.replaceChildren();
     for (const discount of (discountData.codes || []).slice().reverse()) {
       const row = document.createElement("p");
-      row.textContent = `${discount.code} · ${discount.percent}% · ${discount.sitewide ? "Sitewide sale" : discount.recipientEmail ? "Only " + discount.recipientEmail : "Shareable code"} · ${discount.tier === "all" ? "All tiers" : "Tier " + discount.tier} · ${discount.duration === "forever" ? "Every renewal" : "First payment"}${discount.appliesToRentals ? " + rentals" : ""} · ${discount.active ? "Active" : "Inactive"} `;
+      row.textContent = `${discount.code} · ${discount.percent}% · ${discount.sitewide ? "Sitewide sale" : discount.ogOnly ? "All OG Members" : discount.recipientEmail ? "Only " + discount.recipientEmail : "Shareable code"} · ${discount.tier === "all" ? "All tiers" : "Tier " + discount.tier} · ${discount.duration === "forever" ? "Every renewal" : "First payment"}${discount.appliesToRentals ? " + rentals" : ""} · ${discount.active ? "Active" : "Inactive"} `;
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = discount.active ? "Deactivate" : "Activate";
@@ -24335,7 +24355,7 @@ async function loadMembershipTools() {
         for (const name of ["code", "percent", "tier", "duration", "recipientEmail"]) form.elements.namedItem(name).value = discount[name] ?? "";
         form.elements.namedItem("expiresAt").value = discount.expiresAt?.slice(0, 10) || "";
         form.elements.namedItem("appliesToRentals").checked = discount.appliesToRentals === true;
-        form.elements.namedItem("audience").value = discount.sitewide ? "sitewide" : discount.recipientEmail ? "private" : "code";
+        form.elements.namedItem("audience").value = discount.sitewide ? "sitewide" : discount.ogOnly ? "og" : discount.recipientEmail ? "private" : "code";
         form.querySelector('[type="submit"]').textContent = "Save changes";
         document.getElementById("cancelDiscountEdit").hidden = false;
         document.getElementById("discountCodeFeedback").textContent = `Editing ${discount.code}`;
@@ -24484,6 +24504,7 @@ document.getElementById("discountCodeForm")?.addEventListener("submit", async ev
       body: JSON.stringify({
         code: fields.get("code"), percent: Number(fields.get("percent")), tier: fields.get("tier"),
         sitewide: fields.get("audience") === "sitewide",
+        ogOnly: fields.get("audience") === "og",
         recipientEmail: fields.get("audience") === "private" ? fields.get("recipientEmail") : null,
         expiresAt: fields.get("expiresAt") || null, duration: fields.get("duration"), appliesToRentals: fields.has("appliesToRentals")
       })
