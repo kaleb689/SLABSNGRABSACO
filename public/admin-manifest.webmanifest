@@ -1,7 +1,7 @@
 {
   "id": "/admin-app",
-  "name": "SLABSNGRABSACO Admin",
-  "short_name": "SNG Admin",
+  "name": "Admin",
+  "short_name": "Admin",
   "start_url": "/admin-app.html?launch=1",
   "scope": "/",
   "display": "standalone",
