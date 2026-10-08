@@ -21,4 +21,4 @@ jobs:
       - run: node --check public/app.js
       - run: node --check discord-community.js
       - run: node verify-discord-controls.mjs
-      - run: node --test test/admin-discounts.test.js test/checkout-discounts.test.js test/discord-skus.test.js test/signup-onboarding.test.js test/optional-retailer-accounts.test.js test/optional-retailer-api.test.js
+      - run: node --test test/admin-discounts.test.js test/checkout-discounts.test.js test/discord-skus.test.js test/signup-onboarding.test.js test/optional-retailer-accounts.test.js test/optional-retailer-api.test.js test/admin-customer-layout.test.js
