@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, isNewDropPost} from './discord-community.js';
+import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, isNewDropPost, skuControlPayload} from './discord-community.js';
 const source = await fs.readFile('discord-community.js', 'utf8');
 const block = source.slice(source.indexOf('  const skuMenusFile ='), source.indexOf('  async function onQuestionMessage'));
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'discord-controls-'));
@@ -29,7 +29,7 @@ async function api(route, method='GET', payload) {
   return existing;
 }
 const deps={fs,path,crypto,dataDir,tonightChannelId,dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',ownerId:owner,
-  parseDropSkus,changeSkuItems,skuSelectionView,isNewDropPost,api,
+  parseDropSkus,changeSkuItems,skuSelectionView,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),discordCommunityStatus:{}};
@@ -82,10 +82,17 @@ try {
   nightPost.content=Array.from({length:16},(_,i)=>`Product ${i}\nSKU: ABC${i}`).join('\n');
   await controls.ensureSkuControls(nightPost);
   menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
-  assert.equal(menus[nightPost.id].length,2);
-  const oldPage=menus[nightPost.id][1];
+  assert.equal(menus[nightPost.id].length,1,'One public panel regardless of SKU count');
+  const activePanel=menus[nightPost.id][0];
+  const oldPage=String(serial++);
+  messages.set(oldPage,{id:oldPage,channel_id:tonightChannelId,content:'Obsolete panel'});
+  menus[nightPost.id].push(oldPage);
+  await fs.writeFile(path.join(dataDir,'discord-sku-controls.json'),JSON.stringify(menus));
   nightPost.content='Product\nSKU: ABC0';await controls.ensureSkuControls(nightPost);
-  assert.equal(messages.has(oldPage),false,'Removed SKU pages must be deleted');
+  menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
+  assert.equal(menus[nightPost.id].length,1);
+  assert.equal(menus[nightPost.id][0],activePanel,'Reuse public panel instead of duplicating it');
+  assert.equal(messages.has(oldPage),false,'Obsolete duplicate panels must be deleted');
   nightPost.content='No products';await controls.ensureSkuControls(nightPost);
   menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
   assert.equal(menus[nightPost.id],undefined);
