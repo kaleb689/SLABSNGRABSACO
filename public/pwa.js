@@ -7,11 +7,52 @@
   let appInstalled = installed;
   let dialog = null;
   const signedIn = () => dashboard && !dashboard.hidden;
+
+  let appUsageSentForSession = false;
+  function appDeviceId() {
+    try {
+      let id = localStorage.getItem("sng-app-device-id");
+      if (!id) {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        id = "dev-" + [...bytes].map(value => value.toString(16).padStart(2, "0")).join("");
+        localStorage.setItem("sng-app-device-id", id);
+      }
+      return id;
+    } catch {
+      return "dev-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    }
+  }
+  function appPlatform() {
+    if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) return "iOS";
+    if (/Android/i.test(navigator.userAgent)) return "Android";
+    if (/Macintosh|Mac OS X/i.test(navigator.userAgent)) return "macOS";
+    if (/Windows/i.test(navigator.userAgent)) return "Windows";
+    return "Other";
+  }
+  async function recordAppUsage(event = "active", force = false) {
+    if (!signedIn() || (!force && appUsageSentForSession && event === "active")) return;
+    try {
+      const response = await fetch("/api/account/app-usage", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deviceId: appDeviceId(),
+          event,
+          standalone: window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true,
+          platform: appPlatform()
+        })
+      });
+      if (response.ok && event === "active") appUsageSentForSession = true;
+    } catch {}
+  }
   if ("serviceWorker" in navigator && window.isSecureContext) {
     navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).catch(() => {});
   }
   window.addEventListener("beforeinstallprompt", event => { event.preventDefault(); installPrompt = event; });
-  window.addEventListener("appinstalled", () => { appInstalled = true; installPrompt = null; dialog?.close(); sync(); });
+  window.addEventListener("appinstalled", () => { appInstalled = true; installPrompt = null; dialog?.close(); void recordAppUsage("installed", true); sync(); });
 
   function showInstall() {
     if (!signedIn() || appInstalled || dialog) return;
@@ -198,6 +239,11 @@
     document.body.append(nav);
   }
   function sync() {
+    if (signedIn()) {
+      void recordAppUsage(installed ? "launch" : "active", installed);
+    } else {
+      appUsageSentForSession = false;
+    }
     const hideInstall = !signedIn() || appInstalled;
     if (installButton && installButton.hidden !== hideInstall) installButton.hidden = hideInstall;
     if (!signedIn() && dialog) dialog.close();
