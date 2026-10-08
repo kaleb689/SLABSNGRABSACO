@@ -6671,25 +6671,38 @@ function renderOrders(
           getOrderNumber(order);
 
         const tier =
-          Number(order.tier);
+          Number(
+            order.tier ??
+            order.plan?.tier
+          );
 
         const localPlan =
           PLANS[tier] || null;
 
         const planName =
           order.planName ||
+          order.plan?.name ||
           localPlan?.name ||
           "Membership";
 
         const amount =
+          order.monthlyPrice ??
           order.amount ??
+          order.plan?.amount ??
           localPlan?.amount ??
           null;
 
         const profiles =
           order.profiles ??
+          order.plan?.profiles ??
           localPlan?.profiles ??
           null;
+
+        const rateLabel =
+          String(
+            order.rateLabel ||
+            ""
+          ).trim();
 
         const orderDate =
           order.paidAt ||
@@ -6746,13 +6759,18 @@ function renderOrders(
 
               <div>
                 <span>Monthly Price</span>
-                <strong>
+                <strong class="customer-monthly-price">
                   ${
                     amount != null
-                      ? `$${escapeHtml(
+                      ? `${escapeHtml(
                           amount
                         )}/month`
                       : "—"
+                  }
+                  ${
+                    rateLabel
+                      ? `<span class="membership-rate-label ${rateLabel.toLowerCase()}">${escapeHtml(rateLabel)}</span>`
+                      : ""
                   }
                 </strong>
               </div>
