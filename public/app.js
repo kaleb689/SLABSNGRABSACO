@@ -9,7 +9,8 @@ const PLANS = {
   8: { name: "Ultimate", profiles: 100, amount: 800 }
 };
 
-const CUSTOMER_RENTALS_ENABLED = false;
+const CUSTOMER_RENTALS_ENABLED = true;
+const CUSTOMER_RENTAL_RETAILERS = new Set(["pokemoncenter"]);
 
 const RENTAL_PRICING = {
   1: {},
@@ -1384,7 +1385,7 @@ function updateRentalPriceDisplay() {
   const retailer =
     document.getElementById(
       "rental-retailer"
-    )?.value || "target";
+    )?.value || "pokemoncenter";
 
   const quantity =
     Number(
@@ -1484,7 +1485,7 @@ function addRentalToCart() {
   const retailer =
     document.getElementById(
       "rental-retailer"
-    )?.value || "target";
+    )?.value || "pokemoncenter";
 
   const quantity =
     Number(
@@ -11067,10 +11068,8 @@ async function loadManagedMemberships() {
 
     state.rentedMemberships =
       CUSTOMER_RENTALS_ENABLED &&
-      Array.isArray(
-        rentedData.memberships
-      )
-        ? rentedData.memberships
+      Array.isArray(rentedData.memberships)
+        ? rentedData.memberships.filter(item => CUSTOMER_RENTAL_RETAILERS.has(String(item.retailer || item.pool || "").toLowerCase()))
         : [];
 
   } catch (error) {
@@ -11087,6 +11086,7 @@ async function loadManagedMemberships() {
 
 
 async function loadManagedAvailabilityCustomer() {
+  loadSingleRentalPrices();
   const updated =
     document.getElementById(
       "customer-availability-updated"
