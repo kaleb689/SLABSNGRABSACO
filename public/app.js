@@ -8548,57 +8548,7 @@ function retailerProfileCardHtml(
                     </div>
                   </details>
 
-                  <details
-                    class="paid-profile-section paid-profile-subsection"
-                  >
-                    <summary
-                      class="paid-profile-subsection-summary"
-                    >
-                      <div>
-                        <span class="eyebrow">
-                          RETAILER INFORMATION
-                        </span>
-
-                        <strong>
-                          Retailer Information
-                        </strong>
-                      </div>
-
-                      <span
-                        class="paid-profile-subsection-action"
-                        data-section-action
-                      >
-                        CLICK TO OPEN
-                      </span>
-
-                      <span
-                        class="paid-profile-subsection-chevron"
-                        aria-hidden="true"
-                      >
-                        ▾
-                      </span>
-                    </summary>
-
-                    <div
-                      class="paid-profile-subsection-body"
-                    >
-                    <div
-                      class="retailer-credentials-grid"
-                    >
-                      ${RETAILERS
-                        .map(
-                          retailer =>
-                            retailerFieldsHtml(
-                              retailer,
-                              retailers[
-                                retailer.key
-                              ] || {}
-                            )
-                        )
-                        .join("")}
-                    </div>
-                    </div>
-                  </details>
+                  <!-- Target, Walmart and Pokémon Center logins are managed by staff; customer retailer logins are optional below. -->
 
                   <div
                     class="retailer-profile-save-row"
@@ -11521,36 +11471,8 @@ async function saveRetailerProfile(
       ).trim()
   };
 
+  // Do not submit or clear staff-managed retailer logins while saving shipping/card details.
   const retailers = {};
-
-  for (
-    const retailer of
-    RETAILERS
-  ) {
-    retailers[
-      retailer.key
-    ] = {
-      username:
-        String(
-          formData.get(
-            `${retailer.key}Username`
-          ) || ""
-        ).trim(),
-
-      /*
-        A blank password intentionally tells
-        the server to retain the encrypted
-        password already on file.
-      */
-
-      password:
-        String(
-          formData.get(
-            `${retailer.key}Password`
-          ) || ""
-        )
-    };
-  }
 
   if (
     ADMIN_PREVIEW_MODE
