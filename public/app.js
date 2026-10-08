@@ -618,8 +618,7 @@ function pricingCardsHtml() {
           </p>
 
           <p class="plan-login-note">
-            Have ${plan.profiles} unique retailer ${plan.profiles === 1 ? "login" : "logins"}
-            for each retailer you plan to use.
+            Target, Walmart and PKC retailer logins are provided. Add shipping and cards; Costco and Sam's Club logins are optional.
           </p>
 
           <ul class="features">
@@ -6018,6 +6017,103 @@ function savedPaymentById(id) {
 let activePaidProfileSlot = 1;
 let savedImapEntries = [];
 
+let optionalRetailerEntries = [];
+function renderOptionalRetailerLogins() {
+  for (const retailer of ["costco", "samsClub"]) {
+    const group = document.querySelector('[data-optional-retailer="' + retailer + '"]');
+    if (!group) continue;
+    const items = optionalRetailerEntries.filter(entry => entry.retailer === retailer);
+    group.querySelector("[data-optional-count]").textContent = String(items.length);
+    const list = group.querySelector("[data-optional-list]");
+    list.innerHTML = items.length ? items.map(entry =>
+      '<div class="saved-detail-preview"><strong>' + escapeHtml(entry.username) + '</strong>' +
+      '<p class="account-muted">' + (entry.passwordConfigured ? "Password saved securely" : "Password missing") + '</p>' +
+      (ANY_ADMIN_PREVIEW_MODE ? "" : '<div class="saved-detail-actions">' +
+        '<button type="button" class="secondary" data-optional-edit="' + escapeHtml(entry.id) + '">Edit</button>' +
+        '<button type="button" class="secondary danger-button" data-optional-delete="' + escapeHtml(entry.id) + '">Remove</button></div>') +
+      '</div>').join("") : '<p class="account-muted">No optional accounts saved.</p>';
+    group.querySelector("[data-optional-add]").hidden = Boolean(ANY_ADMIN_PREVIEW_MODE);
+  }
+}
+async function loadOptionalRetailerLogins() {
+  if (!state.customer) return;
+  const url = ADMIN_CUSTOMER_PREVIEW_MODE && state.customer.id
+    ? "/api/admin/customers/" + encodeURIComponent(state.customer.id) + "/optional-retailer-logins"
+    : ANY_ADMIN_PREVIEW_MODE ? null : "/api/account/optional-retailer-logins";
+  if (!url) { optionalRetailerEntries = []; renderOptionalRetailerLogins(); return; }
+  try {
+    const response = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.error || "Unable to load optional retailer accounts.");
+    optionalRetailerEntries = Array.isArray(data.entries) ? data.entries : [];
+    renderOptionalRetailerLogins();
+  } catch (error) { console.error("Optional account list:", error.message); }
+}
+document.querySelectorAll("[data-optional-retailer]").forEach(group => {
+  const retailer = group.dataset.optionalRetailer;
+  const form = group.querySelector("[data-optional-form]");
+  const message = group.querySelector("[data-optional-message]");
+  const editForm = entry => {
+    form.reset();
+    form.elements.id.value = entry?.id || "";
+    form.elements.username.value = entry?.username || "";
+    form.elements.password.required = !entry;
+    form.elements.password.placeholder = entry ? "Leave blank to keep saved password" : "Account password";
+    form.hidden = false;
+    form.elements.username.focus({ preventScroll: true });
+  };
+  group.querySelector("[data-optional-add]")?.addEventListener("click", () => {
+    if (!ANY_ADMIN_PREVIEW_MODE) editForm(null);
+  });
+  group.querySelector("[data-optional-cancel]")?.addEventListener("click", () => { form.hidden = true; });
+  group.querySelector("[data-optional-list]")?.addEventListener("click", async event => {
+    if (ANY_ADMIN_PREVIEW_MODE) return;
+    const edit = event.target.closest("[data-optional-edit]");
+    const remove = event.target.closest("[data-optional-delete]");
+    if (edit) {
+      const entry = optionalRetailerEntries.find(item => item.id === edit.dataset.optionalEdit && item.retailer === retailer);
+      if (entry) editForm(entry);
+      return;
+    }
+    if (!remove) return;
+    const entry = optionalRetailerEntries.find(item => item.id === remove.dataset.optionalDelete && item.retailer === retailer);
+    if (!entry || !confirm("Remove this optional retailer account?")) return;
+    try {
+      const response = await fetch("/api/account/optional-retailer-logins/" + encodeURIComponent(entry.id),
+        { method: "DELETE", credentials: "same-origin" });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || "Unable to remove account.");
+      optionalRetailerEntries = data.entries || [];
+      form.hidden = true;
+      renderOptionalRetailerLogins();
+      setMessage(message, "Account removed.", "success");
+    } catch (error) { setMessage(message, error.message, "error"); }
+  });
+  form?.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (ANY_ADMIN_PREVIEW_MODE) return;
+    const id = form.elements.id.value;
+    const button = form.querySelector('button[type="submit"]');
+    try {
+      setButtonBusy(button, true, "Saving…");
+      const response = await fetch("/api/account/optional-retailer-logins" + (id ? "/" + encodeURIComponent(id) : ""), {
+        method: id ? "PUT" : "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ retailer, username: form.elements.username.value.trim(), password: form.elements.password.value })
+      });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || "Unable to save account.");
+      optionalRetailerEntries = data.entries || [];
+      form.hidden = true;
+      form.elements.password.value = "";
+      renderOptionalRetailerLogins();
+      setMessage(message, "Optional retailer account saved securely.", "success");
+    } catch (error) { setMessage(message, error.message, "error"); }
+    finally { setButtonBusy(button, false); }
+  });
+});
+
+
 function renderSavedDetailsManager() {
   const addresses = Array.isArray(state.savedDetails?.addresses)
     ? state.savedDetails.addresses
@@ -6216,6 +6312,7 @@ async function loadSavedDetails() {
   ) {
     renderSavedDetailsManager();
     renderSavedImapManager();
+    await loadOptionalRetailerLogins();
     setupSavedDetailsAccordions();
     renderRetailerProfiles();
     return;
@@ -6240,6 +6337,7 @@ async function loadSavedDetails() {
 
     renderSavedDetailsManager();
     await loadSavedImap();
+    await loadOptionalRetailerLogins();
 
     setupSavedDetailsAccordions();
 
@@ -8548,57 +8646,7 @@ function retailerProfileCardHtml(
                     </div>
                   </details>
 
-                  <details
-                    class="paid-profile-section paid-profile-subsection"
-                  >
-                    <summary
-                      class="paid-profile-subsection-summary"
-                    >
-                      <div>
-                        <span class="eyebrow">
-                          RETAILER INFORMATION
-                        </span>
-
-                        <strong>
-                          Retailer Information
-                        </strong>
-                      </div>
-
-                      <span
-                        class="paid-profile-subsection-action"
-                        data-section-action
-                      >
-                        CLICK TO OPEN
-                      </span>
-
-                      <span
-                        class="paid-profile-subsection-chevron"
-                        aria-hidden="true"
-                      >
-                        ▾
-                      </span>
-                    </summary>
-
-                    <div
-                      class="paid-profile-subsection-body"
-                    >
-                    <div
-                      class="retailer-credentials-grid"
-                    >
-                      ${RETAILERS
-                        .map(
-                          retailer =>
-                            retailerFieldsHtml(
-                              retailer,
-                              retailers[
-                                retailer.key
-                              ] || {}
-                            )
-                        )
-                        .join("")}
-                    </div>
-                    </div>
-                  </details>
+                  <!-- Target, Walmart and Pokémon Center logins are managed by staff; customer retailer logins are optional below. -->
 
                   <div
                     class="retailer-profile-save-row"
@@ -11521,36 +11569,8 @@ async function saveRetailerProfile(
       ).trim()
   };
 
+  // Do not submit or clear staff-managed retailer logins while saving shipping/card details.
   const retailers = {};
-
-  for (
-    const retailer of
-    RETAILERS
-  ) {
-    retailers[
-      retailer.key
-    ] = {
-      username:
-        String(
-          formData.get(
-            `${retailer.key}Username`
-          ) || ""
-        ).trim(),
-
-      /*
-        A blank password intentionally tells
-        the server to retain the encrypted
-        password already on file.
-      */
-
-      password:
-        String(
-          formData.get(
-            `${retailer.key}Password`
-          ) || ""
-        )
-    };
-  }
 
   if (
     ADMIN_PREVIEW_MODE

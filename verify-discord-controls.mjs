@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, isNewDropPost} from './discord-community.js';
+import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, isNewDropPost, skuControlPayload} from './discord-community.js';
 const source = await fs.readFile('discord-community.js', 'utf8');
 const block = source.slice(source.indexOf('  const skuMenusFile ='), source.indexOf('  async function onQuestionMessage'));
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'discord-controls-'));
@@ -29,11 +29,11 @@ async function api(route, method='GET', payload) {
   return existing;
 }
 const deps={fs,path,crypto,dataDir,tonightChannelId,dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',ownerId:owner,
-  parseDropSkus,changeSkuItems,skuSelectionView,isNewDropPost,api,
+  parseDropSkus,changeSkuItems,skuSelectionView,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),discordCommunityStatus:{}};
-const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection};`);
+const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection,mutateSkuDraft,confirmSkuDraft};`);
 const controls=make(deps);
 try {
   assert.equal(dropChannelKind('❗️│upcoming-drop'),'upcomingdrops');
@@ -47,7 +47,7 @@ try {
   assert.ok(!upcomingRows.at(-1).components.some(c=>c.label==='Run all SKUs'));
   const rows=messages.get(menus[nightPost.id][0]).components;
   assert.ok(rows.at(-1).components.some(c=>c.label==="Don't run my profiles tonight"));
-  assert.ok(rows.at(-1).components.some(c=>c.label==='My selected SKUs'));
+  assert.ok(rows.some(row=>row.components.some(c=>c.label==='My selected SKUs')));
   await controls.recordSkuSelection(owner,'member',nightPost.id,'all',2,tonightChannelId);
   await controls.recordSkuSelection(owner,'member',upPost.id,'all',1,upcoming);
   await controls.skipDrop(owner,'member',nightPost.id,tonightChannelId);
@@ -79,13 +79,37 @@ try {
   await controls.skipDrop(owner,'member',chatter.id,upcoming);
   record=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[owner];
   assert.equal(record.skippedUpcomingDrops[0].sourceId,chatter.id,'A post with no SKUs can be skipped');
+
+  const batchUser='1551070928039845999';
+  const batchPost=post('1551070928039845998',upcoming,'TCG Booster One\nSKU: ABC1234\nTCG Booster Two\nSKU: XYZ5678');
+  messages.set(batchPost.id,batchPost);
+  const batchProducts=parseDropSkus(batchPost);
+  const batchDraft=await controls.mutateSkuDraft(batchUser,upcoming,batchPost.id,items=>changeSkuItems(items,batchProducts,batchPost.id,upcoming,2));
+  assert.equal(batchDraft.length,2,'Both SKUs are in the private unconfirmed draft');
+  const priorBatch=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'));
+  assert.equal(priorBatch[batchUser],undefined,'Draft changes do not prematurely notify admin');
+  const savedBatch=await controls.confirmSkuDraft(batchUser,'batch-member',batchPost.id,upcoming);
+  assert.equal(savedBatch.length,2);
+  assert.ok(savedBatch.every(item=>item.quantity===2));
+  const batchRecord=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[batchUser];
+  const adminBatch=messages.get(batchRecord.messageId);
+  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/TCG Booster One/);
+  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/TCG Booster Two/);
+  await assert.rejects(controls.confirmSkuDraft(batchUser,'batch-member',batchPost.id,upcoming),/draft is no longer active/);
   nightPost.content=Array.from({length:16},(_,i)=>`Product ${i}\nSKU: ABC${i}`).join('\n');
   await controls.ensureSkuControls(nightPost);
   menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
-  assert.equal(menus[nightPost.id].length,2);
-  const oldPage=menus[nightPost.id][1];
+  assert.equal(menus[nightPost.id].length,1,'One public panel regardless of SKU count');
+  const activePanel=menus[nightPost.id][0];
+  const oldPage=String(serial++);
+  messages.set(oldPage,{id:oldPage,channel_id:tonightChannelId,content:'Obsolete panel'});
+  menus[nightPost.id].push(oldPage);
+  await fs.writeFile(path.join(dataDir,'discord-sku-controls.json'),JSON.stringify(menus));
   nightPost.content='Product\nSKU: ABC0';await controls.ensureSkuControls(nightPost);
-  assert.equal(messages.has(oldPage),false,'Removed SKU pages must be deleted');
+  menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
+  assert.equal(menus[nightPost.id].length,1);
+  assert.equal(menus[nightPost.id][0],activePanel,'Reuse public panel instead of duplicating it');
+  assert.equal(messages.has(oldPage),false,'Obsolete duplicate panels must be deleted');
   nightPost.content='No products';await controls.ensureSkuControls(nightPost);
   menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
   assert.equal(menus[nightPost.id],undefined);

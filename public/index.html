@@ -1060,9 +1060,7 @@
       </strong>
 
       <p>
-        Retailer login credentials and IMAP credentials
-        are two different things. This guide explains
-        exactly what is needed for each.
+        SLABSNGRABSACO supplies Target, Walmart and Pokémon Center retailer accounts. Optional Costco, Sam's Club and IMAP setup are explained here.
       </p>
 
     </div>
@@ -1081,16 +1079,13 @@
       <div class="guide-content">
         <h3>Match your account setup to your tier</h3>
         <p>
-          Your tier's profile count applies to each retailer you plan to use.
-          Each profile needs a different login for that retailer. For example,
-          a 20 ACO profile tier calls for 20 unique Target logins if you use
-          Target, and 20 unique Walmart logins if you use Walmart.
+          Your tier determines your ACO profiles. We supply Target, Walmart and Pokémon Center retailer accounts. Your own Costco and Sam's Club logins are optional.
         </p>
         <div class="guide-step">
           <span class="guide-step-number">1</span>
           <div>
-            <h4>Count your retailer logins</h4>
-            <p>Check each retailer separately. The same login cannot fill multiple profile slots for that retailer.</p>
+            <h4>Retailer accounts supplied</h4>
+            <p>SLABSNGRABSACO supplies Target, Walmart and Pokémon Center accounts. Costco and Sam's Club are optional additions.</p>
           </div>
         </div>
         
@@ -1282,9 +1277,7 @@
         </h3>
 
         <p>
-          For every retailer you want SLABSNGRABSACO
-          to use, you need to provide the login
-          information for that retailer account.
+          We supply Target, Walmart and Pokémon Center accounts. If you have Costco or Sam's Club logins, add them optionally under Saved Checkout Details.
         </p>
 
 
@@ -1950,9 +1943,7 @@
             </h4>
 
             <p>
-              For every retailer you want included
-              in this profile, enter the login
-              credentials for that store.
+              Target, Walmart and Pokémon Center logins are supplied by staff. Costco and Sam's Club accounts can be added separately under Saved Checkout Details.
             </p>
 
             <p>
@@ -2565,9 +2556,7 @@
         </p>
 
         <p>
-          For retailers requiring an account login,
-          provide the login email or username and
-          password for that specific retailer.
+          Only provide Costco or Sam's Club logins if you choose to use them. Target, Walmart and Pokémon Center accounts are provided by SLABSNGRABSACO.
         </p>
 
       </div>
@@ -3862,10 +3851,7 @@
             </h3>
 
             <p class="account-muted">
-              Add the login information for each retailer
-              you want connected to your ACO setup.
-              Your available profile slots are based on
-              your active membership.
+              Your Target, Walmart and Pokémon Center accounts are provided by SLABSNGRABSACO. Add shipping and payment cards, and only add Costco or Sam's Club credentials if you have them.
             </p>
 
           </div>
@@ -3906,8 +3892,7 @@
           </strong>
 
           <p>
-            Retailer passwords will be encrypted
-            server-side. After a password has been saved,
+            Optional retailer passwords are encrypted server-side. After a password has been saved,
             it will not be displayed back in your account.
             Enter a new password only when adding or
             replacing retailer credentials.
@@ -3960,9 +3945,9 @@
         <div class="account-card-heading">
           <div>
             <span class="eyebrow">SAVED CHECKOUT DETAILS</span>
-            <h3>Saved Cards, Addresses &amp; IMAP Logins</h3>
+            <h3>Saved Cards, Addresses &amp; Optional Retailer Accounts</h3>
             <p class="account-muted">
-              Save checkout details and IMAP logins for your profiles. Move between saved entries with the arrows.
+              Save shipping addresses, payment cards and optional retailer logins. IMAP setup is optional.
             </p>
 
             <p class="saved-details-important-note">
@@ -4165,6 +4150,46 @@
             </div>
           </details>
 
+          <details class="saved-detail-panel saved-detail-disclosure" data-optional-retailer="costco">
+            <summary class="saved-detail-head">
+              <div><span class="eyebrow">OPTIONAL RETAILER ACCOUNT</span><h4>Costco</h4></div>
+              <span class="saved-detail-count" data-optional-count>0</span>
+            </summary>
+            <div class="saved-detail-disclosure-body">
+              <button type="button" class="secondary saved-add-button" data-optional-add>Add Another Costco Account</button>
+              <form class="saved-detail-form" data-optional-form hidden>
+                <input type="hidden" name="id">
+                <label>Costco Email / Username <input name="username" maxlength="254" required></label>
+                <label>Password <input type="password" name="password" maxlength="512" autocomplete="new-password" required></label>
+                <div class="saved-detail-actions">
+                  <button type="submit" class="primary">Save Costco Account</button>
+                  <button type="button" class="secondary" data-optional-cancel>Cancel</button>
+                </div>
+              </form>
+              <div data-optional-list class="saved-detail-preview"></div>
+              <p data-optional-message class="form-message" role="status"></p>
+            </div>
+          </details>
+          <details class="saved-detail-panel saved-detail-disclosure" data-optional-retailer="samsClub">
+            <summary class="saved-detail-head">
+              <div><span class="eyebrow">OPTIONAL RETAILER ACCOUNT</span><h4>Sam's Club</h4></div>
+              <span class="saved-detail-count" data-optional-count>0</span>
+            </summary>
+            <div class="saved-detail-disclosure-body">
+              <button type="button" class="secondary saved-add-button" data-optional-add>Add Another Sam's Club Account</button>
+              <form class="saved-detail-form" data-optional-form hidden>
+                <input type="hidden" name="id">
+                <label>Sam's Club Email / Username <input name="username" maxlength="254" required></label>
+                <label>Password <input type="password" name="password" maxlength="512" autocomplete="new-password" required></label>
+                <div class="saved-detail-actions">
+                  <button type="submit" class="primary">Save Sam's Club Account</button>
+                  <button type="button" class="secondary" data-optional-cancel>Cancel</button>
+                </div>
+              </form>
+              <div data-optional-list class="saved-detail-preview"></div>
+              <p data-optional-message class="form-message" role="status"></p>
+            </div>
+          </details>
           <section class="saved-detail-panel imap-detail-panel">
             <div class="saved-detail-head"><div><span class="eyebrow">EMAIL CONNECTION</span><h4>EMAIL (APP PASSWORD)</h4></div><span id="saved-imap-count" class="saved-detail-count">0</span></div>
             <p class="account-muted">Use the app password from your email provider, not your regular email password. See Chapter 2 in the guide.</p>

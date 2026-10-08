@@ -12784,22 +12784,7 @@ function paidProfileMissingItems(
     secrets,
     `Paid Profile ${index}`
   );
-  let credentials = emptyRetailerCredentials();
-  try {
-    if (record?.credentials) credentials = normalizeRetailerCredentials(decryptJson(record.credentials));
-  } catch {
-    credentials = emptyRetailerCredentials();
-  }
-  // Only show field names. Never put retailer login values in notifications.
-  for (const retailer of ["target", "walmart"]) {
-    const label = retailerDisplayName(retailer);
-    if (!String(credentials[retailer]?.username || "").trim()) {
-      missing.push(`Paid Profile ${index}: ${label} username / email`);
-    }
-    if (!String(credentials[retailer]?.password || "").trim()) {
-      missing.push(`Paid Profile ${index}: ${label} password`);
-    }
-  }
+  // Target, Walmart and Pokémon Center logins are supplied by staff, not the customer.
   return missing;
 }
 
@@ -12821,10 +12806,6 @@ async function customerSetupChecklist(account) {
   for (let slot = 1; slot <= allowance; slot += 1) {
     const label = `Paid Profile ${slot}`;
     for (const field of PROFILE_SETUP_FIELDS) add(`${label}: ${field}`, { type: "paid", slot });
-    for (const retailer of ["Target", "Walmart"]) {
-      add(`${label}: ${retailer} username / email`, { type: "paid", slot });
-      add(`${label}: ${retailer} password`, { type: "paid", slot });
-    }
   }
 
   const [freeAssignments, rentalAssignments] = await Promise.all([
@@ -12858,22 +12839,7 @@ async function customerSetupChecklist(account) {
   add("Account: one shipping address", { type: "shipping" }, hasAddress);
   add("Account: one payment card", { type: "payment" }, hasCard);
 
-  if (allowance) {
-    const paid = await readJson(PAID_FILE, []);
-    const order = (Array.isArray(paid) ? paid : [])
-      .filter(record => String(record.customerAccountId || "") === String(account.id) &&
-        subscriptionAllowsProfiles(record))
-      .sort((a, b) => new Date(b.paidAt || b.createdAt || 0) -
-        new Date(a.paidAt || a.createdAt || 0))[0];
-    if (order) {
-      const secrets = await loadEncryptedPackage(order.id) || {};
-      const target = { type: "order", orderNumber: order.orderNumber || order.submissionNumber || order.id };
-      add("Order: IMAP / host email", target,
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(secrets.acoEmail || "")));
-      add("Order: IMAP / host app password", target,
-        String(secrets.acoPassword || "").length >= 6);
-    }
-  }
+  // IMAP is optional and is never part of required setup notifications.
 
   return tasks;
 }
@@ -13842,32 +13808,8 @@ function safeRetailerProfile(
     );
   }
 
+  // Staff-supplied retailer accounts and passwords are not customer-facing.
   const retailers = {};
-
-  for (
-    const retailer of
-    RETAILER_KEYS
-  ) {
-    retailers[retailer] = {
-      username:
-        credentials[
-          retailer
-        ].username,
-
-      password:
-        credentials[
-          retailer
-        ].password ||
-        "",
-
-      passwordConfigured:
-        Boolean(
-          credentials[
-            retailer
-          ].password
-        )
-    };
-  }
 
   const customerProfile =
     customerVisibleProfile(record);
@@ -15171,6 +15113,12 @@ app.put(
         const retailer of
         RETAILER_KEYS
       ) {
+        // Missing retailer fields must preserve previously stored encrypted accounts.
+        // The customer now only enters optional Costco and Sam's Club logins separately.
+        if (!Object.prototype.hasOwnProperty.call(submitted, retailer)) {
+          updatedCredentials[retailer] = { ...(existingCredentials[retailer] || {}) };
+          continue;
+        }
         const submittedRetailer =
           submitted[
             retailer
@@ -15231,22 +15179,9 @@ app.put(
         };
       }
 
-      updatedCredentials.pkc = {
-        ...(
-          updatedCredentials.pkc ||
-          {}
-        ),
-        password: ""
-      };
-
-      if (
-        !String(
-          updatedCredentials
-            .pkc
-            ?.username ||
-          ""
-        ).trim()
-      ) {
+      // Retain staff-supplied Pokémon Center information on address/card edits.
+      if (Object.prototype.hasOwnProperty.call(submitted, "pkc") &&
+        !String(updatedCredentials.pkc?.username || "").trim()) {
         const guestEmail =
           [
             "target",
@@ -34827,6 +34762,96 @@ function savedImapEntries(account) {
   }
 }
 
+
+/* Optional Costco and Sam's Club accounts are stored separately from
+   operator-supplied Target/Walmart/Pokémon Center inventory. */
+const OPTIONAL_RETAILERS = new Set(["costco", "samsClub"]);
+function optionalRetailerLogins(account) {
+  if (!account?.optionalRetailerLogins) return [];
+  try {
+    const decoded = decryptJson(account.optionalRetailerLogins);
+    return Array.isArray(decoded) ? decoded.filter(item => OPTIONAL_RETAILERS.has(item.retailer)) : [];
+  } catch { return []; }
+}
+const safeOptionalRetailerLogins = entries => entries.map(({ id, retailer, username, createdAt, updatedAt, password }) => ({
+  id, retailer, username, createdAt, updatedAt, passwordConfigured: Boolean(password)
+}));
+app.get("/api/account/optional-retailer-logins", requireCustomer, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true, entries: safeOptionalRetailerLogins(optionalRetailerLogins(req.customerAccount)) });
+});
+app.get("/api/admin/customers/:id/optional-retailer-logins", requireAdmin, async (req, res) => {
+  const account = (await getCustomerAccounts()).find(item => String(item.id) === String(req.params.id));
+  if (!account) return res.status(404).json({ error: "Customer account not found." });
+  res.setHeader("Cache-Control", "no-store");
+  return res.json({ ok: true, entries: safeOptionalRetailerLogins(optionalRetailerLogins(account)) });
+});
+app.post("/api/account/optional-retailer-logins", requireCustomer, async (req, res) => {
+  try {
+    const retailer = String(req.body?.retailer || "");
+    const username = clean(req.body?.username, 254).trim();
+    const password = String(req.body?.password || "");
+    if (!OPTIONAL_RETAILERS.has(retailer)) return res.status(400).json({ error: "Only Costco or Sam's Club can be added here." });
+    if (!username || !password || password.length > 512) return res.status(400).json({ error: "Enter the account username and password." });
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => String(item.id) === String(req.customerAccount.id));
+    if (!account) return res.status(404).json({ error: "Customer account not found." });
+    const entries = optionalRetailerLogins(account);
+    if (entries.length >= 100) return res.status(400).json({ error: "Maximum 100 optional retailer accounts." });
+    if (entries.some(item => item.retailer === retailer && item.username.toLowerCase() === username.toLowerCase()))
+      return res.status(409).json({ error: "This retailer account is already saved." });
+    const now = new Date().toISOString();
+    entries.push({ id: crypto.randomUUID(), retailer, username, password, createdAt: now, updatedAt: now });
+    account.optionalRetailerLogins = encryptJson(entries);
+    await saveCustomerAccounts(accounts);
+    return res.status(201).json({ ok: true, entries: safeOptionalRetailerLogins(entries) });
+  } catch (error) {
+    console.error("Optional retailer account save failed:", error.message);
+    return res.status(500).json({ error: "Unable to save the retailer account." });
+  }
+});
+app.put("/api/account/optional-retailer-logins/:id", requireCustomer, async (req, res) => {
+  try {
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => String(item.id) === String(req.customerAccount.id));
+    if (!account) return res.status(404).json({ error: "Customer account not found." });
+    const entries = optionalRetailerLogins(account);
+    const entry = entries.find(item => item.id === req.params.id);
+    if (!entry) return res.status(404).json({ error: "Retailer account not found." });
+    const username = clean(req.body?.username, 254).trim();
+    const password = String(req.body?.password || "");
+    if (!username || password.length > 512) return res.status(400).json({ error: "Enter a valid username and password." });
+    if (entries.some(item => item.id !== entry.id && item.retailer === entry.retailer &&
+      item.username.toLowerCase() === username.toLowerCase()))
+      return res.status(409).json({ error: "This retailer account is already saved." });
+    entry.username = username;
+    if (password) entry.password = password;
+    entry.updatedAt = new Date().toISOString();
+    account.optionalRetailerLogins = encryptJson(entries);
+    await saveCustomerAccounts(accounts);
+    return res.json({ ok: true, entries: safeOptionalRetailerLogins(entries) });
+  } catch (error) {
+    console.error("Optional retailer account update failed:", error.message);
+    return res.status(500).json({ error: "Unable to update the retailer account." });
+  }
+});
+app.delete("/api/account/optional-retailer-logins/:id", requireCustomer, async (req, res) => {
+  try {
+    const accounts = await getCustomerAccounts();
+    const account = accounts.find(item => String(item.id) === String(req.customerAccount.id));
+    if (!account) return res.status(404).json({ error: "Customer account not found." });
+    const entries = optionalRetailerLogins(account);
+    if (!entries.some(item => item.id === req.params.id)) return res.status(404).json({ error: "Retailer account not found." });
+    const remaining = entries.filter(item => item.id !== req.params.id);
+    account.optionalRetailerLogins = encryptJson(remaining);
+    await saveCustomerAccounts(accounts);
+    return res.json({ ok: true, entries: safeOptionalRetailerLogins(remaining) });
+  } catch (error) {
+    console.error("Optional retailer account removal failed:", error.message);
+    return res.status(500).json({ error: "Unable to remove the retailer account." });
+  }
+});
+
 app.get("/api/account/imap-credentials", requireCustomer, async (req, res) => {
   const entries = savedImapEntries(req.customerAccount);
   res.json({ ok: true, entries: entries.map(({ id, email, createdAt, updatedAt, connectionStatus }) => ({
@@ -48041,6 +48066,13 @@ await initializeArrayFile(
           getAccounts: getCustomerAccounts,
           saveAccounts: saveCustomerAccounts,
           getAllowance: getCustomerProfileAllowance,
+          getPaidSkuAllowance: async accountId => {
+            const paid = await readJson(PAID_FILE, []);
+            const owned = (Array.isArray(paid) ? paid : []).filter(record =>
+              String(record.customerAccountId || "") === String(accountId) &&
+              subscriptionAllowsProfiles(record));
+            return owned.length ? Math.max(0, ...owned.map(profileAllowanceForRecord)) : 0;
+          },
           getOgStatus: async accountId => {
             const account = (await getCustomerAccounts()).find(item => String(item.id) === String(accountId));
             if (account?.ogMemberGrantedAt) return true;
