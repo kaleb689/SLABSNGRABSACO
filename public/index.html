@@ -3273,8 +3273,17 @@
       </div>
 
       <div class="account-topbar-right">
-        <button type="button" class="secondary account-action-button" id="account-notification-settings">Notification Settings</button>
-        <button type="button" class="secondary account-action-button" id="account-install-app" hidden>Add app to Home Screen</button>
+        <button type="button" class="secondary account-action-button account-action-highlight notification-action" id="account-notification-settings">
+          <span class="account-action-icon" aria-hidden="true">🔔</span>
+          <span>Notification Settings</span>
+        </button>
+        <button type="button" class="secondary account-action-button account-action-highlight install-action" id="account-install-app" hidden>
+          <span class="account-action-platforms" aria-hidden="true">
+            <span class="apple-mark"></span>
+            <svg class="android-mark" viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M7.2 6.4 5.7 3.8l1-.6 1.6 2.7A9.6 9.6 0 0 1 12 5.2c1.3 0 2.6.3 3.7.7l1.6-2.7 1 .6-1.5 2.6A7.2 7.2 0 0 1 20 12H4a7.2 7.2 0 0 1 3.2-5.6ZM8 9.4a.8.8 0 1 0 0-1.6.8.8 0 0 0 0 1.6Zm8 0a.8.8 0 1 0 0-1.6.8.8 0 0 0 0 1.6ZM4 13h16v7.2c0 .4-.4.8-.8.8H17v-4h-1.2v4H8.2v-4H7v4H4.8a.8.8 0 0 1-.8-.8V13Z"/></svg>
+          </span>
+          <span>Add app to Home Screen</span>
+        </button>
 
         <div class="member-lifetime-stats">
           <div>
