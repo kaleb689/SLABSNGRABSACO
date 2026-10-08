@@ -14,7 +14,7 @@ function metric(label,value){return '<div class="metric"><small>'+esc(label)+'</
 function panel(title,body){return '<section class="panel"><h2>'+esc(title)+'</h2>'+body+'</section>';}
 function customerName(x){const p=x.profile||{};return [p.firstName,p.lastName].filter(Boolean).join(" ")||p.profileName||"Customer";}
 function customers(){return Array.isArray(data.customers)?data.customers:data.customers.submissions||[];}
-function activationCount(a,status){const profiles=Array.isArray(a?.customers)?a.customers.flatMap(c=>Array.isArray(c.profiles)?c.profiles:[]):[];return profiles.length?profiles.filter(p=>p.status===status).length:(status==="awaiting_activation"?a?.awaitingCount:status==="activated"?a?.activatedCount:a?.expiredCount)??"—";}
+function activationCount(a,status){if(!Array.isArray(a?.customers))return "—";const profiles=a.customers.flatMap(c=>Array.isArray(c.profiles)?c.profiles:[]).filter(p=>p.type==="paid");return profiles.filter(p=>p.status===status).length;}
 function render(){
 $("heading").textContent=({overview:"Overview",customers:"Customers",profiles:"Profiles",usage:"App Usage",more:"More"})[tab];
 document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
