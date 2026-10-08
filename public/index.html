@@ -4165,6 +4165,26 @@
             </div>
           </details>
 
+          <details class="saved-detail-panel saved-detail-disclosure" data-optional-retailer="costco">
+            <summary class="saved-detail-head">
+              <div><span class="eyebrow">OPTIONAL RETAILER ACCOUNT</span><h4>Costco</h4></div>
+              <span class="saved-detail-count" data-optional-count>0</span>
+            </summary>
+            <div class="saved-detail-disclosure-body">
+              <button type="button" class="secondary saved-add-button" data-optional-add>Add Another Costco Account</button>
+              <form class="saved-detail-form" data-optional-form hidden>
+                <input type="hidden" name="id">
+                <label>Costco Email / Username <input name="username" maxlength="254" required></label>
+                <label>Password <input type="password" name="password" maxlength="512" autocomplete="new-password" required></label>
+                <div class="saved-detail-actions">
+                  <button type="submit" class="primary">Save Costco Account</button>
+                  <button type="button" class="secondary" data-optional-cancel>Cancel</button>
+                </div>
+              </form>
+              <div data-optional-list class="saved-detail-preview"></div>
+              <p data-optional-message class="form-message" role="status"></p>
+            </div>
+          </details>
           <section class="saved-detail-panel imap-detail-panel">
             <div class="saved-detail-head"><div><span class="eyebrow">EMAIL CONNECTION</span><h4>EMAIL (APP PASSWORD)</h4></div><span id="saved-imap-count" class="saved-detail-count">0</span></div>
             <p class="account-muted">Use the app password from your email provider, not your regular email password. See Chapter 2 in the guide.</p>
