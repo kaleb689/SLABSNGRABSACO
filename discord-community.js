@@ -310,7 +310,8 @@ export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
   };
 }
 
-// Owner testing is restricted to the Discord-verified guild owner, not all staff.
+// Allow only the verified Discord server owner to test customer SKU selections
+// without a membership. All other accounts must have active paid profiles.
 export function isGuildOwnerSkuTester(userId, verifiedGuildOwnerId) {
   const owner = String(verifiedGuildOwnerId || "");
   return /^\d{17,22}$/.test(owner) && String(userId || "") === owner;
@@ -2048,8 +2049,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   const skuAccessMessage = "To select SKUs, you must have active paid profiles through https://slabsngrabsaco.com";
   async function hasPaidSkuAccess(userId) {
-    // The guild owner may test the exact customer flow without buying a membership.
-    // This is an explicit owner-only exception, never granted to all staff/admins.
+    // Verified guild ownership is the single testing bypass, not admin/staff roles.
     if (isGuildOwnerSkuTester(userId, ownerId)) return true;
     const account = (await getAccounts()).find(item =>
       String(item.discordUserId || "") === String(userId) && !item.disabled);
