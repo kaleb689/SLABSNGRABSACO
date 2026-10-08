@@ -13237,16 +13237,22 @@ function bindSuccessModeTabs(checkouts) {
     products?.setAttribute("aria-selected", String(successViewMode === "products"));
     shipping?.setAttribute("aria-selected", String(successViewMode === "shipping"));
   };
-  products?.addEventListener("click", () => {
-    successViewMode = "products";
-    sync();
-    renderSuccessCheckouts(checkouts);
-  });
-  shipping?.addEventListener("click", () => {
-    successViewMode = "shipping";
-    sync();
-    renderSuccessCheckouts(checkouts);
-  });
+  if (products) {
+    products.onclick = () => {
+      if (successViewMode === "products") return;
+      successViewMode = "products";
+      sync();
+      renderSuccessCheckouts(checkouts);
+    };
+  }
+  if (shipping) {
+    shipping.onclick = () => {
+      if (successViewMode === "shipping") return;
+      successViewMode = "shipping";
+      sync();
+      renderSuccessCheckouts(checkouts);
+    };
+  }
   sync();
 }
 
