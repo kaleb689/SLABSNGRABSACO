@@ -12981,3 +12981,101 @@ body.installed-app{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
     grid-column: 1;
   }
 }
+
+
+/* My Profile stat-card consistency and highlighted app actions. */
+#my-profile .member-lifetime-stats > div:nth-child(1) {
+  align-self: stretch;
+}
+
+#my-profile .member-lifetime-stats > div {
+  height: 100%;
+}
+
+#my-profile .account-action-highlight {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font-weight: 900;
+  letter-spacing: .02em;
+  border-width: 1px;
+}
+
+#my-profile .notification-action {
+  color: #ffe66a !important;
+  border-color: rgba(255, 214, 74, .55) !important;
+  background: linear-gradient(135deg, rgba(255, 216, 74, .14), rgba(255, 151, 61, .10)) !important;
+  box-shadow: 0 0 18px rgba(255, 207, 62, .09);
+}
+
+#my-profile .notification-action:hover {
+  background: linear-gradient(135deg, rgba(255, 216, 74, .22), rgba(255, 151, 61, .16)) !important;
+  box-shadow: 0 0 22px rgba(255, 207, 62, .15);
+}
+
+#my-profile .install-action {
+  color: #7fe6ff !important;
+  border-color: rgba(54, 207, 255, .56) !important;
+  background: linear-gradient(135deg, rgba(0, 198, 255, .13), rgba(112, 78, 255, .13)) !important;
+  box-shadow: 0 0 18px rgba(54, 207, 255, .10);
+}
+
+#my-profile .install-action:hover {
+  background: linear-gradient(135deg, rgba(0, 198, 255, .21), rgba(112, 78, 255, .20)) !important;
+  box-shadow: 0 0 22px rgba(54, 207, 255, .16);
+}
+
+#my-profile .account-action-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+#my-profile .account-action-platforms {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+#my-profile .apple-mark {
+  font-size: 21px;
+  line-height: 1;
+}
+
+#my-profile .android-mark {
+  width: 19px;
+  height: 19px;
+  display: block;
+}
+
+.customer-monthly-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.membership-rate-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+
+.membership-rate-label.discounted {
+  color: #45e68b;
+  border: 1px solid rgba(69,230,139,.35);
+  background: rgba(69,230,139,.09);
+}
+
+.membership-rate-label.grandfathered {
+  color: #ffd84a;
+  border: 1px solid rgba(255,216,74,.38);
+  background: rgba(255,216,74,.09);
+}
