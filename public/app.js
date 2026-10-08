@@ -618,8 +618,7 @@ function pricingCardsHtml() {
           </p>
 
           <p class="plan-login-note">
-            Have ${plan.profiles} unique retailer ${plan.profiles === 1 ? "login" : "logins"}
-            for each retailer you plan to use.
+            Target, Walmart and PKC retailer logins are provided. Add shipping and cards; Costco and Sam's Club logins are optional.
           </p>
 
           <ul class="features">
