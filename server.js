@@ -7020,7 +7020,6 @@ app.post(
               quantity
             ) &&
             [
-              "1_drop",
               "1_week",
               "1_month"
             ].includes(durationType) &&
@@ -35834,7 +35833,7 @@ await writeJson(
 
 app.get("/api/rental-single-prices", async (_req, res) => {
   try {
-    const durations = ["1_drop", "1_week", "1_month"];
+    const durations = ["1_week", "1_month"];
     const amounts = await Promise.all(durations.map(duration => rentalAmountFor(1, duration)));
     return res.json({ prices: Object.fromEntries(durations.map((duration, index) => [duration, amounts[index]])) });
   } catch (error) {
@@ -35884,7 +35883,6 @@ app.post(
           quantity
         ) ||
         ![
-          "1_drop",
           "1_week",
           "1_month"
         ].includes(durationType) ||
