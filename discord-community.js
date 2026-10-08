@@ -2271,7 +2271,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       allowed_mentions: { parse: [], users: [ownerId] },
       embeds: [
         ...(skipping ? [{ title: "Do not run profiles tonight", description: `Requested for ${skipTonightDate} (New York time).`, color: 0xe74c3c }] : []),
-        ...(skippedUpcomingDrops.length ? [{ title: "Do not run profiles for these selected drops",
+        ...(skippedUpcomingDrops.length ? [{ title: "Do not run profiles for these upcoming drops",
           description: skippedUpcomingDrops.map(drop => `[Upcoming drop](https://discord.com/channels/${guildId}/${drop.channelId}/${drop.sourceId})`).join("\n"), color: 0xe74c3c }] : []),
         ...(view.embeds.length ? view.embeds.map(embed => ({ ...embed, title: "Products to run" })) : [{ title: "Products to run", description: "No SKUs selected.", color: 0x41b6e6 }])
       ],
