@@ -165,7 +165,7 @@ export function parseDropSkus(message) {
       }
     }
   }
-  return products.slice(0, 100);
+  return products.slice(0, 200);
 }
 export function dropChannelKind(name) {
   const key = String(name || "").normalize("NFKC").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -179,7 +179,7 @@ export function isNewDropPost(message) {
 const skuItemToken = key => codeHash(key).slice(0, 16);
 const skuSafeText = value => String(value || "").replace(/[\r\n<>*_`~|]/g, " ").trim();
 
-export function skuControlPayload(message, products, tonightChannelId) {
+export function skuControlPayload(message, products, tonightChannelId, retailerDropLabels = {}) {
   const lines = products.map(item =>
     `**\`${skuSafeText(item.sku).slice(0, 80)}\`** — ${skuSafeText(item.name).slice(0, 75) || "Product name not provided"}`
   );
@@ -207,16 +207,18 @@ export function skuControlPayload(message, products, tonightChannelId) {
   return {
     content: products.length
       ? "**SKU selection** — SKU numbers and their products are listed below.\nChoose multiple SKUs, set quantities, and press Confirm Selections. Your existing selections remain unchanged until you confirm."
-      : "Choose whether to skip this upcoming drop below.",
+      : "Choose whether to skip this drop below.",
     embeds: products.length ? [{
-      title: isTonight ? "Dropping tonight — products" : "Upcoming drop — products",
+      title: retailerDropLabels[message.channel_id] ? retailerDropLabels[message.channel_id] + " — products" :
+        isTonight ? "Dropping tonight — products" : "Upcoming drop — products",
       description, color: 0x41b6e6
     }] : [],
     components: [
       { type: 1, components: controls },
       { type: 1, components: [{
         type: 2, style: 4,
-        label: isTonight ? "Don't run my profiles tonight" : "Don't run my profiles for this upcoming drop",
+        label: isTonight ? "Don't run my profiles tonight" : retailerDropLabels[message.channel_id] ?
+          "Don't run my profiles for this drop" : "Don't run my profiles for this upcoming drop",
         custom_id: `sku:skip:${message.id}`
       }] }
     ],
@@ -487,7 +489,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
   });
 }
 
-export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
+export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
 export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
@@ -571,6 +573,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   }
 
   let dropChannelIds = new Set(), tonightChannelId;
+  const retailerDropLabels = {};
   // Channel names may have a Unicode emoji and divider before their functional name.
   const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
   function sameOverwrites(actual, expected) {
@@ -934,7 +937,40 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           }
         }
       }
-      discordCommunityStatus.importantReady = found.every(Boolean);
+      // Provision the three retailer drop channels under Important. Reuse existing
+       // channels and their IDs so saved per-customer drop selections remain intact.
+       const retailerSpecs = [
+         { key: "targetdrops", slug: "target-drops", label: "Target Drops" },
+         { key: "walmartdrops", slug: "walmart-drops", label: "Walmart Drops" },
+         { key: "pkcdrops", slug: "pkc-drops", label: "PKC Drops" }
+       ];
+       const retailerChannels = [];
+       for (const spec of retailerSpecs) {
+         const channelName = "❗️│" + spec.slug;
+         const topic = "SLABSNGRABSACO " + spec.label +
+           ": staff post product names and SKUs; paid members select quantities privately with Confirm Selections.";
+         const overwrites = readOnlyOverwrites();
+         let channel = channels.find(item =>
+           [0, 5].includes(item.type) && normalizeName(item.name) === spec.key);
+         if (!channel) {
+           channel = await api(`/guilds/${guildId}/channels`, "POST", {
+             name: channelName, type: 0, parent_id: important.id,
+             topic, permission_overwrites: overwrites
+           });
+         } else if (channel.name !== channelName || channel.parent_id !== important.id ||
+           channel.topic !== topic || !sameOverwrites(channel.permission_overwrites, overwrites)) {
+           channel = await api(`/channels/${channel.id}`, "PATCH", {
+             name: channelName, parent_id: important.id, topic,
+             permission_overwrites: overwrites
+           });
+         }
+         dropChannelIds.add(channel.id);
+         retailerDropLabels[channel.id] = spec.label;
+         retailerChannels.push({ name: channel.name, id: channel.id });
+       }
+       discordCommunityStatus.retailerDrops = retailerChannels;
+       discordCommunityStatus.retailerDropsReady = retailerChannels.length === 3;
+       discordCommunityStatus.importantReady = found.every(Boolean);
       if (!discordCommunityStatus.importantReady) {
         importantError = `Important: missing ${names.filter((name, index) => !found[index]).join(", ")}`;
       }
@@ -2128,7 +2164,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const sent = menus[message.id] || [];
       let menu;
       if (shouldShow) {
-        const payload = skuControlPayload(message, products, tonightChannelId);
+        const payload = skuControlPayload(message, products, tonightChannelId, retailerDropLabels);
         if (sent[0]) {
           try {
             menu = await api(`/channels/${message.channel_id}/messages/${sent[0]}`, "PATCH", payload);
@@ -2445,7 +2481,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
             content: d.channel_id === tonightChannelId
               ? "Saved: do not run my profiles tonight. The owner has been notified. Choosing a SKU tonight will replace this request."
-              : "Saved: do not run my profiles for this upcoming drop. The owner has been notified. Choosing a SKU from this drop will replace this request."
+              : "Saved: do not run my profiles for this drop. The owner has been notified. Choosing a SKU from this drop will replace this request."
           });
         } catch (error) {
           console.error("Discord drop opt out:", error.message);
