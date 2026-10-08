@@ -12844,19 +12844,19 @@ async function customerSetupChecklist(account) {
     }
   }
 
-  if (tasks.length) {
-    const details = await customerSavedDetailsPayload(account);
-    const hasAddress = details.addresses.some(address =>
-      ["firstName", "lastName", "address", "city", "state", "zip", "country"]
-        .every(key => String(address[key] || "").trim()));
-    const hasCard = details.paymentMethods.some(card =>
-      Boolean(String(card.cardholder || "").trim()) &&
-      /^\d{12,19}$/.test(String(card.acoCardNumber || "").replace(/\D/g, "")) &&
-      /^(0[1-9]|1[0-2])$/.test(String(card.expMonth || "")) &&
-      /^\d{4}$/.test(String(card.expYear || "")));
-    add("Account: one shipping address", { type: "shipping" }, hasAddress);
-    add("Account: one payment card", { type: "payment" }, hasCard);
-  }
+  // New accounts should see missing shipping/card tasks even before
+  // purchasing a membership. Closing onboarding never clears these reminders.
+  const details = await customerSavedDetailsPayload(account);
+  const hasAddress = details.addresses.some(address =>
+    ["firstName", "lastName", "address", "city", "state", "zip", "country"]
+      .every(key => String(address[key] || "").trim()));
+  const hasCard = details.paymentMethods.some(card =>
+    Boolean(String(card.cardholder || "").trim()) &&
+    /^\d{12,19}$/.test(String(card.acoCardNumber || "").replace(/\D/g, "")) &&
+    /^(0[1-9]|1[0-2])$/.test(String(card.expMonth || "")) &&
+    /^\d{4}$/.test(String(card.expYear || "")));
+  add("Account: one shipping address", { type: "shipping" }, hasAddress);
+  add("Account: one payment card", { type: "payment" }, hasCard);
 
   if (allowance) {
     const paid = await readJson(PAID_FILE, []);
