@@ -193,20 +193,20 @@ export function skuControlPayload(message, products, tonightChannelId) {
     shown++;
   }
   if (shown < products.length) {
-    description += `\n\n… ${products.length - shown} more products in **Choose a SKU**.`;
+    description += `\n\n… ${products.length - shown} more products in **Choose Multiple SKUs**.`;
   }
   const isTonight = message.channel_id === tonightChannelId;
   const controls = [];
   if (products.length) {
     controls.push(
-      { type: 2, style: 1, label: "Choose a SKU", custom_id: `sku:open:${message.id}` },
+      { type: 2, style: 1, label: "Choose Multiple SKUs", custom_id: `sku:open:${message.id}` },
       { type: 2, style: 1, label: "Run all SKUs", custom_id: `sku:pick:${message.id}:all` }
     );
   }
   controls.push({ type: 2, style: 2, label: "My selected SKUs", custom_id: "sku:view" });
   return {
     content: products.length
-      ? "**SKU selection** — SKU numbers and their products are listed below.\nChoose a SKU to privately select Qty: 1 or Qty: 2. Use My selected SKUs to review or remove choices."
+      ? "**SKU selection** — SKU numbers and their products are listed below.\nChoose multiple SKUs, set quantities, and press Confirm Selections. Your existing selections remain unchanged until you confirm."
       : "Choose whether to skip this upcoming drop below.",
     embeds: products.length ? [{
       title: isTonight ? "Dropping tonight — products" : "Upcoming drop — products",
@@ -223,30 +223,89 @@ export function skuControlPayload(message, products, tonightChannelId) {
     allowed_mentions: { parse: [] }
   };
 }
-export function skuBrowsePayload(sourceId, products, requestedPage = 0) {
+export function skuBrowsePayload(sourceId, products, requestedPage = 0, draft = []) {
   const pages = Math.ceil(products.length / 25);
   if (!pages) throw new Error("No SKUs are available in this drop.");
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
   const offset = page * 25;
-  const options = products.slice(offset, offset + 25).map((item, position) => ({
-    label: `${skuSafeText(item.sku).slice(0, 30)} · ${skuSafeText(item.name).slice(0, 65) || "Product name not provided"}`.slice(0, 100),
-    description: `Product: ${skuSafeText(item.name).slice(0, 85) || "Name not provided"}`.slice(0, 100),
-    value: String(offset + position)
+  const options = products.slice(offset, offset + 25).map((product, index) => ({
+    label: (skuSafeText(product.sku).slice(0, 30) + " · " + skuSafeText(product.name).slice(0, 65)).slice(0, 100),
+    description: ("Product: " + skuSafeText(product.name)).slice(0, 100),
+    value: String(offset + index),
+    default: draft.some(item => item.sku === product.sku)
   }));
   return {
-    content: `**Choose a SKU — page ${page + 1} of ${pages}**\nThe product name is shown alongside each SKU. Your selections are private until you submit them.`,
+    content: "**Choose Multiple SKUs — page " + (page + 1) + " of " + pages + "**\n" +
+      draft.length + " SKU(s) in your private draft. Your choices stay intact across pages. " +
+      "Set Qty 1 or Qty 2 for all selected SKUs, optionally adjust each SKU, then confirm.",
     components: [
-      { type: 1, components: [{
-        type: 3, custom_id: `sku:choose:${sourceId}:${page}`,
-        placeholder: "Choose a SKU and product", min_values: 1, max_values: 1, options
-      }] },
+      { type: 1, components: [{ type: 3, custom_id: "sku:choose:" + sourceId + ":" + page,
+        placeholder: "Select multiple SKUs / products", min_values: 0, max_values: options.length, options }] },
       { type: 1, components: [
-        { type: 2, style: 2, label: "◀ Previous", custom_id: `sku:page:${sourceId}:${page - 1}`, disabled: page === 0 },
-        { type: 2, style: 2, label: "Next ▶", custom_id: `sku:page:${sourceId}:${page + 1}`, disabled: page === pages - 1 }
+        { type: 2, style: 2, label: "◀ Previous", custom_id: "sku:page:" + sourceId + ":" + (page - 1), disabled: page === 0 },
+        { type: 2, style: 2, label: "Next ▶", custom_id: "sku:page:" + sourceId + ":" + (page + 1), disabled: page === pages - 1 }
+      ] },
+      { type: 1, components: [
+        { type: 2, style: 2, label: "All Selected Qty 1", custom_id: "sku:bulk:" + sourceId + ":1", disabled: draft.length === 0 },
+        { type: 2, style: 2, label: "All Selected Qty 2", custom_id: "sku:bulk:" + sourceId + ":2", disabled: draft.length === 0 }
+      ] },
+      { type: 1, components: [
+        { type: 2, style: 2, label: "Review / Adjust", custom_id: "sku:review:" + sourceId + ":0" },
+        { type: 2, style: 3, label: "Confirm Selections", custom_id: "sku:confirm:" + sourceId }
       ] }
     ],
     allowed_mentions: { parse: [] }
   };
+}
+export function applySkuPageDraft(items, products, sourceId, channelId, requestedPage, submittedValues) {
+  const page = Number(requestedPage);
+  if (!Number.isInteger(page) || page < 0 || page >= Math.ceil(products.length / 25)) throw new Error("Invalid SKU page.");
+  const offset = page * 25;
+  const pageProducts = products.slice(offset, offset + 25);
+  const values = [...new Set((Array.isArray(submittedValues) ? submittedValues : []).map(String))];
+  if (values.length > pageProducts.length || values.some(value => !/^\d+$/.test(value) ||
+      Number(value) < offset || Number(value) >= offset + pageProducts.length))
+    throw new Error("Invalid SKU choice. Reopen the selection screen.");
+  const selected = new Set(values.map(Number));
+  const pageSkus = new Set(pageProducts.map(item => item.sku));
+  const existing = new Map(items.map(item => [item.sku, item]));
+  const next = items.filter(item => !pageSkus.has(item.sku));
+  pageProducts.forEach((item, i) => {
+    if (!selected.has(offset + i)) return;
+    next.push({ key: channelId + ":" + sourceId + ":" + item.sku,
+      name: item.name, sku: item.sku, quantity: existing.get(item.sku)?.quantity || 1 });
+  });
+  if (next.length > 30) throw new Error("Up to 30 SKUs may be selected. Remove another SKU first.");
+  return next;
+}
+export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
+  const pages = Math.max(1, Math.ceil(items.length / 25));
+  const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
+  const selected = items.slice(page * 25, page * 25 + 25);
+  const lines = selected.map(item => skuSafeText(item.sku).slice(0, 35) + " — " +
+    skuSafeText(item.name).slice(0, 60) + " · Qty " + item.quantity);
+  const components = [];
+  if (selected.length) components.push({ type: 1, components: [{
+    type: 3, custom_id: "sku:adjust:" + sourceId + ":" + page,
+    placeholder: "Pick SKU to change quantity or remove", min_values: 1, max_values: 1,
+    options: selected.map(item => ({
+      label: (skuSafeText(item.sku) + " · Qty " + item.quantity).slice(0, 100),
+      description: skuSafeText(item.name).slice(0, 100) || "Selected product",
+      value: skuItemToken(item.key)
+    }))
+  }] });
+  if (pages > 1) components.push({ type: 1, components: [
+    { type: 2, style: 2, label: "◀ Previous", custom_id: "sku:review:" + sourceId + ":" + (page - 1), disabled: page === 0 },
+    { type: 2, style: 2, label: "Next ▶", custom_id: "sku:review:" + sourceId + ":" + (page + 1), disabled: page === pages - 1 }
+  ] });
+  components.push({ type: 1, components: [
+    { type: 2, style: 2, label: "Back to SKU List", custom_id: "sku:page:" + sourceId + ":0" },
+    { type: 2, style: 3, label: "Confirm Selections", custom_id: "sku:confirm:" + sourceId }
+  ] });
+  return { content: "**Review " + items.length + " Draft SKU(s)** — page " + (page + 1) + " of " + pages +
+    "\n" + (lines.join("\n") || "No draft SKUs. Confirm to clear saved SKUs for this drop.") +
+    "\n\nChanges are not saved or shared with the owner until confirmation.",
+    components, allowed_mentions: { parse: [] } };
 }
 
 export function changeSkuItems(items, chosen, sourceId, channelId, quantity) {
