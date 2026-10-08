@@ -199,14 +199,14 @@ export function skuControlPayload(message, products, tonightChannelId) {
   const controls = [];
   if (products.length) {
     controls.push(
-      { type: 2, style: 1, label: "Choose a SKU", custom_id: `sku:open:${message.id}` },
+      { type: 2, style: 1, label: "Choose Multiple SKUs", custom_id: `sku:open:${message.id}` },
       { type: 2, style: 1, label: "Run all SKUs", custom_id: `sku:pick:${message.id}:all` }
     );
   }
   controls.push({ type: 2, style: 2, label: "My selected SKUs", custom_id: "sku:view" });
   return {
     content: products.length
-      ? "**SKU selection** — SKU numbers and their products are listed below.\nChoose a SKU to privately select Qty: 1 or Qty: 2. Use My selected SKUs to review or remove choices."
+      ? "**SKU selection** — SKU numbers and their products are listed below.\nChoose multiple SKUs privately, set Qty 1 or Qty 2, then confirm together. Use My selected SKUs to review or change choices."
       : "Choose whether to skip this upcoming drop below.",
     embeds: products.length ? [{
       title: isTonight ? "Dropping tonight — products" : "Upcoming drop — products",
@@ -223,32 +223,99 @@ export function skuControlPayload(message, products, tonightChannelId) {
     allowed_mentions: { parse: [] }
   };
 }
-export function skuBrowsePayload(sourceId, products, requestedPage = 0) {
+// Page choices are keyed by SKU, not option position. Switching pages never
+// clears selections from earlier pages.
+export function setSkuDraftPage(items, products, requestedPage, values) {
+  const page = Number(requestedPage);
+  const pages = Math.ceil(products.length / 25);
+  if (!Number.isInteger(page) || page < 0 || page >= pages) throw new Error("Invalid SKU page.");
+  const start = page * 25;
+  const pageProducts = products.slice(start, start + 25);
+  const submitted = new Set(values.map(value => {
+    if (!/^\d+$/.test(String(value))) throw new Error("Invalid SKU selection.");
+    const index = Number(value);
+    if (index < start || index >= start + pageProducts.length) throw new Error("That SKU is not on this page.");
+    return index;
+  }));
+  const next = { ...items };
+  for (let i = 0; i < pageProducts.length; i++) {
+    const item = pageProducts[i];
+    if (submitted.has(start + i)) next[item.sku] = next[item.sku] === 2 ? 2 : 1;
+    else delete next[item.sku];
+  }
+  if (Object.keys(next).length > 30) throw new Error("You can select up to 30 SKUs. Remove a few before adding more.");
+  return next;
+}
+export function skuDraftQuantities(items, quantity, sku = null) {
+  if (![0, 1, 2].includes(quantity)) throw new Error("Choose Qty 1, Qty 2 or Remove.");
+  const next = { ...items };
+  if (sku !== null) {
+    if (!Object.hasOwn(next, sku)) throw new Error("That SKU is not selected.");
+    if (quantity === 0) delete next[sku]; else next[sku] = quantity;
+  } else for (const key of Object.keys(next)) next[key] = quantity;
+  return next;
+}
+export function replaceDropSkuItems(items, products, draft, sourceId, channelId) {
+  const prefix = `${channelId}:${sourceId}:`;
+  const next = items.filter(item => !item.key.startsWith(prefix)).map(item => ({ ...item }));
+  for (const product of products) {
+    if (!Object.hasOwn(draft, product.sku)) continue;
+    const quantity = Number(draft[product.sku]);
+    if (![1, 2].includes(quantity)) throw new Error("Invalid SKU quantity.");
+    next.push({ key: prefix + product.sku, name: product.name, sku: product.sku, quantity });
+  }
+  if (next.length > 30) throw new Error("You can save up to 30 selected SKUs across your drops.");
+  return next;
+}
+export function skuBrowsePayload(sourceId, products, requestedPage = 0, draft = {}) {
   const pages = Math.ceil(products.length / 25);
   if (!pages) throw new Error("No SKUs are available in this drop.");
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
   const offset = page * 25;
-  const options = products.slice(offset, offset + 25).map((item, position) => ({
+  const visible = products.slice(offset, offset + 25);
+  const options = visible.map((item, position) => ({
     label: `${skuSafeText(item.sku).slice(0, 30)} · ${skuSafeText(item.name).slice(0, 65) || "Product name not provided"}`.slice(0, 100),
     description: `Product: ${skuSafeText(item.name).slice(0, 85) || "Name not provided"}`.slice(0, 100),
-    value: String(offset + position)
+    value: String(offset + position),
+    default: Object.hasOwn(draft, item.sku)
   }));
+  const selectedOnPage = visible.map((item, position) => ({ item, index: offset + position }))
+    .filter(({ item }) => Object.hasOwn(draft, item.sku));
+  const count = Object.keys(draft).length;
+  const rows = [{
+    type: 1, components: [{
+      type: 3, custom_id: `sku:choose:${sourceId}:${page}`,
+      placeholder: "Select multiple SKUs on this page", min_values: 1, max_values: options.length, options
+    }]
+  }];
+  if (selectedOnPage.length) rows.push({
+    type: 1, components: [{
+      type: 3, custom_id: `sku:adjust:${sourceId}:${page}`,
+      placeholder: "Adjust an individual SKU quantity", min_values: 1, max_values: 1,
+      options: selectedOnPage.map(({ item, index }) => ({
+        label: `${skuSafeText(item.sku)} · Qty ${draft[item.sku]}`.slice(0, 100),
+        description: skuSafeText(item.name).slice(0, 100) || "Selected product",
+        value: String(index)
+      }))
+    }]
+  });
+  rows.push({ type: 1, components: [
+    { type: 2, style: 2, label: "◀ Previous", custom_id: `sku:page:${sourceId}:${page - 1}`, disabled: page === 0 },
+    { type: 2, style: 2, label: "Next ▶", custom_id: `sku:page:${sourceId}:${page + 1}`, disabled: page === pages - 1 }
+  ] });
+  rows.push({ type: 1, components: [
+    { type: 2, style: 1, label: "Qty 1 for selected", custom_id: `sku:bulkqty:${sourceId}:1`, disabled: count === 0 },
+    { type: 2, style: 1, label: "Qty 2 for selected", custom_id: `sku:bulkqty:${sourceId}:2`, disabled: count === 0 }
+  ] });
+  rows.push({ type: 1, components: [
+    { type: 2, style: 3, label: "Confirm Selections", custom_id: `sku:confirm:${sourceId}:${page}` },
+    { type: 2, style: 2, label: "Clear this page", custom_id: `sku:clear:${sourceId}:${page}`, disabled: !selectedOnPage.length }
+  ] });
   return {
-    content: `**Choose a SKU — page ${page + 1} of ${pages}**\nThe product name is shown alongside each SKU. Your selections are private until you submit them.`,
-    components: [
-      { type: 1, components: [{
-        type: 3, custom_id: `sku:choose:${sourceId}:${page}`,
-        placeholder: "Choose a SKU and product", min_values: 1, max_values: 1, options
-      }] },
-      { type: 1, components: [
-        { type: 2, style: 2, label: "◀ Previous", custom_id: `sku:page:${sourceId}:${page - 1}`, disabled: page === 0 },
-        { type: 2, style: 2, label: "Next ▶", custom_id: `sku:page:${sourceId}:${page + 1}`, disabled: page === pages - 1 }
-      ] }
-    ],
-    allowed_mentions: { parse: [] }
+    content: `**Multiple SKU selection — page ${page + 1} of ${pages}**\n**${count} SKU(s) staged** (limit 30 across drops). Select several products in the dropdown; switching pages keeps your choices. Qty buttons apply to all selected items. Use Adjust to customize one. **Nothing is sent to the owner until Confirm Selections.**`,
+    components: rows, allowed_mentions: { parse: [] }
   };
 }
-
 export function changeSkuItems(items, chosen, sourceId, channelId, quantity) {
   if (![0, 1, 2].includes(quantity)) throw new Error("Choose Qty: 1, Qty: 2, or Remove.");
   const next = items.map(item => ({ ...item }));
@@ -389,7 +456,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -1931,6 +1998,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   const skuMenusFile = path.join(dataDir, "discord-sku-controls.json");
   const skuSelectionsFile = path.join(dataDir, "discord-sku-selections.json");
+  const skuDraftsFile = path.join(dataDir, "discord-sku-drafts.json");
   let skuQueue = Promise.resolve();
   function withSkuQueue(task) {
     const next = skuQueue.then(task);
@@ -1947,11 +2015,88 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     await fs.writeFile(temp, JSON.stringify(value), { mode: 0o600 });
     await fs.rename(temp, file);
   }
+
+  // Paid access is checked on opening AND confirming, not inferred from a
+  // Discord role or from gifted/referral profile allowances.
+  async function requirePaidSkuMember(userId) {
+    const account = (await getAccounts()).find(item =>
+      !item.disabled && String(item.discordUserId || "") === String(userId) && item.discordLinkedAt);
+    const allowance = account && typeof getPaidAllowance === "function"
+      ? Number(await getPaidAllowance(account.id)) : 0;
+    if (!account || !(allowance > 0)) {
+      throw new Error("To choose SKUs you need active paid profiles linked to this Discord account. Sign up or renew at https://slabsngrabsaco.com");
+    }
+    return account;
+  }
+  const skuDraftKey = (userId, channelId, sourceId) => `${userId}:${channelId}:${sourceId}`;
+  async function updateSkuDraft(userId, channelId, sourceId, products, change = draft => draft) {
+    return withSkuQueue(async () => {
+      const drafts = await readSkuFile(skuDraftsFile);
+      const key = skuDraftKey(userId, channelId, sourceId);
+      const saved = drafts[key];
+      const selections = await readSkuFile(skuSelectionsFile);
+      const record = selections[userId] || { items: [] };
+      const prefix = `${channelId}:${sourceId}:`;
+      const initial = Object.fromEntries(record.items.filter(item =>
+        item.key.startsWith(prefix) && [1, 2].includes(item.quantity)).map(item => [item.sku, item.quantity]));
+      const known = new Set(products.map(item => item.sku));
+      const source = saved?.items || initial;
+      const current = Object.fromEntries(Object.entries(source)
+        .filter(([sku, quantity]) => known.has(sku) && [1, 2].includes(Number(quantity)))
+        .map(([sku, quantity]) => [sku, Number(quantity)]));
+      const next = change(current);
+      if (Object.keys(next).length > 30) throw new Error("You can select up to 30 SKUs across drops.");
+      drafts[key] = { items: next, updatedAt: new Date().toISOString() };
+      await writeSkuFile(skuDraftsFile, drafts);
+      return next;
+    });
+  }
+  async function confirmSkuDraft(userId, username, sourceId, channelId, products) {
+    if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
+    return withSkuQueue(async () => {
+      const drafts = await readSkuFile(skuDraftsFile);
+      const selections = await readSkuFile(skuSelectionsFile);
+      const record = selections[userId] || { username, messageId: null, items: [] };
+      const stored = drafts[skuDraftKey(userId, channelId, sourceId)];
+      const prefix = `${channelId}:${sourceId}:`;
+      const fallback = Object.fromEntries(record.items.filter(item => item.key.startsWith(prefix))
+        .map(item => [item.sku, item.quantity]));
+      const known = new Set(products.map(item => item.sku));
+      const draft = Object.fromEntries(Object.entries(stored?.items || fallback)
+        .filter(([sku, qty]) => known.has(sku) && [1, 2].includes(Number(qty))));
+      const next = replaceDropSkuItems(record.items, products, draft, sourceId, channelId);
+      const previouslySkipped = channelId === tonightChannelId
+        ? record.skipTonightDate === tonightDate()
+        : (record.skippedUpcomingDrops || []).some(drop => drop.channelId === channelId && drop.sourceId === sourceId);
+      const isSame = !previouslySkipped && next.length === record.items.length &&
+        next.every((item, i) => item.key === record.items[i].key &&
+          item.quantity === record.items[i].quantity && item.name === record.items[i].name);
+      if (isSame) return next;
+      if (channelId === tonightChannelId && next.some(item => item.key.startsWith(prefix))) delete record.skipTonightDate;
+      if (channelId !== tonightChannelId && next.some(item => item.key.startsWith(prefix))) {
+        record.skippedUpcomingDrops = (record.skippedUpcomingDrops || [])
+          .filter(drop => drop.channelId !== channelId || drop.sourceId !== sourceId);
+      }
+      const payload = ownerSkuPayload(userId, username, next,
+        `Confirmed ${Object.keys(draft).length} SKU(s) with individual quantities`,
+        record.skipTonightDate, record.skippedUpcomingDrops);
+      let posted;
+      if (record.messageId) {
+        try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
+        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+      }
+      if (!posted) posted = await api(`/channels/${skuRequestsChannelId}/messages`, "POST", payload);
+      Object.assign(record, { username, items: next, messageId: posted.id, updatedAt: new Date().toISOString() });
+      selections[userId] = record;
+      await writeSkuFile(skuSelectionsFile, selections);
+      return next;
+    });
+  }
   const tonightDate = () => new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit"
   }).format(new Date());
   async function ensureSkuControls(message) {
-    if (!dropChannelIds.has(message.channel_id) || message.author?.bot || message.webhook_id) return;
+    if (!dropChannelIds.has(message.channel_id) || message.author?.bot || message.webhook_id || !isNewDropPost(message)) return;
     const products = parseDropSkus(message);
     const upcomingWithoutSkus = message.channel_id !== tonightChannelId &&
       isNewDropPost(message) && (message.type ?? 0) === 0;
@@ -2025,7 +2170,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function onDropPost(d) {
     if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id ||
       d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0)) return;
-    // A reply must leave the entire existing drop and its controls intact.
+    // Replies must never reset or create selection panels.
+    if (!isNewDropPost(d)) return;
     if (isNewDropPost(d)) {
       try {
         let before = d.id;
