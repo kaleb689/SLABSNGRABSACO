@@ -1365,7 +1365,7 @@ async function loadSingleRentalPrices() {
     const response = await fetch("/api/rental-single-prices", { cache: "no-store" });
     if (!response.ok) throw new Error("Rental prices unavailable");
     const data = await readJson(response);
-    for (const duration of ["1_drop", "1_week", "1_month"]) {
+    for (const duration of ["1_week", "1_month"]) {
       const amount = Number(data.prices?.[duration]);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error("Invalid rental price");
       RENTAL_PRICING[1][duration] = amount;
@@ -1397,7 +1397,7 @@ function updateRentalPriceDisplay() {
   const durationType =
     document.getElementById(
       "rental-duration"
-    )?.value || "1_drop";
+    )?.value || "1_week";
 
   const price =
     rentalPrice(
@@ -1497,7 +1497,7 @@ function addRentalToCart() {
   const durationType =
     document.getElementById(
       "rental-duration"
-    )?.value || "1_drop";
+    )?.value || "1_week";
 
   const price =
     rentalPrice(
