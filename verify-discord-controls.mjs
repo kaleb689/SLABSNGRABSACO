@@ -28,7 +28,7 @@ async function api(route, method='GET', payload) {
   if (method==='PATCH') { Object.assign(existing,payload);changes.push(existing); }
   return existing;
 }
-const deps={fs,path,crypto,dataDir,tonightChannelId,dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',ownerId:owner,
+const deps={fs,path,crypto,dataDir,tonightChannelId,retailerDropLabels:{},dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',ownerId:owner,
   parseDropSkus,changeSkuItems,skuSelectionView,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
