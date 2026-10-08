@@ -867,10 +867,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       console.error("Discord SKU request channel setup:", error.message);
       discordCommunityStatus.error = `SKU request channel setup: ${error.message}`;
     }
+    let chat = null;
     let oneOnOneError = null;
     try {
     const existingOneOnOne = channels.find(item => item.type === 0 && normalizeName(item.name) === "1on1");
-    let chat = channels.find(item => item.type === 4 && normalizeName(item.name) === "chat") ||
+    chat = channels.find(item => item.type === 4 && normalizeName(item.name) === "chat") ||
       channels.find(item => item.id === existingOneOnOne?.parent_id && item.type === 4);
     if (!chat) chat = await api(`/guilds/${guildId}/channels`, "POST", { name: "Chat", type: 4 });
     const questionsChannel = channels.find(item => item.type === 0 && normalizeName(item.name) === "questions");
@@ -980,6 +981,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     }
     let communityError = null;
     try {
+      if (!chat) chat = channels.find(item => item.type === 4 && normalizeName(item.name) === "chat") ||
+        await api(`/guilds/${guildId}/channels`, "POST", { name: "Chat", type: 4 });
       // Leave other system-message settings intact while showing join posts.
       if (Number(guild.system_channel_flags || 0) & 1) {
         await api(`/guilds/${guildId}`, "PATCH", { system_channel_flags: Number(guild.system_channel_flags || 0) & ~1 })
