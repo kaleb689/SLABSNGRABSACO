@@ -275,7 +275,7 @@ export function applySkuPageDraft(items, products, sourceId, channelId, requeste
     next.push({ key: channelId + ":" + sourceId + ":" + item.sku,
       name: item.name, sku: item.sku, quantity: existing.get(item.sku)?.quantity || 1 });
   });
-  if (next.length > 30) throw new Error("Up to 30 SKUs may be selected. Remove another SKU first.");
+  if (next.length > 200) throw new Error("Up to 200 SKUs may be selected across drops.");
   return next;
 }
 export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
@@ -302,10 +302,19 @@ export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
     { type: 2, style: 2, label: "Back to SKU List", custom_id: "sku:page:" + sourceId + ":0" },
     { type: 2, style: 3, label: "Confirm Selections", custom_id: "sku:confirm:" + sourceId }
   ] });
-  return { content: "**Review " + items.length + " Draft SKU(s)** — page " + (page + 1) + " of " + pages +
-    "\n" + (lines.join("\n") || "No draft SKUs. Confirm to clear saved SKUs for this drop.") +
-    "\n\nChanges are not saved or shared with the owner until confirmation.",
-    components, allowed_mentions: { parse: [] } };
+  return {
+    content: "**Review " + items.length + " Draft SKU(s)** — page " + (page + 1) + " of " + pages +
+      "\nChanges are not saved or shared with the owner until confirmation.",
+    embeds: lines.length ? [{ title: "Your draft products and quantities", description: lines.join("\n"), color: 0x41b6e6 }] : [],
+    components, allowed_mentions: { parse: [] }
+  };
+}
+
+// Allow only the verified Discord server owner to test customer SKU selections
+// without a membership. All other accounts must have active paid profiles.
+export function isGuildOwnerSkuTester(userId, verifiedGuildOwnerId) {
+  const owner = String(verifiedGuildOwnerId || "");
+  return /^\d{17,22}$/.test(owner) && String(userId || "") === owner;
 }
 
 export function changeSkuItems(items, chosen, sourceId, channelId, quantity) {
@@ -318,32 +327,63 @@ export function changeSkuItems(items, chosen, sourceId, channelId, quantity) {
     else if (index >= 0) Object.assign(next[index], { quantity, name: product.name });
     else next.push({ key, name: product.name, sku: product.sku, quantity });
   }
-  if (next.length > 30) throw new Error("You have reached 30 selected SKUs. Remove older selections first.");
+  if (next.length > 200) throw new Error("Up to 200 SKUs may be selected across drops.");
   return next;
 }
-export function skuSelectionView(items, notice = "") {
-  const lines = items.map(item => `**${skuSafeText(item.name).slice(0, 70)}**\nSKU: \`${skuSafeText(item.sku).slice(0, 80)}\` · Qty: ${item.quantity}`);
+export function skuSelectionView(items, notice = "", requestedPage = 0) {
+  const pages = Math.max(1, Math.ceil(items.length / 30));
+  const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
+  const visible = items.length <= 30 ? items : items.slice(page * 30, (page + 1) * 30);
+  const lines = visible.map(item => "**" + skuSafeText(item.name).slice(0, 70) +
+    "**\nSKU: \`" + skuSafeText(item.sku).slice(0, 80) + "\` · Qty: " + item.quantity);
   const groups = ["", ""];
   for (const line of lines) {
     const index = groups[0].length + line.length < 3000 ? 0 : 1;
-    groups[index] += `${groups[index] ? "\n\n" : ""}${line}`;
+    groups[index] += (groups[index] ? "\n\n" : "") + line;
   }
   const components = [];
-  for (let offset = 0; offset < items.length; offset += 15) {
-    components.push({ type: 1, components: [{ type: 3, custom_id: `sku:manage:${offset}`,
+  for (let offset = 0; offset < visible.length; offset += 15) {
+    components.push({ type: 1, components: [{
+      type: 3, custom_id: "sku:manage:" + offset,
       placeholder: "Select a SKU to change quantity or remove", min_values: 1, max_values: 1,
-      options: items.slice(offset, offset + 15).map(item => ({
-        label: `${item.sku} · Qty: ${item.quantity}`.slice(0, 100),
+      options: visible.slice(offset, offset + 15).map(item => ({
+        label: (skuSafeText(item.sku) + " · Qty: " + item.quantity).slice(0, 100),
         description: skuSafeText(item.name).slice(0, 100) || "Selected product",
         value: skuItemToken(item.key)
       }))
     }] });
   }
+  if (pages > 1) components.push({ type: 1, components: [
+    { type: 2, style: 2, label: "◀ Previous", custom_id: "sku:mine:" + (page - 1), disabled: page === 0 },
+    { type: 2, style: 2, label: "Next ▶", custom_id: "sku:mine:" + (page + 1), disabled: page === pages - 1 }
+  ] });
   components.push({ type: 1, components: [{ type: 2, style: 2, label: "Refresh my selections", custom_id: "sku:view" }] });
   return {
-    content: `${notice ? notice + "\n\n" : ""}**Your selected SKUs (${items.length})**${items.length ? "\nChoose a selected SKU below to change its quantity or remove it." : "\nYou have no selected SKUs."}`,
+    content: (notice ? notice + "\n\n" : "") + "**Your selected SKUs (" + items.length + ")**" +
+      (items.length ? "\nChoose a selected SKU below to change its quantity or remove it." : "\nYou have no selected SKUs.") +
+      (pages > 1 ? "\nPage " + (page + 1) + " of " + pages + "; use the page buttons to view everything." : ""),
     embeds: groups.filter(Boolean).map(description => ({ title: "Your current selections", description, color: 0x41b6e6 })),
     components, allowed_mentions: { parse: [] }
+  };
+}
+export function skuAdminReviewPayload(items, userId, requestedPage = 0) {
+  const pages = Math.max(1, Math.ceil(items.length / 20));
+  const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
+  const selected = items.slice(page * 20, (page + 1) * 20);
+  const details = selected.map(item =>
+    "**" + skuSafeText(item.name).slice(0, 70) + "** · SKU \`" +
+    skuSafeText(item.sku).slice(0, 70) + "\` · Qty " + item.quantity);
+  return {
+    content: "**Confirmed SKU selections: " + items.length + " total** · Page " + (page + 1) + " of " + pages,
+    embeds: selected.length ? [{
+      title: "Products to run (" + (page * 20 + 1) + "–" + (page * 20 + selected.length) + ")",
+      description: details.join("\n") || "No SKUs selected.", color: 0x41b6e6
+    }] : [],
+    components: pages > 1 ? [{ type: 1, components: [
+      { type: 2, style: 2, label: "◀ Previous", custom_id: "sku:admin:" + userId + ":" + (page - 1), disabled: page === 0 },
+      { type: 2, style: 2, label: "Next ▶", custom_id: "sku:admin:" + userId + ":" + (page + 1), disabled: page === pages - 1 }
+    ] }] : [],
+    allowed_mentions: { parse: [] }
   };
 }
 const LEVELS = [
@@ -2009,6 +2049,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   const skuAccessMessage = "To select SKUs, you must have active paid profiles through https://slabsngrabsaco.com";
   async function hasPaidSkuAccess(userId) {
+    // Verified guild ownership is the single testing bypass, not admin/staff roles.
+    if (isGuildOwnerSkuTester(userId, ownerId)) return true;
     const account = (await getAccounts()).find(item =>
       String(item.discordUserId || "") === String(userId) && !item.disabled);
     if (!account) return false;
@@ -2050,7 +2092,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const record = records[userId] || { username, messageId: null, items: [] };
       const other = (record.items || []).filter(item => !item.key.startsWith(channelId + ":" + sourceId + ":"));
       const next = [...other, ...draft.items];
-      if (next.length > 30) throw new Error("You can have up to 30 SKUs across drops. Remove older selections first.");
+      if (next.length > 200) throw new Error("You can have up to 200 SKUs across drops. Remove older selections first.");
       const skipTonightDate = draft.items.length && channelId === tonightChannelId ? undefined : record.skipTonightDate;
       const skippedUpcomingDrops = draft.items.length && channelId !== tonightChannelId
         ? (record.skippedUpcomingDrops || []).filter(drop => drop.channelId !== channelId || drop.sourceId !== sourceId)
@@ -2196,7 +2238,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         ...(skippedUpcomingDrops.length ? [{ title: "Do not run profiles for these upcoming drops",
           description: skippedUpcomingDrops.map(drop => `[Upcoming drop](https://discord.com/channels/${guildId}/${drop.channelId}/${drop.sourceId})`).join("\n"), color: 0xe74c3c }] : []),
         ...(view.embeds.length ? view.embeds.map(embed => ({ ...embed, title: "Products to run" })) : [{ title: "Products to run", description: "No SKUs selected.", color: 0x41b6e6 }])
-      ]
+      ],
+      components: items.length > 30 ? [{ type: 1, components: [{
+        type: 2, style: 1, label: "View all " + items.length + " SKUs", custom_id: "sku:admin:" + userId + ":0"
+      }] }] : []
     };
   }
   async function skipDrop(userId, username, sourceId, channelId) {
@@ -2406,6 +2451,21 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           console.error("Discord drop opt out:", error.message);
           return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message });
         }
+      }
+      if (d.type === 3 && /^sku:mine:\d{1,3}$/.test(d.data?.custom_id || "")) {
+        const selections = await readSkuFile(skuSelectionsFile);
+        return await api(callback, "POST", { type: 7, data:
+          skuSelectionView(selections[userId]?.items || [], "", Number(d.data.custom_id.split(":")[2]))
+        });
+      }
+      if (d.type === 3 && /^sku:admin:\d{17,22}:\d{1,3}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== skuRequestsChannelId || !supportStaff(d.member, userId))
+          return await reply("Only the owner or Support Staff may review another customer's selections.");
+        const [, , targetId, pageString] = d.data.custom_id.split(":");
+        const selections = await readSkuFile(skuSelectionsFile);
+        const data = skuAdminReviewPayload(selections[targetId]?.items || [], targetId, Number(pageString));
+        const ephemeral = (Number(d.message?.flags || 0) & 64) === 64;
+        return await api(callback, "POST", { type: ephemeral ? 7 : 4, data: ephemeral ? data : { flags: 64, ...data } });
       }
       if (d.type === 3 && d.data?.custom_id === "sku:view") {
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
