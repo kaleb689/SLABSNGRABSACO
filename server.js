@@ -296,7 +296,7 @@ const PLANS = {
   }
 };
 
-const CUSTOMER_RENTALS_ENABLED = false;
+const CUSTOMER_RENTAL_RETAILERS = new Set(["pokemoncenter"]);
 
 const RENTAL_PACKAGES = {
   1: {
@@ -35833,9 +35833,6 @@ await writeJson(
 ------------------------------------------------------- */
 
 app.get("/api/rental-single-prices", async (_req, res) => {
-  if (!CUSTOMER_RENTALS_ENABLED) {
-    return res.status(404).json({ error: "Rental profiles are not currently offered." });
-  }
   try {
     const durations = ["1_drop", "1_week", "1_month"];
     const amounts = await Promise.all(durations.map(duration => rentalAmountFor(1, duration)));
@@ -35850,14 +35847,14 @@ app.post(
   "/api/create-rental-checkout-session",
   requireCustomer,
   async (req, res) => {
-    if (!CUSTOMER_RENTALS_ENABLED) {
-      return res.status(404).json({ error: "Rental profiles are not currently offered." });
-    }
     try {
       const retailer =
         normalizeRentalRetailer(
           req.body?.retailer
         );
+      if (!CUSTOMER_RENTAL_RETAILERS.has(retailer)) {
+        return res.status(404).json({ error: "Only Pokemon Center rental accounts are currently offered." });
+      }
 
       const quantity =
         Number(
