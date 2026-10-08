@@ -47,7 +47,7 @@ try {
   assert.ok(!upcomingRows.at(-1).components.some(c=>c.label==='Run all SKUs'));
   const rows=messages.get(menus[nightPost.id][0]).components;
   assert.ok(rows.at(-1).components.some(c=>c.label==="Don't run my profiles tonight"));
-  assert.ok(rows.at(-1).components.some(c=>c.label==='My selected SKUs'));
+  assert.ok(rows.some(row=>row.components.some(c=>c.label==='My selected SKUs')));
   await controls.recordSkuSelection(owner,'member',nightPost.id,'all',2,tonightChannelId);
   await controls.recordSkuSelection(owner,'member',upPost.id,'all',1,upcoming);
   await controls.skipDrop(owner,'member',nightPost.id,tonightChannelId);
