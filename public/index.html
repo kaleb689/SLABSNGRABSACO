@@ -3348,6 +3348,14 @@
 
       <button
         type="button"
+        class="account-tab"
+        data-account-tab="availability"
+      >
+        Pokémon Center Rentals
+      </button>
+
+      <button
+        type="button"
         class="account-tab account-notifications-tab"
         data-account-tab="notifications"
       >
@@ -4648,6 +4656,94 @@
         >
           Clear Notifications
         </button>
+      </div>
+    </div>
+
+
+    <!-- =================================================
+         POKEMON CENTER RENTALS
+    ================================================== -->
+
+    <div
+      id="account-tab-availability"
+      class="account-tab-panel"
+      data-account-panel="availability"
+      hidden
+    >
+      <div class="rental-availability-shell">
+        <div class="rental-availability-hero">
+          <div>
+            <span class="eyebrow">LIVE INVENTORY</span>
+            <h3>Pokémon Center Rental Accounts</h3>
+            <p>Rent additional Pokémon Center accounts for supported drops. Availability is limited and updates from the current pool.</p>
+          </div>
+          <span id="customer-availability-updated" class="rental-updated-pill">Loading…</span>
+        </div>
+
+        <div class="rental-stock-grid">
+          <article class="rental-stock-card" data-rental-stock-card="pokemoncenter">
+            <div class="rental-stock-head">
+              <span class="rental-stock-light"></span>
+              <span class="rental-stock-status" data-rental-stock-status="pokemoncenter">CHECKING</span>
+            </div>
+            <span class="eyebrow">POKÉMON CENTER</span>
+            <strong id="customer-pokemoncenter-available" class="rental-stock-number">—</strong>
+            <span class="rental-stock-label">accounts available</span>
+            <div class="rental-stock-meta">
+              <span><strong id="customer-pokemoncenter-in-use">—</strong> in use</span>
+              <span><strong id="customer-pokemoncenter-total">—</strong> total</span>
+            </div>
+          </article>
+        </div>
+
+        <div class="rental-purchase-card">
+          <div class="rental-purchase-heading">
+            <span class="eyebrow">BUILD YOUR RENTAL</span>
+            <h3>Choose Your Pokémon Center Package</h3>
+          </div>
+
+          <div class="rental-planning-summary" id="rental-planning-summary" role="status">
+            Pokémon Center rental accounts provide the retailer login. Add the shipping and payment information needed for the accounts you rent.
+          </div>
+
+          <div class="rental-purchase-bar">
+            <label>
+              <span>Retailer</span>
+              <select id="rental-retailer">
+                <option value="pokemoncenter">Pokémon Center</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Accounts</span>
+              <select id="rental-account-quantity">
+                <option value="1">1 Account</option>
+                <option value="5">5 Accounts</option>
+                <option value="10">10 Accounts</option>
+                <option value="15">15 Accounts</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Rental Length</span>
+              <select id="rental-duration">
+                <option value="1_drop">1 Drop</option>
+                <option value="1_week">1 Week</option>
+                <option value="1_month">1 Month</option>
+              </select>
+            </label>
+
+            <div class="rental-price-box">
+              <span>Price</span>
+              <strong id="rental-auto-price">—</strong>
+              <small>Auto-calculated</small>
+            </div>
+
+            <button type="button" class="primary rental-add-button" id="rental-add-to-cart">
+              Add to Cart
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
