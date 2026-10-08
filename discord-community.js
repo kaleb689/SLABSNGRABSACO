@@ -2153,18 +2153,31 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // A reply must leave the entire existing drop and its controls intact.
     if (isNewDropPost(d)) {
       try {
+        const retiredSources = new Set();
         let before = d.id;
         for (let page = 0; page < 20; page++) {
           const history = await api(`/channels/${d.channel_id}/messages?before=${before}&limit=100`);
           if (!history.length) break;
           for (const previous of history) {
             if (!previous.pinned && [0, 19].includes(previous.type)) {
-              await api(`/channels/${d.channel_id}/messages/${previous.id}`, "DELETE");
+              try { await api(`/channels/${d.channel_id}/messages/${previous.id}`, "DELETE"); }
+              catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+              if (!previous.author?.bot && !previous.webhook_id) retiredSources.add(previous.id);
             }
           }
           before = history.at(-1).id;
           if (history.length < 100) break;
         }
+        if (retiredSources.size) await withSkuQueue(async () => {
+          const menus = await readSkuFile(skuMenusFile);
+          for (const id of retiredSources) delete menus[id];
+          await writeSkuFile(skuMenusFile, menus);
+          const drafts = await readSkuFile(skuDraftsFile);
+          for (const key of Object.keys(drafts)) {
+            if ([...retiredSources].some(id => key.endsWith(":" + id))) delete drafts[key];
+          }
+          await writeSkuFile(skuDraftsFile, drafts);
+        });
       } catch (error) {
         discordCommunityStatus.error = `Drop message cleanup: ${error.message}`;
         console.error("Discord drop message cleanup:", error.message);
