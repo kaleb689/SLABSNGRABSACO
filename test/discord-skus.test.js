@@ -107,7 +107,7 @@ test("multi-page drafts retain other pages, preserve quantities, and require an 
   assert.equal(view.components[3].components[1].label, "Confirm Selections");
   assert.match(view.content, /4 SKU\(s\)/);
   const review = skuDraftReviewPayload(source, secondPage);
-  assert.match(review.content, /TCG Product 27/);
+  assert.match(review.embeds[0].description, /TCG Product 27/);
   assert.equal(review.components.at(-1).components[1].label, "Confirm Selections");
   const cleared = applySkuPageDraft(secondPage, products, source, channel, 1, []);
   assert.deepEqual(cleared.map(item => item.sku).sort(), ["SKU-001", "SKU-002"]);
@@ -124,5 +124,59 @@ test("draft review paginates safely when there are more than 25 selections", asy
   assert.equal(first.components[0].components[0].options.length, 25);
   assert.equal(second.components[0].components[0].options.length, 5);
   assert.equal(second.components[1].components[1].disabled, true);
-  assert.match(second.content, /SKU-29/);
+  assert.match(second.embeds[0].description, /SKU-29/);
+});
+
+test("Run All handles 100 products and private/admin review pages respect Discord message limits", async () => {
+  const { changeSkuItems, skuSelectionView, skuAdminReviewPayload, skuDraftReviewPayload,
+    applySkuPageDraft } = await import("../discord-community.js");
+  const products = Array.from({ length: 100 }, (_, i) => ({
+    sku: "TCGSKU-" + String(i).padStart(3,"0"),
+    name: "Long Trading Card Game Booster Bundle Product Name No. " + i
+  }));
+  const source = "1234567890123456789", channel = "1234567890123456788", user = "1234567890123456787";
+  const all = changeSkuItems([], products, source, channel, 2);
+  assert.equal(all.length, 100);
+  const first = applySkuPageDraft([], products, source, channel, 0,
+    products.slice(0,25).map((_,i)=>String(i)));
+  const draft = applySkuPageDraft(first, products, source, channel, 3,
+    products.slice(75,100).map((_,i)=>String(i+75)));
+  assert.equal(draft.length, 50);
+  const draftView = skuDraftReviewPayload(source, draft, 0);
+  assert.ok(draftView.content.length <= 2000);
+  assert.ok(draftView.embeds[0].description.length <= 4096);
+  const view = skuSelectionView(all, "", 3);
+  assert.match(view.content,/Your selected SKUs \(100\)/);
+  assert.match(view.content,/Page 4 of 4/);
+  assert.ok(view.components.every(row => row.components.length <= 5));
+  assert.ok(view.components.filter(row => row.components[0].type === 3)
+    .every(row => row.components[0].options.length <= 25));
+  assert.ok(view.embeds.every(embed => embed.description.length <= 4096));
+  const admin = skuAdminReviewPayload(all,user,4);
+  assert.match(admin.content,/100 total/);
+  assert.match(admin.embeds[0].description,/TCGSKU-080/);
+  assert.ok(admin.embeds[0].description.length <= 4096);
+  assert.ok(admin.content.length <= 2000);
+});
+
+test("only the verified Discord guild owner can bypass paid-profile gating for SKU testing", async () => {
+  const { isGuildOwnerSkuTester } = await import("../discord-community.js");
+  const owner = "1551070928039845923";
+  const paidUser = "1551070928039845924";
+  assert.equal(isGuildOwnerSkuTester(owner, owner), true,
+    "verified server owner may use the same SKU picker without a paid account");
+  assert.equal(isGuildOwnerSkuTester(paidUser, owner), false,
+    "ordinary users must still pass the membership check");
+  assert.equal(isGuildOwnerSkuTester("", owner), false);
+  assert.equal(isGuildOwnerSkuTester(owner, ""), false,
+    "no fallback bypass when the server owner's ID is unknown");
+  assert.equal(isGuildOwnerSkuTester("everyone", "everyone"), false,
+    "text role names or malformed IDs never grant the owner bypass");
+  assert.equal(isGuildOwnerSkuTester(owner, "0"), false);
+  const { readFileSync } = await import("node:fs");
+  const code = readFileSync(new URL("../discord-community.js", import.meta.url), "utf8");
+  assert.match(code, /if \(isGuildOwnerSkuTester\(userId, ownerId\)\) return true;/);
+  assert.match(code, /return Number\(await \(getPaidSkuAllowance \|\| getAllowance\)\(account.id\)\) > 0;/);
+  assert.match(code, /ownerId = guild.owner_id;/,
+    "owner ID comes from Discord itself, not a role label or user-provided input");
 });
