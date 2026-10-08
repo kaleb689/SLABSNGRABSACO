@@ -12934,3 +12934,50 @@ body.installed-app{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
   /* Keep dense daily bars legible; totals remain visible in the summary cards. */
   #my-profile .success-chart-value { display:none; }
 }
+
+
+/* Keep My Profile header controls compact and prevent them from covering account text. */
+#my-profile .account-topbar-right {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 10px 12px;
+  width: min(100%, 560px);
+  min-width: 0;
+  margin-left: auto;
+}
+
+#my-profile .account-topbar-right > .account-action-button {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  white-space: normal;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+#my-profile .account-topbar-right > .member-lifetime-stats {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1050px) {
+  #my-profile .account-topbar-right {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  #my-profile .account-topbar-right {
+    grid-template-columns: 1fr;
+  }
+
+  #my-profile .account-topbar-right > .member-lifetime-stats {
+    grid-column: 1;
+  }
+}
