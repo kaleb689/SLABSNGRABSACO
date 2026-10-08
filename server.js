@@ -1,4 +1,5 @@
 import express from "express";
+import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
@@ -15653,6 +15654,8 @@ app.put(
     }
   }
 );
+attachAdminPasskeys(app, { dataDir: DATA_DIR, baseUrl: BASE_URL, requireAdmin, adminSessions, adminSessionKey, adminUserAgentHash, sessionIdleMs: ADMIN_SESSION_IDLE_MS, sessionMaxAgeMs: ADMIN_SESSION_MAX_AGE_MS });
+
 /* -------------------------------------------------------
    ADMIN LOGIN
 ------------------------------------------------------- */
