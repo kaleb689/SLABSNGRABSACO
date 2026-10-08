@@ -1,4 +1,5 @@
 import express from "express";
+import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
 import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
@@ -24857,6 +24858,22 @@ function managedRetailerKeys(
 }
 
 
+// Only use the retailer account assigned by Admin for exported profile identities.
+function exportRetailerEmailForPaid(record, retailer) {
+  if (!record?.credentials) return "";
+  try {
+    const saved = normalizeRetailerCredentials(decryptJson(record.credentials));
+    return String(saved?.[retailer]?.username || "").trim().toLowerCase();
+  } catch { return ""; }
+}
+function exportRetailerEmailForAssignment(assignment, memberships, retailer) {
+  const id = managedAssignmentMembershipId(assignment);
+  const membership = memberships.find(item => String(item.id) === String(id));
+  if (!membership) return "";
+  return String(managedRetailerCredentialsForAdmin(membership)?.[retailer]?.username || "")
+    .trim().toLowerCase();
+}
+
 function hayhaProfileHasExactShape(
   item
 ) {
@@ -25584,12 +25601,13 @@ app.get(
           secrets = {};
         }
 
-        const status =
-          exportReadinessPayload(
-            record.customerProfile ||
-              {},
-            secrets
-          );
+        const retailerAccountEmail = retailer
+          ? exportRetailerEmailForPaid(record, retailer)
+          : String(record.customerProfile?.email || "").trim().toLowerCase();
+        const status = exportReadinessPayload(
+          { ...(record.customerProfile || {}), email: retailerAccountEmail },
+          secrets
+        );
 
         options.push({
           key:
@@ -25603,10 +25621,7 @@ app.get(
           label:
             `${customerName} ${options.length + 1}`,
 
-          accountEmail:
-            record.customerProfile
-              ?.email ||
-            "",
+          accountEmail: retailerAccountEmail,
 
           exportReady:
             status.exportReady,
@@ -25668,12 +25683,13 @@ app.get(
               assignment
             );
 
-          const status =
-            exportReadinessPayload(
-              assignment.customerProfile ||
-                {},
-              secrets
-            );
+          const retailerAccountEmail = retailer
+            ? exportRetailerEmailForAssignment(assignment, memberships, retailer)
+            : String(assignment.customerProfile?.email || "").trim().toLowerCase();
+          const status = exportReadinessPayload(
+            { ...(assignment.customerProfile || {}), email: retailerAccountEmail },
+            secrets
+          );
 
           const duplicateManagedLogin =
             duplicateCredentialState
@@ -25713,9 +25729,7 @@ app.get(
             label:
               `${customerName} ${options.length + 1}`,
 
-            accountEmail:
-              assignment.customerProfile?.email ||
-              "",
+            accountEmail: retailerAccountEmail,
 
             exportReady:
               status.exportReady,
@@ -26069,12 +26083,10 @@ app.post(
           secrets = {};
         }
 
-        const missingFields =
-          exportProfileMissingFields(
-            record.customerProfile ||
-              {},
-            secrets
-          );
+        const retailerAccountEmail = exportRetailerEmailForPaid(record, retailer);
+        const exportProfile = { ...(record.customerProfile || {}),
+          email: retailerAccountEmail };
+        const missingFields = exportProfileMissingFields(exportProfile, secrets);
 
         candidates.push({
           key:
@@ -26083,7 +26095,7 @@ app.post(
           record,
 
           email:
-            String(record.customerProfile?.email || "").trim().toLowerCase(),
+            retailerAccountEmail,
 
           exportReady:
             missingFields.length ===
@@ -26094,8 +26106,7 @@ app.post(
           item:
             hayhaProfileObject(
               "",
-              record.customerProfile ||
-                {},
+              exportProfile,
               secrets,
               groupId
             )
@@ -26130,12 +26141,10 @@ app.post(
               assignment
             );
 
-          const missingFields =
-            exportProfileMissingFields(
-              assignment.customerProfile ||
-                {},
-              secrets
-            );
+          const retailerAccountEmail = exportRetailerEmailForAssignment(assignment, memberships, retailer);
+          const exportProfile = { ...(assignment.customerProfile || {}),
+            email: retailerAccountEmail };
+          const missingFields = exportProfileMissingFields(exportProfile, secrets);
 
           if (
             duplicateCredentialState
@@ -26158,7 +26167,7 @@ app.post(
             record: assignment,
 
             email:
-              String(assignment.customerProfile?.email || "").trim().toLowerCase(),
+              retailerAccountEmail,
 
             exportReady:
               missingFields.length ===
@@ -26169,8 +26178,7 @@ app.post(
             item:
               hayhaProfileObject(
                 "",
-                assignment.customerProfile ||
-                  {},
+                exportProfile,
                 secrets,
                 groupId
               )
@@ -26337,19 +26345,16 @@ app.post(
         saveRentalAssignments(rentalAssignments)
       ]);
 
-      const fileName =
-        `${safeExportFilePart(
-          customerName
-        )} ${safeExportFilePart(
-          retailerDisplayName(
-            retailer
-          )
-        )} Profiles.hayha`;
-
-      res.setHeader(
-        "Content-Type",
-        "application/json; charset=utf-8"
-      );
+      const exportPayload = ["target", "walmart", "pkc"].includes(retailer)
+        ? buildSafeRetailerProfileExport(retailer, output)
+        : { extension: ".hayha", contentType: "application/json; charset=utf-8",
+            body: JSON.stringify(output, null, 2), excludesPaymentDetails: false };
+      const fileName = `${safeExportFilePart(customerName)} ${safeExportFilePart(retailerDisplayName(retailer))} Profiles${exportPayload.extension}`;
+      res.setHeader("Content-Type", exportPayload.contentType);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("X-Export-Payment-Fields", exportPayload.excludesPaymentDetails ? "excluded" : "legacy");
 
       res.setHeader(
         "X-Export-Profile-Count",
@@ -26363,13 +26368,7 @@ app.post(
         `attachment; filename="${fileName.replace(/"/g, "")}"`
       );
 
-      return res.send(
-        JSON.stringify(
-          output,
-          null,
-          2
-        )
-      );
+      return res.send(exportPayload.body);
 
     } catch (error) {
       console.error(
