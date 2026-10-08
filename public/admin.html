@@ -7225,6 +7225,7 @@ function renderOrder(x) {
         <p>
           Paid and linked profiles are combined by retailer. Only EXPORT READY profiles are included.
           Before any file is created, Admin confirms the exact number being exported.
+          Target exports use Shikari CSV; Walmart and PKC use Valor JSON. Payment card details are excluded from these files for security.
         </p>
 
         <div class="retailer-export-button-grid">
@@ -21098,11 +21099,15 @@ async function adminConfirmRetailerExport(
     );
   }
 
+  const exportExtension = retailer === "target" ? ".csv" :
+    ["walmart", "pkc"].includes(retailer) ? ".json" : ".hayha";
+  const omitsPayment = ["target", "walmart", "pkc"].includes(retailer);
   const confirmed =
     confirm(
       `${ready.length} ${data.retailerLabel || retailer} profile${ready.length === 1 ? "" : "s"} will be exported.` +
       `${missing.length ? ` ${missing.length} profile${missing.length === 1 ? "" : "s"} will be skipped because fields are missing.` : ""}` +
-      `\n\nCreate the .hayha file now?`
+      (omitsPayment ? "\n\nPayment fields will be blank. Add your card details directly within your secure import software." : "") +
+      `\n\nCreate the ${exportExtension} file now?`
     );
 
   if (!confirmed) {
