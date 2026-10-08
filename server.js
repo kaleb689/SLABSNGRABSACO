@@ -46929,6 +46929,26 @@ const ownedOrders =
           ?.profile?.profileName ||
         "Member";
 
+      let retailerCheckoutRecords = [];
+      try {
+        let hitsChannelId = null;
+        try {
+          const token = discordSuccessConfig().token;
+          if (token) hitsChannelId = await resolveDiscordHitsChannelId(token);
+        } catch {
+          hitsChannelId = null;
+        }
+
+        retailerCheckoutRecords = visibleDiscordSuccessRecords(
+          await getSuccessCheckouts(),
+          hitsChannelId
+        ).filter(record =>
+          String(record.customerAccountId) === String(account.id)
+        );
+      } catch (error) {
+        console.error("Customer retailer lifetime stats load failed:", account.id, error.message);
+      }
+
       const accountStats = {
         userSince:
           account.createdAt ||
@@ -46943,16 +46963,16 @@ const ownedOrders =
           ),
 
         totalOrders:
-          safeOrders.length,
+          retailerCheckoutRecords.length,
 
         lifetimeSpend:
-          safeOrders.reduce(
+          retailerCheckoutRecords.reduce(
             (sum, order) =>
               sum +
               Math.max(
                 0,
                 Number(
-                  order?.plan?.amount ||
+                  order?.orderTotal ||
                   0
                 ) || 0
               ),
