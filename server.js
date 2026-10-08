@@ -12103,6 +12103,27 @@ async function saveDiscountCodes(records) {
   await writeJson(DISCOUNT_CODES_FILE, records);
 }
 
+// Consult Stripe for limits on currently redeemable codes. Local records
+// preserve historical use counts if a code's coupon is edited/replaced.
+async function discountCodesWithUsage() {
+  const records = await getDiscountCodes();
+  return Promise.all(records.map(async record => {
+    if (record.maxUses == null) return record;
+    if (!record.stripeCouponId) return { ...record, usageUnavailable: true };
+    try {
+      const coupon = await stripe.coupons.retrieve(record.stripeCouponId);
+      if (!Number.isSafeInteger(coupon?.times_redeemed) || coupon.times_redeemed < 0) {
+        return { ...record, usageUnavailable: true };
+      }
+      const redemptions = Number(record.usesBeforeCurrentCoupon || 0) + coupon.times_redeemed;
+      return { ...record, redemptions, exhausted: redemptions >= Number(record.maxUses) };
+    } catch (error) {
+      console.error("Discount usage check failed:", error?.message);
+      return { ...record, usageUnavailable: true };
+    }
+  }));
+}
+
 
 async function getFreeAssignments() {
   const records =
@@ -16067,11 +16088,11 @@ app.delete("/api/admin/gifted-memberships/:id", requireAdmin, async (req, res) =
 });
 
 app.get("/api/admin/discount-codes", requireAdmin, async (req, res) => {
-  return res.json({ codes: await getDiscountCodes() });
+  return res.json({ codes: await discountCodesWithUsage() });
 });
 
 app.get("/api/public/membership-discounts", async (req, res) => {
-  const records = await getDiscountCodes();
+  const records = await discountCodesWithUsage();
   const discounts = {};
   for (const tier of Object.keys(PLANS)) {
     const sale = activeSitewideDiscount(records, tier);
@@ -36377,7 +36398,7 @@ app.post(
           customerHasOgMemberStatus(customerPaidForOgCheck);
 
         discountOptions = membershipDiscountOptions(
-          await getDiscountCodes(),
+          await discountCodesWithUsage(),
           req.body.discountCode,
           tier,
           Date.now(),
