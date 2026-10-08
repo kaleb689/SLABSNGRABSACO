@@ -1,5 +1,5 @@
 // Match retailer import templates without disclosing payment account data.
-// Payment numbers and security codes are intentionally NOT placed in exports.
+// Raw card numbers and verification codes are intentionally NOT placed in exports.
 import { randomUUID } from "node:crypto";
 
 export const TARGET_CSV_COLUMNS = [
@@ -34,15 +34,31 @@ const csv = value => {
 
 /**
  * Profiles are already validated by the existing authenticated Admin endpoint.
- * Never include account PAN, expiry, CVV, or stored login passwords in downloads.
+ * Never include account PAN, CVV, or stored login passwords in downloads.
  */
+const safeCardMetadata = item => {
+  const card = item.cardInfo || item.card || {};
+  const holder = String(card.cardholder || card.holder || card.cardHolder || "");
+  const monthRaw = String(card.expMonth || card.expiryMonth || "").replace(/\D/g, "");
+  const yearRaw = String(card.expYear || card.expiryYear || "").replace(/\D/g, "");
+  const existing = String(card.expiration || card.expiry || "");
+  const match = existing.match(/^(0?[1-9]|1[0-2])\/(\d{2}|\d{4})$/);
+  const month = monthRaw ? monthRaw.padStart(2, "0") : (match ? match[1].padStart(2, "0") : "");
+  const year = yearRaw || (match ? match[2] : "");
+  const validMonth = /^(0[1-9]|1[0-2])$/.test(month);
+  return { holder, month: validMonth ? month : "", year: validMonth ? year : "",
+    expiration: validMonth && year ? month + "/" + year.slice(-2) : "" ,
+    type: String(card.type || card.brand || "") };
+};
+
 export function buildSafeRetailerProfileExport(retailer, profiles) {
   if (!Array.isArray(profiles)) throw new TypeError("Invalid profile collection.");
   if (retailer === "target") {
     const lines = profiles.map(item => {
       const s = item.shipping || {};
+      const c = safeCardMetadata(item);
       return [item.name, s.firstName, s.lastName, s.email,
-        String(s.phone || "").replace(/\D/g, ""), "", "", "", "",
+        String(s.phone || "").replace(/\D/g, ""), "", c.month, c.year, "",
         s.address, s.address2, s.city, stateCode(s.state), s.zipCode,
         countryCode(s.country), "", "", "", "", "", "", "", ""].map(csv).join(",");
     });
@@ -54,6 +70,7 @@ export function buildSafeRetailerProfileExport(retailer, profiles) {
   const data = {};
   for (const item of profiles) {
     const s = item.shipping || {};
+    const c = safeCardMetadata(item);
     const id = randomUUID();
     const country = countryCode(s.country);
     const address = {
@@ -66,7 +83,7 @@ export function buildSafeRetailerProfileExport(retailer, profiles) {
       name: String(item.name || ""), email: String(s.email || ""),
       phoneNumber: String(s.phone || ""), billingSameAsShipping: true,
       oneCheckout: false, quickTask: false,
-      card: { holder: "", number: "", expiration: "", cvv: "", type: "" },
+      card: { holder: c.holder, number: "", expiration: c.expiration, cvv: "", type: c.type },
       shipping: address, billing: { ...address }, id, totalSpent: 0
     };
   }
