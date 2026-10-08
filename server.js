@@ -13595,6 +13595,30 @@ async function getCustomerProfileAllowance(
   return Math.min(100, baseAllowance + bonus);
 }
 
+function customerVisibleProfile(record = {}) {
+  const profile =
+    record?.customerProfile &&
+    typeof record.customerProfile === "object"
+      ? { ...record.customerProfile }
+      : null;
+
+  if (!profile) return null;
+
+  if (
+    record?.jiggedAddress &&
+    record?.jigSourceAddress &&
+    typeof record.jigSourceAddress === "object"
+  ) {
+    for (const key of ["address", "address2", "city", "state", "zip", "country"]) {
+      if (Object.prototype.hasOwnProperty.call(record.jigSourceAddress, key)) {
+        profile[key] = record.jigSourceAddress[key] || "";
+      }
+    }
+  }
+
+  return profile;
+}
+
 function safeRetailerProfile(
   record,
   allowance
@@ -13664,11 +13688,7 @@ function safeRetailerProfile(
   }
 
   const customerProfile =
-    record?.customerProfile &&
-    typeof record.customerProfile ===
-      "object"
-      ? record.customerProfile
-      : null;
+    customerVisibleProfile(record);
 
   const readiness =
     managedProfileReadiness(
@@ -14182,9 +14202,7 @@ try {
                 null,
 
               customerProfile:
-                assignment
-                  .customerProfile ||
-                null,
+                customerVisibleProfile(assignment),
 
               customerCard,
 
@@ -14513,8 +14531,7 @@ try {
   null,
 
 customerProfile:
-  assignment.customerProfile ||
-  null,
+  customerVisibleProfile(assignment),
 
 customerCard,
             };
