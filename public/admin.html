@@ -7235,7 +7235,7 @@ function renderOrder(x) {
             data-export-retailer="target"
             data-export-order="${escapeHtml(x.id)}"
           >
-            Export All Target Profiles
+            Export Shikari File (Target)
           </button>
 
           <button
@@ -7244,7 +7244,7 @@ function renderOrder(x) {
             data-export-retailer="walmart"
             data-export-order="${escapeHtml(x.id)}"
           >
-            Export All Walmart Profiles
+            Export Valor File (Walmart)
           </button>
 
           <button
@@ -7253,7 +7253,7 @@ function renderOrder(x) {
             data-export-retailer="pkc"
             data-export-order="${escapeHtml(x.id)}"
           >
-            Export All PKC Profiles
+            Export Valor File (Pokemon Center)
           </button>
 
           <button
@@ -20987,7 +20987,7 @@ async function adminDownloadProfileExport(
 
   const filename =
     match?.[1] ||
-    "Customer Profiles.hayha";
+    (retailer === "target" ? "Customer Profiles.csv" : "Customer Profiles.json");
 
   const url =
     URL.createObjectURL(
