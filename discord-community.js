@@ -302,10 +302,12 @@ export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
     { type: 2, style: 2, label: "Back to SKU List", custom_id: "sku:page:" + sourceId + ":0" },
     { type: 2, style: 3, label: "Confirm Selections", custom_id: "sku:confirm:" + sourceId }
   ] });
-  return { content: "**Review " + items.length + " Draft SKU(s)** — page " + (page + 1) + " of " + pages +
-    "\n" + (lines.join("\n") || "No draft SKUs. Confirm to clear saved SKUs for this drop.") +
-    "\n\nChanges are not saved or shared with the owner until confirmation.",
-    components, allowed_mentions: { parse: [] } };
+  return {
+    content: "**Review " + items.length + " Draft SKU(s)** — page " + (page + 1) + " of " + pages +
+      "\nChanges are not saved or shared with the owner until confirmation.",
+    embeds: lines.length ? [{ title: "Your draft products and quantities", description: lines.join("\n"), color: 0x41b6e6 }] : [],
+    components, allowed_mentions: { parse: [] }
+  };
 }
 
 export function changeSkuItems(items, chosen, sourceId, channelId, quantity) {
@@ -2452,9 +2454,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           return await reply("Only the owner or Support Staff may review another customer's selections.");
         const [, , targetId, pageString] = d.data.custom_id.split(":");
         const selections = await readSkuFile(skuSelectionsFile);
-        return await api(callback, "POST", { type: 4, data: {
-          flags: 64, ...skuAdminReviewPayload(selections[targetId]?.items || [], targetId, Number(pageString))
-        } });
+        const data = skuAdminReviewPayload(selections[targetId]?.items || [], targetId, Number(pageString));
+        const ephemeral = (Number(d.message?.flags || 0) & 64) === 64;
+        return await api(callback, "POST", { type: ephemeral ? 7 : 4, data: ephemeral ? data : { flags: 64, ...data } });
       }
       if (d.type === 3 && d.data?.custom_id === "sku:view") {
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
