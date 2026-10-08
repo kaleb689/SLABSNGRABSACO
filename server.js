@@ -16075,7 +16075,10 @@ app.get("/api/public/membership-discounts", async (req, res) => {
   const discounts = {};
   for (const tier of Object.keys(PLANS)) {
     const sale = activeSitewideDiscount(records, tier);
-    if (sale) discounts[tier] = { percent: sale.percent, duration: sale.duration };
+    if (sale) discounts[tier] = {
+      percent: sale.percent, duration: sale.duration,
+      ...(sale.discountType === "fixed-price" ? { fixedPrice: sale.fixedPrice } : {})
+    };
   }
   res.set("Cache-Control", "no-store");
   return res.json({ discounts });
@@ -16103,7 +16106,11 @@ app.put("/api/admin/customers/:id/og-status", requireAdmin, async (req, res) => 
 async function saveAdminDiscount(req, res, existingId = null) {
   try {
     const code = String(req.body?.code || "").trim().toUpperCase();
-    const percent = Number(req.body?.percent);
+    const discountType = req.body?.discountType === "fixed-price" ? "fixed-price" : "percent";
+    const requestedPercent = Number(req.body?.percent);
+    const requestedFixedPrice = Number(req.body?.fixedPrice);
+    const maxUsesInput = req.body?.maxUses;
+    const maxUses = maxUsesInput == null || String(maxUsesInput).trim() === "" ? null : Number(maxUsesInput);
     const tier = req.body?.tier === "all" || req.body?.tier === "" || req.body?.tier == null ? "all" : Number(req.body.tier);
     const appliesToRentals = req.body?.appliesToRentals === true;
     const duration = req.body?.duration === "forever" ? "forever" : "once";
@@ -16114,9 +16121,25 @@ async function saveAdminDiscount(req, res, existingId = null) {
       return res.status(400).json({ error: "Choose a sitewide sale or enter a valid recipient email for a private code." });
     }
     const expiration = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
-    if (!/^[A-Z0-9]{3,40}$/.test(code) || !Number.isInteger(percent) || percent < 1 || percent > 100 ||
-        (tier !== "all" && !PLANS[tier]) || (expiration && (!Number.isFinite(expiration.getTime()) || expiration.getTime() <= Date.now()))) {
-      return res.status(400).json({ error: "Provide a valid code, discount percentage, tier and future expiration." });
+    if (!/^[A-Z0-9]{3,40}$/.test(code) ||
+        (tier !== "all" && !PLANS[tier]) ||
+        (expiration && (!Number.isFinite(expiration.getTime()) || expiration.getTime() <= Date.now()))) {
+      return res.status(400).json({ error: "Provide a valid code, tier and future expiration." });
+    }
+    if (maxUses !== null && (!Number.isSafeInteger(maxUses) || maxUses < 1 || maxUses > 100000)) {
+      return res.status(400).json({ error: "Maximum uses must be a whole number from 1 to 100,000." });
+    }
+    if (discountType === "fixed-price") {
+      if (tier === "all" || appliesToRentals) return res.status(400).json({
+        error: "Fixed membership prices require one specific tier and cannot include rentals."
+      });
+      if (!Number.isFinite(requestedFixedPrice) || requestedFixedPrice < 0.01 ||
+          !Number.isSafeInteger(Math.round(requestedFixedPrice * 100)) ||
+          Math.abs(requestedFixedPrice * 100 - Math.round(requestedFixedPrice * 100)) > 0.00001) {
+        return res.status(400).json({ error: "Enter a valid membership price in dollars and cents." });
+      }
+    } else if (!Number.isInteger(requestedPercent) || requestedPercent < 1 || requestedPercent > 100) {
+      return res.status(400).json({ error: "Discount percentage must be between 1 and 100." });
     }
     if (!process.env.STRIPE_SECRET_KEY) return res.status(503).json({ error: "Stripe is not configured." });
     const records = await getDiscountCodes();
@@ -16130,10 +16153,43 @@ async function saveAdminDiscount(req, res, existingId = null) {
     if (!priceIds.length) return res.status(400).json({ error: "No Stripe prices are configured for this selection." });
     const prices = await Promise.all([...new Set(priceIds)].map(id => stripe.prices.retrieve(id)));
     const productIds = [...new Set(prices.map(price => typeof price.product === "string" ? price.product : price.product?.id).filter(Boolean))];
+    const planPrice = tier === "all" ? null : prices.find(price => price.id === PLANS[tier].priceId);
+    const regularPriceCents = tier === "all" ? null :
+      (Number.isInteger(planPrice?.unit_amount) ? planPrice.unit_amount : Math.round(PLANS[tier].amount * 100));
+    const fixedPriceCents = discountType === "fixed-price" ? Math.round(requestedFixedPrice * 100) : null;
+    if (discountType === "fixed-price" &&
+        (planPrice?.currency && planPrice.currency.toLowerCase() !== "usd" ||
+          !Number.isInteger(regularPriceCents) || regularPriceCents <= 0 ||
+          fixedPriceCents >= regularPriceCents)) {
+      return res.status(400).json({ error: "The custom tier price must be lower than that tier's current USD Stripe price." });
+    }
+    // Stripe counts coupon redemptions, not recurring invoices.
+    // Retain used redemptions when an existing code is edited and Stripe objects are replaced.
+    let usesBeforeCurrentCoupon = Number(existing?.usesBeforeCurrentCoupon || 0);
+    if (existing?.stripeCouponId) {
+      const oldCoupon = await stripe.coupons.retrieve(existing.stripeCouponId);
+      if (!Number.isSafeInteger(oldCoupon?.times_redeemed) || oldCoupon.times_redeemed < 0) {
+        return res.status(502).json({ error: "Unable to verify existing discount usage with Stripe." });
+      }
+      usesBeforeCurrentCoupon += oldCoupon.times_redeemed;
+    }
+    if (maxUses !== null && usesBeforeCurrentCoupon >= maxUses) {
+      return res.status(400).json({
+        error: `This code already has ${usesBeforeCurrentCoupon} uses. Enter a higher total limit or deactivate it.`
+      });
+    }
+    const remainingUses = maxUses === null ? null : maxUses - usesBeforeCurrentCoupon;
+    const amountOffCents = discountType === "fixed-price" ? regularPriceCents - fixedPriceCents : null;
+    const percent = discountType === "fixed-price"
+      ? Number((amountOffCents / regularPriceCents * 100).toFixed(4))
+      : requestedPercent;
     const coupon = await stripe.coupons.create({
-      percent_off: percent,
+      ...(discountType === "fixed-price"
+        ? { amount_off: amountOffCents, currency: "usd" }
+        : { percent_off: requestedPercent }),
       duration,
       applies_to: { products: productIds },
+      ...(remainingUses !== null ? { max_redemptions: remainingUses } : {}),
       name: `SLABSNGRABSACO ${code}`
     });
     let promotion;
@@ -16147,6 +16203,7 @@ async function saveAdminDiscount(req, res, existingId = null) {
       // No public Stripe promotion code is created for either restricted audience.
       promotion = (recipientEmail || ogOnly) ? null : await stripe.promotionCodes.create({
         coupon: coupon.id, code, active: existing ? existing.active : true,
+        ...(remainingUses !== null ? { max_redemptions: remainingUses } : {}),
         ...(expiration ? { expires_at: Math.floor(expiration.getTime() / 1000) } : {})
       });
     } catch (error) {
@@ -16162,6 +16219,8 @@ async function saveAdminDiscount(req, res, existingId = null) {
     }
     const discount = {
       id: existing?.id || crypto.randomUUID(), code, percent, tier, appliesToRentals, duration,
+      discountType, fixedPrice: fixedPriceCents === null ? null : fixedPriceCents / 100,
+      amountOffCents, maxUses, usesBeforeCurrentCoupon,
       expiresAt: expiration?.toISOString() || null,
       active: existing ? existing.active : true, sitewide, ogOnly, recipientEmail: recipientEmail || null,
       stripeCouponId: coupon.id, stripePromotionCodeId: promotion?.id || null,
