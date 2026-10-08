@@ -178,6 +178,70 @@ export function isNewDropPost(message) {
 }
 const skuItemToken = key => codeHash(key).slice(0, 16);
 const skuSafeText = value => String(value || "").replace(/[\r\n<>*_`~|]/g, " ").trim();
+
+export function skuControlPayload(message, products, tonightChannelId) {
+  const lines = products.map(item =>
+    `**\`${skuSafeText(item.sku).slice(0, 80)}\`** — ${skuSafeText(item.name).slice(0, 75) || "Product name not provided"}`
+  );
+  const descriptions = [];
+  for (const line of lines) {
+    if (!descriptions.length || descriptions.at(-1).length + line.length + 1 > 3800) descriptions.push("");
+    descriptions[descriptions.length - 1] += (descriptions.at(-1) ? "\n" : "") + line;
+  }
+  const isTonight = message.channel_id === tonightChannelId;
+  const controls = [];
+  if (products.length) {
+    controls.push(
+      { type: 2, style: 1, label: "Choose a SKU", custom_id: `sku:open:${message.id}` },
+      { type: 2, style: 1, label: "Run all SKUs", custom_id: `sku:pick:${message.id}:all` }
+    );
+  }
+  controls.push({ type: 2, style: 2, label: "My selected SKUs", custom_id: "sku:view" });
+  return {
+    content: products.length
+      ? "**SKU selection** — SKU numbers and their products are listed below.\nChoose a SKU to privately select Qty: 1 or Qty: 2. Use My selected SKUs to review or remove choices."
+      : "Choose whether to skip this upcoming drop below.",
+    embeds: descriptions.map((description, index) => ({
+      title: index === 0 ? (isTonight ? "Dropping tonight — products" : "Upcoming drop — products") : "More products",
+      description, color: 0x41b6e6
+    })),
+    components: [
+      { type: 1, components: controls },
+      { type: 1, components: [{
+        type: 2, style: 4,
+        label: isTonight ? "Don't run my profiles tonight" : "Don't run my profiles for this upcoming drop",
+        custom_id: `sku:skip:${message.id}`
+      }] }
+    ],
+    allowed_mentions: { parse: [] }
+  };
+}
+export function skuBrowsePayload(sourceId, products, requestedPage = 0) {
+  const pages = Math.ceil(products.length / 25);
+  if (!pages) throw new Error("No SKUs are available in this drop.");
+  const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
+  const offset = page * 25;
+  const options = products.slice(offset, offset + 25).map((item, position) => ({
+    label: `${skuSafeText(item.sku).slice(0, 30)} · ${skuSafeText(item.name).slice(0, 65) || "Product name not provided"}`.slice(0, 100),
+    description: `Product: ${skuSafeText(item.name).slice(0, 85) || "Name not provided"}`.slice(0, 100),
+    value: String(offset + position)
+  }));
+  return {
+    content: `**Choose a SKU — page ${page + 1} of ${pages}**\nThe product name is shown alongside each SKU. Your selections are private until you submit them.`,
+    components: [
+      { type: 1, components: [{
+        type: 3, custom_id: `sku:choose:${sourceId}:${page}`,
+        placeholder: "Choose a SKU and product", min_values: 1, max_values: 1, options
+      }] },
+      { type: 1, components: [
+        { type: 2, style: 2, label: "◀ Previous", custom_id: `sku:page:${sourceId}:${page - 1}`, disabled: page === 0 },
+        { type: 2, style: 2, label: "Next ▶", custom_id: `sku:page:${sourceId}:${page + 1}`, disabled: page === pages - 1 }
+      ] }
+    ],
+    allowed_mentions: { parse: [] }
+  };
+}
+
 export function changeSkuItems(items, chosen, sourceId, channelId, quantity) {
   if (![0, 1, 2].includes(quantity)) throw new Error("Choose Qty: 1, Qty: 2, or Remove.");
   const next = items.map(item => ({ ...item }));
@@ -1884,51 +1948,38 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const products = parseDropSkus(message);
     const upcomingWithoutSkus = message.channel_id !== tonightChannelId &&
       isNewDropPost(message) && (message.type ?? 0) === 0;
-    const pageCount = Math.max(Math.ceil(products.length / 15), upcomingWithoutSkus ? 1 : 0);
+    const shouldShow = products.length > 0 || upcomingWithoutSkus;
     await withSkuQueue(async () => {
       const menus = await readSkuFile(skuMenusFile);
       const sent = menus[message.id] || [];
-      for (let page = 0; page < pageCount; page++) {
-        const offset = page * 15;
-        const rows = [];
-        for (let index = offset; index < Math.min(offset + 15, products.length); index += 5) {
-          rows.push({ type: 1, components: products.slice(index, index + 5).map((item, position) => ({
-            type: 2, style: 2, label: `Run this SKU · ${item.sku}`.slice(0, 80),
-            custom_id: `sku:pick:${message.id}:${index + position}`
-          })) });
+      let menu;
+      if (shouldShow) {
+        const payload = skuControlPayload(message, products, tonightChannelId);
+        if (sent[0]) {
+          try {
+            menu = await api(`/channels/${message.channel_id}/messages/${sent[0]}`, "PATCH", payload);
+          } catch (error) {
+            if (!/HTTP 404/.test(error.message)) throw error;
+          }
         }
-        rows.push({ type: 1, components: [...(products.length ? [{
-          type: 2, style: 1, label: "Run all SKUs", custom_id: `sku:pick:${message.id}:all`
-        }] : []), { type: 2, style: 2, label: "My selected SKUs", custom_id: "sku:view" },
-        { type: 2, style: 4, label: message.channel_id === tonightChannelId
-          ? "Don't run my profiles tonight" : "Don't run my profiles for this upcoming drop",
-          custom_id: `sku:skip:${message.id}` }] });
-        const content = products.length
-          ? `Select a SKU below, then choose Qty: 1 or Qty: 2. Use My selected SKUs to review, remove, or change your selections. ${offset ? `More SKUs from the post above (${offset + 1}–${Math.min(offset + 15, products.length)}).` : ""}`.trim()
-          : "Choose whether to skip this upcoming drop below.";
-        let menu;
-        const existingId = sent[offset / 15];
-        if (existingId) {
-          try { menu = await api(`/channels/${message.channel_id}/messages/${existingId}`, "PATCH", { content, components: rows }); }
-          catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+        if (!menu) {
+          menu = await sendMessage(message.channel_id, payload.content, {
+            embeds: payload.embeds,
+            allowed_mentions: payload.allowed_mentions,
+            message_reference: { message_id: message.id, fail_if_not_exists: false },
+            components: payload.components
+          });
         }
-        if (!menu) menu = await sendMessage(message.channel_id, content, {
-          message_reference: { message_id: message.id, fail_if_not_exists: false }, components: rows
-        });
-        sent[offset / 15] = menu.id;
-        // Save each menu so a retry after a partial failure does not post the
-        // same control message again.
-        menus[message.id] = sent;
+        // Persist before deleting obsolete pages; retries will update the same panel.
+        menus[message.id] = [menu.id];
         await writeSkuFile(skuMenusFile, menus);
       }
-      const count = pageCount;
-      for (const id of sent.slice(count)) {
+      for (const id of shouldShow ? sent.filter(id => id !== menu.id) : sent) {
         try { await api(`/channels/${message.channel_id}/messages/${id}`, "DELETE"); }
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
       }
-      if (sent.length !== count) {
-        if (count) menus[message.id] = sent.slice(0, count);
-        else delete menus[message.id];
+      if (!shouldShow) {
+        delete menus[message.id];
         await writeSkuFile(skuMenusFile, menus);
       }
     });
@@ -2098,6 +2149,44 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+      if (d.type === 3 && /^sku:(?:open|page|choose):\d{17,22}(?::\d{1,3})?$/.test(d.data?.custom_id || "")) {
+        if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU menu belongs in a drop channel.");
+        const [, action, sourceId, pageString] = d.data.custom_id.split(":");
+        // Keep browsing private so one member's page does not change for everyone.
+        if (action === "open") await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        const source = await api(`/channels/${d.channel_id}/messages/${sourceId}`);
+        const products = parseDropSkus(source);
+        if (!products.length) {
+          if (action === "open") return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: "That drop no longer has selectable SKUs.", components: [] });
+          return await reply("That drop no longer has selectable SKUs.");
+        }
+        if (action === "choose") {
+          const page = Number(pageString);
+          const selected = Number(d.data.values?.[0]);
+          if (!Number.isInteger(selected) || selected < page * 25 ||
+            selected >= Math.min(page * 25 + 25, products.length)) {
+            return await reply("That SKU is no longer on this selection page. Open Choose a SKU again.");
+          }
+          const chosen = products[selected];
+          return await api(callback, "POST", { type: 4, data: {
+            flags: 64, allowed_mentions: { parse: [] },
+            content: `**${skuSafeText(chosen.name)}**\nSKU: \`${skuSafeText(chosen.sku)}\`\nChoose a quantity or remove your selection.`,
+            components: [{ type: 1, components: [{ type: 3,
+              custom_id: `sku:qty:${sourceId}:${selected}`,
+              placeholder: "Choose Qty: 1 or Qty: 2", min_values: 1, max_values: 1,
+              options: [
+                { label: "Qty: 1", value: "1" }, { label: "Qty: 2", value: "2" },
+                { label: "Remove this SKU", value: "0" }
+              ]
+            }] }]
+          } });
+        }
+        const payload = skuBrowsePayload(sourceId, products, action === "open" ? 0 : Number(pageString));
+        if (action === "open") {
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", payload);
+        }
+        return await api(callback, "POST", { type: 7, data: payload });
+      }
       if (d.type === 3 && /^sku:skip:\d{17,22}$/.test(d.data?.custom_id || "")) {
         if (!dropChannelIds.has(d.channel_id)) return await reply("This option is only available in a drop channel.");
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
