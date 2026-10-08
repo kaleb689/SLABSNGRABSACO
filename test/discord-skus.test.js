@@ -180,3 +180,55 @@ test("only the verified Discord guild owner can bypass paid-profile gating for S
   assert.match(code, /ownerId = guild.owner_id;/,
     "owner ID comes from Discord itself, not a role label or user-provided input");
 });
+
+test("Target, Walmart and PKC drops reuse the private SKU selection flow and preserve older choices", async () => {
+  const { skuControlPayload, skuBrowsePayload, skuAdminReviewPayload } =
+    await import("../discord-community.js");
+  const labels = { "channel-target": "Target Drops", "channel-walmart": "Walmart Drops",
+    "channel-pkc": "PKC Drops" };
+  const products = Array.from({ length: 200 }, (_, i) => ({
+    sku: "TCGSKU-" + String(i).padStart(3, "0"),
+    name: "Retailer Trading Card Game Product " + i
+  }));
+  const message = { id: "1234567890123456789", channel_id: "channel-pkc" };
+  const parsed = parseDropSkus({
+    content: products.map(p => p.name + "\\nSKU: " + p.sku).join("\\n")
+  });
+  assert.equal(parsed.length, 200);
+  assert.deepEqual(parsed[199], products[199]);
+  for (const [channelId, label] of Object.entries(labels)) {
+    const panel = skuControlPayload({ ...message, channel_id: channelId },
+      products, "channel-tonight", labels);
+    assert.equal(panel.embeds[0].title, label + " — products");
+    assert.equal(panel.components[0].components[0].label, "Choose Multiple SKUs");
+    assert.equal(panel.components[0].components[1].label, "Run all SKUs");
+    assert.equal(panel.components[1].components[0].label, "Don't run my profiles for this drop");
+    assert.equal(panel.components[0].components[2].label, "My selected SKUs");
+    assert.ok(panel.embeds[0].description.length <= 4096);
+  }
+  const endPage = skuBrowsePayload(message.id, parsed, 7);
+  assert.equal(endPage.components[0].components[0].options.length, 25);
+  assert.equal(endPage.components[0].components[0].options[24].value, "199");
+  assert.equal(endPage.components[1].components[1].disabled, true);
+  let selected = changeSkuItems([], [products[0]], "old-post", "channel-tonight", 2);
+  selected = changeSkuItems(selected, [products[0], products[1]], message.id, message.channel_id, 1);
+  assert.equal(selected.length, 3, "saved selections from other drop channels must remain");
+  assert.equal(selected[0].quantity, 2);
+  assert.ok(skuAdminReviewPayload(selected, "1234567890123456787").content.includes("3 total"));
+  assert.throws(() => changeSkuItems(selected, products, message.id, message.channel_id, 1),
+    /Up to 200 SKUs/);
+});
+
+test("new drop channels provision idempotently with staff posting and paid-only selection", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../discord-community.js", import.meta.url), "utf8");
+  for (const name of ["target-drops", "walmart-drops", "pkc-drops"]) {
+    assert.ok(source.includes('slug: "' + name + '"'));
+  }
+  assert.match(source, /normalizeName\(item\.name\) === spec\.key/);
+  assert.match(source, /permission_overwrites: overwrites/);
+  assert.match(source, /dropChannelIds\.add\(channel\.id\)/);
+  assert.match(source, /retailerDropsReady = retailerChannels\.length === 3/);
+  assert.match(source, /if \(!await hasPaidSkuAccess\(userId\)\) return await reply\(skuAccessMessage\)/);
+  assert.match(source, /if \(isGuildOwnerSkuTester\(userId, ownerId\)\) return true/);
+});
