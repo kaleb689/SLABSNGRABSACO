@@ -83,3 +83,46 @@ test("single public SKU panel labels products and private pagination scales beyo
   assert.equal(third.components[0].components[0].options[0].value, "50");
   assert.equal(third.components[1].components[1].disabled, true);
 });
+
+test("multi-page drafts retain other pages, preserve quantities, and require an explicit final confirmation", async () => {
+  const { skuBrowsePayload, applySkuPageDraft, skuDraftReviewPayload } = await import("../discord-community.js");
+  const source = "1234567890123456789", channel = "1234567890123456788";
+  const products = Array.from({ length: 53 }, (_, i) => ({
+    sku: "SKU-" + String(i + 1).padStart(3, "0"), name: "TCG Product " + (i + 1)
+  }));
+  const saved = changeSkuItems([], [products[0]], source, channel, 2);
+  const firstPage = applySkuPageDraft(saved, products, source, channel, 0, ["0", "1"]);
+  assert.equal(firstPage.find(item => item.sku === products[0].sku).quantity, 2);
+  const secondPage = applySkuPageDraft(firstPage, products, source, channel, 1, ["25", "26"]);
+  assert.equal(secondPage.length, 4);
+  assert.ok(secondPage.some(item => item.sku === "SKU-027"));
+  assert.ok(secondPage.some(item => item.sku === "SKU-001"));
+  const revisedFirst = applySkuPageDraft(secondPage, products, source, channel, 0, ["1"]);
+  assert.deepEqual(new Set(revisedFirst.map(item => item.sku)), new Set(["SKU-002", "SKU-026", "SKU-027"]));
+  assert.equal(secondPage.length, 4, "page edits cannot mutate the original draft");
+  const view = skuBrowsePayload(source, products, 1, secondPage);
+  assert.equal(view.components[0].components[0].max_values, 25);
+  assert.equal(view.components[0].components[0].min_values, 0);
+  assert.equal(view.components[0].components[0].options[0].default, true);
+  assert.equal(view.components[3].components[1].label, "Confirm Selections");
+  assert.match(view.content, /4 SKU\(s\)/);
+  const review = skuDraftReviewPayload(source, secondPage);
+  assert.match(review.content, /TCG Product 27/);
+  assert.equal(review.components.at(-1).components[1].label, "Confirm Selections");
+  const cleared = applySkuPageDraft(secondPage, products, source, channel, 1, []);
+  assert.deepEqual(cleared.map(item => item.sku).sort(), ["SKU-001", "SKU-002"]);
+  assert.throws(() => applySkuPageDraft([], products, source, channel, 1, ["999"]));
+});
+
+test("draft review paginates safely when there are more than 25 selections", async () => {
+  const { skuDraftReviewPayload } = await import("../discord-community.js");
+  const draft = Array.from({ length: 30 }, (_, i) => ({
+    key: "channel:source:SKU-" + i, sku: "SKU-" + i, name: "TCG Product " + i, quantity: i % 2 + 1
+  }));
+  const first = skuDraftReviewPayload("1234567890123456789", draft, 0);
+  const second = skuDraftReviewPayload("1234567890123456789", draft, 1);
+  assert.equal(first.components[0].components[0].options.length, 25);
+  assert.equal(second.components[0].components[0].options.length, 5);
+  assert.equal(second.components[1].components[1].disabled, true);
+  assert.match(second.content, /SKU-29/);
+});
