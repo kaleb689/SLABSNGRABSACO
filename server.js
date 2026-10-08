@@ -110,6 +110,12 @@ const CUSTOMER_ACCOUNTS_FILE =
     "customer-accounts.json"
   );
 
+const APP_USAGE_FILE =
+  path.join(
+    DATA_DIR,
+    "app-usage.json"
+  );
+
 const PASSWORD_RESET_FILE =
   path.join(
     DATA_DIR,
@@ -4481,6 +4487,63 @@ async function saveCustomerAccounts(
     CUSTOMER_ACCOUNTS_FILE,
     accounts
   );
+}
+
+
+async function getAppUsageRecords() {
+  const records = await readJson(APP_USAGE_FILE, []);
+  return Array.isArray(records) ? records : [];
+}
+
+async function saveAppUsageRecords(records) {
+  await writeJson(APP_USAGE_FILE, Array.isArray(records) ? records : []);
+}
+
+function appUsagePlatform(userAgent = "") {
+  const value = String(userAgent || "");
+  if (/iPhone|iPad|iPod/i.test(value)) return "iOS";
+  if (/Android/i.test(value)) return "Android";
+  if (/Macintosh|Mac OS X/i.test(value)) return "macOS";
+  if (/Windows/i.test(value)) return "Windows";
+  return "Other";
+}
+
+function appUsageSummary(records = [], accounts = []) {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const accountMap = new Map((Array.isArray(accounts) ? accounts : []).map(item => [String(item.id), item]));
+  const normalized = (Array.isArray(records) ? records : []).filter(item => item && item.accountId && item.deviceId);
+  const installed = normalized.filter(item => item.installedConfirmed === true || item.lastStandaloneAt);
+  const active7 = new Set(normalized.filter(item => now - Date.parse(item.lastSeenAt || 0) <= 7 * day).map(item => String(item.accountId)));
+  const active30 = new Set(normalized.filter(item => now - Date.parse(item.lastSeenAt || 0) <= 30 * day).map(item => String(item.accountId)));
+  const installedUsers = new Set(installed.map(item => String(item.accountId)));
+  const installedDevices = new Set(installed.map(item => `${item.accountId}:${item.deviceId}`));
+  const recent = [...normalized]
+    .sort((a,b) => Date.parse(b.lastSeenAt || 0) - Date.parse(a.lastSeenAt || 0))
+    .slice(0, 100)
+    .map(item => {
+      const account = accountMap.get(String(item.accountId)) || {};
+      return {
+        accountId: String(item.accountId),
+        name: account.name || account.displayName || [account.firstName, account.lastName].filter(Boolean).join(" ") || "Customer",
+        email: account.email || "",
+        platform: item.platform || "Other",
+        installedConfirmed: item.installedConfirmed === true || Boolean(item.lastStandaloneAt),
+        firstSeenAt: item.firstSeenAt || null,
+        installedAt: item.installedAt || item.firstStandaloneAt || null,
+        lastSeenAt: item.lastSeenAt || null,
+        lastStandaloneAt: item.lastStandaloneAt || null,
+        launches: Math.max(0, Number(item.launches) || 0)
+      };
+    });
+  return {
+    installedUsers: installedUsers.size,
+    installedDevices: installedDevices.size,
+    activeUsers7d: active7.size,
+    activeUsers30d: active30.size,
+    trackedDevices: normalized.length,
+    recent
+  };
 }
 
 function referralDiscordValue(value) {
@@ -9163,6 +9226,61 @@ app.delete("/api/admin/customers/:id/discord", requireAdmin, async (req, res) =>
 const appOrderNotifications = createOrderNotifications({
   dataDir: DATA_DIR, baseUrl: BASE_URL, getRecords: getSuccessCheckouts, getAccounts: getCustomerAccounts,
   getAccountUpdates: () => readJson(PAID_FILE, [])
+});
+
+
+app.post("/api/account/app-usage", requireCustomer, async (req, res) => {
+  try {
+    const deviceId = clean(req.body?.deviceId, 120);
+    if (!/^[a-zA-Z0-9._:-]{8,120}$/.test(deviceId)) {
+      return res.status(400).json({ error: "Invalid app device identifier." });
+    }
+    const event = clean(req.body?.event, 40) || "active";
+    const standalone = req.body?.standalone === true;
+    const now = new Date().toISOString();
+    const accountId = String(req.customerAccount.id);
+    const records = await getAppUsageRecords();
+    let record = records.find(item => String(item.accountId) === accountId && item.deviceId === deviceId);
+    if (!record) {
+      record = {
+        id: crypto.randomUUID(),
+        accountId,
+        deviceId,
+        firstSeenAt: now,
+        launches: 0
+      };
+      records.push(record);
+    }
+    record.platform = clean(req.body?.platform, 30) || appUsagePlatform(req.headers["user-agent"]);
+    record.userAgentClass = appUsagePlatform(req.headers["user-agent"]);
+    record.lastSeenAt = now;
+    if (standalone) {
+      record.firstStandaloneAt = record.firstStandaloneAt || now;
+      record.lastStandaloneAt = now;
+      record.installedConfirmed = true;
+    }
+    if (event === "installed") {
+      record.installedConfirmed = true;
+      record.installedAt = record.installedAt || now;
+    }
+    if (event === "launch") record.launches = Math.max(0, Number(record.launches) || 0) + 1;
+    await saveAppUsageRecords(records);
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("App usage tracking failed:", error?.message || error);
+    return res.status(500).json({ error: "Unable to record app activity." });
+  }
+});
+
+app.get("/api/admin/app-usage", requireAdmin, async (_req, res) => {
+  try {
+    const [records, accounts] = await Promise.all([getAppUsageRecords(), getCustomerAccounts()]);
+    res.set("Cache-Control", "no-store");
+    return res.json({ ok: true, ...appUsageSummary(records, accounts) });
+  } catch (error) {
+    console.error("Admin app usage load failed:", error?.message || error);
+    return res.status(500).json({ error: "Unable to load app usage." });
+  }
 });
 app.get("/api/account/push-preferences", requireCustomer, async (req, res) => {
   try { res.set("Cache-Control", "no-store"); res.json({ preferences: await appOrderNotifications.preferences(String(req.customerAccount.id)) }); }
@@ -47581,6 +47699,7 @@ async function hardenStoragePermissions() {
     PENDING_FILE,
     PAID_FILE,
     CUSTOMER_ACCOUNTS_FILE,
+    APP_USAGE_FILE,
     PASSWORD_RESET_FILE,
     EMAIL_VERIFY_FILE,
     ORDER_CLAIM_FILE,
@@ -47711,6 +47830,10 @@ async function startServer() {
 
     await initializeArrayFile(
       CUSTOMER_ACCOUNTS_FILE
+    );
+
+    await initializeArrayFile(
+      APP_USAGE_FILE
     );
 
     await initializeArrayFile(
