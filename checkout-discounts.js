@@ -1,5 +1,5 @@
 export function activeSitewideDiscount(records, tier, now = Date.now()) {
-  return records.filter(item => item.sitewide === true && item.active && item.stripePromotionCodeId &&
+  return records.filter(item => item.sitewide === true && item.active && !item.exhausted && !item.usageUnavailable && item.stripePromotionCodeId &&
     !item.recipientEmail && item.ogOnly !== true &&
     (item.tier === "all" || Number(item.tier) === Number(tier)) &&
     (!item.expiresAt || Date.parse(item.expiresAt) > now))
@@ -7,7 +7,7 @@ export function activeSitewideDiscount(records, tier, now = Date.now()) {
 }
 
 export function activeOgDiscount(records, tier, now = Date.now()) {
-  return records.filter(item => item.ogOnly === true && item.active && item.stripeCouponId &&
+  return records.filter(item => item.ogOnly === true && item.active && !item.exhausted && !item.usageUnavailable && item.stripeCouponId &&
     !item.recipientEmail &&
     (item.tier === "all" || Number(item.tier) === Number(tier)) &&
     (!item.expiresAt || Date.parse(item.expiresAt) > now))
@@ -34,6 +34,8 @@ export function membershipDiscountOptions(
   }
 
   if (!code && !discount) return { allow_promotion_codes: true };
+  if (discount?.exhausted) throw new Error("This discount code has reached its maximum number of uses.");
+  if (discount?.usageUnavailable) throw new Error("Discount availability could not be verified. Please try again.");
 
   const usableStripeDiscount =
     discount?.stripePromotionCodeId ||
