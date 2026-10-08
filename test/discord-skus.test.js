@@ -192,7 +192,7 @@ test("Target, Walmart and PKC drops reuse the private SKU selection flow and pre
   }));
   const message = { id: "1234567890123456789", channel_id: "channel-pkc" };
   const parsed = parseDropSkus({
-    content: products.map(p => p.name + "\\nSKU: " + p.sku).join("\\n")
+    content: products.map(p => p.name + "\nSKU: " + p.sku).join("\n")
   });
   assert.equal(parsed.length, 200);
   assert.deepEqual(parsed[199], products[199]);
