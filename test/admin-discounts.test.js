@@ -55,7 +55,7 @@ test("admin discount edit, rollback, deactivation and deletion stay synchronized
     const settings = { code: "SAVE20", percent: 20, tier: "all", sitewide: true, duration: "forever" };
     assert.equal((await request("/api/admin/discount-codes", "POST", settings)).status, 401);
     const created = await request("/api/admin/discount-codes", "POST", settings, admin.cookie);
-    assert.equal(created.status, 201);
+    assert.equal(created.status, 201, JSON.stringify(created.data));
     const id = created.data.discount.id;
     const url = `/api/admin/discount-codes/${id}`;
     const edited = await request(url, "PUT", { ...settings, percent: 30 }, admin.cookie);
