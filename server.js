@@ -33443,6 +33443,12 @@ if (!customerAccountId) {
         const retailer of
         RETAILER_KEYS
       ) {
+        // Customer/order forms omit the staff-managed retailer fields.
+        // Preserve encrypted logins if the request does not explicitly update them.
+        if (!Object.prototype.hasOwnProperty.call(submitted, retailer)) {
+          updatedCredentials[retailer] = { ...(existingCredentials[retailer] || {}) };
+          continue;
+        }
         const submittedRetailer =
           submitted[retailer] &&
           typeof submitted[
@@ -33794,6 +33800,12 @@ app.put(
         const retailer of
         RETAILER_KEYS
       ) {
+        // Customer/order forms omit the staff-managed retailer fields.
+        // Preserve encrypted logins if the request does not explicitly update them.
+        if (!Object.prototype.hasOwnProperty.call(submitted, retailer)) {
+          updatedCredentials[retailer] = { ...(existingCredentials[retailer] || {}) };
+          continue;
+        }
         const submittedRetailer =
           submitted[retailer] &&
           typeof submitted[
