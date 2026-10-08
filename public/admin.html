@@ -7910,9 +7910,9 @@ function renderOrder(x) {
 <details class="order-section admin-collapsible">
   <summary class="order-section-head admin-collapsible-head">
     <div>
-      <h3>Saved Shipping &amp; Payment</h3>
+      <h3>Saved Shipping, Payment &amp; Optional Retailer Accounts</h3>
       <p>
-        Every unique shipping address and card from all paid profiles plus any extra saved addresses/cards.
+        Saved addresses, payment cards, and optional Costco / Sam’s Club account logins.
       </p>
     </div>
     <span class="admin-collapsible-arrow">›</span>
@@ -7921,6 +7921,7 @@ function renderOrder(x) {
   <div
     class="admin-retailer-wrap"
     data-admin-saved-details="${escapeHtml(x.id)}"
+    data-admin-customer-account="${escapeHtml(x.customerAccountId || "")}"
   >
     <button
       type="button"
@@ -10861,6 +10862,22 @@ async function loadAdminSavedDetails(
         ? data.paymentMethods
         : [];
 
+    let optionalLogins = [];
+    const customerAccountId = container.dataset.adminCustomerAccount;
+    if (customerAccountId) {
+      try {
+        const optionalResponse = await fetch("/api/admin/customers/" +
+          encodeURIComponent(customerAccountId) + "/optional-retailer-logins", {
+          credentials: "same-origin", cache: "no-store"
+        });
+        if (optionalResponse.ok) {
+          const optionalData = await optionalResponse.json();
+          optionalLogins = Array.isArray(optionalData.entries) ? optionalData.entries : [];
+        }
+      } catch (error) {
+        console.error("Could not load optional retailer account summaries:", error.message);
+      }
+    }
     container.innerHTML = `
       <div class="admin-saved-details">
 
@@ -10932,6 +10949,18 @@ async function loadAdminSavedDetails(
           <div data-admin-payment-preview></div>
             </div>
           </details>
+        <div class="admin-saved-detail-card">
+          <details>
+            <summary>OPTIONAL COSTCO &amp; SAM&#39;S CLUB ACCOUNTS (${optionalLogins.length})</summary>
+            <div class="admin-saved-detail-body">
+              ${optionalLogins.length ? optionalLogins.map(item => `
+                <p><strong>${item.retailer === "costco" ? "Costco" : "Sam&#39;s Club"}</strong>
+                · ${escapeHtml(item.username)} · ${item.passwordConfigured ? "Password saved securely" : "Password not saved"}</p>
+              `).join("") : `<p class="admin-retailer-empty">No optional retailer accounts have been submitted.</p>`}
+              <small class="admin-edit-help">Customers add or edit accounts in My Profile; operator-supplied retailer inventory remains separate.</small>
+            </div>
+          </details>
+        </div>
         </div>
 
       </div>
