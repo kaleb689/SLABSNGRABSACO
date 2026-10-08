@@ -60,3 +60,26 @@ test('upcoming drop channels use the same controls with singular, plural, or dec
   assert.equal(dropChannelKind('❗️│dropping-tonight'), 'droppingtonight');
   assert.equal(dropChannelKind('sku-requests'), 'skurequests');
 });
+
+test("single public SKU panel labels products and private pagination scales beyond 25 entries", async () => {
+  const { skuControlPayload, skuBrowsePayload } = await import("../discord-community.js");
+  const products = Array.from({ length: 53 }, (_, i) => ({
+    sku: "SKU-" + String(i + 1).padStart(3, "0"),
+    name: "Trading Card Box " + (i + 1)
+  }));
+  const message = { id: "1234567890123456789", channel_id: "tonight-channel" };
+  const publicPanel = skuControlPayload(message, products, "tonight-channel");
+  assert.equal(publicPanel.components.length, 2, "one public panel contains controls without duplicated instructions");
+  assert.match(publicPanel.embeds[0].description, /SKU-001.*Trading Card Box 1/);
+  assert.ok(publicPanel.embeds.map(e => e.description.length).every(n => n <= 4096));
+  assert.ok(publicPanel.embeds.reduce((length, e) => length + e.description.length + e.title.length, 0) <= 6000);
+  const first = skuBrowsePayload(message.id, products, 0);
+  const second = skuBrowsePayload(message.id, products, 1);
+  const third = skuBrowsePayload(message.id, products, 2);
+  assert.equal(first.components[0].components[0].options.length, 25);
+  assert.equal(second.components[0].components[0].options.length, 25);
+  assert.equal(third.components[0].components[0].options.length, 3);
+  assert.match(second.components[0].components[0].options[0].label, /SKU-026.*Trading Card Box 26/);
+  assert.equal(third.components[0].components[0].options[0].value, "50");
+  assert.equal(third.components[1].components[1].disabled, true);
+});
