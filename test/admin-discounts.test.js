@@ -77,6 +77,42 @@ test("admin discount edit, rollback, deactivation and deletion stay synchronized
     assert.equal(privateCode.status, 201);
     assert.equal(privateCode.data.discount.stripePromotionCodeId, null);
     assert.equal((await request(`/api/admin/discount-codes/${privateCode.data.discount.id}`, "DELETE", null, admin.cookie)).status, 200);
+    const fixed = await request("/api/admin/discount-codes", "POST", {
+      code: "FIXED10", discountType: "fixed-price", fixedPrice: 10,
+      tier: 1, maxUses: 2, duration: "once", sitewide: false
+    }, admin.cookie);
+    assert.equal(fixed.status, 201);
+    assert.equal(fixed.data.discount.fixedPrice, 10);
+    assert.equal(fixed.data.discount.amountOffCents, 500);
+    assert.equal(fixed.data.discount.maxUses, 2);
+    assert.equal(fixed.data.discount.discountType, "fixed-price");
+    const fixedList = await request("/api/admin/discount-codes", "GET", null, admin.cookie);
+    assert.equal(fixedList.data.codes[0].redemptions, 0);
+    assert.equal(fixedList.data.codes[0].exhausted, false);
+    const fixedEdit = await request(`/api/admin/discount-codes/${fixed.data.discount.id}`, "PUT", {
+      code: "FIXED10", discountType: "fixed-price", fixedPrice: 9.5,
+      tier: 1, maxUses: 1, duration: "forever"
+    }, admin.cookie);
+    assert.equal(fixedEdit.status, 200);
+    assert.equal(fixedEdit.data.discount.amountOffCents, 550);
+    assert.equal(fixedEdit.data.discount.maxUses, 1);
+    assert.equal((await request("/api/admin/discount-codes", "POST", {
+      code: "INVALID1", discountType: "fixed-price", fixedPrice: 10,
+      tier: "all", maxUses: 2
+    }, admin.cookie)).status, 400, "fixed prices require one selected tier");
+    assert.equal((await request("/api/admin/discount-codes", "POST", {
+      code: "INVALID2", discountType: "fixed-price", fixedPrice: 15,
+      tier: 1, maxUses: 2
+    }, admin.cookie)).status, 400, "fixed price must be less than normal tier price");
+    assert.equal((await request("/api/admin/discount-codes", "POST", {
+      code: "INVALID3", discountType: "fixed-price", fixedPrice: 10,
+      tier: 1, maxUses: 0
+    }, admin.cookie)).status, 400, "redemption limit must be positive");
+    assert.equal((await request("/api/admin/discount-codes", "POST", {
+      code: "INVALID4", discountType: "fixed-price", fixedPrice: 10.001,
+      tier: 1, maxUses: 2
+    }, admin.cookie)).status, 400, "fixed price must use dollar-cent precision");
+    assert.equal((await request(`/api/admin/discount-codes/${fixed.data.discount.id}`, "DELETE", null, admin.cookie)).status, 200);
   } finally {
     server.kill();
     await fs.rm(dataDir, { recursive: true, force: true });
