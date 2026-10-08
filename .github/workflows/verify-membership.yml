@@ -19,7 +19,5 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: node --check server.js
       - run: node --check public/app.js
-      - run: node --check public/admin.html
-        continue-on-error: true
       - run: node --check discord-community.js
-      - run: node --test test/admin-discounts.test.js test/checkout-discounts.test.js test/discord-skus.test.js
+      - run: node --test test/admin-discounts.test.js test/checkout-discounts.test.js test/discord-skus.test.js test/signup-onboarding.test.js
