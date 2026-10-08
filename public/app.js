@@ -29,6 +29,15 @@ const ADMIN_PREVIEW_MODE =
     "adminPreview"
   ) === "1";
 
+const ADMIN_CUSTOMER_PREVIEW_MODE =
+  ADMIN_PREVIEW_PARAMS.get(
+    "adminCustomerPreview"
+  ) === "1";
+
+const ANY_ADMIN_PREVIEW_MODE =
+  ADMIN_PREVIEW_MODE ||
+  ADMIN_CUSTOMER_PREVIEW_MODE;
+
 const SUCCESS_DEMO_MODE = ADMIN_PREVIEW_PARAMS.get("successDemo") === "1";
 
 const ADMIN_PREVIEW_TIER =
@@ -6480,7 +6489,10 @@ function setAccountOnboardingVisibility(step = "") {
 }
 
 function openAccountCheckoutOnboarding(step = "address") {
-  if (!state.customer || ADMIN_PREVIEW_MODE) return;
+  if (!state.customer || ANY_ADMIN_PREVIEW_MODE) {
+    setAccountOnboardingVisibility("");
+    return;
+  }
   if (step === "address" && state.savedDetails?.addresses?.length) step = "card";
   if (step === "card" && state.savedDetails?.paymentMethods?.length) step = "imap";
   if (step === "imap" && (state.customer.imapOnboardingCompletedAt || savedImapEntries.length)) {
@@ -14655,7 +14667,7 @@ await loadSavedDetails();
 if (
   state.customer &&
   (!state.customer.checkoutOnboardingComplete || !state.customer.imapOnboardingCompletedAt) &&
-  !ADMIN_PREVIEW_MODE
+  !ANY_ADMIN_PREVIEW_MODE
 ) {
   const hasAddress =
     (state.savedDetails?.addresses || []).length > 0;
@@ -15063,6 +15075,10 @@ async function openSetupTask(task) {
 function renderSetupChecklist() {
   const panel = document.getElementById("setup-checklist-panel");
   if (!panel) return;
+  if (ADMIN_CUSTOMER_PREVIEW_MODE) {
+    panel.hidden = true;
+    return;
+  }
   const tasks = state.customerChecklist || [];
   const incomplete = tasks.some(item => !item.complete);
   const appProfileVisible = !document.body.classList.contains("app-dashboard") || document.body.dataset.appView === "profile";
@@ -15186,6 +15202,8 @@ function claimCustomerNotification(notification) {
 function showCustomerNotificationPopup(
   notification
 ) {
+  if (ADMIN_CUSTOMER_PREVIEW_MODE) return;
+
   const popup =
     document.getElementById(
       "customer-notification-popup"
@@ -15247,6 +15265,18 @@ async function loadCustomerNotifications(
     showPopup = true
   } = {}
 ) {
+  if (ADMIN_CUSTOMER_PREVIEW_MODE) {
+    state.customerNotifications = [];
+    state.customerChecklist = [];
+    updateCustomerNotificationIndicator(0);
+    const list = document.getElementById("customer-notifications-list");
+    if (list) list.innerHTML = '<p class="account-muted">Notifications are hidden in Admin Customer View.</p>';
+    const popup = document.getElementById("customer-notification-popup");
+    if (popup) popup.hidden = true;
+    setAccountOnboardingVisibility("");
+    return;
+  }
+
   if (!state.customer) {
     updateCustomerNotificationIndicator(
       0
