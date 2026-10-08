@@ -9300,7 +9300,7 @@ function restoreManagedProfilesGroupOpen(
     label.textContent =
       label.dataset
         .hideText ||
-      "HIDE ALL GIFTED PROFILES";
+      "HIDE ALL GIFTED & RENTED PROFILES";
   }
 }
 
@@ -10383,8 +10383,14 @@ if (allowance <= 0) {
     )
     .filter(Boolean);
 
+const rentedCards =
+  state.rentedMemberships
+    .map(membership => managedMembershipCardHtml(membership))
+    .filter(Boolean);
+
 const specialCards = [
-    ...freeCards
+    ...freeCards,
+    ...rentedCards
   ];
 
   container.innerHTML = `
@@ -10401,17 +10407,17 @@ const specialCards = [
                   </span>
 
                   <strong>
-                    Gifted Profiles
+                    Gifted & Rented Profiles
                   </strong>
                 </div>
 
                 <span
                   class="profile-group-open"
                   data-profile-group-label
-                  data-show-text="SHOW ALL GIFTED PROFILES"
-                  data-hide-text="HIDE ALL GIFTED PROFILES"
+                  data-show-text="SHOW ALL GIFTED & RENTED PROFILES"
+                  data-hide-text="HIDE ALL GIFTED & RENTED PROFILES"
                 >
-                  SHOW ALL GIFTED PROFILES
+                  SHOW ALL GIFTED & RENTED PROFILES
                 </span>
               </summary>
 
@@ -10559,8 +10565,14 @@ const specialCards = [
       )
       .filter(Boolean);
 
+  const rentedManagedCards =
+    state.rentedMemberships
+      .map(membership => managedMembershipCardHtml(membership))
+      .filter(Boolean);
+
   const specialCards = [
-    ...freeManagedCards
+    ...freeManagedCards,
+    ...rentedManagedCards
   ];
 
 container.innerHTML = `
@@ -10638,17 +10650,17 @@ container.innerHTML = `
                 </span>
 
                 <strong>
-                  Gifted Profiles
+                  Gifted & Rented Profiles
                 </strong>
               </div>
 
               <span
                 class="profile-group-open"
                 data-profile-group-label
-                data-show-text="SHOW ALL GIFTED PROFILES"
-                data-hide-text="HIDE ALL GIFTED PROFILES"
+                data-show-text="SHOW ALL GIFTED & RENTED PROFILES"
+                data-hide-text="HIDE ALL GIFTED & RENTED PROFILES"
               >
-                SHOW ALL GIFTED PROFILES
+                SHOW ALL GIFTED & RENTED PROFILES
               </span>
             </summary>
 
