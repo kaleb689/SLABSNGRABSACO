@@ -158,3 +158,25 @@ test("Run All handles 100 products and private/admin review pages respect Discor
   assert.ok(admin.embeds[0].description.length <= 4096);
   assert.ok(admin.content.length <= 2000);
 });
+
+test("only the verified Discord guild owner can bypass paid-profile gating for SKU testing", async () => {
+  const { isGuildOwnerSkuTester } = await import("../discord-community.js");
+  const owner = "1551070928039845923";
+  const paidUser = "1551070928039845924";
+  assert.equal(isGuildOwnerSkuTester(owner, owner), true,
+    "verified server owner may use the same SKU picker without a paid account");
+  assert.equal(isGuildOwnerSkuTester(paidUser, owner), false,
+    "ordinary users must still pass the membership check");
+  assert.equal(isGuildOwnerSkuTester("", owner), false);
+  assert.equal(isGuildOwnerSkuTester(owner, ""), false,
+    "no fallback bypass when the server owner's ID is unknown");
+  assert.equal(isGuildOwnerSkuTester("everyone", "everyone"), false,
+    "text role names or malformed IDs never grant the owner bypass");
+  assert.equal(isGuildOwnerSkuTester(owner, "0"), false);
+  const { readFileSync } = await import("node:fs");
+  const code = readFileSync(new URL("../discord-community.js", import.meta.url), "utf8");
+  assert.match(code, /if \(isGuildOwnerSkuTester\(userId, ownerId\)\) return true;/);
+  assert.match(code, /return Number\(await \(getPaidSkuAllowance \|\| getAllowance\)\(account.id\)\) > 0;/);
+  assert.match(code, /ownerId = guild.owner_id;/,
+    "owner ID comes from Discord itself, not a role label or user-provided input");
+});
