@@ -1418,6 +1418,47 @@ async function applySubscriptionInfo(
     subscription
   );
 
+  const subscriptionItem =
+    Array.isArray(subscription?.items?.data)
+      ? subscription.items.data.find(item => item?.price)
+      : null;
+
+  const stripeUnitAmount =
+    Number(subscriptionItem?.price?.unit_amount);
+
+  if (Number.isFinite(stripeUnitAmount) && stripeUnitAmount >= 0) {
+    record.stripeMonthlyAmount = stripeUnitAmount / 100;
+  }
+
+  const discountSource =
+    subscription?.discount?.coupon ||
+    (
+      Array.isArray(subscription?.discounts)
+        ? subscription.discounts
+            .map(item => item?.coupon || item?.source?.coupon || item)
+            .find(item => item && typeof item === "object")
+        : null
+    );
+
+  const percentOff =
+    Number(discountSource?.percent_off);
+
+  const amountOff =
+    Number(discountSource?.amount_off);
+
+  if (Number.isFinite(percentOff) && percentOff > 0) {
+    record.membershipDiscountPercent = percentOff;
+  } else {
+    delete record.membershipDiscountPercent;
+  }
+
+  if (Number.isFinite(amountOff) && amountOff > 0) {
+    record.membershipDiscountAmount =
+      amountOff / 100;
+  } else {
+    delete record.membershipDiscountAmount;
+  }
+
   record.subscriptionStatus =
     subscription.status ||
     record.subscriptionStatus ||
@@ -35279,6 +35320,45 @@ function safeCustomerOrder(
 
     plan:
       record.plan || null,
+
+    monthlyPrice:
+      (() => {
+        const base =
+          Number.isFinite(Number(record.stripeMonthlyAmount))
+            ? Number(record.stripeMonthlyAmount)
+            : Number(record.plan?.amount || 0);
+
+        const percent =
+          Number(record.membershipDiscountPercent || 0);
+
+        const amountOff =
+          Number(record.membershipDiscountAmount || 0);
+
+        if (percent > 0) {
+          return Math.max(0, Math.round(base * (1 - percent / 100) * 100) / 100);
+        }
+
+        if (amountOff > 0) {
+          return Math.max(0, Math.round((base - amountOff) * 100) / 100);
+        }
+
+        return Number.isFinite(base) ? base : null;
+      })(),
+
+    rateLabel:
+      (
+        Number(record.membershipDiscountPercent || 0) > 0 ||
+        Number(record.membershipDiscountAmount || 0) > 0
+      )
+        ? "Discounted"
+        : (
+            Number(record.plan?.tier) &&
+            PLANS[Number(record.plan?.tier)] &&
+            Number(record.plan?.amount) > 0 &&
+            Number(record.plan?.amount) < Number(PLANS[Number(record.plan?.tier)].amount)
+              ? "Grandfathered"
+              : ""
+          ),
 
     profile:
       record.profile || null,
