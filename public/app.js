@@ -544,8 +544,11 @@ let membershipSales = {};
 function membershipPriceHtml(tier, plan) {
   const sale = membershipSales[tier];
   if (!sale) return `$${plan.amount}<small>/month</small>`;
-  const price = (Math.round(plan.amount * 100 * (1 - sale.percent / 100)) / 100).toFixed(2);
-  return `<del style="font-size:.55em;opacity:.65">$${plan.amount}</del> $${price}<small>/month · ${Number(sale.percent)}% off · ${sale.duration === "forever" ? "Every renewal" : "First payment"}</small>`;
+  const price = sale.fixedPrice != null
+    ? Number(sale.fixedPrice).toFixed(2)
+    : (Math.round(plan.amount * 100 * (1 - sale.percent / 100)) / 100).toFixed(2);
+  const discountLabel = sale.fixedPrice != null ? "Special tier price" : `${Number(sale.percent)}% off`;
+  return `<del style="font-size:.55em;opacity:.65">${plan.amount}</del> ${price}<small>/month · ${discountLabel} · ${sale.duration === "forever" ? "Every renewal" : "First payment"}</small>`;
 }
 async function refreshMembershipSales() {
   try {
