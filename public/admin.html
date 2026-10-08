@@ -7346,11 +7346,11 @@ function renderOrder(x) {
             >
               <div>
                 <h3>
-                  Customer, Shipping &amp; Retailer Profiles
+                  Customer &amp; Shipping / Card Details
                 </h3>
 
                 <p>
-                  Customer information, shipping details, and retailer profiles in one place.
+                  Customer information, shipping addresses, and saved payment details in one place.
                 </p>
               </div>
 
@@ -7537,10 +7537,9 @@ function renderOrder(x) {
             <div class="combined-retailer-profile-panel">
               <div class="combined-retailer-profile-head">
                 <span class="eyebrow">RETAILER PROFILES</span>
-                <strong>Retailer Accounts &amp; Profile Information</strong>
+                <strong>Customer Profile Information</strong>
                 <p>
-                  Target, Walmart, Pokemon Center, Sam's Club, and Costco
-                  profile information for this customer.
+                  Shipping and payment information for this customer. Retailer inventory is managed separately.
                 </p>
               </div>
 
@@ -7549,7 +7548,7 @@ function renderOrder(x) {
                 class="load-retailer-profiles admin-edit-button"
                 data-retailer-order="${escapeHtml(x.id)}"
               >
-                Load Retailer Profiles
+                Load Customer Profile Details
               </button>
 
               <div
@@ -8427,20 +8426,10 @@ function retailerProfileHtml(
     profile.customerCard ||
     {};
 
-  const retailerBlocks =
-    ADMIN_RETAILERS
-      .map(retailer => {
+  // Staff accounts are managed in the inventory, not in customer order forms.
+  const retailerBlocks = "";
 
-        const saved =
-          retailers[
-            retailer.key
-          ] || {};
-
-        if (
-          retailer.key ===
-          "pkc"
-        ) {
-          return `
+  return `
             <div class="admin-retailer-block admin-retailer-block-pkc">
 
               <h4>
@@ -8893,64 +8882,8 @@ function retailerProfileHtml(
   const retailers =
     profile?.retailers || {};
 
-  const retailerBlocks =
-    ADMIN_RETAILERS
-      .map(retailer => {
-        const saved =
-          retailers[
-            retailer.key
-          ] || {};
-
-        return `
-          <div class="admin-retailer-block">
-
-            <h4>
-              ${escapeHtml(
-                retailer.name
-              )}
-            </h4>
-
-            <div class="admin-edit-field">
-
-              <label>
-                Email / Username
-              </label>
-
-              <input
-                name="${escapeHtml(
-                  retailer.key
-                )}_username"
-                value="${escapeHtml(
-                  saved.username || ""
-                )}"
-                autocomplete="off"
-              >
-
-            </div>
-
-            <div class="admin-edit-field">
-
-              <label>
-                Password
-              </label>
-
-              <input
-                type="text"
-                name="${escapeHtml(
-                  retailer.key
-                )}_password"
-                value="${escapeHtml(
-                  saved.password || ""
-                )}"
-                autocomplete="off"
-              >
-
-            </div>
-
-          </div>
-        `;
-      })
-      .join("");
+  // Staff credentials are not part of customer profile forms.
+  const retailerBlocks = "";
 
   const durationType =
     profile?.durationType ||
@@ -11461,7 +11394,7 @@ function bindAdminRetailerButtons() {
           );
 
           button.textContent =
-            "Refresh Retailer Profiles";
+            "Refresh Customer Profile Details";
 
           button.disabled =
             false;
@@ -11587,27 +11520,7 @@ if (editButton) {
           const formData =
             new FormData(form);
 
-          const retailers = {};
-
-          for (
-            const retailer of
-            ADMIN_RETAILERS
-          ) {
-            retailers[
-              retailer.key
-            ] = {
-              username:
-                formData.get(
-                  `${retailer.key}_username`
-                ) || "",
-
-              password:
-                formData.get(
-                  `${retailer.key}_password`
-                ) || ""
-            };
-          }
-
+          const retailers = {}; // Omitted keys preserve existing credentials.
           const body = {
             profileName:
               formData.get(
@@ -11838,27 +11751,7 @@ if (editButton) {
           const formData =
             new FormData(form);
 
-          const retailers = {};
-
-          for (
-            const retailer of
-            ADMIN_RETAILERS
-          ) {
-            retailers[
-              retailer.key
-            ] = {
-              username:
-                formData.get(
-                  `${retailer.key}_username`
-                ) || "",
-
-              password:
-                formData.get(
-                  `${retailer.key}_password`
-                ) || ""
-            };
-          }
-
+          const retailers = {}; // Do not overwrite admin-managed accounts.
           const body = {
             durationType:
               formData.get(
