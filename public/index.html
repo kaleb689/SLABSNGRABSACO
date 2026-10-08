@@ -5089,8 +5089,8 @@
 <div id="account-onboarding-backdrop" class="account-onboarding-backdrop" hidden></div>
 
 <section id="account-imap-onboarding" class="account-onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="account-imap-onboarding-title" hidden>
-  <div class="account-onboarding-head"><div><span class="eyebrow">OPTIONAL EMAIL SETUP</span><h2 id="account-imap-onboarding-title">Connect your IMAP email</h2></div></div>
-  <p class="account-onboarding-intro">Connect your checkout email to detect your orders and shipments. You can skip this and add it later under My Profile → Profiles.</p>
+  <div class="account-onboarding-head"><div><span class="eyebrow">OPTIONAL EMAIL SETUP</span><h2 id="account-imap-onboarding-title">Connect your IMAP email</h2></div><button type="button" class="account-onboarding-close" data-onboarding-close="imap" aria-label="Close optional IMAP setup">×</button></div>
+  <p class="account-onboarding-intro">This optional email setup can be completed later under My Profile → Profiles. Your checkout history and shipment tracking only come from confirmed success webhooks, never your personal email orders.</p>
   <form id="account-imap-onboarding-form" class="account-onboarding-form">
 <h3>
   IMAP / Host Email Information
@@ -5174,6 +5174,7 @@
     <button type="button" class="account-onboarding-close" data-onboarding-close="address" aria-label="Close shipping address setup">×</button>
   </div>
   <p class="account-onboarding-intro">
+    You can close this window at any time and finish in My Profile. Missing shipping details will remain marked as Action Needed.<br>
     <strong>Add all addresses you are able to receive packages at to minimize risk of order cancellation.</strong>
     Please remember 1 address can be used for roughly 3–4 profiles. Keep that in mind with your profile allowance.
   </p>
@@ -5218,7 +5219,7 @@
     <button type="button" class="account-onboarding-close" data-onboarding-close="card" aria-label="Close payment card setup">×</button>
   </div>
   <p class="account-onboarding-intro">
-    Add the card or cards you want available for your ACO profiles. After at least one card is saved, you can close this window or continue adding more cards. You can edit, add, or remove saved cards later from My Profile.
+    Add the cards you want available for your ACO profiles, or close this window and finish later from My Profile. Any missing payment information will stay marked as Action Needed. Membership payment is entered separately in secure Stripe Checkout.
   </p>
   <form id="account-card-onboarding-form" class="account-onboarding-form">
     <label>Card Label *<input name="cardLabel" maxlength="100" placeholder="Payment 1, Personal Visa..." required></label>
