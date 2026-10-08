@@ -1,4 +1,5 @@
 import express from "express";
+import { searchManagedPoolProfiles } from "./managed-pool-search.js";
 import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
 import { attachAdminPasskeys } from "./admin-passkeys.js";
@@ -19104,6 +19105,97 @@ async function getAvailableManagedMembershipRecords() {
 }
 
 
+
+/* ADMIN POOL PROFILE SEARCH: never transmit passwords, cards or security codes. */
+app.get("/api/admin/managed-pool/search", requireAdmin, async (req, res) => {
+  try {
+    const [managed, free, rented, customers, holds, paid, gifts] = await Promise.all([
+      getManagedAccounts(), getFreeAssignments(), getRentalAssignments(),
+      getCustomerAccounts(), getRestoreHolds(), readJson(PAID_FILE, []),
+      getGiftedMemberships()
+    ]);
+    const customerById = new Map(customers.map(item => [String(item.id), item]));
+    const summarizeCustomer = account => {
+      if (!account) return null;
+      const profile = account.adminProfile || {};
+      const name = [profile.firstName, profile.lastName].filter(Boolean).join(" ") ||
+        clean(account.name || account.displayName || account.email || "Customer", 150);
+      return { id: String(account.id), name, email: clean(account.email, 254) };
+    };
+    const linked = new Map();
+    for (const [type, assignments] of [["free", free], ["rented", rented]]) {
+      for (const assignment of assignments) {
+        if (!managedAssignmentIsLinked(assignment)) continue;
+        const id = String(assignment.managedAccountId ||
+          assignment.freeMembershipId || assignment.rentedMembershipId || "");
+        if (id && !linked.has(id)) linked.set(id, { type, assignment });
+      }
+    }
+    const heldIds = heldManagedAccountIdsFromHolds(holds);
+    const duplicateIds = managedDuplicateCredentialState(managed, new Set(linked.keys())).duplicateIds;
+    const rows = [];
+    for (const account of managed) {
+      let credentials;
+      try {
+        credentials = account.credentials
+          ? normalizeRetailerCredentials(decryptJson(account.credentials))
+          : emptyRetailerCredentials();
+      } catch (error) {
+        console.error("Managed search decrypt failed:", account.id, error.message);
+        continue;
+      }
+      const id = String(account.id);
+      const assigned = linked.get(id);
+      const owner = assigned
+        ? summarizeCustomer(customerById.get(String(assigned.assignment.customerAccountId)))
+        : null;
+      const broken = account.needsRepair === true ||
+        String(account.repairStatus || "").toLowerCase() === "needs_repair";
+      const status = assigned ? "linked" : broken ? "needs_repair" :
+        duplicateIds.has(id) ? "duplicate" : heldIds.has(id) ? "held" : "available";
+      for (const retailer of ["target", "walmart", "pokemoncenter"]) {
+        const email = clean(credentials?.[retailer]?.username, 254);
+        if (!email) continue;
+        rows.push({
+          id, retailer, loginEmail: email,
+          profileName: clean(account.profileName || "", 150),
+          status, assignedTo: owner,
+          assignmentType: assigned?.type || null,
+          assignmentId: assigned ? String(assigned.assignment.id || "") : null
+        });
+      }
+    }
+    const paidIds = new Set((Array.isArray(paid) ? paid : [])
+      .filter(record => record.customerAccountId && subscriptionAllowsProfiles(record))
+      .map(record => String(record.customerAccountId)));
+    const now = Date.now();
+    for (const gift of gifts) {
+      if (gift.customerAccountId &&
+          new Date(gift.startsAt).getTime() <= now &&
+          new Date(gift.expiresAt).getTime() > now) paidIds.add(String(gift.customerAccountId));
+    }
+    const availableCustomers = customers
+      .filter(item => item.id && item.disabled !== true && paidIds.has(String(item.id)))
+      .map(summarizeCustomer)
+      .filter(Boolean)
+      .sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({
+      ok: true,
+      ...searchManagedPoolProfiles(rows, {
+        query: req.query?.q,
+        retailer: req.query?.retailer,
+        status: req.query?.status,
+        page: req.query?.page
+      }),
+      customers: availableCustomers
+    });
+  } catch (error) {
+    console.error("Managed pool search error:", error);
+    return res.status(500).json({ error: "Unable to search managed profile pools." });
+  }
+});
+
 app.get(
   "/api/admin/available-memberships",
   requireAdmin,
@@ -19596,6 +19688,13 @@ app.post(
           )
         );
 
+      const managedAccountId = clean(req.body?.managedAccountId, 150);
+      if (managedAccountId && quantity !== 1) {
+        return res.status(400).json({
+          error: "A specific pool profile must be linked one at a time."
+        });
+      }
+
       const durationType =
         normalizeSpecialProfileDuration(
           req.body?.durationType
@@ -19649,6 +19748,21 @@ app.post(
               assignmentType
           }
         );
+
+      if (managedAccountId) {
+        const exactAccount = available.find(account => String(account.id) === managedAccountId);
+        if (!exactAccount) return res.status(409).json({
+          error: "This pool profile is no longer available. Refresh your search."
+        });
+        const heldForAnother = activeRestoreHoldsFor(await getRestoreHolds()).some(hold =>
+          String(hold.customerAccountId) !== customerAccountId &&
+          restoreHoldRemainingItems(hold).some(item => String(item.managedAccountId) === managedAccountId)
+        );
+        if (heldForAnother) return res.status(409).json({
+          error: "This profile is held for another customer. Release its hold first."
+        });
+        available = [exactAccount];
+      }
 
       if (assignmentType === "rented") {
         available = preferPreviouslyAssignedManagedAccounts(available,
@@ -24598,6 +24712,17 @@ app.post(
             error:
               "Managed assignment could not be found."
           });
+      }
+
+      const expectedCustomerAccountId = clean(req.body?.expectedCustomerAccountId, 150);
+      const expectedAssignmentId = clean(req.body?.expectedAssignmentId, 150);
+      if ((expectedCustomerAccountId &&
+           String(assignment.customerAccountId || "") !== expectedCustomerAccountId) ||
+          (expectedAssignmentId &&
+           String(assignment.id || "") !== expectedAssignmentId)) {
+        return res.status(409).json({
+          error: "This assignment changed. Refresh the pool search before unlinking."
+        });
       }
 
       const now =
