@@ -183,10 +183,17 @@ export function skuControlPayload(message, products, tonightChannelId) {
   const lines = products.map(item =>
     `**\`${skuSafeText(item.sku).slice(0, 80)}\`** — ${skuSafeText(item.name).slice(0, 75) || "Product name not provided"}`
   );
-  const descriptions = [];
+  // Keep the entire public panel below Discord's 4096-char description
+  // and 6000-char combined embed limits. All items remain accessible privately.
+  let description = "";
+  let shown = 0;
   for (const line of lines) {
-    if (!descriptions.length || descriptions.at(-1).length + line.length + 1 > 3800) descriptions.push("");
-    descriptions[descriptions.length - 1] += (descriptions.at(-1) ? "\n" : "") + line;
+    if (description.length + line.length + 1 > 3500) break;
+    description += (description ? "\n" : "") + line;
+    shown++;
+  }
+  if (shown < products.length) {
+    description += `\n\n… ${products.length - shown} more products in **Choose a SKU**.`;
   }
   const isTonight = message.channel_id === tonightChannelId;
   const controls = [];
@@ -201,10 +208,10 @@ export function skuControlPayload(message, products, tonightChannelId) {
     content: products.length
       ? "**SKU selection** — SKU numbers and their products are listed below.\nChoose a SKU to privately select Qty: 1 or Qty: 2. Use My selected SKUs to review or remove choices."
       : "Choose whether to skip this upcoming drop below.",
-    embeds: descriptions.map((description, index) => ({
-      title: index === 0 ? (isTonight ? "Dropping tonight — products" : "Upcoming drop — products") : "More products",
+    embeds: products.length ? [{
+      title: isTonight ? "Dropping tonight — products" : "Upcoming drop — products",
       description, color: 0x41b6e6
-    })),
+    }] : [],
     components: [
       { type: 1, components: controls },
       { type: 1, components: [{
@@ -2154,7 +2161,16 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         const [, action, sourceId, pageString] = d.data.custom_id.split(":");
         // Keep browsing private so one member's page does not change for everyone.
         if (action === "open") await api(callback, "POST", { type: 5, data: { flags: 64 } });
-        const source = await api(`/channels/${d.channel_id}/messages/${sourceId}`);
+        let source;
+        try {
+          source = await api(`/channels/${d.channel_id}/messages/${sourceId}`);
+        } catch (error) {
+          if (!/HTTP 404/.test(error.message)) throw error;
+          if (action === "open") return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
+            content: "That drop has been removed.", components: []
+          });
+          return await reply("That drop has been removed.");
+        }
         const products = parseDropSkus(source);
         if (!products.length) {
           if (action === "open") return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: "That drop no longer has selectable SKUs.", components: [] });
