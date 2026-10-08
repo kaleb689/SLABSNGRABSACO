@@ -1,0 +1,25 @@
+name: Verify membership discounts and onboarding
+on:
+  push:
+    branches:
+      - feature/fixed-price-limited-use-discounts
+  pull_request:
+    branches:
+      - main
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node --check server.js
+      - run: node --check public/app.js
+      - run: node --check public/admin.html
+        continue-on-error: true
+      - run: node --check discord-community.js
+      - run: node --test test/admin-discounts.test.js test/checkout-discounts.test.js test/discord-skus.test.js
