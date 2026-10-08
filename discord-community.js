@@ -448,7 +448,7 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -1990,6 +1990,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   const skuMenusFile = path.join(dataDir, "discord-sku-controls.json");
   const skuSelectionsFile = path.join(dataDir, "discord-sku-selections.json");
+  const skuDraftsFile = path.join(dataDir, "discord-sku-drafts.json");
   let skuQueue = Promise.resolve();
   function withSkuQueue(task) {
     const next = skuQueue.then(task);
@@ -2005,6 +2006,71 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const temp = `${file}.${crypto.randomUUID()}.tmp`;
     await fs.writeFile(temp, JSON.stringify(value), { mode: 0o600 });
     await fs.rename(temp, file);
+  }
+  const skuAccessMessage = "To select SKUs, you must have active paid profiles through https://slabsngrabsaco.com";
+  async function hasPaidSkuAccess(userId) {
+    const account = (await getAccounts()).find(item =>
+      String(item.discordUserId || "") === String(userId) && !item.disabled);
+    if (!account) return false;
+    return Number(await (getPaidSkuAllowance || getAllowance)(account.id)) > 0;
+  }
+  const skuDraftKey = (userId, channelId, sourceId) => userId + ":" + channelId + ":" + sourceId;
+  async function mutateSkuDraft(userId, channelId, sourceId, transform) {
+    return withSkuQueue(async () => {
+      const drafts = await readSkuFile(skuDraftsFile);
+      const key = skuDraftKey(userId, channelId, sourceId);
+      if (!drafts[key]) {
+        const saved = (await readSkuFile(skuSelectionsFile))[userId]?.items || [];
+        drafts[key] = { items: saved.filter(item => item.key.startsWith(channelId + ":" + sourceId + ":"))
+          .map(item => ({ ...item })), updatedAt: new Date().toISOString() };
+      }
+      if (transform) drafts[key].items = transform(drafts[key].items.map(item => ({ ...item })));
+      drafts[key].updatedAt = new Date().toISOString();
+      for (const [otherKey, draft] of Object.entries(drafts)) {
+        if (Date.now() - Date.parse(draft.updatedAt || 0) > 7 * 86400000) delete drafts[otherKey];
+      }
+      await writeSkuFile(skuDraftsFile, drafts);
+      return drafts[key].items;
+    });
+  }
+  async function confirmSkuDraft(userId, username, sourceId, channelId) {
+    if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
+    const source = await api("/channels/" + channelId + "/messages/" + sourceId);
+    if (source.author?.bot || source.webhook_id) throw new Error("The original drop post is unavailable.");
+    const validSkus = new Set(parseDropSkus(source).map(item => item.sku));
+    return withSkuQueue(async () => {
+      const drafts = await readSkuFile(skuDraftsFile);
+      const key = skuDraftKey(userId, channelId, sourceId);
+      const draft = drafts[key];
+      if (!draft) throw new Error("Your draft is no longer active. Open Choose Multiple SKUs again.");
+      if ((draft.items || []).some(item => !validSkus.has(item.sku))) {
+        throw new Error("The original drop was edited. Open the SKU selector again to review available products.");
+      }
+      const records = await readSkuFile(skuSelectionsFile);
+      const record = records[userId] || { username, messageId: null, items: [] };
+      const other = (record.items || []).filter(item => !item.key.startsWith(channelId + ":" + sourceId + ":"));
+      const next = [...other, ...draft.items];
+      if (next.length > 30) throw new Error("You can have up to 30 SKUs across drops. Remove older selections first.");
+      const skipTonightDate = draft.items.length && channelId === tonightChannelId ? undefined : record.skipTonightDate;
+      const skippedUpcomingDrops = draft.items.length && channelId !== tonightChannelId
+        ? (record.skippedUpcomingDrops || []).filter(drop => drop.channelId !== channelId || drop.sourceId !== sourceId)
+        : (record.skippedUpcomingDrops || []);
+      const payload = ownerSkuPayload(userId, username, next,
+        "Confirmed " + draft.items.length + " SKU(s) for this drop", skipTonightDate, skippedUpcomingDrops);
+      let posted;
+      if (record.messageId) {
+        try { posted = await api("/channels/" + skuRequestsChannelId + "/messages/" + record.messageId, "PATCH", payload); }
+        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+      }
+      if (!posted) posted = await api("/channels/" + skuRequestsChannelId + "/messages", "POST", payload);
+      Object.assign(record, { username, items: next, messageId: posted.id, skipTonightDate,
+        skippedUpcomingDrops, updatedAt: new Date().toISOString() });
+      records[userId] = record;
+      await writeSkuFile(skuSelectionsFile, records);
+      delete drafts[key];
+      await writeSkuFile(skuDraftsFile, drafts);
+      return next;
+    });
   }
   const tonightDate = () => new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit"
@@ -2216,54 +2282,104 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
       if (d.type === 3 && /^sku:(?:open|page|choose):\d{17,22}(?::\d{1,3})?$/.test(d.data?.custom_id || "")) {
-        if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU menu belongs in a drop channel.");
+        if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU selector belongs in a drop channel.");
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
         const [, action, sourceId, pageString] = d.data.custom_id.split(":");
-        // Keep browsing private so one member's page does not change for everyone.
         if (action === "open") await api(callback, "POST", { type: 5, data: { flags: 64 } });
         let source;
-        try {
-          source = await api(`/channels/${d.channel_id}/messages/${sourceId}`);
-        } catch (error) {
+        try { source = await api("/channels/" + d.channel_id + "/messages/" + sourceId); }
+        catch (error) {
           if (!/HTTP 404/.test(error.message)) throw error;
-          if (action === "open") return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
-            content: "That drop has been removed.", components: []
-          });
-          return await reply("That drop has been removed.");
+          const response = { content: "That drop has been removed.", components: [] };
+          return action === "open"
+            ? await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH", response)
+            : await api(callback, "POST", { type: 7, data: response });
         }
         const products = parseDropSkus(source);
         if (!products.length) {
-          if (action === "open") return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: "That drop no longer has selectable SKUs.", components: [] });
-          return await reply("That drop no longer has selectable SKUs.");
+          const response = { content: "That drop no longer has selectable SKUs.", components: [] };
+          return action === "open"
+            ? await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH", response)
+            : await api(callback, "POST", { type: 7, data: response });
         }
-        if (action === "choose") {
-          const page = Number(pageString);
-          const selected = Number(d.data.values?.[0]);
-          if (!Number.isInteger(selected) || selected < page * 25 ||
-            selected >= Math.min(page * 25 + 25, products.length)) {
-            return await reply("That SKU is no longer on this selection page. Open Choose a SKU again.");
+        const page = action === "open" ? 0 : Number(pageString);
+        const draft = await mutateSkuDraft(userId, d.channel_id, sourceId,
+          action === "choose" ? items => applySkuPageDraft(items, products, sourceId, d.channel_id, page, d.data.values) : null);
+        const response = skuBrowsePayload(sourceId, products, page, draft);
+        return action === "open"
+          ? await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH", response)
+          : await api(callback, "POST", { type: 7, data: response });
+      }
+      if (d.type === 3 && /^sku:(?:bulk|review|adjust|individual|confirm):/.test(d.data?.custom_id || "")) {
+        if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU selector belongs in a drop channel.");
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        const [, action, sourceId, arg, extra] = d.data.custom_id.split(":");
+        if (!/^\d{17,22}$/.test(sourceId)) return await reply("Invalid drop post.");
+        const source = await api("/channels/" + d.channel_id + "/messages/" + sourceId);
+        if (source.author?.bot || source.webhook_id) return await reply("That drop is unavailable.");
+        const products = parseDropSkus(source);
+        if (action === "confirm") {
+          await api(callback, "POST", { type: 5, data: { flags: 64 } });
+          try {
+            const items = await confirmSkuDraft(userId,
+              d.member?.user?.global_name || d.member?.user?.username || userId, sourceId, d.channel_id);
+            return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+              skuSelectionView(items, "Selections confirmed. The owner's private list has been updated."));
+          } catch (error) {
+            return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+              { content: error.message, components: [] });
           }
-          const chosen = products[selected];
-          return await api(callback, "POST", { type: 4, data: {
-            flags: 64, allowed_mentions: { parse: [] },
-            content: `**${skuSafeText(chosen.name)}**\nSKU: \`${skuSafeText(chosen.sku)}\`\nChoose a quantity or remove your selection.`,
-            components: [{ type: 1, components: [{ type: 3,
-              custom_id: `sku:qty:${sourceId}:${selected}`,
-              placeholder: "Choose Qty: 1 or Qty: 2", min_values: 1, max_values: 1,
-              options: [
-                { label: "Qty: 1", value: "1" }, { label: "Qty: 2", value: "2" },
-                { label: "Remove this SKU", value: "0" }
-              ]
-            }] }]
+        }
+        if (action === "bulk") {
+          const quantity = Number(arg);
+          if (![1, 2].includes(quantity)) return await reply("Choose Qty 1 or Qty 2.");
+          const draft = await mutateSkuDraft(userId, d.channel_id, sourceId,
+            items => items.map(item => ({ ...item, quantity })));
+          return await api(callback, "POST", { type: 7, data: skuBrowsePayload(sourceId, products, 0, draft) });
+        }
+        if (action === "review") {
+          const draft = await mutateSkuDraft(userId, d.channel_id, sourceId);
+          return await api(callback, "POST", { type: 7, data: skuDraftReviewPayload(sourceId, draft, Number(arg)) });
+        }
+        if (action === "adjust") {
+          const draft = await mutateSkuDraft(userId, d.channel_id, sourceId);
+          const item = draft.find(value => skuItemToken(value.key) === d.data.values?.[0]);
+          if (!item) return await reply("That SKU is no longer in your draft. Refresh your review.");
+          const token = skuItemToken(item.key);
+          return await api(callback, "POST", { type: 7, data: {
+            content: "**" + skuSafeText(item.name) + "**\nSKU: " + skuSafeText(item.sku) + " · Qty " +
+              item.quantity + "\nChoose an adjustment. No changes are saved until confirmation.",
+            components: [
+              { type: 1, components: [
+                { type: 2, style: 2, label: "Qty 1", custom_id: "sku:individual:" + sourceId + ":" + token + ":1" },
+                { type: 2, style: 2, label: "Qty 2", custom_id: "sku:individual:" + sourceId + ":" + token + ":2" },
+                { type: 2, style: 4, label: "Remove SKU", custom_id: "sku:individual:" + sourceId + ":" + token + ":0" }
+              ] },
+              { type: 1, components: [
+                { type: 2, style: 2, label: "Back to Review", custom_id: "sku:review:" + sourceId + ":0" },
+                { type: 2, style: 3, label: "Confirm Selections", custom_id: "sku:confirm:" + sourceId }
+              ] }
+            ],
+            allowed_mentions: { parse: [] }
           } });
         }
-        const payload = skuBrowsePayload(sourceId, products, action === "open" ? 0 : Number(pageString));
-        if (action === "open") {
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", payload);
+        if (action === "individual") {
+          const quantity = Number(extra);
+          if (![0, 1, 2].includes(quantity) || !/^[a-f0-9]{16}$/.test(arg || "")) return await reply("Invalid adjustment.");
+          const draft = await mutateSkuDraft(userId, d.channel_id, sourceId, items => {
+            const result = items.map(item => ({ ...item }));
+            const index = result.findIndex(item => skuItemToken(item.key) === arg);
+            if (index < 0) throw new Error("That SKU is no longer in your draft.");
+            if (quantity) result[index].quantity = quantity;
+            else result.splice(index, 1);
+            return result;
+          });
+          return await api(callback, "POST", { type: 7, data: skuDraftReviewPayload(sourceId, draft, 0) });
         }
-        return await api(callback, "POST", { type: 7, data: payload });
       }
       if (d.type === 3 && /^sku:skip:\d{17,22}$/.test(d.data?.custom_id || "")) {
         if (!dropChannelIds.has(d.channel_id)) return await reply("This option is only available in a drop channel.");
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         try {
           await skipDrop(userId, d.member?.user?.global_name || d.member?.user?.username || userId,
@@ -2284,6 +2400,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", skuSelectionView(selections[userId]?.items || []));
       }
       if (d.type === 3 && /^sku:manage:(?:0|15)$/.test(d.data?.custom_id || "")) {
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
         const selections = await readSkuFile(skuSelectionsFile);
         const token = d.data.values?.[0];
         const item = selections[userId]?.items.find(item => skuItemToken(item.key) === token);
@@ -2298,6 +2415,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         } });
       }
       if (d.type === 3 && /^sku:change:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
         const quantity = Number(d.data.values?.[0]);
         if (![0, 1, 2].includes(quantity)) return await reply("Choose Qty: 1, Qty: 2, or Remove.");
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
@@ -2308,49 +2426,25 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message, components: [] });
         }
       }
-      if (d.type === 3 && /^sku:pick:\d{17,22}:(?:\d{1,3}|all)$/.test(d.data?.custom_id || "")) {
-        if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU control belongs in a drop channel.");
-        const [, , sourceId, target] = d.data.custom_id.split(":");
-        try {
-          const source = await api(`/channels/${d.channel_id}/messages/${sourceId}`);
-          const products = parseDropSkus(source);
-          if (!products.length || (target !== "all" && !products[Number(target)])) {
-            return await reply("That SKU is no longer available in this message.");
-          }
-        } catch (error) {
-          if (/HTTP 404/.test(error.message)) return await reply("That drop message has been removed.");
-          throw error;
-        }
-        return await api(callback, "POST", { type: 4, data: {
-          flags: 64, allowed_mentions: { parse: [] },
-          content: target === "all" ? "Run all SKUs at which quantity? Use My selected SKUs to review existing choices." : "Choose a quantity or remove this SKU. Use My selected SKUs to review your current choices.",
-          components: [{ type: 1, components: [{
-            type: 3, custom_id: `sku:qty:${sourceId}:${target}`,
-            placeholder: "Choose Qty: 1 or Qty: 2", min_values: 1, max_values: 1,
-            options: [
-              { label: "Qty: 1", value: "1" },
-              { label: "Qty: 2", value: "2" },
-              { label: target === "all" ? "Remove all SKUs from this post" : "Remove this SKU", value: "0" }
-            ]
-          }] }]
-        } });
-      }
-      if (d.type === 3 && /^sku:qty:\d{17,22}:(?:\d{1,3}|all)$/.test(d.data?.custom_id || "")) {
-        if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU control belongs in a drop channel.");
-        const [, , sourceId, target] = d.data.custom_id.split(":");
-        const quantity = Number(d.data.values?.[0]);
-        if (![0, 1, 2].includes(quantity)) return await reply("Choose Qty: 1, Qty: 2, or Remove.");
+      if (d.type === 3 && /^sku:(?:pick|qty):\d{17,22}:(?:\d{1,3}|all)$/.test(d.data?.custom_id || "")) {
+        if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU selector belongs in a drop channel.");
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        const [, action, sourceId, target] = d.data.custom_id.split(":");
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         try {
-          const items = await recordSkuSelection(userId,
-            d.member?.user?.global_name || d.member?.user?.username || userId,
-            sourceId, target, quantity, d.channel_id);
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", skuSelectionView(items, "Selection updated. The owner's private message now shows your latest choices."));
+          const source = await api("/channels/" + d.channel_id + "/messages/" + sourceId);
+          const products = parseDropSkus(source);
+          const chosen = target === "all" ? products : [products[Number(target)]].filter(Boolean);
+          if (!chosen.length) throw new Error("That SKU is no longer on this drop.");
+          const quantity = action === "qty" ? Number(d.data.values?.[0]) : 1;
+          if (![0, 1, 2].includes(quantity)) throw new Error("Choose Qty 1 or 2.");
+          const draft = await mutateSkuDraft(userId, d.channel_id, sourceId,
+            items => changeSkuItems(items, chosen, sourceId, d.channel_id, quantity));
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+            skuBrowsePayload(sourceId, products, 0, draft));
         } catch (error) {
-          console.error("Discord SKU selection:", error.message);
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
-            content: error.message, components: []
-          });
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+            { content: error.message, components: [] });
         }
       }
       if (d.type === 3 && /^lapse:bulk:select:\d+$/.test(d.data?.custom_id || "")) {
