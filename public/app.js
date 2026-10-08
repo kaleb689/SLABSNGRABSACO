@@ -6480,8 +6480,21 @@ function setAccountOnboardingVisibility(step = "") {
   if (open) document.getElementById(`account-${step}-onboarding`)?.querySelector("input, button")?.focus({ preventScroll: true });
 }
 
+function onboardingDismissalKey() {
+  return state.customer?.id ? "sng-onboarding-dismissed:" + state.customer.id : "";
+}
+function accountOnboardingWasDismissed() {
+  try { return Boolean(onboardingDismissalKey() && localStorage.getItem(onboardingDismissalKey()) === "1"); }
+  catch { return false; }
+}
+function dismissAccountCheckoutOnboarding() {
+  setAccountOnboardingVisibility("");
+  try { if (onboardingDismissalKey()) localStorage.setItem(onboardingDismissalKey(), "1"); } catch {}
+  showAccountMessage("You can finish shipping and payment setup later in My Profile. Missing information remains in Action Needed until completed.", "info");
+  void loadCustomerNotifications({ showPopup: false });
+}
 function openAccountCheckoutOnboarding(step = "address") {
-  if (!state.customer || ANY_ADMIN_PREVIEW_MODE) {
+  if (!state.customer || ANY_ADMIN_PREVIEW_MODE || accountOnboardingWasDismissed()) {
     setAccountOnboardingVisibility("");
     return;
   }
@@ -6539,10 +6552,7 @@ document.getElementById("account-onboarding-imap-skip")?.addEventListener("click
 document.addEventListener("click", event => {
   const close = event.target.closest("[data-onboarding-close]");
   if (!close) return;
-  const type = close.dataset.onboardingClose;
-  if (type === "address" && !state.savedDetails?.addresses?.length) return;
-  if (type === "card" && !state.savedDetails?.paymentMethods?.length) return;
-  openAccountCheckoutOnboarding(type === "address" ? "card" : "imap");
+  dismissAccountCheckoutOnboarding();
 });
 
 document.getElementById("account-onboarding-address-next")?.addEventListener("click", () => {
@@ -14683,7 +14693,7 @@ await loadSavedDetails();
 if (
   state.customer &&
   (!state.customer.checkoutOnboardingComplete || !state.customer.imapOnboardingCompletedAt) &&
-  !ANY_ADMIN_PREVIEW_MODE
+  !ANY_ADMIN_PREVIEW_MODE && !accountOnboardingWasDismissed()
 ) {
   const hasAddress =
     (state.savedDetails?.addresses || []).length > 0;
