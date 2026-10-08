@@ -5517,7 +5517,7 @@ if (membershipStatusElement) {
 
   for (
     let tierNumber = 1;
-    tierNumber <= 7;
+    tierNumber <= 8;
     tierNumber += 1
   ) {
     membershipStatusElement.classList.remove(
@@ -5530,22 +5530,11 @@ if (membershipStatusElement) {
     membershipStatusElement.textContent = "● AWAITING ACTIVATION";
   } else if (isActive) {
 
-    const tierStatusClass =
-      customerTierStatusClass(
-        tier
-      );
-
-    if (tierStatusClass) {
-      membershipStatusElement.classList.add(
-        tierStatusClass
-      );
-    } else {
-      membershipStatusElement.classList.add(
-        daysRemaining <= 7
-          ? "status-yellow"
-          : "status-green"
-      );
-    }
+    membershipStatusElement.classList.add(
+      daysRemaining <= 7
+        ? "status-yellow"
+        : "status-green"
+    );
 
     membershipStatusElement.textContent =
       `● ACTIVE — ${daysRemaining} ${
