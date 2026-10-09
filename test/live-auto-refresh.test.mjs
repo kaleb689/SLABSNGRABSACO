@@ -28,7 +28,8 @@ function harness(script, side) {
       closest: () => null
     },
     addEventListener: () => {},
-    querySelector: () => ({ dataset: { accountTab: "membership" } })
+    querySelector: selector => selector === ".customer-order[open] [data-linked-profiles-section][open]"
+      ? null : ({ dataset: { accountTab: "membership" } })
   };
   const window = {
     scrollX: 14,
