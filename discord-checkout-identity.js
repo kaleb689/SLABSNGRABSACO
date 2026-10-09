@@ -8,9 +8,13 @@ const orderLabels = /^(?:order(?: (?:number|id|no\.?|#))?|confirmation (?:number
 const profileLabels = /^(?:profile(?: name)?|account name|customer profile)$/i;
 
 function readable(value) {
-  // Preserve underscores in retailer account emails: stripping Markdown
-  // underscores from VALUES changes the login and prevents exact matching.
-  return String(value || "").replace(/[*\x60]/g, "").replace(/\u200b/g, "").trim();
+  // Shikari wraps sensitive Order ID/Profile/Account values in Discord spoiler
+  // markers (||...||), which explains why valid numeric orders and retailer
+  // emails were previously rejected. Remove ONLY the outer wrapper; never
+  // preserve or return any password component from an Account field.
+  // Underscores inside retailer emails must be preserved verbatim.
+  const text = String(value || "").replace(/[*\x60]/g, "").replace(/\u200b/g, "").trim();
+  return text.replace(/^\|\|([\s\S]*?)\|\|$/, "$1").trim();
 }
 function labelText(value) {
   return readable(value).replace(/_/g, "").replace(/:$/, "").replace(/\s+/g, " ").toLowerCase().trim();
