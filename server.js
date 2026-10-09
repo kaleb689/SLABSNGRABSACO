@@ -38298,6 +38298,10 @@ async function scanDiscordSuccessChannel() {
   discordSuccessScan.running = true;
   discordSuccessScan.error = null;
   let added = 0, updated = 0, attributed = 0, skipped = 0, unrecognized = 0, unchanged = 0, conflicts = 0, unmatched = 0, before = "", newest = null;
+  // Aggregate diagnostics ONLY. Never log retailer account emails, profile names or order numbers.
+  const identityStats = { recognized: 0, withEmail: 0, withProfileName: 0, withOrderNumber: 0,
+    withoutIdentity: 0, matched: 0, noEligibleCandidates: 0, unmatchedEmail: 0,
+    unmatchedProfile: 0, ambiguousOwner: 0, eligibleCandidates: 0, totalCandidates: 0 };
   try {
     const { token, channels, webhookSourceFound } = await discordCheckoutSourceChannels();
     if (!token || !channels.length) throw new Error('Checkout source channel is not configured.');
@@ -38305,6 +38309,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.source = (await discordCheckoutSourceChannels()).source;
     discordSuccessScan.webhookSourceFound = webhookSourceFound ?? true;
     const candidates = await discordCheckoutOwners();
+    identityStats.totalCandidates = candidates.length;
     await refreshSuccessRetailerImages();
     const imports = [];
     for (const channelId of channels) {
@@ -38321,8 +38326,32 @@ async function scanDiscordSuccessChannel() {
         if (!order) { skipped++; unrecognized++; continue; }
         order.items = order.items.map(item => ({ ...item,
           imageUrl: publicSuccessProductImage(item.name, order.retailer, item.imageUrl) }));
-        const attribution = discordCheckoutAttribution(order, discordCheckoutIdentity(message), candidates);
-        if (!attribution) unmatched++;
+        const identity = discordCheckoutIdentity(message);
+        identityStats.recognized++;
+        if (identity.email) identityStats.withEmail++;
+        if (identity.profileName) identityStats.withProfileName++;
+        if (identity.orderNumber) identityStats.withOrderNumber++;
+        const eligible = candidates.filter(item => item.customerAccountId &&
+          (!item.retailer || item.retailer === order.retailer) &&
+          (!item.assignment || assignmentTimeContainsCheckout(item.assignment, order.checkoutAt)) &&
+          (!item.createdAt || new Date(item.createdAt) <= new Date(order.checkoutAt)));
+        identityStats.eligibleCandidates += eligible.length;
+        const attribution = discordCheckoutAttribution(order, identity, candidates);
+        if (attribution) identityStats.matched++;
+        else {
+          unmatched++;
+          if (!identity.email && !identity.profileName) identityStats.withoutIdentity++;
+          else if (!eligible.length) identityStats.noEligibleCandidates++;
+          else {
+            const emailMatches = identity.email ? eligible.filter(item => item.email === identity.email) : [];
+            const profileMatches = identity.profileName ? eligible.filter(item =>
+              String(item.profileName || "").trim().toLowerCase() === identity.profileName.trim().toLowerCase()) : [];
+            if (identity.email && !emailMatches.length) identityStats.unmatchedEmail++;
+            if (identity.profileName && !profileMatches.length) identityStats.unmatchedProfile++;
+            const exactMatches = emailMatches.length ? emailMatches : profileMatches;
+            if (new Set(exactMatches.map(item => item.customerAccountId).filter(Boolean)).size > 1) identityStats.ambiguousOwner++;
+          }
+        }
         imports.push({
           order,
           sourceChannelId: String(channelId),
@@ -38367,9 +38396,10 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.alreadyImported = unchanged;
     discordSuccessScan.conflicts = conflicts;
     discordSuccessScan.unmatched = unmatched;
+    discordSuccessScan.identityDiagnostics = identityStats;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0 }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, identityStats }));
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
