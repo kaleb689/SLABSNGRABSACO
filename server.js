@@ -19155,6 +19155,49 @@ app.post("/api/admin/managed-pool/:id/mark-repaired", requireAdmin, async (req, 
   }
 });
 
+/* Override a single Restore Hold without touching customer assignments. */
+app.post("/api/admin/managed-pool/:id/override-hold", requireAdmin, async (req, res) => {
+  try {
+    const id = clean(req.params.id, 150);
+    if (req.body?.confirmed !== true || !id) return res.status(400).json({error:"Confirm the account and restore-hold override."});
+    const [managed, free, rented] = await Promise.all([getManagedAccounts(), getFreeAssignments(), getRentalAssignments()]);
+    const account = managed.find(item => String(item.id) === id);
+    if (!account) return res.status(404).json({error:"Managed account not found."});
+    if (account.needsRepair === true || String(account.repairStatus || "") === "needs_repair") {
+      return res.status(409).json({error:"Repair this account before releasing its Restore Hold."});
+    }
+    if ([...free, ...rented].some(item => managedAssignmentIsLinked(item) &&
+        String(item.managedAccountId || item.freeMembershipId || item.rentedMembershipId || "") === id)) {
+      return res.status(409).json({error:"Account is currently linked and cannot be released."});
+    }
+    const result = await mutateRestoreHolds(async holds => {
+      const nowIso = new Date().toISOString();
+      let count = 0;
+      for (const hold of activeRestoreHoldsFor(holds)) {
+        for (const item of restoreHoldRemainingItems(hold)) {
+          if (String(item.managedAccountId || "") !== id) continue;
+          item.releasedAt = nowIso;
+          item.releaseReason = "admin_override";
+          count++;
+        }
+        if (count && !restoreHoldRemainingItems(hold).length) {
+          hold.status = "released";
+          hold.releasedAt = nowIso;
+          hold.releaseReason = "admin_override";
+          hold.updatedAt = nowIso;
+        }
+      }
+      return count;
+    });
+    if (!result) return res.status(409).json({error:"No active Restore Hold found for this account."});
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ok:true,released:result,message:"Restore Hold overridden; account returned to eligible inventory."});
+  } catch (error) {
+    console.error("Restore Hold override failed:", error?.message);
+    return res.status(500).json({error:"Could not override the Restore Hold."});
+  }
+});
+
 /* ADMIN POOL PROFILE SEARCH: never transmit passwords, cards or security codes. */
 app.get("/api/admin/managed-pool/search", requireAdmin, async (req, res) => {
   try {
