@@ -8,10 +8,12 @@ const orderLabels = /^(?:order(?: (?:number|id|no\.?|#))?|confirmation (?:number
 const profileLabels = /^(?:profile(?: name)?|account name|customer profile)$/i;
 
 function readable(value) {
-  return String(value || "").replace(/[*_\x60]/g, "").replace(/\u200b/g, "").trim();
+  // Preserve underscores in retailer account emails: stripping Markdown
+  // underscores from VALUES changes the login and prevents exact matching.
+  return String(value || "").replace(/[*\x60]/g, "").replace(/\u200b/g, "").trim();
 }
 function labelText(value) {
-  return readable(value).replace(/:$/, "").replace(/\s+/g, " ").toLowerCase().trim();
+  return readable(value).replace(/_/g, "").replace(/:$/, "").replace(/\s+/g, " ").toLowerCase().trim();
 }
 function unique(values) {
   const distinct = [...new Set(values.filter(Boolean))];
