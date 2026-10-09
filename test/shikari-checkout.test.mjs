@@ -157,3 +157,42 @@ test("retailer emails enrich only existing exact-number webhook orders, never in
   assert.match(merge,/withSuccessStoreLock\(async \(\) => \{/);
   assert.match(merge,/record\.priceSource = "verified_retailer_receipt"/);
 });
+
+test("real Discord spoiler wrappers are stripped for Shikari Account, Profile and Order ID without persisting secrets", () => {
+  const fields = [
+    {name: "Site", value: "Target"},
+    {name: "Profile", value: "|| Customer 4 ||"},
+    {name: "Order ID", value: "||102003802680520||"},
+    {name: "Quantity", value: "2"},
+    {name: "Account", value: "||retailer_test@example.test:EXAMPLE_PRIVATE_PASSWORD||"}
+  ];
+  const message = {id:"1580000000000000010",timestamp:"2026-10-09T08:00:00Z",
+    embeds:[{title:"Successful Checkout!",color:0x57f287,fields,
+      description:"["+product+"](https://www.target.com/p/example-product)"}]};
+  const identity = checkoutIdentityFromDiscord(message);
+  assert.deepEqual(identity,{email:"retailer_test@example.test",orderNumber:"102003802680520",profileName:"Customer 4"});
+  const checkout = parseLiveWebhook(message);
+  assert.equal(checkout.orderNumber,"102003802680520");
+  assert.equal(checkout.itemCount,2);
+  assert.equal(checkout.status,"confirmed");
+  assert.equal(checkout.retailer,"Target");
+  assert.ok(!JSON.stringify(checkout).includes("retailer_test@example.test"));
+  assert.ok(!JSON.stringify(checkout).includes("EXAMPLE_PRIVATE_PASSWORD"));
+});
+test("spoiler values remain exact on two-line Shikari webhook descriptions", () => {
+  const input = makeMessage(0xff9900,"1580000000000000011","2026-10-09T08:00:00Z");
+  input.embeds[0].description = input.embeds[0].description
+    .replace("Customer Example 4", "||Customer Example 4||")
+    .replace("102003802680520", "||102003802680520||")
+    .replace("retailer_test@example.test:FAKE_SECRET_VALUE",
+      "||retailer_test@example.test:FAKE_SECRET_VALUE||");
+  const identity = checkoutIdentityFromDiscord(input);
+  assert.equal(identity.email,"retailer_test@example.test");
+  assert.equal(identity.orderNumber,"102003802680520");
+  assert.equal(identity.profileName,"Customer Example 4");
+  const record = parseLiveWebhook(input);
+  assert.equal(record.status,"review_hold");
+  assert.equal(record.orderNumber,"102003802680520");
+  assert.equal(record.sourceProfileLabel,"Customer Example 4");
+  assert.equal(record.itemCount,2);
+});
