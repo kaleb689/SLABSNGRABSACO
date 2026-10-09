@@ -7,6 +7,7 @@ import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection } from "./discord-checkout-identity.js";
+import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
 import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
@@ -37778,6 +37779,7 @@ function visibleDiscordSuccessRecords(records, excludedChannelId = null) {
 // Read-only Discord channel import. Message authors are never attached to
 // customer accounts; the channel contributes anonymous community totals.
 const discordSuccessScan = { running: false, checkedAt: null, added: 0, skipped: 0, error: null, newestMessageId: null };
+const DISCORD_PROFILE_ALIASES_FILE = path.join(DATA_DIR, "discord-profile-aliases.json");
 function discordSuccessConfig() {
   return {
     token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
@@ -37936,6 +37938,7 @@ function discordCheckoutFromMessage(message, channelId) {
     id: `discord:${channelId}:${message.id}`,
     customerAccountId: null,
     orderNumber: discordCheckoutIdentity(message).orderNumber,
+    sourceProfileLabel: discordCheckoutIdentity(message).profileName,
     retailer: normalizeSuccessRetailer(retailer),
     checkoutAt: message.timestamp || new Date().toISOString(),
     orderTotal: totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : completePrices ? subtotalCents / 100 : 0,
@@ -38258,19 +38261,24 @@ async function discordCheckoutOwners() {
   return candidates;
 }
 
-function discordCheckoutAttribution(order, identity, candidates) {
-  const eligible = candidates.filter(item => item.customerAccountId &&
+function discordCheckoutCandidateEligible(item, order) {
+  return Boolean(item.customerAccountId &&
     (!item.retailer || item.retailer === order.retailer) &&
     (!item.assignment || assignmentTimeContainsCheckout(item.assignment, order.checkoutAt)) &&
     (!item.createdAt || new Date(item.createdAt) <= new Date(order.checkoutAt)));
+}
+function discordCheckoutAttribution(order, identity, candidates, aliases = []) {
+  const eligible = candidates.filter(item => discordCheckoutCandidateEligible(item, order));
   const byEmail = identity.email ? eligible.filter(item => item.email === identity.email) : [];
   const byName = identity.profileName ? eligible.filter(item =>
-    String(item.profileName || '').toLowerCase() === identity.profileName.toLowerCase()) : [];
+    String(item.profileName || '').trim().toLowerCase() === identity.profileName.trim().toLowerCase()) : [];
   const match = uniqueCheckoutOwner(byEmail.length ? byEmail : byName);
-  if (!match) return null;
-  // Only attribution IDs and display labels enter the Success store, never credentials.
-  return Object.fromEntries(['customerAccountId', 'profileName', 'profileSlot', 'managedAccountId',
-    'managedAssignmentId', 'managedAssignmentType'].filter(key => match[key] != null).map(key => [key, match[key]]));
+  if (match) {
+    return Object.fromEntries(['customerAccountId', 'profileName', 'profileSlot', 'managedAccountId',
+      'managedAssignmentId', 'managedAssignmentType'].filter(key => match[key] != null).map(key => [key, match[key]]));
+  }
+  // Unrelated external automation names may be linked only by an explicit Admin-approved alias.
+  return resolveApprovedCheckoutAlias(order, candidates, aliases, discordCheckoutCandidateEligible);
 }
 
 let discordSuccessScanQueued = false;
@@ -38309,6 +38317,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.source = (await discordCheckoutSourceChannels()).source;
     discordSuccessScan.webhookSourceFound = webhookSourceFound ?? true;
     const candidates = await discordCheckoutOwners();
+    const approvedAliases = await readJson(DISCORD_PROFILE_ALIASES_FILE, []);
     identityStats.totalCandidates = candidates.length;
     await refreshSuccessRetailerImages();
     const imports = [];
@@ -38336,7 +38345,7 @@ async function scanDiscordSuccessChannel() {
           (!item.assignment || assignmentTimeContainsCheckout(item.assignment, order.checkoutAt)) &&
           (!item.createdAt || new Date(item.createdAt) <= new Date(order.checkoutAt)));
         identityStats.eligibleCandidates += eligible.length;
-        const attribution = discordCheckoutAttribution(order, identity, candidates);
+        const attribution = discordCheckoutAttribution(order, identity, candidates, approvedAliases);
         if (attribution) identityStats.matched++;
         else {
           unmatched++;
@@ -38411,6 +38420,120 @@ async function scanDiscordSuccessChannel() {
   }
 }
 
+
+// Secure review of checkout labels supplied by external automation.
+// These labels are not website profile names, and must never be guessed into customer accounts.
+function isAuthoritativeCheckoutRecord(record, sourceChannelId) {
+  if (!sourceChannelId) return false;
+  const prefix = "discord:" + String(sourceChannelId) + ":";
+  return [record.id, ...(Array.isArray(record.sourceIds) ? record.sourceIds : [])]
+    .some(id => String(id || "").startsWith(prefix));
+}
+
+app.get("/api/admin/discord-checkout-profile-matching", requireAdmin, async (_req, res) => {
+  try {
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1) return res.status(409).json({error:"One authoritative Discord checkout feed must be configured."});
+    const [records, candidates, accounts, aliases] = await Promise.all([
+      getSuccessCheckouts(), discordCheckoutOwners(), getCustomerAccounts(),
+      readJson(DISCORD_PROFILE_ALIASES_FILE, [])
+    ]);
+    const unlinked = records.filter(record => isAuthoritativeCheckoutRecord(record, source.channels[0]) &&
+      !record.customerAccountId);
+    const groups = new Map();
+    for (const order of unlinked) {
+      const key = checkoutAliasKey(order.retailer, order.sourceProfileLabel);
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, {key,retailer:order.retailer,
+        profileLabel:String(order.sourceProfileLabel),orders:[]});
+      groups.get(key).orders.push(order);
+    }
+    const accountMap = new Map((Array.isArray(accounts) ? accounts : []).map(account => [String(account.id),account]));
+    const list = [...groups.values()].map(group => {
+      const options = new Map();
+      for (const order of group.orders) {
+        for (const candidate of candidates) {
+          if (!discordCheckoutCandidateEligible(candidate,order)) continue;
+          const id = String(candidate.customerAccountId);
+          options.set(id,(options.get(id)||0)+1);
+        }
+      }
+      const eligibleCustomers = [...options.keys()].map(id => {
+        const account = accountMap.get(id);
+        const name = [account?.firstName || account?.profile?.firstName,
+          account?.lastName || account?.profile?.lastName].filter(Boolean).join(" ").trim();
+        return {id,label:name || String(account?.email || account?.profile?.email || id)};
+      }).sort((a,b)=>a.label.localeCompare(b.label));
+      return {retailer:group.retailer,profileLabel:group.profileLabel,count:group.orders.length,
+        firstAt:group.orders.reduce((min,o)=> !min || o.checkoutAt < min ? o.checkoutAt : min,""),
+        lastAt:group.orders.reduce((max,o)=> !max || o.checkoutAt > max ? o.checkoutAt : max,""),
+        eligibleCustomers, approved: (Array.isArray(aliases)?aliases:[]).some(alias =>
+          checkoutAliasKey(alias.retailer,alias.profileLabel)===group.key)};
+    }).sort((a,b)=>b.count-a.count || a.profileLabel.localeCompare(b.profileLabel));
+    res.setHeader("Cache-Control","no-store");
+    return res.json({ok:true,unmatchedCount:unlinked.length,unlabeledCount:unlinked.length-
+      [...groups.values()].reduce((sum,group)=>sum+group.orders.length,0),groups:list});
+  } catch (error) {
+    console.error("Discord checkout profile matching summary:",error?.message);
+    return res.status(500).json({error:"Unable to load checkout profile matching."});
+  }
+});
+
+app.post("/api/admin/discord-checkout-profile-matching", requireAdmin, async (req, res) => {
+  try {
+    const retailer = normalizeSuccessRetailer(clean(req.body?.retailer,50));
+    const profileLabel = clean(req.body?.profileLabel,100);
+    const customerAccountId = clean(req.body?.customerAccountId,150);
+    const key = checkoutAliasKey(retailer,profileLabel);
+    if (!key || !customerAccountId || profileLabel.length < 3)
+      return res.status(400).json({error:"Choose a complete Discord profile label and customer."});
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1)
+      return res.status(409).json({error:"Authoritative Discord checkout feed not configured."});
+    const result = await withSuccessStoreLock(async () => {
+      const [records,candidates,rawAliases] = await Promise.all([
+        getSuccessCheckouts(),discordCheckoutOwners(),readJson(DISCORD_PROFILE_ALIASES_FILE,[])
+      ]);
+      const aliases = Array.isArray(rawAliases) ? rawAliases : [];
+      const existing = aliases.filter(a => checkoutAliasKey(a.retailer,a.profileLabel)===key && !a.disabledAt);
+      if (existing.some(a => String(a.customerAccountId)!==customerAccountId))
+        return {status:409,error:"This Discord profile label is already assigned to another customer."};
+      const group = records.filter(record => isAuthoritativeCheckoutRecord(record,source.channels[0]) &&
+        checkoutAliasKey(record.retailer,record.sourceProfileLabel)===key);
+      if (!group.length) return {status:404,error:"No saved source checkouts match that profile label."};
+      if (group.some(record => record.customerAccountId &&
+        String(record.customerAccountId)!==customerAccountId))
+        return {status:409,error:"Historical orders under this label have another owner. Review separately."};
+      const eligible = group.filter(order => !order.customerAccountId &&
+        candidates.some(candidate => String(candidate.customerAccountId)===customerAccountId &&
+          discordCheckoutCandidateEligible(candidate,order)));
+      if (!eligible.length)
+        return {status:409,error:"No eligible paid or assigned customer profile matches these checkout dates."};
+      if (!existing.length) {
+        aliases.push({retailer,profileLabel,customerAccountId,approvedAt:new Date().toISOString()});
+        await writeJson(DISCORD_PROFILE_ALIASES_FILE,aliases);
+      }
+      let linked=0;
+      for (const order of eligible) {
+        const attribution = resolveApprovedCheckoutAlias(order,candidates,aliases,discordCheckoutCandidateEligible);
+        if (!attribution || String(attribution.customerAccountId)!==customerAccountId) continue;
+        Object.assign(order,attribution,{attributionSource:"admin_confirmed_discord_profile_alias"});
+        linked++;
+      }
+      if (linked) {
+        await saveSuccessCheckouts(records);
+        announceSuccessCheckout(customerAccountId);
+        broadcastLiveDataChange("discord-profile-matched");
+      }
+      return {status:200,ok:true,linked,remaining:group.filter(o=>!o.customerAccountId).length};
+    });
+    return res.status(result.status).json(result);
+  } catch (error) {
+    console.error("Discord checkout alias assignment:",error?.message);
+    return res.status(500).json({error:"Unable to safely assign checkout profile."});
+  }
+});
+
 // Admin Success overview: use only already-attributed Discord success checkouts.
 // Unmatched hits cannot be counted as belonging to a paid, personal, or linked profile.
 app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
@@ -38420,7 +38543,12 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
       const token = discordSuccessConfig().token;
       if (token) hitsChannelId = await resolveDiscordHitsChannelId(token);
     } catch {}
-    const records = visibleDiscordSuccessRecords(await getSuccessCheckouts(), hitsChannelId)
+    const allRecords = visibleDiscordSuccessRecords(await getSuccessCheckouts(), hitsChannelId);
+    const chosen = await discordCheckoutSourceChannels();
+    const activeIds = chosen.channels.map(id => "discord:" + id + ":");
+    const unmatchedCount = allRecords.filter(record => !record.customerAccountId &&
+      [record.id, ...(record.sourceIds || [])].some(id => activeIds.some(prefix => String(id).startsWith(prefix)))).length;
+    const records = allRecords
       .filter(record => Boolean(record.customerAccountId))
       .map(record => {
         const safe = safeSuccessCheckout(record);
@@ -38434,7 +38562,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
       .filter(record => Number.isFinite(new Date(record.checkoutAt).getTime()))
       .sort((a, b) => new Date(b.checkoutAt) - new Date(a.checkoutAt));
     res.setHeader("Cache-Control", "no-store");
-    return res.json({ok:true,records});
+    return res.json({ok:true,records,unmatchedCount});
   } catch (error) {
     console.error("Admin success overview:", error?.message);
     return res.status(500).json({error:"Unable to load confirmed ACO success."});
