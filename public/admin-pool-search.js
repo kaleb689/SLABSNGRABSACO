@@ -193,6 +193,28 @@
           }
         });
         actions.append(button);
+      } else if (profile.status === "needs_repair") {
+        const button = make("button", "pool-profile-action-link", "Mark Repaired");
+        button.type = "button";
+        button.addEventListener("click", async () => {
+          if (!window.confirm("Confirm that " + profile.loginEmail +
+              " has been repaired and tested? This clears Needs Repair and returns its managed account to the available pool.")) return;
+          button.disabled = true;
+          try {
+            await api("/api/admin/managed-pool/" + encodeURIComponent(profile.id) + "/mark-repaired", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({retailer: profile.retailer, confirmed: true})
+            });
+            notice = "Marked " + profile.loginEmail + " repaired.";
+            await reload();
+          } catch (error) {
+            statusLine.textContent = error.message;
+          } finally {
+            button.disabled = false;
+          }
+        });
+        actions.append(button);
       } else {
         actions.append(make("span", "pool-profile-meta",
           profile.status === "held"
