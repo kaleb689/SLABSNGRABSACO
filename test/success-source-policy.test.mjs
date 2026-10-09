@@ -46,6 +46,22 @@ test("legacy mixed-email checkout attribution and shipment are cleared without l
   assert.deepEqual(safe.sourceIds, [id]);
 });
 
+test("an authoritative Discord RED checkout remains cancelled during startup migration", () => {
+  const cancelled = {
+    ...confirmed, status: "cancelled",
+    statusUpdatedAt: "2026-10-09T19:00:00.000Z",
+    cancelledAt: "2026-10-09T19:00:00.000Z",
+    sourceIds: [id]
+  };
+  const [saved] = webhookOnlyCheckouts([cancelled], { resetLegacyShipping: true });
+  assert.equal(saved.status, "cancelled");
+  assert.equal(saved.cancelledAt, cancelled.cancelledAt);
+  assert.equal(saved.statusUpdatedAt, cancelled.statusUpdatedAt);
+  assert.deepEqual(saved.sourceIds, [id]);
+  // Repeating the startup migration must not alter a verified RED order.
+  assert.deepEqual(webhookOnlyCheckouts([saved], { resetLegacyShipping: true }), [saved]);
+});
+
 test("legacy shipment sourced only from retailer email is discarded for re-verification", () => {
   const [safe] = webhookOnlyCheckouts([
     { ...confirmed, shipping: { status: "delivered", source: "retailer_email" } }
