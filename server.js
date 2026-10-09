@@ -8,7 +8,7 @@ import { createOrderNotifications, cancelledOrder, lateCancellation } from "./or
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { webhookOnlyCheckouts, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
-import { checkoutIdentityFromDiscord, checkoutSourceSelection } from "./discord-checkout-identity.js";
+import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
@@ -37887,7 +37887,7 @@ async function discordCheckoutSourceChannels() {
 function discordCheckoutFromMessage(message, channelId) {
   const embeds = Array.isArray(message.embeds) ? message.embeds : [];
   const messageText = String(message.content || "");
-  const isCheckout = value => /success|checkout|order confirm/i.test(String(value || ""));
+  const isCheckout = value => /success|checkout|order confirm|order cancel|order review|order on hold|cancellation/i.test(String(value || ""));
   if (!isCheckout(messageText) && !embeds.some(item => isCheckout([item.title, item.description].join(" ")))) return null;
   if (embeds.some(item => /NEW CHECKOUT SUCCESS/i.test(String(item.title || "")))) return null;
   const embed = embeds.find(item => (item.fields || []).some(field => /^(?:product|item)(?:\s*\(|\s*$|\s+name\b)/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))) ||
@@ -37906,13 +37906,17 @@ function discordCheckoutFromMessage(message, channelId) {
     numbered.set(match[2], entry);
   }
   const itemField = fields.find(field => /^(item|product)(?: name)?$/i.test(fieldLabel(field.name)));
-  if (!numbered.size && itemField) {
-    const rawItem = fieldValue(itemField.value);
+  const linkedProduct = checkoutProductFromDiscord(message);
+  if (!numbered.size && (itemField || linkedProduct)) {
+    const rawItem = itemField ? fieldValue(itemField.value) : linkedProduct;
     const priceMatch = rawItem.match(/\s*[-–]\s*\$([\d,]+(?:\.\d{1,2})?)\s*$/);
     const priceField = fields.find(field => /^(price|unit price)$/i.test(fieldLabel(field.name)));
-    const quantityField = fields.find(field => /^quantity$/i.test(fieldLabel(field.name)));
+    const quantityField = fields.find(field => /^quantity$/i.test(fieldLabel(field.name)) ||
+      /^quantity\s*:/i.test(String(field.name || "")));
+    const descriptionQuantity = embed?.description?.match(/(?:^|\n)\s*(?:\*\*)?quantity(?:\*\*)?\s*(?::\s*|\n\s*)(\d+)\b/i)?.[1];
     numbered.set("1", { product: priceMatch ? rawItem.slice(0, priceMatch.index) : rawItem,
-      quantity: fieldValue(quantityField?.value), price: priceMatch?.[1] || fieldValue(priceField?.value), priceIsLineTotal: Boolean(priceMatch) });
+      quantity: fieldValue(quantityField?.value) || descriptionQuantity || "",
+      price: priceMatch?.[1] || fieldValue(priceField?.value), priceIsLineTotal: Boolean(priceMatch) });
   }
   let subtotalCents = 0, completePrices = numbered.size > 0;
   for (const entry of numbered.values()) {
@@ -37945,17 +37949,23 @@ function discordCheckoutFromMessage(message, channelId) {
   const totalField = (embed?.fields || []).find(field => /total|spent|amount/i.test(field.name || ""))?.value ||
     body.match(/(?:total|spent|amount)\s*[:$]\s*\$?([\d,.]+)/i)?.[1] || "";
   const totalMatch = String(totalField).match(/\$?([\d,]+\.\d{2})/);
+  const identity = discordCheckoutIdentity(message);
+  const status = checkoutStatusFromDiscord(message) || "unverified";
+  const eventAt = message.timestamp || new Date().toISOString();
   return {
     id: `discord:${channelId}:${message.id}`,
     customerAccountId: null,
-    orderNumber: discordCheckoutIdentity(message).orderNumber,
-    sourceProfileLabel: discordCheckoutIdentity(message).profileName,
+    // The Account field may include a password; identity.email is used ONLY
+    // for a transient owner lookup and is never copied into this stored record.
+    orderNumber: identity.orderNumber,
+    sourceProfileLabel: identity.profileName,
     retailer: normalizeSuccessRetailer(retailer),
-    checkoutAt: message.timestamp || new Date().toISOString(),
+    checkoutAt: eventAt, statusUpdatedAt: eventAt,
+    ...(status === "cancelled" ? { cancelledAt: eventAt } : {}),
     orderTotal: totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : completePrices ? subtotalCents / 100 : 0,
     orderTotalBasis: totalMatch ? "order_total" : completePrices ? "item_subtotal" : "unknown",
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
-    items, status: "confirmed"
+    items, status
   };
 }
 
@@ -38237,8 +38247,8 @@ function discordCheckoutIdentity(message) {
 }
 
 async function discordCheckoutOwners() {
-  const [profiles, paid, managed, assignments] = await Promise.all([
-    getRetailerProfiles(), readJson(PAID_FILE, []), getManagedAccounts(), managedAssignmentHistory()
+  const [profiles, managed, assignments] = await Promise.all([
+    getRetailerProfiles(), getManagedAccounts(), managedAssignmentHistory()
   ]);
   const candidates = [];
   for (const profile of profiles) {
@@ -38250,12 +38260,9 @@ async function discordCheckoutOwners() {
         email: normalizeEmail(login.username), profileName: profile.profileName, profileSlot: profile.slot });
     }
   }
-  // Primary ACO profile email is also used by guest checkouts.
-  for (const order of Array.isArray(paid) ? paid : []) {
-    if (!order.customerAccountId) continue;
-    candidates.push({ customerAccountId: order.customerAccountId, email: normalizeEmail(order.profile?.email),
-      profileName: order.profile?.profileName, profileSlot: order.profile?.slot, createdAt: order.createdAt });
-  }
+  // Membership/billing emails are NOT retailer logins. Do not let a site
+  // signup email claim a Shikari checkout; only paid retailer profiles and
+  // currently/historically assigned managed retailer accounts are candidates.
   for (const account of managed) {
     let credentials = {};
     try { credentials = normalizeRetailerCredentials(decryptJson(account.credentials)); } catch { continue; }
@@ -38283,12 +38290,17 @@ function discordCheckoutAttribution(order, identity, candidates, aliases = []) {
   const byEmail = identity.email ? eligible.filter(item => item.email === identity.email) : [];
   const byName = identity.profileName ? eligible.filter(item =>
     String(item.profileName || '').trim().toLowerCase() === identity.profileName.trim().toLowerCase()) : [];
-  const match = uniqueCheckoutOwner(byEmail.length ? byEmail : byName);
+  // When a Shikari Account email is present, its exact retailer login is the
+  // sole automatic identity authority. An unrelated Profile label must not
+  // override a mismatched account login or attach someone else's purchase.
+  const match = uniqueCheckoutOwner(identity.email ? byEmail : byName);
   if (match) {
     return Object.fromEntries(['customerAccountId', 'profileName', 'profileSlot', 'managedAccountId',
       'managedAssignmentId', 'managedAssignmentType'].filter(key => match[key] != null).map(key => [key, match[key]]));
   }
-  // Unrelated external automation names may be linked only by an explicit Admin-approved alias.
+  // Never approve a profile-name alias when a concrete Account email did not
+  // match a retailer login. Review the underlying assignment instead.
+  if (identity.email) return null;
   return resolveApprovedCheckoutAlias(order, candidates, aliases, discordCheckoutCandidateEligible);
 }
 
