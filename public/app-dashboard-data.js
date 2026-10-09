@@ -12,6 +12,7 @@ export function visibleLateCancellation(order, now = new Date()) {
 export function shippingStage(order) {
   if (order?.cancelledAt || order?.canceledAt ||
       /cancel|refund|failed|declined/i.test(order.status || '')) return 'cancelled';
+  if (order?.status === 'review_hold') return 'review_hold';
   const status = order.shipping?.status;
   return ['shipped', 'in_transit', 'out_for_delivery', 'delivered'].includes(status) ? status : 'ordered';
 }
@@ -25,7 +26,8 @@ export function periodStart(days, now = new Date()) {
 }
 export function selectedOrders(orders, days, now = new Date()) {
   const start = periodStart(days, now).getTime();
-  return orders.filter(order => Date.parse(order.checkoutAt) >= start && Date.parse(order.checkoutAt) <= now.getTime() && shippingStage(order) !== 'cancelled')
+  return orders.filter(order => Date.parse(order.checkoutAt) >= start && Date.parse(order.checkoutAt) <= now.getTime() &&
+    !['cancelled', 'review_hold'].includes(shippingStage(order)))
     .sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
 }
 export function metricChanges(previous, next) {

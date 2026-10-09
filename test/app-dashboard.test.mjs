@@ -47,7 +47,7 @@ test('app data includes orders beyond the legacy 20-item carousel limit', () => 
   const start = source.indexOf('function buildSuccessSummary(');
   const end = source.indexOf('/* -------------------------------------------------------', start);
   const orders = Array.from({ length: 35 }, (_, i) => ({ id: i, checkoutAt: now.toISOString(), itemCount: 1, orderTotal: 10 }));
-  const sandbox = { safeSuccessCheckout: r => r, successDateKey: date => date.slice(0, 10), buildSuccessActivity: () => [], orders };
+  const sandbox = { safeSuccessCheckout: r => r, confirmedDiscordPurchase: r => !/cancel|review_hold|unverified/i.test(String(r.status || "")), successDateKey: date => date.slice(0, 10), buildSuccessActivity: () => [], orders };
   vm.runInNewContext(source.slice(start, end) + ';legacy = buildSuccessSummary(orders); app = buildSuccessSummary(orders,null,null,true);', sandbox);
   assert.equal(sandbox.legacy.recentCheckouts.length, 20);
   assert.equal(sandbox.legacy.checkouts, undefined);
@@ -73,4 +73,18 @@ test('popup deduplication survives reloads and is scoped to customer and meaning
   const reloaded={...sandbox};vm.runInNewContext(segment+';again=claimCustomerNotification(note);',reloaded);assert.equal(reloaded.again,false);
   sandbox.state.customer.id='b';vm.runInNewContext('other=claimCustomerNotification(note);',sandbox);assert.equal(sandbox.other,true);
   sandbox.note={...note,message:'Add card'};vm.runInNewContext('changed=claimCustomerNotification(note);',sandbox);assert.equal(sandbox.changed,true);
+});
+
+test('green orders count as purchased; orange review holds and red cancellations are excluded from tracker metrics', () => {
+  const records = [
+    {id:'confirmed',checkoutAt:now.toISOString(),status:'confirmed',itemCount:2,orderTotal:39.98,items:[{name:'Trading card pack',quantity:2,price:19.99}]},
+    {id:'hold',checkoutAt:now.toISOString(),status:'review_hold',itemCount:2,orderTotal:39.98,items:[{name:'Trading card pack',quantity:2,price:19.99}]},
+    {id:'cancel',checkoutAt:now.toISOString(),status:'cancelled',itemCount:2,orderTotal:39.98}
+  ];
+  assert.equal(shippingStage(records[1]),'review_hold');
+  const confirmed=selectedOrders(records,1,now);
+  assert.deepEqual(confirmed.map(x=>x.id),['confirmed']);
+  assert.equal(dashboardTotals(confirmed).orders,1);
+  assert.equal(dashboardTotals(confirmed).items,2);
+  assert.equal(dashboardTotals(confirmed).spend,39.98);
 });

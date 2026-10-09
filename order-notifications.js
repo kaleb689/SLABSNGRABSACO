@@ -23,16 +23,23 @@ export function orderKey(record) {
 }
 export function orderSnapshot(record) {
   const cancelled = cancelledOrder(record);
-  return { eligible: !cancelled && /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(record.status || "confirmed"),
+  return { eligible: !cancelled && /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(record.status || ""),
+    reviewHold: !cancelled && record.status === "review_hold",
     cancelled, shipping: JSON.stringify([record.shipping?.status || "", record.shipping?.estimatedDelivery || "", record.shipping?.trackingUrl || ""]) };
 }
 export function orderEvents(record, previous) {
   const next = orderSnapshot(record);
-  if (!record.customerAccountId || !next.eligible) return [];
+  if (!record.customerAccountId || (!next.eligible && !next.reviewHold)) return [];
   const events = [];
   const retailer = String(record.retailer || "Retailer").slice(0, 50);
   const product = String(record.items?.[0]?.name || record.productName || "Your order").slice(0, 110);
   const orderNumber = record.orderNumber ? `Order #${String(record.orderNumber).slice(0, 50)}` : "Order placed";
+  if (next.reviewHold) return previous?.reviewHold ? [] : [{
+    kind: "order_review_hold",
+    title: `${retailer} order on review hold`,
+    message: `${product} • ${orderNumber} • Retailer may still cancel`,
+    tab: "tracking"
+  }];
   if (!previous || !previous.eligible) events.push({
     kind: "order_confirmed",
     title: `${retailer} order confirmed`,
@@ -64,7 +71,7 @@ export function validPushSubscription(value) {
 
 export const notificationDefaults = { orders: true, shipping: true, messages: true, account: true };
 export function notificationCategory(event) {
-  if (event.kind === "order_confirmed" || event.kind === "order_cancelled") return "orders";
+  if (["order_confirmed", "order_cancelled", "order_review_hold"].includes(event.kind)) return "orders";
   if (event.kind === "shipping_update") return "shipping";
   if (/admin_message|missing|action_needed|setup_complete/.test(event.kind || "")) return "messages";
   return "account";
@@ -178,6 +185,26 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         const key = orderKey(record);
         const previous = state.snapshots[key];
         const next = orderSnapshot(record);
+        // Retire checkout-confirmed or shipping alerts when the authoritative
+        // hook changes to orange/unknown. Previously delivered pushes cannot
+        // be recalled, but the in-app inbox and queued pushes must not lie.
+        if (!next.cancelled && !next.eligible) {
+          state.outbox = state.outbox.filter(item => item.key !== key ||
+            !["order_confirmed", "shipping_update", ...(next.reviewHold ? [] : ["order_review_hold"])].includes(item.notification?.kind));
+          state.inbox[record.customerAccountId] = (state.inbox[record.customerAccountId] || [])
+            .filter(item => item.orderKey !== key ||
+              !["order_confirmed", "shipping_update", ...(next.reviewHold ? [] : ["order_review_hold"])].includes(item.kind));
+        }
+        if (!next.cancelled && !next.eligible && !next.reviewHold) {
+          state.snapshots[key] = next;
+          continue;
+        }
+        if (next.eligible && previous?.cancelled) {
+          state.outbox = state.outbox.filter(item => item.key !== key ||
+            item.notification?.kind !== "order_cancelled");
+          state.inbox[record.customerAccountId] = (state.inbox[record.customerAccountId] || [])
+            .filter(item => item.orderKey !== key || item.kind !== "order_cancelled");
+        }
         if (next.cancelled) {
           // Retract all pending confirmation/shipment pushes and stale notices.
           // Only a prior valid ACO success can produce a cancellation event.
@@ -186,7 +213,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
           const inbox = state.inbox[record.customerAccountId] ||= [];
           state.inbox[record.customerAccountId] = inbox.filter(item =>
             item.orderKey !== key || item.kind === "order_cancelled");
-          if (previous?.eligible && !previous.cancelled && lateCancellation(record) &&
+          if ((previous?.eligible || previous?.reviewHold) && !previous.cancelled && lateCancellation(record) &&
               Date.now() - Date.parse(record.cancelledAt || record.canceledAt) < 24 * 60 * 60 * 1000) {
             const retailer = String(record.retailer || "Retailer").slice(0, 50);
             const product = String(record.items?.[0]?.name || "Your order").slice(0, 110);
@@ -208,7 +235,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         for (const event of orderEvents(record, previous)) {
           // A manually reviewed historical alias should update Success totals
           // without producing dozens of old "new order" pushes.
-          if (historic && event.kind === "order_confirmed") continue;
+          if (historic && ["order_confirmed", "order_review_hold"].includes(event.kind)) continue;
           if (historic && event.kind === "shipping_update" &&
               Date.now() - Date.parse(record.shipping?.updatedAt || "") > 24 * 60 * 60 * 1000) continue;
           const notification = { ...event, orderKey: key, id: crypto.randomUUID(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -234,11 +261,13 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       const active = new Set(accounts.filter(account => !account.disabled).map(account => String(account.id)));
       const eligible = new Set(records.filter(record => orderSnapshot(record).eligible).map(orderKey));
       const cancelled = new Set(records.filter(lateCancellation).map(orderKey));
+      const holds = new Set(records.filter(record => record.status === "review_hold" && !cancelledOrder(record)).map(orderKey));
       await locked(async () => {
         const pending = [];
         for (const item of state.outbox) {
           const validOrderState = !item.key || (item.notification.kind === "order_cancelled" ?
-            cancelled.has(item.key) : eligible.has(item.key));
+            cancelled.has(item.key) : item.notification.kind === "order_review_hold" ?
+            holds.has(item.key) : eligible.has(item.key));
           if (!active.has(String(item.accountId)) || !validOrderState ||
               Date.now() - Date.parse(item.notification.createdAt) > 24 * 60 * 60 * 1000) continue;
           if ((state.preferences[item.accountId] || notificationDefaults)[notificationCategory(item.notification)] === false) continue;

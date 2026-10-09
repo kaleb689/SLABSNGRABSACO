@@ -211,3 +211,8 @@
 .app-dashboard[data-app-theme="day"] .stage-in_transit .sng-stage { color:#007fa7; font-weight:800; }
 .app-dashboard[data-app-theme="day"] .stage-out_for_delivery .sng-stage { color:#c65000; font-weight:800; }
 .app-dashboard[data-app-theme="day"] .stage-delivered .sng-stage { color:#087e59; font-weight:800; }
+
+/* Shikari orange webhook: provisional review, never a confirmed purchase. */
+.sng-order-card.stage-review_hold { border-color: rgba(255,174,61,.52); }
+.sng-order-card.stage-review_hold .sng-stage { color: #ffad4e; font-weight: 900; }
+.sng-order-card.stage-review_hold .sng-delivery { color: #ffd8a1; border-radius: 12px; padding: 12px; background: rgba(255,146,0,.12); }

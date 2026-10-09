@@ -8,7 +8,8 @@ import { createOrderNotifications, cancelledOrder, lateCancellation } from "./or
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { webhookOnlyCheckouts, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
-import { checkoutIdentityFromDiscord, checkoutSourceSelection } from "./discord-checkout-identity.js";
+import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
+import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
@@ -37887,7 +37888,7 @@ async function discordCheckoutSourceChannels() {
 function discordCheckoutFromMessage(message, channelId) {
   const embeds = Array.isArray(message.embeds) ? message.embeds : [];
   const messageText = String(message.content || "");
-  const isCheckout = value => /success|checkout|order confirm/i.test(String(value || ""));
+  const isCheckout = value => /success|checkout|order confirm|order cancel|order review|order on hold|cancellation/i.test(String(value || ""));
   if (!isCheckout(messageText) && !embeds.some(item => isCheckout([item.title, item.description].join(" ")))) return null;
   if (embeds.some(item => /NEW CHECKOUT SUCCESS/i.test(String(item.title || "")))) return null;
   const embed = embeds.find(item => (item.fields || []).some(field => /^(?:product|item)(?:\s*\(|\s*$|\s+name\b)/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))) ||
@@ -37906,13 +37907,17 @@ function discordCheckoutFromMessage(message, channelId) {
     numbered.set(match[2], entry);
   }
   const itemField = fields.find(field => /^(item|product)(?: name)?$/i.test(fieldLabel(field.name)));
-  if (!numbered.size && itemField) {
-    const rawItem = fieldValue(itemField.value);
+  const linkedProduct = checkoutProductFromDiscord(message);
+  if (!numbered.size && (itemField || linkedProduct)) {
+    const rawItem = itemField ? fieldValue(itemField.value) : linkedProduct;
     const priceMatch = rawItem.match(/\s*[-–]\s*\$([\d,]+(?:\.\d{1,2})?)\s*$/);
     const priceField = fields.find(field => /^(price|unit price)$/i.test(fieldLabel(field.name)));
-    const quantityField = fields.find(field => /^quantity$/i.test(fieldLabel(field.name)));
+    const quantityField = fields.find(field => /^quantity$/i.test(fieldLabel(field.name)) ||
+      /^quantity\s*:/i.test(String(field.name || "")));
+    const descriptionQuantity = embed?.description?.match(/(?:^|\n)\s*(?:\*\*)?quantity(?:\*\*)?\s*(?::\s*|\n\s*)(\d+)\b/i)?.[1];
     numbered.set("1", { product: priceMatch ? rawItem.slice(0, priceMatch.index) : rawItem,
-      quantity: fieldValue(quantityField?.value), price: priceMatch?.[1] || fieldValue(priceField?.value), priceIsLineTotal: Boolean(priceMatch) });
+      quantity: fieldValue(quantityField?.value) || descriptionQuantity || "",
+      price: priceMatch?.[1] || fieldValue(priceField?.value), priceIsLineTotal: Boolean(priceMatch) });
   }
   let subtotalCents = 0, completePrices = numbered.size > 0;
   for (const entry of numbered.values()) {
@@ -37941,21 +37946,27 @@ function discordCheckoutFromMessage(message, channelId) {
   }
   if (!items.length) return null;
   const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))?.value ||
-    body.match(/(?:^|\n)\s*(?:retailer|store|site)\s*:\s*([^\n]+)/i)?.[1] || "";
+    body.match(/(?:^|\n)[ \t]*(?:retailer|store|site)[ \t]*(?::[ \t]*|\n[ \t]*)([^\n]+)/i)?.[1] || "";
   const totalField = (embed?.fields || []).find(field => /total|spent|amount/i.test(field.name || ""))?.value ||
     body.match(/(?:total|spent|amount)\s*[:$]\s*\$?([\d,.]+)/i)?.[1] || "";
   const totalMatch = String(totalField).match(/\$?([\d,]+\.\d{2})/);
+  const identity = discordCheckoutIdentity(message);
+  const status = checkoutStatusFromDiscord(message) || "unverified";
+  const eventAt = message.timestamp || new Date().toISOString();
   return {
     id: `discord:${channelId}:${message.id}`,
     customerAccountId: null,
-    orderNumber: discordCheckoutIdentity(message).orderNumber,
-    sourceProfileLabel: discordCheckoutIdentity(message).profileName,
+    // The Account field may include a password; identity.email is used ONLY
+    // for a transient owner lookup and is never copied into this stored record.
+    orderNumber: identity.orderNumber,
+    sourceProfileLabel: identity.profileName,
     retailer: normalizeSuccessRetailer(retailer),
-    checkoutAt: message.timestamp || new Date().toISOString(),
+    checkoutAt: eventAt, statusUpdatedAt: eventAt,
+    ...(status === "cancelled" ? { cancelledAt: eventAt } : {}),
     orderTotal: totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : completePrices ? subtotalCents / 100 : 0,
     orderTotalBasis: totalMatch ? "order_total" : completePrices ? "item_subtotal" : "unknown",
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
-    items, status: "confirmed"
+    items, status
   };
 }
 
@@ -38016,6 +38027,9 @@ async function resolveDiscordHitsChannelId(token) {
 }
 
 function publicDiscordHitPayload(order) {
+  // Never mirror a red cancellation, orange hold, or unknown-color hook as
+  // a green "Successful Checkout" message.
+  if (!confirmedDiscordPurchase(order)) return null;
   const items = (Array.isArray(order?.items) ? order.items : [])
     .map(item => ({
       name: publicSuccessProductName(item?.name),
@@ -38237,8 +38251,8 @@ function discordCheckoutIdentity(message) {
 }
 
 async function discordCheckoutOwners() {
-  const [profiles, paid, managed, assignments] = await Promise.all([
-    getRetailerProfiles(), readJson(PAID_FILE, []), getManagedAccounts(), managedAssignmentHistory()
+  const [profiles, managed, assignments] = await Promise.all([
+    getRetailerProfiles(), getManagedAccounts(), managedAssignmentHistory()
   ]);
   const candidates = [];
   for (const profile of profiles) {
@@ -38250,12 +38264,9 @@ async function discordCheckoutOwners() {
         email: normalizeEmail(login.username), profileName: profile.profileName, profileSlot: profile.slot });
     }
   }
-  // Primary ACO profile email is also used by guest checkouts.
-  for (const order of Array.isArray(paid) ? paid : []) {
-    if (!order.customerAccountId) continue;
-    candidates.push({ customerAccountId: order.customerAccountId, email: normalizeEmail(order.profile?.email),
-      profileName: order.profile?.profileName, profileSlot: order.profile?.slot, createdAt: order.createdAt });
-  }
+  // Membership/billing emails are NOT retailer logins. Do not let a site
+  // signup email claim a Shikari checkout; only paid retailer profiles and
+  // currently/historically assigned managed retailer accounts are candidates.
   for (const account of managed) {
     let credentials = {};
     try { credentials = normalizeRetailerCredentials(decryptJson(account.credentials)); } catch { continue; }
@@ -38283,12 +38294,17 @@ function discordCheckoutAttribution(order, identity, candidates, aliases = []) {
   const byEmail = identity.email ? eligible.filter(item => item.email === identity.email) : [];
   const byName = identity.profileName ? eligible.filter(item =>
     String(item.profileName || '').trim().toLowerCase() === identity.profileName.trim().toLowerCase()) : [];
-  const match = uniqueCheckoutOwner(byEmail.length ? byEmail : byName);
+  // When a Shikari Account email is present, its exact retailer login is the
+  // sole automatic identity authority. An unrelated Profile label must not
+  // override a mismatched account login or attach someone else's purchase.
+  const match = uniqueCheckoutOwner(identity.email ? byEmail : byName);
   if (match) {
     return Object.fromEntries(['customerAccountId', 'profileName', 'profileSlot', 'managedAccountId',
       'managedAssignmentId', 'managedAssignmentType'].filter(key => match[key] != null).map(key => [key, match[key]]));
   }
-  // Unrelated external automation names may be linked only by an explicit Admin-approved alias.
+  // Never approve a profile-name alias when a concrete Account email did not
+  // match a retailer login. Review the underlying assignment instead.
+  if (identity.email) return null;
   return resolveApprovedCheckoutAlias(order, candidates, aliases, discordCheckoutCandidateEligible);
 }
 
@@ -38404,7 +38420,7 @@ async function scanDiscordSuccessChannel() {
         broadcastLiveDataChange("discord-success");
       }
     });
-    await mirrorDiscordCheckoutHits(imports, token).catch(error => {
+    await mirrorDiscordCheckoutHits(imports.filter(entry => confirmedDiscordPurchase(entry.order)), token).catch(error => {
       console.error("Discord hits mirror failed:", error?.message || error?.code || "discord_hits_mirror_error");
       discordSuccessScan.hitsError = error?.message || "Discord hits mirror failed.";
     });
@@ -38636,7 +38652,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     const allRecords = visibleDiscordSuccessRecords(await getSuccessCheckouts(), hitsChannelId, chosen.channels);
     const unmatchedCount = allRecords.filter(record => !record.customerAccountId).length;
     const records = allRecords
-      .filter(record => Boolean(record.customerAccountId) && !cancelledOrder(record))
+      .filter(record => Boolean(record.customerAccountId) && confirmedDiscordPurchase(record))
       .map(record => {
         const safe = safeSuccessCheckout(record);
         return {
@@ -39202,6 +39218,15 @@ function safeSuccessItem(item) {
   };
 }
 
+// Review holds are visible to the customer with a warning, but are never
+// counted as a confirmed purchase or as money definitively spent.
+function confirmedDiscordPurchase(record) {
+  return !cancelledOrder(record) &&
+    /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(String(record?.status || ""));
+}
+function reviewHoldDiscordCheckout(record) {
+  return !cancelledOrder(record) && String(record?.status || "") === "review_hold";
+}
 function safeSuccessCheckout(
   record
 ) {
@@ -39255,23 +39280,8 @@ function safeSuccessCheckout(
         150
       ),
 
-    profileSlot:
-      Number.isInteger(
-        Number(
-          record?.profileSlot
-        )
-      )
-        ? Number(
-            record.profileSlot
-          )
-        : null,
-
-    profileName:
-      clean(
-        record?.profileName,
-        80
-      ),
-
+    // Do not expose any retailer profile name, login, account email,
+    // password, or proxy through the customer's Success JSON.
     checkoutAt:
       record?.checkoutAt ||
       record?.createdAt ||
@@ -39282,6 +39292,11 @@ function safeSuccessCheckout(
       total >= 0
         ? total
         : 0,
+    // Shikari success embeds may omit the paid amount. Customers must not
+    // mistake an unknown total for an actual zero-dollar retailer checkout.
+    orderTotalKnown:
+      record?.orderTotalBasis !== "unknown" &&
+      Number.isFinite(total) && total > 0,
 
     itemCount:
       Math.max(
@@ -39909,7 +39924,7 @@ function buildSuccessSummary(
   includeOrders = false
 ) {
   const safeRecords =
-    records.filter(record => !cancelledOrder(record)).map(
+    records.filter(confirmedDiscordPurchase).map(
       safeSuccessCheckout
     );
 
@@ -43715,7 +43730,14 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
           { subject: "delivered" }, { subject: "on the way" }, { subject: "tracking" }, { subject: "cancel" }
         ]
       }, { uid: true });
-      const recentUids = uids.slice(-120);
+      // Some Shikari hooks omit the checkout price. Read receipts separately
+      // so the newest confirmations do not crowd out real shipping notices.
+      const receiptUids = await client.search({
+        since,
+        or: [{ subject: "receipt" }, { subject: "confirmation" },
+          { subject: "confirmed" }, { subject: "your order" }]
+      }, { uid: true });
+      const recentUids = [...new Set([...uids.slice(-120), ...receiptUids.slice(-120)])];
       const candidates = recentUids.length ? await client.fetchAll(
         recentUids,
         { uid: true, envelope: true, internalDate: true, source: true },
@@ -43728,7 +43750,8 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const combined = normalizedShippingText(`${subject}\n${decoded.text}\n${decoded.html}`);
         const cancellation = cancellationFromSubject(subject);
         const status = cancellation || shippingStatusFromMessage(subject, combined);
-        if (!status) continue;
+        const receiptTotal = verifiedRetailerOrderTotal(decoded.text, decoded.html);
+        if (!status && !receiptTotal) continue;
 
         // A customer's inbox can include purchases outside this ACO service.
         // Require an exact existing webhook order number, one unique match,
@@ -43743,6 +43766,21 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const account = accountsById.get(String(record?.customerAccountId || ""));
         if (!account || account.disabled === true) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
+        if (receiptTotal && !cancelledOrder(record) &&
+            (record.orderTotalBasis === "unknown" || (!record.orderTotalBasis && !(Number(record.orderTotal) > 0)))) {
+          // Only attach amount to the existing, uniquely matched Discord
+          // checkout. Never turn an email receipt into a new order or owner.
+          record.orderTotal = receiptTotal;
+          record.orderTotalBasis = "retailer_receipt";
+          record.priceSource = "verified_retailer_receipt";
+          pendingChanges.push({
+            id: record.id, customerAccountId: String(account.id),
+            retailer: record.retailer, orderNumber: record.orderNumber,
+            orderTotal: receiptTotal
+          });
+          changed = true;
+        }
+        if (!status) continue;
         if (cancellation) {
           if (!cancelledOrder(record)) {
             record.status = cancellation;
@@ -43874,6 +43912,16 @@ async function syncShippingTrackers() {
           String(item.orderNumber || "") === String(update.orderNumber || "")
         );
         if (!record) continue;
+        if (update.orderTotal) {
+          if (!cancelledOrder(record) &&
+              (record.orderTotalBasis === "unknown" || (!record.orderTotalBasis && !(Number(record.orderTotal) > 0)))) {
+            record.orderTotal = update.orderTotal;
+            record.orderTotalBasis = "retailer_receipt";
+            record.priceSource = "verified_retailer_receipt";
+            changedAccounts.add(update.customerAccountId);
+          }
+          continue;
+        }
         if (update.cancelledAt) {
           if (cancelledOrder(record)) continue;
           const priorUpdatedAt = Date.parse(record.shipping?.updatedAt || 0);
@@ -47669,6 +47717,15 @@ summary.range = {
 
 // Cancellations are shown as status history only, never counted as
 // confirmed purchases, checkout value, products, or successful orders.
+const reviewHoldCheckouts = ownedRecords.filter(reviewHoldDiscordCheckout)
+  .filter(record => {
+    const day = successDateKey(record.checkoutAt);
+    return day && day >= rangeStart && day <= rangeEnd;
+  })
+  .map(safeSuccessCheckout)
+  .sort((a, b) => new Date(b.checkoutAt || 0) - new Date(a.checkoutAt || 0))
+  .slice(0, req.query.appView === "1" ? 150 : 20);
+
 const cancelledCheckouts = req.query.appView === "1"
   ? ownedRecords.filter(lateCancellation)
     .filter(record => {
@@ -47710,6 +47767,7 @@ const cancelledCheckouts = req.query.appView === "1"
         },
 
         ...summary,
+        reviewHoldCheckouts,
         ...(req.query.appView === "1" ? { cancelledCheckouts } : {})
       });
 

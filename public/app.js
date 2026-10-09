@@ -13377,10 +13377,11 @@ function renderSuccessCheckouts(
     "Retailer";
 
 
+  // The Discord message ID is NOT the retailer's order ID; never display
+  // internal checkout IDs, account names, emails or credentials as tracking.
   const orderNumber =
     checkout.orderNumber ||
     checkout.orderId ||
-    checkout.id ||
     "";
 
 
@@ -13432,7 +13433,11 @@ function renderSuccessCheckouts(
       ? checkout.shipping
       : null;
 
+  const reviewHold = checkout.status === "review_hold";
+  const totalCostText = checkout.orderTotalKnown === false ?
+    "Total not provided" : formatSuccessCurrency(value);
   const shippingStatusLabel =
+    reviewHold ? "Review hold" :
     shipping?.status === "delivered"
       ? "Delivered"
       : shipping?.status === "out_for_delivery"
@@ -13467,7 +13472,7 @@ function renderSuccessCheckouts(
   const primaryName = primaryItem.name || primaryItem.productName || "Successful Checkout";
   const primaryImage = getSuccessItemImage(primaryItem);
   const shippingRank = successShippingRank(shipping?.status);
-  const statusTone = shippingRank === 4 ? "delivered" : shippingRank ? "transit" : "waiting";
+  const statusTone = reviewHold ? "waiting" : shippingRank === 4 ? "delivered" : shippingRank ? "transit" : "waiting";
 
 
   const hiddenProducts =
@@ -13524,8 +13529,9 @@ function renderSuccessCheckouts(
           </span>
 
           <h4>
-            Successful Checkout
+            ${reviewHold ? "Review hold — not confirmed" : "Successful Checkout"}
           </h4>
+          ${reviewHold ? '<p role="status" style="color:#ffb458;font-weight:800">The retailer is reviewing this order and may still cancel it.</p>' : ''}
 
           <p>
             ${escapeHtml(
@@ -13561,7 +13567,7 @@ function renderSuccessCheckouts(
             <div>
               <span class="success-checkout-retailer">${escapeHtml(retailer)}</span>
               <h4>${escapeHtml(primaryName)}</h4>
-              <p>×${formatSuccessNumber(Math.max(1, Number(primaryItem.quantity || 1)))} · ${escapeHtml(formatSuccessCurrency(value))}</p>
+              <p>×${formatSuccessNumber(Math.max(1, Number(primaryItem.quantity || 1)))} · ${escapeHtml(totalCostText)}</p>
             </div>
           </div>
           <div class="success-shipping-panel">
@@ -13569,7 +13575,7 @@ function renderSuccessCheckouts(
               <strong>Shipping Status</strong>
               <span class="success-shipping-badge ${statusTone}">${escapeHtml(shippingStatusLabel)}</span>
             </div>
-            ${renderShippingTimeline(shipping)}
+            ${reviewHold ? '<p style="color:#ffb458;font-weight:700">Awaiting retailer review — shipping is not confirmed.</p>' : renderShippingTimeline(shipping)}
             <div class="success-shipping-details">
               <div><span>EN ROUTE</span><strong>${shipping?.enRouteAt ? escapeHtml(formatSuccessDate(shipping.enRouteAt)) : "—"}</strong></div>
               <div><span>ESTIMATED DELIVERY</span><strong>${shipping?.estimatedDelivery ? escapeHtml(shipping.estimatedDelivery) : "—"}</strong></div>
@@ -13622,11 +13628,7 @@ function renderSuccessCheckouts(
           </span>
 
           <strong>
-            ${escapeHtml(
-              formatSuccessCurrency(
-                value
-              )
-            )}
+            ${escapeHtml(totalCostText)}
           </strong>
         </div>
 
@@ -14273,19 +14275,14 @@ function renderSuccessDashboard(
       : []
   );
 
-  renderSuccessCheckouts(
-    Array.isArray(
-      data.recentCheckouts
-    )
-      ? data.recentCheckouts
-      : (
-          Array.isArray(
-            data.checkouts
-          )
-            ? data.checkouts
-            : []
-        )
-  );
+  // Pending review is visible next to Success with a clear warning, but
+  // server totals and charts count only genuinely green confirmed checkouts.
+  const confirmedRecent = Array.isArray(data.recentCheckouts) ?
+    data.recentCheckouts : Array.isArray(data.checkouts) ? data.checkouts : [];
+  const pendingReview = Array.isArray(data.reviewHoldCheckouts) ? data.reviewHoldCheckouts : [];
+  renderSuccessCheckouts([...confirmedRecent, ...pendingReview]
+    .sort((a, b) => Date.parse(b.checkoutAt || "") - Date.parse(a.checkoutAt || ""))
+    .slice(0, 20));
 }
 
 
