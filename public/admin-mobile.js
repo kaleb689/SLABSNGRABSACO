@@ -34,7 +34,7 @@ const list=customers(),a=data.activation||{},v=data.availability||{},u=data.usag
 if(tab==="overview"){c.innerHTML='<div class="metrics">'+metric("Customer orders",list.length)+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("App users · 7 days",u.activeUsers7d??"—")+metric("Installed devices",u.installedDevices??"—")+'</div>'+panel("Quick actions",'<div class="links"><a class="action" href="/admin.html">OPEN FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html#profileActivationTracker">PROFILE ACTIVATION TOOLS ↗</a></div>')+panel("Status","<p>Data refreshes automatically while this app is open. Sensitive changes use the full secure admin interface.</p>");}
 if(tab==="success"){
   const days=successDays, now=new Date();
-  const cutoff=days==="all"?0:days==="mtd"?new Date(now.getFullYear(),now.getMonth(),1).getTime():days==="ytd"?new Date(now.getFullYear(),0,1).getTime():Date.now()-days*86400000;
+  const cutoff=days==="all"?0:days==="mtd"?new Date(now.getFullYear(),now.getMonth(),1).getTime():days==="ytd"?new Date(now.getFullYear(),0,1).getTime():days===1?new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime():Date.now()-days*86400000;
   const records=(data.success?.records||[]).filter(x=>{
     const time=new Date(x.checkoutAt).getTime();
     return Number.isFinite(time) && time>=cutoff && time<=Date.now()+60000;
