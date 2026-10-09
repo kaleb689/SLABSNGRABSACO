@@ -18,6 +18,28 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
   if (owners.size > 1) return { changed: false, conflict: true, record: null };
   const prior = matches.find(record => record.customerAccountId) || matches[0] || {};
   const priced = order.orderTotalBasis !== 'unknown' && Number.isFinite(order.orderTotal) && order.orderTotal > 0;
+  // Discord webhooks about the SAME retailer order can arrive as green,
+  // orange and red messages at different times. Use only the newest event
+  // color for status, not whichever webhook happens to be scanned last.
+  // A later verified retailer-email cancellation must not be undone by the
+  // regular rescan of an older green Discord message.
+  const when = value => {
+    const date = Date.parse(value || '');
+    return Number.isFinite(date) ? date : -Infinity;
+  };
+  const oldStatusTime = Math.max(when(prior.statusUpdatedAt || prior.checkoutAt), when(prior.cancelledAt || prior.canceledAt));
+  const newStatusTime = when(order.statusUpdatedAt || order.checkoutAt);
+  const updateStatus = !matches.length || (newStatusTime >= oldStatusTime && order.status !== 'unverified');
+  const nextStatus = updateStatus ? (order.status || 'unverified') : (prior.status || 'unverified');
+  const nextStatusAt = updateStatus ? (order.statusUpdatedAt || order.checkoutAt || null) :
+    (prior.statusUpdatedAt || null);
+  let nextCancelledAt = prior.cancelledAt || prior.canceledAt || null;
+  if (updateStatus) nextCancelledAt = nextStatus === 'cancelled' ?
+    (order.cancelledAt || nextStatusAt) : null;
+  let placedAt = prior.checkoutAt || order.checkoutAt;
+  // A cancellation-only webhook is not proof of the original placement
+  // time. A later-discovered older GREEN/ORANGE hook supplies that time.
+  if (order.status !== 'cancelled' && when(order.checkoutAt) < when(placedAt)) placedAt = order.checkoutAt;
   const merged = {
     ...prior,
     ...(owner && !prior.customerAccountId ? attribution : {}),
@@ -26,7 +48,9 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
     retailer: order.retailer,
     orderNumber: order.orderNumber || prior.orderNumber || '',
     sourceProfileLabel: String(order.sourceProfileLabel || prior.sourceProfileLabel || '').slice(0, 100),
-    checkoutAt: prior.checkoutAt || order.checkoutAt,
+    checkoutAt: placedAt,
+    statusUpdatedAt: nextStatusAt,
+    ...(nextCancelledAt ? { cancelledAt: nextCancelledAt } : { cancelledAt: null }),
     orderTotal: priced ? order.orderTotal : prior.orderTotal || 0,
     orderTotalBasis: priced ? order.orderTotalBasis : prior.orderTotalBasis || 'unknown',
     priceSource: priced ? 'checkout_webhook' : prior.priceSource || null,
@@ -35,7 +59,7 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
       const previous = (prior.items || []).find(old => old.name === item.name);
       return { ...item, imageUrl: item.imageUrl || previous?.imageUrl || null };
     }),
-    status: prior.status || 'confirmed',
+    status: nextStatus,
     sourceIds: [...new Set([...matches.flatMap(record => [record.id, ...(record.sourceIds || [])]), order.id])]
   };
   const changed = matches.length !== 1 || JSON.stringify(merged) !== JSON.stringify(prior);
