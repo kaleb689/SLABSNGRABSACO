@@ -47671,6 +47671,19 @@ summary.range = {
   days: rangeDays
 };
 
+// Cancellations are shown as status history only, never counted as
+// confirmed purchases, checkout value, products, or successful orders.
+const cancelledCheckouts = req.query.appView === "1"
+  ? ownedRecords.filter(cancelledOrder)
+    .filter(record => {
+      const day = successDateKey(record.checkoutAt);
+      return day && day >= rangeStart && day <= rangeEnd;
+    })
+    .map(safeSuccessCheckout)
+    .sort((a, b) => new Date(b.checkoutAt || 0) - new Date(a.checkoutAt || 0))
+    .slice(0, 150)
+  : [];
+
       return res.json({
         ok: true,
 
@@ -47700,7 +47713,8 @@ summary.range = {
             null
         },
 
-        ...summary
+        ...summary,
+        ...(req.query.appView === "1" ? { cancelledCheckouts } : {})
       });
 
     } catch (error) {
