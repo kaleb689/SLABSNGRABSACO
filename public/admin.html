@@ -10393,8 +10393,15 @@ async function loadAdminLinkedProfiles(
         for (const profile of saved) {
           const entry = document.createElement("div");
           entry.className = "pool-profile-meta";
-          entry.textContent = (profile.profileName || "Profile " + profile.slot) +
-            " · " + (profile.activationLabel || profile.activationStatus || "Awaiting activation");
+          const retailerKeys = Object.entries(profile.retailers || {})
+            .filter(([, account]) => Boolean(account?.username))
+            .map(([retailer]) => retailer === "pokemoncenter" || retailer === "pkc"
+              ? "Pokemon Center" : retailer === "target" ? "Target"
+              : retailer === "walmart" ? "Walmart" : retailer);
+          entry.textContent = (profile.profileName || profile.customerProfile?.profileName ||
+            "Profile " + profile.slot) + " · " +
+            (retailerKeys.length ? retailerKeys.join(", ") : "Customer-added profile") + " · " +
+            (profile.activationLabel || profile.activationStatus || "Awaiting activation");
           body.append(entry);
         }
         disclosure.append(body);
@@ -10498,8 +10505,15 @@ async function loadAdminLinkedProfiles(
         saved.forEach(profile => {
           const entry = document.createElement("div");
           entry.className = "pool-profile-meta";
-          entry.textContent = (profile.profileName || "Profile " + profile.slot) +
-            " · " + (profile.activationLabel || profile.activationStatus || "Awaiting activation");
+          const retailerKeys = Object.entries(profile.retailers || {})
+            .filter(([, account]) => Boolean(account?.username))
+            .map(([retailer]) => retailer === "pokemoncenter" || retailer === "pkc"
+              ? "Pokemon Center" : retailer === "target" ? "Target"
+              : retailer === "walmart" ? "Walmart" : retailer);
+          entry.textContent = (profile.profileName || profile.customerProfile?.profileName ||
+            "Profile " + profile.slot) + " · " +
+            (retailerKeys.length ? retailerKeys.join(", ") : "Customer-added profile") + " · " +
+            (profile.activationLabel || profile.activationStatus || "Awaiting activation");
           body.append(entry);
         });
         disclosure.append(body);
