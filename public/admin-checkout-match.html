@@ -38,13 +38,22 @@ button:disabled{opacity:.5;cursor:not-allowed}.notice{font-size:13px;color:#9ba9
 <p class="notice" id="status" role="status" aria-live="polite">Loading checkout profile labels…</p>
 <div id="results"></div>
 </div>
+<div class="panel">
+<h2>Verify retailer order numbers for tracking</h2>
+<p>Once a Discord checkout is matched to the right customer, attach its exact retailer order number from the actual order confirmation. Shipping and cancellation updates then match by order number and trusted retailer sender only. No new checkouts are created.</p>
+<div class="stats"><div class="stat"><strong id="tracking-count">—</strong><span>Linked checkouts missing order numbers</span></div></div>
+<label for="tracking-search">Search verified checkout products and customers</label>
+<input id="tracking-search" type="search" autocomplete="off" placeholder="Filter verified orders">
+<p class="notice" id="tracking-status" role="status" aria-live="polite">Loading orders awaiting receipt verification…</p>
+<div id="tracking-results"></div>
+</div>
 </main>
 <script>
 (()=>{
 "use strict";
 const $=id=>document.getElementById(id);
 const e=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let groups=[];
+let groups=[]; let trackingOrders=[];
 function render(){
  const needle=$("search").value.trim().toLowerCase();
  const matches=groups.filter(g=>(g.profileLabel+" "+g.retailer).toLowerCase().includes(needle));
@@ -72,7 +81,60 @@ async function load(){
   data.unlabeledCount+" checkouts also lack a usable Discord profile label; those cannot be auto-matched.":
   "Select the correct customer only when you can verify who owned the checkout profile.";
  render();
+ await loadTracking().catch(error=>{$("tracking-status").textContent=error.message;$("tracking-status").className="notice bad";});
 }
+
+function renderTracking(){
+ const needle=$("tracking-search").value.trim().toLowerCase();
+ const visible=trackingOrders.filter(o=>
+   (o.customer+" "+o.retailer+" "+o.product+" "+o.profileLabel).toLowerCase().includes(needle));
+ $("tracking-results").innerHTML=visible.slice(0,75).map(order=>{
+  const index=trackingOrders.indexOf(order);
+  return '<section class="match"><h3>'+e(order.product)+'</h3><div class="meta">'+
+    e(order.retailer)+' · '+e(order.customer)+' · '+e(order.checkoutAt?.slice(0,16)||"Unknown date")+
+    '<div>Discord profile: '+e(order.profileLabel||"not provided")+'</div></div>'+
+    '<label for="order-number-'+index+'">Retailer order number from verified receipt</label>'+
+    '<input id="order-number-'+index+'" type="text" autocomplete="off" maxlength="100" placeholder="Enter full exact retailer order number">'+
+    '<button type="button" data-track-index="'+index+'">VERIFY RECEIPT & LINK ORDER NUMBER</button></section>';
+ }).join('')||'<p class="notice">No matched checkouts are waiting for order-number verification.</p>';
+ if(visible.length>75)$("tracking-results").insertAdjacentHTML("beforeend",
+  '<p class="notice">Showing 75 orders. Search to narrow the list.</p>');
+}
+async function loadTracking(){
+ const response=await fetch("/api/admin/discord-checkout-tracking-link",{credentials:"same-origin",cache:"no-store"});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(data.error||"Unable to retrieve missing retailer order numbers.");
+ trackingOrders=Array.isArray(data.orders)?data.orders:[];
+ $("tracking-count").textContent=Number(data.missingCount||0).toLocaleString();
+ $("tracking-status").textContent="Only use an order number confirmed on the actual retailer receipt. The customer must already be linked to the checkout.";
+ $("tracking-status").className="notice";
+ renderTracking();
+}
+$("tracking-search").addEventListener("input",renderTracking);
+$("tracking-results").addEventListener("click",async event=>{
+ const button=event.target.closest("button[data-track-index]");
+ if(!button)return;
+ const index=Number(button.dataset.trackIndex),order=trackingOrders[index];
+ if(!order)return;
+ const number=$("order-number-"+index)?.value?.trim();
+ if(!number){$("tracking-status").textContent="Enter the full retailer order number.";return;}
+ if(!confirm('Have you verified order '+number+' on the actual '+order.retailer+
+   ' confirmation for '+order.customer+'? This will update tracking on the existing Discord checkout only.'))return;
+ button.disabled=true;
+ $("tracking-status").textContent="Linking verified order number without creating a new checkout…";
+ try{
+  const response=await fetch("/api/admin/discord-checkout-tracking-link",{
+   method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({id:order.id,orderNumber:number,verifiedByAdmin:true})
+  });
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(result.error||"Unable to verify the retailer order number.");
+  await loadTracking();
+  $("tracking-status").textContent="Verified order number attached. The shipment scanner can now match future retailer updates without creating a duplicate checkout.";
+  $("tracking-status").className="notice good";
+ }catch(error){$("tracking-status").textContent=error.message;$("tracking-status").className="notice bad";button.disabled=false;}
+});
+
 $("search").addEventListener("input",render);
 $("results").addEventListener("click",async event=>{
  const button=event.target.closest("button[data-index]");

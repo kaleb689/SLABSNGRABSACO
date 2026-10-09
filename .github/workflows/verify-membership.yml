@@ -24,6 +24,6 @@ jobs:
       - run: node --check discord-community.js
       - run: node --check discord-checkout-identity.js
       - run: node --check discord-checkout-profile-aliases.js
-      - run: node --test test/discord-checkout-identity.test.mjs test/discord-checkout-profile-aliases.test.mjs test/webhook-success.test.js
+      - run: node --test test/discord-checkout-identity.test.mjs test/discord-checkout-profile-aliases.test.mjs test/webhook-success.test.js test/success-source-policy.test.mjs test/order-notifications.test.js
       - run: node verify-discord-controls.mjs
       - run: node --test test/admin-discounts.test.js test/checkout-discounts.test.js test/discord-skus.test.js test/signup-onboarding.test.js test/optional-retailer-accounts.test.js test/optional-retailer-api.test.js test/admin-customer-layout.test.js test/retailer-export-format.test.js test/managed-pool-search.test.js test/live-auto-refresh.test.mjs test/admin-mobile-live-refresh.test.mjs test/admin-pool-disclosure.test.mjs

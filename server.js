@@ -6,6 +6,7 @@ import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
+import { webhookOnlyCheckouts, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail } from "./success-source-policy.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
@@ -17705,11 +17706,9 @@ app.post(
   requireAdmin,
   (req, res) => {
     res.setHeader("Cache-Control", "no-store");
-    if (!managedSuccessMailboxConfig().configured) {
-      return res.status(400).json({ error: "Complete the managed mailbox settings in Render first." });
-    }
-    runManagedSuccessScan().catch(() => {});
-    return res.status(202).json({ ok: true, running: true });
+    return res.status(409).json({
+      error: "Mailbox receipts cannot create Success checkouts. Only Discord webhooks confirm purchases; verified retailer shipping emails update existing orders."
+    });
   }
 );
 
@@ -37665,15 +37664,26 @@ async function verifyCustomerImap(
 }
 
 async function getSuccessCheckouts() {
-  const records =
-    await readJson(
-      SUCCESS_CHECKOUTS_FILE,
-      []
-    );
+  // Never serve historical email-only entries as checkout confirmations.
+  const records = await readJson(SUCCESS_CHECKOUTS_FILE, []);
+  return webhookOnlyCheckouts(records);
+}
 
-  return Array.isArray(records)
-    ? records
-    : [];
+async function migrateWebhookOnlySuccessCheckouts() {
+  const raw = await readJson(SUCCESS_CHECKOUTS_FILE, []);
+  const original = Array.isArray(raw) ? raw : [];
+  const verified = webhookOnlyCheckouts(original, { resetLegacyShipping: true });
+  if (JSON.stringify(original) === JSON.stringify(verified)) return;
+  // On-disk snapshot is saved before modifying historical customer data.
+  await fs.writeFile(
+    path.join(DATA_DIR, "success-before-webhook-only-20261009.json"),
+    JSON.stringify(original),
+    { flag: "wx", mode: 0o600 }
+  ).catch(error => { if (error.code !== "EEXIST") throw error; });
+  await writeJson(SUCCESS_CHECKOUTS_FILE, verified);
+  console.log("Webhook-only checkout migration:", JSON.stringify({
+    retained: verified.length, excludedNonWebhook: original.length - verified.length
+  }));
 }
 
 const REMOVED_SUCCESS_PRODUCT =
@@ -38534,6 +38544,84 @@ app.post("/api/admin/discord-checkout-profile-matching", requireAdmin, async (re
   }
 });
 
+
+/**
+ * The external Discord feed currently provides profile labels but often no
+ * retailer order numbers. Only an Admin who has checked the actual receipt
+ * may link an order number to an existing attributed webhook checkout.
+ * This never creates or moves a checkout.
+ */
+app.get("/api/admin/discord-checkout-tracking-link", requireAdmin, async (_req, res) => {
+  try {
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1)
+      return res.status(409).json({ error: "Configure one authoritative Discord checkout source first." });
+    const [records, accounts] = await Promise.all([getSuccessCheckouts(), getCustomerAccounts()]);
+    const names = new Map(accounts.map(account => [String(account.id),
+      [account.firstName || account.profile?.firstName,
+        account.lastName || account.profile?.lastName].filter(Boolean).join(" ").trim() ||
+      "Customer profile"]));
+    const missing = records.filter(record =>
+      isAuthoritativeCheckoutRecord(record, source.channels[0]) &&
+      record.customerAccountId && !record.orderNumber && !cancelledOrder(record)
+    ).sort((a, b) => new Date(b.checkoutAt || 0) - new Date(a.checkoutAt || 0));
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ ok: true, missingCount: missing.length, orders: missing.slice(0, 150).map(record => ({
+      id: record.id, retailer: record.retailer, checkoutAt: record.checkoutAt,
+      product: clean(record.items?.[0]?.name || "Verified checkout", 120),
+      profileLabel: clean(record.sourceProfileLabel, 100),
+      customer: names.get(String(record.customerAccountId)) || "Linked customer"
+    })) });
+  } catch (error) {
+    console.error("Missing checkout order numbers:", error?.code || error?.name);
+    return res.status(500).json({ error: "Unable to load verified checkouts awaiting order numbers." });
+  }
+});
+
+app.post("/api/admin/discord-checkout-tracking-link", requireAdmin, async (req, res) => {
+  try {
+    const id = clean(req.body?.id, 170);
+    const orderNumber = clean(req.body?.orderNumber, 100).trim().replace(/^#/, "");
+    if (req.body?.verifiedByAdmin !== true ||
+        !/^discord:\d{17,22}:\d{17,22}$/.test(id) ||
+        !/^[A-Za-z0-9][A-Za-z0-9._ /-]{4,99}$/.test(orderNumber) ||
+        !/\d/.test(orderNumber) ||
+        /^(?:success|pending|unknown|confirmed|none|n\/a)$/i.test(orderNumber))
+      return res.status(400).json({ error: "Verify the real retailer confirmation and enter its complete order number." });
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1)
+      return res.status(409).json({ error: "Authoritative Discord checkout source is unavailable." });
+    const result = await withSuccessStoreLock(async () => {
+      const records = await getSuccessCheckouts();
+      const target = records.find(record => record.id === id &&
+        isAuthoritativeCheckoutRecord(record, source.channels[0]) &&
+        isVerifiedDiscordCheckout(record) && record.customerAccountId && !cancelledOrder(record));
+      if (!target) return { status: 404, error: "An attributed verified checkout with that ID was not found." };
+      if (target.orderNumber) return { status: 409, error: "This checkout already has an order number. No overwrite was made." };
+      const normalize = value => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (records.some(record => record.id !== id &&
+          String(record.retailer).toLowerCase() === String(target.retailer).toLowerCase() &&
+          normalize(record.orderNumber) === normalize(orderNumber)))
+        return { status: 409, error: "That retailer order number is already linked to another checkout." };
+      target.orderNumber = orderNumber;
+      target.orderNumberSource = "admin_verified_receipt";
+      target.orderNumberLinkedAt = new Date().toISOString();
+      await saveSuccessCheckouts(records);
+      announceSuccessCheckout(target.customerAccountId);
+      broadcastLiveDataChange("verified-order-number-linked");
+      return { status: 200, ok: true, updated: true };
+    });
+    if (result.ok) {
+      const timer = setTimeout(() => void syncShippingTrackers(), 300);
+      timer.unref?.();
+    }
+    return res.status(result.status).json(result);
+  } catch (error) {
+    console.error("Verify checkout order number:", error?.code || error?.name);
+    return res.status(500).json({ error: "Unable to link that verified retailer order number." });
+  }
+});
+
 // Admin Success overview: use only already-attributed Discord success checkouts.
 // Unmatched hits cannot be counted as belonging to a paid, personal, or linked profile.
 app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
@@ -38549,7 +38637,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     const unmatchedCount = allRecords.filter(record => !record.customerAccountId &&
       [record.id, ...(record.sourceIds || [])].some(id => activeIds.some(prefix => String(id).startsWith(prefix)))).length;
     const records = allRecords
-      .filter(record => Boolean(record.customerAccountId))
+      .filter(record => Boolean(record.customerAccountId) && !cancelledOrder(record))
       .map(record => {
         const safe = safeSuccessCheckout(record);
         return {
@@ -38833,14 +38921,11 @@ app.get(
   }
 );
 
-async function saveSuccessCheckouts(
-  records
-) {
-  await writeJson(
-    SUCCESS_CHECKOUTS_FILE,
-    records
-  );
-  try { await appOrderNotifications.reconcile(records); }
+async function saveSuccessCheckouts(records) {
+  // Prevent any legacy email-import writer from persisting fake confirmations.
+  const verified = webhookOnlyCheckouts(records);
+  await writeJson(SUCCESS_CHECKOUTS_FILE, verified);
+  try { await appOrderNotifications.reconcile(verified); }
   catch (error) { console.error("Order alert persistence:", error.code || error.name); }
 }
 
@@ -38860,6 +38945,7 @@ function withSuccessStoreLock(operation) {
 }
 
 async function recordSuccessCheckoutUnlocked(record, { notifyDiscord = true } = {}) {
+  if (!isVerifiedDiscordCheckout(record)) return false;
   const safeRecord =
     safeSuccessCheckout(
       record
@@ -38950,8 +39036,9 @@ async function recordSuccessCheckoutUnlocked(record, { notifyDiscord = true } = 
 
 /* Orders in the business mailbox without a customer assignment contribute
    anonymous checkout totals. Only eligible product names enter the carousel. */
-async function recordCommunitySuccessCheckout(order) {
-  return withSuccessStoreLock(() => recordCommunitySuccessCheckoutUnlocked(order));
+async function recordCommunitySuccessCheckout(_order) {
+  // Never record an unlinked mailbox receipt as a purchase.
+  return false;
 }
 async function recordCommunitySuccessCheckoutUnlocked(order) {
   const items = (Array.isArray(order?.items) ? order.items : [])
@@ -39818,7 +39905,7 @@ function buildSuccessSummary(
   includeOrders = false
 ) {
   const safeRecords =
-    records.map(
+    records.filter(record => !cancelledOrder(record)).map(
       safeSuccessCheckout
     );
 
@@ -43602,7 +43689,7 @@ async function sendShippingDiscordDm(account, record, shipping) {
   return true;
 }
 
-async function scanMailboxForShipping(mailbox, records, account) {
+async function scanMailboxForShipping(mailbox, records, account, pendingChanges) {
   const { client } = createCustomerImapClient(mailbox.email, mailbox.password);
   let changed = false;
   try {
@@ -43636,26 +43723,35 @@ async function scanMailboxForShipping(mailbox, records, account) {
         const status = cancellation ? "cancelled" : shippingStatusFromMessage(subject, combined);
         if (!status) continue;
 
-        const matching = records.filter(record => {
-          const orderNumber = String(record.orderNumber || "").trim();
-          if (orderNumber && combined.toLowerCase().includes(orderNumber.toLowerCase())) return true;
-          if (cancellation) return false;
-          const retailer = String(record.retailer || "").toLowerCase();
-          const itemName = String(record.items?.[0]?.name || "").toLowerCase();
-          return retailer && combined.toLowerCase().includes(retailer) &&
-            itemName && combined.toLowerCase().includes(itemName.slice(0, Math.min(24, itemName.length)));
+        // A customer's inbox can include purchases outside this ACO service.
+        // Require an exact existing webhook order number, one unique match,
+        // and a trusted retailer From address. Product names never match.
+        const record = matchVerifiedWebhookEmail(records, {
+          senders: message.envelope?.from || [],
+          subject,
+          text: decoded.text || "",
+          html: decoded.html || "",
+          receivedAt: message.internalDate || message.envelope?.date
         });
-        if (matching.length !== 1) continue;
-
-        const record = matching[0];
+        if (!record || String(record.customerAccountId) !== String(account.id)) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
         if (cancellation) {
-          if (!cancelledOrder(record)) { record.status = "cancelled"; record.cancelledAt = messageAt; changed = true; }
+          if (!cancelledOrder(record)) {
+            record.status = "cancelled";
+            record.cancelledAt = messageAt;
+            pendingChanges.push({
+              id: record.id, customerAccountId: String(account.id),
+              retailer: record.retailer, orderNumber: record.orderNumber,
+              cancelledAt: messageAt
+            });
+            changed = true;
+          }
           continue;
         }
         if (cancelledOrder(record)) continue;
         const prior = record.shipping && typeof record.shipping === "object" ? record.shipping : {};
         if (shippingStatusRank(status) < shippingStatusRank(prior.status)) continue;
+        if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(messageAt)) continue;
 
         const next = {
           status,
@@ -43668,15 +43764,20 @@ async function scanMailboxForShipping(mailbox, records, account) {
           source: "retailer_email"
         };
 
-        const notify = prior.status !== next.status &&
-          (next.status === "shipped" || next.status === "in_transit" || next.status === "out_for_delivery" || next.status === "delivered");
+        // Do not persist a new updatedAt or notify when the mailbox repeats
+        // an unchanged status or the same tracking details.
+        const before = JSON.stringify([prior.status, prior.enRouteAt, prior.estimatedDelivery,
+          prior.deliveredAt, prior.trackingUrl, prior.address]);
+        const after = JSON.stringify([next.status, next.enRouteAt, next.estimatedDelivery,
+          next.deliveredAt, next.trackingUrl, next.address]);
+        if (before === after) continue;
         record.shipping = next;
+        pendingChanges.push({
+          id: record.id, customerAccountId: String(account.id),
+          retailer: record.retailer, orderNumber: record.orderNumber,
+          shipping: next
+        });
         changed = true;
-
-        if (notify) {
-          try { await sendShippingDiscordDm(account, record, next); }
-          catch (error) { console.error("Shipping Discord DM failed:", error?.message || "shipping_dm_error"); }
-        }
       }
     } finally {
       lock.release();
@@ -43695,10 +43796,11 @@ async function syncShippingTrackers() {
   try {
     const accounts = await getCustomerAccounts();
     const records = await getSuccessCheckouts();
-    let changed = false;
+    const pendingChanges = [];
     for (const account of accounts) {
       if (account.disabled === true) continue;
       const owned = records.filter(record =>
+        isVerifiedDiscordCheckout(record) &&
         String(record.customerAccountId || "") === String(account.id) &&
         record.orderNumber && !cancelledOrder(record) &&
         shippingStatusRank(record.shipping?.status) < 4
@@ -43709,15 +43811,67 @@ async function syncShippingTrackers() {
       catch { continue; }
       for (const mailbox of mailboxes) {
         try {
-          if (await scanMailboxForShipping(mailbox, owned, account)) changed = true;
+          await scanMailboxForShipping(mailbox, owned, account, pendingChanges);
         } catch (error) {
           console.error("Shipping tracker mailbox scan:", mailboxFailureReason(error));
         }
       }
     }
-    if (changed) {
-      await saveSuccessCheckouts(records);
-      for (const account of accounts) announceSuccessCheckout(account.id);
+    if (!pendingChanges.length) return;
+    const discordDms = new Map();
+    const changedAccounts = new Set();
+    // Merge on the latest checkout store INSIDE the same lock as Discord
+    // webhook imports, so a slow IMAP scan never overwrites newer purchases.
+    await withSuccessStoreLock(async () => {
+      const latest = await getSuccessCheckouts();
+      for (const update of pendingChanges) {
+        const record = latest.find(item =>
+          isVerifiedDiscordCheckout(item) &&
+          item.id === update.id &&
+          String(item.customerAccountId || "") === update.customerAccountId &&
+          item.retailer === update.retailer &&
+          String(item.orderNumber || "") === String(update.orderNumber || "")
+        );
+        if (!record) continue;
+        if (update.cancelledAt) {
+          if (cancelledOrder(record)) continue;
+          const priorUpdatedAt = Date.parse(record.shipping?.updatedAt || 0);
+          if (Number.isFinite(priorUpdatedAt) && priorUpdatedAt > Date.parse(update.cancelledAt)) continue;
+          record.status = "cancelled";
+          record.cancelledAt = update.cancelledAt;
+          discordDms.delete(record.id);
+          changedAccounts.add(update.customerAccountId);
+          continue;
+        }
+        if (cancelledOrder(record)) continue;
+        const prior = record.shipping || {};
+        const next = update.shipping;
+        if (shippingStatusRank(next.status) < shippingStatusRank(prior.status)) continue;
+        if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(next.updatedAt)) continue;
+        const before = JSON.stringify([prior.status, prior.enRouteAt, prior.estimatedDelivery,
+          prior.deliveredAt, prior.trackingUrl, prior.address]);
+        const after = JSON.stringify([next.status, next.enRouteAt, next.estimatedDelivery,
+          next.deliveredAt, next.trackingUrl, next.address]);
+        if (before === after) continue;
+        record.shipping = next;
+        changedAccounts.add(update.customerAccountId);
+        if (prior.status !== next.status) {
+          // Coalesce a batch of historical shipping updates to one final DM.
+          discordDms.set(record.id, { accountId: update.customerAccountId, record, shipping: next });
+        }
+      }
+      if (changedAccounts.size) {
+        await saveSuccessCheckouts(latest);
+        for (const id of changedAccounts) announceSuccessCheckout(id);
+        broadcastLiveDataChange("verified-shipping-update");
+      }
+    });
+    // Push alerts and Discord DMs only after the order update is durable.
+    for (const entry of discordDms.values()) {
+      const account = accounts.find(a => String(a.id) === entry.accountId);
+      if (!account || cancelledOrder(entry.record)) continue;
+      try { await sendShippingDiscordDm(account, entry.record, entry.shipping); }
+      catch (error) { console.error("Shipping Discord DM failed:", error?.message || "shipping_dm_error"); }
     }
   } catch (error) {
     console.error("Shipping tracker:", error?.message || "shipping_tracker_error");
@@ -44804,18 +44958,7 @@ function startLiveSuccessScheduler() {
   const firstRun =
     setTimeout(
       () => {
-        syncAllActiveCustomerSuccess()
-          .catch(() => {});
-        runManagedSuccessScan().catch(() => {});
-        for (const delay of [30000, 90000, 180000]) {
-          const progressLog = setTimeout(() => console.log("Managed Success mailbox scan progress:", JSON.stringify({
-            running: Boolean(managedSuccessScanPromise), progress: managedSuccessScanStatus.progress,
-            lastError: managedSuccessScanStatus.lastError, parsedOrders: managedSuccessScanStatus.parsedOrders,
-            savedOrders: managedSuccessScanStatus.savedOrders
-          })), delay);
-          progressLog.unref?.();
-        }
-
+        // Retailer email is now shipment enrichment only.
         reconcileLapsedMembershipNotifications()
           .catch(() => {});
       },
@@ -44832,10 +44975,7 @@ function startLiveSuccessScheduler() {
   const interval =
     setInterval(
       () => {
-        syncAllActiveCustomerSuccess()
-          .catch(() => {});
-        runManagedSuccessScan().catch(() => {});
-
+        // No periodic IMAP-based checkout imports.
         reconcileLapsedMembershipNotifications()
           .catch(() => {});
       },
@@ -47731,7 +47871,7 @@ const ownedOrders =
           await getSuccessCheckouts(),
           hitsChannelId
         ).filter(record =>
-          String(record.customerAccountId) === String(account.id)
+          String(record.customerAccountId) === String(account.id) && !cancelledOrder(record)
         );
       } catch (error) {
         console.error("Customer retailer lifetime stats load failed:", account.id, error.message);
@@ -48477,8 +48617,8 @@ await initializeArrayFile(
     await initializeArrayFile(
   SUCCESS_CHECKOUTS_FILE
 );
+    await migrateWebhookOnlySuccessCheckouts();
 
-    
     await removeLegacyDiscordUserIds();
 
     await migrateCustomerJigs();
