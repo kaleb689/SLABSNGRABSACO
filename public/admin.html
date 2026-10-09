@@ -7060,13 +7060,17 @@ function renderOrder(x) {
           </strong>
 
           <div class="customer-managed-profile-counts">
-            <span class="customer-managed-count active">
+            <button type="button" class="customer-managed-count active"
+              data-open-linked-status="active" data-customer-order-id="${escapeHtml(x.id)}"
+              title="Show this customer's active linked profiles">
               ACTIVE ${linkedActiveProfileCount}
-            </span>
+            </button>
 
-            <span class="customer-managed-count inactive">
+            <button type="button" class="customer-managed-count inactive"
+              data-open-linked-status="inactive" data-customer-order-id="${escapeHtml(x.id)}"
+              title="Show this customer's inactive linked profiles">
               INACTIVE ${linkedInactiveProfileCount}
-            </span>
+            </button>
           </div>
 
         </div>
@@ -24756,6 +24760,48 @@ document.addEventListener("click", async event => {
   }
 });
 
+
+// Customer summary counters open the matching linked accounts, not just a static badge.
+document.addEventListener("click", async event => {
+  const badge = event.target.closest("[data-open-linked-status]");
+  if (!badge) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  const id = badge.dataset.customerOrderId;
+  const status = badge.dataset.openLinkedStatus;
+  const order = document.querySelector('.customer-order[data-id="' + CSS.escape(id) + '"]');
+  if (!order) return;
+  order.open = true;
+  const section = order.querySelector("[data-linked-profiles-section]");
+  if (!section) return;
+  section.open = true;
+  section.dataset.loaded = "true";
+  await loadAdminLinkedProfiles(id);
+  const container = section.querySelector("[data-linked-profiles-container]");
+  if (!container) return;
+  const cards = [...container.querySelectorAll(".linked-profile-card-row")];
+  let visible = 0;
+  for (const card of cards) {
+    const label = card.querySelector(".linked-profile-list-status")?.textContent?.trim().toLowerCase() || "";
+    const isActive = label === "activated" || label === "active";
+    const show = status === "active" ? isActive : !isActive;
+    card.hidden = !show;
+    card.style.display = show ? "" : "none";
+    if (show) {
+      visible++;
+      const group = card.closest("[data-linked-retailer-group]");
+      if (group) group.open = true;
+    }
+  }
+  const first = cards.find(card => !card.hidden);
+  if (first) first.querySelector("[data-linked-profile-index]")?.click();
+  const info = document.createElement("p");
+  info.className = "admin-retailer-empty";
+  info.textContent = "Showing " + visible + " " + status + " managed linked account(s). Close and reopen Linked Profiles to view all accounts.";
+  container.prepend(info);
+  section.scrollIntoView({block:"nearest",behavior:"instant"});
+}, true);
 
 /* =========================================
    BACK TO TOP
