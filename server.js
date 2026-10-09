@@ -38707,8 +38707,15 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
       .filter(record => Number.isFinite(new Date(record.checkoutAt).getTime()))
       .sort((a, b) => new Date(b.checkoutAt) - new Date(a.checkoutAt));
     res.setHeader("Cache-Control", "no-store");
+    const communityTotals = historicalPlusVerified({
+      checkouts: confirmed.length,
+      spent: confirmed.reduce((sum,record) => sum +
+        (Number.isFinite(Number(record.orderTotal)) && Number(record.orderTotal) > 0
+          ? Number(record.orderTotal) : 0), 0),
+      unknownPrices: confirmed.filter(record => !(Number(record.orderTotal) > 0)).length
+    });
     return res.json({
-      ok:true,records,unmatchedCount,
+      ok:true,records,unmatchedCount,communityTotals,
       historicalSummary: historicalPlusVerified({checkouts:0,spent:0,unknownPrices:0})
     });
   } catch (error) {
