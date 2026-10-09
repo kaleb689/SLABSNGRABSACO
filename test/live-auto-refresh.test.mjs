@@ -106,7 +106,7 @@ test("Admin live updates refresh its management view and pool search, but not ac
   await h.flush();
   assert.equal(h.requests.filter(item => item[0] === "admin-load").length, 1);
   assert.equal(h.requests.filter(item => item[0] === "pool").length, 1);
-  assert.ok(h.requests.some(item => item[0] === "scroll" && item[1] === 14 && item[2] === 25));
+  assert.equal(h.requests.filter(item => item[0] === "scroll").length, 0, "do not forcibly reset admin scrolling");
   h.setEditing(true);
   h.schedule();
   await h.flush();
