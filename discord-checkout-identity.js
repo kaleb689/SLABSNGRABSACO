@@ -135,7 +135,7 @@ export function checkoutProductFromDiscord(message) {
         !/^(?:success|order|profile|site|account|proxy|status|quantity|price|checkout)\b/i.test(s) &&
         !/[\r\n@]/.test(s) && !/https?:\/\//i.test(s));
     const name = String(linked || plainLine || "").trim().slice(0,250);
-    if (name.length >= 3 && !/@|https?:\/\/|\b(?:account|password|proxy|login|card|security code)\b/i.test(name) &&
+    if (name.length >= 3 && !/@|https?:\/\/|\b(?:account|password|proxy|login|cvv|security code|payment card|card\s*(?:number|no\.?|#))\b/i.test(name) &&
         !/(?:\d[ -]*?){13,19}/.test(name)) return name;
   }
   return "";
