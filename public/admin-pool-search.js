@@ -2,6 +2,8 @@
   "use strict";
   const panel = document.getElementById("adminPoolBrowser");
   if (!panel) return;
+  const disclosure = document.getElementById("adminPoolDisclosure");
+  const browserOpen = () => !disclosure || disclosure.open;
   const queryInput = document.getElementById("adminPoolQuery");
   const retailerInput = document.getElementById("adminPoolRetailer");
   const statusInput = document.getElementById("adminPoolStatus");
@@ -48,6 +50,9 @@
   };
 
   async function reload() {
+    // Background refreshes do not reopen the browser or fetch a hidden list.
+    // Opening it always fetches fresh pool data with the current filters.
+    if (!browserOpen()) return;
     const requestId = ++requestNumber;
     statusLine.textContent = "Searching account pools...";
     const params = new URLSearchParams({
@@ -225,6 +230,17 @@
   });
   next.addEventListener("click", () => { page++; reload(); });
   window.refreshAdminPoolSearch = reload;
+  if (disclosure) {
+    disclosure.addEventListener("toggle", () => {
+      if (disclosure.open) {
+        void reload();
+      } else {
+        // Invalidate requests started before collapse so stale results never appear.
+        ++requestNumber;
+        clearTimeout(timer);
+      }
+    });
+  }
   // A visitor may sign into Admin after the initial search returned 401.
   // Re-query once when the existing Admin dashboard becomes visible.
   const dashboard = document.getElementById("dashboard");
@@ -232,9 +248,9 @@
     let wasHidden = dashboard.hidden;
     new MutationObserver(() => {
       const isHidden = dashboard.hidden;
-      if (wasHidden && !isHidden) void reload();
+      if (wasHidden && !isHidden && browserOpen()) void reload();
       wasHidden = isHidden;
     }).observe(dashboard, { attributes: true, attributeFilter: ["hidden"] });
   }
-  reload();
+  if (browserOpen()) void reload();
 })();
