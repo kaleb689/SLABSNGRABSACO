@@ -5,6 +5,7 @@ import vm from "node:vm";
 import { checkoutIdentityFromDiscord, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "../discord-checkout-identity.js";
 import { reconcileWebhookCheckout, uniqueCheckoutOwner } from "../webhook-success.js";
 import { lateCancellation } from "../order-notifications.js";
+import { verifiedRetailerOrderTotal } from "../retailer-order-total.js";
 
 const channel = "1532179373292257290";
 const product = "Pokemon Trading Card Game: Mega Evolution Delta Reign Three-Booster Blister";
@@ -132,4 +133,27 @@ test("customer Success payload never exposes login email, password or profile na
   assert.match(payload,/orderNumber:/);
   assert.match(payload,/orderTotalKnown:/);
   assert.match(payload,/itemCount:/);
+});
+
+test("only a verified retailer receipt with an explicit unambiguous charge can supply actual total cost", () => {
+  assert.equal(verifiedRetailerOrderTotal("Order Total: $39.98"),39.98);
+  assert.equal(verifiedRetailerOrderTotal("Grand Total: USD $1,240.15"),1240.15);
+  assert.equal(verifiedRetailerOrderTotal("","<div>Order Total: $58.49</div>"),58.49);
+  assert.equal(verifiedRetailerOrderTotal("Subtotal: $38.00\nSales tax $2.50\nShipping $4.99"),null);
+  assert.equal(verifiedRetailerOrderTotal("Your order ships when ready. Total estimated: $39.98"),null);
+  assert.equal(verifiedRetailerOrderTotal("Order Total: $39.98\nTotal Paid: $39.99"),null);
+  assert.equal(verifiedRetailerOrderTotal("Order Total: $0.00"),null);
+  assert.equal(verifiedRetailerOrderTotal("Order Total: $39.98","Order Total: $39.98"),39.98);
+});
+test("retailer emails enrich only existing exact-number webhook orders, never invent orders or owner logins", () => {
+  const source = readFileSync(new URL("../server.js", import.meta.url), "utf8");
+  const scan = source.slice(source.indexOf("async function scanMailboxForShipping("),
+    source.indexOf("async function syncShippingTrackers("));
+  assert.match(scan,/matchVerifiedWebhookEmail\(records/);
+  assert.match(scan,/verifiedRetailerOrderTotal\(decoded\.text, decoded\.html\)/);
+  assert.match(scan,/record\.orderTotalBasis = "retailer_receipt"/);
+  const merge = source.slice(source.indexOf("async function syncShippingTrackers("),
+    source.indexOf("function startShippingTrackerScheduler("));
+  assert.match(merge,/withSuccessStoreLock\(async \(\) => \{/);
+  assert.match(merge,/record\.priceSource = "verified_retailer_receipt"/);
 });
