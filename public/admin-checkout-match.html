@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080d1b">
+<title>Match Checkout Profiles · SLABSNGRABSACO Admin</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,sans-serif;color:#edf7ff;color-scheme:dark;background:#080d1b}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% -20%,#36266c 0,transparent 48%),#080d1b;min-height:100dvh}
+main{max-width:880px;margin:0 auto;padding:24px 20px 96px}
+a{color:#59d8ff}h1{font-size:29px;margin:12px 0}p{color:#b5c1d6;line-height:1.5}
+.heading{display:flex;gap:12px;align-items:center;justify-content:space-between}
+.back{display:inline-block;text-decoration:none;background:#172638;border:1px solid #3d6275;border-radius:12px;color:#9aeaff;font-weight:800;padding:11px 15px}
+.eyebrow{color:#53d6f9;font-size:12px;font-weight:900;letter-spacing:2px}
+.panel{background:#131826;border:1px solid #313a4d;border-radius:23px;padding:20px;margin-top:18px}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}.stat{flex:1;min-width:140px;padding:16px;border-radius:14px;background:#1a2031}.stat strong{font-size:26px;display:block;color:#a68cff}.stat span{font-size:12px;color:#bec8d7}
+input,select{width:100%;border:1px solid #556477;border-radius:12px;background:#101727;color:#fff;min-height:48px;padding:12px;font:inherit;font-size:15px}
+input:focus,select:focus,button:focus-visible{outline:2px solid #55d9ff;outline-offset:2px}
+.match{background:#151a2a;border:1px solid #343b51;border-radius:17px;padding:17px;margin-top:13px}.match h3{font-size:16px;overflow-wrap:anywhere;margin:0 0 7px}
+.meta{color:#a9b8c9;font-size:13px;margin-bottom:11px}
+label{display:block;font-size:13px;font-weight:800;margin:12px 0 7px}
+button{touch-action:manipulation;cursor:pointer;font:inherit}
+.match button{width:100%;border:0;border-radius:12px;background:linear-gradient(110deg,#6941e7,#31b9f0);font-weight:900;color:white;min-height:48px;margin-top:13px}
+button:disabled{opacity:.5;cursor:not-allowed}.notice{font-size:13px;color:#9ba9c1}.good{color:#72e7b2}.bad{color:#ff9fae}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<div class="heading"><span class="eyebrow">SECURE ADMIN · SUCCESS</span><a class="back" href="/admin-app.html">← Back to Admin</a></div>
+<h1>Match Discord checkout profiles</h1>
+<p>Discord webhooks sometimes use profile names different from the names saved on your website. Review each label and link it only to the customer who owned an eligible paid or assigned account at checkout time. No new orders are created.</p>
+<div class="stats"><div class="stat"><strong id="unmatched">—</strong><span>Unlinked checkouts</span></div><div class="stat"><strong id="groups">—</strong><span>Distinct profile labels</span></div></div>
+<div class="panel">
+<label for="search">Search Discord profile labels</label>
+<input id="search" type="search" autocomplete="off" placeholder="Search by profile or retailer">
+<p class="notice" id="status" role="status" aria-live="polite">Loading checkout profile labels…</p>
+<div id="results"></div>
+</div>
+</main>
+<script>
+(()=>{
+"use strict";
+const $=id=>document.getElementById(id);
+const e=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let groups=[];
+function render(){
+ const needle=$("search").value.trim().toLowerCase();
+ const matches=groups.filter(g=>(g.profileLabel+" "+g.retailer).toLowerCase().includes(needle));
+ $("results").innerHTML=matches.slice(0,100).map((g,i)=>{
+  const ix=groups.indexOf(g);
+  return '<section class="match"><h3>'+e(g.profileLabel)+'</h3><div class="meta">'+e(g.retailer)+
+   ' · '+g.count+' unlinked checkouts · '+e(g.firstAt?.slice(0,10)||"Unknown date")+' to '+
+   e(g.lastAt?.slice(0,10)||"Unknown date")+'</div>'+
+   '<label for="target-'+ix+'">Website customer to link</label><select id="target-'+ix+'" '+(g.eligibleCustomers.length?'':'disabled')+'><option value="">Choose a verified customer…</option>'+
+   g.eligibleCustomers.map(c=>'<option value="'+e(c.id)+'">'+e(c.label)+'</option>').join('')+
+   '</select><button type="button" data-index="'+ix+'" '+(g.eligibleCustomers.length?'':'disabled')+'>CONFIRM PROFILE MATCH</button>'+
+   (g.eligibleCustomers.length?'':'<p class="notice">No eligible paid or assigned customer profile exists for these checkout dates.</p>')+
+   '</section>';
+ }).join('')||'<p class="notice">No unmatched Discord profile labels found.</p>';
+ if(matches.length>100)$("results").insertAdjacentHTML("beforeend",'<p class="notice">Showing the first 100 matches. Narrow your search for more.</p>');
+}
+async function load(){
+ const response=await fetch("/api/admin/discord-checkout-profile-matching",{credentials:"same-origin",cache:"no-store"});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(data.error||"Unable to load profiles. Sign in to Admin again.");
+ groups=Array.isArray(data.groups)?data.groups:[];
+ $("unmatched").textContent=Number(data.unmatchedCount||0).toLocaleString();
+ $("groups").textContent=groups.length.toLocaleString();
+ $("status").textContent=data.unlabeledCount?
+  data.unlabeledCount+" checkouts also lack a usable Discord profile label; those cannot be auto-matched.":
+  "Select the correct customer only when you can verify who owned the checkout profile.";
+ render();
+}
+$("search").addEventListener("input",render);
+$("results").addEventListener("click",async event=>{
+ const button=event.target.closest("button[data-index]");
+ if(!button)return;
+ const index=Number(button.dataset.index),group=groups[index];
+ if(!group)return;
+ const accountId=$("target-"+index)?.value;
+ if(!accountId){$("status").textContent="Choose a verified customer before confirming.";return;}
+ const owner=group.eligibleCustomers.find(c=>String(c.id)===accountId);
+ if(!owner)return;
+ if(!confirm('Link checkout profile "'+group.profileLabel+'" at '+group.retailer+' to '+owner.label+'? This may update historical success totals.'))return;
+ button.disabled=true;$("status").textContent="Safely matching existing checkout records…";
+ try{
+  const response=await fetch("/api/admin/discord-checkout-profile-matching",{method:"POST",
+    credentials:"same-origin",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({retailer:group.retailer,profileLabel:group.profileLabel,customerAccountId:accountId})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(result.error||"Unable to match this profile.");
+  await load();
+  $("status").textContent="Matched "+result.linked+" existing checkouts. Remaining under this label: "+result.remaining+". No duplicates created.";
+  $("status").className="notice good";
+ }catch(error){$("status").textContent=error.message;$("status").className="notice bad";button.disabled=false;}
+});
+load().catch(error=>{$("status").textContent=error.message;$("status").className="notice bad"});
+})();
+</script>
+</body>
+</html>
