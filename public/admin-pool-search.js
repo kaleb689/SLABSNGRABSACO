@@ -225,5 +225,16 @@
   });
   next.addEventListener("click", () => { page++; reload(); });
   window.refreshAdminPoolSearch = reload;
+  // A visitor may sign into Admin after the initial search returned 401.
+  // Re-query once when the existing Admin dashboard becomes visible.
+  const dashboard = document.getElementById("dashboard");
+  if (dashboard) {
+    let wasHidden = dashboard.hidden;
+    new MutationObserver(() => {
+      const isHidden = dashboard.hidden;
+      if (wasHidden && !isHidden) void reload();
+      wasHidden = isHidden;
+    }).observe(dashboard, { attributes: true, attributeFilter: ["hidden"] });
+  }
   reload();
 })();
