@@ -20498,6 +20498,10 @@ let adminLiveRefreshTimer = null;
 let adminLiveRefreshRunning = false;
 let adminLiveRefreshPending = false;
 let adminLiveEvents = null;
+let adminLastInteractionAt = Date.now();
+["scroll", "pointerdown", "keydown", "touchmove"].forEach(name =>
+  window.addEventListener(name, () => { adminLastInteractionAt = Date.now(); }, { passive: true, capture: true })
+);
 
 // Never tear down a form while an admin is editing it.
 function adminLiveInputFocused() {
@@ -20513,7 +20517,8 @@ async function refreshAdminInPlace() {
     adminLiveRefreshRunning ||
     document.hidden ||
     dashboard.hidden ||
-    adminLiveInputFocused()
+    adminLiveInputFocused() ||
+    Date.now() - adminLastInteractionAt < 1800
   ) return;
 
   adminLiveRefreshPending = false;
@@ -20531,7 +20536,9 @@ async function refreshAdminInPlace() {
   } catch (error) {
     console.error("Admin live refresh:", error);
   } finally {
-    requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+    if (Math.abs(window.scrollY - scrollY) < 40) {
+      requestAnimationFrame(() => window.scrollTo({left: scrollX, top: scrollY, behavior: "instant"}));
+    }
     adminLiveRefreshRunning = false;
     // Updates arriving during the fetch must never be dropped.
     if (adminLiveRefreshPending) scheduleAdminLiveRefresh();
@@ -20543,7 +20550,7 @@ function scheduleAdminLiveRefresh() {
   clearTimeout(adminLiveRefreshTimer);
   adminLiveRefreshTimer = setTimeout(() => {
     void refreshAdminInPlace();
-  }, 300);
+  }, 2200);
 }
 
 function updateAdminLiveEvents() {
