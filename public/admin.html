@@ -5386,7 +5386,18 @@
     .admin-discord-actions { display: flex; gap: 10px; flex-wrap: wrap; }
     .admin-discord-actions button { width: auto; min-width: 125px; }
     .admin-discord-card small { display: block; margin-top: 10px; color: #a9cad7; }
-  </style>
+  .customer-managed-count[role="button"] {
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 2;
+}
+.customer-managed-count[role="button"]:hover,
+.customer-managed-count[role="button"]:focus-visible {
+  outline: 2px solid #79e8ff;
+  outline-offset: 3px;
+}
+</style>
 <link rel="stylesheet" href="/admin-pool-search.css?v=20261009">
 </head>
 
@@ -7060,19 +7071,17 @@ function renderOrder(x) {
           </strong>
 
           <div class="customer-managed-profile-counts">
-            <button type="button" class="customer-managed-count active"
+            <span role="button" tabindex="0" class="customer-managed-count active"
               data-open-linked-status="active" data-customer-order-id="${escapeHtml(x.id)}"
-              onclick="event.preventDefault();event.stopPropagation();window.adminOpenLinkedStatus?.(this)"
               title="Show this customer's active linked profiles">
               ACTIVE ${linkedActiveProfileCount}
-            </button>
+            </span>
 
-            <button type="button" class="customer-managed-count inactive"
+            <span role="button" tabindex="0" class="customer-managed-count inactive"
               data-open-linked-status="inactive" data-customer-order-id="${escapeHtml(x.id)}"
-              onclick="event.preventDefault();event.stopPropagation();window.adminOpenLinkedStatus?.(this)"
               title="Show this customer's inactive linked profiles">
               INACTIVE ${linkedInactiveProfileCount}
-            </button>
+            </span>
           </div>
 
         </div>
@@ -24762,6 +24771,24 @@ document.addEventListener("click", async event => {
   }
 });
 
+
+// Counter targets are spans in the native summary for Safari compatibility.
+// Capture on the summary before its own toggle action; prevent default so the
+// asynchronous loader owns opening the card.
+document.addEventListener("click", event => {
+  const badge = event.target.closest?.("[data-open-linked-status]");
+  if (!badge) return;
+  event.preventDefault();
+  event.stopPropagation();
+  window.adminOpenLinkedStatus?.(badge);
+}, true);
+document.addEventListener("keydown", event => {
+  const badge = event.target.closest?.("[data-open-linked-status]");
+  if (!badge || !["Enter", " "].includes(event.key)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  window.adminOpenLinkedStatus?.(badge);
+}, true);
 
 // Native summary clicks may swallow delegated button events in Safari.
 // Bind a direct handler so clicking the count reliably expands and loads the records.
