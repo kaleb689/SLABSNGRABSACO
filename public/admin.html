@@ -10413,8 +10413,16 @@ async function loadAdminLinkedProfiles(
     `;
 
 
-    container.querySelectorAll("[data-linked-retailer-group]").forEach(group => {
-      group.open = openRetailerGroups.has(group.dataset.linkedRetailerGroup);
+    const retailerGroups = Array.from(container.querySelectorAll("[data-linked-retailer-group]"));
+    const hasPreviouslyOpenGroup = openRetailerGroups.size > 0;
+    let openedFirstPopulatedGroup = false;
+    retailerGroups.forEach(group => {
+      const hasProfiles = Boolean(group.querySelector("[data-linked-profile-index]"));
+      const shouldOpen = hasPreviouslyOpenGroup
+        ? openRetailerGroups.has(group.dataset.linkedRetailerGroup)
+        : hasProfiles && !openedFirstPopulatedGroup;
+      group.open = shouldOpen;
+      if (shouldOpen && hasProfiles) openedFirstPopulatedGroup = true;
     });
 
     const detail =
