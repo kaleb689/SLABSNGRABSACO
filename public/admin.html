@@ -10371,11 +10371,37 @@ async function loadAdminLinkedProfiles(
         : [];
 
     if (!memberships.length) {
-      container.innerHTML = `
-        <p class="admin-retailer-empty">
-          No active linked profiles.
-        </p>
-      `;
+      container.innerHTML = '<div data-personal-linked-profiles></div><p class="admin-retailer-empty">No managed linked profiles.</p>';
+      try {
+        const response = await fetch(
+          "/api/admin/submissions/" + encodeURIComponent(orderId) + "/retailer-profiles",
+          {credentials:"same-origin", cache:"no-store"}
+        );
+        if (!response.ok) throw new Error("Could not load customer-added profiles.");
+        const data = await response.json();
+        const saved = Array.isArray(data.profiles) ? data.profiles : [];
+        const region = container.querySelector("[data-personal-linked-profiles]");
+        const disclosure = document.createElement("details");
+        disclosure.className = "linked-retailer-profile-group";
+        disclosure.open = true;
+        const summary = document.createElement("summary");
+        summary.textContent = "CUSTOMER-ADDED PROFILES (" + saved.length + ")";
+        disclosure.append(summary);
+        const body = document.createElement("div");
+        body.className = "linked-retailer-profile-group-body";
+        if (!saved.length) body.textContent = "No customer-added profiles stored.";
+        for (const profile of saved) {
+          const entry = document.createElement("div");
+          entry.className = "pool-profile-meta";
+          entry.textContent = (profile.profileName || "Profile " + profile.slot) +
+            " · " + (profile.activationLabel || profile.activationStatus || "Awaiting activation");
+          body.append(entry);
+        }
+        disclosure.append(body);
+        region.replaceChildren(disclosure);
+      } catch (error) {
+        container.querySelector("[data-personal-linked-profiles]").textContent = error.message;
+      }
       return;
     }
 
