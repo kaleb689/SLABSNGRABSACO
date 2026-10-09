@@ -37,10 +37,25 @@ function asOrder(value) {
 export function checkoutIdentityFromDiscord(message) {
   const pairs = [];
   const addLines = text => {
-    for (const line of String(text || "").split(/\r?\n/)) {
-      const match = readable(line).replace(/^[>\-•\s]+/, "")
-        .match(/^([^:\n]{2,55})\s*:\s*(.{1,200})$/);
-      if (match) pairs.push([labelText(match[1]), readable(match[2])]);
+    const lines = String(text || "").split(/\r?\n/).map(line =>
+      readable(line).replace(/^[>\-•\s]+/, "").trim());
+    // Shikari can render its embed details as alternating lines:
+    // "Account" followed by "retailer-email:password", and "Order ID"
+    // followed by the retailer's order number (rather than "Key: Value").
+    const recognized = label => emailLabels.test(label) ||
+      orderLabels.test(label) || profileLabels.test(label);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const inline = line.match(/^([^:\n]{2,55})\s*:\s*(.{1,200})$/);
+      if (inline && recognized(labelText(inline[1]))) {
+        pairs.push([labelText(inline[1]), readable(inline[2])]);
+        continue;
+      }
+      if (!recognized(labelText(line))) continue;
+      const value = lines[i + 1] || "";
+      if (!value || recognized(labelText(value))) continue;
+      pairs.push([labelText(line), value]);
+      i++;
     }
   };
   addLines(message?.content);
