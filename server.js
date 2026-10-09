@@ -6,7 +6,7 @@ import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
-import { webhookOnlyCheckouts, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail } from "./success-source-policy.js";
+import { webhookOnlyCheckouts, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
@@ -37716,12 +37716,12 @@ function discordRecordChannelId(record) {
   return null;
 }
 
-function visibleDiscordSuccessRecords(records, excludedChannelId = null) {
+function visibleDiscordSuccessRecords(records, excludedChannelId = null, authorizedChannelIds = []) {
   const excluded = /^\d{17,22}$/.test(String(excludedChannelId || ""))
     ? String(excludedChannelId)
     : null;
 
-  return (Array.isArray(records) ? records : [])
+  return authoritativeDiscordCheckouts(records, authorizedChannelIds)
     .filter(record =>
       isDiscordSuccessRecord(record) &&
       (!excluded || discordRecordChannelId(record) !== excluded)
@@ -38631,11 +38631,9 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
       const token = discordSuccessConfig().token;
       if (token) hitsChannelId = await resolveDiscordHitsChannelId(token);
     } catch {}
-    const allRecords = visibleDiscordSuccessRecords(await getSuccessCheckouts(), hitsChannelId);
     const chosen = await discordCheckoutSourceChannels();
-    const activeIds = chosen.channels.map(id => "discord:" + id + ":");
-    const unmatchedCount = allRecords.filter(record => !record.customerAccountId &&
-      [record.id, ...(record.sourceIds || [])].some(id => activeIds.some(prefix => String(id).startsWith(prefix)))).length;
+    const allRecords = visibleDiscordSuccessRecords(await getSuccessCheckouts(), hitsChannelId, chosen.channels);
+    const unmatchedCount = allRecords.filter(record => !record.customerAccountId).length;
     const records = allRecords
       .filter(record => Boolean(record.customerAccountId) && !cancelledOrder(record))
       .map(record => {
@@ -38869,7 +38867,8 @@ app.get(
       const records =
         visibleDiscordSuccessRecords(
           await getSuccessCheckouts(),
-          hitsChannelId
+          hitsChannelId,
+          (await discordCheckoutSourceChannels()).channels
         );
       const products = new Map();
       let totalSpent = 0;
@@ -47461,7 +47460,8 @@ app.get(
       const records =
         visibleDiscordSuccessRecords(
           await getSuccessCheckouts(),
-          hitsChannelId
+          hitsChannelId,
+          (await discordCheckoutSourceChannels()).channels
         );
 
       const ownedRecords =
@@ -47869,7 +47869,8 @@ const ownedOrders =
 
         retailerCheckoutRecords = visibleDiscordSuccessRecords(
           await getSuccessCheckouts(),
-          hitsChannelId
+          hitsChannelId,
+          (await discordCheckoutSourceChannels()).channels
         ).filter(record =>
           String(record.customerAccountId) === String(account.id) && !cancelledOrder(record)
         );
