@@ -199,3 +199,40 @@ test('late cancel removes queued success alerts but leaves one cancel notificati
   assert.equal(f.sent.length, 1);
   assert.equal(f.sent[0].title, 'Target order cancelled');
 });
+
+test('orange Shikari review hold notifies as provisional, not confirmed, and later green sends one confirmation', async t => {
+  const f = await fixture(t);
+  await f.service.subscribe('a', subscription);
+  f.records.push(order('review-hold', {checkoutAt: new Date().toISOString(), status:'review_hold',
+    itemCount:2, orderTotal:0, orderTotalBasis:'unknown'}));
+  await f.service.tick();
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].title, 'Target order on review hold');
+  assert.match(f.sent[0].body,/may still cancel/i);
+  assert.equal((await f.service.list('a')).filter(x=>x.kind==='order_confirmed').length, 0);
+  await f.service.tick();
+  assert.equal(f.sent.length, 1);
+  f.records[0].status='confirmed';
+  await f.service.tick();
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.sent[1].title, 'Target order confirmed');
+  await f.service.tick();
+  assert.equal(f.sent.length, 2);
+});
+
+test('red cancellation 24+ hours after orange review shows one cancelled alert, no fake confirmation', async t => {
+  const f = await fixture(t);
+  await f.service.subscribe('a', subscription);
+  f.records.push(order('held-old', {
+    status: 'review_hold',
+    checkoutAt: new Date(Date.now()-27*3600000).toISOString()
+  }));
+  await f.service.tick();
+  assert.equal(f.sent.length, 0, 'historical holds never flood push alerts');
+  f.records[0].status='cancelled';
+  f.records[0].cancelledAt=new Date().toISOString();
+  await f.service.tick();
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].title, 'Target order cancelled');
+  assert.equal((await f.service.list('a')).filter(x=>x.kind==='order_confirmed').length,0);
+});
