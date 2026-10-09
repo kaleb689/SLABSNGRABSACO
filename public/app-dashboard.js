@@ -1,4 +1,4 @@
-import { shippingStage, periodStart, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges } from './app-dashboard-data.js';
+import { shippingStage, visibleLateCancellation, periodStart, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges } from './app-dashboard-data.js';
 
 const appEnabled = window.self === window.top && (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true ||
   (new URLSearchParams(location.search).get('appPreview') === '1' && ADMIN_PREVIEW_MODE));
@@ -42,7 +42,8 @@ if (appEnabled) {
     const earliest = periodStart(days).getTime(), latest = Date.now();
     return cancelledOrders.filter(order => {
       const time = Date.parse(order.checkoutAt || "");
-      return Number.isFinite(time) && time >= earliest && time <= latest;
+      return visibleLateCancellation(order) &&
+        Number.isFinite(time) && time >= earliest && time <= latest;
     }).sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
   }
   const rangeButtons = () => `<div class="sng-range" role="group" aria-label="Date range">${[1, 7, 30, 90, 180, 'ytd'].map(n => `<button type="button" data-app-days="${n}" aria-pressed="${n === days}">${n === 'ytd' ? 'YTD' : n === 1 ? '24HR' : n === 180 ? '6M' : `${n}D`}</button>`).join('')}</div><p class="sng-period-label">${rangeName()}</p>`;
@@ -187,7 +188,8 @@ if (appEnabled) {
         if (!response.ok) throw new Error(data.error || 'Unable to refresh order data.');
         if (state.customer?.id !== id) return;
         orders = Array.isArray(data.checkouts) ? data.checkouts : data.recentCheckouts || [];
-        cancelledOrders = Array.isArray(data.cancelledCheckouts) ? data.cancelledCheckouts : [];
+        cancelledOrders = Array.isArray(data.cancelledCheckouts) ?
+          data.cancelledCheckouts.filter(order => visibleLateCancellation(order)) : [];
       }
       error = ''; accountId = id;
     } catch (failure) { error = failure.message; }
