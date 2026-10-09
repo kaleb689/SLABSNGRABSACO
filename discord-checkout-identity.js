@@ -18,8 +18,13 @@ function unique(values) {
   return distinct.length === 1 ? distinct[0] : "";
 }
 function asEmail(value) {
-  const text = readable(value).replace(/^<mailto:/i, "").replace(/^</, "").replace(/>$/, "").trim();
-  return EMAIL.test(text) ? text.toLowerCase() : "";
+  // Shikari's "Account" field is often "retailer-email:retailer-password".
+  // Extract only the explicit email prefix. NEVER return, log, persist, or
+  // show the password suffix. A standalone password is not a checkout ID.
+  const text = readable(value).replace(/^<mailto:/i, "").trim();
+  const match = text.match(/^<?([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})>?(?::[^\r\n]*)?$/i);
+  const email = match?.[1] || "";
+  return EMAIL.test(email) ? email.toLowerCase() : "";
 }
 function asOrder(value) {
   const text = readable(value).replace(/^#/, "").trim();
@@ -72,4 +77,49 @@ export function checkoutSourceSelection({ checkoutChannelId, successChannelId, h
   if (configured && configured !== hits) return { channels: [configured], source: "success_channel" };
   const discovered = [...new Set(discoveredChannelIds.map(String).filter(id => valid(id) && id !== hits))];
   return { channels: discovered.length === 1 ? discovered : [], source: discovered.length === 1 ? "discovered" : "unconfigured_or_ambiguous" };
+}
+
+/**
+ * Status comes ONLY from the color of the authoritative Discord webhook
+ * embed. Green = confirmed, orange/yellow = review hold, red = cancelled.
+ * Unrecognised/mixed colors are not silently treated as successful.
+ */
+export function checkoutStatusFromDiscord(message) {
+  const embeds = Array.isArray(message?.embeds) ? message.embeds : [];
+  const statuses = new Set();
+  for (const embed of embeds) {
+    const color = Number(embed?.color);
+    if (!Number.isInteger(color) || color <= 0 || color > 0xffffff) continue;
+    const r = (color >> 16) & 255, g = (color >> 8) & 255, b = color & 255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max-min;
+    if (d < 45 || max < 95) continue;
+    let hue = max === r ? ((g-b)/d)%6 : max === g ? (b-r)/d+2 : (r-g)/d+4;
+    hue = ((hue*60)%360+360)%360;
+    if (hue >= 75 && hue <= 175) statuses.add("confirmed");
+    else if (hue >= 18 && hue <= 65) statuses.add("review_hold");
+    else if (hue <= 15 || hue >= 345) statuses.add("cancelled");
+  }
+  return statuses.size === 1 ? [...statuses][0] : null;
+}
+
+/**
+ * Shikari often links the product in the embed description rather than
+ * naming a "Product" field. This returns only a product title and NEVER
+ * falls back to "Account", "Proxy", login credentials, or order metadata.
+ */
+export function checkoutProductFromDiscord(message) {
+  const embeds = Array.isArray(message?.embeds) ? message.embeds : [];
+  for (const embed of embeds) {
+    const description = String(embed?.description || "");
+    const linked = description.match(/\[([^\]\r\n]{3,250})\]\(https?:\/\/[^\s)]+\)/i)?.[1];
+    const plainLine = description.split(/\r?\n/).map(s => s.trim()
+      .replace(/^[>*\s]+/, "").replace(/^\*\*(.+)\*\*$/, "$1"))
+      .find(s => s.length >= 10 && s.length <= 250 &&
+        !/^(?:success|order|profile|site|account|proxy|status|quantity|price|checkout)\b/i.test(s) &&
+        !/[\r\n@]/.test(s) && !/https?:\/\//i.test(s));
+    const name = String(linked || plainLine || "").trim().slice(0,250);
+    if (name.length >= 3 && !/@|https?:\/\/|\b(?:account|password|proxy|login|card|security code)\b/i.test(name) &&
+        !/(?:\d[ -]*?){13,19}/.test(name)) return name;
+  }
+  return "";
 }
