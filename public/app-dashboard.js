@@ -20,12 +20,12 @@ if (appEnabled) {
   let theme = 'night';
   try { theme = localStorage.getItem('sng-app-theme') || 'night'; } catch {}
   const snapshots = new Map(), changes = new Map();
-  const stageLabels = { ordered: 'Ordered', shipped: 'Shipped', in_transit: 'In transit', out_for_delivery: 'Out for delivery', delivered: 'Delivered', cancelled: 'Cancelled' };
+  const stageLabels = { ordered: 'Ordered', shipped: 'Shipped', in_transit: 'In transit', out_for_delivery: 'Out for delivery', delivered: 'Delivered', cancelled: 'Cancelled', review_hold: 'Review hold' };
   const e = value => escapeHtml(String(value ?? ''));
   const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) || 0);
   const dateLabel = value => value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Pending';
   let view = ({ success: 'home', membership: 'profile', notifications: 'notifications', tracking: 'tracking' })[new URLSearchParams(location.search).get('appTab')] || 'home';
-  let days = 30, status = 'all', query = '', orders = [], cancelledOrders = [], busy = false, queued = false, error = '', accountId = null;
+  let days = 30, status = 'all', query = '', orders = [], cancelledOrders = [], reviewHoldOrders = [], busy = false, queued = false, error = '', accountId = null;
   let profileTab = 'membership', stream = null;
   const expanded = new Set();
   const root = document.createElement('div');
@@ -44,6 +44,13 @@ if (appEnabled) {
       const time = Date.parse(order.checkoutAt || "");
       return visibleLateCancellation(order) &&
         Number.isFinite(time) && time >= earliest && time <= latest;
+    }).sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
+  }
+  function holdsInPeriod() {
+    const earliest = periodStart(days).getTime(), latest = Date.now();
+    return reviewHoldOrders.filter(order => {
+      const time = Date.parse(order.checkoutAt || "");
+      return order.status === 'review_hold' && Number.isFinite(time) && time >= earliest && time <= latest;
     }).sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
   }
   const rangeButtons = () => `<div class="sng-range" role="group" aria-label="Date range">${[1, 7, 30, 90, 180, 'ytd'].map(n => `<button type="button" data-app-days="${n}" aria-pressed="${n === days}">${n === 'ytd' ? 'YTD' : n === 1 ? '24HR' : n === 180 ? '6M' : `${n}D`}</button>`).join('')}</div><p class="sng-period-label">${rangeName()}</p>`;
@@ -69,9 +76,11 @@ if (appEnabled) {
       const step = stage === 'out_for_delivery' ? 2 : steps.indexOf(stage);
       const address = shipping.address || {};
       const trackingUrl = /^https:\/\//i.test(shipping.trackingUrl || '') ? shipping.trackingUrl : '';
+      const totalLabel = order.orderTotalKnown === false ? 'Total not provided' : money(order.orderTotal);
       return `<details class="sng-order-card stage-${stage}" data-order-id="${e(order.id || order.orderNumber)}" ${expanded.has(order.id || order.orderNumber) ? 'open' : ''}>
-        <summary><div class="sng-product-image">${image(item)}</div><div class="sng-row-main"><strong>${e(item.name || `${order.retailer} order`)}</strong><small>${e(order.retailer)} · ${dateLabel(order.checkoutAt)} · ${Number(order.itemCount) || 0} items</small></div><div class="sng-row-value"><strong>${money(order.orderTotal)}</strong><small class="sng-stage">● ${stageLabels[stage]}</small></div></summary>
-        ${tracking ? stage === 'cancelled' ? '<p class="sng-delivery">Order cancelled — no shipment expected.</p>' :
+        <summary><div class="sng-product-image">${image(item)}</div><div class="sng-row-main"><strong>${e(item.name || `${order.retailer} order`)}</strong><small>${e(order.retailer)} · ${dateLabel(order.checkoutAt)} · ${Number(order.itemCount) || 0} items</small></div><div class="sng-row-value"><strong>${e(totalLabel)}</strong><small class="sng-stage">● ${stageLabels[stage]}</small></div></summary>
+        ${stage === 'review_hold' ? '<p class="sng-delivery">Review hold — the retailer is reviewing this order and may still cancel it. Not yet confirmed.</p>' :
+          tracking ? stage === 'cancelled' ? '<p class="sng-delivery">Order cancelled — no shipment expected.</p>' :
           `<div class="sng-shipping-steps">${steps.map((s, i) => `<span class="${i <= step ? 'done' : ''}">${stageLabels[s]}</span>`).join('')}</div><p class="sng-delivery">${stage === 'delivered' ? 'Delivered' : 'Expected delivery'} · ${e(shipping.estimatedDelivery || 'Waiting for carrier update')}</p>` : ''}
         <div class="sng-order-details"><span>Order ${e(order.orderNumber || '—')}</span>${(order.items || []).map(product => `<p class="sng-detail-product"><span class="sng-product-image">${image(product)}</span>${e(product.name)} × ${Number(product.quantity) || 1}</p>`).join('')}
         <p>${e(shipping.carrier || 'Carrier pending')}${shipping.trackingNumber ? ` · ${e(shipping.trackingNumber)}` : ''}</p>
@@ -91,7 +100,7 @@ if (appEnabled) {
     return `<div class="sng-bar-chart" role="img" aria-label="Order value · ${rangeName()}">${activity.map(day => `<div class="sng-bar-column" title="${e(day.date)}: ${day.count} orders, ${money(day.value)}"><div class="sng-bar" style="height:${Math.max(day.value ? 4 : 0, day.value / max * 100)}%"></div></div>`).join('')}</div><div class="sng-chart-axis"><span>${dateLabel(activity[0]?.date + 'T12:00:00')}</span><span>${dateLabel(activity.at(-1)?.date + 'T12:00:00')}</span></div>`;
   }
   function render() {
-    if (!state.customer) { root.hidden = true; document.body.classList.remove('app-signed-in'); orders = []; cancelledOrders = []; accountId = null; snapshots.clear(); changes.clear(); stream?.close(); stream = null; return; }
+    if (!state.customer) { root.hidden = true; document.body.classList.remove('app-signed-in'); orders = []; cancelledOrders = []; reviewHoldOrders = []; accountId = null; snapshots.clear(); changes.clear(); stream?.close(); stream = null; return; }
     root.hidden = false; document.body.classList.add('app-signed-in'); document.body.dataset.appView = view;
     document.body.dataset.profileTab = profileTab;
     document.body.dataset.appTheme = theme;
@@ -117,11 +126,12 @@ if (appEnabled) {
     let html = '';
     if (view === 'home') html = common + hero('TOTAL CHECKOUT VALUE', money(totals.spend), `${totals.orders} orders · ${totals.items} items secured · ${state.membership?.name || state.membership?.planName || 'Member'}`) +
       `<button class="sng-arrival" type="button" data-app-view="tracking">${icon('tracking')}<span><strong>${records.filter(r => shippingStage(r) === 'out_for_delivery').length} packages out for delivery</strong><small>View your shipping tracker</small></span><b>›</b></button>` +
-      `<div class="sng-metrics three">${metric('ORDERED', totals.orders, '', 'box', delta.orders)}${metric('IN TRANSIT', totals.transit, 'cyan', 'tracking', delta.transit)}${metric('DELIVERED', totals.delivered, 'green', 'home', delta.delivered)}</div><div class="sng-section-title"><h2>Top products</h2><button type="button" data-app-view="products">View all</button></div>${productRows(products.slice(0, 3), true)}<div class="sng-section-title"><h2>Recent orders</h2><button type="button" data-app-view="tracking">Track all</button></div>${orderRows(records.slice(0, 5))}`;
+      `<div class="sng-metrics three">${metric('ORDERED', totals.orders, '', 'box', delta.orders)}${metric('IN TRANSIT', totals.transit, 'cyan', 'tracking', delta.transit)}${metric('DELIVERED', totals.delivered, 'green', 'home', delta.delivered)}</div><div class="sng-section-title"><h2>Top products</h2><button type="button" data-app-view="products">View all</button></div>${productRows(products.slice(0, 3), true)}<div class="sng-section-title"><h2>Recent orders</h2><button type="button" data-app-view="tracking">Track all</button></div>${orderRows(records.slice(0, 5))}` +
+        (holdsInPeriod().length ? `<div class="sng-section-title"><h2>Review holds · not confirmed</h2></div>${orderRows(holdsInPeriod().slice(0, 5), true)}` : '');
     if (view === 'tracking') {
-      const trackable = [...records, ...cancelledInPeriod()];
+      const trackable = [...records, ...holdsInPeriod(), ...cancelledInPeriod()];
       html = common + hero('IN TRANSIT', `${totals.transit} packages`, `${totals.awaiting} awaiting shipment · ${totals.delivered} delivered`, 'orange') +
-        `<label class="sng-search">Search retailer, product or tracking number<input id="sng-search" value="${e(query)}" placeholder="Search packages" type="search"></label><div class="sng-status-filters" role="group" aria-label="Shipping status">${['all', 'ordered', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled'].map(s => `<button type="button" data-app-status="${s}" aria-pressed="${s === status}">${s === 'all' ? 'All' : stageLabels[s]} <span>${s === 'all' ? trackable.length : trackable.filter(r => shippingStage(r) === s).length}</span></button>`).join('')}</div><div class="sng-section-title"><h2>Packages</h2><span>Live updates</span></div><div id="sng-search-results"></div>`;
+        `<label class="sng-search">Search retailer, product or tracking number<input id="sng-search" value="${e(query)}" placeholder="Search packages" type="search"></label><div class="sng-status-filters" role="group" aria-label="Shipping status">${['all', 'ordered', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'review_hold', 'cancelled'].map(s => `<button type="button" data-app-status="${s}" aria-pressed="${s === status}">${s === 'all' ? 'All' : stageLabels[s]} <span>${s === 'all' ? trackable.length : trackable.filter(r => shippingStage(r) === s).length}</span></button>`).join('')}</div><div class="sng-section-title"><h2>Packages</h2><span>Live updates</span></div><div id="sng-search-results"></div>`;
     }
     if (view === 'products') html = common + `<div class="sng-segment-label">PRODUCTS SECURED</div>` + hero('PRODUCT VALUE', money(totals.spend), `${totals.items} items · ${products.length} products`, 'pink') +
       `<div class="sng-section-title"><h2>Metrics</h2></div><div class="sng-metrics">${metric('TOTAL QUANTITY', totals.items)}${metric('DELIVERED ORDERS', totals.delivered)}${metric('IN TRANSIT', totals.transit)}${metric('AWAITING SHIPMENT', totals.awaiting)}${metric('ORDER VALUE', money(totals.spend))}${metric('PRODUCTS', products.length)}</div><label class="sng-search">Search products<input id="sng-search" value="${e(query)}" placeholder="Search products" type="search"></label><div class="sng-section-title"><h2>Products <span>${products.length}</span></h2></div><div id="sng-search-results"></div>`;
@@ -134,6 +144,7 @@ if (appEnabled) {
         `<div class="sng-metrics">${metric('AVG ORDER', money(totals.orders ? totals.spend / totals.orders : 0), 'cyan')}${metric('ORDERS', totals.orders, 'violet')}${metric('BIGGEST PERIOD', money(biggest.value))}${metric('RETAILERS', retailers.length)}</div>` +
         breakdown('By retailer', retailers, totals.orders) + breakdown('By status', statuses, totals.orders) +
         `<div class="sng-section-title"><h2>Order history</h2></div>${orderRows(records)}` +
+        (holdsInPeriod().length ? `<div class="sng-section-title"><h2>Review holds — retailer may cancel</h2></div>${orderRows(holdsInPeriod(), true)}` : '') +
         (cancelledInPeriod().length ? `<div class="sng-section-title"><h2>Cancelled / refunded orders</h2></div>${orderRows(cancelledInPeriod(), true)}` : '');
     }
     if (view === 'settings') html = `<div class="sng-page-intro"><h1>Settings</h1><p>Manage your app and account preferences.</p></div><div class="sng-settings-list"><button type="button" data-app-theme>${icon('sun')} ${theme === 'night' ? 'Switch to day mode' : 'Switch to night mode'}</button><button type="button" data-app-notification-settings>${icon('notifications')} Notification preferences</button><button type="button" data-setting-profile="edit-profile">${icon('profile')} Saved information</button><button type="button" data-setting-profile="security">${icon('settings')} Account security</button><button type="button" data-setting-profile="orders">${icon('box')} Billing and orders</button></div>`;
@@ -147,7 +158,7 @@ if (appEnabled) {
   function renderSearch() {
     const target = document.getElementById('sng-search-results'); if (!target) return;
     const successes = selectedOrders(orders, days);
-    const records = view === 'tracking' ? [...successes, ...cancelledInPeriod()] : successes;
+    const records = view === 'tracking' ? [...successes, ...holdsInPeriod(), ...cancelledInPeriod()] : successes;
     const needle = query.toLowerCase();
     target.innerHTML = view === 'products' ? productRows(dashboardProducts(successes).filter(p => `${p.name} ${p.retailer}`.toLowerCase().includes(needle))) :
       orderRows(records.filter(order => (status === 'all' || shippingStage(order) === status) && `${order.retailer} ${order.orderNumber} ${order.shipping?.trackingNumber || ''} ${(order.items || []).map(p => p.name).join(' ')}`.toLowerCase().includes(needle)), true);
@@ -181,6 +192,7 @@ if (appEnabled) {
       if (ADMIN_PREVIEW_MODE) {
         orders = adminPreviewSuccessData().recentCheckouts;
         cancelledOrders = [];
+        reviewHoldOrders = [];
       } else {
         const end = new Date(), start = new Date(); start.setUTCDate(start.getUTCDate() - 365);
         const response = await fetch(`/api/account/success?appView=1&start=${start.toISOString().slice(0, 10)}&end=${end.toISOString().slice(0, 10)}`, { credentials: 'same-origin', cache: 'no-store' });
@@ -190,6 +202,8 @@ if (appEnabled) {
         orders = Array.isArray(data.checkouts) ? data.checkouts : data.recentCheckouts || [];
         cancelledOrders = Array.isArray(data.cancelledCheckouts) ?
           data.cancelledCheckouts.filter(order => visibleLateCancellation(order)) : [];
+        reviewHoldOrders = Array.isArray(data.reviewHoldCheckouts) ?
+          data.reviewHoldCheckouts.filter(order => order.status === 'review_hold') : [];
       }
       error = ''; accountId = id;
     } catch (failure) { error = failure.message; }
