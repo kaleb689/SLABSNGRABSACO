@@ -16249,10 +16249,19 @@ async function refreshPublicSuccess() {
     const spentNote = document.getElementById("public-success-spent-note");
     if (spentNote) {
       const pending = Math.max(0, Math.floor(Number(data.pricePendingCheckouts) || 0));
-      spentNote.textContent = pending
-        ? `${pending.toLocaleString()} confirmed checkout${pending === 1 ? "" : "s"} awaiting verified paid totals — displayed spend is confirmed amounts only.`
+      const archivedCount = Math.max(0, Math.floor(Number(data.historicalCheckouts) || 0));
+      const archivedSpent = Number(data.historicalSpent) || 0;
+      const historicalNote = archivedCount
+        ? `Includes ${archivedCount.toLocaleString()} earlier reported checkouts (${formatSuccessCurrency(archivedSpent)} historical summary; no individual archived receipts).`
         : "";
-      spentNote.hidden = !pending;
+      const pendingNote = pending
+        ? `${pending.toLocaleString()} confirmed checkout${pending === 1 ? "" : "s"} still awaiting verified paid totals.`
+        : "";
+      const roundingNote = Number(data.reportedReconciliation) > 0
+        ? `${formatSuccessCurrency(data.reportedReconciliation)} owner-reference total reconciliation.`
+        : "";
+      spentNote.textContent = [historicalNote, pendingNote, roundingNote].filter(Boolean).join(" ");
+      spentNote.hidden = !spentNote.textContent;
     }
     publicSuccessState.products = Array.isArray(data.products) ? data.products : [];
     publicSuccessState.index = Math.min(publicSuccessState.index, Math.max(0, publicSuccessState.products.length - 1));
