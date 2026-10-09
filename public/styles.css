@@ -3212,6 +3212,8 @@ select:focus {
 #home .public-success-products-head > span { color: #ff85dc; text-shadow: 0 0 11px rgba(219,62,177,.65); }
 #home .public-success-stats strong { display: block; margin-top: 8px; font-size: clamp(1.55rem,2.5vw,2.2rem); color: #effaff;
   text-shadow: 0 0 14px rgba(65,182,230,.38); }
+#home .public-success-spent-note { display: block; margin-top: 5px; font-size: .68rem; line-height: 1.35; color: #a7cad8; }
+#home .public-success-spent-note[hidden] { display: none; }
 #home .public-success-products-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 #home .public-success-controls { display: flex; align-items: center; gap: 7px; color: #b9cfe2; font-size: .78rem; white-space: nowrap; }
 #home .public-success-controls button {
