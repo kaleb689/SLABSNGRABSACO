@@ -13,7 +13,7 @@ function renderHit(order) {
     order, payload: null,
     confirmedDiscordPurchase: o => o.status === "confirmed",
     normalizeSuccessRetailer: r => r === "PKC" ? "PKC" : String(r || "Retailer"),
-    publicSuccessProductName: s => String(s || "").trim().replace(/^\\*\\*(.+)\\*\\*$/, "$1"),
+    publicSuccessProductName: s => String(s || "").trim().replace(/^\*\*(.+)\*\*$/, "$1"),
     publicSuccessProductImage: (_n, _r, url) => url || null,
     clean: (s, len) => String(s || "").slice(0, len)
   };
@@ -67,11 +67,11 @@ test("formatting existing sent Discord hits edits known message IDs, never posts
   const end = server.indexOf("\nfunction discordCheckoutIdentity(", start);
   assert.ok(start > -1 && end > start);
   const mirror = server.slice(start, end);
-  assert.match(mirror, /Object\\.entries\\(state\\.sent\\)/);
-  assert.match(mirror, /uniqueBySource\\.has\\(id\\)/);
+  assert.match(mirror, /Object\.entries\(state\.sent\)/);
+  assert.match(mirror, /uniqueBySource\.has\(id\)/);
   assert.match(mirror, /method: "PATCH"/);
   assert.match(mirror, /renderVersion: DISCORD_HIT_RENDER_VERSION/);
-  assert.match(mirror, /if \\(state\\.sent\\[sourceMessageId\\]\\) continue;/);
+  assert.match(mirror, /if \(state\.sent\[sourceMessageId\]\) continue;/);
   assert.match(mirror, /No fallback to POST/);
 });
 
@@ -81,7 +81,7 @@ test("community total logic counts unassigned confirmed checkouts but not cancel
   assert.ok(start > 0 && end > start);
   const handler = server.slice(start, end);
   assert.match(handler, /visibleDiscordSuccessRecords/);
-  assert.match(handler, /totalCheckouts \\+= 1/);
+  assert.match(handler, /totalCheckouts \+= 1/);
   assert.doesNotMatch(handler, /customerAccountId/);
   assert.match(handler, /pricePendingCheckouts/);
   assert.match(handler, /publicSuccessProductImage/);
