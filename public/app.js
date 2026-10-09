@@ -16246,6 +16246,14 @@ async function refreshPublicSuccess() {
     const data = await response.json();
     rollSuccessMetric("public-success-checkouts", data.totalCheckouts);
     rollSuccessMetric("public-success-spent", data.totalSpent, true);
+    const spentNote = document.getElementById("public-success-spent-note");
+    if (spentNote) {
+      const pending = Math.max(0, Math.floor(Number(data.pricePendingCheckouts) || 0));
+      spentNote.textContent = pending
+        ? `${pending.toLocaleString()} confirmed checkout${pending === 1 ? "" : "s"} awaiting verified paid totals — displayed spend is confirmed amounts only.`
+        : "";
+      spentNote.hidden = !pending;
+    }
     publicSuccessState.products = Array.isArray(data.products) ? data.products : [];
     publicSuccessState.index = Math.min(publicSuccessState.index, Math.max(0, publicSuccessState.products.length - 1));
     renderPublicSuccessProduct();
