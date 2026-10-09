@@ -96,3 +96,84 @@ body.admin-page .admin-global-profile-search-box input{width:100%;}
 @media(prefers-reduced-motion:reduce){
   body.admin-page button{transition:none!important;}
 }
+
+/* Customer-app inspired action pills and dashboard trackers */
+body.admin-page {
+  --admin-button-bg:linear-gradient(110deg,#7760e9,#258aca);
+  --admin-button-fg:#fff;
+  --admin-card-bg:#102033;
+  --admin-card-text:#eef8ff;
+}
+body.admin-page #dashboard button:not(.admin-theme-switch):not(.managed-delete-button):not(.admin-search-clear-button),
+body.admin-page .admin-login-card button {
+  border-radius:13px;
+  font-weight:800;
+  min-height:42px;
+}
+body.admin-page #dashboard :is(.admin-edit-button,.admin-head-actions button,#checkManagedSuccessMailbox,#scanManagedSuccessMailbox) {
+  background:var(--admin-button-bg);
+  color:var(--admin-button-fg);
+  border:1px solid rgba(143,210,255,.35);
+  box-shadow:0 5px 17px rgba(73,91,193,.2);
+}
+body.admin-page #dashboard button[aria-pressed="true"],
+body.admin-page #dashboard button.active {
+  background:linear-gradient(105deg,#855df0,#25b9d9);
+  color:#fff;
+  border-color:#a7e5ff;
+}
+body.admin-page :is(.managed-availability-tracker,.managed-availability-card,.customer-order,.admin-feature-panel,.admin-summary) {
+  border:1px solid var(--admin-outline);
+  border-radius:20px;
+  background:var(--admin-card-bg);
+  color:var(--admin-card-text);
+  box-shadow:0 9px 26px rgba(0,0,0,.12);
+}
+body.admin-page .managed-availability-card:nth-child(4n+1) {border-top:3px solid #9870f6;}
+body.admin-page .managed-availability-card:nth-child(4n+2) {border-top:3px solid #36cdeb;}
+body.admin-page .managed-availability-card:nth-child(4n+3) {border-top:3px solid #40d7aa;}
+body.admin-page .managed-availability-card:nth-child(4n+4) {border-top:3px solid #ffbf56;}
+body.admin-page .managed-availability-number {font-weight:900;letter-spacing:-.05em;color:#52d6f4;font-variant-numeric:tabular-nums;}
+body.admin-page .managed-availability-card:nth-child(4n+1) .managed-availability-number {color:#ae88ff;}
+body.admin-page .managed-availability-card:nth-child(4n+3) .managed-availability-number {color:#40d7aa;}
+body.admin-page .managed-availability-card:nth-child(4n+4) .managed-availability-number {color:#ffbf56;}
+body.admin-page .customer-order[open] {border-color:#4fafe5;box-shadow:0 12px 28px rgba(21,134,211,.13);}
+body.admin-page .admin-scan-progress progress{accent-color:#36d4a4;}
+body.admin-page .admin-theme-switch{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:44px;padding:10px 16px;border:1px solid var(--admin-outline);
+  border-radius:999px;background:var(--admin-card-bg);color:var(--admin-card-text);
+  font:800 12px/1.2 inherit;cursor:pointer;white-space:nowrap;
+}
+body.admin-page .admin-theme-switch:hover{border-color:#45cce7;}
+body.admin-page .admin-theme-switch svg{width:18px;height:18px;}
+body.admin-page[data-admin-theme="light"]{
+  color:#142238;
+  --admin-surface:#fff;
+  --admin-raised:#f0f6fc;
+  --admin-outline:#cedce9;
+  --admin-copy:#172b43;
+  --admin-muted:#54677c;
+  --admin-card-bg:#fff;
+  --admin-card-text:#162942;
+  --admin-button-bg:linear-gradient(105deg,#684dd6,#1386c1);
+  --admin-button-fg:#fff;
+  background:radial-gradient(ellipse at 0 0,rgba(104,77,214,.09),transparent 44%),linear-gradient(165deg,#f7fbff,#e7f0f9)!important;
+}
+body.admin-page[data-admin-theme="light"] :is(.admin-head,.admin-summary,.admin-feature-panel,.admin-mailbox-status,.admin-global-profile-search,.admin-pool-browser,.admin-login-card){
+  color:#172b43;background:linear-gradient(160deg,#fff,#f1f7fc);border-color:#cedce9;
+  box-shadow:0 10px 30px rgba(35,78,115,.08);
+}
+body.admin-page[data-admin-theme="light"] :is(.admin-head-copy h1,.admin-feature-panel > summary,.admin-pool-disclosure > summary,.customer-main strong,.managed-availability-head h2){color:#152a42;}
+body.admin-page[data-admin-theme="light"] :is(.admin-head-copy p,.admin-user-view-note,.managed-availability-head p){color:#526780;}
+body.admin-page[data-admin-theme="light"] :is(input:not([type="checkbox"]):not([type="radio"]),select,textarea){
+  background:#fff!important;color:#172b43!important;border-color:#b9cadd!important;
+}
+body.admin-page[data-admin-theme="light"] :is(input,textarea)::placeholder{color:#657a92;}
+body.admin-page[data-admin-theme="light"] .customer-order-summary:hover{background:#eaf5ff;}
+body.admin-page[data-admin-theme="light"] .managed-availability-details{color:#526780;opacity:1;}
+body.admin-page[data-admin-theme="light"] .admin-theme-switch{background:#fff;color:#172b43;}
+@media(max-width:700px){
+  body.admin-page .admin-theme-switch{width:100%;margin-bottom:8px;}
+  body.admin-page .managed-availability-card{padding:17px;}
+}
