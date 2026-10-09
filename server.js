@@ -38921,7 +38921,7 @@ app.get(
         if (!/^(confirmed|success|completed)$/i.test(String(record.status || "confirmed"))) continue;
         const eligibleItems = (Array.isArray(record.items) ? record.items : []).filter(item => {
           const name = publicSuccessProductName(item?.name);
-          return name && isPublicSuccessProduct(name) && !/@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name) && Number(item?.quantity) > 0;
+          return name && isSafeDiscordCheckoutProductName(name) && !/@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name) && Number(item?.quantity) > 0;
         });
         totalCheckouts += 1;
         const total = Number(record.orderTotal);
