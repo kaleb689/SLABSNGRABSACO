@@ -10292,6 +10292,38 @@ function linkedProfileRetailerGroupsHtml(
 }
 
 
+function renderCustomerAddedProfileCards(region, profiles, orderId) {
+  if (!region) return;
+  const saved = Array.isArray(profiles) ? profiles : [];
+  const previous = region.querySelector("details[data-personal-profiles]")?.open;
+  const existingOpenSlots = new Set(
+    [...region.querySelectorAll("[data-retailer-slot][open]")].map(el => el.dataset.retailerSlot)
+  );
+  const wrapper = document.createElement("details");
+  wrapper.className = "linked-retailer-profile-group";
+  wrapper.dataset.personalProfiles = "true";
+  wrapper.open = previous === undefined ? true : previous;
+  const header = document.createElement("summary");
+  header.textContent = "CUSTOMER-ADDED PROFILES (" + saved.length + ") — VIEW / EDIT";
+  wrapper.append(header);
+  const body = document.createElement("div");
+  body.className = "linked-retailer-profile-group-body";
+  if (!saved.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "No saved customer-added profiles were found for this customer account.";
+    body.append(empty);
+  } else {
+    body.innerHTML = saved.map(profile => retailerProfileHtml(orderId, profile)).join("");
+  }
+  wrapper.append(body);
+  region.replaceChildren(wrapper);
+  body.querySelectorAll("[data-retailer-slot]").forEach(el => {
+    el.open = existingOpenSlots.has(el.dataset.retailerSlot);
+  });
+  // Reuse the exact save/edit bindings from the standard paid profile cards.
+  bindRetailerProfileForms();
+}
+
 async function loadAdminLinkedProfiles(
   orderId
 ) {
@@ -10379,33 +10411,11 @@ async function loadAdminLinkedProfiles(
         );
         if (!response.ok) throw new Error("Could not load customer-added profiles.");
         const data = await response.json();
-        const saved = Array.isArray(data.profiles) ? data.profiles : [];
-        const region = container.querySelector("[data-personal-linked-profiles]");
-        const disclosure = document.createElement("details");
-        disclosure.className = "linked-retailer-profile-group";
-        disclosure.open = true;
-        const summary = document.createElement("summary");
-        summary.textContent = "CUSTOMER-ADDED PROFILES (" + saved.length + ")";
-        disclosure.append(summary);
-        const body = document.createElement("div");
-        body.className = "linked-retailer-profile-group-body";
-        if (!saved.length) body.textContent = "No customer-added profiles stored.";
-        for (const profile of saved) {
-          const entry = document.createElement("div");
-          entry.className = "pool-profile-meta";
-          const retailerKeys = Object.entries(profile.retailers || {})
-            .filter(([, account]) => Boolean(account?.username))
-            .map(([retailer]) => retailer === "pokemoncenter" || retailer === "pkc"
-              ? "Pokemon Center" : retailer === "target" ? "Target"
-              : retailer === "walmart" ? "Walmart" : retailer);
-          entry.textContent = (profile.profileName || profile.customerProfile?.profileName ||
-            "Profile " + profile.slot) + " · " +
-            (retailerKeys.length ? retailerKeys.join(", ") : "Customer-added profile") + " · " +
-            (profile.activationLabel || profile.activationStatus || "Awaiting activation");
-          body.append(entry);
-        }
-        disclosure.append(body);
-        region.replaceChildren(disclosure);
+        renderCustomerAddedProfileCards(
+          container.querySelector("[data-personal-linked-profiles]"),
+          data.profiles,
+          orderId
+        );
       } catch (error) {
         container.querySelector("[data-personal-linked-profiles]").textContent = error.message;
       }
@@ -10493,31 +10503,7 @@ async function loadAdminLinkedProfiles(
         );
         if (!response.ok) throw new Error("Saved personal profiles could not be loaded.");
         const data = await response.json();
-        const saved = Array.isArray(data.profiles) ? data.profiles : [];
-        const disclosure = document.createElement("details");
-        disclosure.className = "linked-retailer-profile-group";
-        const summary = document.createElement("summary");
-        summary.textContent = "CUSTOMER-ADDED PROFILES (" + saved.length + ")";
-        disclosure.append(summary);
-        const body = document.createElement("div");
-        body.className = "linked-retailer-profile-group-body";
-        if (!saved.length) body.textContent = "No customer-added profiles stored.";
-        saved.forEach(profile => {
-          const entry = document.createElement("div");
-          entry.className = "pool-profile-meta";
-          const retailerKeys = Object.entries(profile.retailers || {})
-            .filter(([, account]) => Boolean(account?.username))
-            .map(([retailer]) => retailer === "pokemoncenter" || retailer === "pkc"
-              ? "Pokemon Center" : retailer === "target" ? "Target"
-              : retailer === "walmart" ? "Walmart" : retailer);
-          entry.textContent = (profile.profileName || profile.customerProfile?.profileName ||
-            "Profile " + profile.slot) + " · " +
-            (retailerKeys.length ? retailerKeys.join(", ") : "Customer-added profile") + " · " +
-            (profile.activationLabel || profile.activationStatus || "Awaiting activation");
-          body.append(entry);
-        });
-        disclosure.append(body);
-        personalArea.replaceChildren(disclosure);
+        renderCustomerAddedProfileCards(personalArea, data.profiles, orderId);
       } catch (error) {
         personalArea.textContent = error.message;
       }
