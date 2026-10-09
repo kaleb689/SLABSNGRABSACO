@@ -1,6 +1,7 @@
 (() => {
 const $=id=>document.getElementById(id),esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let tab="overview",data={customers:[],activation:null,availability:null,usage:null},authenticated=false,stream=null;
+let tab="overview",data={customers:[],activation:null,availability:null,usage:null,success:{records:[]}},authenticated=false,stream=null;
+let successDays=7;
 let customerSearchText="", mobileRefreshTimer=null, mobileRefreshPending=false, mobileRefreshRunning=false;
 const mobileControlFocused=()=>{
   const active=document.activeElement;
@@ -27,10 +28,43 @@ function customerName(x){const p=x.profile||{};return [p.firstName,p.lastName].f
 function customers(){return Array.isArray(data.customers)?data.customers:data.customers.submissions||[];}
 function activationCount(a,status){if(!Array.isArray(a?.customers))return "—";const profiles=a.customers.flatMap(c=>Array.isArray(c.profiles)?c.profiles:[]).filter(p=>p.type==="paid");return profiles.filter(p=>p.status===status).length;}
 function render(){
-$("heading").textContent=({overview:"Overview",customers:"Customers",profiles:"Profiles",usage:"App Usage",more:"More"})[tab];
+$("heading").textContent=({overview:"Overview",success:"Success",customers:"Customers",profiles:"Profiles",usage:"App Usage",more:"More"})[tab];
 document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
 const list=customers(),a=data.activation||{},v=data.availability||{},u=data.usage||{},c=$("content");
 if(tab==="overview"){c.innerHTML='<div class="metrics">'+metric("Customer orders",list.length)+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("App users · 7 days",u.activeUsers7d??"—")+metric("Installed devices",u.installedDevices??"—")+'</div>'+panel("Quick actions",'<div class="links"><a class="action" href="/admin.html">OPEN FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html#profileActivationTracker">PROFILE ACTIVATION TOOLS ↗</a></div>')+panel("Status","<p>Data refreshes automatically while this app is open. Sensitive changes use the full secure admin interface.</p>");}
+if(tab==="success"){
+  const days=successDays, cutoff=Date.now()-days*86400000;
+  const records=(data.success?.records||[]).filter(x=>{
+    const time=new Date(x.checkoutAt).getTime();
+    return Number.isFinite(time) && time>=cutoff && time<=Date.now()+60000;
+  });
+  const dollars=n=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(n)||0);
+  const spent=records.reduce((sum,x)=>sum+Math.max(0,Number(x.orderTotal)||0),0);
+  const retailers=new Map(),products=new Map();
+  records.forEach(order=>{
+    const retailer=String(order.retailer||"Other");
+    retailers.set(retailer,(retailers.get(retailer)||0)+1);
+    (order.items||[]).forEach(item=>{
+      const name=String(item.name||"Product");
+      const key=retailer.toLowerCase()+"|"+name.toLowerCase();
+      const entry=products.get(key)||{name,retailer,quantity:0,imageUrl:item.imageUrl||""};
+      entry.quantity+=Math.max(0,Number(item.quantity)||0);
+      if(!entry.imageUrl)entry.imageUrl=item.imageUrl||"";
+      products.set(key,entry);
+    });
+  });
+  const palette=["#32d9f9","#a48dff","#ffcf68","#5be1a4","#fe8bae","#ff9b66"];
+  const n=records.length;
+  const chart=Array.from(retailers.entries()).sort((a,b)=>b[1]-a[1]);
+  let offset=0;
+  const parts=chart.map(([,count],i)=>{const start=offset;offset+=n?count/n*100:0;return palette[i%palette.length]+" "+start+"% "+offset+"%";});
+  const donut='<div style="width:165px;height:165px;border-radius:50%;margin:16px auto;display:grid;place-items:center;background:conic-gradient('+(parts.join(",")||"#264458 0% 100%")+')"><div style="background:#071826;border-radius:50%;width:113px;height:113px;display:grid;place-items:center;text-align:center;font-size:24px;font-weight:900">'+n+'<small style="display:block;font-size:10px;color:#a2bed0">ORDERS</small></div></div>';
+  const legend=chart.map(([name,count],i)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #22445a"><span><i style="display:inline-block;background:'+palette[i%palette.length]+';width:10px;height:10px;border-radius:50%;margin-right:9px"></i>'+esc(name)+'</span><strong>'+count+' · '+(n?(100*count/n).toFixed(1):"0")+'%</strong></div>').join("");
+  const validImage=url=>typeof url==="string" && /^(https:\/\/|\/(?!\/))/.test(url);
+  const productList=Array.from(products.values()).sort((a,b)=>b.quantity-a.quantity).map(p=>'<div class="item" style="display:flex;align-items:center;gap:12px"><img alt="" loading="lazy" src="'+esc(validImage(p.imageUrl)?p.imageUrl:"/slabsngrabs-aco-logo-transparent.png")+'" style="width:58px;height:58px;object-fit:contain;border-radius:9px;background:#102638"><div style="flex:1;min-width:0"><strong>'+esc(p.name)+'</strong><small>'+esc(p.retailer)+'</small></div><strong style="color:#6be8ff;white-space:nowrap">×'+p.quantity+'</strong></div>').join("")||'<p>No matching purchases in this period.</p>';
+  c.innerHTML='<div class="panel" style="margin-top:0"><h2>Confirmed ACO Checkouts</h2><p>Only attributed success-channel checkouts for customer paid, personal, or linked accounts.</p><div role="group" style="display:flex;gap:8px">'+[1,7,30].map(v=>'<button type="button" data-success-days="'+v+'" aria-pressed="'+(v===days)+'" style="flex:1;padding:12px;border-radius:10px;border:1px solid #2885a9;color:#fff;background:'+(v===days?"#166f9b":"#0b293b")+'">'+(v===1?"24HR":v+" DAYS")+'</button>').join("")+'</div></div><div class="metrics" style="margin-top:14px">'+metric("Total spent",dollars(spent))+metric("Total orders",n)+'</div>'+panel("Orders by retailer",donut+legend)+panel("Products purchased",productList);
+  c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{successDays=Number(b.dataset.successDays);render();}));
+}
 if(tab==="customers"){c.innerHTML='<input class="search" id="customer-search" type="search" placeholder="Search name or email">'+ '<div id="customer-results"></div>';$("customer-search").value=customerSearchText;const show=()=>{customerSearchText=$("customer-search").value;const q=customerSearchText.toLowerCase();$("customer-results").innerHTML=list.filter(x=>(customerName(x)+" "+(x.profile?.email||"")).toLowerCase().includes(q)).slice(0,150).map(x=>'<article class="item"><strong>'+esc(customerName(x))+'</strong><small>'+esc(x.profile?.email||"")+' · '+esc(x.plan?.name||"Membership")+'</small><button data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>').join("")||"<p>No matching customers.</p>";};$("customer-search").addEventListener("input",show);show();}
 if(tab==="profiles"){c.innerHTML='<div class="metrics">'+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("Activated",activationCount(a,"activated"))+metric("Expired",activationCount(a,"expired"))+metric("Customer orders",list.length)+'</div>'+panel("Profile workflow",'<p>Open the full tracker to activate, extend, or return profiles using the existing verified controls.</p><a href="/admin.html#profileActivationTracker">OPEN PROFILE WORKFLOW ↗</a>')+panel("Inventory",'<p>Target, Walmart, and Pokémon Center inventory remains managed in the full Admin dashboard.</p><a href="/admin.html">OPEN INVENTORY MANAGER ↗</a>');}
 if(tab==="usage"){c.innerHTML='<div class="metrics">'+metric("Installed users",u.installedUsers??"—")+metric("Installed devices",u.installedDevices??"—")+metric("Active users · 7D",u.activeUsers7d??"—")+metric("Active users · 30D",u.activeUsers30d??"—")+'</div>'+panel("Tracking information","<p>Counts begin when updated customer apps report activity. PWA installs are confirmed by app mode or an installation event; they are not App Store downloads.</p>")+panel("Recent activity",(u.recent||[]).slice(0,50).map(x=>'<article class="item"><strong>'+esc(x.name||"Customer")+'</strong><small>'+esc(x.email||"")+' · '+esc(x.platform||"Other")+' · '+(x.installedConfirmed?"Installed":"Web activity")+'</small><small>Last active: '+esc(x.lastSeenAt?new Date(x.lastSeenAt).toLocaleString():"—")+'</small></article>').join("")||"<p>No app activity has been recorded yet.</p>");}
@@ -50,9 +84,10 @@ async function refresh(force=false){
       get("/api/admin/submissions"),
       get("/api/admin/profile-activation-tracker"),
       get("/api/managed-availability"),
-      get("/api/admin/app-usage")
+      get("/api/admin/app-usage"),
+      get("/api/admin/success-overview")
     ]);
-    const keys=["customers","activation","availability","usage"];
+    const keys=["customers","activation","availability","usage","success"];
     results.forEach((r,i)=>{if(r.status==="fulfilled")data[keys[i]]=r.value;});
     if(results.some(r=>r.status==="rejected"&&r.reason.message==="SESSION_EXPIRED")){
       auth(false);return;
