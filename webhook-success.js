@@ -29,7 +29,7 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
   };
   const oldStatusTime = Math.max(when(prior.statusUpdatedAt || prior.checkoutAt), when(prior.cancelledAt || prior.canceledAt));
   const newStatusTime = when(order.statusUpdatedAt || order.checkoutAt);
-  const updateStatus = !matches.length || (newStatusTime >= oldStatusTime && order.status !== 'unverified');
+  const updateStatus = !matches.length || newStatusTime >= oldStatusTime;
   const nextStatus = updateStatus ? (order.status || 'unverified') : (prior.status || 'unverified');
   const nextStatusAt = updateStatus ? (order.statusUpdatedAt || order.checkoutAt || null) :
     (prior.statusUpdatedAt || null);
