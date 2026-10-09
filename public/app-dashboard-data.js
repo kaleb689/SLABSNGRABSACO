@@ -1,5 +1,17 @@
+// Only cancellations that occurred at least 24 hours after checkout belong
+// in a customer's tracking/history display. This mirrors the server rule.
+export function visibleLateCancellation(order, now = new Date()) {
+  const cancelled = Boolean(order?.cancelledAt || order?.canceledAt ||
+    /cancel|refund|failed|declined/i.test(String(order?.status || '')));
+  if (!cancelled) return false;
+  const placed = Date.parse(order?.checkoutAt || '');
+  const ended = Date.parse(order?.cancelledAt || order?.canceledAt || '');
+  return Number.isFinite(placed) && Number.isFinite(ended) &&
+    ended - placed >= 24 * 60 * 60 * 1000 && ended <= now.getTime() + 60 * 1000;
+}
 export function shippingStage(order) {
-  if (/cancel|refund|failed|declined/i.test(order.status || '')) return 'cancelled';
+  if (order?.cancelledAt || order?.canceledAt ||
+      /cancel|refund|failed|declined/i.test(order.status || '')) return 'cancelled';
   const status = order.shipping?.status;
   return ['shipped', 'in_transit', 'out_for_delivery', 'delivered'].includes(status) ? status : 'ordered';
 }
