@@ -43611,7 +43611,7 @@ async function sendShippingDiscordDm(account, record, shipping) {
   return true;
 }
 
-async function scanMailboxForShipping(mailbox, records, account) {
+async function scanMailboxForShipping(mailbox, records, account, pendingChanges) {
   const { client } = createCustomerImapClient(mailbox.email, mailbox.password);
   let changed = false;
   try {
@@ -43645,26 +43645,35 @@ async function scanMailboxForShipping(mailbox, records, account) {
         const status = cancellation ? "cancelled" : shippingStatusFromMessage(subject, combined);
         if (!status) continue;
 
-        const matching = records.filter(record => {
-          const orderNumber = String(record.orderNumber || "").trim();
-          if (orderNumber && combined.toLowerCase().includes(orderNumber.toLowerCase())) return true;
-          if (cancellation) return false;
-          const retailer = String(record.retailer || "").toLowerCase();
-          const itemName = String(record.items?.[0]?.name || "").toLowerCase();
-          return retailer && combined.toLowerCase().includes(retailer) &&
-            itemName && combined.toLowerCase().includes(itemName.slice(0, Math.min(24, itemName.length)));
+        // A customer's inbox can include purchases outside this ACO service.
+        // Require an exact existing webhook order number, one unique match,
+        // and a trusted retailer From address. Product names never match.
+        const record = matchVerifiedWebhookEmail(records, {
+          senders: message.envelope?.from || [],
+          subject,
+          text: decoded.text || "",
+          html: decoded.html || "",
+          receivedAt: message.internalDate || message.envelope?.date
         });
-        if (matching.length !== 1) continue;
-
-        const record = matching[0];
+        if (!record || String(record.customerAccountId) !== String(account.id)) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
         if (cancellation) {
-          if (!cancelledOrder(record)) { record.status = "cancelled"; record.cancelledAt = messageAt; changed = true; }
+          if (!cancelledOrder(record)) {
+            record.status = "cancelled";
+            record.cancelledAt = messageAt;
+            pendingChanges.push({
+              id: record.id, customerAccountId: String(account.id),
+              retailer: record.retailer, orderNumber: record.orderNumber,
+              cancelledAt: messageAt
+            });
+            changed = true;
+          }
           continue;
         }
         if (cancelledOrder(record)) continue;
         const prior = record.shipping && typeof record.shipping === "object" ? record.shipping : {};
         if (shippingStatusRank(status) < shippingStatusRank(prior.status)) continue;
+        if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(messageAt)) continue;
 
         const next = {
           status,
@@ -43677,15 +43686,20 @@ async function scanMailboxForShipping(mailbox, records, account) {
           source: "retailer_email"
         };
 
-        const notify = prior.status !== next.status &&
-          (next.status === "shipped" || next.status === "in_transit" || next.status === "out_for_delivery" || next.status === "delivered");
+        // Do not persist a new updatedAt or notify when the mailbox repeats
+        // an unchanged status or the same tracking details.
+        const before = JSON.stringify([prior.status, prior.enRouteAt, prior.estimatedDelivery,
+          prior.deliveredAt, prior.trackingUrl, prior.address]);
+        const after = JSON.stringify([next.status, next.enRouteAt, next.estimatedDelivery,
+          next.deliveredAt, next.trackingUrl, next.address]);
+        if (before === after) continue;
         record.shipping = next;
+        pendingChanges.push({
+          id: record.id, customerAccountId: String(account.id),
+          retailer: record.retailer, orderNumber: record.orderNumber,
+          shipping: next
+        });
         changed = true;
-
-        if (notify) {
-          try { await sendShippingDiscordDm(account, record, next); }
-          catch (error) { console.error("Shipping Discord DM failed:", error?.message || "shipping_dm_error"); }
-        }
       }
     } finally {
       lock.release();
@@ -43704,10 +43718,11 @@ async function syncShippingTrackers() {
   try {
     const accounts = await getCustomerAccounts();
     const records = await getSuccessCheckouts();
-    let changed = false;
+    const pendingChanges = [];
     for (const account of accounts) {
       if (account.disabled === true) continue;
       const owned = records.filter(record =>
+        isVerifiedDiscordCheckout(record) &&
         String(record.customerAccountId || "") === String(account.id) &&
         record.orderNumber && !cancelledOrder(record) &&
         shippingStatusRank(record.shipping?.status) < 4
@@ -43718,15 +43733,67 @@ async function syncShippingTrackers() {
       catch { continue; }
       for (const mailbox of mailboxes) {
         try {
-          if (await scanMailboxForShipping(mailbox, owned, account)) changed = true;
+          await scanMailboxForShipping(mailbox, owned, account, pendingChanges);
         } catch (error) {
           console.error("Shipping tracker mailbox scan:", mailboxFailureReason(error));
         }
       }
     }
-    if (changed) {
-      await saveSuccessCheckouts(records);
-      for (const account of accounts) announceSuccessCheckout(account.id);
+    if (!pendingChanges.length) return;
+    const discordDms = new Map();
+    const changedAccounts = new Set();
+    // Merge on the latest checkout store INSIDE the same lock as Discord
+    // webhook imports, so a slow IMAP scan never overwrites newer purchases.
+    await withSuccessStoreLock(async () => {
+      const latest = await getSuccessCheckouts();
+      for (const update of pendingChanges) {
+        const record = latest.find(item =>
+          isVerifiedDiscordCheckout(item) &&
+          item.id === update.id &&
+          String(item.customerAccountId || "") === update.customerAccountId &&
+          item.retailer === update.retailer &&
+          String(item.orderNumber || "") === String(update.orderNumber || "")
+        );
+        if (!record) continue;
+        if (update.cancelledAt) {
+          if (cancelledOrder(record)) continue;
+          const priorUpdatedAt = Date.parse(record.shipping?.updatedAt || 0);
+          if (Number.isFinite(priorUpdatedAt) && priorUpdatedAt > Date.parse(update.cancelledAt)) continue;
+          record.status = "cancelled";
+          record.cancelledAt = update.cancelledAt;
+          discordDms.delete(record.id);
+          changedAccounts.add(update.customerAccountId);
+          continue;
+        }
+        if (cancelledOrder(record)) continue;
+        const prior = record.shipping || {};
+        const next = update.shipping;
+        if (shippingStatusRank(next.status) < shippingStatusRank(prior.status)) continue;
+        if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(next.updatedAt)) continue;
+        const before = JSON.stringify([prior.status, prior.enRouteAt, prior.estimatedDelivery,
+          prior.deliveredAt, prior.trackingUrl, prior.address]);
+        const after = JSON.stringify([next.status, next.enRouteAt, next.estimatedDelivery,
+          next.deliveredAt, next.trackingUrl, next.address]);
+        if (before === after) continue;
+        record.shipping = next;
+        changedAccounts.add(update.customerAccountId);
+        if (prior.status !== next.status) {
+          // Coalesce a batch of historical shipping updates to one final DM.
+          discordDms.set(record.id, { accountId: update.customerAccountId, record, shipping: next });
+        }
+      }
+      if (changedAccounts.size) {
+        await saveSuccessCheckouts(latest);
+        for (const id of changedAccounts) announceSuccessCheckout(id);
+        broadcastLiveDataChange("verified-shipping-update");
+      }
+    });
+    // Push alerts and Discord DMs only after the order update is durable.
+    for (const entry of discordDms.values()) {
+      const account = accounts.find(a => String(a.id) === entry.accountId);
+      if (!account || cancelledOrder(entry.record)) continue;
+      try { await sendShippingDiscordDm(account, entry.record, entry.shipping); }
+      catch (error) { console.error("Shipping Discord DM failed:", error?.message || "shipping_dm_error"); }
     }
   } catch (error) {
     console.error("Shipping tracker:", error?.message || "shipping_tracker_error");
