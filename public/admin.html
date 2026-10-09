@@ -10008,6 +10008,13 @@ function linkedProfileListCardHtml(
         membership.id
       )}"
     >
+      <label class="pool-profile-meta" style="display:flex;align-items:center;gap:8px;padding:8px">
+        <input type="checkbox" data-linked-bulk-select="${escapeHtml(membership.id)}"
+          data-bulk-type="${escapeHtml(membership.type)}"
+          data-bulk-assignment="${escapeHtml(membership.assignmentId || membership.id)}"
+          style="width:20px;height:20px" />
+        Select for bulk actions
+      </label>
       <button
         type="button"
         class="linked-profile-button ${
@@ -10393,6 +10400,22 @@ async function loadAdminLinkedProfiles(
 
     container.innerHTML = `
       <div data-personal-linked-profiles style="margin-bottom:12px"></div>
+      <div class="linked-profiles-bulk-toolbar" data-linked-bulk-toolbar style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0">
+        <button type="button" data-bulk-select-all>Select all linked</button>
+        <select data-bulk-action aria-label="Bulk action">
+          <option value="activate">Activate</option>
+          <option value="inactive">Deactivate</option>
+          <option value="extend">Extend</option>
+          <option value="rtp-final">RTP in 1 hour</option>
+          <option value="rtp-fill">RTP and fill spot</option>
+          <option value="return">Return to pool</option>
+        </select>
+        <select data-bulk-duration aria-label="Extension duration">
+          <option value="1_week">1 week</option><option value="1_month">1 month</option>
+        </select>
+        <button type="button" data-bulk-execute>Apply to selected</button>
+        <span role="status" data-bulk-progress></span>
+      </div>
       <div class="linked-profile-shell">
 
         <div class="linked-profile-list">
@@ -10459,6 +10482,60 @@ async function loadAdminLinkedProfiles(
         personalArea.textContent = error.message;
       }
     }
+
+    const bulkButton = container.querySelector("[data-bulk-execute]");
+    const getSelected = () => [...container.querySelectorAll("[data-linked-bulk-select]:checked")];
+    container.querySelector("[data-bulk-select-all]")?.addEventListener("click", () => {
+      const checks = [...container.querySelectorAll("[data-linked-bulk-select]")];
+      const shouldSelect = checks.some(check => !check.checked);
+      checks.forEach(check => { check.checked = shouldSelect; });
+    });
+    bulkButton?.addEventListener("click", async () => {
+      const selected = getSelected().map(check => ({
+        id: check.dataset.linkedBulkSelect,
+        type: check.dataset.bulkType,
+        assignmentId: check.dataset.bulkAssignment
+      }));
+      const action = container.querySelector("[data-bulk-action]").value;
+      const duration = container.querySelector("[data-bulk-duration]").value;
+      const progress = container.querySelector("[data-bulk-progress]");
+      if (!selected.length) { progress.textContent = "Select at least one linked account."; return; }
+      if (!window.confirm("Apply " + action + " to " + selected.length +
+          " linked account(s)? Each account will be validated individually; failures will not block the rest.")) return;
+      bulkButton.disabled = true;
+      let succeeded = 0;
+      const failures = [];
+      for (const item of selected) {
+        let path = "/api/admin/linked-memberships/" + encodeURIComponent(item.type) + "/" + encodeURIComponent(item.id);
+        let body = {};
+        if (action === "activate" || action === "inactive") {
+          path = "/api/admin/managed-profile-activation/" + encodeURIComponent(item.type) + "/" +
+            encodeURIComponent(item.assignmentId);
+          body = {action};
+        } else if (action === "extend") {
+          path += "/extend"; body = {extension:duration};
+        } else if (action === "rtp-final") {
+          path += "/rtp-final-reminder";
+        } else if (action === "rtp-fill") {
+          path += "/rtp-fill-spot";
+        } else if (action === "return") {
+          path += "/return-to-pool";
+        }
+        try {
+          const response = await fetch(path, {method:"POST",credentials:"same-origin",
+            headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || "Request rejected");
+          succeeded++;
+        } catch (error) {
+          failures.push(item.id + ": " + error.message);
+        }
+        progress.textContent = succeeded + " of " + selected.length + " completed; " + failures.length + " failed.";
+      }
+      bulkButton.disabled = false;
+      if (failures.length) window.alert("Some actions failed:\\n" + failures.join("\\n"));
+      await loadAdminLinkedProfiles(orderId);
+    });
 
     const detail =
       container.querySelector(
