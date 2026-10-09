@@ -81,11 +81,37 @@ export function isTrustedRetailerSender(retailer, fromAddresses) {
   const normalized = String(retailer || "").toLowerCase();
   const domains = normalized === "target" ? ["target.com", "targetemail.com"] :
     normalized === "walmart" ? ["walmart.com"] :
-    ["pkc", "pokemon center", "pokemoncenter"].includes(normalized) ? ["pokemoncenter.com", "pokemon.com"] : [];
+    ["pkc", "pokemon center", "pokemoncenter"].includes(normalized) ? ["pokemoncenter.com", "pokemon.com"] :
+    normalized === "costco" ? ["costco.com"] :
+    ["sam's club", "sams club", "samsclub"].includes(normalized) ? ["samsclub.com"] : [];
   if (!domains.length) return false;
   return addresses.some(item => {
     const email = String(typeof item === "string" ? item : item?.address || "").trim().toLowerCase();
     const host = email.split("@")[1] || "";
     return domains.some(domain => host === domain || host.endsWith("." + domain));
   });
+}
+
+/**
+ * Locate one pre-existing, verified webhook checkout for a retailer shipment or
+ * cancellation email. The sender must be on the allowlist, the retailer order
+ * number must match exactly, and the email must follow the checkout.
+ *
+ * Never use product names, shipping addresses, buyer emails, or account owner
+ * similarity to guess a purchase; the mailbox may contain personal purchases.
+ */
+export function matchVerifiedWebhookEmail(records, { senders = [], subject = "", text = "", html = "", receivedAt } = {}) {
+  if (!Array.isArray(records)) return null;
+  const received = new Date(receivedAt).getTime();
+  if (!Number.isFinite(received) || received > Date.now() + 24 * 60 * 60 * 1000) return null;
+  const body = [subject, text, html].filter(Boolean).join("\n");
+  const matches = records.filter(record => {
+    const placed = new Date(record?.checkoutAt).getTime();
+    return isVerifiedDiscordCheckout(record) &&
+      Number.isFinite(placed) &&
+      received >= placed - 48 * 60 * 60 * 1000 &&
+      isTrustedRetailerSender(record.retailer, senders) &&
+      hasExactWebhookOrderNumber(record, body);
+  });
+  return matches.length === 1 ? matches[0] : null;
 }
