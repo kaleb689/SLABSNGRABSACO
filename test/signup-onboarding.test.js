@@ -7,7 +7,8 @@ const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const server = readFileSync(new URL("../server.js", import.meta.url), "utf8");
 
 test("Onboarding forms exist before app.js executes so Save buttons are bound", () => {
-  const script = html.indexOf('<script src="/app.js"></script>');
+  const appScriptTag = html.match(/<script src="\/app\.js(?:\?[^\"]+)?"><\/script>/);
+  const script = appScriptTag ? html.indexOf(appScriptTag[0]) : -1;
   assert.ok(script > 0);
   for (const form of ["account-address-onboarding-form", "account-card-onboarding-form", "account-imap-onboarding-form"]) {
     assert.ok(html.indexOf('id="' + form + '"') < script, form + " must exist before app.js loads");

@@ -123,7 +123,8 @@ test("archived Discord checkout channels never inflate active customer or public
 test("all Success aggregate and customer endpoints use an authoritative-source filter", async () => {
   const server = await fs.readFile(new URL("../server.js", import.meta.url), "utf8");
   assert.match(server, /return authoritativeDiscordCheckouts\(records, authorizedChannelIds\)/);
-  assert.match(server, /visibleDiscordSuccessRecords\(await getSuccessCheckouts\(\), hitsChannelId, chosen\.channels\)/);
+  assert.match(server, /visibleDiscordSuccessRecords\((?:await getSuccessCheckouts\(\)|saved), hitsChannelId, chosen\.channels\)/);
+  assert.match(server, /const \[saved, customers\] = await Promise\.all\(\[getSuccessCheckouts\(\), getCustomerAccounts\(\)\]\)/);
   assert.equal((server.match(/visibleDiscordSuccessRecords\(/g) || []).length, 5);
   assert.equal((server.match(/\(await discordCheckoutSourceChannels\(\)\)\.channels/g) || []).length, 3);
 });
