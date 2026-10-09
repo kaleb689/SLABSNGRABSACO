@@ -5387,7 +5387,7 @@
     .admin-discord-actions button { width: auto; min-width: 125px; }
     .admin-discord-card small { display: block; margin-top: 10px; color: #a9cad7; }
   </style>
-<link rel="stylesheet" href="/admin-pool-search.css?v=20261008">
+<link rel="stylesheet" href="/admin-pool-search.css?v=20261009">
 </head>
 
 
@@ -5732,8 +5732,17 @@ PAID SUBSCRIPTIONS
 
 
 <section id="adminPoolBrowser" class="admin-pool-browser" aria-labelledby="adminPoolBrowserTitle">
+  <details id="adminPoolDisclosure" class="admin-pool-disclosure">
+    <summary id="adminPoolBrowserTitle" class="admin-pool-browser-toggle">
+      <span class="admin-pool-browser-toggle-label">
+        <strong>VIEW AVAILABLE PROFILES</strong>
+        <small>Search Target, Walmart &amp; Pokémon Center profile pools</small>
+      </span>
+      <span class="admin-pool-browser-chevron" aria-hidden="true">&#9662;</span>
+    </summary>
+    <div class="admin-pool-browser-body">
   <span class="eyebrow">ADMIN PROFILE MANAGEMENT</span>
-  <h2 id="adminPoolBrowserTitle">Search, Link &amp; Unlink Pool Profiles</h2>
+  <h2>Search, Link &amp; Unlink Pool Profiles</h2>
   <p>Search Target, Walmart, and Pokemon Center accounts. Link an available
     profile to a member, or unlink an assigned profile and return it to the pool.
     Unlinking never deletes the retailer account.</p>
@@ -5768,6 +5777,9 @@ PAID SUBSCRIPTIONS
     <span id="adminPoolPage">Page 1</span>
     <button id="adminPoolNext" type="button" disabled>Next</button>
   </div>
+
+    </div>
+  </details>
 </section>
 
     <section class="inventory-manager-shell">
@@ -24731,6 +24743,6 @@ document.addEventListener("click", event => {
   ↑
 </button>
 
-<script src="/admin-pool-search.js?v=20261008"></script>
+<script src="/admin-pool-search.js?v=20261009"></script>
 </body>
 </html>
