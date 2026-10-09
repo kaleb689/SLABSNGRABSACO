@@ -38648,7 +38648,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     const allRecords = visibleDiscordSuccessRecords(await getSuccessCheckouts(), hitsChannelId, chosen.channels);
     const unmatchedCount = allRecords.filter(record => !record.customerAccountId).length;
     const records = allRecords
-      .filter(record => Boolean(record.customerAccountId) && !cancelledOrder(record))
+      .filter(record => Boolean(record.customerAccountId) && confirmedDiscordPurchase(record))
       .map(record => {
         const safe = safeSuccessCheckout(record);
         return {
@@ -39214,6 +39214,15 @@ function safeSuccessItem(item) {
   };
 }
 
+// Review holds are visible to the customer with a warning, but are never
+// counted as a confirmed purchase or as money definitively spent.
+function confirmedDiscordPurchase(record) {
+  return !cancelledOrder(record) &&
+    /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(String(record?.status || ""));
+}
+function reviewHoldDiscordCheckout(record) {
+  return !cancelledOrder(record) && String(record?.status || "") === "review_hold";
+}
 function safeSuccessCheckout(
   record
 ) {
@@ -39267,23 +39276,8 @@ function safeSuccessCheckout(
         150
       ),
 
-    profileSlot:
-      Number.isInteger(
-        Number(
-          record?.profileSlot
-        )
-      )
-        ? Number(
-            record.profileSlot
-          )
-        : null,
-
-    profileName:
-      clean(
-        record?.profileName,
-        80
-      ),
-
+    // Do not expose any retailer profile name, login, account email,
+    // password, or proxy through the customer's Success JSON.
     checkoutAt:
       record?.checkoutAt ||
       record?.createdAt ||
@@ -39294,6 +39288,11 @@ function safeSuccessCheckout(
       total >= 0
         ? total
         : 0,
+    // Shikari success embeds may omit the paid amount. Customers must not
+    // mistake an unknown total for an actual zero-dollar retailer checkout.
+    orderTotalKnown:
+      record?.orderTotalBasis !== "unknown" &&
+      Number.isFinite(total) && total > 0,
 
     itemCount:
       Math.max(
@@ -39921,7 +39920,7 @@ function buildSuccessSummary(
   includeOrders = false
 ) {
   const safeRecords =
-    records.filter(record => !cancelledOrder(record)).map(
+    records.filter(confirmedDiscordPurchase).map(
       safeSuccessCheckout
     );
 
@@ -47681,6 +47680,15 @@ summary.range = {
 
 // Cancellations are shown as status history only, never counted as
 // confirmed purchases, checkout value, products, or successful orders.
+const reviewHoldCheckouts = ownedRecords.filter(reviewHoldDiscordCheckout)
+  .filter(record => {
+    const day = successDateKey(record.checkoutAt);
+    return day && day >= rangeStart && day <= rangeEnd;
+  })
+  .map(safeSuccessCheckout)
+  .sort((a, b) => new Date(b.checkoutAt || 0) - new Date(a.checkoutAt || 0))
+  .slice(0, req.query.appView === "1" ? 150 : 20);
+
 const cancelledCheckouts = req.query.appView === "1"
   ? ownedRecords.filter(lateCancellation)
     .filter(record => {
@@ -47722,6 +47730,7 @@ const cancelledCheckouts = req.query.appView === "1"
         },
 
         ...summary,
+        reviewHoldCheckouts,
         ...(req.query.appView === "1" ? { cancelledCheckouts } : {})
       });
 
