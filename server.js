@@ -38352,6 +38352,36 @@ async function scanDiscordSuccessChannel() {
   }
 }
 
+// Admin Success overview: use only already-attributed Discord success checkouts.
+// Unmatched hits cannot be counted as belonging to a paid, personal, or linked profile.
+app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
+  try {
+    let hitsChannelId = null;
+    try {
+      const token = discordSuccessConfig().token;
+      if (token) hitsChannelId = await resolveDiscordHitsChannelId(token);
+    } catch {}
+    const records = visibleDiscordSuccessRecords(await getSuccessCheckouts(), hitsChannelId)
+      .filter(record => Boolean(record.customerAccountId))
+      .map(record => {
+        const safe = safeSuccessCheckout(record);
+        return {
+          retailer: safe.retailer,
+          checkoutAt: safe.checkoutAt,
+          orderTotal: safe.orderTotal,
+          items: safe.items
+        };
+      })
+      .filter(record => Number.isFinite(new Date(record.checkoutAt).getTime()))
+      .sort((a, b) => new Date(b.checkoutAt) - new Date(a.checkoutAt));
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ok:true,records});
+  } catch (error) {
+    console.error("Admin success overview:", error?.message);
+    return res.status(500).json({error:"Unable to load confirmed ACO success."});
+  }
+});
+
 app.get("/api/admin/discord-success-status", requireAdmin, async (_req, res) => {
   const config = await resolvedDiscordSuccessConfig();
   const validChannelId = /^\d{17,22}$/.test(config.channelId);
