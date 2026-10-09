@@ -115,3 +115,16 @@ export function matchVerifiedWebhookEmail(records, { senders = [], subject = "",
   });
   return matches.length === 1 ? matches[0] : null;
 }
+
+/**
+ * Keep previously imported webhook records in the store for audit/rollback,
+ * but include in customer/public Success only records containing a message
+ * from the ONE currently authoritative Discord checkout source.
+ */
+export function authoritativeDiscordCheckouts(records, channelIds) {
+  const allowed = new Set((Array.isArray(channelIds) ? channelIds : [])
+    .map(String).filter(value => /^\d{17,22}$/.test(value)));
+  if (!allowed.size) return [];
+  return (Array.isArray(records) ? records : []).filter(record =>
+    discordCheckoutIds(record).some(id => allowed.has(id.split(":")[1])));
+}
