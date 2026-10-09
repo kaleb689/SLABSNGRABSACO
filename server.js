@@ -4,9 +4,10 @@ import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
 import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
-import { createOrderNotifications, cancelledOrder } from "./order-notifications.js";
+import { createOrderNotifications, cancelledOrder, lateCancellation } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { webhookOnlyCheckouts, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
+import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
@@ -39298,6 +39299,10 @@ function safeSuccessCheckout(
         "confirmed",
         50
       ),
+    // Expose cancellation time only to authenticated owner history; public
+    // Success does not include cancelled orders. The timestamp is needed
+    // to enforce the exact 24-hour visibility boundary.
+    cancelledAt: record?.cancelledAt || record?.canceledAt || null,
 
     shipping:
       record?.shipping && typeof record.shipping === "object"
@@ -43575,16 +43580,7 @@ function normalizedShippingText(value = "") {
     .trim();
 }
 
-function shippingStatusFromMessage(subject = "", text = "") {
-  const value = `${subject}\n${text}`.toLowerCase();
-  if (/\bdelivered\b|delivery complete|has been delivered/.test(value)) return "delivered";
-  if (/\bout for delivery\b|out-for-delivery/.test(value)) return "out_for_delivery";
-  if (/\bin transit\b|\bon the way\b|\ben route\b/.test(value)) return "in_transit";
-  if (/\bshipped\b|has shipped|shipment confirmation|your order is on its way/.test(value)) return "shipped";
-  return null;
-}
-
-function shippingEstimateFromText(text = "") {
+remove false delivered classifierfunction shippingEstimateFromText(text = "") {
   const value = normalizedShippingText(text);
   const match = value.match(/(?:estimated delivery|estimated arrival|arrives? by|expected delivery|delivery date)\s*[:\-]?\s*((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?([A-Z][a-z]{2,8}\s+\d{1,2}(?:,\s+\d{4})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i);
   return match ? clean(`${match[1] || ""}${match[2] || ""}`.trim(), 80) : null;
@@ -43730,8 +43726,8 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const subject = String(message.envelope?.subject || "");
         const decoded = await decodeImapMessage(message.source);
         const combined = normalizedShippingText(`${subject}\n${decoded.text}\n${decoded.html}`);
-        const cancellation = /(?:your|the|this) order(?:\s*#?\s*[\w-]+)? (?:has been |was |is )cancel(?:led|ed)|order cancel(?:lation|led|ed)/i.test(subject);
-        const status = cancellation ? "cancelled" : shippingStatusFromMessage(subject, combined);
+        const cancellation = cancellationFromSubject(subject);
+        const status = cancellation || shippingStatusFromMessage(subject, combined);
         if (!status) continue;
 
         // A customer's inbox can include purchases outside this ACO service.
@@ -43749,12 +43745,12 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
         if (cancellation) {
           if (!cancelledOrder(record)) {
-            record.status = "cancelled";
+            record.status = cancellation;
             record.cancelledAt = messageAt;
             pendingChanges.push({
               id: record.id, customerAccountId: String(account.id),
               retailer: record.retailer, orderNumber: record.orderNumber,
-              cancelledAt: messageAt
+              cancelledAt: messageAt, cancelledStatus: cancellation
             });
             changed = true;
           }
@@ -43815,7 +43811,7 @@ async function syncShippingTrackers() {
     const trackable = records.filter(record =>
       isVerifiedDiscordCheckout(record) && record.orderNumber &&
       accountsById.has(String(record.customerAccountId || "")) &&
-      !cancelledOrder(record) && shippingStatusRank(record.shipping?.status) < 4);
+      !cancelledOrder(record));
     if (!trackable.length) return;
 
     // Customer-connected mailboxes can contain unrelated personal purchases;
@@ -43882,7 +43878,7 @@ async function syncShippingTrackers() {
           if (cancelledOrder(record)) continue;
           const priorUpdatedAt = Date.parse(record.shipping?.updatedAt || 0);
           if (Number.isFinite(priorUpdatedAt) && priorUpdatedAt > Date.parse(update.cancelledAt)) continue;
-          record.status = "cancelled";
+          record.status = update.cancelledStatus || "cancelled";
           record.cancelledAt = update.cancelledAt;
           discordDms.delete(record.id);
           changedAccounts.add(update.customerAccountId);
@@ -47674,7 +47670,7 @@ summary.range = {
 // Cancellations are shown as status history only, never counted as
 // confirmed purchases, checkout value, products, or successful orders.
 const cancelledCheckouts = req.query.appView === "1"
-  ? ownedRecords.filter(cancelledOrder)
+  ? ownedRecords.filter(lateCancellation)
     .filter(record => {
       const day = successDateKey(record.checkoutAt);
       return day && day >= rangeStart && day <= rangeEnd;
