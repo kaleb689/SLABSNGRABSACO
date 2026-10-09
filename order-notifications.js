@@ -12,8 +12,9 @@ export function orderKey(record) {
   return `${record.customerAccountId}:${String(record.retailer || "").toLowerCase()}:${record.id}`;
 }
 export function orderSnapshot(record) {
-  return { eligible: !cancelledOrder(record) && /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(record.status || "confirmed"),
-    shipping: JSON.stringify([record.shipping?.status || "", record.shipping?.estimatedDelivery || "", record.shipping?.trackingUrl || ""]) };
+  const cancelled = cancelledOrder(record);
+  return { eligible: !cancelled && /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(record.status || "confirmed"),
+    cancelled, shipping: JSON.stringify([record.shipping?.status || "", record.shipping?.estimatedDelivery || "", record.shipping?.trackingUrl || ""]) };
 }
 export function orderEvents(record, previous) {
   const next = orderSnapshot(record);
@@ -53,7 +54,7 @@ export function validPushSubscription(value) {
 
 export const notificationDefaults = { orders: true, shipping: true, messages: true, account: true };
 export function notificationCategory(event) {
-  if (event.kind === "order_confirmed") return "orders";
+  if (event.kind === "order_confirmed" || event.kind === "order_cancelled") return "orders";
   if (event.kind === "shipping_update") return "shipping";
   if (/admin_message|missing|action_needed|setup_complete/.test(event.kind || "")) return "messages";
   return "account";
@@ -166,6 +167,29 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         if (!record.customerAccountId) continue;
         const key = orderKey(record);
         const previous = state.snapshots[key];
+        const next = orderSnapshot(record);
+        if (next.cancelled) {
+          // Retract all pending confirmation/shipment pushes and stale notices.
+          // Only a prior valid ACO success can produce a cancellation event.
+          state.outbox = state.outbox.filter(item => item.key !== key);
+          const inbox = state.inbox[record.customerAccountId] ||= [];
+          state.inbox[record.customerAccountId] = inbox.filter(item => item.orderKey !== key);
+          if (previous?.eligible && !previous.cancelled) {
+            const retailer = String(record.retailer || "Retailer").slice(0, 50);
+            const product = String(record.items?.[0]?.name || "Your order").slice(0, 110);
+            const refunded = /refund/i.test(String(record.status || ""));
+            const event = {
+              id: crypto.randomUUID(), kind: "order_cancelled",
+              title: retailer + (refunded ? " order refunded" : " order cancelled"),
+              message: product + (record.orderNumber ? " • Order #" + String(record.orderNumber).slice(0, 50) : ""),
+              tab: "tracking", orderKey: key, createdAt: new Date().toISOString()
+            };
+            state.inbox[record.customerAccountId].push(event);
+            enqueue(record.customerAccountId, event, key);
+          }
+          state.snapshots[key] = next;
+          continue;
+        }
         const checkoutAge = Date.now() - Date.parse(record.checkoutAt || "");
         const historic = !previous && Number.isFinite(checkoutAge) && checkoutAge > 24 * 60 * 60 * 1000;
         for (const event of orderEvents(record, previous)) {
@@ -181,11 +205,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
           // Capture recipients when the event occurs; later subscribers receive only future events.
           enqueue(record.customerAccountId, notification, key);
         }
-        state.snapshots[key] = orderSnapshot(record);
-        if (cancelledOrder(record)) {
-          state.outbox = state.outbox.filter(item => item.key !== key);
-          state.inbox[record.customerAccountId] = (state.inbox[record.customerAccountId] || []).filter(item => item.orderKey !== key);
-        }
+        state.snapshots[key] = next;
       }
       await save();
     });
@@ -200,10 +220,14 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       await reconcileAccountEvents(accounts, await getAccountUpdates());
       const active = new Set(accounts.filter(account => !account.disabled).map(account => String(account.id)));
       const eligible = new Set(records.filter(record => orderSnapshot(record).eligible).map(orderKey));
+      const cancelled = new Set(records.filter(cancelledOrder).map(orderKey));
       await locked(async () => {
         const pending = [];
         for (const item of state.outbox) {
-          if (!active.has(String(item.accountId)) || (item.key && !eligible.has(item.key)) || Date.now() - Date.parse(item.notification.createdAt) > 24 * 60 * 60 * 1000) continue;
+          const validOrderState = !item.key || (item.notification.kind === "order_cancelled" ?
+            cancelled.has(item.key) : eligible.has(item.key));
+          if (!active.has(String(item.accountId)) || !validOrderState ||
+              Date.now() - Date.parse(item.notification.createdAt) > 24 * 60 * 60 * 1000) continue;
           if ((state.preferences[item.accountId] || notificationDefaults)[notificationCategory(item.notification)] === false) continue;
           const subscription = (state.subscriptions[item.accountId] || []).find(sub => sub.endpoint === item.endpoint);
           if (!subscription) continue;
