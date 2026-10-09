@@ -57,8 +57,11 @@ export function webhookOnlyCheckouts(records, { resetLegacyShipping = false } = 
     if (mixedWithMailbox || (resetLegacyShipping && next.shipping?.source === "retailer_email")) {
       delete next.shipping;
     }
-    // The old mailbox scanner could cancel otherwise valid webhook orders.
-    if (resetLegacyShipping && next.cancelledAt) {
+    // Only legacy mixed-mailbox imports may contain an untrusted cancellation.
+    // Never undo a real RED Discord checkout on restart: migration runs before
+    // the next Discord poll, and resetting those statuses briefly inflates
+    // confirmed community totals and can trigger repeat reconciliation writes.
+    if (resetLegacyShipping && mixedWithMailbox && next.cancelledAt) {
       delete next.cancelledAt;
       next.status = "confirmed";
     }
