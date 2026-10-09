@@ -15,7 +15,7 @@ const makeMessage = (color, id, timestamp, orderId = "102003802680520") => ({
     description: [
       "Successful Checkout!", "[" + product + "](https://www.target.com/p/example-product)",
       "Site", "Target", "Profile", "Customer Example 4", "Order ID", orderId,
-      "Quantity", "2", "Account", "retailer-test@example.test:FAKE_SECRET_VALUE",
+      "Quantity", "2", "Account", "retailer_test@example.test:FAKE_SECRET_VALUE",
       "Proxy", "private"
     ].join("\n")
   }]
@@ -41,7 +41,7 @@ function parseLiveWebhook(message) {
 test("Shikari Account email:password is used transiently; only email is extracted", () => {
   const input = makeMessage(0x57f287,"1580000000000000001","2026-10-09T08:00:00Z");
   const parsed = checkoutIdentityFromDiscord(input);
-  assert.deepEqual(parsed, { email: "retailer-test@example.test", profileName: "Customer Example 4",
+  assert.deepEqual(parsed, { email: "retailer_test@example.test", profileName: "Customer Example 4",
     orderNumber: "102003802680520" });
   assert.ok(!JSON.stringify(parsed).includes("FAKE_SECRET_VALUE"));
   assert.equal(checkoutProductFromDiscord(input), product);
@@ -67,7 +67,7 @@ test("actual production parser uses linked item, quantity, retailer Order ID and
   assert.equal(parsed.status,"confirmed");
   assert.equal(parsed.orderTotalBasis,"unknown");
   assert.equal(parsed.orderTotal,0);
-  assert.ok(!JSON.stringify(parsed).includes("retailer-test@example.test"));
+  assert.ok(!JSON.stringify(parsed).includes("retailer_test@example.test"));
   assert.ok(!JSON.stringify(parsed).includes("FAKE_SECRET_VALUE"));
   assert.equal("email" in parsed, false);
   assert.equal("password" in parsed, false);
@@ -111,12 +111,12 @@ test("when Shikari provides Account email, a wrong profile label cannot override
     assignmentTimeContainsCheckout: () => true,
     order: {retailer:"Target",checkoutAt:"2026-10-09T08:00:00Z",sourceProfileLabel:"Example profile"},
     candidates: [
-      {customerAccountId:"correct",retailer:"Target",email:"retailer-test@example.test",profileName:"Different profile"},
+      {customerAccountId:"correct",retailer:"Target",email:"retailer_test@example.test",profileName:"Different profile"},
       {customerAccountId:"wrong",retailer:"Target",email:"other@example.test",profileName:"Example profile"}
     ]
   };
   vm.runInNewContext(source.slice(start,end) +
-    "\nmatched=discordCheckoutAttribution(order,{email:'retailer-test@example.test',profileName:'Example profile'},candidates);" +
+    "\nmatched=discordCheckoutAttribution(order,{email:'retailer_test@example.test',profileName:'Example profile'},candidates);" +
     "\nwrong=discordCheckoutAttribution(order,{email:'not-linked@example.test',profileName:'Example profile'},candidates);",sandbox);
   assert.equal(sandbox.matched.customerAccountId,"correct");
   assert.equal(sandbox.wrong,null);
