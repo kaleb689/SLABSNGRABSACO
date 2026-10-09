@@ -236,3 +236,20 @@ test('red cancellation 24+ hours after orange review shows one cancelled alert, 
   assert.equal(f.sent[0].title, 'Target order cancelled');
   assert.equal((await f.service.list('a')).filter(x=>x.kind==='order_confirmed').length,0);
 });
+
+test('changing an old green order to an orange review hold removes its stale confirmation notice', async t => {
+  const f = await fixture(t, [order('color-change', {checkoutAt:new Date().toISOString(),status:'confirmed'})]);
+  await f.service.subscribe('a',subscription);
+  f.records[0].status='review_hold';
+  await f.service.tick();
+  const pending = await f.service.list('a');
+  assert.equal(pending.filter(x => x.kind==='order_confirmed').length,0);
+  assert.equal(pending.filter(x => x.kind==='order_review_hold').length,1);
+  assert.equal(f.sent.length,1);
+  f.records[0].status='unverified';
+  await f.service.tick();
+  assert.equal((await f.service.list('a')).some(x =>
+    ['order_confirmed','order_review_hold','shipping_update'].includes(x.kind)),false);
+  await f.service.tick();
+  assert.equal(f.sent.length,1);
+});
