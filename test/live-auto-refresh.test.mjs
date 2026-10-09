@@ -16,6 +16,7 @@ function section(source, first, last) {
 
 function harness(script, side) {
   let editing = false;
+  let now = Date.now();
   let nextTimer = 0;
   const timers = new Map();
   const requests = [];
@@ -27,7 +28,8 @@ function harness(script, side) {
       closest: () => null
     },
     addEventListener: () => {},
-    querySelector: () => ({ dataset: { accountTab: "membership" } })
+    querySelector: selector => selector === ".customer-order[open] [data-linked-profiles-section][open]"
+      ? null : ({ dataset: { accountTab: "membership" } })
   };
   const window = {
     scrollX: 14,
@@ -40,6 +42,7 @@ function harness(script, side) {
     document,
     window,
     console,
+    Date: class extends Date { static now() { return now; } },
     setTimeout: fn => {
       const id = ++nextTimer;
       timers.set(id, fn);
@@ -67,6 +70,7 @@ function harness(script, side) {
   vm.runInContext(script, context, { filename: side + "-live-block.js" });
   return {
     requests,
+    advanceClock(ms = 9000) { now += ms; },
     setEditing(value) { editing = value; },
     schedule() { vm.runInContext(
       side === "admin" ? "scheduleAdminLiveRefresh()" : "scheduleCustomerLiveRefresh()",
@@ -96,9 +100,13 @@ test("Admin live updates refresh its management view and pool search, but not ac
   assert.ok(h.requests.some(item => item[0] === "stream" && item[1] === "/api/admin/live/events"));
   h.schedule();
   await h.flush();
+  assert.equal(h.requests.filter(item => item[0] === "admin-load").length, 0, "defer while admin recently interacted");
+  h.advanceClock();
+  h.schedule();
+  await h.flush();
   assert.equal(h.requests.filter(item => item[0] === "admin-load").length, 1);
   assert.equal(h.requests.filter(item => item[0] === "pool").length, 1);
-  assert.ok(h.requests.some(item => item[0] === "scroll" && item[1] === 14 && item[2] === 25));
+  assert.equal(h.requests.filter(item => item[0] === "scroll").length, 0, "do not forcibly reset admin scrolling");
   h.setEditing(true);
   h.schedule();
   await h.flush();

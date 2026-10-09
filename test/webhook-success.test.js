@@ -40,3 +40,43 @@ test('email backfill refuses unrelated source IDs and conflicting order numbers'
  assert.equal(reconcileEmailCheckoutIdentity(records,{id:'legacy',retailer:'PKC',orderNumber:'ABC123'}).conflict,true);
  assert.equal(records[0].orderNumber,'original');
 });
+
+test('repeated scans never add a second copy of the same source message', () => {
+ const records = [];
+ const checkout = { ...order, id: 'discord:1532179373292257290:1580000000000000001', orderNumber: '', customerAccountId: null };
+ assert.equal(reconcileWebhookCheckout(records, checkout, null).added, true);
+ assert.equal(reconcileWebhookCheckout(records, checkout, null).changed, false);
+ assert.equal(reconcileWebhookCheckout(records, checkout, null).changed, false);
+ assert.equal(records.length, 1);
+});
+
+test('an identical product from two unrelated checkout messages is not assumed a duplicate', () => {
+ const records = [];
+ const a = { ...order, id: 'discord:1532179373292257290:1580000000000000001', orderNumber: '' };
+ const b = { ...order, id: 'discord:1532179373292257290:1580000000000000002', orderNumber: '' };
+ reconcileWebhookCheckout(records, a);
+ reconcileWebhookCheckout(records, b);
+ assert.equal(records.length, 2);
+ assert.equal(sameCheckout(a, b), false);
+ assert.equal(sameCheckout({ retailer: 'Target' }, { retailer: 'Target' }), false);
+});
+
+test('same retailer order on two feeds reconciles to one stored checkout', () => {
+ const records = [];
+ const first = { ...order, id: 'discord:1532179373292257290:1580000000000000001', orderNumber: 'W-123456' };
+ const second = { ...order, id: 'discord:1551090141693485156:1580000000000000002', orderNumber: 'W-123456' };
+ reconcileWebhookCheckout(records, first, { customerAccountId: 'customer-1' });
+ reconcileWebhookCheckout(records, second);
+ assert.equal(records.length, 1);
+ assert.equal(records[0].customerAccountId, 'customer-1');
+ assert.ok(records[0].sourceIds.includes(first.id));
+ assert.ok(records[0].sourceIds.includes(second.id));
+ assert.equal(reconcileWebhookCheckout(records, second).changed, false);
+});
+
+test('generic order statuses are never deduplication identities', () => {
+ assert.equal(sameCheckout(
+   { id: 'discord:a:1', orderNumber: 'Success', retailer: 'Target' },
+   { id: 'discord:b:2', orderNumber: 'Success', retailer: 'Target' }
+ ), false);
+});

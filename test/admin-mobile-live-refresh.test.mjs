@@ -93,7 +93,7 @@ function createMobileHarness() {
 test("mobile Admin automatically syncs without interrupting a focused customer search", async () => {
   const h = createMobileHarness();
   await h.settle();
-  assert.equal(h.requests.length, 4, "initial dashboard fetched four sources");
+  assert.equal(h.requests.length, 5, "initial dashboard fetched four management sources and Success");
   assert.equal(h.streams.length, 1, "one live connection established");
   assert.equal(h.streams[0].url, "/api/admin/live/events");
 
@@ -108,12 +108,12 @@ test("mobile Admin automatically syncs without interrupting a focused customer s
   h.document.activeElement = search;
   h.streams[0].emit("data-change");
   await h.flushTimers();
-  assert.equal(h.requests.length, 4, "live event cannot overwrite focused form");
+  assert.equal(h.requests.length, 5, "live event cannot overwrite focused form");
 
   h.document.activeElement = null;
   h.onDocument("focusout")();
   await h.flushTimers();
-  assert.equal(h.requests.length, 8, "pending event reloads when input loses focus");
+  assert.equal(h.requests.length, 10, "pending event reloads when input loses focus");
   assert.equal(search.value, "amy@example", "customer search text survives rerender");
   assert.match(h.node("customer-results").innerHTML, /Amy/);
   assert.ok(h.scrolls.some(([x,y]) => x === 14 && y === 44), "scroll restored");
@@ -125,10 +125,10 @@ test("mobile Admin reconnects and retains same tab, with periodic catchup and fo
   const stream = h.streams[0];
   stream.emit("open");
   await h.flushTimers();
-  assert.equal(h.requests.length, 8, "stream reconnection refreshes data");
+  assert.equal(h.requests.length, 10, "stream reconnection refreshes data");
   h.node("refresh").onclick();
   await h.settle();
-  assert.equal(h.requests.length, 12, "manual refresh runs immediately");
+  assert.equal(h.requests.length, 15, "manual refresh runs immediately");
   assert.match(mobileSource, /setInterval\(\(\)=>\{if\(authenticated&&!document\.hidden\)scheduleMobileRefresh\(\);\},60000\)/);
   assert.match(mobileSource, /window\.addEventListener\("pagehide",\(\)=>\{stream\?\.close\(\);stream=null;\}\)/);
   assert.match(mobileSource, /mobileRefreshRunning=false/);
