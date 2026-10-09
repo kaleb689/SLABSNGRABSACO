@@ -1,4 +1,5 @@
 import express from "express";
+import { historicalPlusVerified, safeAdminProfileLabel } from "./checkout-reporting.js";
 import { searchManagedPoolProfiles } from "./managed-pool-search.js";
 import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
@@ -38669,23 +38670,47 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
       if (token) hitsChannelId = await resolveDiscordHitsChannelId(token);
     } catch {}
     const chosen = await discordCheckoutSourceChannels();
-    const allRecords = visibleDiscordSuccessRecords(await getSuccessCheckouts(), hitsChannelId, chosen.channels);
-    const unmatchedCount = allRecords.filter(record => !record.customerAccountId).length;
-    const records = allRecords
-      .filter(record => Boolean(record.customerAccountId) && confirmedDiscordPurchase(record))
+    const [saved, customers] = await Promise.all([getSuccessCheckouts(), getCustomerAccounts()]);
+    const allRecords = visibleDiscordSuccessRecords(saved, hitsChannelId, chosen.channels);
+    // Admin overview covers EVERY confirmed checkout, including those that
+    // cannot be attributed to an individual paid or linked customer profile.
+    // Only the verified ownership subset is included in per-customer metrics.
+    const confirmed = allRecords.filter(confirmedDiscordPurchase);
+    const unmatchedCount = confirmed.filter(record => !record.customerAccountId).length;
+    const customersById = new Map(customers.map(item => [String(item.id), item]));
+    const records = confirmed
       .map(record => {
         const safe = safeSuccessCheckout(record);
+        const profile = safeAdminProfileLabel(record);
+        const accountId = record.customerAccountId ? String(record.customerAccountId) : null;
+        const customer = accountId ? customersById.get(accountId) : null;
+        const customerName = customer
+          ? [customer.firstName || customer.profile?.firstName,
+             customer.lastName || customer.profile?.lastName].filter(Boolean).join(" ").trim() ||
+            clean(customer.name || customer.displayName || customer.profile?.profileName || "Customer", 100)
+          : "Unmatched checkout";
         return {
           retailer: safe.retailer,
           checkoutAt: safe.checkoutAt,
           orderTotal: safe.orderTotal,
-          items: safe.items
+          orderTotalKnown: safe.orderTotalKnown,
+          items: safe.items.map(item => ({
+            name: clean(item.name, 120),
+            quantity: Math.max(0, Math.floor(Number(item.quantity) || 0)),
+            imageUrl: item.imageUrl
+          })),
+          customerAccountId: accountId,
+          customerName,
+          ...profile
         };
       })
       .filter(record => Number.isFinite(new Date(record.checkoutAt).getTime()))
       .sort((a, b) => new Date(b.checkoutAt) - new Date(a.checkoutAt));
     res.setHeader("Cache-Control", "no-store");
-    return res.json({ok:true,records,unmatchedCount});
+    return res.json({
+      ok:true,records,unmatchedCount,
+      historicalSummary: historicalPlusVerified({checkouts:0,spent:0,unknownPrices:0})
+    });
   } catch (error) {
     console.error("Admin success overview:", error?.message);
     return res.status(500).json({error:"Unable to load confirmed ACO success."});
@@ -38952,10 +38977,11 @@ app.get(
         )
         .map(({ latestPurchasedAt, ...product }) => product);
 
+      // The previous community summary was preserved by the owner but its
+      // individual receipts are unavailable. Never convert it into fake hits.
+      // Add it once to the live authoritative Discord order totals.
       res.json({
-        totalCheckouts,
-        totalSpent: Math.round(totalSpent * 100) / 100,
-        pricePendingCheckouts,
+        ...historicalPlusVerified({checkouts:totalCheckouts,spent:totalSpent,unknownPrices:pricePendingCheckouts}),
         products: orderedProducts
       });
     } catch (error) {
