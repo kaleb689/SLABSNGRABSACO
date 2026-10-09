@@ -154,3 +154,48 @@ test('one-time notification migration removes historical email-derived order ale
   assert.equal(Object.keys(saved.snapshots).length, 1);
   assert.equal(saved.webhookOnlyNotificationsVersion, 1);
 });
+
+test('quickly cancelled checkout under 24 hours is absent from inbox and sends no cancellation push', async t => {
+  const placed = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  const f = await fixture(t, [order('quick-cancel', { checkoutAt: placed })]);
+  await f.service.subscribe('a', subscription);
+  f.records[0].status = 'cancelled';
+  f.records[0].cancelledAt = new Date().toISOString();
+  await f.service.tick();
+  await f.service.tick();
+  assert.equal((await f.service.list('a')).length, 0);
+  assert.equal(f.sent.length, 0);
+});
+
+test('a verified checkout cancelled after 24 hours notifies its owner once, including after restart', async t => {
+  const checkoutAt = new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString();
+  const f = await fixture(t, [order('late-cancel', { checkoutAt })]);
+  await f.service.subscribe('a', subscription);
+  f.records[0].status = 'cancelled';
+  f.records[0].cancelledAt = new Date().toISOString();
+  await f.service.tick();
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].title, 'Target order cancelled');
+  assert.equal((await f.service.list('a')).filter(n => n.kind === 'order_cancelled').length, 1);
+  assert.equal((await f.service.list('b')).length, 0);
+  await f.service.tick();
+  f.service = createOrderNotifications(f.options);
+  await f.service.initialize();
+  await f.service.tick();
+  assert.equal(f.sent.length, 1);
+});
+
+test('late cancel removes queued success alerts but leaves one cancel notification', async t => {
+  const checkoutAt = new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString();
+  const f = await fixture(t);
+  await f.service.subscribe('a', subscription);
+  f.records.push(order('cancel-after-confirmed', { checkoutAt }));
+  await f.service.reconcile(f.records);
+  assert.equal((await f.service.list('a')).filter(n => n.kind === 'order_confirmed').length, 0,
+    'historic checkout must not generate a confirmation alert');
+  f.records[0].status = 'cancelled';
+  f.records[0].cancelledAt = new Date().toISOString();
+  await f.service.tick();
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].title, 'Target order cancelled');
+});

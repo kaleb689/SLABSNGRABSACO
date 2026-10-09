@@ -4,9 +4,10 @@ import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
 import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
-import { createOrderNotifications, cancelledOrder } from "./order-notifications.js";
+import { createOrderNotifications, cancelledOrder, lateCancellation } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { webhookOnlyCheckouts, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
+import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
@@ -39298,6 +39299,10 @@ function safeSuccessCheckout(
         "confirmed",
         50
       ),
+    // Expose cancellation time only to authenticated owner history; public
+    // Success does not include cancelled orders. The timestamp is needed
+    // to enforce the exact 24-hour visibility boundary.
+    cancelledAt: record?.cancelledAt || record?.canceledAt || null,
 
     shipping:
       record?.shipping && typeof record.shipping === "object"
@@ -43563,7 +43568,7 @@ async function getCustomerSuccessMailboxes(
 
 
 
-const SHIPPING_SCAN_INTERVAL_MS = 15 * 60 * 1000;
+const SHIPPING_SCAN_INTERVAL_MS = 5 * 60 * 1000;
 let shippingTrackerRunning = false;
 
 function normalizedShippingText(value = "") {
@@ -43573,15 +43578,6 @@ function normalizedShippingText(value = "") {
     .replace(/&amp;/gi, "&")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function shippingStatusFromMessage(subject = "", text = "") {
-  const value = `${subject}\n${text}`.toLowerCase();
-  if (/\bdelivered\b|delivery complete|has been delivered/.test(value)) return "delivered";
-  if (/\bout for delivery\b|out-for-delivery/.test(value)) return "out_for_delivery";
-  if (/\bin transit\b|\bon the way\b|\ben route\b/.test(value)) return "in_transit";
-  if (/\bshipped\b|has shipped|shipment confirmation|your order is on its way/.test(value)) return "shipped";
-  return null;
 }
 
 function shippingEstimateFromText(text = "") {
@@ -43688,8 +43684,20 @@ async function sendShippingDiscordDm(account, record, shipping) {
   return true;
 }
 
-async function scanMailboxForShipping(mailbox, records, account, pendingChanges) {
-  const { client } = createCustomerImapClient(mailbox.email, mailbox.password);
+function shippingMailboxClient(mailbox) {
+  if (!mailbox.managedHost) return createCustomerImapClient(mailbox.email, mailbox.password).client;
+  // Read-only business mailbox supplied by Render configuration. The host
+  // is never taken from an HTTP request or another customer account.
+  return protectImapClient(new ImapFlow({
+    host: mailbox.managedHost, port: mailbox.managedPort, secure: true,
+    auth: { user: mailbox.email,
+      pass: normalizeImapPassword(mailbox.email, mailbox.password) },
+    logger: false, connectionTimeout: 15000, greetingTimeout: 10000,
+    socketTimeout: 30000, disableAutoIdle: true
+  }));
+}
+async function scanMailboxForShipping(mailbox, records, accountsById, pendingChanges) {
+  const client = shippingMailboxClient(mailbox);
   let changed = false;
   try {
     await client.connect();
@@ -43718,8 +43726,8 @@ async function scanMailboxForShipping(mailbox, records, account, pendingChanges)
         const subject = String(message.envelope?.subject || "");
         const decoded = await decodeImapMessage(message.source);
         const combined = normalizedShippingText(`${subject}\n${decoded.text}\n${decoded.html}`);
-        const cancellation = /(?:your|the|this) order(?:\s*#?\s*[\w-]+)? (?:has been |was |is )cancel(?:led|ed)|order cancel(?:lation|led|ed)/i.test(subject);
-        const status = cancellation ? "cancelled" : shippingStatusFromMessage(subject, combined);
+        const cancellation = cancellationFromSubject(subject);
+        const status = cancellation || shippingStatusFromMessage(subject, combined);
         if (!status) continue;
 
         // A customer's inbox can include purchases outside this ACO service.
@@ -43732,16 +43740,17 @@ async function scanMailboxForShipping(mailbox, records, account, pendingChanges)
           html: decoded.html || "",
           receivedAt: message.internalDate || message.envelope?.date
         });
-        if (!record || String(record.customerAccountId) !== String(account.id)) continue;
+        const account = accountsById.get(String(record?.customerAccountId || ""));
+        if (!account || account.disabled === true) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
         if (cancellation) {
           if (!cancelledOrder(record)) {
-            record.status = "cancelled";
+            record.status = cancellation;
             record.cancelledAt = messageAt;
             pendingChanges.push({
               id: record.id, customerAccountId: String(account.id),
               retailer: record.retailer, orderNumber: record.orderNumber,
-              cancelledAt: messageAt
+              cancelledAt: messageAt, cancelledStatus: cancellation
             });
             changed = true;
           }
@@ -43794,28 +43803,61 @@ async function syncShippingTrackers() {
   shippingTrackerRunning = true;
   try {
     const accounts = await getCustomerAccounts();
-    const records = await getSuccessCheckouts();
+    const accountsById = new Map(accounts.filter(account => account.disabled !== true)
+      .map(account => [String(account.id), account]));
+    const source = await discordCheckoutSourceChannels();
+    const records = authoritativeDiscordCheckouts(await getSuccessCheckouts(), source.channels);
     const pendingChanges = [];
-    for (const account of accounts) {
-      if (account.disabled === true) continue;
-      const owned = records.filter(record =>
-        isVerifiedDiscordCheckout(record) &&
-        String(record.customerAccountId || "") === String(account.id) &&
-        record.orderNumber && !cancelledOrder(record) &&
-        shippingStatusRank(record.shipping?.status) < 4
-      );
+    const trackable = records.filter(record =>
+      isVerifiedDiscordCheckout(record) && record.orderNumber &&
+      accountsById.has(String(record.customerAccountId || "")) &&
+      !cancelledOrder(record));
+    if (!trackable.length) return;
+
+    // Customer-connected mailboxes can contain unrelated personal purchases;
+    // they are never checkout sources and may update only their owner's
+    // exact, authoritative webhook orders.
+    let customerMailboxesScanned = 0;
+    for (const account of accountsById.values()) {
+      const owned = trackable.filter(record =>
+        String(record.customerAccountId || "") === String(account.id));
       if (!owned.length) continue;
       let mailboxes = [];
       try { mailboxes = await getCustomerSuccessMailboxes(account.id); }
       catch { continue; }
       for (const mailbox of mailboxes) {
         try {
-          await scanMailboxForShipping(mailbox, owned, account, pendingChanges);
+          await scanMailboxForShipping(mailbox, owned, accountsById, pendingChanges);
+          customerMailboxesScanned++;
         } catch (error) {
-          console.error("Shipping tracker mailbox scan:", mailboxFailureReason(error));
+          console.error("Shipping tracker customer mailbox scan:", mailboxFailureReason(error));
         }
       }
     }
+
+    // Owner-managed retailer confirmations often arrive in the business
+    // mailbox, not the customer's personal inbox. Read it ONCE for all
+    // verified owners and never import an email as a new Success checkout.
+    const managed = managedSuccessMailboxConfig();
+    let managedMailboxConnected = false;
+    if (managed.configured) {
+      try {
+        await scanMailboxForShipping({
+          email: managed.email, password: managed.password,
+          managedHost: managed.host, managedPort: managed.port
+        }, trackable, accountsById, pendingChanges);
+        managedMailboxConnected = true;
+      } catch (error) {
+        console.error("Shipping tracker managed mailbox scan:", mailboxFailureReason(error));
+      }
+    }
+    console.log("Verified shipping scan:", JSON.stringify({
+      trackable: trackable.length,
+      customerMailboxesScanned,
+      managedConfigured: managed.configured,
+      managedConnected: managedMailboxConnected,
+      candidateUpdates: pendingChanges.length
+    }));
     if (!pendingChanges.length) return;
     const discordDms = new Map();
     const changedAccounts = new Set();
@@ -43836,7 +43878,7 @@ async function syncShippingTrackers() {
           if (cancelledOrder(record)) continue;
           const priorUpdatedAt = Date.parse(record.shipping?.updatedAt || 0);
           if (Number.isFinite(priorUpdatedAt) && priorUpdatedAt > Date.parse(update.cancelledAt)) continue;
-          record.status = "cancelled";
+          record.status = update.cancelledStatus || "cancelled";
           record.cancelledAt = update.cancelledAt;
           discordDms.delete(record.id);
           changedAccounts.add(update.customerAccountId);
@@ -47625,6 +47667,19 @@ summary.range = {
   days: rangeDays
 };
 
+// Cancellations are shown as status history only, never counted as
+// confirmed purchases, checkout value, products, or successful orders.
+const cancelledCheckouts = req.query.appView === "1"
+  ? ownedRecords.filter(lateCancellation)
+    .filter(record => {
+      const day = successDateKey(record.checkoutAt);
+      return day && day >= rangeStart && day <= rangeEnd;
+    })
+    .map(safeSuccessCheckout)
+    .sort((a, b) => new Date(b.checkoutAt || 0) - new Date(a.checkoutAt || 0))
+    .slice(0, 150)
+  : [];
+
       return res.json({
         ok: true,
 
@@ -47654,7 +47709,8 @@ summary.range = {
             null
         },
 
-        ...summary
+        ...summary,
+        ...(req.query.appView === "1" ? { cancelledCheckouts } : {})
       });
 
     } catch (error) {
