@@ -9884,7 +9884,7 @@ function linkedProfileRetailerMeta(
   ) {
     return {
       key:
-        configured[0].key,
+        configured[0].key === "pokemoncenter" ? "pkc" : configured[0].key,
 
       label:
         configured[0].name
