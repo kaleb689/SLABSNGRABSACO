@@ -9,14 +9,15 @@ if (appEnabled) {
     notifications: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="m2 6 10 8L22 6"/>',
     products: '<rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V3h8v4M3 12h18"/>',
     history: '<path d="M3 21h18M5 21V12h3v9m3 0V5h3v16m3 0V8h3v13"/>',
+    success: '<path d="m12 2 3 6 7 .9-5 4.9 1.2 7-6.2-3.3-6.2 3.3 1.2-7-5-4.9L9 8z"/>',
     profile: '<circle cx="12" cy="7" r="4"/><path d="M4 22v-3a8 8 0 0 1 16 0v3"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/>'
     ,settings: '<path d="m9 3 1-1h4l1 1 1 3 3 1 2 2v4l-2 2-3 1-1 3-1 1h-4l-1-1-1-3-3-1-2-2V9l2-2 3-1z"/><circle cx="12" cy="12" r="3"/>',
     box: '<path d="m3 6 9-4 9 4v12l-9 4-9-4zM3 6l9 4 9-4M12 10v12M7 4l9 4"/>'
   };
   const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
-  const labels = { home: 'Home', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Profile', notifications: 'Notifications', settings: 'Settings' };
-  const navLabels = ['home', 'tracking', 'products', 'profile', 'history'].map(id => [id, labels[id]]);
+  const labels = { home: 'Home', success: 'Success', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Profile', notifications: 'Notifications', settings: 'Settings' };
+  const navLabels = ['home', 'success', 'tracking', 'products', 'profile', 'history'].map(id => [id, labels[id]]);
   let theme = 'night';
   try { theme = localStorage.getItem('sng-app-theme') || 'night'; } catch {}
   const snapshots = new Map(), changes = new Map();
@@ -24,7 +25,7 @@ if (appEnabled) {
   const e = value => escapeHtml(String(value ?? ''));
   const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) || 0);
   const dateLabel = value => value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Pending';
-  let view = ({ success: 'home', membership: 'profile', notifications: 'notifications' })[new URLSearchParams(location.search).get('appTab')] || 'home';
+  let view = ({ success: 'success', membership: 'profile', notifications: 'notifications' })[new URLSearchParams(location.search).get('appTab')] || 'home';
   let days = 30, status = 'all', query = '', orders = [], busy = false, queued = false, error = '', accountId = null;
   let profileTab = 'membership', stream = null;
   const expanded = new Set();
@@ -109,6 +110,26 @@ if (appEnabled) {
     if (view === 'home') html = common + hero('TOTAL CHECKOUT VALUE', money(totals.spend), `${totals.orders} orders · ${totals.items} items secured · ${state.membership?.name || state.membership?.planName || 'Member'}`) +
       `<button class="sng-arrival" type="button" data-app-view="tracking">${icon('tracking')}<span><strong>${records.filter(r => shippingStage(r) === 'out_for_delivery').length} packages out for delivery</strong><small>View your shipping tracker</small></span><b>›</b></button>` +
       `<div class="sng-metrics three">${metric('ORDERED', totals.orders, '', 'box', delta.orders)}${metric('IN TRANSIT', totals.transit, 'cyan', 'tracking', delta.transit)}${metric('DELIVERED', totals.delivered, 'green', 'home', delta.delivered)}</div><div class="sng-section-title"><h2>Top products</h2><button type="button" data-app-view="products">View all</button></div>${productRows(products.slice(0, 3), true)}<div class="sng-section-title"><h2>Recent orders</h2><button type="button" data-app-view="tracking">Track all</button></div>${orderRows(records.slice(0, 5))}`;
+    if (view === 'success') {
+      // Only use the authenticated customer-scoped success API response; do not surface
+      // order numbers, shipping details, addresses, or tracking identifiers here.
+      const periods = [1, 7, 30].map(period => {
+        const summary = dashboardTotals(selectedOrders(orders, period));
+        return `<button type="button" class="sng-metric" data-app-days="${period}" aria-pressed="${days === period}"><span>${period === 1 ? 'LAST 24 HOURS' : `LAST ${period} DAYS`}</span><strong>${money(summary.spend)}</strong><small>${summary.orders} orders · ${summary.items} items</small></button>`;
+      }).join('');
+      const retailers = Object.entries(records.reduce((counts, order) => {
+        const retailer = String(order.retailer || 'Other');
+        counts[retailer] = (counts[retailer] || 0) + 1;
+        return counts;
+      }, {})).sort((a, b) => b[1] - a[1]);
+      const safeProducts = products.map(product => `<article class="sng-product-row"><div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · x${Number(product.quantity) || 0} purchased</small></div><div class="sng-row-value"><strong>${money(product.value)}</strong><small>ITEM VALUE</small></div></article>`).join('') || '<p class="sng-empty">No products purchased in this period.</p>';
+      html = common + '<div class="sng-segment-label">YOUR CHECKOUT SUCCESS</div>' +
+        hero('TOTAL SPENT · ' + rangeName().toUpperCase(), money(totals.spend), `${totals.orders} total orders · ${totals.items} items purchased`, 'insights') +
+        '<div class="sng-metrics three">' + periods + '</div>' +
+        '<div class="sng-metrics three">' + metric('TOTAL ORDERS', totals.orders, 'violet') + metric('ITEMS PURCHASED', totals.items, 'cyan') + metric('TOTAL SPENT', money(totals.spend)) + '</div>' +
+        breakdown('Orders by retailer', retailers, totals.orders) +
+        '<div class="sng-section-title"><h2>Products purchased</h2><span>' + products.length + ' products</span></div>' + safeProducts;
+    }
     if (view === 'tracking') html = common + hero('IN TRANSIT', `${totals.transit} packages`, `${totals.awaiting} awaiting shipment · ${totals.delivered} delivered`, 'orange') +
       `<label class="sng-search">Search retailer, product or tracking number<input id="sng-search" value="${e(query)}" placeholder="Search packages" type="search"></label><div class="sng-status-filters" role="group" aria-label="Shipping status">${['all', 'ordered', 'shipped', 'in_transit', 'out_for_delivery', 'delivered'].map(s => `<button type="button" data-app-status="${s}" aria-pressed="${s === status}">${s === 'all' ? 'All' : stageLabels[s]} <span>${s === 'all' ? records.length : records.filter(r => shippingStage(r) === s).length}</span></button>`).join('')}</div><div class="sng-section-title"><h2>Packages</h2><span>Live updates</span></div><div id="sng-search-results"></div>`;
     if (view === 'products') html = common + `<div class="sng-segment-label">PRODUCTS SECURED</div>` + hero('PRODUCT VALUE', money(totals.spend), `${totals.items} items · ${products.length} products`, 'pink') +
