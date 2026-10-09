@@ -68,7 +68,7 @@ export function checkoutSourceSelection({ checkoutChannelId, successChannelId, h
   const explicit = valid(checkoutChannelId) ? String(checkoutChannelId) : null;
   const configured = valid(successChannelId) ? String(successChannelId) : null;
   if (explicit && explicit !== hits) return { channels: [explicit], source: "checkout_source" };
-  if (explicit === hits) return { channels: [], source: "mirror_rejected" };
+  if (explicit && explicit === hits) return { channels: [], source: "mirror_rejected" };
   if (configured && configured !== hits) return { channels: [configured], source: "success_channel" };
   const discovered = [...new Set(discoveredChannelIds.map(String).filter(id => valid(id) && id !== hits))];
   return { channels: discovered.length === 1 ? discovered : [], source: discovered.length === 1 ? "discovered" : "unconfigured_or_ambiguous" };
