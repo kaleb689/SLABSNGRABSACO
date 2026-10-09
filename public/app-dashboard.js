@@ -181,6 +181,7 @@ if (appEnabled) {
     if (stream) return;
     stream = new EventSource('/api/account/success/events');
     stream.addEventListener('checkout', () => void refresh());
+    stream.addEventListener('data-change', () => void refresh());
     stream.addEventListener('open', () => void refresh());
   }
   document.addEventListener('account-session-changed', () => { render(); connect(); if (state.customer && state.customer.id !== accountId) { snapshots.clear(); changes.clear(); void refresh(); } });
@@ -191,6 +192,6 @@ if (appEnabled) {
   window.addEventListener('pagehide', () => { stream?.close(); stream = null; });
   document.getElementById('app-demo-tools')?.addEventListener('click', () => setTimeout(() => void refresh(), 800));
   document.addEventListener('click', event => { if (event.target.closest('[data-demo-event]')) setTimeout(() => void refresh(), 800); });
-  setInterval(() => { if (!document.hidden && state.customer) void refresh(); }, 30000);
+  setInterval(() => { if (!document.hidden && state.customer) void refresh(); }, 15000);
   render(); connect(); void refresh();
 }
