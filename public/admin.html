@@ -10235,16 +10235,15 @@ function linkedProfileRetailerGroupsHtml(
   return retailerOrder
     .filter(
       key =>
-        groups.has(
-          key
-        )
+        ["target", "walmart", "pkc"].includes(key) || groups.has(key)
     )
     .map(
       key => {
         const group =
-          groups.get(
-            key
-          );
+          groups.get(key) || {
+            label: key === "target" ? "Target" : key === "walmart" ? "Walmart" : "Pokemon Center",
+            items: []
+          };
 
         return `
           <details
@@ -10252,7 +10251,6 @@ function linkedProfileRetailerGroupsHtml(
             data-linked-retailer-group="${escapeHtml(
               key
             )}"
-            open
           >
             <summary>
               <span>
@@ -10277,6 +10275,7 @@ function linkedProfileRetailerGroupsHtml(
                     )
                 )
                 .join("")}
+              ${group.items.length ? "" : '<p class="admin-retailer-empty">No linked accounts for this retailer.</p>'}
             </div>
           </details>
         `;
@@ -10306,6 +10305,11 @@ async function loadAdminLinkedProfiles(
     )?.dataset
       ?.linkedProfileId ||
     "";
+
+  const openRetailerGroups = new Set(
+    Array.from(container.querySelectorAll("[data-linked-retailer-group][open]"))
+      .map(group => group.dataset.linkedRetailerGroup)
+  );
 
   const previousScrollY =
     window.scrollY;
@@ -10408,6 +10412,10 @@ async function loadAdminLinkedProfiles(
       </div>
     `;
 
+
+    container.querySelectorAll("[data-linked-retailer-group]").forEach(group => {
+      group.open = openRetailerGroups.has(group.dataset.linkedRetailerGroup);
+    });
 
     const detail =
       container.querySelector(
