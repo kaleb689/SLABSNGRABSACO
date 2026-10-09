@@ -16,6 +16,7 @@ function section(source, first, last) {
 
 function harness(script, side) {
   let editing = false;
+  let now = Date.now();
   let nextTimer = 0;
   const timers = new Map();
   const requests = [];
@@ -40,6 +41,7 @@ function harness(script, side) {
     document,
     window,
     console,
+    Date: class extends Date { static now() { return now; } },
     setTimeout: fn => {
       const id = ++nextTimer;
       timers.set(id, fn);
@@ -67,6 +69,7 @@ function harness(script, side) {
   vm.runInContext(script, context, { filename: side + "-live-block.js" });
   return {
     requests,
+    advanceClock(ms = 9000) { now += ms; },
     setEditing(value) { editing = value; },
     schedule() { vm.runInContext(
       side === "admin" ? "scheduleAdminLiveRefresh()" : "scheduleCustomerLiveRefresh()",
@@ -94,6 +97,10 @@ test("Admin live updates refresh its management view and pool search, but not ac
   const block = section(admin, "let adminLiveRefreshTimer = null;", "/* =========================================\n   INITIALIZE");
   const h = harness(block, "admin");
   assert.ok(h.requests.some(item => item[0] === "stream" && item[1] === "/api/admin/live/events"));
+  h.schedule();
+  await h.flush();
+  assert.equal(h.requests.filter(item => item[0] === "admin-load").length, 0, "defer while admin recently interacted");
+  h.advanceClock();
   h.schedule();
   await h.flush();
   assert.equal(h.requests.filter(item => item[0] === "admin-load").length, 1);
