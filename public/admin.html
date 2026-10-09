@@ -20468,47 +20468,100 @@ document
 ========================================= */
 let adminLiveRefreshTimer = null;
 let adminLiveRefreshRunning = false;
+let adminLiveRefreshPending = false;
+let adminLiveEvents = null;
+
+// Never tear down a form while an admin is editing it.
+function adminLiveInputFocused() {
+  const active = document.activeElement;
+  return Boolean(active && typeof active.matches === "function" &&
+    (active.matches("input, textarea, select, [contenteditable='true']") ||
+      active.closest("[contenteditable='true']")));
+}
 
 async function refreshAdminInPlace() {
   if (
+    !adminLiveRefreshPending ||
     adminLiveRefreshRunning ||
     document.hidden ||
-    dashboard.hidden
-  ) {
-    return;
-  }
+    dashboard.hidden ||
+    adminLiveInputFocused()
+  ) return;
 
+  adminLiveRefreshPending = false;
   adminLiveRefreshRunning = true;
   const scrollX = window.scrollX;
   const scrollY = window.scrollY;
   const filterValue = submissionTypeFilter?.value || "paid";
 
   try {
+    // Reload the currently selected management view without changing routes.
     await load();
     if (submissionTypeFilter) submissionTypeFilter.value = filterValue;
+    // The cross-pool search is an independent panel and must refresh too.
+    await window.refreshAdminPoolSearch?.();
   } catch (error) {
     console.error("Admin live refresh:", error);
   } finally {
     requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
     adminLiveRefreshRunning = false;
+    // Updates arriving during the fetch must never be dropped.
+    if (adminLiveRefreshPending) scheduleAdminLiveRefresh();
   }
 }
 
 function scheduleAdminLiveRefresh() {
+  adminLiveRefreshPending = true;
   clearTimeout(adminLiveRefreshTimer);
   adminLiveRefreshTimer = setTimeout(() => {
     void refreshAdminInPlace();
-  }, 180);
+  }, 300);
 }
 
-if (typeof EventSource !== "undefined") {
-  const adminLiveEvents = new EventSource("/api/admin/live/events");
+function updateAdminLiveEvents() {
+  const enabled = !document.hidden && !dashboard.hidden &&
+    typeof EventSource !== "undefined";
+  if (!enabled) {
+    adminLiveEvents?.close();
+    adminLiveEvents = null;
+    return;
+  }
+  if (adminLiveEvents) return;
+  adminLiveEvents = new EventSource("/api/admin/live/events");
   adminLiveEvents.addEventListener("data-change", scheduleAdminLiveRefresh);
+  // Catch changes from while the app was suspended or disconnected.
+  adminLiveEvents.addEventListener("open", scheduleAdminLiveRefresh);
 }
 
+let adminWasHidden = dashboard.hidden;
+new MutationObserver(() => {
+  const isHidden = dashboard.hidden;
+  if (adminWasHidden === isHidden) return;
+  adminWasHidden = isHidden;
+  updateAdminLiveEvents();
+  if (!isHidden) scheduleAdminLiveRefresh();
+}).observe(dashboard, { attributes: true, attributeFilter: ["hidden"] });
+
+document.addEventListener("focusout", () => {
+  if (adminLiveRefreshPending) scheduleAdminLiveRefresh();
+}, true);
 document.addEventListener("visibilitychange", () => {
+  updateAdminLiveEvents();
   if (!document.hidden && !dashboard.hidden) scheduleAdminLiveRefresh();
 });
+window.addEventListener("pageshow", () => {
+  updateAdminLiveEvents();
+  if (!document.hidden && !dashboard.hidden) scheduleAdminLiveRefresh();
+});
+window.addEventListener("pagehide", () => {
+  adminLiveEvents?.close();
+  adminLiveEvents = null;
+});
+// Fallback for a suspended phone or a missed real-time notification.
+setInterval(() => {
+  if (!document.hidden && !dashboard.hidden) scheduleAdminLiveRefresh();
+}, 60000);
+updateAdminLiveEvents();
 
 /* =========================================
    INITIALIZE

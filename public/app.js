@@ -14569,7 +14569,8 @@ document
 ===================================================== */
 
 async function loadMemberProfile(
-  force = false
+  force = false,
+  background = false
 ) {
   if (ADMIN_PREVIEW_MODE) {
     buildAdminPreviewProfile();
@@ -14646,7 +14647,7 @@ async function loadMemberProfile(
 
     renderCustomerDiscordSettings();
 
-    await loadCustomerNotifications();
+    await loadCustomerNotifications({ showPopup: !background });
 
     state.accountStats =
       data.accountStats || {
@@ -14713,7 +14714,7 @@ await loadSavedDetails();
 if (
   state.customer &&
   (!state.customer.checkoutOnboardingComplete || !state.customer.imapOnboardingCompletedAt) &&
-  !ANY_ADMIN_PREVIEW_MODE && !accountOnboardingWasDismissed()
+  !ANY_ADMIN_PREVIEW_MODE && !background && !accountOnboardingWasDismissed()
 ) {
   const hasAddress =
     (state.savedDetails?.addresses || []).length > 0;
@@ -16298,35 +16299,51 @@ document.addEventListener("visibilitychange", () => {
 */
 let customerLiveRefreshTimer = null;
 let customerLiveRefreshRunning = false;
+let customerLiveRefreshPending = false;
+
+function customerLiveInputFocused() {
+  const active = document.activeElement;
+  return Boolean(active && typeof active.matches === "function" &&
+    (active.matches("input, textarea, select, [contenteditable='true']") ||
+      active.closest("[contenteditable='true']")));
+}
 
 async function refreshCustomerViewInPlace() {
-  if (!state.customer || document.visibilityState !== "visible" || customerLiveRefreshRunning) return;
+  if (!customerLiveRefreshPending || !state.customer ||
+      document.visibilityState !== "visible" ||
+      customerLiveRefreshRunning || customerLiveInputFocused()) return;
 
+  customerLiveRefreshPending = false;
   customerLiveRefreshRunning = true;
   const activeTab =
     document.querySelector("[data-account-tab].active")?.dataset?.accountTab ||
-    "overview";
+    "membership";
   const scrollX = window.scrollX;
   const scrollY = window.scrollY;
 
   try {
-    await loadMemberProfile(true);
+    // Background refreshes must never reopen the signup/IMAP popups.
+    await loadMemberProfile(true, true);
     switchAccountTab(activeTab);
-
     if (activeTab === "success") {
       await loadSuccessDashboard(true);
     }
+  } catch (error) {
+    console.error("Customer live refresh:", error);
   } finally {
     requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
     customerLiveRefreshRunning = false;
+    // Changes made while the previous refresh was in-flight still apply.
+    if (customerLiveRefreshPending) scheduleCustomerLiveRefresh();
   }
 }
 
 function scheduleCustomerLiveRefresh() {
+  customerLiveRefreshPending = true;
   clearTimeout(customerLiveRefreshTimer);
   customerLiveRefreshTimer = setTimeout(() => {
     void refreshCustomerViewInPlace();
-  }, 180);
+  }, 300);
 }
 
 let customerLiveEvents = null;
@@ -16342,17 +16359,31 @@ function updateCustomerLiveEvents() {
   if (customerLiveEvents) return;
   customerLiveEvents = new EventSource("/api/account/live/events");
   customerLiveEvents.addEventListener("data-change", scheduleCustomerLiveRefresh);
-  // Catch changes made while the app was suspended or the connection was lost.
   customerLiveEvents.addEventListener("open", scheduleCustomerLiveRefresh);
 }
 
+document.addEventListener("focusout", () => {
+  if (customerLiveRefreshPending) scheduleCustomerLiveRefresh();
+}, true);
 document.addEventListener("account-session-changed", updateCustomerLiveEvents);
-document.addEventListener("visibilitychange", updateCustomerLiveEvents);
-window.addEventListener("pageshow", updateCustomerLiveEvents);
+document.addEventListener("visibilitychange", () => {
+  updateCustomerLiveEvents();
+  if (document.visibilityState === "visible" && state.customer &&
+      !ADMIN_PREVIEW_MODE) scheduleCustomerLiveRefresh();
+});
+window.addEventListener("pageshow", () => {
+  updateCustomerLiveEvents();
+  if (state.customer && !ADMIN_PREVIEW_MODE) scheduleCustomerLiveRefresh();
+});
 window.addEventListener("pagehide", () => {
   customerLiveEvents?.close();
   customerLiveEvents = null;
 });
+// Catch-up refresh even when the real-time connection was interrupted.
+setInterval(() => {
+  if (state.customer && !ADMIN_PREVIEW_MODE &&
+      document.visibilityState === "visible") scheduleCustomerLiveRefresh();
+}, 60000);
 updateCustomerLiveEvents();
 
 function homepageSampleSuccessData() {
