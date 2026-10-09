@@ -9,7 +9,7 @@ export function cancelledOrder(record) {
     /cancel|refund|failed|declined/i.test(String(record?.status || "")));
 }
 export function orderKey(record) {
-  return `${record.customerAccountId}:${String(record.retailer || "").toLowerCase()}:${record.orderNumber || record.id}`;
+  return `${record.customerAccountId}:${String(record.retailer || "").toLowerCase()}:${record.id}`;
 }
 export function orderSnapshot(record) {
   return { eligible: !cancelledOrder(record) && /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(record.status || "confirmed"),
@@ -92,6 +92,20 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       await save();
     }
     state.preferences ||= {};
+    if (!state.webhookOnlyNotificationsVersion) {
+      // The old IMAP importer could have created checkout alerts for personal
+      // purchases. Rebuild order snapshots from the verified store once and
+      // clear legacy order/shipping notices without touching account notices.
+      const verified = (await getRecords()).filter(record => record.customerAccountId);
+      state.snapshots = Object.fromEntries(verified.map(record => [orderKey(record), orderSnapshot(record)]));
+      const orderKinds = new Set(["order_confirmed", "shipping_update"]);
+      for (const id of Object.keys(state.inbox || {})) {
+        state.inbox[id] = (state.inbox[id] || []).filter(event => !orderKinds.has(event.kind));
+      }
+      state.outbox = (state.outbox || []).filter(event => !orderKinds.has(event.notification?.kind));
+      state.webhookOnlyNotificationsVersion = 1;
+      await save();
+    }
     if (!state.accountEvents) {
       state.accountEvents = {};
       for (const account of await getAccounts()) state.accountEvents[account.id] = accountEventSnapshot(account);
@@ -151,7 +165,15 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       for (const record of records) {
         if (!record.customerAccountId) continue;
         const key = orderKey(record);
-        for (const event of orderEvents(record, state.snapshots[key])) {
+        const previous = state.snapshots[key];
+        const checkoutAge = Date.now() - Date.parse(record.checkoutAt || "");
+        const historic = !previous && Number.isFinite(checkoutAge) && checkoutAge > 24 * 60 * 60 * 1000;
+        for (const event of orderEvents(record, previous)) {
+          // A manually reviewed historical alias should update Success totals
+          // without producing dozens of old "new order" pushes.
+          if (historic && event.kind === "order_confirmed") continue;
+          if (historic && event.kind === "shipping_update" &&
+              Date.now() - Date.parse(record.shipping?.updatedAt || "") > 24 * 60 * 60 * 1000) continue;
           const notification = { ...event, orderKey: key, id: crypto.randomUUID(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
           const inbox = state.inbox[record.customerAccountId] ||= [];
           inbox.push(notification);
