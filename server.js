@@ -63,20 +63,22 @@ function broadcastLiveDataChange(detail = "data") {
 */
 app.use((req, res, next) => {
   const method = String(req.method || "").toUpperCase();
+  // Include every API writer, not just the admin/account subtrees:
+  // profile, saved-details, inventory and checkout routes also mutate state.
+  // GET/HEAD/OPTIONS remain silent, so live refresh reads never echo back.
   const mutation =
-    !["GET", "HEAD", "OPTIONS"].includes(method) &&
+    ["POST", "PUT", "PATCH", "DELETE"].includes(method) &&
     (
-      req.path.startsWith("/api/admin/") ||
-      req.path.startsWith("/api/account/") ||
+      req.path.startsWith("/api/") ||
       req.path === "/webhook" ||
-      req.path.startsWith("/api/webhook") ||
       req.path.startsWith("/stripe")
     );
 
   if (mutation) {
     res.once("finish", () => {
       if (res.statusCode >= 200 && res.statusCode < 400) {
-        broadcastLiveDataChange(`${method} ${req.path}`);
+        // Do not leak admin paths or customer identifiers to other SSE clients.
+        broadcastLiveDataChange();
       }
     });
   }
