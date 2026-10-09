@@ -25,6 +25,7 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
     customerAccountId: owner,
     retailer: order.retailer,
     orderNumber: order.orderNumber || prior.orderNumber || '',
+    sourceProfileLabel: String(order.sourceProfileLabel || prior.sourceProfileLabel || '').slice(0, 100),
     checkoutAt: prior.checkoutAt || order.checkoutAt,
     orderTotal: priced ? order.orderTotal : prior.orderTotal || 0,
     orderTotalBasis: priced ? order.orderTotalBasis : prior.orderTotalBasis || 'unknown',
