@@ -1,7 +1,8 @@
 (() => {
 const $=id=>document.getElementById(id),esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let tab="overview",data={customers:[],activation:null,availability:null,usage:null,success:{records:[]}},authenticated=false,stream=null;
-let successDays=30;
+let successDays=30,successCustomerId="all",successAccountKey="all";
+const successExpandedUsers=new Set();
 let customerSearchText="", mobileRefreshTimer=null, mobileRefreshPending=false, mobileRefreshRunning=false;
 const mobileControlFocused=()=>{
   const active=document.activeElement;
@@ -33,52 +34,150 @@ document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b
 const list=customers(),a=data.activation||{},v=data.availability||{},u=data.usage||{},c=$("content");
 if(tab==="overview"){c.innerHTML='<div class="metrics">'+metric("Customer orders",list.length)+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("App users · 7 days",u.activeUsers7d??"—")+metric("Installed devices",u.installedDevices??"—")+'</div>'+panel("Quick actions",'<div class="links"><a class="action" href="/admin.html">OPEN FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html#profileActivationTracker">PROFILE ACTIVATION TOOLS ↗</a></div>')+panel("Status","<p>Data refreshes automatically while this app is open. Sensitive changes use the full secure admin interface.</p>");}
 if(tab==="success"){
-  const days=successDays, now=new Date();
-  const cutoff=days==="all"?0:days==="mtd"?new Date(now.getFullYear(),now.getMonth(),1).getTime():days==="ytd"?new Date(now.getFullYear(),0,1).getTime():days===1?new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime():Date.now()-days*86400000;
-  const records=(data.success?.records||[]).filter(x=>{
-    const time=new Date(x.checkoutAt).getTime();
-    return Number.isFinite(time) && time>=cutoff && time<=Date.now()+60000;
+  // Community totals include unmatched confirmed checkouts. Attribution is
+  // required ONLY for individual customer and profile performance views.
+  const allSuccess=Array.isArray(data.success?.records)?data.success.records:[];
+  const now=new Date(), currentTime=Date.now(), day=86400000;
+  const days=successDays;
+  const cutoff=days==="all"?0:days==="mtd"?new Date(now.getFullYear(),now.getMonth(),1).getTime():days==="ytd"?new Date(now.getFullYear(),0,1).getTime():currentTime-Number(days)*day;
+  const inRange=allSuccess.filter(x=>{
+    const time=Date.parse(x.checkoutAt);
+    return Number.isFinite(time)&&time>=cutoff&&time<=currentTime+60000;
   });
   const dollars=n=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(n)||0);
-  const spent=records.reduce((sum,x)=>sum+Math.max(0,Number(x.orderTotal)||0),0);
-  const retailers=new Map(),products=new Map();
-  records.forEach(order=>{
-    const retailer=String(order.retailer||"Other");
-    retailers.set(retailer,(retailers.get(retailer)||0)+1);
-    (order.items||[]).forEach(item=>{
-      const name=String(item.name||"Product");
-      const key=retailer.toLowerCase()+"|"+name.toLowerCase();
-      const entry=products.get(key)||{name,retailer,quantity:0,imageUrl:item.imageUrl||""};
-      entry.quantity+=Math.max(0,Number(item.quantity)||0);
-      if(!entry.imageUrl)entry.imageUrl=item.imageUrl||"";
-      products.set(key,entry);
-    });
+  const amount=x=>x?.orderTotalKnown&&Number(x.orderTotal)>0?Number(x.orderTotal):0;
+  const verifiedSpent=rows=>rows.reduce((sum,x)=>sum+amount(x),0);
+  const missingPrices=rows=>rows.filter(x=>!x.orderTotalKnown).length;
+  const safeImage=url=>typeof url==="string"&&/^https:\/\/[^ "'<>]+$/i.test(url);
+  const customerList=new Map();
+  allSuccess.filter(x=>x.customerAccountId).forEach(x=>{
+    customerList.set(String(x.customerAccountId),String(x.customerName||"Customer"));
   });
-  const palette=["#32d9f9","#a48dff","#ffcf68","#5be1a4","#fe8bae","#ff9b66"];
-  const n=records.length;
-  const chart=Array.from(retailers.entries()).sort((a,b)=>b[1]-a[1]);
-  let offset=0;
-  const parts=chart.map(([,count],i)=>{const start=offset;offset+=n?count/n*100:0;return palette[i%palette.length]+" "+start+"% "+offset+"%";});
-  const donut='<div style="width:165px;height:165px;border-radius:50%;margin:16px auto;display:grid;place-items:center;background:conic-gradient('+(parts.join(",")||"#264458 0% 100%")+')"><div style="background:#071826;border-radius:50%;width:113px;height:113px;display:grid;place-items:center;text-align:center;font-size:24px;font-weight:900">'+n+'<small style="display:block;font-size:10px;color:#a2bed0">ORDERS</small></div></div>';
-  const legend=chart.map(([name,count],i)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #22445a"><span><i style="display:inline-block;background:'+palette[i%palette.length]+';width:10px;height:10px;border-radius:50%;margin-right:9px"></i>'+esc(name)+'</span><strong>'+count+' · '+(n?(100*count/n).toFixed(1):"0")+'%</strong></div>').join("");
-  const validImage=url=>typeof url==="string" && /^(https:\/\/|\/(?!\/))/.test(url);
-  const productList=Array.from(products.values()).sort((a,b)=>b.quantity-a.quantity).map(p=>'<div class="item" style="display:flex;align-items:center;gap:12px"><img alt="" loading="lazy" src="'+esc(validImage(p.imageUrl)?p.imageUrl:"/slabsngrabs-aco-logo-transparent.png")+'" style="width:58px;height:58px;object-fit:contain;border-radius:9px;background:#102638"><div style="flex:1;min-width:0"><strong>'+esc(p.name)+'</strong><small>'+esc(p.retailer)+'</small></div><strong style="color:#6be8ff;white-space:nowrap">×'+p.quantity+'</strong></div>').join("")||'<p>No matching purchases in this period.</p>';
-  const avg=n?spent/n:0;
-  const rangeLabels={1:"TODAY",7:"LAST 7 DAYS",30:"LAST 30 DAYS",90:"LAST 90 DAYS",mtd:"THIS MONTH",ytd:"YEAR TO DATE",all:"ALL TIME"};
-  const ranges=[[1,"Today"],[7,"7D"],[30,"30D"],[90,"90D"],["mtd","MTD"],["ytd","YTD"],["all","All"]];
+  const customers=Array.from(customerList.entries()).sort((a,b)=>a[1].localeCompare(b[1]));
+  if(successCustomerId!=="all"&&successCustomerId!=="unmatched"&&!customerList.has(successCustomerId))successCustomerId="all";
+  const customerSelect='<label style="display:block;margin:0 0 13px;color:var(--m-muted,#afbed1)">VIEW CHECKOUTS FOR<select id="success-customer-filter" style="width:100%;margin-top:8px;min-height:43px;border-radius:11px;padding:9px 12px;color:var(--m-text,#fff);background:var(--m-panel,#141f2b);border:1px solid var(--m-border,#36627a)">'+
+    '<option value="all">All community checkouts</option><option value="unmatched">Unmatched / unassigned checkouts</option>'+
+    customers.map(([id,name])=>'<option value="'+esc(id)+'" '+(successCustomerId===id?'selected':'')+'>'+esc(name)+'</option>').join("")+
+    '</select></label>';
+  let accountSelect="";
+  let filtered=inRange.filter(x=>successCustomerId==="all"?true:successCustomerId==="unmatched"?!x.customerAccountId:String(x.customerAccountId)===successCustomerId);
+  if(successCustomerId!=="all"&&successCustomerId!=="unmatched"){
+    const accountOptions=new Map();
+    allSuccess.filter(x=>String(x.customerAccountId)===successCustomerId).forEach(x=>{
+      accountOptions.set(String(x.accountKey||"unknown"),String(x.accountLabel||"Unspecified profile")+" · "+String(x.retailer||"Retailer"));
+    });
+    if(!accountOptions.has(successAccountKey))successAccountKey="all";
+    accountSelect='<label style="display:block;margin:0 0 14px;color:var(--m-muted,#afbed1)">ACCOUNT / PROFILE<select id="success-account-filter" style="width:100%;margin-top:8px;min-height:43px;border-radius:11px;padding:9px 12px;color:var(--m-text,#fff);background:var(--m-panel,#141f2b);border:1px solid var(--m-border,#36627a)">'+
+      '<option value="all">All of this customer&#39;s accounts</option>'+
+      Array.from(accountOptions.entries()).map(([key,name])=>'<option value="'+esc(key)+'" '+(successAccountKey===key?'selected':'')+'>'+esc(name)+'</option>').join("")+
+      '</select></label>';
+    if(successAccountKey!=="all")filtered=filtered.filter(x=>String(x.accountKey||"unknown")===successAccountKey);
+  }else successAccountKey="all";
+  const groupedRetailers=new Map();
+  filtered.forEach(x=>{const key=String(x.retailer||"Other");groupedRetailers.set(key,(groupedRetailers.get(key)||0)+1);});
+  const total=filtered.length,spent=verifiedSpent(filtered),pending=missingPrices(filtered);
+  const shownSpend=!total||pending===total?"—":dollars(spent);
+  const rangeNames={1:"LAST 24 HOURS",7:"LAST 7 DAYS",30:"LAST 30 DAYS",90:"LAST 90 DAYS",mtd:"THIS MONTH",ytd:"YEAR TO DATE",all:"ALL TIME"};
+  const ranges=[[1,"24H"],[7,"7D"],[30,"30D"],[90,"90D"],["mtd","MTD"],["ytd","YTD"],["all","ALL"]];
+  const buttons='<div class="admin-spend-ranges" role="group" aria-label="Total spent period">'+
+    ranges.map(([value,label])=>'<button type="button" data-success-days="'+value+'" aria-pressed="'+(String(value)===String(days))+'">'+label+'</button>').join("")+'</div>';
+  const note=pending?pending+' confirmed checkout'+(pending===1?'':'s')+' awaiting verified paid amounts.':'All displayed checkout amounts are verified.';
   const ticks=days===1?8:days===7?7:12;
-  const min=cutoff||Math.min(Date.now(),...records.map(x=>Date.parse(x.checkoutAt)).filter(Number.isFinite));
-  const span=Math.max(1,Date.now()-min),buckets=Array(ticks).fill(0);
-  records.forEach(order=>{const t=Date.parse(order.checkoutAt);if(Number.isFinite(t)){const i=Math.min(ticks-1,Math.max(0,Math.floor((t-min)/span*ticks)));buckets[i]+=Math.max(0,Number(order.orderTotal)||0);}});
+  const min=cutoff||Math.min(currentTime,...filtered.map(x=>Date.parse(x.checkoutAt)).filter(Number.isFinite));
+  const span=Math.max(1,currentTime-min),buckets=Array(ticks).fill(0);
+  filtered.forEach(x=>{const time=Date.parse(x.checkoutAt);if(Number.isFinite(time)){const pos=Math.min(ticks-1,Math.max(0,Math.floor((time-min)/span*ticks)));buckets[pos]+=amount(x);}});
   const max=Math.max(1,...buckets);
-  const line=buckets.map((value,i)=>(i?'L':'M')+(16+i*(288/(ticks-1))).toFixed(1)+' '+(76-value/max*56).toFixed(1)).join(' ');
-  const trend='<svg class="admin-spend-trend" viewBox="0 0 320 100" preserveAspectRatio="none" role="img" aria-label="Checkout spending trend for selected period"><path d="'+line+'" fill="none" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  const rangeButtons='<div class="admin-spend-ranges" role="group" aria-label="Total spent period">'+ranges.map(([value,label])=>'<button type="button" data-success-days="'+value+'" aria-pressed="'+(String(value)===String(days))+'">'+label+'</button>').join('')+'</div>';
-  const hero='<section class="admin-spend-hero"><span class="admin-spend-kicker">TOTAL SPENT · '+rangeLabels[days]+'</span><strong>'+dollars(spent)+'</strong><p>'+n+' orders · '+retailers.size+' retailers · avg '+dollars(avg)+'</p>'+trend+'</section>';
+  const line=buckets.map((v,i)=>(i?"L":"M")+(16+i*(288/(ticks-1))).toFixed(1)+" "+(76-v/max*56).toFixed(1)).join(" ");
+  const trend='<svg class="admin-spend-trend" viewBox="0 0 320 100" preserveAspectRatio="none" role="img" aria-label="Verified spending trend for selected period"><path d="'+line+'" fill="none" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const hero='<section class="admin-spend-hero"><span class="admin-spend-kicker">TOTAL VERIFIED SPENT · '+rangeNames[days]+'</span><strong>'+shownSpend+'</strong><p>'+total+' confirmed orders · '+groupedRetailers.size+' retailers · '+esc(note)+'</p>'+trend+'</section>';
+  function productsMarkup(rows,limit=30) {
+    const goods=new Map();
+    rows.forEach(order=>(order.items||[]).forEach(item=>{
+      const name=String(item.name||"Product");
+      const retailer=String(order.retailer||"Retailer");
+      const key=retailer.toLowerCase()+"|"+name.toLowerCase();
+      const entry=goods.get(key)||{name,retailer,quantity:0,imageUrl:item.imageUrl||""};
+      entry.quantity+=Math.max(0,Math.floor(Number(item.quantity)||0));
+      if(!entry.imageUrl)entry.imageUrl=item.imageUrl||"";
+      goods.set(key,entry);
+    }));
+    return Array.from(goods.values()).sort((a,b)=>b.quantity-a.quantity||a.name.localeCompare(b.name)).slice(0,limit).map(x=>
+      '<div class="item" style="display:flex;align-items:center;gap:12px;margin-top:8px">'+
+      '<img alt="" loading="lazy" src="'+esc(safeImage(x.imageUrl)?x.imageUrl:"/slabsngrabs-aco-logo-transparent.png")+'" style="width:48px;height:48px;object-fit:contain;flex:none;border-radius:8px;background:#102638">'+
+      '<div style="flex:1;min-width:0"><strong>'+esc(x.name)+'</strong><small>'+esc(x.retailer)+'</small></div>'+
+      '<strong style="color:#70e8ff;white-space:nowrap">×'+x.quantity+'</strong></div>').join("")||
+      '<p>No purchased product details are available for these orders.</p>';
+  }
+  function accountsMarkup(rows) {
+    const accounts=new Map();
+    rows.forEach(x=>{
+      const key=String(x.accountKey||"unknown");
+      if(!accounts.has(key))accounts.set(key,{name:String(x.accountLabel||"Unspecified profile"),retailer:String(x.retailer||"Retailer"),
+        kind:String(x.accountKind||"unclassified"),orders:[]});
+      accounts.get(key).orders.push(x);
+    });
+    return Array.from(accounts.values()).sort((a,b)=>b.orders.length-a.orders.length).map(x=>
+      '<div class="item"><strong>'+esc(x.name)+' · '+esc(x.retailer)+'</strong>'+
+      '<small>'+esc(x.kind==='linked'?"Linked/rented account":x.kind==='paid'?"Paid customer profile":"Verified account (assignment type unavailable)")+
+      ' · '+x.orders.length+' checkout'+(x.orders.length===1?'':'s')+
+      ' · verified spend '+dollars(verifiedSpent(x.orders))+'</small>'+
+      (missingPrices(x.orders)?'<small>'+missingPrices(x.orders)+' order amount'+(missingPrices(x.orders)===1?'':'s')+' pending</small>':'')+
+      '<div style="margin-top:7px">'+productsMarkup(x.orders,12)+'</div></div>').join("")||
+      '<p>No verified account-level purchases found in this period.</p>';
+  }
+  const palette=["#32d9f9","#a48dff","#ffcf68","#5be1a4","#fe8bae","#ff9b66"];
+  const pie=Array.from(groupedRetailers.entries()).sort((a,b)=>b[1]-a[1]);
+  let offset=0;
+  const segments=pie.map(([,count],i)=>{const start=offset;offset+=total?count/total*100:0;return palette[i%palette.length]+" "+start+"% "+offset+"%";});
+  const donut='<div style="width:165px;height:165px;border-radius:50%;margin:16px auto;display:grid;place-items:center;background:conic-gradient('+(segments.join(",")||"#264458 0% 100%")+')"><div style="background:#071826;border-radius:50%;width:113px;height:113px;display:grid;place-items:center;font-size:25px;font-weight:900">'+total+'<small style="display:block;font-size:10px;color:#a2bed0">ORDERS</small></div></div>';
+  const legend=pie.map(([name,count],i)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #22445a"><span><i style="display:inline-block;background:'+palette[i%palette.length]+';width:10px;height:10px;border-radius:50%;margin-right:9px"></i>'+esc(name)+'</span><strong>'+count+' · '+(total?(100*count/total).toFixed(1):"0")+'%</strong></div>').join("");
+  const community=data.success?.communityTotals||{};
+  const archive=data.success?.historicalSummary||{};
+  const combinedNote='Includes '+(archive.historicalCheckouts||0)+' previously reported historical checkouts ('+dollars(archive.historicalSpent||0)+
+    '); their individual receipts and dates are unavailable. '+(archive.reportedReconciliation?
+      dollars(archive.reportedReconciliation)+' owner-reference rounding adjustment. ':'')+
+    'Only Discord-verified orders appear in customer and period breakdowns.';
+  const lifetime=panel("Lifetime community checkouts",'<div class="metrics">'+metric("Total confirmed checkouts",community.totalCheckouts??allSuccess.length)+
+    metric("Reported total checkout spend",dollars(community.totalSpent||0))+'</div><p>'+esc(combinedNote)+'</p>');
   const unmatched=Math.max(0,Number(data.success?.unmatchedCount)||0);
-   const unmatchedNote=unmatched?panel("Unmatched Discord checkouts",'<p><strong>'+unmatched+'</strong> unlinked checkout messages from the authoritative Discord feed are excluded from member totals until the correct paid or assigned profile is verified.</p><a href="/admin-checkout-match.html">MATCH CHECKOUT PROFILES ↗</a>'):"";
-   c.innerHTML=rangeButtons+hero+'<div class="metrics admin-success-metrics">'+metric("Total orders",n)+metric("Retailers",retailers.size)+'</div>'+unmatchedNote+panel("Orders by retailer",donut+legend)+panel("Products purchased",productList);
-  c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{successDays=/^(mtd|ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);render();}));
+  const unmatchedNote=unmatched?panel("Unmatched confirmed checkouts",'<p><strong>'+unmatched+'</strong> confirmed community orders are included above but not assigned to any customer until a paid or linked account is verified.</p><a href="/admin-checkout-match.html">MATCH CHECKOUT PROFILES ↗</a>'):"";
+  const people=new Map();
+  inRange.filter(x=>x.customerAccountId).forEach(x=>{
+    const id=String(x.customerAccountId);
+    if(!people.has(id))people.set(id,{id,name:String(x.customerName||"Customer"),orders:[]});
+    people.get(id).orders.push(x);
+  });
+  const displayedPeople=Array.from(people.values()).filter(x=>successCustomerId==="all"||x.id===successCustomerId)
+    .sort((a,b)=>b.orders.length-a.orders.length||a.name.localeCompare(b.name));
+  const peopleHtml=displayedPeople.map(x=>{
+    const uniqueAccounts=new Set(x.orders.map(order=>order.accountKey)).size;
+    return '<details data-success-user="'+esc(x.id)+'" '+(successExpandedUsers.has(x.id)||successCustomerId===x.id?'open':'')+
+      ' class="item"><summary style="cursor:pointer;font-weight:800">'+esc(x.name)+'</summary>'+
+      '<small>'+x.orders.length+' checkouts · '+uniqueAccounts+' active/historical accounts · '+dollars(verifiedSpent(x.orders))+' verified spent'+
+      (missingPrices(x.orders)?' · '+missingPrices(x.orders)+' prices pending':'')+'</small>'+
+      '<h3 style="font-size:13px;margin:14px 0 6px">Products purchased</h3>'+productsMarkup(x.orders)+
+      '<h3 style="font-size:13px;margin:14px 0 6px">Which accounts checked out</h3>'+accountsMarkup(x.orders)+
+      '</details>';
+  }).join("")||'<p>No attributed customer checkouts for this period. Unmatched orders remain in community totals.</p>';
+  c.innerHTML=buttons+customerSelect+accountSelect+hero+
+    '<div class="metrics admin-success-metrics">'+metric("Confirmed orders",total)+metric("Retailers",groupedRetailers.size)+'</div>'+
+    lifetime+unmatchedNote+panel("Orders by retailer",donut+legend)+
+    panel("Products purchased",productsMarkup(filtered))+
+    panel("Customer checkout breakdown",peopleHtml);
+  c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{
+    successDays=/^(mtd|ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);
+    render();
+  }));
+  c.querySelector("#success-customer-filter")?.addEventListener("change",event=>{
+    successCustomerId=event.target.value;successAccountKey="all";render();
+  });
+  c.querySelector("#success-account-filter")?.addEventListener("change",event=>{
+    successAccountKey=event.target.value;render();
+  });
+  c.querySelectorAll("details[data-success-user]").forEach(el=>el.addEventListener("toggle",()=>{
+    if(el.open)successExpandedUsers.add(el.dataset.successUser);
+    else successExpandedUsers.delete(el.dataset.successUser);
+  }));
 }
 if(tab==="customers"){c.innerHTML='<input class="search" id="customer-search" type="search" placeholder="Search name or email">'+ '<div id="customer-results"></div>';$("customer-search").value=customerSearchText;const show=()=>{customerSearchText=$("customer-search").value;const q=customerSearchText.toLowerCase();$("customer-results").innerHTML=list.filter(x=>(customerName(x)+" "+(x.profile?.email||"")).toLowerCase().includes(q)).slice(0,150).map(x=>'<article class="item"><strong>'+esc(customerName(x))+'</strong><small>'+esc(x.profile?.email||"")+' · '+esc(x.plan?.name||"Membership")+'</small><button data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>').join("")||"<p>No matching customers.</p>";};$("customer-search").addEventListener("input",show);show();}
 if(tab==="profiles"){c.innerHTML='<div class="metrics">'+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("Activated",activationCount(a,"activated"))+metric("Expired",activationCount(a,"expired"))+metric("Customer orders",list.length)+'</div>'+panel("Profile workflow",'<p>Open the full tracker to activate, extend, or return profiles using the existing verified controls.</p><a href="/admin.html#profileActivationTracker">OPEN PROFILE WORKFLOW ↗</a>')+panel("Inventory",'<p>Target, Walmart, and Pokémon Center inventory remains managed in the full Admin dashboard.</p><a href="/admin.html">OPEN INVENTORY MANAGER ↗</a>');}
