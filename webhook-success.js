@@ -1,9 +1,13 @@
 // Reconcile the same checkout across email and bot sources without double counting.
 export function sameCheckout(a, b) {
-  const aliases = new Set([a.id, ...(a.sourceIds || [])]);
-  if ([b.id, ...(b.sourceIds || [])].some(id => aliases.has(id))) return true;
+  const aliases = new Set([a.id, ...(a.sourceIds || [])].filter(Boolean).map(String));
+  if ([b.id, ...(b.sourceIds || [])].filter(Boolean).map(String).some(id => aliases.has(id))) return true;
   const number = v => String(v || '').replace(/^#/, '').trim().toLowerCase();
-  return Boolean(number(a.orderNumber) && number(a.orderNumber) === number(b.orderNumber) && a.retailer === b.retailer);
+  const orderNumber = number(a.orderNumber);
+  // Exact retailer order IDs can be shared by two webhook feeds. Never use a
+  // generic label ("Success") or an empty value to merge unrelated orders.
+  return Boolean(orderNumber.length >= 5 && /\d/.test(orderNumber) &&
+    orderNumber === number(b.orderNumber) && a.retailer === b.retailer);
 }
 
 export function reconcileWebhookCheckout(records, order, attribution = null) {
