@@ -43563,7 +43563,7 @@ async function getCustomerSuccessMailboxes(
 
 
 
-const SHIPPING_SCAN_INTERVAL_MS = 15 * 60 * 1000;
+const SHIPPING_SCAN_INTERVAL_MS = 5 * 60 * 1000;
 let shippingTrackerRunning = false;
 
 function normalizedShippingText(value = "") {
@@ -43688,8 +43688,20 @@ async function sendShippingDiscordDm(account, record, shipping) {
   return true;
 }
 
-async function scanMailboxForShipping(mailbox, records, account, pendingChanges) {
-  const { client } = createCustomerImapClient(mailbox.email, mailbox.password);
+function shippingMailboxClient(mailbox) {
+  if (!mailbox.managedHost) return createCustomerImapClient(mailbox.email, mailbox.password).client;
+  // Read-only business mailbox supplied by Render configuration. The host
+  // is never taken from an HTTP request or another customer account.
+  return protectImapClient(new ImapFlow({
+    host: mailbox.managedHost, port: mailbox.managedPort, secure: true,
+    auth: { user: mailbox.email,
+      pass: normalizeImapPassword(mailbox.email, mailbox.password) },
+    logger: false, connectionTimeout: 15000, greetingTimeout: 10000,
+    socketTimeout: 30000, disableAutoIdle: true
+  }));
+}
+async function scanMailboxForShipping(mailbox, records, accountsById, pendingChanges) {
+  const client = shippingMailboxClient(mailbox);
   let changed = false;
   try {
     await client.connect();
@@ -43732,7 +43744,8 @@ async function scanMailboxForShipping(mailbox, records, account, pendingChanges)
           html: decoded.html || "",
           receivedAt: message.internalDate || message.envelope?.date
         });
-        if (!record || String(record.customerAccountId) !== String(account.id)) continue;
+        const account = accountsById.get(String(record?.customerAccountId || ""));
+        if (!account || account.disabled === true) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
         if (cancellation) {
           if (!cancelledOrder(record)) {
@@ -43794,28 +43807,61 @@ async function syncShippingTrackers() {
   shippingTrackerRunning = true;
   try {
     const accounts = await getCustomerAccounts();
-    const records = await getSuccessCheckouts();
+    const accountsById = new Map(accounts.filter(account => account.disabled !== true)
+      .map(account => [String(account.id), account]));
+    const source = await discordCheckoutSourceChannels();
+    const records = authoritativeDiscordCheckouts(await getSuccessCheckouts(), source.channels);
     const pendingChanges = [];
-    for (const account of accounts) {
-      if (account.disabled === true) continue;
-      const owned = records.filter(record =>
-        isVerifiedDiscordCheckout(record) &&
-        String(record.customerAccountId || "") === String(account.id) &&
-        record.orderNumber && !cancelledOrder(record) &&
-        shippingStatusRank(record.shipping?.status) < 4
-      );
+    const trackable = records.filter(record =>
+      isVerifiedDiscordCheckout(record) && record.orderNumber &&
+      accountsById.has(String(record.customerAccountId || "")) &&
+      !cancelledOrder(record) && shippingStatusRank(record.shipping?.status) < 4);
+    if (!trackable.length) return;
+
+    // Customer-connected mailboxes can contain unrelated personal purchases;
+    // they are never checkout sources and may update only their owner's
+    // exact, authoritative webhook orders.
+    let customerMailboxesScanned = 0;
+    for (const account of accountsById.values()) {
+      const owned = trackable.filter(record =>
+        String(record.customerAccountId || "") === String(account.id));
       if (!owned.length) continue;
       let mailboxes = [];
       try { mailboxes = await getCustomerSuccessMailboxes(account.id); }
       catch { continue; }
       for (const mailbox of mailboxes) {
         try {
-          await scanMailboxForShipping(mailbox, owned, account, pendingChanges);
+          await scanMailboxForShipping(mailbox, owned, accountsById, pendingChanges);
+          customerMailboxesScanned++;
         } catch (error) {
-          console.error("Shipping tracker mailbox scan:", mailboxFailureReason(error));
+          console.error("Shipping tracker customer mailbox scan:", mailboxFailureReason(error));
         }
       }
     }
+
+    // Owner-managed retailer confirmations often arrive in the business
+    // mailbox, not the customer's personal inbox. Read it ONCE for all
+    // verified owners and never import an email as a new Success checkout.
+    const managed = managedSuccessMailboxConfig();
+    let managedMailboxConnected = false;
+    if (managed.configured) {
+      try {
+        await scanMailboxForShipping({
+          email: managed.email, password: managed.password,
+          managedHost: managed.host, managedPort: managed.port
+        }, trackable, accountsById, pendingChanges);
+        managedMailboxConnected = true;
+      } catch (error) {
+        console.error("Shipping tracker managed mailbox scan:", mailboxFailureReason(error));
+      }
+    }
+    console.log("Verified shipping scan:", JSON.stringify({
+      trackable: trackable.length,
+      customerMailboxesScanned,
+      managedConfigured: managed.configured,
+      managedConnected: managedMailboxConnected,
+      candidateUpdates: pendingChanges.length
+    }));
     if (!pendingChanges.length) return;
     const discordDms = new Map();
     const changedAccounts = new Set();
