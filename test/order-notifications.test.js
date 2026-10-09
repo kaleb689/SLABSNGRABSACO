@@ -96,3 +96,61 @@ test('Action Needed pushes ignore timestamp churn and notify only on content cha
   f.service=createOrderNotifications(f.options);await f.service.initialize();note.updatedAt='three';await f.service.tick();assert.equal(f.sent.length,1);
   note.message='Add payment card';note.missingItems=['Card'];await f.service.tick();assert.equal(f.sent.length,2);
 });
+
+test('entering a verified retailer order number does not send a second checkout alert', async t => {
+  const f = await fixture(t, [order('discord-order', { orderNumber: '', checkoutAt: new Date().toISOString() })]);
+  await f.service.subscribe('a', subscription);
+  f.records[0].orderNumber = 'T-12345678';
+  await f.service.tick();
+  assert.equal(f.sent.length, 0);
+  assert.equal((await f.service.list('a')).length, 0);
+});
+
+test('matching a historical checkout cannot send stale new-order confirmations', async t => {
+  const f = await fixture(t);
+  await f.service.subscribe('a', subscription);
+  f.records.push(order('old-webhook', { checkoutAt: '2026-01-01T00:00:00Z' }));
+  await f.service.tick();
+  assert.equal(f.sent.length, 0);
+  assert.equal((await f.service.list('a')).length, 0);
+});
+
+test('upgrading a historical order to shipped can still notify once for a new actual shipment', async t => {
+  const f = await fixture(t);
+  await f.service.subscribe('a', subscription);
+  f.records.push(order('historic-shipped', {
+    checkoutAt: '2026-01-01T00:00:00Z',
+    shipping: { status: 'shipped', updatedAt: new Date().toISOString() }
+  }));
+  await f.service.tick();
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].title, 'Target order shipped');
+});
+
+test('one-time notification migration removes historical email-derived order alerts only', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sng-alert-cleanup-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.writeFile(path.join(dir, 'app-order-notifications.json'), JSON.stringify({
+    snapshots: { 'fake:retailer:order': { eligible: true } },
+    inbox: { a: [
+      { id: 'fake', kind: 'order_confirmed', title: 'Unverified order' },
+      { id: 'legit-note', kind: 'admin_message', title: 'Admin notice' }
+    ] },
+    subscriptions: {}, outbox: [
+      { accountId: 'a', key: 'fake:retailer:order', notification: { kind: 'order_confirmed' } }
+    ],
+    accountEvents: { a: { notices: {}, verified: false, disabled: false } },
+    memberships: {}
+  }));
+  const service = createOrderNotifications({
+    dataDir: dir, baseUrl: 'https://slabsngrabsaco.com',
+    getRecords: async () => [order('one')], getAccounts: async () => [{ id: 'a', notifications: [] }],
+    getAccountUpdates: async () => [], sendPush: async () => {}
+  });
+  await service.initialize();
+  assert.deepEqual((await service.list('a')).map(x => x.title), ['Admin notice']);
+  const saved = JSON.parse(await fs.readFile(path.join(dir, 'app-order-notifications.json')));
+  assert.equal(saved.outbox.length, 0);
+  assert.equal(Object.keys(saved.snapshots).length, 1);
+  assert.equal(saved.webhookOnlyNotificationsVersion, 1);
+});
