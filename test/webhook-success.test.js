@@ -80,3 +80,14 @@ test('generic order statuses are never deduplication identities', () => {
    { id: 'discord:b:2', orderNumber: 'Success', retailer: 'Target' }
  ), false);
 });
+
+test('Discord profile labels backfill on the same source ID without new orders or ownership guesses', () => {
+  const record={...order,orderNumber:'',id:'discord:1532179373292257290:1580000000000000017',customerAccountId:null};
+  const records=[record];
+  const received={...record,sourceProfileLabel:'External Profile 27'};
+  assert.equal(reconcileWebhookCheckout(records,received).added,false);
+  assert.equal(records.length,1);
+  assert.equal(records[0].customerAccountId,null);
+  assert.equal(records[0].sourceProfileLabel,'External Profile 27');
+  assert.equal(reconcileWebhookCheckout(records,received).changed,false);
+});
