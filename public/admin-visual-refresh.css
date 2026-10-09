@@ -1,0 +1,179 @@
+/* Admin dashboard visual refresh — nonfunctional styling aligned with customer app. */
+body.admin-page {
+  --admin-surface: #0c1b2b;
+  --admin-raised: #11263a;
+  --admin-outline: #26485f;
+  --admin-accent: #29d5ff;
+  --admin-copy: #eaf6ff;
+  --admin-muted: #b2c9d9;
+  background: radial-gradient(ellipse at 12% 0%, rgba(17,171,237,.15),transparent 35%),
+    radial-gradient(ellipse at 100% 35%,rgba(111,79,255,.08),transparent 40%),
+    linear-gradient(160deg,#07101b,#0a1725 62%,#06101a) !important;
+  color: var(--admin-copy);
+}
+body.admin-page .admin-shell {width:min(1440px,100%); padding:clamp(14px,2.5vw,36px) clamp(12px,2vw,28px) 100px;}
+body.admin-page .admin-head {
+  align-items:flex-start; gap:20px; padding:clamp(17px,2.5vw,30px);
+  border:1px solid var(--admin-outline); border-radius:22px;
+  background:linear-gradient(125deg,rgba(19,48,74,.95),rgba(8,23,38,.96));
+  box-shadow:0 16px 50px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.06);
+  margin-bottom:24px;
+}
+body.admin-page .admin-head-copy h1{font-size:clamp(1.65rem,3.1vw,2.75rem);line-height:1.08;letter-spacing:-.035em;}
+body.admin-page .admin-head-copy p,
+body.admin-page .admin-user-view-note{color:var(--admin-muted);line-height:1.5;}
+body.admin-page .admin-dashboard-logo{width:90px;height:64px;object-fit:contain;filter:drop-shadow(0 2px 12px rgba(41,213,255,.12));}
+body.admin-page .admin-summary,
+body.admin-page .admin-feature-panel,
+body.admin-page .admin-mailbox-status,
+body.admin-page .admin-global-profile-search,
+body.admin-page .admin-pool-browser,
+body.admin-page .admin-login-card {
+  border:1px solid var(--admin-outline);
+  border-radius:18px;
+  background:linear-gradient(160deg,rgba(16,36,55,.97),rgba(9,23,36,.97));
+  box-shadow:0 12px 32px rgba(0,0,0,.17),inset 0 1px rgba(255,255,255,.035);
+}
+body.admin-page .admin-feature-panel,
+body.admin-page .admin-mailbox-status,
+body.admin-page .admin-global-profile-search,
+body.admin-page .admin-pool-browser{padding:clamp(14px,2vw,22px);}
+body.admin-page .admin-feature-grid{gap:15px;}
+body.admin-page .admin-feature-panel > summary,
+body.admin-page .admin-pool-disclosure > summary{
+  cursor:pointer; font-size:clamp(14px,1.4vw,17px);font-weight:850;
+  color:#f2faff;letter-spacing:-.012em;line-height:1.4;
+}
+body.admin-page .admin-feature-panel > summary:hover,
+body.admin-page .admin-pool-disclosure > summary:hover {color:#77e5ff;}
+body.admin-page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+body.admin-page select,
+body.admin-page textarea{
+  box-sizing:border-box;max-width:100%; min-height:43px;
+  border:1px solid #36536a;border-radius:11px;
+  background-color:#081724;color:#f4fbff;
+  font-size:14px;line-height:1.4;
+}
+body.admin-page input::placeholder,body.admin-page textarea::placeholder{color:#91aabd;opacity:1;}
+body.admin-page :is(input,select,textarea,button,summary,[role="button"]):focus-visible{
+  outline:2px solid #6be4ff;outline-offset:3px;
+}
+body.admin-page button:not([disabled]){transition:background-color .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease;}
+body.admin-page button:not([disabled]):hover{box-shadow:0 4px 16px rgba(0,181,239,.13);}
+body.admin-page .admin-head-actions button,
+body.admin-page .admin-edit-button,
+body.admin-page #logout{
+  min-height:42px; border-radius:11px; padding:10px 15px;
+  font-weight:800;letter-spacing:.01em;
+}
+body.admin-page .admin-head-actions button,
+body.admin-page .admin-edit-button{
+  border:1px solid #36799c;background:linear-gradient(180deg,#123950,#0c293c);
+  color:#e8faff;
+}
+body.admin-page #logout{border-color:#64505d;background:#251c2a;color:#ffdce5;}
+body.admin-page .admin-head-actions{align-items:flex-start;gap:10px;}
+body.admin-page .admin-head-actions > div{display:grid;gap:5px;}
+body.admin-page .admin-summary{padding:14px 18px;margin-bottom:18px;}
+body.admin-page .admin-feature-panel[open]{border-color:#39769a;}
+body.admin-page .admin-global-profile-search{margin-block:18px;}
+body.admin-page .admin-global-profile-search-box input{width:100%;}
+@media(max-width:780px){
+  body.admin-page .admin-head{flex-direction:column;align-items:stretch;border-radius:16px;padding:18px;}
+  body.admin-page .admin-head-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;}
+  body.admin-page .admin-head-actions > div,body.admin-page .admin-head-actions > button{min-width:0;width:100%;}
+  body.admin-page .admin-head-actions button{width:100%;min-height:46px;white-space:normal;}
+  body.admin-page .admin-head-actions .admin-user-view-note{font-size:11px;}
+  body.admin-page .admin-feature-grid{grid-template-columns:minmax(0,1fr);}
+  body.admin-page .admin-mailbox-status{display:flex;flex-wrap:wrap;gap:10px;}
+  body.admin-page .admin-shell{padding-inline:12px;}
+}
+@media(max-width:420px){
+  body.admin-page .admin-head-actions{grid-template-columns:1fr 1fr;gap:8px;}
+  body.admin-page .admin-head-actions button{font-size:12px;padding:9px 7px;}
+  body.admin-page .admin-head-copy h1{font-size:1.7rem;}
+}
+@media(prefers-reduced-motion:reduce){
+  body.admin-page button{transition:none!important;}
+}
+
+/* Customer-app inspired action pills and dashboard trackers */
+body.admin-page {
+  --admin-button-bg:linear-gradient(110deg,#7760e9,#258aca);
+  --admin-button-fg:#fff;
+  --admin-card-bg:#102033;
+  --admin-card-text:#eef8ff;
+}
+body.admin-page #dashboard button:not(.admin-theme-switch):not(.managed-delete-button):not(.admin-search-clear-button),
+body.admin-page .admin-login-card button {
+  border-radius:13px;
+  font-weight:800;
+  min-height:42px;
+}
+body.admin-page #dashboard :is(.admin-edit-button,.admin-head-actions button,#checkManagedSuccessMailbox,#scanManagedSuccessMailbox) {
+  background:var(--admin-button-bg);
+  color:var(--admin-button-fg);
+  border:1px solid rgba(143,210,255,.35);
+  box-shadow:0 5px 17px rgba(73,91,193,.2);
+}
+body.admin-page #dashboard button[aria-pressed="true"],
+body.admin-page #dashboard button.active {
+  background:linear-gradient(105deg,#855df0,#25b9d9);
+  color:#fff;
+  border-color:#a7e5ff;
+}
+body.admin-page :is(.managed-availability-tracker,.managed-availability-card,.customer-order,.admin-feature-panel,.admin-summary) {
+  border:1px solid var(--admin-outline);
+  border-radius:20px;
+  background:var(--admin-card-bg);
+  color:var(--admin-card-text);
+  box-shadow:0 9px 26px rgba(0,0,0,.12);
+}
+body.admin-page .managed-availability-card:nth-child(4n+1) {border-top:3px solid #9870f6;}
+body.admin-page .managed-availability-card:nth-child(4n+2) {border-top:3px solid #36cdeb;}
+body.admin-page .managed-availability-card:nth-child(4n+3) {border-top:3px solid #40d7aa;}
+body.admin-page .managed-availability-card:nth-child(4n+4) {border-top:3px solid #ffbf56;}
+body.admin-page .managed-availability-number {font-weight:900;letter-spacing:-.05em;color:#52d6f4;font-variant-numeric:tabular-nums;}
+body.admin-page .managed-availability-card:nth-child(4n+1) .managed-availability-number {color:#ae88ff;}
+body.admin-page .managed-availability-card:nth-child(4n+3) .managed-availability-number {color:#40d7aa;}
+body.admin-page .managed-availability-card:nth-child(4n+4) .managed-availability-number {color:#ffbf56;}
+body.admin-page .customer-order[open] {border-color:#4fafe5;box-shadow:0 12px 28px rgba(21,134,211,.13);}
+body.admin-page .admin-scan-progress progress{accent-color:#36d4a4;}
+body.admin-page .admin-theme-switch{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:44px;padding:10px 16px;border:1px solid var(--admin-outline);
+  border-radius:999px;background:var(--admin-card-bg);color:var(--admin-card-text);
+  font:800 12px/1.2 inherit;cursor:pointer;white-space:nowrap;
+}
+body.admin-page .admin-theme-switch:hover{border-color:#45cce7;}
+body.admin-page .admin-theme-switch svg{width:18px;height:18px;}
+body.admin-page[data-admin-theme="light"]{
+  color:#142238;
+  --admin-surface:#fff;
+  --admin-raised:#f0f6fc;
+  --admin-outline:#cedce9;
+  --admin-copy:#172b43;
+  --admin-muted:#54677c;
+  --admin-card-bg:#fff;
+  --admin-card-text:#162942;
+  --admin-button-bg:linear-gradient(105deg,#684dd6,#1386c1);
+  --admin-button-fg:#fff;
+  background:radial-gradient(ellipse at 0 0,rgba(104,77,214,.09),transparent 44%),linear-gradient(165deg,#f7fbff,#e7f0f9)!important;
+}
+body.admin-page[data-admin-theme="light"] :is(.admin-head,.admin-summary,.admin-feature-panel,.admin-mailbox-status,.admin-global-profile-search,.admin-pool-browser,.admin-login-card){
+  color:#172b43;background:linear-gradient(160deg,#fff,#f1f7fc);border-color:#cedce9;
+  box-shadow:0 10px 30px rgba(35,78,115,.08);
+}
+body.admin-page[data-admin-theme="light"] :is(.admin-head-copy h1,.admin-feature-panel > summary,.admin-pool-disclosure > summary,.customer-main strong,.managed-availability-head h2){color:#152a42;}
+body.admin-page[data-admin-theme="light"] :is(.admin-head-copy p,.admin-user-view-note,.managed-availability-head p){color:#526780;}
+body.admin-page[data-admin-theme="light"] :is(input:not([type="checkbox"]):not([type="radio"]),select,textarea){
+  background:#fff!important;color:#172b43!important;border-color:#b9cadd!important;
+}
+body.admin-page[data-admin-theme="light"] :is(input,textarea)::placeholder{color:#657a92;}
+body.admin-page[data-admin-theme="light"] .customer-order-summary:hover{background:#eaf5ff;}
+body.admin-page[data-admin-theme="light"] .managed-availability-details{color:#526780;opacity:1;}
+body.admin-page[data-admin-theme="light"] .admin-theme-switch{background:#fff;color:#172b43;}
+@media(max-width:700px){
+  body.admin-page .admin-theme-switch{width:100%;margin-bottom:8px;}
+  body.admin-page .managed-availability-card{padding:17px;}
+}
