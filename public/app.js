@@ -16263,6 +16263,14 @@ async function refreshPublicSuccess() {
       spentNote.textContent = [historicalNote, pendingNote, roundingNote].filter(Boolean).join(" ");
       spentNote.hidden = !spentNote.textContent;
     }
+    const earlierItems = document.getElementById("public-success-historical-products");
+    if (earlierItems) {
+      const archivedTins = Math.max(0, Math.floor(Number(data.historicalTinQuantity) || 0));
+      earlierItems.textContent = archivedTins
+        ? `Previous historical tracker summary: ${archivedTins.toLocaleString()} tins. Individual archived items and product photos cannot be verified from that summary.`
+        : "";
+      earlierItems.hidden = !archivedTins;
+    }
     publicSuccessState.products = Array.isArray(data.products) ? data.products : [];
     publicSuccessState.index = Math.min(publicSuccessState.index, Math.max(0, publicSuccessState.products.length - 1));
     renderPublicSuccessProduct();
