@@ -10606,14 +10606,7 @@ async function loadAdminLinkedProfiles(
         );
       });
 
-    requestAnimationFrame(
-      () => {
-        window.scrollTo(
-          window.scrollX,
-          previousScrollY
-        );
-      }
-    );
+    // Do not force the scroll position after loading a linked-profile panel.
 
   } catch (error) {
     container.innerHTML = `
@@ -20656,7 +20649,8 @@ async function refreshAdminInPlace() {
     document.hidden ||
     dashboard.hidden ||
     adminLiveInputFocused() ||
-    Date.now() - adminLastInteractionAt < 1800
+    document.querySelector(".customer-order[open] [data-linked-profiles-section][open]") ||
+    Date.now() - adminLastInteractionAt < 8000
   ) return;
 
   adminLiveRefreshPending = false;
@@ -20674,9 +20668,7 @@ async function refreshAdminInPlace() {
   } catch (error) {
     console.error("Admin live refresh:", error);
   } finally {
-    if (Math.abs(window.scrollY - scrollY) < 40) {
-      requestAnimationFrame(() => window.scrollTo({left: scrollX, top: scrollY, behavior: "instant"}));
-    }
+    // Preserve the user's own scrolling; no competing forced scroll on refresh.
     adminLiveRefreshRunning = false;
     // Updates arriving during the fetch must never be dropped.
     if (adminLiveRefreshPending) scheduleAdminLiveRefresh();
@@ -24796,7 +24788,7 @@ document.addEventListener("click", event => {
       "Mark this profile for RTP in 1 hour? The customer notification will be grouped and sent about 10 minutes after your first RTP selection."
     );
     if (!confirmed) {
-      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+      /* Keep the administrator's current scroll position untouched. */
       return;
     }
 
@@ -24824,11 +24816,11 @@ document.addEventListener("click", event => {
 
       button.textContent = "RTP SENT";
       button.classList.add("rtp-sent");
-      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+      /* Keep the administrator's current scroll position untouched. */
     } catch (error) {
       button.textContent = originalText;
       window.alert(error.message || "Unable to queue RTP final reminder.");
-      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+      /* Keep the administrator's current scroll position untouched. */
     } finally {
       button.disabled = false;
     }
@@ -24852,7 +24844,7 @@ document.addEventListener("click", event => {
       "RTP this account and fill its spot? The current account will be flagged NEEDS REPAIR and a replacement will be pulled from the same retailer pool."
     );
     if (!confirmed) {
-      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+      /* Keep the administrator's current scroll position untouched. */
       return;
     }
 
@@ -24879,11 +24871,11 @@ document.addEventListener("click", event => {
       }
 
       button.textContent = "SPOT FILLED";
-      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+      /* Keep the administrator's current scroll position untouched. */
     } catch (error) {
       button.textContent = originalText;
       window.alert(error.message || "Unable to RTP and fill this spot.");
-      requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+      /* Keep the administrator's current scroll position untouched. */
     } finally {
       button.disabled = false;
     }
