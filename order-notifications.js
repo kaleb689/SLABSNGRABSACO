@@ -8,6 +8,16 @@ export function cancelledOrder(record) {
   return Boolean(record?.cancelledAt || record?.canceledAt || record?.cancelled === true || record?.canceled === true ||
     /cancel|refund|failed|declined/i.test(String(record?.status || "")));
 }
+// Early cancellations are filtered entirely from customer tracking and alerts.
+// Exactly 24 hours after checkout is the first visible cancellation moment.
+// Missing, ambiguous, or impossible event timestamps are not guessed.
+export function lateCancellation(record) {
+  if (!cancelledOrder(record)) return false;
+  const placed = Date.parse(record?.checkoutAt || "");
+  const cancelled = Date.parse(record?.cancelledAt || record?.canceledAt || "");
+  return Number.isFinite(placed) && Number.isFinite(cancelled) &&
+    cancelled - placed >= 24 * 60 * 60 * 1000 && cancelled <= Date.now() + 60 * 1000;
+}
 export function orderKey(record) {
   return `${record.customerAccountId}:${String(record.retailer || "").toLowerCase()}:${record.id}`;
 }
@@ -171,10 +181,13 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         if (next.cancelled) {
           // Retract all pending confirmation/shipment pushes and stale notices.
           // Only a prior valid ACO success can produce a cancellation event.
-          state.outbox = state.outbox.filter(item => item.key !== key);
+          state.outbox = state.outbox.filter(item =>
+            item.key !== key || item.notification?.kind === "order_cancelled");
           const inbox = state.inbox[record.customerAccountId] ||= [];
-          state.inbox[record.customerAccountId] = inbox.filter(item => item.orderKey !== key);
-          if (previous?.eligible && !previous.cancelled) {
+          state.inbox[record.customerAccountId] = inbox.filter(item =>
+            item.orderKey !== key || item.kind === "order_cancelled");
+          if (previous?.eligible && !previous.cancelled && lateCancellation(record) &&
+              Date.now() - Date.parse(record.cancelledAt || record.canceledAt) < 24 * 60 * 60 * 1000) {
             const retailer = String(record.retailer || "Retailer").slice(0, 50);
             const product = String(record.items?.[0]?.name || "Your order").slice(0, 110);
             const refunded = /refund/i.test(String(record.status || ""));
@@ -220,7 +233,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       await reconcileAccountEvents(accounts, await getAccountUpdates());
       const active = new Set(accounts.filter(account => !account.disabled).map(account => String(account.id)));
       const eligible = new Set(records.filter(record => orderSnapshot(record).eligible).map(orderKey));
-      const cancelled = new Set(records.filter(cancelledOrder).map(orderKey));
+      const cancelled = new Set(records.filter(lateCancellation).map(orderKey));
       await locked(async () => {
         const pending = [];
         for (const item of state.outbox) {
