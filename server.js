@@ -6,6 +6,7 @@ import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
+import { checkoutIdentityFromDiscord, checkoutSourceSelection } from "./discord-checkout-identity.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
 import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
@@ -37815,49 +37816,69 @@ async function resolvedDiscordSuccessConfig() {
   }
 }
 
+
 let checkoutSourceChannelsCache = null;
 async function discordCheckoutSourceChannels() {
   const config = await resolvedDiscordSuccessConfig();
-  const explicit = String(process.env.DISCORD_CHECKOUT_SOURCE_CHANNEL_ID || '').trim();
-  if (/^\d{17,22}$/.test(explicit)) return { token: config.token, channels: [...new Set([config.channelId, explicit].filter(id => /^\d{17,22}$/.test(id)))] };
-  if (checkoutSourceChannelsCache) return { token: config.token, ...checkoutSourceChannelsCache };
-  const channels = /^\d{17,22}$/.test(config.channelId) ? [config.channelId] : [];
-  if (!config.token) return { token: '', channels };
-  const get = async route => {
-    const response = await fetch('https://discord.com/api/v10' + route,
-      { headers: { Authorization: `Bot ${config.token}` }, signal: AbortSignal.timeout(10000) });
-    if (!response.ok) throw new Error(`Discord checkout source lookup failed (HTTP ${response.status}).`);
-    return response.json();
-  };
-  const found = [];
-  for (const guild of await get('/users/@me/guilds')) {
-    const list = await get(`/guilds/${guild.id}/channels`);
-    for (const channel of list) {
-      if (channel.type === 0 && String(channel.name || '').toLowerCase().replace(/[^a-z]/g, '') === 'successwebhooks') found.push(channel.id);
-    }
+  const explicit = String(process.env.DISCORD_CHECKOUT_SOURCE_CHANNEL_ID || "").trim();
+  const cacheKey = [config.channelId, explicit, Boolean(config.token)].join("|");
+  if (checkoutSourceChannelsCache?.cacheKey === cacheKey) {
+    return { token: config.token, ...checkoutSourceChannelsCache };
   }
-  if (found.length === 1) channels.push(found[0]);
-  else console.error('Checkout source channel discovery:', found.length ? 'multiple_success_webhooks_channels_set_explicit_id' : 'success_webhooks_channel_not_accessible_to_bot');
 
   let hitsChannelId = null;
-  try {
-    hitsChannelId = await resolveDiscordHitsChannelId(config.token);
-  } catch {
-    hitsChannelId = null;
+  if (config.token) {
+    try { hitsChannelId = await resolveDiscordHitsChannelId(config.token); }
+    catch { /* The hits channel may not exist yet; never use it as a checkout feed. */ }
   }
-
-  checkoutSourceChannelsCache = {
-    channels: [...new Set(channels)].filter(id => !hitsChannelId || String(id) !== String(hitsChannelId)),
-    webhookSourceFound: found.length === 1
+  let selection = checkoutSourceSelection({
+    checkoutChannelId: explicit, successChannelId: config.channelId, hitsChannelId
+  });
+  // The dedicated checkout feed is authoritative when configured. Never
+  // import both feeds: mirrored messages without order numbers can otherwise
+  // count the same purchase twice.
+  if (!selection.channels.length && selection.source !== "mirror_rejected" && config.token) {
+    const get = async route => {
+      const response = await fetch("https://discord.com/api/v10" + route, {
+        headers: { Authorization: "Bot " + config.token }, signal: AbortSignal.timeout(10000)
+      });
+      if (!response.ok) throw new Error("Discord checkout source lookup failed (HTTP " + response.status + ").");
+      return response.json();
+    };
+    const found = [];
+    for (const guild of await get("/users/@me/guilds")) {
+      const list = await get("/guilds/" + guild.id + "/channels");
+      for (const channel of list) {
+        const name = String(channel.name || "").toLowerCase().replace(/[^a-z]/g, "");
+        if (channel.type === 0 && (name === "successwebhooks" || name === "mysuccess")) found.push(channel.id);
+      }
+    }
+    selection = checkoutSourceSelection({ discoveredChannelIds: found, hitsChannelId });
+    if (!selection.channels.length) {
+      console.error("Checkout source channel discovery:",
+        found.length > 1 ? "multiple_sources_choose_explicit_id" : "success_source_not_accessible_to_bot");
+    }
+  }
+  const result = {
+    channels: selection.channels,
+    source: selection.source,
+    webhookSourceFound: selection.channels.length > 0
   };
-  return { token: config.token, ...checkoutSourceChannelsCache };
+  checkoutSourceChannelsCache = { cacheKey, ...result };
+  if (!result.channels.length) {
+    console.error("Discord checkout source not configured:", selection.source);
+  }
+  return { token: config.token, ...result };
 }
 
 function discordCheckoutFromMessage(message, channelId) {
-  const embed = (message.embeds || []).find(item => /success|checkout|order confirm/i.test([item.title, item.description].join(" "))) || null;
+  const embeds = Array.isArray(message.embeds) ? message.embeds : [];
   const messageText = String(message.content || "");
-  if (!embed && !/success|checkout|order confirm/i.test(messageText)) return null;
-  if (/NEW CHECKOUT SUCCESS/i.test(embed?.title || "")) return null; // Already saved by this site's own webhook.
+  const isCheckout = value => /success|checkout|order confirm/i.test(String(value || ""));
+  if (!isCheckout(messageText) && !embeds.some(item => isCheckout([item.title, item.description].join(" ")))) return null;
+  if (embeds.some(item => /NEW CHECKOUT SUCCESS/i.test(String(item.title || "")))) return null;
+  const embed = embeds.find(item => (item.fields || []).some(field => /^(?:product|item)(?:\s*\(|\s*$|\s+name\b)/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))) ||
+    embeds.find(item => isCheckout([item.title, item.description].join(" "))) || null;
   const body = [messageText, embed?.description || "", ...(embed?.fields || []).map(field => `${field.name}: ${field.value}`)].join("\n");
   const items = [];
   const fields = embed?.fields || [];
@@ -37871,7 +37892,7 @@ function discordCheckoutFromMessage(message, channelId) {
     entry[match[1].toLowerCase()] = fieldValue(field.value);
     numbered.set(match[2], entry);
   }
-  const itemField = fields.find(field => /^(item|product)$/i.test(fieldLabel(field.name)));
+  const itemField = fields.find(field => /^(item|product)(?: name)?$/i.test(fieldLabel(field.name)));
   if (!numbered.size && itemField) {
     const rawItem = fieldValue(itemField.value);
     const priceMatch = rawItem.match(/\s*[-–]\s*\$([\d,]+(?:\.\d{1,2})?)\s*$/);
@@ -37883,8 +37904,8 @@ function discordCheckoutFromMessage(message, channelId) {
   let subtotalCents = 0, completePrices = numbered.size > 0;
   for (const entry of numbered.values()) {
     const name = publicSuccessProductName(entry.product);
-    const quantity = Number(entry.quantity);
-    if (!name || !isPublicSuccessProduct(name) || /@|\b(?:address|email|phone|account|ship to)\b/i.test(name) ||
+    const quantity = String(entry.quantity || "").trim() ? Number(entry.quantity) : 1;
+    if (!name || !isSafeDiscordCheckoutProductName(name) || /@|\b(?:address|email|phone|account|ship to)\b/i.test(name) ||
         !Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
       completePrices = false;
       continue;
@@ -37901,12 +37922,13 @@ function discordCheckoutFromMessage(message, channelId) {
     const match = line.match(/^\s*(?:[•*\-]\s*)?(.{5,120}?)\s*(?:[×xX]\s*(\d+)|\(\s*(\d+)\s*\))\s*$/);
     if (!match) continue;
     const name = publicSuccessProductName(match[1]);
-    if (isPublicSuccessProduct(name) && !/@|\b(?:address|email|phone|account|ship to)\b/i.test(name)) {
+    if (isSafeDiscordCheckoutProductName(name) && !/@|\b(?:address|email|phone|account|ship to)\b/i.test(name)) {
       items.push({ name, quantity: Math.min(999, Number(match[2] || match[3])), imageUrl: publicSuccessImageUrl(embed?.thumbnail?.url || embed?.image?.url) });
     }
   }
   if (!items.length) return null;
-  const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(field.name || ""))?.value || "";
+  const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))?.value ||
+    body.match(/(?:^|\n)\s*(?:retailer|store|site)\s*:\s*([^\n]+)/i)?.[1] || "";
   const totalField = (embed?.fields || []).find(field => /total|spent|amount/i.test(field.name || ""))?.value ||
     body.match(/(?:total|spent|amount)\s*[:$]\s*\$?([\d,.]+)/i)?.[1] || "";
   const totalMatch = String(totalField).match(/\$?([\d,]+\.\d{2})/);
@@ -37989,7 +38011,7 @@ function publicDiscordHitPayload(order) {
       price: Math.max(0, Number(item?.price) || 0)
     }))
     .filter(item => item.name &&
-      !/@|\b(?:order|address|phone|email|account|password|card|ship(?:ping)? to|username|mode)\b/i.test(item.name));
+      !/@|\b(?:order\s*(?:number|id|#)|address|phone|email|account|password|cvv|security\s*code|card\s*(?:number|no\.?|#)|(?:credit|debit)\s+card|ship(?:ping)?\s+to|username|mode)\b/i.test(item.name));
 
   if (!items.length) return null;
 
@@ -38192,12 +38214,11 @@ async function mirrorDiscordCheckoutHits(imports, token) {
 }
 
 function discordCheckoutIdentity(message) {
-  const fields = (message.embeds || []).flatMap(embed => embed.fields || []);
-  const value = pattern => String(fields.find(field => pattern.test(String(field.name).replace(/[*_`]/g, '').trim()))?.value || '').replace(/[*_`|]/g, '').trim();
+  const identity = checkoutIdentityFromDiscord(message);
   return {
-    orderNumber: clean(value(/^order\s*(id|number|#)$/i).replace(/^#/, ''), 150),
-    email: normalizeEmail(value(/^(email|account email|checkout email|account)$/i)),
-    profileName: clean(value(/^profile(?: name)?$/i), 100)
+    orderNumber: clean(identity.orderNumber, 150),
+    email: normalizeEmail(identity.email),
+    profileName: clean(identity.profileName, 100)
   };
 }
 
@@ -38276,11 +38297,12 @@ async function scanDiscordSuccessChannel() {
   if (discordSuccessScan.running) return false;
   discordSuccessScan.running = true;
   discordSuccessScan.error = null;
-  let added = 0, updated = 0, attributed = 0, skipped = 0, before = "", newest = null;
+  let added = 0, updated = 0, attributed = 0, skipped = 0, unrecognized = 0, unchanged = 0, conflicts = 0, unmatched = 0, before = "", newest = null;
   try {
     const { token, channels, webhookSourceFound } = await discordCheckoutSourceChannels();
     if (!token || !channels.length) throw new Error('Checkout source channel is not configured.');
     discordSuccessScan.sourceChannels = channels;
+    discordSuccessScan.source = (await discordCheckoutSourceChannels()).source;
     discordSuccessScan.webhookSourceFound = webhookSourceFound ?? true;
     const candidates = await discordCheckoutOwners();
     await refreshSuccessRetailerImages();
@@ -38296,14 +38318,16 @@ async function scanDiscordSuccessChannel() {
       if (!newest) newest = String(messages[0].id);
       for (const message of messages) {
         const order = discordCheckoutFromMessage(message, channelId);
-        if (!order) { skipped++; continue; }
+        if (!order) { skipped++; unrecognized++; continue; }
         order.items = order.items.map(item => ({ ...item,
           imageUrl: publicSuccessProductImage(item.name, order.retailer, item.imageUrl) }));
+        const attribution = discordCheckoutAttribution(order, discordCheckoutIdentity(message), candidates);
+        if (!attribution) unmatched++;
         imports.push({
           order,
           sourceChannelId: String(channelId),
           sourceMessageId: String(message.id),
-          attribution: discordCheckoutAttribution(order, discordCheckoutIdentity(message), candidates)
+          attribution
         });
       }
       if (messages.length < 100) break;
@@ -38315,7 +38339,8 @@ async function scanDiscordSuccessChannel() {
       const original = JSON.stringify(existing);
       for (const { order, attribution } of imports.reverse()) {
         const result = reconcileWebhookCheckout(existing, order, attribution);
-        if (!result.changed) { skipped++; continue; }
+        if (result.conflict) { conflicts++; skipped++; continue; }
+        if (!result.changed) { unchanged++; skipped++; continue; }
         if (result.added) added++; else updated++;
         if (result.record.customerAccountId) attributed++;
       }
@@ -38338,9 +38363,13 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.updated = updated;
     discordSuccessScan.attributed = attributed;
     discordSuccessScan.skipped = skipped;
+    discordSuccessScan.unrecognized = unrecognized;
+    discordSuccessScan.alreadyImported = unchanged;
+    discordSuccessScan.conflicts = conflicts;
+    discordSuccessScan.unmatched = unmatched;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0 }));
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
@@ -38456,6 +38485,16 @@ app.get("/api/admin/live/events", requireAdmin, (req, res) => {
 
 function isPublicSuccessProduct(name) {
   return /pok[eé]mon|lorcana|magic\s*[:\-]?\s*the\s*gathering|\bmtg\b|nee[\s-]?doh|trading\s*card|\btcg\b|yu[\s-]?gi[\s-]?oh|one\s*piece\s*(?:card|tcg)|digimon|flesh\s*and\s*blood|dragon\s*ball\s*(?:card|tcg)/i.test(name);
+}
+
+// Products in a trusted checkout webhook can have abbreviated titles (such as
+// an ETB name) without the word "Pokemon". Reject private data, not "card"
+// as a product word: Pokemon Trading Card Game is legitimate merchandise.
+function isSafeDiscordCheckoutProductName(name) {
+  const value = publicSuccessProductName(name);
+  return value.length >= 3 &&
+    !/@|\b(?:order\s*(?:number|id|#)|address|phone|email|account|password|cvv|security\s*code|card\s*(?:number|no\.?|#)|(?:credit|debit)\s+card|ship(?:ping)?\s+to|username)\b/i.test(value) &&
+    !/(?:\d[ -]*?){13,19}/.test(value);
 }
 
 function publicSuccessProductName(value) {
@@ -38819,6 +38858,12 @@ function normalizeSuccessRetailer(
     targetgo: "Target",
     walmart: "Walmart",
     walmartgo: "Walmart",
+    "target us": "Target",
+    "target.com": "Target",
+    "walmart us": "Walmart",
+    "walmart.com": "Walmart",
+    "pokemoncenter.com": "PKC",
+    "pokemon center usa": "PKC",
     "sam's club": "Sam's Club",
     "sams club": "Sam's Club",
     samsclub: "Sam's Club",
