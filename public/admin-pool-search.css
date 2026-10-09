@@ -28,3 +28,17 @@
 .pool-profile-pager{margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pool-profile-pager span{color:#d3e4f0}
 @media(max-width:600px){.admin-pool-browser{padding:15px}.pool-profile-actions button,.admin-pool-browser-fields button{width:100%}}
+
+/* Keep inventory search out of the way until the admin asks to view it. */
+.admin-pool-browser{padding:0;overflow:hidden}
+.admin-pool-browser-toggle{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 22px;cursor:pointer;list-style:none;user-select:none}
+.admin-pool-browser-toggle::-webkit-details-marker{display:none}
+.admin-pool-browser-toggle::marker{content:""}
+.admin-pool-browser-toggle:focus-visible{outline:2px solid #80d9ff;outline-offset:-3px;border-radius:14px}
+.admin-pool-browser-toggle-label{display:flex;flex-direction:column;gap:5px;min-width:0}
+.admin-pool-browser-toggle-label strong{font-size:15px;letter-spacing:.08em;color:#fff}
+.admin-pool-browser-toggle-label small{font-size:12px;line-height:1.4;color:#bed5e7}
+.admin-pool-browser-chevron{flex:0 0 auto;font-size:23px;color:#b4e9ff;transition:transform .18s ease}
+.admin-pool-disclosure[open] .admin-pool-browser-chevron{transform:rotate(180deg)}
+.admin-pool-browser-body{padding:18px 22px 22px;border-top:1px solid rgba(75,180,227,.25)}
+@media(max-width:600px){.admin-pool-browser-toggle{padding:15px}.admin-pool-browser-body{padding:15px}}
