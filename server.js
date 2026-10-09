@@ -68,6 +68,9 @@ app.use((req, res, next) => {
   // GET/HEAD/OPTIONS remain silent, so live refresh reads never echo back.
   const mutation =
     ["POST", "PUT", "PATCH", "DELETE"].includes(method) &&
+    // App activity is telemetry, not a customer/admin data edit.
+    // A periodic device ping must not refresh every connected dashboard.
+    req.path !== "/api/account/app-usage" &&
     (
       req.path.startsWith("/api/") ||
       req.path === "/webhook" ||
