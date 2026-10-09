@@ -37895,6 +37895,9 @@ function discordCheckoutFromMessage(message, channelId) {
     embeds.find(item => isCheckout([item.title, item.description].join(" "))) || null;
   const body = [messageText, embed?.description || "", ...(embed?.fields || []).map(field => `${field.name}: ${field.value}`)].join("\n");
   const items = [];
+  const messageImageUrl = publicSuccessImageUrl(
+    embeds.map(item => item?.thumbnail?.url || item?.image?.url).find(Boolean)
+  );
   const fields = embed?.fields || [];
   const numbered = new Map();
   const fieldLabel = value => String(value || "").replace(/[*_`]/g, "").trim();
@@ -37931,17 +37934,17 @@ function discordCheckoutFromMessage(message, channelId) {
     const money = String(entry.price || "").replace(/[$,\s]/g, "");
     const validPrice = /^\d+(?:\.\d{1,2})?$/.test(money);
     const priceCents = validPrice ? Math.round(Number(money) * 100) : null;
-    if (priceCents === null || !Number.isSafeInteger(priceCents)) completePrices = false;
+    if (priceCents === null || !Number.isSafeInteger(priceCents) || priceCents <= 0) completePrices = false;
     else subtotalCents += entry.priceIsLineTotal ? priceCents : priceCents * quantity;
     items.push({ name, quantity, price: priceCents === null ? 0 : priceCents / 100 / (entry.priceIsLineTotal ? quantity : 1),
-      imageUrl: publicSuccessImageUrl(embed?.thumbnail?.url || embed?.image?.url) });
+      imageUrl: messageImageUrl });
   }
   for (const line of numbered.size ? [] : body.split(/\n+/)) {
     const match = line.match(/^\s*(?:[•*\-]\s*)?(.{5,120}?)\s*(?:[×xX]\s*(\d+)|\(\s*(\d+)\s*\))\s*$/);
     if (!match) continue;
     const name = publicSuccessProductName(match[1]);
     if (isSafeDiscordCheckoutProductName(name) && !/@|\b(?:address|email|phone|account|ship to)\b/i.test(name)) {
-      items.push({ name, quantity: Math.min(999, Number(match[2] || match[3])), imageUrl: publicSuccessImageUrl(embed?.thumbnail?.url || embed?.image?.url) });
+      items.push({ name, quantity: Math.min(999, Number(match[2] || match[3])), imageUrl: messageImageUrl });
     }
   }
   if (!items.length) return null;
@@ -37974,6 +37977,7 @@ function discordCheckoutFromMessage(message, channelId) {
 
 const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
 const DISCORD_HIT_MIRROR_VERSION = 8;
+const DISCORD_HIT_RENDER_VERSION = 2;
 let discordHitsChannelIdCache = null;
 let discordHitMirrorMutation = Promise.resolve();
 
@@ -38027,49 +38031,38 @@ async function resolveDiscordHitsChannelId(token) {
 }
 
 function publicDiscordHitPayload(order) {
-  // Never mirror a red cancellation, orange hold, or unknown-color hook as
-  // a green "Successful Checkout" message.
+  // Public Discord hits must never disclose prices, retailer logins,
+  // passwords, order identifiers, shipping information or profile identities.
   if (!confirmedDiscordPurchase(order)) return null;
+  const retailer = normalizeSuccessRetailer(order?.retailer);
   const items = (Array.isArray(order?.items) ? order.items : [])
-    .map(item => ({
-      name: publicSuccessProductName(item?.name),
-      quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
-      sourceQuantity: clean(item?.sourceQuantity, 30),
-      sourcePrice: clean(item?.sourcePrice, 30),
-      price: Math.max(0, Number(item?.price) || 0)
-    }))
+    .map(item => {
+      const name = publicSuccessProductName(item?.name);
+      return { name, quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
+        imageUrl: publicSuccessProductImage(name, retailer, item?.imageUrl || item?.image) };
+    })
     .filter(item => item.name &&
       !/@|\b(?:order\s*(?:number|id|#)|address|phone|email|account|password|cvv|security\s*code|card\s*(?:number|no\.?|#)|(?:credit|debit)\s+card|ship(?:ping)?\s+to|username|mode)\b/i.test(item.name));
-
   if (!items.length) return null;
-
   const site = clean(order?.sourceSite, 200) ||
-    (order?.retailer === "PKC" ? "Pokemon Center US" : clean(order?.retailer, 200) || "Retailer");
-
+    (retailer === "PKC" ? "Pokemon Center US" : clean(retailer, 200) || "Retailer");
   const fields = [{ name: "Site", value: site.slice(0, 1024), inline: false }];
-
   items.slice(0, 9).forEach((item, index) => {
-    const number = index + 1;
-    const suffix = items.length === 1 ? " (1)" : ` (${number})`;
-    const price = item.sourcePrice || item.price.toFixed(2);
-    const quantity = item.sourceQuantity || String(item.quantity);
+    const suffix = items.length === 1 ? " (1)" : ` (${index + 1})`;
     fields.push(
       { name: `Product${suffix}`, value: item.name.slice(0, 1024), inline: false },
-      { name: `Price${suffix}`, value: String(price).slice(0, 1024), inline: false },
-      { name: `Quantity${suffix}`, value: String(quantity).slice(0, 1024), inline: false }
+      { name: `Quantity${suffix}`, value: String(item.quantity), inline: false }
     );
   });
-
-  return {
-    embeds: [{
-      title: "Successful Checkout!",
-      color: 0x00ff00,
-      fields: fields.slice(0, 25)
-    }],
-    allowed_mentions: { parse: [] }
-  };
+  const main = { title: "Successful Checkout!", color: 0x00ff00, fields: fields.slice(0, 25) };
+  const pictures = items.slice(0, 9).filter(item => item.imageUrl);
+  if (pictures.length) main.thumbnail = { url: pictures[0].imageUrl };
+  const extra = pictures.slice(1, 9).map(item => ({
+    color: 0x00ff00, description: `${item.name} ×${item.quantity}`,
+    thumbnail: { url: item.imageUrl }
+  }));
+  return { embeds: [main, ...extra], allowed_mentions: { parse: [] } };
 }
-
 async function postDiscordHit(token, channelId, order) {
   const payload = publicDiscordHitPayload(order);
   if (!payload) return null;
@@ -38174,6 +38167,29 @@ async function mirrorDiscordCheckoutHits(imports, token) {
       state.sent = {};
     }
 
+    // Reformat existing mirrored hits IN PLACE, never delete or repost.
+    // Source IDs in the persisted ledger make each PATCH unambiguous.
+    const formatUpgrades = Object.entries(state.sent)
+      .filter(([id, sent]) => sent && /^\d{17,22}$/.test(String(sent.messageId || "")) &&
+        Number(sent.renderVersion || 0) < DISCORD_HIT_RENDER_VERSION && uniqueBySource.has(id))
+      .slice(0, 25);
+    for (const [id, sent] of formatUpgrades) {
+      const payload = publicDiscordHitPayload(uniqueBySource.get(id).order);
+      if (!payload) continue;
+      try {
+        await discordBotJson(token, `/channels/${hitsChannelId}/messages/${sent.messageId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        state.sent[id].renderVersion = DISCORD_HIT_RENDER_VERSION;
+        await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+      } catch (error) {
+        // No fallback to POST: that would create an unnecessary duplicate.
+        console.error("Discord hit display update failed:", error?.message || "edit_failed");
+        break;
+      }
+    }
+
     // Complete the fixed 11-message baseline first. Each source ID is
     // permanently reserved before POST so retries cannot duplicate it.
     for (const sourceMessageId of state.baselineIds || []) {
@@ -38195,7 +38211,8 @@ async function mirrorDiscordCheckoutHits(imports, token) {
       state.sent[sourceMessageId] = {
         messageId: String(posted.id || ""),
         sourceChannelId,
-        checkoutAt: entry.order.checkoutAt || null
+        checkoutAt: entry.order.checkoutAt || null,
+        renderVersion: DISCORD_HIT_RENDER_VERSION
       };
       await writeJson(DISCORD_HIT_MIRROR_FILE, state);
     }
@@ -38234,7 +38251,8 @@ async function mirrorDiscordCheckoutHits(imports, token) {
       state.sent[sourceMessageId] = {
         messageId: String(posted.id || ""),
         sourceChannelId,
-        checkoutAt: entry.order.checkoutAt || null
+        checkoutAt: entry.order.checkoutAt || null,
+        renderVersion: DISCORD_HIT_RENDER_VERSION
       };
       await writeJson(DISCORD_HIT_MIRROR_FILE, state);
     }
@@ -38337,6 +38355,7 @@ async function scanDiscordSuccessChannel() {
   const identityStats = { recognized: 0, withEmail: 0, withProfileName: 0, withOrderNumber: 0,
     withoutIdentity: 0, matched: 0, noEligibleCandidates: 0, unmatchedEmail: 0,
     unmatchedProfile: 0, ambiguousOwner: 0, eligibleCandidates: 0, totalCandidates: 0 };
+  const sourceStatusCounts = { confirmed: 0, review_hold: 0, cancelled: 0, unverified: 0 };
   try {
     const { token, channels, webhookSourceFound } = await discordCheckoutSourceChannels();
     if (!token || !channels.length) throw new Error('Checkout source channel is not configured.');
@@ -38360,6 +38379,7 @@ async function scanDiscordSuccessChannel() {
       for (const message of messages) {
         const order = discordCheckoutFromMessage(message, channelId);
         if (!order) { skipped++; unrecognized++; continue; }
+        sourceStatusCounts[Object.hasOwn(sourceStatusCounts, order.status) ? order.status : "unverified"]++;
         order.items = order.items.map(item => ({ ...item,
           imageUrl: publicSuccessProductImage(item.name, order.retailer, item.imageUrl) }));
         const identity = discordCheckoutIdentity(message);
@@ -38435,7 +38455,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.identityDiagnostics = identityStats;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, identityStats }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, identityStats }));
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
@@ -38765,10 +38785,13 @@ function publicSuccessProductName(value) {
       return point > 31 && point <= 0x10ffff ? String.fromCodePoint(point) : "";
     })
     .replace(/&amp;/gi, "&")
-    .replace(/\s+/g, " ").trim();
+    .replace(/\s+/g, " ").trim()
+    .replace(/^\*\*(.+)\*\*$/, "$1");
 }
 
 const verifiedPublicProductImages = [
+  { match: /ascended heroes.*tech sticker.*charmander/i, retailer: "Target",
+    imageUrl: "https://target.scene7.com/is/image/Target/GUEST_0c8fa752-b4cd-495f-be91-cc59011f406d" },
   { match: /ascended heroes tin.*mega f(?:eraligatr|raligatr) ex/i, retailer: "Target",
     imageUrl: "https://target.scene7.com/is/image/Target/GUEST_9e3e1626-502a-42d0-b3eb-e8901ae0d162" },
   { match: /30th celebration tin/i, retailer: "Target",
@@ -38800,6 +38823,8 @@ const verifiedPublicProductImages = [
 ];
 
 const successRetailerCatalog = [
+  { key: 'target-delta-reign-blister', match: /delta reign.*(?:three[- ]booster|3[- ]booster).*blister/i, retailer: 'Target',
+    productUrl: 'https://www.target.com/p/-/A-1013166573' },
   { key: 'delta-reign-pkc-etb', match: /delta reign.*elite trainer box/i, retailer: 'PKC',
     productUrl: 'https://www.pokemoncenter.com/product/10-10438-112' },
   { key: 'delta-reign-bundle', match: /delta reign.*booster bundle/i, retailer: 'PKC',
@@ -38890,6 +38915,7 @@ app.get(
       const products = new Map();
       let totalSpent = 0;
       let totalCheckouts = 0;
+      let pricePendingCheckouts = 0;
 
       for (const record of records) {
         if (!/^(confirmed|success|completed)$/i.test(String(record.status || "confirmed"))) continue;
@@ -38900,6 +38926,7 @@ app.get(
         totalCheckouts += 1;
         const total = Number(record.orderTotal);
         if (Number.isFinite(total) && total > 0) totalSpent += total;
+        else pricePendingCheckouts += 1;
 
         const purchasedAt = new Date(record.checkoutAt || record.updatedAt || record.createdAt || 0).getTime();
         for (const item of eligibleItems) {
@@ -38928,6 +38955,7 @@ app.get(
       res.json({
         totalCheckouts,
         totalSpent: Math.round(totalSpent * 100) / 100,
+        pricePendingCheckouts,
         products: orderedProducts
       });
     } catch (error) {
