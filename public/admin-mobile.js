@@ -59,6 +59,11 @@ async function refresh(force=false){
     }
     if(results[0].status==="rejected")throw results[0].reason;
     if(results[1].status==="rejected")data.activation=null;
+    // A field may gain focus while the network request is in flight.
+    if(!force && authenticated && (document.hidden || mobileControlFocused())){
+      mobileRefreshPending=true;
+      return;
+    }
     auth(true);
     $("updated").textContent="Updated "+new Date().toLocaleTimeString();
     const x=window.scrollX,y=window.scrollY;
