@@ -10473,7 +10473,23 @@ const specialCards = [
     ...rentedCards
   ];
 
+  // Keep previously saved customer-created profiles visible when billing
+  // allowance is temporarily zero. Never count them as active or tracked.
+  const preservedProfiles = (state.retailerProfiles || []).map(profile => {
+    const label = escapeHtml(profile.profileName || "Saved profile");
+    const slot = Number(profile.slot) || 0;
+    const status = escapeHtml(profile.activationLabel || profile.activationStatus || "Awaiting activation");
+    return `<div class="retailer-profile-placeholder">
+      <strong>${label}</strong>
+      <p>Profile ${slot} · ${status} · Saved information preserved</p>
+    </div>`;
+  }).join("");
+
   container.innerHTML = `
+    ${preservedProfiles ? `<details class="profile-group-dropdown" open>
+      <summary><strong>Previously Saved Profiles (${state.retailerProfiles.length})</strong></summary>
+      <div class="profile-group-dropdown-body">${preservedProfiles}</div>
+    </details>` : ""}
     ${
       specialCards.length
         ? `
