@@ -38544,6 +38544,84 @@ app.post("/api/admin/discord-checkout-profile-matching", requireAdmin, async (re
   }
 });
 
+
+/**
+ * The external Discord feed currently provides profile labels but often no
+ * retailer order numbers. Only an Admin who has checked the actual receipt
+ * may link an order number to an existing attributed webhook checkout.
+ * This never creates or moves a checkout.
+ */
+app.get("/api/admin/discord-checkout-tracking-link", requireAdmin, async (_req, res) => {
+  try {
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1)
+      return res.status(409).json({ error: "Configure one authoritative Discord checkout source first." });
+    const [records, accounts] = await Promise.all([getSuccessCheckouts(), getCustomerAccounts()]);
+    const names = new Map(accounts.map(account => [String(account.id),
+      [account.firstName || account.profile?.firstName,
+        account.lastName || account.profile?.lastName].filter(Boolean).join(" ").trim() ||
+      "Customer profile"]));
+    const missing = records.filter(record =>
+      isAuthoritativeCheckoutRecord(record, source.channels[0]) &&
+      record.customerAccountId && !record.orderNumber && !cancelledOrder(record)
+    ).sort((a, b) => new Date(b.checkoutAt || 0) - new Date(a.checkoutAt || 0));
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ ok: true, missingCount: missing.length, orders: missing.slice(0, 150).map(record => ({
+      id: record.id, retailer: record.retailer, checkoutAt: record.checkoutAt,
+      product: clean(record.items?.[0]?.name || "Verified checkout", 120),
+      profileLabel: clean(record.sourceProfileLabel, 100),
+      customer: names.get(String(record.customerAccountId)) || "Linked customer"
+    })) });
+  } catch (error) {
+    console.error("Missing checkout order numbers:", error?.code || error?.name);
+    return res.status(500).json({ error: "Unable to load verified checkouts awaiting order numbers." });
+  }
+});
+
+app.post("/api/admin/discord-checkout-tracking-link", requireAdmin, async (req, res) => {
+  try {
+    const id = clean(req.body?.id, 170);
+    const orderNumber = clean(req.body?.orderNumber, 100).trim().replace(/^#/, "");
+    if (req.body?.verifiedByAdmin !== true ||
+        !/^discord:\d{17,22}:\d{17,22}$/.test(id) ||
+        !/^[A-Za-z0-9][A-Za-z0-9._ /-]{4,99}$/.test(orderNumber) ||
+        !/\d/.test(orderNumber) ||
+        /^(?:success|pending|unknown|confirmed|none|n\/a)$/i.test(orderNumber))
+      return res.status(400).json({ error: "Verify the real retailer confirmation and enter its complete order number." });
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1)
+      return res.status(409).json({ error: "Authoritative Discord checkout source is unavailable." });
+    const result = await withSuccessStoreLock(async () => {
+      const records = await getSuccessCheckouts();
+      const target = records.find(record => record.id === id &&
+        isAuthoritativeCheckoutRecord(record, source.channels[0]) &&
+        isVerifiedDiscordCheckout(record) && record.customerAccountId && !cancelledOrder(record));
+      if (!target) return { status: 404, error: "An attributed verified checkout with that ID was not found." };
+      if (target.orderNumber) return { status: 409, error: "This checkout already has an order number. No overwrite was made." };
+      const normalize = value => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (records.some(record => record.id !== id &&
+          String(record.retailer).toLowerCase() === String(target.retailer).toLowerCase() &&
+          normalize(record.orderNumber) === normalize(orderNumber)))
+        return { status: 409, error: "That retailer order number is already linked to another checkout." };
+      target.orderNumber = orderNumber;
+      target.orderNumberSource = "admin_verified_receipt";
+      target.orderNumberLinkedAt = new Date().toISOString();
+      await saveSuccessCheckouts(records);
+      announceSuccessCheckout(target.customerAccountId);
+      broadcastLiveDataChange("verified-order-number-linked");
+      return { status: 200, ok: true, updated: true };
+    });
+    if (result.ok) {
+      const timer = setTimeout(() => void syncShippingTrackers(), 300);
+      timer.unref?.();
+    }
+    return res.status(result.status).json(result);
+  } catch (error) {
+    console.error("Verify checkout order number:", error?.code || error?.name);
+    return res.status(500).json({ error: "Unable to link that verified retailer order number." });
+  }
+});
+
 // Admin Success overview: use only already-attributed Discord success checkouts.
 // Unmatched hits cannot be counted as belonging to a paid, personal, or linked profile.
 app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
@@ -38559,7 +38637,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     const unmatchedCount = allRecords.filter(record => !record.customerAccountId &&
       [record.id, ...(record.sourceIds || [])].some(id => activeIds.some(prefix => String(id).startsWith(prefix)))).length;
     const records = allRecords
-      .filter(record => Boolean(record.customerAccountId))
+      .filter(record => Boolean(record.customerAccountId) && !cancelledOrder(record))
       .map(record => {
         const safe = safeSuccessCheckout(record);
         return {
@@ -39827,7 +39905,7 @@ function buildSuccessSummary(
   includeOrders = false
 ) {
   const safeRecords =
-    records.map(
+    records.filter(record => !cancelledOrder(record)).map(
       safeSuccessCheckout
     );
 
@@ -47793,7 +47871,7 @@ const ownedOrders =
           await getSuccessCheckouts(),
           hitsChannelId
         ).filter(record =>
-          String(record.customerAccountId) === String(account.id)
+          String(record.customerAccountId) === String(account.id) && !cancelledOrder(record)
         );
       } catch (error) {
         console.error("Customer retailer lifetime stats load failed:", account.id, error.message);
