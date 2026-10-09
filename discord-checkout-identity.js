@@ -23,7 +23,7 @@ function asEmail(value) {
 }
 function asOrder(value) {
   const text = readable(value).replace(/^#/, "").trim();
-  if (!ORDER.test(text) || /^(?:unknown|pending|none|null|n\/a)$/i.test(text)) return "";
+  if (!ORDER.test(text) || text.length < 5 || !/\d/.test(text) || /^(?:unknown|pending|none|null|n\/a)$/i.test(text)) return "";
   return text;
 }
 
