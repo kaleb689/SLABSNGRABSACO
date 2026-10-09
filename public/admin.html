@@ -24830,6 +24830,12 @@ window.adminOpenLinkedStatus = async function(badge) {
     info.textContent = "Showing " + visible + " " + status +
       " linked account(s). Use the profile controls below to view or change status.";
     container.prepend(info);
+    // The customer summary sits above several long sections. Explicitly
+    // navigate to the filtered linked section after loading; Safari otherwise
+    // leaves the viewport at the counter that was clicked.
+    await new Promise(resolve => requestAnimationFrame(() =>
+      requestAnimationFrame(resolve)));
+    section.scrollIntoView({behavior:"smooth",block:"start"});
   } catch (error) {
     window.alert(error.message || "Could not load linked profiles.");
   } finally { badge.disabled = false; }
