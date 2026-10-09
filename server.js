@@ -29718,6 +29718,17 @@ app.get(
         }
       }
 
+      // Legacy paid orders may lack a customerAccountId. Resolve only
+      // an unambiguous website-account email match for read-only display.
+      if (!customerAccountId && order) {
+        const orderEmail = normalizeEmail(order.profile?.email || order.email || "");
+        if (orderEmail) {
+          const matches = (await getCustomerAccounts()).filter(account =>
+            normalizeEmail(account.email || "") === orderEmail);
+          if (matches.length === 1) customerAccountId = matches[0].id;
+        }
+      }
+
       if (!customerAccountId) {
         return res
           .status(404)
