@@ -19111,6 +19111,50 @@ async function getAvailableManagedMembershipRecords() {
 
 
 
+/* Admin-only repair clearance; never reassign or erase a linked account. */
+app.post("/api/admin/managed-pool/:id/mark-repaired", requireAdmin, async (req, res) => {
+  try {
+    const id = clean(req.params.id, 150);
+    const retailer = clean(req.body?.retailer, 50);
+    if (!["target", "walmart", "pokemoncenter"].includes(retailer)) {
+      return res.status(400).json({error:"Choose the retailer being repaired."});
+    }
+    if (req.body?.confirmed !== true) {
+      return res.status(400).json({error:"Confirm the account has been repaired."});
+    }
+    const [accounts, free, rented, holds] = await Promise.all([
+      getManagedAccounts(), getFreeAssignments(), getRentalAssignments(), getRestoreHolds()
+    ]);
+    const account = accounts.find(a => String(a.id) === id);
+    if (!account) return res.status(404).json({error:"Managed account not found."});
+    const inUse = [...free, ...rented].some(a => managedAssignmentIsLinked(a) &&
+      String(a.managedAccountId || a.freeMembershipId || a.rentedMembershipId || "") === id);
+    if (inUse) return res.status(409).json({error:"Account is linked; unlink it before clearing repair status."});
+    if (heldManagedAccountIdsFromHolds(holds).has(id)) {
+      return res.status(409).json({error:"Account is in Restore Hold. Release the hold first."});
+    }
+    const credentials = account.credentials ?
+      normalizeRetailerCredentials(decryptJson(account.credentials)) : emptyRetailerCredentials();
+    if (!clean(credentials?.[retailer]?.username, 254)) {
+      return res.status(409).json({error:"Retailer login is missing; repair the account details first."});
+    }
+    if (account.needsRepair !== true && String(account.repairStatus || "") !== "needs_repair") {
+      return res.status(409).json({error:"Account is not marked Needs Repair."});
+    }
+    account.needsRepair = false;
+    account.repairStatus = "repaired";
+    account.repairedAt = new Date().toISOString();
+    account.updatedAt = account.repairedAt;
+    account.repairReason = "";
+    await saveManagedAccounts(accounts);
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ok:true,message:"Repair status cleared; account is eligible for the pool."});
+  } catch (error) {
+    console.error("Managed account repair status update failed:", error?.message);
+    return res.status(500).json({error:"Unable to update repair status."});
+  }
+});
+
 /* ADMIN POOL PROFILE SEARCH: never transmit passwords, cards or security codes. */
 app.get("/api/admin/managed-pool/search", requireAdmin, async (req, res) => {
   try {
@@ -27917,9 +27961,17 @@ app.get(
             id
         );
 
-      const customerAccountId =
-        order?.customerAccountId ||
-        null;
+      let customerAccountId = order?.customerAccountId || null;
+      // Legacy orders may predate the account link. Resolve only a unique
+      // matching website account, without changing stored assignments.
+      if (!customerAccountId && order) {
+        const orderEmail = normalizeEmail(order.profile?.email || order.email || "");
+        if (orderEmail) {
+          const matches = (await getCustomerAccounts()).filter(a =>
+            normalizeEmail(a.email || "") === orderEmail);
+          if (matches.length === 1) customerAccountId = matches[0].id;
+        }
+      }
 
       if (!customerAccountId) {
         return res.json({
