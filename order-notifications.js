@@ -185,6 +185,26 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         const key = orderKey(record);
         const previous = state.snapshots[key];
         const next = orderSnapshot(record);
+        // Retire checkout-confirmed or shipping alerts when the authoritative
+        // hook changes to orange/unknown. Previously delivered pushes cannot
+        // be recalled, but the in-app inbox and queued pushes must not lie.
+        if (!next.cancelled && !next.eligible) {
+          state.outbox = state.outbox.filter(item => item.key !== key ||
+            !["order_confirmed", "shipping_update", ...(next.reviewHold ? [] : ["order_review_hold"])].includes(item.notification?.kind));
+          state.inbox[record.customerAccountId] = (state.inbox[record.customerAccountId] || [])
+            .filter(item => item.orderKey !== key ||
+              !["order_confirmed", "shipping_update", ...(next.reviewHold ? [] : ["order_review_hold"])].includes(item.kind));
+        }
+        if (!next.cancelled && !next.eligible && !next.reviewHold) {
+          state.snapshots[key] = next;
+          continue;
+        }
+        if (next.eligible && previous?.cancelled) {
+          state.outbox = state.outbox.filter(item => item.key !== key ||
+            item.notification?.kind !== "order_cancelled");
+          state.inbox[record.customerAccountId] = (state.inbox[record.customerAccountId] || [])
+            .filter(item => item.orderKey !== key || item.kind !== "order_cancelled");
+        }
         if (next.cancelled) {
           // Retract all pending confirmation/shipment pushes and stale notices.
           // Only a prior valid ACO success can produce a cancellation event.
