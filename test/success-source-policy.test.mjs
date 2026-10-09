@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { webhookOnlyCheckouts, isVerifiedDiscordCheckout,
-  hasExactWebhookOrderNumber, isTrustedRetailerSender, matchVerifiedWebhookEmail } from "../success-source-policy.js";
+  hasExactWebhookOrderNumber, isTrustedRetailerSender, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "../success-source-policy.js";
 
 const id = "discord:1532179373292257290:1580000000000000001";
 const now = new Date().toISOString();
@@ -99,4 +99,31 @@ test("production Success, shipping, and notification flow uses strict source bar
   const scheduler = source.split("function startLiveSuccessScheduler()")[1].split("function ", 1)[0];
   assert.doesNotMatch(scheduler, /syncAllActiveCustomerSuccess\(\)/);
   assert.doesNotMatch(scheduler, /runManagedSuccessScan\(\)/);
+});
+
+test("archived Discord checkout channels never inflate active customer or public Success", () => {
+  const activeChannel = "1532179373292257290";
+  const retiredChannel = "1551090141693485156";
+  const current = { ...confirmed, id: "discord:" + activeChannel + ":1580000000000000001" };
+  const archived = { ...confirmed, id: "discord:" + retiredChannel + ":1580000000000000002" };
+  const crossFeedSameCheckout = { ...confirmed,
+    id: "discord:" + retiredChannel + ":1580000000000000003",
+    sourceIds: ["discord:" + activeChannel + ":1580000000000000004"]
+  };
+  const records = [current, archived, crossFeedSameCheckout];
+  const visible = authoritativeDiscordCheckouts(records, [activeChannel]);
+  assert.deepEqual(visible.map(record => record.id), [current.id, crossFeedSameCheckout.id]);
+  assert.deepEqual(authoritativeDiscordCheckouts(records, []), []);
+  assert.deepEqual(authoritativeDiscordCheckouts(records, [retiredChannel]).map(record => record.id),
+    [archived.id, crossFeedSameCheckout.id]);
+  // Audited history remains untouched; only the view is source-restricted.
+  assert.equal(records.length, 3);
+});
+
+test("all Success aggregate and customer endpoints use an authoritative-source filter", async () => {
+  const server = await fs.readFile(new URL("../server.js", import.meta.url), "utf8");
+  assert.match(server, /return authoritativeDiscordCheckouts\(records, authorizedChannelIds\)/);
+  assert.match(server, /visibleDiscordSuccessRecords\(await getSuccessCheckouts\(\), hitsChannelId, chosen\.channels\)/);
+  assert.equal((server.match(/visibleDiscordSuccessRecords\(/g) || []).length, 5);
+  assert.equal((server.match(/\(await discordCheckoutSourceChannels\(\)\)\.channels/g) || []).length, 3);
 });
