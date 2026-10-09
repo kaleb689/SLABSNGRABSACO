@@ -8,6 +8,7 @@ import { createOrderNotifications, cancelledOrder, lateCancellation } from "./or
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { webhookOnlyCheckouts, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
+import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
@@ -43729,7 +43730,14 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
           { subject: "delivered" }, { subject: "on the way" }, { subject: "tracking" }, { subject: "cancel" }
         ]
       }, { uid: true });
-      const recentUids = uids.slice(-120);
+      // Some Shikari hooks omit the checkout price. Read receipts separately
+      // so the newest confirmations do not crowd out real shipping notices.
+      const receiptUids = await client.search({
+        since,
+        or: [{ subject: "receipt" }, { subject: "confirmation" },
+          { subject: "confirmed" }, { subject: "your order" }]
+      }, { uid: true });
+      const recentUids = [...new Set([...uids.slice(-120), ...receiptUids.slice(-120)])];
       const candidates = recentUids.length ? await client.fetchAll(
         recentUids,
         { uid: true, envelope: true, internalDate: true, source: true },
@@ -43742,7 +43750,8 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const combined = normalizedShippingText(`${subject}\n${decoded.text}\n${decoded.html}`);
         const cancellation = cancellationFromSubject(subject);
         const status = cancellation || shippingStatusFromMessage(subject, combined);
-        if (!status) continue;
+        const receiptTotal = verifiedRetailerOrderTotal(decoded.text, decoded.html);
+        if (!status && !receiptTotal) continue;
 
         // A customer's inbox can include purchases outside this ACO service.
         // Require an exact existing webhook order number, one unique match,
@@ -43757,6 +43766,21 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const account = accountsById.get(String(record?.customerAccountId || ""));
         if (!account || account.disabled === true) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
+        if (receiptTotal && !cancelledOrder(record) &&
+            (record.orderTotalBasis === "unknown" || (!record.orderTotalBasis && !(Number(record.orderTotal) > 0)))) {
+          // Only attach amount to the existing, uniquely matched Discord
+          // checkout. Never turn an email receipt into a new order or owner.
+          record.orderTotal = receiptTotal;
+          record.orderTotalBasis = "retailer_receipt";
+          record.priceSource = "verified_retailer_receipt";
+          pendingChanges.push({
+            id: record.id, customerAccountId: String(account.id),
+            retailer: record.retailer, orderNumber: record.orderNumber,
+            orderTotal: receiptTotal
+          });
+          changed = true;
+        }
+        if (!status) continue;
         if (cancellation) {
           if (!cancelledOrder(record)) {
             record.status = cancellation;
@@ -43888,6 +43912,16 @@ async function syncShippingTrackers() {
           String(item.orderNumber || "") === String(update.orderNumber || "")
         );
         if (!record) continue;
+        if (update.orderTotal) {
+          if (!cancelledOrder(record) &&
+              (record.orderTotalBasis === "unknown" || (!record.orderTotalBasis && !(Number(record.orderTotal) > 0)))) {
+            record.orderTotal = update.orderTotal;
+            record.orderTotalBasis = "retailer_receipt";
+            record.priceSource = "verified_retailer_receipt";
+            changedAccounts.add(update.customerAccountId);
+          }
+          continue;
+        }
         if (update.cancelledAt) {
           if (cancelledOrder(record)) continue;
           const priorUpdatedAt = Date.parse(record.shipping?.updatedAt || 0);
