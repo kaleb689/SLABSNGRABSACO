@@ -37945,7 +37945,7 @@ function discordCheckoutFromMessage(message, channelId) {
   }
   if (!items.length) return null;
   const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))?.value ||
-    body.match(/(?:^|\n)\s*(?:retailer|store|site)\s*:\s*([^\n]+)/i)?.[1] || "";
+    body.match(/(?:^|\n)[ \t]*(?:retailer|store|site)[ \t]*(?::[ \t]*|\n[ \t]*)([^\n]+)/i)?.[1] || "";
   const totalField = (embed?.fields || []).find(field => /total|spent|amount/i.test(field.name || ""))?.value ||
     body.match(/(?:total|spent|amount)\s*[:$]\s*\$?([\d,.]+)/i)?.[1] || "";
   const totalMatch = String(totalField).match(/\$?([\d,]+\.\d{2})/);
@@ -38026,6 +38026,9 @@ async function resolveDiscordHitsChannelId(token) {
 }
 
 function publicDiscordHitPayload(order) {
+  // Never mirror a red cancellation, orange hold, or unknown-color hook as
+  // a green "Successful Checkout" message.
+  if (!confirmedDiscordPurchase(order)) return null;
   const items = (Array.isArray(order?.items) ? order.items : [])
     .map(item => ({
       name: publicSuccessProductName(item?.name),
@@ -38416,7 +38419,7 @@ async function scanDiscordSuccessChannel() {
         broadcastLiveDataChange("discord-success");
       }
     });
-    await mirrorDiscordCheckoutHits(imports, token).catch(error => {
+    await mirrorDiscordCheckoutHits(imports.filter(entry => confirmedDiscordPurchase(entry.order)), token).catch(error => {
       console.error("Discord hits mirror failed:", error?.message || error?.code || "discord_hits_mirror_error");
       discordSuccessScan.hitsError = error?.message || "Discord hits mirror failed.";
     });
