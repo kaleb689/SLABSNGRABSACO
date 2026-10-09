@@ -193,6 +193,28 @@
           }
         });
         actions.append(button);
+      } else if (profile.status === "held") {
+        const button = make("button", "pool-profile-action-link", "Override Restore Hold");
+        button.type = "button";
+        button.addEventListener("click", async () => {
+          if (!window.confirm("Override the Restore Hold on " + profile.loginEmail +
+              "? This releases only this account to available inventory. Existing customer assignments are not changed.")) return;
+          button.disabled = true;
+          try {
+            await api("/api/admin/managed-pool/" + encodeURIComponent(profile.id) + "/override-hold", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({confirmed:true})
+            });
+            notice = "Restore Hold released for " + profile.loginEmail + ".";
+            await reload();
+          } catch (error) {
+            statusLine.textContent = error.message;
+          } finally {
+            button.disabled = false;
+          }
+        });
+        actions.append(button);
       } else if (profile.status === "needs_repair") {
         const button = make("button", "pool-profile-action-link", "Mark Repaired");
         button.type = "button";
