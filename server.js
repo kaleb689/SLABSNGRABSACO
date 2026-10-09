@@ -6,6 +6,7 @@ import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
+import { webhookOnlyCheckouts, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail } from "./success-source-policy.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
@@ -17705,11 +17706,9 @@ app.post(
   requireAdmin,
   (req, res) => {
     res.setHeader("Cache-Control", "no-store");
-    if (!managedSuccessMailboxConfig().configured) {
-      return res.status(400).json({ error: "Complete the managed mailbox settings in Render first." });
-    }
-    runManagedSuccessScan().catch(() => {});
-    return res.status(202).json({ ok: true, running: true });
+    return res.status(409).json({
+      error: "Mailbox receipts cannot create Success checkouts. Only Discord webhooks confirm purchases; verified retailer shipping emails update existing orders."
+    });
   }
 );
 
@@ -37665,15 +37664,26 @@ async function verifyCustomerImap(
 }
 
 async function getSuccessCheckouts() {
-  const records =
-    await readJson(
-      SUCCESS_CHECKOUTS_FILE,
-      []
-    );
+  // Never serve historical email-only entries as checkout confirmations.
+  const records = await readJson(SUCCESS_CHECKOUTS_FILE, []);
+  return webhookOnlyCheckouts(records);
+}
 
-  return Array.isArray(records)
-    ? records
-    : [];
+async function migrateWebhookOnlySuccessCheckouts() {
+  const raw = await readJson(SUCCESS_CHECKOUTS_FILE, []);
+  const original = Array.isArray(raw) ? raw : [];
+  const verified = webhookOnlyCheckouts(original, { resetLegacyShipping: true });
+  if (JSON.stringify(original) === JSON.stringify(verified)) return;
+  // On-disk snapshot is saved before modifying historical customer data.
+  await fs.writeFile(
+    path.join(DATA_DIR, "success-before-webhook-only-20261009.json"),
+    JSON.stringify(original),
+    { flag: "wx", mode: 0o600 }
+  ).catch(error => { if (error.code !== "EEXIST") throw error; });
+  await writeJson(SUCCESS_CHECKOUTS_FILE, verified);
+  console.log("Webhook-only checkout migration:", JSON.stringify({
+    retained: verified.length, excludedNonWebhook: original.length - verified.length
+  }));
 }
 
 const REMOVED_SUCCESS_PRODUCT =
@@ -38833,14 +38843,11 @@ app.get(
   }
 );
 
-async function saveSuccessCheckouts(
-  records
-) {
-  await writeJson(
-    SUCCESS_CHECKOUTS_FILE,
-    records
-  );
-  try { await appOrderNotifications.reconcile(records); }
+async function saveSuccessCheckouts(records) {
+  // Prevent any legacy email-import writer from persisting fake confirmations.
+  const verified = webhookOnlyCheckouts(records);
+  await writeJson(SUCCESS_CHECKOUTS_FILE, verified);
+  try { await appOrderNotifications.reconcile(verified); }
   catch (error) { console.error("Order alert persistence:", error.code || error.name); }
 }
 
@@ -38860,6 +38867,7 @@ function withSuccessStoreLock(operation) {
 }
 
 async function recordSuccessCheckoutUnlocked(record, { notifyDiscord = true } = {}) {
+  if (!isVerifiedDiscordCheckout(record)) return false;
   const safeRecord =
     safeSuccessCheckout(
       record
@@ -38950,8 +38958,9 @@ async function recordSuccessCheckoutUnlocked(record, { notifyDiscord = true } = 
 
 /* Orders in the business mailbox without a customer assignment contribute
    anonymous checkout totals. Only eligible product names enter the carousel. */
-async function recordCommunitySuccessCheckout(order) {
-  return withSuccessStoreLock(() => recordCommunitySuccessCheckoutUnlocked(order));
+async function recordCommunitySuccessCheckout(_order) {
+  // Never record an unlinked mailbox receipt as a purchase.
+  return false;
 }
 async function recordCommunitySuccessCheckoutUnlocked(order) {
   const items = (Array.isArray(order?.items) ? order.items : [])
@@ -44804,18 +44813,7 @@ function startLiveSuccessScheduler() {
   const firstRun =
     setTimeout(
       () => {
-        syncAllActiveCustomerSuccess()
-          .catch(() => {});
-        runManagedSuccessScan().catch(() => {});
-        for (const delay of [30000, 90000, 180000]) {
-          const progressLog = setTimeout(() => console.log("Managed Success mailbox scan progress:", JSON.stringify({
-            running: Boolean(managedSuccessScanPromise), progress: managedSuccessScanStatus.progress,
-            lastError: managedSuccessScanStatus.lastError, parsedOrders: managedSuccessScanStatus.parsedOrders,
-            savedOrders: managedSuccessScanStatus.savedOrders
-          })), delay);
-          progressLog.unref?.();
-        }
-
+        // Retailer email is now shipment enrichment only.
         reconcileLapsedMembershipNotifications()
           .catch(() => {});
       },
@@ -44832,10 +44830,7 @@ function startLiveSuccessScheduler() {
   const interval =
     setInterval(
       () => {
-        syncAllActiveCustomerSuccess()
-          .catch(() => {});
-        runManagedSuccessScan().catch(() => {});
-
+        // No periodic IMAP-based checkout imports.
         reconcileLapsedMembershipNotifications()
           .catch(() => {});
       },
@@ -48477,8 +48472,8 @@ await initializeArrayFile(
     await initializeArrayFile(
   SUCCESS_CHECKOUTS_FILE
 );
+    await migrateWebhookOnlySuccessCheckouts();
 
-    
     await removeLegacyDiscordUserIds();
 
     await migrateCustomerJigs();
