@@ -219,9 +219,8 @@ if(tab==="success"){
   c.innerHTML=buttons+customerSelect+accountSelect+hero+
     '<div class="metrics admin-success-metrics">'+metric("Confirmed orders",total)+
       metric("Retailers",groupedRetailers.size)+'</div>'+
-    lifetime+panel("Orders by retailer",donut+legend)+
-    panel("Products purchased",productsMarkup(filtered))+peopleHtml+
-    unmatchedPanel+scanStatus;
+    unmatchedPanel+lifetime+panel("Orders by retailer",donut+legend)+
+    panel("Products purchased",productsMarkup(filtered))+peopleHtml+scanStatus;
   c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{
     successDays=/^(mtd|ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);
     render();
