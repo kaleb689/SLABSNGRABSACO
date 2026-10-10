@@ -42,4 +42,11 @@ test("registered and unpaid website signups are included in Admin live data, not
   assert.match(admin,/Awaiting activation/);
   assert.match(admin,/App users · 7 days/);
   assert.match(admin,/data-view/);
+  const customerPage=read("public/index.html");
+  const adminPage=read("public/admin-app.html");
+  const fullAdminPage=read("public/admin-success.html");
+  for(const page of [customerPage,adminPage,fullAdminPage]){
+    assert.match(page,/custom-date-controls\.css\?v=20261010-fit2/);
+  }
+  assert.match(adminPage,/admin-mobile\.js\?v=25-signup-20261010/);
 });
