@@ -114,13 +114,13 @@ test("per-customer 24H / 7D / 30D filters work independently of global timeframe
   assert.match(html(),/data-success-panel="products"/);
   assert.match(html(),/data-success-panel="customers"/);
   assert.match(html(),/success-user-accordion/);
-  // MTD affects the selected graph and can be selected separately per user.
-  press("global","mtd");
-  assert.match(html(),/TOTAL VERIFIED SPENT · MONTH TO DATE/);
-  assert.match(html(),/data-success-days="mtd" aria-pressed="true"/);
-  press("user","mtd");
-  assert.match(html(),/Month to date/);
-  assert.match(html(),/data-success-user-days="mtd" data-success-user-id="member-a" aria-pressed="true"/);
+  // MTD was removed from the interface; the calendar can choose exact days.
+  press("global","ytd");
+  assert.match(html(),/TOTAL VERIFIED SPENT · YEAR TO DATE/);
+  assert.match(html(),/data-success-days="ytd" aria-pressed="true"/);
+  assert.match(html(),/data-success-calendar/);
+  assert.match(html(),/data-success-user-calendar="member-a"/);
+  assert.doesNotMatch(html(),/data-success-days="mtd"|data-success-user-days="mtd"|>6M</);
 });
 
 test("month-to-date begins at local midnight on day one and stops at month/year rollovers",()=>{
