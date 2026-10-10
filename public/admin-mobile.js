@@ -78,6 +78,14 @@ async function passkeyRegister(){const x=await post("/api/admin/passkeys/registe
 async function passkeyLogin(){const x=await post("/api/admin/passkeys/login/options",{});const pk=x.publicKey;pk.challenge=decode64(pk.challenge);pk.allowCredentials=(pk.allowCredentials||[]).map(c=>({...c,id:decode64(c.id)}));const c=await navigator.credentials.get({publicKey:pk});await post("/api/admin/passkeys/login/verify",{requestId:x.requestId,credential:{id:c.id,type:c.type,response:{authenticatorData:encode64(c.response.authenticatorData),clientDataJSON:encode64(c.response.clientDataJSON),signature:encode64(c.response.signature)}}});await refresh(true);}
 const pushLabels={newOrders:"New orders",activations:"Profile activations",expirations:"Expiring profiles",actionNeeded:"Action needed",support:"Support",checkouts:"Checkouts",deployments:"Deployments"};
 async function pushSettings(){const c=$("push-settings");if(!c)return;try{const d=await get("/api/admin/push/settings");c.innerHTML='<button class="action" id="enable-push">ENABLE PUSH NOTIFICATIONS</button>'+Object.entries(pushLabels).map(([k,v])=>'<label style="display:flex;align-items:center;justify-content:space-between">'+esc(v)+'<input style="width:26px;min-height:26px" type="checkbox" data-push="'+k+'" '+(d.preferences?.[k]?'checked':'')+'></label>').join('');c.querySelectorAll("[data-push]").forEach(el=>el.onchange=async()=>{await fetch("/api/admin/push/settings",{method:"PUT",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({[el.dataset.push]:el.checked})});});$("enable-push").onclick=async()=>{try{if(!("PushManager" in window)||!("Notification" in window))throw Error("Install the app to enable iPhone push.");if(await Notification.requestPermission()!=="granted")throw Error("Notification permission not granted.");if(!d.publicKey)throw Error("Push server key unavailable.");const reg=await navigator.serviceWorker.ready;const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:decode64(d.publicKey)});await post("/api/admin/push/subscribe",sub.toJSON());alert("Notifications enabled.");}catch(e){alert(e.message);}};}catch(e){c.textContent=e.message;}}
+const metricSnapshots=new Map();
+function liveMetric(label,value,numericValue,formatMoney=false){
+  const prior=metricSnapshots.get(label);
+  if(Number.isFinite(numericValue))metricSnapshots.set(label,numericValue);
+  const change=prior==null||!Number.isFinite(numericValue)?null:numericValue-prior;
+  const suffix=change==null||change===0?"":'<small class="admin-metric-change" aria-label="Change since last refresh">'+(change>0?"+":"−")+(formatMoney?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Math.abs(change)):Math.abs(change))+'</small>';
+  return '<div class="metric"><small>'+esc(label)+'</small><strong>'+esc(value??"—")+'</strong>'+suffix+'</div>';
+}
 function metric(label,value){return '<div class="metric"><small>'+esc(label)+'</small><strong>'+esc(value??"—")+'</strong></div>';}
 function panel(title,body){return '<section class="panel"><h2>'+esc(title)+'</h2>'+body+'</section>';}
 function collapsiblePanel(title,body){return '<details class="panel admin-overview-disclosure"><summary>'+esc(title)+'</summary><div class="admin-overview-disclosure-content">'+body+'</div></details>';}
@@ -190,10 +198,10 @@ if(tab==="overview"){
         '<span><small>CUSTOMERS</small><b>'+list.length+'</b></span>'+
       '</div></section>'+
     '<div class="metrics admin-overview-grid admin-membership-overview-metrics">'+
-      '<div class="metric admin-membership-metric"><small>ACTIVE PAID MEMBERSHIPS</small><strong>'+activeMembershipRows.length+'</strong><small>Within current paid period</small></div>'+
-      '<div class="metric admin-membership-metric"><small>MONTHLY MEMBERSHIP PAYMENTS</small><strong>'+esc(recurringTotal)+'</strong><small>'+esc(recurringNote)+'</small></div>'+
-      metric("Registered customers",list.length)+
-      metric("Awaiting activation",activationCount(a,"awaiting_activation"))+
+      liveMetric("ACTIVE PAID MEMBERSHIPS",activeMembershipRows.length,activeMembershipRows.length)+
+      liveMetric("MONTHLY MEMBERSHIP PAYMENTS",recurringTotal,recurringVerified?recurringCents.reduce((sum,n)=>sum+n,0)/100:NaN,true)+
+      liveMetric("Registered customers",list.length,list.length)+
+      liveMetric("Awaiting activation",activationCount(a,"awaiting_activation"),Number(activationCount(a,"awaiting_activation")))+
       '<details class="metric admin-app-users-metric"><summary>APP USERS · 7 DAYS <strong>'+esc(u.activeUsers7d??"—")+'</strong></summary><div class="admin-app-users-list">'+(Array.isArray(u.recent)?u.recent.filter(person=>{const when=Date.parse(person.lastSeenAt||"");return Number.isFinite(when)&&when>=Date.now()-7*86400000}).slice(0,30).map(person=>'<p>'+esc(person.name||person.email||"App user")+' · '+esc(person.lastSeenAt?new Date(person.lastSeenAt).toLocaleDateString():"")+'</p>').join(""):"")+'</div></details></div>'+
     collapsiblePanel("Quick actions",'<div class="links">'+
       '<a class="action" href="/admin-success.html">CHECKOUT SPENDING & INSIGHTS ↗</a>'+
