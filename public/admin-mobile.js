@@ -82,12 +82,23 @@ function metric(label,value){return '<div class="metric"><small>'+esc(label)+'</
 function panel(title,body){return '<section class="panel"><h2>'+esc(title)+'</h2>'+body+'</section>';}
 function customerName(x){const p=x.profile||{};return [p.firstName,p.lastName].filter(Boolean).join(" ")||p.profileName||p.email||"Customer";}
 function customerTier(person) {
-  const raw=String(person?.plan?.name || person?.planName || person?.membershipName || '').trim();
-  const assigned=Number(person?.plan?.profileCount || person?.plan?.accounts || person?.paidProfileCount || 0);
-  const match=/(^|[^0-9])(10|20|50)(?![0-9])/.exec(raw);
-  const count=[10,20,50].includes(assigned) ? assigned : Number(match?.[2]) || 0;
-  const label=person?.accountOnly ? 'No paid membership' : (raw || (count ? count + ' accounts' : 'Membership'));
-  return {color:person?.accountOnly ? 'free' : (count ? 'tier-' + count : 'standard'),label};
+  const plan=person?.plan || person?.membership || {};
+  const raw=String(plan.name || person?.planName || person?.membershipName || '').trim();
+  const assigned=Number(plan.profiles ?? plan.profileCount ?? plan.accounts ?? person?.paidProfileCount ?? person?.profileAllowance ?? 0);
+  const named=/(^|[^0-9])(10|20|50)(?![0-9])/.exec(raw);
+  const planTier=Number(plan.tier ?? person?.tier ?? 0);
+  const allowedByTier=({5:10,6:20,7:50})[planTier] || 0;
+  const count=assigned > 0 ? assigned : Number(named?.[2]) || allowedByTier;
+  const unpaid=person?.accountOnly===true;
+  const label=unpaid ? 'No paid membership' : (raw || (count ? count + ' profiles' : 'Membership'));
+  const expires=plan.currentPeriodEnd || plan.subscriptionEndDate || plan.periodEnd || person?.currentPeriodEnd || person?.subscriptionEndDate || person?.periodEnd || null;
+  const endTimestamp=expires ? Date.parse(expires) : NaN;
+  const daysRemaining=Number.isFinite(endTimestamp) ? Math.max(0,Math.ceil((endTimestamp-Date.now()) / 86400000)) : null;
+  const status=unpaid ? 'Awaiting membership' : String(plan.status || person?.membershipStatus || '');
+  return {
+    color:unpaid ? 'free' : ([10,20,50].includes(count) ? 'tier-' + count : 'standard'),
+    label, count:unpaid ? 0 : count, status, daysRemaining
+  };
 }
 function customers(){
   // Newly registered accounts live in free-submissions until a membership
@@ -535,13 +546,20 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+list.leng
       (customerName(x)+" "+(x.profile?.email||"")).toLowerCase().includes(q))
       .slice(0,150).map(x=>{
         const tier=customerTier(x);
+        const renewal=tier.daysRemaining==null ? '' : tier.daysRemaining===0 ? 'Period ends today' : tier.daysRemaining+' day'+(tier.daysRemaining===1?'':'s')+' left';
+        const status=tier.status && !/^(active|trialing)$/i.test(tier.status) ? tier.status : '';
+        const count=tier.count ? tier.count+' ACO PROFILES' : 'NO ACTIVE TIER';
         return '<article class="item admin-customer-tier-row admin-customer-'+tier.color+'">'+
           '<div class="admin-customer-topline"><div class="admin-customer-identity">'+
+          '<small class="admin-customer-eyebrow">CUSTOMER ACCOUNT</small>'+
           '<strong>'+esc(customerName(x))+'</strong>'+
-          '<small>'+esc(x.profile?.email||"")+'</small></div>'+
+          '<small class="admin-customer-email">'+esc(x.profile?.email||"")+'</small>'+
+          (status ? '<small class="admin-customer-status">'+esc(status)+'</small>' : '')+'</div>'+
           '<div class="admin-customer-tier-badge"><small>MEMBERSHIP TIER</small>'+
-          '<strong>'+esc(tier.label)+'</strong></div></div>'+
-          '<button data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>';
+          '<span class="admin-customer-tier-count">'+esc(count)+'</span>'+
+          '<strong>'+esc(tier.label)+'</strong>'+
+          (renewal ? '<span class="admin-customer-renewal">'+esc(renewal)+'</span>' : '')+'</div></div>'+
+          '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">OPEN CUSTOMER PROFILE <span aria-hidden="true">↗</span></button></article>';
       }).join("")||
       "<p>No matching customers.</p>";
   };
