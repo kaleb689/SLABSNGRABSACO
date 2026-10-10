@@ -38454,8 +38454,11 @@ app.get("/api/admin/discord-checkout-profile-matching", requireAdmin, async (_re
       getSuccessCheckouts(), discordCheckoutOwners(), getCustomerAccounts(),
       readJson(DISCORD_PROFILE_ALIASES_FILE, [])
     ]);
-    const unlinked = records.filter(record => isAuthoritativeCheckoutRecord(record, source.channels[0]) &&
-      !record.customerAccountId);
+    // Review ONLY confirmed checkout orders. Red cancellations and orange
+    // review holds are not customer successes and must not clutter matching.
+    const unlinked = records.filter(record =>
+      isAuthoritativeCheckoutRecord(record, source.channels[0]) &&
+      confirmedDiscordPurchase(record) && !record.customerAccountId);
     const groups = new Map();
     for (const order of unlinked) {
       const key = checkoutAliasKey(order.retailer, order.sourceProfileLabel);
@@ -38485,7 +38488,8 @@ app.get("/api/admin/discord-checkout-profile-matching", requireAdmin, async (_re
         lastAt:group.orders.reduce((max,o)=> !max || o.checkoutAt > max ? o.checkoutAt : max,""),
         eligibleCustomers, approved: (Array.isArray(aliases)?aliases:[]).some(alias =>
           checkoutAliasKey(alias.retailer,alias.profileLabel)===group.key)};
-    }).sort((a,b)=>b.count-a.count || a.profileLabel.localeCompare(b.profileLabel));
+    }).sort((a,b)=>Date.parse(b.lastAt || 0)-Date.parse(a.lastAt || 0) ||
+      b.count-a.count || a.profileLabel.localeCompare(b.profileLabel));
     res.setHeader("Cache-Control","no-store");
     return res.json({ok:true,unmatchedCount:unlinked.length,unlabeledCount:unlinked.length-
       [...groups.values()].reduce((sum,group)=>sum+group.orders.length,0),groups:list});
@@ -38648,8 +38652,35 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     // explicitly attributed to an existing website customer account.
     const confirmed = allRecords.filter(confirmedDiscordPurchase);
     const customersById = new Map(customers.map(item => [String(item.id), item]));
-    const unmatchedCount = confirmed.filter(record =>
-      !record.customerAccountId || !customersById.has(String(record.customerAccountId))).length;
+    const unassignedConfirmed = confirmed.filter(record =>
+      !record.customerAccountId || !customersById.has(String(record.customerAccountId)));
+    const unmatchedCount = unassignedConfirmed.length;
+    // Aggregate-only Admin diagnostics: explain missing PC/morning hits
+    // without displaying them as purchases belonging to any customer.
+    const inspectedAt = Date.now(), dayMs = 86400000;
+    const inLastDays = (record, days) => {
+      const at = Date.parse(record.checkoutAt || "");
+      return Number.isFinite(at) && at >= inspectedAt - days * dayMs && at <= inspectedAt + 60000;
+    };
+    const byRetailer = new Map();
+    for (const record of unassignedConfirmed) {
+      const retailer = normalizeSuccessRetailer(record.retailer);
+      if (!byRetailer.has(retailer))
+        byRetailer.set(retailer, { retailer, total: 0, last24h: 0, last7d: 0, last30d: 0 });
+      const group = byRetailer.get(retailer);
+      group.total++;
+      if (inLastDays(record, 1)) group.last24h++;
+      if (inLastDays(record, 7)) group.last7d++;
+      if (inLastDays(record, 30)) group.last30d++;
+    }
+    const unmatchedRecent = {
+      total: unmatchedCount,
+      last24h: unassignedConfirmed.filter(record => inLastDays(record, 1)).length,
+      last7d: unassignedConfirmed.filter(record => inLastDays(record, 7)).length,
+      last30d: unassignedConfirmed.filter(record => inLastDays(record, 30)).length,
+      byRetailer: [...byRetailer.values()].sort((a,b) => b.last7d-a.last7d ||
+        b.total-a.total || a.retailer.localeCompare(b.retailer))
+    };
     const paidByCustomer = new Map();
     for (const paid of Array.isArray(paidRaw) ? paidRaw : []) {
       const id = String(paid?.customerAccountId || "");
@@ -38693,7 +38724,8 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
       unknownPrices: confirmed.filter(record => !(Number(record.orderTotal) > 0)).length
     });
     return res.json({
-      ok:true,records,unmatchedCount,communityTotals,
+      ok:true,records,unmatchedCount,unmatchedRecent,
+      sourceCheckedAt: discordSuccessScan.checkedAt || null,communityTotals,
       historicalSummary: historicalPlusVerified({checkouts:0,spent:0,unknownPrices:0})
     });
   } catch (error) {
