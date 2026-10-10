@@ -38794,7 +38794,7 @@ app.get("/api/admin/checkout-paid-verification", requireAdmin, async (_req, res)
 app.post("/api/admin/checkout-paid-verification", requireAdmin, async (req, res) => {
   try {
     const id = String(req.body?.id || "").trim();
-    if (!/^discord:\\d{17,22}:\\d{17,22}$/.test(id))
+    if (!/^discord:\d{17,22}:\d{17,22}$/.test(id))
       return res.status(400).json({ error: "Select a valid existing Discord checkout." });
     const source = await discordCheckoutSourceChannels();
     if (source.channels.length !== 1)
