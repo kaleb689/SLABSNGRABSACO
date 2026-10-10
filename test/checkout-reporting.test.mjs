@@ -5,7 +5,8 @@ import {
   HISTORICAL_COMMUNITY_SNAPSHOT,
   historicalPlusVerified,
   moneyToCents,
-  safeAdminProfileLabel
+  safeAdminProfileLabel,
+  adminCheckoutCustomerName
 } from "../checkout-reporting.js";
 
 test("archived 240 checkouts and original amount combine with live 82 once", () => {
@@ -55,6 +56,16 @@ test("account labels retain useful profile identity without login emails or secr
   assert.match(paid.accountLabel,/Walmart paid profile 3/);
 });
 
+test("Admin checkout names prefer real saved customer names, not webhook profile labels", () => {
+  const account={id:"member-12345678",email:"customer@example.test",
+    adminProfile:{firstName:"Amy",lastName:"Example"}};
+  const paid={profile:{firstName:"Old",lastName:"Name"}};
+  assert.equal(adminCheckoutCustomerName(account,paid),"Amy Example");
+  assert.equal(adminCheckoutCustomerName({id:"abc",email:"customer@example.test"},paid),"Old Name");
+  assert.equal(adminCheckoutCustomerName({id:"abc",email:"customer@example.test"}),"customer@example.test");
+  assert.equal(adminCheckoutCustomerName({id:"user-last-8"}),"Customer account r-last-8");
+});
+
 test("public and Admin endpoints read one authoritative live source and keep the archive separate", () => {
   const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
   const mobile=readFileSync(new URL("../public/admin-mobile.js",import.meta.url),"utf8");
@@ -69,10 +80,15 @@ test("public and Admin endpoints read one authoritative live source and keep the
   assert.match(adminRoute,/confirmed\.filter\(record => !record\.customerAccountId\)/);
   assert.doesNotMatch(adminRoute,/filter\(record => Boolean\(record\.customerAccountId\) && confirmedDiscordPurchase/);
   assert.match(adminRoute,/safeAdminProfileLabel/);
-  assert.match(mobile,/Customer checkout breakdown/);
+  assert.match(adminRoute,/adminCheckoutCustomerName/);
+  assert.match(adminRoute,/customersById\.has/);
+  assert.match(adminRoute,/\.filter\(record => record\.customerAccountId/);
+  assert.match(mobile,/panel\(x\.name\+" checkout breakdown"/);
+  assert.doesNotMatch(mobile,/Unmatched \/ unassigned checkouts/);
   assert.match(mobile,/Which accounts checked out/);
   assert.match(mobile,/success-customer-filter/);
   assert.match(mobile,/success-account-filter/);
   assert.match(mobile,/orderTotalKnown/);
-  assert.match(site,/historicalCheckouts/);
+  assert.match(site,/rollSuccessMetric\("public-success-spent"/);
+  assert.doesNotMatch(site,/public-success-spent-note|public-success-historical-products/);
 });
