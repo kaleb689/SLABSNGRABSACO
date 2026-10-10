@@ -9,8 +9,8 @@
 body.admin-page #dashboard button:not(:is(.danger,.delete-button,.managed-delete-button,.admin-cancel-button,.remove-button,.destructive,[class*="delete" i],[class*="remove" i],[id*="delete" i],[data-action*="delete" i],#logout)),
 body.admin-page .admin-login-card button:not(:is(.danger,.destructive)),
 body.admin-page #dashboard :is(.admin-head-actions a,.admin-edit-button,.admin-save-button,.load-retailer-profiles),
-body:not(.admin-page) :is(.account-card button,.account-action-button,.primary,.secondary,.profile-support-button),
-#workspace :is(button,.action,.item a,.panel a) {
+body:not(.admin-page) :is(.account-card button,button.account-action-button,a.account-action-button,button.primary,button.secondary,a.primary,a.secondary,button.profile-support-button,a.profile-support-button),
+#workspace :is(button,a.action,.item a,.panel a) {
   box-sizing:border-box;
   min-height:46px;
   max-width:100%;
