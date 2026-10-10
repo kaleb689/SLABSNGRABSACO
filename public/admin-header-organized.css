@@ -1,0 +1,19 @@
+/* Responsive Admin dashboard header: production controls remain in the DOM. */
+#dashboard .admin-head{display:grid;grid-template-columns:minmax(190px,280px) minmax(0,1fr);align-items:start;gap:clamp(18px,3vw,45px);padding:clamp(20px,3vw,34px)}
+#dashboard .admin-head-copy{min-width:0}
+#dashboard .admin-head-actions{display:flex;align-items:flex-start;justify-content:flex-end;flex-wrap:wrap;gap:10px;min-width:0}
+#dashboard .admin-head-actions > div{flex:0 1 auto;min-width:0}
+#dashboard .admin-head-actions .admin-price-review-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 16px;white-space:normal;text-align:center;font-size:clamp(11px,.9vw,14px)}
+#dashboard .admin-head-actions .admin-user-view-note{font-size:10px;line-height:1.3;max-width:260px;text-align:center}
+#dashboard .admin-utility-tools{order:4;flex:0 0 auto;position:relative;min-width:160px}
+#dashboard .admin-utility-tools>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:44px;padding:10px 15px;border:1px solid #42a6cc;border-radius:12px;background:linear-gradient(125deg,#28296f,#0b718b);color:#fff;font-weight:800;cursor:pointer}
+#dashboard .admin-utility-tools>summary::-webkit-details-marker{display:none}
+#dashboard .admin-utility-tools>summary:after{content:"⌄";font-size:18px}
+#dashboard .admin-utility-tools[open]>summary:after{content:"⌃"}
+#dashboard .admin-utility-tool-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:15px;margin-top:8px;border:1px solid #285f79;border-radius:14px;background:#0c2135}
+#dashboard .admin-utility-tool-grid>div{min-width:0}
+#dashboard .admin-utility-tool-grid button{width:100%;max-width:none;min-height:42px;margin:0;white-space:normal}
+#dashboard .admin-utility-tools[open]{flex-basis:100%}
+#dashboard #logout{min-height:44px;margin:0;order:5;white-space:nowrap}
+@media(max-width:900px){#dashboard .admin-head{grid-template-columns:1fr}#dashboard .admin-head-actions{justify-content:flex-start}#dashboard .admin-utility-tools[open]{flex-basis:100%}}
+@media(max-width:520px){#dashboard .admin-head-actions .admin-price-review-link{width:100%}#dashboard .admin-head-actions>div{flex:1 1 100%}#dashboard .admin-utility-tool-grid{grid-template-columns:1fr}}
