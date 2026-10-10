@@ -37,7 +37,7 @@ if (appEnabled) {
   document.body.classList.add('app-dashboard');
   document.body.dataset.appView = view;
 
-  const rangeName = () => days === 'ytd' ? 'Year to date' : days === 1 ? 'Last 24 hours' : `Last ${days} days`;
+  const rangeName = () => days === 'all' ? 'Lifetime' : days === 'mtd' ? 'Month to date' : days === 'ytd' ? 'Year to date' : days === 1 ? 'Last 24 hours' : `Last ${days} days`;
   function cancelledInPeriod() {
     const earliest = periodStart(days).getTime(), latest = Date.now();
     return cancelledOrders.filter(order => {
@@ -53,7 +53,7 @@ if (appEnabled) {
       return order.status === 'review_hold' && Number.isFinite(time) && time >= earliest && time <= latest;
     }).sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
   }
-  const rangeButtons = () => `<div class="sng-range" role="group" aria-label="Date range">${[1, 7, 30, 90, 180, 'ytd'].map(n => `<button type="button" data-app-days="${n}" aria-pressed="${n === days}">${n === 'ytd' ? 'YTD' : n === 1 ? '24HR' : n === 180 ? '6M' : `${n}D`}</button>`).join('')}</div><p class="sng-period-label">${rangeName()}</p>`;
+  const rangeButtons = () => `<div class="sng-range" role="group" aria-label="Date range">${[1, 7, 30, 90, 'mtd', 'ytd', 180, 'all'].map(n => `<button type="button" data-app-days="${n}" aria-pressed="${n === days}">${n === 'all' ? 'ALL' : n === 'mtd' ? 'MTD' : n === 'ytd' ? 'YTD' : n === 1 ? '24H' : n === 180 ? '6M' : `${n}D`}</button>`).join('')}</div><p class="sng-period-label">${rangeName()}</p>`;
   const metric = (label, value, tone = '', symbol = '', delta = null) => `<div class="sng-metric ${tone}"><span>${symbol ? icon(symbol) : ''}${e(label)}</span><strong>${e(value)}</strong>${delta === null ? '' : `<small class="sng-delta" title="Change since the previous refresh of this date range">${delta >= 0 ? '+' : ''}${delta} since last update</small>`}</div>`;
   const hero = (label, value, note, tone = '') => {
     const activity = dashboardActivity(selectedOrders(orders, days), days);
@@ -68,7 +68,7 @@ if (appEnabled) {
     const src = safe ? url : fallback;
     return `<img src="${e(src)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${fallback}'">`;
   };
-  const productRows = (products, ranked = false) => products.map((product, index) => `<article class="sng-product-row">${ranked ? `<b class="sng-rank">${index + 1}</b>` : ''}<div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong>${money(product.value)}</strong><small>VALUE</small></div></article>`).join('') || '<p class="sng-empty">No products in this date range.</p>';
+  const productRows = (products, ranked = false) => products.map((product, index) => `<article class="sng-product-row">${ranked ? `<b class="sng-rank">${index + 1}</b>` : ''}<div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong>${money(product.value)}</strong><small>ITEM VALUE (EXCL. FEES)</small></div></article>`).join('') || '<p class="sng-empty">No products in this date range.</p>';
   function orderRows(records, tracking = false) {
     return records.map(order => {
       const stage = shippingStage(order), item = order.items?.[0] || {}, shipping = order.shipping || {};
@@ -174,7 +174,7 @@ if (appEnabled) {
   root.addEventListener('click', event => {
     const button = event.target.closest('button'); if (!button) return;
     if (button.dataset.appView) setView(button.dataset.appView);
-    if (button.dataset.appDays) { days = button.dataset.appDays === 'ytd' ? 'ytd' : Number(button.dataset.appDays); render(); }
+    if (button.dataset.appDays) { days = /^(mtd|ytd|all)$/.test(button.dataset.appDays) ? button.dataset.appDays : Number(button.dataset.appDays); render(); }
     if (button.dataset.appStatus) { status = button.dataset.appStatus; render(); }
     if (button.dataset.profileTab) { profileTab = button.dataset.profileTab; document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click(); render(); }
     if (button.dataset.settingProfile) { profileTab = button.dataset.settingProfile; setView('profile'); }
