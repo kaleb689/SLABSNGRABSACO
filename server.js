@@ -12,6 +12,7 @@ import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-t
 import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
+import { managedAccountEmailEvidence } from "./discord-checkout-owner-evidence.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal } from "./checkout-price-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
@@ -38264,6 +38265,18 @@ async function discordCheckoutOwners() {
         candidates.push({ customerAccountId: assignment.customerAccountId, retailer: normalizeSuccessRetailer(key),
           email: normalizeEmail(login.username), profileName: account.profileName,
           managedAccountId: account.id, managedAssignmentId: assignment.id,
+          managedAssignmentType: assignment.assignmentType, assignment });
+      }
+      // Some older Admin inventory records saved the retailer login in the
+      // explicit Account Email field, not in a username slot. Only use it as
+      // another EXACT email for this assigned account when retailer identity
+      // is unambiguous. Do not use member/billing emails or fuzzy names.
+      const extraLogin = managedAccountEmailEvidence(account, credentials, assignment);
+      if (extraLogin && assignment.customerAccountId) {
+        candidates.push({ customerAccountId: assignment.customerAccountId,
+          retailer: extraLogin.retailer, email: extraLogin.email,
+          profileName: account.profileName, managedAccountId: account.id,
+          managedAssignmentId: assignment.id,
           managedAssignmentType: assignment.assignmentType, assignment });
       }
     }
