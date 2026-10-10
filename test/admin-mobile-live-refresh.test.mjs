@@ -25,6 +25,8 @@ function createMobileHarness() {
         style: {}, dataset: {}, listeners,
         classList: { toggle: () => {} },
         addEventListener(name, callback) { listeners.set(name, callback); },
+        querySelectorAll() { return []; },
+        querySelector() { return null; },
         closest(selector) { return selector === "#workspace" ? node("workspace") : null; },
         matches(selector) { return selector.includes("input"); }
       });
