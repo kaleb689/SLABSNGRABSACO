@@ -77,7 +77,7 @@ test('popup deduplication survives reloads and is scoped to customer and meaning
 
 test('green orders count as purchased; orange review holds and red cancellations are excluded from tracker metrics', () => {
   const records = [
-    {id:'confirmed',checkoutAt:now.toISOString(),status:'confirmed',itemCount:2,orderTotal:39.98,items:[{name:'Trading card pack',quantity:2,price:19.99}]},
+    {id:'confirmed',checkoutAt:now.toISOString(),status:'confirmed',itemCount:2,orderTotal:39.98,orderTotalKnown:true,items:[{name:'Trading card pack',quantity:2,price:19.99}]},
     {id:'hold',checkoutAt:now.toISOString(),status:'review_hold',itemCount:2,orderTotal:39.98,items:[{name:'Trading card pack',quantity:2,price:19.99}]},
     {id:'cancel',checkoutAt:now.toISOString(),status:'cancelled',itemCount:2,orderTotal:39.98}
   ];
