@@ -23,7 +23,9 @@ export function historicalPlusVerified({checkouts=0, spent=0, unknownPrices=0}) 
   const liveSpendCents = moneyToCents(spent);
   return {
     totalCheckouts: old.checkoutCount + liveCheckouts,
-    totalSpent: (old.spentCents + liveSpendCents + old.referenceReconciliationCents) / 100,
+    // An owner-reported reference total differs by four cents; this is
+    // informational only, not evidence of additional paid checkout value.
+    totalSpent: (old.spentCents + liveSpendCents) / 100,
     historicalCheckouts: old.checkoutCount,
     historicalSpent: old.spentCents / 100,
     historicalTinQuantity: old.tinQuantity,
