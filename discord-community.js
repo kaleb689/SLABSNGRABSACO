@@ -311,9 +311,14 @@ export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
   ] });
   return {
     content: "**Review " + items.length + " Draft SKU(s)** — page " + (page + 1) + " of " + pages +
-      "\n**SKUs:** " + skus + "\n**Qty: " + (qty || "choose 1 or 2") + " — applies to ALL SKUs**" +
+      "\n**Qty: " + (qty || "choose 1 or 2") + " for ALL selected SKUs**" +
       "\nChanges are not shared with the owner until confirmation.",
-    embeds: lines.length ? [{ title: "Selected products", description: lines.join("\n"), color: 0x41b6e6 }] : [],
+    embeds: lines.length ? [{
+      title: "Selected products",
+      description: "**SKUs:**\n" + skus + "\n**Qty: " + (qty || "choose 1 or 2") +
+        " — for ALL selected SKUs**\n\n" + lines.join("\n"),
+      color: 0x41b6e6
+    }] : [],
     components, allowed_mentions: { parse: [] }
   };
 }
@@ -338,6 +343,25 @@ export function uniformSkuQuantity(items) {
 export function setGlobalSkuQuantity(items, quantity) {
   if (![1, 2].includes(Number(quantity))) throw new Error("Choose Qty 1 or Qty 2 for all selected SKUs.");
   return (Array.isArray(items) ? items : []).map(row => ({ ...row, quantity: Number(quantity) }));
+}
+export function skuOwnerDetails(items) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return { title: "New SKU Order", description: "No SKUs selected.", color: 0x41b6e6 };
+  const summary = skuCompactNotification(rows);
+  const skus = rows.map(row => skuSafeText(row.sku).slice(0, 80));
+  const visible = [];
+  for (const sku of skus) {
+    if(visible.length && visible.join(", ").length + sku.length + 3 > 3000) break;
+    visible.push(sku);
+  }
+  const more = skus.length - visible.length;
+  return {
+    title: "New SKU Order",
+    description: "**SKUs:**\n(" + visible.join(", ") + ")" +
+      (more > 0 ? "\n+" + more + " more SKUs — choose View all SKUs for the full list." : "") +
+      "\n**Qty: " + summary.quantity + "**",
+    color: 0xfa9238
+  };
 }
 export function skuCompactNotification(items) {
   const rows = Array.isArray(items) ? items : [];
