@@ -16088,7 +16088,11 @@ async function saveAdminDiscount(req, res, existingId = null) {
     const maxUses = maxUsesInput == null || String(maxUsesInput).trim() === "" ? null : Number(maxUsesInput);
     const tier = req.body?.tier === "all" || req.body?.tier === "" || req.body?.tier == null ? "all" : Number(req.body.tier);
     const appliesToRentals = req.body?.appliesToRentals === true;
-    const duration = req.body?.duration === "forever" ? "forever" : "once";
+    const duration = ["once","forever","repeating"].includes(req.body?.duration) ? req.body.duration : "once";
+    const durationMonths = duration === "repeating" ? Number(req.body?.durationMonths) : null;
+    if (duration === "repeating" && (!Number.isSafeInteger(durationMonths) || durationMonths < 1 || durationMonths > 36)) {
+      return res.status(400).json({error:"Enter a discount duration of 1–36 months."});
+    }
     const sitewide = req.body?.sitewide === true;
     const ogOnly = req.body?.ogOnly === true;
     const recipientEmail = String(req.body?.recipientEmail || "").trim().toLowerCase();
@@ -16163,6 +16167,7 @@ async function saveAdminDiscount(req, res, existingId = null) {
         ? { amount_off: amountOffCents, currency: "usd" }
         : { percent_off: requestedPercent }),
       duration,
+      ...(duration === "repeating" ? {duration_in_months:durationMonths} : {}),
       applies_to: { products: productIds },
       ...(remainingUses !== null ? { max_redemptions: remainingUses } : {}),
       name: `SLABSNGRABSACO ${code}`
@@ -16193,7 +16198,7 @@ async function saveAdminDiscount(req, res, existingId = null) {
       throw error;
     }
     const discount = {
-      id: existing?.id || crypto.randomUUID(), code, percent, tier, appliesToRentals, duration,
+      id: existing?.id || crypto.randomUUID(), code, percent, tier, appliesToRentals, duration, durationMonths,
       discountType, fixedPrice: fixedPriceCents === null ? null : fixedPriceCents / 100,
       amountOffCents, maxUses, usesBeforeCurrentCoupon,
       expiresAt: expiration?.toISOString() || null,
