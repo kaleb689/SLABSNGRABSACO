@@ -150,9 +150,11 @@ test("new website signup updates mobile Admin across Success, Home, Customers an
     profile: {firstName: "Jill", lastName: "New", email: "jill@example.test"},
     plan: {name: "No Paid Membership", profiles: 0}
   }];
+  const requestsBeforeSignup = h.requests.length;
   h.streams[0].emit("data-change");
   await h.flushTimers();
-  assert.equal(h.requests.length, 12, "all six sources fetched even while viewing Success");
+  assert.equal(h.requests.length, requestsBeforeSignup + 6,
+    "all six sources fetched even while viewing Success");
   click({target: {closest: () => ({dataset: {tab: "overview"}})}});
   assert.match(h.node("content").innerHTML, /Latest website signups/);
   assert.match(h.node("content").innerHTML, /Jill New/);
