@@ -16028,16 +16028,23 @@ app.post("/api/admin/gifted-memberships", requireAdmin, async (req, res) => {
     }
     const priorGiftEnd = records.filter(item => String(item.customerAccountId) === customerAccountId)
       .map(item=>item.expiresAt).filter(Boolean).sort().at(-1)||null;
-    const window = giftedBillingWindow({
-      now:new Date(),periodEnd:stripePeriodEnd,priorGiftEnd,
-      trialEnd:subscription?.trial_end,quantity,unit
-    });
-    if (subscription) {
+    const alreadyDeferred=subscription?.metadata?.sng_last_membership_gift_request===requestId;
+    const recordedStart=alreadyDeferred?subscription.metadata.sng_last_membership_gift_start:null;
+    const recordedEnd=alreadyDeferred?subscription.metadata.sng_last_membership_gift_end:null;
+    const window=alreadyDeferred&&recordedStart&&recordedEnd
+      ? {startsAt:recordedStart,expiresAt:recordedEnd,stripeTrialEnd:Math.floor(new Date(recordedEnd).getTime()/1000)}
+      : giftedBillingWindow({
+          now:new Date(),periodEnd:stripePeriodEnd,priorGiftEnd,
+          trialEnd:subscription?.trial_end,quantity,unit
+        });
+    if (subscription && !alreadyDeferred) {
       // A future Stripe trial boundary defers renewal billing without generating
       // an immediate proration. Preserve the original recurring tier/price.
       const updated = await stripe.subscriptions.update(subscription.id, {
         trial_end:window.stripeTrialEnd,proration_behavior:"none",
-        metadata:{sng_last_membership_gift_request:requestId}
+        metadata:{sng_last_membership_gift_request:requestId,
+          sng_last_membership_gift_start:window.startsAt,
+          sng_last_membership_gift_end:window.expiresAt}
       },{idempotencyKey:"sng-membership-gift-"+requestId});
       if (Number(updated.trial_end)!==window.stripeTrialEnd) {
         return res.status(502).json({error:"Stripe did not confirm the gifted billing date. Do not retry with a new gift request."});
