@@ -203,3 +203,45 @@ html[data-admin-mobile-theme="light"] #workspace .success-filter-label {
   body.admin-page button,body:not(.admin-page) button,
   #workspace button,#workspace summary {transition:none!important;}
 }
+
+/* Installed Admin bottom tabs are controls too: accent the entire active tab. */
+#tabs{gap:3px;padding-inline:6px;}
+#tabs button{
+  min-width:0;min-height:54px;padding:8px 2px;
+  border:1px solid rgba(104,151,222,.34);border-radius:12px;
+  background:linear-gradient(180deg,rgba(65,63,121,.2),rgba(24,84,121,.16));
+  color:#b6cbe7;box-shadow:inset 0 1px rgba(255,255,255,.06);
+  font-weight:800;
+}
+#tabs button.active,#tabs button[aria-current="page"]{
+  background:linear-gradient(140deg,#774ce5,#168cce 71%,#0cb89c);
+  color:#fff;border-color:#8deaff;
+  box-shadow:0 5px 15px rgba(38,112,193,.28);
+}
+#tabs button span{font-size:9px;line-height:1.25;}
+html[data-admin-mobile-theme="light"] #tabs button{background:linear-gradient(135deg,#f0eaff,#e6f7ff);color:#4c5697;border-color:#c7cbeb;}
+html[data-admin-mobile-theme="light"] #tabs button.active{background:linear-gradient(135deg,#7850e5,#228bcb);color:white;border-color:#8dddf8;}
+/* Customer profile and account settings often use unclassified utility buttons.
+   Cover them without recoloring destructive/remove controls. */
+body:not(.admin-page) #my-profile button:not(:is(.danger,.delete-button,.remove-button,.destructive,[class*="delete" i],[class*="remove" i],[id*="delete" i])),
+body:not(.admin-page) #home .public-success-controls button:not(:disabled),
+body:not(.admin-page) #customer-dashboard button:not(:is(.danger,.delete-button,.remove-button,.destructive,[class*="delete" i],[class*="remove" i])) {
+  min-height:44px;max-width:100%;
+  border-radius:13px;border:1px solid rgba(98,201,241,.68);
+  color:#f6fcff;background:linear-gradient(115deg,#6545bb,#246eaa 60%,#0b9d9e);
+  box-shadow:0 6px 16px rgba(45,81,180,.2);
+  font-weight:800;line-height:1.35;white-space:normal;
+}
+body:not(.admin-page) #my-profile button[aria-pressed="true"],
+body:not(.admin-page) #customer-dashboard button[aria-pressed="true"],
+.app-dashboard .sng-app-nav button.active{
+  background:linear-gradient(115deg,#8f4ef4,#228bd4 70%,#12c4aa);
+  color:white;border-color:#96eaff;
+}
+.app-dashboard[data-app-theme="day"] #my-profile button:not(:is(.danger,.delete-button,.remove-button,.destructive)),
+.app-dashboard[data-app-theme="day"] #customer-dashboard button:not(:is(.danger,.delete-button,.remove-button,.destructive)){
+  color:#fff;background:linear-gradient(115deg,#7245cc,#167db5);
+}
+.app-dashboard[data-app-theme="day"] .sng-app-nav button.active{
+  color:#fff;background:linear-gradient(115deg,#8452ed,#128cca);border-color:#a5e2ff;
+}
