@@ -80,6 +80,7 @@ const pushLabels={newOrders:"New orders",activations:"Profile activations",expir
 async function pushSettings(){const c=$("push-settings");if(!c)return;try{const d=await get("/api/admin/push/settings");c.innerHTML='<button class="action" id="enable-push">ENABLE PUSH NOTIFICATIONS</button>'+Object.entries(pushLabels).map(([k,v])=>'<label style="display:flex;align-items:center;justify-content:space-between">'+esc(v)+'<input style="width:26px;min-height:26px" type="checkbox" data-push="'+k+'" '+(d.preferences?.[k]?'checked':'')+'></label>').join('');c.querySelectorAll("[data-push]").forEach(el=>el.onchange=async()=>{await fetch("/api/admin/push/settings",{method:"PUT",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({[el.dataset.push]:el.checked})});});$("enable-push").onclick=async()=>{try{if(!("PushManager" in window)||!("Notification" in window))throw Error("Install the app to enable iPhone push.");if(await Notification.requestPermission()!=="granted")throw Error("Notification permission not granted.");if(!d.publicKey)throw Error("Push server key unavailable.");const reg=await navigator.serviceWorker.ready;const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:decode64(d.publicKey)});await post("/api/admin/push/subscribe",sub.toJSON());alert("Notifications enabled.");}catch(e){alert(e.message);}};}catch(e){c.textContent=e.message;}}
 function metric(label,value){return '<div class="metric"><small>'+esc(label)+'</small><strong>'+esc(value??"—")+'</strong></div>';}
 function panel(title,body){return '<section class="panel"><h2>'+esc(title)+'</h2>'+body+'</section>';}
+function collapsiblePanel(title,body){return '<details class="panel admin-overview-disclosure"><summary>'+esc(title)+'</summary><div class="admin-overview-disclosure-content">'+body+'</div></details>';}
 function customerName(x){const p=x.profile||{};return [p.firstName,p.lastName].filter(Boolean).join(" ")||p.profileName||p.email||"Customer";}
 function customerTier(person) {
   const plan=person?.plan || person?.membership || {};
@@ -197,14 +198,14 @@ if(tab==="overview"){
       metric("Awaiting activation",activationCount(a,"awaiting_activation"))+
       metric("App users · 7 days",u.activeUsers7d??"—")+
       metric("Installed devices",u.installedDevices??"—")+'</div>'+
-    panel("Latest website signups",recentSignupRows)+
-    panel("Recent confirmed checkouts",recentRows+
+    collapsiblePanel("Latest website signups",recentSignupRows)+
+    collapsiblePanel("Recent confirmed checkouts",recentRows+
       '<a href="/admin-success.html" class="action">VIEW ALL CHECKOUTS ↗</a>')+
-    panel("Quick actions",'<div class="links">'+
+    collapsiblePanel("Quick actions",'<div class="links">'+
       '<a class="action" href="/admin-success.html">CHECKOUT SPENDING & INSIGHTS ↗</a>'+
       '<a class="action" href="/admin.html">OPEN FULL ADMIN DASHBOARD ↗</a>'+
       '<a class="action" href="/admin.html#profileActivationTracker">PROFILE ACTIVATION TOOLS ↗</a></div>')+
-    panel("Live updates","<p>Checkout data and customer changes refresh automatically. Customer and account totals are shown separately to prevent unassigned orders from being attributed to the wrong person.</p>");
+    collapsiblePanel("Live updates","<p>Checkout data and customer changes refresh automatically. Customer and account totals are shown separately to prevent unassigned orders from being attributed to the wrong person.</p>");
 }
 if(tab==="success"){
   // Community totals include unmatched confirmed checkouts. Attribution is
