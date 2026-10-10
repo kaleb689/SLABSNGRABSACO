@@ -1,0 +1,292 @@
+/*
+ * Approved customer-app navigation and notification controls (2026-10-10).
+ * Kept separate from legacy themes to avoid changing admin and checkout UI.
+ */
+
+/* Space the three top-right actions and give them matching neon tiles. */
+body.app-dashboard #my-profile #app-dashboard .sng-app-header {
+  gap:12px;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-brand {
+  flex:1 1 auto;
+  min-width:0;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-brand strong {
+  overflow-wrap:anywhere;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-header-actions {
+  display:flex;
+  flex:0 0 auto;
+  align-items:center;
+  gap:clamp(6px,2vw,11px);
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-header-actions > button {
+  display:grid;
+  place-items:center;
+  flex:0 0 auto;
+  width:clamp(36px,10vw,44px);
+  height:clamp(36px,10vw,44px);
+  min-width:0;
+  padding:8px;
+  border:1.5px solid transparent!important;
+  border-radius:14px!important;
+  background:linear-gradient(135deg,#1f1e4b,#063e53) padding-box,
+             linear-gradient(135deg,#a47cff,#27d7ff) border-box!important;
+  color:#f4f9ff!important;
+  box-shadow:0 4px 14px rgba(0,5,20,.40);
+  transition:box-shadow .2s ease,transform .2s ease;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-header-actions > button:hover {
+  box-shadow:0 0 16px rgba(51,201,255,.25);
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-header-actions > button[aria-pressed="true"] {
+  background:linear-gradient(135deg,#48329a,#086b82) padding-box,
+             linear-gradient(135deg,#c89eff,#6af1ff) border-box!important;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-header-actions svg {
+  width:23px;
+  height:23px;
+  stroke-width:1.9;
+}
+body.app-dashboard #my-profile #app-dashboard #sng-app-unread {
+  top:-6px;
+  right:-5px;
+  min-width:18px;
+  min-height:18px;
+  padding:2px 4px;
+  display:grid;
+  place-items:center;
+  border:1px solid #250f32;
+  border-radius:999px;
+  background:#fa476b;
+  color:#fff;
+  font-size:10px;
+  line-height:1;
+  font-weight:900;
+  box-sizing:border-box;
+}
+
+/* Make five independent navigation tiles; gaps remain visible at 320px. */
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav {
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:clamp(5px,1.8vw,11px);
+  width:min(calc(100% - 18px),620px);
+  bottom:max(9px,env(safe-area-inset-bottom));
+  padding:5px;
+  border:1px solid rgba(120,172,219,.22);
+  border-radius:22px;
+  background:rgba(3,10,22,.88);
+  box-shadow:0 12px 35px rgba(0,0,0,.40);
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button,
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button:not(.active) {
+  display:flex;
+  justify-content:center;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+  min-height:70px;
+  padding:9px 2px 8px;
+  box-sizing:border-box;
+  border:1.5px solid transparent!important;
+  border-radius:17px!important;
+  background:linear-gradient(140deg,#201c4c,#063c51) padding-box,
+             linear-gradient(135deg,#9b6cff,#14cbe6) border-box!important;
+  color:#f2f8ff!important;
+  box-shadow:0 3px 12px rgba(0,0,0,.22)!important;
+  transition:box-shadow .2s ease,transform .2s ease;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button.active {
+  color:#fff!important;
+  background:linear-gradient(145deg,#312677,#075570) padding-box,
+             linear-gradient(135deg,#c4a4ff,#50ecff) border-box!important;
+  box-shadow:inset 0 0 0 1px rgba(190,232,255,.17),
+             0 0 18px rgba(63,194,255,.27)!important;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button:hover {
+  box-shadow:0 0 18px rgba(63,194,255,.25)!important;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button svg {
+  width:clamp(20px,5.8vw,26px);
+  height:clamp(20px,5.8vw,26px);
+  flex:none;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button span {
+  color:#f2f8ff!important;
+  opacity:1;
+  font-size:clamp(9px,2.45vw,11px);
+  font-weight:750;
+  line-height:1.1;
+  letter-spacing:0;
+  white-space:nowrap;
+}
+
+/* Day mode keeps the same spacing and distinct outlined tiles. */
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav {
+  border-color:rgba(72,112,171,.24);
+  background:rgba(246,250,255,.94);
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-header-actions > button {
+  background:linear-gradient(140deg,#f9f6ff,#e0faff) padding-box,
+             linear-gradient(135deg,#8855f5,#0ab9d4) border-box!important;
+  color:#2b3363!important;
+  box-shadow:0 5px 17px rgba(60,92,151,.13);
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav > button:not(.active) {
+  background:linear-gradient(145deg,#fcfaff,#e5f9ff) padding-box,
+             linear-gradient(135deg,#9465e9,#29b5db) border-box!important;
+  color:#233658!important;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav > button:not(.active) span {
+  color:#233658!important;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav > button.active {
+  background:linear-gradient(125deg,#8958e8,#087cbb) padding-box,
+             linear-gradient(135deg,#7649e9,#32d8f3) border-box!important;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav > button.active span {
+  color:#fff!important;
+}
+@media(max-width:360px) {
+  body.app-dashboard #my-profile #app-dashboard .sng-app-header { gap:7px; }
+  body.app-dashboard #my-profile #app-dashboard .sng-app-header-actions { gap:5px; }
+  body.app-dashboard #my-profile #app-dashboard .sng-app-header-actions > button {
+    width:34px;
+    height:38px;
+    padding:6px;
+    border-radius:12px!important;
+  }
+  body.app-dashboard #my-profile #app-dashboard .sng-app-header-actions svg { width:20px;height:20px; }
+  body.app-dashboard #my-profile #app-dashboard .sng-app-nav { gap:4px;padding:4px; }
+  body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button { min-height:63px;padding:7px 1px; }
+  body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button span { font-size:9px; }
+}
+
+/* All notification-setting actions use the same geometry, glow and type. */
+dialog.app-notification-dialog {
+  width:min(460px,calc(100vw - 28px));
+  max-height:min(87dvh,calc(100dvh - 26px));
+  padding:clamp(19px,5vw,29px);
+  box-sizing:border-box;
+  border:1.5px solid #35cfff;
+  border-radius:22px;
+  background:linear-gradient(160deg,#030d1e,#020916 60%,#050b1a);
+  color:#f5f9ff;
+  box-shadow:0 20px 60px rgba(0,0,0,.66),0 0 22px rgba(38,204,255,.16);
+}
+dialog.app-notification-dialog h2 {
+  font-size:clamp(23px,5.8vw,29px);
+  font-weight:850;
+  line-height:1.2;
+  margin:0 0 16px;
+}
+dialog.app-notification-dialog p {
+  color:#d0def4;
+  font-size:clamp(13px,3.7vw,15px);
+  line-height:1.6;
+}
+dialog.app-notification-dialog .account-onboarding-actions {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  align-items:stretch;
+  margin-block:18px;
+}
+dialog.app-notification-dialog .account-onboarding-actions > button {
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  width:100%;
+  min-width:0;
+  min-height:60px;
+  padding:12px 9px;
+  box-sizing:border-box;
+  border:1.5px solid transparent!important;
+  border-radius:15px!important;
+  background:linear-gradient(135deg,#221e4b,#05374a) padding-box,
+             linear-gradient(125deg,#a07bf5,#23cbe5) border-box!important;
+  color:#f4f9ff!important;
+  box-shadow:0 4px 16px rgba(3,13,35,.45);
+  font-size:clamp(12px,3.5vw,15px);
+  line-height:1.3;
+  font-weight:800;
+  text-align:center;
+  white-space:normal;
+  overflow-wrap:normal;
+  cursor:pointer;
+}
+dialog.app-notification-dialog .account-onboarding-actions > button[data-enable-push] {
+  background:linear-gradient(115deg,#8e4af2,#117dd9 65%,#04bdb6) padding-box,
+             linear-gradient(120deg,#d4acff,#45ecff) border-box!important;
+  box-shadow:0 0 0 2px rgba(49,207,245,.21),0 5px 20px rgba(31,133,217,.23);
+}
+dialog.app-notification-dialog .account-onboarding-actions > button[data-disable-push] {
+  /* Neutral action, but never a stray light-gray browser button. */
+  background:linear-gradient(135deg,#262052,#05384e) padding-box,
+             linear-gradient(125deg,#a785ff,#26d8ef) border-box!important;
+  color:#fff!important;
+  font-weight:800!important;
+}
+dialog.app-notification-dialog .account-onboarding-actions > button:focus-visible,
+dialog.app-notification-dialog form button:focus-visible {
+  outline:2px solid #73e9ff;
+  outline-offset:3px;
+}
+dialog.app-notification-dialog .account-onboarding-actions > button:disabled {
+  opacity:.60;
+  cursor:wait;
+}
+dialog.app-notification-dialog fieldset {
+  border:0;
+  min-width:0;
+  display:grid;
+  gap:14px;
+  margin:18px 0 22px;
+  padding:4px 0;
+}
+dialog.app-notification-dialog legend {
+  color:#aebedb;
+  font-size:14px;
+  margin:0 0 13px;
+}
+dialog.app-notification-dialog label {
+  display:flex;
+  align-items:center;
+  gap:13px;
+  min-height:37px;
+  color:#f0f4fc;
+  font-size:clamp(12px,3.5vw,14px);
+  line-height:1.35;
+  font-weight:700;
+}
+dialog.app-notification-dialog input[type="checkbox"] {
+  flex:0 0 24px;
+  width:24px;
+  height:24px;
+  accent-color:#0bcdf2;
+}
+dialog.app-notification-dialog form button[type="submit"] {
+  width:100%;
+  min-height:55px;
+  margin-top:10px;
+  padding:12px 13px;
+  box-sizing:border-box;
+  border:1.5px solid #55e8ff!important;
+  border-radius:15px!important;
+  background:linear-gradient(115deg,#9452f1,#3175eb 53%,#08bbb5)!important;
+  color:#fff!important;
+  box-shadow:0 6px 22px rgba(38,144,233,.27);
+  font-weight:850;
+  font-size:clamp(12px,3.5vw,15px);
+  line-height:1.3;
+  white-space:normal;
+}
+@media(max-width:350px) {
+  dialog.app-notification-dialog .account-onboarding-actions { gap:8px; }
+  dialog.app-notification-dialog .account-onboarding-actions > button { font-size:12px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  body.app-dashboard #my-profile #app-dashboard .sng-app-header-actions > button,
+  body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button { transition:none; }
+}
