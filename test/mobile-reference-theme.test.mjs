@@ -17,7 +17,7 @@ test('reference theme loads after legacy controls without changing customer data
   assert.ok(adminControls !== -1 && adminTheme > adminControls);
   assert.ok(customerControls !== -1 && customerTheme > customerControls);
   assert.match(customerPage, /src="\/app-dashboard\.js\?v=20261010-approved-v4"/);
-  assert.match(adminPage, /src="\/admin-mobile\.js\?v=31-membership-collapsible-20261010"/);
+  assert.match(adminPage, /src="\/admin-mobile\.js\?v=32-admin-success-cleanup-20261010"/);
   assert.match(theme, /html\[data-admin-mobile-theme="light"\]/);
   assert.match(theme, /body\.app-dashboard\.app-signed-in\[data-app-theme="day"\]/);
   assert.match(theme, /@media\(prefers-reduced-motion:reduce\)/);
@@ -39,7 +39,7 @@ test('Admin app navigation has five accessible real tabs with app usage in More'
   assert.match(theme, /\.admin-spend-hero\s*\{/);
 });
 
-test('Admin overview reads real community totals and itemized latest orders; More navigation works', async () => {
+test('Admin overview keeps historical totals without duplicate order lists; More navigation works', async () => {
   const nodes = new Map();
   function node(id) {
     if (!nodes.has(id)) {
@@ -79,8 +79,7 @@ test('Admin overview reads real community totals and itemized latest orders; Mor
   for (let i=0; i<7; i++) await new Promise(resolve => setImmediate(resolve));
   assert.match(node('content').innerHTML, /\$4,876\.54/);
   assert.match(node('content').innerHTML, /55/);
-  assert.match(node('content').innerHTML, /Trading card bundle/);
-  assert.match(node('content').innerHTML, /Recent confirmed checkouts/);
+  assert.doesNotMatch(node('content').innerHTML, /Trading card bundle|Recent confirmed checkouts/);
   assert.match(node('content').innerHTML, /Reported total/);
   const navClick = node('tabs').listeners.get('click');
   navClick({target:{closest:() => ({dataset:{tab:'more'}})}});

@@ -5,7 +5,7 @@ import vm from "node:vm";
 
 const source=readFileSync(new URL("../public/admin-mobile.js",import.meta.url),"utf8");
 
-test("per-customer 24H / 7D / 30D filters work independently of global timeframe",async()=>{
+test("per-customer breakdowns respect the selected global period",async()=>{
   const hooks=[];
   const elements=new Map();
   function el(id){
@@ -99,18 +99,17 @@ test("per-customer 24H / 7D / 30D filters work independently of global timeframe
   assert.match(html(),/REVIEW TARGET HITS/);
   assert.match(html(),/REVIEW ALL UNMATCHED HITS/);
   assert.doesNotMatch(html(),/DO NOT ATTACH UNMATCHED BOOSTER/);
-  // Changing the top graph does not erase earlier linked Pokémon Center hits
-  // from the separately selected customer reporting period.
+  // The parent period limits all visible customer breakdowns.
   press("global",1);
-  assert.equal(userCount(),3);
+  assert.equal(userCount(),1);
   assert.match(html(),/1 confirmed order/);
   press("user",7);
-  assert.equal(userCount(),2);
-  assert.match(html(),/Pokémon Center booster box/);
+  assert.equal(userCount(),1);
+  assert.doesNotMatch(html(),/Pokémon Center booster box/);
   press("user",1);
   assert.equal(userCount(),1);
   press("user",30);
-  assert.equal(userCount(),3);
+  assert.equal(userCount(),1);
   assert.match(html(),/data-success-panel="products"/);
   assert.match(html(),/data-success-panel="customers"/);
   assert.match(html(),/success-user-accordion/);

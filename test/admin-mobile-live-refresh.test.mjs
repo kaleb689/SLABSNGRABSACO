@@ -158,9 +158,8 @@ test("new website signup updates mobile Admin across Success, Home, Customers an
   assert.equal(h.requests.length, requestsBeforeSignup + 6,
     "all six sources fetched even while viewing Success");
   click({target: {closest: () => ({dataset: {tab: "overview"}})}});
-  assert.match(h.node("content").innerHTML, /Latest website signups/);
-  assert.match(h.node("content").innerHTML, /Jill New/);
-  assert.match(h.node("content").innerHTML, /1<\/strong>/);
+  assert.doesNotMatch(h.node("content").innerHTML, /Latest website signups/);
+  assert.match(h.node("content").innerHTML, /Registered customers<\/small><strong>2<\/strong>/);
   click({target: {closest: () => ({dataset: {tab: "customers"}})}});
   assert.match(h.node("customer-results").innerHTML, /Jill New/);
   assert.match(h.node("customer-results").innerHTML, /No paid membership/);
@@ -179,5 +178,5 @@ test("newly paid website accounts are not double-counted when snapshots overlap"
   // Same customer exists in both API responses temporarily. The paid state wins.
   assert.match(h.node("content").innerHTML, /Registered customers/);
   assert.doesNotMatch(h.node("content").innerHTML, /New signups · no plan<\/small><strong>1<\/strong>/);
-  assert.match(h.node("content").innerHTML, /Paid customers<\/small><strong>1<\/strong>/);
+  assert.doesNotMatch(h.node("content").innerHTML, /Paid customers<\/small>/);
 });

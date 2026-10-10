@@ -36,11 +36,11 @@ test("registered and unpaid website signups are included in Admin live data, not
   assert.match(admin,/stream\.addEventListener\("data-change",scheduleMobileRefresh\)/);
   assert.match(admin,/stream\.addEventListener\("checkout",scheduleMobileRefresh\)/);
   assert.match(admin,/accountOnly===true/);
-  assert.match(admin,/Latest website signups/);
+  assert.doesNotMatch(admin,/collapsiblePanel\("Latest website signups"/);
   assert.match(admin,/Registered customers/);
-  assert.match(admin,/Paid customers/);
+  assert.match(admin,/ACTIVE PAID MEMBERSHIPS/);
   assert.match(admin,/Awaiting activation/);
-  assert.match(admin,/App users · 7 days/);
+  assert.match(admin,/APP USERS · 7 DAYS/);
   assert.match(admin,/data-view/);
   const customerPage=read("public/index.html");
   const adminPage=read("public/admin-app.html");
@@ -48,5 +48,5 @@ test("registered and unpaid website signups are included in Admin live data, not
   for(const page of [customerPage,adminPage,fullAdminPage]){
     assert.match(page,/custom-date-controls\.css\?v=20261010-fit2/);
   }
-  assert.match(adminPage,/admin-mobile\.js\?v=31-membership-collapsible-20261010/);
+  assert.match(adminPage,/admin-mobile\.js\?v=32-admin-success-cleanup-20261010/);
 });
