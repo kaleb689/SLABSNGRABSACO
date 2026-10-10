@@ -5,7 +5,7 @@ import vm from "node:vm";
 
 const source=readFileSync(new URL("../public/admin-mobile.js",import.meta.url),"utf8");
 
-test("Admin Success renders lifetime, unmatched, customer products and hit accounts",async()=>{
+test("Admin Success renders period-matched unmatched, customer products and hit accounts",async()=>{
   const elements=new Map();
   function el(id){
     if(!elements.has(id)){
@@ -63,8 +63,7 @@ test("Admin Success renders lifetime, unmatched, customer products and hit accou
   tab({target:{closest:()=>({dataset:{tab:"success"}})}});
   for(let i=0;i<7;i++)await new Promise(resolve=>setImmediate(resolve));
   const html=el("content").innerHTML;
-  assert.match(html,/Lifetime community checkouts/);
-  assert.match(html,/\$15,914\.36/);
+  assert.doesNotMatch(html,/Lifetime community checkouts/);
   assert.match(html,/\$38\.25/); // includes authenticated community and unmatched paid totals
   assert.match(html,/All linked customer checkouts/);
   assert.match(html,/Amy Example checkout breakdown/);
