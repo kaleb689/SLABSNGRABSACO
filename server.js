@@ -1,5 +1,5 @@
 import express from "express";
-import { historicalPlusVerified, safeAdminProfileLabel } from "./checkout-reporting.js";
+import { historicalPlusVerified, safeAdminProfileLabel, adminCheckoutCustomerName } from "./checkout-reporting.js";
 import { searchManagedPoolProfiles } from "./managed-pool-search.js";
 import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
@@ -38638,25 +38638,35 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
       if (token) hitsChannelId = await resolveDiscordHitsChannelId(token);
     } catch {}
     const chosen = await discordCheckoutSourceChannels();
-    const [saved, customers] = await Promise.all([getSuccessCheckouts(), getCustomerAccounts()]);
+    const [saved, customers, paidRaw] = await Promise.all([
+      getSuccessCheckouts(), getCustomerAccounts(), readJson(PAID_FILE, [])
+    ]);
     const allRecords = visibleDiscordSuccessRecords(saved, hitsChannelId, chosen.channels);
-    // Admin overview covers EVERY confirmed checkout, including those that
-    // cannot be attributed to an individual paid or linked customer profile.
-    // Only the verified ownership subset is included in per-customer metrics.
+    // The community aggregate includes every confirmed Discord webhook,
+    // including unmatched purchases. Individual Admin Success records and
+    // period/customer/product/account analytics include ONLY checkout orders
+    // explicitly attributed to an existing website customer account.
     const confirmed = allRecords.filter(confirmedDiscordPurchase);
-    const unmatchedCount = confirmed.filter(record => !record.customerAccountId).length;
     const customersById = new Map(customers.map(item => [String(item.id), item]));
+    const unmatchedCount = confirmed.filter(record =>
+      !record.customerAccountId || !customersById.has(String(record.customerAccountId))).length;
+    const paidByCustomer = new Map();
+    for (const paid of Array.isArray(paidRaw) ? paidRaw : []) {
+      const id = String(paid?.customerAccountId || "");
+      if (id && !paidByCustomer.has(id)) paidByCustomer.set(id, paid);
+      // Latest nonempty signup names can supersede older incomplete records.
+      else if (id && (paid?.profile?.firstName || paid?.profile?.lastName))
+        paidByCustomer.set(id, paid);
+    }
     const records = confirmed
+      .filter(record => record.customerAccountId &&
+        customersById.has(String(record.customerAccountId)))
       .map(record => {
         const safe = safeSuccessCheckout(record);
         const profile = safeAdminProfileLabel(record);
-        const accountId = record.customerAccountId ? String(record.customerAccountId) : null;
-        const customer = accountId ? customersById.get(accountId) : null;
-        const customerName = customer
-          ? [customer.firstName || customer.profile?.firstName,
-             customer.lastName || customer.profile?.lastName].filter(Boolean).join(" ").trim() ||
-            clean(customer.name || customer.displayName || customer.profile?.profileName || "Customer", 100)
-          : "Unmatched checkout";
+        const accountId = String(record.customerAccountId);
+        const customerName = adminCheckoutCustomerName(
+          customersById.get(accountId), paidByCustomer.get(accountId));
         return {
           retailer: safe.retailer,
           checkoutAt: safe.checkoutAt,
