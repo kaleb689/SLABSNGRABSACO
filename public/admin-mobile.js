@@ -588,6 +588,22 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+list.leng
             '<div class="admin-membership-visible-bar" role="progressbar" aria-label="Membership time remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="'+Math.min(30,tier.daysRemaining)+'"><span style="width:'+Math.min(100,Math.round(tier.daysRemaining/30*100))+'%;background:'+(tier.daysRemaining<=5?'#ef4444':tier.daysRemaining<=10?'#eab308':'#25c977')+'"></span></div>')+
           '<details class="admin-customer-detail"><summary>Customer details &amp; actions</summary>'+
             '<div class="admin-customer-detail-body"><p><b>Membership:</b> '+esc(tier.label)+'</p>'+
+            (()=>{
+              const subId=String(x.stripeSubscriptionId||x.subscriptionId||x.plan?.stripeSubscriptionId||"");
+              const billing=(data.billing?.memberships||[]).find(item=>item.subscriptionId===subId);
+              if(!subId)return '<p class="admin-billing-note">No linked Stripe subscription.</p>';
+              if(!billing)return '<p class="admin-billing-note">Stripe billing information unavailable.</p>';
+              const money=v=>v==null?"Unavailable":dollars(v/100);
+              return '<div class="admin-customer-billing"><p><b>Last paid:</b> '+esc(money(billing.lastPaidCents))+
+                (billing.lastPaidAt?' · '+esc(new Date(billing.lastPaidAt).toLocaleDateString()):'')+
+                (billing.lastPaymentKind==="subscription_update"?' (upgrade/proration)':'')+'</p>'+
+                '<p><b>Current monthly charge:</b> '+esc(money(billing.currentAmountCents))+'</p>'+
+                '<p><b>Next scheduled renewal:</b> '+esc(money(billing.nextInvoiceCents))+
+                (billing.nextBillingAt?' · '+esc(new Date(billing.nextBillingAt).toLocaleDateString()):'')+'</p>'+
+                '<p><b>Regular tier rate:</b> '+esc(money(billing.regularAmountCents))+'</p>'+
+                (billing.giftedUntil?'<p class="admin-billing-gifted"><b>Gifted time:</b> $0 due until '+esc(new Date(billing.giftedUntil).toLocaleDateString())+'</p>':'')+
+                '</div>';
+            })()+
             (tier.daysRemaining==null ? '<p>Membership period end is not available.</p>' :
               '<p><b>'+esc(renewal)+'</b></p><div class="admin-membership-track" role="progressbar" aria-label="Membership days remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="'+Math.min(30,tier.daysRemaining)+'"><span style="width:'+Math.min(100,Math.round(tier.daysRemaining/30*100))+'%;background:'+(tier.daysRemaining<=5?'#ef4444':tier.daysRemaining<=10?'#eab308':'#25c977')+'"></span></div>')+
             '<details class="admin-inline-notifications"><summary>Send Notification</summary><label>Notification type<select data-notice-type><option value="missing">Missing account setup information</option><option value="card">Missing payment card</option><option value="shipping">Missing shipping address</option><option value="retailer">Missing optional retailer information</option><option value="custom">Custom message</option></select></label><label>Customer message<textarea data-notice-message rows="3" placeholder="Optional details, required for custom messages"></textarea></label><button type="button" data-send-notice="'+esc(x.id)+'">SEND NOTIFICATION</button><p data-notice-result role="status"></p></details>'+
