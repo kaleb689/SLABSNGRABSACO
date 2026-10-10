@@ -18,7 +18,7 @@ test("archived 240 checkouts and original amount combine with live 82 once", () 
   assert.equal(current.totalSpent, 20499.76);
   assert.equal(historicalPlusVerified({checkouts:0,spent:0}).totalSpent, 15876.11);
   // The four-cent reference discrepancy is not verified retailer spend.
-  assert.equal(current.totalSpent-current.liveVerifiedSpent,15876.11);
+  assert.equal(Math.round((current.totalSpent-current.liveVerifiedSpent)*100),1587611);
   assert.equal(current.historicalCheckouts, 240);
   assert.equal(current.historicalSpent, 15876.11);
   assert.equal(current.reportedReconciliation, .04);
