@@ -15,6 +15,7 @@ import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checko
 import { managedAccountEmailEvidence } from "./discord-checkout-owner-evidence.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal } from "./checkout-price-policy.js";
+import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
@@ -38747,6 +38748,87 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
   } catch (error) {
     console.error("Admin success overview:", error?.message);
     return res.status(500).json({error:"Unable to load confirmed ACO success."});
+  }
+});
+
+/**
+ * Manual verified-price fallback for orders whose external webhook omits the
+ * paid amount. Admins must check the actual retailer receipt, and the entered
+ * order number must exactly match an existing authoritative Discord checkout.
+ * Never create a checkout or assign an unverified customer from this endpoint.
+ */
+app.get("/api/admin/checkout-paid-verification", requireAdmin, async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1)
+      return res.status(409).json({ error: "One authoritative checkout channel is required." });
+    const [records, accounts] = await Promise.all([
+      getSuccessCheckouts(), getCustomerAccounts()
+    ]);
+    const names = new Map(accounts.map(account => [
+      String(account.id), adminCheckoutCustomerName(account)
+    ]));
+    const pending = authoritativeDiscordCheckouts(records, source.channels)
+      .filter(record => confirmedDiscordPurchase(record) &&
+        checkoutPaidAmount(record) === null)
+      .sort((a, b) => Date.parse(b.checkoutAt || 0) - Date.parse(a.checkoutAt || 0));
+    return res.json({ ok:true, pendingCount:pending.length,
+      orders:pending.slice(0, 250).map(record => ({
+        id:record.id, retailer:normalizeSuccessRetailer(record.retailer),
+        checkoutAt:record.checkoutAt || null,
+        orderNumber:clean(record.orderNumber, 110),
+        customer: names.get(String(record.customerAccountId || "")) || "Unmatched community checkout",
+        items:(Array.isArray(record.items) ? record.items : []).map(item => ({
+          name:publicSuccessProductName(item.name),
+          quantity:Math.max(1, Math.floor(Number(item.quantity)||1))
+        })).filter(item => item.name && isSafeDiscordCheckoutProductName(item.name) &&
+          !/@|\\b(?:password|account|cvv|security\\s*code|address|order\\s*id)\\b/i.test(item.name)).slice(0,6)
+      })) });
+  } catch (error) {
+    console.error("Checkout price review:", error?.code || error?.name || "review_failed");
+    return res.status(503).json({ error: "Could not retrieve checkouts awaiting verified totals." });
+  }
+});
+
+app.post("/api/admin/checkout-paid-verification", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.body?.id || "").trim();
+    if (!/^discord:\\d{17,22}:\\d{17,22}$/.test(id))
+      return res.status(400).json({ error: "Select a valid existing Discord checkout." });
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1)
+      return res.status(409).json({ error: "The authoritative checkout source is unavailable." });
+    const result = await withSuccessStoreLock(async () => {
+      const records = await getSuccessCheckouts();
+      const order = records.find(item => item.id === id &&
+        isAuthoritativeCheckoutRecord(item, source.channels[0]) &&
+        confirmedDiscordPurchase(item) && isVerifiedDiscordCheckout(item));
+      if (!order) return {status:404,error:"The confirmed checkout was not found."};
+      if (checkoutPaidAmount(order) !== null)
+        return {status:409,error:"A verified final paid amount already exists. No value was replaced."};
+      const total = adminVerifiedReceiptTotal(req.body, order);
+      if (total === null)
+        return {status:400,error:"Verify the retailer receipt and re-enter its exact order number and final charged amount."};
+      order.orderTotal = total;
+      order.orderTotalBasis = "retailer_receipt";
+      order.priceSource = "admin_verified_retailer_receipt";
+      order.verifiedPaidAt = new Date().toISOString();
+      await saveSuccessCheckouts(records);
+      const auditFile = path.join(DATA_DIR, "checkout-price-verification-audit.json");
+      const prior = await readJson(auditFile, []);
+      await writeJson(auditFile, [...(Array.isArray(prior)?prior:[]),
+        { sourceId:order.id, retailer:order.retailer, paidTotal:total,
+          verifiedAt:order.verifiedPaidAt, method:"admin_checked_retailer_receipt" }]);
+      if (order.customerAccountId) announceSuccessCheckout(order.customerAccountId);
+      broadcastLiveDataChange("checkout-paid-verified");
+      queueDiscordSuccessScan(350);
+      return {status:200,ok:true,paidTotal:total,customerLinked:Boolean(order.customerAccountId)};
+    });
+    return res.status(result.status).json(result);
+  } catch (error) {
+    console.error("Admin checkout verified price:", error?.code || error?.name || "verification_failed");
+    return res.status(503).json({error:"Unable to save verified price."});
   }
 });
 
