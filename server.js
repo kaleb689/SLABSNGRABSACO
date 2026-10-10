@@ -1,5 +1,5 @@
 import express from "express";
-import { historicalPlusVerified, safeAdminProfileLabel, adminCheckoutCustomerName } from "./checkout-reporting.js";
+import { historicalPlusVerified, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
 import { searchManagedPoolProfiles } from "./managed-pool-search.js";
 import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
@@ -38454,8 +38454,11 @@ app.get("/api/admin/discord-checkout-profile-matching", requireAdmin, async (_re
       getSuccessCheckouts(), discordCheckoutOwners(), getCustomerAccounts(),
       readJson(DISCORD_PROFILE_ALIASES_FILE, [])
     ]);
-    const unlinked = records.filter(record => isAuthoritativeCheckoutRecord(record, source.channels[0]) &&
-      !record.customerAccountId);
+    // Review ONLY confirmed checkout orders. Red cancellations and orange
+    // review holds are not customer successes and must not clutter matching.
+    const unlinked = records.filter(record =>
+      isAuthoritativeCheckoutRecord(record, source.channels[0]) &&
+      confirmedDiscordPurchase(record) && !record.customerAccountId);
     const groups = new Map();
     for (const order of unlinked) {
       const key = checkoutAliasKey(order.retailer, order.sourceProfileLabel);
@@ -38480,12 +38483,25 @@ app.get("/api/admin/discord-checkout-profile-matching", requireAdmin, async (_re
           account?.lastName || account?.profile?.lastName].filter(Boolean).join(" ").trim();
         return {id,label:name || String(account?.email || account?.profile?.email || id)};
       }).sort((a,b)=>a.label.localeCompare(b.label));
+      const productCount = new Map();
+      for (const order of group.orders) for (const item of order.items || []) {
+        const name = publicSuccessProductName(item.name);
+        const qty = Math.max(0, Math.floor(Number(item.quantity) || 0));
+        if (!name || !isSafeDiscordCheckoutProductName(name) || !qty) continue;
+        const key = name.toLowerCase();
+        const existing = productCount.get(key) || {name,quantity:0};
+        existing.quantity += qty;
+        productCount.set(key,existing);
+      }
       return {retailer:group.retailer,profileLabel:group.profileLabel,count:group.orders.length,
         firstAt:group.orders.reduce((min,o)=> !min || o.checkoutAt < min ? o.checkoutAt : min,""),
         lastAt:group.orders.reduce((max,o)=> !max || o.checkoutAt > max ? o.checkoutAt : max,""),
+        products: [...productCount.values()].sort((a,b)=>b.quantity-a.quantity ||
+          a.name.localeCompare(b.name)).slice(0,6),
         eligibleCustomers, approved: (Array.isArray(aliases)?aliases:[]).some(alias =>
           checkoutAliasKey(alias.retailer,alias.profileLabel)===group.key)};
-    }).sort((a,b)=>b.count-a.count || a.profileLabel.localeCompare(b.profileLabel));
+    }).sort((a,b)=>Date.parse(b.lastAt || 0)-Date.parse(a.lastAt || 0) ||
+      b.count-a.count || a.profileLabel.localeCompare(b.profileLabel));
     res.setHeader("Cache-Control","no-store");
     return res.json({ok:true,unmatchedCount:unlinked.length,unlabeledCount:unlinked.length-
       [...groups.values()].reduce((sum,group)=>sum+group.orders.length,0),groups:list});
@@ -38648,8 +38664,10 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     // explicitly attributed to an existing website customer account.
     const confirmed = allRecords.filter(confirmedDiscordPurchase);
     const customersById = new Map(customers.map(item => [String(item.id), item]));
-    const unmatchedCount = confirmed.filter(record =>
-      !record.customerAccountId || !customersById.has(String(record.customerAccountId))).length;
+    const unassignedConfirmed = confirmed.filter(record =>
+      !record.customerAccountId || !customersById.has(String(record.customerAccountId)));
+    const unmatchedCount = unassignedConfirmed.length;
+    const unmatchedRecent = summarizeUnmatchedCheckouts(unassignedConfirmed);
     const paidByCustomer = new Map();
     for (const paid of Array.isArray(paidRaw) ? paidRaw : []) {
       const id = String(paid?.customerAccountId || "");
@@ -38693,7 +38711,8 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
       unknownPrices: confirmed.filter(record => !(Number(record.orderTotal) > 0)).length
     });
     return res.json({
-      ok:true,records,unmatchedCount,communityTotals,
+      ok:true,records,unmatchedCount,unmatchedRecent,
+      sourceCheckedAt: discordSuccessScan.checkedAt || null,communityTotals,
       historicalSummary: historicalPlusVerified({checkouts:0,spent:0,unknownPrices:0})
     });
   } catch (error) {

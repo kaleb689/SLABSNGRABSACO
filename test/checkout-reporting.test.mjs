@@ -6,7 +6,8 @@ import {
   historicalPlusVerified,
   moneyToCents,
   safeAdminProfileLabel,
-  adminCheckoutCustomerName
+  adminCheckoutCustomerName,
+  summarizeUnmatchedCheckouts
 } from "../checkout-reporting.js";
 
 test("archived 240 checkouts and original amount combine with live 82 once", () => {
@@ -66,6 +67,24 @@ test("Admin checkout names prefer real saved customer names, not webhook profile
   assert.equal(adminCheckoutCustomerName({id:"user-last-8"}),"Customer account r-last-8");
 });
 
+
+test("unmatched PKC confirmed successes remain separate from linked customer checkout metrics", () => {
+  const at=Date.parse("2026-10-09T21:00:00Z");
+  const orders=[
+    {retailer:"PKC",checkoutAt:"2026-10-09T08:00:00Z"},
+    {retailer:"PKC",checkoutAt:"2026-10-06T08:00:00Z"},
+    {retailer:"Target",checkoutAt:"2026-09-29T12:00:00Z"}
+  ];
+  const unmatched=summarizeUnmatchedCheckouts(orders,at);
+  assert.equal(unmatched.total,3);
+  assert.equal(unmatched.last24h,1);
+  assert.equal(unmatched.last7d,2);
+  assert.equal(unmatched.last30d,3);
+  assert.deepEqual(unmatched.byRetailer[0],
+    {retailer:"PKC",total:2,last24h:1,last7d:2,last30d:2});
+  assert.deepEqual(summarizeUnmatchedCheckouts([],at).byRetailer,[]);
+});
+
 test("public and Admin endpoints read one authoritative live source and keep the archive separate", () => {
   const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
   const mobile=readFileSync(new URL("../public/admin-mobile.js",import.meta.url),"utf8");
@@ -77,7 +96,7 @@ test("public and Admin endpoints read one authoritative live source and keep the
   const adminRoute=server.slice(adminStart,server.indexOf('app.get("/api/admin/discord-success-status"',adminStart));
   assert.match(publicRoute,/historicalPlusVerified\(/);
   assert.match(publicRoute,/visibleDiscordSuccessRecords/);
-  assert.ok(adminRoute.includes("const unmatchedCount = confirmed.filter(record =>"));
+  assert.ok(adminRoute.includes("const unmatchedCount = unassignedConfirmed.length;"));
   assert.ok(adminRoute.includes("!record.customerAccountId || !customersById.has"));
   assert.ok(adminRoute.includes("const confirmed = allRecords.filter(confirmedDiscordPurchase)"));
   assert.doesNotMatch(adminRoute,/filter\(record => Boolean\(record\.customerAccountId\) && confirmedDiscordPurchase/);
@@ -85,7 +104,9 @@ test("public and Admin endpoints read one authoritative live source and keep the
   assert.match(adminRoute,/adminCheckoutCustomerName/);
   assert.match(adminRoute,/customersById\.has/);
   assert.match(adminRoute,/\.filter\(record => record\.customerAccountId/);
-  assert.match(mobile,/panel\(x\.name\+" checkout breakdown"/);
+  assert.match(mobile,/esc\(x\.name\)\+\x27 checkout breakdown/);
+  assert.match(mobile,/data-success-user-days/);
+  assert.match(mobile,/successUserDays/);
   assert.doesNotMatch(mobile,/Unmatched \/ unassigned checkouts/);
   assert.match(mobile,/Which accounts checked out/);
   assert.match(mobile,/success-customer-filter/);
@@ -94,4 +115,20 @@ test("public and Admin endpoints read one authoritative live source and keep the
   assert.match(site,/rollSuccessMetric\("public-success-spent"/);
   assert.doesNotMatch(site,/public-success-spent-note|public-success-historical-products/);
   assert.doesNotMatch(home,/id="public-success-spent-note"|id="public-success-historical-products"/);
+});
+
+
+test("PKC matching review includes only confirmed orders and safe item descriptions", () => {
+  const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
+  const begin=server.indexOf('app.get("/api/admin/discord-checkout-profile-matching"');
+  const end=server.indexOf('app.post("/api/admin/discord-checkout-profile-matching"',begin);
+  assert.ok(begin>=0&&end>begin);
+  const matching=server.slice(begin,end);
+  assert.match(matching,/confirmedDiscordPurchase\(record\)/);
+  assert.match(matching,/isSafeDiscordCheckoutProductName\(name\)/);
+  assert.match(matching,/products: \[\.\.\.productCount\.values\(\)\]/);
+  const page=readFileSync(new URL("../public/admin-checkout-match.html",import.meta.url),"utf8");
+  assert.match(page,/requestedRetailer/);
+  assert.match(page,/match-products/);
+  assert.match(page,/Choose a verified customer/);
 });

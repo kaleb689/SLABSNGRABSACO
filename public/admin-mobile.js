@@ -3,6 +3,7 @@ const $=id=>document.getElementById(id),esc=v=>String(v??"").replace(/[&<>"']/g,
 let tab="overview",data={customers:[],activation:null,availability:null,usage:null,success:{records:[]}},authenticated=false,stream=null;
 let successDays=30,successCustomerId="all",successAccountKey="all";
 const successExpandedUsers=new Set();
+const successUserDays=new Map();
 let customerSearchText="", mobileRefreshTimer=null, mobileRefreshPending=false, mobileRefreshRunning=false;
 const mobileControlFocused=()=>{
   const active=document.activeElement;
@@ -101,12 +102,15 @@ if(tab==="success"){
       if(!entry.imageUrl)entry.imageUrl=item.imageUrl||"";
       goods.set(key,entry);
     }));
-    return Array.from(goods.values()).sort((a,b)=>b.quantity-a.quantity||a.name.localeCompare(b.name)).slice(0,limit).map(x=>
-      '<div class="item" style="display:flex;align-items:center;gap:12px;margin-top:8px">'+
-      '<img alt="" loading="lazy" src="'+esc(safeImage(x.imageUrl)?x.imageUrl:"/slabsngrabs-aco-logo-transparent.png")+'" style="width:48px;height:48px;object-fit:contain;flex:none;border-radius:8px;background:#102638">'+
-      '<div style="flex:1;min-width:0"><strong>'+esc(x.name)+'</strong><small>'+esc(x.retailer)+'</small></div>'+
-      '<strong style="color:#70e8ff;white-space:nowrap">×'+x.quantity+'</strong></div>').join("")||
-      '<p>No purchased product details are available for these orders.</p>';
+    const products=Array.from(goods.values()).sort((a,b)=>b.quantity-a.quantity||a.name.localeCompare(b.name));
+    const visible=products.slice(0,limit);
+    if(!visible.length)return '<p class="success-empty">No products from linked customer checkouts in this period.</p>';
+    return '<div class="success-products-list">'+visible.map(x=>
+      '<div class="success-product-row">'+
+      '<img alt="" loading="lazy" src="'+esc(safeImage(x.imageUrl)?x.imageUrl:"/slabsngrabs-aco-logo-transparent.png")+'">'+
+      '<div class="success-product-copy"><strong>'+esc(x.name)+'</strong><small>'+esc(x.retailer)+'</small></div>'+
+      '<span class="success-product-quantity">×'+x.quantity+'</span></div>').join("")+'</div>'+
+      (products.length>visible.length?'<p class="success-overflow">+'+(products.length-visible.length)+' more products in this period</p>':'');
   }
   function accountsMarkup(rows) {
     const accounts=new Map();
@@ -116,14 +120,24 @@ if(tab==="success"){
         kind:String(x.accountKind||"unclassified"),orders:[]});
       accounts.get(key).orders.push(x);
     });
-    return Array.from(accounts.values()).sort((a,b)=>b.orders.length-a.orders.length).map(x=>
-      '<div class="item"><strong>'+esc(x.name)+' · '+esc(x.retailer)+'</strong>'+
-      '<small>'+esc(x.kind==='linked'?"Linked/rented account":x.kind==='paid'?"Paid customer profile":"Verified account (assignment type unavailable)")+
-      ' · '+x.orders.length+' checkout'+(x.orders.length===1?'':'s')+
-      ' · verified spend '+dollars(verifiedSpent(x.orders))+'</small>'+
-      (missingPrices(x.orders)?'<small>'+missingPrices(x.orders)+' order amount'+(missingPrices(x.orders)===1?'':'s')+' pending</small>':'')+
-      '<div style="margin-top:7px">'+productsMarkup(x.orders,12)+'</div></div>').join("")||
-      '<p>No verified account-level purchases found in this period.</p>';
+    const entries=Array.from(accounts.values()).sort((a,b)=>b.orders.length-a.orders.length);
+    if(!entries.length)return '<p class="success-empty">No linked account checkouts in this period.</p>';
+    return '<div class="success-account-list">'+entries.map(x=>{
+      const tally=new Map();
+      x.orders.forEach(order=>(order.items||[]).forEach(item=>{
+        const name=String(item.name||"Product");
+        tally.set(name,(tally.get(name)||0)+Math.max(0,Number(item.quantity)||0));
+      }));
+      const productSummary=[...tally.entries()].slice(0,5).map(([name,qty])=>
+        esc(name)+' ×'+Math.floor(qty)).join(' · ');
+      return '<div class="success-account-row">'+
+        '<div class="success-account-title"><strong>'+esc(x.name)+'</strong><span>'+esc(x.retailer)+'</span></div>'+
+        '<div class="success-account-meta"><span>'+esc(x.kind==='linked'?"Linked account":x.kind==='paid'?"Paid customer profile":"Verified assigned profile")+'</span>'+
+        '<span>'+x.orders.length+' order'+(x.orders.length===1?'':'s')+'</span>'+
+        '<span>'+esc(missingPrices(x.orders)===x.orders.length?"Amount pending":dollars(verifiedSpent(x.orders)))+'</span></div>'+
+        (productSummary?'<p class="success-account-products">'+productSummary+'</p>':'')+
+        '</div>';
+    }).join("")+'</div>';
   }
   const palette=["#32d9f9","#a48dff","#ffcf68","#5be1a4","#fe8bae","#ff9b66"];
   const pie=Array.from(groupedRetailers.entries()).sort((a,b)=>b[1]-a[1]);
@@ -139,34 +153,81 @@ if(tab==="success"){
     'Only Discord-verified orders appear in customer and period breakdowns.';
   const lifetime=panel("Lifetime community checkouts",'<div class="metrics">'+metric("Total confirmed checkouts",community.totalCheckouts??allSuccess.length)+
     metric("Reported total checkout spend",dollars(community.totalSpent||0))+'</div><p>'+esc(combinedNote)+'</p>');
-  // Unmatched community orders have no customer attribution: do not show them in Admin Success.
+  const unmatchedMeta=data.success?.unmatchedRecent||{};
+  const missingPkC=(Array.isArray(unmatchedMeta.byRetailer)?unmatchedMeta.byRetailer:[])
+    .find(x=>/^(PKC|Pokemon Center)$/i.test(String(x.retailer||"")));
+  const unmatchedPanel=Number(unmatchedMeta.total||0)>0
+    ? '<section class="panel success-matching-panel"><div class="success-matching-head">'+
+      '<div><span class="success-eyebrow">ACCOUNT MATCHING</span><h2>Unassigned confirmed checkouts</h2></div>'+
+      '<span class="success-matching-count">'+Number(unmatchedMeta.total||0)+' unmatched</span></div>'+
+      '<p>These confirmed orders count in community totals but cannot be credited to a customer until the retailer account is verified.</p>'+
+      '<div class="success-matching-stats"><span><strong>'+Number(unmatchedMeta.last24h||0)+'</strong> 24H</span>'+
+      '<span><strong>'+Number(unmatchedMeta.last7d||0)+'</strong> 7D</span>'+
+      '<span><strong>'+Number(unmatchedMeta.last30d||0)+'</strong> 30D</span></div>'+
+      (missingPkC?'<p class="success-pkc-note"><strong>Pokémon Center:</strong> '+Number(missingPkC.total||0)+
+        ' unassigned confirmed checkout'+(Number(missingPkC.total||0)===1?'':'s')+
+        ' · '+Number(missingPkC.last24h||0)+' in 24H · '+Number(missingPkC.last7d||0)+' in 7D</p>':'')+
+      '<a class="success-match-link" href="/admin-checkout-match.html?retailer=PKC">REVIEW POKÉMON CENTER HITS ↗</a>'+
+      '<a class="success-match-link success-match-secondary" href="/admin-checkout-match.html">REVIEW ALL UNMATCHED HITS ↗</a></section>'
+    : "";
   const people=new Map();
-  inRange.filter(x=>x.customerAccountId).forEach(x=>{
+  // Individual customer breakdowns use their OWN 24H / 7D / 30D filter, not
+  // the global graph period. A 24H overview must not hide an older PKC hit.
+  allSuccess.forEach(x=>{
     const id=String(x.customerAccountId);
     if(!people.has(id))people.set(id,{id,name:String(x.customerName||"Customer"),orders:[]});
     people.get(id).orders.push(x);
   });
   const displayedPeople=Array.from(people.values()).filter(x=>successCustomerId==="all"||x.id===successCustomerId)
-    .sort((a,b)=>b.orders.length-a.orders.length||a.name.localeCompare(b.name));
+    .sort((a,b)=>Math.max(...b.orders.map(o=>Date.parse(o.checkoutAt)||0))-
+      Math.max(...a.orders.map(o=>Date.parse(o.checkoutAt)||0))||a.name.localeCompare(b.name));
   const peopleHtml=displayedPeople.map(x=>{
-    const uniqueAccounts=new Set(x.orders.map(order=>order.accountKey)).size;
-    const summary=x.orders.length+' confirmed checkout'+(x.orders.length===1?'':'s')+' · '+
-      uniqueAccounts+' account'+(uniqueAccounts===1?'':'s')+' · '+dollars(verifiedSpent(x.orders))+' verified spent'+
-      (missingPrices(x.orders)?' · '+missingPrices(x.orders)+' paid amount'+(missingPrices(x.orders)===1?'':'s')+' pending':'');
-    return panel(x.name+" checkout breakdown",
-      '<p>'+esc(summary)+'</p>'+
-      '<details data-success-user="'+esc(x.id)+'" '+(successExpandedUsers.has(x.id)||successCustomerId===x.id?'open':'')+
-      ' class="item"><summary style="cursor:pointer;font-weight:800">View products purchased and accounts that checked out</summary>'+
-      '<h3 style="font-size:13px;margin:14px 0 6px">Products purchased</h3>'+productsMarkup(x.orders)+
-      '<h3 style="font-size:13px;margin:14px 0 6px">Which accounts checked out</h3>'+accountsMarkup(x.orders)+
-      '</details>');
-  }).join("")||panel("Customer checkouts",'<p>No linked customer checkouts in this period.</p>');
+    const userDays=[1,7,30].includes(successUserDays.get(x.id))?successUserDays.get(x.id):30;
+    const userCutoff=currentTime-userDays*day;
+    let userRows=x.orders.filter(order=>{
+      const at=Date.parse(order.checkoutAt);
+      return Number.isFinite(at)&&at>=userCutoff&&at<=currentTime+60000;
+    });
+    if(successCustomerId===x.id&&successAccountKey!=="all")
+      userRows=userRows.filter(order=>String(order.accountKey||"unknown")===successAccountKey);
+    const accountCount=new Set(userRows.map(order=>order.accountKey||"unknown")).size;
+    const userPending=missingPrices(userRows);
+    const userSpend=userRows.length&&userPending===userRows.length?"—":dollars(verifiedSpent(userRows));
+    const periodButtons='<div class="success-user-period" role="group" aria-label="'+esc(x.name)+' breakdown time range">'+
+      [[1,"24H"],[7,"7D"],[30,"30D"]].map(([num,label])=>
+        '<button type="button" data-success-user-days="'+num+'" data-success-user-id="'+esc(x.id)+
+        '" aria-pressed="'+(num===userDays)+'">'+label+'</button>').join("")+'</div>';
+    return '<section class="panel success-user-panel" data-success-customer="'+esc(x.id)+'">'+
+      '<div class="success-user-heading"><div><span class="success-eyebrow">CUSTOMER CHECKOUTS</span>'+
+      '<h2>'+esc(x.name)+' checkout breakdown</h2></div><span class="success-user-range">'+
+      (userDays===1?'24 hours':userDays+' days')+'</span></div>'+periodButtons+
+      '<div class="success-user-stats">'+
+      '<div><small>Confirmed orders</small><strong>'+userRows.length+'</strong></div>'+
+      '<div><small>Verified spent</small><strong>'+userSpend+'</strong></div>'+
+      '<div><small>Accounts with hits</small><strong>'+accountCount+'</strong></div></div>'+
+      (userPending?'<p class="success-pending">'+userPending+' confirmed order'+(userPending===1?'':'s')+
+        ' awaiting a verified paid total.</p>':'')+
+      '<details class="success-user-details" data-success-user="'+esc(x.id)+'" '+
+        (successExpandedUsers.has(x.id)||successCustomerId===x.id?'open':'')+'>'+
+      '<summary>View products purchased & accounts that checked out</summary>'+
+      '<div class="success-user-details-body"><h3>Products purchased</h3>'+
+        productsMarkup(userRows,18)+'<h3>Which accounts checked out</h3>'+
+        accountsMarkup(userRows)+'</div></details></section>';
+  }).join("")||panel("Customer checkouts",'<p>No confirmed customer-linked checkouts are available yet. Review the unmatched retailer profiles below.</p>');
+  const scanAt=Date.parse(data.success?.sourceCheckedAt||"");
+  const scanStatus=Number.isFinite(scanAt)?'<p class="success-scan-status">Webhook source last scanned '+
+    esc(new Date(scanAt).toLocaleString())+'</p>':"";
   c.innerHTML=buttons+customerSelect+accountSelect+hero+
-    '<div class="metrics admin-success-metrics">'+metric("Confirmed orders",total)+metric("Retailers",groupedRetailers.size)+'</div>'+
-    lifetime+panel("Orders by retailer",donut+legend)+
-    panel("Products purchased",productsMarkup(filtered))+peopleHtml;
+    '<div class="metrics admin-success-metrics">'+metric("Confirmed orders",total)+
+      metric("Retailers",groupedRetailers.size)+'</div>'+
+    unmatchedPanel+lifetime+panel("Orders by retailer",donut+legend)+
+    panel("Products purchased",productsMarkup(filtered))+peopleHtml+scanStatus;
   c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{
     successDays=/^(mtd|ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);
+    render();
+  }));
+  c.querySelectorAll("[data-success-user-days]").forEach(b=>b.addEventListener("click",()=>{
+    successUserDays.set(b.dataset.successUserId,Number(b.dataset.successUserDays));
     render();
   }));
   c.querySelector("#success-customer-filter")?.addEventListener("change",event=>{
