@@ -68,10 +68,11 @@ test("Admin Success renders lifetime, unmatched, customer products and hit accou
   assert.match(html,/Which accounts checked out/);
   assert.match(html,/Target paid profile 1/);
   assert.match(html,/Ascended Heroes Tin/);
-  assert.match(html,/Confirmed orders<\\/small><strong>1<\\/strong>/);
-  // Raw unassigned order fixtures must never appear in the customer's Success
+  assert.match(html,/1 confirmed order/);
+  // Raw unassigned order fixtures must never appear in the customer Success
   // product carousel, retailer breakdown, or individual customer reports.
-  assert.doesNotMatch(html,/Unmatched confirmed checkouts|Unmatched \\/ unassigned checkouts/);
+  assert.equal(html.includes("Unmatched confirmed checkouts"), false);
+  assert.equal(html.includes("Unmatched / unassigned checkouts"), false);
   assert.doesNotMatch(html,/Booster Pack|Customer checkout breakdown/);
   assert.match(html,/Orders by retailer/);
   assert.match(html,/24H/);
