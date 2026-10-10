@@ -97,7 +97,8 @@ function customerTier(person) {
   const named=/(^|[^0-9])(10|20|50)(?![0-9])/.exec(raw);
   const planTier=Number(plan.tier ?? person?.tier ?? 0);
   const allowedByTier=({5:10,6:20,7:50})[planTier] || 0;
-  const count=assigned > 0 ? assigned : Number(named?.[2]) || allowedByTier;
+  const count=assigned > 0 ? assigned : Number(named?.[2]) || allowedByTier || Number(person?.tierProfileCount||0);
+  const tierLevel=count>=50?50:count>=20?20:count>=10?10:0;
   const unpaid=person?.accountOnly===true;
   const label=unpaid ? 'No paid membership' : (raw || (count ? count + ' profiles' : 'Membership'));
   const expires=plan.currentPeriodEnd || plan.subscriptionEndDate || plan.periodEnd || person?.currentPeriodEnd || person?.subscriptionEndDate || person?.periodEnd || null;
@@ -105,7 +106,7 @@ function customerTier(person) {
   const daysRemaining=Number.isFinite(endTimestamp) ? Math.max(0,Math.ceil((endTimestamp-Date.now()) / 86400000)) : null;
   const status=unpaid ? 'Awaiting membership' : String(plan.status || person?.membershipStatus || '');
   return {
-    color:unpaid ? 'free' : ([10,20,50].includes(count) ? 'tier-' + count : 'standard'),
+    color:unpaid ? 'free' : (tierLevel ? 'tier-' + tierLevel : 'standard'),
     label, count:unpaid ? 0 : count, status, daysRemaining
   };
 }
@@ -201,7 +202,7 @@ if(tab==="overview"){
       liveMetric("ACTIVE PAID MEMBERSHIPS",activeMembershipRows.length,activeMembershipRows.length)+
       liveMetric("MONTHLY MEMBERSHIP PAYMENTS",recurringTotal,recurringVerified?recurringCents.reduce((sum,n)=>sum+n,0)/100:NaN,true)+
       liveMetric("Registered customers",list.length,list.length)+
-      liveMetric("Awaiting activation",activationCount(a,"awaiting_activation"),Number(activationCount(a,"awaiting_activation")))+
+      '<details class="metric admin-activation-metric"><summary>AWAITING ACTIVATION<strong>'+esc(activationCount(a,"awaiting_activation"))+'</strong></summary><div class="admin-activation-list">'+(Array.isArray(a.customers)?a.customers.flatMap(person=>(person.profiles||[]).filter(p=>p.type==="paid"&&p.status==="awaiting_activation").map(p=>'<p>'+esc(person.name||person.email||person.customerName||"Customer")+' · '+esc(p.retailer||"Profile")+'</p>')).join(""):"")+'<a href="/admin.html#profileActivationTracker">OPEN ACTIVATION TOOLS ↗</a></div></details>'+
       '<details class="metric admin-app-users-metric"><summary>APP USERS · 7 DAYS <strong>'+esc(u.activeUsers7d??"—")+'</strong></summary><div class="admin-app-users-list">'+(Array.isArray(u.recent)?u.recent.filter(person=>{const when=Date.parse(person.lastSeenAt||"");return Number.isFinite(when)&&when>=Date.now()-7*86400000}).slice(0,30).map(person=>'<p>'+esc(person.name||person.email||"App user")+' · '+esc(person.lastSeenAt?new Date(person.lastSeenAt).toLocaleDateString():"")+'</p>').join(""):"")+'</div></details></div>'+
     collapsiblePanel("Quick actions",'<div class="links">'+
       '<a class="action" href="/admin-success.html">CHECKOUT SPENDING & INSIGHTS ↗</a>'+
@@ -583,6 +584,8 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+list.leng
           '<span class="admin-customer-tier-count">'+esc(count)+'</span>'+
           '<strong>'+esc(tier.label)+'</strong>'+
           (renewal ? '<span class="admin-customer-renewal">'+esc(renewal)+'</span>' : '')+'</div></div>'+
+          (tier.daysRemaining==null?'<p class="admin-period-unavailable">Membership renewal date unavailable</p>':
+            '<div class="admin-membership-visible-bar" role="progressbar" aria-label="Membership time remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="'+Math.min(30,tier.daysRemaining)+'"><span style="width:'+Math.min(100,Math.round(tier.daysRemaining/30*100))+'%;background:'+(tier.daysRemaining<=5?'#ef4444':tier.daysRemaining<=10?'#eab308':'#25c977')+'"></span></div>')+
           '<details class="admin-customer-detail"><summary>Customer details &amp; actions</summary>'+
             '<div class="admin-customer-detail-body"><p><b>Membership:</b> '+esc(tier.label)+'</p>'+
             (tier.daysRemaining==null ? '<p>Membership period end is not available.</p>' :
