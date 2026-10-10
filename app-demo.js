@@ -38,6 +38,7 @@ export function buildDemoData(now = new Date()) {
     return { id: `demo-checkout-${i + 1}`, customerAccountId: DEMO_ID, retailer: retailers[i % 3],
       orderNumber: `DEMO-ORDER-${1001 + i}`, checkoutAt: date(-i * 2), status: 'confirmed',
       itemCount: quantity, orderTotal: Math.round(quantity * price * 100) / 100,
+      orderTotalKnown: true, orderTotalBasis: 'order_total',
       items: [{ name: names[i % 3], quantity, price, imageUrl: '/demo-product.svg' }],
       shipping: { status: stage === 'confirmed' ? 'awaiting_shipment' : stage, carrier: 'Demo carrier',
         trackingNumber: `DEMO-TRACK-${1001 + i}`, estimatedDelivery: stage === 'delivered' ? date(-1).slice(0, 10) : date(3).slice(0, 10),

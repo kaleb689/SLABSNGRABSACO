@@ -17,12 +17,15 @@ export function shippingStage(order) {
   return ['shipped', 'in_transit', 'out_for_delivery', 'delivered'].includes(status) ? status : 'ordered';
 }
 export function periodStart(days, now = new Date()) {
-  const start = new Date(now);
-  if (days === 1) return new Date(now.getTime() - 86400000);
-  start.setHours(0, 0, 0, 0);
-  if (days === 'ytd') start.setMonth(0, 1);
-  else start.setDate(start.getDate() - days + 1);
-  return start;
+  // Use the same rolling windows and local calendar boundaries as Admin.
+  // Avoid invalid dates for MTD/lifetime and day-window drift at midnight.
+  if (days === 'all' || days === 'lifetime') return new Date(0);
+  if (days === 'mtd') return new Date(now.getFullYear(), now.getMonth(), 1);
+  if (days === 'ytd') return new Date(now.getFullYear(), 0, 1);
+  const durationDays = Number(days);
+  return Number.isFinite(durationDays) && durationDays > 0
+    ? new Date(now.getTime() - Math.floor(durationDays) * 86400000)
+    : new Date(0);
 }
 export function selectedOrders(orders, days, now = new Date()) {
   const start = periodStart(days, now).getTime();
@@ -36,9 +39,17 @@ export function metricChanges(previous, next) {
 // Unknown subtotals are not verified charges, even if legacy payloads still
 // contain a numeric orderTotal. Customer and Admin spending must agree.
 export function verifiedOrderSpend(order) {
-  const amount=Number(order?.orderTotal);
-  return order?.orderTotalKnown !== false && Number.isFinite(amount) &&
-    amount > 0 ? Math.round(amount * 100) / 100 : 0;
+  const amount = Number(order?.orderTotal);
+  // A legacy numeric amount or a unit subtotal is not proof of money paid.
+  // API responses explicitly set orderTotalKnown; trusted raw records may
+  // instead carry the same verified basis used by the server and Admin.
+  const paidBasis = ['order_total', 'retailer_receipt'].includes(String(order?.orderTotalBasis || '').toLowerCase());
+  const receiptSource = order?.priceSource === 'verified_retailer_receipt' ||
+    order?.priceSource === 'admin_verified_retailer_receipt';
+  const verified = order?.orderTotalKnown === true ||
+    (order?.orderTotalKnown !== false && (paidBasis || receiptSource));
+  return verified && Number.isFinite(amount) && amount > 0 && amount <= 1000000
+    ? Math.round(amount * 100) / 100 : 0;
 }
 export function dashboardTotals(orders) {
   return { orders: orders.length, items: orders.reduce((sum, r) => sum + (Number(r.itemCount) || 0), 0),
@@ -62,17 +73,26 @@ export function dashboardProducts(orders) {
   return [...products.values()].sort((a, b) => b.value - a.value);
 }
 export function dashboardActivity(orders, days, now = new Date()) {
-  const start = periodStart(days, now);
+  const source = Array.isArray(orders) ? orders : [];
+  const earliest = source.map(order => Date.parse(order?.checkoutAt || ''))
+    .filter(Number.isFinite).reduce((min, at) => Math.min(min, at), now.getTime());
+  const start = days === 'all' || days === 'lifetime'
+    ? new Date(Math.max(0, earliest)) : periodStart(days, now);
   const hours = days === 1;
-  const count = hours ? 24 : days === 'ytd' ? Math.floor((now - start) / 86400000) + 1 : days;
-  const bucketMs = hours ? 3600000 : (count > 30 ? Math.ceil(count / 24) : 1) * 86400000;
+  const duration = Math.max(86400000, now.getTime() - start.getTime());
+  const bucketMs = hours ? 3600000 : Math.ceil(duration / 86400000 / 24) * 86400000;
+  const length = hours ? 24 : Math.max(1, Math.ceil(duration / bucketMs));
   const buckets = new Map();
-  const length = Math.ceil((hours ? 86400000 : count * 86400000) / bucketMs);
   for (let i = 0; i < length; i++) buckets.set(i, {
-    date: new Date(start.getTime() + i * bucketMs).toISOString().slice(0, 10), count: 0, value: 0
+    date: new Date(start.getTime() + i * bucketMs).toISOString().slice(0, 10),
+    count: 0, value: 0
   });
-  for (const order of orders) {
-    const bucket = buckets.get(Math.floor((Date.parse(order.checkoutAt) - start.getTime()) / bucketMs));
+  for (const order of source) {
+    const at = Date.parse(order?.checkoutAt || '');
+    if (!Number.isFinite(at) || at < start.getTime() || at > now.getTime()) continue;
+    // A purchase made exactly at the end of a period belongs to its last bar.
+    const index = Math.min(length - 1, Math.floor((at - start.getTime()) / bucketMs));
+    const bucket = buckets.get(index);
     if (bucket) { bucket.count++; bucket.value += verifiedOrderSpend(order); }
   }
   return [...buckets.values()];

@@ -97,7 +97,7 @@ test("Admin and customer style files load vivid controls with light/dark modes a
   const mobile=source("public/admin-mobile-controls.css"),shared=source("public/sng-controls.css");
   const script=source("public/admin-mobile.js"),review=source("public/admin-checkout-prices.html");
   assert.match(app,/admin-mobile-controls\.css\?v=1/);
-  assert.match(site,/sng-controls\.css\?v=1/);
+  assert.match(site,/sng-controls\.css\?v=2/);
   assert.match(admin,/sng-controls\.css\?v=1/);
   assert.match(admin,/admin-checkout-prices\.html/);
   assert.match(script,/success-filter-select/);
