@@ -5684,7 +5684,7 @@ PAID SUBSCRIPTIONS
         <label data-discount-fixed hidden>New tier price ($)<br><input name="fixedPrice" type="number" min="0.01" step="0.01" placeholder="e.g. 50.00" style="width:110px"></label>
         <label>Tier<br><select name="tier"><option value="all">All tiers</option><option value="1">Starter</option><option value="2">Intermediate</option><option value="3">Advanced</option><option value="4">Pro</option><option value="5">High Volume</option><option value="6">Power User</option><option value="7">Elite</option><option value="8">Ultimate</option></select></label>
         <label>Maximum uses (optional)<br><input name="maxUses" type="number" min="1" max="100000" step="1" placeholder="Unlimited" style="width:110px"></label>
-        <label>Membership discount<br><select name="duration"><option value="once">First payment</option><option value="forever">Every renewal</option></select></label>
+        <label>Membership discount<br><select name="duration"><option value="once">First payment</option><option value="repeating">Limited months</option><option value="forever">Every renewal</option></select></label><label>Discount months (when limited)<br><input type="number" name="durationMonths" min="1" max="36" step="1" placeholder="e.g. 3" style="width:100px"></label>
         <label>Expires<br><input name="expiresAt" type="date"></label>
         <label><input name="appliesToRentals" type="checkbox"> Include rentals</label>
         <button type="submit" class="admin-edit-button">Create code</button>
@@ -24461,7 +24461,7 @@ async function loadMembershipTools() {
     discountList.replaceChildren();
     for (const discount of (discountData.codes || []).slice().reverse()) {
       const row = document.createElement("p");
-      row.textContent = `${discount.code} · ${discount.discountType === "fixed-price" ? "$" + Number(discount.fixedPrice).toFixed(2) + "/month" : discount.percent + "% off"} · ${discount.sitewide ? "Sitewide sale" : discount.ogOnly ? "All OG Members" : discount.recipientEmail ? "Only " + discount.recipientEmail : "Shareable code"} · ${discount.tier === "all" ? "All tiers" : "Tier " + discount.tier} · ${discount.duration === "forever" ? "Every renewal" : "First payment"}${discount.appliesToRentals ? " + rentals" : ""} · ${discount.maxUses != null ? (discount.redemptions ?? "?") + "/" + discount.maxUses + " uses" : "Unlimited uses"} · ${discount.active ? "Active" : "Inactive"} `;
+      row.textContent = `${discount.code} · ${discount.discountType === "fixed-price" ? "$" + Number(discount.fixedPrice).toFixed(2) + "/month" : discount.percent + "% off"} · ${discount.sitewide ? "Sitewide sale" : discount.ogOnly ? "All OG Members" : discount.recipientEmail ? "Only " + discount.recipientEmail : "Shareable code"} · ${discount.tier === "all" ? "All tiers" : "Tier " + discount.tier} · ${discount.duration === "forever" ? "Every renewal" : discount.duration === "repeating" ? `${discount.durationMonths} monthly payments` : "First payment"}${discount.appliesToRentals ? " + rentals" : ""} · ${discount.maxUses != null ? (discount.redemptions ?? "?") + "/" + discount.maxUses + " uses" : "Unlimited uses"} · ${discount.active ? "Active" : "Inactive"} `;
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = discount.active ? "Deactivate" : "Activate";
@@ -24666,7 +24666,7 @@ document.getElementById("discountCodeForm")?.addEventListener("submit", async ev
         sitewide: fields.get("audience") === "sitewide",
         ogOnly: fields.get("audience") === "og",
         recipientEmail: fields.get("audience") === "private" ? fields.get("recipientEmail") : null,
-        expiresAt: fields.get("expiresAt") || null, duration: fields.get("duration"), appliesToRentals: fields.has("appliesToRentals")
+        expiresAt: fields.get("expiresAt") || null, duration: fields.get("duration"), durationMonths: fields.get("durationMonths") ? Number(fields.get("durationMonths")) : null, appliesToRentals: fields.has("appliesToRentals")
       })
     });
     feedback.textContent = `${data.discount.code} is ready for Stripe Checkout.`;
