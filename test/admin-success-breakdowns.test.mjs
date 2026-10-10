@@ -17,7 +17,7 @@ test("per-customer 24H / 7D / 30D filters work independently of global timeframe
         addEventListener(name,fn){listeners.set(name,fn);},
         querySelectorAll(selector){
           const types={
-            "[data-success-user-days]":{pattern:/data-success-user-days="(\d+)" data-success-user-id="([^"]+)"/g,kind:"user"},
+            "[data-success-user-days]":{pattern:/data-success-user-days="([^"]+)" data-success-user-id="([^"]+)"/g,kind:"user"},
             "[data-success-days]":{pattern:/data-success-days="([^"]+)"/g,kind:"global"}
           };
           const type=types[selector];
@@ -102,4 +102,28 @@ test("per-customer 24H / 7D / 30D filters work independently of global timeframe
   assert.equal(userCount(),1);
   press("user",30);
   assert.equal(userCount(),3);
+  assert.match(html(),/data-success-panel="products"/);
+  assert.match(html(),/data-success-panel="customers"/);
+  assert.match(html(),/success-user-accordion/);
+  // MTD affects the selected graph and can be selected separately per user.
+  press("global","mtd");
+  assert.match(html(),/TOTAL VERIFIED SPENT · MONTH TO DATE/);
+  assert.match(html(),/data-success-days="mtd" aria-pressed="true"/);
+  press("user","mtd");
+  assert.match(html(),/Month to date/);
+  assert.match(html(),/data-success-user-days="mtd" data-success-user-id="member-a" aria-pressed="true"/);
+});
+
+test("month-to-date begins at local midnight on day one and stops at month/year rollovers",()=>{
+  const start=source.indexOf("function successPeriodStart(");
+  const end=source.indexOf("\nlet customerSearchText=",start);
+  assert.ok(start>0&&end>start);
+  const script=source.slice(start,end);
+  const context={Date,value:null};
+  vm.runInNewContext(script+'\nvalue = successPeriodStart("mtd",new Date(2026,9,12,22,15));',context);
+  assert.equal(context.value,new Date(2026,9,1).getTime());
+  vm.runInNewContext(script+'\nvalue = successPeriodStart("mtd",new Date(2026,10,1,0,1));',context);
+  assert.equal(context.value,new Date(2026,10,1).getTime());
+  vm.runInNewContext(script+'\nvalue = successPeriodStart("ytd",new Date(2026,10,1));',context);
+  assert.equal(context.value,new Date(2026,0,1).getTime());
 });
