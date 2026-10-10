@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { planDiscordCommunityHits, sourceMessageIdsForHit } from "../discord-hit-mirror-policy.js";
+import { checkoutPriceSignature } from "../checkout-price-policy.js";
 
 const channel = "1532179373292257290";
 const otherChannel = "1551090141693485156";
@@ -31,7 +32,8 @@ test("every confirmed authoritative checkout qualifies, including unassigned and
 test("existing eleven-message baseline entries stay reserved while older unlinked hits backfill", () => {
   const linked = order(10, { owner: "member-123" });
   const unlinked = order(9);
-  const sent = { [sid(10)]: { messageId: sid(500), renderVersion: 3 } };
+  const sent = { [sid(10)]: { messageId: sid(500), renderVersion: 3,
+    priceSignature: checkoutPriceSignature(linked) } };
   const plan = planDiscordCommunityHits([linked, unlinked], channel, sent, 3);
   assert.deepEqual(plan.newHits.map(entry => entry.sourceMessageId), [sid(9)]);
   assert.equal(plan.eligible, 2);
