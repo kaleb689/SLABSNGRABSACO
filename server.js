@@ -38483,9 +38483,21 @@ app.get("/api/admin/discord-checkout-profile-matching", requireAdmin, async (_re
           account?.lastName || account?.profile?.lastName].filter(Boolean).join(" ").trim();
         return {id,label:name || String(account?.email || account?.profile?.email || id)};
       }).sort((a,b)=>a.label.localeCompare(b.label));
+      const productCount = new Map();
+      for (const order of group.orders) for (const item of order.items || []) {
+        const name = publicSuccessProductName(item.name);
+        const qty = Math.max(0, Math.floor(Number(item.quantity) || 0));
+        if (!name || !isSafeDiscordCheckoutProductName(name) || !qty) continue;
+        const key = name.toLowerCase();
+        const existing = productCount.get(key) || {name,quantity:0};
+        existing.quantity += qty;
+        productCount.set(key,existing);
+      }
       return {retailer:group.retailer,profileLabel:group.profileLabel,count:group.orders.length,
         firstAt:group.orders.reduce((min,o)=> !min || o.checkoutAt < min ? o.checkoutAt : min,""),
         lastAt:group.orders.reduce((max,o)=> !max || o.checkoutAt > max ? o.checkoutAt : max,""),
+        products: [...productCount.values()].sort((a,b)=>b.quantity-a.quantity ||
+          a.name.localeCompare(b.name)).slice(0,6),
         eligibleCustomers, approved: (Array.isArray(aliases)?aliases:[]).some(alias =>
           checkoutAliasKey(alias.retailer,alias.profileLabel)===group.key)};
     }).sort((a,b)=>Date.parse(b.lastAt || 0)-Date.parse(a.lastAt || 0) ||
