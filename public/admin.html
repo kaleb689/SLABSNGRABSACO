@@ -5403,7 +5403,7 @@
 <link rel="stylesheet" href="/sng-controls.css?v=1">
 <link rel="stylesheet" href="/sng-premium-controls.css?v=2">
 <link rel="stylesheet" href="/admin-header-organized.css?v=20261010-1">
-</head>
+<link rel="stylesheet" href="/admin-membership-kpis.css?v=20261010"></head>
 
 
 <body class="admin-page">
@@ -5615,6 +5615,10 @@
     </div>
 
 
+  <section class="admin-membership-kpis" aria-label="Current paid memberships">
+    <div class="admin-membership-kpi"><small>ACTIVE PAID MEMBERSHIPS</small><strong id="activePaidMembershipCount">—</strong><span>Paid customers within their membership period</span></div>
+    <div class="admin-membership-kpi"><small>MONTHLY MEMBERSHIP PAYMENTS</small><strong id="activeMembershipRevenue">—</strong><span id="activeMembershipRevenueNote">Based on verified membership billing amounts</span></div>
+  </section>
   <div class="admin-summary">
 
   <div
@@ -19631,6 +19635,36 @@ const response =
           data.submissions ||
           []
         );
+  // Never conflate checkout product spending with monthly membership revenue.
+  const now=Date.now();
+  const unique=new Map();
+  for(const row of submissions){
+    const key=String(row.customerAccountId||row.profile?.email||row.id||"");
+    if(!key)continue;
+    const status=String(row.subscriptionStatus||row.membershipStatus||"").toLowerCase();
+    const until=Date.parse(row.currentPeriodEnd||row.subscriptionEndDate||"");
+    if(!["active","trialing"].includes(status)||!Number.isFinite(until)||until<=now)continue;
+    unique.set(key,row);
+  }
+  const activeRows=[...unique.values()];
+  document.getElementById("activePaidMembershipCount").textContent=String(activeRows.length);
+  // Use only explicit server-provided recurring amounts; unknown is not $0.
+  const cents=activeRows.map(row=>{
+    const centsValue=row.membershipMonthlyAmountCents??row.subscriptionMonthlyAmountCents??row.recurringAmountCents;
+    if(centsValue!=null&&Number.isFinite(Number(centsValue)))return Number(centsValue);
+    const dollarsValue=row.membershipMonthlyAmount??row.subscriptionMonthlyAmount;
+    return dollarsValue!=null&&Number.isFinite(Number(dollarsValue))?Math.round(Number(dollarsValue)*100):null;
+  });
+  const revenue=document.getElementById("activeMembershipRevenue");
+  const note=document.getElementById("activeMembershipRevenueNote");
+  if(cents.every(value=>value!=null)){
+    revenue.textContent=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(cents.reduce((a,b)=>a+b,0)/100);
+    note.textContent="Verified recurring subscription amounts";
+  }else{
+    revenue.textContent="—";
+    note.textContent="Membership billing amounts unavailable in Admin API ("+cents.filter(v=>v==null).length+" missing)";
+  }
+
 
 
   loginWrap.hidden = true;

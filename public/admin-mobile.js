@@ -563,7 +563,7 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+list.leng
             '<div class="admin-customer-detail-body"><p><b>Membership:</b> '+esc(tier.label)+'</p>'+
             (tier.daysRemaining==null ? '<p>Membership period end is not available.</p>' :
               '<p><b>'+esc(renewal)+'</b></p><div class="admin-membership-track" role="progressbar" aria-label="Membership days remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="'+Math.min(30,tier.daysRemaining)+'"><span style="width:'+Math.min(100,Math.round(tier.daysRemaining/30*100))+'%;background:'+(tier.daysRemaining<=5?'#ef4444':tier.daysRemaining<=10?'#eab308':'#25c977')+'"></span></div>')+
-            '<a class="admin-customer-manage" href="/admin.html">MANAGE CUSTOMER / SEND NOTIFICATION ↗</a>'+
+            '<details class="admin-inline-notifications"><summary>Send Notification</summary><label>Notification type<select data-notice-type><option value="missing">Missing account setup information</option><option value="card">Missing payment card</option><option value="shipping">Missing shipping address</option><option value="retailer">Missing optional retailer information</option><option value="custom">Custom message</option></select></label><label>Customer message<textarea data-notice-message rows="3" placeholder="Optional details, required for custom messages"></textarea></label><button type="button" data-send-notice="'+esc(x.id)+'">SEND NOTIFICATION</button><p data-notice-result role="status"></p></details>'+
             '<p class="admin-customer-tip">Use the full Admin customer page for missing card, shipping, retailer info, and custom notifications.</p></div></details>'+
           '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE <span aria-hidden="true">↗</span></button></article>';
       }).join("")||
@@ -657,6 +657,32 @@ const faceButton=document.getElementById("face-id-login");if(faceButton){faceBut
 $("login").addEventListener("submit",async ev=>{ev.preventDefault();const f=new FormData(ev.currentTarget);const r=await fetch("/api/admin/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:f.get("password"),code:f.get("code")})});if(!r.ok){$("login-message").textContent="Sign in failed. Check your password and authenticator code.";return;}ev.currentTarget.reset();$("login-message").textContent="";await refresh(true);});
 $("refresh").onclick=()=>void refresh(true);
 $("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;tab=b.dataset.tab;render();window.scrollTo(0,0);if(tab==="success")void refreshSuccessTracker();});
+$("content").addEventListener("click",async e=>{
+  const b=e.target.closest("[data-send-notice]");
+  if(!b)return;
+  const form=b.closest(".admin-inline-notifications");
+  const kind=form.querySelector("[data-notice-type]").value;
+  const input=form.querySelector("[data-notice-message]");
+  const result=form.querySelector("[data-notice-result]");
+  const defaults={
+    card:"Your SLABSNGRABSACO profile is missing a saved payment card. Please sign in and add a payment method for retailer checkouts.",
+    shipping:"Your SLABSNGRABSACO profile is missing a shipping address. Please sign in and complete your shipping information.",
+    retailer:"Please review any missing optional retailer account information on your SLABSNGRABSACO profile."
+  };
+  const message=kind==="custom"?input.value.trim():kind==="missing"?"":(input.value.trim()||defaults[kind]);
+  if(kind==="custom"&&!message){result.textContent="Enter your custom message first.";return;}
+  if(!confirm("Send this notification to the selected customer?"))return;
+  b.disabled=true;result.textContent="Sending…";
+  try{
+    const url="/api/admin/submissions/"+encodeURIComponent(b.dataset.sendNotice)+"/"+(kind==="missing"?"notify-missing-info":"message-customer");
+    const response=await fetch(url,{method:"POST",credentials:"same-origin",...(kind==="missing"?{}:{headers:{"Content-Type":"application/json"},body:JSON.stringify({message})})});
+    const body=await response.json().catch(()=>({}));
+    if(!response.ok)throw Error(body.error||"Notification could not be sent");
+    result.textContent="Saved to customer notifications."+(body.discordSent?" Discord notified.":"");
+    input.value="";
+  }catch(error){result.textContent=error.message||"Notification failed";}
+  finally{b.disabled=false;}
+});
 $("content").addEventListener("click",async e=>{const b=e.target.closest("[data-view]");if(!b)return;b.disabled=true;try{const r=await fetch("/api/admin/customers/"+encodeURIComponent(b.dataset.view)+"/view-as-user",{method:"POST",credentials:"same-origin"});const j=await r.json();if(!r.ok)throw Error(j.error||"Unable to open customer");location.assign(j.url||"/admin.html");}catch(err){alert(err.message);b.disabled=false;}});
 document.addEventListener("focusout",()=>{if(mobileRefreshPending)scheduleMobileRefresh();},true);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&authenticated)scheduleMobileRefresh();});
