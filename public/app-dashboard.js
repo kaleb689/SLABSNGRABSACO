@@ -240,8 +240,10 @@ if (appEnabled) {
     target.innerHTML = view === 'products' ? productRows(dashboardProducts(successes).filter(p => `${p.name} ${p.retailer}`.toLowerCase().includes(needle))) :
       orderRows(records.filter(order => (status === 'all' || shippingStage(order) === status) && `${order.retailer} ${order.orderNumber} ${order.shipping?.trackingNumber || ''} ${(order.items || []).map(p => p.name).join(' ')}`.toLowerCase().includes(needle)), true);
   }
-  function setView(next) {
+  function setView(next, { preserveProfileTab = false } = {}) {
     if (!labels[next]) return;
+    // Tapping the centered Membership tab always opens the plan summary.
+    if (next === 'profile' && !preserveProfileTab) profileTab = 'membership';
     view = next; query = ''; calendarOpen=false; document.body.dataset.appView = view;
     if (location.hash !== '#my-profile') go('my-profile');
     if (view === 'notifications') document.querySelector('button[data-account-tab="notifications"]')?.click();
@@ -267,7 +269,7 @@ if (appEnabled) {
     if (button.dataset.appStatus) { status = button.dataset.appStatus; render(); }
     if (button.hasAttribute('data-app-upgrade')) { document.getElementById('upgrade-membership')?.click(); return; }
     if (button.dataset.profileTab) { profileTab = button.dataset.profileTab; document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click(); render(); }
-    if (button.dataset.settingProfile) { profileTab = button.dataset.settingProfile; setView('profile'); }
+    if (button.dataset.settingProfile) { profileTab = button.dataset.settingProfile; setView('profile', { preserveProfileTab: true }); }
     if (button.hasAttribute('data-app-theme')) { theme = theme === 'night' ? 'day' : 'night'; try { localStorage.setItem('sng-app-theme', theme); } catch {} render(); }
     if (button.hasAttribute('data-app-notification-settings')) document.getElementById('account-notification-settings')?.click();
     if (button.hasAttribute('data-app-refresh')) void refresh();
