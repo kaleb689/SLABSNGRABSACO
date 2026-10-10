@@ -193,3 +193,176 @@ body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-
 @media(prefers-reduced-motion:reduce) {
   #app-dashboard .sng-drop-source > summary > b {transition:none}
 }
+
+
+/* Approved Membership page: separate plan hero, connected plan details and centered tab. */
+body.app-dashboard.app-signed-in[data-app-view="profile"][data-profile-tab="membership"] #customer-dashboard #account-tab-membership {
+  display:none!important;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-heading {
+  margin:4px 0 14px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-heading > span {
+  display:block;color:#c9a9fb;font-size:10px;font-weight:900;letter-spacing:1.7px;margin-bottom:7px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-heading h1 {
+  font-size:clamp(28px,7vw,35px);font-weight:900;letter-spacing:-.8px;margin:0 0 5px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-heading p {
+  font-size:12px;line-height:1.5;margin:0;color:#afa8c3;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-hero {
+  min-height:176px;align-items:flex-start;padding:24px;
+  border:2px solid rgba(220,170,255,.74);border-radius:25px;
+  background:linear-gradient(122deg,#38215e 0%,#66439b 58%,#a85bc4 100%);
+  box-shadow:0 12px 32px rgba(85,42,160,.22);
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-hero .sng-membership-hero-copy {
+  display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-hero h2 {
+  font-size:clamp(24px,6.8vw,34px);font-weight:900;margin:6px 0 0;letter-spacing:-.65px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-hero p {
+  margin:0;color:#fff;font-size:13px;font-weight:700;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-status {
+  display:inline-flex;margin-top:11px;padding:7px 11px;max-width:100%;
+  border:1px solid rgba(255,255,255,.48);border-radius:999px;
+  color:#fff;background:rgba(0,0,0,.14);font-size:10px;line-height:1.4;font-weight:900;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-hero.sng-tier-10 {
+  background:linear-gradient(115deg,#063d65,#086c88 58%,#20baba);border-color:#56e7ec;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-hero.sng-tier-20 {
+  background:linear-gradient(115deg,#422568,#7140a1 58%,#ac62df);border-color:#cfa4ff;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-hero.sng-tier-50 {
+  background:linear-gradient(115deg,#744016,#a36b28 58%,#d9a84c);border-color:#ffdf9c;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-emblem {
+  width:54px;height:54px;border-radius:18px;position:relative;z-index:1;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-details {
+  margin:16px 0 19px;padding:20px 17px 16px;
+  border-radius:22px;border:1px solid rgba(156,125,217,.43);
+  background:linear-gradient(140deg,#211b33 0%,#161723 100%);
+  box-shadow:0 10px 29px rgba(0,0,0,.14);
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-details-title {
+  display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:15px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-details-title h2 {
+  margin:0;color:#f7efff;font-size:16px;font-weight:900;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-details-title span {
+  color:#ae9aca;font-size:9px;font-weight:900;letter-spacing:1px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-stats {
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-stat {
+  padding:15px 13px;min-width:0;min-height:91px;
+  border:1px solid rgba(127,112,167,.45);border-radius:15px;
+  border-left:3px solid #af7aff;background:rgba(20,17,38,.7);
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-stat:nth-child(2) {border-left-color:#59daea}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-stat:nth-child(3) {border-left-color:#ffc775}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-stat:nth-child(4) {border-left-color:#49dba8}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-stat small {
+  display:block;color:#c2b4d8;font-size:10px;font-weight:850;line-height:1.35;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-stat strong {
+  display:block;color:#fff;font-size:clamp(16px,5vw,23px);
+  line-height:1.25;font-weight:900;overflow-wrap:anywhere;margin:9px 0 3px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-stat span {
+  display:block;color:#9d97af;font-size:10px;line-height:1.4;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-action-row {
+  display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:15px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-action-row > button {
+  padding:12px 10px;min-height:47px;border-radius:13px;
+  background:linear-gradient(140deg,#8654e1,#6542a9);
+  border:1px solid #bf93f7;color:#fff;font-weight:850;font-size:11px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-action-row > button:nth-child(2) {
+  background:rgba(47,57,102,.7);border-color:#6a86cf;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-member-tools-heading {
+  margin:10px 0;display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-member-tools-heading h2 {
+  margin:0;color:#eee7fc;font-size:15px;font-weight:900;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-member-tools-heading p {
+  margin:0;color:#ada0c3;font-size:10px;text-align:right;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-profile-menu {
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:14px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-profile-menu > button {
+  width:100%;padding:12px 9px;min-height:47px;white-space:normal;text-align:center;
+  background:rgba(32,27,49,.94);color:#d0c6e3;border:1px solid #59506e;
+  border-radius:13px;font-size:11px;font-weight:850;box-shadow:none;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-profile-menu > button[aria-pressed="true"] {
+  background:linear-gradient(140deg,#7550b5,#4d398a);border-color:#c8a0fc;
+  color:#fff;box-shadow:0 3px 14px rgba(102,65,177,.24);
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-membership-drop {
+  margin:7px 0 18px;min-height:75px;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button[data-app-view="profile"]:not(.active) {
+  border:2px solid transparent!important;
+  background:linear-gradient(140deg,#493077,#533a84) padding-box,
+    linear-gradient(135deg,#d9a6ff,#af78ff) border-box!important;
+  color:#fff!important;
+  box-shadow:0 2px 18px rgba(155,87,225,.27)!important;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button[data-app-view="profile"].active {
+  border:2px solid transparent!important;
+  background:linear-gradient(145deg,#7750bb,#573388) padding-box,
+    linear-gradient(135deg,#e3bbff,#a471e9) border-box!important;
+  color:#fff!important;
+  box-shadow:0 0 23px rgba(175,107,239,.42)!important;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button[data-app-view="profile"] svg,
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button[data-app-view="profile"] span {
+  color:#fff!important;
+}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-membership-heading p,
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-member-tools-heading p {color:#65567c}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-membership-details {
+  background:linear-gradient(130deg,#ffffff,#f7f1ff);border-color:#d5c1ee;
+}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-membership-details-title h2,
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-member-tools-heading h2 {color:#35244d}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-membership-stat {
+  background:#fff;border-color:#dfd3ed;border-left-color:#9564e0;
+}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-membership-stat:nth-child(2) {border-left-color:#27a6bb}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-membership-stat:nth-child(3) {border-left-color:#c68c2c}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-membership-stat:nth-child(4) {border-left-color:#27a884}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-membership-stat strong {color:#292039}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-membership-stat small {color:#615172}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-membership-stat span {color:#766b84}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-profile-menu > button:not([aria-pressed="true"]) {
+  background:#fff;color:#5b4478;border:1px solid #d6c5ea;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav > button[data-app-view="profile"]:not(.active) {
+  background:linear-gradient(140deg,#f0e4ff,#e8d9fa) padding-box,
+    linear-gradient(135deg,#a473dc,#7954bf) border-box!important;color:#6336a6!important;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav > button[data-app-view="profile"]:not(.active) svg,
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav > button[data-app-view="profile"]:not(.active) span {color:#6336a6!important}
+@media(min-width:570px) {
+  body.app-dashboard.app-signed-in #app-dashboard .sng-membership-stats {grid-template-columns:repeat(4,minmax(0,1fr));}
+}
+@media(max-width:370px) {
+  body.app-dashboard.app-signed-in #app-dashboard .sng-membership-hero {padding:19px 17px}
+  body.app-dashboard.app-signed-in #app-dashboard .sng-membership-emblem {width:44px;height:44px}
+  body.app-dashboard.app-signed-in #app-dashboard .sng-membership-details {padding:15px 12px}
+  body.app-dashboard.app-signed-in #app-dashboard .sng-membership-stat {padding:12px 9px}
+}
