@@ -4,7 +4,7 @@
  * authoritative Discord checkout by retailer order number. Parsing a number
  * is never a new order or independent evidence of ownership.
  */
-const TOTAL_LABEL = /^(?:order\s+total|grand\s+total|total\s+(?:paid|charged|due)|amount\s+(?:charged|paid)|payment\s+total|you\s+paid|total)$/i;
+const TOTAL_LABEL = /^(?:order\s+total|grand\s+total|final\s+total|paid\s+total|total\s+(?:paid|charged|due)|amount\s+(?:charged|paid)|payment\s+total|you\s+paid|total)$/i;
 const NON_FINAL = /\b(?:sub\s*total|estimated|estimate|before\s+tax|before\s+shipping|unit\s+price|per\s+item|each|discount|refund)\b/i;
 const MAX_CENTS = 100000000;
 function amountCents(raw) {
@@ -33,7 +33,7 @@ function collectExplicitTotals(source, results) {
       if (cents !== null) results.push(cents);
       continue;
     }
-    if (!TOTAL_LABEL.test(lines[i]) || i + 1 >= lines.length) continue;
+    if (!TOTAL_LABEL.test(lines[i].replace(/[:\-]\s*$/, "")) || i + 1 >= lines.length) continue;
     // Common HTML/plaintext receipts put the label and charged amount in
     // adjacent table cells or on separate lines.
     const cents = amountCents(lines[i + 1]);
