@@ -45,7 +45,10 @@ test("per-customer 24H / 7D / 30D filters work independently of global timeframe
       orderTotalKnown:true,orderTotal:45,accountKey:"managed:pkc-2",accountLabel:"Linked PKC 2",accountKind:"linked",
       items:[{name:"Pokémon Center ETB",quantity:1}]},
     {retailer:"PKC",checkoutAt:at(0),customerAccountId:null,customerName:"Unmatched checkout",
-      orderTotalKnown:false,orderTotal:0,items:[{name:"DO NOT ATTACH UNMATCHED BOOSTER",quantity:5}]}
+      orderTotalKnown:false,orderTotal:0,items:[{name:"DO NOT ATTACH UNMATCHED BOOSTER",quantity:5}]},
+    {retailer:"Target",checkoutAt:at(2),customerAccountId:"member-b",customerName:"Ben Example",
+      orderTotalKnown:false,orderTotal:0,accountKey:"managed:target-3",accountLabel:"Target 3",accountKind:"linked",
+      items:[{name:"Unpriced but confirmed Target box",quantity:1}]}
   ];
   const fixtures={
     "/api/admin/submissions":{submissions:[]},
@@ -55,8 +58,9 @@ test("per-customer 24H / 7D / 30D filters work independently of global timeframe
     "/api/admin/success-overview":{
       records,communityTotals:{totalCheckouts:244,totalSpent:20000},
       historicalSummary:{historicalCheckouts:240,historicalSpent:15876.11},
-      unmatchedRecent:{total:9,last24h:1,last7d:4,last30d:9,
-        byRetailer:[{retailer:"PKC",total:9,last24h:1,last7d:4,last30d:9}]},
+      unmatchedRecent:{total:10,last24h:2,last7d:5,last30d:10,
+        byRetailer:[{retailer:"PKC",total:9,last24h:1,last7d:4,last30d:9},
+          {retailer:"Target",total:1,last24h:1,last7d:1,last30d:1}]},
       sourceCheckedAt:new Date().toISOString()
     }
   };
@@ -84,10 +88,15 @@ test("per-customer 24H / 7D / 30D filters work independently of global timeframe
   };
   assert.equal(userCount(),3);
   assert.match(html(),/Amy Example checkout breakdown/);
+  assert.match(html(),/Ben Example checkout breakdown/);
+  assert.match(html(),/Ben Example checkout breakdown[\s\S]*?<small>Verified spent<\/small><strong>\$0\.00<\/strong>/);
+  assert.doesNotMatch(html(),/<strong>Pending<\/strong>/);
   assert.match(html(),/Pokémon Center booster box/);
   assert.match(html(),/Pokémon Center ETB/);
   assert.match(html(),/Pokémon Center:<\/strong> 9 unassigned confirmed checkouts/);
   assert.match(html(),/REVIEW POKÉMON CENTER HITS/);
+  assert.match(html(),/Target:<\/strong> 1 unassigned confirmed checkout/);
+  assert.match(html(),/REVIEW TARGET HITS/);
   assert.match(html(),/REVIEW ALL UNMATCHED HITS/);
   assert.doesNotMatch(html(),/DO NOT ATTACH UNMATCHED BOOSTER/);
   // Changing the top graph does not erase earlier linked Pokémon Center hits
