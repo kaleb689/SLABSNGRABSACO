@@ -128,7 +128,7 @@ test('Membership is centered, and the Admin app shows right-side tier badges', (
   assert.match(admin,/class="admin-customer-tier-badge"/);
   assert.match(admin,/admin-customer-tier-10|tier-' \+ tierLevel/);
   assert.match(page,/href="\/app-drop-controls\.css\?v=20261010-approved-v4"/);
-  assert.match(adminPage,/href="\/admin-customer-tiers\.css\?v=20261010-approved-v4"/);
+  assert.match(adminPage,/href="\/admin-customer-tiers\.css\?v=20261010-activation-v5"/);
 });
 
 
