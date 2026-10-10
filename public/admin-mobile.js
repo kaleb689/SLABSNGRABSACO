@@ -559,7 +559,7 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+list.leng
           '<span class="admin-customer-tier-count">'+esc(count)+'</span>'+
           '<strong>'+esc(tier.label)+'</strong>'+
           (renewal ? '<span class="admin-customer-renewal">'+esc(renewal)+'</span>' : '')+'</div></div>'+
-          '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">OPEN CUSTOMER PROFILE <span aria-hidden="true">↗</span></button></article>';
+          '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW PAGE <span aria-hidden="true">↗</span></button></article>';
       }).join("")||
       "<p>No matching customers.</p>";
   };
