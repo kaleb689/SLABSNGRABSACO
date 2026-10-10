@@ -86,7 +86,7 @@ if(tab==="success"){
   const groupedRetailers=new Map();
   filtered.forEach(x=>{const key=String(x.retailer||"Other");groupedRetailers.set(key,(groupedRetailers.get(key)||0)+1);});
   const total=filtered.length,spent=verifiedSpent(filtered),pending=missingPrices(filtered);
-  const shownSpend=total&&pending===total?"Pending":dollars(spent);
+  const shownSpend=dollars(spent);
   const rangeNames={1:"LAST 24 HOURS",7:"LAST 7 DAYS",30:"LAST 30 DAYS",90:"LAST 90 DAYS",mtd:"MONTH TO DATE",ytd:"YEAR TO DATE",all:"ALL TIME"};
   const ranges=[[1,"24H"],[7,"7D"],[30,"30D"],[90,"90D"],["mtd","MTD"],["ytd","YTD"],["all","ALL"]];
   const buttons='<div class="admin-spend-ranges" role="group" aria-label="Total spent period">'+
@@ -143,7 +143,7 @@ if(tab==="success"){
         '<div class="success-account-title"><strong>'+esc(x.name)+'</strong><span>'+esc(x.retailer)+'</span></div>'+
         '<div class="success-account-meta"><span>'+esc(x.kind==='linked'?"Linked account":x.kind==='paid'?"Paid customer profile":"Verified assigned profile")+'</span>'+
         '<span>'+x.orders.length+' order'+(x.orders.length===1?'':'s')+'</span>'+
-        '<span>'+esc(missingPrices(x.orders)===x.orders.length?"Amount pending":dollars(verifiedSpent(x.orders)))+'</span></div>'+
+        '<span>'+esc(dollars(verifiedSpent(x.orders)))+'</span></div>'+
         (productSummary?'<p class="success-account-products">'+productSummary+'</p>':'')+
         '</div>';
     }).join("")+'</div>';
@@ -201,7 +201,7 @@ if(tab==="success"){
       userRows=userRows.filter(order=>String(order.accountKey||"unknown")===successAccountKey);
     const accountCount=new Set(userRows.map(order=>order.accountKey||"unknown")).size;
     const userPending=missingPrices(userRows);
-    const userSpend=userRows.length&&userPending===userRows.length?"Pending":dollars(verifiedSpent(userRows));
+    const userSpend=dollars(verifiedSpent(userRows));
     const periodButtons='<div class="success-user-period" role="group" aria-label="'+esc(x.name)+' breakdown time range">'+
       [[1,"24H"],[7,"7D"],[30,"30D"],["mtd","MTD"]].map(([num,label])=>
         '<button type="button" data-success-user-days="'+num+'" data-success-user-id="'+esc(x.id)+
