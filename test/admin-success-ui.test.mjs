@@ -89,7 +89,7 @@ test("Admin Success renders period-matched unmatched, customer products and hit 
 test("membership revenue counts only actual paid subscription invoices in month", async()=>{
   const {stripeMembershipRevenue}=await import("../stripe-membership-revenue.js");
   const stripe={
-    subscriptions:{list:async()=>({data:[{id:"sub_a",items:{data:[{quantity:1,price:{unit_amount:4500,currency:"usd",recurring:{interval:"month",interval_count:1}}}]}},{id:"sub_b",items:{data:[{quantity:1,price:{unit_amount:7000,currency:"usd",recurring:{interval:"month",interval_count:1}}}]}}],has_more:false})},
+    subscriptions:{list:async()=>({data:[{id:"sub_a",status:"active",items:{data:[{quantity:1,price:{unit_amount:4500,currency:"usd",recurring:{interval:"month",interval_count:1}}}]}},{id:"sub_b",status:"active",items:{data:[{quantity:1,price:{unit_amount:7000,currency:"usd",recurring:{interval:"month",interval_count:1}}}]}}],has_more:false})},
     invoices:{list:async()=>({data:[
       {id:"in_a",status:"paid",currency:"usd",amount_paid:1500,created:1791653459,status_transitions:{paid_at:1791653463},parent:{subscription_details:{subscription:"sub_a"}}},
       {id:"in_b",status:"paid",currency:"usd",amount_paid:4550,created:1791477392,status_transitions:{paid_at:1791477396},parent:{subscription_details:{subscription:"sub_b"}}},
