@@ -44056,9 +44056,18 @@ async function syncShippingTrackers() {
         console.error("Shipping tracker managed mailbox scan:", mailboxFailureReason(error));
       }
     }
+    // Safe aggregate observability: track REAL verified checkout prices so
+    // support can distinguish unavailable receipts from a broken UI without
+    // printing retailer order numbers, customer IDs or account credentials.
     console.log("Verified shipping scan:", JSON.stringify({
       trackable: trackable.length,
       communityPriceCandidates: businessPriceCandidates.length,
+      confirmedWithVerifiedPaidAmount: businessPriceCandidates.filter(
+        record => checkoutPaidAmount(record) !== null).length,
+      awaitingVerifiedPaidAmount: businessPriceCandidates.filter(
+        record => checkoutPaidAmount(record) === null).length,
+      verifiedSpendCents: businessPriceCandidates.reduce(
+        (sum,record) => sum + Math.round((checkoutPaidAmount(record) ?? 0) * 100), 0),
       customerMailboxesScanned,
       managedConfigured: managed.configured,
       managedConnected: managedMailboxConnected,
