@@ -47,16 +47,21 @@ if(tab==="success"){
   // Community totals include unmatched confirmed checkouts. Attribution is
   // required ONLY for individual customer and profile performance views.
   const allSuccess=Array.isArray(data.success?.records)?data.success.records.filter(x=>Boolean(x.customerAccountId)):[];
+  // The global Admin Success tracker reports ALL confirmed webhooks, including
+  // those whose customer cannot be identified yet. Per-customer reporting
+  // intentionally continues to use only uniquely attributed records.
+  const allCommunity=Array.isArray(data.success?.communityRecords)
+    ? data.success.communityRecords : allSuccess;
   const now=new Date(), currentTime=Date.now(), day=86400000;
   const days=successDays;
   const cutoff=successPeriodStart(days,now);
-  const inRange=allSuccess.filter(x=>{
+  const inRange=allCommunity.filter(x=>{
     const time=Date.parse(x.checkoutAt);
     return Number.isFinite(time)&&time>=cutoff&&time<=currentTime+60000;
   });
   const dollars=n=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(n)||0);
   const amount=x=>x?.orderTotalKnown&&Number(x.orderTotal)>0?Number(x.orderTotal):0;
-  const verifiedSpent=rows=>rows.reduce((sum,x)=>sum+amount(x),0);
+  const verifiedSpent=rows=>rows.reduce((cents,x)=>cents+Math.round(amount(x)*100),0)/100;
   const missingPrices=rows=>rows.filter(x=>!x.orderTotalKnown).length;
   const safeImage=url=>typeof url==="string"&&/^https:\/\/[^ "'<>]+$/i.test(url);
   const customerList=new Map();
@@ -64,14 +69,19 @@ if(tab==="success"){
     customerList.set(String(x.customerAccountId),String(x.customerName||"Customer"));
   });
   const customers=Array.from(customerList.entries()).sort((a,b)=>a[1].localeCompare(b[1]));
-  if(successCustomerId!=="all"&&!customerList.has(successCustomerId))successCustomerId="all";
+  if(!["all","linked","unmatched"].includes(successCustomerId)&&!customerList.has(successCustomerId))successCustomerId="all";
   const customerSelect='<label class="success-filter-label">VIEW CHECKOUTS FOR<select class="success-filter-select" id="success-customer-filter">'+
-    '<option value="all" '+(successCustomerId==="all"?'selected':'')+'>All linked customer checkouts</option>'+
+    '<option value="all" '+(successCustomerId==="all"?'selected':'')+'>All confirmed checkouts · linked & unmatched</option>'+
+    '<option value="linked" '+(successCustomerId==="linked"?'selected':'')+'>All linked customer checkouts</option>'+
+    '<option value="unmatched" '+(successCustomerId==="unmatched"?'selected':'')+'>Unmatched confirmed checkouts</option>'+
     customers.map(([id,name])=>'<option value="'+esc(id)+'" '+(successCustomerId===id?'selected':'')+'>'+esc(name)+'</option>').join("")+
     '</select></label>';
   let accountSelect="";
-  let filtered=inRange.filter(x=>successCustomerId==="all"?true:String(x.customerAccountId)===successCustomerId);
-  if(successCustomerId!=="all"){
+  let filtered=inRange.filter(x=>successCustomerId==="all" ? true :
+    successCustomerId==="linked" ? Boolean(x.linked ?? x.customerAccountId) :
+    successCustomerId==="unmatched" ? !Boolean(x.linked ?? x.customerAccountId) :
+    String(x.customerAccountId)===successCustomerId);
+  if(!["all","linked","unmatched"].includes(successCustomerId)){
     const accountOptions=new Map();
     allSuccess.filter(x=>String(x.customerAccountId)===successCustomerId).forEach(x=>{
       accountOptions.set(String(x.accountKey||"unknown"),String(x.accountLabel||"Unspecified profile")+" · "+String(x.retailer||"Retailer"));
@@ -91,7 +101,7 @@ if(tab==="success"){
   const ranges=[[1,"24H"],[7,"7D"],[30,"30D"],[90,"90D"],["mtd","MTD"],["ytd","YTD"],["all","ALL"]];
   const buttons='<div class="admin-spend-ranges" role="group" aria-label="Total spent period">'+
     ranges.map(([value,label])=>'<button type="button" data-success-days="'+value+'" aria-pressed="'+(String(value)===String(days))+'">'+label+'</button>').join("")+'</div>';
-  const note=!total?'No linked customer checkouts in this period.':pending?pending+' of '+total+' confirmed checkouts awaiting verified paid amounts.':'All displayed checkout amounts are verified.';
+  const note=!total?'No confirmed checkouts in this period.':pending?pending+' of '+total+' confirmed checkouts without verified paid amounts.':'All displayed checkout amounts are verified.';
   const ticks=days===1?8:days===7?7:12;
   const min=cutoff||Math.min(currentTime,...filtered.map(x=>Date.parse(x.checkoutAt)).filter(Number.isFinite));
   const span=Math.max(1,currentTime-min),buckets=Array(ticks).fill(0);
@@ -99,7 +109,10 @@ if(tab==="success"){
   const max=Math.max(1,...buckets);
   const line=buckets.map((v,i)=>(i?"L":"M")+(16+i*(288/(ticks-1))).toFixed(1)+" "+(76-v/max*56).toFixed(1)).join(" ");
   const trend='<svg class="admin-spend-trend" viewBox="0 0 320 100" preserveAspectRatio="none" role="img" aria-label="Verified spending trend for selected period"><path d="'+line+'" fill="none" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  const hero='<section class="admin-spend-hero"><span class="admin-spend-kicker">TOTAL VERIFIED SPENT · '+rangeNames[days]+'</span><strong>'+shownSpend+'</strong><p>'+total+' confirmed order'+(total===1?'':'s')+' · '+groupedRetailers.size+' retailers · '+esc(note)+'</p>'+trend+'</section>';
+  const scopeLabel=successCustomerId==="all"?"ALL CONFIRMED ORDERS":
+    successCustomerId==="linked"?"LINKED CUSTOMER ORDERS":
+    successCustomerId==="unmatched"?"UNMATCHED CONFIRMED ORDERS":"SELECTED CUSTOMER";
+  const hero='<section class="admin-spend-hero"><span class="admin-spend-kicker">TOTAL VERIFIED SPENT · '+rangeNames[days]+' · '+scopeLabel+'</span><strong>'+shownSpend+'</strong><p>'+total+' confirmed order'+(total===1?'':'s')+' · '+groupedRetailers.size+' retailers · '+esc(note)+'</p>'+trend+'</section>';
   function productsMarkup(rows,limit=30) {
     const goods=new Map();
     rows.forEach(order=>(order.items||[]).forEach(item=>{
@@ -157,9 +170,8 @@ if(tab==="success"){
   const community=data.success?.communityTotals||{};
   const archive=data.success?.historicalSummary||{};
   const combinedNote='Includes '+(archive.historicalCheckouts||0)+' previously reported historical checkouts ('+dollars(archive.historicalSpent||0)+
-    '); their individual receipts and dates are unavailable. '+(archive.reportedReconciliation?
-      dollars(archive.reportedReconciliation)+' owner-reference rounding adjustment. ':'')+
-    'Only Discord-verified orders appear in customer and period breakdowns.';
+    '); their individual receipts and dates are unavailable. '+
+    'Historical receipts cannot be assigned to a customer or period. Only verified final charged amounts count as live spending.';
   const lifetime=panel("Lifetime community checkouts",'<div class="metrics">'+metric("Total confirmed checkouts",community.totalCheckouts??allSuccess.length)+
     metric("Reported total checkout spend",dollars(community.totalSpent||0))+'</div><p>'+esc(combinedNote)+'</p>');
   // A separate, audited Admin-only receipt workflow can fill genuinely
@@ -247,7 +259,7 @@ if(tab==="success"){
     '<span class="success-accordion-count">'+total+' orders</span></summary>'+
     '<div class="success-overview-accordion-body">'+productsMarkup(filtered)+'</div></details>';
   const customersDrop='<details class="success-overview-accordion" data-success-panel="customers" '+
-    (successOpenPanels.has("customers")||successCustomerId!=="all"?'open':'')+
+    (successOpenPanels.has("customers")?'open':'')+
     '><summary><span>Customer breakdowns</span><span class="success-accordion-count">'+
     displayedPeople.length+' users</span></summary><div class="success-overview-accordion-body">'+
     peopleHtml+'</div></details>';
