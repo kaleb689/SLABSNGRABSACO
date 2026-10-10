@@ -19635,36 +19635,26 @@ const response =
           data.submissions ||
           []
         );
-  // Never conflate checkout product spending with monthly membership revenue.
-  const now=Date.now();
-  const unique=new Map();
-  for(const row of submissions){
-    const key=String(row.customerAccountId||row.profile?.email||row.id||"");
-    if(!key)continue;
-    const status=String(row.subscriptionStatus||row.membershipStatus||"").toLowerCase();
-    const until=Date.parse(row.currentPeriodEnd||row.subscriptionEndDate||"");
-    if(!["active","trialing"].includes(status)||!Number.isFinite(until)||until<=now)continue;
-    unique.set(key,row);
+  // Paid subscription invoices are reconciled by the authenticated server
+  // with Stripe; this is cash collected during the UTC calendar month.
+  const countNode=document.getElementById("activePaidMembershipCount");
+  const revenueNode=document.getElementById("activeMembershipRevenue");
+  const revenueNote=document.getElementById("activeMembershipRevenueNote");
+  try {
+    const billingResponse=await fetch("/api/admin/membership-revenue",{
+      credentials:"same-origin",cache:"no-store"
+    });
+    if(!billingResponse.ok)throw Error("Stripe revenue unavailable");
+    const billing=await billingResponse.json();
+    if(!Number.isFinite(Number(billing.monthlyPaidCents)))throw Error("Invalid Stripe invoice amount");
+    countNode.textContent=String(billing.activePaidMemberships);
+    revenueNode.textContent=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(billing.monthlyPaidCents/100);
+    revenueNote.textContent="Paid subscription invoices · "+billing.period+" (UTC)";
+  }catch(error){
+    countNode.textContent="—";
+    revenueNode.textContent="—";
+    revenueNote.textContent="Live Stripe billing temporarily unavailable";
   }
-  const activeRows=[...unique.values()];
-  document.getElementById("activePaidMembershipCount").textContent=String(activeRows.length);
-  // Use only explicit server-provided recurring amounts; unknown is not $0.
-  const cents=activeRows.map(row=>{
-    const centsValue=row.membershipMonthlyAmountCents??row.subscriptionMonthlyAmountCents??row.recurringAmountCents;
-    if(centsValue!=null&&Number.isFinite(Number(centsValue)))return Number(centsValue);
-    const dollarsValue=row.membershipMonthlyAmount??row.subscriptionMonthlyAmount;
-    return dollarsValue!=null&&Number.isFinite(Number(dollarsValue))?Math.round(Number(dollarsValue)*100):null;
-  });
-  const revenue=document.getElementById("activeMembershipRevenue");
-  const note=document.getElementById("activeMembershipRevenueNote");
-  if(cents.every(value=>value!=null)){
-    revenue.textContent=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(cents.reduce((a,b)=>a+b,0)/100);
-    note.textContent="Verified recurring subscription amounts";
-  }else{
-    revenue.textContent="—";
-    note.textContent="Membership billing amounts unavailable in Admin API ("+cents.filter(v=>v==null).length+" missing)";
-  }
-
 
 
   loginWrap.hidden = true;

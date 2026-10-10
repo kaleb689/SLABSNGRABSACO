@@ -1,6 +1,6 @@
 (() => {
 const $=id=>document.getElementById(id),esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let tab="overview",data={customers:[],registered:[],activation:null,availability:null,usage:null,success:{records:[]}},authenticated=false,stream=null;
+let tab="overview",data={customers:[],registered:[],activation:null,availability:null,usage:null,billing:null,success:{records:[]}},authenticated=false,stream=null;
 let successDays=30,successCustomerId="all",successAccountKey="all";
 let successCustomRange=null,successCalendarOpen=false,successCalendarError="";
 let successCalendarDraft={from:"",to:""};
@@ -186,9 +186,9 @@ if(tab==="overview"){
     const amount=person.membershipMonthlyAmount??person.subscriptionMonthlyAmount??plan.membershipMonthlyAmount??plan.subscriptionMonthlyAmount;
     return amount!=null&&Number.isFinite(Number(amount))?Math.round(Number(amount)*100):null;
   });
-  const recurringVerified=recurringCents.every(n=>n!=null);
-  const recurringTotal=recurringVerified?dollars(recurringCents.reduce((sum,n)=>sum+n,0)/100):"—";
-  const recurringNote=recurringVerified?"Verified monthly subscription charges":"Billing amount unavailable for "+recurringCents.filter(n=>n==null).length+" active subscription(s)";
+  const recurringVerified=data.billing?.monthlyPaidCents!=null&&Number.isFinite(Number(data.billing.monthlyPaidCents));
+  const recurringTotal=recurringVerified?dollars(data.billing.monthlyPaidCents/100):"—";
+  const recurringNote=recurringVerified?"Stripe paid membership invoices · "+data.billing.period+" (UTC)":"Live Stripe billing unavailable — retrying";
   c.innerHTML=
     '<section class="admin-overview-hero" aria-label="All-time community checkout overview">'+
       '<span class="admin-overview-hero-label">ALL-TIME COMMUNITY CHECKOUT VALUE</span>'+
@@ -199,8 +199,8 @@ if(tab==="overview"){
         '<span><small>CUSTOMERS</small><b>'+list.length+'</b></span>'+
       '</div></section>'+
     '<div class="metrics admin-overview-grid admin-membership-overview-metrics">'+
-      liveMetric("ACTIVE PAID MEMBERSHIPS",activeMembershipRows.length,activeMembershipRows.length)+
-      liveMetric("MONTHLY MEMBERSHIP PAYMENTS",recurringTotal,recurringVerified?recurringCents.reduce((sum,n)=>sum+n,0)/100:NaN,true)+
+      liveMetric("ACTIVE PAID MEMBERSHIPS",data.billing?.activePaidMemberships??activeMembershipRows.length,Number(data.billing?.activePaidMemberships??activeMembershipRows.length))+
+      liveMetric("MONTHLY MEMBERSHIP PAYMENTS",recurringTotal,recurringVerified?data.billing.monthlyPaidCents/100:NaN,true)+
       liveMetric("Registered customers",list.length,list.length)+
       '<details class="metric admin-activation-metric"><summary>AWAITING ACTIVATION<strong>'+esc(activationCount(a,"awaiting_activation"))+'</strong></summary><div class="admin-activation-list">'+(Array.isArray(a.customers)?a.customers.flatMap(person=>(person.profiles||[]).filter(p=>p.type==="paid"&&p.status==="awaiting_activation").map(p=>'<p>'+esc(person.name||person.email||person.customerName||"Customer")+' · '+esc(p.retailer||"Profile")+'</p>')).join(""):"")+'<a href="/admin.html#profileActivationTracker">OPEN ACTIVATION TOOLS ↗</a></div></details>'+
       '<details class="metric admin-app-users-metric"><summary>APP USERS · 7 DAYS <strong>'+esc(u.activeUsers7d??"—")+'</strong></summary><div class="admin-app-users-list">'+(Array.isArray(u.recent)?u.recent.filter(person=>{const when=Date.parse(person.lastSeenAt||"");return Number.isFinite(when)&&when>=Date.now()-7*86400000}).slice(0,30).map(person=>'<p>'+esc(person.name||person.email||"App user")+' · '+esc(person.lastSeenAt?new Date(person.lastSeenAt).toLocaleDateString():"")+'</p>').join(""):"")+'</div></details></div>'+
@@ -642,9 +642,10 @@ async function refresh(force=false){
       get("/api/admin/profile-activation-tracker"),
       get("/api/managed-availability"),
       get("/api/admin/app-usage"),
-      get("/api/admin/success-overview")
+      get("/api/admin/success-overview"),
+      get("/api/admin/membership-revenue")
     ]);
-    const keys=["customers","registered","activation","availability","usage","success"];
+    const keys=["customers","registered","activation","availability","usage","success","billing"];
     results.forEach((r,i)=>{if(r.status==="fulfilled")data[keys[i]]=r.value;});
     if(results.some(r=>r.status==="rejected"&&r.reason.message==="SESSION_EXPIRED")){
       auth(false);return;
