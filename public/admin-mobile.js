@@ -494,6 +494,8 @@ async function refreshSuccessTracker(){
   try{
     const next=await get("/api/admin/success-overview");
     data.success=next;
+    // Updating a live chart must not dismiss a customer's active date picker.
+    if(mobileControlFocused()){mobileRefreshPending=true;return;}
     if(tab==="success"&&authenticated&&!document.hidden){
       const x=window.scrollX,y=window.scrollY;
       render();
