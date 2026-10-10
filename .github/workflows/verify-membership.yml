@@ -28,6 +28,8 @@ jobs:
       - run: node --check discord-community.js
       - run: node --check discord-checkout-identity.js
       - run: node --check discord-checkout-profile-aliases.js
+      - run: node --check discord-checkout-owner-evidence.js
+      - run: node --test test/discord-checkout-owner-evidence.test.mjs
       - run: node --test test/checkout-reporting.test.mjs
       - run: node --test test/admin-success-ui.test.mjs
       - run: node --test test/admin-success-breakdowns.test.mjs
