@@ -287,14 +287,16 @@ export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
   const pages = Math.max(1, Math.ceil(items.length / 25));
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
   const selected = items.slice(page * 25, page * 25 + 25);
+  const qty = uniformSkuQuantity(items);
+  const skus = "(" + selected.map(item => skuSafeText(item.sku).slice(0, 80)).join(", ") + ")";
   const lines = selected.map(item => skuSafeText(item.sku).slice(0, 35) + " — " +
-    skuSafeText(item.name).slice(0, 60) + " · Qty " + item.quantity);
+    skuSafeText(item.name).slice(0, 60));
   const components = [];
   if (selected.length) components.push({ type: 1, components: [{
     type: 3, custom_id: "sku:adjust:" + sourceId + ":" + page,
-    placeholder: "Pick SKU to change quantity or remove", min_values: 1, max_values: 1,
+    placeholder: "Remove a SKU (not individual Qty)", min_values: 1, max_values: 1,
     options: selected.map(item => ({
-      label: (skuSafeText(item.sku) + " · Qty " + item.quantity).slice(0, 100),
+      label: skuSafeText(item.sku).slice(0, 100),
       description: skuSafeText(item.name).slice(0, 100) || "Selected product",
       value: skuItemToken(item.key)
     }))
@@ -309,8 +311,9 @@ export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
   ] });
   return {
     content: "**Review " + items.length + " Draft SKU(s)** — page " + (page + 1) + " of " + pages +
-      "\nChanges are not saved or shared with the owner until confirmation.",
-    embeds: lines.length ? [{ title: "Your draft products and quantities", description: lines.join("\n"), color: 0x41b6e6 }] : [],
+      "\n**SKUs:** " + skus + "\n**Qty: " + (qty || "choose 1 or 2") + " — applies to ALL SKUs**" +
+      "\nChanges are not shared with the owner until confirmation.",
+    embeds: lines.length ? [{ title: "Selected products", description: lines.join("\n"), color: 0x41b6e6 }] : [],
     components, allowed_mentions: { parse: [] }
   };
 }
@@ -360,23 +363,18 @@ export function changeSkuItems(items, chosen, sourceId, channelId, quantity) {
   return setGlobalSkuQuantity(next, quantity || uniformSkuQuantity(next) || 1);
 }
 export function skuSelectionView(items, notice = "", requestedPage = 0) {
-  const pages = Math.max(1, Math.ceil(items.length / 30));
+  const rows = Array.isArray(items) ? items : [];
+  const pages = Math.max(1, Math.ceil(rows.length / 30));
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
-  const visible = items.length <= 30 ? items : items.slice(page * 30, (page + 1) * 30);
-  const lines = visible.map(item => "**" + skuSafeText(item.name).slice(0, 70) +
-    "**\nSKU: \`" + skuSafeText(item.sku).slice(0, 80) + "\` · Qty: " + item.quantity);
-  const groups = ["", ""];
-  for (const line of lines) {
-    const index = groups[0].length + line.length < 3000 ? 0 : 1;
-    groups[index] += (groups[index] ? "\n\n" : "") + line;
-  }
+  const visible = rows.length <= 30 ? rows : rows.slice(page * 30, (page + 1) * 30);
+  const qty = uniformSkuQuantity(rows);
   const components = [];
   for (let offset = 0; offset < visible.length; offset += 15) {
     components.push({ type: 1, components: [{
       type: 3, custom_id: "sku:manage:" + offset,
-      placeholder: "Select a SKU to change quantity or remove", min_values: 1, max_values: 1,
+      placeholder: "Remove a selected SKU", min_values: 1, max_values: 1,
       options: visible.slice(offset, offset + 15).map(item => ({
-        label: (skuSafeText(item.sku) + " · Qty: " + item.quantity).slice(0, 100),
+        label: skuSafeText(item.sku).slice(0, 80),
         description: skuSafeText(item.name).slice(0, 100) || "Selected product",
         value: skuItemToken(item.key)
       }))
@@ -387,26 +385,44 @@ export function skuSelectionView(items, notice = "", requestedPage = 0) {
     { type: 2, style: 2, label: "Next ▶", custom_id: "sku:mine:" + (page + 1), disabled: page === pages - 1 }
   ] });
   components.push({ type: 1, components: [{ type: 2, style: 2, label: "Refresh my selections", custom_id: "sku:view" }] });
+  // Discord limits embeds to 4096 characters. Split only if the SKU line would exceed 3200.
+  const sections = [], limit = 3200;
+  let group = [];
+  for(const item of visible) {
+    const sku = skuSafeText(item.sku).slice(0,80);
+    if(group.length && group.join(", ").length + sku.length + 3 > limit) {
+      sections.push(group);group = [];
+    }
+    group.push(sku);
+  }
+  if(group.length) sections.push(group);
   return {
-    content: (notice ? notice + "\n\n" : "") + "**Your selected SKUs (" + items.length + ")**" +
-      (items.length ? "\nChoose a selected SKU below to change its quantity or remove it." : "\nYou have no selected SKUs.") +
-      (pages > 1 ? "\nPage " + (page + 1) + " of " + pages + "; use the page buttons to view everything." : ""),
-    embeds: groups.filter(Boolean).map(description => ({ title: "Your current selections", description, color: 0x41b6e6 })),
+    content: (notice ? notice + "\n\n" : "") + "**Your selected SKUs (" + rows.length + ")**" +
+      (rows.length ? "\nUse the dropdown to remove a SKU. Quantity is one choice for all products." : "\nYou have no selected SKUs.") +
+      (pages > 1 ? "\nPage " + (page + 1) + " of " + pages : ""),
+    embeds: sections.map((part,i) => ({ title: "Your selected SKUs" + (sections.length>1 ? " ("+(i+1)+")":""),
+      description: "**SKUs:**\n(" + part.join(", ") + ")\n**Qty: " +
+        (qty || "Choose 1 or 2 before submitting") + (qty ? " — for ALL selected SKUs" : "") + "**",
+      color: 0x41b6e6 })),
     components, allowed_mentions: { parse: [] }
   };
 }
 export function skuAdminReviewPayload(items, userId, requestedPage = 0) {
-  const pages = Math.max(1, Math.ceil(items.length / 20));
+  const rows = Array.isArray(items) ? items : [];
+  const pages = Math.max(1, Math.ceil(rows.length / 20));
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
-  const selected = items.slice(page * 20, (page + 1) * 20);
+  const selected = rows.slice(page * 20, (page + 1) * 20);
+  const quantity = uniformSkuQuantity(rows) || 1;
   const details = selected.map(item =>
-    "**" + skuSafeText(item.name).slice(0, 70) + "** · SKU \`" +
-    skuSafeText(item.sku).slice(0, 70) + "\` · Qty " + item.quantity);
+    "**" + skuSafeText(item.name).slice(0, 70) + "** · SKU " +
+    skuSafeText(item.sku).slice(0, 70));
   return {
-    content: "**Confirmed SKU selections: " + items.length + " total** · Page " + (page + 1) + " of " + pages,
+    content: "**Confirmed SKU selections: " + rows.length + " total** · Page " + (page + 1) + " of " + pages,
     embeds: selected.length ? [{
       title: "Products to run (" + (page * 20 + 1) + "–" + (page * 20 + selected.length) + ")",
-      description: details.join("\n") || "No SKUs selected.", color: 0x41b6e6
+      description: "**SKUs:**\n(" + selected.map(item => skuSafeText(item.sku).slice(0,80)).join(", ") +
+        ")\n**Qty: " + quantity + " — for ALL selected SKUs**\n\n" + details.join("\n"),
+      color: 0x41b6e6
     }] : [],
     components: pages > 1 ? [{ type: 1, components: [
       { type: 2, style: 2, label: "◀ Previous", custom_id: "sku:admin:" + userId + ":" + (page - 1), disabled: page === 0 },
