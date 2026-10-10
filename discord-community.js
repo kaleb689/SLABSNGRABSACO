@@ -2217,7 +2217,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const records = await readSkuFile(skuSelectionsFile);
       const record = records[userId] || { username, messageId: null, items: [] };
       const other = (record.items || []).filter(item => !item.key.startsWith(channelId + ":" + sourceId + ":"));
-      const next = setGlobalSkuQuantity([...other, ...draft.items], uniformSkuQuantity(draft.items) || 1);
+      const chosenQty = draft.items.length ? uniformSkuQuantity(draft.items) : uniformSkuQuantity(other);
+      const next = setGlobalSkuQuantity([...other, ...draft.items], chosenQty || 1);
       if (next.length > 200) throw new Error("You can have up to 200 SKUs across drops. Remove older selections first.");
       const skipTonightDate = draft.items.length && channelId === tonightChannelId ? undefined : record.skipTonightDate;
       const skippedUpcomingDrops = draft.items.length && channelId !== tonightChannelId
