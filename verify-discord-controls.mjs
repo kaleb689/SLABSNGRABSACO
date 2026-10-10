@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, isNewDropPost, skuControlPayload} from './discord-community.js';
+import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload} from './discord-community.js';
 const source = await fs.readFile('discord-community.js', 'utf8');
 const block = source.slice(source.indexOf('  const skuMenusFile ='), source.indexOf('  async function onQuestionMessage'));
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'discord-controls-'));
@@ -29,7 +29,7 @@ async function api(route, method='GET', payload) {
   return existing;
 }
 const deps={fs,path,crypto,dataDir,tonightChannelId,retailerDropLabels:{},dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',ownerId:owner,
-  parseDropSkus,changeSkuItems,skuSelectionView,isNewDropPost,skuControlPayload,api,
+  parseDropSkus,changeSkuItems,skuSelectionView,skuOwnerDetails,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),discordCommunityStatus:{}};
@@ -57,6 +57,7 @@ try {
   await controls.recordSkuSelection(owner,'member',upPost.id,'all',2,upcoming);
   record=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[owner];
   assert.ok(record.skipTonightDate,'Upcoming selection preserves tonight opt-out');
+  assert.ok(record.items.every(item=>item.quantity===2),'One quantity applies to all currently selected SKUs');
   await controls.recordSkuSelection(owner,'member',nightPost.id,'all',1,tonightChannelId);
   record=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[owner];
   assert.equal(record.skipTonightDate,undefined);
@@ -93,8 +94,9 @@ try {
   assert.ok(savedBatch.every(item=>item.quantity===2));
   const batchRecord=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[batchUser];
   const adminBatch=messages.get(batchRecord.messageId);
-  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/TCG Booster One/);
-  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/TCG Booster Two/);
+  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/\(ABC1234, XYZ5678\)/);
+  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/Qty: 2/);
+  assert.doesNotMatch(adminBatch.embeds.map(item=>item.description).join('\n'),/ABC1234 x2|XYZ5678 x2/);
   await assert.rejects(controls.confirmSkuDraft(batchUser,'batch-member',batchPost.id,upcoming),/draft is no longer active/);
   nightPost.content=Array.from({length:16},(_,i)=>`Product ${i}\nSKU: ABC${i}`).join('\n');
   await controls.ensureSkuControls(nightPost);
