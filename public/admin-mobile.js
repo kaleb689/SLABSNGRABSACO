@@ -3,6 +3,7 @@ const $=id=>document.getElementById(id),esc=v=>String(v??"").replace(/[&<>"']/g,
 let tab="overview",data={customers:[],activation:null,availability:null,usage:null,success:{records:[]}},authenticated=false,stream=null;
 let successDays=30,successCustomerId="all",successAccountKey="all";
 const successExpandedUsers=new Set();
+const successUserDays=new Map();
 let customerSearchText="", mobileRefreshTimer=null, mobileRefreshPending=false, mobileRefreshRunning=false;
 const mobileControlFocused=()=>{
   const active=document.activeElement;
@@ -101,12 +102,15 @@ if(tab==="success"){
       if(!entry.imageUrl)entry.imageUrl=item.imageUrl||"";
       goods.set(key,entry);
     }));
-    return Array.from(goods.values()).sort((a,b)=>b.quantity-a.quantity||a.name.localeCompare(b.name)).slice(0,limit).map(x=>
-      '<div class="item" style="display:flex;align-items:center;gap:12px;margin-top:8px">'+
-      '<img alt="" loading="lazy" src="'+esc(safeImage(x.imageUrl)?x.imageUrl:"/slabsngrabs-aco-logo-transparent.png")+'" style="width:48px;height:48px;object-fit:contain;flex:none;border-radius:8px;background:#102638">'+
-      '<div style="flex:1;min-width:0"><strong>'+esc(x.name)+'</strong><small>'+esc(x.retailer)+'</small></div>'+
-      '<strong style="color:#70e8ff;white-space:nowrap">×'+x.quantity+'</strong></div>').join("")||
-      '<p>No purchased product details are available for these orders.</p>';
+    const products=Array.from(goods.values()).sort((a,b)=>b.quantity-a.quantity||a.name.localeCompare(b.name));
+    const visible=products.slice(0,limit);
+    if(!visible.length)return '<p class="success-empty">No products from linked customer checkouts in this period.</p>';
+    return '<div class="success-products-list">'+visible.map(x=>
+      '<div class="success-product-row">'+
+      '<img alt="" loading="lazy" src="'+esc(safeImage(x.imageUrl)?x.imageUrl:"/slabsngrabs-aco-logo-transparent.png")+'">'+
+      '<div class="success-product-copy"><strong>'+esc(x.name)+'</strong><small>'+esc(x.retailer)+'</small></div>'+
+      '<span class="success-product-quantity">×'+x.quantity+'</span></div>').join("")+'</div>'+
+      (products.length>visible.length?'<p class="success-overflow">+'+(products.length-visible.length)+' more products in this period</p>':'');
   }
   function accountsMarkup(rows) {
     const accounts=new Map();
@@ -116,14 +120,24 @@ if(tab==="success"){
         kind:String(x.accountKind||"unclassified"),orders:[]});
       accounts.get(key).orders.push(x);
     });
-    return Array.from(accounts.values()).sort((a,b)=>b.orders.length-a.orders.length).map(x=>
-      '<div class="item"><strong>'+esc(x.name)+' · '+esc(x.retailer)+'</strong>'+
-      '<small>'+esc(x.kind==='linked'?"Linked/rented account":x.kind==='paid'?"Paid customer profile":"Verified account (assignment type unavailable)")+
-      ' · '+x.orders.length+' checkout'+(x.orders.length===1?'':'s')+
-      ' · verified spend '+dollars(verifiedSpent(x.orders))+'</small>'+
-      (missingPrices(x.orders)?'<small>'+missingPrices(x.orders)+' order amount'+(missingPrices(x.orders)===1?'':'s')+' pending</small>':'')+
-      '<div style="margin-top:7px">'+productsMarkup(x.orders,12)+'</div></div>').join("")||
-      '<p>No verified account-level purchases found in this period.</p>';
+    const entries=Array.from(accounts.values()).sort((a,b)=>b.orders.length-a.orders.length);
+    if(!entries.length)return '<p class="success-empty">No linked account checkouts in this period.</p>';
+    return '<div class="success-account-list">'+entries.map(x=>{
+      const tally=new Map();
+      x.orders.forEach(order=>(order.items||[]).forEach(item=>{
+        const name=String(item.name||"Product");
+        tally.set(name,(tally.get(name)||0)+Math.max(0,Number(item.quantity)||0));
+      }));
+      const productSummary=[...tally.entries()].slice(0,5).map(([name,qty])=>
+        esc(name)+' ×'+Math.floor(qty)).join(' · ');
+      return '<div class="success-account-row">'+
+        '<div class="success-account-title"><strong>'+esc(x.name)+'</strong><span>'+esc(x.retailer)+'</span></div>'+
+        '<div class="success-account-meta"><span>'+esc(x.kind==='linked'?"Linked account":x.kind==='paid'?"Paid customer profile":"Verified assigned profile")+'</span>'+
+        '<span>'+x.orders.length+' order'+(x.orders.length===1?'':'s')+'</span>'+
+        '<span>'+esc(missingPrices(x.orders)===x.orders.length?"Amount pending":dollars(verifiedSpent(x.orders)))+'</span></div>'+
+        (productSummary?'<p class="success-account-products">'+productSummary+'</p>':'')+
+        '</div>';
+    }).join("")+'</div>';
   }
   const palette=["#32d9f9","#a48dff","#ffcf68","#5be1a4","#fe8bae","#ff9b66"];
   const pie=Array.from(groupedRetailers.entries()).sort((a,b)=>b[1]-a[1]);
