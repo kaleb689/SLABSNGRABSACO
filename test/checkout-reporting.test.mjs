@@ -70,6 +70,7 @@ test("public and Admin endpoints read one authoritative live source and keep the
   const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
   const mobile=readFileSync(new URL("../public/admin-mobile.js",import.meta.url),"utf8");
   const site=readFileSync(new URL("../public/app.js",import.meta.url),"utf8");
+  const home=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
   const publicStart=server.indexOf('"/api/public/success"');
   const adminStart=server.indexOf('"/api/admin/success-overview"');
   const publicRoute=server.slice(publicStart,server.indexOf("async function saveSuccessCheckouts(",publicStart));
@@ -92,4 +93,5 @@ test("public and Admin endpoints read one authoritative live source and keep the
   assert.match(mobile,/orderTotalKnown/);
   assert.match(site,/rollSuccessMetric\("public-success-spent"/);
   assert.doesNotMatch(site,/public-success-spent-note|public-success-historical-products/);
+  assert.doesNotMatch(home,/id="public-success-spent-note"|id="public-success-historical-products"/);
 });
