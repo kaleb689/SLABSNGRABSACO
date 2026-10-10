@@ -214,7 +214,7 @@ if(tab==="success"){
     if(!people.has(id))people.set(id,{id,name:String(x.customerName||"Customer"),orders:[]});
     people.get(id).orders.push(x);
   });
-  const displayedPeople=Array.from(people.values()).filter(x=>successCustomerId==="all"||x.id===successCustomerId)
+  const displayedPeople=Array.from(people.values()).filter(x=>["all","linked"].includes(successCustomerId)||x.id===successCustomerId)
     .sort((a,b)=>Math.max(...b.orders.map(o=>Date.parse(o.checkoutAt)||0))-
       Math.max(...a.orders.map(o=>Date.parse(o.checkoutAt)||0))||a.name.localeCompare(b.name));
   const peopleHtml=displayedPeople.map(x=>{
@@ -280,8 +280,10 @@ if(tab==="success"){
   }));
   c.querySelector("#success-customer-filter")?.addEventListener("change",event=>{
     successCustomerId=event.target.value;successAccountKey="all";
-    successOpenPanels.add("customers");
-    if(successCustomerId!=="all")successOpenCustomerCards.add(successCustomerId);
+    if(!["all","linked","unmatched"].includes(successCustomerId)) {
+      successOpenPanels.add("customers");
+      successOpenCustomerCards.add(successCustomerId);
+    }
     render();
   });
   c.querySelector("#success-account-filter")?.addEventListener("change",event=>{
