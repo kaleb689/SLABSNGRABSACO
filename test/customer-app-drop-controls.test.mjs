@@ -127,6 +127,28 @@ test('Membership is centered, and the Admin app shows right-side tier badges', (
   assert.match(app,/if \(view === 'drops'\) html = dropEditor.render\(\)/);
   assert.match(admin,/class="admin-customer-tier-badge"/);
   assert.match(admin,/admin-customer-tier-10|tier-' \+ count/);
-  assert.match(page,/href="\/app-drop-controls\.css\?v=20261010-member-v3"/);
-  assert.match(adminPage,/href="\/admin-customer-tiers\.css\?v=20261010-member-v3"/);
+  assert.match(page,/href="\/app-drop-controls\.css\?v=20261010-approved-v4"/);
+  assert.match(adminPage,/href="\/admin-customer-tiers\.css\?v=20261010-approved-v4"/);
+});
+
+
+test('approved Membership layout renders real subscription values and does not duplicate the old membership panel', () => {
+  const app=readFileSync(new URL('../public/app-dashboard.js',import.meta.url),'utf8');
+  const styles=readFileSync(new URL('../public/app-drop-controls.css',import.meta.url),'utf8');
+  const admin=readFileSync(new URL('../public/admin-mobile.js',import.meta.url),'utf8');
+  const adminStyles=readFileSync(new URL('../public/admin-customer-tiers.css',import.meta.url),'utf8');
+  assert.match(app,/membership\?\.profiles/);
+  assert.match(app,/sng-membership-details/);
+  assert.match(app,/membership-period-end/);
+  assert.match(app,/membership-days-remaining/);
+  assert.match(app,/data-app-upgrade/);
+  assert.match(app,/preserveProfileTab/);
+  assert.match(styles,/data-profile-tab="membership"\] #customer-dashboard #account-tab-membership/);
+  assert.match(styles,/sng-app-nav > button\[data-app-view="profile"\]\.active/);
+  for (const count of ['10','20','50']) assert.match(styles,new RegExp('sng-membership-hero\\.sng-tier-'+count));
+  assert.match(admin,/admin-customer-renewal/);
+  assert.match(admin,/currentPeriodEnd/);
+  assert.match(admin,/admin-customer-tier-count/);
+  assert.match(adminStyles,/Approved Admin customer layout/);
+  assert.match(adminStyles,/admin-customer-tier-badge/);
 });
