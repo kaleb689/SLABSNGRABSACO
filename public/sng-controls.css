@@ -1,0 +1,123 @@
+/* Cohesive, vibrant, accessible controls across customer and full Admin UIs. */
+/* Admin web dashboard: retain destructive-action colors and existing workflows. */
+body.admin-page #dashboard :is(button,.admin-edit-button,.admin-save-button,.admin-head-actions a),
+body.admin-page .admin-login-card button {
+  border-radius:14px;min-height:44px;font-weight:820;
+  transition:background .16s,border-color .16s,box-shadow .16s,transform .16s;
+  touch-action:manipulation;
+}
+body.admin-page #dashboard :is(.admin-edit-button,.admin-save-button,.admin-save-button,.primary,.admin-head-actions button:not(.admin-theme-switch)),
+body.admin-page .admin-login-card button.primary {
+  color:#fff;border:1px solid #5ccff8;
+  background:linear-gradient(115deg,#8058e9,#247bd0 66%,#13acbf);
+  box-shadow:0 7px 20px rgba(59,119,221,.2),inset 0 1px rgba(255,255,255,.18);
+}
+body.admin-page #dashboard button:not(.managed-delete-button):not(.danger):not(.delete-button):active {transform:scale(.985);}
+body.admin-page :is(select,.admin-feature-panel summary,.admin-pool-disclosure summary) {
+  border-radius:13px;
+}
+body.admin-page select {
+  appearance:none;-webkit-appearance:none;min-height:44px;
+  background-color:#14273a;color:#e9faff;
+  border:1px solid #5383aa;padding:10px 44px 10px 12px;
+  background-image:linear-gradient(45deg,transparent 50%,#5ce1fa 50%),linear-gradient(135deg,#5ce1fa 50%,transparent 50%);
+  background-position:calc(100% - 22px) center,calc(100% - 16px) center;
+  background-size:6px 6px,6px 6px;background-repeat:no-repeat;
+}
+body.admin-page #dashboard :is(.admin-feature-panel>summary,.admin-pool-disclosure>summary,.customer-order summary) {
+  border:1px solid rgba(97,163,213,.4);border-radius:13px;
+  background:linear-gradient(105deg,rgba(104,74,214,.15),rgba(18,172,208,.1));
+  padding:13px 16px;color:#c5ecff;
+}
+body.admin-page[data-admin-theme="light"] select {
+  background-color:#fff;color:#1b3552;border-color:#9ebdde;
+  background-image:linear-gradient(45deg,transparent 50%,#7052cb 50%),linear-gradient(135deg,#7052cb 50%,transparent 50%);
+}
+body.admin-page[data-admin-theme="light"] #dashboard :is(.admin-feature-panel>summary,.admin-pool-disclosure>summary,.customer-order summary) {
+  color:#30527d;background:linear-gradient(115deg,#f2edff,#e8f7ff);border-color:#c6d5ed;
+}
+/* Customer storefront forms, drop choices and saved profile controls. */
+body:not(.admin-page) :is(button.primary,button.secondary,.account-card button.primary,.account-card button.secondary,.account-action-button) {
+  min-height:44px;border-radius:14px;font-weight:850;
+  transition:background .16s,transform .16s,box-shadow .16s,border-color .16s;
+  touch-action:manipulation;
+}
+body:not(.admin-page) :is(button.primary,.account-card button.primary) {
+  background:linear-gradient(115deg,#8054ee,#237bd4 65%,#19b9ac);
+  color:white;border:1px solid rgba(120,223,251,.8);
+  box-shadow:0 8px 20px rgba(80,83,225,.25);
+}
+body:not(.admin-page) :is(button.secondary,.account-card button.secondary,.account-action-button) {
+  background:linear-gradient(115deg,rgba(100,76,199,.23),rgba(13,158,195,.2));
+  color:#d8ebff;border:1px solid #698cd3;
+  box-shadow:inset 0 1px rgba(255,255,255,.11);
+}
+body:not(.admin-page) :is(select,.account-card select,#my-profile select) {
+  appearance:none;-webkit-appearance:none;min-height:45px;border-radius:13px;
+  padding:10px 43px 10px 12px;border:1px solid #538ab4;
+  background-color:#111f32;color:#f3f9ff;
+  background-image:linear-gradient(45deg,transparent 50%,#57dbf5 50%),linear-gradient(135deg,#57dbf5 50%,transparent 50%);
+  background-position:calc(100% - 21px) center,calc(100% - 15px) center;
+  background-size:6px 6px,6px 6px;background-repeat:no-repeat;
+}
+body:not(.admin-page) :is(details>summary,.account-card summary) {
+  cursor:pointer;transition:background .16s,border-color .16s;
+}
+body:not(.admin-page) :is(details>summary,.account-card summary):hover {
+  background:linear-gradient(110deg,rgba(133,86,240,.13),rgba(44,179,209,.13));
+}
+body:not(.admin-page) :is(button,select,summary):focus-visible,
+body.admin-page :is(button,select,summary):focus-visible {
+  outline:3px solid #4dd7f5;outline-offset:3px;
+}
+/* Customer native app ranges and filters: colored states, readable and tappable. */
+.app-dashboard .sng-range button,
+.app-dashboard .sng-status-filters button,
+.app-dashboard .sng-profile-menu button {
+  min-height:44px;border-radius:14px;border:1px solid #4c5481;
+  background:linear-gradient(135deg,rgba(116,77,226,.22),rgba(35,144,195,.14));
+  color:#d6d8fb;box-shadow:inset 0 1px rgba(255,255,255,.08);
+  font-weight:850;transition:background .15s,transform .15s;
+}
+.app-dashboard .sng-range button:nth-child(3n+2),.app-dashboard .sng-status-filters button:nth-child(3n+2) {
+  background:linear-gradient(130deg,rgba(36,147,217,.23),rgba(41,207,207,.12));color:#91e9ff;
+}
+.app-dashboard .sng-range button:nth-child(3n),.app-dashboard .sng-status-filters button:nth-child(3n) {
+  background:linear-gradient(130deg,rgba(38,172,142,.2),rgba(36,147,211,.13));color:#96f0d2;
+}
+.app-dashboard .sng-range button[aria-pressed="true"],
+.app-dashboard .sng-status-filters button[aria-pressed="true"],
+.app-dashboard .sng-profile-menu button[aria-pressed="true"] {
+  color:white;background:linear-gradient(115deg,#7e56eb,#2681d5 68%,#18b6b7);
+  border-color:#95dfff;box-shadow:0 7px 19px rgba(78,83,224,.29);
+}
+.app-dashboard .sng-range button:active,
+.app-dashboard .sng-status-filters button:active {transform:scale(.96);}
+.app-dashboard .sng-order-card summary {
+  background:linear-gradient(120deg,rgba(107,73,226,.13),rgba(27,174,212,.09));
+  border-radius:16px;min-height:72px;
+}
+.app-dashboard .sng-order-card summary::after {color:#70e5fa;}
+.app-dashboard .sng-settings-list button {
+  border-color:#5864a2;
+  background:linear-gradient(115deg,rgba(87,57,182,.27),rgba(23,113,166,.2));color:#f4f6ff;
+}
+.app-dashboard[data-app-theme="day"] .sng-range button,
+.app-dashboard[data-app-theme="day"] .sng-status-filters button,
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button {
+  background:linear-gradient(115deg,#f1edff,#e8f9ff);border-color:#c3c5ea;color:#55509b;
+}
+.app-dashboard[data-app-theme="day"] .sng-range button[aria-pressed="true"],
+.app-dashboard[data-app-theme="day"] .sng-status-filters button[aria-pressed="true"],
+.app-dashboard[data-app-theme="day"] .sng-profile-menu button[aria-pressed="true"] {
+  background:linear-gradient(115deg,#744ce4,#1683cb);border-color:#a3c9fb;color:white;
+}
+.app-dashboard[data-app-theme="day"] .sng-settings-list button {
+  color:#29416b;background:linear-gradient(120deg,#f2edff,#ecfaff);border-color:#c6c9ee;
+}
+.app-dashboard[data-app-theme="day"] .sng-order-card summary {background:linear-gradient(110deg,#f3eeff,#edfaff);}
+.app-dashboard[data-app-theme="day"] :is(select,.account-card select) {
+  background-color:#fff;color:#1b3354;border-color:#b9cde1;
+  background-image:linear-gradient(45deg,transparent 50%,#7052cd 50%),linear-gradient(135deg,#7052cd 50%,transparent 50%);
+}
+@media(prefers-reduced-motion:reduce){body.admin-page button,body:not(.admin-page) button{transition:none!important}}
