@@ -65,7 +65,7 @@ if(tab==="success"){
   });
   const customers=Array.from(customerList.entries()).sort((a,b)=>a[1].localeCompare(b[1]));
   if(successCustomerId!=="all"&&!customerList.has(successCustomerId))successCustomerId="all";
-  const customerSelect='<label style="display:block;margin:0 0 13px;color:var(--m-muted,#afbed1)">VIEW CHECKOUTS FOR<select id="success-customer-filter" style="width:100%;margin-top:8px;min-height:43px;border-radius:11px;padding:9px 12px;color:var(--m-text,#fff);background:var(--m-panel,#141f2b);border:1px solid var(--m-border,#36627a)">'+
+  const customerSelect='<label class="success-filter-label">VIEW CHECKOUTS FOR<select class="success-filter-select" id="success-customer-filter">'+
     '<option value="all" '+(successCustomerId==="all"?'selected':'')+'>All linked customer checkouts</option>'+
     customers.map(([id,name])=>'<option value="'+esc(id)+'" '+(successCustomerId===id?'selected':'')+'>'+esc(name)+'</option>').join("")+
     '</select></label>';
@@ -77,7 +77,7 @@ if(tab==="success"){
       accountOptions.set(String(x.accountKey||"unknown"),String(x.accountLabel||"Unspecified profile")+" · "+String(x.retailer||"Retailer"));
     });
     if(!accountOptions.has(successAccountKey))successAccountKey="all";
-    accountSelect='<label style="display:block;margin:0 0 14px;color:var(--m-muted,#afbed1)">ACCOUNT / PROFILE<select id="success-account-filter" style="width:100%;margin-top:8px;min-height:43px;border-radius:11px;padding:9px 12px;color:var(--m-text,#fff);background:var(--m-panel,#141f2b);border:1px solid var(--m-border,#36627a)">'+
+    accountSelect='<label class="success-filter-label">ACCOUNT / PROFILE<select class="success-filter-select" id="success-account-filter">'+
       '<option value="all">All of this customer&#39;s accounts</option>'+
       Array.from(accountOptions.entries()).map(([key,name])=>'<option value="'+esc(key)+'" '+(successAccountKey===key?'selected':'')+'>'+esc(name)+'</option>').join("")+
       '</select></label>';
@@ -162,6 +162,12 @@ if(tab==="success"){
     'Only Discord-verified orders appear in customer and period breakdowns.';
   const lifetime=panel("Lifetime community checkouts",'<div class="metrics">'+metric("Total confirmed checkouts",community.totalCheckouts??allSuccess.length)+
     metric("Reported total checkout spend",dollars(community.totalSpent||0))+'</div><p>'+esc(combinedNote)+'</p>');
+  // A separate, audited Admin-only receipt workflow can fill genuinely
+  // missing final prices without creating orders or guessing their owners.
+  const priceReview=pending||Number(community.pricePendingCheckouts||0)>0
+    ?'<section class="panel success-price-action"><h2>Verify missing checkout prices</h2>'+
+     '<p>Confirmed checkouts without a final charged amount cannot increase verified spend. Check real retailer receipts to update totals.</p>'+
+     '<a href="/admin-checkout-prices.html">REVIEW UNVERIFIED TOTALS ↗</a></section>':"";
   const unmatchedMeta=data.success?.unmatchedRecent||{};
   const unmatchedByRetailer=Array.isArray(unmatchedMeta.byRetailer)?unmatchedMeta.byRetailer:[];
   const missingPkC=unmatchedByRetailer
@@ -248,7 +254,7 @@ if(tab==="success"){
   c.innerHTML=buttons+customerSelect+accountSelect+hero+
     '<div class="metrics admin-success-metrics">'+metric("Confirmed orders",total)+
       metric("Retailers",groupedRetailers.size)+'</div>'+
-    unmatchedPanel+lifetime+panel("Orders by retailer",donut+legend)+
+    priceReview+unmatchedPanel+lifetime+panel("Orders by retailer",donut+legend)+
     productsDrop+customersDrop+scanStatus;
   c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{
     successDays=/^(mtd|ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);

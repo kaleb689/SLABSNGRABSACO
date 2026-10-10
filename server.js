@@ -15,6 +15,7 @@ import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checko
 import { managedAccountEmailEvidence } from "./discord-checkout-owner-evidence.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal } from "./checkout-price-policy.js";
+import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
@@ -38750,6 +38751,87 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
   }
 });
 
+/**
+ * Manual verified-price fallback for orders whose external webhook omits the
+ * paid amount. Admins must check the actual retailer receipt, and the entered
+ * order number must exactly match an existing authoritative Discord checkout.
+ * Never create a checkout or assign an unverified customer from this endpoint.
+ */
+app.get("/api/admin/checkout-paid-verification", requireAdmin, async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1)
+      return res.status(409).json({ error: "One authoritative checkout channel is required." });
+    const [records, accounts] = await Promise.all([
+      getSuccessCheckouts(), getCustomerAccounts()
+    ]);
+    const names = new Map(accounts.map(account => [
+      String(account.id), adminCheckoutCustomerName(account)
+    ]));
+    const pending = authoritativeDiscordCheckouts(records, source.channels)
+      .filter(record => confirmedDiscordPurchase(record) &&
+        checkoutPaidAmount(record) === null)
+      .sort((a, b) => Date.parse(b.checkoutAt || 0) - Date.parse(a.checkoutAt || 0));
+    return res.json({ ok:true, pendingCount:pending.length,
+      orders:pending.slice(0, 250).map(record => ({
+        id:record.id, retailer:normalizeSuccessRetailer(record.retailer),
+        checkoutAt:record.checkoutAt || null,
+        orderNumber:clean(record.orderNumber, 110),
+        customer: names.get(String(record.customerAccountId || "")) || "Unmatched community checkout",
+        items:(Array.isArray(record.items) ? record.items : []).map(item => ({
+          name:publicSuccessProductName(item.name),
+          quantity:Math.max(1, Math.floor(Number(item.quantity)||1))
+        })).filter(item => item.name && isSafeDiscordCheckoutProductName(item.name) &&
+          !/@|\\b(?:password|account|cvv|security\\s*code|address|order\\s*id)\\b/i.test(item.name)).slice(0,6)
+      })) });
+  } catch (error) {
+    console.error("Checkout price review:", error?.code || error?.name || "review_failed");
+    return res.status(503).json({ error: "Could not retrieve checkouts awaiting verified totals." });
+  }
+});
+
+app.post("/api/admin/checkout-paid-verification", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.body?.id || "").trim();
+    if (!/^discord:\d{17,22}:\d{17,22}$/.test(id))
+      return res.status(400).json({ error: "Select a valid existing Discord checkout." });
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1)
+      return res.status(409).json({ error: "The authoritative checkout source is unavailable." });
+    const result = await withSuccessStoreLock(async () => {
+      const records = await getSuccessCheckouts();
+      const order = records.find(item => item.id === id &&
+        isAuthoritativeCheckoutRecord(item, source.channels[0]) &&
+        confirmedDiscordPurchase(item) && isVerifiedDiscordCheckout(item));
+      if (!order) return {status:404,error:"The confirmed checkout was not found."};
+      if (checkoutPaidAmount(order) !== null)
+        return {status:409,error:"A verified final paid amount already exists. No value was replaced."};
+      const total = adminVerifiedReceiptTotal(req.body, order);
+      if (total === null)
+        return {status:400,error:"Verify the retailer receipt and re-enter its exact order number and final charged amount."};
+      order.orderTotal = total;
+      order.orderTotalBasis = "retailer_receipt";
+      order.priceSource = "admin_verified_retailer_receipt";
+      order.verifiedPaidAt = new Date().toISOString();
+      await saveSuccessCheckouts(records);
+      const auditFile = path.join(DATA_DIR, "checkout-price-verification-audit.json");
+      const prior = await readJson(auditFile, []);
+      await writeJson(auditFile, [...(Array.isArray(prior)?prior:[]),
+        { sourceId:order.id, retailer:order.retailer, paidTotal:total,
+          verifiedAt:order.verifiedPaidAt, method:"admin_checked_retailer_receipt" }]);
+      if (order.customerAccountId) announceSuccessCheckout(order.customerAccountId);
+      broadcastLiveDataChange("checkout-paid-verified");
+      queueDiscordSuccessScan(350);
+      return {status:200,ok:true,paidTotal:total,customerLinked:Boolean(order.customerAccountId)};
+    });
+    return res.status(result.status).json(result);
+  } catch (error) {
+    console.error("Admin checkout verified price:", error?.code || error?.name || "verification_failed");
+    return res.status(503).json({error:"Unable to save verified price."});
+  }
+});
+
 app.get("/api/admin/discord-success-status", requireAdmin, async (_req, res) => {
   const config = await resolvedDiscordSuccessConfig();
   const validChannelId = /^\d{17,22}$/.test(config.channelId);
@@ -39909,10 +39991,7 @@ function buildSuccessActivity(
 
     existing.count += 1;
 
-    existing.value +=
-      Number(
-        record.orderTotal || 0
-      ) || 0;
+    existing.value += record.orderTotalKnown ? Number(record.orderTotal || 0) : 0;
 
     daily.set(
       key,
@@ -40050,14 +40129,8 @@ function buildSuccessSummary(
     );
 
   const checkoutValue =
-    rangeRecords.reduce(
-      (sum, record) =>
-        sum +
-        Number(
-          record.orderTotal || 0
-        ),
-      0
-    );
+    rangeRecords.reduce((sum, record) =>
+      sum + (record.orderTotalKnown ? Number(record.orderTotal || 0) : 0), 0);
 
   const dailyCounts =
     new Map();
@@ -43842,24 +43915,31 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
           receivedAt: message.internalDate || message.envelope?.date
         });
         const account = accountsById.get(String(record?.customerAccountId || ""));
-        if (!account || account.disabled === true) continue;
+        // A trusted OWNER-MANAGED business mailbox can verify the final paid
+        // amount of an unmatched webhook checkout without assigning its owner.
+        // Customer mailboxes can enrich only their own already-attributed hits.
+        const unmatchedBusinessReceipt = Boolean(mailbox.managedHost &&
+          record && !record.customerAccountId);
+        if ((!account || account.disabled === true) && !unmatchedBusinessReceipt) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
-        if (receiptTotal && !cancelledOrder(record) &&
-            (record.orderTotalBasis !== "retailer_receipt" &&
-              record.priceSource !== "verified_retailer_receipt")) {
+        if (receiptTotal && confirmedDiscordPurchase(record) &&
+            record.orderTotalBasis !== "retailer_receipt" &&
+            record.priceSource !== "verified_retailer_receipt") {
           // Only attach amount to the existing, uniquely matched Discord
           // checkout. Never turn an email receipt into a new order or owner.
           record.orderTotal = receiptTotal;
           record.orderTotalBasis = "retailer_receipt";
           record.priceSource = "verified_retailer_receipt";
           pendingChanges.push({
-            id: record.id, customerAccountId: String(account.id),
+            id: record.id, customerAccountId: account ? String(account.id) : "",
             retailer: record.retailer, orderNumber: record.orderNumber,
             orderTotal: receiptTotal
           });
           changed = true;
         }
-        if (!status) continue;
+        // Ownership-free business receipts may update spending only. They
+        // must never create customer shipment alerts or change attribution.
+        if (!account || !status) continue;
         if (cancellation) {
           if (!cancelledOrder(record)) {
             record.status = cancellation;
@@ -43925,11 +44005,12 @@ async function syncShippingTrackers() {
     const source = await discordCheckoutSourceChannels();
     const records = authoritativeDiscordCheckouts(await getSuccessCheckouts(), source.channels);
     const pendingChanges = [];
-    const trackable = records.filter(record =>
+    const businessPriceCandidates = records.filter(record =>
       isVerifiedDiscordCheckout(record) && record.orderNumber &&
-      accountsById.has(String(record.customerAccountId || "")) &&
-      !cancelledOrder(record));
-    if (!trackable.length) return;
+      confirmedDiscordPurchase(record) && !cancelledOrder(record));
+    const trackable = businessPriceCandidates.filter(record =>
+      accountsById.has(String(record.customerAccountId || "")));
+    if (!businessPriceCandidates.length) return;
 
     // Customer-connected mailboxes can contain unrelated personal purchases;
     // they are never checkout sources and may update only their owner's
@@ -43962,7 +44043,7 @@ async function syncShippingTrackers() {
         await scanMailboxForShipping({
           email: managed.email, password: managed.password,
           managedHost: managed.host, managedPort: managed.port
-        }, trackable, accountsById, pendingChanges);
+        }, businessPriceCandidates, accountsById, pendingChanges);
         managedMailboxConnected = true;
       } catch (error) {
         console.error("Shipping tracker managed mailbox scan:", mailboxFailureReason(error));
@@ -43970,6 +44051,7 @@ async function syncShippingTrackers() {
     }
     console.log("Verified shipping scan:", JSON.stringify({
       trackable: trackable.length,
+      communityPriceCandidates: businessPriceCandidates.length,
       customerMailboxesScanned,
       managedConfigured: managed.configured,
       managedConnected: managedMailboxConnected,
@@ -43982,23 +44064,26 @@ async function syncShippingTrackers() {
     // webhook imports, so a slow IMAP scan never overwrites newer purchases.
     await withSuccessStoreLock(async () => {
       const latest = await getSuccessCheckouts();
+      let receiptChanged = false;
       for (const update of pendingChanges) {
         const record = latest.find(item =>
           isVerifiedDiscordCheckout(item) &&
           item.id === update.id &&
-          String(item.customerAccountId || "") === update.customerAccountId &&
+          String(item.customerAccountId || "") === String(update.customerAccountId || "") &&
           item.retailer === update.retailer &&
           String(item.orderNumber || "") === String(update.orderNumber || "")
         );
         if (!record) continue;
         if (update.orderTotal) {
-          if (!cancelledOrder(record) &&
-              (record.orderTotalBasis !== "retailer_receipt" &&
-              record.priceSource !== "verified_retailer_receipt")) {
+          if (confirmedDiscordPurchase(record) &&
+              record.orderTotalBasis !== "retailer_receipt" &&
+              record.priceSource !== "verified_retailer_receipt") {
             record.orderTotal = update.orderTotal;
             record.orderTotalBasis = "retailer_receipt";
             record.priceSource = "verified_retailer_receipt";
-            changedAccounts.add(update.customerAccountId);
+            record.verifiedPaidAt = new Date().toISOString();
+            receiptChanged = true;
+            if (update.customerAccountId) changedAccounts.add(update.customerAccountId);
           }
           continue;
         }
@@ -44029,7 +44114,7 @@ async function syncShippingTrackers() {
           discordDms.set(record.id, { accountId: update.customerAccountId, record, shipping: next });
         }
       }
-      if (changedAccounts.size) {
+      if (changedAccounts.size || receiptChanged) {
         await saveSuccessCheckouts(latest);
         for (const id of changedAccounts) announceSuccessCheckout(id);
         broadcastLiveDataChange("verified-shipping-update");
@@ -48069,7 +48154,8 @@ const ownedOrders =
           hitsChannelId,
           (await discordCheckoutSourceChannels()).channels
         ).filter(record =>
-          String(record.customerAccountId) === String(account.id) && !cancelledOrder(record)
+          String(record.customerAccountId) === String(account.id) &&
+          confirmedDiscordPurchase(record)
         );
       } catch (error) {
         console.error("Customer retailer lifetime stats load failed:", account.id, error.message);
@@ -48092,18 +48178,8 @@ const ownedOrders =
           retailerCheckoutRecords.length,
 
         lifetimeSpend:
-          retailerCheckoutRecords.reduce(
-            (sum, order) =>
-              sum +
-              Math.max(
-                0,
-                Number(
-                  order?.orderTotal ||
-                  0
-                ) || 0
-              ),
-            0
-          )
+          retailerCheckoutRecords.reduce((sum, order) =>
+            sum + (checkoutPaidAmount(order) ?? 0), 0)
       };
 
       /*

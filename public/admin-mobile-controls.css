@@ -1,0 +1,114 @@
+/* Mobile Admin: large colorful controls that fit an iPhone without horizontal clipping. */
+#workspace .admin-spend-ranges {
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:9px;padding:2px 0 18px;overflow:visible;
+}
+#workspace .admin-spend-ranges button {
+  min-width:0;min-height:46px;padding:10px 5px;font-size:12px;font-weight:900;
+  border-radius:14px;border:1px solid rgba(116,155,226,.43);
+  background:linear-gradient(140deg,rgba(106,83,199,.23),rgba(28,112,162,.19));
+  color:#d4d9ff;box-shadow:inset 0 1px rgba(255,255,255,.1),0 4px 14px #0002;
+  transition:background .16s,transform .16s,border-color .16s,box-shadow .16s;
+  touch-action:manipulation;
+}
+#workspace .admin-spend-ranges button:nth-child(3n+2) {background:linear-gradient(135deg,rgba(13,170,226,.19),rgba(52,104,237,.17));color:#9deaff;}
+#workspace .admin-spend-ranges button:nth-child(3n) {background:linear-gradient(135deg,rgba(22,175,146,.18),rgba(34,155,202,.12));color:#91f4d5;}
+#workspace .admin-spend-ranges button[aria-pressed="true"],
+#workspace .admin-spend-ranges button:nth-child(n)[aria-pressed="true"] {
+  color:white;background:linear-gradient(120deg,#8258f1,#287bd8 60%,#12acae);
+  border-color:#a1defb;box-shadow:0 8px 23px rgba(78,94,231,.29),inset 0 1px rgba(255,255,255,.27);
+}
+#workspace .admin-spend-ranges button:active,
+#workspace .success-user-period button:active {transform:scale(.97);}
+#workspace .success-filter-label {
+  display:grid;gap:8px;margin:0 0 14px;padding:12px 14px;
+  border:1px solid rgba(98,160,235,.4);border-radius:17px;
+  background:linear-gradient(110deg,rgba(92,66,202,.15),rgba(28,172,206,.11));
+  color:#acd6ff;font-size:11px;font-weight:900;letter-spacing:.075em;
+}
+#workspace .success-filter-label:nth-of-type(even){border-color:rgba(76,217,184,.3);}
+#workspace select.success-filter-select,
+#workspace select {
+  appearance:none;-webkit-appearance:none;display:block;width:100%;
+  min-height:49px;margin:0;padding:11px 44px 11px 15px;
+  border:1px solid #53719d;border-radius:13px;
+  background-color:#17253d;
+  background-image:linear-gradient(45deg,transparent 50%,#62dfff 50%),linear-gradient(135deg,#62dfff 50%,transparent 50%);
+  background-position:calc(100% - 22px) 50%,calc(100% - 16px) 50%;
+  background-size:6px 6px,6px 6px;background-repeat:no-repeat;
+  color:#eef6ff;font-size:14px;font-weight:780;box-shadow:inset 0 1px rgba(255,255,255,.07);
+}
+#workspace select option{background:#17253d;color:#fff;}
+#workspace .success-user-period {
+  grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;border-radius:15px;
+  background:rgba(72,99,162,.15);padding:6px;
+}
+#workspace .success-user-period button {
+  min-width:0;min-height:44px;border:1px solid rgba(100,137,221,.3);
+  background:linear-gradient(145deg,rgba(107,86,194,.17),rgba(39,109,159,.13));
+  border-radius:11px;color:#d0d5f8;
+}
+#workspace .success-user-period button[aria-pressed="true"] {
+  background:linear-gradient(115deg,#8254ed,#267ee0 70%,#10b4d2);color:#fff;
+  border-color:#a4d8ff;box-shadow:0 5px 18px rgba(72,100,238,.22);
+}
+#workspace .success-overview-accordion {
+  border:1px solid #4b5d98;border-top:3px solid #a577ff;
+  background:linear-gradient(145deg,rgba(102,65,200,.12),rgba(21,37,60,.86));
+  box-shadow:0 10px 32px rgba(0,0,0,.19);
+}
+#workspace .success-overview-accordion[data-success-panel="customers"]{border-top-color:#30cfec;}
+#workspace .success-overview-accordion>summary,
+#workspace .success-customer-summary {
+  color:var(--m-text,#f3f5ff);min-height:64px;
+  background:linear-gradient(110deg,rgba(123,94,218,.17),rgba(39,190,208,.1));
+  transition:background .16s;
+}
+#workspace .success-overview-accordion>summary:hover,
+#workspace .success-customer-summary:hover {background:linear-gradient(115deg,rgba(130,99,246,.26),rgba(23,189,224,.2));}
+#workspace .success-overview-accordion>summary::after,
+#workspace .success-customer-summary::after {
+  width:28px;height:28px;display:grid;place-items:center;font-weight:900;
+  color:#6fe7ff;background:rgba(66,196,236,.16);border:1px solid rgba(91,206,237,.4);
+  border-radius:9px;flex:none;
+}
+#workspace .success-user-accordion {
+  border:1px solid rgba(145,115,240,.45);
+  background:linear-gradient(140deg,rgba(120,75,228,.09),rgba(36,149,185,.06));
+}
+#workspace .success-user-details summary{color:#81eaff;font-size:13px;min-height:46px;}
+#workspace .success-matching-stats span{background:rgba(141,108,224,.12);border-color:rgba(149,133,237,.36);}
+#workspace .success-price-action {
+  border-top:3px solid #28d9aa;
+  background:linear-gradient(135deg,rgba(20,166,161,.16),rgba(98,67,184,.12)),var(--m-panel,#141722);
+}
+#workspace .success-price-action a{
+  display:block;text-align:center;text-decoration:none;min-height:44px;
+  padding:13px 10px;background:linear-gradient(115deg,#138fb7,#4b5ddd,#7548ce);
+  color:#fff;border-radius:13px;font-weight:850;font-size:12px;box-shadow:0 7px 20px rgba(32,139,210,.23);
+}
+#workspace .item button,#workspace .action,#workspace .panel a {min-height:44px;}
+#workspace button:focus-visible,#workspace a:focus-visible,#workspace select:focus-visible,
+#workspace summary:focus-visible {outline:3px solid #62e3ff;outline-offset:3px;}
+#tabs button.active {color:#66eaff;background:linear-gradient(180deg,rgba(57,185,221,.13),transparent);border-radius:14px;}
+html[data-admin-mobile-theme="light"] #workspace .admin-spend-ranges button {
+  color:#5244a3;border-color:#c7bee9;background:linear-gradient(130deg,#f4eeff,#e8f9ff);
+}
+html[data-admin-mobile-theme="light"] #workspace .admin-spend-ranges button:nth-child(3n+2){color:#096c9b;}
+html[data-admin-mobile-theme="light"] #workspace .admin-spend-ranges button:nth-child(3n){color:#007f67;}
+html[data-admin-mobile-theme="light"] #workspace .admin-spend-ranges button[aria-pressed="true"] {color:#fff;background:linear-gradient(115deg,#704de4,#2778c9);}
+html[data-admin-mobile-theme="light"] #workspace .success-filter-label {
+  color:#375381;border-color:#c6ceeb;background:linear-gradient(110deg,#f3efff,#ebfaff);
+}
+html[data-admin-mobile-theme="light"] #workspace select {
+  color:#172b43;background-color:#fff;border-color:#b7c5e5;
+  background-image:linear-gradient(45deg,transparent 50%,#6250c0 50%),linear-gradient(135deg,#6250c0 50%,transparent 50%);
+}
+html[data-admin-mobile-theme="light"] #workspace select option {color:#182a45;background:#fff;}
+html[data-admin-mobile-theme="light"] #workspace .success-user-period button {color:#46448a;background:linear-gradient(140deg,#f2eafe,#ecf8fc);}
+html[data-admin-mobile-theme="light"] #workspace .success-user-period button[aria-pressed="true"] {color:white;background:linear-gradient(115deg,#7854eb,#2973c4);}
+html[data-admin-mobile-theme="light"] #workspace .success-overview-accordion {background:linear-gradient(120deg,#faf7ff,#f6fcff);}
+html[data-admin-mobile-theme="light"] #workspace .success-overview-accordion>summary,
+html[data-admin-mobile-theme="light"] #workspace .success-customer-summary {background:linear-gradient(110deg,#f2edff,#eaf8ff);}
+@media(max-width:360px){#workspace .admin-spend-ranges{gap:6px}#workspace .admin-spend-ranges button{font-size:11px;padding-inline:3px}#workspace .success-filter-label{padding:10px}}
+@media(prefers-reduced-motion:reduce){#workspace button,#workspace summary{transition:none!important}}

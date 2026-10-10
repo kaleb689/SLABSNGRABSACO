@@ -33,9 +33,16 @@ export function selectedOrders(orders, days, now = new Date()) {
 export function metricChanges(previous, next) {
   return Object.fromEntries(['orders', 'transit', 'delivered'].map(key => [key, previous ? next[key] - previous[key] : 0]));
 }
+// Unknown subtotals are not verified charges, even if legacy payloads still
+// contain a numeric orderTotal. Customer and Admin spending must agree.
+export function verifiedOrderSpend(order) {
+  const amount=Number(order?.orderTotal);
+  return order?.orderTotalKnown !== false && Number.isFinite(amount) &&
+    amount > 0 ? Math.round(amount * 100) / 100 : 0;
+}
 export function dashboardTotals(orders) {
   return { orders: orders.length, items: orders.reduce((sum, r) => sum + (Number(r.itemCount) || 0), 0),
-    spend: orders.reduce((sum, r) => sum + (Number(r.orderTotal) || 0), 0),
+    spend: orders.reduce((sum, r) => sum + verifiedOrderSpend(r), 0),
     transit: orders.filter(r => ['shipped', 'in_transit', 'out_for_delivery'].includes(shippingStage(r))).length,
     delivered: orders.filter(r => shippingStage(r) === 'delivered').length,
     awaiting: orders.filter(r => shippingStage(r) === 'ordered').length };
@@ -66,7 +73,7 @@ export function dashboardActivity(orders, days, now = new Date()) {
   });
   for (const order of orders) {
     const bucket = buckets.get(Math.floor((Date.parse(order.checkoutAt) - start.getTime()) / bucketMs));
-    if (bucket) { bucket.count++; bucket.value += Number(order.orderTotal) || 0; }
+    if (bucket) { bucket.count++; bucket.value += verifiedOrderSpend(order); }
   }
   return [...buckets.values()];
 }
