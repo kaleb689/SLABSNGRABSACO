@@ -186,7 +186,7 @@ if(tab==="overview"){
     const amount=person.membershipMonthlyAmount??person.subscriptionMonthlyAmount??plan.membershipMonthlyAmount??plan.subscriptionMonthlyAmount;
     return amount!=null&&Number.isFinite(Number(amount))?Math.round(Number(amount)*100):null;
   });
-  const recurringVerified=Number.isFinite(Number(data.billing?.monthlyPaidCents));
+  const recurringVerified=data.billing?.monthlyPaidCents!=null&&Number.isFinite(Number(data.billing.monthlyPaidCents));
   const recurringTotal=recurringVerified?dollars(data.billing.monthlyPaidCents/100):"—";
   const recurringNote=recurringVerified?"Stripe paid membership invoices · "+data.billing.period+" (UTC)":"Live Stripe billing unavailable — retrying";
   c.innerHTML=
