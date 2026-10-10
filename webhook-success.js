@@ -67,7 +67,15 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
     itemCount: order.itemCount,
     items: order.items.map(item => {
       const previous = (prior.items || []).find(old => old.name === item.name);
-      return { ...item, imageUrl: item.imageUrl || previous?.imageUrl || null };
+      const newUnitPrice = Number(item.price);
+      const previousUnitPrice = Number(previous?.price);
+      return { ...item,
+        // Do not lose an earlier verified/reported product price when a
+        // later status-only webhook repeats the order without price fields.
+        price: Number.isFinite(newUnitPrice) && newUnitPrice > 0 ? newUnitPrice :
+          Number.isFinite(previousUnitPrice) && previousUnitPrice > 0 ? previousUnitPrice : 0,
+        imageUrl: item.imageUrl || previous?.imageUrl || null
+      };
     }),
     status: nextStatus,
     sourceIds: [...new Set([...matches.flatMap(record => [record.id, ...(record.sourceIds || [])]), order.id])]
