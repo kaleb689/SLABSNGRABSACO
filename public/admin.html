@@ -24484,6 +24484,7 @@ async function loadMembershipTools() {
         const form = document.getElementById("discountCodeForm");
         form.dataset.editId = discount.id;
         for (const name of ["code", "percent", "tier", "duration", "recipientEmail"]) form.elements.namedItem(name).value = discount[name] ?? "";
+        form.elements.namedItem("durationMonths").value = discount.durationMonths ?? "";
         form.elements.namedItem("discountType").value = discount.discountType || "percent";
         form.elements.namedItem("fixedPrice").value = discount.fixedPrice ?? "";
         form.elements.namedItem("maxUses").value = discount.maxUses ?? "";
