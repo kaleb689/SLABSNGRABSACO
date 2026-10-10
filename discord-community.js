@@ -2169,10 +2169,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const key = skuDraftKey(userId, channelId, sourceId);
       if (!drafts[key]) {
         const saved = (await readSkuFile(skuSelectionsFile))[userId]?.items || [];
-        drafts[key] = { items: saved.filter(item => item.key.startsWith(channelId + ":" + sourceId + ":"))
-          .map(item => ({ ...item })), updatedAt: new Date().toISOString() };
+        const previous = saved.filter(item => item.key.startsWith(channelId + ":" + sourceId + ":"));
+        drafts[key] = { items: setGlobalSkuQuantity(previous, uniformSkuQuantity(previous) || 1), updatedAt: new Date().toISOString() };
       }
-      if (transform) drafts[key].items = transform(drafts[key].items.map(item => ({ ...item })));
+      if (transform) {
+        const updated = transform(drafts[key].items.map(item => ({ ...item })));
+        drafts[key].items = setGlobalSkuQuantity(updated, uniformSkuQuantity(updated) || 1);
+      }
       drafts[key].updatedAt = new Date().toISOString();
       for (const [otherKey, draft] of Object.entries(drafts)) {
         if (Date.now() - Date.parse(draft.updatedAt || 0) > 7 * 86400000) delete drafts[otherKey];
@@ -2197,7 +2200,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const records = await readSkuFile(skuSelectionsFile);
       const record = records[userId] || { username, messageId: null, items: [] };
       const other = (record.items || []).filter(item => !item.key.startsWith(channelId + ":" + sourceId + ":"));
-      const next = [...other, ...draft.items];
+      const next = setGlobalSkuQuantity([...other, ...draft.items], uniformSkuQuantity(draft.items) || 1);
       if (next.length > 200) throw new Error("You can have up to 200 SKUs across drops. Remove older selections first.");
       const skipTonightDate = draft.items.length && channelId === tonightChannelId ? undefined : record.skipTonightDate;
       const skippedUpcomingDrops = draft.items.length && channelId !== tonightChannelId
@@ -2334,7 +2337,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     await ensureSkuControls(d);
   }
   function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = []) {
-    const view = skuSelectionView(items);
+    const summary = skuOwnerDetails(items);
     const skipping = skipTonightDate === tonightDate();
     return {
       content: `${mention(ownerId)} · ${mention(userId)} (${skuSafeText(username).slice(0, 70)}) ${skipping ? "DO NOT RUN MY PROFILES TONIGHT" : "selected SKUs"}\n${change} · <t:${Math.floor(Date.now() / 1000)}:F>`,
@@ -2343,7 +2346,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         ...(skipping ? [{ title: "Do not run profiles tonight", description: `Requested for ${skipTonightDate} (New York time).`, color: 0xe74c3c }] : []),
         ...(skippedUpcomingDrops.length ? [{ title: "Do not run profiles for these upcoming drops",
           description: skippedUpcomingDrops.map(drop => `[Upcoming drop](https://discord.com/channels/${guildId}/${drop.channelId}/${drop.sourceId})`).join("\n"), color: 0xe74c3c }] : []),
-        ...(view.embeds.length ? view.embeds.map(embed => ({ ...embed, title: "Products to run" })) : [{ title: "Products to run", description: "No SKUs selected.", color: 0x41b6e6 }])
+        summary
       ],
       components: items.length > 30 ? [{ type: 1, components: [{
         type: 2, style: 1, label: "View all " + items.length + " SKUs", custom_id: "sku:admin:" + userId + ":0"
@@ -2359,7 +2362,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };
       const tonight = channelId === tonightChannelId;
-      const next = record.items.filter(item => !item.key.startsWith(tonight ? `${channelId}:` : `${channelId}:${sourceId}:`));
+      const remaining = record.items.filter(item => !item.key.startsWith(tonight ? `${channelId}:` : `${channelId}:${sourceId}:`));
+      const next = setGlobalSkuQuantity(remaining, uniformSkuQuantity(remaining) || 1);
       const date = tonight ? tonightDate() : record.skipTonightDate;
       const skipped = [...(record.skippedUpcomingDrops || [])];
       if (!tonight && !skipped.some(drop => drop.channelId === channelId && drop.sourceId === sourceId)) {
@@ -2388,17 +2392,17 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       if (!item) throw new Error("That SKU is no longer selected. Refresh your selections.");
       const next = record.items.map(item => ({ ...item }));
       if (!quantity) next.splice(next.findIndex(item => skuItemToken(item.key) === token), 1);
-      else next.find(item => skuItemToken(item.key) === token).quantity = quantity;
-      const payload = ownerSkuPayload(userId, record.username, next, quantity ? `Changed ${skuSafeText(item.sku)} to Qty: ${quantity}` : `Removed ${skuSafeText(item.sku)}`, record.skipTonightDate, record.skippedUpcomingDrops);
+      const normalized = setGlobalSkuQuantity(next, quantity || uniformSkuQuantity(next) || 1);
+      const payload = ownerSkuPayload(userId, record.username, normalized, quantity ? `Changed ${skuSafeText(item.sku)} to Qty: ${quantity}` : `Removed ${skuSafeText(item.sku)}`, record.skipTonightDate, record.skippedUpcomingDrops);
       let posted;
       if (record.messageId) {
         try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
       }
       if (!posted) posted = await api(`/channels/${skuRequestsChannelId}/messages`, "POST", payload);
-      Object.assign(record, { items: next, messageId: posted.id, updatedAt: new Date().toISOString() });
+      Object.assign(record, { items: normalized, messageId: posted.id, updatedAt: new Date().toISOString() });
       await writeSkuFile(skuSelectionsFile, selections);
-      return next;
+      return normalized;
     });
   }
   async function recordSkuSelection(userId, username, sourceId, target, quantity, channelId) {
