@@ -230,6 +230,7 @@ export function skuBrowsePayload(sourceId, products, requestedPage = 0, draft = 
   if (!pages) throw new Error("No SKUs are available in this drop.");
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
   const offset = page * 25;
+  const qty = uniformSkuQuantity(draft);
   const options = products.slice(offset, offset + 25).map((product, index) => ({
     label: (skuSafeText(product.sku).slice(0, 30) + " · " + skuSafeText(product.name).slice(0, 65)).slice(0, 100),
     description: ("Product: " + skuSafeText(product.name)).slice(0, 100),
@@ -238,21 +239,22 @@ export function skuBrowsePayload(sourceId, products, requestedPage = 0, draft = 
   }));
   return {
     content: "**Choose Multiple SKUs — page " + (page + 1) + " of " + pages + "**\n" +
-      draft.length + " SKU(s) in your private draft. Your choices stay intact across pages. " +
-      "Set Qty 1 or Qty 2 for all selected SKUs, optionally adjust each SKU, then confirm.",
+      draft.length + " SKU(s) selected. **Quantity: " + (qty || "choose 1 or 2") +
+      " for ALL selected SKUs**.\nSelect products across pages, choose either Qty 1 for all or Qty 2 for all, then confirm. " +
+      "Individual products cannot have different quantities.",
     components: [
       { type: 1, components: [{ type: 3, custom_id: "sku:choose:" + sourceId + ":" + page,
-        placeholder: "Select multiple SKUs / products", min_values: 0, max_values: options.length, options }] },
+        placeholder: "Choose SKUs / products", min_values: 0, max_values: options.length, options }] },
       { type: 1, components: [
         { type: 2, style: 2, label: "◀ Previous", custom_id: "sku:page:" + sourceId + ":" + (page - 1), disabled: page === 0 },
         { type: 2, style: 2, label: "Next ▶", custom_id: "sku:page:" + sourceId + ":" + (page + 1), disabled: page === pages - 1 }
       ] },
       { type: 1, components: [
-        { type: 2, style: 2, label: "All Selected Qty 1", custom_id: "sku:bulk:" + sourceId + ":1", disabled: draft.length === 0 },
-        { type: 2, style: 2, label: "All Selected Qty 2", custom_id: "sku:bulk:" + sourceId + ":2", disabled: draft.length === 0 }
+        { type: 2, style: qty === 1 ? 3 : 2, label: "Qty 1 — ALL SKUs", custom_id: "sku:bulk:" + sourceId + ":1", disabled: draft.length === 0 },
+        { type: 2, style: qty === 2 ? 3 : 2, label: "Qty 2 — ALL SKUs", custom_id: "sku:bulk:" + sourceId + ":2", disabled: draft.length === 0 }
       ] },
       { type: 1, components: [
-        { type: 2, style: 2, label: "Review / Adjust", custom_id: "sku:review:" + sourceId + ":0" },
+        { type: 2, style: 2, label: "Review / Remove SKUs", custom_id: "sku:review:" + sourceId + ":0" },
         { type: 2, style: 3, label: "Confirm Selections", custom_id: "sku:confirm:" + sourceId }
       ] }
     ],
@@ -268,17 +270,18 @@ export function applySkuPageDraft(items, products, sourceId, channelId, requeste
   if (values.length > pageProducts.length || values.some(value => !/^\d+$/.test(value) ||
       Number(value) < offset || Number(value) >= offset + pageProducts.length))
     throw new Error("Invalid SKU choice. Reopen the selection screen.");
-  const selected = new Set(values.map(Number));
+  const chosen = new Set(values.map(Number));
   const pageSkus = new Set(pageProducts.map(item => item.sku));
   const existing = new Map(items.map(item => [item.sku, item]));
   const next = items.filter(item => !pageSkus.has(item.sku));
+  const quantity = uniformSkuQuantity(items) || 1;
   pageProducts.forEach((item, i) => {
-    if (!selected.has(offset + i)) return;
+    if (!chosen.has(offset + i)) return;
     next.push({ key: channelId + ":" + sourceId + ":" + item.sku,
-      name: item.name, sku: item.sku, quantity: existing.get(item.sku)?.quantity || 1 });
+      name: item.name, sku: item.sku, quantity: existing.get(item.sku)?.quantity || quantity });
   });
   if (next.length > 200) throw new Error("Up to 200 SKUs may be selected across drops.");
-  return next;
+  return setGlobalSkuQuantity(next, quantity);
 }
 export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
   const pages = Math.max(1, Math.ceil(items.length / 25));
