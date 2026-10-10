@@ -84,8 +84,8 @@ test("uniquely matched retailer receipts replace item subtotals and refresh exis
     server.indexOf("function startShippingTrackerScheduler("));
   // Verify the two receipt-precedence guards without overfitting to one
   // equivalent implementation of the trusted receipt basis comparison.
-  const receiptBasisGuards = (receiptTracker.match(/record\\.orderTotalBasis !== "retailer_receipt"|!\\["retailer_receipt"\\]\\.includes\\(String\\(record\\.orderTotalBasis/g) || []);
-  assert.equal(receiptBasisGuards.length,2);
+  const receiptBasisGuards = receiptTracker.split('record.orderTotalBasis !== "retailer_receipt"').length - 1;
+  assert.equal(receiptBasisGuards,2);
   assert.equal((receiptTracker.match(/record\.priceSource !== "verified_retailer_receipt"/g)||[]).length,2);
   assert.match(receiptTracker,/matchVerifiedWebhookEmail\(records/);
   assert.match(receiptTracker,/queueDiscordSuccessScan\(350\)/);
