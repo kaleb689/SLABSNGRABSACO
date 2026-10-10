@@ -1,4 +1,5 @@
 import { shippingStage, visibleLateCancellation, periodStart, periodBounds, customDateBounds, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges } from './app-dashboard-data.js';
+import { createCustomerDropEditor } from './app-drop-controls.js';
 
 const appEnabled = window.self === window.top && (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true ||
   (new URLSearchParams(location.search).get('appPreview') === '1' && ADMIN_PREVIEW_MODE));
@@ -9,14 +10,15 @@ if (appEnabled) {
     notifications: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="m2 6 10 8L22 6"/>',
     products: '<rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V3h8v4M3 12h18"/>',
     history: '<path d="M3 21h18M5 21V12h3v9m3 0V5h3v16m3 0V8h3v13"/>',
-    profile: '<circle cx="12" cy="7" r="4"/><path d="M4 22v-3a8 8 0 0 1 16 0v3"/>',
+    profile: '<path d="M3 9V5h18v4M5 10h14v11H5zM9 14h6M9 18h6"/>',
+    drops: '<path d="M4 7h16M4 12h16M4 17h16M7 4v16"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/>'
     ,settings: '<path d="M10.2 2.5h3.6l.5 2.3a7.8 7.8 0 0 1 1.5.65l2-1.3 2.55 2.55-1.3 2a7.8 7.8 0 0 1 .65 1.5l2.3.5v3.6l-2.3.5a7.8 7.8 0 0 1-.65 1.5l1.3 2-2.55 2.55-2-1.3a7.8 7.8 0 0 1-1.5.65l-.5 2.3h-3.6l-.5-2.3a7.8 7.8 0 0 1-1.5-.65l-2 1.3-2.55-2.55 1.3-2a7.8 7.8 0 0 1-.65-1.5l-2.3-.5v-3.6l2.3-.5a7.8 7.8 0 0 1 .65-1.5l-1.3-2 2.55-2.55 2 1.3a7.8 7.8 0 0 1 1.5-.65z"/><circle cx="12" cy="12" r="3.2"/>',
     box: '<path d="m3 6 9-4 9 4v12l-9 4-9-4zM3 6l9 4 9-4M12 10v12M7 4l9 4"/>'
   };
   const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
-  const labels = { home: 'Home', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Profile', notifications: 'Notifications', settings: 'Settings' };
-  const navLabels = ['home', 'tracking', 'products', 'profile', 'history'].map(id => [id, labels[id]]);
+  const labels = { home: 'Home', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Membership', drops: 'Drops', notifications: 'Notifications', settings: 'Settings' };
+  const navLabels = ['home', 'tracking', 'profile', 'products', 'history'].map(id => [id, labels[id]]);
   let theme = 'night';
   try { theme = localStorage.getItem('sng-app-theme') || 'night'; } catch {}
   const snapshots = new Map(), changes = new Map();
@@ -24,7 +26,7 @@ if (appEnabled) {
   const e = value => escapeHtml(String(value ?? ''));
   const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) || 0);
   const dateLabel = value => value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Pending';
-  let view = ({ success: 'home', membership: 'profile', notifications: 'notifications', tracking: 'tracking' })[new URLSearchParams(location.search).get('appTab')] || 'home';
+  let view = ({ success: 'home', membership: 'profile', drops: 'drops', notifications: 'notifications', tracking: 'tracking' })[new URLSearchParams(location.search).get('appTab')] || 'home';
   let days = 30, status = 'all', query = '', orders = [], cancelledOrders = [], reviewHoldOrders = [], busy = false, queued = false, error = '', accountId = null;
   let profileTab = 'membership', stream = null;
   let calendarOpen = false, calendarError = '', customRange = null;
@@ -51,6 +53,7 @@ if (appEnabled) {
   document.getElementById('customer-dashboard').before(root);
   document.body.classList.add('app-dashboard');
   document.body.dataset.appView = view;
+  const dropEditor = createCustomerDropEditor({escape:e,onUpdate:()=>{ if(view==='drops') render(); }});
 
   const rangeName = () => days === 'custom' ? calendarLabel(customRange) : days === 'all' ? 'Lifetime' : days === 'ytd' ? 'Year to date' : days === 1 ? 'Last 24 hours' : `Last ${days} days`;
   function cancelledInPeriod() {
@@ -156,7 +159,7 @@ if (appEnabled) {
     const currentFocus = document.activeElement?.id, cursor = document.activeElement?.selectionStart;
     const common = rangeButtons() + (state.customer.demo || ADMIN_PREVIEW_MODE ? '<div class="sng-demo-label">DEMO · Sample account</div>' : '') + (error ? `<p class="sng-error" role="status">${e(error)} <button type="button" data-app-refresh>Retry</button></p>` : '') + (busy && !accountId ? '<p class="sng-demo-label" role="status">Loading your checkout data…</p>' : '');
     let html = '';
-    if (view === 'home') html = common + hero('TOTAL CHECKOUT VALUE', money(totals.spend), `${totals.orders} orders · ${totals.items} items secured · ${state.membership?.name || state.membership?.planName || 'Member'}`) +
+    if (view === 'home') html = common + '<button class="sng-drop-shortcut" type="button" data-app-view="drops"><span><b>LIVE DROP SKUs</b><small>Select products for Target, Walmart, PKC, Costco or Sam’s</small></span><strong>Choose SKUs →</strong></button>' + hero('TOTAL CHECKOUT VALUE', money(totals.spend), `${totals.orders} orders · ${totals.items} items secured · ${state.membership?.name || state.membership?.planName || 'Member'}`) +
       `<button class="sng-arrival" type="button" data-app-view="tracking">${icon('tracking')}<span><strong>${records.filter(r => shippingStage(r) === 'out_for_delivery').length} packages out for delivery</strong><small>View your shipping tracker</small></span><b>›</b></button>` +
       `<div class="sng-metrics three">${metric('ORDERED', totals.orders, '', 'box', delta.orders)}${metric('IN TRANSIT', totals.transit, 'cyan', 'tracking', delta.transit)}${metric('DELIVERED', totals.delivered, 'green', 'home', delta.delivered)}</div><div class="sng-section-title"><h2>Top products</h2><button type="button" data-app-view="products">View all</button></div>${productRows(products.slice(0, 3), true)}<div class="sng-section-title"><h2>Recent orders</h2><button type="button" data-app-view="tracking">Track all</button></div>${orderRows(records.slice(0, 5))}` +
         (holdsInPeriod().length ? `<div class="sng-section-title"><h2>Review holds · not confirmed</h2></div>${orderRows(holdsInPeriod().slice(0, 5), true)}` : '');
@@ -181,7 +184,16 @@ if (appEnabled) {
     }
     if (view === 'settings') html = `<div class="sng-page-intro"><h1>Settings</h1><p>Manage your app and account preferences.</p></div><div class="sng-settings-list"><button type="button" data-app-theme>${icon('sun')} ${theme === 'night' ? 'Switch to day mode' : 'Switch to night mode'}</button><button type="button" data-app-notification-settings>${icon('notifications')} Notification preferences</button><button type="button" data-setting-profile="edit-profile">${icon('profile')} Saved information</button><button type="button" data-setting-profile="security">${icon('settings')} Account security</button><button type="button" data-setting-profile="orders">${icon('box')} Billing and orders</button></div>`;
     if (view === 'notifications') html = `<div class="sng-page-intro"><h1>Notifications</h1><p>Orders, shipping and messages from SLABSNGRABSACO.</p></div>`;
-    if (view === 'profile') html = `<div class="sng-page-intro"><h1>My profile</h1><p>Your tier, saved information and account settings.</p></div><div class="sng-profile-menu" role="group" aria-label="Profile sections">${[['membership', 'Membership'], ['availability', 'Rentals'], ['edit-profile', 'Saved info'], ['orders', 'Billing orders'], ['security', 'Security']].map(([id, label]) => `<button type="button" data-profile-tab="${id}" aria-pressed="${profileTab === id}">${label}</button>`).join('')}</div>`;
+    if (view === 'profile') {
+      const planName=String(state.membership?.name || state.membership?.planName || 'Membership');
+      const tier=/\b(10|20|50)\b/.exec(planName)?.[1] || 'other';
+      const displayTier=tier==='other'?planName:tier+' accounts';
+      html = `<div class="sng-page-intro"><h1>Membership</h1><p>Manage your membership, saved details and drop preferences.</p></div>` +
+        `<section class="sng-membership-hero sng-tier-${tier}"><div><small>YOUR MEMBERSHIP</small><h2>${e(displayTier)}</h2><p>${e(planName)}</p></div><span class="sng-membership-emblem">${icon('profile')}</span></section>` +
+        `<button type="button" class="sng-drop-shortcut" data-app-view="drops"><span><b>Choose drop SKUs</b><small>Target · Walmart · PKC · Costco · Sam’s Club</small></span><strong>Open →</strong></button>` +
+        `<div class="sng-profile-menu" role="group" aria-label="Membership sections">${[['membership', 'Membership'], ['availability', 'Rentals'], ['edit-profile', 'Saved info'], ['orders', 'Billing orders'], ['security', 'Security']].map(([id, label]) => `<button type="button" data-profile-tab="${id}" aria-pressed="${profileTab === id}">${label}</button>`).join('')}</div>`;
+    }
+    if (view === 'drops') html = dropEditor.render();
     content.innerHTML = html;
     renderSearch();
     if (currentFocus === 'sng-search') { const input = document.getElementById(currentFocus); input?.focus({ preventScroll: true }); if (input && cursor !== null) input.setSelectionRange(cursor, cursor); }
@@ -201,10 +213,13 @@ if (appEnabled) {
     if (location.hash !== '#my-profile') go('my-profile');
     if (view === 'notifications') document.querySelector('button[data-account-tab="notifications"]')?.click();
     if (view === 'profile') document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click();
-    render(); window.scrollTo({ top: 0, behavior: 'auto' });
+    render();
+    if (view === 'drops' && !dropEditor.isDirty()) void dropEditor.load();
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }
   root.addEventListener('click', event => {
     const button = event.target.closest('button'); if (!button) return;
+    if (dropEditor.handleClick(button)) return;
     if (button.dataset.appView) setView(button.dataset.appView);
     if (button.dataset.appDays) {
       days = /^(ytd|all)$/.test(button.dataset.appDays) ? button.dataset.appDays : Number(button.dataset.appDays);
@@ -228,6 +243,7 @@ if (appEnabled) {
     if (event.target.hasAttribute('data-app-date-from')) calendarDraft.from=event.target.value;
     if (event.target.hasAttribute('data-app-date-to')) calendarDraft.to=event.target.value;
   });
+  root.addEventListener('change', event => { dropEditor.handleChange(event.target); });
   root.addEventListener('submit', event => {
     if(!event.target.matches('[data-app-date-form]'))return;
     event.preventDefault();
@@ -241,7 +257,13 @@ if (appEnabled) {
     customRange={...calendarDraft};days='custom';calendarOpen=false;calendarError='';
     render();void refresh();
   });
-  root.addEventListener('toggle', event => { if (event.target.matches('details[data-order-id]')) { const id = event.target.dataset.orderId; event.target.open ? expanded.add(id) : expanded.delete(id); } }, true);
+  root.addEventListener('toggle', event => {
+    dropEditor.handleToggle(event.target);
+    if (event.target.matches('details[data-order-id]')) {
+      const id = event.target.dataset.orderId;
+      event.target.open ? expanded.add(id) : expanded.delete(id);
+    }
+  }, true);
   async function refresh() {
     if (!state.customer || document.hidden) return render();
     if (busy) { queued = true; return; }
@@ -280,7 +302,13 @@ if (appEnabled) {
     stream.addEventListener('data-change', () => void refresh());
     stream.addEventListener('open', () => void refresh());
   }
-  document.addEventListener('account-session-changed', () => { render(); connect(); if (state.customer && state.customer.id !== accountId) { snapshots.clear(); changes.clear(); void refresh(); } });
+  document.addEventListener('account-session-changed', () => {
+    if (!state.customer || (accountId && state.customer.id !== accountId)) dropEditor.reset();
+    render(); connect();
+    if (state.customer && state.customer.id !== accountId) {
+      snapshots.clear(); changes.clear(); void refresh();
+    }
+  });
   document.addEventListener('account-data-updated', () => { render(); void refresh(); });
   document.addEventListener('account-notifications-updated', render);
   document.addEventListener('visibilitychange', () => { connect(); if (!document.hidden) void refresh(); });

@@ -34,7 +34,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { startDiscordCommunity, discordCommunityStatus, createDiscordLinkCode, revokeDiscordLinkCodes, queueDiscordRoleRemoval } from "./discord-community.js";
+import { startDiscordCommunity, discordCommunityStatus, createDiscordLinkCode, revokeDiscordLinkCodes, queueDiscordRoleRemoval, listCustomerDropSkus, submitCustomerDropSkus } from "./discord-community.js";
 import { getCommunityInvite } from "./discord-invite.js";
 import { startCheckoutDmSummaryScheduler } from "./checkout-dm-summary.js";
 import { startMembershipLapseNotificationScheduler } from "./membership-lapse-notifications.js";
@@ -38901,6 +38901,37 @@ app.get("/api/account/success/events", requireCustomer, (req, res) => {
 
 app.get("/api/account/live/events", requireCustomer, (req, res) => {
   openSuccessEventStream(req, res, customerLiveDataListeners);
+});
+
+
+app.get("/api/account/drop-skus", requireCustomer, async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const discordId = String(req.customerAccount.discordUserId || "");
+  if (!discordId) return res.status(409).json({ error: "Link your Discord account to select drop SKUs." });
+  try {
+    return res.json(await listCustomerDropSkus(discordId));
+  } catch (error) {
+    const known = /paid profiles|not ready/i.test(error.message);
+    return res.status(known ? 403 : 503).json({
+      error: known ? error.message : "Drop SKUs could not be loaded. Please try again."
+    });
+  }
+});
+app.post("/api/account/drop-skus", requireCustomer, async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const discordId = String(req.customerAccount.discordUserId || "");
+  if (!discordId) return res.status(409).json({ error: "Link your Discord account to select drop SKUs." });
+  try {
+    const displayName = [req.customerAccount.firstName, req.customerAccount.lastName]
+      .filter(Boolean).join(" ") || req.customerAccount.email || "Member";
+    const saved = await submitCustomerDropSkus(discordId, displayName, req.body || {});
+    return res.json(saved);
+  } catch (error) {
+    const invalid = /Invalid|Choose|changed|Refresh|up to|select up to|paid profiles|ready/i.test(error.message);
+    return res.status(invalid ? 400 : 503).json({
+      error: invalid ? error.message : "Unable to submit your drop selections. Please try again."
+    });
+  }
 });
 
 app.get("/api/admin/live/events", requireAdmin, (req, res) => {

@@ -81,6 +81,14 @@ async function pushSettings(){const c=$("push-settings");if(!c)return;try{const 
 function metric(label,value){return '<div class="metric"><small>'+esc(label)+'</small><strong>'+esc(value??"—")+'</strong></div>';}
 function panel(title,body){return '<section class="panel"><h2>'+esc(title)+'</h2>'+body+'</section>';}
 function customerName(x){const p=x.profile||{};return [p.firstName,p.lastName].filter(Boolean).join(" ")||p.profileName||p.email||"Customer";}
+function customerTier(person) {
+  const raw=String(person?.plan?.name || person?.planName || person?.membershipName || '').trim();
+  const assigned=Number(person?.plan?.profileCount || person?.plan?.accounts || person?.paidProfileCount || 0);
+  const match=/(^|[^0-9])(10|20|50)(?![0-9])/.exec(raw);
+  const count=[10,20,50].includes(assigned) ? assigned : Number(match?.[2]) || 0;
+  const label=person?.accountOnly ? 'No paid membership' : (raw || (count ? count + ' accounts' : 'Membership'));
+  return {color:person?.accountOnly ? 'free' : (count ? 'tier-' + count : 'standard'),label};
+}
 function customers(){
   // Newly registered accounts live in free-submissions until a membership
   // checkout succeeds. Paid submissions alone hide those new signups.
@@ -525,10 +533,16 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+list.leng
     const q=customerSearchText.toLowerCase();
     $("customer-results").innerHTML=list.filter(x=>
       (customerName(x)+" "+(x.profile?.email||"")).toLowerCase().includes(q))
-      .slice(0,150).map(x=>'<article class="item"><strong>'+esc(customerName(x))+
-      '</strong><small>'+esc(x.profile?.email||"")+' · '+
-      esc(x.accountOnly?"Registered · No paid membership":x.plan?.name||"Membership")+
-      '</small><button data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>').join("")||
+      .slice(0,150).map(x=>{
+        const tier=customerTier(x);
+        return '<article class="item admin-customer-tier-row admin-customer-'+tier.color+'">'+
+          '<div class="admin-customer-topline"><div class="admin-customer-identity">'+
+          '<strong>'+esc(customerName(x))+'</strong>'+
+          '<small>'+esc(x.profile?.email||"")+'</small></div>'+
+          '<div class="admin-customer-tier-badge"><small>MEMBERSHIP TIER</small>'+
+          '<strong>'+esc(tier.label)+'</strong></div></div>'+
+          '<button data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>';
+      }).join("")||
       "<p>No matching customers.</p>";
   };
   $("customer-search").addEventListener("input",show);show();
