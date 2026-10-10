@@ -1,5 +1,5 @@
 import express from "express";
-import { historicalPlusVerified, safeAdminProfileLabel, adminCheckoutCustomerName } from "./checkout-reporting.js";
+import { historicalPlusVerified, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
 import { searchManagedPoolProfiles } from "./managed-pool-search.js";
 import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
@@ -38655,32 +38655,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     const unassignedConfirmed = confirmed.filter(record =>
       !record.customerAccountId || !customersById.has(String(record.customerAccountId)));
     const unmatchedCount = unassignedConfirmed.length;
-    // Aggregate-only Admin diagnostics: explain missing PC/morning hits
-    // without displaying them as purchases belonging to any customer.
-    const inspectedAt = Date.now(), dayMs = 86400000;
-    const inLastDays = (record, days) => {
-      const at = Date.parse(record.checkoutAt || "");
-      return Number.isFinite(at) && at >= inspectedAt - days * dayMs && at <= inspectedAt + 60000;
-    };
-    const byRetailer = new Map();
-    for (const record of unassignedConfirmed) {
-      const retailer = normalizeSuccessRetailer(record.retailer);
-      if (!byRetailer.has(retailer))
-        byRetailer.set(retailer, { retailer, total: 0, last24h: 0, last7d: 0, last30d: 0 });
-      const group = byRetailer.get(retailer);
-      group.total++;
-      if (inLastDays(record, 1)) group.last24h++;
-      if (inLastDays(record, 7)) group.last7d++;
-      if (inLastDays(record, 30)) group.last30d++;
-    }
-    const unmatchedRecent = {
-      total: unmatchedCount,
-      last24h: unassignedConfirmed.filter(record => inLastDays(record, 1)).length,
-      last7d: unassignedConfirmed.filter(record => inLastDays(record, 7)).length,
-      last30d: unassignedConfirmed.filter(record => inLastDays(record, 30)).length,
-      byRetailer: [...byRetailer.values()].sort((a,b) => b.last7d-a.last7d ||
-        b.total-a.total || a.retailer.localeCompare(b.retailer))
-    };
+    const unmatchedRecent = summarizeUnmatchedCheckouts(unassignedConfirmed);
     const paidByCustomer = new Map();
     for (const paid of Array.isArray(paidRaw) ? paidRaw : []) {
       const id = String(paid?.customerAccountId || "");
