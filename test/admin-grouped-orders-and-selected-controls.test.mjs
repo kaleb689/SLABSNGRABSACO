@@ -84,3 +84,13 @@ test("Full-status-color outline wraps all sides of customer recent order and tra
   }
   assert.match(app,/admin-mobile\.js\?v=31-membership-collapsible-20261010/);
 });
+
+test("Admin overview keeps membership KPIs visible and collapses optional sections",()=>{
+  const mobile=read("public/admin-mobile.js");
+  for(const title of ["Latest website signups","Recent confirmed checkouts","Quick actions","Live updates"]){
+    assert.ok(mobile.includes(`collapsiblePanel("${title}"`),title+" is collapsible");
+  }
+  assert.match(mobile,/ACTIVE PAID MEMBERSHIPS/);
+  assert.match(mobile,/MONTHLY MEMBERSHIP PAYMENTS/);
+  assert.match(mobile,/function collapsiblePanel\(title,body\)/);
+});
