@@ -96,7 +96,7 @@ test("public and Admin endpoints read one authoritative live source and keep the
   const adminRoute=server.slice(adminStart,server.indexOf('app.get("/api/admin/discord-success-status"',adminStart));
   assert.match(publicRoute,/historicalPlusVerified\(/);
   assert.match(publicRoute,/visibleDiscordSuccessRecords/);
-  assert.ok(adminRoute.includes("const unmatchedCount = confirmed.filter(record =>"));
+  assert.ok(adminRoute.includes("const unmatchedCount = unassignedConfirmed.length;"));
   assert.ok(adminRoute.includes("!record.customerAccountId || !customersById.has"));
   assert.ok(adminRoute.includes("const confirmed = allRecords.filter(confirmedDiscordPurchase)"));
   assert.doesNotMatch(adminRoute,/filter\(record => Boolean\(record\.customerAccountId\) && confirmedDiscordPurchase/);
