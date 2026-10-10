@@ -82,7 +82,7 @@ test("uniquely matched retailer receipts replace item subtotals and refresh exis
   const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
   const receiptTracker=server.slice(server.indexOf("async function scanMailboxForShipping("),
     server.indexOf("function startShippingTrackerScheduler("));
-  assert.equal((receiptTracker.match(/record\.orderTotalBasis !== "retailer_receipt"/g)||[]).length,2);
+  assert.equal(receiptTracker.split('!["retailer_receipt"].includes(String(record.orderTotalBasis').length-1,2);
   assert.equal((receiptTracker.match(/record\.priceSource !== "verified_retailer_receipt"/g)||[]).length,2);
   assert.match(receiptTracker,/matchVerifiedWebhookEmail\(records/);
   assert.match(receiptTracker,/queueDiscordSuccessScan\(350\)/);
