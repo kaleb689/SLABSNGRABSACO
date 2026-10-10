@@ -19646,10 +19646,10 @@ const response =
     });
     if(!billingResponse.ok)throw Error("Stripe revenue unavailable");
     const billing=await billingResponse.json();
-    if(!Number.isFinite(Number(billing.monthlyPaidCents)))throw Error("Invalid Stripe invoice amount");
+    if(!Number.isFinite(Number(billing.monthlyRecurringCents)))throw Error("Invalid Stripe invoice amount");
     countNode.textContent=String(billing.activePaidMemberships);
-    revenueNode.textContent=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(billing.monthlyPaidCents/100);
-    revenueNote.textContent="Paid subscription invoices · "+billing.period+" (UTC)";
+    revenueNode.textContent=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(billing.monthlyRecurringCents/100);
+    revenueNote.textContent="Current monthly subscription charges · "+billing.period+" (UTC)";
   }catch(error){
     countNode.textContent="—";
     revenueNode.textContent="—";
