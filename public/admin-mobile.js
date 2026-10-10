@@ -32,6 +32,7 @@ function mobileCustomLabel(range) {
   const format=value=>new Date(value+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
   return format(range.from)+" – "+format(range.to);
 }
+const mobileCalendarIcon='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg>';
 function mobileCalendarMarkup(scope,id,range,draft,open,error) {
   const today=mobileDayKey(new Date());
   const parent=scope==="user"?' data-success-user-date-form="'+esc(id)+'"':' data-success-date-form';
@@ -190,7 +191,7 @@ if(tab==="success"){
   const buttons='<div class="admin-spend-ranges" role="group" aria-label="Total spent period">'+
     ranges.map(([value,label])=>'<button type="button" data-success-days="'+value+'" aria-pressed="'+(String(value)===String(days))+'">'+label+'</button>').join("")+
     '<button type="button" data-success-calendar aria-label="Choose custom date range" aria-expanded="'+successCalendarOpen+'" aria-pressed="'+(days==="custom")+'" class="sng-calendar-button">'+
-    '<span aria-hidden="true">▦</span> Custom</button></div>'+
+    mobileCalendarIcon+' Custom</button></div>'+
     mobileCalendarMarkup("global","",successCustomRange,successCalendarDraft,successCalendarOpen,successCalendarError);
   const note=!total?'No confirmed checkouts in this period.':pending?pending+' of '+total+' confirmed checkouts without verified paid amounts.':'All displayed checkout amounts are verified.';
   const ticks=days===1?8:days===7?7:12;
@@ -355,7 +356,7 @@ if(tab==="success"){
       [[1,"24H"],[7,"7D"],[30,"30D"]].map(([num,label])=>
         '<button type="button" data-success-user-days="'+num+'" data-success-user-id="'+esc(x.id)+
         '" aria-pressed="'+(num===userDays)+'">'+label+'</button>').join("")+
-      '<button type="button" class="sng-calendar-button" data-success-user-calendar="'+esc(x.id)+'" aria-label="Choose custom dates for '+esc(x.name)+'" aria-expanded="'+successUserCalendarOpen.has(x.id)+'" aria-pressed="'+(userDays==="custom")+'">▦ Custom</button></div>'+
+      '<button type="button" class="sng-calendar-button" data-success-user-calendar="'+esc(x.id)+'" aria-label="Choose custom dates for '+esc(x.name)+'" aria-expanded="'+successUserCalendarOpen.has(x.id)+'" aria-pressed="'+(userDays==="custom")+'">'+mobileCalendarIcon+' Custom</button></div>'+
       mobileCalendarMarkup("user",x.id,userCustomRange,successUserCalendarDraft.get(x.id),successUserCalendarOpen.has(x.id),successUserCalendarErrors.get(x.id));
     return '<details class="panel success-user-panel success-user-accordion" data-success-customer="'+esc(x.id)+'" '+
       (successOpenCustomerCards.has(x.id)||successCustomerId===x.id?'open':'')+'>'+
