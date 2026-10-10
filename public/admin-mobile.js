@@ -159,6 +159,26 @@ if(tab==="overview"){
     return '<article class="item admin-recent-checkout"><strong>'+esc(name+more)+'</strong>'+
       '<small>'+esc(order.retailer||"Retailer")+' · '+esc(date)+' · '+qty+' item'+(qty===1?"":"s")+'</small></article>';
   }).join("")||'<p>Recent itemized orders will appear as their confirmed webhook records arrive.</p>';
+  const activeMemberships=new Map();
+  for(const person of list){
+    const key=String(person.customerAccountId||person.profile?.email||person.id||"");
+    const plan=person.plan||person.membership||{};
+    const status=String(person.subscriptionStatus||person.membershipStatus||plan.status||"").toLowerCase();
+    const expires=Date.parse(person.currentPeriodEnd||person.subscriptionEndDate||plan.currentPeriodEnd||plan.subscriptionEndDate||"");
+    if(!key||!["active","trialing"].includes(status)||!Number.isFinite(expires)||expires<=Date.now())continue;
+    activeMemberships.set(key,person);
+  }
+  const activeMembershipRows=[...activeMemberships.values()];
+  const recurringCents=activeMembershipRows.map(person=>{
+    const plan=person.plan||person.membership||{};
+    const cents=person.membershipMonthlyAmountCents??person.subscriptionMonthlyAmountCents??person.recurringAmountCents??plan.membershipMonthlyAmountCents??plan.subscriptionMonthlyAmountCents;
+    if(cents!=null&&Number.isFinite(Number(cents)))return Number(cents);
+    const amount=person.membershipMonthlyAmount??person.subscriptionMonthlyAmount??plan.membershipMonthlyAmount??plan.subscriptionMonthlyAmount;
+    return amount!=null&&Number.isFinite(Number(amount))?Math.round(Number(amount)*100):null;
+  });
+  const recurringVerified=recurringCents.every(n=>n!=null);
+  const recurringTotal=recurringVerified?dollars(recurringCents.reduce((sum,n)=>sum+n,0)/100):"—";
+  const recurringNote=recurringVerified?"Verified monthly subscription charges":"Billing amount unavailable for "+recurringCents.filter(n=>n==null).length+" active subscription(s)";
   c.innerHTML=
     '<section class="admin-overview-hero" aria-label="All-time community checkout overview">'+
       '<span class="admin-overview-hero-label">ALL-TIME COMMUNITY CHECKOUT VALUE</span>'+
@@ -168,7 +188,9 @@ if(tab==="overview"){
         '<span><small>CONFIRMED CHECKOUTS</small><b>'+esc(allTimeOrders)+'</b></span>'+
         '<span><small>CUSTOMERS</small><b>'+list.length+'</b></span>'+
       '</div></section>'+
-    '<div class="metrics admin-overview-grid">'+
+    '<div class="metrics admin-overview-grid admin-membership-overview-metrics">'+
+      '<div class="metric admin-membership-metric"><small>ACTIVE PAID MEMBERSHIPS</small><strong>'+activeMembershipRows.length+'</strong><small>Within current paid period</small></div>'+
+      '<div class="metric admin-membership-metric"><small>MONTHLY MEMBERSHIP PAYMENTS</small><strong>'+esc(recurringTotal)+'</strong><small>'+esc(recurringNote)+'</small></div>'+
       metric("Registered customers",list.length)+
       metric("Paid customers",paidCount)+
       metric("New signups · no plan",freeCount)+
