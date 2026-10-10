@@ -163,8 +163,11 @@ if(tab==="success"){
   const lifetime=panel("Lifetime community checkouts",'<div class="metrics">'+metric("Total confirmed checkouts",community.totalCheckouts??allSuccess.length)+
     metric("Reported total checkout spend",dollars(community.totalSpent||0))+'</div><p>'+esc(combinedNote)+'</p>');
   const unmatchedMeta=data.success?.unmatchedRecent||{};
-  const missingPkC=(Array.isArray(unmatchedMeta.byRetailer)?unmatchedMeta.byRetailer:[])
+  const unmatchedByRetailer=Array.isArray(unmatchedMeta.byRetailer)?unmatchedMeta.byRetailer:[];
+  const missingPkC=unmatchedByRetailer
     .find(x=>/^(PKC|Pokemon Center)$/i.test(String(x.retailer||"")));
+  const missingTarget=unmatchedByRetailer
+    .find(x=>/^Target$/i.test(String(x.retailer||"")));
   const unmatchedPanel=Number(unmatchedMeta.total||0)>0
     ? '<section class="panel success-matching-panel"><div class="success-matching-head">'+
       '<div><span class="success-eyebrow">ACCOUNT MATCHING</span><h2>Unassigned confirmed checkouts</h2></div>'+
@@ -176,7 +179,11 @@ if(tab==="success"){
       (missingPkC?'<p class="success-pkc-note"><strong>Pokémon Center:</strong> '+Number(missingPkC.total||0)+
         ' unassigned confirmed checkout'+(Number(missingPkC.total||0)===1?'':'s')+
         ' · '+Number(missingPkC.last24h||0)+' in 24H · '+Number(missingPkC.last7d||0)+' in 7D</p>':'')+
+      (missingTarget?'<p class="success-target-note"><strong>Target:</strong> '+Number(missingTarget.total||0)+
+        ' unassigned confirmed checkout'+(Number(missingTarget.total||0)===1?'':'s')+
+        ' · '+Number(missingTarget.last24h||0)+' in 24H · '+Number(missingTarget.last7d||0)+' in 7D</p>':'')+
       '<a class="success-match-link" href="/admin-checkout-match.html?retailer=PKC">REVIEW POKÉMON CENTER HITS ↗</a>'+
+      (missingTarget?'<a class="success-match-link success-match-secondary" href="/admin-checkout-match.html?retailer=Target">REVIEW TARGET HITS ↗</a>':'')+
       '<a class="success-match-link success-match-secondary" href="/admin-checkout-match.html">REVIEW ALL UNMATCHED HITS ↗</a></section>'
     : "";
   const people=new Map();
