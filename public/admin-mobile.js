@@ -41,9 +41,51 @@ function customers(){return Array.isArray(data.customers)?data.customers:data.cu
 function activationCount(a,status){if(!Array.isArray(a?.customers))return "—";const profiles=a.customers.flatMap(c=>Array.isArray(c.profiles)?c.profiles:[]).filter(p=>p.type==="paid");return profiles.filter(p=>p.status===status).length;}
 function render(){
 $("heading").textContent=({overview:"Overview",success:"Success",customers:"Customers",profiles:"Profiles",usage:"App Usage",more:"More"})[tab];
-document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
+document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===(tab==="usage"?"more":tab)));
 const list=customers(),a=data.activation||{},v=data.availability||{},u=data.usage||{},c=$("content");
-if(tab==="overview"){c.innerHTML='<div class="metrics">'+metric("Community checkouts",data.success?.communityTotals?.totalCheckouts??"—")+metric("Reported checkout spend",data.success?.communityTotals?.totalSpent!=null?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(data.success.communityTotals.totalSpent)||0):"—")+metric("Customers",list.length)+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("App users · 7 days",u.activeUsers7d??"—")+metric("Installed devices",u.installedDevices??"—")+'</div>'+panel("Quick actions",'<div class="links"><a class="action" href="/admin-success.html">ALL CHECKOUT SPENDING ↗</a><a class="action" href="/admin.html">OPEN FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html#profileActivationTracker">PROFILE ACTIVATION TOOLS ↗</a></div>')+panel("Status","<p>Data refreshes automatically while this app is open. Sensitive changes use the full secure admin interface.</p>");}
+if(tab==="overview"){
+  // Keep the existing all-time community totals (including the historical
+  // archive) distinct from customer-specific verified receipt spending.
+  const community=data.success?.communityTotals||{};
+  const dollars=n=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(n)||0);
+  const allTimeSpent=community.totalSpent==null?"—":dollars(community.totalSpent);
+  const allTimeOrders=community.totalCheckouts??"—";
+  const recent=Array.isArray(data.success?.communityRecords)
+    ? [...data.success.communityRecords].sort((a,b)=>(Date.parse(b.checkoutAt)||0)-(Date.parse(a.checkoutAt)||0)).slice(0,5)
+    : [];
+  const recentRows=recent.map(order=>{
+    const items=Array.isArray(order.items)?order.items:[];
+    const first=items[0]||{};
+    const name=String(first.name||order.productName||"Confirmed checkout");
+    const more=items.length>1?" + "+(items.length-1)+" more product"+(items.length===2?"":"s"):"";
+    const qty=items.reduce((sum,item)=>sum+Math.max(0,Math.floor(Number(item.quantity)||0)),0);
+    const when=Date.parse(order.checkoutAt);
+    const date=Number.isFinite(when)?new Date(when).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"Date pending";
+    return '<article class="item admin-recent-checkout"><strong>'+esc(name+more)+'</strong>'+
+      '<small>'+esc(order.retailer||"Retailer")+' · '+esc(date)+' · '+qty+' item'+(qty===1?"":"s")+'</small></article>';
+  }).join("")||'<p>Recent itemized orders will appear as their confirmed webhook records arrive.</p>';
+  c.innerHTML=
+    '<section class="admin-overview-hero" aria-label="All-time community checkout overview">'+
+      '<span class="admin-overview-hero-label">ALL-TIME COMMUNITY CHECKOUT VALUE</span>'+
+      '<strong>'+esc(allTimeSpent)+'</strong>'+
+      '<p>Reported total · includes historical checkout records</p>'+
+      '<div class="admin-overview-hero-stats">'+
+        '<span><small>CONFIRMED CHECKOUTS</small><b>'+esc(allTimeOrders)+'</b></span>'+
+        '<span><small>CUSTOMERS</small><b>'+list.length+'</b></span>'+
+      '</div></section>'+
+    '<div class="metrics admin-overview-grid">'+
+      metric("Customers",list.length)+
+      metric("Awaiting activation",activationCount(a,"awaiting_activation"))+
+      metric("App users · 7 days",u.activeUsers7d??"—")+
+      metric("Installed devices",u.installedDevices??"—")+'</div>'+
+    panel("Recent confirmed checkouts",recentRows+
+      '<a href="/admin-success.html" class="action">VIEW ALL CHECKOUTS ↗</a>')+
+    panel("Quick actions",'<div class="links">'+
+      '<a class="action" href="/admin-success.html">CHECKOUT SPENDING & INSIGHTS ↗</a>'+
+      '<a class="action" href="/admin.html">OPEN FULL ADMIN DASHBOARD ↗</a>'+
+      '<a class="action" href="/admin.html#profileActivationTracker">PROFILE ACTIVATION TOOLS ↗</a></div>')+
+    panel("Live updates","<p>Checkout data and customer changes refresh automatically. Customer and account totals are shown separately to prevent unassigned orders from being attributed to the wrong person.</p>");
+}
 if(tab==="success"){
   // Community totals include unmatched confirmed checkouts. Attribution is
   // required ONLY for individual customer and profile performance views.
@@ -344,8 +386,9 @@ if(tab==="success"){
 }
 if(tab==="customers"){c.innerHTML='<input class="search" id="customer-search" type="search" placeholder="Search name or email">'+ '<div id="customer-results"></div>';$("customer-search").value=customerSearchText;const show=()=>{customerSearchText=$("customer-search").value;const q=customerSearchText.toLowerCase();$("customer-results").innerHTML=list.filter(x=>(customerName(x)+" "+(x.profile?.email||"")).toLowerCase().includes(q)).slice(0,150).map(x=>'<article class="item"><strong>'+esc(customerName(x))+'</strong><small>'+esc(x.profile?.email||"")+' · '+esc(x.plan?.name||"Membership")+'</small><button data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>').join("")||"<p>No matching customers.</p>";};$("customer-search").addEventListener("input",show);show();}
 if(tab==="profiles"){c.innerHTML='<div class="metrics">'+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("Activated",activationCount(a,"activated"))+metric("Expired",activationCount(a,"expired"))+metric("Customers",list.length)+'</div>'+panel("Profile workflow",'<p>Open the full tracker to activate, extend, or return profiles using the existing verified controls.</p><a href="/admin.html#profileActivationTracker">OPEN PROFILE WORKFLOW ↗</a>')+panel("Inventory",'<p>Target, Walmart, and Pokémon Center inventory remains managed in the full Admin dashboard.</p><a href="/admin.html">OPEN INVENTORY MANAGER ↗</a>');}
-if(tab==="usage"){c.innerHTML='<div class="metrics">'+metric("Installed users",u.installedUsers??"—")+metric("Installed devices",u.installedDevices??"—")+metric("Active users · 7D",u.activeUsers7d??"—")+metric("Active users · 30D",u.activeUsers30d??"—")+'</div>'+panel("Tracking information","<p>Counts begin when updated customer apps report activity. PWA installs are confirmed by app mode or an installation event; they are not App Store downloads.</p>")+panel("Recent activity",(u.recent||[]).slice(0,50).map(x=>'<article class="item"><strong>'+esc(x.name||"Customer")+'</strong><small>'+esc(x.email||"")+' · '+esc(x.platform||"Other")+' · '+(x.installedConfirmed?"Installed":"Web activity")+'</small><small>Last active: '+esc(x.lastSeenAt?new Date(x.lastSeenAt).toLocaleString():"—")+'</small></article>').join("")||"<p>No app activity has been recorded yet.</p>");}
-if(tab==="more"){c.innerHTML=panel("Push notifications",`<div id="push-settings">Loading…</div>`)+panel("Admin tools",'<div class="links"><button class="action" id="register-face-id">SET UP FACE ID ON THIS IPHONE</button><a class="action" href="/admin.html">FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html">DISCOUNTS AND MEMBERSHIPS ↗</a><a class="action" href="/admin.html">DISCORD AND NOTIFICATIONS ↗</a><button class="action" id="signout">SIGN OUT</button></div>');void pushSettings();$("register-face-id").onclick=async()=>{try{await passkeyRegister();}catch(e){alert(e.message);}};$("signout").onclick=async()=>{await fetch("/api/admin/logout",{method:"POST",credentials:"same-origin"}).catch(()=>{});auth(false);};}
+if(tab==="usage"){c.innerHTML='<div class="admin-usage-return"><button type="button" id="admin-more-return" class="action">← BACK TO MORE</button></div>'+'<div class="metrics">'+metric("Installed users",u.installedUsers??"—")+metric("Installed devices",u.installedDevices??"—")+metric("Active users · 7D",u.activeUsers7d??"—")+metric("Active users · 30D",u.activeUsers30d??"—")+'</div>'+panel("Tracking information","<p>Counts begin when updated customer apps report activity. PWA installs are confirmed by app mode or an installation event; they are not App Store downloads.</p>")+panel("Recent activity",(u.recent||[]).slice(0,50).map(x=>'<article class="item"><strong>'+esc(x.name||"Customer")+'</strong><small>'+esc(x.email||"")+' · '+esc(x.platform||"Other")+' · '+(x.installedConfirmed?"Installed":"Web activity")+'</small><small>Last active: '+esc(x.lastSeenAt?new Date(x.lastSeenAt).toLocaleString():"—")+'</small></article>').join("")||"<p>No app activity has been recorded yet.</p>");}
+if(tab==="usage"){$("admin-more-return").onclick=()=>{tab="more";render();window.scrollTo(0,0);};}
+if(tab==="more"){c.innerHTML=panel("App usage & devices",'<div class="links"><button type="button" class="action" id="open-admin-usage">VIEW APP USAGE ↗</button></div>')+panel("Push notifications",`<div id="push-settings">Loading…</div>`)+panel("Admin tools",'<div class="links"><button class="action" id="register-face-id">SET UP FACE ID ON THIS IPHONE</button><a class="action" href="/admin.html">FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html">DISCOUNTS AND MEMBERSHIPS ↗</a><a class="action" href="/admin.html">DISCORD AND NOTIFICATIONS ↗</a><button class="action" id="signout">SIGN OUT</button></div>');void pushSettings();$("open-admin-usage").onclick=()=>{tab="usage";render();window.scrollTo(0,0);};$("register-face-id").onclick=async()=>{try{await passkeyRegister();}catch(e){alert(e.message);}};$("signout").onclick=async()=>{await fetch("/api/admin/logout",{method:"POST",credentials:"same-origin"}).catch(()=>{});auth(false);};}
 }
 let successRefreshRunning=false,successRefreshQueued=false;
 async function refreshSuccessTracker(){

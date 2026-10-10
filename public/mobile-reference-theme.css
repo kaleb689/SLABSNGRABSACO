@@ -1,0 +1,424 @@
+/*
+ * Mobile app visual system inspired by the supplied dark seller / tracking UI.
+ * Presentation only: data sources, checkout attribution, receipts and shipping
+ * controls remain owned by their existing application code.
+ * Scope intentionally limited to the two installed PWA surfaces.
+ */
+:root {
+  --sng-ref-bg:#0b0a13;
+  --sng-ref-surface:#15141f;
+  --sng-ref-raised:#1c1b29;
+  --sng-ref-edge:#302d41;
+  --sng-ref-copy:#f8f6ff;
+  --sng-ref-muted:#a3a2b7;
+  --sng-ref-purple:#ae69f8;
+  --sng-ref-cyan:#48d8ee;
+  --sng-ref-green:#44e3ab;
+  --sng-ref-gold:#ffc563;
+  --sng-ref-pink:#f16bad;
+}
+
+/* Installed Admin app */
+html:not([data-admin-mobile-theme="light"]) body.sng-admin-app {
+  --m-bg:var(--sng-ref-bg);
+  --m-panel:var(--sng-ref-surface);
+  --m-border:var(--sng-ref-edge);
+  --m-text:var(--sng-ref-copy);
+  --m-muted:var(--sng-ref-muted);
+  --m-input:#171725;
+  --m-nav:#151320;
+  background:
+    radial-gradient(ellipse at 7% 7%,rgba(133,53,151,.2),transparent 36%),
+    radial-gradient(ellipse at 95% 43%,rgba(35,65,132,.1),transparent 45%),
+    #0b0a13;
+  color:var(--m-text);
+}
+body.sng-admin-app header {
+  height:auto;
+  min-height:76px;
+  padding:calc(env(safe-area-inset-top) + 10px) 16px 11px;
+  background:rgba(16,14,26,.95);
+  border-bottom:1px solid rgba(162,133,204,.16);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  gap:11px;
+}
+body.sng-admin-app header img {
+  width:47px!important;height:47px!important;
+  min-width:47px;max-width:47px!important;max-height:47px!important;
+  border-radius:13px;background:#fff;padding:5px;
+  object-fit:contain;
+}
+body.sng-admin-app header b {font-size:13px;letter-spacing:.025em;}
+body.sng-admin-app header small {color:#b8a5d9;letter-spacing:.13em;font-size:9px;}
+body.sng-admin-app header button,
+body.sng-admin-app #admin-theme-toggle {
+  width:43px;height:43px;min-width:43px;min-height:43px;
+  display:grid;place-items:center;
+  background:#211d32;border:1px solid #49405e;
+  color:#ebe5ff;border-radius:14px;box-shadow:none;
+  font-size:21px;
+}
+body.sng-admin-app header button svg {width:22px;height:22px;stroke:currentColor;}
+body.sng-admin-app main {max-width:940px;padding:20px 15px calc(114px + env(safe-area-inset-bottom));}
+body.sng-admin-app .intro {margin:0 0 17px;padding:0 2px;}
+body.sng-admin-app .intro span {color:#b7a0ed;font-size:10px;letter-spacing:.17em;}
+body.sng-admin-app .intro h1 {font-size:clamp(26px,7.5vw,37px);margin:5px 0 3px;line-height:1.1;}
+body.sng-admin-app .intro p {font-size:11px;color:#9894ad;margin:0;}
+body.sng-admin-app .metrics {gap:10px;}
+body.sng-admin-app .metric,
+body.sng-admin-app .panel,
+body.sng-admin-app .item,
+body.sng-admin-app #signin {
+  background:var(--m-panel);
+  border-color:var(--m-border);
+  border-radius:19px;
+  box-shadow:0 7px 22px rgba(0,0,0,.17), inset 0 1px rgba(255,255,255,.035);
+}
+body.sng-admin-app .metric {
+  min-width:0;min-height:104px;padding:15px 14px;
+  border:1px solid #353045;
+  border-top:2px solid #b46cff;
+  background:linear-gradient(150deg,rgba(112,72,155,.16),transparent 65%),var(--m-panel);
+}
+body.sng-admin-app .metric:nth-child(4n + 2) {
+  border-top-color:#37d8ee;background:linear-gradient(140deg,rgba(38,142,172,.14),transparent 66%),var(--m-panel);
+}
+body.sng-admin-app .metric:nth-child(4n + 3) {
+  border-top-color:#39dda9;background:linear-gradient(140deg,rgba(30,153,119,.13),transparent 66%),var(--m-panel);
+}
+body.sng-admin-app .metric:nth-child(4n) {
+  border-top-color:#ffbd60;background:linear-gradient(140deg,rgba(178,110,43,.12),transparent 66%),var(--m-panel);
+}
+body.sng-admin-app .metric small {font-size:10px;line-height:1.4;letter-spacing:.03em;color:#acabc1;}
+body.sng-admin-app .metric strong {display:block;font-size:clamp(23px,6vw,31px);line-height:1.1;margin-top:12px;color:#d2acff;overflow-wrap:anywhere;}
+body.sng-admin-app .metric:nth-child(4n + 2) strong{color:#79def5;}
+body.sng-admin-app .metric:nth-child(4n + 3) strong{color:#69e9b9;}
+body.sng-admin-app .metric:nth-child(4n) strong{color:#ffd186;}
+body.sng-admin-app .panel {padding:16px;margin-top:13px;}
+body.sng-admin-app .panel h2 {font-size:16px;letter-spacing:-.02em;margin-bottom:13px;}
+body.sng-admin-app .item {
+  padding:13px 14px;box-shadow:none;
+  background:linear-gradient(90deg,rgba(93,73,126,.085),transparent 54%),var(--m-panel);
+}
+body.sng-admin-app .item strong{line-height:1.45;}
+body.sng-admin-app .item small{font-size:11px;color:var(--m-muted);line-height:1.5;}
+body.sng-admin-app :is(.item,.panel) a,
+body.sng-admin-app :is(.item,.panel) button.action,
+body.sng-admin-app form button,
+body.sng-admin-app #face-id-login {
+  border-radius:13px!important;
+  background:linear-gradient(110deg,#854fcd,#4d65d6 65%,#2698c7)!important;
+  border:1px solid rgba(178,157,244,.43)!important;
+  box-shadow:none;color:#fff!important;
+}
+body.sng-admin-app .links {gap:9px;}
+body.sng-admin-app .links .action {min-height:46px;display:grid;place-items:center;margin:0;text-decoration:none;}
+body.sng-admin-app input:not([type="checkbox"]),body.sng-admin-app select,body.sng-admin-app textarea {
+  background:var(--m-input);color:var(--m-text);
+  border-color:var(--m-border);border-radius:13px;
+  width:100%;max-width:100%;min-width:0;
+}
+body.sng-admin-app input:focus-visible,
+body.sng-admin-app select:focus-visible,
+body.sng-admin-app button:focus-visible,
+body.sng-admin-app summary:focus-visible,
+body.sng-admin-app a:focus-visible {
+  outline:2px solid #65dfeb;outline-offset:3px;
+}
+
+/* Reference-style floating five-tab navigator (App Usage stays in More). */
+body.sng-admin-app #tabs {
+  position:fixed;left:50%;right:auto;bottom:max(9px,env(safe-area-inset-bottom));
+  transform:translateX(-50%);
+  width:min(620px,calc(100% - 22px));
+  box-sizing:border-box;
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:4px;padding:7px;
+  background:rgba(18,16,28,.96);
+  border:1px solid rgba(135,121,172,.3);
+  border-radius:27px;
+  box-shadow:0 14px 35px #0009, inset 0 1px rgba(255,255,255,.055);
+  backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+}
+body.sng-admin-app #tabs[hidden] {display:none!important;}
+body.sng-admin-app #tabs button {
+  min-width:0;min-height:57px;padding:7px 2px;
+  display:flex;flex-direction:column;gap:5px;
+  align-items:center;justify-content:center;
+  font-size:21px;color:#9290a4;
+  border:1px solid transparent;
+  border-radius:20px;background:transparent;
+  line-height:1.1;
+}
+body.sng-admin-app #tabs button svg {width:22px;height:22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none;}
+body.sng-admin-app #tabs button span {margin:0;font-size:9px;letter-spacing:0;font-weight:780;}
+body.sng-admin-app #tabs button.active {
+  color:#f9f6ff;background:linear-gradient(135deg,#3b344d,#29243b);
+  border-color:rgba(169,133,230,.23);
+  box-shadow:0 4px 12px #0003;
+}
+body.sng-admin-app #tabs button.active svg {color:#cdaaff;}
+
+/* Hero matches the bold seller and insights summary cards in the recording. */
+body.sng-admin-app .admin-overview-hero {
+  color:#fff;position:relative;isolation:isolate;overflow:hidden;
+  border-radius:24px;min-height:205px;
+  padding:20px 19px 18px;margin-bottom:12px;
+  background:linear-gradient(110deg,#ffb43f 0%,#f57949 33%,#f15576 67%,#ce4cb6 100%);
+  border:1px solid rgba(255,228,214,.28);
+  box-shadow:0 13px 30px rgba(180,60,118,.19);
+}
+body.sng-admin-app .admin-overview-hero::after {
+  content:"";position:absolute;right:-64px;top:-77px;
+  width:220px;height:220px;border-radius:50%;
+  background:rgba(255,255,255,.12);z-index:-1;
+}
+body.sng-admin-app .admin-overview-hero-label {
+  display:block;letter-spacing:.13em;font-size:10px;font-weight:900;
+}
+body.sng-admin-app .admin-overview-hero>strong {
+  display:block;font-size:clamp(37px,10vw,56px);
+  line-height:1.1;letter-spacing:-.045em;margin-top:12px;
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
+}
+body.sng-admin-app .admin-overview-hero p {
+  font-size:11px;color:#fff9;line-height:1.4;margin:5px 0 16px;
+}
+body.sng-admin-app .admin-overview-hero-stats{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
+}
+body.sng-admin-app .admin-overview-hero-stats>span {
+  min-width:0;padding:10px 11px;border-radius:13px;
+  background:rgba(79,26,65,.19);border:1px solid rgba(255,255,255,.21);
+}
+body.sng-admin-app .admin-overview-hero-stats small{
+  display:block;color:#fffde2;font-size:9px;font-weight:800;letter-spacing:.1em;
+}
+body.sng-admin-app .admin-overview-hero-stats b {
+  display:block;font-size:17px;line-height:1.2;margin-top:4px;
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
+}
+body.sng-admin-app .admin-overview-grid {margin-bottom:12px;}
+
+/* Success: legible, bright but not noisy; only pressed filters are filled. */
+body.sng-admin-app #workspace .admin-spend-ranges {
+  display:flex;flex-wrap:nowrap;gap:6px;
+  overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;
+  padding:2px 1px 12px;
+}
+body.sng-admin-app #workspace .admin-spend-ranges button {
+  flex:1 0 43px;min-width:43px;min-height:40px;
+  padding:8px 6px;border-radius:12px;
+  font-size:11px;background:#1a1927;
+  border:1px solid #3d384e;color:#b8accb;box-shadow:none;
+}
+body.sng-admin-app #workspace .admin-spend-ranges button:not([aria-pressed="true"]) {
+  background:#1a1927;border-color:#3d384e;color:#c4bed0;box-shadow:none;
+}
+body.sng-admin-app #workspace .admin-spend-ranges button[aria-pressed="true"] {
+  color:white;border-color:#e0b8ff;
+  background:linear-gradient(115deg,#a24cf5,#ec58ae)!important;
+  box-shadow:0 4px 15px rgba(211,64,194,.27);
+}
+body.sng-admin-app .admin-spend-hero {
+  min-height:222px;padding:22px 19px 10px;
+  border:1px solid rgba(255,227,214,.22);
+  border-radius:24px;
+  background:linear-gradient(113deg,#ffb63b,#fa7651 40%,#ee5c98 73%,#b64cdb);
+  box-shadow:0 12px 29px rgba(185,68,130,.18);
+}
+body.sng-admin-app .admin-spend-hero>strong {font-size:clamp(37px,10vw,54px);margin-top:15px;}
+body.sng-admin-app .admin-spend-hero>p {font-size:11px;margin-top:7px;color:#fff;}
+body.sng-admin-app .admin-spend-trend {height:64px;margin-top:11px;opacity:.85;}
+body.sng-admin-app .success-filter-label {
+  border:1px solid #3a354e;
+  background:var(--m-panel);color:#d4b4fa;
+  border-radius:15px;box-shadow:none;
+}
+body.sng-admin-app .success-filter-select {
+  background-color:var(--m-input);color:var(--m-text);
+  border:1px solid #4a405d;border-radius:12px;box-shadow:none;
+}
+body.sng-admin-app .success-overview-accordion {
+  border:1px solid #393347;background:#161420;
+  border-radius:19px;box-shadow:0 7px 20px #0002;
+}
+body.sng-admin-app .success-overview-accordion>summary{min-height:62px;padding:14px 15px;}
+body.sng-admin-app .success-overview-accordion-body {padding:10px;gap:9px;}
+body.sng-admin-app .success-product-row,
+body.sng-admin-app .success-account-row {
+  background:var(--m-panel);border-bottom-color:#343042;
+}
+body.sng-admin-app .success-product-quantity {
+  border-radius:10px;color:#70edd0;background:#36bfae1d;border-color:#4fceb26b;
+}
+body.sng-admin-app .success-user-period button:not([aria-pressed="true"]) {
+  background:transparent!important;color:var(--m-muted)!important;box-shadow:none!important;
+}
+body.sng-admin-app .success-user-period button[aria-pressed="true"] {
+  background:linear-gradient(110deg,#9f5df5,#dd53b3)!important;
+  border-color:#d5aaff;color:white!important;
+}
+body.sng-admin-app .success-order-card {background:var(--m-panel);border-radius:14px;}
+body.sng-admin-app .success-user-stats>div {background:var(--m-input);border-radius:13px;}
+
+/* Customer app uses the same palette, with distinct functional card colors. */
+body.app-dashboard.app-signed-in:not([data-app-theme="day"]) {
+  background:
+    radial-gradient(ellipse at 4% 6%,rgba(135,39,130,.17),transparent 39%),
+    radial-gradient(ellipse at 100% 45%,rgba(42,74,152,.085),transparent 39%),
+    #0b0a13;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-app-header {margin-bottom:20px;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-app-brand span {color:#b4a1cc;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-range {
+  display:flex;flex-wrap:nowrap;gap:6px;
+  overflow-x:auto;scrollbar-width:none;
+  padding:3px 0 13px;margin-bottom:12px;
+  overscroll-behavior-x:contain;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-range::-webkit-scrollbar {display:none;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-range button {
+  flex:0 0 auto;min-height:38px;min-width:46px;
+  border-radius:12px;padding:8px 11px;
+  font-size:11px;box-shadow:none;
+}
+body.app-dashboard.app-signed-in:not([data-app-theme="day"]) #app-dashboard .sng-range button[aria-pressed="false"] {
+  background:#191723!important;color:#b7adbe!important;
+  border:1px solid #373244!important;box-shadow:none!important;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-range button[aria-pressed="true"] {
+  background:linear-gradient(120deg,#a350f5,#d855c3)!important;
+  color:#fff!important;border:1px solid #d9a5f9!important;
+  box-shadow:0 4px 14px rgba(145,61,184,.2)!important;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-hero {
+  padding:22px 21px 65px;min-height:187px;
+  border:1px solid rgba(255,236,220,.22);
+  border-radius:24px;
+  background:linear-gradient(110deg,#ffb946,#f57768 48%,#de4ac5);
+  box-shadow:0 13px 29px rgba(174,65,120,.16);
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-hero.orange {
+  background:linear-gradient(110deg,#fa487a,#ff8050 58%,#ffc453);
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-hero.pink {
+  background:linear-gradient(110deg,#a74bee,#d94fbf 62%,#f17eb0);
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-hero.violet {
+  background:linear-gradient(110deg,#ffa83e,#f26e86 52%,#b14fe4);
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-hero>strong {
+  font-size:clamp(34px,9vw,53px);margin-top:13px;
+  letter-spacing:-.045em;font-variant-numeric:tabular-nums;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-hero p {color:#fffc;font-size:12px;margin-top:7px;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-hero::after {
+  width:220px;height:220px;top:-81px;right:-76px;
+  background:rgba(255,255,255,.15);
+}
+body.app-dashboard.app-signed-in:not([data-app-theme="day"]) #app-dashboard .sng-metric,
+body.app-dashboard.app-signed-in:not([data-app-theme="day"]) #app-dashboard .sng-chart-card,
+body.app-dashboard.app-signed-in:not([data-app-theme="day"]) #app-dashboard .sng-product-row,
+body.app-dashboard.app-signed-in:not([data-app-theme="day"]) #app-dashboard .sng-order-card,
+body.app-dashboard.app-signed-in:not([data-app-theme="day"]) #app-dashboard .sng-arrival {
+  background:#16151f;border-color:#353040;
+  box-shadow:inset 0 1px rgba(255,255,255,.035),0 8px 24px rgba(0,0,0,.11);
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-metrics {gap:9px;margin-bottom:19px;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-metric {
+  border-radius:17px;padding:16px 13px;
+  border-top:2px solid #a570e2;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-metric:nth-child(4n+2) {border-top-color:#50daf4;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-metric:nth-child(4n+3) {border-top-color:#49e1ad;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-metric:nth-child(4n) {border-top-color:#ffc16f;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-metric>span {color:#a7a0b7;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-metric strong {font-size:clamp(17px,5.4vw,27px);}
+body.app-dashboard.app-signed-in #app-dashboard .sng-chart-card {border-radius:20px;padding:8px 17px 17px;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-bar {
+  border-radius:6px 6px 0 0;background:linear-gradient(#f49ac5,#a452e4);
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-product-row,
+body.app-dashboard.app-signed-in #app-dashboard .sng-order-card {border-radius:17px;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-product-image {border-radius:11px;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-row-main small {font-size:11px;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-section-title h2 {font-size:16px;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-progress span {background:linear-gradient(90deg,#4bccba,#5ae9a4);}
+body.app-dashboard.app-signed-in #app-dashboard .sng-donut {filter:drop-shadow(0 2px 14px rgba(148,76,217,.18));}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav {
+  background:rgba(18,16,27,.96);
+  border:1px solid rgba(141,118,176,.34);
+  border-radius:28px;
+  padding:7px;gap:5px;
+  box-shadow:0 13px 36px #0008,inset 0 1px rgba(255,255,255,.05);
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button.active {
+  background:linear-gradient(135deg,#3c354e,#292539);
+  border-color:#524568;
+  color:#f9f4ff;
+  box-shadow:0 3px 11px #0003;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-app-nav > button.active svg {color:#cda6f3;}
+
+/* Keep the user's working day and light mode options. */
+html[data-admin-mobile-theme="light"] body.sng-admin-app {
+  --m-bg:#f3f1f9;--m-panel:#fff;--m-border:#d7d2e4;--m-text:#261b36;--m-muted:#706780;--m-input:#f8f6fc;
+  background:radial-gradient(ellipse at 2% 0,rgba(200,161,233,.21),transparent 45%),#f3f1f9;
+}
+html[data-admin-mobile-theme="light"] body.sng-admin-app header {background:rgba(255,255,255,.96);border-bottom-color:#d9d1e3;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app header small {color:#775996;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app header button,
+html[data-admin-mobile-theme="light"] body.sng-admin-app #admin-theme-toggle {background:#f1e9fa;color:#4b396d;border-color:#d9cbe7;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app #tabs {
+  background:rgba(255,255,255,.96);border-color:#d6cde2;box-shadow:0 9px 32px rgba(70,42,100,.13);
+}
+html[data-admin-mobile-theme="light"] body.sng-admin-app #tabs button {color:#83778e;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app #tabs button.active {
+  background:#f1e8fc;border-color:#dec9f7;color:#61419a;
+}
+html[data-admin-mobile-theme="light"] body.sng-admin-app #tabs button.active svg {color:#8e4cc6;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app .metric {background:#fff;border-color:#e0d8e7;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app .metric small{color:#746880;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app .metric strong{color:#7951b1;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app .metric:nth-child(4n+2) strong{color:#1e87a7;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app .metric:nth-child(4n+3) strong{color:#158969;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app .metric:nth-child(4n) strong{color:#a66e1a;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app .success-overview-accordion,
+html[data-admin-mobile-theme="light"] body.sng-admin-app .success-product-row,
+html[data-admin-mobile-theme="light"] body.sng-admin-app .success-account-row,
+html[data-admin-mobile-theme="light"] body.sng-admin-app .success-order-card {background:#fff;border-color:#ded7e8;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-spend-ranges button:not([aria-pressed="true"]) {
+  background:#f7f1fc;color:#695777;border-color:#ddd0ea;
+}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-range button[aria-pressed="false"] {
+  background:#fff!important;color:#655772!important;border:1px solid #d7d1e4!important;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav {
+  background:rgba(255,255,255,.97);border-color:#d8d1e5;box-shadow:0 9px 28px rgba(55,41,100,.13);
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav > button.active {
+  background:#efe7fc;color:#583889;border-color:#d9c3ee;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-app-nav > button.active svg {color:#7645bc;}
+
+/* Size and motion accessibility. */
+@media(max-width:380px){
+ body.sng-admin-app header {padding-inline:11px;gap:7px;}
+ body.sng-admin-app header img {width:43px!important;height:43px!important;min-width:43px;max-width:43px!important;max-height:43px!important;}
+ body.sng-admin-app header button,body.sng-admin-app #admin-theme-toggle{width:39px;height:39px;min-width:39px;}
+ body.sng-admin-app .admin-overview-hero {padding:19px 16px;}
+ body.sng-admin-app .admin-overview-hero>strong{font-size:37px;}
+ body.sng-admin-app .admin-spend-hero>strong{font-size:36px;}
+ body.sng-admin-app .metric {padding:13px 11px;}
+ body.sng-admin-app .metric strong {font-size:24px;}
+ body.sng-admin-app #tabs{gap:2px;padding:5px;}
+ body.sng-admin-app #tabs button{min-height:54px;padding-inline:1px;}
+ body.sng-admin-app #tabs button span{font-size:8px;}
+ body.app-dashboard.app-signed-in #app-dashboard .sng-metrics.three {gap:6px;}
+ body.app-dashboard.app-signed-in #app-dashboard .sng-metrics.three .sng-metric{padding:12px 8px;}
+}
+@media(prefers-reduced-motion:reduce){
+ body.sng-admin-app *,body.app-dashboard.app-signed-in #app-dashboard * {scroll-behavior:auto!important;transition:none!important;animation:none!important;}
+}
