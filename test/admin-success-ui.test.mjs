@@ -32,14 +32,16 @@ test("Admin Success renders lifetime, unmatched, customer products and hit accou
           customerAccountId:"user1",customerName:"Amy Example",
           accountKey:"paid:target:1",accountLabel:"Target paid profile 1",accountKind:"paid",
           items:[{name:"Ascended Heroes Tin",quantity:2,imageUrl:""}]},
-        {retailer:"Walmart",checkoutAt:recent,orderTotal:13.25,orderTotalKnown:true,
-          customerAccountId:null,customerName:"Unmatched checkout",
-          accountKey:"unassigned",accountLabel:"Unmatched",accountKind:"unclassified",
+      ],
+      communityRecords:[
+        {retailer:"Target",checkoutAt:recent,orderTotal:25,orderTotalKnown:true,linked:true,
+          items:[{name:"Ascended Heroes Tin",quantity:2,imageUrl:""}]},
+        {retailer:"Walmart",checkoutAt:recent,orderTotal:13.25,orderTotalKnown:true,linked:false,
           items:[{name:"Booster Pack",quantity:1,imageUrl:""}]}
       ],
       unmatchedCount:1,
-      communityTotals:{totalCheckouts:242,totalSpent:15914.40},
-      historicalSummary:{historicalCheckouts:240,historicalSpent:15876.11,reportedReconciliation:.04}
+      communityTotals:{totalCheckouts:242,totalSpent:15914.36},
+      historicalSummary:{historicalCheckouts:240,historicalSpent:15876.11}
     }
   };
   const document={
@@ -62,18 +64,22 @@ test("Admin Success renders lifetime, unmatched, customer products and hit accou
   for(let i=0;i<7;i++)await new Promise(resolve=>setImmediate(resolve));
   const html=el("content").innerHTML;
   assert.match(html,/Lifetime community checkouts/);
-  assert.match(html,/\$15,914\.40/);
+  assert.match(html,/\$15,914\.36/);
+  assert.match(html,/\$38\.25/); // includes authenticated community and unmatched paid totals
   assert.match(html,/All linked customer checkouts/);
   assert.match(html,/Amy Example checkout breakdown/);
   assert.match(html,/Which accounts checked out/);
   assert.match(html,/Target paid profile 1/);
   assert.match(html,/Ascended Heroes Tin/);
-  assert.match(html,/1 confirmed order/);
+  assert.match(html,/2 confirmed orders/);
   // The new all-orders scope must be discoverable, while unmatched source
   // records are never mixed into individual customer ownership reports.
   assert.match(html,/Unmatched confirmed checkouts/);
   assert.equal(html.includes("Unmatched / unassigned checkouts"), false);
-  assert.doesNotMatch(html,/Booster Pack|Customer checkout breakdown/);
+  assert.match(html,/Booster Pack/);
+  const person=html.slice(html.indexOf('data-success-customer="user1"'));
+  assert.doesNotMatch(person,/Booster Pack|Unmatched checkout/);
+  assert.match(person,/Ascended Heroes Tin/);
   assert.match(html,/Orders by retailer/);
   assert.match(html,/24H/);
   assert.match(html,/30D/);
