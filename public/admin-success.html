@@ -101,7 +101,7 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
   <span class="eyebrow">ALL ORDERS / VERIFIED PAID TOTALS</span>
   <h2>Spending by date</h2>
   <div class="toolbar">
-    <div class="periods" id="periods" role="group" aria-label="Checkout date range"></div>
+    <div class="period-stack"><div class="periods" id="periods" role="group" aria-label="Checkout date range"></div><div id="custom-period-editor"></div></div>
     <label class="select-wrap">VIEW CHECKOUTS FOR <select id="scope" aria-label="Customer and order scope"><option value="all">All confirmed checkouts</option></select></label>
   </div>
   <div class="stats" id="period-stats" aria-live="polite"></div>
@@ -123,19 +123,58 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
   const totalCents = rows => rows.reduce((c,x) => c + amt(x),0);
   const itemQty = x => (x.items||[]).reduce((n,item) => n + Math.max(0,Math.floor(Number(item.quantity)||0)),0);
   const countUnknown = rows => rows.filter(x => !x.orderTotalKnown).length;
-  const periods = [[1,'24H'],[7,'7D'],[30,'30D'],[90,'90D'],['mtd','MTD'],['ytd','YTD'],['all','ALL']];
+  const periods = [[1,'24H'],[7,'7D'],[30,'30D'],[90,'90D'],['ytd','YTD'],['all','ALL']];
   let data={records:[],communityRecords:[]},days=30,scope='all',refreshing=false;
   const userPeriods=new Map(),openUsers=new Set(),openOrders=new Set();
+  let globalRange=null,globalDraft={from:'',to:''},globalCalendarOpen=false,globalError='';
+  const userRanges=new Map(),userDrafts=new Map(),userCalendarOpen=new Set(),userErrors=new Map();
+  const dayKey=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+  function initialDates(){
+    const to=new Date(),from=new Date(to.getFullYear(),to.getMonth(),to.getDate()-29);
+    return {from:dayKey(from),to:dayKey(to)};
+  }
+  function customWindow(range,now=new Date()){
+    const parse=v=>{
+      if(typeof v!=='string'||!/^\\d{4}-\\d{2}-\\d{2}$/.test(v))return null;
+      const [y,m,d]=v.split('-').map(Number),dt=new Date(y,m-1,d);
+      return dt.getFullYear()===y&&dt.getMonth()===m-1&&dt.getDate()===d?dt:null;
+    };
+    const first=parse(range?.from),last=parse(range?.to);
+    if(!first||!last||first>last||range.to>dayKey(now))return null;
+    return {start:first.getTime(),end:Math.min(new Date(last.getFullYear(),last.getMonth(),last.getDate()+1).getTime(),now.getTime()+60000)};
+  }
+  function bounds(period,range,now=new Date()){
+    return period==='custom'?customWindow(range,now)||{start:Infinity,end:-Infinity}:{start:start(period,now),end:now.getTime()+60000};
+  }
+  function rangeLabel(range){
+    if(!range)return 'Custom dates';
+    const fmt=d=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    return fmt(range.from)+' – '+fmt(range.to);
+  }
+  function calendarForm(scope,id,range,draft,open,error){
+    if(!open)return '';
+    const dates=draft?.from&&draft?.to?draft:range||initialDates(), today=dayKey(new Date());
+    const formAttr=scope==='user'?'data-user-calendar-form="'+esc(id)+'"':'data-global-calendar-form';
+    return '<form class="sng-custom-calendar" '+formAttr+'><div class="sng-date-fields">'+
+      '<label>From<input name="from" type="date" required max="'+today+'" value="'+esc(dates.from)+'"></label>'+
+      '<label>To<input name="to" type="date" required max="'+today+'" value="'+esc(dates.to)+'"></label></div>'+
+      (error?'<p class="sng-calendar-error" role="alert">'+esc(error)+'</p>':'')+
+      '<div class="sng-date-actions"><button type="submit">Apply range</button>'+
+      '<button type="button" '+(scope==='user'?'data-user-calendar-cancel="'+esc(id)+'"':'data-global-calendar-cancel')+'>Cancel</button></div></form>';
+  }
   function start(period,now=new Date()){
     if(period==='all')return 0;
     if(period==='mtd')return new Date(now.getFullYear(),now.getMonth(),1).getTime();
     if(period==='ytd')return new Date(now.getFullYear(),0,1).getTime();
     return now.getTime()-Number(period)*86400000;
   }
-  const within=(rows,period,now=new Date())=>rows.filter(x=>{
-    const at=Date.parse(x.checkoutAt||'');
-    return Number.isFinite(at)&&at>=start(period,now)&&at<=now.getTime()+60000;
-  });
+  const within=(rows,period,now=new Date(),range=null)=>{
+    const {start:lower,end:upper}=bounds(period,range,now);
+    return rows.filter(x=>{
+      const at=Date.parse(x.checkoutAt||'');
+      return Number.isFinite(at)&&at>=lower&&at<upper;
+    });
+  };
   const validImage=url=>typeof url==='string'&&/^https:\/\/[a-z0-9.-]+\/[^\s"'<>]*$/i.test(url);
   const stat=(name,val)=>'<div class="stat"><small>'+esc(name)+'</small><strong>'+esc(val)+'</strong></div>';
   function productList(records){
@@ -202,12 +241,15 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
     }
     const people=[...map.values()].filter(u=>scope==='all'||scope==='linked'||scope==='customer:'+u.id);
     const html=people.sort((a,b)=>b.orders.length-a.orders.length).map(u=>{
-      const period=userPeriods.get(u.id)||30,rows=within(u.orders,period);
-      const buttons=[ [1,'24H'],[7,'7D'],[30,'30D'],['mtd','MTD'] ].map(([value,label])=>
-        '<button type="button" data-user="'+esc(u.id)+'" data-period="'+value+'" aria-pressed="'+(period===value)+'">'+label+'</button>').join('');
+      const period=userPeriods.get(u.id)||30,range=userRanges.get(u.id),rows=within(u.orders,period,new Date(),range);
+      const buttons=[ [1,'24H'],[7,'7D'],[30,'30D'] ].map(([value,label])=>
+        '<button type="button" data-user="'+esc(u.id)+'" data-period="'+value+'" aria-pressed="'+(period===value)+'">'+label+'</button>').join('')+
+        '<button type="button" class="sng-calendar-button" data-user-calendar="'+esc(u.id)+'" aria-label="Custom date range for '+esc(u.name)+'" aria-expanded="'+userCalendarOpen.has(u.id)+'" aria-pressed="'+(period==='custom')+'">▦ Custom</button>';
       return '<details class="user-card" data-user-card="'+esc(u.id)+'" '+(openUsers.has(u.id)?'open':'')+'><summary><span>'+esc(u.name)+
         ' checkout breakdown</span><span class="pill">'+u.orders.length+' lifetime hits</span></summary>'+
-        '<div class="body"><div class="user-periods">'+buttons+'</div><div class="user-metrics">'+
+        '<div class="body"><div class="user-periods">'+buttons+'</div>'+
+        calendarForm('user',u.id,range,userDrafts.get(u.id),userCalendarOpen.has(u.id),userErrors.get(u.id))+
+        '<div class="user-metrics">'+
         stat('Confirmed orders',rows.length)+stat('Verified spent',money(totalCents(rows)/100))+
         stat('Without paid receipts',countUnknown(rows))+'</div>'+
         '<h3>Orders with bundled products</h3>'+orderList(rows)+'</div></details>';
@@ -217,17 +259,19 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
   function render(){
     const now=new Date();
     $('periods').innerHTML=periods.map(([value,label])=>
-      '<button type="button" data-global-period="'+value+'" aria-pressed="'+(value===days)+'">'+label+'</button>').join('');
+      '<button type="button" data-global-period="'+value+'" aria-pressed="'+(value===days)+'">'+label+'</button>').join('')+
+      '<button type="button" class="sng-calendar-button" data-global-calendar aria-label="Choose custom date range" aria-expanded="'+globalCalendarOpen+'" aria-pressed="'+(days==='custom')+'">▦ Custom</button>';
+    $('custom-period-editor').innerHTML=calendarForm('global','',globalRange,globalDraft,globalCalendarOpen,globalError);
     const all=Array.isArray(data.communityRecords)?data.communityRecords:[];
     const linked=Array.isArray(data.records)?data.records:[];
     let source=scope==='all'?all:scope==='linked'?all.filter(x=>x.linked):
       scope==='unmatched'?all.filter(x=>!x.linked):linked.filter(x=>scope==='customer:'+x.customerAccountId);
-    const rows=within(source,days,now);
+    const rows=within(source,days,now,globalRange);
     const cents=totalCents(rows),unknown=countUnknown(rows);
     $('period-stats').innerHTML=stat('Confirmed checkouts',rows.length)+
       stat('Verified retailer spend',money(cents/100))+
       stat('Awaiting paid receipts',unknown)+stat('Items purchased',rows.reduce((n,x)=>n+itemQty(x),0));
-    $('period-caption').textContent=(days==='all'?'All available dated webhooks':days==='mtd'?'Month to date':days==='ytd'?'Year to date':days===1?'Last 24 hours':'Last '+days+' days')+
+    $('period-caption').textContent=(days==='custom'?rangeLabel(globalRange):days==='all'?'All available dated webhooks':days==='ytd'?'Year to date':days===1?'Last 24 hours':'Last '+days+' days')+
       ' · '+(scope==='all'?'All confirmed, linked or unmatched':scope==='unmatched'?'Unmatched community orders':scope==='linked'?'Customer-linked orders':'Selected customer')+
       '. Missing retailer receipts do not produce invented spending amounts.';
     const community=data.communityTotals||{};
@@ -267,8 +311,57 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
   }
   $('periods').addEventListener('click',e=>{
     const b=e.target.closest('[data-global-period]');if(!b)return;
-    days=/^(mtd|ytd|all)$/.test(b.dataset.globalPeriod)?b.dataset.globalPeriod:Number(b.dataset.globalPeriod);
+    days=/^(ytd|all)$/.test(b.dataset.globalPeriod)?b.dataset.globalPeriod:Number(b.dataset.globalPeriod);
+    globalCalendarOpen=false;globalError='';render();
+  });
+  $('periods').addEventListener('click',e=>{
+    const b=e.target.closest('[data-global-calendar]');if(!b)return;
+    globalCalendarOpen=!globalCalendarOpen;globalError='';
+    if(globalCalendarOpen)globalDraft=globalRange?{...globalRange}:initialDates();
     render();
+  });
+  $('custom-period-editor').addEventListener('input',e=>{
+    if(e.target.name==='from')globalDraft.from=e.target.value;
+    if(e.target.name==='to')globalDraft.to=e.target.value;
+  });
+  $('custom-period-editor').addEventListener('click',e=>{
+    if(!e.target.closest('[data-global-calendar-cancel]'))return;
+    globalCalendarOpen=false;globalError='';render();
+  });
+  $('custom-period-editor').addEventListener('submit',e=>{
+    if(!e.target.matches('[data-global-calendar-form]'))return;
+    e.preventDefault();
+    globalDraft={from:e.target.querySelector('[name="from"]')?.value||'',to:e.target.querySelector('[name="to"]')?.value||''};
+    if(!customWindow(globalDraft)){globalError='Choose valid dates from oldest to newest, ending no later than today.';render();return;}
+    globalRange={...globalDraft};days='custom';globalCalendarOpen=false;globalError='';render();
+  });
+  $('customers').addEventListener('input',e=>{
+    const form=e.target.closest('[data-user-calendar-form]');if(!form)return;
+    const id=form.dataset.userCalendarForm,draft=userDrafts.get(id)||initialDates();
+    if(e.target.name==='from')draft.from=e.target.value;
+    if(e.target.name==='to')draft.to=e.target.value;
+    userDrafts.set(id,draft);
+  });
+  $('customers').addEventListener('click',e=>{
+    const open=e.target.closest('[data-user-calendar]');
+    if(open){
+      const id=open.dataset.userCalendar;
+      if(userCalendarOpen.has(id))userCalendarOpen.delete(id);
+      else{userCalendarOpen.add(id);userDrafts.set(id,userRanges.get(id)||initialDates());}
+      userErrors.delete(id);openUsers.add(id);renderCustomers();return;
+    }
+    const cancel=e.target.closest('[data-user-calendar-cancel]');
+    if(cancel){userCalendarOpen.delete(cancel.dataset.userCalendarCancel);userErrors.delete(cancel.dataset.userCalendarCancel);renderCustomers();}
+  });
+  $('customers').addEventListener('submit',e=>{
+    const form=e.target.closest('[data-user-calendar-form]');if(!form)return;
+    e.preventDefault();
+    const id=form.dataset.userCalendarForm;
+    const range={from:form.querySelector('[name="from"]')?.value||'',to:form.querySelector('[name="to"]')?.value||''};
+    userDrafts.set(id,range);
+    if(!customWindow(range)){userErrors.set(id,'Choose valid dates ending no later than today.');renderCustomers();return;}
+    userRanges.set(id,range);userPeriods.set(id,'custom');
+    userCalendarOpen.delete(id);userErrors.delete(id);openUsers.add(id);renderCustomers();
   });
   $('scope').addEventListener('change',e=>{scope=e.target.value;render();});
   $('customers').addEventListener('toggle',e=>{
@@ -277,7 +370,8 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
   },true);
   $('customers').addEventListener('click',e=>{
     const b=e.target.closest('[data-user][data-period]');if(!b)return;
-    userPeriods.set(b.dataset.user,b.dataset.period==='mtd'?'mtd':Number(b.dataset.period));
+    userPeriods.set(b.dataset.user,Number(b.dataset.period));
+    userCalendarOpen.delete(b.dataset.user);userErrors.delete(b.dataset.user);
     openUsers.add(b.dataset.user);renderCustomers();
   });
   $('customers').addEventListener('toggle',e=>{
