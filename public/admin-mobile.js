@@ -77,7 +77,9 @@ if(tab==="success"){
     customers.map(([id,name])=>'<option value="'+esc(id)+'" '+(successCustomerId===id?'selected':'')+'>'+esc(name)+'</option>').join("")+
     '</select></label>';
   let accountSelect="";
-  let filtered=inRange.filter(x=>successCustomerId==="all" ? true :
+  const scopedRows=["all","linked","unmatched"].includes(successCustomerId) ? inRange :
+    allSuccess.filter(x=>{const at=Date.parse(x.checkoutAt);return Number.isFinite(at)&&at>=cutoff&&at<=currentTime+60000;});
+  let filtered=scopedRows.filter(x=>successCustomerId==="all" ? true :
     successCustomerId==="linked" ? Boolean(x.linked ?? x.customerAccountId) :
     successCustomerId==="unmatched" ? !Boolean(x.linked ?? x.customerAccountId) :
     String(x.customerAccountId)===successCustomerId);
