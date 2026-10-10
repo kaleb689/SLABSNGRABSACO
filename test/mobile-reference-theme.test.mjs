@@ -17,7 +17,7 @@ test('reference theme loads after legacy controls without changing customer data
   assert.ok(adminControls !== -1 && adminTheme > adminControls);
   assert.ok(customerControls !== -1 && customerTheme > customerControls);
   assert.match(customerPage, /src="\/app-dashboard\.js\?v=20261010-approved-v4"/);
-  assert.match(adminPage, /src="\/admin-mobile\.js\?v=27-approved-membership-20261010"/);
+  assert.match(adminPage, /src="\/admin-mobile\.js\?v=28-customer-expand-20261010"/);
   assert.match(theme, /html\[data-admin-mobile-theme="light"\]/);
   assert.match(theme, /body\.app-dashboard\.app-signed-in\[data-app-theme="day"\]/);
   assert.match(theme, /@media\(prefers-reduced-motion:reduce\)/);

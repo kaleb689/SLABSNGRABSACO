@@ -559,7 +559,13 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+list.leng
           '<span class="admin-customer-tier-count">'+esc(count)+'</span>'+
           '<strong>'+esc(tier.label)+'</strong>'+
           (renewal ? '<span class="admin-customer-renewal">'+esc(renewal)+'</span>' : '')+'</div></div>'+
-          '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW PAGE <span aria-hidden="true">↗</span></button></article>';
+          '<details class="admin-customer-detail"><summary>Customer details &amp; actions</summary>'+
+            '<div class="admin-customer-detail-body"><p><b>Membership:</b> '+esc(tier.label)+'</p>'+
+            (tier.daysRemaining==null ? '<p>Membership period end is not available.</p>' :
+              '<p><b>'+esc(renewal)+'</b></p><div class="admin-membership-track" role="progressbar" aria-label="Membership days remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="'+Math.min(30,tier.daysRemaining)+'"><span style="width:'+Math.min(100,Math.round(tier.daysRemaining/30*100))+'%;background:'+(tier.daysRemaining<=5?'#ef4444':tier.daysRemaining<=10?'#eab308':'#25c977')+'"></span></div>')+
+            '<a class="admin-customer-manage" href="/admin.html">MANAGE CUSTOMER / SEND NOTIFICATION ↗</a>'+
+            '<p class="admin-customer-tip">Use the full Admin customer page for missing card, shipping, retailer info, and custom notifications.</p></div></details>'+
+          '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE <span aria-hidden="true">↗</span></button></article>';
       }).join("")||
       "<p>No matching customers.</p>";
   };
