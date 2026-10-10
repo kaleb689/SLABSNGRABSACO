@@ -13,6 +13,7 @@ import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
+import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal } from "./checkout-price-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
@@ -37954,9 +37955,8 @@ function discordCheckoutFromMessage(message, channelId) {
   if (!items.length) return null;
   const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))?.value ||
     body.match(/(?:^|\n)[ \t]*(?:retailer|store|site)[ \t]*(?::[ \t]*|\n[ \t]*)([^\n]+)/i)?.[1] || "";
-  const totalField = (embed?.fields || []).find(field => /total|spent|amount/i.test(field.name || ""))?.value ||
-    body.match(/(?:total|spent|amount)\s*[:$]\s*\$?([\d,.]+)/i)?.[1] || "";
-  const totalMatch = String(totalField).match(/\$?([\d,]+\.\d{2})/);
+  // An explicit order/paid amount is verified. Item prices alone are not.
+  const paidTotal = checkoutExplicitPaidTotal(message);
   const identity = discordCheckoutIdentity(message);
   const status = checkoutStatusFromDiscord(message) || "unverified";
   const eventAt = message.timestamp || new Date().toISOString();
@@ -37970,8 +37970,8 @@ function discordCheckoutFromMessage(message, channelId) {
     retailer: normalizeSuccessRetailer(retailer),
     checkoutAt: eventAt, statusUpdatedAt: eventAt,
     ...(status === "cancelled" ? { cancelledAt: eventAt } : {}),
-    orderTotal: totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : completePrices ? subtotalCents / 100 : 0,
-    orderTotalBasis: totalMatch ? "order_total" : completePrices ? "item_subtotal" : "unknown",
+    orderTotal: paidTotal !== null ? paidTotal : completePrices ? subtotalCents / 100 : 0,
+    orderTotalBasis: paidTotal !== null ? "order_total" : completePrices ? "item_subtotal" : "unknown",
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
     items, status
   };
@@ -37981,7 +37981,7 @@ function discordCheckoutFromMessage(message, channelId) {
 
 const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
 const DISCORD_HIT_MIRROR_VERSION = 9;
-const DISCORD_HIT_RENDER_VERSION = 3;
+const DISCORD_HIT_RENDER_VERSION = 4;
 let discordHitsChannelIdCache = null;
 let discordHitMirrorMutation = Promise.resolve();
 
@@ -38035,14 +38035,15 @@ async function resolveDiscordHitsChannelId(token) {
 }
 
 function publicDiscordHitPayload(order) {
-  // Public Discord hits must never disclose prices, retailer logins,
-  // passwords, order identifiers, shipping information or profile identities.
+  // Public community hits may display product prices and verified paid totals,
+  // but never order identifiers, retailer accounts, passwords or customer data.
   if (!confirmedDiscordPurchase(order)) return null;
   const retailer = normalizeSuccessRetailer(order?.retailer);
   const items = (Array.isArray(order?.items) ? order.items : [])
     .map(item => {
       const name = publicSuccessProductName(item?.name);
       return { name, quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
+        unitPrice: checkoutUnitPrice(item),
         imageUrl: publicSuccessProductImage(name, retailer, item?.imageUrl || item?.image) };
     })
     .filter(item => item.name &&
@@ -38050,20 +38051,32 @@ function publicDiscordHitPayload(order) {
   if (!items.length) return null;
   const site = clean(order?.sourceSite, 200) ||
     (retailer === "PKC" ? "Pokemon Center US" : clean(retailer, 200) || "Retailer");
+  const money = n => "$" + Number(n).toFixed(2);
+  const paid = checkoutPaidAmount(order);
+  const subtotal = checkoutItemSubtotal(order);
   const fields = [{ name: "Site", value: site.slice(0, 1024), inline: false }];
-  items.slice(0, 9).forEach((item, index) => {
-    const suffix = items.length === 1 ? " (1)" : ` (${index + 1})`;
+  // Discord embeds can have at most 25 fields. Extra items go in the
+  // additional embeds, not into a truncated or invalid field array.
+  items.slice(0, 7).forEach((item, index) => {
+    const suffix = " (" + (index + 1) + ")";
     fields.push(
-      { name: `Product${suffix}`, value: item.name.slice(0, 1024), inline: false },
-      { name: `Quantity${suffix}`, value: String(item.quantity), inline: false }
+      { name: "Product" + suffix, value: item.name.slice(0, 1024), inline: false },
+      { name: "Quantity" + suffix, value: String(item.quantity), inline: true },
+      { name: "Unit price" + suffix, value: item.unitPrice !== null ?
+        money(item.unitPrice) : "Pending verification", inline: true }
     );
   });
-  const main = { title: "Successful Checkout!", color: 0x00ff00, fields: fields.slice(0, 25) };
-  const pictures = items.slice(0, 9).filter(item => item.imageUrl);
-  if (pictures.length) main.thumbnail = { url: pictures[0].imageUrl };
-  const extra = pictures.slice(1, 9).map(item => ({
-    color: 0x00ff00, description: `${item.name} ×${item.quantity}`,
-    thumbnail: { url: item.imageUrl }
+  if (subtotal !== null) fields.push({ name: "Items subtotal (before tax / shipping)",
+    value: money(subtotal), inline: false });
+  fields.push({ name: "Total paid at checkout", value: paid !== null ?
+    money(paid) : "Pending verification", inline: false });
+  const main = { title: "Successful Checkout!", color: 0x00ff00, fields };
+  if (items[0].imageUrl) main.thumbnail = { url: items[0].imageUrl };
+  const extra = items.slice(1, 9).map(item => ({
+    color: 0x00ff00,
+    description: item.name + " ×" + item.quantity + "\nUnit price: " +
+      (item.unitPrice !== null ? money(item.unitPrice) : "Pending verification"),
+    ...(item.imageUrl ? { thumbnail: {url:item.imageUrl} } : {})
   }));
   return { embeds: [main, ...extra], allowed_mentions: { parse: [] } };
 }
@@ -38171,6 +38184,7 @@ async function mirrorDiscordCheckoutHits(records, token, sourceChannelId) {
             body: JSON.stringify(payload)
           });
         state.sent[entry.sourceMessageId].renderVersion = DISCORD_HIT_RENDER_VERSION;
+        state.sent[entry.sourceMessageId].priceSignature = checkoutPriceSignature(entry.order);
         counts.edited++;
         await writeJson(DISCORD_HIT_MIRROR_FILE, state);
       } catch (error) {
@@ -38202,7 +38216,8 @@ async function mirrorDiscordCheckoutHits(records, token, sourceChannelId) {
         messageId: String(posted.id),
         sourceChannelId: String(sourceChannelId),
         checkoutAt: entry.order.checkoutAt || null,
-        renderVersion: DISCORD_HIT_RENDER_VERSION, posting: false
+        renderVersion: DISCORD_HIT_RENDER_VERSION,
+        priceSignature: checkoutPriceSignature(entry.order), posting: false
       };
       await writeJson(DISCORD_HIT_MIRROR_FILE, state);
       counts.posted++;
@@ -38690,6 +38705,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
           checkoutAt: safe.checkoutAt,
           orderTotal: safe.orderTotal,
           orderTotalKnown: safe.orderTotalKnown,
+          itemSubtotal: checkoutItemSubtotal(record),
           items: safe.items.map(item => ({
             name: clean(item.name, 120),
             quantity: Math.max(0, Math.floor(Number(item.quantity) || 0)),
@@ -39350,11 +39366,8 @@ function safeSuccessCheckout(
       total >= 0
         ? total
         : 0,
-    // Shikari success embeds may omit the paid amount. Customers must not
-    // mistake an unknown total for an actual zero-dollar retailer checkout.
-    orderTotalKnown:
-      record?.orderTotalBasis !== "unknown" &&
-      Number.isFinite(total) && total > 0,
+    // A known item subtotal is NOT the actual final charged amount.
+    orderTotalKnown: checkoutPaidAmount(record) !== null,
 
     itemCount:
       Math.max(
