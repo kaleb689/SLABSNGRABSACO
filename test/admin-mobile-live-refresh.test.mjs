@@ -25,6 +25,8 @@ function createMobileHarness() {
         style: {}, dataset: {}, listeners,
         classList: { toggle: () => {} },
         addEventListener(name, callback) { listeners.set(name, callback); },
+        querySelectorAll() { return []; },
+        querySelector() { return null; },
         closest(selector) { return selector === "#workspace" ? node("workspace") : null; },
         matches(selector) { return selector.includes("input"); }
       });
@@ -47,6 +49,7 @@ function createMobileHarness() {
     "/api/admin/submissions": { submissions: [
       { id: "order1", customerAccountId: "user1", profile: { firstName: "Amy", email: "amy@example.test" } }
     ] },
+    "/api/admin/free-submissions": [],
     "/api/admin/profile-activation-tracker": { customers: [] },
     "/api/managed-availability": {},
     "/api/admin/app-usage": {}
@@ -86,14 +89,14 @@ function createMobileHarness() {
     for (const callback of callbacks) callback();
     await settle();
   }
-  return { node, document, window, streams, requests, scrolls, settle, flushTimers,
+  return { node, document, window, fixtures, streams, requests, scrolls, settle, flushTimers,
     onDocument(name) { return documentListeners.get(name); } };
 }
 
 test("mobile Admin automatically syncs without interrupting a focused customer search", async () => {
   const h = createMobileHarness();
   await h.settle();
-  assert.equal(h.requests.length, 5, "initial dashboard fetched four management sources and Success");
+  assert.equal(h.requests.length, 6, "initial dashboard fetched paid and registered customers plus management sources");
   assert.equal(h.streams.length, 1, "one live connection established");
   assert.equal(h.streams[0].url, "/api/admin/live/events");
 
@@ -108,12 +111,12 @@ test("mobile Admin automatically syncs without interrupting a focused customer s
   h.document.activeElement = search;
   h.streams[0].emit("data-change");
   await h.flushTimers();
-  assert.equal(h.requests.length, 5, "live event cannot overwrite focused form");
+  assert.equal(h.requests.length, 6, "live event cannot overwrite focused form");
 
   h.document.activeElement = null;
   h.onDocument("focusout")();
   await h.flushTimers();
-  assert.equal(h.requests.length, 10, "pending event reloads when input loses focus");
+  assert.equal(h.requests.length, 12, "pending event reloads when input loses focus");
   assert.equal(search.value, "amy@example", "customer search text survives rerender");
   assert.match(h.node("customer-results").innerHTML, /Amy/);
   assert.ok(h.scrolls.some(([x,y]) => x === 14 && y === 44), "scroll restored");
@@ -125,12 +128,56 @@ test("mobile Admin reconnects and retains same tab, with periodic catchup and fo
   const stream = h.streams[0];
   stream.emit("open");
   await h.flushTimers();
-  assert.equal(h.requests.length, 10, "stream reconnection refreshes data");
+  assert.equal(h.requests.length, 12, "stream reconnection refreshes data");
   h.node("refresh").onclick();
   await h.settle();
-  assert.equal(h.requests.length, 15, "manual refresh runs immediately");
+  assert.equal(h.requests.length, 18, "manual refresh runs immediately");
   assert.match(mobileSource, /setInterval\(\(\)=>\{if\(authenticated&&!document\.hidden\)scheduleMobileRefresh\(\);\},60000\)/);
   assert.match(mobileSource, /window\.addEventListener\("pagehide",\(\)=>\{stream\?\.close\(\);stream=null;\}\)/);
   assert.match(mobileSource, /mobileRefreshRunning=false/);
   assert.match(mobileSource, /mobileRefreshPending=true/);
+});
+
+test("new website signup updates mobile Admin across Success, Home, Customers and Profiles without refresh", async () => {
+  const h = createMobileHarness();
+  await h.settle();
+  assert.equal(h.node("content").innerHTML.includes("jill@example.test"), false);
+  assert.match(h.node("content").innerHTML, /Registered customers/);
+  const click = h.node("tabs").listeners.get("click");
+  click({target: {closest: () => ({dataset: {tab: "success"}})}});
+  // A newly created account is initially in /free-submissions, not paid orders.
+  h.fixtures["/api/admin/free-submissions"] = [{
+    id: "new-account", customerAccountId: "new-account", accountOnly: true,
+    createdAt: "2026-10-10T12:30:00.000Z",
+    profile: {firstName: "Jill", lastName: "New", email: "jill@example.test"},
+    plan: {name: "No Paid Membership", profiles: 0}
+  }];
+  const requestsBeforeSignup = h.requests.length;
+  h.streams[0].emit("data-change");
+  await h.flushTimers();
+  assert.equal(h.requests.length, requestsBeforeSignup + 6,
+    "all six sources fetched even while viewing Success");
+  click({target: {closest: () => ({dataset: {tab: "overview"}})}});
+  assert.match(h.node("content").innerHTML, /Latest website signups/);
+  assert.match(h.node("content").innerHTML, /Jill New/);
+  assert.match(h.node("content").innerHTML, /1<\/strong>/);
+  click({target: {closest: () => ({dataset: {tab: "customers"}})}});
+  assert.match(h.node("customer-results").innerHTML, /Jill New/);
+  assert.match(h.node("customer-results").innerHTML, /No paid membership/);
+  click({target: {closest: () => ({dataset: {tab: "profiles"}})}});
+  assert.match(h.node("content").innerHTML, /Registered customers/);
+  assert.ok(h.requests.includes("/api/admin/free-submissions"));
+});
+
+test("newly paid website accounts are not double-counted when snapshots overlap", async () => {
+  const h = createMobileHarness();
+  h.fixtures["/api/admin/free-submissions"] = [{
+    id:"order1", customerAccountId:"user1", accountOnly:true,
+    profile:{firstName:"Amy",email:"amy@example.test"}
+  }];
+  await h.settle();
+  // Same customer exists in both API responses temporarily. The paid state wins.
+  assert.match(h.node("content").innerHTML, /Registered customers/);
+  assert.doesNotMatch(h.node("content").innerHTML, /New signups · no plan<\/small><strong>1<\/strong>/);
+  assert.match(h.node("content").innerHTML, /Paid customers<\/small><strong>1<\/strong>/);
 });
