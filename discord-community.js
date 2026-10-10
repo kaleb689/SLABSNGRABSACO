@@ -291,6 +291,15 @@ export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
   const skus = "(" + selected.map(item => skuSafeText(item.sku).slice(0, 80)).join(", ") + ")";
   const lines = selected.map(item => skuSafeText(item.sku).slice(0, 35) + " — " +
     skuSafeText(item.name).slice(0, 60));
+  const header = "**SKUs:**\n" + skus + "\n**Qty: " +
+    (qty || "choose 1 or 2") + " — for ALL selected SKUs**";
+  const visibleNames = [];
+  for (const line of lines) {
+    if (header.length + visibleNames.join("\n").length + line.length + 5 > 3850) break;
+    visibleNames.push(line);
+  }
+  const names = visibleNames.join("\n") +
+    (visibleNames.length < lines.length ? "\n…" + (lines.length - visibleNames.length) + " more products; see SKU list above." : "");
   const components = [];
   if (selected.length) components.push({ type: 1, components: [{
     type: 3, custom_id: "sku:adjust:" + sourceId + ":" + page,
@@ -315,8 +324,7 @@ export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
       "\nChanges are not shared with the owner until confirmation.",
     embeds: lines.length ? [{
       title: "Selected products",
-      description: "**SKUs:**\n" + skus + "\n**Qty: " + (qty || "choose 1 or 2") +
-        " — for ALL selected SKUs**\n\n" + lines.join("\n"),
+      description: header + "\n\n" + names,
       color: 0x41b6e6
     }] : [],
     components, allowed_mentions: { parse: [] }
