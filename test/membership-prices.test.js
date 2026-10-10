@@ -37,5 +37,5 @@ test('customer plan cards and retailer guide use approved tier prices and suppli
  assert.match(app,/profiles: 50, amount: 290/);
  assert.doesNotMatch(guide,/20-profile tier needs 20 unique logins/);
  assert.match(guide,/Target, Walmart and Pokémon Center accounts are supplied by SLABSNGRABSACO/);
- assert.match(guide,/Costco or Sam’s Club accounts are optional/);
+ assert.match(guide,/Costco and Sam’s Club accounts are optional/);
 });
