@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10152a">
+<title>Verify Checkout Prices · SLABSNGRABSACO Admin</title>
+<link rel="stylesheet" href="/admin-mobile-controls.css?v=1">
+<style>
+:root{font-family:Inter,-apple-system,BlinkMacSystemFont,system-ui,sans-serif;color-scheme:dark;background:#0a1020;color:#f3f7ff}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;background:radial-gradient(ellipse at 10% 3%,rgba(137,79,255,.23),transparent 52%),radial-gradient(ellipse at 100% 35%,rgba(35,195,205,.15),transparent 48%),#0a1020}
+main{max-width:780px;margin:auto;padding:22px 16px max(64px,env(safe-area-inset-bottom))}
+.header{display:flex;align-items:center;gap:14px;margin:0 0 20px}
+.logo{width:53px;height:53px;padding:4px;border-radius:14px;background:#fff;object-fit:contain}
+.brand{min-width:0;flex:1}.brand small{display:block;color:#54d5ff;font-size:10px;letter-spacing:.13em;font-weight:900}.brand strong{font-size:14px;letter-spacing:.05em}
+a,button{font:inherit;touch-action:manipulation;cursor:pointer}
+.back,.refresh,button[type=submit]{display:inline-flex;justify-content:center;align-items:center;border-radius:13px;text-decoration:none;font-weight:850;min-height:45px;padding:12px 14px;color:#fff;background:linear-gradient(115deg,#704de1,#257cce);border:1px solid #76c7f4;box-shadow:0 7px 20px rgba(66,83,209,.22)}
+.back{white-space:nowrap;font-size:11px;max-width:100px}
+h1{font-size:clamp(24px,7vw,34px);letter-spacing:-.04em;margin:0}
+.subhead{font-size:12px;line-height:1.65;color:#b6c7dc}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0}
+.refresh{font-size:12px;background:linear-gradient(115deg,#147da7,#197f91)}
+.count{margin-left:auto;color:#84eadd;background:#1c3b45;border:1px solid #347c80;border-radius:999px;padding:9px 12px;font-weight:850;font-size:12px}
+.search{width:100%;min-height:48px;background:#141f35;border:1px solid #4d678a;border-radius:13px;color:#f7f9ff;padding:12px 14px;font-size:16px;margin:0 0 16px}
+.review-list{display:grid;gap:13px}
+.price-card{border:1px solid #56649e;border-top:3px solid #996af7;border-radius:19px;overflow:hidden;background:linear-gradient(140deg,rgba(99,70,189,.18),rgba(17,39,67,.95));box-shadow:0 10px 25px #0003}
+.price-card:nth-child(3n+2){border-top-color:#24ccea}.price-card:nth-child(3n){border-top-color:#3dd9aa}
+.price-card>summary{list-style:none;cursor:pointer;padding:17px;display:flex;align-items:center;gap:12px;min-height:66px;line-height:1.35}
+.price-card>summary::-webkit-details-marker{display:none}
+.summary-name{flex:1;min-width:0;display:grid;gap:4px}.summary-name strong{font-size:14px;overflow-wrap:anywhere}.summary-name small{font-size:11px;color:#b2c7d9}
+.chevron{border-radius:9px;background:#243e63;color:#88dcff;padding:3px 9px;font-weight:900}
+.price-card[open] .chevron{transform:rotate(180deg)}
+.card-body{padding:16px;border-top:1px solid #405779}
+.products{display:grid;gap:5px;margin:0 0 14px}.products div{font-size:12px;color:#c8d9eb;line-height:1.5}
+.card-body label{display:grid;gap:7px;font-size:12px;font-weight:850;margin:12px 0;color:#c3d8f8}
+.card-body input:not([type=checkbox]){width:100%;min-height:48px;border:1px solid #6b82bb;border-radius:12px;background:#111f34;color:#fff;font-size:16px;padding:11px 13px}
+.card-body .checkbox-row{display:flex;align-items:flex-start;gap:12px;font-size:12px;line-height:1.55;cursor:pointer}
+.card-body input[type=checkbox]{width:20px;height:20px;margin:0;flex:0 0 20px;accent-color:#7958ec}
+.card-body button[type=submit]{width:100%;margin-top:7px;font-size:13px}
+button:disabled{opacity:.55;cursor:wait}
+.notice{color:#f7d89a;font-size:12px;line-height:1.55}
+.message{min-height:25px;color:#80f0d7;font-size:12px;font-weight:850}
+.error{color:#ffb2bd}
+.empty{padding:20px;border-radius:17px;border:1px solid #394d75;background:rgba(30,49,78,.6);line-height:1.6;color:#cfdbed;font-size:13px}
+button:focus-visible,input:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #60ddf4;outline-offset:3px}
+@media(prefers-color-scheme:light){
+  :root{color-scheme:light;background:#f1f6fd;color:#172d49}
+  body{background:linear-gradient(135deg,#f3f0ff,#eefbff)}
+  .price-card{background:linear-gradient(145deg,#fff,#f2f8ff);border-color:#c7c9ed}
+  .price-card>summary,.summary-name small{color:#2e4762}
+  .subhead,.products div,.card-body label,.empty{color:#39536c}
+  .card-body{border-color:#d3dff0}
+  .card-body input:not([type=checkbox]),.search{background:#fff;color:#193351;border-color:#b4c6e5}
+  .chevron{background:#ebeafd;color:#654dd3}
+  .empty{background:#fff;border-color:#d3dff0}
+}
+</style>
+</head>
+<body>
+<main>
+<header class="header"><img class="logo" src="/slabsngrabs-aco-logo-transparent.png" alt="">
+<div class="brand"><strong>SLABSNGRABSACO</strong><small>SECURE CHECKOUT REVIEW</small></div>
+<a class="back" href="/admin-app.html">← ADMIN</a></header>
+<h1>Verify checkout prices</h1>
+<p class="subhead">Only confirmed checkouts from the authorized Discord source appear here. Verify the <strong>actual final amount charged on the retailer receipt</strong>—not an item subtotal. Prices update customer, community, and Admin totals without creating or reassigning orders.</p>
+<div class="toolbar"><button class="refresh" id="reload" type="button">↻ Refresh orders</button><span class="count" id="pending">Loading…</span></div>
+<input class="search" id="filter" type="search" placeholder="Filter by retailer or product" aria-label="Filter missing checkout prices">
+<p id="status" class="message" role="status" aria-live="polite"></p>
+<div id="orders" class="review-list"><p class="empty">Loading confirmed orders…</p></div>
+</main>
+<script>
+(function(){
+  const container=document.getElementById("orders"), status=document.getElementById("status");
+  const filter=document.getElementById("filter"), pending=document.getElementById("pending");
+  let orders=[], count=0, loading=false;
+  const escapeHtml=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const money=value=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(value)||0);
+  const date=value=>{const d=new Date(value||0);return Number.isFinite(d.getTime())?d.toLocaleString():"Date unavailable"};
+  function draw(){
+    pending.textContent=count+" needing prices";
+    const q=filter.value.trim().toLowerCase();
+    const list=orders.filter(order=>[order.retailer,order.customer,order.orderNumber,...(order.items||[]).map(item=>item.name)].join(" ").toLowerCase().includes(q));
+    container.innerHTML=list.length?list.map(order=>{
+      const id=escapeHtml(order.id),number=escapeHtml(order.orderNumber||"");
+      return '<details class="price-card"><summary><span class="summary-name"><strong>'+escapeHtml(order.retailer)+' · '+escapeHtml(order.customer)+'</strong><small>'+escapeHtml(date(order.checkoutAt))+' · '+(order.orderNumber?'Retailer order available':'Needs retailer order number')+'</small></span><span class="chevron">⌄</span></summary>'+
+        '<div class="card-body"><div class="products">'+(order.items||[]).map(item=>'<div>×'+Number(item.quantity||1)+' '+escapeHtml(item.name)+'</div>').join('')+'</div>'+
+        (order.orderNumber?'<p class="notice">Retailer order number: <strong>'+number+'</strong></p><form data-id="'+id+'"><label>Final total paid (USD)<input name="paidTotal" inputmode="decimal" type="number" min="0.01" max="1000000" step="0.01" placeholder="0.00" required></label>'+
+          '<label>Re-enter the exact retailer order number<input name="orderNumberConfirmation" type="text" autocomplete="off" placeholder="From verified retailer receipt" required></label>'+
+          '<label class="checkbox-row"><input name="verifiedReceipt" type="checkbox" required><span>I checked the original retailer receipt and confirmed the full amount charged, including any taxes and shipping.</span></label>'+
+          '<button type="submit">SAVE VERIFIED PAID TOTAL</button></form>':
+          '<p class="notice">This checkout has no verified retailer order number. Link its genuine order number in Admin before entering a price.</p>')+'</div></details>';
+    }).join(''):'<p class="empty">'+(q?'No orders match that filter.':'No confirmed checkout prices currently need review.')+'</p>';
+  }
+  async function load(){
+    if(loading)return;
+    loading=true;document.getElementById("reload").disabled=true;
+    try{
+      const r=await fetch("/api/admin/checkout-paid-verification",{credentials:"same-origin",cache:"no-store"});
+      const j=await r.json();if(!r.ok)throw Error(j.error||"Unable to load verified checkout records.");
+      count=Number(j.pendingCount||0);orders=Array.isArray(j.orders)?j.orders:[];
+      draw();
+    }catch(e){status.textContent=e.message+(e.message.includes("Unauthorized")?" Sign in through the Admin app.":"");status.classList.add("error");container.innerHTML='<p class="empty">Orders could not be loaded. Please sign in to Admin and retry.</p>';}
+    finally{loading=false;document.getElementById("reload").disabled=false;}
+  }
+  container.addEventListener("submit",async e=>{
+    const form=e.target.closest("form[data-id]");if(!form)return;e.preventDefault();
+    const button=form.querySelector("button[type=submit]");const data=new FormData(form);
+    if(!data.get("verifiedReceipt")){status.textContent="Confirm that you checked the retailer receipt.";return;}
+    button.disabled=true;status.textContent="Checking and saving verified total…";status.classList.remove("error");
+    try{
+      const r=await fetch("/api/admin/checkout-paid-verification",{
+        method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:form.dataset.id,paidTotal:String(data.get("paidTotal")||""),
+          orderNumberConfirmation:String(data.get("orderNumberConfirmation")||""),verifiedReceipt:true})
+      });
+      const j=await r.json();if(!r.ok)throw Error(j.error||"Unable to save verified total.");
+      status.textContent="Verified "+money(j.paidTotal)+" saved. Dashboards and the existing Discord hit will update.";
+      await load();
+    }catch(error){status.textContent=error.message;status.classList.add("error");button.disabled=false;}
+  });
+  filter.addEventListener("input",draw);
+  document.getElementById("reload").addEventListener("click",load);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!document.activeElement?.closest(".price-card form"))load();});
+  setInterval(()=>{if(!document.hidden&&!document.activeElement?.closest(".price-card form"))load();},30000);
+  void load();
+})();
+</script>
+</body>
+</html>
