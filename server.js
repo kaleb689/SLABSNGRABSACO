@@ -16063,10 +16063,13 @@ app.post("/api/admin/gifted-memberships", requireAdmin, async (req, res) => {
 
 app.delete("/api/admin/gifted-memberships/:id", requireAdmin, async (req, res) => {
   const records = await getGiftedMemberships();
-  const next = records.filter(item => String(item.id) !== String(req.params.id));
-  if (next.length === records.length) return res.status(404).json({ error: "Gifted membership was not found." });
-  await saveGiftedMemberships(next);
-  return res.json({ ok: true });
+  const target=records.find(item=>String(item.id)===String(req.params.id));
+  if (!target) return res.status(404).json({error:"Gifted membership was not found."});
+  if (target.stripeSubscriptionId) {
+    return res.status(409).json({error:"This gift already deferred Stripe billing. Its Stripe schedule must be reconciled before revocation; no change was made."});
+  }
+  await saveGiftedMemberships(records.filter(item=>String(item.id)!==String(req.params.id)));
+  return res.json({ok:true});
 });
 
 app.get("/api/admin/discount-codes", requireAdmin, async (req, res) => {
