@@ -68,7 +68,7 @@ test("Admin Success uses global confirmed records, independent customer breakdow
   assert.match(html,/credentials:'same-origin',cache:'no-store'/);
   assert.match(html,/setInterval\(\(\)=>\{if\(!document.hidden\)void refresh\(\);\},15000\)/);
   for (const page of [app,admin,customer]) assert.match(page,/sng-premium-controls\.css\?v=2/);
-  assert.match(app,/admin-mobile\.js\?v=26-membership-tiers-20261010/);
+  assert.match(app,/admin-mobile\.js\?v=27-approved-membership-20261010/);
   assert.match(js,/\/admin-success\.html/);
   assert.match(admin,/\/admin-success\.html/);
   assert.match(css,/min-height:46px/);

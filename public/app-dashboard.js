@@ -185,13 +185,46 @@ if (appEnabled) {
     if (view === 'settings') html = `<div class="sng-page-intro"><h1>Settings</h1><p>Manage your app and account preferences.</p></div><div class="sng-settings-list"><button type="button" data-app-theme>${icon('sun')} ${theme === 'night' ? 'Switch to day mode' : 'Switch to night mode'}</button><button type="button" data-app-notification-settings>${icon('notifications')} Notification preferences</button><button type="button" data-setting-profile="edit-profile">${icon('profile')} Saved information</button><button type="button" data-setting-profile="security">${icon('settings')} Account security</button><button type="button" data-setting-profile="orders">${icon('box')} Billing and orders</button></div>`;
     if (view === 'notifications') html = `<div class="sng-page-intro"><h1>Notifications</h1><p>Orders, shipping and messages from SLABSNGRABSACO.</p></div>`;
     if (view === 'profile') {
-      const planName=String(state.membership?.name || state.membership?.planName || 'Membership');
-      const tier=/\b(10|20|50)\b/.exec(planName)?.[1] || 'other';
-      const displayTier=tier==='other'?planName:tier+' accounts';
-      html = `<div class="sng-page-intro"><h1>Membership</h1><p>Manage your membership, saved details and drop preferences.</p></div>` +
-        `<section class="sng-membership-hero sng-tier-${tier}"><div><small>YOUR MEMBERSHIP</small><h2>${e(displayTier)}</h2><p>${e(planName)}</p></div><span class="sng-membership-emblem">${icon('profile')}</span></section>` +
-        `<button type="button" class="sng-drop-shortcut" data-app-view="drops"><span><b>Choose drop SKUs</b><small>Target · Walmart · PKC · Costco · Sam’s Club</small></span><strong>Open →</strong></button>` +
-        `<div class="sng-profile-menu" role="group" aria-label="Membership sections">${[['membership', 'Membership'], ['availability', 'Rentals'], ['edit-profile', 'Saved info'], ['orders', 'Billing orders'], ['security', 'Security']].map(([id, label]) => `<button type="button" data-profile-tab="${id}" aria-pressed="${profileTab === id}">${label}</button>`).join('')}</div>`;
+      // Keep the app's membership card synchronized with the existing customer account page.
+      const membership = state.membership || null;
+      const planName = String(membership?.planName || membership?.name || (membership ? 'Membership' : 'No active membership'));
+      const allowance = Number(membership?.profiles ?? membership?.profileCount ?? membership?.accounts ?? ({5:10,6:20,7:50})[Number(membership?.tier)] ?? 0);
+      const tier = [10, 20, 50].includes(allowance) ? String(allowance) : 'other';
+      const savedText = (id, fallback = '—') => {
+        const value = document.getElementById(id)?.textContent?.trim();
+        return value && value !== '—' ? value : fallback;
+      };
+      const dateValue = membership?.subscriptionEndDate || membership?.currentPeriodEnd || membership?.cancelAt;
+      const parsedEnd = dateValue ? Date.parse(dateValue) : NaN;
+      const dateFallback = Number.isFinite(parsedEnd) ? new Date(parsedEnd).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : '—';
+      const daysFallback = Number.isFinite(parsedEnd) ? String(Math.max(0,Math.ceil((parsedEnd-Date.now()) / 86400000))) : '—';
+      const priceFallback = membership?.amount != null ? money(membership.amount) + '/month' : '—';
+      const membershipStatus = savedText('membership-status',membership?.status || 'No active membership');
+      const membershipPrice = savedText('membership-price',priceFallback);
+      const renewalDate = savedText('membership-period-end',dateFallback);
+      const daysLeft = savedText('membership-days-remaining',daysFallback);
+      const upgrade = document.getElementById('upgrade-membership');
+      const menuItems = [['membership','Membership'],['availability','Rentals'],['edit-profile','Saved info'],['orders','Billing orders'],['security','Security']].filter(([id]) => id !== 'availability' || !document.querySelector('[data-account-tab="availability"]')?.hidden);
+      const tile = (label,value,detail) => `<div class="sng-membership-stat"><small>${e(label)}</small><strong>${e(value)}</strong><span>${e(detail)}</span></div>`;
+      html = `<div class="sng-page-intro sng-membership-heading"><span>YOUR ACCOUNT</span><h1>Membership</h1><p>Your plan, profile allowance, billing and saved settings.</p></div>` +
+        (profileTab === 'membership' ?
+          `<section class="sng-membership-hero sng-tier-${tier}" aria-label="Current membership">` +
+            `<div class="sng-membership-hero-copy"><small>CURRENT MEMBERSHIP</small><h2>${e(planName)}</h2><p>${allowance > 0 ? e(allowance + ' ACO profiles') : 'Your account plan'}</p>` +
+            `<span class="sng-membership-status">${e(membershipStatus)}</span></div>` +
+            `<div class="sng-membership-emblem" aria-hidden="true">${icon('profile')}</div></section>` +
+          `<section class="sng-membership-details" aria-label="Membership details"><div class="sng-membership-details-title"><h2>Plan details</h2><span>YOUR SUBSCRIPTION</span></div>` +
+            `<div class="sng-membership-stats">` +
+              tile('Monthly membership',membershipPrice,'Your current plan') +
+              tile('ACO profiles',savedText('membership-profiles',allowance ? String(allowance) : '—'),'Included with your tier') +
+              tile('Renewal / end',renewalDate,'Current billing period') +
+              tile('Days remaining',daysLeft,'Until the period ends') +
+            `</div><div class="sng-membership-action-row">` +
+              `<button type="button" data-app-upgrade ${upgrade?.disabled ? 'disabled' : ''}>${e(upgrade?.textContent?.trim() || 'Manage membership')} ↗</button>` +
+              `<button type="button" data-profile-tab="edit-profile">Manage saved info →</button>` +
+            `</div></section>` : '') +
+        `<div class="sng-member-tools-heading"><h2>Account sections</h2><p>Choose what to manage</p></div>` +
+        `<div class="sng-profile-menu" role="group" aria-label="Membership sections">${menuItems.map(([id,label]) => `<button type="button" data-profile-tab="${id}" aria-pressed="${profileTab===id}">${e(label)}</button>`).join('')}</div>` +
+        (profileTab === 'membership' ? `<button type="button" class="sng-drop-shortcut sng-membership-drop" data-app-view="drops"><span><b>Choose drop SKUs</b><small>Target · Walmart · PKC · Costco · Sam’s Club</small></span><strong>Open →</strong></button>` : '');
     }
     if (view === 'drops') html = dropEditor.render();
     content.innerHTML = html;
@@ -207,8 +240,10 @@ if (appEnabled) {
     target.innerHTML = view === 'products' ? productRows(dashboardProducts(successes).filter(p => `${p.name} ${p.retailer}`.toLowerCase().includes(needle))) :
       orderRows(records.filter(order => (status === 'all' || shippingStage(order) === status) && `${order.retailer} ${order.orderNumber} ${order.shipping?.trackingNumber || ''} ${(order.items || []).map(p => p.name).join(' ')}`.toLowerCase().includes(needle)), true);
   }
-  function setView(next) {
+  function setView(next, { preserveProfileTab = false } = {}) {
     if (!labels[next]) return;
+    // Tapping the centered Membership tab always opens the plan summary.
+    if (next === 'profile' && !preserveProfileTab) profileTab = 'membership';
     view = next; query = ''; calendarOpen=false; document.body.dataset.appView = view;
     if (location.hash !== '#my-profile') go('my-profile');
     if (view === 'notifications') document.querySelector('button[data-account-tab="notifications"]')?.click();
@@ -232,8 +267,9 @@ if (appEnabled) {
     }
     if (button.hasAttribute('data-app-date-cancel')) {calendarOpen=false;calendarError='';render();}
     if (button.dataset.appStatus) { status = button.dataset.appStatus; render(); }
+    if (button.hasAttribute('data-app-upgrade')) { document.getElementById('upgrade-membership')?.click(); return; }
     if (button.dataset.profileTab) { profileTab = button.dataset.profileTab; document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click(); render(); }
-    if (button.dataset.settingProfile) { profileTab = button.dataset.settingProfile; setView('profile'); }
+    if (button.dataset.settingProfile) { profileTab = button.dataset.settingProfile; setView('profile', { preserveProfileTab: true }); }
     if (button.hasAttribute('data-app-theme')) { theme = theme === 'night' ? 'day' : 'night'; try { localStorage.setItem('sng-app-theme', theme); } catch {} render(); }
     if (button.hasAttribute('data-app-notification-settings')) document.getElementById('account-notification-settings')?.click();
     if (button.hasAttribute('data-app-refresh')) void refresh();

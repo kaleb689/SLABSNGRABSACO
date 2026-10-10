@@ -43,6 +43,7 @@ jobs:
       - run: node --test test/customer-app-uniform-ui.test.mjs
       - run: node --check public/app-drop-controls.js
       - run: node --test test/customer-app-drop-controls.test.mjs
+      - run: node --test test/membership-prices.test.js
       - run: node --test test/mobile-reference-theme.test.mjs
       - run: node --test test/custom-date-ranges.test.mjs
       - run: node --test test/admin-signups-and-date-layout.test.mjs
