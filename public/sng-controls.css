@@ -121,3 +121,16 @@ body.admin-page :is(button,select,summary):focus-visible {
   background-image:linear-gradient(45deg,transparent 50%,#7052cd 50%),linear-gradient(135deg,#7052cd 50%,transparent 50%);
 }
 @media(prefers-reduced-motion:reduce){body.admin-page button,body:not(.admin-page) button{transition:none!important}}
+
+/* The receipt-verification quick action lives alongside full Admin tools. */
+body.admin-page #dashboard .admin-head-actions .admin-price-review-link{
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  padding:12px 14px;min-height:45px;border-radius:13px;line-height:1.35;
+  color:#fff;border:1px solid #7bd4f8;text-decoration:none;font-size:12px;font-weight:880;
+  background:linear-gradient(115deg,#7855e8,#288aca 65%,#19b8ad);
+  box-shadow:0 8px 21px rgba(43,108,190,.28);
+}
+body.admin-page #dashboard .admin-head-actions .admin-price-review-link:hover{filter:brightness(1.1);}
+@media(max-width:640px){
+  body.admin-page select,body:not(.admin-page) select{max-width:100%;min-width:0;}
+}
