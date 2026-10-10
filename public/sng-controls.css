@@ -134,3 +134,22 @@ body.admin-page #dashboard .admin-head-actions .admin-price-review-link:hover{fi
 @media(max-width:640px){
   body.admin-page select,body:not(.admin-page) select{max-width:100%;min-width:0;}
 }
+
+
+/* Eight clearly selectable customer periods fit on a 320px iPhone without horizontal scrolling. */
+.app-dashboard .sng-range {
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;
+  max-width:100%;overflow:visible;padding:2px 0 6px;
+}
+.app-dashboard .sng-range button {
+  flex-shrink:1;min-width:0;min-height:46px;padding:10px 4px;
+  border-radius:13px;line-height:1.15;text-align:center;
+}
+.app-dashboard .sng-product-row .sng-row-value {min-width:0;overflow-wrap:anywhere;}
+.app-dashboard .sng-product-row .sng-row-value small {
+  display:block;font-size:9px;line-height:1.3;letter-spacing:.01em;
+}
+@media (max-width:355px) {
+  .app-dashboard .sng-range {gap:5px;}
+  .app-dashboard .sng-range button {font-size:11px;}
+}
