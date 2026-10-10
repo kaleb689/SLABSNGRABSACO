@@ -414,6 +414,17 @@ if(tab==="success"){
   c.querySelector("[data-success-date-cancel]")?.addEventListener("click",()=>{
     successCalendarOpen=false;successCalendarError="";render();
   });
+  c.querySelector("[data-success-date-form]")?.addEventListener("input",event=>{
+    if(event.target.name==="from")successCalendarDraft.from=event.target.value;
+    if(event.target.name==="to")successCalendarDraft.to=event.target.value;
+  });
+  c.querySelectorAll("[data-success-user-date-form]").forEach(form=>form.addEventListener("input",event=>{
+    const id=form.dataset.successUserDateForm;
+    const draft=successUserCalendarDraft.get(id)||mobileDefaultDates();
+    if(event.target.name==="from")draft.from=event.target.value;
+    if(event.target.name==="to")draft.to=event.target.value;
+    successUserCalendarDraft.set(id,draft);
+  }));
   c.querySelector("[data-success-date-form]")?.addEventListener("submit",event=>{
     event.preventDefault();
     const form=event.currentTarget,from=form.querySelector('[name="from"]')?.value||"",to=form.querySelector('[name="to"]')?.value||"";
