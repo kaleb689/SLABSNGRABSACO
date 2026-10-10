@@ -159,7 +159,7 @@ test("new website signup updates mobile Admin across Success, Home, Customers an
     "all six sources fetched even while viewing Success");
   click({target: {closest: () => ({dataset: {tab: "overview"}})}});
   assert.doesNotMatch(h.node("content").innerHTML, /Latest website signups/);
-  assert.match(h.node("content").innerHTML, /1<\/strong>/);
+  assert.match(h.node("content").innerHTML, /Registered customers<\/small><strong>2<\/strong>/);
   click({target: {closest: () => ({dataset: {tab: "customers"}})}});
   assert.match(h.node("customer-results").innerHTML, /Jill New/);
   assert.match(h.node("customer-results").innerHTML, /No paid membership/);
