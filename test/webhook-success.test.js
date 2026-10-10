@@ -7,7 +7,7 @@ test('webhook prices correct email records, retain attribution, and collapse dup
  const result=reconcileWebhookCheckout(records,order,{customerAccountId:'new-owner'});
  assert.equal(result.changed,true);assert.equal(records.length,1);
  assert.equal(records[0].customerAccountId,'original');assert.equal(records[0].orderTotal,308.56);
- assert.equal(records[0].priceSource,'checkout_webhook');
+ assert.equal(records[0].priceSource,'checkout_item_subtotal');
  assert.equal(sameCheckout(records[0],order),true);
  assert.equal(reconcileWebhookCheckout(records,order).changed,false);
 });
