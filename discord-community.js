@@ -2405,6 +2405,28 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       return normalized;
     });
   }
+  async function setUserGlobalSkuQuantity(userId, quantity) {
+    if (![1, 2].includes(quantity)) throw new Error("Choose Qty 1 or Qty 2 for ALL SKUs.");
+    return withSkuQueue(async () => {
+      if (!skuRequestsChannelId) throw new Error("Private SKU requests channel is unavailable.");
+      const selections = await readSkuFile(skuSelectionsFile);
+      const record = selections[userId];
+      if (!record?.items?.length) throw new Error("Choose SKUs before setting a quantity.");
+      const next = setGlobalSkuQuantity(record.items, quantity);
+      const payload = ownerSkuPayload(userId, record.username, next,
+        "Set Qty " + quantity + " for ALL " + next.length + " selected SKUs",
+        record.skipTonightDate, record.skippedUpcomingDrops);
+      let posted;
+      if (record.messageId) {
+        try { posted = await api("/channels/" + skuRequestsChannelId + "/messages/" + record.messageId, "PATCH", payload); }
+        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+      }
+      if (!posted) posted = await api("/channels/" + skuRequestsChannelId + "/messages", "POST", payload);
+      Object.assign(record, { items: next, messageId: posted.id, updatedAt: new Date().toISOString() });
+      await writeSkuFile(skuSelectionsFile, selections);
+      return next;
+    });
+  }
   async function recordSkuSelection(userId, username, sourceId, target, quantity, channelId) {
     if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
     const source = await api(`/channels/${channelId}/messages/${sourceId}`);
@@ -2585,27 +2607,51 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
         const selections = await readSkuFile(skuSelectionsFile);
         const token = d.data.values?.[0];
-        const item = selections[userId]?.items.find(item => skuItemToken(item.key) === token);
-        if (!item) return await reply("That SKU is no longer selected. Click My selected SKUs to refresh.");
+        const record = selections[userId];
+        const item = record?.items.find(row => skuItemToken(row.key) === token);
+        if (!item) return await reply("That SKU is no longer selected. Refresh My selected SKUs.");
+        const quantity = uniformSkuQuantity(record.items);
         return await api(callback, "POST", { type: 4, data: {
           flags: 64, allowed_mentions: { parse: [] },
-          content: `**${skuSafeText(item.name)}**\nSKU: \`${skuSafeText(item.sku)}\` · Currently selected Qty: ${item.quantity}`,
-          components: [{ type: 1, components: [{ type: 3, custom_id: `sku:change:${token}`,
-            placeholder: "Change quantity or remove this SKU", min_values: 1, max_values: 1,
-            options: [{ label: "Qty: 1", value: "1", default: item.quantity === 1 }, { label: "Qty: 2", value: "2", default: item.quantity === 2 }, { label: "Remove this SKU", value: "0" }]
-          }] }]
+          content: "**" + skuSafeText(item.name) + "**\nSKU: " + skuSafeText(item.sku) +
+            "\n**Qty: " + (quantity || "choose 1 or 2") + " for ALL selected SKUs**",
+          components: [
+            { type: 1, components: [{ type: 3, custom_id: "sku:change:" + token,
+              placeholder: "Remove this SKU", min_values: 1, max_values: 1,
+              options: [{ label: "Remove this SKU", value: "0" }]
+            }] },
+            { type: 1, components: [
+              { type: 2, style: quantity === 1 ? 3 : 2, label: "Qty 1 — ALL SKUs", custom_id: "sku:global:1" },
+              { type: 2, style: quantity === 2 ? 3 : 2, label: "Qty 2 — ALL SKUs", custom_id: "sku:global:2" }
+            ] }
+          ]
         } });
+      }
+      if (d.type === 3 && /^sku:global:[12]$/.test(d.data?.custom_id || "")) {
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        const quantity = Number(d.data.custom_id.split(":")[2]);
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          const items = await setUserGlobalSkuQuantity(userId, quantity);
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original",
+            "PATCH", skuSelectionView(items, "Qty " + quantity + " saved for ALL SKUs. The owner has been notified."));
+        } catch (error) {
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original",
+            "PATCH", { content: error.message, components: [] });
+        }
       }
       if (d.type === 3 && /^sku:change:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
         if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
         const quantity = Number(d.data.values?.[0]);
-        if (![0, 1, 2].includes(quantity)) return await reply("Choose Qty: 1, Qty: 2, or Remove.");
+        if (quantity !== 0) return await reply("Individual SKU quantities are not allowed. Choose Qty 1 or 2 for ALL selected SKUs.");
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         try {
-          const items = await manageSkuSelection(userId, d.data.custom_id.split(":")[2], quantity);
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", skuSelectionView(items, "Selection updated. The owner's private message now shows your latest choices."));
+          const items = await manageSkuSelection(userId, d.data.custom_id.split(":")[2], 0);
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original",
+            "PATCH", skuSelectionView(items, "SKU removed. The owner has been notified."));
         } catch (error) {
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message, components: [] });
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original",
+            "PATCH", { content: error.message, components: [] });
         }
       }
       if (d.type === 3 && /^sku:(?:pick|qty):\d{17,22}:(?:\d{1,3}|all)$/.test(d.data?.custom_id || "")) {
