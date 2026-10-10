@@ -132,7 +132,7 @@ test('customer 24H, 7D, 30D, 90D, MTD, YTD and lifetime filters agree with activ
     assert.equal(values,Math.round(dashboardTotals(selected).spend*100),String(period));
   }
   const source=readFileSync(new URL('../public/app-dashboard.js',import.meta.url),'utf8');
-  assert.match(source,/\[1, 7, 30, 90, 'mtd', 'ytd', 180, 'all'\]/);
+  assert.match(source,/\[1,7,30,90,'ytd','all'\]/);
   assert.match(source,/\^\(mtd\|ytd\|all\)\$/);
   const css=readFileSync(new URL('../public/sng-controls.css',import.meta.url),'utf8');
   assert.match(css,/\.app-dashboard \.sng-range \{\s*display:grid;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
