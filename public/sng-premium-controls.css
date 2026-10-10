@@ -259,3 +259,148 @@ body.admin-page[data-admin-theme="light"] #dashboard select {
   border-color:#9db6df!important;
   color:#233658!important;
 }
+
+
+/* 2026-10-10: date-range and shipping-status controls are filled ONLY when
+   selected. Previous color-by-position and generic primary-button styles
+   made every choice appear active at once. */
+#workspace .admin-spend-ranges button[aria-pressed="false"],
+#workspace .success-user-period button[aria-pressed="false"],
+body.admin-page #dashboard .periods button[aria-pressed="false"],
+body.admin-page #dashboard .user-periods button[aria-pressed="false"],
+body.app-dashboard #my-profile #app-dashboard .sng-range button[aria-pressed="false"],
+body.app-dashboard #my-profile #app-dashboard .sng-status-filters button[aria-pressed="false"],
+body.app-dashboard #my-profile #app-dashboard .sng-profile-menu button[aria-pressed="false"] {
+  background:#17243a!important;
+  background-image:none!important;
+  color:#b5cbe5!important;
+  border:1px solid #55729c!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.045)!important;
+  filter:none!important;
+}
+#workspace .admin-spend-ranges button[aria-pressed="true"],
+#workspace .success-user-period button[aria-pressed="true"],
+body.admin-page #dashboard .periods button[aria-pressed="true"],
+body.admin-page #dashboard .user-periods button[aria-pressed="true"],
+body.app-dashboard #my-profile #app-dashboard .sng-range button[aria-pressed="true"],
+body.app-dashboard #my-profile #app-dashboard .sng-status-filters button[aria-pressed="true"],
+body.app-dashboard #my-profile #app-dashboard .sng-profile-menu button[aria-pressed="true"] {
+  background:linear-gradient(115deg,#9656fc,#278fed 64%,#04bba9)!important;
+  background-image:linear-gradient(115deg,#9656fc,#278fed 64%,#04bba9)!important;
+  color:#fff!important;
+  border:2px solid #9dedff!important;
+  box-shadow:0 0 0 2px rgba(95,216,251,.14),0 8px 20px rgba(72,101,236,.32)!important;
+  filter:none!important;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-status-filters button[aria-pressed="false"] span{
+  color:#9ebdd6;opacity:1;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-status-filters button[aria-pressed="true"] span{
+  color:#fff;opacity:1;
+}
+html[data-admin-mobile-theme="light"] #workspace .admin-spend-ranges button[aria-pressed="false"],
+html[data-admin-mobile-theme="light"] #workspace .success-user-period button[aria-pressed="false"],
+body.admin-page[data-admin-theme="light"] #dashboard .periods button[aria-pressed="false"],
+body.admin-page[data-admin-theme="light"] #dashboard .user-periods button[aria-pressed="false"],
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-range button[aria-pressed="false"],
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-status-filters button[aria-pressed="false"],
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-profile-menu button[aria-pressed="false"] {
+  background:#eff4ff!important;background-image:none!important;
+  color:#344b71!important;border-color:#b4c7e4!important;
+}
+
+/* User-picked Option B: status color wraps ALL FOUR sides of recent orders,
+   tracking packages, and order-history cards, with an unobtrusive glow. */
+body.app-dashboard #my-profile #app-dashboard .sng-order-card {
+  border:2px solid var(--sng-status-outline,#50cef7)!important;
+  border-radius:20px;
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--sng-status-outline,#50cef7) 16%,transparent),
+             0 0 18px color-mix(in srgb,var(--sng-status-outline,#50cef7) 18%,transparent);
+}
+body.app-dashboard #my-profile #app-dashboard .sng-order-card.stage-ordered {--sng-status-outline:#ffd33b}
+body.app-dashboard #my-profile #app-dashboard .sng-order-card.stage-shipped {--sng-status-outline:#c279ff}
+body.app-dashboard #my-profile #app-dashboard .sng-order-card.stage-in_transit {--sng-status-outline:#37ddff}
+body.app-dashboard #my-profile #app-dashboard .sng-order-card.stage-out_for_delivery {--sng-status-outline:#ff983f}
+body.app-dashboard #my-profile #app-dashboard .sng-order-card.stage-delivered {--sng-status-outline:#29e8aa}
+body.app-dashboard #my-profile #app-dashboard .sng-order-card.stage-review_hold {--sng-status-outline:#ffc366}
+body.app-dashboard #my-profile #app-dashboard .sng-order-card.stage-cancelled {--sng-status-outline:#ff638a}
+body.app-dashboard #my-profile #app-dashboard .sng-order-card[open] {
+  box-shadow:0 0 0 1px var(--sng-status-outline,#50cef7),
+             0 0 23px color-mix(in srgb,var(--sng-status-outline,#50cef7) 27%,transparent);
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-order-card {
+  box-shadow:0 3px 15px color-mix(in srgb,var(--sng-status-outline,#50cef7) 19%,transparent);
+}
+
+/* Admin order receipts also receive a vivid full-perimeter border. */
+#workspace .success-order-card,
+body.admin-page #dashboard .receipt-order {
+  border:2px solid transparent;
+  border-radius:16px;
+  background:linear-gradient(#13233b,#102138) padding-box,
+             linear-gradient(120deg,#ad6fff,#34d2fa 61%,#36e7b9) border-box;
+  box-shadow:0 5px 20px rgba(48,140,235,.13);
+  overflow:hidden;
+}
+#workspace .success-order-card>summary,
+body.admin-page #dashboard .receipt-order>summary {
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:13px 14px;cursor:pointer;list-style:none;min-height:62px;
+  color:#f1faff;
+}
+#workspace .success-order-card>summary::-webkit-details-marker,
+body.admin-page #dashboard .receipt-order>summary::-webkit-details-marker {display:none}
+#workspace .success-order-card>summary .success-order-title,
+body.admin-page #dashboard .receipt-order>summary .receipt-order-title {
+  display:grid;gap:5px;min-width:0;flex:1;
+}
+#workspace .success-order-card>summary small,
+body.admin-page #dashboard .receipt-order>summary small {
+  color:#afc6e5;font-size:11px;line-height:1.35;font-weight:600;
+}
+#workspace .success-order-card .success-order-total,
+body.admin-page #dashboard .receipt-order .receipt-order-total {
+  color:#78e8f9;text-align:right;font-size:15px;font-weight:900;white-space:nowrap;
+}
+#workspace .success-order-card .success-order-total small,
+body.admin-page #dashboard .receipt-order .receipt-order-total small {
+  display:block;white-space:normal;max-width:120px;
+}
+#workspace .success-order-items,
+body.admin-page #dashboard .receipt-order-items {
+  display:grid;gap:0;padding:2px 12px 12px;
+}
+#workspace .success-order-item,
+body.admin-page #dashboard .receipt-order-item {
+  display:flex;align-items:center;gap:11px;min-width:0;
+  padding:11px 4px;border-top:1px solid rgba(110,161,208,.25);
+  color:#eef5ff;font-size:12px;
+}
+#workspace .success-order-item img,
+body.admin-page #dashboard .receipt-order-item img {
+  width:43px;height:43px;object-fit:contain;background:#fff;border-radius:9px;
+  padding:3px;flex-shrink:0;
+}
+#workspace .success-order-item strong,
+body.admin-page #dashboard .receipt-order-item strong {flex:1;min-width:0;overflow-wrap:anywhere;font-weight:750}
+#workspace .success-order-item .success-qty,
+body.admin-page #dashboard .receipt-order-item .receipt-qty {
+  color:#71eaff;font-size:13px;font-weight:900;flex-shrink:0;
+}
+#workspace .success-order-card + .success-order-card,
+body.admin-page #dashboard .receipt-order + .receipt-order {margin-top:10px}
+#workspace .success-order-warning,
+body.admin-page #dashboard .receipt-order-warning {color:#ffcf8a!important}
+#workspace .success-order-list {display:grid;gap:10px}
+body.admin-page #dashboard .receipt-order-list {display:grid;gap:10px}
+html[data-admin-mobile-theme="light"] #workspace .success-order-card,
+body.admin-page[data-admin-theme="light"] #dashboard .receipt-order{
+  background:linear-gradient(#fcfdff,#f4f8ff) padding-box,
+             linear-gradient(120deg,#8446e7,#12a6d1 64%,#16ad8b) border-box;
+}
+html[data-admin-mobile-theme="light"] #workspace .success-order-card>summary,
+body.admin-page[data-admin-theme="light"] #dashboard .receipt-order>summary,
+html[data-admin-mobile-theme="light"] #workspace .success-order-item,
+body.admin-page[data-admin-theme="light"] #dashboard .receipt-order-item {color:#1e3552}
+html[data-admin-mobile-theme="light"] #workspace .success-order-card>summary small,
+body.admin-page[data-admin-theme="light"] #dashboard .receipt-order>summary small {color:#506583}
