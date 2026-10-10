@@ -165,7 +165,7 @@ test("premium responsive controls load LAST across full Admin, installed Admin, 
   assert.match(premium,/data-admin-mobile-theme="light"/);
   assert.match(premium,/data-admin-theme="light"/);
   assert.match(premium,/data-app-theme="day"/);
-  assert.match(file("public/admin-app.html"),/admin-mobile-controls\.css\?v=1"><link rel="stylesheet" href="\/sng-premium-controls\.css\?v=1"/);
-  assert.match(file("public/index.html"),/\/sng-premium-controls\.css\?v=1/);
-  assert.match(file("public/admin.html"),/\/sng-premium-controls\.css\?v=1/);
+  assert.match(file("public/admin-app.html"),/admin-mobile-controls\.css\?v=1"><link rel="stylesheet" href="\/sng-premium-controls\.css\?v=2"/);
+  assert.match(file("public/index.html"),/\/sng-premium-controls\.css\?v=2/);
+  assert.match(file("public/admin.html"),/\/sng-premium-controls\.css\?v=2/);
 });
