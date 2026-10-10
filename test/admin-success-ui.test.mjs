@@ -85,3 +85,21 @@ test("Admin Success renders period-matched unmatched, customer products and hit 
   assert.match(html,/YTD/);
   assert.doesNotMatch(html,/password:|example@gmail\.com/);
 });
+
+test("membership revenue counts only actual paid subscription invoices in month", async()=>{
+  const {stripeMembershipRevenue}=await import("../stripe-membership-revenue.js");
+  const stripe={
+    subscriptions:{list:async()=>({data:[{id:"sub_a"},{id:"sub_b"}],has_more:false})},
+    invoices:{list:async()=>({data:[
+      {id:"in_a",status:"paid",currency:"usd",amount_paid:1500,created:1791653459,status_transitions:{paid_at:1791653463},parent:{subscription_details:{subscription:"sub_a"}}},
+      {id:"in_b",status:"paid",currency:"usd",amount_paid:4550,created:1791477392,status_transitions:{paid_at:1791477396},parent:{subscription_details:{subscription:"sub_b"}}},
+      {id:"in_wrong",status:"paid",currency:"usd",amount_paid:10000,created:1791477392,status_transitions:{paid_at:1791477396}},
+      {id:"in_old",status:"paid",currency:"usd",amount_paid:3000,created:1790014905,status_transitions:{paid_at:1790014908},parent:{subscription_details:{subscription:"sub_a"}}}
+    ],has_more:false})}
+  };
+  const v=await stripeMembershipRevenue(stripe,new Date("2026-10-10T22:00:00Z"));
+  assert.equal(v.activePaidMemberships,2);
+  assert.equal(v.monthlyPaidCents,6050);
+  assert.equal(v.paidInvoiceCount,2);
+  assert.equal(v.period,"2026-10");
+});
