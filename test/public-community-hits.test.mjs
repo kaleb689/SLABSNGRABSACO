@@ -62,17 +62,30 @@ test("missing product picture does not produce a misleading price or broken thum
   assert.equal(hit.embeds[0].fields.some(f => /price/i.test(f.name)), false);
 });
 
-test("formatting existing sent Discord hits edits known message IDs, never posts duplicate replacements", () => {
+test("hits mirror backfills unmatched canonical orders without resetting sent history", () => {
   const start = server.indexOf("async function mirrorDiscordCheckoutHits(");
   const end = server.indexOf("\nfunction discordCheckoutIdentity(", start);
   assert.ok(start > -1 && end > start);
   const mirror = server.slice(start, end);
-  assert.match(mirror, /Object\.entries\(state\.sent\)/);
-  assert.match(mirror, /uniqueBySource\.has\(id\)/);
+  assert.match(mirror, /planDiscordCommunityHits\(records/);
   assert.match(mirror, /method: "PATCH"/);
-  assert.match(mirror, /renderVersion: DISCORD_HIT_RENDER_VERSION/);
-  assert.match(mirror, /if \(state\.sent\[sourceMessageId\]\) continue;/);
+  assert.match(mirror, /method: "DELETE"/);
   assert.match(mirror, /No fallback to POST/);
+  assert.match(mirror, /if \(state\.sent\[entry\.sourceMessageId\]\) continue;/);
+  assert.match(mirror, /const plan = planDiscordCommunityHits/);
+  assert.doesNotMatch(mirror, /clearBotHitMessages\(token/);
+  assert.doesNotMatch(mirror, /customerAccountId/);
+  assert.match(mirror, /DISCORD_HIT_RENDER_VERSION/);
+});
+
+test("Discord scanner mirrors reconciled orders, not raw green-only imports", () => {
+  const start = server.indexOf("async function scanDiscordSuccessChannel(");
+  const end = server.indexOf("\n// Secure review of checkout labels", start);
+  assert.ok(start > -1 && end > start);
+  const scan = server.slice(start, end);
+  assert.match(scan, /authoritativeDiscordCheckouts\(\s*await getSuccessCheckouts\(\), channels\)/);
+  assert.match(scan, /mirrorDiscordCheckoutHits\(\s*communityRecords, token, channels\[0\]\)/);
+  assert.doesNotMatch(scan, /mirrorDiscordCheckoutHits\(imports\.filter/);
 });
 
 test("community total logic counts unassigned confirmed checkouts but not cancellations or holds", () => {
