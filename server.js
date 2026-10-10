@@ -38721,10 +38721,10 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     res.setHeader("Cache-Control", "no-store");
     const communityTotals = historicalPlusVerified({
       checkouts: confirmed.length,
-      spent: confirmed.reduce((sum,record) => sum +
-        (Number.isFinite(Number(record.orderTotal)) && Number(record.orderTotal) > 0
-          ? Number(record.orderTotal) : 0), 0),
-      unknownPrices: confirmed.filter(record => !(Number(record.orderTotal) > 0)).length
+      spent: confirmed.reduce((sum, record) =>
+        sum + (checkoutPaidAmount(record) ?? 0), 0),
+      unknownPrices: confirmed.filter(record =>
+        checkoutPaidAmount(record) === null).length
     });
     return res.json({
       ok:true,records,unmatchedCount,unmatchedRecent,
@@ -38963,14 +38963,16 @@ app.get(
       let pricePendingCheckouts = 0;
 
       for (const record of records) {
-        if (!/^(confirmed|success|completed)$/i.test(String(record.status || "confirmed"))) continue;
+        if (!confirmedDiscordPurchase(record)) continue;
         const eligibleItems = (Array.isArray(record.items) ? record.items : []).filter(item => {
           const name = publicSuccessProductName(item?.name);
           return name && isSafeDiscordCheckoutProductName(name) && !/@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name) && Number(item?.quantity) > 0;
         });
         totalCheckouts += 1;
-        const total = Number(record.orderTotal);
-        if (Number.isFinite(total) && total > 0) totalSpent += total;
+        // An item subtotal excludes tax, shipping and fees. It is never
+        // counted as the verified amount paid by the customer.
+        const paidTotal = checkoutPaidAmount(record);
+        if (paidTotal !== null) totalSpent += paidTotal;
         else pricePendingCheckouts += 1;
 
         const purchasedAt = new Date(record.checkoutAt || record.updatedAt || record.createdAt || 0).getTime();
@@ -39304,11 +39306,6 @@ function reviewHoldDiscordCheckout(record) {
 function safeSuccessCheckout(
   record
 ) {
-  const total =
-    Number(
-      record?.orderTotal || 0
-    );
-
   const items =
     Array.isArray(record?.items)
       ? record.items.map(item => {
@@ -39361,11 +39358,8 @@ function safeSuccessCheckout(
       record?.createdAt ||
       null,
 
-    orderTotal:
-      Number.isFinite(total) &&
-      total >= 0
-        ? total
-        : 0,
+    // Never present an item subtotal as an amount actually charged.
+    orderTotal: checkoutPaidAmount(record) ?? 0,
     // A known item subtotal is NOT the actual final charged amount.
     orderTotalKnown: checkoutPaidAmount(record) !== null,
 
@@ -43838,7 +43832,8 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         if (!account || account.disabled === true) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
         if (receiptTotal && !cancelledOrder(record) &&
-            (record.orderTotalBasis === "unknown" || (!record.orderTotalBasis && !(Number(record.orderTotal) > 0)))) {
+            (!["retailer_receipt"].includes(String(record.orderTotalBasis || "").toLowerCase()) &&
+              record.priceSource !== "verified_retailer_receipt")) {
           // Only attach amount to the existing, uniquely matched Discord
           // checkout. Never turn an email receipt into a new order or owner.
           record.orderTotal = receiptTotal;
@@ -43985,7 +43980,8 @@ async function syncShippingTrackers() {
         if (!record) continue;
         if (update.orderTotal) {
           if (!cancelledOrder(record) &&
-              (record.orderTotalBasis === "unknown" || (!record.orderTotalBasis && !(Number(record.orderTotal) > 0)))) {
+              (!["retailer_receipt"].includes(String(record.orderTotalBasis || "").toLowerCase()) &&
+              record.priceSource !== "verified_retailer_receipt")) {
             record.orderTotal = update.orderTotal;
             record.orderTotalBasis = "retailer_receipt";
             record.priceSource = "verified_retailer_receipt";
@@ -44024,6 +44020,9 @@ async function syncShippingTrackers() {
         await saveSuccessCheckouts(latest);
         for (const id of changedAccounts) announceSuccessCheckout(id);
         broadcastLiveDataChange("verified-shipping-update");
+        // Edit an existing community hit when its verified receipt changes.
+        // The durable mirror ledger forbids duplicate posting.
+        if (pendingChanges.some(change => change.orderTotal)) queueDiscordSuccessScan(350);
       }
     });
     // Push alerts and Discord DMs only after the order update is durable.
