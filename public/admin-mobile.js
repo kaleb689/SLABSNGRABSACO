@@ -89,7 +89,7 @@ if(tab==="success"){
   const max=Math.max(1,...buckets);
   const line=buckets.map((v,i)=>(i?"L":"M")+(16+i*(288/(ticks-1))).toFixed(1)+" "+(76-v/max*56).toFixed(1)).join(" ");
   const trend='<svg class="admin-spend-trend" viewBox="0 0 320 100" preserveAspectRatio="none" role="img" aria-label="Verified spending trend for selected period"><path d="'+line+'" fill="none" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  const hero='<section class="admin-spend-hero"><span class="admin-spend-kicker">TOTAL VERIFIED SPENT · '+rangeNames[days]+'</span><strong>'+shownSpend+'</strong><p>'+total+' confirmed orders · '+groupedRetailers.size+' retailers · '+esc(note)+'</p>'+trend+'</section>';
+  const hero='<section class="admin-spend-hero"><span class="admin-spend-kicker">TOTAL VERIFIED SPENT · '+rangeNames[days]+'</span><strong>'+shownSpend+'</strong><p>'+total+' confirmed order'+(total===1?'':'s')+' · '+groupedRetailers.size+' retailers · '+esc(note)+'</p>'+trend+'</section>';
   function productsMarkup(rows,limit=30) {
     const goods=new Map();
     rows.forEach(order=>(order.items||[]).forEach(item=>{
