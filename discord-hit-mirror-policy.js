@@ -1,5 +1,6 @@
 import { sameCheckout } from "./webhook-success.js";
 import { cancelledOrder } from "./order-notifications.js";
+import { checkoutPriceSignature } from "./checkout-price-policy.js";
 
 const SOURCE_CHANNEL = /^\d{17,22}$/;
 const SOURCE_MESSAGE = /^\d{17,22}$/;
@@ -36,7 +37,7 @@ function descendingSourceId(a, b) {
  * in the persistent ledger. Unsent older webhook orders are eligible for
  * backfill; an attribution/customerAccountId is never required.
  */
-export function planDiscordCommunityHits(records, sourceChannelId, sent = {}, renderVersion = 2) {
+export function planDiscordCommunityHits(records, sourceChannelId, sent = {}, renderVersion = 4) {
   const groups = [];
   for (const record of Array.isArray(records) ? records : []) {
     const ids = sourceMessageIdsForHit(record, sourceChannelId);
@@ -70,7 +71,8 @@ export function planDiscordCommunityHits(records, sourceChannelId, sent = {}, re
       // Keep one existing bot message for an order, even if multiple webhook
       // events or old bugs once created extra mirrored messages.
       const keeper = prior[0];
-      if (Number(sent[keeper].renderVersion || 0) < renderVersion) {
+      if (Number(sent[keeper].renderVersion || 0) < renderVersion ||
+          String(sent[keeper].priceSignature || "") !== checkoutPriceSignature(order)) {
         updates.push({ sourceMessageId: keeper, messageId: String(sent[keeper].messageId), order });
       }
       for (const id of prior.slice(1)) {

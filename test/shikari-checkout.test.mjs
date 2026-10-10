@@ -6,6 +6,7 @@ import { checkoutIdentityFromDiscord, checkoutStatusFromDiscord, checkoutProduct
 import { reconcileWebhookCheckout, uniqueCheckoutOwner } from "../webhook-success.js";
 import { lateCancellation } from "../order-notifications.js";
 import { verifiedRetailerOrderTotal } from "../retailer-order-total.js";
+import { checkoutExplicitPaidTotal } from "../checkout-price-policy.js";
 
 const channel = "1532179373292257290";
 const product = "Pokemon Trading Card Game: Mega Evolution Delta Reign Three-Booster Blister";
@@ -29,7 +30,7 @@ function parseLiveWebhook(message) {
   assert.ok(start > 0 && end > start, "extract actual production parser");
   const sandbox = {
     message, channel, parsed: null, discordCheckoutIdentity: checkoutIdentityFromDiscord,
-    checkoutStatusFromDiscord, checkoutProductFromDiscord,
+    checkoutStatusFromDiscord, checkoutProductFromDiscord, checkoutExplicitPaidTotal,
     publicSuccessProductName: s => String(s || "").slice(0, 120).trim(),
     isSafeDiscordCheckoutProductName: s => !/@|password/i.test(s),
     publicSuccessImageUrl: s => s || null,

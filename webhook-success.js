@@ -17,7 +17,15 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
   const owner = owners.size === 1 ? [...owners][0] : owners.size ? null : attribution?.customerAccountId || null;
   if (owners.size > 1) return { changed: false, conflict: true, record: null };
   const prior = matches.find(record => record.customerAccountId) || matches[0] || {};
-  const priced = order.orderTotalBasis !== 'unknown' && Number.isFinite(order.orderTotal) && order.orderTotal > 0;
+  const priceRank = value => ({
+    unknown:0, item_subtotal:1, order_total:2, retailer_receipt:3
+  })[String(value || 'unknown')] || 0;
+  const incomingPriceRank = priceRank(order.orderTotalBasis);
+  const previousPriceRank = priceRank(prior.orderTotalBasis);
+  // A later duplicate webhook must not overwrite an exact verified receipt
+  // with an item subtotal or an unknown amount.
+  const priced = incomingPriceRank > 0 && incomingPriceRank >= previousPriceRank &&
+    Number.isFinite(order.orderTotal) && order.orderTotal > 0;
   // Discord webhooks about the SAME retailer order can arrive as green,
   // orange and red messages at different times. Use only the newest event
   // color for status, not whichever webhook happens to be scanned last.
@@ -53,11 +61,21 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
     ...(nextCancelledAt ? { cancelledAt: nextCancelledAt } : { cancelledAt: null }),
     orderTotal: priced ? order.orderTotal : prior.orderTotal || 0,
     orderTotalBasis: priced ? order.orderTotalBasis : prior.orderTotalBasis || 'unknown',
-    priceSource: priced ? 'checkout_webhook' : prior.priceSource || null,
+    priceSource: priced ? (order.orderTotalBasis === 'item_subtotal' ?
+      'checkout_item_subtotal' : order.priceSource || 'checkout_webhook') :
+      prior.priceSource || null,
     itemCount: order.itemCount,
     items: order.items.map(item => {
       const previous = (prior.items || []).find(old => old.name === item.name);
-      return { ...item, imageUrl: item.imageUrl || previous?.imageUrl || null };
+      const newUnitPrice = Number(item.price);
+      const previousUnitPrice = Number(previous?.price);
+      return { ...item,
+        // Do not lose an earlier verified/reported product price when a
+        // later status-only webhook repeats the order without price fields.
+        price: Number.isFinite(newUnitPrice) && newUnitPrice > 0 ? newUnitPrice :
+          Number.isFinite(previousUnitPrice) && previousUnitPrice > 0 ? previousUnitPrice : 0,
+        imageUrl: item.imageUrl || previous?.imageUrl || null
+      };
     }),
     status: nextStatus,
     sourceIds: [...new Set([...matches.flatMap(record => [record.id, ...(record.sourceIds || [])]), order.id])]

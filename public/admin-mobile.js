@@ -4,6 +4,15 @@ let tab="overview",data={customers:[],activation:null,availability:null,usage:nu
 let successDays=30,successCustomerId="all",successAccountKey="all";
 const successExpandedUsers=new Set();
 const successUserDays=new Map();
+const successOpenPanels=new Set();
+const successOpenCustomerCards=new Set();
+function successPeriodStart(period,now=new Date()){
+  if(period==="all")return 0;
+  if(period==="mtd")return new Date(now.getFullYear(),now.getMonth(),1,0,0,0,0).getTime();
+  if(period==="ytd")return new Date(now.getFullYear(),0,1,0,0,0,0).getTime();
+  const days=Number(period);
+  return Number.isFinite(days)&&days>0?now.getTime()-days*86400000:now.getTime()-30*86400000;
+}
 let customerSearchText="", mobileRefreshTimer=null, mobileRefreshPending=false, mobileRefreshRunning=false;
 const mobileControlFocused=()=>{
   const active=document.activeElement;
@@ -40,7 +49,7 @@ if(tab==="success"){
   const allSuccess=Array.isArray(data.success?.records)?data.success.records.filter(x=>Boolean(x.customerAccountId)):[];
   const now=new Date(), currentTime=Date.now(), day=86400000;
   const days=successDays;
-  const cutoff=days==="all"?0:days==="mtd"?new Date(now.getFullYear(),now.getMonth(),1).getTime():days==="ytd"?new Date(now.getFullYear(),0,1).getTime():currentTime-Number(days)*day;
+  const cutoff=successPeriodStart(days,now);
   const inRange=allSuccess.filter(x=>{
     const time=Date.parse(x.checkoutAt);
     return Number.isFinite(time)&&time>=cutoff&&time<=currentTime+60000;
@@ -77,12 +86,12 @@ if(tab==="success"){
   const groupedRetailers=new Map();
   filtered.forEach(x=>{const key=String(x.retailer||"Other");groupedRetailers.set(key,(groupedRetailers.get(key)||0)+1);});
   const total=filtered.length,spent=verifiedSpent(filtered),pending=missingPrices(filtered);
-  const shownSpend=!total||pending===total?"—":dollars(spent);
-  const rangeNames={1:"LAST 24 HOURS",7:"LAST 7 DAYS",30:"LAST 30 DAYS",90:"LAST 90 DAYS",mtd:"THIS MONTH",ytd:"YEAR TO DATE",all:"ALL TIME"};
+  const shownSpend=total&&pending===total?"Pending":dollars(spent);
+  const rangeNames={1:"LAST 24 HOURS",7:"LAST 7 DAYS",30:"LAST 30 DAYS",90:"LAST 90 DAYS",mtd:"MONTH TO DATE",ytd:"YEAR TO DATE",all:"ALL TIME"};
   const ranges=[[1,"24H"],[7,"7D"],[30,"30D"],[90,"90D"],["mtd","MTD"],["ytd","YTD"],["all","ALL"]];
   const buttons='<div class="admin-spend-ranges" role="group" aria-label="Total spent period">'+
     ranges.map(([value,label])=>'<button type="button" data-success-days="'+value+'" aria-pressed="'+(String(value)===String(days))+'">'+label+'</button>').join("")+'</div>';
-  const note=pending?pending+' confirmed checkout'+(pending===1?'':'s')+' awaiting verified paid amounts.':'All displayed checkout amounts are verified.';
+  const note=!total?'No linked customer checkouts in this period.':pending?pending+' of '+total+' confirmed checkouts awaiting verified paid amounts.':'All displayed checkout amounts are verified.';
   const ticks=days===1?8:days===7?7:12;
   const min=cutoff||Math.min(currentTime,...filtered.map(x=>Date.parse(x.checkoutAt)).filter(Number.isFinite));
   const span=Math.max(1,currentTime-min),buckets=Array(ticks).fill(0);
@@ -182,8 +191,8 @@ if(tab==="success"){
     .sort((a,b)=>Math.max(...b.orders.map(o=>Date.parse(o.checkoutAt)||0))-
       Math.max(...a.orders.map(o=>Date.parse(o.checkoutAt)||0))||a.name.localeCompare(b.name));
   const peopleHtml=displayedPeople.map(x=>{
-    const userDays=[1,7,30].includes(successUserDays.get(x.id))?successUserDays.get(x.id):30;
-    const userCutoff=currentTime-userDays*day;
+    const userDays=[1,7,30,"mtd"].includes(successUserDays.get(x.id))?successUserDays.get(x.id):30;
+    const userCutoff=successPeriodStart(userDays,now);
     let userRows=x.orders.filter(order=>{
       const at=Date.parse(order.checkoutAt);
       return Number.isFinite(at)&&at>=userCutoff&&at<=currentTime+60000;
@@ -192,15 +201,18 @@ if(tab==="success"){
       userRows=userRows.filter(order=>String(order.accountKey||"unknown")===successAccountKey);
     const accountCount=new Set(userRows.map(order=>order.accountKey||"unknown")).size;
     const userPending=missingPrices(userRows);
-    const userSpend=userRows.length&&userPending===userRows.length?"—":dollars(verifiedSpent(userRows));
+    const userSpend=userRows.length&&userPending===userRows.length?"Pending":dollars(verifiedSpent(userRows));
     const periodButtons='<div class="success-user-period" role="group" aria-label="'+esc(x.name)+' breakdown time range">'+
-      [[1,"24H"],[7,"7D"],[30,"30D"]].map(([num,label])=>
+      [[1,"24H"],[7,"7D"],[30,"30D"],["mtd","MTD"]].map(([num,label])=>
         '<button type="button" data-success-user-days="'+num+'" data-success-user-id="'+esc(x.id)+
         '" aria-pressed="'+(num===userDays)+'">'+label+'</button>').join("")+'</div>';
-    return '<section class="panel success-user-panel" data-success-customer="'+esc(x.id)+'">'+
-      '<div class="success-user-heading"><div><span class="success-eyebrow">CUSTOMER CHECKOUTS</span>'+
-      '<h2>'+esc(x.name)+' checkout breakdown</h2></div><span class="success-user-range">'+
-      (userDays===1?'24 hours':userDays+' days')+'</span></div>'+periodButtons+
+    return '<details class="panel success-user-panel success-user-accordion" data-success-customer="'+esc(x.id)+'" '+
+      (successOpenCustomerCards.has(x.id)||successCustomerId===x.id?'open':'')+'>'+
+      '<summary class="success-customer-summary"><span>'+esc(x.name)+' checkout breakdown</span>'+
+      '<span class="success-customer-total">'+x.orders.length+' total hit'+(x.orders.length===1?'':'s')+'</span></summary>'+
+      '<div class="success-customer-body"><div class="success-user-heading"><div><span class="success-eyebrow">CUSTOMER CHECKOUTS</span>'+
+      '<h2>Checkout details</h2></div><span class="success-user-range">'+
+      (userDays==='mtd'?'Month to date':userDays===1?'24 hours':userDays+' days')+'</span></div>'+periodButtons+
       '<div class="success-user-stats">'+
       '<div><small>Confirmed orders</small><strong>'+userRows.length+'</strong></div>'+
       '<div><small>Verified spent</small><strong>'+userSpend+'</strong></div>'+
@@ -212,30 +224,52 @@ if(tab==="success"){
       '<summary>View products purchased & accounts that checked out</summary>'+
       '<div class="success-user-details-body"><h3>Products purchased</h3>'+
         productsMarkup(userRows,18)+'<h3>Which accounts checked out</h3>'+
-        accountsMarkup(userRows)+'</div></details></section>';
+        accountsMarkup(userRows)+'</div></details></div></details>';
   }).join("")||panel("Customer checkouts",'<p>No confirmed customer-linked checkouts are available yet. Review the unmatched retailer profiles below.</p>');
   const scanAt=Date.parse(data.success?.sourceCheckedAt||"");
   const scanStatus=Number.isFinite(scanAt)?'<p class="success-scan-status">Webhook source last scanned '+
     esc(new Date(scanAt).toLocaleString())+'</p>':"";
+  const productsDrop='<details class="success-overview-accordion" data-success-panel="products" '+
+    (successOpenPanels.has("products")?'open':'')+'><summary><span>Products purchased</span>'+
+    '<span class="success-accordion-count">'+total+' orders</span></summary>'+
+    '<div class="success-overview-accordion-body">'+productsMarkup(filtered)+'</div></details>';
+  const customersDrop='<details class="success-overview-accordion" data-success-panel="customers" '+
+    (successOpenPanels.has("customers")||successCustomerId!=="all"?'open':'')+
+    '><summary><span>Customer breakdowns</span><span class="success-accordion-count">'+
+    displayedPeople.length+' users</span></summary><div class="success-overview-accordion-body">'+
+    peopleHtml+'</div></details>';
   c.innerHTML=buttons+customerSelect+accountSelect+hero+
     '<div class="metrics admin-success-metrics">'+metric("Confirmed orders",total)+
       metric("Retailers",groupedRetailers.size)+'</div>'+
     unmatchedPanel+lifetime+panel("Orders by retailer",donut+legend)+
-    panel("Products purchased",productsMarkup(filtered))+peopleHtml+scanStatus;
+    productsDrop+customersDrop+scanStatus;
   c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{
     successDays=/^(mtd|ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);
     render();
   }));
   c.querySelectorAll("[data-success-user-days]").forEach(b=>b.addEventListener("click",()=>{
-    successUserDays.set(b.dataset.successUserId,Number(b.dataset.successUserDays));
+    successUserDays.set(b.dataset.successUserId,b.dataset.successUserDays==="mtd"?"mtd":Number(b.dataset.successUserDays));
     render();
   }));
   c.querySelector("#success-customer-filter")?.addEventListener("change",event=>{
-    successCustomerId=event.target.value;successAccountKey="all";render();
+    successCustomerId=event.target.value;successAccountKey="all";
+    successOpenPanels.add("customers");
+    if(successCustomerId!=="all")successOpenCustomerCards.add(successCustomerId);
+    render();
   });
   c.querySelector("#success-account-filter")?.addEventListener("change",event=>{
     successAccountKey=event.target.value;render();
   });
+  c.querySelectorAll("details[data-success-panel]").forEach(el=>
+    el.addEventListener("toggle",()=>{
+      if(el.open)successOpenPanels.add(el.dataset.successPanel);
+      else successOpenPanels.delete(el.dataset.successPanel);
+    }));
+  c.querySelectorAll("details[data-success-customer]").forEach(el=>
+    el.addEventListener("toggle",()=>{
+      if(el.open)successOpenCustomerCards.add(el.dataset.successCustomer);
+      else successOpenCustomerCards.delete(el.dataset.successCustomer);
+    }));
   c.querySelectorAll("details[data-success-user]").forEach(el=>el.addEventListener("toggle",()=>{
     if(el.open)successExpandedUsers.add(el.dataset.successUser);
     else successExpandedUsers.delete(el.dataset.successUser);
