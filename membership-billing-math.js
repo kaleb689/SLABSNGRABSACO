@@ -34,7 +34,8 @@ export function membershipRate(subscription,nowMs=Date.now()) {
   base=Math.round(base);
   const giftedUntil=Number(subscription.trial_end||0)*1000>nowMs?Number(subscription.trial_end)*1000:null;
   const terms=items.map(item=>Number(item.current_period_end)).filter(Number.isFinite);
-  const nextAt=giftedUntil||Number(subscription.current_period_end||0)*1000||Math.max(...terms)*1000||null;
+  const nextCandidates=[Number(subscription.current_period_end||0),...terms].filter(n=>Number.isFinite(n)&&n>0);
+  const nextAt=giftedUntil||(nextCandidates.length?Math.max(...nextCandidates)*1000:null);
   function rateAt(date) {
     const {coupon,error}=discountAt(subscription,date);
     if(error)return null;
