@@ -2228,6 +2228,40 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }));
     }
   }
+  const tonightSkuDmSourceIds = new Set();
+  async function sendTonightSkuLoadedDm(sourceMessage) {
+    if (!sourceMessage?.id || sourceMessage.channel_id !== tonightChannelId ||
+      !isNewDropPost(sourceMessage) || !parseDropSkus(sourceMessage).length ||
+      tonightSkuDmSourceIds.has(sourceMessage.id)) return 0;
+    tonightSkuDmSourceIds.add(sourceMessage.id);
+    if (tonightSkuDmSourceIds.size > 500) tonightSkuDmSourceIds.delete(tonightSkuDmSourceIds.values().next().value);
+    const accounts = await getAccounts();
+    const recipients = new Set();
+    for (const account of accounts) {
+      const userId = String(account.discordUserId || "");
+      if (account.disabled || !account.discordLinkedAt || !/^\d{17,22}$/.test(userId) || recipients.has(userId)) continue;
+      try {
+        if ((Number(await getAllowance(account.id)) || 0) > 0) recipients.add(userId);
+      } catch (error) {
+        console.error("Discord SKU DM allowance check:", error.message);
+      }
+    }
+    let sent = 0;
+    for (const userId of recipients) {
+      try {
+        const dm = await api("/users/@me/channels", "POST", { recipient_id: userId });
+        await api(`/channels/${dm.id}/messages`, "POST", {
+          content: "SKU’s loaded for tonight. Please make your selections for tonight’s drop in the dropping tonight channel",
+          allowed_mentions: { parse: [] }
+        });
+        sent += 1;
+      } catch (error) {
+        console.error(`Discord SKU loaded DM to ${userId}:`, error.message);
+      }
+    }
+    console.log(`Discord Dropping Tonight SKU DM sent to ${sent}/${recipients.size} paid linked user(s).`);
+    return sent;
+  }
   async function onDropPost(d) {
     if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id ||
       d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0)) return;
@@ -2264,7 +2298,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         console.error("Discord drop message cleanup:", error.message);
       }
     }
-    await ensureSkuControls(d);
+    const skuCount = await ensureSkuControls(d);
+    if (isNewDropPost(d) && d.channel_id === tonightChannelId && skuCount > 0) {
+      await sendTonightSkuLoadedDm(d);
+    }
   }
   function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = []) {
     const view = skuSelectionView(items);
