@@ -129,6 +129,8 @@ if (appEnabled) {
     return `<div class="sng-bar-chart" role="img" aria-label="Order value · ${rangeName()}">${activity.map(day => `<div class="sng-bar-column" title="${e(day.date)}: ${day.count} orders, ${money(day.value)}"><div class="sng-bar" style="height:${Math.max(day.value ? 4 : 0, day.value / max * 100)}%"></div></div>`).join('')}</div><div class="sng-chart-axis"><span>${dateLabel(activity[0]?.date + 'T12:00:00')}</span><span>${dateLabel(activity.at(-1)?.date + 'T12:00:00')}</span></div>`;
   }
   function render() {
+    // Keep the native iOS/Android date picker mounted during live refreshes.
+    if (calendarOpen && document.activeElement?.matches?.('[data-app-date-from],[data-app-date-to]')) return;
     if (!state.customer) { root.hidden = true; document.body.classList.remove('app-signed-in'); orders = []; cancelledOrders = []; reviewHoldOrders = []; accountId = null; snapshots.clear(); changes.clear(); stream?.close(); stream = null; return; }
     root.hidden = false; document.body.classList.add('app-signed-in'); document.body.dataset.appView = view;
     document.body.dataset.profileTab = profileTab;
