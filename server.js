@@ -39991,10 +39991,7 @@ function buildSuccessActivity(
 
     existing.count += 1;
 
-    existing.value +=
-      Number(
-        record.orderTotal || 0
-      ) || 0;
+    existing.value += record.orderTotalKnown ? Number(record.orderTotal || 0) : 0;
 
     daily.set(
       key,
@@ -40132,14 +40129,8 @@ function buildSuccessSummary(
     );
 
   const checkoutValue =
-    rangeRecords.reduce(
-      (sum, record) =>
-        sum +
-        Number(
-          record.orderTotal || 0
-        ),
-      0
-    );
+    rangeRecords.reduce((sum, record) =>
+      sum + (record.orderTotalKnown ? Number(record.orderTotal || 0) : 0), 0);
 
   const dailyCounts =
     new Map();
@@ -48163,7 +48154,8 @@ const ownedOrders =
           hitsChannelId,
           (await discordCheckoutSourceChannels()).channels
         ).filter(record =>
-          String(record.customerAccountId) === String(account.id) && !cancelledOrder(record)
+          String(record.customerAccountId) === String(account.id) &&
+          confirmedDiscordPurchase(record)
         );
       } catch (error) {
         console.error("Customer retailer lifetime stats load failed:", account.id, error.message);
@@ -48186,18 +48178,8 @@ const ownedOrders =
           retailerCheckoutRecords.length,
 
         lifetimeSpend:
-          retailerCheckoutRecords.reduce(
-            (sum, order) =>
-              sum +
-              Math.max(
-                0,
-                Number(
-                  order?.orderTotal ||
-                  0
-                ) || 0
-              ),
-            0
-          )
+          retailerCheckoutRecords.reduce((sum, order) =>
+            sum + (checkoutPaidAmount(order) ?? 0), 0)
       };
 
       /*
