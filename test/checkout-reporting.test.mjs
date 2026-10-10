@@ -6,7 +6,8 @@ import {
   historicalPlusVerified,
   moneyToCents,
   safeAdminProfileLabel,
-  adminCheckoutCustomerName
+  adminCheckoutCustomerName,
+  summarizeUnmatchedCheckouts
 } from "../checkout-reporting.js";
 
 test("archived 240 checkouts and original amount combine with live 82 once", () => {
@@ -66,6 +67,24 @@ test("Admin checkout names prefer real saved customer names, not webhook profile
   assert.equal(adminCheckoutCustomerName({id:"user-last-8"}),"Customer account r-last-8");
 });
 
+
+test("unmatched PKC confirmed successes remain separate from linked customer checkout metrics", () => {
+  const at=Date.parse("2026-10-09T21:00:00Z");
+  const orders=[
+    {retailer:"PKC",checkoutAt:"2026-10-09T08:00:00Z"},
+    {retailer:"PKC",checkoutAt:"2026-10-06T08:00:00Z"},
+    {retailer:"Target",checkoutAt:"2026-09-29T12:00:00Z"}
+  ];
+  const unmatched=summarizeUnmatchedCheckouts(orders,at);
+  assert.equal(unmatched.total,3);
+  assert.equal(unmatched.last24h,1);
+  assert.equal(unmatched.last7d,2);
+  assert.equal(unmatched.last30d,3);
+  assert.deepEqual(unmatched.byRetailer[0],
+    {retailer:"PKC",total:2,last24h:1,last7d:2,last30d:2});
+  assert.deepEqual(summarizeUnmatchedCheckouts([],at).byRetailer,[]);
+});
+
 test("public and Admin endpoints read one authoritative live source and keep the archive separate", () => {
   const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
   const mobile=readFileSync(new URL("../public/admin-mobile.js",import.meta.url),"utf8");
@@ -85,7 +104,9 @@ test("public and Admin endpoints read one authoritative live source and keep the
   assert.match(adminRoute,/adminCheckoutCustomerName/);
   assert.match(adminRoute,/customersById\.has/);
   assert.match(adminRoute,/\.filter\(record => record\.customerAccountId/);
-  assert.match(mobile,/panel\(x\.name\+" checkout breakdown"/);
+  assert.match(mobile,/esc\(x\.name\)\+\x27 checkout breakdown/);
+  assert.match(mobile,/data-success-user-days/);
+  assert.match(mobile,/successUserDays/);
   assert.doesNotMatch(mobile,/Unmatched \/ unassigned checkouts/);
   assert.match(mobile,/Which accounts checked out/);
   assert.match(mobile,/success-customer-filter/);
