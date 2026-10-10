@@ -11,7 +11,7 @@ if (appEnabled) {
     history: '<path d="M3 21h18M5 21V12h3v9m3 0V5h3v16m3 0V8h3v13"/>',
     profile: '<circle cx="12" cy="7" r="4"/><path d="M4 22v-3a8 8 0 0 1 16 0v3"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/>'
-    ,settings: '<path d="m9 3 1-1h4l1 1 1 3 3 1 2 2v4l-2 2-3 1-1 3-1 1h-4l-1-1-1-3-3-1-2-2V9l2-2 3-1z"/><circle cx="12" cy="12" r="3"/>',
+    ,settings: '<path d="M10.2 2.5h3.6l.5 2.3a7.8 7.8 0 0 1 1.5.65l2-1.3 2.55 2.55-1.3 2a7.8 7.8 0 0 1 .65 1.5l2.3.5v3.6l-2.3.5a7.8 7.8 0 0 1-.65 1.5l1.3 2-2.55 2.55-2-1.3a7.8 7.8 0 0 1-1.5.65l-.5 2.3h-3.6l-.5-2.3a7.8 7.8 0 0 1-1.5-.65l-2 1.3-2.55-2.55 1.3-2a7.8 7.8 0 0 1-.65-1.5l-2.3-.5v-3.6l2.3-.5a7.8 7.8 0 0 1 .65-1.5l-1.3-2 2.55-2.55 2 1.3a7.8 7.8 0 0 1 1.5-.65z"/><circle cx="12" cy="12" r="3.2"/>',
     box: '<path d="m3 6 9-4 9 4v12l-9 4-9-4zM3 6l9 4 9-4M12 10v12M7 4l9 4"/>'
   };
   const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
