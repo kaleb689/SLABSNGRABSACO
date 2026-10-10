@@ -6,6 +6,7 @@ const successExpandedUsers=new Set();
 const successUserDays=new Map();
 const successOpenPanels=new Set();
 const successOpenCustomerCards=new Set();
+const successOpenOrderCards=new Set();
 function successPeriodStart(period,now=new Date()){
   if(period==="all")return 0;
   if(period==="mtd")return new Date(now.getFullYear(),now.getMonth(),1,0,0,0,0).getTime();
@@ -136,6 +137,38 @@ if(tab==="success"){
       '<span class="success-product-quantity">×'+x.quantity+'</span></div>').join("")+'</div>'+
       (products.length>visible.length?'<p class="success-overflow">+'+(products.length-visible.length)+' more products in this period</p>':'');
   }
+
+  // Each confirmed checkout is a single order. Keep its line items together
+  // rather than flattening bundled products into one misleading purchase list.
+  // Do not group by close timestamps or similar SKUs: distinct orders can
+  // arrive in the same minute and must remain separate.
+  function ordersMarkup(rows,limit=60) {
+    const orders=[...rows].sort((a,b)=>(Date.parse(b.checkoutAt)||0)-(Date.parse(a.checkoutAt)||0));
+    if(!orders.length)return '<p class="success-empty">No customer-linked orders in this period.</p>';
+    return '<div class="success-order-list">'+orders.slice(0,limit).map((order,index)=>{
+      const date=Date.parse(order.checkoutAt);
+      const stamp=Number.isFinite(date)?new Date(date).toLocaleString():"Date unavailable";
+      const products=Array.isArray(order.items)?order.items:[];
+      const count=products.reduce((sum,item)=>sum+Math.max(0,Math.floor(Number(item.quantity)||0)),0);
+      const key=String(order.id||order.orderId||[order.checkoutAt,order.retailer,order.accountKey,index].join("|"));
+      const known=order.orderTotalKnown===true&&Number(order.orderTotal)>0;
+      const paid=known?dollars(order.orderTotal):"$0.00";
+      const details=products.map(item=>{
+        const qty=Math.max(0,Math.floor(Number(item.quantity)||0));
+        const image=safeImage(item.imageUrl)?item.imageUrl:"/slabsngrabs-aco-logo-transparent.png";
+        return '<div class="success-order-item"><img src="'+esc(image)+'" loading="lazy" alt="">'+
+          '<strong>'+esc(item.name||"Product")+'</strong><span class="success-qty">×'+qty+'</span></div>';
+      }).join("")||'<p class="success-empty">Product details unavailable for this order.</p>';
+      return '<details class="success-order-card" data-success-order="'+esc(key)+'" '+
+        (successOpenOrderCards.has(key)?'open':'')+'><summary>'+
+        '<span class="success-order-title"><strong>Order '+(index+1)+' · '+esc(order.retailer||"Retailer")+'</strong>'+
+        '<small>'+esc(stamp)+' · '+esc(order.accountLabel||"Assigned account")+' · '+count+' item'+(count===1?'':'s')+'</small></span>'+
+        '<span class="success-order-total">'+paid+'<small class="'+(known?'':'success-order-warning')+'">'+
+        (known?'Final charged total':'Amount awaiting receipt verification')+'</small></span>'+
+        '</summary><div class="success-order-items">'+details+'</div></details>';
+    }).join("")+'</div>'+
+    (orders.length>limit?'<p class="success-overflow">+'+(orders.length-limit)+' more confirmed orders in this period</p>':'');
+  }
   function accountsMarkup(rows) {
     const accounts=new Map();
     rows.forEach(x=>{
@@ -248,8 +281,9 @@ if(tab==="success"){
         ' awaiting a verified paid total.</p>':'')+
       '<details class="success-user-details" data-success-user="'+esc(x.id)+'" '+
         (successExpandedUsers.has(x.id)||successCustomerId===x.id?'open':'')+'>'+
-      '<summary>View products purchased & accounts that checked out</summary>'+
-      '<div class="success-user-details-body"><h3>Products purchased</h3>'+
+      '<summary>View orders, purchased products & accounts that checked out</summary>'+
+      '<div class="success-user-details-body"><h3>Orders & purchased products</h3>'+
+        ordersMarkup(userRows)+'<h3>Product totals across orders</h3>'+
         productsMarkup(userRows,18)+'<h3>Which accounts checked out</h3>'+
         accountsMarkup(userRows)+'</div></details></div></details>';
   }).join("")||panel("Customer checkouts",'<p>No confirmed customer-linked checkouts are available yet. Review the unmatched retailer profiles below.</p>');
@@ -302,6 +336,10 @@ if(tab==="success"){
   c.querySelectorAll("details[data-success-user]").forEach(el=>el.addEventListener("toggle",()=>{
     if(el.open)successExpandedUsers.add(el.dataset.successUser);
     else successExpandedUsers.delete(el.dataset.successUser);
+  }));
+  c.querySelectorAll("details[data-success-order]").forEach(el=>el.addEventListener("toggle",()=>{
+    if(el.open)successOpenOrderCards.add(el.dataset.successOrder);
+    else successOpenOrderCards.delete(el.dataset.successOrder);
   }));
 }
 if(tab==="customers"){c.innerHTML='<input class="search" id="customer-search" type="search" placeholder="Search name or email">'+ '<div id="customer-results"></div>';$("customer-search").value=customerSearchText;const show=()=>{customerSearchText=$("customer-search").value;const q=customerSearchText.toLowerCase();$("customer-results").innerHTML=list.filter(x=>(customerName(x)+" "+(x.profile?.email||"")).toLowerCase().includes(q)).slice(0,150).map(x=>'<article class="item"><strong>'+esc(customerName(x))+'</strong><small>'+esc(x.profile?.email||"")+' · '+esc(x.plan?.name||"Membership")+'</small><button data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>').join("")||"<p>No matching customers.</p>";};$("customer-search").addEventListener("input",show);show();}
