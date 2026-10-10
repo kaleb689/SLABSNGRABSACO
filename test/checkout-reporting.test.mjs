@@ -116,3 +116,19 @@ test("public and Admin endpoints read one authoritative live source and keep the
   assert.doesNotMatch(site,/public-success-spent-note|public-success-historical-products/);
   assert.doesNotMatch(home,/id="public-success-spent-note"|id="public-success-historical-products"/);
 });
+
+
+test("PKC matching review includes only confirmed orders and safe item descriptions", () => {
+  const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
+  const begin=server.indexOf('app.get("/api/admin/discord-checkout-profile-matching"');
+  const end=server.indexOf('app.post("/api/admin/discord-checkout-profile-matching"',begin);
+  assert.ok(begin>=0&&end>begin);
+  const matching=server.slice(begin,end);
+  assert.match(matching,/confirmedDiscordPurchase\(record\)/);
+  assert.match(matching,/isSafeDiscordCheckoutProductName\(name\)/);
+  assert.match(matching,/products: \[\.\.\.productCount\.values\(\)\]/);
+  const page=readFileSync(new URL("../public/admin-checkout-match.html",import.meta.url),"utf8");
+  assert.match(page,/requestedRetailer/);
+  assert.match(page,/match-products/);
+  assert.match(page,/Choose a verified customer/);
+});
