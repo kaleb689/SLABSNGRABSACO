@@ -87,7 +87,8 @@ test("per-customer 24H / 7D / 30D filters work independently of global timeframe
   assert.match(html(),/Pokémon Center booster box/);
   assert.match(html(),/Pokémon Center ETB/);
   assert.match(html(),/Pokémon Center:<\/strong> 9 unassigned confirmed checkouts/);
-  assert.match(html(),/REVIEW POKÉMON CENTER & MORNING HITS/);
+  assert.match(html(),/REVIEW POKÉMON CENTER HITS/);
+  assert.match(html(),/REVIEW ALL UNMATCHED HITS/);
   assert.doesNotMatch(html(),/DO NOT ATTACH UNMATCHED BOOSTER/);
   // Changing the top graph does not erase earlier linked Pokémon Center hits
   // from the separately selected customer reporting period.
