@@ -231,7 +231,7 @@ test("new drop channels provision idempotently with staff posting and paid-only 
   assert.match(source, /normalizeName\(item\.name\) === spec\.key/);
   assert.match(source, /permission_overwrites: overwrites/);
   assert.match(source, /dropChannelIds\.add\(channel\.id\)/);
-  assert.match(source, /retailerDropsReady = retailerChannels\.length === 3/);
+  assert.match(source, /retailerDropsReady = retailerChannels\.length === 5/);
   assert.match(source, /if \(!await hasPaidSkuAccess\(userId\)\) return await reply\(skuAccessMessage\)/);
   assert.match(source, /if \(isGuildOwnerSkuTester\(userId, ownerId\)\) return true/);
 });
