@@ -1,3 +1,4 @@
+import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
 import { historicalPlusVerified, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
@@ -15983,62 +15984,99 @@ app.post("/api/admin/gifted-memberships", requireAdmin, async (req, res) => {
   try {
     const customerAccountId = String(req.body?.customerAccountId || "").trim();
     const tier = Number(req.body?.tier);
-    const months = Number(req.body?.months);
-    if (!customerAccountId || !PLANS[tier] || !Number.isInteger(months) || months < 1 || months > 12) {
-      return res.status(400).json({ error: "Choose a customer, valid tier, and a duration from 1 to 12 months." });
+    const unit = req.body?.durationUnit === "weeks" ? "weeks" : "months";
+    const quantity = Number(req.body?.durationQuantity ?? req.body?.months);
+    const requestId = String(req.body?.requestId || "").trim() || crypto.randomUUID();
+    if (!customerAccountId || !PLANS[tier] || !Number.isSafeInteger(quantity) ||
+        quantity < 1 || quantity > 12 || !/^[a-zA-Z0-9-]{12,80}$/.test(requestId)) {
+      return res.status(400).json({error:"Choose a customer, tier, 1–12 weeks or months, and a valid gift request."});
     }
     const customers = await getCustomerAccounts();
     const customer = customers.find(item => String(item.id) === customerAccountId);
-    if (!customer) return res.status(404).json({ error: "Customer account was not found." });
+    if (!customer) return res.status(404).json({error:"Customer account was not found."});
 
-    const paid = await readJson(PAID_FILE, []);
-    const activePaid = (Array.isArray(paid) ? paid : [])
-      .filter(item => String(item.customerAccountId) === customerAccountId && subscriptionAllowsProfiles(item));
-    const paidEnd = activePaid
-      .map(item => subscriptionEndIso(item))
-      .filter(Boolean)
-      .map(value => new Date(value).getTime())
-      .filter(Number.isFinite)
-      .reduce((max, value) => Math.max(max, value), Date.now());
     const records = await getGiftedMemberships();
-    const priorGiftEnd = records
-      .filter(item => String(item.customerAccountId) === customerAccountId)
-      .map(item => new Date(item.expiresAt).getTime())
-      .filter(Number.isFinite)
-      .reduce((max, value) => Math.max(max, value), Date.now());
-    const startDate = new Date(Math.max(Date.now(), paidEnd, priorGiftEnd));
-    const startsAt = startDate.toISOString();
-    const endDate = new Date(startDate);
-    endDate.setUTCMonth(endDate.getUTCMonth() + months);
-    const expiresAt = endDate.toISOString();
+    const prior = records.find(item => item.requestId === requestId);
+    if (prior) {
+      if (String(prior.customerAccountId) !== customerAccountId || Number(prior.tier) !== tier) {
+        return res.status(409).json({error:"Gift request was already used for another membership."});
+      }
+      return res.json({ok:true,membership:prior,replayed:true});
+    }
+    const paid = await readJson(PAID_FILE, []);
+    const activePaid = (Array.isArray(paid) ? paid : []).filter(item =>
+      String(item.customerAccountId) === customerAccountId && subscriptionAllowsProfiles(item));
+    const subscriptionIds = [...new Set(activePaid.map(item=>String(item.stripeSubscriptionId||"")).filter(Boolean))];
+    if (activePaid.length && subscriptionIds.length !== 1) {
+      return res.status(409).json({error:"Paid membership has no unique Stripe subscription. Repair account linkage before gifting."});
+    }
+    let subscription = null;
+    let stripePeriodEnd = null;
+    if (subscriptionIds.length) {
+      subscription = await stripe.subscriptions.retrieve(subscriptionIds[0]);
+      if (!["active","trialing"].includes(subscription.status) ||
+          subscription.cancel_at_period_end || subscription.cancel_at ||
+          subscription.pause_collection) {
+        return res.status(409).json({error:"Subscription is not eligible for an automatic billing extension. Review cancellation or pause first."});
+      }
+      const periods = (subscription.items?.data||[]).map(item=>Number(item.current_period_end)).filter(Number.isFinite);
+      const period = Number(subscription.current_period_end)||Math.max(0,...periods);
+      if (!(period > 0)) {
+        return res.status(409).json({error:"Stripe did not provide a verified billing period end."});
+      }
+      stripePeriodEnd = period;
+    }
+    const priorGiftEnd = records.filter(item => String(item.customerAccountId) === customerAccountId)
+      .map(item=>item.expiresAt).filter(Boolean).sort().at(-1)||null;
+    const alreadyDeferred=subscription?.metadata?.sng_last_membership_gift_request===requestId;
+    const recordedStart=alreadyDeferred?subscription.metadata.sng_last_membership_gift_start:null;
+    const recordedEnd=alreadyDeferred?subscription.metadata.sng_last_membership_gift_end:null;
+    const window=alreadyDeferred&&recordedStart&&recordedEnd
+      ? {startsAt:recordedStart,expiresAt:recordedEnd,stripeTrialEnd:Math.floor(new Date(recordedEnd).getTime()/1000)}
+      : giftedBillingWindow({
+          now:new Date(),periodEnd:stripePeriodEnd,priorGiftEnd,
+          trialEnd:subscription?.trial_end,quantity,unit
+        });
+    if (subscription && !alreadyDeferred) {
+      // A future Stripe trial boundary defers renewal billing without generating
+      // an immediate proration. Preserve the original recurring tier/price.
+      const updated = await stripe.subscriptions.update(subscription.id, {
+        trial_end:window.stripeTrialEnd,proration_behavior:"none",
+        metadata:{sng_last_membership_gift_request:requestId,
+          sng_last_membership_gift_start:window.startsAt,
+          sng_last_membership_gift_end:window.expiresAt}
+      },{idempotencyKey:"sng-membership-gift-"+requestId});
+      if (Number(updated.trial_end)!==window.stripeTrialEnd) {
+        return res.status(502).json({error:"Stripe did not confirm the gifted billing date. Do not retry with a new gift request."});
+      }
+    }
     const grant = {
-      id: crypto.randomUUID(),
-      customerAccountId,
-      customerEmail: customer.email || "",
-      tier,
-      tierName: PLANS[tier].name,
-      profiles: PLANS[tier].profiles,
-      months,
-      startsAt,
-      expiresAt,
-      createdAt: new Date().toISOString(),
-      createdBy: "admin"
+      id:crypto.randomUUID(),requestId,customerAccountId,customerEmail:customer.email||"",
+      tier,tierName:PLANS[tier].name,profiles:PLANS[tier].profiles,
+      months:unit==="months"?quantity:null,durationUnit:unit,durationQuantity:quantity,
+      startsAt:window.startsAt,expiresAt:window.expiresAt,
+      stripeSubscriptionId:subscription?.id||null,
+      billingDeferredUntil:subscription?window.expiresAt:null,
+      createdAt:new Date().toISOString(),createdBy:"admin"
     };
     records.push(grant);
     await saveGiftedMemberships(records);
-    return res.status(201).json({ ok: true, membership: grant });
-  } catch (error) {
-    console.error("Gifted membership creation failed:", error);
-    return res.status(500).json({ error: "Unable to create gifted membership." });
+    return res.status(201).json({ok:true,membership:grant});
+  }catch(error){
+    console.error("Gifted membership creation failed:",error?.message||error);
+    return res.status(502).json({error:"Gift could not be confirmed. Check Stripe billing and the membership grant before retrying."});
   }
 });
 
 app.delete("/api/admin/gifted-memberships/:id", requireAdmin, async (req, res) => {
   const records = await getGiftedMemberships();
-  const next = records.filter(item => String(item.id) !== String(req.params.id));
-  if (next.length === records.length) return res.status(404).json({ error: "Gifted membership was not found." });
-  await saveGiftedMemberships(next);
-  return res.json({ ok: true });
+  const target=records.find(item=>String(item.id)===String(req.params.id));
+  if (!target) return res.status(404).json({error:"Gifted membership was not found."});
+  if (target.stripeSubscriptionId) {
+    return res.status(409).json({error:"This gift already deferred Stripe billing. Its Stripe schedule must be reconciled before revocation; no change was made."});
+  }
+  await saveGiftedMemberships(records.filter(item=>String(item.id)!==String(req.params.id)));
+  return res.json({ok:true});
 });
 
 app.get("/api/admin/discount-codes", requireAdmin, async (req, res) => {

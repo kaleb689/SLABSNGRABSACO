@@ -167,3 +167,5 @@ body.sng-admin-app #workspace .admin-membership-visible-bar{height:11px;margin:1
 /* The App Users tracker fills the remaining row on Home. */
 body.sng-admin-app #workspace .admin-overview-grid>.admin-app-users-metric{grid-column:1/-1;width:100%;min-width:0}
 body.sng-admin-app #workspace .admin-app-users-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px 14px}
+
+body.sng-admin-app #workspace .admin-customer-billing{border:1px solid rgba(72,165,201,.38);border-radius:12px;background:rgba(9,37,54,.65);padding:10px 12px;margin:10px 0;font-size:12px}body.sng-admin-app #workspace .admin-customer-billing p{margin:8px 0}body.sng-admin-app #workspace .admin-billing-gifted{color:#7cf3b1;font-weight:750}body.sng-admin-app #workspace .admin-billing-note{font-size:11px;color:#a6bad0}
