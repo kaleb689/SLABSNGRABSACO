@@ -1,3 +1,4 @@
+import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
 import { historicalPlusVerified, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
 import { searchManagedPoolProfiles } from "./managed-pool-search.js";
@@ -16365,6 +16366,21 @@ app.post("/api/account/site-notification/:id/dismiss", requireCustomer, async (r
   } catch (error) {
     console.error("Dismiss notification failed:", error?.message);
     return res.status(500).json({ error: "Could not save notification dismissal." });
+  }
+});
+
+let membershipRevenueCache = null;
+app.get("/api/admin/membership-revenue", requireAdmin, async (_req, res) => {
+  res.set("Cache-Control", "private, no-store");
+  try {
+    if (!membershipRevenueCache || Date.now() - membershipRevenueCache.when > 20000) {
+      const summary = await stripeMembershipRevenue(stripe);
+      membershipRevenueCache = {when: Date.now(), summary};
+    }
+    return res.json({ok: true, ...membershipRevenueCache.summary});
+  } catch (error) {
+    console.error("Admin Stripe membership revenue unavailable:", error?.message || error);
+    return res.status(502).json({error: "Stripe membership billing totals are temporarily unavailable."});
   }
 });
 
