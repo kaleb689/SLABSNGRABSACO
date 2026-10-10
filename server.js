@@ -38101,7 +38101,7 @@ async function clearBotHitMessages(token, channelId) {
 // sent messages when migrating to full historical backfill.
 async function mirrorDiscordCheckoutHits(records, token, sourceChannelId) {
   if (!token || !Array.isArray(records) || !records.length ||
-      !/^\\d{17,22}$/.test(String(sourceChannelId || ""))) return null;
+      !/^\d{17,22}$/.test(String(sourceChannelId || ""))) return null;
 
   return discordHitMirrorState(async () => {
     const hitsChannelId = await resolveDiscordHitsChannelId(token);
@@ -38143,7 +38143,7 @@ async function mirrorDiscordCheckoutHits(records, token, sourceChannelId) {
           `/channels/${hitsChannelId}/messages/${entry.messageId}`,
           { method: "DELETE" });
       } catch (error) {
-        if (!/HTTP 404\\b/.test(String(error?.message || ""))) {
+        if (!/HTTP 404\b/.test(String(error?.message || ""))) {
           console.error("Discord hit withdrawal failed:", error?.message || "withdraw_failed");
           break;
         }
