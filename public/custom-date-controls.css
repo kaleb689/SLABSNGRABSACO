@@ -1,0 +1,119 @@
+/*
+ * Unified, accessible custom date ranges for both installed apps and full
+ * Admin Success. Calendar inputs use native iOS/Android date pickers.
+ */
+.sng-custom-calendar {
+  display:block;
+  width:100%;min-width:0;max-width:100%;box-sizing:border-box;
+  margin:7px 0 15px;padding:14px;
+  background:#1b1928;color:#f7f3ff;
+  border:1px solid #584a73;border-radius:17px;
+  box-shadow:0 10px 22px rgba(0,0,0,.16);
+}
+.sng-date-fields {
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;
+}
+.sng-date-fields label {
+  display:flex;flex-direction:column;gap:7px;
+  min-width:0;font-size:11px;font-weight:850;
+  color:#d6cce9;letter-spacing:.03em;
+}
+.sng-date-fields input[type="date"] {
+  display:block;min-width:0;max-width:100%;width:100%;box-sizing:border-box;
+  min-height:46px;margin:0;padding:10px 8px;
+  color:#fff;background:#262336;
+  border:1px solid #605577;border-radius:11px;
+  font:inherit;font-size:16px;
+  color-scheme:dark;
+}
+.sng-date-fields input[type="date"]:focus-visible,
+.sng-custom-calendar button:focus-visible,
+button.sng-calendar-button:focus-visible {
+  outline:2px solid #82e8ff;outline-offset:2px;
+}
+.sng-date-actions {display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:13px;}
+.sng-date-actions button {
+  min-height:44px;padding:11px 10px;cursor:pointer;
+  border-radius:12px;font-weight:900;font-size:12px;
+  color:#fff;background:linear-gradient(110deg,#9d56f3,#d34fad);
+  border:1px solid #d9a7ff;
+}
+.sng-date-actions button[type="button"] {
+  color:#d6cae5;background:#2b263c;border:1px solid #5a4e6c;
+}
+.sng-calendar-error {margin:9px 0 0;color:#ffb9c8!important;font-size:12px;line-height:1.5;}
+button.sng-calendar-button {display:inline-flex!important;align-items:center;justify-content:center;gap:5px;white-space:nowrap;}
+button.sng-calendar-button svg {flex:0 0 auto;width:16px;height:16px;}
+.sng-custom-calendar button:active,button.sng-calendar-button:active {transform:scale(.98);}
+
+/* Installed customer app */
+body.app-dashboard.app-signed-in #app-dashboard .sng-calendar-button {min-width:86px;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-custom-calendar {
+  background:#1b1928;color:#f7f3ff;border-color:#53436c;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-custom-calendar input[type="date"] {margin:0;}
+body.app-dashboard.app-signed-in #app-dashboard .sng-calendar-button[aria-expanded="true"] {
+  border-color:#c8a7fa!important;
+}
+
+/* Installed Admin app */
+body.sng-admin-app #workspace .admin-spend-ranges button.sng-calendar-button {
+  flex:0 0 auto;width:auto;min-width:84px;
+  background:#242036;border-color:#55466e;color:#e6d2fa;
+}
+body.sng-admin-app #workspace .success-user-period button.sng-calendar-button {
+  min-width:0;padding:7px 5px;border-radius:11px;font-size:11px;
+  border:1px solid #55466e;background:#242036;color:#decdf2;
+}
+body.sng-admin-app #workspace :is(.admin-spend-ranges,.success-user-period) button.sng-calendar-button[aria-pressed="true"] {
+  background:linear-gradient(115deg,#9658ee,#db55bb)!important;
+  color:#fff!important;border-color:#d6b6ff!important;
+}
+body.sng-admin-app #workspace .success-user-period {
+  grid-template-columns:repeat(4,minmax(0,1fr));
+}
+body.sng-admin-app #workspace .sng-custom-calendar {margin-bottom:14px;}
+
+/* Full Admin Success */
+body.admin-page #dashboard .period-stack {min-width:0;}
+body.admin-page #dashboard .periods {grid-template-columns:repeat(4,minmax(0,1fr));}
+body.admin-page #dashboard .user-periods {grid-template-columns:repeat(4,minmax(0,1fr));}
+body.admin-page #dashboard :is(.periods,.user-periods) button.sng-calendar-button {
+  color:#eddefa;background:#29223f;border:1px solid #64528a;
+  padding:8px 6px;font-size:11px;border-radius:12px;
+}
+body.admin-page #dashboard :is(.periods,.user-periods) button.sng-calendar-button[aria-pressed="true"] {
+  background:linear-gradient(115deg,#9852ec,#dd52b1)!important;
+  border-color:#cba8f7!important;color:#fff!important;
+}
+body.admin-page #dashboard .user-card .sng-custom-calendar {margin:11px 0;}
+
+/* Preserve both app light modes and accessible input contrast. */
+html[data-admin-mobile-theme="light"] body.sng-admin-app .sng-custom-calendar,
+body.admin-page[data-admin-theme="light"] .sng-custom-calendar,
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-custom-calendar {
+  background:#fff;color:#241b37;border-color:#d9cbe6;box-shadow:0 6px 18px rgba(64,38,93,.08);
+}
+html[data-admin-mobile-theme="light"] body.sng-admin-app .sng-date-fields label,
+body.admin-page[data-admin-theme="light"] .sng-date-fields label,
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-date-fields label {color:#514068;}
+html[data-admin-mobile-theme="light"] body.sng-admin-app .sng-date-fields input[type="date"],
+body.admin-page[data-admin-theme="light"] .sng-date-fields input[type="date"],
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-date-fields input[type="date"] {
+  background:#f8f4fc;color:#241a36;border-color:#d5c6e5;color-scheme:light;
+}
+html[data-admin-mobile-theme="light"] body.sng-admin-app .sng-date-actions button[type="button"],
+body.admin-page[data-admin-theme="light"] .sng-date-actions button[type="button"],
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-date-actions button[type="button"] {
+  background:#eee7f5;color:#45345e;border-color:#d9cce7;
+}
+@media(max-width:370px){
+  .sng-date-fields {gap:7px;}
+  .sng-custom-calendar {padding:11px;}
+  .sng-date-fields input[type="date"] {padding:8px 5px;font-size:16px;}
+  body.sng-admin-app #workspace .success-user-period button.sng-calendar-button {font-size:10px;padding:6px 2px;}
+  body.admin-page #dashboard .periods,body.admin-page #dashboard .user-periods {gap:5px;}
+}
+@media(prefers-reduced-motion:reduce){
+  .sng-custom-calendar button,button.sng-calendar-button {transition:none!important;animation:none!important;}
+}

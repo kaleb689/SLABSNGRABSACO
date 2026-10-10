@@ -2,6 +2,50 @@
 const $=id=>document.getElementById(id),esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let tab="overview",data={customers:[],activation:null,availability:null,usage:null,success:{records:[]}},authenticated=false,stream=null;
 let successDays=30,successCustomerId="all",successAccountKey="all";
+let successCustomRange=null,successCalendarOpen=false,successCalendarError="";
+let successCalendarDraft={from:"",to:""};
+const successUserCustomRanges=new Map(),successUserCalendarOpen=new Set(),successUserCalendarDraft=new Map(),successUserCalendarErrors=new Map();
+function mobileDayKey(date) {
+  return [date.getFullYear(),String(date.getMonth()+1).padStart(2,"0"),String(date.getDate()).padStart(2,"0")].join("-");
+}
+function mobileDefaultDates() {
+  const now=new Date(),from=new Date(now.getFullYear(),now.getMonth(),now.getDate()-29);
+  return {from:mobileDayKey(from),to:mobileDayKey(now)};
+}
+function mobileCustomWindow(range,now=new Date()) {
+  const parseDay=value=>{
+    if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
+    const [y,m,d]=value.split("-").map(Number);
+    const at=new Date(y,m-1,d);
+    return at.getFullYear()===y&&at.getMonth()===m-1&&at.getDate()===d?at:null;
+  };
+  const start=parseDay(range?.from),last=parseDay(range?.to);
+  if(!start||!last||start>last||range.to>mobileDayKey(now))return null;
+  return {start:start.getTime(),end:Math.min(new Date(last.getFullYear(),last.getMonth(),last.getDate()+1).getTime(),now.getTime()+60000)};
+}
+function mobilePeriodWindow(period,range,now=new Date()) {
+  if(period==="custom")return mobileCustomWindow(range,now)||{start:Infinity,end:-Infinity};
+  return {start:successPeriodStart(period,now),end:now.getTime()+60000};
+}
+function mobileCustomLabel(range) {
+  if(!range)return "Custom dates";
+  const format=value=>new Date(value+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+  return format(range.from)+" – "+format(range.to);
+}
+const mobileCalendarIcon='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg>';
+function mobileCalendarMarkup(scope,id,range,draft,open,error) {
+  const today=mobileDayKey(new Date());
+  const parent=scope==="user"?' data-success-user-date-form="'+esc(id)+'"':' data-success-date-form';
+  const from=draft?.from||range?.from||mobileDefaultDates().from;
+  const to=draft?.to||range?.to||mobileDefaultDates().to;
+  return open?'<form class="sng-custom-calendar"'+parent+'>'+
+    '<div class="sng-date-fields"><label>From<input name="from" type="date" value="'+esc(from)+'" max="'+today+'" required></label>'+
+    '<label>To<input name="to" type="date" value="'+esc(to)+'" max="'+today+'" required></label></div>'+
+    (error?'<p class="sng-calendar-error" role="alert">'+esc(error)+'</p>':"")+
+    '<div class="sng-date-actions"><button type="submit">Apply range</button>'+
+    (scope==="user"?'<button type="button" data-success-user-cancel="'+esc(id)+'">Cancel</button>':'<button type="button" data-success-date-cancel>Cancel</button>')+
+    '</div></form>':"";
+}
 const successExpandedUsers=new Set();
 const successUserDays=new Map();
 const successOpenPanels=new Set();
@@ -97,10 +141,10 @@ if(tab==="success"){
     ? data.success.communityRecords : allSuccess;
   const now=new Date(), currentTime=Date.now(), day=86400000;
   const days=successDays;
-  const cutoff=successPeriodStart(days,now);
+  const {start:cutoff,end:periodEnd}=mobilePeriodWindow(days,successCustomRange,now);
   const inRange=allCommunity.filter(x=>{
     const time=Date.parse(x.checkoutAt);
-    return Number.isFinite(time)&&time>=cutoff&&time<=currentTime+60000;
+    return Number.isFinite(time)&&time>=cutoff&&time<periodEnd;
   });
   const dollars=n=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(n)||0);
   const amount=x=>x?.orderTotalKnown&&Number(x.orderTotal)>0?Number(x.orderTotal):0;
@@ -121,7 +165,7 @@ if(tab==="success"){
     '</select></label>';
   let accountSelect="";
   const scopedRows=["all","linked","unmatched"].includes(successCustomerId) ? inRange :
-    allSuccess.filter(x=>{const at=Date.parse(x.checkoutAt);return Number.isFinite(at)&&at>=cutoff&&at<=currentTime+60000;});
+    allSuccess.filter(x=>{const at=Date.parse(x.checkoutAt);return Number.isFinite(at)&&at>=cutoff&&at<periodEnd;});
   let filtered=scopedRows.filter(x=>successCustomerId==="all" ? true :
     successCustomerId==="linked" ? Boolean(x.linked ?? x.customerAccountId) :
     successCustomerId==="unmatched" ? !Boolean(x.linked ?? x.customerAccountId) :
@@ -142,14 +186,17 @@ if(tab==="success"){
   filtered.forEach(x=>{const key=String(x.retailer||"Other");groupedRetailers.set(key,(groupedRetailers.get(key)||0)+1);});
   const total=filtered.length,spent=verifiedSpent(filtered),pending=missingPrices(filtered);
   const shownSpend=dollars(spent);
-  const rangeNames={1:"LAST 24 HOURS",7:"LAST 7 DAYS",30:"LAST 30 DAYS",90:"LAST 90 DAYS",mtd:"MONTH TO DATE",ytd:"YEAR TO DATE",all:"ALL TIME"};
-  const ranges=[[1,"24H"],[7,"7D"],[30,"30D"],[90,"90D"],["mtd","MTD"],["ytd","YTD"],["all","ALL"]];
+  const rangeNames={1:"LAST 24 HOURS",7:"LAST 7 DAYS",30:"LAST 30 DAYS",90:"LAST 90 DAYS",ytd:"YEAR TO DATE",all:"ALL TIME",custom:mobileCustomLabel(successCustomRange).toUpperCase()};
+  const ranges=[[1,"24H"],[7,"7D"],[30,"30D"],[90,"90D"],["ytd","YTD"],["all","ALL"]];
   const buttons='<div class="admin-spend-ranges" role="group" aria-label="Total spent period">'+
-    ranges.map(([value,label])=>'<button type="button" data-success-days="'+value+'" aria-pressed="'+(String(value)===String(days))+'">'+label+'</button>').join("")+'</div>';
+    ranges.map(([value,label])=>'<button type="button" data-success-days="'+value+'" aria-pressed="'+(String(value)===String(days))+'">'+label+'</button>').join("")+
+    '<button type="button" data-success-calendar aria-label="Choose custom date range" aria-expanded="'+successCalendarOpen+'" aria-pressed="'+(days==="custom")+'" class="sng-calendar-button">'+
+    mobileCalendarIcon+' Custom</button></div>'+
+    mobileCalendarMarkup("global","",successCustomRange,successCalendarDraft,successCalendarOpen,successCalendarError);
   const note=!total?'No confirmed checkouts in this period.':pending?pending+' of '+total+' confirmed checkouts without verified paid amounts.':'All displayed checkout amounts are verified.';
   const ticks=days===1?8:days===7?7:12;
   const min=cutoff||Math.min(currentTime,...filtered.map(x=>Date.parse(x.checkoutAt)).filter(Number.isFinite));
-  const span=Math.max(1,currentTime-min),buckets=Array(ticks).fill(0);
+  const span=Math.max(1,periodEnd-min),buckets=Array(ticks).fill(0);
   filtered.forEach(x=>{const time=Date.parse(x.checkoutAt);if(Number.isFinite(time)){const pos=Math.min(ticks-1,Math.max(0,Math.floor((time-min)/span*ticks)));buckets[pos]+=amount(x);}});
   const max=Math.max(1,...buckets);
   const line=buckets.map((v,i)=>(i?"L":"M")+(16+i*(288/(ticks-1))).toFixed(1)+" "+(76-v/max*56).toFixed(1)).join(" ");
@@ -293,11 +340,12 @@ if(tab==="success"){
     .sort((a,b)=>Math.max(...b.orders.map(o=>Date.parse(o.checkoutAt)||0))-
       Math.max(...a.orders.map(o=>Date.parse(o.checkoutAt)||0))||a.name.localeCompare(b.name));
   const peopleHtml=displayedPeople.map(x=>{
-    const userDays=[1,7,30,"mtd"].includes(successUserDays.get(x.id))?successUserDays.get(x.id):30;
-    const userCutoff=successPeriodStart(userDays,now);
+    const userDays=[1,7,30,"custom"].includes(successUserDays.get(x.id))?successUserDays.get(x.id):30;
+    const userCustomRange=successUserCustomRanges.get(x.id);
+    const {start:userCutoff,end:userPeriodEnd}=mobilePeriodWindow(userDays,userCustomRange,now);
     let userRows=x.orders.filter(order=>{
       const at=Date.parse(order.checkoutAt);
-      return Number.isFinite(at)&&at>=userCutoff&&at<=currentTime+60000;
+      return Number.isFinite(at)&&at>=userCutoff&&at<userPeriodEnd;
     });
     if(successCustomerId===x.id&&successAccountKey!=="all")
       userRows=userRows.filter(order=>String(order.accountKey||"unknown")===successAccountKey);
@@ -305,16 +353,18 @@ if(tab==="success"){
     const userPending=missingPrices(userRows);
     const userSpend=dollars(verifiedSpent(userRows));
     const periodButtons='<div class="success-user-period" role="group" aria-label="'+esc(x.name)+' breakdown time range">'+
-      [[1,"24H"],[7,"7D"],[30,"30D"],["mtd","MTD"]].map(([num,label])=>
+      [[1,"24H"],[7,"7D"],[30,"30D"]].map(([num,label])=>
         '<button type="button" data-success-user-days="'+num+'" data-success-user-id="'+esc(x.id)+
-        '" aria-pressed="'+(num===userDays)+'">'+label+'</button>').join("")+'</div>';
+        '" aria-pressed="'+(num===userDays)+'">'+label+'</button>').join("")+
+      '<button type="button" class="sng-calendar-button" data-success-user-calendar="'+esc(x.id)+'" aria-label="Choose custom dates for '+esc(x.name)+'" aria-expanded="'+successUserCalendarOpen.has(x.id)+'" aria-pressed="'+(userDays==="custom")+'">'+mobileCalendarIcon+' Custom</button></div>'+
+      mobileCalendarMarkup("user",x.id,userCustomRange,successUserCalendarDraft.get(x.id),successUserCalendarOpen.has(x.id),successUserCalendarErrors.get(x.id));
     return '<details class="panel success-user-panel success-user-accordion" data-success-customer="'+esc(x.id)+'" '+
       (successOpenCustomerCards.has(x.id)||successCustomerId===x.id?'open':'')+'>'+
       '<summary class="success-customer-summary"><span>'+esc(x.name)+' checkout breakdown</span>'+
       '<span class="success-customer-total">'+x.orders.length+' total hit'+(x.orders.length===1?'':'s')+'</span></summary>'+
       '<div class="success-customer-body"><div class="success-user-heading"><div><span class="success-eyebrow">CUSTOMER CHECKOUTS</span>'+
       '<h2>Checkout details</h2></div><span class="success-user-range">'+
-      (userDays==='mtd'?'Month to date':userDays===1?'24 hours':userDays+' days')+'</span></div>'+periodButtons+
+      (userDays==="custom"?esc(mobileCustomLabel(userCustomRange)):userDays===1?'24 hours':userDays+' days')+'</span></div>'+periodButtons+
       '<div class="success-user-stats">'+
       '<div><small>Confirmed orders</small><strong>'+userRows.length+'</strong></div>'+
       '<div><small>Verified spent</small><strong>'+userSpend+'</strong></div>'+
@@ -347,12 +397,59 @@ if(tab==="success"){
     priceReview+unmatchedPanel+lifetime+panel("Orders by retailer",donut+legend)+
     productsDrop+customersDrop+scanStatus;
   c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{
-    successDays=/^(mtd|ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);
+    successDays=/^(ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);
+    successCalendarOpen=false;successCalendarError="";
     render();
   }));
   c.querySelectorAll("[data-success-user-days]").forEach(b=>b.addEventListener("click",()=>{
-    successUserDays.set(b.dataset.successUserId,b.dataset.successUserDays==="mtd"?"mtd":Number(b.dataset.successUserDays));
+    successUserDays.set(b.dataset.successUserId,Number(b.dataset.successUserDays));
+    successUserCalendarOpen.delete(b.dataset.successUserId);
+    successUserCalendarErrors.delete(b.dataset.successUserId);
     render();
+  }));
+  c.querySelector("[data-success-calendar]")?.addEventListener("click",()=>{
+    successCalendarOpen=!successCalendarOpen;successCalendarError="";
+    if(successCalendarOpen)successCalendarDraft=successCustomRange?{...successCustomRange}:mobileDefaultDates();
+    render();
+  });
+  c.querySelector("[data-success-date-cancel]")?.addEventListener("click",()=>{
+    successCalendarOpen=false;successCalendarError="";render();
+  });
+  c.querySelector("[data-success-date-form]")?.addEventListener("input",event=>{
+    if(event.target.name==="from")successCalendarDraft.from=event.target.value;
+    if(event.target.name==="to")successCalendarDraft.to=event.target.value;
+  });
+  c.querySelectorAll("[data-success-user-date-form]").forEach(form=>form.addEventListener("input",event=>{
+    const id=form.dataset.successUserDateForm;
+    const draft=successUserCalendarDraft.get(id)||mobileDefaultDates();
+    if(event.target.name==="from")draft.from=event.target.value;
+    if(event.target.name==="to")draft.to=event.target.value;
+    successUserCalendarDraft.set(id,draft);
+  }));
+  c.querySelector("[data-success-date-form]")?.addEventListener("submit",event=>{
+    event.preventDefault();
+    const form=event.currentTarget,from=form.querySelector('[name="from"]')?.value||"",to=form.querySelector('[name="to"]')?.value||"";
+    successCalendarDraft={from,to};
+    if(!mobileCustomWindow(successCalendarDraft)){successCalendarError="Choose a valid From and To date, ending no later than today.";render();return;}
+    successCustomRange={...successCalendarDraft};successDays="custom";successCalendarOpen=false;successCalendarError="";render();
+  });
+  c.querySelectorAll("[data-success-user-calendar]").forEach(button=>button.addEventListener("click",()=>{
+    const id=button.dataset.successUserCalendar;
+    if(successUserCalendarOpen.has(id))successUserCalendarOpen.delete(id);
+    else{successUserCalendarOpen.add(id);successUserCalendarDraft.set(id,successUserCustomRanges.get(id)||mobileDefaultDates());}
+    successUserCalendarErrors.delete(id);successOpenPanels.add("customers");successOpenCustomerCards.add(id);render();
+  }));
+  c.querySelectorAll("[data-success-user-cancel]").forEach(button=>button.addEventListener("click",()=>{
+    successUserCalendarOpen.delete(button.dataset.successUserCancel);successUserCalendarErrors.delete(button.dataset.successUserCancel);render();
+  }));
+  c.querySelectorAll("[data-success-user-date-form]").forEach(form=>form.addEventListener("submit",event=>{
+    event.preventDefault();
+    const id=form.dataset.successUserDateForm;
+    const from=form.querySelector('[name="from"]')?.value||"",to=form.querySelector('[name="to"]')?.value||"";
+    const range={from,to};successUserCalendarDraft.set(id,range);
+    if(!mobileCustomWindow(range)){successUserCalendarErrors.set(id,"Choose a valid range ending no later than today.");render();return;}
+    successUserCustomRanges.set(id,range);successUserDays.set(id,"custom");successUserCalendarOpen.delete(id);successUserCalendarErrors.delete(id);
+    successOpenPanels.add("customers");successOpenCustomerCards.add(id);render();
   }));
   c.querySelector("#success-customer-filter")?.addEventListener("change",event=>{
     successCustomerId=event.target.value;successAccountKey="all";
@@ -398,6 +495,8 @@ async function refreshSuccessTracker(){
   try{
     const next=await get("/api/admin/success-overview");
     data.success=next;
+    // Updating a live chart must not dismiss a customer's active date picker.
+    if(mobileControlFocused()){mobileRefreshPending=true;return;}
     if(tab==="success"&&authenticated&&!document.hidden){
       const x=window.scrollX,y=window.scrollY;
       render();

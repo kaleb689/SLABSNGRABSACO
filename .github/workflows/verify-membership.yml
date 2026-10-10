@@ -42,6 +42,7 @@ jobs:
       - run: node --test test/checkout-spend-and-controls.test.mjs test/app-dashboard.test.mjs
       - run: node --test test/customer-app-uniform-ui.test.mjs
       - run: node --test test/mobile-reference-theme.test.mjs
+      - run: node --test test/custom-date-ranges.test.mjs
       - run: node --test test/admin-community-spend-and-premium-controls.test.mjs
       - run: node --test test/admin-community-spend.test.mjs
       - run: node --test test/checkout-price-policy.test.mjs test/discord-hit-mirror-policy.test.mjs test/discord-source-history.test.mjs test/discord-checkout-identity.test.mjs test/discord-checkout-profile-aliases.test.mjs test/webhook-success.test.js test/success-source-policy.test.mjs test/shikari-checkout.test.mjs test/cancellation-tracking.test.mjs test/order-notifications.test.js

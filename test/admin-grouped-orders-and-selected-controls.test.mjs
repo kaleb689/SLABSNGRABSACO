@@ -82,5 +82,5 @@ test("Full-status-color outline wraps all sides of customer recent order and tra
   for(const file of [app,site,admin,secure]){
     assert.match(file,/sng-premium-controls\.css\?v=2/);
   }
-  assert.match(app,/admin-mobile\.js\?v=23/);
+  assert.match(app,/admin-mobile\.js\?v=24-calendar-20261010/);
 });

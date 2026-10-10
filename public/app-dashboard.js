@@ -1,4 +1,4 @@
-import { shippingStage, visibleLateCancellation, periodStart, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges } from './app-dashboard-data.js';
+import { shippingStage, visibleLateCancellation, periodStart, periodBounds, customDateBounds, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges } from './app-dashboard-data.js';
 
 const appEnabled = window.self === window.top && (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true ||
   (new URLSearchParams(location.search).get('appPreview') === '1' && ADMIN_PREVIEW_MODE));
@@ -27,6 +27,21 @@ if (appEnabled) {
   let view = ({ success: 'home', membership: 'profile', notifications: 'notifications', tracking: 'tracking' })[new URLSearchParams(location.search).get('appTab')] || 'home';
   let days = 30, status = 'all', query = '', orders = [], cancelledOrders = [], reviewHoldOrders = [], busy = false, queued = false, error = '', accountId = null;
   let profileTab = 'membership', stream = null;
+  let calendarOpen = false, calendarError = '', customRange = null;
+  let calendarDraft = {from:'',to:''};
+  const dayKey = date => [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),
+    String(date.getDate()).padStart(2,'0')].join('-');
+  const defaultDraft = () => {
+    const today=new Date(), from=new Date(today.getFullYear(),today.getMonth(),today.getDate()-29);
+    return {from:dayKey(from),to:dayKey(today)};
+  };
+  const calendarLabel = range => {
+    const display = day => new Date(day+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    return range ? display(range.from)+' – '+display(range.to) : 'Custom dates';
+  };
+  const dateWindow = () => periodBounds(days,new Date(),customRange);
+  const selected = rows => selectedOrders(rows,days,new Date(),customRange);
+  const activityFor = rows => dashboardActivity(rows,days,new Date(),customRange);
   const expanded = new Set();
   const root = document.createElement('div');
   root.id = 'app-dashboard'; root.hidden = true;
@@ -37,26 +52,40 @@ if (appEnabled) {
   document.body.classList.add('app-dashboard');
   document.body.dataset.appView = view;
 
-  const rangeName = () => days === 'all' ? 'Lifetime' : days === 'mtd' ? 'Month to date' : days === 'ytd' ? 'Year to date' : days === 1 ? 'Last 24 hours' : `Last ${days} days`;
+  const rangeName = () => days === 'custom' ? calendarLabel(customRange) : days === 'all' ? 'Lifetime' : days === 'ytd' ? 'Year to date' : days === 1 ? 'Last 24 hours' : `Last ${days} days`;
   function cancelledInPeriod() {
-    const earliest = periodStart(days).getTime(), latest = Date.now();
+    const {start:earliest, end:latest} = dateWindow();
     return cancelledOrders.filter(order => {
       const time = Date.parse(order.checkoutAt || "");
       return visibleLateCancellation(order) &&
-        Number.isFinite(time) && time >= earliest && time <= latest;
+        Number.isFinite(time) && time >= earliest && time < latest;
     }).sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
   }
   function holdsInPeriod() {
-    const earliest = periodStart(days).getTime(), latest = Date.now();
+    const {start:earliest, end:latest} = dateWindow();
     return reviewHoldOrders.filter(order => {
       const time = Date.parse(order.checkoutAt || "");
-      return order.status === 'review_hold' && Number.isFinite(time) && time >= earliest && time <= latest;
+      return order.status === 'review_hold' && Number.isFinite(time) && time >= earliest && time < latest;
     }).sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
   }
-  const rangeButtons = () => `<div class="sng-range" role="group" aria-label="Date range">${[1, 7, 30, 90, 'mtd', 'ytd', 180, 'all'].map(n => `<button type="button" data-app-days="${n}" aria-pressed="${n === days}">${n === 'all' ? 'ALL' : n === 'mtd' ? 'MTD' : n === 'ytd' ? 'YTD' : n === 1 ? '24H' : n === 180 ? '6M' : `${n}D`}</button>`).join('')}</div><p class="sng-period-label">${rangeName()}</p>`;
+  const rangeButtons = () => {
+    const today=dayKey(new Date()), draft=calendarDraft.from&&calendarDraft.to?calendarDraft:defaultDraft();
+    const presets=[1,7,30,90,'ytd','all'].map(n=>
+      '<button type="button" data-app-days="'+n+'" aria-pressed="'+(n===days)+'">'+
+      (n==='all'?'ALL':n==='ytd'?'YTD':n===1?'24H':n+'D')+'</button>').join('');
+    const calendarButton='<button type="button" class="sng-calendar-button" data-app-calendar aria-controls="sng-custom-calendar" aria-expanded="'+calendarOpen+'" aria-pressed="'+(days==='custom')+'" aria-label="Choose custom date range">'+
+      '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg> Custom</button>';
+    const form=calendarOpen?'<form id="sng-custom-calendar" class="sng-custom-calendar" data-app-date-form>'+
+      '<div class="sng-date-fields"><label>From<input type="date" data-app-date-from name="from" value="'+e(draft.from)+'" max="'+today+'" required></label>'+
+      '<label>To<input type="date" data-app-date-to name="to" value="'+e(draft.to)+'" max="'+today+'" required></label></div>'+
+      (calendarError?'<p class="sng-calendar-error" role="alert">'+e(calendarError)+'</p>':'')+
+      '<div class="sng-date-actions"><button type="submit">Apply range</button><button type="button" data-app-date-cancel>Cancel</button></div></form>':'';
+    return '<div class="sng-range" role="group" aria-label="Date range">'+presets+calendarButton+'</div>'+
+      form+'<p class="sng-period-label">'+e(rangeName())+'</p>';
+  };
   const metric = (label, value, tone = '', symbol = '', delta = null) => `<div class="sng-metric ${tone}"><span>${symbol ? icon(symbol) : ''}${e(label)}</span><strong>${e(value)}</strong>${delta === null ? '' : `<small class="sng-delta" title="Change since the previous refresh of this date range">${delta >= 0 ? '+' : ''}${delta} since last update</small>`}</div>`;
   const hero = (label, value, note, tone = '') => {
-    const activity = dashboardActivity(selectedOrders(orders, days), days);
+    const activity = activityFor(selected(orders));
     const max = Math.max(1, ...activity.map(day => day.value));
     const path = activity.map((day, i) => `${i ? 'L' : 'M'}${i / Math.max(1, activity.length - 1) * 300} ${50 - day.value / max * 43}`).join(' ');
     return `<section class="sng-hero ${tone}"><div>${e(label)}</div><strong>${e(value)}</strong><p>${e(note)}</p><svg viewBox="0 0 300 55" preserveAspectRatio="none" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="2"/></svg></section>`;
@@ -95,11 +124,13 @@ if (appEnabled) {
     return `<section class="sng-chart-card"><div class="sng-section-title"><h2>${title}</h2><span>${entries.length}</span></div><div class="sng-breakdown"><div class="sng-donut" role="img" aria-label="${e(title)}: ${entries.map(([name,count]) => `${e(name)} ${count}`).join(', ')}" style="background:conic-gradient(${segments.join(',') || '#303440 0% 100%'})"><div><strong>${total}</strong><small>ORDERS</small></div></div><div class="sng-legend">${entries.map(([name,count],i) => `<p><i style="background:${colors[i % colors.length]}"></i><span>${e(name)}</span><b>${total ? (count / total * 100).toFixed(1) : 0}%</b></p>`).join('') || '<p>No orders in this period.</p>'}</div></div>${entries.map(([name,count],i) => `<div class="sng-breakdown-row"><span>${e(name)}</span><b>${count} orders</b><div class="sng-progress"><span style="width:${total ? count / total * 100 : 0}%;background:${colors[i % colors.length]}"></span></div></div>`).join('')}</section>`;
   }
   function bars(records) {
-    const activity = dashboardActivity(records, days);
+    const activity = activityFor(records);
     const max = Math.max(1, ...activity.map(day => day.value));
     return `<div class="sng-bar-chart" role="img" aria-label="Order value · ${rangeName()}">${activity.map(day => `<div class="sng-bar-column" title="${e(day.date)}: ${day.count} orders, ${money(day.value)}"><div class="sng-bar" style="height:${Math.max(day.value ? 4 : 0, day.value / max * 100)}%"></div></div>`).join('')}</div><div class="sng-chart-axis"><span>${dateLabel(activity[0]?.date + 'T12:00:00')}</span><span>${dateLabel(activity.at(-1)?.date + 'T12:00:00')}</span></div>`;
   }
   function render() {
+    // Keep the native iOS/Android date picker mounted during live refreshes.
+    if (calendarOpen && document.activeElement?.matches?.('[data-app-date-from],[data-app-date-to]')) return;
     if (!state.customer) { root.hidden = true; document.body.classList.remove('app-signed-in'); orders = []; cancelledOrders = []; reviewHoldOrders = []; accountId = null; snapshots.clear(); changes.clear(); stream?.close(); stream = null; return; }
     root.hidden = false; document.body.classList.add('app-signed-in'); document.body.dataset.appView = view;
     document.body.dataset.profileTab = profileTab;
@@ -114,12 +145,13 @@ if (appEnabled) {
       button.classList.toggle('active', button.dataset.appView === view);
       button.setAttribute('aria-pressed', String(button.dataset.appView === view));
     });
-    const records = selectedOrders(orders, days), totals = dashboardTotals(records), products = dashboardProducts(records);
-    const previous = snapshots.get(days);
+    const records = selected(orders), totals = dashboardTotals(records), products = dashboardProducts(records);
+    const periodKey = days==='custom' ? 'custom:'+customRange?.from+':'+customRange?.to : String(days);
+    const previous = snapshots.get(periodKey);
     if (accountId && (!previous || JSON.stringify(previous) !== JSON.stringify(totals))) {
-      changes.set(days, metricChanges(previous, totals)); snapshots.set(days, totals);
+      changes.set(periodKey, metricChanges(previous, totals)); snapshots.set(periodKey, totals);
     }
-    const delta = changes.get(days) || { orders: 0, transit: 0, delivered: 0 };
+    const delta = changes.get(periodKey) || { orders: 0, transit: 0, delivered: 0 };
     const content = document.getElementById('sng-app-content');
     const currentFocus = document.activeElement?.id, cursor = document.activeElement?.selectionStart;
     const common = rangeButtons() + (state.customer.demo || ADMIN_PREVIEW_MODE ? '<div class="sng-demo-label">DEMO · Sample account</div>' : '') + (error ? `<p class="sng-error" role="status">${e(error)} <button type="button" data-app-refresh>Retry</button></p>` : '') + (busy && !accountId ? '<p class="sng-demo-label" role="status">Loading your checkout data…</p>' : '');
@@ -136,7 +168,7 @@ if (appEnabled) {
     if (view === 'products') html = common + `<div class="sng-segment-label">PRODUCTS SECURED</div>` + hero('PRODUCT VALUE', money(totals.spend), `${totals.items} items · ${products.length} products`, 'pink') +
       `<div class="sng-section-title"><h2>Metrics</h2></div><div class="sng-metrics">${metric('TOTAL QUANTITY', totals.items)}${metric('DELIVERED ORDERS', totals.delivered)}${metric('IN TRANSIT', totals.transit)}${metric('AWAITING SHIPMENT', totals.awaiting)}${metric('ORDER VALUE', money(totals.spend))}${metric('PRODUCTS', products.length)}</div><label class="sng-search">Search products<input id="sng-search" value="${e(query)}" placeholder="Search products" type="search"></label><div class="sng-section-title"><h2>Products <span>${products.length}</span></h2></div><div id="sng-search-results"></div>`;
     if (view === 'history') {
-      const activity = dashboardActivity(records, days);
+      const activity = activityFor(records);
       const biggest = activity.reduce((best, bucket) => bucket.value > best.value ? bucket : best, { value: 0 });
       const retailers = Object.entries(records.reduce((all, order) => { all[order.retailer] = (all[order.retailer] || 0) + 1; return all; }, {})).sort((a,b) => b[1]-a[1]);
       const statuses = Object.entries(records.reduce((all, order) => { const name = stageLabels[shippingStage(order)]; all[name] = (all[name] || 0) + 1; return all; }, {}));
@@ -157,7 +189,7 @@ if (appEnabled) {
   }
   function renderSearch() {
     const target = document.getElementById('sng-search-results'); if (!target) return;
-    const successes = selectedOrders(orders, days);
+    const successes = selected(orders);
     const records = view === 'tracking' ? [...successes, ...holdsInPeriod(), ...cancelledInPeriod()] : successes;
     const needle = query.toLowerCase();
     target.innerHTML = view === 'products' ? productRows(dashboardProducts(successes).filter(p => `${p.name} ${p.retailer}`.toLowerCase().includes(needle))) :
@@ -165,7 +197,7 @@ if (appEnabled) {
   }
   function setView(next) {
     if (!labels[next]) return;
-    view = next; query = ''; document.body.dataset.appView = view;
+    view = next; query = ''; calendarOpen=false; document.body.dataset.appView = view;
     if (location.hash !== '#my-profile') go('my-profile');
     if (view === 'notifications') document.querySelector('button[data-account-tab="notifications"]')?.click();
     if (view === 'profile') document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click();
@@ -174,7 +206,16 @@ if (appEnabled) {
   root.addEventListener('click', event => {
     const button = event.target.closest('button'); if (!button) return;
     if (button.dataset.appView) setView(button.dataset.appView);
-    if (button.dataset.appDays) { days = /^(mtd|ytd|all)$/.test(button.dataset.appDays) ? button.dataset.appDays : Number(button.dataset.appDays); render(); }
+    if (button.dataset.appDays) {
+      days = /^(ytd|all)$/.test(button.dataset.appDays) ? button.dataset.appDays : Number(button.dataset.appDays);
+      calendarOpen=false; calendarError=''; render(); void refresh();
+    }
+    if (button.hasAttribute('data-app-calendar')) {
+      calendarOpen=!calendarOpen; calendarError='';
+      if(calendarOpen)calendarDraft=customRange?{...customRange}:defaultDraft();
+      render();
+    }
+    if (button.hasAttribute('data-app-date-cancel')) {calendarOpen=false;calendarError='';render();}
     if (button.dataset.appStatus) { status = button.dataset.appStatus; render(); }
     if (button.dataset.profileTab) { profileTab = button.dataset.profileTab; document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click(); render(); }
     if (button.dataset.settingProfile) { profileTab = button.dataset.settingProfile; setView('profile'); }
@@ -182,7 +223,24 @@ if (appEnabled) {
     if (button.hasAttribute('data-app-notification-settings')) document.getElementById('account-notification-settings')?.click();
     if (button.hasAttribute('data-app-refresh')) void refresh();
   });
-  root.addEventListener('input', event => { if (event.target.id === 'sng-search') { query = event.target.value; renderSearch(); } });
+  root.addEventListener('input', event => {
+    if (event.target.id === 'sng-search') { query = event.target.value; renderSearch(); }
+    if (event.target.hasAttribute('data-app-date-from')) calendarDraft.from=event.target.value;
+    if (event.target.hasAttribute('data-app-date-to')) calendarDraft.to=event.target.value;
+  });
+  root.addEventListener('submit', event => {
+    if(!event.target.matches('[data-app-date-form]'))return;
+    event.preventDefault();
+    const from=event.target.querySelector('[data-app-date-from]')?.value||'';
+    const to=event.target.querySelector('[data-app-date-to]')?.value||'';
+    calendarDraft={from,to};
+    const bounds=customDateBounds(calendarDraft);
+    if(!bounds || to>dayKey(new Date())){
+      calendarError='Choose valid dates from oldest to newest, ending no later than today.';render();return;
+    }
+    customRange={...calendarDraft};days='custom';calendarOpen=false;calendarError='';
+    render();void refresh();
+  });
   root.addEventListener('toggle', event => { if (event.target.matches('details[data-order-id]')) { const id = event.target.dataset.orderId; event.target.open ? expanded.add(id) : expanded.delete(id); } }, true);
   async function refresh() {
     if (!state.customer || document.hidden) return render();
@@ -195,7 +253,12 @@ if (appEnabled) {
         reviewHoldOrders = [];
       } else {
         const end = new Date(), start = new Date(); start.setUTCDate(start.getUTCDate() - 365);
-        const response = await fetch(`/api/account/success?appView=1&start=${start.toISOString().slice(0, 10)}&end=${end.toISOString().slice(0, 10)}`, { credentials: 'same-origin', cache: 'no-store' });
+        // Fetch the entire requested custom window, even when it predates
+        // the default 365-day app window. The API remains authoritative.
+        const queryStart = days==='custom' && customRange ? customRange.from :
+          days==='all' ? '1970-01-01' : start.toISOString().slice(0,10);
+        const queryEnd = days==='custom' && customRange ? customRange.to : end.toISOString().slice(0,10);
+        const response = await fetch(`/api/account/success?appView=1&start=${encodeURIComponent(queryStart)}&end=${encodeURIComponent(queryEnd)}`, { credentials: 'same-origin', cache: 'no-store' });
         const data = await readJson(response);
         if (!response.ok) throw new Error(data.error || 'Unable to refresh order data.');
         if (state.customer?.id !== id) return;

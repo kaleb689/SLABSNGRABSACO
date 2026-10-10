@@ -16,7 +16,33 @@ export function shippingStage(order) {
   const status = order.shipping?.status;
   return ['shipped', 'in_transit', 'out_for_delivery', 'delivered'].includes(status) ? status : 'ordered';
 }
-export function periodStart(days, now = new Date()) {
+// Dates from <input type="date"> are local calendar days, not UTC strings.
+// In particular, an end date is inclusive across DST and timezone changes.
+export function customDateBounds(range) {
+  const parseDay = value => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.getFullYear() === year && date.getMonth() === month - 1 &&
+      date.getDate() === day ? date : null;
+  };
+  const first = parseDay(range?.from), last = parseDay(range?.to);
+  if (!first || !last || first > last) return null;
+  return {
+    start: first.getTime(),
+    end: new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1).getTime()
+  };
+}
+export function periodBounds(days, now = new Date(), range = null) {
+  if (days === 'custom') {
+    const bounds = customDateBounds(range);
+    return bounds ? {start:bounds.start, end:Math.min(bounds.end, now.getTime()+1)}
+      : {start:Infinity, end:-Infinity};
+  }
+  return {start:periodStart(days,now).getTime(),end:now.getTime()+1};
+}
+export function periodStart(days, now = new Date(), range = null) {
+  if (days === 'custom') return new Date(customDateBounds(range)?.start ?? NaN);
   // Use the same rolling windows and local calendar boundaries as Admin.
   // Avoid invalid dates for MTD/lifetime and day-window drift at midnight.
   if (days === 'all' || days === 'lifetime') return new Date(0);
@@ -27,9 +53,9 @@ export function periodStart(days, now = new Date()) {
     ? new Date(now.getTime() - Math.floor(durationDays) * 86400000)
     : new Date(0);
 }
-export function selectedOrders(orders, days, now = new Date()) {
-  const start = periodStart(days, now).getTime();
-  return orders.filter(order => Date.parse(order.checkoutAt) >= start && Date.parse(order.checkoutAt) <= now.getTime() &&
+export function selectedOrders(orders, days, now = new Date(), range = null) {
+  const {start, end} = periodBounds(days, now, range);
+  return orders.filter(order => Date.parse(order.checkoutAt) >= start && Date.parse(order.checkoutAt) < end &&
     !['cancelled', 'review_hold'].includes(shippingStage(order)))
     .sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
 }
@@ -72,14 +98,17 @@ export function dashboardProducts(orders) {
   }
   return [...products.values()].sort((a, b) => b.value - a.value);
 }
-export function dashboardActivity(orders, days, now = new Date()) {
+export function dashboardActivity(orders, days, now = new Date(), range = null) {
   const source = Array.isArray(orders) ? orders : [];
+  const bounds = periodBounds(days, now, range);
+  if (bounds.end <= bounds.start) return [];
   const earliest = source.map(order => Date.parse(order?.checkoutAt || ''))
     .filter(Number.isFinite).reduce((min, at) => Math.min(min, at), now.getTime());
   const start = days === 'all' || days === 'lifetime'
-    ? new Date(Math.max(0, earliest)) : periodStart(days, now);
+    ? new Date(Math.max(0, earliest)) : new Date(bounds.start);
+  const end = bounds.end;
   const hours = days === 1;
-  const duration = Math.max(86400000, now.getTime() - start.getTime());
+  const duration = Math.max(86400000, end - 1 - start.getTime());
   const bucketMs = hours ? 3600000 : Math.ceil(duration / 86400000 / 24) * 86400000;
   const length = hours ? 24 : Math.max(1, Math.ceil(duration / bucketMs));
   const buckets = new Map();
@@ -89,7 +118,7 @@ export function dashboardActivity(orders, days, now = new Date()) {
   });
   for (const order of source) {
     const at = Date.parse(order?.checkoutAt || '');
-    if (!Number.isFinite(at) || at < start.getTime() || at > now.getTime()) continue;
+    if (!Number.isFinite(at) || at < start.getTime() || at >= end) continue;
     // A purchase made exactly at the end of a period belongs to its last bar.
     const index = Math.min(length - 1, Math.floor((at - start.getTime()) / bucketMs));
     const bucket = buckets.get(index);
