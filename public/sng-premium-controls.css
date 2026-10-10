@@ -245,3 +245,17 @@ body:not(.admin-page) #customer-dashboard button[aria-pressed="true"],
 .app-dashboard[data-app-theme="day"] .sng-app-nav button.active{
   color:#fff;background:linear-gradient(115deg,#8452ed,#128cca);border-color:#a5e2ff;
 }
+
+/* Admin's legacy light-mode sheet uses !important on every select, so the
+   premium skin must explicitly override it instead of silently going plain. */
+body.admin-page[data-admin-theme="light"] #dashboard select {
+  background-color:#edf5ff!important;
+  background-image:linear-gradient(45deg,transparent 50%,#654fc9 50%),
+    linear-gradient(135deg,#654fc9 50%,transparent 50%),
+    linear-gradient(115deg,#f1ebff,#e6f9ff)!important;
+  background-position:calc(100% - 22px) 51%,calc(100% - 16px) 51%,center!important;
+  background-size:6px 6px,6px 6px,100% 100%!important;
+  background-repeat:no-repeat!important;
+  border-color:#9db6df!important;
+  color:#233658!important;
+}
