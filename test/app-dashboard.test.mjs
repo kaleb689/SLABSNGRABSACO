@@ -37,7 +37,7 @@ test('complete checklists stay hidden; incomplete app checklist appears only in 
       const panel = {};
       const document = { body: { classList: { contains: () => true }, dataset: { appView: view } },
         getElementById: id => id === 'setup-checklist-panel' ? panel : { classList: { contains: () => true } } };
-      vm.runInNewContext(header + ';renderSetupChecklist();', { document, state: { customer: {}, customerChecklist: [{ complete }] } });
+      vm.runInNewContext(header + ';renderSetupChecklist();', { document, ADMIN_CUSTOMER_PREVIEW_MODE: false, state: { customer: {}, customerChecklist: [{ complete }] } });
       assert.equal(panel.hidden, complete || view !== 'profile', `${view}, complete=${complete}`);
     }
   }
