@@ -152,6 +152,7 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
     const fmt=d=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     return fmt(range.from)+' – '+fmt(range.to);
   }
+  const fullCalendarIcon='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg>';
   function calendarForm(scope,id,range,draft,open,error){
     if(!open)return '';
     const dates=draft?.from&&draft?.to?draft:range||initialDates(), today=dayKey(new Date());
@@ -245,7 +246,7 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
       const period=userPeriods.get(u.id)||30,range=userRanges.get(u.id),rows=within(u.orders,period,new Date(),range);
       const buttons=[ [1,'24H'],[7,'7D'],[30,'30D'] ].map(([value,label])=>
         '<button type="button" data-user="'+esc(u.id)+'" data-period="'+value+'" aria-pressed="'+(period===value)+'">'+label+'</button>').join('')+
-        '<button type="button" class="sng-calendar-button" data-user-calendar="'+esc(u.id)+'" aria-label="Custom date range for '+esc(u.name)+'" aria-expanded="'+userCalendarOpen.has(u.id)+'" aria-pressed="'+(period==='custom')+'">▦ Custom</button>';
+        '<button type="button" class="sng-calendar-button" data-user-calendar="'+esc(u.id)+'" aria-label="Custom date range for '+esc(u.name)+'" aria-expanded="'+userCalendarOpen.has(u.id)+'" aria-pressed="'+(period==='custom')+'">'+fullCalendarIcon+' Custom</button>';
       return '<details class="user-card" data-user-card="'+esc(u.id)+'" '+(openUsers.has(u.id)?'open':'')+'><summary><span>'+esc(u.name)+
         ' checkout breakdown</span><span class="pill">'+u.orders.length+' lifetime hits</span></summary>'+
         '<div class="body"><div class="user-periods">'+buttons+'</div>'+
@@ -261,7 +262,7 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
     const now=new Date();
     $('periods').innerHTML=periods.map(([value,label])=>
       '<button type="button" data-global-period="'+value+'" aria-pressed="'+(value===days)+'">'+label+'</button>').join('')+
-      '<button type="button" class="sng-calendar-button" data-global-calendar aria-label="Choose custom date range" aria-expanded="'+globalCalendarOpen+'" aria-pressed="'+(days==='custom')+'">▦ Custom</button>';
+      '<button type="button" class="sng-calendar-button" data-global-calendar aria-label="Choose custom date range" aria-expanded="'+globalCalendarOpen+'" aria-pressed="'+(days==='custom')+'">'+fullCalendarIcon+' Custom</button>';
     $('custom-period-editor').innerHTML=calendarForm('global','',globalRange,globalDraft,globalCalendarOpen,globalError);
     const all=Array.isArray(data.communityRecords)?data.communityRecords:[];
     const linked=Array.isArray(data.records)?data.records:[];
