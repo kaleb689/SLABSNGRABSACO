@@ -43845,7 +43845,7 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         if (!account || account.disabled === true) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
         if (receiptTotal && !cancelledOrder(record) &&
-            (!["retailer_receipt"].includes(String(record.orderTotalBasis || "").toLowerCase()) &&
+            (record.orderTotalBasis !== "retailer_receipt" &&
               record.priceSource !== "verified_retailer_receipt")) {
           // Only attach amount to the existing, uniquely matched Discord
           // checkout. Never turn an email receipt into a new order or owner.
@@ -43993,7 +43993,7 @@ async function syncShippingTrackers() {
         if (!record) continue;
         if (update.orderTotal) {
           if (!cancelledOrder(record) &&
-              (!["retailer_receipt"].includes(String(record.orderTotalBasis || "").toLowerCase()) &&
+              (record.orderTotalBasis !== "retailer_receipt" &&
               record.priceSource !== "verified_retailer_receipt")) {
             record.orderTotal = update.orderTotal;
             record.orderTotalBasis = "retailer_receipt";
