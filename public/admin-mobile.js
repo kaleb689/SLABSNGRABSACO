@@ -186,9 +186,9 @@ if(tab==="overview"){
     const amount=person.membershipMonthlyAmount??person.subscriptionMonthlyAmount??plan.membershipMonthlyAmount??plan.subscriptionMonthlyAmount;
     return amount!=null&&Number.isFinite(Number(amount))?Math.round(Number(amount)*100):null;
   });
-  const recurringVerified=data.billing?.monthlyPaidCents!=null&&Number.isFinite(Number(data.billing.monthlyPaidCents));
-  const recurringTotal=recurringVerified?dollars(data.billing.monthlyPaidCents/100):"—";
-  const recurringNote=recurringVerified?"Stripe paid membership invoices · "+data.billing.period+" (UTC)":"Live Stripe billing unavailable — retrying";
+  const recurringVerified=data.billing?.monthlyRecurringCents!=null&&Number.isFinite(Number(data.billing.monthlyRecurringCents));
+  const recurringTotal=recurringVerified?dollars(data.billing.monthlyRecurringCents/100):"—";
+  const recurringNote=recurringVerified?"Current recurring memberships · "+data.billing.period+" (UTC)":"Recurring Stripe billing unavailable — retrying";
   c.innerHTML=
     '<section class="admin-overview-hero" aria-label="All-time community checkout overview">'+
       '<span class="admin-overview-hero-label">ALL-TIME COMMUNITY CHECKOUT VALUE</span>'+

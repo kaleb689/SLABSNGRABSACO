@@ -30,8 +30,30 @@ export async function stripeMembershipRevenue(stripe, now = new Date()) {
       invoice.currency === "usd" &&
       Number.isFinite(when) && when >= periodStart && when < nextPeriod;
   });
+  // Recurring amount means the sum of CURRENT monthly subscription prices.
+  // Upgrade/proration invoices and payments already collected do not affect MRR.
+  // Fail closed for recurring discounts or non-monthly prices until a verified
+  // discount-aware monthly equivalent is available.
+  const monthlyAmounts=active.map(subscription=>{
+    if ((subscription.discounts||[]).length || subscription.discount) return null;
+    let cents=0;
+    for (const item of subscription.items?.data||[]) {
+      const price=item.price;
+      const every=Number(price?.recurring?.interval_count||1);
+      const quantity=Number(item.quantity||1);
+      if (!price?.recurring || price.recurring.interval!=="month" ||
+          !Number.isFinite(every) || every<=0 ||
+          !Number.isFinite(Number(price.unit_amount)) ||
+          price.currency!=="usd") return null;
+      cents+=Number(price.unit_amount)*quantity/every;
+    }
+    return (subscription.items?.data||[]).length ? Math.round(cents) : null;
+  });
+  const recurringTotalVerified=monthlyAmounts.every(amount=>amount!==null);
   return {
     activePaidMemberships: active.length,
+    monthlyRecurringCents: recurringTotalVerified ? monthlyAmounts.reduce((a,b)=>a+b,0) : null,
+    recurringCalculation: "current_subscription_prices",
     monthlyPaidCents: receipts.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.amount_paid) || 0), 0),
     paidInvoiceCount: receipts.length,
     currency: "usd",
