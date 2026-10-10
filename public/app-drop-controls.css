@@ -1,0 +1,195 @@
+/* Installed customer app: distinct Membership and live Discord drop controls. */
+body.app-dashboard.app-signed-in #app-dashboard .sng-app-nav {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-app-nav > button[data-app-view="profile"] {
+  color:#dfb4ff;
+  border:1px solid rgba(175,117,246,.34);
+  background:linear-gradient(160deg,rgba(120,58,195,.24),rgba(84,48,128,.06));
+  border-radius:23px;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-app-nav > button[data-app-view="profile"].active {
+  background:linear-gradient(145deg,#793fba,#4f2c88);
+  box-shadow:0 4px 18px rgba(125,68,187,.37);
+  border-color:#dd9aff;color:#fff;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-app-nav > button[data-app-view="profile"] span {
+  font-size:clamp(9px,2.35vw,11px);
+}
+#app-dashboard .sng-membership-hero {
+  display:flex;justify-content:space-between;align-items:center;
+  position:relative;min-height:155px;overflow:hidden;
+  box-sizing:border-box;padding:23px;margin:12px 0 15px;
+  color:#fff;border:1px solid rgba(219,170,255,.44);
+  border-radius:24px;background:linear-gradient(125deg,#493077,#6a39a0,#a25cba);
+  box-shadow:0 13px 35px rgba(72,37,124,.3);
+}
+#app-dashboard .sng-membership-hero:before {
+  content:"";position:absolute;right:-75px;top:-85px;width:220px;height:220px;
+  border-radius:50%;background:rgba(255,255,255,.1);
+}
+#app-dashboard .sng-membership-hero > div {position:relative;z-index:1;min-width:0}
+#app-dashboard .sng-membership-hero small {
+  display:block;font-size:11px;letter-spacing:1.25px;font-weight:900;color:#f4dfff;
+}
+#app-dashboard .sng-membership-hero h2 {
+  margin:10px 0 4px;font-size:clamp(22px,6.2vw,32px);line-height:1.2;
+  color:white;text-transform:none;letter-spacing:-.5px;
+}
+#app-dashboard .sng-membership-hero p {font-size:12px;color:#f5dfff;margin:7px 0 0}
+#app-dashboard .sng-membership-emblem {
+  display:grid;place-items:center;flex:none;width:60px;height:60px;
+  border-radius:19px;border:1px solid #ffffff80;background:#ffffff24;
+}
+#app-dashboard .sng-membership-emblem svg {width:31px;height:31px}
+#app-dashboard .sng-membership-hero.sng-tier-10 {
+  background:linear-gradient(120deg,#074e79,#147d9d,#12b2b8);border-color:#70d8e4;
+}
+#app-dashboard .sng-membership-hero.sng-tier-20 {
+  background:linear-gradient(120deg,#543080,#7a3fae,#a65de0);border-color:#ddabff;
+}
+#app-dashboard .sng-membership-hero.sng-tier-50 {
+  background:linear-gradient(120deg,#9a4b14,#bb742a,#cf9e43);border-color:#ffe2a1;
+}
+#app-dashboard .sng-drop-shortcut {
+  width:100%;display:flex;justify-content:space-between;align-items:center;
+  gap:12px;text-align:left;margin:12px 0 18px;
+  padding:17px 16px;border:1px solid rgba(141,124,235,.56);
+  border-radius:18px;color:#f9f5ff;
+  background:linear-gradient(115deg,rgba(67,45,125,.88),rgba(35,59,100,.82));
+  box-shadow:0 6px 24px #0003;
+}
+#app-dashboard .sng-drop-shortcut span {min-width:0}
+#app-dashboard .sng-drop-shortcut b {display:block;font-weight:850;font-size:13px}
+#app-dashboard .sng-drop-shortcut small {display:block;color:#dccfee;font-size:11px;line-height:1.5;margin-top:4px}
+#app-dashboard .sng-drop-shortcut strong {font-size:11px;color:#edd8ff;white-space:nowrap}
+#app-dashboard .sng-drop-intro {padding:12px 1px 2px;}
+#app-dashboard .sng-drop-intro > small {
+  font-size:10px;letter-spacing:1.3px;color:#ca9cff;font-weight:900;
+}
+#app-dashboard .sng-drop-intro h1 {font-size:clamp(23px,6.3vw,31px);margin:9px 0 7px;color:#fff;}
+#app-dashboard .sng-drop-intro p {font-size:12px;line-height:1.6;color:#bbb5d2;margin:0 0 18px;}
+#app-dashboard .sng-drop-notice,
+#app-dashboard .sng-drop-error,
+#app-dashboard .sng-drop-empty {
+  font-size:12px;line-height:1.6;padding:13px 14px;border-radius:14px;
+  color:#bfdaed;border:1px solid #385577;background:rgba(36,62,94,.3);
+}
+#app-dashboard .sng-drop-error {color:#ffd0da;border-color:#cd6680;background:rgba(144,38,68,.19)}
+#app-dashboard .sng-drop-empty {padding:12px;margin:10px 0;border-style:dashed;color:#a9a7ba;}
+#app-dashboard .sng-drop-quantity {
+  padding:17px;display:flex;align-items:center;justify-content:space-between;
+  gap:12px;margin-bottom:13px;border-radius:20px;
+  border:1px solid #946fd0;
+  background:linear-gradient(125deg,rgba(88,52,150,.56),rgba(41,42,92,.56));
+}
+#app-dashboard .sng-drop-quantity > div:first-child {min-width:0;}
+#app-dashboard .sng-drop-quantity small {display:block;color:#dfbbff;letter-spacing:1px;font-weight:900;font-size:10px;}
+#app-dashboard .sng-drop-quantity strong {display:block;color:#fff;font-size:14px;line-height:1.45;margin:6px 0;}
+#app-dashboard .sng-drop-quantity p {font-size:11px;color:#dac9e9;line-height:1.45;margin:0}
+#app-dashboard .sng-drop-qty-options {display:flex;gap:6px;flex-shrink:0;}
+#app-dashboard .sng-drop-qty-options button {
+  border-radius:12px;padding:11px 12px;min-height:44px;border:1px solid #8164aa;
+  color:#eddcff;background:rgba(47,29,90,.67);font-weight:900;font-size:12px;
+}
+#app-dashboard .sng-drop-qty-options button[aria-pressed="true"] {
+  color:white;background:linear-gradient(145deg,#9259eb,#513bd0);
+  border-color:#d2b6ff;box-shadow:0 3px 12px #653cc780;
+}
+#app-dashboard .sng-drop-master-actions,
+#app-dashboard .sng-drop-actions {display:flex;gap:9px;flex-wrap:wrap;margin-bottom:15px}
+#app-dashboard .sng-drop-master-actions > button,
+#app-dashboard .sng-drop-actions > button,
+#app-dashboard .sng-drop-retry {
+  flex:1;min-width:125px;min-height:45px;font-weight:850;font-size:12px;
+  padding:11px;border-radius:13px;color:#d6f8ff;
+  border:1px solid #3ba1c0;background:rgba(29,88,116,.24);
+}
+#app-dashboard .sng-drop-master-actions > button:last-child,
+#app-dashboard .sng-drop-actions > button:last-child {
+  color:#ffc9d7;border-color:#92546d;background:rgba(123,38,77,.15);
+}
+#app-dashboard .sng-drop-master-actions > button[aria-pressed="true"],
+#app-dashboard .sng-drop-actions > button[aria-pressed="true"] {
+  color:#fff;background:linear-gradient(120deg,#ad385e,#713350);border-color:#e591b3;
+}
+#app-dashboard .sng-drop-retailer {
+  border:1px solid rgba(114,101,174,.62);border-radius:19px;
+  padding:14px;margin:13px 0;
+  background:linear-gradient(120deg,rgba(43,33,74,.68),rgba(21,26,47,.88));
+}
+#app-dashboard .sng-drop-retailer > header {
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  position:static;height:auto;border:0;background:none;margin:0 0 10px;padding:0;
+}
+#app-dashboard .sng-drop-retailer > header h2 {
+  margin:0;font-size:15px;color:#f8f4ff;letter-spacing:0;font-weight:850;
+}
+#app-dashboard .sng-drop-retailer > header > small {
+  font-size:10px;color:#bbb2d6;text-align:right;white-space:nowrap;
+}
+#app-dashboard .sng-drop-retailer[data-retailer="target"] {border-top:3px solid #ee687d}
+#app-dashboard .sng-drop-retailer[data-retailer="walmart"] {border-top:3px solid #f4b54a}
+#app-dashboard .sng-drop-retailer[data-retailer="pokemon"] {border-top:3px solid #aa7cff}
+#app-dashboard .sng-drop-retailer[data-retailer="costco"] {border-top:3px solid #72dfca}
+#app-dashboard .sng-drop-retailer[data-retailer="sams"] {border-top:3px solid #57baff}
+#app-dashboard .sng-drop-source {border:1px solid #3c375d;border-radius:13px;background:rgba(16,16,31,.59);margin:9px 0;overflow:hidden}
+#app-dashboard .sng-drop-source > summary {
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  cursor:pointer;list-style:none;min-height:66px;padding:13px;color:#fff;
+}
+#app-dashboard .sng-drop-source > summary::-webkit-details-marker {display:none}
+#app-dashboard .sng-drop-source > summary strong {display:block;font-size:13px;}
+#app-dashboard .sng-drop-source > summary small {display:block;color:#b6aace;margin-top:4px;font-size:11px}
+#app-dashboard .sng-drop-source > summary > b {font-size:21px;color:#b08bef;transition:transform .2s}
+#app-dashboard .sng-drop-source[open] > summary > b {transform:rotate(180deg)}
+#app-dashboard .sng-drop-source-body {padding:4px 12px 15px;border-top:1px solid #3d3559}
+#app-dashboard .sng-drop-actions {padding-top:13px;margin-bottom:10px;}
+#app-dashboard .sng-drop-product {
+  display:flex;gap:12px;align-items:center;margin:8px 0;padding:13px 11px;
+  color:#fff;border:1px solid #343650;border-radius:11px;background:rgba(34,35,57,.7);cursor:pointer;
+}
+#app-dashboard .sng-drop-product input[type="checkbox"] {
+  appearance:auto;-webkit-appearance:checkbox;accent-color:#a66ce7;flex:none;
+  width:22px;height:22px;min-width:22px;min-height:22px;margin:0;
+}
+#app-dashboard .sng-drop-product > span {min-width:0;overflow-wrap:anywhere}
+#app-dashboard .sng-drop-product b {display:block;font-size:12px;color:#ddc7ff;}
+#app-dashboard .sng-drop-product small {display:block;font-size:12px;color:#dad7e5;line-height:1.5;margin-top:4px}
+#app-dashboard .sng-drop-submit {
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin:20px 0 22px;padding:15px;border-radius:19px;
+  border:1px solid #9770d3;background:linear-gradient(115deg,#312250,#193e64);
+}
+#app-dashboard .sng-drop-submit > span {min-width:0}
+#app-dashboard .sng-drop-submit strong {display:block;font-size:13px;color:#fff}
+#app-dashboard .sng-drop-submit small {display:block;font-size:10px;color:#d0c6e6;margin-top:6px;line-height:1.45}
+#app-dashboard .sng-drop-submit > button {
+  flex:none;min-height:48px;padding:12px 16px;border-radius:13px;
+  border:1px solid #e0b2ff;color:#fff;font-size:12px;font-weight:900;
+  background:linear-gradient(135deg,#a86aec,#5c43d7);
+}
+#app-dashboard button:disabled {opacity:.53;cursor:not-allowed}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-intro h1,
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-retailer > header h2 {color:#2e2050}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-intro p {color:#685e81}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-retailer {
+  background:linear-gradient(130deg,#fbf7ff,#f0f5ff);border-color:#c1b3df;
+}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-source {background:#fff;border-color:#d4c6e5}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-source summary,
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-product {color:#2b2350}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-source small {color:#685d80}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-product {
+  background:#f7f3ff;border-color:#ddd2ed;
+}
+body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-drop-product small {color:#514666}
+@media(max-width:390px) {
+  #app-dashboard .sng-drop-quantity {flex-direction:column;align-items:stretch}
+  #app-dashboard .sng-drop-qty-options {width:100%}
+  #app-dashboard .sng-drop-qty-options button {flex:1}
+  #app-dashboard .sng-drop-submit > button {padding:11px 9px;min-height:46px}
+}
+@media(prefers-reduced-motion:reduce) {
+  #app-dashboard .sng-drop-source > summary > b {transition:none}
+}
