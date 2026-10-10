@@ -166,7 +166,8 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
     return rows.slice(0,80).map(x=>{
       const summary=(x.items||[]).slice(0,3).map(item=>String(item.name||'Item')+' ×'+Math.max(0,Math.floor(Number(item.quantity)||0))).join(' · ');
       return '<div class="detail-item"><strong>'+esc(x.retailer||'Retailer')+'</strong> · '+esc(new Date(x.checkoutAt).toLocaleDateString())+
-        ' · '+esc(summary)+'<span class="'+(x.orderTotalKnown?'money':'pending')+'"> · '+(x.orderTotalKnown?money(x.orderTotal):'Amount not verified')+'</span></div>';
+        ' · '+esc(x.accountLabel||'Unspecified linked profile')+' · '+esc(summary)+
+        '<span class="'+(x.orderTotalKnown?'money':'pending')+'"> · '+(x.orderTotalKnown?money(x.orderTotal):'Amount not verified')+'</span></div>';
     }).join('')||'<p>No orders for the selected customer period.</p>';
   }
   function renderCustomers(){
@@ -176,7 +177,7 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
       const user=map.get(id)||{id,name:String(x.customerName||'Customer'),orders:[]};
       user.orders.push(x);map.set(id,user);
     }
-    const people=[...map.values()].filter(u=>scope==='all'||scope==='linked'||scope==='unmatched'||scope==='customer:'+u.id);
+    const people=[...map.values()].filter(u=>scope==='all'||scope==='linked'||scope==='customer:'+u.id);
     const html=people.sort((a,b)=>b.orders.length-a.orders.length).map(u=>{
       const period=userPeriods.get(u.id)||30,rows=within(u.orders,period);
       const buttons=[ [1,'24H'],[7,'7D'],[30,'30D'],['mtd','MTD'] ].map(([value,label])=>
@@ -203,7 +204,7 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
     $('period-stats').innerHTML=stat('Confirmed checkouts',rows.length)+
       stat('Verified retailer spend',money(cents/100))+
       stat('Awaiting paid receipts',unknown)+stat('Items purchased',rows.reduce((n,x)=>n+itemQty(x),0));
-    $('period-caption').textContent=(days==='all'?'All available dated webhooks':days==='mtd'?'Month to date':days==='ytd'?'Year to date':'Last '+days*24+' hours')+
+    $('period-caption').textContent=(days==='all'?'All available dated webhooks':days==='mtd'?'Month to date':days==='ytd'?'Year to date':days===1?'Last 24 hours':'Last '+days+' days')+
       ' · '+(scope==='all'?'All confirmed, linked or unmatched':scope==='unmatched'?'Unmatched community orders':scope==='linked'?'Customer-linked orders':'Selected customer')+
       '. Missing retailer receipts do not produce invented spending amounts.';
     const community=data.communityTotals||{};
