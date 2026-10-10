@@ -230,6 +230,7 @@ export function skuBrowsePayload(sourceId, products, requestedPage = 0, draft = 
   if (!pages) throw new Error("No SKUs are available in this drop.");
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
   const offset = page * 25;
+  const qty = uniformSkuQuantity(draft);
   const options = products.slice(offset, offset + 25).map((product, index) => ({
     label: (skuSafeText(product.sku).slice(0, 30) + " · " + skuSafeText(product.name).slice(0, 65)).slice(0, 100),
     description: ("Product: " + skuSafeText(product.name)).slice(0, 100),
@@ -238,21 +239,22 @@ export function skuBrowsePayload(sourceId, products, requestedPage = 0, draft = 
   }));
   return {
     content: "**Choose Multiple SKUs — page " + (page + 1) + " of " + pages + "**\n" +
-      draft.length + " SKU(s) in your private draft. Your choices stay intact across pages. " +
-      "Set Qty 1 or Qty 2 for all selected SKUs, optionally adjust each SKU, then confirm.",
+      draft.length + " SKU(s) selected. **Quantity: " + (qty || "choose 1 or 2") +
+      " for ALL selected SKUs**.\nSelect products across pages, choose either Qty 1 for all or Qty 2 for all, then confirm. " +
+      "Individual products cannot have different quantities.",
     components: [
       { type: 1, components: [{ type: 3, custom_id: "sku:choose:" + sourceId + ":" + page,
-        placeholder: "Select multiple SKUs / products", min_values: 0, max_values: options.length, options }] },
+        placeholder: "Choose SKUs / products", min_values: 0, max_values: options.length, options }] },
       { type: 1, components: [
         { type: 2, style: 2, label: "◀ Previous", custom_id: "sku:page:" + sourceId + ":" + (page - 1), disabled: page === 0 },
         { type: 2, style: 2, label: "Next ▶", custom_id: "sku:page:" + sourceId + ":" + (page + 1), disabled: page === pages - 1 }
       ] },
       { type: 1, components: [
-        { type: 2, style: 2, label: "All Selected Qty 1", custom_id: "sku:bulk:" + sourceId + ":1", disabled: draft.length === 0 },
-        { type: 2, style: 2, label: "All Selected Qty 2", custom_id: "sku:bulk:" + sourceId + ":2", disabled: draft.length === 0 }
+        { type: 2, style: qty === 1 ? 3 : 2, label: "Qty 1 — ALL SKUs", custom_id: "sku:bulk:" + sourceId + ":1", disabled: draft.length === 0 },
+        { type: 2, style: qty === 2 ? 3 : 2, label: "Qty 2 — ALL SKUs", custom_id: "sku:bulk:" + sourceId + ":2", disabled: draft.length === 0 }
       ] },
       { type: 1, components: [
-        { type: 2, style: 2, label: "Review / Adjust", custom_id: "sku:review:" + sourceId + ":0" },
+        { type: 2, style: 2, label: "Review / Remove SKUs", custom_id: "sku:review:" + sourceId + ":0" },
         { type: 2, style: 3, label: "Confirm Selections", custom_id: "sku:confirm:" + sourceId }
       ] }
     ],
@@ -268,30 +270,42 @@ export function applySkuPageDraft(items, products, sourceId, channelId, requeste
   if (values.length > pageProducts.length || values.some(value => !/^\d+$/.test(value) ||
       Number(value) < offset || Number(value) >= offset + pageProducts.length))
     throw new Error("Invalid SKU choice. Reopen the selection screen.");
-  const selected = new Set(values.map(Number));
+  const chosen = new Set(values.map(Number));
   const pageSkus = new Set(pageProducts.map(item => item.sku));
   const existing = new Map(items.map(item => [item.sku, item]));
   const next = items.filter(item => !pageSkus.has(item.sku));
+  const quantity = uniformSkuQuantity(items) || 1;
   pageProducts.forEach((item, i) => {
-    if (!selected.has(offset + i)) return;
+    if (!chosen.has(offset + i)) return;
     next.push({ key: channelId + ":" + sourceId + ":" + item.sku,
-      name: item.name, sku: item.sku, quantity: existing.get(item.sku)?.quantity || 1 });
+      name: item.name, sku: item.sku, quantity: existing.get(item.sku)?.quantity || quantity });
   });
   if (next.length > 200) throw new Error("Up to 200 SKUs may be selected across drops.");
-  return next;
+  return setGlobalSkuQuantity(next, quantity);
 }
 export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
   const pages = Math.max(1, Math.ceil(items.length / 25));
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
   const selected = items.slice(page * 25, page * 25 + 25);
+  const qty = uniformSkuQuantity(items);
+  const skus = "(" + selected.map(item => skuSafeText(item.sku).slice(0, 80)).join(", ") + ")";
   const lines = selected.map(item => skuSafeText(item.sku).slice(0, 35) + " — " +
-    skuSafeText(item.name).slice(0, 60) + " · Qty " + item.quantity);
+    skuSafeText(item.name).slice(0, 60));
+  const header = "**SKUs:**\n" + skus + "\n**Qty: " +
+    (qty || "choose 1 or 2") + " — for ALL selected SKUs**";
+  const visibleNames = [];
+  for (const line of lines) {
+    if (header.length + visibleNames.join("\n").length + line.length + 5 > 3850) break;
+    visibleNames.push(line);
+  }
+  const names = visibleNames.join("\n") +
+    (visibleNames.length < lines.length ? "\n…" + (lines.length - visibleNames.length) + " more products; see SKU list above." : "");
   const components = [];
   if (selected.length) components.push({ type: 1, components: [{
     type: 3, custom_id: "sku:adjust:" + sourceId + ":" + page,
-    placeholder: "Pick SKU to change quantity or remove", min_values: 1, max_values: 1,
+    placeholder: "Remove a SKU (not individual Qty)", min_values: 1, max_values: 1,
     options: selected.map(item => ({
-      label: (skuSafeText(item.sku) + " · Qty " + item.quantity).slice(0, 100),
+      label: skuSafeText(item.sku).slice(0, 100),
       description: skuSafeText(item.name).slice(0, 100) || "Selected product",
       value: skuItemToken(item.key)
     }))
@@ -306,8 +320,13 @@ export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
   ] });
   return {
     content: "**Review " + items.length + " Draft SKU(s)** — page " + (page + 1) + " of " + pages +
-      "\nChanges are not saved or shared with the owner until confirmation.",
-    embeds: lines.length ? [{ title: "Your draft products and quantities", description: lines.join("\n"), color: 0x41b6e6 }] : [],
+      "\n**Qty: " + (qty || "choose 1 or 2") + " for ALL selected SKUs**" +
+      "\nChanges are not shared with the owner until confirmation.",
+    embeds: lines.length ? [{
+      title: "Selected products",
+      description: header + "\n\n" + names,
+      color: 0x41b6e6
+    }] : [],
     components, allowed_mentions: { parse: [] }
   };
 }
@@ -319,37 +338,75 @@ export function isGuildOwnerSkuTester(userId, verifiedGuildOwnerId) {
   return /^\d{17,22}$/.test(owner) && String(userId || "") === owner;
 }
 
+/*
+ * A single 1 or 2 applies to every SKU in a customer's selection, across
+ * all drop channels. Mixed legacy records are not valid new submissions.
+ */
+export function uniformSkuQuantity(items) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return 1;
+  const qty = Number(rows[0]?.quantity);
+  return [1, 2].includes(qty) && rows.every(row => Number(row.quantity) === qty) ? qty : null;
+}
+export function setGlobalSkuQuantity(items, quantity) {
+  if (![1, 2].includes(Number(quantity))) throw new Error("Choose Qty 1 or Qty 2 for all selected SKUs.");
+  return (Array.isArray(items) ? items : []).map(row => ({ ...row, quantity: Number(quantity) }));
+}
+export function skuOwnerDetails(items) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return { title: "New SKU Order", description: "No SKUs selected.", color: 0x41b6e6 };
+  const summary = skuCompactNotification(rows);
+  const skus = rows.map(row => skuSafeText(row.sku).slice(0, 80));
+  const visible = [];
+  for (const sku of skus) {
+    if(visible.length && visible.join(", ").length + sku.length + 3 > 3000) break;
+    visible.push(sku);
+  }
+  const more = skus.length - visible.length;
+  return {
+    title: "New SKU Order",
+    description: "**SKUs:**\n(" + visible.join(", ") + ")" +
+      (more > 0 ? "\n+" + more + " more SKUs — choose View all SKUs for the full list." : "") +
+      "\n**Qty: " + summary.quantity + "**",
+    color: 0xfa9238
+  };
+}
+export function skuCompactNotification(items) {
+  const rows = Array.isArray(items) ? items : [];
+  const qty = uniformSkuQuantity(rows);
+  if (qty === null) throw new Error("Choose one quantity for all selected SKUs before confirming.");
+  return {
+    skus: "(" + rows.map(row => skuSafeText(row.sku).slice(0, 80)).join(", ") + ")",
+    quantity: qty
+  };
+}
 export function changeSkuItems(items, chosen, sourceId, channelId, quantity) {
   if (![0, 1, 2].includes(quantity)) throw new Error("Choose Qty: 1, Qty: 2, or Remove.");
-  const next = items.map(item => ({ ...item }));
+  const next = (Array.isArray(items) ? items : []).map(item => ({ ...item }));
   for (const product of chosen) {
-    const key = `${channelId}:${sourceId}:${product.sku}`;
+    const key = channelId + ":" + sourceId + ":" + product.sku;
     const index = next.findIndex(item => item.key === key);
     if (!quantity) { if (index >= 0) next.splice(index, 1); }
-    else if (index >= 0) Object.assign(next[index], { quantity, name: product.name });
+    else if (index >= 0) Object.assign(next[index], { name: product.name });
     else next.push({ key, name: product.name, sku: product.sku, quantity });
   }
   if (next.length > 200) throw new Error("Up to 200 SKUs may be selected across drops.");
-  return next;
+  // Switching Qty for any selection changes all SKUs, never only one.
+  return setGlobalSkuQuantity(next, quantity || uniformSkuQuantity(next) || 1);
 }
 export function skuSelectionView(items, notice = "", requestedPage = 0) {
-  const pages = Math.max(1, Math.ceil(items.length / 30));
+  const rows = Array.isArray(items) ? items : [];
+  const pages = Math.max(1, Math.ceil(rows.length / 30));
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
-  const visible = items.length <= 30 ? items : items.slice(page * 30, (page + 1) * 30);
-  const lines = visible.map(item => "**" + skuSafeText(item.name).slice(0, 70) +
-    "**\nSKU: \`" + skuSafeText(item.sku).slice(0, 80) + "\` · Qty: " + item.quantity);
-  const groups = ["", ""];
-  for (const line of lines) {
-    const index = groups[0].length + line.length < 3000 ? 0 : 1;
-    groups[index] += (groups[index] ? "\n\n" : "") + line;
-  }
+  const visible = rows.length <= 30 ? rows : rows.slice(page * 30, (page + 1) * 30);
+  const qty = uniformSkuQuantity(rows);
   const components = [];
   for (let offset = 0; offset < visible.length; offset += 15) {
     components.push({ type: 1, components: [{
       type: 3, custom_id: "sku:manage:" + offset,
-      placeholder: "Select a SKU to change quantity or remove", min_values: 1, max_values: 1,
+      placeholder: "Remove a selected SKU", min_values: 1, max_values: 1,
       options: visible.slice(offset, offset + 15).map(item => ({
-        label: (skuSafeText(item.sku) + " · Qty: " + item.quantity).slice(0, 100),
+        label: skuSafeText(item.sku).slice(0, 80),
         description: skuSafeText(item.name).slice(0, 100) || "Selected product",
         value: skuItemToken(item.key)
       }))
@@ -360,26 +417,53 @@ export function skuSelectionView(items, notice = "", requestedPage = 0) {
     { type: 2, style: 2, label: "Next ▶", custom_id: "sku:mine:" + (page + 1), disabled: page === pages - 1 }
   ] });
   components.push({ type: 1, components: [{ type: 2, style: 2, label: "Refresh my selections", custom_id: "sku:view" }] });
+  // Discord limits embeds to 4096 characters. Split only if the SKU line would exceed 3200.
+  const sections = [], limit = 3200;
+  let group = [];
+  for(const item of visible) {
+    const sku = skuSafeText(item.sku).slice(0,80);
+    if(group.length && group.join(", ").length + sku.length + 3 > limit) {
+      sections.push(group);group = [];
+    }
+    group.push(sku);
+  }
+  if(group.length) sections.push(group);
   return {
-    content: (notice ? notice + "\n\n" : "") + "**Your selected SKUs (" + items.length + ")**" +
-      (items.length ? "\nChoose a selected SKU below to change its quantity or remove it." : "\nYou have no selected SKUs.") +
-      (pages > 1 ? "\nPage " + (page + 1) + " of " + pages + "; use the page buttons to view everything." : ""),
-    embeds: groups.filter(Boolean).map(description => ({ title: "Your current selections", description, color: 0x41b6e6 })),
+    content: (notice ? notice + "\n\n" : "") + "**Your selected SKUs (" + rows.length + ")**" +
+      (rows.length ? "\nUse the dropdown to remove a SKU. Quantity is one choice for all products." : "\nYou have no selected SKUs.") +
+      (pages > 1 ? "\nPage " + (page + 1) + " of " + pages : ""),
+    embeds: sections.map((part,i) => ({ title: "Your selected SKUs" + (sections.length>1 ? " ("+(i+1)+")":""),
+      description: "**SKUs:**\n(" + part.join(", ") + ")\n**Qty: " +
+        (qty || "Choose 1 or 2 before submitting") + (qty ? " — for ALL selected SKUs" : "") + "**",
+      color: 0x41b6e6 })),
     components, allowed_mentions: { parse: [] }
   };
 }
 export function skuAdminReviewPayload(items, userId, requestedPage = 0) {
-  const pages = Math.max(1, Math.ceil(items.length / 20));
+  const rows = Array.isArray(items) ? items : [];
+  const pages = Math.max(1, Math.ceil(rows.length / 20));
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
-  const selected = items.slice(page * 20, (page + 1) * 20);
+  const selected = rows.slice(page * 20, (page + 1) * 20);
+  const quantity = uniformSkuQuantity(rows) || 1;
   const details = selected.map(item =>
-    "**" + skuSafeText(item.name).slice(0, 70) + "** · SKU \`" +
-    skuSafeText(item.sku).slice(0, 70) + "\` · Qty " + item.quantity);
+    "**" + skuSafeText(item.name).slice(0, 70) + "** · SKU " +
+    skuSafeText(item.sku).slice(0, 70));
+  const header = "**SKUs:**\n(" + selected.map(item => skuSafeText(item.sku).slice(0,80)).join(", ") +
+    ")\n**Qty: " + quantity + " — for ALL selected SKUs**";
+  const visibleNames = [];
+  for (const line of details) {
+    if (header.length + visibleNames.join("\n").length + line.length + 6 > 3850) break;
+    visibleNames.push(line);
+  }
+  const names = visibleNames.join("\n") +
+    (visibleNames.length < details.length ? "\n…" + (details.length - visibleNames.length) +
+      " more product names; see the SKU list above." : "");
   return {
-    content: "**Confirmed SKU selections: " + items.length + " total** · Page " + (page + 1) + " of " + pages,
+    content: "**Confirmed SKU selections: " + rows.length + " total** · Page " + (page + 1) + " of " + pages,
     embeds: selected.length ? [{
       title: "Products to run (" + (page * 20 + 1) + "–" + (page * 20 + selected.length) + ")",
-      description: details.join("\n") || "No SKUs selected.", color: 0x41b6e6
+      description: header + (names ? "\n\n" + names : ""),
+      color: 0x41b6e6
     }] : [],
     components: pages > 1 ? [{ type: 1, components: [
       { type: 2, style: 2, label: "◀ Previous", custom_id: "sku:admin:" + userId + ":" + (page - 1), disabled: page === 0 },
@@ -2102,10 +2186,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const key = skuDraftKey(userId, channelId, sourceId);
       if (!drafts[key]) {
         const saved = (await readSkuFile(skuSelectionsFile))[userId]?.items || [];
-        drafts[key] = { items: saved.filter(item => item.key.startsWith(channelId + ":" + sourceId + ":"))
-          .map(item => ({ ...item })), updatedAt: new Date().toISOString() };
+        const previous = saved.filter(item => item.key.startsWith(channelId + ":" + sourceId + ":"));
+        drafts[key] = { items: setGlobalSkuQuantity(previous, uniformSkuQuantity(previous) || 1), updatedAt: new Date().toISOString() };
       }
-      if (transform) drafts[key].items = transform(drafts[key].items.map(item => ({ ...item })));
+      if (transform) {
+        const updated = transform(drafts[key].items.map(item => ({ ...item })));
+        drafts[key].items = setGlobalSkuQuantity(updated, uniformSkuQuantity(updated) || 1);
+      }
       drafts[key].updatedAt = new Date().toISOString();
       for (const [otherKey, draft] of Object.entries(drafts)) {
         if (Date.now() - Date.parse(draft.updatedAt || 0) > 7 * 86400000) delete drafts[otherKey];
@@ -2130,7 +2217,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const records = await readSkuFile(skuSelectionsFile);
       const record = records[userId] || { username, messageId: null, items: [] };
       const other = (record.items || []).filter(item => !item.key.startsWith(channelId + ":" + sourceId + ":"));
-      const next = [...other, ...draft.items];
+      const chosenQty = draft.items.length ? uniformSkuQuantity(draft.items) : uniformSkuQuantity(other);
+      const next = setGlobalSkuQuantity([...other, ...draft.items], chosenQty || 1);
       if (next.length > 200) throw new Error("You can have up to 200 SKUs across drops. Remove older selections first.");
       const skipTonightDate = draft.items.length && channelId === tonightChannelId ? undefined : record.skipTonightDate;
       const skippedUpcomingDrops = draft.items.length && channelId !== tonightChannelId
@@ -2267,7 +2355,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     await ensureSkuControls(d);
   }
   function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = []) {
-    const view = skuSelectionView(items);
+    const summary = skuOwnerDetails(items);
     const skipping = skipTonightDate === tonightDate();
     return {
       content: `${mention(ownerId)} · ${mention(userId)} (${skuSafeText(username).slice(0, 70)}) ${skipping ? "DO NOT RUN MY PROFILES TONIGHT" : "selected SKUs"}\n${change} · <t:${Math.floor(Date.now() / 1000)}:F>`,
@@ -2276,7 +2364,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         ...(skipping ? [{ title: "Do not run profiles tonight", description: `Requested for ${skipTonightDate} (New York time).`, color: 0xe74c3c }] : []),
         ...(skippedUpcomingDrops.length ? [{ title: "Do not run profiles for these upcoming drops",
           description: skippedUpcomingDrops.map(drop => `[Upcoming drop](https://discord.com/channels/${guildId}/${drop.channelId}/${drop.sourceId})`).join("\n"), color: 0xe74c3c }] : []),
-        ...(view.embeds.length ? view.embeds.map(embed => ({ ...embed, title: "Products to run" })) : [{ title: "Products to run", description: "No SKUs selected.", color: 0x41b6e6 }])
+        summary
       ],
       components: items.length > 30 ? [{ type: 1, components: [{
         type: 2, style: 1, label: "View all " + items.length + " SKUs", custom_id: "sku:admin:" + userId + ":0"
@@ -2292,7 +2380,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };
       const tonight = channelId === tonightChannelId;
-      const next = record.items.filter(item => !item.key.startsWith(tonight ? `${channelId}:` : `${channelId}:${sourceId}:`));
+      const remaining = record.items.filter(item => !item.key.startsWith(tonight ? `${channelId}:` : `${channelId}:${sourceId}:`));
+      const next = setGlobalSkuQuantity(remaining, uniformSkuQuantity(remaining) || 1);
       const date = tonight ? tonightDate() : record.skipTonightDate;
       const skipped = [...(record.skippedUpcomingDrops || [])];
       if (!tonight && !skipped.some(drop => drop.channelId === channelId && drop.sourceId === sourceId)) {
@@ -2321,14 +2410,36 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       if (!item) throw new Error("That SKU is no longer selected. Refresh your selections.");
       const next = record.items.map(item => ({ ...item }));
       if (!quantity) next.splice(next.findIndex(item => skuItemToken(item.key) === token), 1);
-      else next.find(item => skuItemToken(item.key) === token).quantity = quantity;
-      const payload = ownerSkuPayload(userId, record.username, next, quantity ? `Changed ${skuSafeText(item.sku)} to Qty: ${quantity}` : `Removed ${skuSafeText(item.sku)}`, record.skipTonightDate, record.skippedUpcomingDrops);
+      const normalized = setGlobalSkuQuantity(next, quantity || uniformSkuQuantity(next) || 1);
+      const payload = ownerSkuPayload(userId, record.username, normalized, quantity ? `Changed ${skuSafeText(item.sku)} to Qty: ${quantity}` : `Removed ${skuSafeText(item.sku)}`, record.skipTonightDate, record.skippedUpcomingDrops);
       let posted;
       if (record.messageId) {
         try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
       }
       if (!posted) posted = await api(`/channels/${skuRequestsChannelId}/messages`, "POST", payload);
+      Object.assign(record, { items: normalized, messageId: posted.id, updatedAt: new Date().toISOString() });
+      await writeSkuFile(skuSelectionsFile, selections);
+      return normalized;
+    });
+  }
+  async function setUserGlobalSkuQuantity(userId, quantity) {
+    if (![1, 2].includes(quantity)) throw new Error("Choose Qty 1 or Qty 2 for ALL SKUs.");
+    return withSkuQueue(async () => {
+      if (!skuRequestsChannelId) throw new Error("Private SKU requests channel is unavailable.");
+      const selections = await readSkuFile(skuSelectionsFile);
+      const record = selections[userId];
+      if (!record?.items?.length) throw new Error("Choose SKUs before setting a quantity.");
+      const next = setGlobalSkuQuantity(record.items, quantity);
+      const payload = ownerSkuPayload(userId, record.username, next,
+        "Set Qty " + quantity + " for ALL " + next.length + " selected SKUs",
+        record.skipTonightDate, record.skippedUpcomingDrops);
+      let posted;
+      if (record.messageId) {
+        try { posted = await api("/channels/" + skuRequestsChannelId + "/messages/" + record.messageId, "PATCH", payload); }
+        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+      }
+      if (!posted) posted = await api("/channels/" + skuRequestsChannelId + "/messages", "POST", payload);
       Object.assign(record, { items: next, messageId: posted.id, updatedAt: new Date().toISOString() });
       await writeSkuFile(skuSelectionsFile, selections);
       return next;
@@ -2431,7 +2542,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           const quantity = Number(arg);
           if (![1, 2].includes(quantity)) return await reply("Choose Qty 1 or Qty 2.");
           const draft = await mutateSkuDraft(userId, d.channel_id, sourceId,
-            items => items.map(item => ({ ...item, quantity })));
+            items => setGlobalSkuQuantity(items, quantity));
           return await api(callback, "POST", { type: 7, data: skuBrowsePayload(sourceId, products, 0, draft) });
         }
         if (action === "review") {
@@ -2444,13 +2555,12 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           if (!item) return await reply("That SKU is no longer in your draft. Refresh your review.");
           const token = skuItemToken(item.key);
           return await api(callback, "POST", { type: 7, data: {
-            content: "**" + skuSafeText(item.name) + "**\nSKU: " + skuSafeText(item.sku) + " · Qty " +
-              item.quantity + "\nChoose an adjustment. No changes are saved until confirmation.",
+            content: "**" + skuSafeText(item.name) + "**\nSKU: " + skuSafeText(item.sku) +
+              "\nQty: " + (uniformSkuQuantity(draft) || "choose 1 or 2") + " for ALL selected SKUs." +
+              "\nYou can remove this item, or go back and set the same quantity for all products.",
             components: [
               { type: 1, components: [
-                { type: 2, style: 2, label: "Qty 1", custom_id: "sku:individual:" + sourceId + ":" + token + ":1" },
-                { type: 2, style: 2, label: "Qty 2", custom_id: "sku:individual:" + sourceId + ":" + token + ":2" },
-                { type: 2, style: 4, label: "Remove SKU", custom_id: "sku:individual:" + sourceId + ":" + token + ":0" }
+                { type: 2, style: 4, label: "Remove this SKU", custom_id: "sku:individual:" + sourceId + ":" + token + ":0" }
               ] },
               { type: 1, components: [
                 { type: 2, style: 2, label: "Back to Review", custom_id: "sku:review:" + sourceId + ":0" },
@@ -2462,13 +2572,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         }
         if (action === "individual") {
           const quantity = Number(extra);
-          if (![0, 1, 2].includes(quantity) || !/^[a-f0-9]{16}$/.test(arg || "")) return await reply("Invalid adjustment.");
+          if (quantity !== 0 || !/^[a-f0-9]{16}$/.test(arg || ""))
+            return await reply("Individual quantities are not allowed. Go back and choose Qty 1 or Qty 2 for ALL SKUs.");
           const draft = await mutateSkuDraft(userId, d.channel_id, sourceId, items => {
             const result = items.map(item => ({ ...item }));
             const index = result.findIndex(item => skuItemToken(item.key) === arg);
             if (index < 0) throw new Error("That SKU is no longer in your draft.");
-            if (quantity) result[index].quantity = quantity;
-            else result.splice(index, 1);
+            result.splice(index, 1);
             return result;
           });
           return await api(callback, "POST", { type: 7, data: skuDraftReviewPayload(sourceId, draft, 0) });
@@ -2515,27 +2625,51 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
         const selections = await readSkuFile(skuSelectionsFile);
         const token = d.data.values?.[0];
-        const item = selections[userId]?.items.find(item => skuItemToken(item.key) === token);
-        if (!item) return await reply("That SKU is no longer selected. Click My selected SKUs to refresh.");
+        const record = selections[userId];
+        const item = record?.items.find(row => skuItemToken(row.key) === token);
+        if (!item) return await reply("That SKU is no longer selected. Refresh My selected SKUs.");
+        const quantity = uniformSkuQuantity(record.items);
         return await api(callback, "POST", { type: 4, data: {
           flags: 64, allowed_mentions: { parse: [] },
-          content: `**${skuSafeText(item.name)}**\nSKU: \`${skuSafeText(item.sku)}\` · Currently selected Qty: ${item.quantity}`,
-          components: [{ type: 1, components: [{ type: 3, custom_id: `sku:change:${token}`,
-            placeholder: "Change quantity or remove this SKU", min_values: 1, max_values: 1,
-            options: [{ label: "Qty: 1", value: "1", default: item.quantity === 1 }, { label: "Qty: 2", value: "2", default: item.quantity === 2 }, { label: "Remove this SKU", value: "0" }]
-          }] }]
+          content: "**" + skuSafeText(item.name) + "**\nSKU: " + skuSafeText(item.sku) +
+            "\n**Qty: " + (quantity || "choose 1 or 2") + " for ALL selected SKUs**",
+          components: [
+            { type: 1, components: [{ type: 3, custom_id: "sku:change:" + token,
+              placeholder: "Remove this SKU", min_values: 1, max_values: 1,
+              options: [{ label: "Remove this SKU", value: "0" }]
+            }] },
+            { type: 1, components: [
+              { type: 2, style: quantity === 1 ? 3 : 2, label: "Qty 1 — ALL SKUs", custom_id: "sku:global:1" },
+              { type: 2, style: quantity === 2 ? 3 : 2, label: "Qty 2 — ALL SKUs", custom_id: "sku:global:2" }
+            ] }
+          ]
         } });
+      }
+      if (d.type === 3 && /^sku:global:[12]$/.test(d.data?.custom_id || "")) {
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        const quantity = Number(d.data.custom_id.split(":")[2]);
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          const items = await setUserGlobalSkuQuantity(userId, quantity);
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original",
+            "PATCH", skuSelectionView(items, "Qty " + quantity + " saved for ALL SKUs. The owner has been notified."));
+        } catch (error) {
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original",
+            "PATCH", { content: error.message, components: [] });
+        }
       }
       if (d.type === 3 && /^sku:change:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
         if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
         const quantity = Number(d.data.values?.[0]);
-        if (![0, 1, 2].includes(quantity)) return await reply("Choose Qty: 1, Qty: 2, or Remove.");
+        if (quantity !== 0) return await reply("Individual SKU quantities are not allowed. Choose Qty 1 or 2 for ALL selected SKUs.");
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         try {
-          const items = await manageSkuSelection(userId, d.data.custom_id.split(":")[2], quantity);
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", skuSelectionView(items, "Selection updated. The owner's private message now shows your latest choices."));
+          const items = await manageSkuSelection(userId, d.data.custom_id.split(":")[2], 0);
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original",
+            "PATCH", skuSelectionView(items, "SKU removed. The owner has been notified."));
         } catch (error) {
-          return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: error.message, components: [] });
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original",
+            "PATCH", { content: error.message, components: [] });
         }
       }
       if (d.type === 3 && /^sku:(?:pick|qty):\d{17,22}:(?:\d{1,3}|all)$/.test(d.data?.custom_id || "")) {
