@@ -193,19 +193,13 @@ if(tab==="overview"){
       '<div class="metric admin-membership-metric"><small>ACTIVE PAID MEMBERSHIPS</small><strong>'+activeMembershipRows.length+'</strong><small>Within current paid period</small></div>'+
       '<div class="metric admin-membership-metric"><small>MONTHLY MEMBERSHIP PAYMENTS</small><strong>'+esc(recurringTotal)+'</strong><small>'+esc(recurringNote)+'</small></div>'+
       metric("Registered customers",list.length)+
-      metric("Paid customers",paidCount)+
-      metric("New signups · no plan",freeCount)+
       metric("Awaiting activation",activationCount(a,"awaiting_activation"))+
-      metric("App users · 7 days",u.activeUsers7d??"—")+
-      metric("Installed devices",u.installedDevices??"—")+'</div>'+
-    collapsiblePanel("Latest website signups",recentSignupRows)+
-    collapsiblePanel("Recent confirmed checkouts",recentRows+
-      '<a href="/admin-success.html" class="action">VIEW ALL CHECKOUTS ↗</a>')+
+      '<details class="metric admin-app-users-metric"><summary>APP USERS · 7 DAYS <strong>'+esc(u.activeUsers7d??"—")+'</strong></summary><div class="admin-app-users-list">'+(Array.isArray(u.recent)?u.recent.filter(person=>{const when=Date.parse(person.lastSeenAt||"");return Number.isFinite(when)&&when>=Date.now()-7*86400000}).slice(0,30).map(person=>'<p>'+esc(person.name||person.email||"App user")+' · '+esc(person.lastSeenAt?new Date(person.lastSeenAt).toLocaleDateString():"")+'</p>').join(""):"")+'</div></details></div>'+
     collapsiblePanel("Quick actions",'<div class="links">'+
       '<a class="action" href="/admin-success.html">CHECKOUT SPENDING & INSIGHTS ↗</a>'+
       '<a class="action" href="/admin.html">OPEN FULL ADMIN DASHBOARD ↗</a>'+
       '<a class="action" href="/admin.html#profileActivationTracker">PROFILE ACTIVATION TOOLS ↗</a></div>')+
-    collapsiblePanel("Live updates","<p>Checkout data and customer changes refresh automatically. Customer and account totals are shown separately to prevent unassigned orders from being attributed to the wrong person.</p>");
+    '<p class="admin-data-refresh-note">Customer and order data refresh automatically.</p>';
 }
 if(tab==="success"){
   // Community totals include unmatched confirmed checkouts. Attribution is
@@ -406,9 +400,8 @@ if(tab==="success"){
       '<a class="success-match-link success-match-secondary" href="/admin-checkout-match.html">REVIEW ALL UNMATCHED HITS ↗</a></section>'
     : "";
   const people=new Map();
-  // Individual customer breakdowns use their OWN 24H / 7D / 30D filter, not
-  // the global graph period. A 24H overview must not hide an older PKC hit.
-  allSuccess.forEach(x=>{
+  // All success breakdowns follow the selected parent date range.
+  allSuccess.filter(x=>{const when=Date.parse(x.checkoutAt);return Number.isFinite(when)&&when>=cutoff&&when<periodEnd;}).forEach(x=>{
     const id=String(x.customerAccountId);
     if(!people.has(id))people.set(id,{id,name:String(x.customerName||"Customer"),orders:[]});
     people.get(id).orders.push(x);
@@ -471,8 +464,8 @@ if(tab==="success"){
   c.innerHTML=buttons+customerSelect+accountSelect+hero+
     '<div class="metrics admin-success-metrics">'+metric("Confirmed orders",total)+
       metric("Retailers",groupedRetailers.size)+'</div>'+
-    priceReview+unmatchedPanel+lifetime+panel("Orders by retailer",donut+legend)+
-    productsDrop+customersDrop+scanStatus;
+    panel("Orders by retailer",donut+legend)+productsDrop+customersDrop+
+    priceReview+scanStatus+unmatchedPanel;
   c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{
     successDays=/^(ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);
     successCalendarOpen=false;successCalendarError="";
