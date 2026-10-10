@@ -140,7 +140,8 @@ test("all Success aggregate and customer endpoints use an authoritative-source f
   const server = await fs.readFile(new URL("../server.js", import.meta.url), "utf8");
   assert.match(server, /return authoritativeDiscordCheckouts\(records, authorizedChannelIds\)/);
   assert.match(server, /visibleDiscordSuccessRecords\((?:await getSuccessCheckouts\(\)|saved), hitsChannelId, chosen\.channels\)/);
-  assert.match(server, /const \[saved, customers\] = await Promise\.all\(\[getSuccessCheckouts\(\), getCustomerAccounts\(\)\]\)/);
+  assert.ok(server.includes("const [saved, customers, paidRaw] = await Promise.all(["));
+  assert.ok(server.includes(".filter(record => record.customerAccountId &&"));
   assert.equal((server.match(/visibleDiscordSuccessRecords\(/g) || []).length, 5);
   assert.equal((server.match(/\(await discordCheckoutSourceChannels\(\)\)\.channels/g) || []).length, 3);
 });
