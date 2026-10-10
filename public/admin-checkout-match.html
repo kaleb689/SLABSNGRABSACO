@@ -19,6 +19,7 @@ input,select{width:100%;border:1px solid #556477;border-radius:12px;background:#
 input:focus,select:focus,button:focus-visible{outline:2px solid #55d9ff;outline-offset:2px}
 .match{background:#151a2a;border:1px solid #343b51;border-radius:17px;padding:17px;margin-top:13px}.match h3{font-size:16px;overflow-wrap:anywhere;margin:0 0 7px}
 .meta{color:#a9b8c9;font-size:13px;margin-bottom:11px}
+.match-products{display:flex;flex-wrap:wrap;gap:7px;margin:9px 0 14px}.match-products span{font-size:11px;line-height:1.4;background:#202940;border:1px solid #384b67;border-radius:10px;padding:6px 9px;color:#d2e5f3}
 label{display:block;font-size:13px;font-weight:800;margin:12px 0 7px}
 button{touch-action:manipulation;cursor:pointer;font:inherit}
 .match button{width:100%;border:0;border-radius:12px;background:linear-gradient(110deg,#6941e7,#31b9f0);font-weight:900;color:white;min-height:48px;margin-top:13px}
@@ -58,16 +59,18 @@ const requestedRetailer=new URLSearchParams(location.search).get("retailer")||""
 if(/^(?:pkc|pokemon center)$/i.test(requestedRetailer))$("search").value="PKC";
 function render(){
  const needle=$("search").value.trim().toLowerCase();
- const matches=groups.filter(g=>(g.profileLabel+" "+g.retailer).toLowerCase().includes(needle));
+ const matches=groups.filter(g=>(g.profileLabel+" "+g.retailer+" "+(g.products||[]).map(p=>p.name).join(" ")).toLowerCase().includes(needle));
  $("results").innerHTML=matches.slice(0,100).map((g,i)=>{
   const ix=groups.indexOf(g);
   return '<section class="match"><h3>'+e(g.profileLabel)+'</h3><div class="meta">'+e(g.retailer)+
    ' · '+g.count+' unlinked checkouts · '+e(g.firstAt?.slice(0,10)||"Unknown date")+' to '+
    e(g.lastAt?.slice(0,10)||"Unknown date")+'</div>'+
+   '<div class="match-products">'+(Array.isArray(g.products)?g.products:[]).slice(0,6).map(p=>
+     '<span>'+e(p.name)+' ×'+Math.max(0,Math.floor(Number(p.quantity)||0))+'</span>').join('')+'</div>'+
    '<label for="target-'+ix+'">Website customer to link</label><select id="target-'+ix+'" '+(g.eligibleCustomers.length?'':'disabled')+'><option value="">Choose a verified customer…</option>'+
    g.eligibleCustomers.map(c=>'<option value="'+e(c.id)+'">'+e(c.label)+'</option>').join('')+
    '</select><button type="button" data-index="'+ix+'" '+(g.eligibleCustomers.length?'':'disabled')+'>CONFIRM PROFILE MATCH</button>'+
-   (g.eligibleCustomers.length?'':'<p class="notice">No eligible paid or assigned customer profile exists for these checkout dates.</p>')+
+   (g.eligibleCustomers.length?'':'<p class="notice">No eligible paid or linked retailer account exists for these dates. Verify the account in Admin Profiles and assign it to the correct customer first, then refresh this page.</p>')+
    '</section>';
  }).join('')||'<p class="notice">No unmatched Discord profile labels found.</p>';
  if(matches.length>100)$("results").insertAdjacentHTML("beforeend",'<p class="notice">Showing the first 100 matches. Narrow your search for more.</p>');
