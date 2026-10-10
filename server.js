@@ -37764,31 +37764,14 @@ function visibleDiscordSuccessRecords(records, excludedChannelId = null, authori
         return null;
       }
 
-      const removedValue =
-        removedItems.reduce(
-          (sum, item) =>
-            sum +
-            Math.max(0, Number(item?.price || 0)) *
-              Math.max(0, Number(item?.quantity || 0)),
-          0
-        );
-
-      const orderTotal =
-        removedValue > 0
-          ? Math.max(0, Number(record?.orderTotal || 0) - removedValue)
-          : Number(record?.orderTotal || 0);
-
+      // A presentation-only product exclusion must NEVER subtract an item
+      // price from the retailer's verified final amount charged. Item prices
+      // exclude fees, shipping and tax and cannot reprice a receipt.
       return {
         ...record,
         items,
-        itemCount:
-          items.reduce(
-            (sum, item) =>
-              sum +
-              Math.max(0, Math.floor(Number(item?.quantity || 0))),
-            0
-          ),
-        orderTotal
+        itemCount: items.reduce((sum, item) =>
+          sum + Math.max(0, Math.floor(Number(item?.quantity || 0))), 0)
       };
     })
     .filter(Boolean);
@@ -38732,6 +38715,26 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
       })
       .filter(record => Number.isFinite(new Date(record.checkoutAt).getTime()))
       .sort((a, b) => new Date(b.checkoutAt) - new Date(a.checkoutAt));
+    // Admin-only, de-identified community checkout rows: this includes
+    // confirmed unmatched hits for global period totals, but never grants a
+    // customer a purchase or exposes source retailer login/order number.
+    const communityRecords = confirmed.map(record => {
+      const safe = safeSuccessCheckout(record);
+      return {
+        retailer: safe.retailer, checkoutAt: safe.checkoutAt,
+        orderTotal: safe.orderTotal, orderTotalKnown: safe.orderTotalKnown,
+        itemSubtotal: checkoutItemSubtotal(record),
+        itemCount: safe.itemCount,
+        linked: Boolean(record.customerAccountId &&
+          customersById.has(String(record.customerAccountId))),
+        items: safe.items.map(item => ({
+          name: clean(item.name, 120),
+          quantity: Math.max(0, Math.floor(Number(item.quantity) || 0)),
+          imageUrl: item.imageUrl
+        }))
+      };
+    }).filter(record => Number.isFinite(Date.parse(record.checkoutAt || "")))
+      .sort((a,b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
     res.setHeader("Cache-Control", "no-store");
     const communityTotals = historicalPlusVerified({
       checkouts: confirmed.length,
@@ -38741,7 +38744,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
         checkoutPaidAmount(record) === null).length
     });
     return res.json({
-      ok:true,records,unmatchedCount,unmatchedRecent,
+      ok:true,records,communityRecords,unmatchedCount,unmatchedRecent,
       sourceCheckedAt: discordSuccessScan.checkedAt || null,communityTotals,
       historicalSummary: historicalPlusVerified({checkouts:0,spent:0,unknownPrices:0})
     });
@@ -43873,7 +43876,9 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const time = new Date(record.checkoutAt || 0).getTime();
         return Number.isFinite(time) && time > 0 ? Math.min(min, time) : min;
       }, Date.now());
-      const since = new Date(Math.max(oldestCheckout - 2 * 24 * 60 * 60 * 1000, Date.now() - 45 * 24 * 60 * 60 * 1000));
+      // Older confirmation messages may have been missed by previous scan
+      // versions. Keep a bounded 120-day search; never make an email an order.
+      const since = new Date(Math.max(oldestCheckout - 2 * 24 * 60 * 60 * 1000, Date.now() - 120 * 24 * 60 * 60 * 1000));
       const uids = await client.search({
         since,
         or: [
@@ -43886,9 +43891,11 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
       const receiptUids = await client.search({
         since,
         or: [{ subject: "receipt" }, { subject: "confirmation" },
-          { subject: "confirmed" }, { subject: "your order" }]
+          { subject: "confirmed" }, { subject: "your order" },
+          { subject: "order" }, { subject: "purchase" },
+          { subject: "charged" }, { subject: "payment" }]
       }, { uid: true });
-      const recentUids = [...new Set([...uids.slice(-120), ...receiptUids.slice(-120)])];
+      const recentUids = [...new Set([...uids.slice(-120), ...receiptUids.slice(-240)])];
       const candidates = recentUids.length ? await client.fetchAll(
         recentUids,
         { uid: true, envelope: true, internalDate: true, source: true },
@@ -44049,9 +44056,18 @@ async function syncShippingTrackers() {
         console.error("Shipping tracker managed mailbox scan:", mailboxFailureReason(error));
       }
     }
+    // Safe aggregate observability: track REAL verified checkout prices so
+    // support can distinguish unavailable receipts from a broken UI without
+    // printing retailer order numbers, customer IDs or account credentials.
     console.log("Verified shipping scan:", JSON.stringify({
       trackable: trackable.length,
       communityPriceCandidates: businessPriceCandidates.length,
+      confirmedWithVerifiedPaidAmount: businessPriceCandidates.filter(
+        record => checkoutPaidAmount(record) !== null).length,
+      awaitingVerifiedPaidAmount: businessPriceCandidates.filter(
+        record => checkoutPaidAmount(record) === null).length,
+      verifiedSpendCents: businessPriceCandidates.reduce(
+        (sum,record) => sum + Math.round((checkoutPaidAmount(record) ?? 0) * 100), 0),
       customerMailboxesScanned,
       managedConfigured: managed.configured,
       managedConnected: managedMailboxConnected,

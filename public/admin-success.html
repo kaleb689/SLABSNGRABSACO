@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10162b">
+<title>All Checkout Success | SLABSNGRABSACO Admin</title>
+<link rel="icon" href="/slabsngrabs-aco-logo-transparent.png">
+<link rel="stylesheet" href="/sng-premium-controls.css?v=1">
+<style>
+:root{font-family:Inter,-apple-system,BlinkMacSystemFont,system-ui,sans-serif;color-scheme:dark;--panel:#121e38;--muted:#b2c9dd;--copy:#f3f8ff;--border:#384f85;--base:#090f20}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;color:var(--copy);background:radial-gradient(ellipse at 3% 5%,#47238570,transparent 49%),radial-gradient(ellipse at 100% 20%,#075d7270,transparent 45%),var(--base)}
+.success-root{max-width:1180px;margin:auto;padding:20px 15px max(90px,env(safe-area-inset-bottom))}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:16px;margin-bottom:24px}
+.logo{width:53px;height:53px;object-fit:contain;background:white;border-radius:14px;padding:4px}
+.identity{flex:1;min-width:160px}
+.identity small,.eyebrow{display:block;color:#84ddfa;letter-spacing:.115em;font-weight:900;font-size:10px}
+h1{font-size:clamp(25px,5vw,39px);letter-spacing:-.045em;margin:5px 0}
+h2{font-size:18px;letter-spacing:-.02em;margin:0 0 12px}
+h3{font-size:15px;margin:0 0 10px}
+p{line-height:1.55;margin:7px 0 13px;color:var(--muted);font-size:13px}
+button,select,a{font:inherit;touch-action:manipulation;cursor:pointer}
+.back,.tools{display:flex;flex-wrap:wrap;gap:9px}
+.back a{text-align:center;text-decoration:none;border-radius:13px;min-height:45px;padding:11px 13px;color:white;background:linear-gradient(120deg,#754cef,#188bc0);border:1px solid #86d7ff;font-size:12px;font-weight:850}
+.panel,.stat,.user-card{border:1px solid var(--border);background:linear-gradient(130deg,rgba(85,59,150,.13),transparent 60%),var(--panel);border-radius:19px;box-shadow:0 11px 26px #0002}
+.panel{padding:18px;margin:16px 0}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}
+.stat{padding:17px;min-width:0;border-top:3px solid #8f60ed}
+.stat:nth-child(4n+2){border-top-color:#30c7eb}
+.stat:nth-child(4n+3){border-top-color:#32d1a8}
+.stat:nth-child(4n){border-top-color:#ffc26c}
+.stat small{display:block;color:var(--muted);font-size:11px;font-weight:800;line-height:1.35}
+.stat strong{display:block;font-size:clamp(20px,3vw,32px);letter-spacing:-.03em;margin-top:8px;overflow-wrap:anywhere;color:var(--copy)}
+.toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(200px,360px);gap:16px;align-items:end;margin:19px 0}
+.periods,.user-periods{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.periods button,.user-periods button{min-width:0;min-height:46px;padding:10px 4px;border-radius:13px;border:1px solid #718ed1;color:#f2fbff;font-weight:850;font-size:12px;background:linear-gradient(110deg,#5536ad,#166e97)}
+.periods button[aria-pressed="true"],.user-periods button[aria-pressed="true"]{background:linear-gradient(118deg,#9852ff,#288cf0 70%,#08bfa7);border-color:#a8f1ff;color:#fff;box-shadow:0 0 0 2px #52dfff3a,0 8px 17px #3e62d34a}
+.select-wrap{display:grid;gap:7px;color:#9bdcf1;font-size:11px;font-weight:900;letter-spacing:.04em}
+.select-wrap select{width:100%;min-height:49px;max-width:100%;border-radius:13px;background-color:#20365d;color:#fff;padding:12px 40px 12px 13px;border:1px solid #72abd3;font-size:14px;appearance:none;background-image:linear-gradient(45deg,transparent 50%,#80efff 50%),linear-gradient(135deg,#80efff 50%,transparent 50%);background-position:calc(100% - 22px) 50%,calc(100% - 16px) 50%;background-size:6px 6px,6px 6px;background-repeat:no-repeat}
+.rows{display:grid;gap:8px}
+.line{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:12px;border:1px solid #405884;border-radius:13px;background:#18274480}
+.line strong,.line span{font-size:13px}
+.line small{color:var(--muted);font-size:11px}
+.money{font-variant-numeric:tabular-nums;color:#8cf1d4;font-weight:900;text-align:right}
+.pill{display:inline-block;border:1px solid #658ed3;background:#223966;border-radius:999px;padding:4px 9px;font-size:10px;font-weight:900;color:#a9e7ff}
+.pending{color:#ffcf8a}
+.disclosures{display:grid;gap:13px;margin-top:18px}
+details.panel{padding:0;overflow:hidden}
+details.panel>summary{min-height:60px;display:flex;align-items:center;gap:10px;list-style:none;cursor:pointer;padding:17px 19px;font-size:16px;font-weight:900;background:linear-gradient(117deg,#5836ac66,#0e8db24a)}
+details.panel>summary::-webkit-details-marker,.user-card>summary::-webkit-details-marker{display:none}
+details.panel>summary span:first-child{flex:1}
+details.panel>summary:after,.user-card>summary:after{content:"⌄";display:grid;place-items:center;width:29px;height:29px;border-radius:9px;color:#8beaff;background:#143960;border:1px solid #447dac;flex:none}
+details[open]>summary:after{transform:rotate(180deg)}
+.body{padding:17px}
+.products{display:grid;gap:9px}
+.product{display:grid;grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:12px;background:#15264378;border:1px solid #334e79;border-radius:13px;padding:10px}
+.product img{width:52px;height:52px;border-radius:10px;background:white;object-fit:contain}
+.product strong{font-size:12px;display:block;overflow-wrap:anywhere}
+.product small{color:var(--muted);font-size:11px}
+.user-card{margin:10px 0;overflow:hidden}
+.user-card>summary{display:flex;gap:11px;align-items:center;padding:14px;cursor:pointer;min-height:66px;list-style:none}
+.user-card>summary>span:first-child{flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;font-weight:900}
+.user-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:13px 0}
+.user-metrics>div{border-radius:12px;background:#152b48;padding:12px;min-width:0}
+.user-metrics small{display:block;font-size:10px;color:var(--muted)}
+.user-metrics strong{display:block;margin-top:6px;font-size:clamp(15px,3vw,20px);overflow-wrap:anywhere}
+.detail-list{display:grid;gap:7px;margin-top:12px}
+.detail-item{font-size:12px;color:var(--muted);padding:10px 12px;background:#1c314d;border:1px solid #40527e;border-radius:10px}
+.status{min-height:24px;font-size:12px;color:#94ebdb;font-weight:800;margin-top:12px}
+.head-note{margin:4px 0 18px}
+.head-note strong{color:#cfe9ff}
+#theme-toggle{min-height:43px;border-radius:12px;border:1px solid #82b7ec;background:linear-gradient(115deg,#5541b0,#17789e);color:white;padding:10px 14px;font-weight:850}
+button:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #6feaff;outline-offset:3px}
+body[data-admin-theme="light"]{--panel:#fff;--muted:#506985;--copy:#203450;--border:#c4d2ec;--base:#f3f7ff;color-scheme:light;background:linear-gradient(135deg,#f2ecff,#effbff)}
+body[data-admin-theme="light"] .identity small,body[data-admin-theme="light"] .eyebrow{color:#4c4ca3}
+body[data-admin-theme="light"] .line,body[data-admin-theme="light"] .product{background:#f3f8ff}
+body[data-admin-theme="light"] .user-metrics>div,body[data-admin-theme="light"] .detail-item{background:#f1f5fe}
+body[data-admin-theme="light"] .money{color:#007e66}
+body[data-admin-theme="light"] .pending{color:#8a5c18}
+body[data-admin-theme="light"] .select-wrap{color:#45629a}
+body[data-admin-theme="light"] .select-wrap select{background-color:#eef6ff;color:#253a59}
+body[data-admin-theme="light"] .pill{background:#eceaff;color:#5350a0}
+body[data-admin-theme="light"] details.panel>summary{background:linear-gradient(115deg,#f1ebff,#eaf9ff);color:#30466c}
+body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color:#5852ac}
+@media(max-width:750px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.toolbar{grid-template-columns:1fr}.top{align-items:flex-start}.back{width:100%}}
+@media(max-width:370px){.success-root{padding-inline:10px}.stats{gap:7px}.stat{padding:12px}.periods,.user-periods{gap:5px}.periods button,.user-periods button{font-size:11px;padding-inline:3px}.line{grid-template-columns:minmax(0,1fr) auto}.line small{grid-column:1/-1}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body class="admin-page">
+<main id="dashboard" class="success-root">
+<header class="top">
+<img class="logo" src="/slabsngrabs-aco-logo-transparent.png" alt="">
+<div class="identity"><small>SLABSNGRABSACO · SECURE ADMIN</small><h1>All Checkout Success</h1></div>
+<div class="back"><a href="/admin-app.html">Mobile Admin</a><a href="/admin.html">Full Admin</a><a href="/admin-checkout-prices.html">Verify prices</a><button type="button" id="theme-toggle" aria-label="Toggle light and dark mode">Light / Dark</button></div>
+</header>
+<p class="head-note">All <strong>confirmed</strong> checkout webhooks count, even if no customer is matched. Prices count only when the final retailer amount is verified. Unmatched purchases never appear in a customer's personal Success page.</p>
+<div class="stats" id="historical"><div class="stat"><small>Historical confirmed orders</small><strong>240</strong></div><div class="stat"><small>Historical reported spend</small><strong>$15,876.11</strong></div><div class="stat"><small>Live confirmed orders</small><strong>—</strong></div><div class="stat"><small>Combined reported lifetime</small><strong>—</strong></div></div>
+<div class="panel">
+  <span class="eyebrow">ALL ORDERS / VERIFIED PAID TOTALS</span>
+  <h2>Spending by date</h2>
+  <div class="toolbar">
+    <div class="periods" id="periods" role="group" aria-label="Checkout date range"></div>
+    <label class="select-wrap">VIEW CHECKOUTS FOR <select id="scope" aria-label="Customer and order scope"><option value="all">All confirmed checkouts</option></select></label>
+  </div>
+  <div class="stats" id="period-stats" aria-live="polite"></div>
+  <p id="period-caption"></p>
+</div>
+<section class="disclosures">
+<details class="panel" id="retailer-panel"><summary><span>Orders by retailer</span></summary><div class="body" id="retailers"></div></details>
+<details class="panel" id="product-panel"><summary><span>Products Purchased</span></summary><div class="body" id="products"></div></details>
+<details class="panel" id="customer-panel"><summary><span>Customer Breakdowns</span></summary><div class="body" id="customers"></div></details>
+</section>
+<div id="status" class="status" role="status" aria-live="polite">Loading verified checkout reporting…</div>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const money = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n)||0);
+  const amt = x => x && x.orderTotalKnown === true && Number(x.orderTotal)>0 ? Math.round(Number(x.orderTotal)*100) : 0;
+  const totalCents = rows => rows.reduce((c,x) => c + amt(x),0);
+  const itemQty = x => (x.items||[]).reduce((n,item) => n + Math.max(0,Math.floor(Number(item.quantity)||0)),0);
+  const countUnknown = rows => rows.filter(x => !x.orderTotalKnown).length;
+  const periods = [[1,'24H'],[7,'7D'],[30,'30D'],[90,'90D'],['mtd','MTD'],['ytd','YTD'],['all','ALL']];
+  let data={records:[],communityRecords:[]},days=30,scope='all',refreshing=false;
+  const userPeriods=new Map(),openUsers=new Set();
+  function start(period,now=new Date()){
+    if(period==='all')return 0;
+    if(period==='mtd')return new Date(now.getFullYear(),now.getMonth(),1).getTime();
+    if(period==='ytd')return new Date(now.getFullYear(),0,1).getTime();
+    return now.getTime()-Number(period)*86400000;
+  }
+  const within=(rows,period,now=new Date())=>rows.filter(x=>{
+    const at=Date.parse(x.checkoutAt||'');
+    return Number.isFinite(at)&&at>=start(period,now)&&at<=now.getTime()+60000;
+  });
+  const validImage=url=>typeof url==='string'&&/^https:\/\/[a-z0-9.-]+\/[^\s"'<>]*$/i.test(url);
+  const stat=(name,val)=>'<div class="stat"><small>'+esc(name)+'</small><strong>'+esc(val)+'</strong></div>';
+  function productList(records){
+    const groups=new Map();
+    for(const row of records)for(const item of row.items||[]){
+      const name=String(item.name||'Product'),retailer=String(row.retailer||'Retailer');
+      const key=retailer.toLowerCase()+'|'+name.toLowerCase();
+      const old=groups.get(key)||{name,retailer,qty:0,image:''};
+      old.qty+=Math.max(0,Math.floor(Number(item.quantity)||0));
+      if(!old.image&&validImage(item.imageUrl))old.image=item.imageUrl;
+      groups.set(key,old);
+    }
+    return [...groups.values()].sort((a,b)=>b.qty-a.qty||a.name.localeCompare(b.name))
+      .map(x=>'<div class="product"><img src="'+esc(x.image||'/slabsngrabs-aco-logo-transparent.png')+'" alt="" loading="lazy"><div><strong>'+esc(x.name)+'</strong><small>'+esc(x.retailer)+'</small></div><strong>×'+x.qty+'</strong></div>').join('')||'<p>No purchased products during this period.</p>';
+  }
+  function retailerList(rows){
+    const retailers=new Map();
+    for(const x of rows){
+      const k=String(x.retailer||'Retailer');
+      const old=retailers.get(k)||{name:k,orders:0,cents:0,pending:0};
+      old.orders++;old.cents+=amt(x);if(!x.orderTotalKnown)old.pending++;retailers.set(k,old);
+    }
+    return '<div class="rows">'+[...retailers.values()].sort((a,b)=>b.orders-a.orders).map(x=>
+      '<div class="line"><div><strong>'+esc(x.name)+'</strong><small> · '+x.orders+' confirmed orders'+(x.pending?' · '+x.pending+' without final paid amount':'')+'</small></div><span class="money">'+money(x.cents/100)+'</span></div>'
+    ).join('')+'</div>'||'<p>No retailers in this period.</p>';
+  }
+  function orderList(rows){
+    return rows.slice(0,80).map(x=>{
+      const summary=(x.items||[]).slice(0,3).map(item=>String(item.name||'Item')+' ×'+Math.max(0,Math.floor(Number(item.quantity)||0))).join(' · ');
+      return '<div class="detail-item"><strong>'+esc(x.retailer||'Retailer')+'</strong> · '+esc(new Date(x.checkoutAt).toLocaleDateString())+
+        ' · '+esc(x.accountLabel||'Unspecified linked profile')+' · '+esc(summary)+
+        '<span class="'+(x.orderTotalKnown?'money':'pending')+'"> · '+(x.orderTotalKnown?money(x.orderTotal):'Amount not verified')+'</span></div>';
+    }).join('')||'<p>No orders for the selected customer period.</p>';
+  }
+  function renderCustomers(){
+    const map=new Map();
+    for(const x of data.records||[]){
+      const id=String(x.customerAccountId||'');if(!id)continue;
+      const user=map.get(id)||{id,name:String(x.customerName||'Customer'),orders:[]};
+      user.orders.push(x);map.set(id,user);
+    }
+    const people=[...map.values()].filter(u=>scope==='all'||scope==='linked'||scope==='customer:'+u.id);
+    const html=people.sort((a,b)=>b.orders.length-a.orders.length).map(u=>{
+      const period=userPeriods.get(u.id)||30,rows=within(u.orders,period);
+      const buttons=[ [1,'24H'],[7,'7D'],[30,'30D'],['mtd','MTD'] ].map(([value,label])=>
+        '<button type="button" data-user="'+esc(u.id)+'" data-period="'+value+'" aria-pressed="'+(period===value)+'">'+label+'</button>').join('');
+      return '<details class="user-card" data-user-card="'+esc(u.id)+'" '+(openUsers.has(u.id)?'open':'')+'><summary><span>'+esc(u.name)+
+        ' checkout breakdown</span><span class="pill">'+u.orders.length+' lifetime hits</span></summary>'+
+        '<div class="body"><div class="user-periods">'+buttons+'</div><div class="user-metrics">'+
+        stat('Confirmed orders',rows.length)+stat('Verified spent',money(totalCents(rows)/100))+
+        stat('Without paid receipts',countUnknown(rows))+'</div>'+
+        '<h3>Purchases &amp; source profiles</h3>'+orderList(rows)+'</div></details>';
+    }).join('');
+    $('customers').innerHTML=html||'<p>No uniquely linked customer purchases yet. Unmatched community orders still count in all-order spending totals.</p>';
+  }
+  function render(){
+    const now=new Date();
+    $('periods').innerHTML=periods.map(([value,label])=>
+      '<button type="button" data-global-period="'+value+'" aria-pressed="'+(value===days)+'">'+label+'</button>').join('');
+    const all=Array.isArray(data.communityRecords)?data.communityRecords:[];
+    const linked=Array.isArray(data.records)?data.records:[];
+    let source=scope==='all'?all:scope==='linked'?all.filter(x=>x.linked):
+      scope==='unmatched'?all.filter(x=>!x.linked):linked.filter(x=>scope==='customer:'+x.customerAccountId);
+    const rows=within(source,days,now);
+    const cents=totalCents(rows),unknown=countUnknown(rows);
+    $('period-stats').innerHTML=stat('Confirmed checkouts',rows.length)+
+      stat('Verified retailer spend',money(cents/100))+
+      stat('Awaiting paid receipts',unknown)+stat('Items purchased',rows.reduce((n,x)=>n+itemQty(x),0));
+    $('period-caption').textContent=(days==='all'?'All available dated webhooks':days==='mtd'?'Month to date':days==='ytd'?'Year to date':days===1?'Last 24 hours':'Last '+days+' days')+
+      ' · '+(scope==='all'?'All confirmed, linked or unmatched':scope==='unmatched'?'Unmatched community orders':scope==='linked'?'Customer-linked orders':'Selected customer')+
+      '. Missing retailer receipts do not produce invented spending amounts.';
+    const community=data.communityTotals||{};
+    const historical=data.historicalSummary||{};
+    $('historical').innerHTML=stat('Historical reported orders',historical.historicalCheckouts??240)+
+      stat('Historical reported spent',money(historical.historicalSpent??15876.11))+
+      stat('Live confirmed orders',community.liveConfirmedCheckouts??all.length)+
+      stat('Combined reported lifetime',money(community.totalSpent??0));
+    $('retailers').innerHTML=retailerList(rows);
+    $('products').innerHTML='<div class="products">'+productList(rows)+'</div>';
+    renderCustomers();
+  }
+  function scopes(){
+    const select=$('scope');const map=new Map();
+    for(const row of data.records||[])if(row.customerAccountId){
+      map.set(String(row.customerAccountId),String(row.customerName||'Customer'));
+    }
+    select.innerHTML='<option value="all">All confirmed checkouts · linked &amp; unmatched</option>'+
+      '<option value="linked">Linked customer checkouts</option>'+
+      '<option value="unmatched">Unmatched community checkouts</option>'+
+      [...map.entries()].sort((a,b)=>a[1].localeCompare(b[1])).map(([id,name])=>'<option value="customer:'+esc(id)+'">'+esc(name)+'</option>').join('');
+    if(![...select.options].some(o=>o.value===scope))scope='all';
+    select.value=scope;
+  }
+  async function refresh(){
+    if(refreshing||document.hidden||document.activeElement?.matches('select'))return;
+    refreshing=true;
+    try{
+      const res=await fetch('/api/admin/success-overview',{credentials:'same-origin',cache:'no-store'});
+      const json=await res.json();
+      if(!res.ok)throw Error(json.error||'Please sign in to Admin.');
+      data=json;
+      scopes();render();
+      $('status').textContent='Live source checked '+(data.sourceCheckedAt?new Date(data.sourceCheckedAt).toLocaleString():'recently')+'. Values refresh automatically.';
+    }catch(e){$('status').textContent='Could not refresh authenticated checkout data: '+e.message;}
+    finally{refreshing=false;}
+  }
+  $('periods').addEventListener('click',e=>{
+    const b=e.target.closest('[data-global-period]');if(!b)return;
+    days=/^(mtd|ytd|all)$/.test(b.dataset.globalPeriod)?b.dataset.globalPeriod:Number(b.dataset.globalPeriod);
+    render();
+  });
+  $('scope').addEventListener('change',e=>{scope=e.target.value;render();});
+  $('customers').addEventListener('toggle',e=>{
+    const d=e.target.closest('[data-user-card]');if(!d)return;
+    if(d.open)openUsers.add(d.dataset.userCard);else openUsers.delete(d.dataset.userCard);
+  },true);
+  $('customers').addEventListener('click',e=>{
+    const b=e.target.closest('[data-user][data-period]');if(!b)return;
+    userPeriods.set(b.dataset.user,b.dataset.period==='mtd'?'mtd':Number(b.dataset.period));
+    openUsers.add(b.dataset.user);renderCustomers();
+  });
+  let theme='dark';try{theme=localStorage.getItem('sng-admin-theme')==='light'?'light':'dark';}catch{}
+  document.body.dataset.adminTheme=theme;
+  $('theme-toggle').addEventListener('click',()=>{
+    theme=theme==='light'?'dark':'light';document.body.dataset.adminTheme=theme;
+    try{localStorage.setItem('sng-admin-theme',theme);}catch{}
+  });
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh();});
+  setInterval(()=>{if(!document.hidden)void refresh();},15000);
+  void refresh();
+})();
+</script>
+</body>
+</html>

@@ -4,21 +4,21 @@
  * authoritative Discord checkout by retailer order number. Parsing a number
  * is never a new order or independent evidence of ownership.
  */
-const TOTAL_LABEL = /^(?:order\s+total|grand\s+total|final\s+total|paid\s+total|total\s+(?:paid|charged|due)|amount\s+(?:charged|paid)|payment\s+total|you\s+paid|total)$/i;
+const TOTAL_LABEL = /^(?:order\s+total|grand\s+total|final\s+(?:order\s+)?total|paid\s+total|total\s+(?:paid|charged)(?:\s+(?:today|to\s+(?:your\s+)?(?:card|payment\s+method)))?|amount\s+(?:charged|paid)|payment\s+total|you\s+paid|total)(?:\s*\((?:usd|including\s+tax(?:es)?(?:\s+and\s+shipping)?)\))?$/i;
 const NON_FINAL = /\b(?:sub\s*total|estimated|estimate|before\s+tax|before\s+shipping|unit\s+price|per\s+item|each|discount|refund)\b/i;
 const MAX_CENTS = 100000000;
 function amountCents(raw) {
   const text = String(raw || "").replace(/\*|\u0060|\|\|/g, "").trim();
   if (NON_FINAL.test(text)) return null;
-  const match = text.match(/^(?:(?:USD|US\$)\s*)?\$\s*([\d,]{1,10}\.\d{2})(?:\s*(?:USD))?\s*$/i) ||
-    text.match(/^(?:USD|US\$)\s*([\d,]{1,10}\.\d{2})\s*$/i);
+  const match = text.match(/^\$\s*([\d,]{1,10}\.\d{2})(?:\s*USD)?\s*$/i) ||
+    text.match(/^(?:USD\s*\$?\s*|US\$\s*)([\d,]{1,10}\.\d{2})\s*$/i);
   if (!match) return null;
   const cents = Math.round(Number(match[1].replace(/,/g, "")) * 100);
   return Number.isSafeInteger(cents) && cents > 0 && cents <= MAX_CENTS ? cents : null;
 }
 function normalizeText(value) {
   return String(value || "").replace(/&(?:nbsp|#160);/gi, " ")
-    .replace(/&amp;/gi, "&").replace(/&dollar;|&#36;/gi, "$")
+    .replace(/&amp;/gi, "&").replace(/&dollar;|&#36;|&#x24;/gi, "$")
     .replace(/[\u00a0\u202f]/g, " ").replace(/\r/g, "");
 }
 function collectExplicitTotals(source, results) {
@@ -27,7 +27,7 @@ function collectExplicitTotals(source, results) {
   for (let i = 0; i < lines.length; i++) {
     // Only exact paid-total labels. A product line with "Price" or "Subtotal"
     // cannot establish the retailer's final amount charged.
-    const inline = lines[i].match(/^([^:$]{2,65}?)\s*[:\-]?\s*((?:(?:USD|US\$)\s*)?\$[\d,]+\.\d{2}(?:\s*USD)?|USD\s+[\d,]+\.\d{2})$/i);
+    const inline = lines[i].match(/^([^:$]{2,85}?)\s*[:\-]?\s*((?:\$\s*|USD\s*\$?\s*|US\$\s*)[\d,]+\.\d{2}(?:\s*USD)?)$/i);
     if (inline && TOTAL_LABEL.test(inline[1].trim())) {
       const cents = amountCents(inline[2]);
       if (cents !== null) results.push(cents);
