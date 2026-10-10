@@ -13,6 +13,7 @@ import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
+import { collectDiscordCheckoutPages } from "./discord-source-history.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
 import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
@@ -37794,6 +37795,7 @@ function visibleDiscordSuccessRecords(records, excludedChannelId = null, authori
 // customer accounts; the channel contributes anonymous community totals.
 const discordSuccessScan = { running: false, checkedAt: null, added: 0, skipped: 0, error: null, newestMessageId: null };
 const DISCORD_PROFILE_ALIASES_FILE = path.join(DATA_DIR, "discord-profile-aliases.json");
+const DISCORD_SOURCE_HISTORY_FILE = path.join(DATA_DIR, "discord-source-history.json");
 function discordSuccessConfig() {
   return {
     token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
@@ -38320,16 +38322,17 @@ async function scanDiscordSuccessChannel() {
     identityStats.totalCandidates = candidates.length;
     await refreshSuccessRetailerImages();
     const imports = [];
+    const historyCheckpoints = [];
+    const previousHistory = await readJson(DISCORD_SOURCE_HISTORY_FILE, {});
     for (const channelId of channels) {
-      before = '';
-      for (let page = 0; page < 10; page++) {
-      const url = `https://discord.com/api/v10/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`;
-      const response = await fetch(url, { headers: { Authorization: `Bot ${token}` }, signal: AbortSignal.timeout(15000) });
-      if (!response.ok) throw new Error(`Discord channel read failed (HTTP ${response.status}).`);
-      const messages = await response.json();
-      if (!Array.isArray(messages) || !messages.length) break;
-      if (!newest) newest = String(messages[0].id);
-      for (const message of messages) {
+      const batch = await collectDiscordCheckoutPages(
+        before => discordBotJson(token,
+          `/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`),
+        { channelId, previous: previousHistory, recentPages: 10, historyPages: 5 }
+      );
+      historyCheckpoints.push(batch.history);
+      if (!newest) newest = batch.newestMessageId;
+      for (const message of batch.messages) {
         const order = discordCheckoutFromMessage(message, channelId);
         if (!order) { skipped++; unrecognized++; continue; }
         sourceStatusCounts[Object.hasOwn(sourceStatusCounts, order.status) ? order.status : "unverified"]++;
@@ -38368,9 +38371,6 @@ async function scanDiscordSuccessChannel() {
           attribution
         });
       }
-      if (messages.length < 100) break;
-      before = messages[messages.length - 1].id;
-      }
     }
     await withSuccessStoreLock(async () => {
       const existing = await getSuccessCheckouts();
@@ -38393,6 +38393,13 @@ async function scanDiscordSuccessChannel() {
         broadcastLiveDataChange("discord-success");
       }
     });
+    // Advance the historical Discord pagination cursor ONLY after the
+    // upstream checkout records were successfully reconciled and saved.
+    // A failed batch can be replayed safely on the next scan.
+    if (historyCheckpoints.length === 1) {
+      await writeJson(DISCORD_SOURCE_HISTORY_FILE, historyCheckpoints[0]);
+      discordSuccessScan.historicalBackfill = historyCheckpoints[0];
+    }
     // Reconciled final statuses (not raw green messages) are authoritative.
     // Include ALL confirmed source orders, even when no paid/linked profile
     // matched; ownership affects customer views, never community hits.
