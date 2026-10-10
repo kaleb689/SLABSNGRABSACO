@@ -305,7 +305,9 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
       const json=await res.json();
       if(!res.ok)throw Error(json.error||'Please sign in to Admin.');
       data=json;
-      scopes();render();
+      scopes();
+      // Preserve the native calendar picker and unsaved dates across polling.
+      if(!document.activeElement?.matches?.('input[type="date"]'))render();
       $('status').textContent='Live source checked '+(data.sourceCheckedAt?new Date(data.sourceCheckedAt).toLocaleString():'recently')+'. Values refresh automatically.';
     }catch(e){$('status').textContent='Could not refresh authenticated checkout data: '+e.message;}
     finally{refreshing=false;}
