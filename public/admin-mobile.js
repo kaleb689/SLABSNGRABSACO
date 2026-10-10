@@ -86,7 +86,7 @@ function customerTier(person) {
   const assigned=Number(person?.plan?.profileCount || person?.plan?.accounts || person?.paidProfileCount || 0);
   const match=/(^|[^0-9])(10|20|50)(?![0-9])/.exec(raw);
   const count=[10,20,50].includes(assigned) ? assigned : Number(match?.[2]) || 0;
-  const label=person?.accountOnly ? 'Not subscribed' : (raw || (count ? count + ' accounts' : 'Membership'));
+  const label=person?.accountOnly ? 'No paid membership' : (raw || (count ? count + ' accounts' : 'Membership'));
   return {color:person?.accountOnly ? 'free' : (count ? 'tier-' + count : 'standard'),label};
 }
 function customers(){
