@@ -117,3 +117,133 @@ body.app-dashboard.app-signed-in[data-app-theme="day"] #app-dashboard .sng-date-
 @media(prefers-reduced-motion:reduce){
   .sng-custom-calendar button,button.sng-calendar-button {transition:none!important;animation:none!important;}
 }
+
+/*
+ * Fit every date shortcut in the visible header without horizontal swiping.
+ * Four compact columns form two rows on phones; the calendar occupies the
+ * two remaining cells alongside YTD and ALL. Date picker behavior is unchanged.
+ * These selectors intentionally override the older horizontal-scroll themes.
+ */
+body.app-dashboard.app-signed-in #app-dashboard .sng-range,
+body.sng-admin-app #workspace .admin-spend-ranges,
+body.admin-page #dashboard .periods {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-auto-flow:row;
+  gap:7px;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  margin-inline:0;
+  padding:2px 0 9px;
+  overflow:visible;
+  overflow-x:visible;
+  overscroll-behavior-x:auto;
+  box-sizing:border-box;
+  align-items:stretch;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-range > button,
+body.sng-admin-app #workspace .admin-spend-ranges > button,
+body.admin-page #dashboard .periods > button {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex:initial;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  min-height:44px;
+  padding:9px 3px;
+  margin:0;
+  border-radius:12px;
+  box-sizing:border-box;
+  font-size:clamp(10px,2.8vw,12px);
+  line-height:1.2;
+  white-space:nowrap;
+  text-align:center;
+  touch-action:manipulation;
+}
+body.app-dashboard.app-signed-in #app-dashboard .sng-range > button.sng-calendar-button,
+body.sng-admin-app #workspace .admin-spend-ranges > button.sng-calendar-button,
+body.admin-page #dashboard .periods > button.sng-calendar-button {
+  grid-column:span 2;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  flex:none;
+  padding:9px 7px;
+  gap:6px;
+  white-space:nowrap;
+}
+/* Per-customer periods also remain fully visible inside narrower accordions. */
+body.sng-admin-app #workspace .success-user-period,
+body.admin-page #dashboard .user-periods {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:6px;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  overflow:visible;
+  box-sizing:border-box;
+}
+body.sng-admin-app #workspace .success-user-period > button,
+body.admin-page #dashboard .user-periods > button {
+  min-width:0;
+  max-width:100%;
+  width:100%;
+  min-height:44px;
+  margin:0;
+  padding:7px 3px;
+  box-sizing:border-box;
+  text-align:center;
+  font-size:clamp(10px,2.7vw,12px);
+  line-height:1.15;
+}
+body.sng-admin-app #workspace .success-user-period > button.sng-calendar-button,
+body.admin-page #dashboard .user-periods > button.sng-calendar-button {
+  min-width:0;
+  max-width:100%;
+  width:100%;
+  white-space:normal;
+  padding:6px 2px;
+  gap:3px;
+}
+@media(max-width:480px) {
+  body.sng-admin-app #workspace .success-user-period > button.sng-calendar-button,
+  body.admin-page #dashboard .user-periods > button.sng-calendar-button {
+    flex-direction:column;
+    gap:2px;
+  }
+  body.sng-admin-app #workspace .success-user-period > button.sng-calendar-button svg,
+  body.admin-page #dashboard .user-periods > button.sng-calendar-button svg {
+    width:14px;
+    height:14px;
+  }
+}
+@media(max-width:355px) {
+  body.app-dashboard.app-signed-in #app-dashboard .sng-range,
+  body.sng-admin-app #workspace .admin-spend-ranges,
+  body.admin-page #dashboard .periods {
+    gap:5px;
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-range > button,
+  body.sng-admin-app #workspace .admin-spend-ranges > button,
+  body.admin-page #dashboard .periods > button {
+    font-size:11px;
+    padding-inline:2px;
+  }
+  body.sng-admin-app #workspace .success-user-period,
+  body.admin-page #dashboard .user-periods {gap:4px;}
+}
+/* On larger app screens all seven options fit on a single row instead. */
+@media(min-width:820px) {
+  body.app-dashboard.app-signed-in #app-dashboard .sng-range,
+  body.sng-admin-app #workspace .admin-spend-ranges {
+    grid-template-columns:repeat(7,minmax(0,1fr));
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-range > button.sng-calendar-button,
+  body.sng-admin-app #workspace .admin-spend-ranges > button.sng-calendar-button {
+    grid-column:auto;
+  }
+}
