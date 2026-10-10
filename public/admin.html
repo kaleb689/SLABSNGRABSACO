@@ -5665,11 +5665,11 @@ PAID SUBSCRIPTIONS
 <div class="admin-feature-grid">
     <details class="admin-membership-tools admin-feature-panel">
       <summary>Membership gifts and discount codes</summary>
-      <p>Gift a tier after a customer's current paid period, or create a Stripe code for memberships and optional rentals.</p>
+      <p>Gift a tier for weeks or months, with a matching Stripe billing extension for paid members, or create a Stripe discount code.</p>
       <form id="giftTierForm" class="admin-feature-form">
         <label>Customer<br><select name="customerAccountId" id="giftTierCustomer" required><option value="">Loading customers…</option></select></label>
         <label>Tier<br><select name="tier" required><option value="1">Starter</option><option value="2">Intermediate</option><option value="3">Advanced</option><option value="4">Pro</option><option value="5">High Volume</option><option value="6">Power User</option><option value="7">Elite</option></select></label>
-        <label>Months<br><input type="number" name="months" min="1" max="12" value="1" required style="width:75px"></label>
+        <label>Gift duration<br><input type="number" name="durationQuantity" min="1" max="12" value="1" required style="width:75px"></label><label>Unit<br><select name="durationUnit"><option value="months">Month(s)</option><option value="weeks">Week(s)</option></select></label>
         <button type="submit" class="admin-edit-button">Gift tier</button>
       </form>
       <div id="giftTierFeedback" role="status"></div>
@@ -24443,7 +24443,7 @@ async function loadMembershipTools() {
     giftList.replaceChildren();
     for (const gift of (giftData.memberships || []).slice().reverse()) {
       const row = document.createElement("p");
-      row.textContent = `${gift.customerEmail} · ${gift.tierName} · ${gift.months} month(s) · ${new Date(gift.startsAt).toLocaleDateString()} – ${new Date(gift.expiresAt).toLocaleDateString()} `;
+      row.textContent = `${gift.customerEmail} · ${gift.tierName} · ${gift.durationQuantity ?? gift.months} ${gift.durationUnit ?? "months"} · ${new Date(gift.startsAt).toLocaleDateString()} – ${new Date(gift.expiresAt).toLocaleDateString()} `;
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = "Revoke";
@@ -24597,6 +24597,7 @@ document.getElementById("discordSuccessScanButton")?.addEventListener("click", a
 });
 setInterval(() => { if (!document.hidden && !document.getElementById("dashboard")?.hidden) refreshDiscordSuccessStatus(); }, 6000);
 
+document.getElementById("giftTierForm")?.addEventListener("change", event => { delete event.currentTarget.dataset.giftRequestId; });
 document.getElementById("giftTierForm")?.addEventListener("submit", async event => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -24605,11 +24606,13 @@ document.getElementById("giftTierForm")?.addEventListener("submit", async event 
   button.disabled = true;
   try {
     const fields = new FormData(form);
+    form.dataset.giftRequestId ||= crypto.randomUUID();
     const data = await membershipApi("/api/admin/gifted-memberships", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customerAccountId: fields.get("customerAccountId"), tier: Number(fields.get("tier")), months: Number(fields.get("months")) })
+      body: JSON.stringify({ customerAccountId: fields.get("customerAccountId"), tier: Number(fields.get("tier")), durationQuantity: Number(fields.get("durationQuantity")), durationUnit: fields.get("durationUnit"), requestId: form.dataset.giftRequestId })
     });
-    feedback.textContent = `Gift scheduled through ${new Date(data.membership.expiresAt).toLocaleDateString()}.`;
+    delete form.dataset.giftRequestId;
+    feedback.textContent = `Gift scheduled through ${new Date(data.membership.expiresAt).toLocaleDateString()}. ${data.membership.billingDeferredUntil ? "Stripe next renewal deferred to that date." : "No paid Stripe subscription to defer."}`;
     loadMembershipTools();
   } catch (error) { feedback.textContent = error.message; }
   finally { button.disabled = false; }
