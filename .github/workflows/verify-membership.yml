@@ -19,6 +19,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: node --check checkout-reporting.js
       - run: node --check server.js
+      - run: node --test test/membership-gift-billing.test.mjs test/membership-billing-math.test.mjs
       - run: node --check public/app.js
       - run: node --check public/app-dashboard.js
       - run: node --check public/app-dashboard-data.js
