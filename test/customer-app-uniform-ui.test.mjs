@@ -13,7 +13,7 @@ test("approved customer app stylesheet loads after premium controls", () => {
   const uniform = page.indexOf('href="/app-ui-uniform.css?v=20261010"');
   assert.ok(premium !== -1, "Premium controls stylesheet retained");
   assert.ok(uniform > premium, "Approved final overrides must load last");
-  assert.match(page, /src="\/app-dashboard\.js\?v=20261010-member-v3"/);
+  assert.match(page, /src="\/app-dashboard\.js\?v=20261010-approved-v4"/);
 });
 
 test("five navigation tiles have real spacing and readable labels", () => {
