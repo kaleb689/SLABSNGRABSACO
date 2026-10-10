@@ -33,6 +33,7 @@ jobs:
       - run: node --test test/checkout-reporting.test.mjs
       - run: node --test test/admin-success-ui.test.mjs
       - run: node --test test/admin-success-breakdowns.test.mjs
+      - run: node --test test/admin-grouped-orders-and-selected-controls.test.mjs
       - run: node --test test/public-community-hits.test.mjs
       - run: node --check checkout-price-policy.js
       - run: node --check checkout-admin-receipt-policy.js
