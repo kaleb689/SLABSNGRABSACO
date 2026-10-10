@@ -91,3 +91,37 @@ export function adminCheckoutCustomerName(account, paidRecord = null) {
   const id = String(account?.id || paidRecord?.customerAccountId || "").trim();
   return id ? "Customer account " + id.slice(-8) : "Customer account";
 }
+
+
+/**
+ * Admin-only aggregate diagnostics for confirmed webhook successes that have
+ * no verified website owner. These never become customer checkout records.
+ * Preserve PKC and morning counts without fabricating a profile assignment.
+ */
+export function summarizeUnmatchedCheckouts(records, now=Date.now()) {
+  const source=Array.isArray(records)?records:[];
+  const day=86400000;
+  const within=(order,days)=>{
+    const at=Date.parse(order?.checkoutAt||"");
+    return Number.isFinite(at)&&at>=now-days*day&&at<=now+60000;
+  };
+  const byRetailer=new Map();
+  for(const record of source){
+    const retailer=String(record?.retailer||"Retailer").trim()||"Retailer";
+    if(!byRetailer.has(retailer))
+      byRetailer.set(retailer,{retailer,total:0,last24h:0,last7d:0,last30d:0});
+    const item=byRetailer.get(retailer);
+    item.total++;
+    if(within(record,1))item.last24h++;
+    if(within(record,7))item.last7d++;
+    if(within(record,30))item.last30d++;
+  }
+  return {
+    total:source.length,
+    last24h:source.filter(record=>within(record,1)).length,
+    last7d:source.filter(record=>within(record,7)).length,
+    last30d:source.filter(record=>within(record,30)).length,
+    byRetailer:[...byRetailer.values()].sort((a,b)=>b.last7d-a.last7d||
+      b.total-a.total||a.retailer.localeCompare(b.retailer))
+  };
+}
