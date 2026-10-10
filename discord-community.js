@@ -448,12 +448,21 @@ export function skuAdminReviewPayload(items, userId, requestedPage = 0) {
   const details = selected.map(item =>
     "**" + skuSafeText(item.name).slice(0, 70) + "** · SKU " +
     skuSafeText(item.sku).slice(0, 70));
+  const header = "**SKUs:**\n(" + selected.map(item => skuSafeText(item.sku).slice(0,80)).join(", ") +
+    ")\n**Qty: " + quantity + " — for ALL selected SKUs**";
+  const visibleNames = [];
+  for (const line of details) {
+    if (header.length + visibleNames.join("\n").length + line.length + 6 > 3850) break;
+    visibleNames.push(line);
+  }
+  const names = visibleNames.join("\n") +
+    (visibleNames.length < details.length ? "\n…" + (details.length - visibleNames.length) +
+      " more product names; see the SKU list above." : "");
   return {
     content: "**Confirmed SKU selections: " + rows.length + " total** · Page " + (page + 1) + " of " + pages,
     embeds: selected.length ? [{
       title: "Products to run (" + (page * 20 + 1) + "–" + (page * 20 + selected.length) + ")",
-      description: "**SKUs:**\n(" + selected.map(item => skuSafeText(item.sku).slice(0,80)).join(", ") +
-        ")\n**Qty: " + quantity + " — for ALL selected SKUs**\n\n" + details.join("\n"),
+      description: header + (names ? "\n\n" + names : ""),
       color: 0x41b6e6
     }] : [],
     components: pages > 1 ? [{ type: 1, components: [
