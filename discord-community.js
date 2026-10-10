@@ -319,18 +319,42 @@ export function isGuildOwnerSkuTester(userId, verifiedGuildOwnerId) {
   return /^\d{17,22}$/.test(owner) && String(userId || "") === owner;
 }
 
+/*
+ * A single 1 or 2 applies to every SKU in a customer's selection, across
+ * all drop channels. Mixed legacy records are not valid new submissions.
+ */
+export function uniformSkuQuantity(items) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return 1;
+  const qty = Number(rows[0]?.quantity);
+  return [1, 2].includes(qty) && rows.every(row => Number(row.quantity) === qty) ? qty : null;
+}
+export function setGlobalSkuQuantity(items, quantity) {
+  if (![1, 2].includes(Number(quantity))) throw new Error("Choose Qty 1 or Qty 2 for all selected SKUs.");
+  return (Array.isArray(items) ? items : []).map(row => ({ ...row, quantity: Number(quantity) }));
+}
+export function skuCompactNotification(items) {
+  const rows = Array.isArray(items) ? items : [];
+  const qty = uniformSkuQuantity(rows);
+  if (qty === null) throw new Error("Choose one quantity for all selected SKUs before confirming.");
+  return {
+    skus: "(" + rows.map(row => skuSafeText(row.sku).slice(0, 80)).join(", ") + ")",
+    quantity: qty
+  };
+}
 export function changeSkuItems(items, chosen, sourceId, channelId, quantity) {
   if (![0, 1, 2].includes(quantity)) throw new Error("Choose Qty: 1, Qty: 2, or Remove.");
-  const next = items.map(item => ({ ...item }));
+  const next = (Array.isArray(items) ? items : []).map(item => ({ ...item }));
   for (const product of chosen) {
-    const key = `${channelId}:${sourceId}:${product.sku}`;
+    const key = channelId + ":" + sourceId + ":" + product.sku;
     const index = next.findIndex(item => item.key === key);
     if (!quantity) { if (index >= 0) next.splice(index, 1); }
-    else if (index >= 0) Object.assign(next[index], { quantity, name: product.name });
+    else if (index >= 0) Object.assign(next[index], { name: product.name });
     else next.push({ key, name: product.name, sku: product.sku, quantity });
   }
   if (next.length > 200) throw new Error("Up to 200 SKUs may be selected across drops.");
-  return next;
+  // Switching Qty for any selection changes all SKUs, never only one.
+  return setGlobalSkuQuantity(next, quantity || uniformSkuQuantity(next) || 1);
 }
 export function skuSelectionView(items, notice = "", requestedPage = 0) {
   const pages = Math.max(1, Math.ceil(items.length / 30));
