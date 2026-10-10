@@ -225,7 +225,7 @@ test("Target, Walmart and PKC drops reuse the private SKU selection flow and pre
 test("new drop channels provision idempotently with staff posting and paid-only selection", async () => {
   const { readFileSync } = await import("node:fs");
   const source = readFileSync(new URL("../discord-community.js", import.meta.url), "utf8");
-  for (const name of ["target-drops", "walmart-drops", "pkc-drops"]) {
+  for (const name of ["target-drops", "walmart-drops", "pkc-drops", "costco-drops", "sams-drops"]) {
     assert.ok(source.includes('slug: "' + name + '"'));
   }
   assert.match(source, /normalizeName\(item\.name\) === spec\.key/);
