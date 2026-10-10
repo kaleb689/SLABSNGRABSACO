@@ -1,0 +1,205 @@
+/* SLABSNGRABSACO shared control system: Admin web, installed Admin, customer website/app.
+   Loaded LAST to override legacy inline/early stylesheet button and select rules. */
+:root {
+  --sng-button-violet:#7347e5;
+  --sng-button-blue:#267fdc;
+  --sng-button-cyan:#08acda;
+  --sng-button-teal:#08b89d;
+}
+body.admin-page #dashboard button:not(:is(.danger,.delete-button,.managed-delete-button,.admin-cancel-button,.remove-button,.destructive,[class*="delete" i],[class*="remove" i],[id*="delete" i],[data-action*="delete" i],#logout)),
+body.admin-page .admin-login-card button:not(:is(.danger,.destructive)),
+body.admin-page #dashboard :is(.admin-head-actions a,.admin-edit-button,.admin-save-button,.load-retailer-profiles),
+body:not(.admin-page) :is(.account-card button,.account-action-button,.primary,.secondary,.profile-support-button),
+#workspace :is(button,.action,.item a,.panel a) {
+  box-sizing:border-box;
+  min-height:46px;
+  max-width:100%;
+  border-radius:14px;
+  border:1px solid rgba(116,219,255,.78);
+  background:linear-gradient(118deg,#6744c7 0%,#216da9 57%,#098f9e 100%);
+  color:#fff;
+  box-shadow:0 8px 19px rgba(50,90,184,.25),inset 0 1px 0 rgba(255,255,255,.19);
+  font-weight:800;
+  line-height:1.35;
+  padding:11px 15px;
+  overflow-wrap:anywhere;
+  white-space:normal;
+  text-align:center;
+  transition:transform .16s,box-shadow .16s,filter .16s,border-color .16s;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+/* Different accent families make a grid of actions look intentional rather than
+   seven identical grey rectangles. State beats nth-child coloring. */
+body.admin-page #dashboard button:not(:is(.danger,.delete-button,.managed-delete-button,.admin-cancel-button,.destructive)):nth-of-type(3n+2),
+#workspace .links :is(button,a):nth-child(3n+2),
+body:not(.admin-page) .account-card button:nth-of-type(3n+2) {
+  background:linear-gradient(116deg,#1766b7,#099abf 68%,#0b9f91);
+}
+body.admin-page #dashboard button:not(:is(.danger,.delete-button,.managed-delete-button,.admin-cancel-button,.destructive)):nth-of-type(3n),
+#workspace .links :is(button,a):nth-child(3n) {
+  background:linear-gradient(116deg,#6643cd,#6e5bdc 53%,#087eb2);
+}
+body.admin-page #dashboard :is(button,[role="button"]):not(:disabled):active,
+body:not(.admin-page) :is(button,[role="button"]):not(:disabled):active,
+#workspace :is(button,.action):not(:disabled):active {transform:translateY(1px) scale(.986);}
+body.admin-page #dashboard :is(button,a):not(:disabled):hover,
+body:not(.admin-page) :is(button,a):not(:disabled):hover,
+#workspace :is(button,a):not(:disabled):hover {
+  filter:brightness(1.075);
+}
+body.admin-page #dashboard :is(button,a):focus-visible,
+body.admin-page #dashboard select:focus-visible,
+body:not(.admin-page) :is(button,select,summary):focus-visible,
+#workspace :is(button,a,select,summary):focus-visible {
+  outline:3px solid #65ecff;
+  outline-offset:3px;
+}
+body.admin-page #dashboard button:disabled,
+#workspace button:disabled,
+body:not(.admin-page) button:disabled {opacity:.52;filter:saturate(.62);cursor:not-allowed;}
+/* Real native selects are intentionally retained for accessibility / iOS;
+   their CLOSED surfaces receive the design treatment, with a visible arrow. */
+body.admin-page #dashboard select,
+body.admin-page .admin-login-card select,
+body:not(.admin-page) :is(select,.account-card select,#my-profile select),
+#workspace select {
+  box-sizing:border-box;
+  display:block;
+  min-width:0;
+  max-width:100%;
+  min-height:49px;
+  border:1px solid #70a3df;
+  border-radius:14px;
+  color:#f7fcff;
+  background-color:#1b3157;
+  background-image:linear-gradient(45deg,transparent 50%,#78eeff 50%),
+    linear-gradient(135deg,#78eeff 50%,transparent 50%),
+    linear-gradient(115deg,rgba(112,75,219,.3),rgba(18,141,192,.2));
+  background-position:calc(100% - 22px) 51%,calc(100% - 16px) 51%,center;
+  background-size:6px 6px,6px 6px,100% 100%;
+  background-repeat:no-repeat;
+  padding:10px 43px 10px 14px;
+  font-size:16px;
+  font-weight:750;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 5px 15px rgba(43,83,156,.14);
+  appearance:none;-webkit-appearance:none;
+}
+body.admin-page #dashboard select option,
+body:not(.admin-page) select option,
+#workspace select option {background:#162540;color:#f5f9ff;}
+/* Strong, unmistakable inactive AND selected period buttons. */
+#workspace .admin-spend-ranges button,
+#workspace .success-user-period button,
+.app-dashboard .sng-range button,
+.app-dashboard .sng-status-filters button,
+.app-dashboard .sng-profile-menu button {
+  min-width:0;min-height:46px;
+  border-radius:13px;
+  border:1px solid #7b8fd9;
+  background:linear-gradient(120deg,#523c9a,#1b608f);
+  color:#f5f8ff;
+  padding:10px 5px;
+  font-size:12px;
+  font-weight:900;
+  line-height:1.25;
+  box-shadow:0 6px 13px rgba(28,56,124,.24);
+}
+#workspace .admin-spend-ranges button[aria-pressed="true"],
+#workspace .success-user-period button[aria-pressed="true"],
+.app-dashboard .sng-range button[aria-pressed="true"],
+.app-dashboard .sng-status-filters button[aria-pressed="true"],
+.app-dashboard .sng-profile-menu button[aria-pressed="true"] {
+  color:#fff;
+  background:linear-gradient(118deg,#9351fd,#268ff0 64%,#0dcbb0);
+  border-color:#b1f6ff;
+  box-shadow:0 0 0 2px rgba(105,225,255,.18),0 9px 19px rgba(75,96,213,.33);
+}
+#workspace .admin-spend-ranges,
+#workspace .success-user-period,
+.app-dashboard .sng-range {
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:7px;max-width:100%;overflow:visible;
+}
+#workspace .admin-spend-ranges button,#workspace .success-user-period button {width:100%;}
+#workspace .success-overview-accordion>summary,
+#workspace .success-customer-summary,
+body.admin-page #dashboard :is(details>summary,.admin-pool-disclosure>summary),
+body:not(.admin-page) :is(.account-card details>summary,#my-profile details>summary) {
+  min-height:51px;max-width:100%;
+  border:1px solid rgba(116,166,238,.48);
+  border-radius:15px;
+  color:#e9f7ff;
+  background:linear-gradient(117deg,rgba(100,64,200,.28),rgba(20,131,171,.22));
+  box-shadow:inset 0 1px rgba(255,255,255,.08);
+  overflow-wrap:anywhere;
+  cursor:pointer;
+}
+#workspace .success-overview-accordion>summary,
+#workspace .success-customer-summary {padding:15px 16px;}
+#workspace .success-overview-accordion[open]>summary,
+#workspace .success-user-accordion[open]>.success-customer-summary,
+body.admin-page #dashboard details[open]>summary {
+  border-color:#7fe8f4;
+  background:linear-gradient(116deg,rgba(113,68,225,.38),rgba(7,158,187,.29));
+}
+#workspace .success-filter-label {
+  border:1px solid #617dce;
+  border-radius:16px;
+  background:linear-gradient(118deg,rgba(91,57,183,.32),rgba(12,131,169,.26));
+  padding:13px;
+}
+#workspace .success-filter-label select {margin-top:8px;}
+/* Phone layout: never allow controls or customer detail cards to break the viewport. */
+#workspace,#workspace .panel,#workspace .item,#workspace .success-overview-accordion,
+#workspace .success-customer-body,#workspace .success-account-row,
+.app-dashboard .sng-product-row,.app-dashboard .sng-order-card,
+body.admin-page #dashboard,body.admin-page #dashboard .admin-feature-panel {
+  min-width:0;max-width:100%;
+}
+#workspace .success-customer-summary {gap:7px;flex-wrap:wrap;}
+body.admin-page #dashboard :is(button,select,summary),
+#workspace :is(button,select,summary),
+.app-dashboard :is(button,select,summary) {touch-action:manipulation;}
+html[data-admin-mobile-theme="light"] #workspace select,
+body.admin-page[data-admin-theme="light"] #dashboard select,
+.app-dashboard[data-app-theme="day"] select {
+  color:#1c3156;
+  background-color:#eff6ff;
+  border-color:#a6a7df;
+  background-image:linear-gradient(45deg,transparent 50%,#5b4dcd 50%),
+    linear-gradient(135deg,#5b4dcd 50%,transparent 50%),
+    linear-gradient(115deg,#f0ebff,#e8faff);
+}
+html[data-admin-mobile-theme="light"] #workspace :is(.success-overview-accordion>summary,.success-customer-summary),
+body.admin-page[data-admin-theme="light"] #dashboard details>summary,
+.app-dashboard[data-app-theme="day"] :is(.account-card details>summary) {
+  color:#273c70;
+  border-color:#bec7ed;
+  background:linear-gradient(115deg,#eee9ff,#e5f8ff);
+}
+html[data-admin-mobile-theme="light"] #workspace :is(.admin-spend-ranges button,.success-user-period button),
+.app-dashboard[data-app-theme="day"] .sng-range button {
+  color:#493d90;background:linear-gradient(118deg,#eee8ff,#dff4ff);
+  border-color:#c3bff1;
+}
+html[data-admin-mobile-theme="light"] #workspace :is(.admin-spend-ranges button,.success-user-period button)[aria-pressed="true"],
+.app-dashboard[data-app-theme="day"] .sng-range button[aria-pressed="true"] {
+  color:#fff;background:linear-gradient(110deg,#8851f5,#2787e6 70%,#0cbbb4);
+  border-color:#88dff5;
+}
+html[data-admin-mobile-theme="light"] #workspace .success-filter-label {
+  color:#365884;border-color:#c1c8eb;
+  background:linear-gradient(115deg,#f1eaff,#e2f6ff);
+}
+@media(max-width:375px){
+  #workspace .admin-spend-ranges,#workspace .success-user-period,
+  .app-dashboard .sng-range {gap:5px;}
+  #workspace .admin-spend-ranges button,#workspace .success-user-period button,
+  .app-dashboard .sng-range button {font-size:11px;padding-inline:3px;}
+  #workspace .success-customer-summary {font-size:12px;}
+}
+@media(prefers-reduced-motion:reduce){
+  body.admin-page button,body:not(.admin-page) button,
+  #workspace button,#workspace summary {transition:none!important;}
+}
