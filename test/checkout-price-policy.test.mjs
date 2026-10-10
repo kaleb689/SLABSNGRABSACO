@@ -49,6 +49,12 @@ test("receipt verified paid amount is not overwritten by later unpriced or subto
   assert.equal(records[0].orderTotal,44.82);
   assert.equal(records[0].orderTotalBasis,"retailer_receipt");
   assert.equal(records[0].customerAccountId,"member-123");
+  // A status-only webhook that omits product prices must retain the
+  // original unit price so the public Discord price is not erased.
+  const missingPrice={...priced,orderTotalBasis:"unknown",orderTotal:0,
+    items:[{name:"TCG tin",quantity:2}]};
+  reconcileWebhookCheckout(records,missingPrice);
+  assert.equal(records[0].items[0].price,19.99);
   reconcileWebhookCheckout(records,priced);
   assert.equal(records.length,1);
   assert.equal(records[0].orderTotal,44.82);
