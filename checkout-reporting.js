@@ -52,3 +52,42 @@ export function safeAdminProfileLabel(record) {
     : "profile:" + retailer.toLowerCase() + ":" + label.toLowerCase();
   return { accountKey:key, accountLabel:label, accountKind:managed ? "linked" : slot ? "paid" : "unclassified" };
 }
+
+
+/**
+ * Stable Admin-only identity label for paid and linked customer checkouts.
+ * Prefer real signup/admin names; older customer accounts can have no saved
+ * first/last name, so use a recognizable account email as the last fallback
+ * rather than an indistinguishable "Customer" for every accordion.
+ * NEVER use Shikari retailer logins, webhook profile names or passwords.
+ */
+export function adminCheckoutCustomerName(account, paidRecord = null) {
+  const profiles = [
+    account?.adminProfile,
+    account?.profile,
+    paidRecord?.profile,
+    account
+  ].filter(value => value && typeof value === "object");
+  const first = profiles.map(item => String(item.firstName || "").trim()).find(Boolean) || "";
+  const last = profiles.map(item => String(item.lastName || "").trim()).find(Boolean) || "";
+  const full = [first, last].filter(Boolean).join(" ").slice(0, 100);
+  if (full && !/^customer$/i.test(full)) return full;
+  const validName = value => {
+    const name = String(value || "").trim();
+    return name && !/^(?:customer|aco profile|profile|member|customer profile)$/i.test(name) &&
+      !/[\r\n]/.test(name) ? name.slice(0, 100) : "";
+  };
+  for (const value of [
+    account?.name, account?.displayName,
+    account?.adminProfile?.profileName, paidRecord?.profile?.profileName,
+    account?.profile?.profileName
+  ]) {
+    const label = validName(value);
+    if (label) return label;
+  }
+  const email = String(account?.email || account?.adminProfile?.email ||
+    paidRecord?.profile?.email || "").trim();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return email.slice(0, 100);
+  const id = String(account?.id || paidRecord?.customerAccountId || "").trim();
+  return id ? "Customer account " + id.slice(-8) : "Customer account";
+}
