@@ -573,6 +573,17 @@ async function consumeCode(dataDir, code, userId, username, getAccounts, saveAcc
   });
 }
 
+
+let webSkuBridge = null;
+export async function listCustomerDropSkus(discordUserId) {
+  if (!webSkuBridge) throw new Error("Discord drop controls are not ready yet.");
+  return webSkuBridge.list(String(discordUserId || ""));
+}
+export async function submitCustomerDropSkus(discordUserId, username, selection) {
+  if (!webSkuBridge) throw new Error("Discord drop controls are not ready yet.");
+  return webSkuBridge.save(String(discordUserId || ""), String(username || ""), selection);
+}
+
 export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
 export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
   discordCommunityStatus.configured = Boolean(token);
@@ -1027,7 +1038,9 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
        const retailerSpecs = [
          { key: "targetdrops", slug: "target-drops", label: "Target Drops" },
          { key: "walmartdrops", slug: "walmart-drops", label: "Walmart Drops" },
-         { key: "pkcdrops", slug: "pkc-drops", label: "PKC Drops" }
+         { key: "pkcdrops", slug: "pkc-drops", label: "PKC Drops" },
+          { key: "costcodrops", slug: "costco-drops", label: "Costco Drops" },
+          { key: "samsdrops", slug: "sams-drops", label: "Sam's Drops" }
        ];
        const retailerChannels = [];
        for (const spec of retailerSpecs) {
@@ -1054,7 +1067,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
          retailerChannels.push({ name: channel.name, id: channel.id });
        }
        discordCommunityStatus.retailerDrops = retailerChannels;
-       discordCommunityStatus.retailerDropsReady = retailerChannels.length === 3;
+       discordCommunityStatus.retailerDropsReady = retailerChannels.length === 5;
        discordCommunityStatus.importantReady = found.every(Boolean);
       if (!discordCommunityStatus.importantReady) {
         importantError = `Important: missing ${names.filter((name, index) => !found[index]).join(", ")}`;
@@ -3221,6 +3234,142 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     console.log("Sent owner grouped renewal DM layout preview.");
     return true;
   }
+
+
+  // The installed customer app shares the Discord bot's live product posts,
+  // selected SKU file, owner alert and single-quantity invariant.
+  async function webActiveDropSources() {
+    if (!skuRequestsChannelId || !dropChannelIds.size) throw new Error("Discord drop controls are not ready yet.");
+    const posts = await Promise.all([...dropChannelIds].map(async channelId => {
+      const messages = await api("/channels/" + channelId + "/messages?limit=100");
+      const candidates = (Array.isArray(messages) ? messages : []).filter(message =>
+        !message.author?.bot && !message.webhook_id && !message.message_reference?.message_id &&
+        (message.type === 0 || message.type === undefined));
+      const source = candidates.find(message => parseDropSkus(message).length) ||
+        (channelId === tonightChannelId || !retailerDropLabels[channelId] ? candidates[0] : null);
+      if (!source) return null;
+      const label = retailerDropLabels[channelId] ||
+        (channelId === tonightChannelId ? "Dropping Tonight" : "Upcoming Drops");
+      const retailer = /target/i.test(label) ? "target" :
+        /walmart/i.test(label) ? "walmart" :
+        /pkc|pokemon|pokémon/i.test(label) ? "pokemon" :
+        /costco/i.test(label) ? "costco" :
+        /sam.?s/i.test(label) ? "sams" :
+        channelId === tonightChannelId ? "tonight" : "upcoming";
+      return {
+        channelId: String(channelId), sourceId: String(source.id),
+        retailer, label, products: parseDropSkus(source)
+      };
+    }));
+    return posts.filter(Boolean);
+  }
+  async function webDropList(userId) {
+    if (!await hasPaidSkuAccess(userId)) throw new Error(skuAccessMessage);
+    const sources = await webActiveDropSources();
+    const saved = (await readSkuFile(skuSelectionsFile))[userId] || {};
+    const items = Array.isArray(saved.items) ? saved.items : [];
+    return {
+      sources, quantity: uniformSkuQuantity(items) || 1,
+      selectedKeys: items.map(item => String(item.key || "")),
+      optedOutKeys: sources.filter(source =>
+        (source.channelId === tonightChannelId
+          ? saved.skipTonightDate === tonightDate()
+          : (saved.skippedUpcomingDrops || []).some(skip =>
+              skip.channelId === source.channelId && skip.sourceId === source.sourceId))
+      ).map(source => source.channelId + ":" + source.sourceId),
+      savedAt: saved.updatedAt || null
+    };
+  }
+  async function webDropSave(userId, username, request) {
+    if (!await hasPaidSkuAccess(userId)) throw new Error(skuAccessMessage);
+    const quantity = Number(request?.quantity);
+    if (![1, 2].includes(quantity)) throw new Error("Choose Qty 1 or Qty 2 for ALL selected SKUs.");
+    const entries = request?.sources;
+    if (!Array.isArray(entries) || entries.length > 30) throw new Error("Invalid drop selections.");
+    const live = await webActiveDropSources();
+    const byKey = new Map(live.map(source => [source.channelId + ":" + source.sourceId, source]));
+    const submitted = new Map();
+    for (const entry of entries) {
+      const key = String(entry?.channelId || "") + ":" + String(entry?.sourceId || "");
+      const source = byKey.get(key);
+      if (!source || submitted.has(key) || !Array.isArray(entry.skus) ||
+          entry.skus.length > 200 || typeof entry.skip !== "boolean") {
+        throw new Error("A drop changed. Refresh the drop list and submit again.");
+      }
+      const valid = new Set(source.products.map(product => product.sku));
+      const requested = [...new Set(entry.skus.map(String))];
+      if (requested.some(sku => !valid.has(sku)) || (entry.skip && requested.length)) {
+        throw new Error("Invalid SKU choice. Refresh the drop list and submit again.");
+      }
+      submitted.set(key, { source, skus: requested, skip: entry.skip });
+    }
+    // Require a complete snapshot so hidden or stale forms cannot silently
+    // overwrite part of the user's saved preferences.
+    if (submitted.size !== live.length) throw new Error("The active drops changed. Refresh and submit again.");
+    return withSkuQueue(async () => {
+      const selections = await readSkuFile(skuSelectionsFile);
+      const record = selections[userId] || { username, messageId: null, items: [] };
+      const old = Array.isArray(record.items) ? record.items : [];
+      const active = new Set(submitted.keys());
+      const stillSaved = old.filter(item => {
+        const parts = String(item.key || "").split(":");
+        return !active.has(parts.slice(0, 2).join(":")) &&
+          !(parts[0] === tonightChannelId && [...submitted.values()].some(row =>
+            row.source.channelId === tonightChannelId && row.skip));
+      });
+      const chosen = [];
+      for (const { source, skus, skip } of submitted.values()) {
+        if (skip) continue;
+        const wanted = new Set(skus);
+        for (const product of source.products) {
+          if (wanted.has(product.sku)) chosen.push({
+            key: source.channelId + ":" + source.sourceId + ":" + product.sku,
+            sku: product.sku, name: product.name, quantity
+          });
+        }
+      }
+      const next = setGlobalSkuQuantity([...stillSaved, ...chosen], quantity);
+      if (next.length > 200) throw new Error("You can select up to 200 SKUs across drops.");
+      const optedTonight = [...submitted.values()].some(row =>
+        row.source.channelId === tonightChannelId && row.skip);
+      const includesTonight = [...submitted.values()].some(row =>
+        row.source.channelId === tonightChannelId);
+      const skipTonightDate = optedTonight ? tonightDate() :
+        includesTonight ? undefined : record.skipTonightDate;
+      const preserved = (record.skippedUpcomingDrops || []).filter(skip =>
+        !active.has(skip.channelId + ":" + skip.sourceId));
+      const skippedUpcomingDrops = [...preserved,
+        ...[...submitted.values()].filter(row =>
+          row.skip && row.source.channelId !== tonightChannelId).map(row => ({
+            channelId: row.source.channelId, sourceId: row.source.sourceId
+          }))];
+      if (skippedUpcomingDrops.length > 30) throw new Error("You can skip up to 30 upcoming drops.");
+      const noChange = JSON.stringify(old.map(item => [item.key, Number(item.quantity)])) ===
+        JSON.stringify(next.map(item => [item.key, Number(item.quantity)])) &&
+        record.skipTonightDate === skipTonightDate &&
+        JSON.stringify(record.skippedUpcomingDrops || []) === JSON.stringify(skippedUpcomingDrops);
+      if (noChange) return { ok: true, unchanged: true, selectedCount: next.length, quantity };
+      const payload = ownerSkuPayload(userId, username, next,
+        "Submitted " + chosen.length + " active SKU(s) from the customer app",
+        skipTonightDate, skippedUpcomingDrops);
+      let posted;
+      if (record.messageId) {
+        try {
+          posted = await api("/channels/" + skuRequestsChannelId + "/messages/" +
+            record.messageId, "PATCH", payload);
+        } catch (error) {
+          if (!/HTTP 404/.test(error.message)) throw error;
+        }
+      }
+      if (!posted) posted = await api("/channels/" + skuRequestsChannelId + "/messages", "POST", payload);
+      Object.assign(record, { username, items: next, messageId: posted.id,
+        skipTonightDate, skippedUpcomingDrops, updatedAt: new Date().toISOString() });
+      selections[userId] = record;
+      await writeSkuFile(skuSelectionsFile, selections);
+      return { ok: true, selectedCount: next.length, quantity, savedAt: record.updatedAt };
+    });
+  }
+  webSkuBridge = { list: webDropList, save: webDropSave };
 
   async function setup() {
     try {
