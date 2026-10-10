@@ -43842,24 +43842,31 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
           receivedAt: message.internalDate || message.envelope?.date
         });
         const account = accountsById.get(String(record?.customerAccountId || ""));
-        if (!account || account.disabled === true) continue;
+        // A trusted OWNER-MANAGED business mailbox can verify the final paid
+        // amount of an unmatched webhook checkout without assigning its owner.
+        // Customer mailboxes can enrich only their own already-attributed hits.
+        const unmatchedBusinessReceipt = Boolean(mailbox.managedHost &&
+          record && !record.customerAccountId);
+        if ((!account || account.disabled === true) && !unmatchedBusinessReceipt) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
-        if (receiptTotal && !cancelledOrder(record) &&
-            (record.orderTotalBasis !== "retailer_receipt" &&
-              record.priceSource !== "verified_retailer_receipt")) {
+        if (receiptTotal && confirmedDiscordPurchase(record) &&
+            record.orderTotalBasis !== "retailer_receipt" &&
+            record.priceSource !== "verified_retailer_receipt") {
           // Only attach amount to the existing, uniquely matched Discord
           // checkout. Never turn an email receipt into a new order or owner.
           record.orderTotal = receiptTotal;
           record.orderTotalBasis = "retailer_receipt";
           record.priceSource = "verified_retailer_receipt";
           pendingChanges.push({
-            id: record.id, customerAccountId: String(account.id),
+            id: record.id, customerAccountId: account ? String(account.id) : "",
             retailer: record.retailer, orderNumber: record.orderNumber,
             orderTotal: receiptTotal
           });
           changed = true;
         }
-        if (!status) continue;
+        // Ownership-free business receipts may update spending only. They
+        // must never create customer shipment alerts or change attribution.
+        if (!account || !status) continue;
         if (cancellation) {
           if (!cancelledOrder(record)) {
             record.status = cancellation;
@@ -43925,11 +43932,12 @@ async function syncShippingTrackers() {
     const source = await discordCheckoutSourceChannels();
     const records = authoritativeDiscordCheckouts(await getSuccessCheckouts(), source.channels);
     const pendingChanges = [];
-    const trackable = records.filter(record =>
+    const businessPriceCandidates = records.filter(record =>
       isVerifiedDiscordCheckout(record) && record.orderNumber &&
-      accountsById.has(String(record.customerAccountId || "")) &&
-      !cancelledOrder(record));
-    if (!trackable.length) return;
+      confirmedDiscordPurchase(record) && !cancelledOrder(record));
+    const trackable = businessPriceCandidates.filter(record =>
+      accountsById.has(String(record.customerAccountId || "")));
+    if (!businessPriceCandidates.length) return;
 
     // Customer-connected mailboxes can contain unrelated personal purchases;
     // they are never checkout sources and may update only their owner's
@@ -43962,7 +43970,7 @@ async function syncShippingTrackers() {
         await scanMailboxForShipping({
           email: managed.email, password: managed.password,
           managedHost: managed.host, managedPort: managed.port
-        }, trackable, accountsById, pendingChanges);
+        }, businessPriceCandidates, accountsById, pendingChanges);
         managedMailboxConnected = true;
       } catch (error) {
         console.error("Shipping tracker managed mailbox scan:", mailboxFailureReason(error));
@@ -43970,6 +43978,7 @@ async function syncShippingTrackers() {
     }
     console.log("Verified shipping scan:", JSON.stringify({
       trackable: trackable.length,
+      communityPriceCandidates: businessPriceCandidates.length,
       customerMailboxesScanned,
       managedConfigured: managed.configured,
       managedConnected: managedMailboxConnected,
@@ -43982,23 +43991,26 @@ async function syncShippingTrackers() {
     // webhook imports, so a slow IMAP scan never overwrites newer purchases.
     await withSuccessStoreLock(async () => {
       const latest = await getSuccessCheckouts();
+      let receiptChanged = false;
       for (const update of pendingChanges) {
         const record = latest.find(item =>
           isVerifiedDiscordCheckout(item) &&
           item.id === update.id &&
-          String(item.customerAccountId || "") === update.customerAccountId &&
+          String(item.customerAccountId || "") === String(update.customerAccountId || "") &&
           item.retailer === update.retailer &&
           String(item.orderNumber || "") === String(update.orderNumber || "")
         );
         if (!record) continue;
         if (update.orderTotal) {
-          if (!cancelledOrder(record) &&
-              (record.orderTotalBasis !== "retailer_receipt" &&
-              record.priceSource !== "verified_retailer_receipt")) {
+          if (confirmedDiscordPurchase(record) &&
+              record.orderTotalBasis !== "retailer_receipt" &&
+              record.priceSource !== "verified_retailer_receipt") {
             record.orderTotal = update.orderTotal;
             record.orderTotalBasis = "retailer_receipt";
             record.priceSource = "verified_retailer_receipt";
-            changedAccounts.add(update.customerAccountId);
+            record.verifiedPaidAt = new Date().toISOString();
+            receiptChanged = true;
+            if (update.customerAccountId) changedAccounts.add(update.customerAccountId);
           }
           continue;
         }
@@ -44029,7 +44041,7 @@ async function syncShippingTrackers() {
           discordDms.set(record.id, { accountId: update.customerAccountId, record, shipping: next });
         }
       }
-      if (changedAccounts.size) {
+      if (changedAccounts.size || receiptChanged) {
         await saveSuccessCheckouts(latest);
         for (const id of changedAccounts) announceSuccessCheckout(id);
         broadcastLiveDataChange("verified-shipping-update");
