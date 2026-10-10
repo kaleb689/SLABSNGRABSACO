@@ -2502,7 +2502,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           const quantity = Number(arg);
           if (![1, 2].includes(quantity)) return await reply("Choose Qty 1 or Qty 2.");
           const draft = await mutateSkuDraft(userId, d.channel_id, sourceId,
-            items => items.map(item => ({ ...item, quantity })));
+            items => setGlobalSkuQuantity(items, quantity));
           return await api(callback, "POST", { type: 7, data: skuBrowsePayload(sourceId, products, 0, draft) });
         }
         if (action === "review") {
@@ -2515,13 +2515,12 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           if (!item) return await reply("That SKU is no longer in your draft. Refresh your review.");
           const token = skuItemToken(item.key);
           return await api(callback, "POST", { type: 7, data: {
-            content: "**" + skuSafeText(item.name) + "**\nSKU: " + skuSafeText(item.sku) + " · Qty " +
-              item.quantity + "\nChoose an adjustment. No changes are saved until confirmation.",
+            content: "**" + skuSafeText(item.name) + "**\nSKU: " + skuSafeText(item.sku) +
+              "\nQty: " + (uniformSkuQuantity(draft) || "choose 1 or 2") + " for ALL selected SKUs." +
+              "\nYou can remove this item, or go back and set the same quantity for all products.",
             components: [
               { type: 1, components: [
-                { type: 2, style: 2, label: "Qty 1", custom_id: "sku:individual:" + sourceId + ":" + token + ":1" },
-                { type: 2, style: 2, label: "Qty 2", custom_id: "sku:individual:" + sourceId + ":" + token + ":2" },
-                { type: 2, style: 4, label: "Remove SKU", custom_id: "sku:individual:" + sourceId + ":" + token + ":0" }
+                { type: 2, style: 4, label: "Remove this SKU", custom_id: "sku:individual:" + sourceId + ":" + token + ":0" }
               ] },
               { type: 1, components: [
                 { type: 2, style: 2, label: "Back to Review", custom_id: "sku:review:" + sourceId + ":0" },
@@ -2533,13 +2532,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         }
         if (action === "individual") {
           const quantity = Number(extra);
-          if (![0, 1, 2].includes(quantity) || !/^[a-f0-9]{16}$/.test(arg || "")) return await reply("Invalid adjustment.");
+          if (quantity !== 0 || !/^[a-f0-9]{16}$/.test(arg || ""))
+            return await reply("Individual quantities are not allowed. Go back and choose Qty 1 or Qty 2 for ALL SKUs.");
           const draft = await mutateSkuDraft(userId, d.channel_id, sourceId, items => {
             const result = items.map(item => ({ ...item }));
             const index = result.findIndex(item => skuItemToken(item.key) === arg);
             if (index < 0) throw new Error("That SKU is no longer in your draft.");
-            if (quantity) result[index].quantity = quantity;
-            else result.splice(index, 1);
+            result.splice(index, 1);
             return result;
           });
           return await api(callback, "POST", { type: 7, data: skuDraftReviewPayload(sourceId, draft, 0) });
