@@ -16246,31 +16246,6 @@ async function refreshPublicSuccess() {
     const data = await response.json();
     rollSuccessMetric("public-success-checkouts", data.totalCheckouts);
     rollSuccessMetric("public-success-spent", data.totalSpent, true);
-    const spentNote = document.getElementById("public-success-spent-note");
-    if (spentNote) {
-      const pending = Math.max(0, Math.floor(Number(data.pricePendingCheckouts) || 0));
-      const archivedCount = Math.max(0, Math.floor(Number(data.historicalCheckouts) || 0));
-      const archivedSpent = Number(data.historicalSpent) || 0;
-      const historicalNote = archivedCount
-        ? `Includes ${archivedCount.toLocaleString()} earlier reported checkouts (${formatSuccessCurrency(archivedSpent)} historical summary; no individual archived receipts).`
-        : "";
-      const pendingNote = pending
-        ? `${pending.toLocaleString()} confirmed checkout${pending === 1 ? "" : "s"} still awaiting verified paid totals.`
-        : "";
-      const roundingNote = Number(data.reportedReconciliation) > 0
-        ? `${formatSuccessCurrency(data.reportedReconciliation)} owner-reference total reconciliation.`
-        : "";
-      spentNote.textContent = [historicalNote, pendingNote, roundingNote].filter(Boolean).join(" ");
-      spentNote.hidden = !spentNote.textContent;
-    }
-    const earlierItems = document.getElementById("public-success-historical-products");
-    if (earlierItems) {
-      const archivedTins = Math.max(0, Math.floor(Number(data.historicalTinQuantity) || 0));
-      earlierItems.textContent = archivedTins
-        ? `Previous historical tracker summary: ${archivedTins.toLocaleString()} tins. Individual archived items and product photos cannot be verified from that summary.`
-        : "";
-      earlierItems.hidden = !archivedTins;
-    }
     publicSuccessState.products = Array.isArray(data.products) ? data.products : [];
     publicSuccessState.index = Math.min(publicSuccessState.index, Math.max(0, publicSuccessState.products.length - 1));
     renderPublicSuccessProduct();
