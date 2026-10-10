@@ -26,14 +26,15 @@ test("replies leave previous posts intact even when Discord labels them as regul
 
 import { changeSkuItems, skuSelectionView } from "../discord-community.js";
 
-test("SKU changes replace quantity, remove only the selected item, and leave other drops intact", () => {
+test("SKU quantity is global, removing an item preserves all other drop selections", () => {
   const products = [{ name: "Dunk", sku: "DD1391-100" }, { name: "Jordan", sku: "FV5029-006" }];
   const first = changeSkuItems([], products, "post1", "channel", 1);
   const changed = changeSkuItems(first, [products[0]], "post1", "channel", 2);
   assert.equal(changed[0].quantity, 2);
-  assert.equal(changed[1].quantity, 1);
+  assert.equal(changed[1].quantity, 2, "switching to Qty 2 must apply to every selected SKU");
   assert.equal(first[0].quantity, 1, "original state is unchanged until saved");
   const nextDrop = changeSkuItems(changed, [products[0]], "post2", "channel", 1);
+  assert.ok(nextDrop.every(item => item.quantity === 1), "Qty 1 also changes earlier selected SKUs");
   const removed = changeSkuItems(nextDrop, products, "post1", "channel", 0);
   assert.equal(removed.length, 1);
   assert.equal(removed[0].key, "channel:post2:DD1391-100");
@@ -41,10 +42,12 @@ test("SKU changes replace quantity, remove only the selected item, and leave oth
 });
 
 test("private SKU summary shows quantities and exposes all 30 selections within Discord limits", () => {
-  const items = Array.from({ length: 30 }, (_, i) => ({ key: `channel:post:sku-${i}`, name: "Product ".repeat(15), sku: `SKU-${i}`, quantity: i % 2 + 1 }));
+  const items = Array.from({ length: 30 }, (_, i) => ({ key: `channel:post:sku-${i}`, name: "Product ".repeat(15), sku: `SKU-${i}`, quantity: 2 }));
   const view = skuSelectionView(items);
   assert.match(view.content, /Your selected SKUs \(30\)/);
+  assert.match(view.embeds.map(x => x.description).join(""), /\(SKU-0, SKU-1, SKU-2/);
   assert.match(view.embeds.map(x => x.description).join(""), /Qty: 2/);
+  assert.doesNotMatch(view.embeds[0].description, /SKU-0 x2|SKU-1 x2|SKU-0.*Qty: 2.*SKU-1/s);
   assert.ok(view.embeds.every(x => x.description.length <= 4096));
   assert.equal(view.components.filter(row => row.components[0].type === 3).flatMap(row => row.components[0].options).length, 30);
   assert.ok(view.components.every(row => row.components[0].type !== 3 || row.components[0].options.length <= 25));
@@ -117,7 +120,7 @@ test("multi-page drafts retain other pages, preserve quantities, and require an 
 test("draft review paginates safely when there are more than 25 selections", async () => {
   const { skuDraftReviewPayload } = await import("../discord-community.js");
   const draft = Array.from({ length: 30 }, (_, i) => ({
-    key: "channel:source:SKU-" + i, sku: "SKU-" + i, name: "TCG Product " + i, quantity: i % 2 + 1
+    key: "channel:source:SKU-" + i, sku: "SKU-" + i, name: "TCG Product " + i, quantity: 2
   }));
   const first = skuDraftReviewPayload("1234567890123456789", draft, 0);
   const second = skuDraftReviewPayload("1234567890123456789", draft, 1);
@@ -213,7 +216,7 @@ test("Target, Walmart and PKC drops reuse the private SKU selection flow and pre
   let selected = changeSkuItems([], [products[0]], "old-post", "channel-tonight", 2);
   selected = changeSkuItems(selected, [products[0], products[1]], message.id, message.channel_id, 1);
   assert.equal(selected.length, 3, "saved selections from other drop channels must remain");
-  assert.equal(selected[0].quantity, 2);
+  assert.ok(selected.every(item => item.quantity === 1));
   assert.ok(skuAdminReviewPayload(selected, "1234567890123456787").content.includes("3 total"));
   assert.throws(() => changeSkuItems(selected, products, message.id, message.channel_id, 1),
     /Up to 200 SKUs/);
@@ -231,4 +234,68 @@ test("new drop channels provision idempotently with staff posting and paid-only 
   assert.match(source, /retailerDropsReady = retailerChannels\.length === 3/);
   assert.match(source, /if \(!await hasPaidSkuAccess\(userId\)\) return await reply\(skuAccessMessage\)/);
   assert.match(source, /if \(isGuildOwnerSkuTester\(userId, ownerId\)\) return true/);
+});
+
+
+test("Discord owner SKU notification is an exact inline list with one quantity line below", async () => {
+  const { setGlobalSkuQuantity, uniformSkuQuantity, skuCompactNotification, skuOwnerDetails } =
+    await import("../discord-community.js");
+  const products = ["SKU-G41", "SKU-RS11", "SKU-PM"].map((sku,i)=>({
+    key:"channel:post:"+sku,name:"TCG Product "+i,sku,quantity:1
+  }));
+  const first=skuOwnerDetails(products);
+  assert.equal(first.title,"New SKU Order");
+  assert.match(first.description,/\*\*SKUs:\*\*\n\(SKU-G41, SKU-RS11, SKU-PM\)\n\*\*Qty: 1\*\*/);
+  assert.doesNotMatch(first.description,/SKU-G41 x1|SKU-RS11 x1|SKU-PM x1/);
+  const updated=setGlobalSkuQuantity(products,2);
+  assert.deepEqual(updated.map(x=>x.quantity),[2,2,2]);
+  assert.equal(uniformSkuQuantity(updated),2);
+  assert.deepEqual(skuCompactNotification(updated),{
+    skus:"(SKU-G41, SKU-RS11, SKU-PM)",quantity:2
+  });
+  assert.match(skuOwnerDetails(updated).description,/\(SKU-G41, SKU-RS11, SKU-PM\)\n\*\*Qty: 2\*\*/);
+  assert.deepEqual(products.map(x=>x.quantity),[1,1,1],"original selection is immutable");
+});
+
+test("mixed quantities are invalid and only Qty 1 / Qty 2 globally may be saved", async () => {
+  const { uniformSkuQuantity, setGlobalSkuQuantity, skuCompactNotification,
+    skuBrowsePayload, applySkuPageDraft } = await import("../discord-community.js");
+  const products=[{name:"Box A",sku:"BOX-A"},{name:"Box B",sku:"BOX-B"}];
+  const mixed=[
+    {key:"c:p:BOX-A",name:"Box A",sku:"BOX-A",quantity:1},
+    {key:"c:p:BOX-B",name:"Box B",sku:"BOX-B",quantity:2}
+  ];
+  assert.equal(uniformSkuQuantity(mixed),null);
+  assert.throws(()=>skuCompactNotification(mixed),/Choose one quantity for all/);
+  assert.throws(()=>setGlobalSkuQuantity(mixed,0),/Choose Qty 1 or Qty 2/);
+  assert.throws(()=>setGlobalSkuQuantity(mixed,3),/Choose Qty 1 or Qty 2/);
+  const repaired=setGlobalSkuQuantity(mixed,2);
+  assert.ok(repaired.every(x=>x.quantity===2));
+  const edited=applySkuPageDraft(repaired,products,"p","c",0,["0","1"]);
+  assert.ok(edited.every(x=>x.quantity===2));
+  const picker=skuBrowsePayload("p",products,0,edited);
+  assert.match(picker.content,/Individual products cannot have different quantities/);
+  assert.deepEqual(picker.components[2].components.map(x=>x.label),
+    ["Qty 1 — ALL SKUs","Qty 2 — ALL SKUs"]);
+  assert.match(picker.components[3].components[0].label,/Remove SKUs/);
+  const source=(await import("node:fs")).readFileSync(new URL("../discord-community.js",import.meta.url),"utf8");
+  assert.doesNotMatch(source,/label: "Qty 1", custom_id: "sku:individual:/);
+  assert.doesNotMatch(source,/label: "Qty 2", custom_id: "sku:individual:/);
+  assert.match(source,/if \(quantity !== 0\) return await reply\("Individual SKU quantities are not allowed/);
+});
+
+test("owner's Discord SKU summary scales without leaking mixed quantities or exceeding embed limits", async () => {
+  const { skuOwnerDetails, skuAdminReviewPayload, setGlobalSkuQuantity } = await import("../discord-community.js");
+  const products=Array.from({length:200},(_,i)=>({
+    key:"channel:post:SKU-"+i,sku:"SKU-"+String(i).padStart(3,"0")+"A".repeat(68),
+    name:"Product "+i+" with special trading card game contents",quantity:1
+  }));
+  const valid=setGlobalSkuQuantity(products,2);
+  const owner=skuOwnerDetails(valid);
+  assert.ok(owner.description.length<=4096);
+  assert.match(owner.description,/\*\*Qty: 2\*\*/);
+  assert.match(owner.description,/more SKUs/);
+  const admin=skuAdminReviewPayload(valid,"1234567890123456787",0);
+  assert.ok(admin.embeds.every(e=>e.description.length<=4096));
+  assert.match(admin.embeds[0].description,/\*\*Qty: 2/);
 });
