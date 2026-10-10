@@ -167,7 +167,8 @@ if(tab==="success"){
       (missingPkC?'<p class="success-pkc-note"><strong>Pokémon Center:</strong> '+Number(missingPkC.total||0)+
         ' unassigned confirmed checkout'+(Number(missingPkC.total||0)===1?'':'s')+
         ' · '+Number(missingPkC.last24h||0)+' in 24H · '+Number(missingPkC.last7d||0)+' in 7D</p>':'')+
-      '<a class="success-match-link" href="/admin-checkout-match.html?retailer=PKC">REVIEW POKÉMON CENTER & MORNING HITS ↗</a></section>'
+      '<a class="success-match-link" href="/admin-checkout-match.html?retailer=PKC">REVIEW POKÉMON CENTER HITS ↗</a>'+
+      '<a class="success-match-link success-match-secondary" href="/admin-checkout-match.html">REVIEW ALL UNMATCHED HITS ↗</a></section>'
     : "";
   const people=new Map();
   // Individual customer breakdowns use their OWN 24H / 7D / 30D filter, not
