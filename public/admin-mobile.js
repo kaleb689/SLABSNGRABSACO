@@ -36,7 +36,7 @@ if(tab==="overview"){c.innerHTML='<div class="metrics">'+metric("Community check
 if(tab==="success"){
   // Community totals include unmatched confirmed checkouts. Attribution is
   // required ONLY for individual customer and profile performance views.
-  const allSuccess=Array.isArray(data.success?.records)?data.success.records:[];
+  const allSuccess=Array.isArray(data.success?.records)?data.success.records.filter(x=>Boolean(x.customerAccountId)):[];
   const now=new Date(), currentTime=Date.now(), day=86400000;
   const days=successDays;
   const cutoff=days==="all"?0:days==="mtd"?new Date(now.getFullYear(),now.getMonth(),1).getTime():days==="ytd"?new Date(now.getFullYear(),0,1).getTime():currentTime-Number(days)*day;
@@ -54,14 +54,14 @@ if(tab==="success"){
     customerList.set(String(x.customerAccountId),String(x.customerName||"Customer"));
   });
   const customers=Array.from(customerList.entries()).sort((a,b)=>a[1].localeCompare(b[1]));
-  if(successCustomerId!=="all"&&successCustomerId!=="unmatched"&&!customerList.has(successCustomerId))successCustomerId="all";
+  if(successCustomerId!=="all"&&!customerList.has(successCustomerId))successCustomerId="all";
   const customerSelect='<label style="display:block;margin:0 0 13px;color:var(--m-muted,#afbed1)">VIEW CHECKOUTS FOR<select id="success-customer-filter" style="width:100%;margin-top:8px;min-height:43px;border-radius:11px;padding:9px 12px;color:var(--m-text,#fff);background:var(--m-panel,#141f2b);border:1px solid var(--m-border,#36627a)">'+
-    '<option value="all" '+(successCustomerId==="all"?'selected':'')+'>All community checkouts</option><option value="unmatched" '+(successCustomerId==="unmatched"?'selected':'')+'>Unmatched / unassigned checkouts</option>'+
+    '<option value="all" '+(successCustomerId==="all"?'selected':'')+'>All linked customer checkouts</option>'+
     customers.map(([id,name])=>'<option value="'+esc(id)+'" '+(successCustomerId===id?'selected':'')+'>'+esc(name)+'</option>').join("")+
     '</select></label>';
   let accountSelect="";
-  let filtered=inRange.filter(x=>successCustomerId==="all"?true:successCustomerId==="unmatched"?!x.customerAccountId:String(x.customerAccountId)===successCustomerId);
-  if(successCustomerId!=="all"&&successCustomerId!=="unmatched"){
+  let filtered=inRange.filter(x=>successCustomerId==="all"?true:String(x.customerAccountId)===successCustomerId);
+  if(successCustomerId!=="all"){
     const accountOptions=new Map();
     allSuccess.filter(x=>String(x.customerAccountId)===successCustomerId).forEach(x=>{
       accountOptions.set(String(x.accountKey||"unknown"),String(x.accountLabel||"Unspecified profile")+" · "+String(x.retailer||"Retailer"));
@@ -139,8 +139,7 @@ if(tab==="success"){
     'Only Discord-verified orders appear in customer and period breakdowns.';
   const lifetime=panel("Lifetime community checkouts",'<div class="metrics">'+metric("Total confirmed checkouts",community.totalCheckouts??allSuccess.length)+
     metric("Reported total checkout spend",dollars(community.totalSpent||0))+'</div><p>'+esc(combinedNote)+'</p>');
-  const unmatched=Math.max(0,Number(data.success?.unmatchedCount)||0);
-  const unmatchedNote=unmatched?panel("Unmatched confirmed checkouts",'<p><strong>'+unmatched+'</strong> confirmed community orders are included above but not assigned to any customer until a paid or linked account is verified.</p><a href="/admin-checkout-match.html">MATCH CHECKOUT PROFILES ↗</a>'):"";
+  // Unmatched community orders have no customer attribution: do not show them in Admin Success.
   const people=new Map();
   inRange.filter(x=>x.customerAccountId).forEach(x=>{
     const id=String(x.customerAccountId);
@@ -151,19 +150,21 @@ if(tab==="success"){
     .sort((a,b)=>b.orders.length-a.orders.length||a.name.localeCompare(b.name));
   const peopleHtml=displayedPeople.map(x=>{
     const uniqueAccounts=new Set(x.orders.map(order=>order.accountKey)).size;
-    return '<details data-success-user="'+esc(x.id)+'" '+(successExpandedUsers.has(x.id)||successCustomerId===x.id?'open':'')+
-      ' class="item"><summary style="cursor:pointer;font-weight:800">'+esc(x.name)+'</summary>'+
-      '<small>'+x.orders.length+' checkouts · '+uniqueAccounts+' active/historical accounts · '+dollars(verifiedSpent(x.orders))+' verified spent'+
-      (missingPrices(x.orders)?' · '+missingPrices(x.orders)+' prices pending':'')+'</small>'+
+    const summary=x.orders.length+' confirmed checkout'+(x.orders.length===1?'':'s')+' · '+
+      uniqueAccounts+' account'+(uniqueAccounts===1?'':'s')+' · '+dollars(verifiedSpent(x.orders))+' verified spent'+
+      (missingPrices(x.orders)?' · '+missingPrices(x.orders)+' paid amount'+(missingPrices(x.orders)===1?'':'s')+' pending':'');
+    return panel(x.name+" checkout breakdown",
+      '<p>'+esc(summary)+'</p>'+
+      '<details data-success-user="'+esc(x.id)+'" '+(successExpandedUsers.has(x.id)||successCustomerId===x.id?'open':'')+
+      ' class="item"><summary style="cursor:pointer;font-weight:800">View products purchased and accounts that checked out</summary>'+
       '<h3 style="font-size:13px;margin:14px 0 6px">Products purchased</h3>'+productsMarkup(x.orders)+
       '<h3 style="font-size:13px;margin:14px 0 6px">Which accounts checked out</h3>'+accountsMarkup(x.orders)+
-      '</details>';
-  }).join("")||'<p>No attributed customer checkouts for this period. Unmatched orders remain in community totals.</p>';
+      '</details>');
+  }).join("")||panel("Customer checkouts",'<p>No linked customer checkouts in this period.</p>');
   c.innerHTML=buttons+customerSelect+accountSelect+hero+
     '<div class="metrics admin-success-metrics">'+metric("Confirmed orders",total)+metric("Retailers",groupedRetailers.size)+'</div>'+
-    lifetime+unmatchedNote+panel("Orders by retailer",donut+legend)+
-    panel("Products purchased",productsMarkup(filtered))+
-    panel("Customer checkout breakdown",peopleHtml);
+    lifetime+panel("Orders by retailer",donut+legend)+
+    panel("Products purchased",productsMarkup(filtered))+peopleHtml;
   c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{
     successDays=/^(mtd|ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);
     render();
