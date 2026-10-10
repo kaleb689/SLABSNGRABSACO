@@ -30,7 +30,7 @@ button:disabled{opacity:.5;cursor:not-allowed}.notice{font-size:13px;color:#9ba9
 <main>
 <div class="heading"><span class="eyebrow">SECURE ADMIN · SUCCESS</span><a class="back" href="/admin-app.html">← Back to Admin</a></div>
 <h1>Match Discord checkout profiles</h1>
-<p>Discord webhooks sometimes use profile names different from the names saved on your website. Review each label and link it only to the customer who owned an eligible paid or assigned account at checkout time. No new orders are created.</p>
+<p>Review confirmed Discord checkout profiles, including recent Pokémon Center and morning orders. Check the exact retailer account owner and assignment date before selecting a customer. Unverified, cancelled and review-hold orders are not counted as successful purchases. No new orders are created.</p>
 <div class="stats"><div class="stat"><strong id="unmatched">—</strong><span>Unlinked checkouts</span></div><div class="stat"><strong id="groups">—</strong><span>Distinct profile labels</span></div></div>
 <div class="panel">
 <label for="search">Search Discord profile labels</label>
@@ -54,6 +54,8 @@ button:disabled{opacity:.5;cursor:not-allowed}.notice{font-size:13px;color:#9ba9
 const $=id=>document.getElementById(id);
 const e=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let groups=[]; let trackingOrders=[];
+const requestedRetailer=new URLSearchParams(location.search).get("retailer")||"";
+if(/^(?:pkc|pokemon center)$/i.test(requestedRetailer))$("search").value="PKC";
 function render(){
  const needle=$("search").value.trim().toLowerCase();
  const matches=groups.filter(g=>(g.profileLabel+" "+g.retailer).toLowerCase().includes(needle));
