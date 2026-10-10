@@ -85,11 +85,13 @@ test("Full-status-color outline wraps all sides of customer recent order and tra
   assert.match(app,/admin-mobile\.js\?v=32-admin-success-cleanup-20261010/);
 });
 
-test("Admin overview keeps membership KPIs visible and collapses optional sections",()=>{
+test("Admin overview keeps membership KPIs visible and removes duplicate sections",()=>{
   const mobile=read("public/admin-mobile.js");
-  for(const title of ["Latest website signups","Recent confirmed checkouts","Quick actions","Live updates"]){
-    assert.ok(mobile.includes(`collapsiblePanel("${title}"`),title+" is collapsible");
+  for(const title of ["Latest website signups","Recent confirmed checkouts","Live updates"]){
+    assert.ok(!mobile.includes(`collapsiblePanel("${title}"`),title+" is absent from Home");
   }
+  assert.ok(mobile.includes(`collapsiblePanel("Quick actions"`));
+  assert.match(mobile,/admin-app-users-metric/);
   assert.match(mobile,/ACTIVE PAID MEMBERSHIPS/);
   assert.match(mobile,/MONTHLY MEMBERSHIP PAYMENTS/);
   assert.match(mobile,/function collapsiblePanel\(title,body\)/);
