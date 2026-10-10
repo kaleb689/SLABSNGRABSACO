@@ -1,6 +1,6 @@
 (() => {
 const $=id=>document.getElementById(id),esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let tab="overview",data={customers:[],activation:null,availability:null,usage:null,success:{records:[]}},authenticated=false,stream=null;
+let tab="overview",data={customers:[],registered:[],activation:null,availability:null,usage:null,success:{records:[]}},authenticated=false,stream=null;
 let successDays=30,successCustomerId="all",successAccountKey="all";
 let successCustomRange=null,successCalendarOpen=false,successCalendarError="";
 let successCalendarDraft={from:"",to:""};
@@ -80,13 +80,37 @@ const pushLabels={newOrders:"New orders",activations:"Profile activations",expir
 async function pushSettings(){const c=$("push-settings");if(!c)return;try{const d=await get("/api/admin/push/settings");c.innerHTML='<button class="action" id="enable-push">ENABLE PUSH NOTIFICATIONS</button>'+Object.entries(pushLabels).map(([k,v])=>'<label style="display:flex;align-items:center;justify-content:space-between">'+esc(v)+'<input style="width:26px;min-height:26px" type="checkbox" data-push="'+k+'" '+(d.preferences?.[k]?'checked':'')+'></label>').join('');c.querySelectorAll("[data-push]").forEach(el=>el.onchange=async()=>{await fetch("/api/admin/push/settings",{method:"PUT",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({[el.dataset.push]:el.checked})});});$("enable-push").onclick=async()=>{try{if(!("PushManager" in window)||!("Notification" in window))throw Error("Install the app to enable iPhone push.");if(await Notification.requestPermission()!=="granted")throw Error("Notification permission not granted.");if(!d.publicKey)throw Error("Push server key unavailable.");const reg=await navigator.serviceWorker.ready;const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:decode64(d.publicKey)});await post("/api/admin/push/subscribe",sub.toJSON());alert("Notifications enabled.");}catch(e){alert(e.message);}};}catch(e){c.textContent=e.message;}}
 function metric(label,value){return '<div class="metric"><small>'+esc(label)+'</small><strong>'+esc(value??"—")+'</strong></div>';}
 function panel(title,body){return '<section class="panel"><h2>'+esc(title)+'</h2>'+body+'</section>';}
-function customerName(x){const p=x.profile||{};return [p.firstName,p.lastName].filter(Boolean).join(" ")||p.profileName||"Customer";}
-function customers(){return Array.isArray(data.customers)?data.customers:data.customers.submissions||[];}
+function customerName(x){const p=x.profile||{};return [p.firstName,p.lastName].filter(Boolean).join(" ")||p.profileName||p.email||"Customer";}
+function customers(){
+  // Newly registered accounts live in free-submissions until a membership
+  // checkout succeeds. Paid submissions alone hide those new signups.
+  const paid=Array.isArray(data.customers)?data.customers:
+    Array.isArray(data.customers?.submissions)?data.customers.submissions:[];
+  const registered=Array.isArray(data.registered)?data.registered:[];
+  const people=new Map();
+  const key=row=>{
+    const id=String(row.customerAccountId||row.id||"").trim();
+    const email=String(row.profile?.email||row.email||"").trim().toLowerCase();
+    return id?"id:"+id:email?"email:"+email:null;
+  };
+  // Paid memberships win if older/free snapshots overlap. The free route
+  // already excludes paid customers; dedup also prevents duplicate UI cards.
+  [...registered,...paid].forEach(row=>{
+    if(!row||typeof row!=="object")return;
+    const id=key(row);if(!id)return;
+    people.set(id,row);
+  });
+  return [...people.values()].sort((a,b)=>
+    (Date.parse(b.accountCreatedAt||b.createdAt||b.paidAt||0)||0)-
+    (Date.parse(a.accountCreatedAt||a.createdAt||a.paidAt||0)||0));
+}
 function activationCount(a,status){if(!Array.isArray(a?.customers))return "—";const profiles=a.customers.flatMap(c=>Array.isArray(c.profiles)?c.profiles:[]).filter(p=>p.type==="paid");return profiles.filter(p=>p.status===status).length;}
 function render(){
 $("heading").textContent=({overview:"Overview",success:"Success",customers:"Customers",profiles:"Profiles",usage:"App Usage",more:"More"})[tab];
 document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===(tab==="usage"?"more":tab)));
-const list=customers(),a=data.activation||{},v=data.availability||{},u=data.usage||{},c=$("content");
+const list=customers(),freeCount=list.filter(person=>person.accountOnly===true).length,
+  paidCount=list.length-freeCount,
+  a=data.activation||{},v=data.availability||{},u=data.usage||{},c=$("content");
 if(tab==="overview"){
   // Keep the existing all-time community totals (including the historical
   // archive) distinct from customer-specific verified receipt spending.
@@ -97,6 +121,14 @@ if(tab==="overview"){
   const recent=Array.isArray(data.success?.communityRecords)
     ? [...data.success.communityRecords].sort((a,b)=>(Date.parse(b.checkoutAt)||0)-(Date.parse(a.checkoutAt)||0)).slice(0,5)
     : [];
+  const recentSignups=list.filter(x=>x.accountOnly===true)
+    .sort((a,b)=>(Date.parse(b.accountCreatedAt||b.createdAt)||0)-(Date.parse(a.accountCreatedAt||a.createdAt)||0))
+    .slice(0,5);
+  const recentSignupRows=recentSignups.map(person=>
+    '<article class="item admin-new-signup"><strong>'+esc(customerName(person))+'</strong>'+
+    '<small>'+esc(person.profile?.email||"")+' · Registered · No paid membership</small>'+
+    '<button type="button" data-view="'+esc(person.customerAccountId||person.id)+'">VIEW CUSTOMER PAGE ↗</button></article>'
+  ).join("")||'<p>New accounts without a membership will appear here.</p>';
   const recentRows=recent.map(order=>{
     const items=Array.isArray(order.items)?order.items:[];
     const first=items[0]||{};
@@ -118,10 +150,13 @@ if(tab==="overview"){
         '<span><small>CUSTOMERS</small><b>'+list.length+'</b></span>'+
       '</div></section>'+
     '<div class="metrics admin-overview-grid">'+
-      metric("Customers",list.length)+
+      metric("Registered customers",list.length)+
+      metric("Paid customers",paidCount)+
+      metric("New signups · no plan",freeCount)+
       metric("Awaiting activation",activationCount(a,"awaiting_activation"))+
       metric("App users · 7 days",u.activeUsers7d??"—")+
       metric("Installed devices",u.installedDevices??"—")+'</div>'+
+    panel("Latest website signups",recentSignupRows)+
     panel("Recent confirmed checkouts",recentRows+
       '<a href="/admin-success.html" class="action">VIEW ALL CHECKOUTS ↗</a>')+
     panel("Quick actions",'<div class="links">'+
@@ -481,8 +516,24 @@ if(tab==="success"){
     else successOpenOrderCards.delete(el.dataset.successOrder);
   }));
 }
-if(tab==="customers"){c.innerHTML='<input class="search" id="customer-search" type="search" placeholder="Search name or email">'+ '<div id="customer-results"></div>';$("customer-search").value=customerSearchText;const show=()=>{customerSearchText=$("customer-search").value;const q=customerSearchText.toLowerCase();$("customer-results").innerHTML=list.filter(x=>(customerName(x)+" "+(x.profile?.email||"")).toLowerCase().includes(q)).slice(0,150).map(x=>'<article class="item"><strong>'+esc(customerName(x))+'</strong><small>'+esc(x.profile?.email||"")+' · '+esc(x.plan?.name||"Membership")+'</small><button data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>').join("")||"<p>No matching customers.</p>";};$("customer-search").addEventListener("input",show);show();}
-if(tab==="profiles"){c.innerHTML='<div class="metrics">'+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("Activated",activationCount(a,"activated"))+metric("Expired",activationCount(a,"expired"))+metric("Customers",list.length)+'</div>'+panel("Profile workflow",'<p>Open the full tracker to activate, extend, or return profiles using the existing verified controls.</p><a href="/admin.html#profileActivationTracker">OPEN PROFILE WORKFLOW ↗</a>')+panel("Inventory",'<p>Target, Walmart, and Pokémon Center inventory remains managed in the full Admin dashboard.</p><a href="/admin.html">OPEN INVENTORY MANAGER ↗</a>');}
+if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+list.length+' registered customer'+(list.length===1?'':'s')+' · '+freeCount+' without a paid membership</p>'+
+  '<input class="search" id="customer-search" type="search" placeholder="Search name or email">'+
+  '<div id="customer-results"></div>';
+  $("customer-search").value=customerSearchText;
+  const show=()=>{
+    customerSearchText=$("customer-search").value;
+    const q=customerSearchText.toLowerCase();
+    $("customer-results").innerHTML=list.filter(x=>
+      (customerName(x)+" "+(x.profile?.email||"")).toLowerCase().includes(q))
+      .slice(0,150).map(x=>'<article class="item"><strong>'+esc(customerName(x))+
+      '</strong><small>'+esc(x.profile?.email||"")+' · '+
+      esc(x.accountOnly?"Registered · No paid membership":x.plan?.name||"Membership")+
+      '</small><button data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>').join("")||
+      "<p>No matching customers.</p>";
+  };
+  $("customer-search").addEventListener("input",show);show();
+}
+if(tab==="profiles"){c.innerHTML='<div class="metrics">'+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("Activated",activationCount(a,"activated"))+metric("Expired",activationCount(a,"expired"))+metric("Registered customers",list.length)+'</div>'+panel("Profile workflow",'<p>Open the full tracker to activate, extend, or return profiles using the existing verified controls.</p><a href="/admin.html#profileActivationTracker">OPEN PROFILE WORKFLOW ↗</a>')+panel("Inventory",'<p>Target, Walmart, and Pokémon Center inventory remains managed in the full Admin dashboard.</p><a href="/admin.html">OPEN INVENTORY MANAGER ↗</a>');}
 if(tab==="usage"){c.innerHTML='<div class="admin-usage-return"><button type="button" id="admin-more-return" class="action">← BACK TO MORE</button></div>'+'<div class="metrics">'+metric("Installed users",u.installedUsers??"—")+metric("Installed devices",u.installedDevices??"—")+metric("Active users · 7D",u.activeUsers7d??"—")+metric("Active users · 30D",u.activeUsers30d??"—")+'</div>'+panel("Tracking information","<p>Counts begin when updated customer apps report activity. PWA installs are confirmed by app mode or an installation event; they are not App Store downloads.</p>")+panel("Recent activity",(u.recent||[]).slice(0,50).map(x=>'<article class="item"><strong>'+esc(x.name||"Customer")+'</strong><small>'+esc(x.email||"")+' · '+esc(x.platform||"Other")+' · '+(x.installedConfirmed?"Installed":"Web activity")+'</small><small>Last active: '+esc(x.lastSeenAt?new Date(x.lastSeenAt).toLocaleString():"—")+'</small></article>').join("")||"<p>No app activity has been recorded yet.</p>");}
 if(tab==="usage"){$("admin-more-return").onclick=()=>{tab="more";render();window.scrollTo(0,0);};}
 if(tab==="more"){c.innerHTML=panel("App usage & devices",'<div class="links"><button type="button" class="action" id="open-admin-usage">VIEW APP USAGE ↗</button></div>')+panel("Push notifications",`<div id="push-settings">Loading…</div>`)+panel("Admin tools",'<div class="links"><button class="action" id="register-face-id">SET UP FACE ID ON THIS IPHONE</button><a class="action" href="/admin.html">FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html">DISCOUNTS AND MEMBERSHIPS ↗</a><a class="action" href="/admin.html">DISCORD AND NOTIFICATIONS ↗</a><button class="action" id="signout">SIGN OUT</button></div>');void pushSettings();$("open-admin-usage").onclick=()=>{tab="usage";render();window.scrollTo(0,0);};$("register-face-id").onclick=async()=>{try{await passkeyRegister();}catch(e){alert(e.message);}};$("signout").onclick=async()=>{await fetch("/api/admin/logout",{method:"POST",credentials:"same-origin"}).catch(()=>{});auth(false);};}
@@ -522,18 +573,20 @@ async function refresh(force=false){
   try{
     const results=await Promise.allSettled([
       get("/api/admin/submissions"),
+      get("/api/admin/free-submissions"),
       get("/api/admin/profile-activation-tracker"),
       get("/api/managed-availability"),
       get("/api/admin/app-usage"),
       get("/api/admin/success-overview")
     ]);
-    const keys=["customers","activation","availability","usage","success"];
+    const keys=["customers","registered","activation","availability","usage","success"];
     results.forEach((r,i)=>{if(r.status==="fulfilled")data[keys[i]]=r.value;});
     if(results.some(r=>r.status==="rejected"&&r.reason.message==="SESSION_EXPIRED")){
       auth(false);return;
     }
     if(results[0].status==="rejected")throw results[0].reason;
-    if(results[1].status==="rejected")data.activation=null;
+    if(results[1].status==="rejected")data.registered=[];
+    if(results[2].status==="rejected")data.activation=null;
     // A field may gain focus while the network request is in flight.
     if(!force && authenticated && (document.hidden || mobileControlFocused())){
       mobileRefreshPending=true;
@@ -546,8 +599,10 @@ async function refresh(force=false){
     requestAnimationFrame(()=>window.scrollTo(x,y));
     if(!stream){
       stream=new EventSource("/api/admin/live/events");
-      stream.addEventListener("data-change",()=>{if(tab==="success")void refreshSuccessTracker();else scheduleMobileRefresh();});
-      stream.addEventListener("checkout",()=>void refreshSuccessTracker());
+      // A signup changes the customer roster even while the Success tab is
+      // selected. Refresh all dashboard sources, not just checkout totals.
+      stream.addEventListener("data-change",scheduleMobileRefresh);
+      stream.addEventListener("checkout",scheduleMobileRefresh);
       // Catch any edits made while the app was sleeping or disconnected.
       stream.addEventListener("open",scheduleMobileRefresh);
     }
