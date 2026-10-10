@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#10162b">
 <title>All Checkout Success | SLABSNGRABSACO Admin</title>
 <link rel="icon" href="/slabsngrabs-aco-logo-transparent.png">
-<link rel="stylesheet" href="/sng-premium-controls.css?v=1">
+<link rel="stylesheet" href="/sng-premium-controls.css?v=2">
 <style>
 :root{font-family:Inter,-apple-system,BlinkMacSystemFont,system-ui,sans-serif;color-scheme:dark;--panel:#121e38;--muted:#b2c9dd;--copy:#f3f8ff;--border:#384f85;--base:#090f20}
 *{box-sizing:border-box}
@@ -125,7 +125,7 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
   const countUnknown = rows => rows.filter(x => !x.orderTotalKnown).length;
   const periods = [[1,'24H'],[7,'7D'],[30,'30D'],[90,'90D'],['mtd','MTD'],['ytd','YTD'],['all','ALL']];
   let data={records:[],communityRecords:[]},days=30,scope='all',refreshing=false;
-  const userPeriods=new Map(),openUsers=new Set();
+  const userPeriods=new Map(),openUsers=new Set(),openOrders=new Set();
   function start(period,now=new Date()){
     if(period==='all')return 0;
     if(period==='mtd')return new Date(now.getFullYear(),now.getMonth(),1).getTime();
@@ -163,12 +163,35 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
     ).join('')+'</div>'||'<p>No retailers in this period.</p>';
   }
   function orderList(rows){
-    return rows.slice(0,80).map(x=>{
-      const summary=(x.items||[]).slice(0,3).map(item=>String(item.name||'Item')+' ×'+Math.max(0,Math.floor(Number(item.quantity)||0))).join(' · ');
-      return '<div class="detail-item"><strong>'+esc(x.retailer||'Retailer')+'</strong> · '+esc(new Date(x.checkoutAt).toLocaleDateString())+
-        ' · '+esc(x.accountLabel||'Unspecified linked profile')+' · '+esc(summary)+
-        '<span class="'+(x.orderTotalKnown?'money':'pending')+'"> · '+(x.orderTotalKnown?money(x.orderTotal):'Amount not verified')+'</span></div>';
-    }).join('')||'<p>No orders for the selected customer period.</p>';
+    // Source records are real distinct confirmed retailer orders. Display
+    // all bundled items under their existing checkout without fabricating
+    // orders, splitting SKUs into checkouts, or estimating a charged total.
+    const ordered=[...rows].sort((a,b)=>(Date.parse(b.checkoutAt)||0)-(Date.parse(a.checkoutAt)||0));
+    return '<div class="receipt-order-list">'+ordered.slice(0,80).map((x,index)=>{
+      const time=Date.parse(x.checkoutAt);
+      const stamp=Number.isFinite(time)?new Date(time).toLocaleString():'Date unavailable';
+      const key=String(x.id||x.orderId||x.orderNumber||
+        [x.checkoutAt,x.retailer,x.accountKey,index].join('|'));
+      const valid=x.orderTotalKnown===true&&Number(x.orderTotal)>0;
+      const products=Array.isArray(x.items)?x.items:[];
+      const count=products.reduce((n,item)=>n+Math.max(0,Math.floor(Number(item.quantity)||0)),0);
+      return '<details class="receipt-order" data-receipt-order="'+esc(key)+'" '+(openOrders.has(key)?'open':'')+'>'+
+        '<summary><span class="receipt-order-title"><strong>'+esc(x.retailer||'Retailer')+' · Order '+(index+1)+'</strong>'+
+        '<small>'+esc(stamp)+' · '+esc(x.accountLabel||'Linked customer profile')+
+        ' · '+count+' item'+(count===1?'':'s')+'</small></span>'+
+        '<span class="receipt-order-total">'+(valid?money(x.orderTotal):'$0.00')+
+        '<small class="'+(valid?'':'receipt-order-warning')+'">'+
+        (valid?'Final retailer charge':'Awaiting verified paid total')+'</small></span></summary>'+
+        '<div class="receipt-order-items">'+(products.length?products.map(item=>{
+          const image=validImage(item.imageUrl)?item.imageUrl:'/slabsngrabs-aco-logo-transparent.png';
+          return '<div class="receipt-order-item"><img src="'+esc(image)+'" loading="lazy" alt="">'+
+            '<strong>'+esc(item.name||'Product')+'</strong>'+
+            '<span class="receipt-qty">×'+Math.max(0,Math.floor(Number(item.quantity)||0))+'</span></div>';
+        }).join(''):'<p>Product details are not available for this order.</p>')+
+        '</div></details>';
+    }).join('')+'</div>'+
+    (ordered.length>80?'<p>Showing the newest 80 orders for this date range.</p>':'')||
+    '<p>No orders for the selected customer period.</p>';
   }
   function renderCustomers(){
     const map=new Map();
@@ -187,7 +210,7 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
         '<div class="body"><div class="user-periods">'+buttons+'</div><div class="user-metrics">'+
         stat('Confirmed orders',rows.length)+stat('Verified spent',money(totalCents(rows)/100))+
         stat('Without paid receipts',countUnknown(rows))+'</div>'+
-        '<h3>Purchases &amp; source profiles</h3>'+orderList(rows)+'</div></details>';
+        '<h3>Orders with bundled products</h3>'+orderList(rows)+'</div></details>';
     }).join('');
     $('customers').innerHTML=html||'<p>No uniquely linked customer purchases yet. Unmatched community orders still count in all-order spending totals.</p>';
   }
@@ -257,6 +280,11 @@ body[data-admin-theme="light"] .user-card>summary:after{background:#eceaff;color
     userPeriods.set(b.dataset.user,b.dataset.period==='mtd'?'mtd':Number(b.dataset.period));
     openUsers.add(b.dataset.user);renderCustomers();
   });
+  $('customers').addEventListener('toggle',e=>{
+    const order=e.target.closest('[data-receipt-order]');if(!order)return;
+    if(order.open)openOrders.add(order.dataset.receiptOrder);
+    else openOrders.delete(order.dataset.receiptOrder);
+  },true);
   let theme='dark';try{theme=localStorage.getItem('sng-admin-theme')==='light'?'light':'dark';}catch{}
   document.body.dataset.adminTheme=theme;
   $('theme-toggle').addEventListener('click',()=>{
