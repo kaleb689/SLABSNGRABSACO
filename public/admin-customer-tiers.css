@@ -11,13 +11,13 @@ body.sng-admin-app #workspace .admin-customer-tier-row {
   background:linear-gradient(118deg,var(--tier-soft),rgba(19,26,43,.87));
 }
 body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-10 {
-  --tier-accent:#40dfed;--tier-soft:rgba(22,150,172,.15);--tier-edge:rgba(64,223,237,.47);
+  --tier-accent:#ff943d;--tier-soft:rgba(255,148,61,.15);--tier-edge:rgba(255,148,61,.52);
 }
 body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-20 {
-  --tier-accent:#c38bff;--tier-soft:rgba(114,72,203,.19);--tier-edge:rgba(195,139,255,.46);
+  --tier-accent:#45e68b;--tier-soft:rgba(69,230,139,.15);--tier-edge:rgba(69,230,139,.52);
 }
 body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-50 {
-  --tier-accent:#ffcf76;--tier-soft:rgba(185,126,36,.15);--tier-edge:rgba(255,207,118,.48);
+  --tier-accent:#ff5aa8;--tier-soft:rgba(255,90,168,.16);--tier-edge:rgba(255,90,168,.55);
 }
 body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-free {
   --tier-accent:#8b9bad;--tier-soft:rgba(86,99,128,.11);--tier-edge:rgba(139,155,173,.32);
@@ -68,9 +68,6 @@ html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-custo
 html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-badge {
   background:linear-gradient(110deg,#fff,#f6f2ff);
 }
-html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-10 {--tier-accent:#00899d;}
-html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-20 {--tier-accent:#7240bd;}
-html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-50 {--tier-accent:#996013;}
 @media(max-width:350px) {
   body.sng-admin-app #workspace .admin-customer-topline {gap:7px}
   body.sng-admin-app #workspace .admin-customer-tier-badge {width:105px;padding:10px 6px}
@@ -93,7 +90,7 @@ body.sng-admin-app #workspace .admin-customer-identity {
   display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center;
 }
 body.sng-admin-app #workspace .admin-customer-eyebrow {
-  display:block;color:var(--tier-accent)!important;
+  display:block;color:var(--m-muted,#a2b4ca)!important;
   margin:0 0 10px!important;font-size:9px!important;
   letter-spacing:1px;font-weight:900;line-height:1.3;
 }
@@ -145,7 +142,8 @@ html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-custo
   background:linear-gradient(135deg,#fff,#f4f1fc);
 }
 html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-badge {
-  background:linear-gradient(130deg,#fff,var(--tier-soft));
+  /* Keep website pastel/yellow tier lettering legible even when the app is in light mode. */
+  background:linear-gradient(130deg,#20273d,#161c2e);
 }
 html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-badge strong {
   color:var(--tier-accent);
@@ -168,27 +166,27 @@ body.sng-admin-app #workspace .admin-app-users-list{display:grid;grid-template-c
 
 body.sng-admin-app #workspace .admin-customer-billing{border:1px solid rgba(72,165,201,.38);border-radius:12px;background:rgba(9,37,54,.65);padding:10px 12px;margin:10px 0;font-size:12px}body.sng-admin-app #workspace .admin-customer-billing p{margin:8px 0}body.sng-admin-app #workspace .admin-billing-gifted{color:#7cf3b1;font-weight:750}body.sng-admin-app #workspace .admin-billing-note{font-size:11px;color:#a6bad0}
 
-/* Distinct accent colors for every currently supported paid ACO tier. */
+/* Website pricing palette (public/styles.css .customer-tier-color-N):
+ * Starter 1=#dce8f0; Intermediate 2=#1dd6ff; Advanced 3=#ffd83d;
+ * Pro 5=#bd6cff; High Volume 10=#ff943d; Power User 20=#45e68b;
+ * Elite 50=#ff5aa8; Ultimate 100=website gold #ffd76a.
+ * These are profile counts, mapped to website plan tier indices 1–8.
+ */
 body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-1 {
-  --tier-accent:#76cfff;--tier-soft:rgba(55,139,216,.18);--tier-edge:rgba(118,207,255,.50);
+  --tier-accent:#dce8f0;--tier-soft:rgba(148,168,182,.13);--tier-edge:rgba(220,232,240,.55);
 }
 body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-2 {
-  --tier-accent:#58ebbb;--tier-soft:rgba(24,166,130,.17);--tier-edge:rgba(88,235,187,.50);
+  --tier-accent:#1dd6ff;--tier-soft:rgba(29,214,255,.15);--tier-edge:rgba(29,214,255,.52);
 }
 body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-3 {
-  --tier-accent:#b9a3ff;--tier-soft:rgba(111,80,204,.19);--tier-edge:rgba(185,163,255,.50);
+  --tier-accent:#ffd83d;--tier-soft:rgba(255,216,61,.14);--tier-edge:rgba(255,216,61,.55);
 }
 body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-5 {
-  --tier-accent:#ffac76;--tier-soft:rgba(195,107,45,.17);--tier-edge:rgba(255,172,118,.50);
+  --tier-accent:#bd6cff;--tier-soft:rgba(189,108,255,.18);--tier-edge:rgba(189,108,255,.53);
 }
 body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-100 {
-  --tier-accent:#ff83b2;--tier-soft:rgba(193,60,126,.17);--tier-edge:rgba(255,131,178,.52);
+  --tier-accent:#ffd76a;--tier-soft:rgba(255,215,106,.17);--tier-edge:rgba(255,215,106,.58);
 }
-html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-1{--tier-accent:#137db5}
-html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-2{--tier-accent:#00765a}
-html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-3{--tier-accent:#6752ae}
-html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-5{--tier-accent:#a95820}
-html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-100{--tier-accent:#a52c65}
 body.sng-admin-app #workspace .admin-membership-visible-bar>span,
 body.sng-admin-app #workspace .admin-membership-track>span{transition:width .22s ease}
 
@@ -197,7 +195,8 @@ body.sng-admin-app #workspace .admin-customer-tier-row .admin-customer-detail {
   border-color:var(--tier-accent);
 }
 body.sng-admin-app #workspace .admin-customer-tier-row .admin-customer-detail > summary {
-  color:var(--tier-accent);
+  /* The small membership tier badge is the only place with tier-colored text. */
+  color:var(--m-text,#f3f5ff);
 }
 body.sng-admin-app #workspace .admin-customer-tier-row .admin-customer-renewal {
   border-color:var(--tier-accent);
@@ -205,4 +204,12 @@ body.sng-admin-app #workspace .admin-customer-tier-row .admin-customer-renewal {
 body.sng-admin-app #workspace .admin-customer-tier-row .admin-membership-visible-bar,
 body.sng-admin-app #workspace .admin-customer-tier-row .admin-membership-track {
   border-color:var(--tier-accent);
+}
+/* Ultimate on the website uses a gold-gradient plan name. Restrict to badge text. */
+body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-100 .admin-customer-tier-badge strong {
+  background:linear-gradient(105deg,#fff7bf 5%,#ffd76a 22%,#fff1a6 40%,#d9a928 58%,#fff3a8 74%,#ffcf4a 92%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  -webkit-text-fill-color:transparent;
 }
