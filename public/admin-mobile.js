@@ -133,12 +133,32 @@ function customers(){
     (Date.parse(b.accountCreatedAt||b.createdAt||b.paidAt||0)||0)-
     (Date.parse(a.accountCreatedAt||a.createdAt||a.paidAt||0)||0));
 }
+// These two internal/test accounts remain manageable in Admin but are not real registered customers.
+function countsAsRegisteredCustomer(person){
+  const profile=person?.profile||{};
+  const names=[
+    profile.email,person?.email,profile.username,person?.username,
+    profile.siteUsername,person?.siteUsername,
+    profile.profileName,person?.profileName,profile.name,person?.name,
+    profile.displayName,person?.displayName,person?.customerName,person?.fullName,
+    [profile.firstName,profile.lastName].filter(Boolean).join(" "),
+    [person?.firstName,person?.lastName].filter(Boolean).join(" "),
+    person?.customerAccountId,person?.id
+  ];
+  const excluded=new Set(["fakeadmin","fakeadminprofile","kalebmatthews04"]);
+  return !names.some(value=>{
+    const normalized=String(value??"").trim().toLowerCase().split("@")[0].split("+")[0].replace(/[^a-z0-9]/g,"");
+    return excluded.has(normalized);
+  });
+}
 function activationCount(a,status){if(!Array.isArray(a?.customers))return "—";const profiles=a.customers.flatMap(c=>Array.isArray(c.profiles)?c.profiles:[]).filter(p=>p.type==="paid");return profiles.filter(p=>p.status===status).length;}
 function render(){
 $("heading").textContent=({overview:"Overview",success:"Success",customers:"Customers",profiles:"Profiles",usage:"App Usage",more:"More"})[tab];
 document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===(tab==="usage"?"more":tab)));
-const list=customers(),freeCount=list.filter(person=>person.accountOnly===true).length,
-  paidCount=list.length-freeCount,
+const list=customers(),registeredCustomerList=list.filter(countsAsRegisteredCustomer),
+  registeredCustomerCount=registeredCustomerList.length,
+  freeCount=registeredCustomerList.filter(person=>person.accountOnly===true).length,
+  paidCount=registeredCustomerCount-freeCount,
   a=data.activation||{},v=data.availability||{},u=data.usage||{},c=$("content");
 if(tab==="overview"){
   // Keep the existing all-time community totals (including the historical
@@ -196,12 +216,12 @@ if(tab==="overview"){
       '<p>Reported total · includes historical checkout records</p>'+
       '<div class="admin-overview-hero-stats">'+
         '<span><small>CONFIRMED CHECKOUTS</small><b>'+esc(allTimeOrders)+'</b></span>'+
-        '<span><small>CUSTOMERS</small><b>'+list.length+'</b></span>'+
+        '<span><small>CUSTOMERS</small><b>'+registeredCustomerCount+'</b></span>'+
       '</div></section>'+
     '<div class="metrics admin-overview-grid admin-membership-overview-metrics">'+
       liveMetric("ACTIVE PAID MEMBERSHIPS",data.billing?.activePaidMemberships??activeMembershipRows.length,Number(data.billing?.activePaidMemberships??activeMembershipRows.length))+
       liveMetric("MONTHLY MEMBERSHIP PAYMENTS",recurringTotal,recurringVerified?data.billing.monthlyPaidCents/100:NaN,true)+
-      liveMetric("Registered customers",list.length,list.length)+
+      liveMetric("Registered customers",registeredCustomerCount,registeredCustomerCount)+
       '<details class="metric admin-activation-metric"><summary>AWAITING ACTIVATION<strong>'+esc(activationCount(a,"awaiting_activation"))+'</strong></summary><div class="admin-activation-list">'+(Array.isArray(a.customers)?a.customers.flatMap(person=>(person.profiles||[]).filter(p=>p.type==="paid"&&p.status==="awaiting_activation").map(p=>'<p>'+esc(person.name||person.email||person.customerName||"Customer")+' · '+esc(p.retailer||"Profile")+'</p>')).join(""):"")+'<a href="/admin.html#profileActivationTracker">OPEN ACTIVATION TOOLS ↗</a></div></details>'+
       '<details class="metric admin-app-users-metric"><summary>APP USERS · 7 DAYS <strong>'+esc(u.activeUsers7d??"—")+'</strong></summary><div class="admin-app-users-list">'+(Array.isArray(u.recent)?u.recent.filter(person=>{const when=Date.parse(person.lastSeenAt||"");return Number.isFinite(when)&&when>=Date.now()-7*86400000}).slice(0,30).map(person=>{const known=list.find(customer=>String(customer.customerAccountId||customer.id||"")===String(person.customerAccountId||person.customerId||person.id||"")&&Boolean(person.customerAccountId||person.customerId||person.id))||list.find(customer=>String(customer.profile?.email||customer.email||"").toLowerCase()===String(person.email||"").toLowerCase()&&Boolean(person.email));const candidate=[known?customerName(known):"",[person.firstName,person.lastName].filter(Boolean).join(" "),person.customerName,person.name,person.email].map(v=>String(v||"").trim()).find(v=>v&&!/^(customer|app user|unknown)$/i.test(v));const name=candidate||"Unidentified app user";const timestamp=new Date(person.lastSeenAt);const when=Number.isFinite(timestamp.getTime())?timestamp.toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit",hour12:true}):"Time unavailable";return '<p><strong>'+esc(name)+'</strong> · Last active '+esc(when)+'</p>';}).join(""):"")+'</div></details></div>'+
     collapsiblePanel("Quick actions",'<div class="links">'+
@@ -560,7 +580,7 @@ if(tab==="success"){
     else successOpenOrderCards.delete(el.dataset.successOrder);
   }));
 }
-if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+list.length+' registered customer'+(list.length===1?'':'s')+' · '+freeCount+' without a paid membership</p>'+
+if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registeredCustomerCount+' registered customer'+(registeredCustomerCount===1?'':'s')+' · '+freeCount+' without a paid membership</p>'+
   '<input class="search" id="customer-search" type="search" placeholder="Search name or email">'+
   '<div id="customer-results"></div>';
   $("customer-search").value=customerSearchText;
@@ -614,7 +634,7 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+list.leng
   };
   $("customer-search").addEventListener("input",show);show();
 }
-if(tab==="profiles"){c.innerHTML='<div class="metrics">'+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("Activated",activationCount(a,"activated"))+metric("Expired",activationCount(a,"expired"))+metric("Registered customers",list.length)+'</div>'+panel("Profile workflow",'<p>Open the full tracker to activate, extend, or return profiles using the existing verified controls.</p><a href="/admin.html#profileActivationTracker">OPEN PROFILE WORKFLOW ↗</a>')+panel("Inventory",'<p>Target, Walmart, and Pokémon Center inventory remains managed in the full Admin dashboard.</p><a href="/admin.html">OPEN INVENTORY MANAGER ↗</a>');}
+if(tab==="profiles"){c.innerHTML='<div class="metrics">'+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("Activated",activationCount(a,"activated"))+metric("Expired",activationCount(a,"expired"))+metric("Registered customers",registeredCustomerCount)+'</div>'+panel("Profile workflow",'<p>Open the full tracker to activate, extend, or return profiles using the existing verified controls.</p><a href="/admin.html#profileActivationTracker">OPEN PROFILE WORKFLOW ↗</a>')+panel("Inventory",'<p>Target, Walmart, and Pokémon Center inventory remains managed in the full Admin dashboard.</p><a href="/admin.html">OPEN INVENTORY MANAGER ↗</a>');}
 if(tab==="usage"){c.innerHTML='<div class="admin-usage-return"><button type="button" id="admin-more-return" class="action">← BACK TO MORE</button></div>'+'<div class="metrics">'+metric("Installed users",u.installedUsers??"—")+metric("Installed devices",u.installedDevices??"—")+metric("Active users · 7D",u.activeUsers7d??"—")+metric("Active users · 30D",u.activeUsers30d??"—")+'</div>'+panel("Tracking information","<p>Counts begin when updated customer apps report activity. PWA installs are confirmed by app mode or an installation event; they are not App Store downloads.</p>")+panel("Recent activity",(u.recent||[]).slice(0,50).map(x=>'<article class="item"><strong>'+esc(x.name||"Customer")+'</strong><small>'+esc(x.email||"")+' · '+esc(x.platform||"Other")+' · '+(x.installedConfirmed?"Installed":"Web activity")+'</small><small>Last active: '+esc(x.lastSeenAt?new Date(x.lastSeenAt).toLocaleString():"—")+'</small></article>').join("")||"<p>No app activity has been recorded yet.</p>");}
 if(tab==="usage"){$("admin-more-return").onclick=()=>{tab="more";render();window.scrollTo(0,0);};}
 if(tab==="more"){c.innerHTML=panel("App usage & devices",'<div class="links"><button type="button" class="action" id="open-admin-usage">VIEW APP USAGE ↗</button></div>')+panel("Push notifications",`<div id="push-settings">Loading…</div>`)+panel("Admin tools",'<div class="links"><button class="action" id="register-face-id">SET UP FACE ID ON THIS IPHONE</button><a class="action" href="/admin.html">FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html">DISCOUNTS AND MEMBERSHIPS ↗</a><a class="action" href="/admin.html">DISCORD AND NOTIFICATIONS ↗</a><button class="action" id="signout">SIGN OUT</button></div>');void pushSettings();$("open-admin-usage").onclick=()=>{tab="usage";render();window.scrollTo(0,0);};$("register-face-id").onclick=async()=>{try{await passkeyRegister();}catch(e){alert(e.message);}};$("signout").onclick=async()=>{await fetch("/api/admin/logout",{method:"POST",credentials:"same-origin"}).catch(()=>{});auth(false);};}
