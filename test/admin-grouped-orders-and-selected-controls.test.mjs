@@ -82,7 +82,7 @@ test("Full-status-color outline wraps all sides of customer recent order and tra
   for(const file of [app,site,admin,secure]){
     assert.match(file,/sng-premium-controls\.css\?v=2/);
   }
-  assert.match(app,/admin-mobile\.js\?v=36-membership-gift-billing-20261010/);
+  assert.match(app,/admin-mobile\.js\?v=37-registered-customer-count-20261010/);
 });
 
 test("Admin overview keeps membership KPIs visible and removes duplicate sections",()=>{
