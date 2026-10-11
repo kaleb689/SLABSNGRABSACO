@@ -81,9 +81,7 @@ html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-custo
 /* Approved Admin customer layout: large tier tile on the right, not a small tag. */
 body.sng-admin-app #workspace .admin-customer-tier-row {
   padding:15px 14px 14px;margin:12px 0;
-  border:1px solid var(--tier-edge);
-  border-left:3px solid var(--tier-accent);border-right:3px solid var(--tier-accent);
-  border-top:2px solid var(--tier-accent);
+  border:2px solid var(--tier-accent);
   border-radius:19px;
   background:linear-gradient(112deg,var(--tier-soft) 0%,rgba(19,22,36,.95) 75%);
   box-shadow:0 11px 24px rgba(0,0,0,.15);
@@ -125,7 +123,7 @@ body.sng-admin-app #workspace .admin-customer-tier-badge .admin-customer-tier-co
 }
 body.sng-admin-app #workspace .admin-customer-tier-badge strong {
   font-size:clamp(12px,3.9vw,16px);line-height:1.35;
-  color:var(--m-text,#fff);margin:0;text-align:center;
+  color:var(--tier-accent);margin:0;text-align:center;
 }
 body.sng-admin-app #workspace .admin-customer-renewal {
   display:inline-flex;padding:5px 8px;border-radius:999px;
@@ -136,7 +134,7 @@ body.sng-admin-app #workspace .admin-customer-renewal {
 body.sng-admin-app #workspace .admin-customer-tier-row > button[data-view] {
   display:flex;align-items:center;justify-content:space-between;
   padding:13px 14px;min-height:46px;margin-top:13px;
-  border-radius:13px;border:1px solid var(--tier-edge)!important;
+  border-radius:13px;border:1px solid var(--tier-accent)!important;
   background:linear-gradient(112deg,#3c326a,#244563)!important;
   color:#fff!important;box-shadow:none;font-weight:900;
 }
@@ -150,7 +148,7 @@ html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-custo
   background:linear-gradient(130deg,#fff,var(--tier-soft));
 }
 html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-badge strong {
-  color:#261d35;
+  color:var(--tier-accent);
 }
 @media(max-width:375px) {
   body.sng-admin-app #workspace .admin-customer-tier-row {padding:12px 10px;}
@@ -193,3 +191,18 @@ html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-custo
 html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-100{--tier-accent:#a52c65}
 body.sng-admin-app #workspace .admin-membership-visible-bar>span,
 body.sng-admin-app #workspace .admin-membership-track>span{transition:width .22s ease}
+
+/* Customer membership colors stay consistent across every visible outline. */
+body.sng-admin-app #workspace .admin-customer-tier-row .admin-customer-detail {
+  border-color:var(--tier-accent);
+}
+body.sng-admin-app #workspace .admin-customer-tier-row .admin-customer-detail > summary {
+  color:var(--tier-accent);
+}
+body.sng-admin-app #workspace .admin-customer-tier-row .admin-customer-renewal {
+  border-color:var(--tier-accent);
+}
+body.sng-admin-app #workspace .admin-customer-tier-row .admin-membership-visible-bar,
+body.sng-admin-app #workspace .admin-customer-tier-row .admin-membership-track {
+  border-color:var(--tier-accent);
+}
