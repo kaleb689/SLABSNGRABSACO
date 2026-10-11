@@ -128,7 +128,7 @@ test('Membership is centered, and the Admin app shows right-side tier badges', (
   assert.match(admin,/class="admin-customer-tier-badge"/);
   assert.match(admin,/admin-customer-tier-10|tier-' \+ tierLevel/);
   assert.match(page,/href="\/app-drop-controls\.css\?v=20261010-approved-v4"/);
-  assert.match(adminPage,/href="\/admin-customer-tiers\.css\?v=20261011-tier-accents-v2"/);
+  assert.match(adminPage,/href="\/admin-customer-tiers\.css\?v=20261011-website-palette-v3"/);
 });
 
 
@@ -171,4 +171,34 @@ test('Admin membership tier labels and every customer card border inherit the ac
     assert.ok(styles.includes('.admin-customer-tier-row.admin-customer-tier-'+count),
       'Tier '+count+' should have its own accent');
   }
+});
+
+
+test('Admin customer tier palette matches the website pricing tier colors exactly', () => {
+  const website=readFileSync(new URL('../public/styles.css',import.meta.url),'utf8');
+  const admin=readFileSync(new URL('../public/admin-customer-tiers.css',import.meta.url),'utf8');
+  const planIndicesToProfileCounts=[[1,1],[2,2],[3,3],[4,5],[5,10],[6,20],[7,50]];
+  for(const [siteTier,count] of planIndicesToProfileCounts){
+    const websiteMatch=website.match(new RegExp('\\.customer-tier-color-'+siteTier+'\\s*\\{\\s*color:\\s*(#[0-9a-f]{6})','i'));
+    const appMatch=admin.match(new RegExp('\\.admin-customer-tier-row\\.admin-customer-tier-'+count+'\\s*\\{[^}]*--tier-accent:\\s*(#[0-9a-f]{6})','i'));
+    assert.ok(websiteMatch,'Website tier '+siteTier+' color should be defined');
+    assert.ok(appMatch,'Admin tier '+count+' profile color should be defined');
+    assert.equal(appMatch[1].toLowerCase(),websiteMatch[1].toLowerCase(),
+      count+' profiles should exactly use website tier '+siteTier+' color');
+  }
+  assert.match(website,/\\.ultimate-crown\\s*\\{[^}]*color:\\s*#ffd76a/i);
+  assert.match(admin,/\\.admin-customer-tier-row\\.admin-customer-tier-100\\s*\\{[^}]*--tier-accent:\\s*#ffd76a/i);
+  assert.match(admin,/\\.admin-customer-tier-row\\.admin-customer-tier-100 \\.admin-customer-tier-badge strong\\s*\\{[^}]*linear-gradient\\(105deg,#fff7bf/i);
+});
+
+test('Only small membership tier badges contain tier-accent-colored lettering', () => {
+  const admin=readFileSync(new URL('../public/admin-customer-tiers.css',import.meta.url),'utf8');
+  assert.match(admin,/\\.admin-customer-eyebrow\\s*\\{[^}]*color:var\\(--m-muted/);
+  assert.match(admin,/\\.admin-customer-tier-row \\.admin-customer-detail > summary\\s*\\{[^}]*color:var\\(--m-text/);
+  assert.match(admin,/\\.admin-customer-identity strong\\s*\\{[^}]*color:var\\(--m-text/);
+  assert.match(admin,/\\.admin-customer-tier-badge \\.admin-customer-tier-count\\s*\\{[^}]*color:var\\(--tier-accent\\)/);
+  assert.match(admin,/\\.admin-customer-tier-badge strong\\s*\\{[^}]*color:var\\(--tier-accent\\)/);
+  assert.match(admin,/\\.admin-customer-tier-row\\s*\\{[^}]*border:2px solid var\\(--tier-accent\\)/);
+  assert.match(admin,/\\.admin-customer-tier-badge\\s*\\{[^}]*border:2px solid var\\(--tier-accent\\)/);
+  assert.doesNotMatch(admin,/html\\[data-admin-mobile-theme="light"\\] body\\.sng-admin-app #workspace \\.admin-customer-tier-row\\.admin-customer-tier-5\\s*\\{\\s*--tier-accent/i);
 });
