@@ -21,14 +21,14 @@ self.addEventListener("push", event => {
     try { payload = event.data?.json() || {}; } catch {}
     await self.registration.showNotification(payload.title || "SLABSNGRABSACO", {
       body: payload.body || "You have a new account update.", icon: "/icons/app-192.png", badge: "/icons/app-192.png",
-      tag: payload.tag || "account-update", data: { tab: ["success", "membership", "notifications"].includes(payload.tab) ? payload.tab : "notifications" }
+      tag: payload.tag || "account-update", data: { tab: ["success", "membership", "notifications", "drops"].includes(payload.tab) ? payload.tab : "notifications" }
     });
   })());
 });
 self.addEventListener("notificationclick", event => {
   event.notification.close();
   event.waitUntil((async () => {
-    const tab = ["success", "membership", "notifications"].includes(event.notification.data?.tab) ? event.notification.data.tab : "notifications";
+    const tab = ["success", "membership", "notifications", "drops"].includes(event.notification.data?.tab) ? event.notification.data.tab : "notifications";
     const url = new URL(`/?appTab=${tab}#my-profile`, self.location.origin).href;
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const client of windows) {

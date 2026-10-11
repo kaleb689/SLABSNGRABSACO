@@ -167,6 +167,7 @@
         <label><input type="checkbox" name="orders"> Order confirmations</label>
         <label><input type="checkbox" name="shipping"> Shipping and delivery updates</label>
         <label><input type="checkbox" name="messages"> Messages and information needed</label>
+        <label><input type="checkbox" name="drops"> New and updated drop SKUs</label>
         <label><input type="checkbox" name="account"> Account and membership updates</label>
         <button type="submit" class="primary">Save notification preferences</button></fieldset></form>
       <div class="account-onboarding-actions"><button type="button" class="text-button" data-disable-push>Disable on this device</button><button type="button" class="secondary" data-close-settings>Done</button></div>`;
@@ -188,7 +189,7 @@
     current.querySelector("[data-close-settings]").addEventListener("click", () => current.close());
     form.addEventListener("submit", async event => {
       event.preventDefault();
-      const preferences = Object.fromEntries(["orders", "shipping", "messages", "account"].map(key => [key, form.elements[key].checked]));
+      const preferences = Object.fromEntries(["orders", "shipping", "messages", "account", "drops"].map(key => [key, form.elements[key].checked]));
       fieldset.disabled = true;
       try { await pushRequest("/api/account/push-preferences", "PUT", preferences); status.textContent = "Notification preferences saved."; }
       catch (error) { status.textContent = error.message; }
@@ -199,7 +200,7 @@
     current.showModal();
     try {
       const data = await pushRequest("/api/account/push-preferences");
-      for (const key of ["orders", "shipping", "messages", "account"]) form.elements[key].checked = data.preferences[key];
+      for (const key of ["orders", "shipping", "messages", "account", "drops"]) form.elements[key].checked = data.preferences[key];
       fieldset.disabled = false;
       status.textContent = !supportsPush() ? "Open the Home Screen app to enable phone notifications." : window.Notification.permission === "denied" ? phoneSettingsText() : "Tap Enable phone notifications to allow alerts on this device.";
     } catch (error) { status.textContent = error.message; }
