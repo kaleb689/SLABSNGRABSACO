@@ -213,3 +213,35 @@ body.sng-admin-app #workspace .admin-customer-tier-row.admin-customer-tier-100 .
   color:transparent;
   -webkit-text-fill-color:transparent;
 }
+
+/*
+ * Admin Customers typography: all labels, profile counts, time remaining,
+ * account details and actions use white text. Only the actual membership
+ * plan name (e.g. Pro / Intermediate) keeps its website tier color.
+ * Tier-specific borders, progress fills and outlines are unchanged.
+ */
+body.sng-admin-app #workspace .admin-customer-tier-row :is(
+  .admin-customer-eyebrow,
+  .admin-customer-identity strong,
+  .admin-customer-identity small,
+  .admin-customer-status,
+  .admin-customer-tier-badge small,
+  .admin-customer-tier-count,
+  .admin-customer-renewal,
+  .admin-customer-detail > summary,
+  .admin-customer-detail-body,
+  .admin-customer-detail-body p,
+  .admin-period-unavailable,
+  .admin-billing-note,
+  .admin-billing-gifted,
+  .admin-customer-tip,
+  .admin-inline-notifications > summary,
+  .admin-inline-notifications label,
+  .admin-inline-notifications [data-notice-result]
+) {
+  color:#fff!important;
+}
+/* White type stays legible when switching the Admin app to light mode. */
+html[data-admin-mobile-theme="light"] body.sng-admin-app #workspace .admin-customer-tier-row {
+  background:linear-gradient(112deg,var(--tier-soft) 0%,#171826 75%);
+}
