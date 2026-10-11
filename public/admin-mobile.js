@@ -133,29 +133,59 @@ function customers(){
     (Date.parse(b.accountCreatedAt||b.createdAt||b.paidAt||0)||0)-
     (Date.parse(a.accountCreatedAt||a.createdAt||a.paidAt||0)||0));
 }
-// These two internal/test accounts remain manageable in Admin but are not real registered customers.
+// Keep internal profiles accessible for Admin support, but never count them as customers.
 function countsAsRegisteredCustomer(person){
   const profile=person?.profile||{};
+  const account=person?.account||{};
   const names=[
-    profile.email,person?.email,profile.username,person?.username,
-    profile.siteUsername,person?.siteUsername,
-    profile.profileName,person?.profileName,profile.name,person?.name,
+    profile.email,person?.email,person?.customerEmail,person?.signupEmail,
+    person?.accountEmail,person?.userEmail,account.email,
+    profile.contactEmail,profile.signupEmail,profile.accountEmail,profile.userEmail,
+    profile.username,profile.userName,person?.username,person?.userName,
+    profile.siteUsername,person?.siteUsername,person?.accountUsername,
+    profile.profileName,person?.profileName,profile.name,person?.name,account.name,
     profile.displayName,person?.displayName,person?.customerName,person?.fullName,
+    profile.fullName,person?.discordUsername,profile.discordUsername,
     [profile.firstName,profile.lastName].filter(Boolean).join(" "),
     [person?.firstName,person?.lastName].filter(Boolean).join(" "),
-    person?.customerAccountId,person?.id
+    person?.customerAccountId,person?.accountId,person?.id
   ];
-  const excluded=new Set(["fakeadmin","fakeadminprofile","kalebmatthews04"]);
   return !names.some(value=>{
     const normalized=String(value??"").trim().toLowerCase().split("@")[0].split("+")[0].replace(/[^a-z0-9]/g,"");
-    return excluded.has(normalized);
+    return normalized==="kalebmatthews04" || /^fakeadmin(?:profile|test|account)?[0-9]*$/.test(normalized);
   });
+}
+// The paid and signup endpoints can refer to one customer using different
+// record IDs. Count unique customer identities (account ID OR signup email).
+// This affects metrics only; all Admin records remain visible and editable.
+function registeredCustomerRoster(records){
+  const groups=[],aliases=new Map();
+  for(const person of records.filter(countsAsRegisteredCustomer)){
+    const profile=person?.profile||{};
+    const id=String(person?.customerAccountId||person?.accountId||person?.id||"").trim().toLowerCase();
+    const email=String(profile.email||person?.email||person?.customerEmail||"").trim().toLowerCase();
+    const keys=[id&&"id:"+id,email&&"email:"+email].filter(Boolean);
+    if(!keys.length)continue;
+    let group=keys.map(key=>aliases.get(key)).find(Boolean);
+    if(!group){group={person,merged:false};groups.push(group);}
+    for(const key of keys){
+      const duplicate=aliases.get(key);
+      if(duplicate&&duplicate!==group){
+        if(group.person.accountOnly===true&&duplicate.person.accountOnly!==true)group.person=duplicate.person;
+        duplicate.merged=true;
+        for(const [alias,owner] of aliases)if(owner===duplicate)aliases.set(alias,group);
+      }
+      aliases.set(key,group);
+    }
+    if(group.person.accountOnly===true&&person.accountOnly!==true)group.person=person;
+  }
+  return groups.filter(group=>!group.merged).map(group=>group.person);
 }
 function activationCount(a,status){if(!Array.isArray(a?.customers))return "—";const profiles=a.customers.flatMap(c=>Array.isArray(c.profiles)?c.profiles:[]).filter(p=>p.type==="paid");return profiles.filter(p=>p.status===status).length;}
 function render(){
 $("heading").textContent=({overview:"Overview",success:"Success",customers:"Customers",profiles:"Profiles",usage:"App Usage",more:"More"})[tab];
 document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===(tab==="usage"?"more":tab)));
-const list=customers(),registeredCustomerList=list.filter(countsAsRegisteredCustomer),
+const list=customers(),registeredCustomerList=registeredCustomerRoster(list),
   registeredCustomerCount=registeredCustomerList.length,
   freeCount=registeredCustomerList.filter(person=>person.accountOnly===true).length,
   paidCount=registeredCustomerCount-freeCount,
@@ -170,7 +200,7 @@ if(tab==="overview"){
   const recent=Array.isArray(data.success?.communityRecords)
     ? [...data.success.communityRecords].sort((a,b)=>(Date.parse(b.checkoutAt)||0)-(Date.parse(a.checkoutAt)||0)).slice(0,5)
     : [];
-  const recentSignups=list.filter(x=>x.accountOnly===true)
+  const recentSignups=registeredCustomerList.filter(x=>x.accountOnly===true)
     .sort((a,b)=>(Date.parse(b.accountCreatedAt||b.createdAt)||0)-(Date.parse(a.accountCreatedAt||a.createdAt)||0))
     .slice(0,5);
   const recentSignupRows=recentSignups.map(person=>
@@ -585,11 +615,15 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
   '<div id="customer-results"></div>';
   $("customer-search").value=customerSearchText;
   const show=()=>{
-    customerSearchText=$("customer-search").value;
+    const output=$("customer-results");
+    if(!output)return;
+    try{
+    customerSearchText=$("customer-search")?.value||"";
     const q=customerSearchText.toLowerCase();
-    $("customer-results").innerHTML=list.filter(x=>
+    output.innerHTML=list.filter(x=>
       (customerName(x)+" "+(x.profile?.email||"")).toLowerCase().includes(q))
       .slice(0,150).map(x=>{
+        try{
         const tier=customerTier(x);
         const renewal=tier.daysRemaining==null ? '' : tier.daysRemaining===0 ? 'Period ends today' : tier.daysRemaining+' day'+(tier.daysRemaining===1?'':'s')+' left';
         const status=tier.status && !/^(active|trialing)$/i.test(tier.status) ? tier.status : '';
@@ -610,7 +644,8 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
             '<div class="admin-customer-detail-body"><p><b>Membership:</b> '+esc(tier.label)+'</p>'+
             (()=>{
               const subId=String(x.stripeSubscriptionId||x.subscriptionId||x.plan?.stripeSubscriptionId||"");
-              const billing=(data.billing?.memberships||[]).find(item=>item.subscriptionId===subId);
+              const memberships=Array.isArray(data.billing?.memberships)?data.billing.memberships:[];
+              const billing=memberships.find(item=>item&&item.subscriptionId===subId);
               if(!subId)return '<p class="admin-billing-note">No linked Stripe subscription.</p>';
               if(!billing)return '<p class="admin-billing-note">Stripe billing information unavailable.</p>';
               const money=v=>v==null?"Unavailable":dollars(v/100);
@@ -629,8 +664,24 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
             '<details class="admin-inline-notifications"><summary>Send Notification</summary><label>Notification type<select data-notice-type><option value="missing">Missing account setup information</option><option value="card">Missing payment card</option><option value="shipping">Missing shipping address</option><option value="retailer">Missing optional retailer information</option><option value="custom">Custom message</option></select></label><label>Customer message<textarea data-notice-message rows="3" placeholder="Optional details, required for custom messages"></textarea></label><button type="button" data-send-notice="'+esc(x.id)+'">SEND NOTIFICATION</button><p data-notice-result role="status"></p></details>'+
             '<p class="admin-customer-tip">Use the full Admin customer page for missing card, shipping, retailer info, and custom notifications.</p></div></details>'+
           '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE <span aria-hidden="true">↗</span></button></article>';
+        }catch(error){
+          console.error("Admin customer membership card could not be rendered",error);
+          return '<article class="item admin-customer-tier-row"><strong>'+esc(customerName(x))+'</strong>'+
+            '<small>'+esc(x.profile?.email||x.email||"")+'</small>'+
+            '<p>Membership details are temporarily unavailable.</p>'+
+            '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>';
+        }
       }).join("")||
       "<p>No matching customers.</p>";
+    }catch(error){
+      // Never leave an empty results area when a customer record is malformed.
+      console.error("Admin customer directory could not be rendered",error);
+      output.innerHTML=list.slice(0,150).map(x=>
+        '<article class="item"><strong>'+esc(customerName(x))+'</strong>'+
+        '<small>'+esc(x.profile?.email||x.email||"")+'</small>'+
+        '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>'
+      ).join("")||'<p class="error">Could not display customers. Tap Refresh to retry.</p>';
+    }
   };
   $("customer-search").addEventListener("input",show);show();
 }
