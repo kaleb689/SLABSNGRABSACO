@@ -1,6 +1,7 @@
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
+import { productGroupKey } from "./public/product-grouping.js";
 import { historicalPlusVerified, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
 import { searchManagedPoolProfiles } from "./managed-pool-search.js";
 import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
@@ -39168,7 +39169,7 @@ app.get(
           const name = publicSuccessProductName(item?.name);
           const quantity = Math.max(0, Math.floor(Number(item?.quantity) || 0));
           if (!quantity) continue;
-          const key = name.toLowerCase();
+          const key = productGroupKey(name);
           const prior = products.get(key);
           products.set(key, {
             name: prior?.name || name,
