@@ -1,3 +1,4 @@
+import { productGroupKey } from "./product-grouping.js";
 // Only cancellations that occurred at least 24 hours after checkout belong
 // in a customer's tracking/history display. This mirrors the server rule.
 export function visibleLateCancellation(order, now = new Date()) {
@@ -86,15 +87,27 @@ export function dashboardTotals(orders) {
 }
 export function dashboardProducts(orders) {
   const products = new Map();
-  for (const order of orders) for (const item of order.items || []) {
-    const key = `${order.retailer}:${item.name}`;
-    const product = products.get(key) || { name: item.name || 'Product', retailer: order.retailer, imageUrl: item.imageUrl,
-      quantity: 0, value: 0, delivered: 0, orders: 0 };
-    if (!product.imageUrl && item.imageUrl) product.imageUrl = item.imageUrl;
-    const qty = Math.max(0, Number(item.quantity) || 1);
-    product.quantity += qty; product.value += qty * (Number(item.price) || 0); product.orders++;
-    if (shippingStage(order) === 'delivered') product.delivered += qty;
-    products.set(key, product);
+  for (const order of orders) {
+    const seenInOrder = new Set();
+    for (const item of order.items || []) {
+      const rawName = String(item?.name || "").trim();
+      const name = rawName || "Product";
+      const retailer = String(order.retailer || "Retailer").trim() || "Retailer";
+      const key = rawName ? productGroupKey(name) : "unknown:" + retailer.toLowerCase();
+      const product = products.get(key) || { name, retailer, retailers: [],
+        imageUrl: item?.imageUrl, quantity: 0, value: 0, delivered: 0, orders: 0 };
+      if (!product.imageUrl && item?.imageUrl) product.imageUrl = item.imageUrl;
+      if (!product.retailers.some(value => value.toLowerCase() === retailer.toLowerCase())) {
+        product.retailers.push(retailer);
+      }
+      product.retailer = product.retailers.join(" · ");
+      const qty = Math.max(0, Number(item?.quantity) || 1);
+      product.quantity += qty;
+      product.value += qty * (Number(item?.price) || 0);
+      if (!seenInOrder.has(key)) { product.orders++; seenInOrder.add(key); }
+      if (shippingStage(order) === "delivered") product.delivered += qty;
+      products.set(key, product);
+    }
   }
   return [...products.values()].sort((a, b) => b.value - a.value);
 }
