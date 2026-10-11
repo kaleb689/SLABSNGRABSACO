@@ -128,7 +128,7 @@ test('Membership is centered, and the Admin app shows right-side tier badges', (
   assert.match(admin,/class="admin-customer-tier-badge"/);
   assert.match(admin,/admin-customer-tier-10|tier-' \+ tierLevel/);
   assert.match(page,/href="\/app-drop-controls\.css\?v=20261010-approved-v4"/);
-  assert.match(adminPage,/href="\/admin-customer-tiers\.css\?v=20261010-customer-tier-restore"/);
+  assert.match(adminPage,/href="\/admin-customer-tiers\.css\?v=20261011-tier-accents-v2"/);
 });
 
 
@@ -151,4 +151,24 @@ test('approved Membership layout renders real subscription values and does not d
   assert.match(admin,/admin-customer-tier-count/);
   assert.match(adminStyles,/Approved Admin customer layout/);
   assert.match(adminStyles,/admin-customer-tier-badge/);
+});
+
+test('Admin membership tier labels and every customer card border inherit the actual tier color', () => {
+  const styles=readFileSync(new URL('../public/admin-customer-tiers.css',import.meta.url),'utf8');
+  const selectors=[
+    '.admin-customer-tier-row .admin-customer-detail',
+    '.admin-customer-tier-row .admin-membership-visible-bar',
+    '.admin-customer-tier-row .admin-membership-track'
+  ];
+  for(const selector of selectors) {
+    assert.ok(styles.includes(selector),selector+' must be styled per tier');
+  }
+  assert.match(styles,/border:2px solid var\(--tier-accent\)/);
+  assert.match(styles,/border:1px solid var\(--tier-accent\)!important/);
+  assert.match(styles,/\.admin-customer-tier-badge strong\s*\{[^}]*color:var\(--tier-accent\)/s);
+  assert.match(styles,/html\[data-admin-mobile-theme="light"\] body\.sng-admin-app #workspace \.admin-customer-tier-badge strong\s*\{\s*color:var\(--tier-accent\)/);
+  for(const count of ['1','2','3','5','10','20','50','100']){
+    assert.ok(styles.includes('.admin-customer-tier-row.admin-customer-tier-'+count),
+      'Tier '+count+' should have its own accent');
+  }
 });
