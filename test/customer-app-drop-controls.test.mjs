@@ -186,19 +186,19 @@ test('Admin customer tier palette matches the website pricing tier colors exactl
     assert.equal(appMatch[1].toLowerCase(),websiteMatch[1].toLowerCase(),
       count+' profiles should exactly use website tier '+siteTier+' color');
   }
-  assert.match(website,/\\.ultimate-crown\\s*\\{[^}]*color:\\s*#ffd76a/i);
-  assert.match(admin,/\\.admin-customer-tier-row\\.admin-customer-tier-100\\s*\\{[^}]*--tier-accent:\\s*#ffd76a/i);
-  assert.match(admin,/\\.admin-customer-tier-row\\.admin-customer-tier-100 \\.admin-customer-tier-badge strong\\s*\\{[^}]*linear-gradient\\(105deg,#fff7bf/i);
+  assert.match(website,/\.ultimate-crown\s*\{[^}]*color:\s*#ffd76a/i);
+  assert.match(admin,/\.admin-customer-tier-row\.admin-customer-tier-100\s*\{[^}]*--tier-accent:\s*#ffd76a/i);
+  assert.match(admin,/\.admin-customer-tier-row\.admin-customer-tier-100 \.admin-customer-tier-badge strong\s*\{[^}]*linear-gradient\(105deg,#fff7bf/i);
 });
 
 test('Only small membership tier badges contain tier-accent-colored lettering', () => {
   const admin=readFileSync(new URL('../public/admin-customer-tiers.css',import.meta.url),'utf8');
-  assert.match(admin,/\\.admin-customer-eyebrow\\s*\\{[^}]*color:var\\(--m-muted/);
-  assert.match(admin,/\\.admin-customer-tier-row \\.admin-customer-detail > summary\\s*\\{[^}]*color:var\\(--m-text/);
-  assert.match(admin,/\\.admin-customer-identity strong\\s*\\{[^}]*color:var\\(--m-text/);
-  assert.match(admin,/\\.admin-customer-tier-badge \\.admin-customer-tier-count\\s*\\{[^}]*color:var\\(--tier-accent\\)/);
-  assert.match(admin,/\\.admin-customer-tier-badge strong\\s*\\{[^}]*color:var\\(--tier-accent\\)/);
-  assert.match(admin,/\\.admin-customer-tier-row\\s*\\{[^}]*border:2px solid var\\(--tier-accent\\)/);
-  assert.match(admin,/\\.admin-customer-tier-badge\\s*\\{[^}]*border:2px solid var\\(--tier-accent\\)/);
-  assert.doesNotMatch(admin,/html\\[data-admin-mobile-theme="light"\\] body\\.sng-admin-app #workspace \\.admin-customer-tier-row\\.admin-customer-tier-5\\s*\\{\\s*--tier-accent/i);
+  assert.match(admin,/\.admin-customer-eyebrow\s*\{[^}]*color:var\(--m-muted/);
+  assert.match(admin,/\.admin-customer-tier-row \.admin-customer-detail > summary\s*\{[^}]*color:var\(--m-text/);
+  assert.match(admin,/\.admin-customer-identity strong\s*\{[^}]*color:var\(--m-text/);
+  assert.match(admin,/\.admin-customer-tier-badge \.admin-customer-tier-count\s*\{[^}]*color:var\(--tier-accent\)/);
+  assert.match(admin,/\.admin-customer-tier-badge strong\s*\{[^}]*color:var\(--tier-accent\)/);
+  assert.match(admin,/\.admin-customer-tier-row\s*\{[^}]*border:2px solid var\(--tier-accent\)/);
+  assert.match(admin,/\.admin-customer-tier-badge\s*\{[^}]*border:2px solid var\(--tier-accent\)/);
+  assert.doesNotMatch(admin,/html\[data-admin-mobile-theme="light"\] body\.sng-admin-app #workspace \.admin-customer-tier-row\.admin-customer-tier-5\s*\{\s*--tier-accent/i);
 });
