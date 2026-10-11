@@ -180,3 +180,32 @@ test("newly paid website accounts are not double-counted when snapshots overlap"
   assert.doesNotMatch(h.node("content").innerHTML, /New signups · no plan<\/small><strong>1<\/strong>/);
   assert.doesNotMatch(h.node("content").innerHTML, /Paid customers<\/small>/);
 });
+
+
+test("internal fake admin and kalebmatthews04 are excluded only from registered customer totals", async () => {
+  const h = createMobileHarness();
+  h.fixtures["/api/admin/free-submissions"] = [
+    { id: "internal-test", customerAccountId: "internal-test", accountOnly: true,
+      profile: { firstName: "Fake", lastName: "Admin", email: "testing@example.test" } },
+    { id: "owner-test", customerAccountId: "owner-test", accountOnly: true,
+      profile: { firstName: "Owner", email: "kalebmatthews04@example.test" } },
+    { id: "real-signup", customerAccountId: "real-signup", accountOnly: true,
+      profile: { firstName: "Jill", lastName: "Real", email: "jill.real@example.test" } }
+  ];
+  await h.settle();
+  const home = h.node("content").innerHTML;
+  assert.ok(home.includes("Registered customers</small><strong>2</strong>"),
+    "Home registration card should count only Amy and Jill");
+  assert.ok(home.includes("<small>CUSTOMERS</small><b>2</b>"),
+    "all-time customer figure should use the same count");
+  const click = h.node("tabs").listeners.get("click");
+  click({ target: { closest: () => ({ dataset: { tab: "customers" } }) } });
+  assert.ok(h.node("content").innerHTML.includes("2 registered customers · 1 without a paid membership"));
+  const rows = h.node("customer-results").innerHTML;
+  assert.match(rows, /Fake Admin/, "internal account stays available for Admin actions");
+  assert.match(rows, /kalebmatthews04@example.test/, "owner test account stays available for Admin actions");
+  assert.match(rows, /Jill Real/, "real customers remain visible");
+  click({ target: { closest: () => ({ dataset: { tab: "profiles" } }) } });
+  assert.ok(h.node("content").innerHTML.includes("Registered customers</small><strong>2</strong>"),
+    "Profiles card uses filtered registration count");
+});
