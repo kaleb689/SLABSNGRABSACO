@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
 
 const API = "https://discord.com/api/v10";
 let lapseChecklistRuntime = null;
@@ -585,7 +586,7 @@ export async function submitCustomerDropSkus(discordUserId, username, selection)
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -2165,6 +2166,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     return false;
   }
   const skuMenusFile = path.join(dataDir, "discord-sku-controls.json");
+  const skuAlertFile = path.join(dataDir, "discord-sku-alert-history.json");
+  let skuAlertQueue = Promise.resolve();
+  const withSkuAlertQueue = work => {
+    const queued = skuAlertQueue.then(work);
+    skuAlertQueue = queued.catch(() => {});
+    return queued;
+  };
   const skuSelectionsFile = path.join(dataDir, "discord-sku-selections.json");
   const skuDraftsFile = path.join(dataDir, "discord-sku-drafts.json");
   let skuQueue = Promise.resolve();
@@ -2329,6 +2337,70 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }));
     }
   }
+  async function notifyRetailerSkuChange(message) {
+    if (typeof onRetailerSkuUpdate !== "function" ||
+        !isRetailerSkuPost(message, guildId, retailerDropLabels)) return;
+    const products = parseDropSkus(message);
+    const fingerprint = dropSkuFingerprint(products);
+    if (!fingerprint) return;
+    return withSkuAlertQueue(async () => {
+      const state = await readSkuFile(skuAlertFile);
+      const prior = state[message.id];
+      // Gateway retries and edited_at changes with identical SKUs must not
+      // create duplicate notifications. A 1.5s edit debounce batches saves.
+      const decision = decideSkuAlert(prior, fingerprint, Date.now(), 0);
+      if (!decision.remember) return;
+      const retailer = retailerDropLabels[message.channel_id];
+      const notification = skuAlertPayload({
+        retailer, products, guildId, channelId: message.channel_id, messageId: message.id
+      });
+      const eventKey = "drop:" + message.channel_id + ":" + message.id + ":" + fingerprint;
+      const result = await onRetailerSkuUpdate({ notification, eventKey, messageId: message.id });
+      const notifiedAt = new Date().toISOString();
+      state[message.id] = { fingerprint, channelId: message.channel_id, notifiedAt };
+      const expiry = Date.now() - 30 * 86400_000;
+      for (const [id, row] of Object.entries(state)) {
+        if (Date.parse(row?.notifiedAt || "") < expiry) delete state[id];
+      }
+      await writeSkuFile(skuAlertFile, state);
+      const dmIds = [...new Set(Array.isArray(result?.dmUserIds) ? result.dmUserIds : [])];
+      for (const userId of dmIds) {
+        if (!/^\d{15,25}$/.test(String(userId))) continue;
+        try {
+          const channel = await api("/users/@me/channels", "POST", { recipient_id: String(userId) });
+          await api("/channels/" + channel.id + "/messages", "POST", {
+            allowed_mentions: { parse: [] },
+            embeds: [{
+              title: "📣 " + notification.title,
+              description: notification.message + "\n\n[View the retailer drop](" + notification.sourceUrl + ")",
+              color: 0x41b6e6
+            }],
+            components: [{ type: 1, components: [
+              { type: 2, style: 5, label: "Choose SKUs in app", url: "https://slabsngrabsaco.com/?appTab=drops#my-profile" },
+              { type: 2, style: 5, label: "View Discord drop", url: notification.sourceUrl }
+            ] }]
+          });
+        } catch (error) {
+          // Users may block server DMs. Their in-app notice is still saved.
+          console.error("Retailer SKU DM unavailable:", error.message);
+        }
+      }
+    });
+  }
+  const pendingDropEdits = new Map();
+  function scheduleEditedDropAlert(channelId, messageId) {
+    if (!retailerDropLabels[channelId] || !messageId) return;
+    const key = channelId + ":" + messageId;
+    clearTimeout(pendingDropEdits.get(key));
+    const timer = setTimeout(() => {
+      pendingDropEdits.delete(key);
+      void api("/channels/" + channelId + "/messages/" + messageId)
+        .then(notifyRetailerSkuChange)
+        .catch(error => console.error("Discord SKU update notification:", error.message));
+    }, 1500);
+    timer.unref?.();
+    pendingDropEdits.set(key, timer);
+  }
   async function onDropPost(d) {
     if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id ||
       d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0)) return;
@@ -2366,6 +2438,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
     }
     await ensureSkuControls(d);
+    await notifyRetailerSkuChange(d);
   }
   function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = []) {
     const summary = skuOwnerDetails(items);
@@ -3176,7 +3249,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           })().catch(error => console.error("Discord public message handling:", error.message));
           if (packet.t === "MESSAGE_UPDATE" && packet.d?.guild_id === guildId && dropChannelIds.has(packet.d.channel_id)) {
             void api(`/channels/${packet.d.channel_id}/messages/${packet.d.id}`)
-              .then(ensureSkuControls).catch(error => console.error("Discord edited drop controls:", error.message));
+              .then(async message => {
+                await ensureSkuControls(message);
+                scheduleEditedDropAlert(packet.d.channel_id, packet.d.id);
+              }).catch(error => console.error("Discord edited drop controls:", error.message));
           }
           if (["CHANNEL_CREATE", "CHANNEL_UPDATE", "CHANNEL_DELETE"].includes(packet.t) &&
             packet.d?.guild_id === guildId) { channelVisibility.clear(); scheduleIntroRefresh(); }

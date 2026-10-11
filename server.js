@@ -49084,6 +49084,31 @@ await initializeArrayFile(
           aiKey: String(process.env.OPENAI_API_KEY || "").trim(),
           geminiKey: String(process.env.GEMINI_API_KEY || "").trim(),
           onSuccessMessage: () => queueDiscordSuccessScan(50),
+          onRetailerSkuUpdate: async ({ notification, eventKey }) => {
+            // Only linked members whose paid plan presently permits profiles
+            // receive drop notices. Unlinked, expired and disabled accounts do
+            // not get pushes or DMs for retailer SKUs.
+            const [accounts, paid] = await Promise.all([
+              getCustomerAccounts(), readJson(PAID_FILE, [])
+            ]);
+            const eligible = new Set((Array.isArray(paid) ? paid : [])
+              .filter(record => subscriptionAllowsProfiles(record) &&
+                profileAllowanceForRecord(record) > 0)
+              .map(record => String(record.customerAccountId || "")));
+            const recipients = (Array.isArray(accounts) ? accounts : []).filter(account =>
+              !account.disabled && eligible.has(String(account.id)) &&
+              /^\d{15,25}$/.test(String(account.discordUserId || "")));
+            const delivery = await appOrderNotifications.notifyDropUpdate(
+              recipients.map(account => String(account.id)), notification, eventKey
+            );
+            if (delivery.pushAccountIds.length) {
+              void appOrderNotifications.tick()
+                .catch(error => console.error("Retailer SKU push:", error.message));
+            }
+            const dmAccounts = new Set(delivery.dmAccountIds);
+            return { dmUserIds: recipients.filter(account =>
+              dmAccounts.has(String(account.id))).map(account => String(account.discordUserId)) };
+          },
           onRtpLapsedProfiles: async ({ selections }) => {
             const parsed = (Array.isArray(selections) ? selections : []).map(value => {
               const [rawType, ...idParts] = String(value || "").split(":");

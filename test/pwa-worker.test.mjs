@@ -6,13 +6,14 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
 function worker(fetcher = async () => "live response") {
   const events = {};
-  const saved = [];
+  const saved = [], notifications = [];
   const cache = { add: async url => saved.push(url), match: async url => url === "/offline.html" ? "offline page" : undefined };
   const self = { location: { origin: "https://slabsngrabsaco.com" }, addEventListener: (key, fn) => events[key] = fn,
-    skipWaiting: async () => {}, clients: { claim: async () => {} } };
+    skipWaiting: async () => {}, clients: { claim: async () => {}, matchAll: async () => [], openWindow: async () => {} },
+    registration: { showNotification: async (title, options) => notifications.push({ title, ...options }) } };
   const caches = { open: async () => cache, keys: async () => [], delete: async () => {} };
   vm.runInNewContext(source, { self, caches, fetch: fetcher, URL, Response });
-  return { events, saved };
+  return { events, saved, self, notifications };
 }
 test("only the generic offline page is cached", async () => {
   const w = worker(); let promise;
@@ -40,4 +41,24 @@ test("disconnected navigation shows a generic reconnect page", async () => {
   const w = worker(async () => { throw new Error("offline"); }); let response;
   w.events.fetch({request:{method:"GET",mode:"navigate",url:"https://slabsngrabsaco.com/"},respondWith:value=>response=value});
   assert.equal(await response,"offline page");
+});
+
+
+test("drop SKU push alerts open the installed customer's Drops selection page", async () => {
+  const w = worker(); let completed;
+  w.events.push({
+    data: { json: () => ({ title: "Target drop SKUs updated", body: "Choose your SKUs", tab: "drops" }) },
+    waitUntil: promise => { completed = promise; }
+  });
+  await completed;
+  assert.equal(w.notifications.length, 1);
+  assert.equal(w.notifications[0].data.tab, "drops");
+  let destination = "";
+  w.self.clients.openWindow = async url => { destination = url; };
+  w.events.notificationclick({
+    notification: { data: { tab: "drops" }, close: () => {} },
+    waitUntil: promise => { completed = promise; }
+  });
+  await completed;
+  assert.equal(destination, "https://slabsngrabsaco.com/?appTab=drops#my-profile");
 });

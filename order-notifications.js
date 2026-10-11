@@ -69,10 +69,11 @@ export function validPushSubscription(value) {
   } catch { return false; }
 }
 
-export const notificationDefaults = { orders: true, shipping: true, messages: true, account: true };
+export const notificationDefaults = { orders: true, shipping: true, messages: true, account: true, drops: true };
 export function notificationCategory(event) {
   if (["order_confirmed", "order_cancelled", "order_review_hold"].includes(event.kind)) return "orders";
   if (event.kind === "shipping_update") return "shipping";
+  if (event.kind === "drop_skus_updated") return "drops";
   if (/admin_message|missing|action_needed|setup_complete/.test(event.kind || "")) return "messages";
   return "account";
 }
@@ -290,6 +291,57 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
   }
   return {
     initialize, reconcile, tick,
+    // Record an announcement for every eligible account. A subscribed device
+    // receives an app push; callers can DM members with no eligible push
+    // subscription. Persist event IDs so reconnects and restarts never replay.
+    notifyDropUpdate: (accountIds, notification, eventKey) => locked(async () => {
+      if (!String(eventKey || "").startsWith("drop:") || notification?.kind !== "drop_skus_updated") {
+        throw new Error("Invalid drop announcement");
+      }
+      state.dropAnnouncements ||= {};
+      state.inbox ||= {};
+      const pushAccountIds = [];
+      const dmAccountIds = [];
+      const now = new Date().toISOString();
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      for (const [key, timestamp] of Object.entries(state.dropAnnouncements)) {
+        if (!Number.isFinite(Date.parse(timestamp)) || Date.parse(timestamp) < cutoff) {
+          delete state.dropAnnouncements[key];
+        }
+      }
+      for (const accountId of new Set((Array.isArray(accountIds) ? accountIds : [])
+        .map(value => String(value || "").trim()).filter(Boolean))) {
+        const key = eventKey + ":" + accountId;
+        if (state.dropAnnouncements[key]) continue;
+        const event = {
+          ...notification, id: crypto.randomUUID(), createdAt: now, updatedAt: now
+        };
+        // Keep one actionable in-app notice and pending push per drop post.
+        // A meaningful edit replaces a still-queued previous SKU version.
+        state.outbox = state.outbox.filter(item =>
+          String(item.accountId) !== accountId ||
+          item.notification?.kind !== "drop_skus_updated" ||
+          item.notification?.sourceUrl !== notification.sourceUrl);
+        const inbox = state.inbox[accountId] ||= [];
+        state.inbox[accountId] = inbox.filter(item =>
+          item.kind !== "drop_skus_updated" || item.sourceUrl !== notification.sourceUrl);
+        const currentInbox = state.inbox[accountId];
+        currentInbox.push(event);
+        if (currentInbox.length > 200) currentInbox.splice(0, currentInbox.length - 200);
+        const prefs = { ...notificationDefaults, ...state.preferences[accountId] };
+        if (prefs.drops && (state.subscriptions[accountId] || []).length) {
+          // key=null means this is not an order and must not be subjected to
+          // confirmed-checkout validation by the order delivery loop.
+          enqueue(accountId, event);
+          pushAccountIds.push(accountId);
+        } else if (prefs.drops) {
+          dmAccountIds.push(accountId);
+        }
+        state.dropAnnouncements[key] = now;
+      }
+      await save();
+      return { pushAccountIds, dmAccountIds };
+    }),
     // The isolated demo uses the same subscriptions and category preferences,
     // without inserting fake records into the production order event queue.
     sendDemoNotification: (accountId, notification) => locked(async () => {

@@ -253,3 +253,53 @@ test('changing an old green order to an orange review hold removes its stale con
   await f.service.tick();
   assert.equal(f.sent.length,1);
 });
+
+
+test('retailer SKU announcements use app push first and Discord fallback without duplicates', async t => {
+  const f = await fixture(t);
+  await f.service.subscribe('a', subscription);
+  const event = {
+    kind: 'drop_skus_updated', title: 'Target drop SKUs updated',
+    message: '2 SKUs available. Choose your products.', tab: 'drops'
+  };
+  const first = await f.service.notifyDropUpdate(['a', 'b', 'a'], event, 'drop:target:post:version-a');
+  assert.deepEqual(first.pushAccountIds, ['a']);
+  assert.deepEqual(first.dmAccountIds, ['b']);
+  assert.equal((await f.service.list('a')).length, 1);
+  assert.equal((await f.service.list('b')).length, 1);
+  await f.service.tick();
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].tab, 'drops');
+  assert.equal(f.sent[0].title, event.title);
+
+  // A duplicate gateway message or Render restart cannot notify twice.
+  assert.deepEqual(await f.service.notifyDropUpdate(['a', 'b'], event, 'drop:target:post:version-a'),
+    { pushAccountIds: [], dmAccountIds: [] });
+  f.service = createOrderNotifications(f.options);
+  await f.service.initialize();
+  assert.deepEqual(await f.service.notifyDropUpdate(['a', 'b'], event, 'drop:target:post:version-a'),
+    { pushAccountIds: [], dmAccountIds: [] });
+  await f.service.tick();
+  assert.equal(f.sent.length, 1);
+
+  // An edited SKU list is a new event, so a new alert is appropriate.
+  const next = await f.service.notifyDropUpdate(['a', 'b'], event, 'drop:target:post:version-b');
+  assert.deepEqual(next.pushAccountIds, ['a']);
+  assert.deepEqual(next.dmAccountIds, ['b']);
+  await f.service.tick();
+  assert.equal(f.sent.length, 2);
+});
+
+test('drop notification preferences silence both push and DM fallback', async t => {
+  const f = await fixture(t);
+  await f.service.subscribe('a', subscription);
+  await f.service.setPreferences('a', { drops: false });
+  await f.service.setPreferences('b', { drops: false });
+  const notice = { kind: 'drop_skus_updated', title: 'PKC SKUs updated', message: 'Choose SKUs', tab: 'drops' };
+  const result = await f.service.notifyDropUpdate(['a', 'b'], notice, 'drop:pkc:post:v1');
+  assert.deepEqual(result, { pushAccountIds: [], dmAccountIds: [] });
+  await f.service.tick();
+  assert.equal(f.sent.length, 0);
+  assert.equal((await f.service.list('a')).length, 1);
+  await assert.rejects(f.service.notifyDropUpdate(['a'], notice, 'account:invalid'), /Invalid/);
+});
