@@ -209,3 +209,51 @@ test("internal fake admin and kalebmatthews04 are excluded only from registered 
   assert.ok(h.node("content").innerHTML.includes("Registered customers</small><strong>2</strong>"),
     "Profiles card uses filtered registration count");
 });
+
+test("Admin Customers always renders cards with irregular Stripe membership data",async()=>{
+  const h=createMobileHarness();
+  h.fixtures["/api/admin/membership-revenue"]={
+    memberships:{unexpected:"shape"},monthlyRecurringCents:null
+  };
+  h.fixtures["/api/admin/submissions"]={submissions:[
+    {id:"paid1",customerAccountId:"customer1",stripeSubscriptionId:"sub_one",
+      profile:{firstName:"Alice",lastName:"Real",email:"alice@example.test"},
+      plan:{name:"10 ACO",profiles:10,status:"active"}}
+  ]};
+  await h.settle();
+  h.node("tabs").listeners.get("click")({
+    target:{closest:()=>({dataset:{tab:"customers"}})}
+  });
+  assert.match(h.node("customer-results").innerHTML,/Alice Real/);
+  assert.match(h.node("customer-results").innerHTML,/VIEW CUSTOMER PAGE/);
+  assert.match(h.node("customer-results").innerHTML,/Stripe billing information unavailable/);
+});
+test("registered counts deduplicate signup and paid records while excluding both internal profiles",async()=>{
+  const h=createMobileHarness();
+  h.fixtures["/api/admin/submissions"]={submissions:[
+    {id:"order1",customerAccountId:"user1",profile:{firstName:"Amy",email:"amy@example.test"}},
+    {id:"order2",customerAccountId:"user2",profile:{firstName:"Bri",email:"bri@example.test"}},
+    {id:"order3",customerAccountId:"user3",profile:{firstName:"Cam",email:"cam@example.test"}},
+    {id:"order4",customerAccountId:"user4",profile:{firstName:"Dan",email:"dan@example.test"}},
+    {id:"order5",customerAccountId:"not-test-id",profile:{firstName:"Fake",lastName:"Admin Profile",email:"ops@example.test"}},
+    {id:"order6",customerAccountId:"owner-test-id",profile:{firstName:"Kaleb",lastName:"Matthews",username:"kalebmatthews04",email:"site-owner@example.test"}}
+  ]};
+  h.fixtures["/api/admin/free-submissions"]=[
+    {id:"temporary-signup-id",customerAccountId:"old-user1-id",accountOnly:true,
+      profile:{firstName:"Amy",email:"amy@example.test"}}
+  ];
+  await h.settle();
+  assert.match(h.node("content").innerHTML,/Registered customers<\/small><strong>4<\/strong>/);
+  assert.match(h.node("content").innerHTML,/<small>CUSTOMERS<\/small><b>4<\/b>/);
+  h.node("tabs").listeners.get("click")({
+    target:{closest:()=>({dataset:{tab:"customers"}})}
+  });
+  assert.match(h.node("content").innerHTML,/4 registered customers/);
+  assert.match(h.node("customer-results").innerHTML,/Fake Admin Profile/);
+  assert.match(h.node("customer-results").innerHTML,/Kaleb Matthews/);
+  assert.match(h.node("customer-results").innerHTML,/Alice Real|Amy/);
+  h.node("tabs").listeners.get("click")({
+    target:{closest:()=>({dataset:{tab:"profiles"}})}
+  });
+  assert.match(h.node("content").innerHTML,/Registered customers<\/small><strong>4<\/strong>/);
+});
