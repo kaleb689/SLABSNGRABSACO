@@ -128,7 +128,7 @@ test('Membership is centered, and the Admin app shows right-side tier badges', (
   assert.match(admin,/class="admin-customer-tier-badge"/);
   assert.match(admin,/admin-customer-tier-10|tier-' \+ tierLevel/);
   assert.match(page,/href="\/app-drop-controls\.css\?v=20261010-approved-v4"/);
-  assert.match(adminPage,/href="\/admin-customer-tiers\.css\?v=20261011-website-palette-v3"/);
+  assert.match(adminPage,/href="\/admin-customer-tiers\.css\?v=20261011-white-card-text-v4"/);
 });
 
 
@@ -191,7 +191,7 @@ test('Admin customer tier palette matches the website pricing tier colors exactl
   assert.match(admin,/\.admin-customer-tier-row\.admin-customer-tier-100 \.admin-customer-tier-badge strong\s*\{[^}]*linear-gradient\(105deg,#fff7bf/i);
 });
 
-test('Only small membership tier badges contain tier-accent-colored lettering', () => {
+test('The tier name remains colored while other customer text is white', () => {
   const admin=readFileSync(new URL('../public/admin-customer-tiers.css',import.meta.url),'utf8');
   assert.match(admin,/\.admin-customer-eyebrow\s*\{[^}]*color:var\(--m-muted/);
   assert.match(admin,/\.admin-customer-tier-row \.admin-customer-detail > summary\s*\{[^}]*color:var\(--m-text/);
@@ -201,4 +201,33 @@ test('Only small membership tier badges contain tier-accent-colored lettering', 
   assert.match(admin,/\.admin-customer-tier-row\s*\{[^}]*border:2px solid var\(--tier-accent\)/);
   assert.match(admin,/\.admin-customer-tier-badge\s*\{[^}]*border:2px solid var\(--tier-accent\)/);
   assert.doesNotMatch(admin,/html\[data-admin-mobile-theme="light"\] body\.sng-admin-app #workspace \.admin-customer-tier-row\.admin-customer-tier-5\s*\{\s*--tier-accent/i);
+});
+
+test('Customer card text is white except the actual membership tier name', () => {
+  const css=readFileSync(new URL('../public/admin-customer-tiers.css',import.meta.url),'utf8');
+  const section=css.slice(css.indexOf('Admin Customers typography: all labels'));
+  assert.ok(section.includes('Admin Customers typography: all labels'),'final white typography override must be present');
+  const override=section.match(/body\.sng-admin-app #workspace \.admin-customer-tier-row :is\(([\s\S]*?)\)\s*\{\s*color:#fff!important;\s*\}/);
+  assert.ok(override,'Admin customer cards should contain a scoped white typography override');
+  const selectors=override[1];
+  for(const selector of [
+    '.admin-customer-eyebrow',
+    '.admin-customer-identity strong',
+    '.admin-customer-identity small',
+    '.admin-customer-status',
+    '.admin-customer-tier-badge small',
+    '.admin-customer-tier-count',
+    '.admin-customer-renewal',
+    '.admin-customer-detail > summary',
+    '.admin-customer-detail-body',
+    '.admin-period-unavailable',
+    '.admin-billing-gifted',
+    '.admin-billing-note',
+    '.admin-customer-tip'
+  ]) {
+    assert.ok(selectors.includes(selector),selector+' should display white text');
+  }
+  assert.doesNotMatch(selectors,/\.admin-customer-tier-badge strong/,'actual tier name must not be forced white');
+  assert.match(css,/\.admin-customer-tier-badge strong\s*\{[^}]*color:var\(--tier-accent\)/);
+  assert.match(css,/html\[data-admin-mobile-theme="light"\] body\.sng-admin-app #workspace \.admin-customer-tier-row \{\s*background:linear-gradient\(112deg,var\(--tier-soft\) 0%,#171826 75%\)/);
 });
