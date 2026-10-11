@@ -182,7 +182,7 @@ test("newly paid website accounts are not double-counted when snapshots overlap"
 });
 
 
-test("internal fake admin and kalebmatthews04 are excluded only from registered customer totals", async () => {
+test("internal fake admin and kalebmatthews04 are excluded from customer counts and directory", async () => {
   const h = createMobileHarness();
   h.fixtures["/api/admin/free-submissions"] = [
     { id: "internal-test", customerAccountId: "internal-test", accountOnly: true,
@@ -202,8 +202,8 @@ test("internal fake admin and kalebmatthews04 are excluded only from registered 
   click({ target: { closest: () => ({ dataset: { tab: "customers" } }) } });
   assert.ok(h.node("content").innerHTML.includes("2 registered customers · 1 without a paid membership"));
   const rows = h.node("customer-results").innerHTML;
-  assert.match(rows, /Fake Admin/, "internal account stays available for Admin actions");
-  assert.match(rows, /kalebmatthews04@example.test/, "owner test account stays available for Admin actions");
+  assert.doesNotMatch(rows, /Fake Admin/, "internal account stays out of the customer directory");
+  assert.doesNotMatch(rows, /kalebmatthews04@example.test/, "owner test account stays out of the customer directory");
   assert.match(rows, /Jill Real/, "real customers remain visible");
   click({ target: { closest: () => ({ dataset: { tab: "profiles" } }) } });
   assert.ok(h.node("content").innerHTML.includes("Registered customers</small><strong>2</strong>"),
@@ -226,7 +226,7 @@ test("Admin Customers always renders cards with irregular Stripe membership data
   });
   assert.match(h.node("customer-results").innerHTML,/Alice Real/);
   assert.match(h.node("customer-results").innerHTML,/VIEW CUSTOMER PAGE/);
-  assert.match(h.node("customer-results").innerHTML,/Stripe billing information unavailable/);
+  assert.match(h.node("customer-results").innerHTML,/Stripe billing details unavailable/);
 });
 test("registered counts deduplicate signup and paid records while excluding both internal profiles",async()=>{
   const h=createMobileHarness();
@@ -249,11 +249,67 @@ test("registered counts deduplicate signup and paid records while excluding both
     target:{closest:()=>({dataset:{tab:"customers"}})}
   });
   assert.match(h.node("content").innerHTML,/4 registered customers/);
-  assert.match(h.node("customer-results").innerHTML,/Fake Admin Profile/);
-  assert.match(h.node("customer-results").innerHTML,/Kaleb Matthews/);
+  assert.doesNotMatch(h.node("customer-results").innerHTML,/Fake Admin Profile/);
+  assert.doesNotMatch(h.node("customer-results").innerHTML,/Kaleb Matthews/);
   assert.match(h.node("customer-results").innerHTML,/Alice Real|Amy/);
   h.node("tabs").listeners.get("click")({
     target:{closest:()=>({dataset:{tab:"profiles"}})}
   });
   assert.match(h.node("content").innerHTML,/Registered customers<\/small><strong>4<\/strong>/);
+});
+
+test("Paid membership cards retain tier color, payment breakdown, expiration bar and controls",async()=>{
+  const h=createMobileHarness();
+  const expires=new Date(Date.now()+14*86400000).toISOString();
+  h.fixtures["/api/admin/submissions"]={submissions:[
+    {id:"paid20",customerAccountId:"member20",stripeSubscriptionId:"sub_20",
+      profile:{firstName:"Member",lastName:"Twenty",email:"twenty@example.test"},
+      plan:{tier:6,profiles:20,name:"20 ACO",status:"active"},currentPeriodEnd:expires},
+    {id:"paid2",customerAccountId:"member2",stripeSubscriptionId:"sub_2",
+      profile:{firstName:"Member",lastName:"Two",email:"two@example.test"},
+      plan:{tier:2,status:"active"},currentPeriodEnd:expires}
+  ]};
+  h.fixtures["/api/admin/membership-revenue"]={memberships:[
+    {subscriptionId:"sub_20",currentAmountCents:4500,lastPaidCents:3000,
+      nextInvoiceCents:4500,regularAmountCents:5000,nextBillingAt:expires,
+      lastPaidAt:"2026-10-01T13:30:00Z",lastPaymentKind:"subscription_update"},
+    {subscriptionId:"sub_2",currentAmountCents:2500,lastPaidCents:2500,
+      nextInvoiceCents:2500,regularAmountCents:2500,nextBillingAt:expires}
+  ]};
+  await h.settle();
+  h.node("tabs").listeners.get("click")({target:{closest:()=>({dataset:{tab:"customers"}})}});
+  const rows=h.node("customer-results").innerHTML;
+  assert.match(rows,/Member Twenty/);
+  assert.match(rows,/Member Two/);
+  assert.match(rows,/admin-customer-tier-20/);
+  assert.match(rows,/admin-customer-tier-2/);
+  assert.match(rows,/admin-customer-tier-badge/);
+  assert.match(rows,/Membership time remaining/);
+  assert.match(rows,/Membership days remaining/);
+  assert.match(rows,/Last paid:/);
+  assert.ok(rows.includes("$30.00"));
+  assert.match(rows,/Current monthly charge:/);
+  assert.ok(rows.includes("$45.00"));
+  assert.match(rows,/Next scheduled renewal:/);
+  assert.match(rows,/Regular tier rate:/);
+  assert.ok(rows.includes("upgrade/proration"));
+  assert.match(rows,/Send Notification/);
+  assert.match(rows,/Customer details &amp; actions/);
+  assert.doesNotMatch(rows,/Membership details are temporarily unavailable/);
+  assert.doesNotMatch(rows,/Unable to display membership details/);
+});
+test("Internal test customers are omitted from list without deleting their backing records",async()=>{
+  const h=createMobileHarness();
+  h.fixtures["/api/admin/free-submissions"]=[
+    {id:"owner",customerAccountId:"alias-owner",accountOnly:true,profile:{email:"kalebmatthews04@gmail.com"}},
+    {id:"fake",customerAccountId:"fake-123",accountOnly:true,profile:{firstName:"Fake",lastName:"Admin"}},
+    {id:"real",customerAccountId:"new-real",accountOnly:true,profile:{firstName:"Real",email:"registered@example.test"}}
+  ];
+  await h.settle();
+  h.node("tabs").listeners.get("click")({target:{closest:()=>({dataset:{tab:"customers"}})}});
+  const rows=h.node("customer-results").innerHTML;
+  assert.match(rows,/registered@example.test/);
+  assert.doesNotMatch(rows,/kalebmatthews04/i);
+  assert.doesNotMatch(rows,/Fake Admin/);
+  assert.match(h.node("content").innerHTML,/2 registered customers/);
 });
