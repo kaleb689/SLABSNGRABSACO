@@ -287,12 +287,12 @@ test("Paid membership cards retain tier color, payment breakdown, expiration bar
   assert.match(rows,/Membership time remaining/);
   assert.match(rows,/Membership days remaining/);
   assert.match(rows,/Last paid:/);
-  assert.match(rows,/\\$30\\.00/);
+  assert.ok(rows.includes("$30.00"));
   assert.match(rows,/Current monthly charge:/);
-  assert.match(rows,/\\$45\\.00/);
+  assert.ok(rows.includes("$45.00"));
   assert.match(rows,/Next scheduled renewal:/);
   assert.match(rows,/Regular tier rate:/);
-  assert.match(rows,/upgrade\\/proration/);
+  assert.ok(rows.includes("upgrade/proration"));
   assert.match(rows,/Send Notification/);
   assert.match(rows,/Customer details &amp; actions/);
   assert.doesNotMatch(rows,/Membership details are temporarily unavailable/);
