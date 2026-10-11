@@ -90,24 +90,43 @@ function metric(label,value){return '<div class="metric"><small>'+esc(label)+'</
 function panel(title,body){return '<section class="panel"><h2>'+esc(title)+'</h2>'+body+'</section>';}
 function collapsiblePanel(title,body){return '<details class="panel admin-overview-disclosure"><summary>'+esc(title)+'</summary><div class="admin-overview-disclosure-content">'+body+'</div></details>';}
 function customerName(x){const p=x.profile||{};return [p.firstName,p.lastName].filter(Boolean).join(" ")||p.profileName||p.email||"Customer";}
+function customerMoney(cents){
+  return cents==null||!Number.isFinite(Number(cents))?"Unavailable":
+    new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(cents)/100);
+}
+function customerBilling(person){
+  const subscriptionId=String(person?.stripeSubscriptionId||person?.subscriptionId||person?.plan?.stripeSubscriptionId||person?.membership?.stripeSubscriptionId||"");
+  const records=data.billing?.memberships;
+  return subscriptionId&&Array.isArray(records)?records.find(record=>record&&String(record.subscriptionId)===subscriptionId)||null:null;
+}
+function customerDate(value){
+  if(typeof value==="number"&&Number.isFinite(value))return value<100000000000?value*1000:value;
+  const timestamp=Date.parse(String(value||""));
+  return Number.isFinite(timestamp)?timestamp:null;
+}
 function customerTier(person) {
   const plan=person?.plan || person?.membership || {};
   const raw=String(plan.name || person?.planName || person?.membershipName || '').trim();
   const assigned=Number(plan.profiles ?? plan.profileCount ?? plan.accounts ?? person?.paidProfileCount ?? person?.profileAllowance ?? 0);
-  const named=/(^|[^0-9])(10|20|50)(?![0-9])/.exec(raw);
+  const named=/(^|[^0-9])(100|50|20|10|5|3|2|1)(?![0-9])/.exec(raw);
   const planTier=Number(plan.tier ?? person?.tier ?? 0);
-  const allowedByTier=({5:10,6:20,7:50})[planTier] || 0;
+  const allowedByTier=({1:1,2:2,3:3,4:5,5:10,6:20,7:50,8:100})[planTier] || 0;
   const count=assigned > 0 ? assigned : Number(named?.[2]) || allowedByTier || Number(person?.tierProfileCount||0);
-  const tierLevel=count>=50?50:count>=20?20:count>=10?10:0;
+  const tierLevel=count>=100?100:count>=50?50:count>=20?20:count>=10?10:count>=5?5:count>=3?3:count>=2?2:count>=1?1:0;
   const unpaid=person?.accountOnly===true;
   const label=unpaid ? 'No paid membership' : (raw || (count ? count + ' profiles' : 'Membership'));
-  const expires=plan.currentPeriodEnd || plan.subscriptionEndDate || plan.periodEnd || person?.currentPeriodEnd || person?.subscriptionEndDate || person?.periodEnd || null;
-  const endTimestamp=expires ? Date.parse(expires) : NaN;
-  const daysRemaining=Number.isFinite(endTimestamp) ? Math.max(0,Math.ceil((endTimestamp-Date.now()) / 86400000)) : null;
+  const billing=customerBilling(person);
+  const expires=plan.currentPeriodEnd || plan.subscriptionEndDate || plan.periodEnd || person?.currentPeriodEnd || person?.subscriptionEndDate || person?.periodEnd || billing?.nextBillingAt || billing?.giftedUntil || null;
+  const endTimestamp=customerDate(expires);
+  const daysRemaining=endTimestamp!==null ? Math.max(0,Math.ceil((endTimestamp-Date.now()) / 86400000)) : null;
+  const startTimestamp=customerDate(plan.currentPeriodStart||person?.currentPeriodStart||person?.subscriptionStartDate||null);
+  const cycleLength=startTimestamp!==null&&endTimestamp!==null&&endTimestamp>startTimestamp
+    ? Math.max(1,Math.ceil((endTimestamp-startTimestamp)/86400000)):Math.max(30,daysRemaining??30);
+  const remainingPercent=daysRemaining===null?null:Math.max(0,Math.min(100,Math.round(100*daysRemaining/cycleLength)));
   const status=unpaid ? 'Awaiting membership' : String(plan.status || person?.membershipStatus || '');
   return {
     color:unpaid ? 'free' : (tierLevel ? 'tier-' + tierLevel : 'standard'),
-    label, count:unpaid ? 0 : count, status, daysRemaining
+    label, count:unpaid ? 0 : count, status, daysRemaining, remainingPercent
   };
 }
 function customers(){
@@ -620,7 +639,7 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
     try{
     customerSearchText=$("customer-search")?.value||"";
     const q=customerSearchText.toLowerCase();
-    output.innerHTML=list.filter(x=>
+    output.innerHTML=registeredCustomerList.filter(x=>
       (customerName(x)+" "+(x.profile?.email||"")).toLowerCase().includes(q))
       .slice(0,150).map(x=>{
         try{
@@ -639,16 +658,13 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
           '<strong>'+esc(tier.label)+'</strong>'+
           (renewal ? '<span class="admin-customer-renewal">'+esc(renewal)+'</span>' : '')+'</div></div>'+
           (tier.daysRemaining==null?'<p class="admin-period-unavailable">Membership renewal date unavailable</p>':
-            '<div class="admin-membership-visible-bar" role="progressbar" aria-label="Membership time remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="'+Math.min(30,tier.daysRemaining)+'"><span style="width:'+Math.min(100,Math.round(tier.daysRemaining/30*100))+'%;background:'+(tier.daysRemaining<=5?'#ef4444':tier.daysRemaining<=10?'#eab308':'#25c977')+'"></span></div>')+
+            '<div class="admin-membership-visible-bar" role="progressbar" aria-label="Membership time remaining" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+tier.remainingPercent+'"><span style="width:'+tier.remainingPercent+'%;background:'+(tier.daysRemaining<=5?'#ef4444':tier.daysRemaining<=10?'#eab308':'var(--tier-accent,#25c977)')+'"></span></div>')+
           '<details class="admin-customer-detail"><summary>Customer details &amp; actions</summary>'+
             '<div class="admin-customer-detail-body"><p><b>Membership:</b> '+esc(tier.label)+'</p>'+
             (()=>{
-              const subId=String(x.stripeSubscriptionId||x.subscriptionId||x.plan?.stripeSubscriptionId||"");
-              const memberships=Array.isArray(data.billing?.memberships)?data.billing.memberships:[];
-              const billing=memberships.find(item=>item&&item.subscriptionId===subId);
-              if(!subId)return '<p class="admin-billing-note">No linked Stripe subscription.</p>';
-              if(!billing)return '<p class="admin-billing-note">Stripe billing information unavailable.</p>';
-              const money=v=>v==null?"Unavailable":dollars(v/100);
+              const billing=customerBilling(x);
+              if(!billing)return '<p class="admin-billing-note">Stripe billing details unavailable for this membership.</p>';
+              const money=customerMoney;
               return '<div class="admin-customer-billing"><p><b>Last paid:</b> '+esc(money(billing.lastPaidCents))+
                 (billing.lastPaidAt?' · '+esc(new Date(billing.lastPaidAt).toLocaleDateString()):'')+
                 (billing.lastPaymentKind==="subscription_update"?' (upgrade/proration)':'')+'</p>'+
@@ -660,23 +676,28 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
                 '</div>';
             })()+
             (tier.daysRemaining==null ? '<p>Membership period end is not available.</p>' :
-              '<p><b>'+esc(renewal)+'</b></p><div class="admin-membership-track" role="progressbar" aria-label="Membership days remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="'+Math.min(30,tier.daysRemaining)+'"><span style="width:'+Math.min(100,Math.round(tier.daysRemaining/30*100))+'%;background:'+(tier.daysRemaining<=5?'#ef4444':tier.daysRemaining<=10?'#eab308':'#25c977')+'"></span></div>')+
+              '<p><b>'+esc(renewal)+'</b></p><div class="admin-membership-track" role="progressbar" aria-label="Membership days remaining" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+tier.remainingPercent+'"><span style="width:'+tier.remainingPercent+'%;background:'+(tier.daysRemaining<=5?'#ef4444':tier.daysRemaining<=10?'#eab308':'var(--tier-accent,#25c977)')+'"></span></div>')+
             '<details class="admin-inline-notifications"><summary>Send Notification</summary><label>Notification type<select data-notice-type><option value="missing">Missing account setup information</option><option value="card">Missing payment card</option><option value="shipping">Missing shipping address</option><option value="retailer">Missing optional retailer information</option><option value="custom">Custom message</option></select></label><label>Customer message<textarea data-notice-message rows="3" placeholder="Optional details, required for custom messages"></textarea></label><button type="button" data-send-notice="'+esc(x.id)+'">SEND NOTIFICATION</button><p data-notice-result role="status"></p></details>'+
             '<p class="admin-customer-tip">Use the full Admin customer page for missing card, shipping, retailer info, and custom notifications.</p></div></details>'+
           '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE <span aria-hidden="true">↗</span></button></article>';
         }catch(error){
           console.error("Admin customer membership card could not be rendered",error);
-          return '<article class="item admin-customer-tier-row"><strong>'+esc(customerName(x))+'</strong>'+
-            '<small>'+esc(x.profile?.email||x.email||"")+'</small>'+
-            '<p>Membership details are temporarily unavailable.</p>'+
-            '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>';
+          return '<article class="item admin-customer-tier-row admin-customer-standard">'+
+            '<div class="admin-customer-topline"><div class="admin-customer-identity">'+
+            '<small class="admin-customer-eyebrow">CUSTOMER ACCOUNT</small>'+
+            '<strong>'+esc(customerName(x))+'</strong>'+
+            '<small class="admin-customer-email">'+esc(x.profile?.email||x.email||"")+'</small></div>'+
+            '<div class="admin-customer-tier-badge"><small>MEMBERSHIP TIER</small>'+
+            '<strong>Details unavailable</strong></div></div>'+
+            '<p class="admin-period-unavailable">Unable to display membership details.</p>'+
+            '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE <span aria-hidden="true">↗</span></button></article>';
         }
       }).join("")||
       "<p>No matching customers.</p>";
     }catch(error){
       // Never leave an empty results area when a customer record is malformed.
       console.error("Admin customer directory could not be rendered",error);
-      output.innerHTML=list.slice(0,150).map(x=>
+      output.innerHTML=registeredCustomerList.slice(0,150).map(x=>
         '<article class="item"><strong>'+esc(customerName(x))+'</strong>'+
         '<small>'+esc(x.profile?.email||x.email||"")+'</small>'+
         '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>'
