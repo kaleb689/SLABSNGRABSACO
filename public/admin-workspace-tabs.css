@@ -48,3 +48,7 @@
  #dashboard .admin-workspace-tab{flex:1 1 40%;font-size:12px;padding:10px 8px}
  #dashboard .admin-head-actions #adminNotificationList{right:-74px}
 }
+
+/* Search is the single available-account list; keep only the add-new form below it. */
+#dashboard[data-admin-page="available"] #rows .available-retailer-columns{display:none!important}
+#dashboard[data-admin-page="available"] #rows>.order-section:first-child{margin-top:0}
