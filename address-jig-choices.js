@@ -93,3 +93,31 @@ export function eligibleJigSelections(original,ids=[]){
  for(const id of active){const a=apply(base,id);if(!a)continue;const key=JSON.stringify(Object.values(a).map(v=>v.toUpperCase()));if(seen.has(key))continue;seen.add(key);out.push({id,address:a,experimental:ADDRESS_JIG_OPTIONS.find(x=>x.id===id).risk==="experimental"});}
  return out;
 }
+
+
+/*
+ * Rotate individually selected formats across main addresses. Each address
+ * still receives at most four alternatives; untouched originals are not
+ * included in this list.
+ */
+export function rotatedJigSelections(original, selectedIds=[], mainAddressIndex=0, limit=4) {
+  const candidates=eligibleJigSelections(original,selectedIds);
+  if(!candidates.length)return [];
+  const categoryById=new Map(ADDRESS_JIG_OPTIONS.map(option=>[option.id,option.group]));
+  const grouped=new Map();
+  for(const candidate of candidates){
+    const category=categoryById.get(candidate.id)||"Other";
+    if(!grouped.has(category))grouped.set(category,[]);
+    grouped.get(category).push(candidate);
+  }
+  const columns=[...grouped.values()];
+  const interleaved=[];
+  for(let index=0;columns.some(group=>index<group.length);index++){
+    for(const group of columns)if(index<group.length)interleaved.push(group[index]);
+  }
+  const position=Math.max(0,Math.floor(Number(mainAddressIndex)||0));
+  const shift=(position*4)%interleaved.length;
+  const rotated=[...interleaved.slice(shift),...interleaved.slice(0,shift)];
+  const count=Math.max(0,Math.floor(Number(limit)||0));
+  return rotated.slice(0,count);
+}
