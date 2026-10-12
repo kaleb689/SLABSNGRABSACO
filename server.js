@@ -42,7 +42,7 @@ import { startCheckoutDmSummaryScheduler } from "./checkout-dm-summary.js";
 import { startMembershipLapseNotificationScheduler } from "./membership-lapse-notifications.js";
 import { membershipDiscountOptions, activeSitewideDiscount } from "./checkout-discounts.js";
 import { safeAddressVariants, safeAddressVariantKey, defaultJigVariants } from "./address-jigs.js";
-import { ADDRESS_JIG_OPTIONS, eligibleJigSelections } from "./address-jig-choices.js";
+import { ADDRESS_JIG_OPTIONS, eligibleJigSelections, rotatedJigSelections } from "./address-jig-choices.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -27428,7 +27428,7 @@ app.post(
         addresses
       ) {
         const variants = customJigOptions
-          ? eligibleJigSelections(source, customJigOptions).slice(0, 4)
+          ? rotatedJigSelections(source, customJigOptions, addresses.indexOf(source), 4)
               .map(item => ({...item.address, jigOptionId:item.id}))
           : (source.savedVariants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id }));
 

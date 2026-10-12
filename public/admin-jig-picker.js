@@ -58,6 +58,8 @@
     confirm.addEventListener("click",async()=>{
       const selected=checkboxes().filter(x=>x.checked).map(x=>x.value);
       if(!selected.length){status.textContent="Select at least one jig format.";return;}
+      // Remember toolbar selections too, not only individually clicked boxes.
+      try {localStorage.setItem("adminJigCheckboxSelection",JSON.stringify(selected));} catch {}
       confirm.disabled=true;cancel.disabled=true;
       status.textContent="Applying your selected address rules...";
       try {

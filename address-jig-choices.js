@@ -17,10 +17,9 @@ const standard=[
  ["zip.five","ZIP formatting","Use five-digit ZIP instead of ZIP+4"],
  ["zip.four","ZIP formatting","Keep verified ZIP+4 on this address"]
 ];
+// Experimental address formats are opt-in, not USPS-verified, and may not deliver.
+// Misspellings and double-letter jigs were explicitly removed from this set.
 const experimental=[
- ...["NORTHWAST","NORTHWST","NORTWEST","SOUTHWAST","SOUTWEST"].map(x=>["direction.typo."+x.toLowerCase(),"Directional misspellings",x]),
- ...["LAEN","LAYN","LAYNE","LLANE","AVNUE","AVENU","BOULVARD","BOULIVARD"].map(x=>["street.typo."+x.toLowerCase(),"Street misspellings",x]),
- ...["BROWARDD","CENNTER","SABALL","PALMM"].map(x=>["double."+x.toLowerCase(),"Double letters",x]),
  ["house.fraction","Fractional house number","Add 1/2 after house number"],
  ["unit.building","Multiple unit designators","BLDG with existing unit"],
  ["street.compressed","Compressed street names","Join street and suffix words"],
@@ -68,15 +67,7 @@ function apply(base,id){
  else if(id==="city.pompano"&&a.zip.startsWith("33064")){const c=a.city.toUpperCase();a.city=c==="POMPANO BEACH"?"LIGHTHOUSE POINT":c==="LIGHTHOUSE POINT"?"POMPANO BEACH":a.city;}
  else if(id==="zip.five"&&/^\d{5}-\d{4}$/.test(a.zip)){a.zip=a.zip.slice(0,5);}
  else if(id==="zip.four"){return null; /* Never fabricate ZIP+4; retain verified source as-is. */}
- else if(id.startsWith("direction.typo.")){
-   const to=id.split(".")[2].toUpperCase(),south=to.startsWith("S"),full=south?"SOUTHWEST":"NORTHWEST",short=south?"SW":"NW";
-   a.address=street.replace(/^(\d+[A-Z0-9/-]*\s+)([A-Z]+)(\s+.*)$/,(_,h,dir,tail)=>dir===full||dir===short?h+to+tail:street);
- }else if(id.startsWith("street.typo.")){
-   const to=id.split(".")[2].toUpperCase(),map={LAEN:"LANE",LAYN:"LANE",LAYNE:"LANE",LLANE:"LANE",AVNUE:"AVENUE",AVENU:"AVENUE",BOULVARD:"BOULEVARD",BOULIVARD:"BOULEVARD"},from=map[to];if(!from)return null;
-   const short=suffixPairs.find(x=>x[0]===from)?.[1];a.address=swapToken(street,from,to);if(a.address===street)a.address=swapToken(street,short,to);
- }else if(id.startsWith("double.")){
-   const to=id.split(".")[1].toUpperCase(),from={BROWARDD:"BROWARD",CENNTER:"CENTER",SABALL:"SABAL",PALMM:"PALM"}[to];if(!from)return null;a.address=swapToken(street,from,to);
- }else if(id==="house.fraction"){a.address=street.replace(/^(\d+)(?=\s)/,"$1 1/2");}
+else if(id==="house.fraction"){a.address=street.replace(/^(\d+)(?=\s)/,"$1 1/2");}
  else if(id==="unit.building"&&unit){a.address2="BLDG "+unit;}
  else if(id==="street.compressed"){a.address=street.replace(/(\b[A-Z0-9-]+)\s+([A-Z]{2,})$/,"$1$2");}
  else if(id==="unit.floor"){const m=unitNumber(unit)?.match(/^(\d+)([A-Z])$/);if(m)a.address2="FL "+m[1]+" APT "+m[2];}
@@ -92,4 +83,32 @@ export function eligibleJigSelections(original,ids=[]){
  const seen=new Set(),out=[];
  for(const id of active){const a=apply(base,id);if(!a)continue;const key=JSON.stringify(Object.values(a).map(v=>v.toUpperCase()));if(seen.has(key))continue;seen.add(key);out.push({id,address:a,experimental:ADDRESS_JIG_OPTIONS.find(x=>x.id===id).risk==="experimental"});}
  return out;
+}
+
+
+/*
+ * Rotate individually selected formats across main addresses. Each address
+ * still receives at most four alternatives; untouched originals are not
+ * included in this list.
+ */
+export function rotatedJigSelections(original, selectedIds=[], mainAddressIndex=0, limit=4) {
+  const candidates=eligibleJigSelections(original,selectedIds);
+  if(!candidates.length)return [];
+  const categoryById=new Map(ADDRESS_JIG_OPTIONS.map(option=>[option.id,option.group]));
+  const grouped=new Map();
+  for(const candidate of candidates){
+    const category=categoryById.get(candidate.id)||"Other";
+    if(!grouped.has(category))grouped.set(category,[]);
+    grouped.get(category).push(candidate);
+  }
+  const columns=[...grouped.values()];
+  const interleaved=[];
+  for(let index=0;columns.some(group=>index<group.length);index++){
+    for(const group of columns)if(index<group.length)interleaved.push(group[index]);
+  }
+  const position=Math.max(0,Math.floor(Number(mainAddressIndex)||0));
+  const shift=(position*4)%interleaved.length;
+  const rotated=[...interleaved.slice(shift),...interleaved.slice(0,shift)];
+  const count=Math.max(0,Math.floor(Number(limit)||0));
+  return rotated.slice(0,count);
 }
