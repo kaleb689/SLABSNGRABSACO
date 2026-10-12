@@ -1,0 +1,68 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import vm from "node:vm";
+import {ADDRESS_JIG_OPTIONS, eligibleJigSelections} from "../address-jig-choices.js";
+
+const example={address:"451 NORTHWEST 87TH LANE",address2:"APT 102",city:"PLANTATION",state:"FL",zip:"33324-6540",country:"US"};
+const file=(path)=>fs.readFileSync(new URL(path,import.meta.url),"utf8");
+const pick=(items,id)=>items.find(item=>item.id===id);
+
+test("every address variation has its own ID and required experimental types",()=>{
+ const ids=ADDRESS_JIG_OPTIONS.map(option=>option.id);
+ assert.equal(new Set(ids).size,ids.length);
+ for(const prefix of ["direction.typo.","street.typo.","double.","house.fraction","unit.building","street.compressed","unit.floor","grid.compressed","house.letter","house.hyphen"]){
+   assert.ok(ids.some(id=>id.startsWith(prefix)),prefix);
+ }
+});
+test("selected address changes are unique and never stacked",()=>{
+ const before=JSON.stringify(example);
+ const results=eligibleJigSelections(example,ADDRESS_JIG_OPTIONS.map(x=>x.id));
+ assert.ok(results.length>8);
+ assert.equal(JSON.stringify(example),before);
+ assert.equal(new Set(results.map(x=>JSON.stringify(x.address))).size,results.length);
+ for(const item of results){
+   const different=Object.keys(example).filter(field=>String(example[field]).toUpperCase()!==String(item.address[field]).toUpperCase());
+   assert.equal(different.length,1,item.id+" changed "+different.join(", "));
+ }
+});
+test("standard options retain the original house number and unit ID",()=>{
+ const items=eligibleJigSelections(example,["direction.short","suffix.ln","unit.unit","city.plantation","zip.five"]);
+ assert.equal(pick(items,"direction.short")?.address.address,"451 NW 87TH LANE");
+ assert.equal(pick(items,"suffix.ln")?.address.address,"451 NORTHWEST 87TH LN");
+ assert.equal(pick(items,"unit.unit")?.address.address2,"UNIT 102");
+ assert.equal(pick(items,"city.plantation")?.address.city,"FORT LAUDERDALE");
+ assert.equal(pick(items,"zip.five")?.address.zip,"33324");
+});
+test("inapplicable floor/grid variants are never forced",()=>{
+ assert.equal(eligibleJigSelections(example,["unit.floor","grid.compressed"]).length,0);
+});
+test("street suffix is not applied to middle street-name tokens",()=>{
+ const addr={...example,address:"10700 CITY CENTER BOULEVARD"};
+ assert.equal(eligibleJigSelections(addr,["suffix.ctr"]).length,0);
+ assert.equal(pick(eligibleJigSelections(addr,["suffix.blvd"]),"suffix.blvd")?.address.address,"10700 CITY CENTER BLVD");
+});
+test("Admin tabs, modal, and bell are wired to original admin page",()=>{
+ const html=file("../public/admin.html");
+ assert.match(html,/admin-workspace-tabs\.js/);
+ assert.match(html,/admin-jig-picker\.js/);
+ assert.match(html,/data-notification-profile-type/);
+ const tabs=file("../public/admin-workspace-tabs.js");
+ for(const name of ["Home","Customers","Gifted","Rented","Available Memberships"])assert.ok(tabs.includes(name));
+ assert.match(tabs,/adminNotifications/);
+ const picker=file("../public/admin-jig-picker.js");
+ assert.match(picker,/input\.type="checkbox"/);
+ assert.match(picker,/jigOptions/);
+});
+test("server contains jig API, unchanged anchor, pool limit, and metadata",()=>{
+ const server=file("../server.js");
+ for(const snippet of ['app.get("/api/admin/jig-options"',"originalAnchorIndexes","originalIsPreserved","eligibleJigSelections(sourceAddress","eligibleJigSelections(source, customJigOptions)","Four jigs for this main address are already assigned."])assert.ok(server.includes(snippet),snippet);
+ const search=file("../public/admin-pool-search.js");
+ assert.match(search,/pool-profile-action-edit/);
+ assert.match(search,/pool-profile-action-delete/);
+});
+test("inline Admin JS remains parseable",()=>{
+ for(const match of file("../public/admin.html").matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)){
+   if(match[1].trim())assert.doesNotThrow(()=>new vm.Script(match[1]));
+ }
+});

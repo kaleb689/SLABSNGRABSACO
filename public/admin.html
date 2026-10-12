@@ -5404,6 +5404,7 @@
 <link rel="stylesheet" href="/sng-premium-controls.css?v=2">
 <link rel="stylesheet" href="/admin-header-organized.css?v=20261010-1">
 <link rel="stylesheet" href="/admin-membership-kpis.css?v=20261010">  <style>.admin-member-billing-breakdown{border:1px solid #326c8d;border-radius:13px;padding:13px 16px;margin:12px 0 18px;background:#0b2437;color:#d8f5ff}.admin-member-billing-breakdown summary{cursor:pointer;font-weight:850;color:#8ae6ff}.admin-member-billing-line{border-top:1px solid #36566d;padding:12px 0}.admin-member-billing-line p{font-size:12px;margin:6px 0;overflow-wrap:anywhere}</style>
+<link rel="stylesheet" href="/admin-workspace-tabs.css?v=20261012-1"><link rel="stylesheet" href="/admin-jig-picker.css?v=20261012-1">
 </head>
 
 
@@ -5770,10 +5771,9 @@ PAID SUBSCRIPTIONS
     </summary>
     <div class="admin-pool-browser-body">
   <span class="eyebrow">ADMIN PROFILE MANAGEMENT</span>
-  <h2>Search, Link &amp; Unlink Pool Profiles</h2>
-  <p>Search Target, Walmart, and Pokemon Center accounts. Link an available
-    profile to a member, or unlink an assigned profile and return it to the pool.
-    Unlinking never deletes the retailer account.</p>
+  <h2>Search &amp; Manage Available Accounts</h2>
+  <p>Search Target, Walmart, and Pokemon Center accounts. Assign, edit, or delete an available
+    profile using the actions directly beneath the search result. Filter by status to review linked accounts.</p>
   <div class="admin-pool-browser-fields">
     <label>Search profiles
       <input id="adminPoolQuery" type="search" autocomplete="off" placeholder="Retailer login, customer name or email...">
@@ -5789,7 +5789,7 @@ PAID SUBSCRIPTIONS
     <label>Status
       <select id="adminPoolStatus">
         <option value="all">All statuses</option>
-        <option value="available">Available</option>
+        <option value="available" selected>Available</option>
         <option value="linked">Linked</option>
         <option value="held">Restore hold</option>
         <option value="needs_repair">Needs repair</option>
@@ -18463,7 +18463,7 @@ async function loadProfileActivationTracker() {
         String(visibleProfiles.filter(profile => profile.status === "expired").length);
 
     const awaitingProfiles =
-      customers.flatMap(
+      (Array.isArray(data.customers) ? data.customers : []).flatMap(
         group =>
           group.profiles
             .filter(
@@ -18516,6 +18516,7 @@ async function loadProfileActivationTracker() {
                       data-notification-profile-id="${escapeHtml(
                         profile.id
                       )}"
+                      data-notification-profile-type="${escapeHtml(profile.type || "paid")}"
                     >
                       <span>
                         <strong>
@@ -25044,6 +25045,8 @@ document.addEventListener("click", event => {
   ↑
 </button>
 
+<script src="/admin-workspace-tabs.js?v=20261012-1"></script>
+<script src="/admin-jig-picker.js?v=20261012-1"></script>
 <script src="/admin-pool-search.js?v=20261009"></script>
 <script src="/admin-theme-toggle.js?v=20261009"></script>
 </body>

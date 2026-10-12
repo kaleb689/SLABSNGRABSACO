@@ -42,6 +42,7 @@ import { startCheckoutDmSummaryScheduler } from "./checkout-dm-summary.js";
 import { startMembershipLapseNotificationScheduler } from "./membership-lapse-notifications.js";
 import { membershipDiscountOptions, activeSitewideDiscount } from "./checkout-discounts.js";
 import { safeAddressVariants, safeAddressVariantKey, defaultJigVariants } from "./address-jigs.js";
+import { ADDRESS_JIG_OPTIONS, eligibleJigSelections } from "./address-jig-choices.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1123,11 +1124,17 @@ async function prepareNewManagedAssignment(assignment, membership, account, orde
   const sources = pool.sources;
   let selected = null;
   for (const source of sources) {
-    const variants = [
-      ...(source.variants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id }))
-    ];
-    selected = variants.find(item => !reserved.has(safeAddressVariantKey(item)))
-      ? { source, variant: variants.find(item => !reserved.has(safeAddressVariantKey(item))) } : null;
+    const originalKey = safeAddressVariantKey(source.original);
+    const alreadyOriginal = [...paidProfiles,...free,...rented].some(record =>
+      record !== assignment && String(record.customerAccountId || "") === String(account.id) &&
+      !record.jiggedAddress && safeAddressVariantKey(record.customerProfile || {}) === originalKey);
+    if (!alreadyOriginal && !reserved.has(originalKey)) {
+      selected = {source, variant:{...source.original, originalVariant:true}};
+      break;
+    }
+    const variants = (source.variants || []).map(item => ({...item.address,jigPoolVariantId:item.id}));
+    const available = variants.find(item => !reserved.has(safeAddressVariantKey(item)));
+    selected = available ? {source,variant:available} : null;
     if (selected) break;
   }
   const email = String(membership?.accountEmail || managedAccountCanonicalEmail(membership) || "").trim();
@@ -1142,6 +1149,13 @@ async function prepareNewManagedAssignment(assignment, membership, account, orde
   if (selected) {
     const key = safeAddressVariantKey(selected.variant);
     reserved.add(key);
+    if (selected.variant.originalVariant) {
+      assignment.jigSourceKey = selected.source.id;
+      assignment.jigSourceAddress = {...selected.source.original};
+      assignment.jiggedAddress = null;
+      assignment.jigPoolVariantId = null;
+      assignment.jigNeeded = false;
+    } else {
     let savedVariant = (selected.source.variants || []).find(item => safeAddressVariantKey(item.address) === key);
     if (!savedVariant) {
       savedVariant = { id: crypto.randomUUID(), address: {
@@ -1157,6 +1171,7 @@ async function prepareNewManagedAssignment(assignment, membership, account, orde
     assignment.jiggedAddress = { ...savedVariant.address };
     assignment.jigPoolVariantId = savedVariant.id;
     assignment.jigHistoryKeys = [...new Set([...(assignment.jigHistoryKeys || []), key])];
+    }
   }
   const cards = details.paymentMethods || [];
   const card = cards[reserved.size % (cards.length || 1)];
@@ -19267,6 +19282,10 @@ app.post("/api/admin/managed-pool/:id/override-hold", requireAdmin, async (req, 
 });
 
 /* ADMIN POOL PROFILE SEARCH: never transmit passwords, cards or security codes. */
+app.get("/api/admin/jig-options", requireAdmin, (_req, res) => {
+  res.setHeader("Cache-Control","no-store");
+  return res.json({ok:true, options:ADDRESS_JIG_OPTIONS});
+});
 app.get("/api/admin/managed-pool/search", requireAdmin, async (req, res) => {
   try {
     const [managed, free, rented, customers, holds, paid, gifts] = await Promise.all([
@@ -19319,6 +19338,8 @@ app.get("/api/admin/managed-pool/search", requireAdmin, async (req, res) => {
         rows.push({
           id, retailer, loginEmail: email,
           profileName: clean(account.profileName || "", 150),
+          accountEmail: clean(account.accountEmail || "", 254),
+          notes: clean(account.notes || "", 500),
           status, assignedTo: owner,
           assignmentType: assigned?.type || null,
           assignmentId: assigned ? String(assigned.assignment.id || "") : null
@@ -25464,7 +25485,7 @@ async function resetCustomerJigs(context) {
     source.generatedSafeVariantsAt = now;
     for (const [index, record] of assigned.entries()) {
       claimed.add(record);
-      const variant = source.variants[index];
+      const variant = index === 0 ? null : source.variants[index - 1];
       const deliveryAddress = variant?.address || Object.fromEntries(
         ["address", "address2", "city", "state", "zip", "country"].map(field => [field, source.original[field] || ""])
       );
@@ -25475,8 +25496,8 @@ async function resetCustomerJigs(context) {
       record.jigPoolVariantId = variant?.id || null;
       record.jigVariantIndex = variant ? index + 1 : null;
       record.jigHistoryKeys = variant ? [safeAddressVariantKey(variant.address)] : [];
-      record.jigNeeded = !variant;
-      record.jigNeededReason = variant ? null : "Four JIGs are already assigned for this Main address. Add another Main address.";
+      record.jigNeeded = index !== 0 && !variant;
+      record.jigNeededReason = index === 0 || variant ? null : "Four JIGs are already assigned for this Main address. Add another Main address.";
       record.exportAttemptStatus = null;
       record.updatedAt = now;
       updatedProfiles++;
@@ -27383,6 +27404,22 @@ app.post(
         managed profiles will therefore each be based on a different
         source address before we begin the next round of safe variants.
       */
+      const customJigOptions = Array.isArray(req.body?.jigOptions)
+        ? req.body.jigOptions : null;
+      const originalAnchorIndexes = new Set();
+      const sourcesWithOriginal = new Set();
+      if (customJigOptions) {
+        for (const source of addresses) {
+          const sourceKey = safeAddressVariantKey(source);
+          const i = profileTargets.findIndex((target, index) =>
+            !originalAnchorIndexes.has(index) && !target.record.jiggedAddress &&
+            safeAddressVariantKey(target.profile || {}) === sourceKey);
+          if (i >= 0) {
+            originalAnchorIndexes.add(i);
+            sourcesWithOriginal.add(sourceKey);
+          }
+        }
+      }
       const perSourceVariantLists =
         [];
 
@@ -27390,9 +27427,10 @@ app.post(
         const source of
         addresses
       ) {
-        const variants = [
-          ...(source.savedVariants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id }))
-        ];
+        const variants = customJigOptions
+          ? eligibleJigSelections(source, customJigOptions).slice(0, 4)
+              .map(item => ({...item.address, jigOptionId:item.id}))
+          : (source.savedVariants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id }));
 
         const sourceKey =
           safeAddressVariantKey(
@@ -27420,12 +27458,13 @@ app.post(
         const sourceEntries =
           [];
 
+        const order = customJigOptions && !sourcesWithOriginal.has(sourceKey) &&
+          !usedAddressKeys.has(sourceKey)
+          ? [{...source, originalVariant:true}, ...changed]
+          : [...changed, ...unchanged];
         for (
           const variant of
-          [
-            ...changed,
-            ...unchanged
-          ]
+          order
         ) {
           const key =
             safeAddressVariantKey(
@@ -27626,7 +27665,8 @@ app.post(
         // An address already attached to a profile is never replaced by
         // another bulk JIG run. Flag collisions for a deliberate edit.
         const hasShippingAddress = !!(profile.address && profile.city && profile.state && profile.zip);
-        const shouldAssignShipping = !hasShippingAddress || !record.jiggedAddress;
+        const shouldAssignShipping = !originalAnchorIndexes.has(index) &&
+          (!hasShippingAddress || !record.jiggedAddress);
 
         if (!profile.email && isLinkedProfile) {
           const managed = memberships.find(item => String(item.id) === String(record.managedAccountId || record.freeMembershipId || record.rentedMembershipId));
@@ -27717,16 +27757,28 @@ app.post(
             };
 
             const poolSource = jigPool.sources.find(item => item.id === entry.source.id);
-            let poolVariant = (poolSource?.variants || []).find(item => safeAddressVariantKey(item.address) === entry.key);
-            if (poolSource && !poolVariant) {
-              poolVariant = { id: crypto.randomUUID(), address: {
-                address: entry.variant.address, address2: entry.variant.address2,
-                city: entry.variant.city, state: entry.variant.state,
-                zip: entry.variant.zip, country: entry.variant.country
-              } };
-              poolSource.variants.push(poolVariant);
+            let poolVariant = entry.variant.originalVariant ? null :
+              (poolSource?.variants || []).find(item => safeAddressVariantKey(item.address) === entry.key);
+            if (poolSource && !entry.variant.originalVariant && !poolVariant) {
+              if (poolSource.variants.length >= 4) {
+                const occupiedIds = new Set(profileTargets.map(target =>
+                  target.record.jigPoolVariantId).filter(Boolean));
+                const removable = poolSource.variants.find(item => !occupiedIds.has(item.id));
+                if (removable) poolSource.variants = poolSource.variants.filter(item => item.id !== removable.id);
+              }
+              if (poolSource.variants.length < 4) {
+                poolVariant = { id: crypto.randomUUID(), address: {
+                  address: entry.variant.address, address2: entry.variant.address2,
+                  city: entry.variant.city, state: entry.variant.state,
+                  zip: entry.variant.zip, country: entry.variant.country
+                } };
+                poolSource.variants.push(poolVariant);
+              }
             }
-            record.jiggedAddress = { ...(poolVariant?.address || entry.variant) };
+            record.jiggedAddress = entry.variant.originalVariant ? null :
+              { ...(poolVariant?.address || entry.variant) };
+            if (customJigOptions) record.jigOptionId = entry.variant.originalVariant
+              ? null : entry.variant.jigOptionId || null;
             record.jigPoolVariantId = poolVariant?.id || null;
             record.jigNeeded = false;
             record.exportAttemptStatus = null;
@@ -30864,7 +30916,46 @@ app.post(
       );
       if (!poolSource) return res.status(400).json({ error: "Choose one of this customer's unchanged main addresses." });
 
-      const variants = (poolSource.variants || []).map(item => item.address);
+      const explicitlySelected = Array.isArray(req.body?.jigOptions);
+       const requestedEntries = explicitlySelected
+         ? eligibleJigSelections(sourceAddress, req.body.jigOptions) : [];
+       const otherAssignmentsForCustomer = [
+         ...(await getFreeAssignments()), ...(await getRentalAssignments())
+       ].filter(item => String(item.customerAccountId || "") === String(account.id));
+       const unmodifiedOriginalKey = safeAddressVariantKey(sourceAddress);
+       const originalIsPreserved = [...paidProfiles, ...otherAssignmentsForCustomer].some(item =>
+         item !== assignment && !item.jiggedAddress &&
+         safeAddressVariantKey(item.customerProfile || {}) === unmodifiedOriginalKey
+       );
+       if (!originalIsPreserved && explicitlySelected) {
+         assignment.customerProfile = {
+           ...(assignment.customerProfile || {}),
+           firstName: sourceAddress.firstName || assignment.customerProfile?.firstName || "",
+           lastName: sourceAddress.lastName || assignment.customerProfile?.lastName || "",
+           phone: sourceAddress.phone || assignment.customerProfile?.phone || "",
+           ...Object.fromEntries(["address","address2","city","state","zip","country"].map(key =>
+             [key,sourceAddress[key] || ""]))
+         };
+         assignment.jiggedAddress = null;
+         assignment.jigSourceAddress = {...sourceAddress};
+         assignment.jigSourceKey = poolSource.id;
+         assignment.jigNeeded = false;
+         assignment.jigNeededReason = null;
+         assignment.updatedAt = new Date().toISOString();
+         if (type === "free") await saveFreeAssignments(assignments);
+         else await saveRentalAssignments(assignments);
+         return res.json({ok:true,unchanged:true,variant:assignment.customerProfile,
+           message:"This first profile retains the unchanged original address. Jig the next profile to use your selected variations."});
+       }
+       const requested = requestedEntries.map(entry => ({...entry.address,jigOptionId:entry.id}));
+       const optionUses = new Map();
+       for (const sibling of otherAssignmentsForCustomer) {
+         if (!sibling.jigOptionId) continue;
+         optionUses.set(sibling.jigOptionId,(optionUses.get(sibling.jigOptionId)||0)+1);
+       }
+       const variants = explicitlySelected
+         ? requested.sort((a,b)=>(optionUses.get(a.jigOptionId)||0)-(optionUses.get(b.jigOptionId)||0))
+         : (poolSource.variants || []).map(item => item.address);
 
       if (!variants.length) {
         return res
@@ -31060,7 +31151,17 @@ app.post(
       assignment.jiggedAddress = {
         ...chosen
       };
-      let poolVariant = poolSource.variants.find(item => safeAddressVariantKey(item.address) === chosenKey);
+      if (explicitlySelected) assignment.jigOptionId = chosen.jigOptionId || null;
+       let poolVariant = poolSource.variants.find(item => safeAddressVariantKey(item.address) === chosenKey);
+       if (!poolVariant && poolSource.variants.length >= 4) {
+         const occupied = new Set([...paidProfiles, ...otherAssignmentsForCustomer]
+           .filter(item => item !== assignment).map(item => item.jigPoolVariantId).filter(Boolean));
+         const removable = poolSource.variants.find(item => !occupied.has(item.id));
+         if (!removable) return res.status(409).json({
+           error:"Four jigs for this main address are already assigned. Remove an unused jig before creating another."
+         });
+         poolSource.variants = poolSource.variants.filter(item => item.id !== removable.id);
+       }
       if (!poolVariant) {
         poolVariant = { id: crypto.randomUUID(), address: { ...chosen } };
         poolSource.variants.push(poolVariant);
