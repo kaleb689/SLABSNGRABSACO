@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload} from './discord-community.js';
+import {skuReminderOwnerPanel} from './sku-reminders.js';
 const source = await fs.readFile('discord-community.js', 'utf8');
 const block = source.slice(source.indexOf('  const skuMenusFile ='), source.indexOf('  async function onQuestionMessage'));
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'discord-controls-'));
@@ -32,7 +33,7 @@ const deps={fs,path,crypto,dataDir,tonightChannelId,retailerDropLabels:{},dropCh
   parseDropSkus,changeSkuItems,skuSelectionView,skuOwnerDetails,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
-  skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),discordCommunityStatus:{}};
+  skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,discordCommunityStatus:{}};
 const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection,mutateSkuDraft,confirmSkuDraft};`);
 const controls=make(deps);
 try {
@@ -41,6 +42,10 @@ try {
   await controls.backfillDropMenus();
   let menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
   assert.ok(menus[upPost.id], 'Upcoming SKU post behind chatter must get controls');
+  const privateReminders = [...messages.values()].filter(p => p.channel_id === 'private' &&
+    p.components?.some(row => row.components.some(button => button.custom_id?.startsWith('sku:remind:'))));
+  assert.equal(privateReminders.length, 2, 'The owner gets a private bell for each existing SKU-bearing original post');
+  assert.ok(privateReminders.every(p => p.components[0].components[0].emoji?.name === '🔔'));
   assert.ok(menus[chatter.id], 'Upcoming opt-out must work without SKUs');
   const upcomingRows=messages.get(menus[chatter.id][0]).components;
   assert.ok(upcomingRows.at(-1).components.some(c=>c.label==="Don't run my profiles for this upcoming drop"));
@@ -115,5 +120,8 @@ try {
   nightPost.content='No products';await controls.ensureSkuControls(nightPost);
   menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
   assert.equal(menus[nightPost.id],undefined);
+  const finalOwnerPanels = [...messages.values()].filter(p => p.channel_id === 'private' &&
+    p.components?.some(row => row.components.some(button => button.custom_id?.startsWith('sku:remind:'))));
+  assert.equal(finalOwnerPanels.length, 1, 'Removing SKUs retires its owner-only reminder button');
   console.log('PASS: channel aliases, existing Upcoming controls, tonight and per-post Upcoming opt-out/reversal, no-SKU opt-out, owner notifications, preserved other-drop selections, idempotency, menu growth and stale-control cleanup');
 } finally { await fs.rm(dataDir,{recursive:true,force:true}); }
