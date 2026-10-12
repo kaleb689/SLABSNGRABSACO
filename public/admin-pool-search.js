@@ -182,6 +182,16 @@
           finally { remove.disabled = false; }
         });
         actions.append(edit, remove);
+        const assignToggle = make("button", "pool-profile-action-link pool-profile-assign-toggle", "Assign");
+        assignToggle.type = "button";
+        assignToggle.setAttribute("aria-expanded", "false");
+        const assignmentPanel = make("div", "pool-profile-assignment-panel");
+        assignmentPanel.hidden = true;
+        assignToggle.addEventListener("click", () => {
+          assignmentPanel.hidden = !assignmentPanel.hidden;
+          assignToggle.setAttribute("aria-expanded", assignmentPanel.hidden ? "false" : "true");
+          if (!assignmentPanel.hidden) customerSelect.focus();
+        });
         const customerLabel = make("label", "", "Customer");
         const customerSelect = make("select");
         addOption(customerSelect, "", "Choose an active member");
@@ -236,7 +246,8 @@
             button.disabled = false;
           }
         });
-        actions.append(customerLabel, typeLabel, durationLabel, button);
+        assignmentPanel.append(customerLabel, typeLabel, durationLabel, button);
+        actions.append(assignToggle, assignmentPanel);
       } else if (profile.status === "linked" && profile.assignmentId &&
           ["free", "rented"].includes(profile.assignmentType)) {
         const button = make("button", "pool-profile-action-unlink", "Unlink / Return to pool");
