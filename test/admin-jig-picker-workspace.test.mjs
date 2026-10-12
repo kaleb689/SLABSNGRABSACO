@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
-import {ADDRESS_JIG_OPTIONS, eligibleJigSelections} from "../address-jig-choices.js";
+import {ADDRESS_JIG_OPTIONS, eligibleJigSelections, rotatedJigSelections} from "../address-jig-choices.js";
 
 const example={address:"451 NORTHWEST 87TH LANE",address2:"APT 102",city:"PLANTATION",state:"FL",zip:"33324-6540",country:"US"};
 const file=(path)=>fs.readFileSync(new URL(path,import.meta.url),"utf8");
@@ -65,4 +65,21 @@ test("inline Admin JS remains parseable",()=>{
  for(const match of file("../public/admin.html").matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)){
    if(match[1].trim())assert.doesNotThrow(()=>new vm.Script(match[1]));
  }
+});
+
+
+test("bulk address jig rotation covers more selected categories across separate main addresses",()=>{
+ const ids=ADDRESS_JIG_OPTIONS.filter(item=>item.risk==="standard").map(item=>item.id);
+ const first=rotatedJigSelections(example,ids,0);
+ const second=rotatedJigSelections(example,ids,1);
+ const third=rotatedJigSelections(example,ids,2);
+ assert.ok(first.length>0&&first.length<=4);
+ assert.ok(second.length>0&&second.length<=4);
+ assert.ok(third.length>0&&third.length<=4);
+ const selected=new Set([...first,...second,...third].map(x=>x.id));
+ assert.ok(selected.size>first.length,"rotation should reach checkbox types outside the first four");
+ assert.ok(first.every(x=>ids.includes(x.id)));
+ assert.ok(second.every(x=>ids.includes(x.id)));
+ assert.deepEqual(rotatedJigSelections(example,ids,0),first,"rotation is deterministic");
+ assert.deepEqual(rotatedJigSelections(example,ids,0,0),[],"zero jig limit does not generate extra profiles");
 });
