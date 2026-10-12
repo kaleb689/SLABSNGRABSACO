@@ -52,7 +52,7 @@ function apply(base,id){
    const m=street.match(/^(\d+[A-Z0-9/-]*\s+)([A-Z]+)(\s+.*)$/);
    if(m){const pair=directionPairs.find(([full,short])=>m[2]===(id==="direction.short"?full:short));if(pair)a.address=m[1]+pair[id==="direction.short"?1:0]+m[3];}
  }else if(id.startsWith("ordinal.")){a.address=streetOrdinal(street,id.slice(8));}
- else if(id.startsWith("suffix.")){const parts=id.split("."),pair=suffixPairs.find(([,short])=>short.toLowerCase()===parts[1]);if(pair)a.address=swapToken(street,parts[2]==="full"?pair[1]:pair[0],parts[2]==="full"?pair[0]:pair[1]);}
+ else if(id.startsWith("suffix.")){const parts=id.split("."),pair=suffixPairs.find(([,short])=>short.toLowerCase()===parts[1]);if(pair){const from=parts[2]==="full"?pair[1]:pair[0],to=parts[2]==="full"?pair[0]:pair[1];const words=street.split(" ");const final=words.length-1;if(words[final]===from){words[final]=to;a.address=words.join(" ");}}}
  else if(id.startsWith("unit.")){const n=unitNumber(unit);if(!n)return null;const labels={apt:"APT",unit:"UNIT",suite:"SUITE",ste:"STE",hash:"#",condo:"CONDO",number:""};const label=labels[id.slice(5)];if(label===undefined)return null;a.address2=(label?label+" ":"")+n;}
  else if(id==="city.plantation"&&a.zip.startsWith("33324")){const c=a.city.toUpperCase();a.city=c==="PLANTATION"?"FORT LAUDERDALE":c==="FORT LAUDERDALE"?"PLANTATION":a.city;}
  else if(id==="city.pompano"&&a.zip.startsWith("33064")){const c=a.city.toUpperCase();a.city=c==="POMPANO BEACH"?"LIGHTHOUSE POINT":c==="LIGHTHOUSE POINT"?"POMPANO BEACH":a.city;}
