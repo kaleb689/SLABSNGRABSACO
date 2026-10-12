@@ -19501,7 +19501,9 @@ document
   });
 
 
+let adminActiveLoadSequence = 0;
 async function load() {
+  const activeLoad = ++adminActiveLoadSequence;
 
   await loadManagedAvailability();
   loadMembershipTools();
@@ -19509,6 +19511,7 @@ async function load() {
   refreshAdminBroadcast();
 
   await loadProfileActivationTracker();
+  if (activeLoad !== adminActiveLoadSequence) return;
 
  const submissionType =
   submissionTypeFilter?.value ||
@@ -19552,6 +19555,7 @@ const response =
         "no-store"
     }
   );
+  if (activeLoad !== adminActiveLoadSequence) return;
 
 
   if (!response.ok) {
@@ -19589,6 +19593,7 @@ const response =
 
   const data =
     await response.json();
+  if (activeLoad !== adminActiveLoadSequence) return;
 
   if (
     submissionType ===
@@ -19649,6 +19654,7 @@ const response =
     });
     if(!billingResponse.ok)throw Error("Stripe revenue unavailable");
     const billing=await billingResponse.json();
+    if (activeLoad !== adminActiveLoadSequence) return;
     if(!Number.isFinite(Number(billing.monthlyRecurringCents)))throw Error("Invalid Stripe invoice amount");
     countNode.textContent=String(billing.activePaidMemberships);
     revenueNode.textContent=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(billing.monthlyRecurringCents/100);
@@ -19728,6 +19734,7 @@ if (!submissions.length) {
 }
 
 
+  if (activeLoad !== adminActiveLoadSequence) return;
   const sortedSubmissions =
     [...submissions]
       .sort(
