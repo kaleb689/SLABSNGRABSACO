@@ -191,3 +191,55 @@
   applyPage(queryPage || "home", false);
   window.adminGoToPage = applyPage;
 })();
+
+/* Keep every rendered paid-customer status card synchronized with a visual time-left bar.
+   The existing Admin renderer already supplies the authoritative "N days left" text;
+   this enhancement only visualizes it, so it cannot change subscription state. */
+(() => {
+  "use strict";
+  const root = document.getElementById("dashboard");
+  if (!root) return;
+
+  function enhanceMembershipBars() {
+    for (const status of root.querySelectorAll(".customer-order-summary .order-status-meta")) {
+      const text = String(status.textContent || "").replace(/\s+/g, " ").trim();
+      const match = text.match(/(\d+)\s+days?\s+left/i);
+      const existing = status.querySelector(".membership-time-left");
+      if (!match) {
+        existing?.remove();
+        continue;
+      }
+      const days = Math.max(0, Number(match[1]) || 0);
+      // Paid memberships are monthly; cap at a full 30-day visual cycle.
+      const percent = Math.max(0, Math.min(100, Math.round((days / 30) * 100)));
+      const level = percent <= 20 ? "red" : percent <= 50 ? "yellow" : "green";
+      const bar = existing || document.createElement("div");
+      bar.className = "membership-time-left";
+      bar.dataset.level = level;
+      bar.style.setProperty("--membership-left", `${percent}%`);
+      bar.setAttribute("role", "progressbar");
+      bar.setAttribute("aria-label", "Membership time remaining");
+      bar.setAttribute("aria-valuemin", "0");
+      bar.setAttribute("aria-valuemax", "30");
+      bar.setAttribute("aria-valuenow", String(Math.min(days, 30)));
+      bar.innerHTML = '<div class="membership-time-left-track"><div class="membership-time-left-fill"></div></div><span class="membership-time-left-label"></span>';
+      bar.querySelector(".membership-time-left-label").textContent = `${days} day${days === 1 ? "" : "s"} remaining`;
+      if (!existing) status.append(bar);
+    }
+  }
+
+  let scheduled = false;
+  const schedule = () => {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      enhanceMembershipBars();
+    });
+  };
+
+  const observer = new MutationObserver(schedule);
+  observer.observe(root, {subtree:true,childList:true,characterData:true});
+  document.addEventListener("change", schedule, true);
+  schedule();
+})();
