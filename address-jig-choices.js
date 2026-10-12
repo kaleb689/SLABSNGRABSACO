@@ -5,14 +5,17 @@ const standard=[
  ["ordinal.number","Street numbers","87TH to 87 (numeric street name)"],
  ["ordinal.suffix","Street numbers","87 to 87TH (street ordinal)"],
  ["ordinal.word","Street numbers","9TH to NINTH"],
+ ["ordinal.cardinal","Street numbers","9TH to NINE"],
+ ["ordinal.spaced","Street numbers","87TH to 87 TH"],
  ...[["LANE","LN"],["AVENUE","AVE"],["STREET","ST"],["DRIVE","DR"],["TERRACE","TER"],["BOULEVARD","BLVD"],["MANOR","MNR"],["CENTER","CTR"]].flatMap(([long,short])=>[
    ["suffix."+short.toLowerCase(),"Street types",long+" to "+short],
    ["suffix."+short.toLowerCase()+".full","Street types",short+" to "+long]
  ]),
- ...[["apt","Apt"],["unit","Unit"],["suite","Suite"],["ste","Ste"],["hash","#"],["condo","Condo"],["number","Number only"]].map(([id,label])=>["unit."+id,"Apartment / unit",label]),
+ ...[["apt","Apt"],["unit","Unit"],["suite","Suite"],["ste","Ste"],["apartment","Apartment"],["hash","#"],["hashcompact","#102 (no space)"],["apthash","Apt #102"],["condo","Condo"],["number","Number only"]].map(([id,label])=>["unit."+id,"Apartment / unit",label]),
  ["city.plantation","Mailing cities","Plantation / Fort Lauderdale, ZIP 33324"],
  ["city.pompano","Mailing cities","Pompano Beach / Lighthouse Point, ZIP 33064"],
- ["zip.five","ZIP formatting","Use five-digit ZIP instead of ZIP+4"]
+ ["zip.five","ZIP formatting","Use five-digit ZIP instead of ZIP+4"],
+ ["zip.four","ZIP formatting","Keep verified ZIP+4 on this address"]
 ];
 const experimental=[
  ...["NORTHWAST","NORTHWST","NORTWEST","SOUTHWAST","SOUTWEST"].map(x=>["direction.typo."+x.toLowerCase(),"Directional misspellings",x]),
@@ -42,8 +45,14 @@ function streetOrdinal(text,kind){
  const teens={11:"ELEVENTH",12:"TWELFTH",13:"THIRTEENTH",14:"FOURTEENTH",15:"FIFTEENTH",16:"SIXTEENTH",17:"SEVENTEENTH",18:"EIGHTEENTH",19:"NINETEENTH"};
  const tenRoot={20:"TWENTY",30:"THIRTY",40:"FORTY",50:"FIFTY",60:"SIXTY",70:"SEVENTY",80:"EIGHTY",90:"NINETY"};
  const ord=ones[n]||teens[n]||tensWords[n]||(tenRoot[Math.floor(n/10)*10]&&ones[n%10]?tenRoot[Math.floor(n/10)*10]+"-"+ones[n%10]:"");
- if(kind==="number"&&!has)return text;if(kind==="suffix"&&has)return text;if(kind==="word"&&!has)return text;
- const replacement=kind==="number"?m[2]:kind==="suffix"?m[2]+suffix:ord;
+ const cardinalOnes=["","ONE","TWO","THREE","FOUR","FIVE","SIX","SEVEN","EIGHT","NINE"];
+ const cardinalTeens={10:"TEN",11:"ELEVEN",12:"TWELVE",13:"THIRTEEN",14:"FOURTEEN",15:"FIFTEEN",16:"SIXTEEN",17:"SEVENTEEN",18:"EIGHTEEN",19:"NINETEEN"};
+ const cardinalTens={20:"TWENTY",30:"THIRTY",40:"FORTY",50:"FIFTY",60:"SIXTY",70:"SEVENTY",80:"EIGHTY",90:"NINETY"};
+ const cardinal=cardinalOnes[n]||cardinalTeens[n]||cardinalTens[n]||
+   (tenRoot[Math.floor(n/10)*10]&&cardinalOnes[n%10]?tenRoot[Math.floor(n/10)*10]+"-"+cardinalOnes[n%10]:"");
+ if(kind==="number"&&!has)return text;if(kind==="suffix"&&has)return text;if(["word","cardinal","spaced"].includes(kind)&&!has)return text;
+ const replacement=kind==="number"?m[2]:kind==="suffix"?m[2]+suffix:kind==="word"?ord:
+   kind==="cardinal"?cardinal:kind==="spaced"?m[2]+" "+m[3]:null;
  return replacement?m[1]+replacement+text.slice(m[0].length):text;
 }
 function apply(base,id){
@@ -53,10 +62,11 @@ function apply(base,id){
    if(m){const pair=directionPairs.find(([full,short])=>m[2]===(id==="direction.short"?full:short));if(pair)a.address=m[1]+pair[id==="direction.short"?1:0]+m[3];}
  }else if(id.startsWith("ordinal.")){a.address=streetOrdinal(street,id.slice(8));}
  else if(id.startsWith("suffix.")){const parts=id.split("."),pair=suffixPairs.find(([,short])=>short.toLowerCase()===parts[1]);if(pair){const from=parts[2]==="full"?pair[1]:pair[0],to=parts[2]==="full"?pair[0]:pair[1];const words=street.split(" ");const final=words.length-1;if(words[final]===from){words[final]=to;a.address=words.join(" ");}}}
- else if(id.startsWith("unit.")){const n=unitNumber(unit);if(!n)return null;const labels={apt:"APT",unit:"UNIT",suite:"SUITE",ste:"STE",hash:"#",condo:"CONDO",number:""};const label=labels[id.slice(5)];if(label===undefined)return null;a.address2=(label?label+" ":"")+n;}
+ else if(id.startsWith("unit.")){const n=unitNumber(unit);if(!n)return null;const labels={apt:"APT",unit:"UNIT",suite:"SUITE",ste:"STE",apartment:"APARTMENT",hash:"#",hashcompact:"#",apthash:"APT #",condo:"CONDO",number:""};const kind=id.slice(5),label=labels[kind];if(label===undefined)return null;a.address2=(label?label+(kind==="hashcompact"?"":" "):"")+n;}
  else if(id==="city.plantation"&&a.zip.startsWith("33324")){const c=a.city.toUpperCase();a.city=c==="PLANTATION"?"FORT LAUDERDALE":c==="FORT LAUDERDALE"?"PLANTATION":a.city;}
  else if(id==="city.pompano"&&a.zip.startsWith("33064")){const c=a.city.toUpperCase();a.city=c==="POMPANO BEACH"?"LIGHTHOUSE POINT":c==="LIGHTHOUSE POINT"?"POMPANO BEACH":a.city;}
  else if(id==="zip.five"&&/^\d{5}-\d{4}$/.test(a.zip)){a.zip=a.zip.slice(0,5);}
+ else if(id==="zip.four"){return null; /* Never fabricate ZIP+4; retain verified source as-is. */}
  else if(id.startsWith("direction.typo.")){
    const to=id.split(".")[2].toUpperCase(),south=to.startsWith("S"),full=south?"SOUTHWEST":"NORTHWEST",short=south?"SW":"NW";
    a.address=street.replace(/^(\d+[A-Z0-9/-]*\s+)([A-Z]+)(\s+.*)$/,(_,h,dir,tail)=>dir===full||dir===short?h+to+tail:street);
