@@ -17,10 +17,9 @@ const standard=[
  ["zip.five","ZIP formatting","Use five-digit ZIP instead of ZIP+4"],
  ["zip.four","ZIP formatting","Keep verified ZIP+4 on this address"]
 ];
+// Experimental address formats are opt-in, not USPS-verified, and may not deliver.
+// Misspellings and double-letter jigs were explicitly removed from this set.
 const experimental=[
- ...["NORTHWAST","NORTHWST","NORTWEST","SOUTHWAST","SOUTWEST"].map(x=>["direction.typo."+x.toLowerCase(),"Directional misspellings",x]),
- ...["LAEN","LAYN","LAYNE","LLANE","AVNUE","AVENU","BOULVARD","BOULIVARD"].map(x=>["street.typo."+x.toLowerCase(),"Street misspellings",x]),
- ...["BROWARDD","CENNTER","SABALL","PALMM"].map(x=>["double."+x.toLowerCase(),"Double letters",x]),
  ["house.fraction","Fractional house number","Add 1/2 after house number"],
  ["unit.building","Multiple unit designators","BLDG with existing unit"],
  ["street.compressed","Compressed street names","Join street and suffix words"],
@@ -68,15 +67,7 @@ function apply(base,id){
  else if(id==="city.pompano"&&a.zip.startsWith("33064")){const c=a.city.toUpperCase();a.city=c==="POMPANO BEACH"?"LIGHTHOUSE POINT":c==="LIGHTHOUSE POINT"?"POMPANO BEACH":a.city;}
  else if(id==="zip.five"&&/^\d{5}-\d{4}$/.test(a.zip)){a.zip=a.zip.slice(0,5);}
  else if(id==="zip.four"){return null; /* Never fabricate ZIP+4; retain verified source as-is. */}
- else if(id.startsWith("direction.typo.")){
-   const to=id.split(".")[2].toUpperCase(),south=to.startsWith("S"),full=south?"SOUTHWEST":"NORTHWEST",short=south?"SW":"NW";
-   a.address=street.replace(/^(\d+[A-Z0-9/-]*\s+)([A-Z]+)(\s+.*)$/,(_,h,dir,tail)=>dir===full||dir===short?h+to+tail:street);
- }else if(id.startsWith("street.typo.")){
-   const to=id.split(".")[2].toUpperCase(),map={LAEN:"LANE",LAYN:"LANE",LAYNE:"LANE",LLANE:"LANE",AVNUE:"AVENUE",AVENU:"AVENUE",BOULVARD:"BOULEVARD",BOULIVARD:"BOULEVARD"},from=map[to];if(!from)return null;
-   const short=suffixPairs.find(x=>x[0]===from)?.[1];a.address=swapToken(street,from,to);if(a.address===street)a.address=swapToken(street,short,to);
- }else if(id.startsWith("double.")){
-   const to=id.split(".")[1].toUpperCase(),from={BROWARDD:"BROWARD",CENNTER:"CENTER",SABALL:"SABAL",PALMM:"PALM"}[to];if(!from)return null;a.address=swapToken(street,from,to);
- }else if(id==="house.fraction"){a.address=street.replace(/^(\d+)(?=\s)/,"$1 1/2");}
+else if(id==="house.fraction"){a.address=street.replace(/^(\d+)(?=\s)/,"$1 1/2");}
  else if(id==="unit.building"&&unit){a.address2="BLDG "+unit;}
  else if(id==="street.compressed"){a.address=street.replace(/(\b[A-Z0-9-]+)\s+([A-Z]{2,})$/,"$1$2");}
  else if(id==="unit.floor"){const m=unitNumber(unit)?.match(/^(\d+)([A-Z])$/);if(m)a.address2="FL "+m[1]+" APT "+m[2];}
