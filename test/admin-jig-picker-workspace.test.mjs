@@ -83,3 +83,13 @@ test("bulk address jig rotation covers more selected categories across separate 
  assert.deepEqual(rotatedJigSelections(example,ids,0),first,"rotation is deterministic");
  assert.deepEqual(rotatedJigSelections(example,ids,0,0),[],"zero jig limit does not generate extra profiles");
 });
+
+
+test("available account search uses only three visible action buttons until assigning",()=>{
+ const search=file("../public/admin-pool-search.js");
+ assert.match(search,/pool-profile-action-edit/);
+ assert.match(search,/pool-profile-action-delete/);
+ assert.match(search,/pool-profile-assign-toggle/);
+ assert.match(search,/assignmentPanel.hidden = true/);
+ assert.match(search,/assignmentPanel.append\(customerLabel, typeLabel, durationLabel, button\)/);
+});
