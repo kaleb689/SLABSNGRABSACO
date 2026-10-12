@@ -110,6 +110,78 @@
 
       const actions = make("div", "pool-profile-actions");
       if (profile.status === "available") {
+        const edit = make("button", "pool-profile-action-edit", "Edit account");
+        edit.type = "button";
+        const form = make("form", "pool-profile-edit-form");
+        form.hidden = true;
+        const fieldGrid = make("div", "pool-edit-grid");
+        function editField(label, name, value = "", type = "text") {
+          const wrapper = make("label", "", label);
+          const input = make("input");
+          input.name = name;
+          input.type = type;
+          input.autocomplete = "off";
+          input.value = value;
+          wrapper.append(input);
+          fieldGrid.append(wrapper);
+          return input;
+        }
+        const profileName = editField("Account name", "profileName", profile.profileName || "");
+        const accountEmail = editField("Account email", "accountEmail", profile.accountEmail || "");
+        const notes = editField("Notes", "notes", profile.notes || "");
+        const loginEmail = editField("Retailer login email", "loginEmail", profile.loginEmail || "");
+        const newPassword = editField("New retailer password (optional)", "password", "", "password");
+        newPassword.placeholder = "Leave blank to keep existing password";
+        form.append(fieldGrid);
+        const actionsRow = make("div", "pool-profile-edit-buttons");
+        const save = make("button", "pool-profile-action-link", "Save changes");
+        save.type = "submit";
+        const cancel = make("button", "", "Cancel");
+        cancel.type = "button";
+        cancel.addEventListener("click", () => { form.hidden = true; });
+        actionsRow.append(save, cancel);
+        form.append(actionsRow);
+        const editStatus = make("p", "pool-profile-meta");
+        editStatus.setAttribute("role", "status");
+        form.append(editStatus);
+        edit.addEventListener("click", () => { form.hidden = !form.hidden; if (!form.hidden) profileName.focus(); });
+        form.addEventListener("submit", async event => {
+          event.preventDefault();
+          if (!window.confirm("Save changes to " + profile.loginEmail + "?")) return;
+          save.disabled = true;
+          editStatus.textContent = "Saving...";
+          try {
+            await api("/api/admin/available-memberships/" + encodeURIComponent(profile.id), {
+              method: "PUT",
+              headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({
+                profileName: profileName.value,
+                accountEmail: accountEmail.value,
+                notes: notes.value,
+                retailers: {[profile.retailer]: {username: loginEmail.value, password: newPassword.value}}
+              })
+            });
+            notice = "Account updated.";
+            await reload();
+          } catch (error) {
+            editStatus.textContent = error.message;
+          } finally { save.disabled = false; }
+        });
+        row.append(form);
+        const remove = make("button", "pool-profile-action-delete", "Delete account");
+        remove.type = "button";
+        remove.addEventListener("click", async () => {
+          const account = profile.loginEmail;
+          if (!window.confirm("Permanently delete the AVAILABLE managed account " + account + "? All associated retailer logins in this pool record will be deleted. This cannot be undone.")) return;
+          remove.disabled = true;
+          try {
+            await api("/api/admin/available-memberships/" + encodeURIComponent(profile.id), {method:"DELETE"});
+            notice = "Deleted available account " + account + ".";
+            await reload();
+          } catch (error) { statusLine.textContent = error.message; }
+          finally { remove.disabled = false; }
+        });
+        actions.append(edit, remove);
         const customerLabel = make("label", "", "Customer");
         const customerSelect = make("select");
         addOption(customerSelect, "", "Choose an active member");
