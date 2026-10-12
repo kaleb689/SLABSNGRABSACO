@@ -37,8 +37,9 @@ const suffixPairs=[["LANE","LN"],["AVENUE","AVE"],["STREET","ST"],["DRIVE","DR"]
 function swapToken(text,from,to){const words=text.split(" ");const index=words.findIndex(w=>w.toUpperCase()===from);if(index<0)return text;words[index]=to;return words.join(" ");}
 function unitNumber(text){return clean(text).match(/^(?:(?:APT|APARTMENT|UNIT|SUITE|STE|CONDO|#)\s*#?\s*)?([A-Z0-9-]+)$/i)?.[1]||null;}
 function streetOrdinal(text,kind){
- const m=text.match(/^(\d+[A-Z0-9/-]*\s+(?:(?:NW|SW|NE|SE|N|S|E|W|NORTHWEST|SOUTHWEST|NORTHEAST|SOUTHEAST|NORTH|SOUTH|EAST|WEST)\s+)?)(\d{1,2})(ST|ND|RD|TH)?(?=\s)/i);
- if(!m)return text;const n=Number(m[2]),has=!!m[3];if(n<1||n>99)return text;
+ const m=text.match(/^(\d+[A-Z0-9/-]*\s+(?:(?:NW|SW|NE|SE|N|S|E|W|NORTHWEST|SOUTHWEST|NORTHEAST|SOUTHEAST|NORTH|SOUTH|EAST|WEST)\s+)?)(\d{1,3})(ST|ND|RD|TH)?(?=\s)/i);
+ if(!m)return text;const n=Number(m[2]),has=!!m[3];if(n<1||n>999)return text;
+ if(n>99 && (kind==="word" || kind==="cardinal"))return text;
  const suffix=(n%100>=11&&n%100<=13)?"TH":({1:"ST",2:"ND",3:"RD"}[n%10]||"TH");
  const ones=["","FIRST","SECOND","THIRD","FOURTH","FIFTH","SIXTH","SEVENTH","EIGHTH","NINTH"];
  const tensWords={10:"TENTH",20:"TWENTIETH",30:"THIRTIETH",40:"FORTIETH",50:"FIFTIETH",60:"SIXTIETH",70:"SEVENTIETH",80:"EIGHTIETH",90:"NINETIETH"};
