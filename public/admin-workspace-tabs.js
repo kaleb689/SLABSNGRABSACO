@@ -110,8 +110,10 @@
     dashboard.dataset.adminPage = next;
     home.hidden = next !== "home";
     available.hidden = next !== "available";
-    customerTools.hidden = next !== "customers";
+    customerTools.hidden = !["customers","gifted","rented"].includes(next);
     recordArea.hidden = next === "home";
+    const pageTitle = header.querySelector("h1");
+    if (pageTitle) pageTitle.textContent = ({home:"Admin Home",customers:"Paid Customers",gifted:"Gifted Accounts",rented:"Rented Accounts",available:"Available Memberships"})[next];
     nav.querySelectorAll("button").forEach(button => {
       const current = button.dataset.adminPage === next;
       button.classList.toggle("active", current);
@@ -140,10 +142,13 @@
     window.scrollTo({top:0,behavior:"smooth"});
   });
 
-  async function goToIssue(profileId) {
-    applyPage("customers");
-    if (select.value !== "paid") {
-      select.value = "paid";
+  async function goToIssue(profileId, profileType) {
+    const page = profileType === "gifted" || profileType === "free" ? "gifted" :
+      profileType === "rented" ? "rented" : "customers";
+    const filter = viewTypes[page] || "paid";
+    applyPage(page);
+    if (select.value !== filter) {
+      select.value = filter;
       select.dispatchEvent(new Event("change", {bubbles:true}));
     }
     const notificationPanel = document.getElementById("adminNotifications");
@@ -168,7 +173,7 @@
     if (!button) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    void goToIssue(button.dataset.notificationProfileId);
+    void goToIssue(button.dataset.notificationProfileId,button.dataset.notificationProfileType);
   }, true);
 
   // A search result can switch from any page to a customer's page.
