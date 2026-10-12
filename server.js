@@ -27390,6 +27390,22 @@ app.post(
         managed profiles will therefore each be based on a different
         source address before we begin the next round of safe variants.
       */
+      const customJigOptions = Array.isArray(req.body?.jigOptions)
+        ? req.body.jigOptions : null;
+      const originalAnchorIndexes = new Set();
+      const sourcesWithOriginal = new Set();
+      if (customJigOptions) {
+        for (const source of addresses) {
+          const sourceKey = safeAddressVariantKey(source);
+          const i = profileTargets.findIndex((target, index) =>
+            !originalAnchorIndexes.has(index) && !target.record.jiggedAddress &&
+            safeAddressVariantKey(target.profile || {}) === sourceKey);
+          if (i >= 0) {
+            originalAnchorIndexes.add(i);
+            sourcesWithOriginal.add(sourceKey);
+          }
+        }
+      }
       const perSourceVariantLists =
         [];
 
@@ -27397,9 +27413,10 @@ app.post(
         const source of
         addresses
       ) {
-        const variants = [
-          ...(source.savedVariants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id }))
-        ];
+        const variants = customJigOptions
+          ? eligibleJigSelections(source, customJigOptions).slice(0, 4)
+              .map(item => ({...item.address, jigOptionId:item.id}))
+          : (source.savedVariants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id }));
 
         const sourceKey =
           safeAddressVariantKey(
@@ -27427,12 +27444,13 @@ app.post(
         const sourceEntries =
           [];
 
+        const order = customJigOptions && !sourcesWithOriginal.has(sourceKey) &&
+          !usedAddressKeys.has(sourceKey)
+          ? [{...source, originalVariant:true}, ...changed]
+          : [...changed, ...unchanged];
         for (
           const variant of
-          [
-            ...changed,
-            ...unchanged
-          ]
+          order
         ) {
           const key =
             safeAddressVariantKey(
@@ -27633,7 +27651,8 @@ app.post(
         // An address already attached to a profile is never replaced by
         // another bulk JIG run. Flag collisions for a deliberate edit.
         const hasShippingAddress = !!(profile.address && profile.city && profile.state && profile.zip);
-        const shouldAssignShipping = !hasShippingAddress || !record.jiggedAddress;
+        const shouldAssignShipping = !originalAnchorIndexes.has(index) &&
+          (!hasShippingAddress || !record.jiggedAddress);
 
         if (!profile.email && isLinkedProfile) {
           const managed = memberships.find(item => String(item.id) === String(record.managedAccountId || record.freeMembershipId || record.rentedMembershipId));
@@ -27724,16 +27743,28 @@ app.post(
             };
 
             const poolSource = jigPool.sources.find(item => item.id === entry.source.id);
-            let poolVariant = (poolSource?.variants || []).find(item => safeAddressVariantKey(item.address) === entry.key);
-            if (poolSource && !poolVariant) {
-              poolVariant = { id: crypto.randomUUID(), address: {
-                address: entry.variant.address, address2: entry.variant.address2,
-                city: entry.variant.city, state: entry.variant.state,
-                zip: entry.variant.zip, country: entry.variant.country
-              } };
-              poolSource.variants.push(poolVariant);
+            let poolVariant = entry.variant.originalVariant ? null :
+              (poolSource?.variants || []).find(item => safeAddressVariantKey(item.address) === entry.key);
+            if (poolSource && !entry.variant.originalVariant && !poolVariant) {
+              if (poolSource.variants.length >= 4) {
+                const occupiedIds = new Set(profileTargets.map(target =>
+                  target.record.jigPoolVariantId).filter(Boolean));
+                const removable = poolSource.variants.find(item => !occupiedIds.has(item.id));
+                if (removable) poolSource.variants = poolSource.variants.filter(item => item.id !== removable.id);
+              }
+              if (poolSource.variants.length < 4) {
+                poolVariant = { id: crypto.randomUUID(), address: {
+                  address: entry.variant.address, address2: entry.variant.address2,
+                  city: entry.variant.city, state: entry.variant.state,
+                  zip: entry.variant.zip, country: entry.variant.country
+                } };
+                poolSource.variants.push(poolVariant);
+              }
             }
-            record.jiggedAddress = { ...(poolVariant?.address || entry.variant) };
+            record.jiggedAddress = entry.variant.originalVariant ? null :
+              { ...(poolVariant?.address || entry.variant) };
+            if (customJigOptions) record.jigOptionId = entry.variant.originalVariant
+              ? null : entry.variant.jigOptionId || null;
             record.jigPoolVariantId = poolVariant?.id || null;
             record.jigNeeded = false;
             record.exportAttemptStatus = null;
