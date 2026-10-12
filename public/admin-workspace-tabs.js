@@ -124,9 +124,12 @@
       if (changed) void window.refreshAdminPoolSearch?.();
     }
     const wanted = viewTypes[next];
-    if (wanted && select.value !== wanted) {
-      select.value = wanted;
-      if (reload) select.dispatchEvent(new Event("change", {bubbles:true}));
+    const changeFilter = Boolean(wanted && select.value !== wanted);
+    if (changeFilter) select.value = wanted;
+    // Home billing, consent and operational settings should refresh on return,
+    // including when the customer page already used the Paid filter.
+    if (reload && (changeFilter || (next === "home" && changed))) {
+      select.dispatchEvent(new Event("change", {bubbles:true}));
     }
     if (changed && history.replaceState) {
       const url = new URL(location.href);
