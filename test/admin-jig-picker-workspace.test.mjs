@@ -11,9 +11,12 @@ const pick=(items,id)=>items.find(item=>item.id===id);
 test("every address variation has its own ID and required experimental types",()=>{
  const ids=ADDRESS_JIG_OPTIONS.map(option=>option.id);
  assert.equal(new Set(ids).size,ids.length);
- for(const prefix of ["direction.typo.","street.typo.","double.","house.fraction","unit.building","street.compressed","unit.floor","grid.compressed","house.letter","house.hyphen"]){
+ for(const prefix of ["house.fraction","unit.building","street.compressed","unit.floor","grid.compressed","house.letter","house.hyphen"]){
    assert.ok(ids.some(id=>id.startsWith(prefix)),prefix);
  }
+ assert.ok(ids.every(id=>!id.startsWith("direction.typo.")&&!id.startsWith("street.typo.")&&!id.startsWith("double.")),
+   "previously rejected misspellings and double letters are absent");
+ assert.equal(eligibleJigSelections(example,["direction.typo.northwast","double.browardd"]).length,0);
 });
 test("selected address changes are unique and never stacked",()=>{
  const before=JSON.stringify(example);
