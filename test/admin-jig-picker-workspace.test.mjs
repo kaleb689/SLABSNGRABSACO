@@ -59,7 +59,7 @@ test("Admin tabs, modal, and bell are wired to original admin page",()=>{
 });
 test("server contains jig API, unchanged anchor, pool limit, and metadata",()=>{
  const server=file("../server.js");
- for(const snippet of ['app.get("/api/admin/jig-options"',"originalAnchorIndexes","originalIsPreserved","eligibleJigSelections(sourceAddress","rotatedJigSelections(source, customJigOptions)","Four jigs for this main address are already assigned."])assert.ok(server.includes(snippet),snippet);
+ for(const snippet of ['app.get("/api/admin/jig-options"',"originalAnchorIndexes","originalIsPreserved","eligibleJigSelections(sourceAddress","rotatedJigSelections(source, customJigOptions,","Four jigs for this main address are already assigned."])assert.ok(server.includes(snippet),snippet);
  const search=file("../public/admin-pool-search.js");
  assert.match(search,/pool-profile-action-edit/);
  assert.match(search,/pool-profile-action-delete/);
