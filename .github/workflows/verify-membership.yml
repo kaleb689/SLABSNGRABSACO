@@ -26,6 +26,10 @@ jobs:
       - run: node --check shipping-tracking-policy.js
       - run: node --check public/admin-pool-search.js
       - run: node --check public/admin-mobile.js
+      - run: node --check address-jig-choices.js
+      - run: node --check public/admin-workspace-tabs.js
+      - run: node --check public/admin-jig-picker.js
+      - run: node --test test/admin-jig-picker-workspace.test.mjs
       - run: node --check discord-community.js
       - run: node --check discord-checkout-identity.js
       - run: node --check discord-checkout-profile-aliases.js
