@@ -1124,11 +1124,17 @@ async function prepareNewManagedAssignment(assignment, membership, account, orde
   const sources = pool.sources;
   let selected = null;
   for (const source of sources) {
-    const variants = [
-      ...(source.variants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id }))
-    ];
-    selected = variants.find(item => !reserved.has(safeAddressVariantKey(item)))
-      ? { source, variant: variants.find(item => !reserved.has(safeAddressVariantKey(item))) } : null;
+    const originalKey = safeAddressVariantKey(source.original);
+    const alreadyOriginal = [...paidProfiles,...free,...rented].some(record =>
+      record !== assignment && String(record.customerAccountId || "") === String(account.id) &&
+      !record.jiggedAddress && safeAddressVariantKey(record.customerProfile || {}) === originalKey);
+    if (!alreadyOriginal && !reserved.has(originalKey)) {
+      selected = {source, variant:{...source.original, originalVariant:true}};
+      break;
+    }
+    const variants = (source.variants || []).map(item => ({...item.address,jigPoolVariantId:item.id}));
+    const available = variants.find(item => !reserved.has(safeAddressVariantKey(item)));
+    selected = available ? {source,variant:available} : null;
     if (selected) break;
   }
   const email = String(membership?.accountEmail || managedAccountCanonicalEmail(membership) || "").trim();
@@ -1143,6 +1149,13 @@ async function prepareNewManagedAssignment(assignment, membership, account, orde
   if (selected) {
     const key = safeAddressVariantKey(selected.variant);
     reserved.add(key);
+    if (selected.variant.originalVariant) {
+      assignment.jigSourceKey = selected.source.id;
+      assignment.jigSourceAddress = {...selected.source.original};
+      assignment.jiggedAddress = null;
+      assignment.jigPoolVariantId = null;
+      assignment.jigNeeded = false;
+    } else {
     let savedVariant = (selected.source.variants || []).find(item => safeAddressVariantKey(item.address) === key);
     if (!savedVariant) {
       savedVariant = { id: crypto.randomUUID(), address: {
@@ -1158,6 +1171,7 @@ async function prepareNewManagedAssignment(assignment, membership, account, orde
     assignment.jiggedAddress = { ...savedVariant.address };
     assignment.jigPoolVariantId = savedVariant.id;
     assignment.jigHistoryKeys = [...new Set([...(assignment.jigHistoryKeys || []), key])];
+    }
   }
   const cards = details.paymentMethods || [];
   const card = cards[reserved.size % (cards.length || 1)];
@@ -25471,7 +25485,7 @@ async function resetCustomerJigs(context) {
     source.generatedSafeVariantsAt = now;
     for (const [index, record] of assigned.entries()) {
       claimed.add(record);
-      const variant = source.variants[index];
+      const variant = index === 0 ? null : source.variants[index - 1];
       const deliveryAddress = variant?.address || Object.fromEntries(
         ["address", "address2", "city", "state", "zip", "country"].map(field => [field, source.original[field] || ""])
       );
@@ -25482,8 +25496,8 @@ async function resetCustomerJigs(context) {
       record.jigPoolVariantId = variant?.id || null;
       record.jigVariantIndex = variant ? index + 1 : null;
       record.jigHistoryKeys = variant ? [safeAddressVariantKey(variant.address)] : [];
-      record.jigNeeded = !variant;
-      record.jigNeededReason = variant ? null : "Four JIGs are already assigned for this Main address. Add another Main address.";
+      record.jigNeeded = index !== 0 && !variant;
+      record.jigNeededReason = index === 0 || variant ? null : "Four JIGs are already assigned for this Main address. Add another Main address.";
       record.exportAttemptStatus = null;
       record.updatedAt = now;
       updatedProfiles++;
