@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
+import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 
 const API = "https://discord.com/api/v10";
 let lapseChecklistRuntime = null;
@@ -2175,6 +2176,20 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   };
   const skuSelectionsFile = path.join(dataDir, "discord-sku-selections.json");
   const skuDraftsFile = path.join(dataDir, "discord-sku-drafts.json");
+  const skuReminderPanelsFile = path.join(dataDir, "discord-sku-reminder-panels.json");
+  const skuReminderHistoryFile = path.join(dataDir, "discord-sku-reminder-history.json");
+  let skuReminderPanelQueue = Promise.resolve();
+  function withSkuReminderPanelQueue(task) {
+    const next = skuReminderPanelQueue.then(task);
+    skuReminderPanelQueue = next.catch(() => {});
+    return next;
+  }
+  let skuReminderSendQueue = Promise.resolve();
+  function withSkuReminderSendQueue(task) {
+    const next = skuReminderSendQueue.then(task);
+    skuReminderSendQueue = next.catch(() => {});
+    return next;
+  }
   let skuQueue = Promise.resolve();
   function withSkuQueue(task) {
     const next = skuQueue.then(task);
@@ -2265,6 +2280,59 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   const tonightDate = () => new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit"
   }).format(new Date());
+
+  // Discord has no per-viewer visibility for buttons on public messages.
+  // Mirror the bell into the owner's private Users-SKUs / sku-requests channel.
+  async function ensureOwnerSkuReminderPanel(message, products) {
+    if (!skuRequestsChannelId || !ownerId || !isNewDropPost(message) || !dropChannelIds.has(message.channel_id) ||
+        message.author?.bot || message.webhook_id) return;
+    await withSkuReminderPanelQueue(async () => {
+      const panels = await readSkuFile(skuReminderPanelsFile);
+      const previous = panels[message.id];
+      if (!products.length) {
+        if (previous?.messageId) {
+          await api("/channels/" + skuRequestsChannelId + "/messages/" + previous.messageId, "DELETE")
+            .catch(error => { if (!/HTTP 404/.test(error.message)) throw error; });
+          delete panels[message.id];
+          await writeSkuFile(skuReminderPanelsFile, panels);
+        }
+        return;
+      }
+      const retailer = retailerDropLabels[message.channel_id] ||
+        (message.channel_id === tonightChannelId ? "Dropping Tonight" : "Upcoming Drops");
+      const payload = skuReminderOwnerPanel({
+        guildId, channelId: message.channel_id, sourceId: message.id, retailer,
+        skuCount: products.length
+      });
+      let posted;
+      if (previous?.messageId) {
+        try {
+          posted = await api("/channels/" + skuRequestsChannelId + "/messages/" + previous.messageId, "PATCH", payload);
+        } catch (error) {
+          if (!/HTTP 404/.test(error.message)) throw error;
+        }
+      }
+      if (!posted) posted = await api("/channels/" + skuRequestsChannelId + "/messages", "POST", payload);
+      panels[message.id] = { channelId: message.channel_id, messageId: posted.id };
+      await writeSkuFile(skuReminderPanelsFile, panels);
+    });
+  }
+  async function retireOwnerSkuReminderPanels(retiredSources) {
+    if (!retiredSources.size || !skuRequestsChannelId) return;
+    await withSkuReminderPanelQueue(async () => {
+      const panels = await readSkuFile(skuReminderPanelsFile);
+      let changed = false;
+      for (const sourceId of retiredSources) {
+        const previous = panels[sourceId];
+        if (!previous) continue;
+        await api("/channels/" + skuRequestsChannelId + "/messages/" + previous.messageId, "DELETE")
+          .catch(error => { if (!/HTTP 404/.test(error.message)) throw error; });
+        delete panels[sourceId];
+        changed = true;
+      }
+      if (changed) await writeSkuFile(skuReminderPanelsFile, panels);
+    });
+  }
   async function ensureSkuControls(message) {
     if (!dropChannelIds.has(message.channel_id) || message.author?.bot || message.webhook_id) return;
     const products = parseDropSkus(message);
@@ -2305,6 +2373,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         await writeSkuFile(skuMenusFile, menus);
       }
     });
+    await ensureOwnerSkuReminderPanel(message, products);
     return products.length;
   }
   async function backfillDropMenus() {
@@ -2387,6 +2456,71 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
     });
   }
+
+  async function remindUnselectedSkuDrop(channelId, sourceId) {
+    return withSkuReminderSendQueue(async () => {
+      // Only current main SKU posts are eligible: a replaced or deleted drop
+      // must never send a new notification from an old button.
+      const sources = await webActiveDropSources();
+      const drop = sources.find(row => row.channelId === channelId &&
+        row.sourceId === sourceId && row.products.length);
+      if (!drop) throw new Error("This SKU drop is no longer active. Post new SKUs to create a fresh reminder button.");
+      const accounts = await getAccounts();
+      const paidAccountIds = new Set();
+      for (const account of accounts) {
+        if (!account?.discordLinkedAt || account.disabled ||
+            !/^\d{17,22}$/.test(String(account.discordUserId || ""))) continue;
+        try {
+          if (Number(await (getPaidSkuAllowance || getAllowance)(account.id)) > 0)
+            paidAccountIds.add(String(account.id));
+        } catch (error) {
+          console.error("SKU reminder membership check:", error.message);
+        }
+      }
+      const dropKey = { channelId, sourceId, tonightChannelId, today: tonightDate() };
+      const selections = await readSkuFile(skuSelectionsFile);
+      const recipients = unselectedSkuRecipientIds(accounts, selections, paidAccountIds, dropKey, ownerId);
+      const state = await readSkuFile(skuReminderHistoryFile);
+      const reminder = state[sourceId] || { channelId, sentTo: {} };
+      let sent = 0, recent = 0, failed = 0, answered = 0;
+      const message = skuReminderDirectMessage({
+        guildId, channelId, sourceId, retailer: drop.label
+      });
+      for (const id of recipients) {
+        if (!canRepeatSkuReminder(reminder.sentTo?.[id])) {
+          recent++;
+          continue;
+        }
+        // A selection may arrive while other customers are being notified.
+        const updated = await readSkuFile(skuSelectionsFile);
+        if (hasRespondedToSkuDrop(updated[id], dropKey)) {
+          answered++;
+          continue;
+        }
+        try {
+          const dmChannel = await api("/users/@me/channels", "POST", { recipient_id: id });
+          await api("/channels/" + dmChannel.id + "/messages", "POST", message);
+          reminder.sentTo ||= {};
+          reminder.sentTo[id] = new Date().toISOString();
+          state[sourceId] = reminder;
+          await writeSkuFile(skuReminderHistoryFile, state);
+          sent++;
+        } catch (error) {
+          failed++;
+          console.error("Discord SKU selection reminder DM unavailable:", error.message);
+        }
+      }
+      const expiry = Date.now() - 30 * 86400000;
+      for (const [key, entry] of Object.entries(state)) {
+        for (const [id, at] of Object.entries(entry?.sentTo || {})) {
+          if (Date.parse(at) < expiry) delete entry.sentTo[id];
+        }
+        if (!Object.keys(entry?.sentTo || {}).length) delete state[key];
+      }
+      await writeSkuFile(skuReminderHistoryFile, state);
+      return { eligible: recipients.length, sent, recent, failed, answered };
+    });
+  }
   const pendingDropEdits = new Map();
   function scheduleEditedDropAlert(channelId, messageId) {
     if (!retailerDropLabels[channelId] || !messageId) return;
@@ -2432,6 +2566,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           }
           await writeSkuFile(skuDraftsFile, drafts);
         });
+        await retireOwnerSkuReminderPanels(retiredSources);
       } catch (error) {
         discordCommunityStatus.error = `Drop message cleanup: ${error.message}`;
         console.error("Discord drop message cleanup:", error.message);
@@ -2575,6 +2710,28 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+
+      if (d.type === 3 && /^sku:remind:\d{17,22}:\d{17,22}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== skuRequestsChannelId || !isGuildOwnerSkuTester(userId, ownerId))
+          return await reply("Only the verified Discord server owner may send SKU reminders.");
+        const [, , channelId, sourceId] = d.data.custom_id.split(":");
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          const result = await remindUnselectedSkuDrop(channelId, sourceId);
+          const content = result.eligible
+            ? "🔔 **SKU reminder results**\nSent to **" + result.sent +
+              "** member(s). " + result.recent + " already reminded in the last 30 minutes; " +
+              result.answered + " responded while reminders were sending; " +
+              result.failed + " could not receive a Discord DM."
+            : "✅ Everyone eligible has already selected SKUs or skipped this drop. No reminders were sent.";
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+            { content, allowed_mentions: { parse: [] } });
+        } catch (error) {
+          console.error("Owner SKU selection reminder:", error.message);
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+            { content: "Could not send reminders: " + error.message, allowed_mentions: { parse: [] } });
+        }
+      }
       if (d.type === 3 && /^sku:(?:open|page|choose):\d{17,22}(?::\d{1,3})?$/.test(d.data?.custom_id || "")) {
         if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU selector belongs in a drop channel.");
         if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
