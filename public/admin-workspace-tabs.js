@@ -9,7 +9,7 @@
     ["home", "Home"], ["customers", "Customers"], ["gifted", "Gifted"],
     ["rented", "Rented"], ["available", "Available Memberships"]
   ];
-  const viewTypes = {customers:"paid", gifted:"free-profile", rented:"rented-profile", available:"available-memberships"};
+  const viewTypes = {home:"paid", customers:"paid", gifted:"free-profile", rented:"rented-profile", available:"available-memberships"};
   const nav = document.createElement("nav");
   nav.id = "adminWorkspaceTabs";
   nav.className = "admin-workspace-tabs";
