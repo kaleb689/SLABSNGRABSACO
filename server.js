@@ -42,6 +42,7 @@ import { startCheckoutDmSummaryScheduler } from "./checkout-dm-summary.js";
 import { startMembershipLapseNotificationScheduler } from "./membership-lapse-notifications.js";
 import { membershipDiscountOptions, activeSitewideDiscount } from "./checkout-discounts.js";
 import { safeAddressVariants, safeAddressVariantKey, defaultJigVariants } from "./address-jigs.js";
+import { ADDRESS_JIG_OPTIONS, eligibleJigSelections } from "./address-jig-choices.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -19267,6 +19268,10 @@ app.post("/api/admin/managed-pool/:id/override-hold", requireAdmin, async (req, 
 });
 
 /* ADMIN POOL PROFILE SEARCH: never transmit passwords, cards or security codes. */
+app.get("/api/admin/jig-options", requireAdmin, (_req, res) => {
+  res.setHeader("Cache-Control","no-store");
+  return res.json({ok:true, options:ADDRESS_JIG_OPTIONS});
+});
 app.get("/api/admin/managed-pool/search", requireAdmin, async (req, res) => {
   try {
     const [managed, free, rented, customers, holds, paid, gifts] = await Promise.all([
@@ -19319,6 +19324,8 @@ app.get("/api/admin/managed-pool/search", requireAdmin, async (req, res) => {
         rows.push({
           id, retailer, loginEmail: email,
           profileName: clean(account.profileName || "", 150),
+          accountEmail: clean(account.accountEmail || "", 254),
+          notes: clean(account.notes || "", 500),
           status, assignedTo: owner,
           assignmentType: assigned?.type || null,
           assignmentId: assigned ? String(assigned.assignment.id || "") : null
@@ -30864,7 +30871,46 @@ app.post(
       );
       if (!poolSource) return res.status(400).json({ error: "Choose one of this customer's unchanged main addresses." });
 
-      const variants = (poolSource.variants || []).map(item => item.address);
+      const explicitlySelected = Array.isArray(req.body?.jigOptions);
+       const requestedEntries = explicitlySelected
+         ? eligibleJigSelections(sourceAddress, req.body.jigOptions) : [];
+       const otherAssignmentsForCustomer = [
+         ...(await getFreeAssignments()), ...(await getRentalAssignments())
+       ].filter(item => String(item.customerAccountId || "") === String(account.id));
+       const unmodifiedOriginalKey = safeAddressVariantKey(sourceAddress);
+       const originalIsPreserved = [...paidProfiles, ...otherAssignmentsForCustomer].some(item =>
+         item !== assignment && !item.jiggedAddress &&
+         safeAddressVariantKey(item.customerProfile || {}) === unmodifiedOriginalKey
+       );
+       if (!originalIsPreserved && explicitlySelected) {
+         assignment.customerProfile = {
+           ...(assignment.customerProfile || {}),
+           firstName: sourceAddress.firstName || assignment.customerProfile?.firstName || "",
+           lastName: sourceAddress.lastName || assignment.customerProfile?.lastName || "",
+           phone: sourceAddress.phone || assignment.customerProfile?.phone || "",
+           ...Object.fromEntries(["address","address2","city","state","zip","country"].map(key =>
+             [key,sourceAddress[key] || ""]))
+         };
+         assignment.jiggedAddress = null;
+         assignment.jigSourceAddress = {...sourceAddress};
+         assignment.jigSourceKey = poolSource.id;
+         assignment.jigNeeded = false;
+         assignment.jigNeededReason = null;
+         assignment.updatedAt = new Date().toISOString();
+         if (type === "free") await saveFreeAssignments(assignments);
+         else await saveRentalAssignments(assignments);
+         return res.json({ok:true,unchanged:true,variant:assignment.customerProfile,
+           message:"This first profile retains the unchanged original address. Jig the next profile to use your selected variations."});
+       }
+       const requested = requestedEntries.map(entry => ({...entry.address,jigOptionId:entry.id}));
+       const optionUses = new Map();
+       for (const sibling of otherAssignmentsForCustomer) {
+         if (!sibling.jigOptionId) continue;
+         optionUses.set(sibling.jigOptionId,(optionUses.get(sibling.jigOptionId)||0)+1);
+       }
+       const variants = explicitlySelected
+         ? requested.sort((a,b)=>(optionUses.get(a.jigOptionId)||0)-(optionUses.get(b.jigOptionId)||0))
+         : (poolSource.variants || []).map(item => item.address);
 
       if (!variants.length) {
         return res
@@ -31060,7 +31106,17 @@ app.post(
       assignment.jiggedAddress = {
         ...chosen
       };
-      let poolVariant = poolSource.variants.find(item => safeAddressVariantKey(item.address) === chosenKey);
+      if (explicitlySelected) assignment.jigOptionId = chosen.jigOptionId || null;
+       let poolVariant = poolSource.variants.find(item => safeAddressVariantKey(item.address) === chosenKey);
+       if (!poolVariant && poolSource.variants.length >= 4) {
+         const occupied = new Set([...paidProfiles, ...otherAssignmentsForCustomer]
+           .filter(item => item !== assignment).map(item => item.jigPoolVariantId).filter(Boolean));
+         const removable = poolSource.variants.find(item => !occupied.has(item.id));
+         if (!removable) return res.status(409).json({
+           error:"Four jigs for this main address are already assigned. Remove an unused jig before creating another."
+         });
+         poolSource.variants = poolSource.variants.filter(item => item.id !== removable.id);
+       }
       if (!poolVariant) {
         poolVariant = { id: crypto.randomUUID(), address: { ...chosen } };
         poolSource.variants.push(poolVariant);
