@@ -55,8 +55,8 @@ test("Full Admin Success groups checkouts per customer and does not invent purch
   },{timeout:1000});
   assert.match(nodes.customers.innerHTML,/Example Member/);
   assert.match(nodes.customers.innerHTML,/2 orders/);
-  assert.match(nodes.customers.innerHTML,/62\\.51/);
-  assert.doesNotMatch(nodes.customers.innerHTML,/999\\.99/);
+  assert.ok(nodes.customers.innerHTML.includes("62.51"));
+  assert.ok(!nodes.customers.innerHTML.includes("999.99"));
   assert.match(nodes.customers.innerHTML,/price pending/);
   for(const name of ["Booster Bundle","Elite Trainer Box","Tin"])
     assert.ok(nodes.products.innerHTML.includes(name),name);
@@ -73,7 +73,7 @@ test("Inactive period and shipping filters are neutral; only the selected option
   assert.match(css,/\.periods button\[aria-pressed="false"\]/);
   assert.match(mobile,/aria-pressed="'\+\(String\(value\)===String\(days\)\)/);
   assert.match(customer,/s === status/);
-  assert.match(admin,/button\\.dataset\\.period === String\\(period\\)/);
+  assert.ok(admin.includes('button.dataset.period === String(period)'));
 });
 test("Full-status-color outline wraps all sides of customer recent order and tracking cards",()=>{
   const css=read("public/sng-premium-controls.css");
@@ -87,7 +87,7 @@ test("Full-status-color outline wraps all sides of customer recent order and tra
   for(const file of [app,site,admin,secure]){
     assert.match(file,/sng-premium-controls\.css\?v=2/);
   }
-  assert.match(app,/admin-mobile\.js\?v=39-restore-customer-memberships-20261010/);
+  assert.ok(app.includes("/admin-mobile.js?v=20261013-live-1"));
 });
 
 test("Admin overview keeps membership KPIs visible and removes duplicate sections",()=>{
