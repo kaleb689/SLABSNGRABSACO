@@ -118,6 +118,7 @@ function auth(value){
     $("signin").hidden=value;
     $("workspace").hidden=!value;
     $("tabs").hidden=!value;
+    if($("mobile-biometric-setup"))$("mobile-biometric-setup").hidden=!value;
     window.AdminLiveNotifications?.setAuthenticated(value);
   }
   if(!value){
@@ -776,7 +777,7 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
 if(tab==="profiles"){c.innerHTML='<div class="metrics">'+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("Activated",activationCount(a,"activated"))+metric("Expired",activationCount(a,"expired"))+metric("Registered customers",registeredCustomerCount)+'</div>'+panel("Profile workflow",'<p>Open the full tracker to activate, extend, or return profiles using the existing verified controls.</p><a href="/admin.html#profileActivationTracker">OPEN PROFILE WORKFLOW ↗</a>')+panel("Inventory",'<p>Target, Walmart, and Pokémon Center inventory remains managed in the full Admin dashboard.</p><a href="/admin.html">OPEN INVENTORY MANAGER ↗</a>');}
 if(tab==="usage"){c.innerHTML='<div class="admin-usage-return"><button type="button" id="admin-more-return" class="action">← BACK TO MORE</button></div>'+'<div class="metrics">'+metric("Installed users",u.installedUsers??"—")+metric("Installed devices",u.installedDevices??"—")+metric("Active users · 7D",u.activeUsers7d??"—")+metric("Active users · 30D",u.activeUsers30d??"—")+'</div>'+panel("Tracking information","<p>Counts begin when updated customer apps report activity. PWA installs are confirmed by app mode or an installation event; they are not App Store downloads.</p>")+panel("Recent activity",(u.recent||[]).slice(0,50).map(x=>'<article class="item"><strong>'+esc(x.name||"Customer")+'</strong><small>'+esc(x.email||"")+' · '+esc(x.platform||"Other")+' · '+(x.installedConfirmed?"Installed":"Web activity")+'</small><small>Last active: '+esc(x.lastSeenAt?new Date(x.lastSeenAt).toLocaleString():"—")+'</small></article>').join("")||"<p>No app activity has been recorded yet.</p>");}
 if(tab==="usage"){$("admin-more-return").onclick=()=>{tab="more";render();window.scrollTo(0,0);};}
-if(tab==="more"){c.innerHTML=panel("App usage & devices",'<div class="links"><button type="button" class="action" id="open-admin-usage">VIEW APP USAGE ↗</button></div>')+'<details class="panel admin-push-disclosure"><summary>Push notifications</summary><div id="push-settings" class="admin-push-content">Loading…</div></details>'+panel("Admin tools",'<div class="links"><button class="action" id="register-face-id">SET UP FACE ID / TOUCH ID</button><a class="action" href="/admin.html">FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html">DISCOUNTS AND MEMBERSHIPS ↗</a><a class="action" href="/admin.html">DISCORD AND NOTIFICATIONS ↗</a><button class="action" id="signout">SIGN OUT</button></div>');void pushSettings();$("open-admin-usage").onclick=()=>{tab="usage";render();window.scrollTo(0,0);};$("register-face-id").onclick=async()=>{try{await passkeyRegister();}catch(e){alert(passkeyError(e));}};$("signout").onclick=async()=>{await fetch("/api/admin/logout",{method:"POST",credentials:"same-origin"}).catch(()=>{});auth(false);};}
+if(tab==="more"){c.innerHTML=panel("Face ID / Touch ID",'<p>Use your iPad biometric unlock for secure Admin sign-in. Available Face ID or Touch ID depends on the device.</p><button type="button" class="action" id="register-face-id">ENABLE FACE ID / TOUCH ID</button>')+panel("App usage & devices",'<div class="links"><button type="button" class="action" id="open-admin-usage">VIEW APP USAGE ↗</button></div>')+'<details class="panel admin-push-disclosure"><summary>Push notifications</summary><div id="push-settings" class="admin-push-content">Loading…</div></details>'+panel("Admin tools",'<div class="links"><a class="action" href="/admin.html">FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html">DISCOUNTS AND MEMBERSHIPS ↗</a><a class="action" href="/admin.html">DISCORD AND NOTIFICATIONS ↗</a><button class="action" id="signout">SIGN OUT</button></div>');void pushSettings();$("open-admin-usage").onclick=()=>{tab="usage";render();window.scrollTo(0,0);};$("register-face-id").onclick=async()=>{try{await passkeyRegister();}catch(e){alert(passkeyError(e));}};$("signout").onclick=async()=>{await fetch("/api/admin/logout",{method:"POST",credentials:"same-origin"}).catch(()=>{});auth(false);};}
 }
 let successRefreshRunning=false,successRefreshQueued=false;
 async function refreshSuccessTracker(){
@@ -860,6 +861,13 @@ async function refresh(force=false){
     if(mobileRefreshPending && !mobileRefreshBlocked()) scheduleMobileRefresh();
   }
 }
+const quickFaceSetup=$("mobile-biometric-setup");
+if(quickFaceSetup)quickFaceSetup.onclick=async()=>{
+  if(!authenticated){$("login-message").textContent="Sign in first to set up Face ID / Touch ID.";return;}
+  quickFaceSetup.disabled=true;
+  try{await passkeyRegister();}catch(e){alert(passkeyError(e));}
+  finally{quickFaceSetup.disabled=false;}
+};
 const faceButton=document.getElementById("face-id-login");if(faceButton){faceButton.onclick=async()=>{faceButton.disabled=true;try{await passkeyLogin();}catch(e){$("login-message").textContent=passkeyError(e);}finally{faceButton.disabled=false;}};}
 $("login").addEventListener("submit",async ev=>{ev.preventDefault();const f=new FormData(ev.currentTarget);const r=await fetch("/api/admin/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:f.get("password"),code:f.get("code")})});if(!r.ok){$("login-message").textContent="Sign in failed. Check your password and authenticator code.";return;}ev.currentTarget.reset();$("login-message").textContent="";await refresh(true);});
 $("refresh").onclick=()=>void refresh(true);
