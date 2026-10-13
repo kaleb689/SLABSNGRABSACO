@@ -126,7 +126,7 @@ test("full Admin Success provides checkout filters, verified spend, customer bre
   const page=file("public/admin-success.html");
   const script=file("public/admin-success.js");
   assert.ok(page.includes('All confirmed checkouts'));
-  assert.ok(page.includes('Unmatched community checkouts'));
+  assert.ok(script.includes('Unmatched community checkouts'));
   assert.ok(page.includes('Customer Breakdowns'));
   assert.ok(page.includes('Products Purchased'));
   assert.ok(page.includes('Verify prices'));
