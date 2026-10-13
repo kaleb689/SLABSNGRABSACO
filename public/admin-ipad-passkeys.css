@@ -17,3 +17,16 @@
   #dashboard .admin-head-actions .admin-passkey-controls{flex:1 1 160px;max-width:100%}
   #dashboard .admin-passkey-setup{width:100%;min-height:44px;padding:8px}
 }
+
+/* Compact iPad app: keep a permanent, clearly labeled biometric entry point. */
+body.sng-admin-app header #mobile-biometric-setup{
+  width:auto;min-width:94px;max-width:130px;height:42px;padding:6px 8px;
+  flex:0 0 auto;font-size:10px;letter-spacing:.02em;line-height:1.25;
+  text-align:center;background:#133b55;color:#e3f9ff;border:1px solid #4289b3;
+  border-radius:12px;font-weight:850
+}
+body.sng-admin-app header #mobile-biometric-setup[hidden]{display:none!important}
+@media(max-width:410px){
+ body.sng-admin-app header #mobile-biometric-setup{min-width:76px;max-width:86px;font-size:9px;padding:5px 4px}
+ body.sng-admin-app header{gap:5px}
+}
