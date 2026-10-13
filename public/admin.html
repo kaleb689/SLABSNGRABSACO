@@ -20739,7 +20739,7 @@ async function refreshAdminInPlace() {
     document.hidden ||
     dashboard.hidden ||
     adminLiveInputFocused() ||
-    document.querySelector(".customer-order[open] [data-linked-profiles-section][open]") ||
+    document.querySelector(".jig-modal:not([hidden])") ||
     Date.now() - adminLastInteractionAt < 1400
   ) return;
 
