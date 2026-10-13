@@ -139,7 +139,31 @@
     try { localStorage.setItem("sng-admin-theme", next); } catch {}
   });
   try { document.body.dataset.adminTheme = localStorage.getItem("sng-admin-theme") || "dark"; } catch { document.body.dataset.adminTheme = "dark"; }
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) void refresh(); });
-  setInterval(() => { if (!document.hidden) void refresh(); }, 15000);
+  // Admin Success is part of the live dashboard: keep verified totals updated
+  // immediately when Discord success or background billing data changes.
+  let stream = null;
+  let pendingRefresh = null;
+  function scheduleRefresh() {
+    if (document.hidden) return;
+    clearTimeout(pendingRefresh);
+    pendingRefresh = setTimeout(() => { pendingRefresh = null; void refresh(); }, 400);
+  }
+  function connect() {
+    if (document.hidden || typeof EventSource === "undefined") {
+      stream?.close();
+      stream = null;
+      return;
+    }
+    if (stream) return;
+    stream = new EventSource("/api/admin/live/events");
+    stream.addEventListener("data-change", scheduleRefresh);
+    stream.addEventListener("open", scheduleRefresh);
+  }
+  document.addEventListener("visibilitychange", () => { connect(); if (!document.hidden) scheduleRefresh(); });
+  window.addEventListener("pageshow", connect);
+  window.addEventListener("pagehide", () => {stream?.close();stream=null;});
+  // Recovery when tab was asleep or its event stream temporarily disconnected.
+  setInterval(() => { if (!document.hidden) scheduleRefresh(); }, 30000);
+  connect();
   void refresh();
 })();
