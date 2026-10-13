@@ -47,7 +47,7 @@ test("bell open state is excluded from BOTH Admin dropdown persistence systems",
   assert.equal(html.split(skipRestore).length - 1, 2);
   assert.equal(html.split(skipSave).length - 1, 2);
   assert.match(html, /admin-workspace-tabs\.css\?v=20261013-sixcol-1/);
-  assert.match(html, /admin-workspace-tabs\.js\?v=20261013-sixcol-1/);
+  assert.match(html, /admin-workspace-tabs\.js\?v=20261013-biometric-1/);
 });
 
 test("Admin JS and inline template scripts parse", () => {
