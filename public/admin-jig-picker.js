@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const route = "/api/admin/jig-options";
-  let catalog = null, modal = null, originalButton = null;
+  let catalog = null, postalConfigured = false, modal = null, originalButton = null;
   function element(tag,className,text) {
     const node=document.createElement(tag);
     if(className)node.className=className;
@@ -14,6 +14,7 @@
     const body=await response.json().catch(()=>({}));
     if(!response.ok || !Array.isArray(body.options))throw Error(body.error||"Unable to load jig choices.");
     catalog=body.options;
+    postalConfigured=body.postalVerificationConfigured===true;
     return catalog;
   }
   function ensureModal() {
@@ -52,8 +53,8 @@
     modal.addEventListener("click",e=>{if(e.target===modal)closeModal();});
     document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!modal.hidden)closeModal();});
     const checkboxes=()=>[...choices.querySelectorAll('input[type="checkbox"]')];
-    standard.addEventListener("click",()=>checkboxes().forEach(x=>{x.checked=x.dataset.risk==="standard";}));
-    all.addEventListener("click",()=>checkboxes().forEach(x=>{x.checked=true;}));
+    standard.addEventListener("click",()=>checkboxes().forEach(x=>{x.checked=!x.disabled&&x.dataset.risk==="standard";}));
+    all.addEventListener("click",()=>checkboxes().forEach(x=>{x.checked=!x.disabled;}));
     clear.addEventListener("click",()=>checkboxes().forEach(x=>{x.checked=false;}));
     confirm.addEventListener("click",async()=>{
       const selected=checkboxes().filter(x=>x.checked).map(x=>x.value);
@@ -98,7 +99,8 @@
           const label=element("label","admin-jig-picker-choice");
           const input=element("input");
           input.type="checkbox";input.value=option.id;input.dataset.risk=option.risk;
-          input.checked=selected?selected.has(option.id):option.risk==="standard";
+          input.disabled=(option.id==="zip.four"||option.id==="city.alternate")&&!postalConfigured;
+          input.checked=!input.disabled&&(selected?selected.has(option.id):option.risk==="standard");
           const caption=element("span","",option.label);
           if(option.risk==="experimental")caption.append(element("small","","Experimental"));
           label.append(input,caption);set.append(label);
@@ -109,7 +111,9 @@
         const value=[...groups.querySelectorAll('input:checked')].map(x=>x.value);
         try{localStorage.setItem("adminJigCheckboxSelection",JSON.stringify(value));}catch{}
       },{once:false});
-      status.textContent="Options with no applicable text change for a particular address are automatically skipped.";
+      status.textContent=postalConfigured
+        ? "USPS ZIP+4 and alternative mailing cities are checked against each customer's actual source address; unverified choices are skipped."
+        : "Postal city and ZIP+4 verification is unavailable until USPS_CLIENT_ID and USPS_CLIENT_SECRET are configured on Render. Other JIG options remain available.";
     } catch(error) {status.textContent=error.message||"Unable to load options.";}
   }
   function requestBody(button) {
