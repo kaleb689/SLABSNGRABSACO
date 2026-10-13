@@ -19,7 +19,7 @@ test("Admin customer dropdowns use one customer-scoped state manager", () => {
 
 test("Closing parent immediately closes all nested details and saved keys", () => {
   const start = admin.indexOf("(function setupStableDetailsState()");
-  const end = admin.indexOf("CUSTOMER ACTION CENTER / EXPORT", start);
+  const end = admin.lastIndexOf("/* =========================================", admin.indexOf("CUSTOMER ACTION CENTER / EXPORT", start));
   assert.ok(start > 0 && end > start);
   const source = admin.slice(start,end);
   const events = new Map();
