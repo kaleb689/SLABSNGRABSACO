@@ -87,6 +87,26 @@
       summary.setAttribute("aria-label", "Admin notifications");
       summary.title = "Open admin notifications";
     }
+    // Notifications are a transient popover, not a persistent Admin dropdown.
+    // A previously stored "open" value must not cover navigation on return.
+    notifications.open = false;
+    const bell = notifications.querySelector("summary");
+    bell?.setAttribute("aria-controls", "adminNotificationList");
+    bell?.setAttribute("aria-expanded", "false");
+    notifications.addEventListener("toggle", () => {
+      bell?.setAttribute("aria-expanded", String(notifications.open));
+    });
+    document.addEventListener("pointerdown", event => {
+      if (notifications.open && !notifications.contains(event.target)) {
+        notifications.open = false;
+      }
+    }, true);
+    document.addEventListener("keydown", event => {
+      if (notifications.open && event.key === "Escape") {
+        notifications.open = false;
+        bell?.focus();
+      }
+    });
   }
 
   const buttons = new Map();
