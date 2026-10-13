@@ -90,5 +90,5 @@ test('Admin overview keeps historical totals without duplicate order lists; More
   assert.match(node('content').innerHTML, /7/);
   node('admin-more-return').onclick();
   assert.equal(node('heading').textContent, 'More');
-  assert.match(node('content').innerHTML, /SET UP FACE ID/);
+  assert.match(node('content').innerHTML, /ENABLE FACE ID \/ TOUCH ID/);
 });
