@@ -41,7 +41,7 @@
   const homeActions = document.createElement("div");
   homeActions.className = "admin-home-action-links";
   if (headerActions) {
-    [...headerActions.children].filter(item => item.id !== "logout" && item.id !== "adminNotifications")
+    [...headerActions.children].filter(item => item.id !== "logout" && item.id !== "adminNotifications" && item.id !== "adminPasskeyControls")
       .forEach(item => homeActions.append(item));
   }
   home.append(homeActions);
