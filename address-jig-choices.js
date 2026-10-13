@@ -12,10 +12,8 @@ const standard=[
    ["suffix."+short.toLowerCase()+".full","Street types",short+" to "+long]
  ]),
  ...[["apt","Apt"],["unit","Unit"],["suite","Suite"],["ste","Ste"],["apartment","Apartment"],["hash","#"],["hashcompact","#102 (no space)"],["apthash","Apt #102"],["condo","Condo"],["number","Number only"]].map(([id,label])=>["unit."+id,"Apartment / unit",label]),
- ["city.plantation","Mailing cities","Plantation / Fort Lauderdale, ZIP 33324"],
- ["city.pompano","Mailing cities","Pompano Beach / Lighthouse Point, ZIP 33064"],
  ["zip.five","ZIP formatting","Use five-digit ZIP instead of ZIP+4"],
- ["zip.four","ZIP formatting","Keep verified ZIP+4 on this address"]
+ ["zip.four","ZIP formatting","Use verified ZIP+4 when available (lookup required)"]
 ];
 // Experimental address formats are opt-in, not USPS-verified, and may not deliver.
 // Misspellings and double-letter jigs were explicitly removed from this set.
@@ -63,8 +61,6 @@ function apply(base,id){
  }else if(id.startsWith("ordinal.")){a.address=streetOrdinal(street,id.slice(8));}
  else if(id.startsWith("suffix.")){const parts=id.split("."),pair=suffixPairs.find(([,short])=>short.toLowerCase()===parts[1]);if(pair){const from=parts[2]==="full"?pair[1]:pair[0],to=parts[2]==="full"?pair[0]:pair[1];const words=street.split(" ");const final=words.length-1;if(words[final]===from){words[final]=to;a.address=words.join(" ");}}}
  else if(id.startsWith("unit.")){const n=unitNumber(unit);if(!n)return null;const labels={apt:"APT",unit:"UNIT",suite:"SUITE",ste:"STE",apartment:"APARTMENT",hash:"#",hashcompact:"#",apthash:"APT #",condo:"CONDO",number:""};const kind=id.slice(5),label=labels[kind];if(label===undefined)return null;a.address2=(label?label+(kind==="hashcompact"?"":" "):"")+n;}
- else if(id==="city.plantation"&&a.zip.startsWith("33324")){const c=a.city.toUpperCase();a.city=c==="PLANTATION"?"FORT LAUDERDALE":c==="FORT LAUDERDALE"?"PLANTATION":a.city;}
- else if(id==="city.pompano"&&a.zip.startsWith("33064")){const c=a.city.toUpperCase();a.city=c==="POMPANO BEACH"?"LIGHTHOUSE POINT":c==="LIGHTHOUSE POINT"?"POMPANO BEACH":a.city;}
  else if(id==="zip.five"&&/^\d{5}-\d{4}$/.test(a.zip)){a.zip=a.zip.slice(0,5);}
  else if(id==="zip.four"){return null; /* Never fabricate ZIP+4; retain verified source as-is. */}
 else if(id==="house.fraction"){a.address=street.replace(/^(\d+)(?=\s)/,"$1 1/2");}
