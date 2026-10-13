@@ -28,7 +28,7 @@ function harness(script, side) {
       closest: () => null
     },
     addEventListener: () => {},
-    querySelector: selector => selector === ".customer-order[open] [data-linked-profiles-section][open]"
+    querySelector: selector => [".customer-order[open] [data-linked-profiles-section][open]", ".jig-modal:not([hidden])"].includes(selector)
       ? null : ({ dataset: { accountTab: "membership" } })
   };
   const window = {
