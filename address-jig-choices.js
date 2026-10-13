@@ -2,18 +2,19 @@
 const standard=[
  ["direction.short","Directions","Abbreviate directions (NORTHWEST to NW)"],
  ["direction.long","Directions","Expand directions (NW to NORTHWEST)"],
- ["ordinal.number","Street numbers","87TH to 87 (numeric street name)"],
- ["ordinal.suffix","Street numbers","87 to 87TH (street ordinal)"],
- ["ordinal.word","Street numbers","9TH to NINTH"],
- ["ordinal.cardinal","Street numbers","9TH to NINE"],
- ["ordinal.spaced","Street numbers","87TH to 87 TH"],
+ ["ordinal.number","Street numbers","Remove ordinal suffix from a numbered street"],
+ ["ordinal.suffix","Street numbers","Use the correct ordinal suffix for a numbered street"],
+ ["ordinal.word","Street numbers","Spell out the numbered street ordinal"],
+ ["ordinal.cardinal","Street numbers","Spell out the numbered street cardinal"],
+ ["ordinal.spaced","Street numbers","Separate the ordinal suffix from a numbered street"],
  ...[["LANE","LN"],["AVENUE","AVE"],["STREET","ST"],["DRIVE","DR"],["TERRACE","TER"],["BOULEVARD","BLVD"],["MANOR","MNR"],["CENTER","CTR"]].flatMap(([long,short])=>[
    ["suffix."+short.toLowerCase(),"Street types",long+" to "+short],
    ["suffix."+short.toLowerCase()+".full","Street types",short+" to "+long]
  ]),
- ...[["apt","Apt"],["unit","Unit"],["suite","Suite"],["ste","Ste"],["apartment","Apartment"],["hash","#"],["hashcompact","#102 (no space)"],["apthash","Apt #102"],["condo","Condo"],["number","Number only"]].map(([id,label])=>["unit."+id,"Apartment / unit",label]),
+ ...[["apt","Apt"],["unit","Unit"],["suite","Suite"],["ste","Ste"],["apartment","Apartment"],["hash","#"],["hashcompact","Number sign without spacing"],["apthash","Apartment label with number sign"],["condo","Condo"],["number","Number only"]].map(([id,label])=>["unit."+id,"Apartment / unit",label]),
+ ["city.alternate","Mailing cities","Use an alternate USPS-matched mailing city for this address"],
  ["zip.five","ZIP formatting","Use five-digit ZIP instead of ZIP+4"],
- ["zip.four","ZIP formatting","Use verified ZIP+4 when available (lookup required)"]
+ ["zip.four","ZIP formatting","Lookup and use address-verified ZIP+4"]
 ];
 // Experimental address formats are opt-in, not USPS-verified, and may not deliver.
 // Misspellings and double-letter jigs were explicitly removed from this set.
@@ -21,10 +22,10 @@ const experimental=[
  ["house.fraction","Fractional house number","Add 1/2 after house number"],
  ["unit.building","Multiple unit designators","BLDG with existing unit"],
  ["street.compressed","Compressed street names","Join street and suffix words"],
- ["unit.floor","Floor and apartment","4B to FL 4 APT B (only where applicable)"],
- ["grid.compressed","Compressed grid","N 450 W to N450W (grid only)"],
- ["house.letter","Alphanumeric house number","123 to 123A"],
- ["house.hyphen","Alphanumeric house number","123 to 123-A"]
+ ["unit.floor","Floor and apartment","Use a floor and apartment designation where applicable"],
+ ["grid.compressed","Compressed grid","Compress directional street grid (grid streets only)"],
+ ["house.letter","Alphanumeric house number","Add letter to house number (experimental)"],
+ ["house.hyphen","Alphanumeric house number","Add hyphenated letter to house number (experimental)"]
 ];
 export const ADDRESS_JIG_OPTIONS=Object.freeze([...standard.map(([id,group,label])=>({id,group,label,risk:"standard"})),...experimental.map(([id,group,label])=>({id,group,label,risk:"experimental"}))]);
 const clean=x=>String(x??"").replace(/\s+/g," ").trim();
