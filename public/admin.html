@@ -20761,9 +20761,15 @@ async function refreshAdminInPlace() {
 function scheduleAdminLiveRefresh() {
   adminLiveRefreshPending = true;
   clearTimeout(adminLiveRefreshTimer);
-  adminLiveRefreshTimer = setTimeout(() => {
-    void refreshAdminInPlace();
-  }, 2200);
+  adminLiveRefreshTimer = setTimeout(async () => {
+    await refreshAdminInPlace();
+    // A pending update must be retried even when focus, a form or
+    // temporary user interaction prevented a previous render.
+    if (adminLiveRefreshPending && !document.hidden && !dashboard.hidden) {
+      clearTimeout(adminLiveRefreshTimer);
+      adminLiveRefreshTimer = setTimeout(scheduleAdminLiveRefresh, 1800);
+    }
+  }, 650);
 }
 
 function updateAdminLiveEvents() {
@@ -21224,6 +21230,14 @@ document.addEventListener(
       }
 
       if (detail.matches('[data-inline-admin-section="shipping"]')) return;
+      if (!detail.open) {
+        // Reset saved state as well as the live DOM: nested panels should
+        // stay closed when the parent is reopened after any re-render.
+        for (const descendant of detail.querySelectorAll("details")) {
+          descendant.open = false;
+          sessionStorage.setItem(detailsKey(descendant), "closed");
+        }
+      }
 
       sessionStorage.setItem(
         detailsKey(
@@ -25052,7 +25066,7 @@ document.addEventListener("click", event => {
   ↑
 </button>
 
-<script src="/admin-workspace-tabs.js?v=20261012-4"></script>
+<script src="/admin-workspace-tabs.js?v=20261013-1"></script>
 <script src="/admin-jig-picker.js?v=20261012-2"></script>
 <script src="/admin-pool-search.js?v=20261012-2"></script>
 <script src="/admin-theme-toggle.js?v=20261009"></script>
