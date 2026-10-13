@@ -18403,6 +18403,7 @@ function bindManagedMembershipDashboard(
 }
   
 
+let adminLastActivationFingerprint = null;
 async function loadProfileActivationTracker() {
   if (!profileActivationGroups) {
     return;
@@ -18433,6 +18434,11 @@ async function loadProfileActivationTracker() {
         "Unable to load activation tracker."
       );
     }
+    const fingerprint = JSON.stringify(data, (key, value) =>
+      ["lastCheckedAt", "lastFetchedAt", "sourceCheckedAt", "generatedAt"].includes(key)
+        ? undefined : value);
+    if (fingerprint === adminLastActivationFingerprint) return;
+    adminLastActivationFingerprint = fingerprint;
 
     if (
       profileDiscordStatus
@@ -19501,7 +19507,9 @@ document
 
 
 let adminActiveLoadSequence = 0;
-async function load() {
+let adminPaidRowsFingerprint = null;
+let adminOtherRowsFingerprint = new Map();
+async function load({ background = false } = {}) {
   const activeLoad = ++adminActiveLoadSequence;
 
   await loadManagedAvailability();
@@ -19593,6 +19601,10 @@ const response =
   const data =
     await response.json();
   if (activeLoad !== adminActiveLoadSequence) return;
+  const viewFingerprint = JSON.stringify(data);
+  if (background && submissionType !== "paid" &&
+      adminOtherRowsFingerprint.get(submissionType) === viewFingerprint && rows.children.length) return;
+  adminOtherRowsFingerprint.set(submissionType, viewFingerprint);
 
   if (
     submissionType ===
@@ -19749,6 +19761,17 @@ if (!submissions.length) {
             0
           )
       );
+  const nextPaidFingerprint = JSON.stringify(sortedSubmissions);
+  if (background && adminPaidRowsFingerprint === nextPaidFingerprint &&
+      rows.querySelector("#paidCustomerRows")) return;
+  // An interaction can open a card while the live request is in flight.
+  // Defer its DOM replacement until the card is closed.
+  if (background && (document.querySelector("#rows .customer-order[open]") ||
+      adminLiveInputFocused())) {
+    adminLiveRefreshPending = true;
+    return;
+  }
+  adminPaidRowsFingerprint = nextPaidFingerprint;
 
   rows.innerHTML = `
     <div
@@ -20742,7 +20765,7 @@ async function refreshAdminInPlace() {
 
   try {
     // Reload the currently selected management view without changing routes.
-    await load();
+    await load({ background: true });
     if (submissionTypeFilter) submissionTypeFilter.value = filterValue;
     // The cross-pool search is an independent panel and must refresh too.
     await window.refreshAdminPoolSearch?.();
@@ -20827,193 +20850,7 @@ load();
 
 
 
-/* =========================================
-   PERSIST ALL ADMIN DROPDOWN / TAB STATES
-   Open panels stay open through saves and reload/rerender.
-========================================= */
-(function setupAdminPersistentDetails() {
-  const storagePrefix =
-    "sng-admin-details:";
-
-  function detailKey(
-    detail,
-    index = 0
-  ) {
-    const explicit =
-      detail.id ||
-      detail.dataset
-        ?.managedGroupDetails ||
-      detail.dataset
-        ?.managedAddRemovePanel ||
-      detail.dataset
-        ?.giftedEditPanel ||
-      detail.dataset
-        ?.linkedProfilesSection ||
-      detail.dataset
-        ?.managedMembershipCard ||
-      "";
-
-    const parent =
-      detail.closest(
-        "[data-managed-customer-group], [data-managed-group-details], .customer-order"
-      );
-
-    const parentKey =
-      parent?.dataset
-        ?.managedCustomerGroup ||
-      parent?.dataset
-        ?.managedGroupDetails ||
-      parent?.dataset?.id ||
-      "";
-
-    const summary =
-      detail.querySelector(
-        ":scope > summary"
-      )?.innerText
-        ?.replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 120) ||
-      "details";
-
-    return (
-      storagePrefix +
-      [
-        location.pathname,
-        parentKey,
-        explicit,
-        summary,
-        index
-      ].join("|")
-    );
-  }
-
-  function restoreDetails(
-    root = document
-  ) {
-    root
-      .querySelectorAll(
-        "details"
-      )
-      .forEach(
-        (detail, index) => {
-          if (detail.id === "adminNotifications" || detail.matches('[data-inline-admin-section="shipping"]')) {
-            detail.open = false;
-            return;
-          }
-          const stored =
-            sessionStorage.getItem(
-              detailKey(
-                detail,
-                index
-              )
-            );
-
-          if (stored === "open") {
-            detail.open =
-              true;
-          } else if (
-            stored === "closed"
-          ) {
-            detail.open =
-              false;
-          }
-        }
-      );
-  }
-
-  document.addEventListener(
-    "toggle",
-    event => {
-      const detail =
-        event.target;
-
-      if (
-        detail?.tagName !==
-        "DETAILS"
-      ) {
-        return;
-      }
-
-      if (detail.id === "adminNotifications" || detail.matches('[data-inline-admin-section="shipping"]')) return;
-
-      const all =
-        Array.from(
-          document.querySelectorAll(
-            "details"
-          )
-        );
-
-      sessionStorage.setItem(
-        detailKey(
-          detail,
-          Math.max(
-            0,
-            all.indexOf(
-              detail
-            )
-          )
-        ),
-        detail.open
-          ? "open"
-          : "closed"
-      );
-    },
-    true
-  );
-
-  const observer =
-    new MutationObserver(
-      records => {
-        for (
-          const record of
-          records
-        ) {
-          for (
-            const node of
-            record.addedNodes
-          ) {
-            if (
-              node.nodeType !==
-              1
-            ) {
-              continue;
-            }
-
-            if (
-              node.matches?.(
-                "details"
-              )
-            ) {
-              restoreDetails(
-                node.parentElement ||
-                document
-              );
-            } else if (
-              node.querySelector?.(
-                "details"
-              )
-            ) {
-              restoreDetails(
-                node
-              );
-            }
-          }
-        }
-      }
-    );
-
-  observer.observe(
-    document.documentElement,
-    {
-      childList: true,
-      subtree: true
-    }
-  );
-
-  restoreDetails();
-})();
-
-
+/* Legacy index-based dropdown persistence removed: it could restore one customer's panels in another customer's card. */
 
 /* =========================================
    LINKED PROFILE FULL CARD SHOW / HIDE
@@ -21081,211 +20918,108 @@ document.addEventListener(
 
 
 /* =========================================
-   UNIVERSAL STABLE DETAILS STATE
-   Save/edit/rerender keeps every panel open until user closes it.
+   CUSTOMER-SCOPED DROPDOWN STATE
+   Closing a customer closes every inner dropdown, without clearing data.
+   Recreated customer panels never auto-expand from stale saved state.
 ========================================= */
 (function setupStableDetailsState() {
-  const prefix =
-    "sng-details-v2:";
+  const prefix = "sng-details-v3:";
 
-  function stablePart(
-    element
-  ) {
-    if (!element) {
-      return "";
+  function part(element) {
+    if (!element) return "";
+    const keys = ["id", "customerActionCenter", "linkedProfilesSection",
+      "managedMembershipId", "managedCustomerGroup", "managedGroupDetails",
+      "managedAddRemovePanel", "giftedEditPanel", "managedFullEditPanel",
+      "profileSlot", "assignmentId", "inlineAdminSection"];
+    for (const key of keys) {
+      const value = element.dataset?.[key];
+      if (value) return key + ":" + value;
     }
-
-    const datasetKeys = [
-      "managedMembershipId",
-      "managedCustomerGroup",
-      "managedGroupDetails",
-      "managedAddRemovePanel",
-      "giftedEditPanel",
-      "managedFullEditPanel",
-      "profileSlot",
-      "assignmentId"
-    ];
-
-    for (
-      const key of
-      datasetKeys
-    ) {
-      const value =
-        element.dataset?.[key];
-
-      if (value) {
-        return `${key}:${value}`;
-      }
-    }
-
-    return element.id
-      ? `id:${element.id}`
-      : "";
+    return element.id ? "id:" + element.id : "";
   }
 
-  function detailsKey(
-    detail
-  ) {
-    const self =
-      stablePart(
-        detail
-      );
-
-    const parent =
-      stablePart(
-        detail.parentElement
-          ?.closest(
-            "details"
-          )
-      );
-
-    const heading =
-      detail.querySelector(
-        ":scope > summary h1, :scope > summary h2, :scope > summary h3, :scope > summary h4, :scope > summary strong, :scope > summary"
-      )?.textContent
-        ?.replace(/\s+/g, " ")
-        .trim()
-        .replace(/\d+\s+(DAY|DAYS)\s+LEFT/gi, "")
-        .slice(0, 100) ||
-      "details";
-
-    const siblings =
-      detail.parentElement
-        ? Array.from(
-            detail.parentElement.children
-          ).filter(
-            item =>
-              item.tagName ===
-              "DETAILS"
-          )
-        : [];
-
-    return (
-      prefix +
-      [
-        location.pathname,
-        location.hash,
-        parent,
-        self,
-        heading,
-        Math.max(
-          0,
-          siblings.indexOf(
-            detail
-          )
-        )
-      ].join("|")
-    );
+  function detailsKey(detail) {
+    const customerId = detail.closest(".customer-order")?.dataset?.id || "";
+    const parent = detail.parentElement?.closest("details");
+    const heading = detail.querySelector(":scope > summary")?.textContent
+      ?.replace(/\s+/g, " ").trim().replace(/\d+\s+days?\s+left/gi, "")
+      .slice(0, 100) || "details";
+    const siblings = detail.parentElement
+      ? Array.from(detail.parentElement.children).filter(item => item.tagName === "DETAILS") : [];
+    return prefix + [
+      location.pathname, location.hash, customerId, part(parent),
+      part(detail), heading, Math.max(0, siblings.indexOf(detail))
+    ].join("|");
   }
 
-  function restore(
-    root = document
-  ) {
-    const details =
-      root.matches?.("details")
-        ? [root]
-        : Array.from(
-            root.querySelectorAll?.(
-              "details"
-            ) ||
-            []
-          );
+  function customerChild(detail) {
+    const customer = detail.closest(".customer-order");
+    return Boolean(customer && customer !== detail);
+  }
 
-    for (
-      const detail of
-      details
-    ) {
-      if (detail.id === "adminNotifications" || detail.matches('[data-inline-admin-section="shipping"]')) {
+  function resetChildren(parent) {
+    // Also clear persistence; otherwise a MutationObserver can reopen a panel
+    // with missing content after the parent is opened a second time.
+    for (const nested of parent.querySelectorAll("details")) {
+      nested.open = false;
+      sessionStorage.setItem(detailsKey(nested), "closed");
+    }
+  }
+
+  function restore(root = document) {
+    const details = root.matches?.("details")
+      ? [root, ...root.querySelectorAll("details")]
+      : Array.from(root.querySelectorAll?.("details") || []);
+    for (const detail of details) {
+      if (detail.id === "adminNotifications" ||
+          detail.matches('[data-inline-admin-section="shipping"]')) {
         detail.open = false;
         continue;
       }
-      const state =
-        sessionStorage.getItem(
-          detailsKey(
-            detail
-          )
-        );
-
-      if (state === "open") {
-        detail.open =
-          true;
-      } else if (
-        state === "closed"
-      ) {
-        detail.open =
-          false;
+      // Never resurrect a disclosure under a closed customer (or any other
+      // closed parent), even when it was inserted asynchronously.
+      if (detail.parentElement?.closest("details:not([open])")) {
+        detail.open = false;
+        sessionStorage.setItem(detailsKey(detail), "closed");
+        continue;
       }
+      // Customer inner panels are transient; on a rerender they start closed.
+      // An explicitly opened, newly fetched linked-profile group may stay
+      // open while its customer remains open.
+      if (customerChild(detail)) continue;
+      const saved = sessionStorage.getItem(detailsKey(detail));
+      if (saved === "open") detail.open = true;
+      else if (saved === "closed") detail.open = false;
     }
   }
 
-  document.addEventListener(
-    "toggle",
-    event => {
-      const detail =
-        event.target;
+  // Collapse immediately on the user click, before delayed toggle/mutation
+  // events can restore stale child states.
+  document.addEventListener("click", event => {
+    const summary = event.target?.closest?.("summary");
+    const parent = summary?.parentElement;
+    if (parent?.matches?.("details[open]")) resetChildren(parent);
+  }, true);
+  document.addEventListener("toggle", event => {
+    const detail = event.target;
+    if (detail?.tagName !== "DETAILS") return;
+    if (detail.id === "adminNotifications" ||
+        detail.matches('[data-inline-admin-section="shipping"]')) return;
+    if (!detail.open) resetChildren(detail);
+    sessionStorage.setItem(detailsKey(detail), detail.open ? "open" : "closed");
+  }, true);
 
-      if (
-        detail?.tagName !==
-        "DETAILS"
-      ) {
-        return;
-      }
-
-      if (detail.id === "adminNotifications" || detail.matches('[data-inline-admin-section="shipping"]')) return;
-      if (!detail.open) {
-        // Reset saved state as well as the live DOM: nested panels should
-        // stay closed when the parent is reopened after any re-render.
-        for (const descendant of detail.querySelectorAll("details")) {
-          descendant.open = false;
-          sessionStorage.setItem(detailsKey(descendant), "closed");
-        }
-      }
-
-      sessionStorage.setItem(
-        detailsKey(
-          detail
-        ),
-        detail.open
-          ? "open"
-          : "closed"
-      );
-    },
-    true
-  );
-
-  new MutationObserver(
-    records => {
-      for (
-        const record of
-        records
-      ) {
-        for (
-          const node of
-          record.addedNodes
-        ) {
-          if (
-            node.nodeType ===
-            1
-          ) {
-            restore(
-              node
-            );
-          }
+  new MutationObserver(records => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (node.nodeType === 1 && (node.matches?.("details") || node.querySelector?.("details"))) {
+          restore(node);
         }
       }
     }
-  ).observe(
-    document.documentElement,
-    {
-      childList: true,
-      subtree: true
-    }
-  );
-
+  }).observe(document.documentElement, { childList: true, subtree: true });
   restore();
 })();
-
-
 
 /* =========================================
    CUSTOMER ACTION CENTER / EXPORT / LINKED CONTROLS
