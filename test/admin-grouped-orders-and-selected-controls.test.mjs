@@ -40,27 +40,32 @@ test("Mobile Admin keeps bundled items inside one actual checkout, does not pric
   assert.match(markup,/3 items/);
   assert.match(markup,/Mike paid 1/);
 });
-test("Full Admin groups actual orders and all line items without inventing purchase totals",()=>{
-  const source=read("public/admin-success.html");
-  const fn=extractFunction(source,"  function orderList(","  function renderCustomers(");
-  const markup=vm.runInNewContext(fn+"\norderList(rows)",{
-    rows,esc,money,validImage:()=>false,openOrders:new Set(),
-    Math,Number,Date,Intl,String,Array
+test("Full Admin Success groups checkouts per customer and does not invent purchase totals",()=>{
+  const source=read("public/admin-success.js");
+  const customers=extractFunction(source,"  function renderCustomers(","  function render(");
+  const products=extractFunction(source,"  function renderProducts(","  function renderCustomers(");
+  const nodes={customers:{innerHTML:""},products:{innerHTML:""}};
+  const linked=rows.map(row=>({...row,customerAccountId:"example-member",customerName:"Example Member"}));
+  const total=row=>row.orderTotalKnown===true?Number(row.orderTotal)||0:0;
+  const quantity=row=>row.items.reduce((sum,item)=>sum+item.quantity,0);
+  vm.runInNewContext(customers+"\n"+products+"\nrenderCustomers(rows); renderProducts(rows);",{
+    rows:linked,$:id=>nodes[id],esc,money,paid:total,quantity,
+    recordDate:row=>Date.parse(row.checkoutAt)||0,
+    Map,Math,Number,Date,Intl,String,Array
   },{timeout:1000});
-  assert.equal((markup.match(/class="receipt-order"/g)||[]).length,2);
-  assert.match(markup,/Booster Bundle/);
-  assert.match(markup,/Elite Trainer Box/);
-  assert.match(markup,/Tin/);
-  assert.match(markup,/62\.51/);
-  assert.doesNotMatch(markup,/999\.99/);
-  assert.match(markup,/Awaiting verified paid total/);
-  assert.match(markup,/3 items/);
+  assert.match(nodes.customers.innerHTML,/Example Member/);
+  assert.match(nodes.customers.innerHTML,/2 orders/);
+  assert.match(nodes.customers.innerHTML,/62\\.51/);
+  assert.doesNotMatch(nodes.customers.innerHTML,/999\\.99/);
+  assert.match(nodes.customers.innerHTML,/price pending/);
+  for(const name of ["Booster Bundle","Elite Trainer Box","Tin"])
+    assert.ok(nodes.products.innerHTML.includes(name),name);
 });
 test("Inactive period and shipping filters are neutral; only the selected option is filled",()=>{
   const css=read("public/sng-premium-controls.css");
   const mobile=read("public/admin-mobile.js");
   const customer=read("public/app-dashboard.js");
-  const admin=read("public/admin-success.html");
+  const admin=read("public/admin-success.js");
   assert.match(css,/\.admin-spend-ranges button\[aria-pressed="false"\]/);
   assert.match(css,/\.sng-range button\[aria-pressed="false"\]/);
   assert.match(css,/\.sng-status-filters button\[aria-pressed="false"\]/);
@@ -68,7 +73,7 @@ test("Inactive period and shipping filters are neutral; only the selected option
   assert.match(css,/\.periods button\[aria-pressed="false"\]/);
   assert.match(mobile,/aria-pressed="'\+\(String\(value\)===String\(days\)\)/);
   assert.match(customer,/s === status/);
-  assert.match(admin,/value===days/);
+  assert.match(admin,/button\\.dataset\\.period === String\\(period\\)/);
 });
 test("Full-status-color outline wraps all sides of customer recent order and tracking cards",()=>{
   const css=read("public/sng-premium-controls.css");
