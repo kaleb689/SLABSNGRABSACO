@@ -18921,23 +18921,8 @@ refreshProfileActivationTracker
   );
 
 
-window.setInterval(
-  () => {
-    if (
-      !dashboard.hidden
-    ) {
-      loadProfileActivationTracker()
-        .catch(
-          error =>
-            console.error(
-              "Activation tracker refresh failed:",
-              error
-            )
-        );
-    }
-  },
-  15000
-);
+// Activation tracker updates arrive through /api/admin/live/events.
+// The additional 15-second full rebuild moved open iPad profile pages.
 
 
 
@@ -20610,20 +20595,18 @@ document
           saved.at ||
           0
         ) >
-        15000
+        2500
     ) {
       return;
     }
-
+    // A completed action requests one scroll restore, not repeated scroll
+    // overrides triggered by every background DOM mutation.
+    sessionStorage.removeItem(storageKey);
     requestAnimationFrame(
       () => {
-        window.scrollTo(
-          window.scrollX,
-          Number(
-            saved.y ||
-            0
-          )
-        );
+        const targetY=Number(saved.y||0);
+        if(Math.abs(window.scrollY-targetY)>2)
+          window.scrollTo(window.scrollX,targetY);
       }
     );
 
@@ -20739,6 +20722,7 @@ async function refreshAdminInPlace() {
     document.hidden ||
     dashboard.hidden ||
     adminLiveInputFocused() ||
+    document.querySelector("#rows .customer-order[open]") ||
     document.querySelector(".jig-modal:not([hidden])") ||
     Date.now() - adminLastInteractionAt < 1400
   ) return;
@@ -20805,6 +20789,10 @@ new MutationObserver(() => {
 
 document.addEventListener("focusout", () => {
   if (adminLiveRefreshPending) scheduleAdminLiveRefresh();
+}, true);
+document.addEventListener("toggle", event => {
+  if (adminLiveRefreshPending && event.target?.matches?.("#rows .customer-order"))
+    scheduleAdminLiveRefresh();
 }, true);
 document.addEventListener("visibilitychange", () => {
   updateAdminLiveEvents();
