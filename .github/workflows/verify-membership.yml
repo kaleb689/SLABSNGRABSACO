@@ -32,6 +32,7 @@ jobs:
       - run: node --check public/admin-workspace-tabs.js
       - run: node --check public/admin-jig-picker.js
       - run: node --test test/admin-jig-picker-workspace.test.mjs
+      - run: node --test test/admin-summary-notification-layout.test.mjs
       - run: node --check discord-community.js
       - run: node --check discord-checkout-identity.js
       - run: node --check discord-checkout-profile-aliases.js
