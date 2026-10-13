@@ -59,6 +59,9 @@ function successPeriodStart(period,now=new Date()){
   return Number.isFinite(days)&&days>0?now.getTime()-days*86400000:now.getTime()-30*86400000;
 }
 let customerSearchText="", mobileRefreshTimer=null, mobileRefreshPending=false, mobileRefreshRunning=false;
+let mobileLastScrollAt=0;
+window.addEventListener("scroll",()=>{mobileLastScrollAt=Date.now();},{passive:true});
+window.addEventListener("wheel",()=>{mobileLastScrollAt=Date.now();},{passive:true});
 const mobileControlFocused=()=>{
   const active=document.activeElement;
   return Boolean(authenticated && active?.closest?.("#workspace") &&
@@ -725,7 +728,7 @@ async function refreshSuccessTracker(){
       const x=window.scrollX,y=window.scrollY;
       render();
       $("updated").textContent="Live · "+new Date().toLocaleTimeString();
-      requestAnimationFrame(()=>window.scrollTo(x,y));
+      requestAnimationFrame(()=>{if(Date.now()-mobileLastScrollAt>=950)window.scrollTo(x,y);});
     }
   }catch(e){
     if(e.message==="SESSION_EXPIRED"){auth(false);return;}
@@ -737,7 +740,7 @@ async function refreshSuccessTracker(){
 async function refresh(force=false){
   if(mobileRefreshRunning){mobileRefreshPending=true;return;}
   // Don't overwrite live search text or form controls in the mobile Admin app.
-  if(!force && authenticated && (document.hidden || mobileControlFocused())){
+  if(!force && authenticated && (document.hidden || mobileControlFocused() || Date.now()-mobileLastScrollAt<950)){
     mobileRefreshPending=true;
     return;
   }
@@ -762,7 +765,7 @@ async function refresh(force=false){
     if(results[1].status==="rejected")data.registered=[];
     if(results[2].status==="rejected")data.activation=null;
     // A field may gain focus while the network request is in flight.
-    if(!force && authenticated && (document.hidden || mobileControlFocused())){
+    if(!force && authenticated && (document.hidden || mobileControlFocused() || Date.now()-mobileLastScrollAt<950)){
       mobileRefreshPending=true;
       return;
     }
@@ -770,7 +773,7 @@ async function refresh(force=false){
     $("updated").textContent="Updated "+new Date().toLocaleTimeString();
     const x=window.scrollX,y=window.scrollY;
     render();
-    requestAnimationFrame(()=>window.scrollTo(x,y));
+    requestAnimationFrame(()=>{if(Date.now()-mobileLastScrollAt>=950)window.scrollTo(x,y);});
     if(!stream){
       stream=new EventSource("/api/admin/live/events");
       // A signup changes the customer roster even while the Success tab is

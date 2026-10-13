@@ -139,3 +139,11 @@
 .jig-modal .jig-variant-row>button{width:auto!important;min-width:75px!important;max-width:none!important;height:auto!important;min-height:43px;padding:9px 12px!important;white-space:normal!important;overflow-wrap:normal!important;word-break:normal!important;line-height:1.25!important}
 @media(max-width:1100px){.jig-modal .jig-variant-row{grid-template-columns:repeat(4,minmax(0,1fr))}.jig-modal .jig-variant-row>span{grid-column:1/-1}.jig-modal .jig-variant-row>button{min-width:0!important}}
 @media(max-width:540px){.jig-modal .jig-modal-panel{max-height:calc(100dvh - 16px)}.jig-modal .jig-variant-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Postal verification sits beside other JIG form controls without overflowing. */
+.jig-modal .jig-verified-postal{display:flex;flex-wrap:wrap;align-items:end;gap:9px;padding:12px;border:1px solid #365f78;border-radius:12px;background:#082334}
+.jig-modal .jig-verified-postal>button{flex:1 1 210px;white-space:normal;min-height:42px}
+.jig-modal .jig-verified-postal>label{flex:2 1 250px;min-width:0;margin:0}
+.jig-modal .jig-verified-postal select{width:100%;max-width:100%;min-height:43px;white-space:normal}
+.jig-modal .jig-verified-postal select[hidden]{display:none!important}
+.jig-modal .jig-verified-postal>span{flex:1 1 100%;font-size:12px;color:#b8d9eb}

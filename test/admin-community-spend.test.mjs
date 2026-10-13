@@ -122,27 +122,28 @@ test("Admin Success shows all webhook orders, verified paid spending, and keeps 
   assert.doesNotMatch(html(),/Community unmatched-only-product/);
 });
 
-test("new full Admin Success page provides all-checkout time filters, safe user breakdowns and auto refresh", () => {
+test("full Admin Success provides checkout filters, verified spend, customer breakdowns and instant refresh", () => {
   const page=file("public/admin-success.html");
-  assert.match(page,/\/api\/admin\/success-overview/);
-  assert.match(page,/All confirmed checkouts · linked &amp; unmatched/);
-  assert.match(page,/Unmatched community checkouts/);
-  assert.match(page,/Customer Breakdowns/);
-  assert.match(page,/Products Purchased/);
-  assert.match(page,/Verify prices/);
-  assert.match(page,/Historical reported spent/);
-  assert.match(page,/credentials:'same-origin'/);
-  assert.match(page,/cache:'no-store'/);
-  assert.match(page,/setInterval\(\(\)=>\{if\(!document\.hidden\)void refresh\(\);\},15000\)/);
-  assert.match(page,/communityRecords/);
-  assert.match(page,/totalCents/);
-  const script=page.match(/<script>([\s\S]+?)<\/script>/)?.[1];
-  assert.ok(script);
+  const script=file("public/admin-success.js");
+  assert.ok(page.includes('All confirmed checkouts'));
+  assert.ok(script.includes('Unmatched community checkouts'));
+  assert.ok(page.includes('Customer Breakdowns'));
+  assert.ok(page.includes('Products Purchased'));
+  assert.ok(page.includes('Verify prices'));
+  assert.ok(page.includes('Historical reported spend'));
+  for (const preset of ["1","7","30","90","custom"])
+    assert.ok(page.includes('data-period="'+preset+'"'),'Admin Success period '+preset);
+  assert.ok(script.includes("/api/admin/success-overview"));
+  assert.ok(script.includes("communityRecords"));
+  assert.ok(script.includes("function renderCustomers(rows)"));
+  assert.ok(script.includes('credentials:"same-origin", cache:"no-store"'));
+  assert.ok(script.includes('new EventSource("/api/admin/live/events")'));
+  assert.ok(script.includes('stream.addEventListener("data-change", scheduleRefresh)'));
   assert.doesNotThrow(()=>new vm.Script(script));
   const fullAdmin=file("public/admin.html");
   const mobileHome=file("public/admin-mobile.js");
-  assert.match(fullAdmin,/href="\/admin-success\.html"/);
-  assert.match(mobileHome,/href="\/admin-success\.html"/);
+  assert.ok(fullAdmin.includes('href="/admin-success.html"'));
+  assert.ok(mobileHome.includes('href="/admin-success.html"'));
 });
 
 test("trusted retailer receipt total parser supports realistic Target, Walmart and PKC layouts without inventing amounts",()=>{

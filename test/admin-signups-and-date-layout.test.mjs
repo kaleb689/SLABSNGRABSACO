@@ -18,7 +18,7 @@ test("customer and Admin global date filters fit fully without horizontal scroll
   assert.match(css,/@media\(max-width:355px\)/);
   assert.match(app,/const presets=\[1,7,30,90,'ytd','all'\]/);
   assert.match(admin,/const ranges=\[\[1,"24H"\],\[7,"7D"\],\[30,"30D"\],\[90,"90D"\],\["ytd","YTD"\],\["all","ALL"\]\]/);
-  assert.match(full,/const periods = \[\[1,'24H'\],\[7,'7D'\],\[30,'30D'\],\[90,'90D'\],\['ytd','YTD'\],\['all','ALL'\]\]/);
+  for(const range of ['1','7','30','90','ytd','all','custom']) assert.ok(full.includes('data-period="'+range+'"'),'Admin Success period '+range);
 });
 
 test("calendar stays accessible and customer drilldowns use a four-column row",()=>{
@@ -27,7 +27,7 @@ test("calendar stays accessible and customer drilldowns use a four-column row",(
   assert.match(css,/button\.sng-calendar-button svg/);
   assert.match(app,/data-app-calendar/);
   assert.match(admin,/data-success-user-calendar/);
-  assert.match(full,/data-user-calendar/);
+  for(const input of ['id="customDates"','id="dateFrom"','id="dateTo"']) assert.ok(full.includes(input),'Admin Success date input '+input);
   assert.match(css,/@media\(min-width:820px\)/);
 });
 
@@ -48,5 +48,5 @@ test("registered and unpaid website signups are included in Admin live data, not
   for(const page of [customerPage,adminPage,fullAdminPage]){
     assert.match(page,/custom-date-controls\.css\?v=20261010-fit2/);
   }
-  assert.match(adminPage,/admin-mobile\.js\?v=39-restore-customer-memberships-20261010/);
+  assert.ok(adminPage.includes("/admin-mobile.js?v=20261013-live-1"));
 });

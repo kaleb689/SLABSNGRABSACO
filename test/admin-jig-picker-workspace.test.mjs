@@ -4,7 +4,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 import {ADDRESS_JIG_OPTIONS, eligibleJigSelections, rotatedJigSelections} from "../address-jig-choices.js";
 
-const example={address:"451 NORTHWEST 87TH LANE",address2:"APT 102",city:"PLANTATION",state:"FL",zip:"33324-6540",country:"US"};
+const example={address:"123 NORTHWEST 9TH LANE",address2:"APT 2B",city:"EXAMPLE CITY",state:"FL",zip:"33101-1234",country:"US"};
 const file=(path)=>fs.readFileSync(new URL(path,import.meta.url),"utf8");
 const pick=(items,id)=>items.find(item=>item.id===id);
 
@@ -30,12 +30,12 @@ test("selected address changes are unique and never stacked",()=>{
  }
 });
 test("standard options retain the original house number and unit ID",()=>{
- const items=eligibleJigSelections(example,["direction.short","suffix.ln","unit.unit","city.plantation","zip.five"]);
- assert.equal(pick(items,"direction.short")?.address.address,"451 NW 87TH LANE");
- assert.equal(pick(items,"suffix.ln")?.address.address,"451 NORTHWEST 87TH LN");
- assert.equal(pick(items,"unit.unit")?.address.address2,"UNIT 102");
- assert.equal(pick(items,"city.plantation")?.address.city,"FORT LAUDERDALE");
- assert.equal(pick(items,"zip.five")?.address.zip,"33324");
+ const items=eligibleJigSelections(example,["direction.short","suffix.ln","unit.unit","city.alternate","zip.five"]);
+ assert.equal(pick(items,"direction.short")?.address.address,"123 NW 9TH LANE");
+ assert.equal(pick(items,"suffix.ln")?.address.address,"123 NORTHWEST 9TH LN");
+ assert.equal(pick(items,"unit.unit")?.address.address2,"UNIT 2B");
+ assert.equal(pick(items,"city.alternate"),undefined,"City replacements require server-side postal verification");
+ assert.equal(pick(items,"zip.five")?.address.zip,"33101");
 });
 test("inapplicable floor/grid variants are never forced",()=>{
  assert.equal(eligibleJigSelections(example,["unit.floor","grid.compressed"]).length,0);

@@ -8,6 +8,7 @@ const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
 const customer=read('public/app-dashboard.js');
 const admin=read('public/admin-mobile.js');
 const fullAdmin=read('public/admin-success.html');
+const fullAdminScript=read('public/admin-success.js');
 const customerPage=read('public/index.html');
 const adminPage=read('public/admin-app.html');
 const css=read('public/custom-date-controls.css');
@@ -61,20 +62,20 @@ test('Admin mobile date window uses local dates and clamps current day to now',(
   assert.equal(sandbox.invalid,null);
 });
 
-test('full Admin calendar validates exact date bounds and script parses',()=>{
-  const embedded=fullAdmin.match(/<script>([\s\S]*?)<\/script>/)?.[1];
-  assert.ok(embedded,'full Admin inline script');
-  assert.doesNotThrow(()=>new vm.Script(embedded));
-  const begin=embedded.indexOf('  const periods ='),end=embedded.indexOf('  const validImage',begin);
-  assert.ok(begin>0&&end>begin);
-  const sandbox={Date,comparison:null,invalid:null};
-  vm.runInNewContext(embedded.slice(begin,end)+
-    '\ncomparison=customWindow({from:"2026-10-01",to:"2026-10-05"},new Date(2026,9,11,12));'+
-    '\ninvalid=customWindow({from:"2026-02-30",to:"2026-03-01"},new Date(2026,9,11,12));',
+test('full Admin date picker uses inclusive local dates and its CSP-safe external script parses',()=>{
+  assert.doesNotThrow(()=>new vm.Script(fullAdminScript));
+  const begin=fullAdminScript.indexOf('  function selectedWindow(');
+  const end=fullAdminScript.indexOf('  function visibleRows(',begin);
+  assert.ok(begin>=0&&end>begin,'calendar helper remains in external Admin Success script');
+  const sandbox={
+    Date,period:'custom',comparison:null,
+    $:id=>({value:id==='dateFrom'?'2026-10-01':'2026-10-05'})
+  };
+  vm.runInNewContext(fullAdminScript.slice(begin,end)+
+    '\ncomparison=selectedWindow(new Date(2026,9,11,12));',
     sandbox,{timeout:1500});
   assert.equal(sandbox.comparison.start,new Date(2026,9,1).getTime());
-  assert.equal(sandbox.comparison.end,new Date(2026,9,6).getTime());
-  assert.equal(sandbox.invalid,null);
+  assert.equal(sandbox.comparison.end,new Date(2026,9,5,23,59,59,999).getTime());
 });
 
 test('MTD and 6M are removed from visible period presets; custom calendar is available everywhere',()=>{
@@ -90,10 +91,9 @@ test('MTD and 6M are removed from visible period presets; custom calendar is ava
   assert.match(admin,/data-success-date-form/);
   assert.match(admin,/data-success-user-date-form/);
   assert.match(admin,/successDays="custom"/);
-  assert.match(fullAdmin,/data-global-calendar/);
-  assert.match(fullAdmin,/data-user-calendar/);
-  assert.match(fullAdmin,/data-global-calendar-form/);
-  assert.match(fullAdmin,/data-user-calendar-form/);
+  for(const marker of ['id="customDates"','id="dateFrom"','id="dateTo"','id="applyCustom"'])
+    assert.ok(fullAdmin.includes(marker),'Admin Success calendar control '+marker);
+  assert.ok(fullAdminScript.includes('period === "custom"'));
   assert.doesNotMatch(fullAdmin,/\['mtd','MTD'\]/);
   assert.doesNotMatch(admin,/\["mtd","MTD"\]/);
   assert.match(customerPage,/custom-date-controls\.css\?v=20261010/);

@@ -49,6 +49,7 @@ test("authentic retailer paid labels, split HTML cells and USD notation are supp
 test("Admin Success uses global confirmed records, independent customer breakdowns, and seven live periods",()=>{
   const js=source("public/admin-mobile.js");
   const html=source("public/admin-success.html");
+  const fullJs=source("public/admin-success.js");
   const app=source("public/admin-app.html");
   const admin=source("public/admin.html");
   const customer=source("public/index.html");
@@ -59,16 +60,17 @@ test("Admin Success uses global confirmed records, independent customer breakdow
   assert.match(js,/successUserDays=new Map/);
   assert.match(js,/\["all","linked","unmatched"\]/);
   assert.match(js,/\[\[1,"24H"\],\[7,"7D"\],\[30,"30D"\],\[90,"90D"\]/);
-  assert.match(html,/\/api\/admin\/success-overview/);
-  assert.match(html,/communityRecords/);
-  assert.match(html,/historical\.historicalSpent/);
+  assert.ok(fullJs.includes("/api/admin/success-overview"));
+  assert.ok(fullJs.includes("communityRecords"));
+  assert.ok(fullJs.includes("const historicalSpend = 15876.11"));
   assert.match(html,/id="customer-panel"/);
   assert.match(html,/id="product-panel"/);
-  assert.match(html,/userPeriods=new Map/);
-  assert.match(html,/credentials:'same-origin',cache:'no-store'/);
-  assert.match(html,/setInterval\(\(\)=>\{if\(!document.hidden\)void refresh\(\);\},15000\)/);
+  assert.ok(fullJs.includes("function renderCustomers(rows)"));
+  assert.ok(fullJs.includes('credentials:"same-origin", cache:"no-store"'));
+  assert.ok(fullJs.includes('stream.addEventListener("data-change", scheduleRefresh)'));
+  assert.ok(fullJs.includes("setInterval(() => { if (!document.hidden) scheduleRefresh(); }, 30000)"));
   for (const page of [app,admin,customer]) assert.match(page,/sng-premium-controls\.css\?v=2/);
-  assert.match(app,/admin-mobile\.js\?v=39-restore-customer-memberships-20261010/);
+  assert.ok(app.includes("/admin-mobile.js?v=20261013-live-1"));
   assert.match(js,/\/admin-success\.html/);
   assert.match(admin,/\/admin-success\.html/);
   assert.match(css,/min-height:46px/);
