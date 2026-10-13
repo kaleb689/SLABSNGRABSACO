@@ -96,3 +96,35 @@
  #dashboard[data-admin-page="customers"] .customer-order-summary{grid-template-columns:minmax(0,1fr) auto!important;min-height:0!important;padding:17px!important}
  #dashboard[data-admin-page="customers"] .customer-order-summary .order-meta{display:none!important}
 }
+
+/* 2026-10-12: prevent the narrow, tall status column and excessive blank customer cards. */
+#dashboard[data-admin-page="customers"] .customer-order-summary{
+  display:grid!important;
+  grid-template-columns:minmax(240px,2fr) minmax(110px,.7fr) minmax(125px,.8fr) minmax(260px,1.35fr) 24px!important;
+  min-height:0!important;
+  gap:16px!important;
+  padding:18px 20px!important;
+}
+#dashboard[data-admin-page="customers"] .customer-order-summary>.customer-main,
+#dashboard[data-admin-page="customers"] .customer-order-summary>.order-meta,
+#dashboard[data-admin-page="customers"] .customer-order-summary .order-status-meta{
+  min-width:0!important;max-width:100%;overflow-wrap:normal;word-break:normal;
+}
+#dashboard[data-admin-page="customers"] .order-status-meta,
+#dashboard[data-admin-page="customers"] .membership-time-left{width:100%!important;max-width:300px}
+#dashboard[data-admin-page="customers"] .order-status-meta *{overflow-wrap:normal;word-break:normal}
+#dashboard[data-admin-page="customers"] .membership-time-left-label{white-space:normal;font-size:12px;line-height:1.4}
+@media(max-width:1100px){
+ #dashboard[data-admin-page="customers"] .customer-order-summary{
+  grid-template-columns:minmax(220px,1.5fr) minmax(115px,.75fr) minmax(230px,1.2fr) 24px!important;
+ }
+ #dashboard[data-admin-page="customers"] .customer-order-summary>.order-meta:nth-of-type(2){grid-column:auto}
+}
+@media(max-width:850px){
+ #dashboard[data-admin-page="customers"] .customer-order-summary{
+  grid-template-columns:minmax(0,1fr)!important;
+  gap:12px!important;
+ }
+ #dashboard[data-admin-page="customers"] .customer-order-summary .order-meta{display:block!important}
+ #dashboard[data-admin-page="customers"] .order-status-meta{max-width:none}
+}
