@@ -30,6 +30,7 @@ jobs:
       - run: node --test test/admin-ipad-notifications.test.mjs
       - run: node --check public/admin-passkey-controls.js
       - run: node --test test/admin-ipad-stability-passkeys.test.mjs
+      - run: node --test test/admin-nested-dropdown-reset.test.mjs
       - run: node --check address-jig-choices.js
       - run: node --check postal-jig-validation.js
       - run: node --test test/postal-jig-validation.test.mjs
