@@ -18530,7 +18530,7 @@ async function loadProfileActivationTracker() {
                           ${escapeHtml(
                             profile.profileName ||
                             "Profile"
-                          )}
+                          )}${profile.retailer ? ` · ${escapeHtml(String(profile.retailer).toUpperCase())}` : ""}${profile.slot ? ` #${escapeHtml(profile.slot)}` : ""}
                         </strong>
 
                         <small>
