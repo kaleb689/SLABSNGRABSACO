@@ -43,6 +43,7 @@ import { startMembershipLapseNotificationScheduler } from "./membership-lapse-no
 import { membershipDiscountOptions, activeSitewideDiscount } from "./checkout-discounts.js";
 import { safeAddressVariants, safeAddressVariantKey, defaultJigVariants } from "./address-jigs.js";
 import { ADDRESS_JIG_OPTIONS, eligibleJigSelections, rotatedJigSelections } from "./address-jig-choices.js";
+import { lookupPostalJigOptions, selectedPostalJigs, uspsAddressLookupConfigured } from "./postal-jig-validation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -65,9 +66,15 @@ function sendLiveDataEvent(listeners, detail = "data") {
   }
 }
 
+let pendingLiveDataBroadcast = null;
 function broadcastLiveDataChange(detail = "data") {
-  sendLiveDataEvent(adminLiveDataListeners, detail);
-  sendLiveDataEvent(customerLiveDataListeners, detail);
+  if (pendingLiveDataBroadcast) return;
+  pendingLiveDataBroadcast = setTimeout(() => {
+    pendingLiveDataBroadcast = null;
+    sendLiveDataEvent(adminLiveDataListeners, detail);
+    sendLiveDataEvent(customerLiveDataListeners, detail);
+  }, 300);
+  pendingLiveDataBroadcast.unref?.();
 }
 
 /*
@@ -779,6 +786,12 @@ async function writeJson(file, value) {
   } catch {
     // Some mounted filesystems may not support chmod.
   }
+  // Include background checkout/Discord/Stripe persistence, not just API writes.
+  // This event contains no customer data; connected pages re-fetch their own
+  // authenticated views. Ignore unrelated secret and telemetry files.
+  if (/paid|profile|checkout|assignment|membership|shipping|jig|order|notification|success|drop-sku|account-pool/i.test(path.basename(file))) {
+    broadcastLiveDataChange("saved");
+  }
 }
 
 
@@ -1048,6 +1061,7 @@ async function getCustomerJigPool(accountId) {
 
 async function saveCustomerJigPool(accountId, pool) {
   await writeJson(customerJigPoolPath(accountId), encryptJson(pool));
+  broadcastLiveDataChange("jig");
 }
 
 function jigSourceAddress(item = {}) {
@@ -1105,6 +1119,22 @@ async function customerJigPoolWithSources(account, order, paidProfiles) {
 function jigVariantAllowed(original, candidate) {
   const key = safeAddressVariantKey(candidate);
   return safeAddressVariants(original).some(variant => safeAddressVariantKey(variant) === key);
+}
+
+// Server-side postal lookups are bound to the actual saved main address.
+// Never accept a user-provided city or ZIP+4 as a verified address option.
+async function verifiedPostalJigEntries(sourceAddress, selectedIds = []) {
+  const selected = Array.isArray(selectedIds) ? selectedIds : [];
+  if (!selected.some(id => id === "city.alternate" || id === "zip.four")) return [];
+  try {
+    return await selectedPostalJigs(sourceAddress, selected);
+  } catch (error) {
+    const postalOnly = selected.every(id => id === "city.alternate" || id === "zip.four");
+    if (postalOnly) throw error;
+    // Other selected formatting options can still be applied when the postal
+    // provider is unavailable. No unverified postal variant is generated.
+    return [];
+  }
 }
 
 async function prepareNewManagedAssignment(assignment, membership, account, order, reserved = new Set()) {
@@ -19284,7 +19314,7 @@ app.post("/api/admin/managed-pool/:id/override-hold", requireAdmin, async (req, 
 /* ADMIN POOL PROFILE SEARCH: never transmit passwords, cards or security codes. */
 app.get("/api/admin/jig-options", requireAdmin, (_req, res) => {
   res.setHeader("Cache-Control","no-store");
-  return res.json({ok:true, options:ADDRESS_JIG_OPTIONS});
+  return res.json({ok:true, options:ADDRESS_JIG_OPTIONS, postalVerificationConfigured:uspsAddressLookupConfigured()});
 });
 app.get("/api/admin/managed-pool/search", requireAdmin, async (req, res) => {
   try {
@@ -25579,6 +25609,22 @@ app.get("/api/admin/submissions/:id/jigs", requireAdmin, async (req, res) => {
   }
 });
 
+app.get("/api/admin/submissions/:id/jigs/:sourceId/postal-options", requireAdmin, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const context = await adminJigContext(req.params.id);
+    if (!context) return res.status(404).json({error:"Customer not found."});
+    const source = context.pool.sources.find(item => item.id === req.params.sourceId);
+    if (!source) return res.status(404).json({error:"Main address not found."});
+    const verified = await lookupPostalJigOptions(source.original);
+    return res.json({ok:true, ...verified});
+  } catch (error) {
+    const invalid = ["INVALID_ADDRESS", "ADDRESS_NOT_FOUND", "ADDRESS_NOT_VERIFIED"].includes(error.code);
+    return res.status(error.code === "POSTAL_NOT_CONFIGURED" ? 503 : invalid ? 422 : 502)
+      .json({error:error.message || "Address verification unavailable.", options:[]});
+  }
+});
+
 app.post("/api/admin/submissions/:id/jigs/main", requireAdmin, async (req, res) => {
   try {
     const context = await adminJigContext(req.params.id);
@@ -25674,14 +25720,24 @@ async function saveAdminJigVariant(req, res, editing) {
     const source = context.pool.sources.find(item => item.id === req.params.sourceId);
     if (!source) return res.status(404).json({ error: "Main address not found." });
     const candidate = jigSourceAddress(req.body?.address);
-    // City, state, ZIP and country always come from the submitted main address.
-    const address = {
-      address: candidate.address, address2: candidate.address2,
-      city: source.original.city, state: source.original.state,
-      zip: source.original.zip, country: source.original.country
-    };
-    if (!jigVariantAllowed(source.original, address)) {
-      return res.status(400).json({ error: "Use only truthful formatting of the original street and unit. House number, street name, unit number, city, state and ZIP must stay the same." });
+    let verifiedPostalAddress = null;
+    const postalOptionId = clean(req.body?.postalOptionId, 180);
+    if (postalOptionId) {
+      const postal = await lookupPostalJigOptions(source.original);
+      verifiedPostalAddress = postal.options.find(option => option.id === postalOptionId)?.address || null;
+      if (!verifiedPostalAddress) return res.status(422).json({error:"The selected postal option could not be verified for this main address."});
+    }
+    // The submitted source remains unchanged. Mailing city and ZIP may differ
+    // only when a fresh server-side USPS match explicitly authorizes them.
+    const address = verifiedPostalAddress
+      ? jigDeliveryAddress(verifiedPostalAddress)
+      : {
+        address: candidate.address, address2: candidate.address2,
+        city: source.original.city, state: source.original.state,
+        zip: source.original.zip, country: source.original.country
+      };
+    if (!verifiedPostalAddress && !jigVariantAllowed(source.original, address)) {
+      return res.status(400).json({ error: "Use truthful street/unit formatting, or choose a USPS-verified city or ZIP+4 variant." });
     }
     if (!editing && (source.variants || []).length >= 4) {
       return res.status(409).json({ error: "This Main address has four JIGs. Edit an existing JIG or add a different Main address." });
@@ -27427,9 +27483,12 @@ app.post(
         const source of
         addresses
       ) {
-        const variants = customJigOptions
-          ? rotatedJigSelections(source, customJigOptions, addresses.indexOf(source), 4)
-              .map(item => ({...item.address, jigOptionId:item.id}))
+        const postal = customJigOptions
+          ? await verifiedPostalJigEntries(source, customJigOptions) : [];
+      const variants = customJigOptions
+          ? [...postal.map(item => ({...item.address, jigOptionId:item.id})),
+             ...rotatedJigSelections(source, customJigOptions, addresses.indexOf(source), 4)
+               .map(item => ({...item.address, jigOptionId:item.id}))].slice(0, 4)
           : (source.savedVariants || []).map(item => ({ ...item.address, jigPoolVariantId: item.id }));
 
         const sourceKey =
@@ -30918,7 +30977,8 @@ app.post(
 
       const explicitlySelected = Array.isArray(req.body?.jigOptions);
        const requestedEntries = explicitlySelected
-         ? eligibleJigSelections(sourceAddress, req.body.jigOptions) : [];
+         ? [...await verifiedPostalJigEntries(sourceAddress, req.body.jigOptions),
+            ...eligibleJigSelections(sourceAddress, req.body.jigOptions)] : [];
        const otherAssignmentsForCustomer = [
          ...(await getFreeAssignments()), ...(await getRentalAssignments())
        ].filter(item => String(item.customerAccountId || "") === String(account.id));
