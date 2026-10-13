@@ -42,7 +42,7 @@ test("iPad live refresh does not rebuild unchanged content or repeatedly restore
   assert.match(mobile, /const changed=mobileRenderedFingerprint!==mobileVisibleFingerprint\(\)/);
   assert.match(mobile, /if\(!force\)mobileRestoreScroll\(x,y\)/);
   assert.match(mobile, /Math\.abs\(window\.scrollY-y\)>2/);
-  assert.match(admin, /15-second activation-tracker poll/);
+  assert.match(admin, /15-second full rebuild/);
   assert.doesNotMatch(admin,/window\.setInterval\(\s*\(\) => \{\s*if\s*\(\s*!dashboard\.hidden\s*\)\s*\{\s*loadProfileActivationTracker\(\)/);
   assert.match(admin,/document\.querySelector\("#rows \.customer-order\[open\]"\)/);
   assert.match(admin,/sessionStorage\.removeItem\(storageKey\);/);
