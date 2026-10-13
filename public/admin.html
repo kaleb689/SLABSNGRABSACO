@@ -5404,7 +5404,7 @@
 <link rel="stylesheet" href="/sng-premium-controls.css?v=2">
 <link rel="stylesheet" href="/admin-header-organized.css?v=20261010-1">
 <link rel="stylesheet" href="/admin-membership-kpis.css?v=20261010">  <style>.admin-member-billing-breakdown{border:1px solid #326c8d;border-radius:13px;padding:13px 16px;margin:12px 0 18px;background:#0b2437;color:#d8f5ff}.admin-member-billing-breakdown summary{cursor:pointer;font-weight:850;color:#8ae6ff}.admin-member-billing-line{border-top:1px solid #36566d;padding:12px 0}.admin-member-billing-line p{font-size:12px;margin:6px 0;overflow-wrap:anywhere}</style>
-<link rel="stylesheet" href="/admin-workspace-tabs.css?v=20261013-sixcol-1"><link rel="stylesheet" href="/admin-ipad-notifications.css?v=20261013-1"><link rel="stylesheet" href="/admin-jig-picker.css?v=20261012-4">
+<link rel="stylesheet" href="/admin-workspace-tabs.css?v=20261013-sixcol-1"><link rel="stylesheet" href="/admin-ipad-notifications.css?v=20261013-1"><link rel="stylesheet" href="/admin-ipad-passkeys.css?v=20261013-1"><link rel="stylesheet" href="/admin-jig-picker.css?v=20261012-4">
 </head>
 
 
@@ -5494,6 +5494,9 @@
         <p id="msg"></p>
 
       </form>
+      <button type="button" class="admin-passkey-login-button" id="adminPasskeyLogin">SIGN IN WITH FACE ID / TOUCH ID</button>
+      <p id="adminPasskeyLoginStatus" class="admin-passkey-feedback" role="status" aria-live="polite"></p>
+      <p class="admin-passkey-help">First sign in with your password and authenticator code, then set up your iPad passkey in the Admin header.</p>
 
     </div>
 
@@ -5605,6 +5608,10 @@
 
 </div></details>
 
+        <div id="adminPasskeyControls" class="admin-passkey-controls">
+          <button type="button" id="adminPasskeySetup" class="admin-passkey-setup">SET UP FACE ID / TOUCH ID</button>
+          <span id="adminPasskeySetupStatus" class="admin-passkey-feedback" role="status" aria-live="polite"></span>
+        </div>
         <button
           id="logout"
           type="button"
@@ -18921,23 +18928,8 @@ refreshProfileActivationTracker
   );
 
 
-window.setInterval(
-  () => {
-    if (
-      !dashboard.hidden
-    ) {
-      loadProfileActivationTracker()
-        .catch(
-          error =>
-            console.error(
-              "Activation tracker refresh failed:",
-              error
-            )
-        );
-    }
-  },
-  15000
-);
+// Activation tracker updates arrive through /api/admin/live/events.
+// The additional 15-second full rebuild moved open iPad profile pages.
 
 
 
@@ -20610,20 +20602,18 @@ document
           saved.at ||
           0
         ) >
-        15000
+        2500
     ) {
       return;
     }
-
+    // A completed action requests one scroll restore, not repeated scroll
+    // overrides triggered by every background DOM mutation.
+    sessionStorage.removeItem(storageKey);
     requestAnimationFrame(
       () => {
-        window.scrollTo(
-          window.scrollX,
-          Number(
-            saved.y ||
-            0
-          )
-        );
+        const targetY=Number(saved.y||0);
+        if(Math.abs(window.scrollY-targetY)>2)
+          window.scrollTo(window.scrollX,targetY);
       }
     );
 
@@ -20739,6 +20729,7 @@ async function refreshAdminInPlace() {
     document.hidden ||
     dashboard.hidden ||
     adminLiveInputFocused() ||
+    document.querySelector("#rows .customer-order[open]") ||
     document.querySelector(".jig-modal:not([hidden])") ||
     Date.now() - adminLastInteractionAt < 1400
   ) return;
@@ -20805,6 +20796,10 @@ new MutationObserver(() => {
 
 document.addEventListener("focusout", () => {
   if (adminLiveRefreshPending) scheduleAdminLiveRefresh();
+}, true);
+document.addEventListener("toggle", event => {
+  if (adminLiveRefreshPending && event.target?.matches?.("#rows .customer-order"))
+    scheduleAdminLiveRefresh();
 }, true);
 document.addEventListener("visibilitychange", () => {
   updateAdminLiveEvents();
@@ -25108,7 +25103,8 @@ document.addEventListener("click", event => {
   ↑
 </button>
 
-<script src="/admin-workspace-tabs.js?v=20261013-sixcol-1"></script>
+<script src="/admin-passkey-controls.js?v=20261013-1"></script>
+<script src="/admin-workspace-tabs.js?v=20261013-biometric-1"></script>
 <script src="/admin-jig-picker.js?v=20261013-postal-1"></script>
 <script src="/admin-pool-search.js?v=20261012-2"></script>
 <script src="/admin-theme-toggle.js?v=20261009"></script>

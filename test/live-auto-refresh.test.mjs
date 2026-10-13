@@ -15,7 +15,7 @@ function section(source, first, last) {
 }
 
 function harness(script, side) {
-  let editing = false;
+  let editing = false, customerExpanded = false;
   let now = Date.now();
   let nextTimer = 0;
   const timers = new Map();
@@ -28,7 +28,8 @@ function harness(script, side) {
       closest: () => null
     },
     addEventListener: () => {},
-    querySelector: selector => [".customer-order[open] [data-linked-profiles-section][open]", ".jig-modal:not([hidden])"].includes(selector)
+    querySelector: selector => selector === "#rows .customer-order[open]" ? (customerExpanded ? {} : null) :
+      [".customer-order[open] [data-linked-profiles-section][open]", ".jig-modal:not([hidden])"].includes(selector)
       ? null : ({ dataset: { accountTab: "membership" } })
   };
   const window = {
@@ -72,6 +73,7 @@ function harness(script, side) {
     requests,
     advanceClock(ms = 9000) { now += ms; },
     setEditing(value) { editing = value; },
+    setCustomerExpanded(value) { customerExpanded = value; },
     schedule() { vm.runInContext(
       side === "admin" ? "scheduleAdminLiveRefresh()" : "scheduleCustomerLiveRefresh()",
       context
@@ -115,6 +117,20 @@ test("Admin live updates refresh its management view and pool search, but not ac
   h.schedule();
   await h.flush();
   assert.equal(h.requests.filter(item => item[0] === "admin-load").length, 2);
+});
+
+test("expanded Admin customer profiles defer live DOM replacement until the card closes",async()=>{
+  const block=section(admin,"let adminLiveRefreshTimer = null;","/* =========================================\n   INITIALIZE");
+  const h=harness(block,"admin");
+  h.advanceClock();
+  h.setCustomerExpanded(true);
+  h.schedule();
+  await h.flush();
+  assert.equal(h.requests.filter(item=>item[0]==="admin-load").length,0);
+  h.setCustomerExpanded(false);
+  h.schedule();
+  await h.flush();
+  assert.equal(h.requests.filter(item=>item[0]==="admin-load").length,1);
 });
 
 test("Customer live updates run silently and retain active tab, while typing blocks rerender", async () => {

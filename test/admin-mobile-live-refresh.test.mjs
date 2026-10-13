@@ -15,13 +15,14 @@ function createMobileHarness() {
   const pendingTimers = new Map();
   const requests = [];
   const scrolls = [];
+  let expandedDetails = false;
   let nextTimer = 0;
 
   function node(id) {
     if (!elements.has(id)) {
       const listeners = new Map();
-      elements.set(id, {
-        id, hidden: false, textContent: "", innerHTML: "", value: "", disabled: false,
+      const element = {
+        id, hidden: false, textContent: "", value: "", disabled: false, writes: 0,
         style: {}, dataset: {}, listeners,
         classList: { toggle: () => {} },
         addEventListener(name, callback) { listeners.set(name, callback); },
@@ -29,7 +30,13 @@ function createMobileHarness() {
         querySelector() { return null; },
         closest(selector) { return selector === "#workspace" ? node("workspace") : null; },
         matches(selector) { return selector.includes("input"); }
+      };
+      let markup = "";
+      Object.defineProperty(element,"innerHTML",{
+        get(){return markup;},
+        set(value){markup=String(value);element.writes++;}
       });
+      elements.set(id,element);
     }
     return elements.get(id);
   }
@@ -37,7 +44,7 @@ function createMobileHarness() {
   const document = {
     hidden: false, activeElement: null,
     getElementById: node,
-    querySelectorAll: () => [],
+    querySelectorAll: selector => selector === "#content details[open]" && expandedDetails ? [{}] : [],
     addEventListener(name, callback) { documentListeners.set(name, callback); }
   };
   const window = {
@@ -90,6 +97,7 @@ function createMobileHarness() {
     await settle();
   }
   return { node, document, window, fixtures, streams, requests, scrolls, settle, flushTimers,
+    setExpandedDetails(value){expandedDetails=Boolean(value);},
     onDocument(name) { return documentListeners.get(name); } };
 }
 
@@ -119,7 +127,8 @@ test("mobile Admin automatically syncs without interrupting a focused customer s
   assert.equal(h.requests.length, 14, "pending event reloads when input loses focus");
   assert.equal(search.value, "amy@example", "customer search text survives rerender");
   assert.match(h.node("customer-results").innerHTML, /Amy/);
-  assert.ok(h.scrolls.some(([x,y]) => x === 14 && y === 44), "scroll restored");
+  assert.equal(h.scrolls.some(([x,y]) => x === 14 && y === 44), false,
+    "an unchanged live event must never programmatically scroll the iPad");
 });
 
 test("mobile Admin reconnects and retains same tab, with periodic catchup and forced refresh", async () => {
@@ -312,4 +321,43 @@ test("Internal test customers are omitted from list without deleting their backi
   assert.doesNotMatch(rows,/kalebmatthews04/i);
   assert.doesNotMatch(rows,/Fake Admin/);
   assert.match(h.node("content").innerHTML,/2 registered customers/);
+});
+
+test("unchanged live events do not rebuild the Admin page or move iPad scroll",async()=>{
+  const h=createMobileHarness();
+  await h.settle();
+  const content=h.node("content"),before=content.writes;
+  h.fixtures["/api/admin/success-overview"]={sourceCheckedAt:"2026-10-13T16:00:10Z"};
+  h.streams[0].emit("data-change");
+  await h.flushTimers();
+  assert.equal(content.writes,before,
+    "source scan timestamps must not rebuild the visible page");
+  assert.equal(h.scrolls.length,0,
+    "background heartbeat must not call scrollTo");
+  h.fixtures["/api/admin/success-overview"]={
+    sourceCheckedAt:"2026-10-13T16:00:20Z",
+    communityTotals:{totalCheckouts:10,totalSpent:1455.25}
+  };
+  h.streams[0].emit("data-change");
+  await h.flushTimers();
+  assert.ok(content.writes>before,"a genuine checkout total change updates the page");
+});
+
+test("new profile data arrives while detail is expanded and rerenders after closing",async()=>{
+  const h=createMobileHarness();
+  await h.settle();
+  const click=h.node("tabs").listeners.get("click");
+  click({target:{closest:()=>({dataset:{tab:"profiles"}})}});
+  const content=h.node("content"),before=content.writes;
+  h.setExpandedDetails(true);
+  h.fixtures["/api/admin/profile-activation-tracker"]={
+    customers:[{customerAccountId:"user1",profiles:[{id:"profile1",type:"paid",status:"awaiting_activation"}]}]
+  };
+  h.streams[0].emit("data-change");
+  await h.flushTimers();
+  assert.equal(content.writes,before,"an open customer detail remains intact");
+  h.setExpandedDetails(false);
+  h.onDocument("toggle")();
+  await h.flushTimers();
+  assert.ok(content.writes>before,"deferred data appears when the customer detail closes");
 });
