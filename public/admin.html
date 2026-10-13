@@ -20740,7 +20740,7 @@ async function refreshAdminInPlace() {
     dashboard.hidden ||
     adminLiveInputFocused() ||
     document.querySelector(".customer-order[open] [data-linked-profiles-section][open]") ||
-    Date.now() - adminLastInteractionAt < 8000
+    Date.now() - adminLastInteractionAt < 1400
   ) return;
 
   adminLiveRefreshPending = false;
