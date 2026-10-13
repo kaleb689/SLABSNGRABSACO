@@ -16313,6 +16313,9 @@ document.addEventListener("visibilitychange", () => {
 let customerLiveRefreshTimer = null;
 let customerLiveRefreshRunning = false;
 let customerLiveRefreshPending = false;
+let customerLiveLastScrollAt = 0;
+window.addEventListener("scroll", () => { customerLiveLastScrollAt = Date.now(); }, {passive:true});
+window.addEventListener("wheel", () => { customerLiveLastScrollAt = Date.now(); }, {passive:true});
 
 function customerLiveInputFocused() {
   const active = document.activeElement;
@@ -16324,7 +16327,8 @@ function customerLiveInputFocused() {
 async function refreshCustomerViewInPlace() {
   if (!customerLiveRefreshPending || !state.customer ||
       document.visibilityState !== "visible" ||
-      customerLiveRefreshRunning || customerLiveInputFocused()) return;
+      customerLiveRefreshRunning || customerLiveInputFocused() ||
+      Date.now() - customerLiveLastScrollAt < 950) return;
 
   customerLiveRefreshPending = false;
   customerLiveRefreshRunning = true;
@@ -16344,7 +16348,9 @@ async function refreshCustomerViewInPlace() {
   } catch (error) {
     console.error("Customer live refresh:", error);
   } finally {
-    requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+    requestAnimationFrame(() => {
+      if (Date.now() - customerLiveLastScrollAt >= 950) window.scrollTo(scrollX, scrollY);
+    });
     customerLiveRefreshRunning = false;
     // Changes made while the previous refresh was in-flight still apply.
     if (customerLiveRefreshPending) scheduleCustomerLiveRefresh();
@@ -16354,9 +16360,13 @@ async function refreshCustomerViewInPlace() {
 function scheduleCustomerLiveRefresh() {
   customerLiveRefreshPending = true;
   clearTimeout(customerLiveRefreshTimer);
-  customerLiveRefreshTimer = setTimeout(() => {
-    void refreshCustomerViewInPlace();
-  }, 300);
+  customerLiveRefreshTimer = setTimeout(async () => {
+    await refreshCustomerViewInPlace();
+    if (customerLiveRefreshPending && state.customer && document.visibilityState === "visible") {
+      clearTimeout(customerLiveRefreshTimer);
+      customerLiveRefreshTimer = setTimeout(scheduleCustomerLiveRefresh, 1100);
+    }
+  }, 400);
 }
 
 let customerLiveEvents = null;
