@@ -81,6 +81,17 @@ function mobileFetchBlocked(){
 function mobileRefreshBlocked(){
   return mobileFetchBlocked() || (document.querySelectorAll?.("#content details[open]")?.length || 0)>0;
 }
+let mobileIdleCatchupTimer=null;
+function retryMobileWhenIdle(){
+  clearTimeout(mobileIdleCatchupTimer);
+  mobileIdleCatchupTimer=setTimeout(()=>{
+    mobileIdleCatchupTimer=null;
+    if(!mobileRefreshPending || document.hidden)return;
+    if(!mobileRefreshBlocked())scheduleMobileRefresh();
+    else if(Date.now()-mobileLastScrollAt<2800)retryMobileWhenIdle();
+    // Open details and focused edits resume via toggle/focusout.
+  },3000);
+}
 function mobileRestoreScroll(x,y){
   requestAnimationFrame(()=>{
     // Never issue a programmatic scroll on an unchanged live event.
@@ -790,7 +801,7 @@ async function refreshSuccessTracker(){
     window.AdminLiveNotifications?.apply(data);
     if(mobileRenderedFingerprint===mobileVisibleFingerprint())return;
     // Refresh data without collapsing the customer's open card or date picker.
-    if(mobileRefreshBlocked()){mobileRefreshPending=true;return;}
+    if(mobileRefreshBlocked()){mobileRefreshPending=true;retryMobileWhenIdle();return;}
     if(tab==="success"&&authenticated&&!document.hidden){
       const x=window.scrollX,y=window.scrollY;
       render();
@@ -809,6 +820,7 @@ async function refresh(force=false){
   // Don't overwrite live search text or form controls in the mobile Admin app.
   if(!force && authenticated && mobileFetchBlocked()){
     mobileRefreshPending=true;
+    retryMobileWhenIdle();
     return;
   }
   mobileRefreshPending=false;
@@ -837,6 +849,7 @@ async function refresh(force=false){
     // Only replace visible DOM for genuinely changed data and idle controls.
     if(!force && changed && mobileRefreshBlocked()){
       mobileRefreshPending=true;
+      retryMobileWhenIdle();
     }else if(changed){
       $("updated").textContent="Updated "+new Date().toLocaleTimeString();
       const x=window.scrollX,y=window.scrollY;
@@ -858,7 +871,10 @@ async function refresh(force=false){
   }finally{
     mobileRefreshRunning=false;
     // Never lose an update that arrived while another refresh was running.
-    if(mobileRefreshPending && !mobileRefreshBlocked()) scheduleMobileRefresh();
+    if(mobileRefreshPending){
+      if(!mobileRefreshBlocked())scheduleMobileRefresh();
+      else retryMobileWhenIdle();
+    }
   }
 }
 const quickFaceSetup=$("mobile-biometric-setup");
