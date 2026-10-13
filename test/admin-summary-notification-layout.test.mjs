@@ -41,11 +41,11 @@ test("compact bell popover scrolls instead of covering navigation", () => {
   assert.match(html, /profile\.slot \? ` #/);
 });
 
-test("bell open state is excluded from BOTH Admin dropdown persistence systems", () => {
-  const skipRestore = 'if (detail.id === "adminNotifications" || detail.matches(\'[data-inline-admin-section="shipping"]\')) {';
-  const skipSave = 'if (detail.id === "adminNotifications" || detail.matches(\'[data-inline-admin-section="shipping"]\')) return;';
-  assert.equal(html.split(skipRestore).length - 1, 2);
-  assert.equal(html.split(skipSave).length - 1, 2);
+test("bell open state is excluded from the consolidated Admin dropdown manager", () => {
+  assert.match(html, /detail\.id === "adminNotifications"/);
+  assert.match(html, /sng-details-v3:/);
+  assert.doesNotMatch(html, /sng-admin-details:/);
+  assert.doesNotMatch(html, /sng-details-v2:/);
   assert.match(html, /admin-workspace-tabs\.css\?v=20261013-sixcol-1/);
   assert.match(html, /admin-workspace-tabs\.js\?v=20261013-biometric-1/);
 });
