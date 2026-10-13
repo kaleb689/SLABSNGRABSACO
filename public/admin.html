@@ -5404,7 +5404,7 @@
 <link rel="stylesheet" href="/sng-premium-controls.css?v=2">
 <link rel="stylesheet" href="/admin-header-organized.css?v=20261010-1">
 <link rel="stylesheet" href="/admin-membership-kpis.css?v=20261010">  <style>.admin-member-billing-breakdown{border:1px solid #326c8d;border-radius:13px;padding:13px 16px;margin:12px 0 18px;background:#0b2437;color:#d8f5ff}.admin-member-billing-breakdown summary{cursor:pointer;font-weight:850;color:#8ae6ff}.admin-member-billing-line{border-top:1px solid #36566d;padding:12px 0}.admin-member-billing-line p{font-size:12px;margin:6px 0;overflow-wrap:anywhere}</style>
-<link rel="stylesheet" href="/admin-workspace-tabs.css?v=20261012-4"><link rel="stylesheet" href="/admin-jig-picker.css?v=20261012-4">
+<link rel="stylesheet" href="/admin-workspace-tabs.css?v=20261013-postal-1"><link rel="stylesheet" href="/admin-jig-picker.css?v=20261012-4">
 </head>
 
 
@@ -7956,7 +7956,7 @@ function renderOrder(x) {
     <div class="jig-modal-panel" role="dialog" aria-modal="true" aria-label="Customer address JIGs">
       <button type="button" class="jig-modal-close" data-close-jigs aria-label="Close JIGs">×</button>
       <h3>Main Addresses &amp; JIGs</h3>
-      <p>Submitted main addresses stay unchanged. Edit or add only a truthful formatting variant; house, street, unit number, city, state and ZIP stay the same.</p>
+      <p>Submitted main addresses always stay unchanged. Use truthful formatting changes or a ZIP+4 / alternate mailing city verified against the customer's actual address by USPS. Never invent delivery information.</p>
       <button type="button" class="admin-save-button" data-add-main-address>Add Main Address</button>
       <form class="jig-edit-form" data-main-address-form hidden>
         <h4>Add Main Address</h4>
@@ -7976,6 +7976,13 @@ function renderOrder(x) {
         <label>Street address <input name="address" required maxlength="240"></label>
         <label>Apartment / unit <input name="address2" maxlength="160"></label>
         <p data-jig-fixed-address></p>
+        <div class="jig-verified-postal">
+          <button type="button" class="admin-edit-button" data-jig-postal-lookup>Check verified ZIP+4 and alternate cities</button>
+          <label>Verified postal variation
+            <select data-jig-postal-select hidden></select>
+          </label>
+          <span data-jig-postal-status role="status"></span>
+        </div>
         <button type="submit" class="admin-save-button">Save JIG</button>
         <span data-jig-form-message role="status"></span>
       </form>
@@ -22976,6 +22983,34 @@ document.addEventListener("click", async event => {
     if (!form.hidden) form.scrollIntoView({ block: "nearest" });
     return;
   }
+  const postalLookup = event.target.closest("[data-jig-postal-lookup]");
+  if (postalLookup) {
+    const form = postalLookup.closest("[data-jig-edit-form]");
+    const modal = form?.closest("[data-jig-modal]");
+    const status = form?.querySelector("[data-jig-postal-status]");
+    const select = form?.querySelector("[data-jig-postal-select]");
+    if (!form || !modal || !form.dataset.sourceId) return;
+    postalLookup.disabled = true;
+    status.textContent = "Checking USPS for this customer's address...";
+    try {
+      const route = `/api/admin/submissions/${encodeURIComponent(modal._orderId)}/jigs/${encodeURIComponent(form.dataset.sourceId)}/postal-options`;
+      const response = await fetch(route, {credentials:"same-origin",cache:"no-store"});
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "USPS postal verification failed.");
+      form._verifiedPostalOptions = Array.isArray(payload.options) ? payload.options : [];
+      select.replaceChildren(new Option("Keep standard street/unit formatting", ""));
+      for (const option of form._verifiedPostalOptions) select.add(new Option(option.label, option.id));
+      select.hidden = !form._verifiedPostalOptions.length;
+      status.textContent = form._verifiedPostalOptions.length
+        ? "Select one USPS-matched ZIP+4 or mailing city, then save. The original main address will not change."
+        : "USPS verified this address, but found no other ZIP+4 or confirmed city variation.";
+    } catch (error) {
+      form._verifiedPostalOptions = [];
+      select.hidden = true;
+      status.textContent = error.message || "Postal verification unavailable.";
+    } finally { postalLookup.disabled = false; }
+    return;
+  }
   const jigAction = event.target.closest("[data-jig-action]");
   if (jigAction) {
     const modal = jigAction.closest("[data-jig-modal]");
@@ -23030,8 +23065,12 @@ document.addEventListener("click", async event => {
     form.querySelector("[data-jig-fixed-address]").textContent =
       `Main address: ${[source.original.address, source.original.address2, source.original.city, source.original.state, source.original.zip].filter(Boolean).join(", ")}`;
     form.querySelector("[data-jig-form-message]").textContent = "";
+    form.querySelector("[data-jig-postal-status]").textContent = "";
+    const postalSelect = form.querySelector("[data-jig-postal-select]");
+    postalSelect.replaceChildren();
+    postalSelect.hidden = true;
+    form._verifiedPostalOptions = [];
     form.hidden = false;
-    form.scrollIntoView({ block: "nearest" });
   }
 });
 
@@ -23072,11 +23111,14 @@ document.addEventListener("submit", async event => {
     const response = await fetch(path, {
       method: form.dataset.variantId ? "PUT" : "POST", credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address: {
-        address: form.elements.address.value, address2: form.elements.address2.value,
-        city: source.original.city, state: source.original.state,
-        zip: source.original.zip, country: source.original.country
-      } })
+      body: JSON.stringify({
+        postalOptionId: form.querySelector("[data-jig-postal-select]")?.value || "",
+        address: {
+          address: form.elements.address.value, address2: form.elements.address2.value,
+          city: source.original.city, state: source.original.state,
+          zip: source.original.zip, country: source.original.country
+        }
+      })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Unable to save JIG.");
@@ -25067,7 +25109,7 @@ document.addEventListener("click", event => {
 </button>
 
 <script src="/admin-workspace-tabs.js?v=20261013-1"></script>
-<script src="/admin-jig-picker.js?v=20261012-2"></script>
+<script src="/admin-jig-picker.js?v=20261013-postal-1"></script>
 <script src="/admin-pool-search.js?v=20261012-2"></script>
 <script src="/admin-theme-toggle.js?v=20261009"></script>
 </body>
