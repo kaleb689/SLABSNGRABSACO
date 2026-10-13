@@ -62,6 +62,7 @@ let customerSearchText="", mobileRefreshTimer=null, mobileRefreshPending=false, 
 let mobileLastScrollAt=0;
 window.addEventListener("scroll",()=>{mobileLastScrollAt=Date.now();},{passive:true});
 window.addEventListener("wheel",()=>{mobileLastScrollAt=Date.now();},{passive:true});
+window.addEventListener("touchmove",()=>{mobileLastScrollAt=Date.now();},{passive:true});
 const mobileControlFocused=()=>{
   const active=document.activeElement;
   return Boolean(authenticated && active?.closest?.("#workspace") &&
@@ -69,18 +70,36 @@ const mobileControlFocused=()=>{
 };
 function scheduleMobileRefresh(){
   mobileRefreshPending=true;
-  clearTimeout(mobileRefreshTimer);
-  mobileRefreshTimer=setTimeout(()=>void refresh(),300);
+  if(mobileRefreshTimer)return;
+  mobileRefreshTimer=setTimeout(()=>{mobileRefreshTimer=null;void refresh();},450);
 }
+function mobileRefreshBlocked(){
+  return document.hidden || mobileControlFocused() ||
+    (document.querySelectorAll?.("#content details[open]")?.length || 0)>0 ||
+    Date.now()-mobileLastScrollAt<1800;
+}
+function mobileRestoreScroll(x,y){requestAnimationFrame(()=>window.scrollTo(x,y));}
 const get=async path=>{const r=await fetch(path,{credentials:"same-origin",cache:"no-store"});if(r.status===401)throw Error("SESSION_EXPIRED");const j=await r.json();if(!r.ok)throw Error(j.error||"Unable to load data");return j;};
-function auth(value){authenticated=value;$("signin").hidden=value;$("workspace").hidden=!value;$("tabs").hidden=!value;if(!value){stream?.close();stream=null;}}
+function auth(value){authenticated=value;$("signin").hidden=value;$("workspace").hidden=!value;$("tabs").hidden=!value;window.AdminLiveNotifications?.setAuthenticated(value);if(!value){stream?.close();stream=null;}}
 const decode64=v=>Uint8Array.from(atob(String(v).replace(/-/g,"+").replace(/_/g,"/").padEnd(Math.ceil(v.length/4)*4,"=")),c=>c.charCodeAt(0));
 const encode64=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/[+]/g,"-").replace(/[/]/g,"_").replace(/=+$/,"");
 const post=async(path,body)=>{const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw Error(j.error||"Passkey request failed");return j;};
-async function passkeyRegister(){const x=await post("/api/admin/passkeys/register/options",{});const pk=x.publicKey;pk.challenge=decode64(pk.challenge);pk.user.id=decode64(pk.user.id);pk.excludeCredentials=(pk.excludeCredentials||[]).map(c=>({...c,id:decode64(c.id)}));const c=await navigator.credentials.create({publicKey:pk});await post("/api/admin/passkeys/register/verify",{requestId:x.requestId,credential:{id:c.id,type:c.type,response:{clientDataJSON:encode64(c.response.clientDataJSON),attestationObject:encode64(c.response.attestationObject)}}});alert("Face ID passkey registered. You can now sign in with Face ID.");}
-async function passkeyLogin(){const x=await post("/api/admin/passkeys/login/options",{});const pk=x.publicKey;pk.challenge=decode64(pk.challenge);pk.allowCredentials=(pk.allowCredentials||[]).map(c=>({...c,id:decode64(c.id)}));const c=await navigator.credentials.get({publicKey:pk});await post("/api/admin/passkeys/login/verify",{requestId:x.requestId,credential:{id:c.id,type:c.type,response:{authenticatorData:encode64(c.response.authenticatorData),clientDataJSON:encode64(c.response.clientDataJSON),signature:encode64(c.response.signature)}}});await refresh(true);}
+function passkeySupported(){
+  if(!window.isSecureContext || !navigator.credentials?.create || !navigator.credentials?.get)
+    throw Error("Face ID / Touch ID passkeys require a secure Safari session. Open the installed Admin app or https://slabsngrabsaco.com in Safari.");
+  if(!window.PublicKeyCredential)
+    throw Error("This iPad browser does not support passkeys. Update iPadOS and use Safari.");
+}
+function passkeyError(error){
+  if(error?.name==="NotAllowedError")return "The passkey request was cancelled, timed out, or Face ID / Touch ID is unavailable. Confirm biometrics and iCloud Keychain are enabled in iPad Settings.";
+  if(error?.name==="SecurityError")return "Passkeys are blocked for this website origin. Open the Admin app from the same website address where you registered Face ID.";
+  if(error?.name==="InvalidStateError")return "This iPad already has this passkey. Use Sign In with Face ID / Touch ID or remove and register again.";
+  return error?.message||"Unable to create or use this passkey.";
+}
+async function passkeyRegister(){passkeySupported();const x=await post("/api/admin/passkeys/register/options",{});const pk=x.publicKey;pk.challenge=decode64(pk.challenge);pk.user.id=decode64(pk.user.id);pk.excludeCredentials=(pk.excludeCredentials||[]).map(c=>({...c,id:decode64(c.id)}));const c=await navigator.credentials.create({publicKey:pk});await post("/api/admin/passkeys/register/verify",{requestId:x.requestId,credential:{id:c.id,type:c.type,response:{clientDataJSON:encode64(c.response.clientDataJSON),attestationObject:encode64(c.response.attestationObject)}}});alert("Face ID passkey registered. You can now sign in with Face ID.");}
+async function passkeyLogin(){passkeySupported();const x=await post("/api/admin/passkeys/login/options",{});const pk=x.publicKey;pk.challenge=decode64(pk.challenge);pk.allowCredentials=(pk.allowCredentials||[]).map(c=>({...c,id:decode64(c.id)}));const c=await navigator.credentials.get({publicKey:pk});await post("/api/admin/passkeys/login/verify",{requestId:x.requestId,credential:{id:c.id,type:c.type,response:{authenticatorData:encode64(c.response.authenticatorData),clientDataJSON:encode64(c.response.clientDataJSON),signature:encode64(c.response.signature)}}});await refresh(true);}
 const pushLabels={newOrders:"New orders",activations:"Profile activations",expirations:"Expiring profiles",actionNeeded:"Action needed",support:"Support",checkouts:"Checkouts",deployments:"Deployments"};
-async function pushSettings(){const c=$("push-settings");if(!c)return;try{const d=await get("/api/admin/push/settings");c.innerHTML='<button class="action" id="enable-push">ENABLE PUSH NOTIFICATIONS</button>'+Object.entries(pushLabels).map(([k,v])=>'<label style="display:flex;align-items:center;justify-content:space-between">'+esc(v)+'<input style="width:26px;min-height:26px" type="checkbox" data-push="'+k+'" '+(d.preferences?.[k]?'checked':'')+'></label>').join('');c.querySelectorAll("[data-push]").forEach(el=>el.onchange=async()=>{await fetch("/api/admin/push/settings",{method:"PUT",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({[el.dataset.push]:el.checked})});});$("enable-push").onclick=async()=>{try{if(!("PushManager" in window)||!("Notification" in window))throw Error("Install the app to enable iPhone push.");if(await Notification.requestPermission()!=="granted")throw Error("Notification permission not granted.");if(!d.publicKey)throw Error("Push server key unavailable.");const reg=await navigator.serviceWorker.ready;const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:decode64(d.publicKey)});await post("/api/admin/push/subscribe",sub.toJSON());alert("Notifications enabled.");}catch(e){alert(e.message);}};}catch(e){c.textContent=e.message;}}
+async function pushSettings(){const c=$("push-settings");if(!c)return;try{const d=await get("/api/admin/push/settings");c.innerHTML='<button class="action" id="enable-push">ENABLE PUSH NOTIFICATIONS</button>'+Object.entries(pushLabels).map(([k,v])=>'<label style="display:flex;align-items:center;justify-content:space-between">'+esc(v)+'<input style="width:26px;min-height:26px" type="checkbox" data-push="'+k+'" '+(d.preferences?.[k]?'checked':'')+'></label>').join('');c.querySelectorAll("[data-push]").forEach(el=>el.onchange=async()=>{await fetch("/api/admin/push/settings",{method:"PUT",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({[el.dataset.push]:el.checked})});});$("enable-push").onclick=async()=>{try{if(!("PushManager" in window)||!("Notification" in window))throw Error("Install the app to enable iPad or iPhone push notifications.");if(await Notification.requestPermission()!=="granted")throw Error("Notification permission not granted.");if(!d.publicKey)throw Error("Push server key unavailable.");const reg=await navigator.serviceWorker.ready;const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:decode64(d.publicKey)});await post("/api/admin/push/subscribe",sub.toJSON());alert("Notifications enabled.");}catch(e){alert(e.message);}};}catch(e){c.textContent=e.message;}}
 const metricSnapshots=new Map();
 function liveMetric(label,value,numericValue,formatMoney=false){
   const prior=metricSnapshots.get(label);
@@ -712,23 +731,23 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
 if(tab==="profiles"){c.innerHTML='<div class="metrics">'+metric("Awaiting activation",activationCount(a,"awaiting_activation"))+metric("Activated",activationCount(a,"activated"))+metric("Expired",activationCount(a,"expired"))+metric("Registered customers",registeredCustomerCount)+'</div>'+panel("Profile workflow",'<p>Open the full tracker to activate, extend, or return profiles using the existing verified controls.</p><a href="/admin.html#profileActivationTracker">OPEN PROFILE WORKFLOW ↗</a>')+panel("Inventory",'<p>Target, Walmart, and Pokémon Center inventory remains managed in the full Admin dashboard.</p><a href="/admin.html">OPEN INVENTORY MANAGER ↗</a>');}
 if(tab==="usage"){c.innerHTML='<div class="admin-usage-return"><button type="button" id="admin-more-return" class="action">← BACK TO MORE</button></div>'+'<div class="metrics">'+metric("Installed users",u.installedUsers??"—")+metric("Installed devices",u.installedDevices??"—")+metric("Active users · 7D",u.activeUsers7d??"—")+metric("Active users · 30D",u.activeUsers30d??"—")+'</div>'+panel("Tracking information","<p>Counts begin when updated customer apps report activity. PWA installs are confirmed by app mode or an installation event; they are not App Store downloads.</p>")+panel("Recent activity",(u.recent||[]).slice(0,50).map(x=>'<article class="item"><strong>'+esc(x.name||"Customer")+'</strong><small>'+esc(x.email||"")+' · '+esc(x.platform||"Other")+' · '+(x.installedConfirmed?"Installed":"Web activity")+'</small><small>Last active: '+esc(x.lastSeenAt?new Date(x.lastSeenAt).toLocaleString():"—")+'</small></article>').join("")||"<p>No app activity has been recorded yet.</p>");}
 if(tab==="usage"){$("admin-more-return").onclick=()=>{tab="more";render();window.scrollTo(0,0);};}
-if(tab==="more"){c.innerHTML=panel("App usage & devices",'<div class="links"><button type="button" class="action" id="open-admin-usage">VIEW APP USAGE ↗</button></div>')+panel("Push notifications",`<div id="push-settings">Loading…</div>`)+panel("Admin tools",'<div class="links"><button class="action" id="register-face-id">SET UP FACE ID ON THIS IPHONE</button><a class="action" href="/admin.html">FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html">DISCOUNTS AND MEMBERSHIPS ↗</a><a class="action" href="/admin.html">DISCORD AND NOTIFICATIONS ↗</a><button class="action" id="signout">SIGN OUT</button></div>');void pushSettings();$("open-admin-usage").onclick=()=>{tab="usage";render();window.scrollTo(0,0);};$("register-face-id").onclick=async()=>{try{await passkeyRegister();}catch(e){alert(e.message);}};$("signout").onclick=async()=>{await fetch("/api/admin/logout",{method:"POST",credentials:"same-origin"}).catch(()=>{});auth(false);};}
+if(tab==="more"){c.innerHTML=panel("App usage & devices",'<div class="links"><button type="button" class="action" id="open-admin-usage">VIEW APP USAGE ↗</button></div>')+'<details class="panel admin-push-disclosure"><summary>Push notifications</summary><div id="push-settings" class="admin-push-content">Loading…</div></details>'+panel("Admin tools",'<div class="links"><button class="action" id="register-face-id">SET UP FACE ID / TOUCH ID</button><a class="action" href="/admin.html">FULL ADMIN DASHBOARD ↗</a><a class="action" href="/admin.html">DISCOUNTS AND MEMBERSHIPS ↗</a><a class="action" href="/admin.html">DISCORD AND NOTIFICATIONS ↗</a><button class="action" id="signout">SIGN OUT</button></div>');void pushSettings();$("open-admin-usage").onclick=()=>{tab="usage";render();window.scrollTo(0,0);};$("register-face-id").onclick=async()=>{try{await passkeyRegister();}catch(e){alert(passkeyError(e));}};$("signout").onclick=async()=>{await fetch("/api/admin/logout",{method:"POST",credentials:"same-origin"}).catch(()=>{});auth(false);};}
 }
 let successRefreshRunning=false,successRefreshQueued=false;
 async function refreshSuccessTracker(){
-  if(!authenticated||document.hidden||tab!=="success")return;
+  if(!authenticated||mobileRefreshBlocked()||tab!=="success")return;
   if(successRefreshRunning){successRefreshQueued=true;return;}
   successRefreshRunning=true;
   try{
     const next=await get("/api/admin/success-overview");
     data.success=next;
     // Updating a live chart must not dismiss a customer's active date picker.
-    if(mobileControlFocused()){mobileRefreshPending=true;return;}
+    if(mobileRefreshBlocked()){mobileRefreshPending=true;return;}
     if(tab==="success"&&authenticated&&!document.hidden){
       const x=window.scrollX,y=window.scrollY;
       render();
       $("updated").textContent="Live · "+new Date().toLocaleTimeString();
-      requestAnimationFrame(()=>{if(Date.now()-mobileLastScrollAt>=950)window.scrollTo(x,y);});
+      mobileRestoreScroll(x,y);
     }
   }catch(e){
     if(e.message==="SESSION_EXPIRED"){auth(false);return;}
@@ -740,7 +759,7 @@ async function refreshSuccessTracker(){
 async function refresh(force=false){
   if(mobileRefreshRunning){mobileRefreshPending=true;return;}
   // Don't overwrite live search text or form controls in the mobile Admin app.
-  if(!force && authenticated && (document.hidden || mobileControlFocused() || Date.now()-mobileLastScrollAt<950)){
+  if(!force && authenticated && mobileRefreshBlocked()){
     mobileRefreshPending=true;
     return;
   }
@@ -764,8 +783,9 @@ async function refresh(force=false){
     if(results[0].status==="rejected")throw results[0].reason;
     if(results[1].status==="rejected")data.registered=[];
     if(results[2].status==="rejected")data.activation=null;
+    window.AdminLiveNotifications?.apply(data);
     // A field may gain focus while the network request is in flight.
-    if(!force && authenticated && (document.hidden || mobileControlFocused() || Date.now()-mobileLastScrollAt<950)){
+    if(!force && authenticated && mobileRefreshBlocked()){
       mobileRefreshPending=true;
       return;
     }
@@ -773,7 +793,7 @@ async function refresh(force=false){
     $("updated").textContent="Updated "+new Date().toLocaleTimeString();
     const x=window.scrollX,y=window.scrollY;
     render();
-    requestAnimationFrame(()=>{if(Date.now()-mobileLastScrollAt>=950)window.scrollTo(x,y);});
+    mobileRestoreScroll(x,y);
     if(!stream){
       stream=new EventSource("/api/admin/live/events");
       // A signup changes the customer roster even while the Success tab is
@@ -792,7 +812,7 @@ async function refresh(force=false){
     if(mobileRefreshPending && !document.hidden) scheduleMobileRefresh();
   }
 }
-const faceButton=document.getElementById("face-id-login");if(faceButton){faceButton.onclick=async()=>{faceButton.disabled=true;try{await passkeyLogin();}catch(e){$("login-message").textContent=e.message;}finally{faceButton.disabled=false;}};}
+const faceButton=document.getElementById("face-id-login");if(faceButton){faceButton.onclick=async()=>{faceButton.disabled=true;try{await passkeyLogin();}catch(e){$("login-message").textContent=passkeyError(e);}finally{faceButton.disabled=false;}};}
 $("login").addEventListener("submit",async ev=>{ev.preventDefault();const f=new FormData(ev.currentTarget);const r=await fetch("/api/admin/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:f.get("password"),code:f.get("code")})});if(!r.ok){$("login-message").textContent="Sign in failed. Check your password and authenticator code.";return;}ev.currentTarget.reset();$("login-message").textContent="";await refresh(true);});
 $("refresh").onclick=()=>void refresh(true);
 $("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;tab=b.dataset.tab;render();window.scrollTo(0,0);if(tab==="success")void refreshSuccessTracker();});
@@ -824,6 +844,7 @@ $("content").addEventListener("click",async e=>{
 });
 $("content").addEventListener("click",async e=>{const b=e.target.closest("[data-view]");if(!b)return;b.disabled=true;try{const r=await fetch("/api/admin/customers/"+encodeURIComponent(b.dataset.view)+"/view-as-user",{method:"POST",credentials:"same-origin"});const j=await r.json();if(!r.ok)throw Error(j.error||"Unable to open customer");location.assign(j.url||"/admin.html");}catch(err){alert(err.message);b.disabled=false;}});
 document.addEventListener("focusout",()=>{if(mobileRefreshPending)scheduleMobileRefresh();},true);
+document.addEventListener("toggle",()=>{if(mobileRefreshPending)scheduleMobileRefresh();},true);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&authenticated)scheduleMobileRefresh();});
 window.addEventListener("pageshow",()=>{if(authenticated)scheduleMobileRefresh();});
 window.addEventListener("pagehide",()=>{stream?.close();stream=null;});

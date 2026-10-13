@@ -26,6 +26,8 @@ jobs:
       - run: node --check shipping-tracking-policy.js
       - run: node --check public/admin-pool-search.js
       - run: node --check public/admin-mobile.js
+      - run: node --check public/admin-live-notifications.js
+      - run: node --test test/admin-ipad-notifications.test.mjs
       - run: node --check address-jig-choices.js
       - run: node --check postal-jig-validation.js
       - run: node --test test/postal-jig-validation.test.mjs
