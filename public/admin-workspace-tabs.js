@@ -186,6 +186,15 @@
     }
   }, true);
 
+
+  // Closing any parent disclosure resets its descendants, including those
+  // rendered dynamically after profile edits or search refreshes.
+  document.addEventListener("toggle", event => {
+    const parent = event.target;
+    if (!(parent instanceof HTMLDetailsElement) || parent.open || !dashboard.contains(parent)) return;
+    for (const nested of parent.querySelectorAll("details[open]")) nested.open = false;
+  }, true);
+
   // Preserve navigation after normal page refresh, including notifications.
   const queryPage = new URLSearchParams(location.search).get("page");
   applyPage(queryPage || "home", false);
