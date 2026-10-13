@@ -18,3 +18,18 @@
 #adminJigChoiceModal .admin-jig-picker-choice small{display:block;margin-top:3px;font-size:10px;color:#ffcd83}
 #adminJigChoiceModal .admin-jig-picker-status{font-weight:700;min-height:16px}
 @media(max-width:540px){#adminJigChoiceModal{padding:8px}#adminJigChoiceModal .admin-jig-picker-panel{padding:13px;border-radius:12px}#adminJigChoiceModal .admin-jig-picker-groups{grid-template-columns:1fr}}
+
+/* Stable trackpad scrolling and compact option rows. */
+#adminJigChoiceModal{overscroll-behavior:contain;overflow:hidden;touch-action:pan-y}
+#adminJigChoiceModal .admin-jig-picker-panel{
+ box-sizing:border-box;width:min(900px,calc(100vw - 24px));max-height:calc(100dvh - 32px);
+ overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;
+ -webkit-overflow-scrolling:touch;scrollbar-gutter:stable;
+}
+#adminJigChoiceModal .admin-jig-picker-groups{
+ grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));align-items:start
+}
+#adminJigChoiceModal .admin-jig-picker-group{gap:5px;padding:10px}
+#adminJigChoiceModal .admin-jig-picker-choice{align-items:center;gap:8px;min-height:27px}
+#adminJigChoiceModal .admin-jig-picker-choice span{overflow-wrap:break-word}
+@media(max-width:540px){#adminJigChoiceModal .admin-jig-picker-panel{max-height:calc(100dvh - 16px)}}
