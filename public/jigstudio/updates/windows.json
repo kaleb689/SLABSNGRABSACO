@@ -1,12 +1,12 @@
 {
   "channel": "owner",
   "appId": "com.slabsngrabsaco.jigstudio.owner",
-  "version": "4.9.7",
+  "version": "4.9.9",
   "files": [
     {
       "path": "package.json",
-      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/package-4.9.7.json",
-      "sha256": "6bcdbba39a4bd6a475218a2b9d32712d69e75d2dcfafd2ded147888c111f368f"
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/package-4.9.9.json",
+      "sha256": "c3f4cf971f91a268dba2ae6b591fc0dd2a62ee7fe8c269869bfafad1fe09967e"
     }
   ]
 }
