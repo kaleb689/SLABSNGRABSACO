@@ -1,17 +1,12 @@
 {
   "channel": "owner",
   "appId": "com.slabsngrabsaco.jigstudio.owner",
-  "version": "4.9.5",
+  "version": "4.9.7",
   "files": [
     {
-      "path": "desktop-native.js",
-      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/desktop-native-4.9.5.js",
-      "sha256": "526b902e066b30fe386853a26f10f3500d8e7739e1d536997c24a1918a60a5aa"
-    },
-    {
       "path": "package.json",
-      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/package-4.9.5.json",
-      "sha256": "43335e3ab0b7899c5ac862fe54053e493a4979c0334486e358e3f97ca11d5036"
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/package-4.9.7.json",
+      "sha256": "6bcdbba39a4bd6a475218a2b9d32712d69e75d2dcfafd2ded147888c111f368f"
     }
   ]
 }
