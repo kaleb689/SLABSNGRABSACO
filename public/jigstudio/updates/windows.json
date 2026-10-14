@@ -1,37 +1,52 @@
 {
   "channel": "owner",
   "appId": "com.slabsngrabsaco.jigstudio.owner",
-  "version": "4.10.0",
+  "version": "4.11.0",
   "files": [
     {
       "path": "index.html",
-      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/index-4.10.0.html",
-      "sha256": "e9379318a6644b54ce59e74ec26f136922caf75a62faf52380cdee187292fcf1"
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/index-4.11.0.html",
+      "sha256": "978ba4601ea9650d003e3c0edeb95713494f0ff213ee1cd534fff3eadf809802"
     },
     {
       "path": "app.js",
-      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/app-4.10.0.js",
-      "sha256": "ac32607044f97fcc631374bbd05d007924148b916ca90530036d0a0906bee506"
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/app-4.11.0.js",
+      "sha256": "af13f69b71d776735783a53b85b8d10c88089298f8682132e557909ab1a7e7e6"
     },
     {
       "path": "main.js",
-      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/main-4.10.0.js",
-      "sha256": "7d04ea00ff99822dfaacc9fec438d478360f81cd4dccbd83b97955364f2f1a3b"
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/main-4.11.0.js",
+      "sha256": "a8285584b550d07b4e8eff5769062e38e06886201d6d2ca804c26dae20cc59bf"
     },
     {
       "path": "preload.js",
-      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/preload-4.10.0.js",
-      "sha256": "2c0c94a82feed85b84c3889bcd809cedf5519b5894d51e64792c6fad639b38fa"
-    },
-    {
-      "path": "services.js",
-      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/services-4.10.0.js",
-      "sha256": "8d811eaf5d3d48ed1922e4ac0580e471805ee4b0985ee083318fef41058594cf"
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/preload-4.11.0.js",
+      "sha256": "a3e2a2cb0e9a5ea50c08c4dd566db0bd94dcd2c11e43dc1711062481857fa699"
     },
     {
       "path": "package.json",
-      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/package-4.10.0.json",
-      "sha256": "9e3eca79a9e4afa9eed10fac4eb18c3e5f8a52c7ed66fba6902848950c48bdb5"
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/package-4.11.0.json",
+      "sha256": "064dc8b1131209bf4ed5f65d9f656e021116c53385af90548d41afa680eebe46"
+    },
+    {
+      "path": "site-bridge.js",
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/site-bridge-4.11.0.js",
+      "sha256": "c894405714568a8064f44cacc5fc1d059cd3b536a1e74968effab61dcf55e191"
+    },
+    {
+      "path": "site-ui.js",
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/site-ui-4.11.0.js",
+      "sha256": "3f567c9765107d1473374a21fff22ea8f546a8c7dd624cef765718d5f898667e"
+    },
+    {
+      "path": "desktop-native.js",
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/desktop-native-4.11.0.js",
+      "sha256": "9d6063e60a646082ac1542a715534d9c8d3d88191664e5d953d91ded423c34f6"
+    },
+    {
+      "path": "aco-private-bank.js",
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/aco-private-bank-4.11.0.js",
+      "sha256": "557a971991e4ff40bb8b1808c850b4c3c693df7a1dbd26b89645371b212a8982"
     }
   ]
 }
