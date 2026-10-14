@@ -1,0 +1,39 @@
+'use strict';
+const {contextBridge,ipcRenderer}=require('electron');
+contextBridge.exposeInMainWorld('desktopAPI',Object.freeze({
+ windowControls:Object.freeze({minimize:()=>ipcRenderer.invoke('window:minimize'),maximize:()=>ipcRenderer.invoke('window:maximize'),close:()=>ipcRenderer.invoke('window:close'),isMaximized:()=>ipcRenderer.invoke('window:isMaximized'),platform:()=>ipcRenderer.invoke('window:platform')}),
+ localCards:Object.freeze({list:customerId=>ipcRenderer.invoke('cards:list',customerId),add:(customerId,card)=>ipcRenderer.invoke('cards:add',customerId,card),remove:(customerId,cardId)=>ipcRenderer.invoke('cards:remove',customerId,cardId),distribute:(customerId,cardIds,count)=>ipcRenderer.invoke('cards:distribute',customerId,cardIds,count),exportProfiles:payload=>ipcRenderer.invoke('cards:exportProfiles',payload)}),
+ updates:Object.freeze({info:()=>ipcRenderer.invoke('updates:info'),lastResult:()=>ipcRenderer.invoke('updates:lastResult'),connection:()=>ipcRenderer.invoke('updates:connection'),check:()=>ipcRenderer.invoke('updates:check'),installOnline:()=>ipcRenderer.invoke('updates:installOnline'),installZip:()=>ipcRenderer.invoke('updates:installZip')}),
+ site:Object.freeze({
+  open:()=>ipcRenderer.invoke('site:open'),
+  read:(view,options)=>ipcRenderer.invoke('site:read',view,options),
+  assign:payload=>ipcRenderer.invoke('site:assign',payload),
+  returnToPool:payload=>ipcRenderer.invoke('site:return',payload),
+  jig:payload=>ipcRenderer.invoke('site:jig',payload),
+  export:payload=>ipcRenderer.invoke('site:export',payload),
+  makeTemplate:payload=>ipcRenderer.invoke('site:makeTemplate',payload),
+  logout:()=>ipcRenderer.invoke('site:logout'),
+  loadNotices:()=>ipcRenderer.invoke('site:notifications:load'),
+  saveNotices:history=>ipcRenderer.invoke('site:notifications:save',history),
+  onChange:callback=>{if(typeof callback!=='function')throw TypeError('Listener required');const handler=()=>callback();ipcRenderer.on('site:change',handler);return ()=>ipcRenderer.removeListener('site:change',handler);}
+ }),
+ cloudflare:Object.freeze({
+  authorize:config=>ipcRenderer.invoke('cf:authorize',config),
+  check:()=>ipcRenderer.invoke('cf:check'),
+  publish:aliases=>ipcRenderer.invoke('cf:publish',aliases),
+  lock:()=>ipcRenderer.invoke('cf:lock'),
+  mx:()=>ipcRenderer.invoke('email:mx')
+ }),
+ chooseLocalFiles:()=>ipcRenderer.invoke('local:chooseFiles'),
+ onlineFile:(url,filename)=>ipcRenderer.invoke('online:fetch',url,filename),
+ openRetailer:(retailer,alias)=>ipcRenderer.invoke('retailer:open',retailer,alias),
+ openInbox:(retailer,alias,inbox)=>ipcRenderer.invoke('retailer:openInbox',retailer,alias,inbox),
+ copyPassword:password=>ipcRenderer.invoke('vault:copyPassword',password),
+ openProvider:provider=>ipcRenderer.invoke('link:provider',provider),
+ lookupZip:zip=>ipcRenderer.invoke('zip:lookup',zip),
+ floridaZipCities:()=>ipcRenderer.invoke('zip:floridaCities'),
+ uspsLookup:input=>ipcRenderer.invoke('usps:lookup',input),
+ smartyLookup:input=>ipcRenderer.invoke('smarty:lookup',input),
+ publicZip4Lookup:address=>ipcRenderer.invoke('usps:publicLookup',address),
+ copyPublicZip4Field:(field,value)=>ipcRenderer.invoke('usps:copyAddressField',field,value)
+}));

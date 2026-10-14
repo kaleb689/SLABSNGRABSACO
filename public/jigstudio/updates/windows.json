@@ -1,12 +1,37 @@
 {
   "channel": "owner",
   "appId": "com.slabsngrabsaco.jigstudio.owner",
-  "version": "4.9.9",
+  "version": "4.10.0",
   "files": [
     {
+      "path": "index.html",
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/index-4.10.0.html",
+      "sha256": "e9379318a6644b54ce59e74ec26f136922caf75a62faf52380cdee187292fcf1"
+    },
+    {
+      "path": "app.js",
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/app-4.10.0.js",
+      "sha256": "ac32607044f97fcc631374bbd05d007924148b916ca90530036d0a0906bee506"
+    },
+    {
+      "path": "main.js",
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/main-4.10.0.js",
+      "sha256": "7d04ea00ff99822dfaacc9fec438d478360f81cd4dccbd83b97955364f2f1a3b"
+    },
+    {
+      "path": "preload.js",
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/preload-4.10.0.js",
+      "sha256": "2c0c94a82feed85b84c3889bcd809cedf5519b5894d51e64792c6fad639b38fa"
+    },
+    {
+      "path": "services.js",
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/services-4.10.0.js",
+      "sha256": "8d811eaf5d3d48ed1922e4ac0580e471805ee4b0985ee083318fef41058594cf"
+    },
+    {
       "path": "package.json",
-      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/package-4.9.9.json",
-      "sha256": "c3f4cf971f91a268dba2ae6b591fc0dd2a62ee7fe8c269869bfafad1fe09967e"
+      "url": "https://slabsngrabsaco.onrender.com/jigstudio/updates/files/package-4.10.0.json",
+      "sha256": "9e3eca79a9e4afa9eed10fac4eb18c3e5f8a52c7ed66fba6902848950c48bdb5"
     }
   ]
 }

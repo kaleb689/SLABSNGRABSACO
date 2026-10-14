@@ -1,0 +1,94 @@
+{
+  "name": "slabsngrabsaco-jig-studio",
+  "version": "4.10.0",
+  "description": "SLABSNGRABSACO private Miami Vice desktop app with OS-encrypted local per-customer card vault",
+  "private": true,
+  "main": "main.js",
+  "author": "SLABSNGRABSACO",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --test tests/*.test.js",
+    "build:win": "electron-builder --win nsis",
+    "build:mac": "electron-builder --mac dmg zip",
+    "build:linux": "electron-builder --linux AppImage"
+  },
+  "build": {
+    "appId": "com.slabsngrabsaco.jigstudio.owner",
+    "productName": "SLABSNGRABSACO Jig Studio - Owner",
+    "files": [
+      "index.html",
+      "app.js",
+      "main.js",
+      "preload.js",
+      "local_files.js",
+      "services.js",
+      "package.json",
+      "verification.js",
+      "site-bridge.js",
+      "site-model.js",
+      "site-signal-preload.js",
+      "site-ui.js",
+      "WEBSITE_SYNC.md",
+      "site-workflow.js",
+      "site-workflow.css",
+      "desktop-updates.js",
+      "windows-update.ps1",
+      "windows-update.js",
+      "updates-ui.js",
+      "JigStudio.ico",
+      "JigStudio.png",
+      "mac-update.sh",
+      "profile-site-import.js",
+      "profile-site-import.css",
+      "payment-allocation.js",
+      "card-distribution-ui.js",
+      "card-distribution.css",
+      "desktop-native.css",
+      "desktop-native.js",
+      "vice-shell.css",
+      "vice-shell.js",
+      "local-card-vault.js",
+      "window-chrome.js",
+      "local-cards-ui.js",
+      "local-cards.css",
+      "vice-v44.css",
+      "vice-v44.js",
+      "local-card-export.js",
+      "owner-patch.js",
+      "usps-public-assist.js",
+      "usps-public-assist.css"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.business",
+      "icon": "JigStudio.icns"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "JigStudio.ico",
+      "executableName": "JigStudio"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SLABSNGRABSACO Jig Studio"
+    },
+    "asar": false,
+    "extraResources": [
+      {
+        "from": "../Branding/JigStudio.icns",
+        "to": "JigStudio.icns"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  }
+}
