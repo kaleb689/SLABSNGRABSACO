@@ -197,3 +197,18 @@ test("spoiler values remain exact on two-line Shikari webhook descriptions", () 
   assert.equal(record.sourceProfileLabel,"Customer Example 4");
   assert.equal(record.itemCount,2);
 });
+
+
+test("preorder and review hold values parse explicit unit prices in description blocks and spoiler fields",()=>{
+  for(const color of [0x57f287,0xff9900]) for(const price of ['||$167.75||','USD 167.75','167.75 USD']) {
+    const message=makeMessage(color,'1580000000000000300','2026-10-15T18:00:00Z');
+    message.embeds[0].description+='\n**Price**\n'+price;
+    const parsed=parseLiveWebhook(message);
+    assert.equal(parsed.orderTotal,335.50);
+    assert.equal(parsed.orderTotalBasis,'item_subtotal');
+    assert.equal(parsed.items[0].price,167.75);
+  }
+  const message=makeMessage(0x57f287,'1580000000000000301','2026-10-15T18:00:00Z');
+  message.embeds[0].fields=[{name:'Price',value:'||$12.99||'}];
+  assert.equal(parseLiveWebhook(message).orderTotal,25.98);
+});

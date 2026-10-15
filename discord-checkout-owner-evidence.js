@@ -47,7 +47,13 @@ export function recoverCheckoutAssignmentOwners(assignments, holds) {
   });
 }
 export function managedAccountEmailEvidence(account, credentials, assignment) {
-  const email = String(account?.accountEmail || account?.displayEmail || "").trim().toLowerCase();
+  const loginEmails = [...new Set(Object.values(credentials || {}).map(login =>
+    String(login?.username || "").trim().toLowerCase()).filter(Boolean))];
+  // Old single-login imports kept the one retailer login in a generic slot.
+  // Its explicit historical retailer assignment supplies the retailer scope.
+  const canonical = account?.accountEmail || account?.displayEmail ||
+    (loginEmails.length === 1 ? loginEmails[0] : "");
+  const email = String(canonical).trim().toLowerCase();
   if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(email)) return null;
   const saved = Object.entries(credentials || {})
     .filter(([, login]) => Boolean(String(login?.username || "").trim()))
@@ -61,7 +67,9 @@ export function managedAccountEmailEvidence(account, credentials, assignment) {
   // Older retailer-specific pool imports put the login in a legacy credential
   // slot. The explicit pool AND assignment must agree before using its saved
   // canonical Account Email; a different retailer slot cannot override them.
-  if (assignmentSite && possible.length && !possible.includes(assignmentSite) && poolSite !== assignmentSite) return null;
+  const singleLoginMatches = loginEmails.length === 1 && loginEmails[0] === email;
+  if (assignmentSite && possible.length && !possible.includes(assignmentSite) &&
+      poolSite !== assignmentSite && !singleLoginMatches) return null;
   const site = assignmentSite || (possible.length === 1 ? possible[0] : "");
   if (!site) return null;
   // Do not duplicate a candidate already generated from the encrypted login.

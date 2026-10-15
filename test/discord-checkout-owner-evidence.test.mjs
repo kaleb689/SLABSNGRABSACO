@@ -25,7 +25,8 @@ test("a retailer-specific legacy pool can use its saved canonical email without 
   assert.deepEqual(managedAccountEmailEvidence(account,credentials,{assignmentRetailer:'pokemoncenter'}),
     {email:'nicholas_dixon663@web.de',retailer:'PKC'});
   assert.equal(managedAccountEmailEvidence(account,credentials,{assignmentRetailer:'target'}),null);
-  assert.equal(managedAccountEmailEvidence({...account,retailer:''},credentials,{assignmentRetailer:'pokemoncenter'}),null);
+  assert.deepEqual(managedAccountEmailEvidence({...account,retailer:''},credentials,{assignmentRetailer:'pokemoncenter'}),
+    {email:'nicholas_dixon663@web.de',retailer:'PKC'});
 });
 
 test("never guess the retailer, owner or credentials from unrelated account fields", () => {
@@ -54,4 +55,15 @@ test("checkout owner candidates use saved managed account logins and respect his
   assert.match(section,/assignment.customerAccountId/);
   assert.match(section,/managedAssignmentId: assignment.id/);
   assert.doesNotMatch(section,/customer\.email/);
+});
+
+
+test("single-login legacy imports follow the exact historical assigned retailer and reject differing login identities",()=>{
+  const credentials={target:{username:'same-retailer-login@example.com'}};
+  const assignment={customerAccountId:'member-a',assignmentRetailer:'pokemoncenter'};
+  assert.deepEqual(managedAccountEmailEvidence({},credentials,assignment),
+    {email:'same-retailer-login@example.com',retailer:'PKC'});
+  assert.equal(managedAccountEmailEvidence({accountEmail:'other@example.com'},credentials,assignment),null);
+  assert.equal(managedAccountEmailEvidence({}, {...credentials,walmart:{username:'different@example.com'}},assignment),null);
+  assert.equal(managedAccountEmailEvidence({retailer:'target'},credentials,assignment),null);
 });
