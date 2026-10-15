@@ -6,6 +6,7 @@ import { checkoutIdentityFromDiscord, checkoutStatusFromDiscord, checkoutProduct
 import { reconcileWebhookCheckout, uniqueCheckoutOwner } from "../webhook-success.js";
 import { lateCancellation } from "../order-notifications.js";
 import { verifiedRetailerOrderTotal } from "../retailer-order-total.js";
+import {resolveOwnerVerifiedBackfill} from "../checkout-owner-backfills.js";
 import { checkoutExplicitPaidTotal } from "../checkout-price-policy.js";
 
 const channel = "1532179373292257290";
@@ -109,7 +110,7 @@ test("when Shikari provides Account email, a wrong profile label cannot override
   const start = source.indexOf("function discordCheckoutCandidateEligible(");
   const end = source.indexOf("let discordSuccessScanQueued =",start);
   const sandbox = {
-    uniqueCheckoutOwner, resolveApprovedCheckoutAlias: () => ({customerAccountId:"wrong-from-alias"}),
+    uniqueCheckoutOwner, resolveOwnerVerifiedBackfill, resolveApprovedCheckoutAlias: () => ({customerAccountId:"wrong-from-alias"}),
     assignmentTimeContainsCheckout: () => true,
     order: {retailer:"Target",checkoutAt:"2026-10-09T08:00:00Z",sourceProfileLabel:"Example profile"},
     candidates: [
