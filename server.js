@@ -38680,6 +38680,7 @@ async function scanDiscordSuccessChannel() {
   const rejectedSamples = [];
   const rejectedParseReasons = {};
   const rejectedQuantityClasses = {};
+  const ambiguousGreenShapes = {};
   const rejectedFieldShapes = {
     greenExactProduct:0, greenNumberedProduct:0,
     greenTitleOnly:0, greenSkuOnly:0, greenItemsLabel:0,
@@ -38747,6 +38748,15 @@ async function scanDiscordSuccessChannel() {
             const identity = checkoutIdentityFromDiscord(message);
             if (identity.orderNumber || identity.email) rejectedFieldShapes.greenRejectedWithAccountIdentity++;
             const kind = parsedDiagnostics.reason || "unspecified";
+            const candidate = checkoutProductFromDiscord(message);
+            const merch = /(?:pok[eé]mon|trading\s*cards?|\btcg\b|booster|mini.?tins?|elite trainer|\betb\b|blister|collect(?:or|ible)|bundles?|trainer box|trading card game)/i.test(candidate);
+            const descriptionLinked = embeds.some(e => /\[[^\]]+\]\(https?:\/\/[^)]+\)/i.test(String(e.description || "")));
+            const explicitlySuccessful = hasCheckoutWords;
+            const category = kind + (explicitlySuccessful ? "_checkout_heading" : "_neutral_heading") +
+              (merch ? "_merchandise_text" : candidate ? "_other_text" : "_no_description_product") +
+              (descriptionLinked ? "_linked" : "_plain") +
+              (hasProductField ? "_product_field" : "_no_product_field");
+            ambiguousGreenShapes[category] = (ambiguousGreenShapes[category] || 0) + 1;
             const subKind = parsedDiagnostics.itemRejectReason || "not_applicable";
             const shaped = "green_" + kind + "_" + subKind;
             rejectedParseReasons[shaped] = (rejectedParseReasons[shaped] || 0) + 1;
@@ -38876,6 +38886,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.rejectedFieldShapes = rejectedFieldShapes;
     discordSuccessScan.rejectedParseReasons = rejectedParseReasons;
     discordSuccessScan.rejectedQuantityClasses = rejectedQuantityClasses;
+    discordSuccessScan.ambiguousGreenShapes = ambiguousGreenShapes;
     discordSuccessScan.persistedStoreChanged = persistedStoreChanged;
     discordSuccessScan.added = added;
     discordSuccessScan.updated = updated;
@@ -38888,7 +38899,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.identityDiagnostics = identityStats;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedQuantityClasses, rejectedSamples, identityStats }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedQuantityClasses, ambiguousGreenShapes, rejectedSamples, identityStats }));
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
