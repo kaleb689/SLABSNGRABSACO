@@ -38095,7 +38095,9 @@ async function discordCheckoutSourceChannels() {
   return { token: config.token, ...result };
 }
 
-function discordCheckoutFromMessage(message, channelId) {
+function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
+  // Diagnostics expose only reason categories, never webhook values or identities.
+  const reject = reason => { if (diagnostics) diagnostics.reason = reason; return null; };
   const embeds = Array.isArray(message.embeds) ? message.embeds : [];
   const messageText = String(message.content || "");
   const isCheckout = value => /success|checkout|checked\s*out|order confirm|order cancel|order review|order on hold|cancellation/i.test(String(value || ""));
@@ -38124,8 +38126,8 @@ function discordCheckoutFromMessage(message, channelId) {
   const structuredGreenCheckout = Boolean(message.webhook_id) &&
     checkoutStatusFromDiscord(message) === "confirmed" &&
     (hasProductField || descriptionHasItemEvidence);
-  if (!headingConfirmsCheckout && !structuredGreenCheckout) return null;
-  if (embeds.some(item => /NEW CHECKOUT SUCCESS/i.test(String(item.title || "")))) return null;
+  if (!headingConfirmsCheckout && !structuredGreenCheckout) return reject("no_purchase_evidence");
+  if (embeds.some(item => /NEW CHECKOUT SUCCESS/i.test(String(item.title || "")))) return reject("internal_echo");
   const embed = embeds.find(item =>
     (Array.isArray(item.fields) ? item.fields : []).some(field => isProductField(field.name))) ||
     embeds.find(item => isSafeDiscordCheckoutProductName(
@@ -38184,8 +38186,18 @@ function discordCheckoutFromMessage(message, channelId) {
     const quantityText = rawQuantity.replace(/^(?:qty|quantity)\s*[:=]\s*/i, "");
     const quantityMatch = quantityText.match(/^(?:x\s*)?(\d{1,3})\s*x?$/i);
     const quantity = rawQuantity ? (quantityMatch ? Number(quantityMatch[1]) : NaN) : 1;
-    if (!name || !isSafeDiscordCheckoutProductName(name) || /@|\b(?:address|email|phone|account|ship to)\b/i.test(name) ||
-        !Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
+    if (!name) {
+      if (diagnostics) diagnostics.itemRejectReason = "missing_product";
+      completePrices = false;
+      continue;
+    }
+    if (!isSafeDiscordCheckoutProductName(name) || /@|\b(?:address|email|phone|account|ship to)\b/i.test(name)) {
+      if (diagnostics) diagnostics.itemRejectReason = "unsafe_product";
+      completePrices = false;
+      continue;
+    }
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
+      if (diagnostics) diagnostics.itemRejectReason = "invalid_quantity";
       completePrices = false;
       continue;
     }
@@ -38205,7 +38217,7 @@ function discordCheckoutFromMessage(message, channelId) {
       items.push({ name, quantity: Math.min(999, Number(match[2] || match[3])), imageUrl: messageImageUrl });
     }
   }
-  if (!items.length) return null;
+  if (!items.length) return reject(diagnostics?.itemRejectReason || "no_product_items");
   const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))?.value ||
     body.match(/(?:^|\n)[ \t]*(?:retailer|store|site)[ \t]*(?::[ \t]*|\n[ \t]*)([^\n]+)/i)?.[1] || "";
   // An explicit order/paid amount is verified. Item prices alone are not.
@@ -38654,6 +38666,7 @@ async function scanDiscordSuccessChannel() {
     greenRejected: 0, webhookRejected: 0
   };
   const rejectedSamples = [];
+  const rejectedParseReasons = {};
   const rejectedFieldShapes = {
     greenExactProduct:0, greenNumberedProduct:0,
     greenTitleOnly:0, greenSkuOnly:0, greenItemsLabel:0,
@@ -38682,9 +38695,12 @@ async function scanDiscordSuccessChannel() {
       historyCheckpoints.push(batch.history);
       if (!newest) newest = batch.newestMessageId;
       for (const message of batch.messages) {
-        const order = discordCheckoutFromMessage(message, channelId);
+        const parsedDiagnostics = {};
+        const order = discordCheckoutFromMessage(message, channelId, parsedDiagnostics);
         if (!order) {
           skipped++; unrecognized++;
+          const parseReason = parsedDiagnostics.reason || "unspecified";
+          rejectedParseReasons[parseReason] = (rejectedParseReasons[parseReason] || 0) + 1;
           const embeds = Array.isArray(message.embeds) ? message.embeds : [];
           const hasCheckoutWords = /success|checkout|order confirm|order cancel|order review|order on hold|cancellation/i.test(
             [message.content || "", ...embeds.flatMap(e => [e.title || "", e.description || ""])].join(" "));
@@ -38713,6 +38729,10 @@ async function scanDiscordSuccessChannel() {
             if (!direct && !numbered) rejectedFieldShapes.greenOther++;
             const identity = checkoutIdentityFromDiscord(message);
             if (identity.orderNumber || identity.email) rejectedFieldShapes.greenRejectedWithAccountIdentity++;
+            const kind = parsedDiagnostics.reason || "unspecified";
+            const subKind = parsedDiagnostics.itemRejectReason || "not_applicable";
+            const shaped = "green_" + kind + "_" + subKind;
+            rejectedParseReasons[shaped] = (rejectedParseReasons[shaped] || 0) + 1;
           }
           if (message.webhook_id) rejectionReasons.webhookRejected++;
           // Newest first. Keep a small, sanitized structural sample for triage.
@@ -38837,6 +38857,7 @@ async function scanDiscordSuccessChannel() {
     collisionStats.knownOrderNumberGroups = confirmedOrderGroups.size;
     discordSuccessScan.confirmedOrderCollisions = collisionStats;
     discordSuccessScan.rejectedFieldShapes = rejectedFieldShapes;
+    discordSuccessScan.rejectedParseReasons = rejectedParseReasons;
     discordSuccessScan.persistedStoreChanged = persistedStoreChanged;
     discordSuccessScan.added = added;
     discordSuccessScan.updated = updated;
@@ -38849,7 +38870,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.identityDiagnostics = identityStats;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedSamples, identityStats }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedSamples, identityStats }));
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
