@@ -15,6 +15,7 @@ import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { managedAccountEmailEvidence, checkoutAssignmentContains, recoverCheckoutAssignmentOwners } from "./discord-checkout-owner-evidence.js";
+import { resolveOwnerVerifiedBackfill } from "./checkout-owner-backfills.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
 import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
@@ -38668,7 +38669,7 @@ function discordCheckoutAttribution(order, identity, candidates, aliases = []) {
   }
   // Never approve a profile-name alias when a concrete Account email did not
   // match a retailer login. Review the underlying assignment instead.
-  if (identity.email) return null;
+  if (identity.email) return resolveOwnerVerifiedBackfill(order, identity, candidates);
   return resolveApprovedCheckoutAlias(order, candidates, aliases, discordCheckoutCandidateEligible);
 }
 
