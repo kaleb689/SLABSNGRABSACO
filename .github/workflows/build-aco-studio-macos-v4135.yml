@@ -56,15 +56,15 @@ jobs:
           test -f build-src/App/desktop-updates.js
           test -f build-src/App/build/after-sign.cjs
           node -e "if(require('./build-src/App/package.json').version!=='4.13.5')process.exit(1)"
-      - name: Confirm all Apple signing credentials or explicitly flag unsigned
+      - name: Confirm Developer ID credentials or prepare ad-hoc signing
         id: creds
         shell: bash
         run: |
           if [[ -n "$CSC_LINK" && -n "$CSC_KEY_PASSWORD" && -n "$APPLE_ID" && -n "$APPLE_APP_SPECIFIC_PASSWORD" && -n "$APPLE_TEAM_ID" ]]; then
             echo 'status=signed-notarized' >> "$GITHUB_OUTPUT"
           elif [[ -z "$CSC_LINK" && -z "$CSC_KEY_PASSWORD" && -z "$APPLE_ID" && -z "$APPLE_APP_SPECIFIC_PASSWORD" && -z "$APPLE_TEAM_ID" ]]; then
-            echo 'status=unsigned' >> "$GITHUB_OUTPUT"
-            echo '::warning::This build is unsigned and cannot be claimed to resolve macOS Gatekeeper damaged-app warnings.'
+            echo 'status=adhoc-signed' >> "$GITHUB_OUTPUT"
+            echo '::warning::Apple Developer ID credentials are absent. Applying ad-hoc signing to produce a valid sealed app. Gatekeeper trust still requires notarization.'
           else
             echo '::error::Apple signing/notarization credentials are incomplete; all five secrets are required together.'
             exit 1
@@ -82,8 +82,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ '${{ steps.creds.outputs.status }}' == 'unsigned' ]]; then
+          if [[ '${{ steps.creds.outputs.status }}' == 'adhoc-signed' ]]; then
             unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            node <<'PATCH_ADHOC_PACKAGE'
+          const fs = require('node:fs');
+          const packagePath = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+          pkg.build ??= {};
+          pkg.build.mac ??= {};
+          pkg.build.mac.identity = '-';
+          fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
+          console.log('Using mac.identity=- for ad-hoc signing. Not notarized.');
+          PATCH_ADHOC_PACKAGE
           fi
           node <<'NODE'
           const {build, Platform}=require('electron-builder');
@@ -93,7 +103,7 @@ jobs:
             process.exit(1);
           });
           NODE
-      - name: Validate actual app bundle, architecture and mounted installer
+      - name: Validate mounted installer and copied app code seal on macOS
         working-directory: build-src/App
         shell: bash
         run: |
@@ -120,10 +130,18 @@ jobs:
           hdiutil verify "$DMG"
           mkdir -p "$RUNNER_TEMP/aco-mount"
           hdiutil attach -readonly -nobrowse -mountpoint "$RUNNER_TEMP/aco-mount" "$DMG"
-          test -n "$(find "$RUNNER_TEMP/aco-mount" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          MOUNTED_APP="$(find "$RUNNER_TEMP/aco-mount" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$MOUNTED_APP"
+          INSTALL_DIR="$RUNNER_TEMP/aco-installed-copy"
+          mkdir -p "$INSTALL_DIR"
+          INSTALLED_APP="$INSTALL_DIR/$(basename "$MOUNTED_APP")"
+          ditto "$MOUNTED_APP" "$INSTALLED_APP"
+          test -f "$APP_DIR/Contents/_CodeSignature/CodeResources"
+          test -f "$INSTALLED_APP/Contents/_CodeSignature/CodeResources"
+          codesign --verify --deep --strict --verbose=2 "$APP_DIR"
+          codesign --verify --deep --strict --verbose=2 "$INSTALLED_APP"
           hdiutil detach "$RUNNER_TEMP/aco-mount"
           if [[ '${{ steps.creds.outputs.status }}' == 'signed-notarized' ]]; then
-            codesign --verify --deep --strict "$APP_DIR"
             spctl --assess --type execute "$APP_DIR"
             xcrun stapler validate "$APP_DIR"
           fi
@@ -149,7 +167,7 @@ jobs:
           fi
           grep -q 'ACO Studio desktop renderer launched' "$ACO_STUDIO_SMOKE_FILE"
           wait "$PID" || true
-      - name: Include signing status for release labeling
+      - name: Record signing mode for release labeling
         shell: bash
         working-directory: build-src/App
         run: echo '${{ steps.creds.outputs.status }}' > "dist/signing-status-${{ matrix.arch }}.txt"
@@ -187,7 +205,7 @@ jobs:
           cmp installers/signing-status-arm64.txt installers/signing-status-x64.txt
           for file in installers/*.dmg; do test "$(stat -c '%s' "$file")" -gt 50000000; done
           sha256sum installers/*.dmg | tee installers/SHA256SUMS.txt
-      - name: Publish unsigned or notarized DMGs as actual GitHub release files
+      - name: Publish validated ad-hoc or notarized DMGs as GitHub release files
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -198,10 +216,10 @@ jobs:
             TAG='aco-studio-v4.13.5-macos-notarized'
             TITLE='ACO Studio v4.13.5 - Mac installers (signed and notarized)'
             NOTE='Native macOS ARM64 and Intel installers. Both Mac builds passed source checks, DMG integrity/mount, architecture checks, application launch smoke tests, and signing/notarization validation. Production website Admin end-to-end parity and updater installation on an owner Mac were NOT tested.'
-          elif [[ "$STATUS" == 'unsigned' ]]; then
-            TAG='aco-studio-v4.13.5-macos-unsigned'
-            TITLE='ACO Studio v4.13.5 - Mac installers (unsigned preview)'
-            NOTE='Native ARM64 and Intel DMGs built and launched in hosted macOS checks. UNSIGNED: Gatekeeper may reject the app, including the application-is-damaged warning. Do not treat this as a notarized production release. Apple Developer ID certificate and notarization credentials remain required.'
+          elif [[ "$STATUS" == 'adhoc-signed' ]]; then
+            TAG='aco-studio-v4.13.5-macos-adhoc'
+            TITLE='ACO Studio v4.13.5 - Mac installers (ad-hoc signed preview)'
+            NOTE='ARM64 and Intel builds with valid ad-hoc app signatures and sealed resources verified by codesign after DMG mount and app copy. Application smoke launch and project tests also passed. Not Apple Developer ID signed or notarized. macOS Gatekeeper may block first launch. Only Apple Developer ID signing and notarization can remove that limitation.'
           else
             echo 'Unexpected signing status'; exit 1
           fi
