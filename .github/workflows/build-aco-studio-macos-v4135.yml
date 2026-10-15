@@ -79,7 +79,12 @@ jobs:
         working-directory: build-src/App
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.creds.outputs.status == 'signed-notarized' && 'true' || 'false' }}
+        shell: bash
         run: |
+          set -euo pipefail
+          if [[ '${{ steps.creds.outputs.status }}' == 'unsigned' ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
           node <<'NODE'
           const {build, Platform}=require('electron-builder');
           build({targets:Platform.MAC.createTarget(['dmg','zip']),publish:'never'}).catch(error=>{
