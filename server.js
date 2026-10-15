@@ -38185,9 +38185,11 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
     const quantityField = fields.find(field => /^(quantity|qty)$/i.test(fieldLabel(field.name)) ||
       /^(quantity|qty)\s*:/i.test(String(field.name || "")));
     const descriptionQuantity = embed?.description?.match(/(?:^|\n)\s*(?:\*\*)?quantity(?:\*\*)?\s*(?::\s*|\n\s*)(\d+)\b/i)?.[1];
+    const descriptionPrice = String(embed?.description || "").replace(/[*_`]|\|\|/g, "")
+      .match(/(?:^|\n)\s*(?:unit price|item price|price)\s*(?::\s*|\n\s*)([^\n]+)/i)?.[1];
     numbered.set("1", { product: priceMatch ? rawItem.slice(0, priceMatch.index) : rawItem,
       quantity: fieldValue(quantityField?.value) || descriptionQuantity || "",
-      price: priceMatch?.[1] || fieldValue(priceField?.value), priceIsLineTotal: Boolean(priceMatch) });
+      price: priceMatch?.[1] || fieldValue(priceField?.value) || descriptionPrice, priceIsLineTotal: Boolean(priceMatch) });
   }
   let subtotalCents = 0, completePrices = numbered.size > 0;
   for (const entry of numbered.values()) {
@@ -38227,7 +38229,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
       continue;
     }
     if (quantityUnknown) completePrices = false;
-    const money = String(entry.price || "").replace(/[$,\s]/g, "");
+    const money = String(entry.price || "").replace(/\|\||[$,\s]/g, "").replace(/^(?:USD|US\$)|USD$/gi, "").trim();
     const validPrice = /^\d+(?:\.\d{1,2})?$/.test(money);
     const priceCents = validPrice ? Math.round(Number(money) * 100) : null;
     if (priceCents === null || !Number.isSafeInteger(priceCents) || priceCents <= 0) completePrices = false;
