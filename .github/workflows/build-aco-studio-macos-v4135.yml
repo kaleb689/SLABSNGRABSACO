@@ -1,4 +1,4 @@
-name: Build ACO Studio v4.13.5 macOS installers
+name: Build ACO Studio v4.13.6 Mac startup fix
 
 on:
   push:
@@ -22,9 +22,9 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            os: macos-15
+            os: macos-26
           - arch: x64
-            os: macos-15-intel
+            os: macos-26-intel
     env:
       CSC_LINK: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
       CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
@@ -79,21 +79,31 @@ jobs:
         working-directory: build-src/App
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.creds.outputs.status == 'signed-notarized' && 'true' || 'false' }}
+          ACO_ADHOC_MODE: ${{ steps.creds.outputs.status == 'adhoc-signed' && 'true' || 'false' }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ '${{ steps.creds.outputs.status }}' == 'adhoc-signed' ]]; then
-            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
-            node <<'PATCH_ADHOC_PACKAGE'
+          node <<'PATCH_MAC_PACKAGE'
           const fs = require('node:fs');
           const packagePath = 'package.json';
           const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+          if (pkg.version !== '4.13.5') throw Error('Original ACO Studio v4.13.5 package expected before patch');
+          pkg.version = '4.13.6';
           pkg.build ??= {};
           pkg.build.mac ??= {};
-          pkg.build.mac.identity = '-';
+          if (process.env.ACO_ADHOC_MODE === 'true') {
+            pkg.build.mac.identity = '-';
+            const entitlementPath = 'build/entitlements.mac.plist';
+            const entry = '<key>com.apple.security.cs.disable-library-validation</key><true/>';
+            const plist = fs.readFileSync(entitlementPath, 'utf8');
+            if (!plist.includes('</dict>')) throw Error('Mac entitlement property list not recognized');
+            if (!plist.includes(entry)) fs.writeFileSync(entitlementPath, plist.replace('</dict>', entry + '\n</dict>'));
+            console.log('Mac v4.13.6 uses ad-hoc signing with hardened runtime and library-validation exception; Apple notarization still unavailable.');
+          }
           fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
-          console.log('Using mac.identity=- for ad-hoc signing. Not notarized.');
-          PATCH_ADHOC_PACKAGE
+          PATCH_MAC_PACKAGE
+          if [[ '${{ steps.creds.outputs.status }}' == 'adhoc-signed' ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
           fi
           node <<'NODE'
           const {build, Platform}=require('electron-builder');
@@ -115,6 +125,7 @@ jobs:
           test "$(stat -f '%z' "$DMG")" -gt 50000000
           test "$(stat -f '%z' "$UPDATE_ZIP")" -gt 50000000
           test -d "$APP_DIR/Contents/Frameworks/Electron Framework.framework"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_DIR/Contents/Info.plist")" = '4.13.6'
           test -f "$APP_DIR/Contents/Resources/app/address-distribution.js"
           test -f "$APP_DIR/Contents/Resources/app/personal-access.js"
           test -f "$APP_DIR/Contents/Resources/app/desktop-updates.js"
@@ -140,6 +151,9 @@ jobs:
           test -f "$INSTALLED_APP/Contents/_CodeSignature/CodeResources"
           codesign --verify --deep --strict --verbose=2 "$APP_DIR"
           codesign --verify --deep --strict --verbose=2 "$INSTALLED_APP"
+          if [[ '${{ steps.creds.outputs.status }}' == 'adhoc-signed' ]]; then
+            codesign -d --entitlements :- "$INSTALLED_APP" 2>&1 | grep -Fq 'com.apple.security.cs.disable-library-validation'
+          fi
           hdiutil detach "$RUNNER_TEMP/aco-mount"
           if [[ '${{ steps.creds.outputs.status }}' == 'signed-notarized' ]]; then
             spctl --assess --type execute "$APP_DIR"
@@ -167,13 +181,41 @@ jobs:
           fi
           grep -q 'ACO Studio desktop renderer launched' "$ACO_STUDIO_SMOKE_FILE"
           wait "$PID" || true
+      - name: Verify actual installed app stays running on normal launch (macOS 26)
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_DIR="$(find "$RUNNER_TEMP/aco-installed-copy" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$APP_DIR"
+          EXE="$(find "$APP_DIR/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          test -n "$EXE"
+          echo "macOS $(sw_vers -productVersion) architecture $(uname -m)"
+          set +e
+          "$EXE" > "$RUNNER_TEMP/aco-normal-launch.log" 2>&1 &
+          PID=$!
+          set -e
+          sleep 20
+          if ! kill -0 "$PID" 2>/dev/null; then
+            set +e
+            wait "$PID"
+            EXIT_CODE=$?
+            set -e
+            echo "::error::Installed ACO Studio exited unexpectedly after normal startup, exit=$EXIT_CODE"
+            tail -n 120 "$RUNNER_TEMP/aco-normal-launch.log"
+            find "$HOME/Library/Logs/DiagnosticReports" -type f -mmin -5 -maxdepth 1 -print 2>/dev/null | head -n 20 || true
+            exit 1
+          fi
+          echo "PASS: installed application survived 20 seconds of ordinary startup"
+          kill -TERM "$PID" || true
+          wait "$PID" || true
+          tail -n 15 "$RUNNER_TEMP/aco-normal-launch.log" || true
       - name: Record signing mode for release labeling
         shell: bash
         working-directory: build-src/App
         run: echo '${{ steps.creds.outputs.status }}' > "dist/signing-status-${{ matrix.arch }}.txt"
       - uses: actions/upload-artifact@v4
         with:
-          name: ACO-Studio-v4.13.5-macOS-${{ matrix.arch }}-${{ steps.creds.outputs.status }}
+          name: ACO-Studio-v4.13.6-macOS-${{ matrix.arch }}-${{ steps.creds.outputs.status }}
           path: |
             build-src/App/dist/*.dmg
             build-src/App/dist/*.zip
@@ -190,7 +232,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-v4.13.5-macOS-*
+          pattern: ACO-Studio-v4.13.6-macOS-*
           path: installers
           merge-multiple: true
       - name: Check both architecture installers and signing status
@@ -198,8 +240,8 @@ jobs:
         run: |
           set -euo pipefail
           ls -lh installers
-          test -f installers/ACO-Studio-4.13.5-arm64.dmg
-          test -f installers/ACO-Studio-4.13.5-x64.dmg
+          test -f installers/ACO-Studio-4.13.6-arm64.dmg
+          test -f installers/ACO-Studio-4.13.6-x64.dmg
           test -f installers/signing-status-arm64.txt
           test -f installers/signing-status-x64.txt
           cmp installers/signing-status-arm64.txt installers/signing-status-x64.txt
@@ -213,13 +255,13 @@ jobs:
           set -euo pipefail
           STATUS="$(cat installers/signing-status-arm64.txt)"
           if [[ "$STATUS" == 'signed-notarized' ]]; then
-            TAG='aco-studio-v4.13.5-macos-notarized'
-            TITLE='ACO Studio v4.13.5 - Mac installers (signed and notarized)'
-            NOTE='Native macOS ARM64 and Intel installers. Both Mac builds passed source checks, DMG integrity/mount, architecture checks, application launch smoke tests, and signing/notarization validation. Production website Admin end-to-end parity and updater installation on an owner Mac were NOT tested.'
+            TAG='aco-studio-v4.13.6-macos-notarized'
+            TITLE='ACO Studio v4.13.6 - Mac installers (signed and notarized)'
+            NOTE='Native macOS ARM64 and Intel installers built on macOS 26, with full 20-second ordinary launch verification after installation copy, DMG signature validation, and Apple Developer ID notarization checks. Not tested on an owner M5 Pro. Production website Admin end-to-end parity and updater installation on an owner Mac were NOT tested.'
           elif [[ "$STATUS" == 'adhoc-signed' ]]; then
-            TAG='aco-studio-v4.13.5-macos-adhoc'
-            TITLE='ACO Studio v4.13.5 - Mac installers (ad-hoc signed preview)'
-            NOTE='ARM64 and Intel builds with valid ad-hoc app signatures and sealed resources verified by codesign after DMG mount and app copy. Application smoke launch and project tests also passed. Not Apple Developer ID signed or notarized. macOS Gatekeeper may block first launch. Only Apple Developer ID signing and notarization can remove that limitation.'
+            TAG='aco-studio-v4.13.6-macos-adhoc'
+            TITLE='ACO Studio v4.13.6 - Mac installers (ad-hoc signed preview)'
+            NOTE='ARM64 and Intel v4.13.6 startup fix built on macOS 26 with an ad-hoc Hardened Runtime entitlement for Electron library validation. Both architectures passed complete signature checks and survived 20 seconds of ordinary startup from the copied installer. GitHub runners use Apple Silicon M1 rather than the owner M5 Pro, so an owner-device crash has NOT been ruled out. Not Apple Developer ID signed or notarized; Gatekeeper may still block first launch. Existing local data and updater files were not modified.'
           else
             echo 'Unexpected signing status'; exit 1
           fi
