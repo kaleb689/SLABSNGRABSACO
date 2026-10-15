@@ -38111,6 +38111,13 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
   const hasProductField = embeds.some(item =>
     (Array.isArray(item.fields) ? item.fields : []).some(field => isProductField(field.name)));
   const descriptionProduct = checkoutProductFromDiscord(message);
+  // This channel is an explicitly configured retailer checkout source. A
+  // GREEN webhook can omit both the standard checkout heading and numbered
+  // product fields while still carrying a recognizable merchandise title.
+  // Mere color or generic "Pokemon Center US" site labels are insufficient.
+  const merchandiseDescription = isSafeDiscordCheckoutProductName(descriptionProduct) &&
+    /(?:pok[eé]mon|trading\s*cards?|\btcg\b|booster|mini.?tins?|elite trainer|\betb\b|blister|collect(?:or|ible)|bundles?|trainer box|trading card game)/i.test(descriptionProduct) &&
+    !/^\s*(?:pok[eé]mon\s*center(?:\s+us)?|target|walmart|costco|sam'?s\s*club)\s*$/i.test(descriptionProduct);
   // A plain status/log sentence can look like a product name. Description-
   // only checkouts need an explicit linked product or quantity/price detail,
   // never just arbitrary GREEN informational text.
@@ -38125,7 +38132,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
     embeds.some(item => isCheckout([item.title, item.description].join(" ")));
   const structuredGreenCheckout = Boolean(message.webhook_id) &&
     checkoutStatusFromDiscord(message) === "confirmed" &&
-    (hasProductField || descriptionHasItemEvidence);
+    (hasProductField || descriptionHasItemEvidence || merchandiseDescription);
   if (!headingConfirmsCheckout && !structuredGreenCheckout) return reject("no_purchase_evidence");
   if (embeds.some(item => /NEW CHECKOUT SUCCESS/i.test(String(item.title || "")))) return reject("internal_echo");
   const embed = embeds.find(item =>
@@ -38162,6 +38169,10 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
   const itemField = fields.find(field =>
     /^(?:products?|items?)(?: name| title| purchased)?$/i.test(fieldLabel(field.name)));
   const linkedProduct = descriptionProduct;
+  // No quantity was reported in a neutral-heading, text-only product hook.
+  // Preserve that uncertainty instead of turning it into a fictional item.
+  const quantityUnavailable = !itemField && merchandiseDescription &&
+    !headingConfirmsCheckout && !hasProductField && !descriptionHasItemEvidence;
   // Some bots mix a plain Product field with numbered Qty/Price fields.
   if (numbered.size && ![...numbered.values()].some(entry => entry.product)) {
     const first = numbered.keys().next().value;
@@ -38189,7 +38200,9 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
       .replace(/\b(?:qty|quantity|items?|units?|pcs|pieces|each|ea|packs?)\b/gi, "")
       .replace(/[\[\](){}:=]/g, "").trim();
     const quantityMatch = quantityText.match(/^(?:x\s*)?(\d{1,3})(?:\.0+)?\s*x?$/i);
-    const quantity = rawQuantity ? (quantityMatch ? Number(quantityMatch[1]) : NaN) : 1;
+    const quantity = rawQuantity ? (quantityMatch ? Number(quantityMatch[1]) : NaN) :
+      quantityUnavailable ? 0 : 1;
+    const quantityUnknown = quantity === 0 && !rawQuantity && quantityUnavailable;
     if (!name) {
       if (diagnostics) diagnostics.itemRejectReason = "missing_product";
       completePrices = false;
@@ -38200,7 +38213,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
       completePrices = false;
       continue;
     }
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
+    if (!Number.isInteger(quantity) || (quantityUnknown ? quantity < 0 : quantity < 1) || quantity > 999) {
       if (diagnostics) {
         diagnostics.itemRejectReason = "invalid_quantity";
         const hasDigits = /\d/.test(rawQuantity);
@@ -38213,6 +38226,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
       completePrices = false;
       continue;
     }
+    if (quantityUnknown) completePrices = false;
     const money = String(entry.price || "").replace(/[$,\s]/g, "");
     const validPrice = /^\d+(?:\.\d{1,2})?$/.test(money);
     const priceCents = validPrice ? Math.round(Number(money) * 100) : null;
@@ -38228,6 +38242,19 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
     if (isSafeDiscordCheckoutProductName(name) && !/@|\b(?:address|email|phone|account|ship to)\b/i.test(name)) {
       items.push({ name, quantity: Math.min(999, Number(match[2] || match[3])), imageUrl: messageImageUrl });
     }
+  }
+  // A trusted GREEN webhook explicitly announcing checkout success may omit
+  // product information entirely. Count the checkout but show no invented
+  // product quantity or unit price. Never apply this to generic sync/status
+  // notices or to review/cancellation events.
+  const plainHeading = [messageText, ...embeds.flatMap(e => [e.title || "",e.description || ""])].join(" ");
+  const genericNonCheckout = /\b(?:sync|synchroniz|inventory|heartbeat|debug|restock|stock alert|failed|declined|cancel(?:led)?|review|on hold)\b/i.test(plainHeading);
+  if (!items.length && Boolean(message.webhook_id) &&
+      checkoutStatusFromDiscord(message) === "confirmed" &&
+      headingConfirmsCheckout && !genericNonCheckout) {
+    items.push({ name: "Product details unavailable", quantity: 0, price: 0,
+      imageUrl: null });
+    completePrices = false;
   }
   if (!items.length) return reject(diagnostics?.itemRejectReason || "no_product_items");
   const retailer = (embed?.fields || []).find(field => /^(retailer|store|site)$/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))?.value ||
@@ -38324,7 +38351,8 @@ function publicDiscordHitPayload(order) {
   const items = (Array.isArray(order?.items) ? order.items : [])
     .map(item => {
       const name = publicSuccessProductName(item?.name);
-      return { name, quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
+      return { name, quantity: Number(item?.quantity) === 0 ? 0 :
+        Math.max(1, Math.floor(Number(item?.quantity) || 1)),
         unitPrice: checkoutUnitPrice(item),
         imageUrl: publicSuccessProductImage(name, retailer, item?.imageUrl || item?.image) };
     })
@@ -38343,7 +38371,7 @@ function publicDiscordHitPayload(order) {
     const suffix = " (" + (index + 1) + ")";
     fields.push(
       { name: "Product" + suffix, value: item.name.slice(0, 1024), inline: false },
-      { name: "Quantity" + suffix, value: String(item.quantity), inline: true },
+      { name: "Quantity" + suffix, value: item.quantity ? String(item.quantity) : "Not provided", inline: true },
       { name: "Unit price" + suffix, value: item.unitPrice !== null ?
         money(item.unitPrice) : "Pending verification", inline: true }
     );
@@ -38356,7 +38384,7 @@ function publicDiscordHitPayload(order) {
   if (items[0].imageUrl) main.thumbnail = { url: items[0].imageUrl };
   const extra = items.slice(1, 9).map(item => ({
     color: 0x00ff00,
-    description: item.name + " ×" + item.quantity + "\nUnit price: " +
+    description: item.name + (item.quantity ? " ×" + item.quantity : " (quantity not provided)") + "\nUnit price: " +
       (item.unitPrice !== null ? money(item.unitPrice) : "Pending verification"),
     ...(item.imageUrl ? { thumbnail: {url:item.imageUrl} } : {})
   }));
