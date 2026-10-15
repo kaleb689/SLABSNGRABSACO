@@ -78,7 +78,17 @@ test('Read-only update checks do not touch any saved data or need old Render upd
 });
 test('No installed target means no quit or attempted application writes',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-not-installed-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));let quit=false;
- const e=U.createMacUpdater({app:{getPath:()=>dir,getVersion:()=>'4.13.7',isPackaged:false,quit:()=>quit=true},loadFeed:async()=>manifest()});await assert.rejects(e.install(),/Applications/);assert.equal(quit,false);assert.deepEqual(await fs.readdir(dir),[]);
+ const e=U.createMacUpdater({app:{getPath:()=>dir,getVersion:()=>'4.13.7',isPackaged:false,quit:()=>quit=true},loadFeed:async()=>manifest()});await assert.rejects(e.install(),/Install ACO Studio/);assert.equal(quit,false);assert.deepEqual(await fs.readdir(dir),[]);
+});
+test('Packaged Mac app launched from Desktop moves itself to Applications instead of failing the update',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-relocate-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ let moved=0,quit=false,feedReads=0;
+ const app={getPath:()=>dir,getVersion:()=>'4.13.9',isPackaged:true,quit:()=>quit=true,
+  moveToApplicationsFolder:opts=>{moved++;assert.equal(typeof opts.conflictHandler,'function');return true;}};
+ const e=U.createMacUpdater({app,execPath:path.join(dir,'Desktop','ACO Studio.app','Contents','MacOS','ACO Studio'),loadFeed:async()=>{feedReads++;return manifest('4.13.10');}});
+ const r=await e.install();
+ assert.equal(r.started,true);assert.equal(r.relaunching,true);assert.equal(moved,1);assert.equal(quit,false);assert.equal(feedReads,0);
+ assert.deepEqual(await fs.readdir(dir),[]);
 });
 test('Mac integration keeps the Windows updater and original app data namespace',async()=>{
  const main=await fs.readFile(path.join(__dirname,'../main.js'),'utf8'),preload=await fs.readFile(path.join(__dirname,'../preload.js'),'utf8'),desktop=await fs.readFile(path.join(__dirname,'../desktop-updates.js'),'utf8');
