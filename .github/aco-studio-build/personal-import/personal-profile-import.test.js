@@ -74,15 +74,28 @@ test('Unrelated existing duplicate groups do not block a clean personal import',
  for(const id of ['customer-1','customer-2'])await h.vault.importRows({scope:'aco',customerId:id,retailer:'target',rows:[row('unrelated@example.test')]});
  const p=await h.importer.choose(event,'target');assert.equal(p.skipped,0);assert.equal((await h.confirm(p)).added,1);
 });
-test('Cross-bank and repeated file emails require review and are never moved or merged',async t=>{
- const h=await harness(t,{rows:[row('taken@example.test'),row('good@example.test'),row('GOOD@example.test')]});
- await h.vault.importRows({scope:'aco',customerId:'customer-1',retailer:'walmart',rows:[row('taken@example.test')]});
+test('The same email may exist in Personal PKC and Personal Target as separate retailer pools',async t=>{
+ const h=await harness(t,{rows:[row('same@example.test')]});
+ await h.vault.importRows({scope:'personal',customerId:null,retailer:'pokemoncenter',rows:[row('same@example.test')]});
+ const p=await h.importer.choose(event,'target');
+ assert.equal(p.skipped,0);assert.equal(p.ready,1);
+ const r=await h.confirm(p);assert.equal(r.added,1);
+ const list=await h.vault.list('personal',null);
+ assert.equal(list.profiles.filter(x=>x.email==='same@example.test').length,2);
+});
+test('Cross-retailer email reuse is allowed, while duplicates inside the selected retailer pool are flagged',async t=>{
+ const h=await harness(t,{rows:[row('shared@example.test'),row('taken@example.test'),row('good@example.test'),row('GOOD@example.test')]});
+ await h.vault.importRows({scope:'aco',customerId:'customer-1',retailer:'pokemoncenter',rows:[row('shared@example.test')]});
+ await h.vault.importRows({scope:'aco',customerId:'customer-2',retailer:'target',rows:[row('taken@example.test')]});
  const before=await fs.readFile(h.vault.paths.aco),p=await h.importer.choose(event,'target');
- assert.equal(p.skipped,2);assert.equal(p.ready,1);
+ assert.equal(p.skipped,2);assert.equal(p.ready,2);
+ assert.ok(!p.conflicts.some(x=>x.email==='shared@example.test'));
+ assert.ok(p.conflicts.some(x=>x.email==='taken@example.test'));
  await assert.rejects(h.importer.confirm(event,{token:p.token,confirmPersonalOnly:true}),/duplicate warnings/);
- const r=await h.confirm(p);assert.equal(r.added,1);assert.equal(r.skipped,2);
+ const r=await h.confirm(p);assert.equal(r.added,2);assert.equal(r.skipped,2);
  assert.deepEqual(await fs.readFile(h.vault.paths.aco),before);
- assert.equal(Core.parseFile(r.entries[0].name,r.entries[0].text).records[0].email,'good@example.test');
+ const records=Core.parseFile(r.entries[0].name,r.entries[0].text).records.map(x=>x.email.toLowerCase()).sort();
+ assert.deepEqual(records,['good@example.test','shared@example.test']);
 });
 test('Website duplicate scan is read-only and incomplete coverage requires acknowledgement',async t=>{
  const h=await harness(t,{online:false});let p=await h.importer.choose(event,'target');assert.equal(p.websiteComplete,false);
@@ -100,7 +113,7 @@ test('Serialized vault guard catches a customer write occurring after the final 
  const importer=createPersonalImporter({requireAccess:()=>{},chooseFiles:async()=>({filePaths:['/selected.json']}),
   readFiles:async()=>[{name:'profiles.json',text:JSON.stringify([row('race@example.test')])}],
   webAccounts:async()=>({records:[],complete:true}),vault:{...h.vault,scanRows:async(...args)=>{
-   const result=await h.vault.scanRows(...args);if(++scanCount===2)await h.vault.importRows({scope:'aco',customerId:'customer-1',retailer:'walmart',rows:[row('race@example.test')]});return result;
+   const result=await h.vault.scanRows(...args);if(++scanCount===2)await h.vault.importRows({scope:'aco',customerId:'customer-1',retailer:'target',rows:[row('race@example.test')]});return result;
   }}});
  const p=await importer.choose(event,'target');await assert.rejects(importer.confirm(event,{token:p.token,confirmPersonalOnly:true}),/Banks changed after review/);
  assert.equal((await h.vault.list('personal',null)).profiles.length,0);
