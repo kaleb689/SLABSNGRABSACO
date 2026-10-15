@@ -38251,7 +38251,8 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
   const genericNonCheckout = /\b(?:sync|synchroniz|inventory|heartbeat|debug|restock|stock alert|failed|declined|cancel(?:led|lation)?|review|on hold)\b/i.test(plainHeading);
   if (!items.length && Boolean(message.webhook_id) &&
       checkoutStatusFromDiscord(message) === "confirmed" &&
-      headingConfirmsCheckout && !genericNonCheckout) {
+      headingConfirmsCheckout && !genericNonCheckout &&
+      !numbered.size && !itemField && !descriptionProduct) {
     items.push({ name: "Product details unavailable", quantity: 0, price: 0,
       imageUrl: null });
     completePrices = false;
