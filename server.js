@@ -38099,7 +38099,22 @@ function discordCheckoutFromMessage(message, channelId) {
   const embeds = Array.isArray(message.embeds) ? message.embeds : [];
   const messageText = String(message.content || "");
   const isCheckout = value => /success|checkout|order confirm|order cancel|order review|order on hold|cancellation/i.test(String(value || ""));
-  if (!isCheckout(messageText) && !embeds.some(item => isCheckout([item.title, item.description].join(" ")))) return null;
+  const headingConfirmsCheckout = isCheckout(messageText) ||
+    embeds.some(item => isCheckout([item.title, item.description].join(" ")));
+  // Real green source webhooks can contain a valid product and retailer order
+  // identity without using the literal words "success" or "checkout" in
+  // their message headings. Do not drop those completed purchases.
+  const structuredGreenCheckout = !headingConfirmsCheckout &&
+    Boolean(message.webhook_id) &&
+    checkoutStatusFromDiscord(message) === "confirmed" &&
+    embeds.some(item => (Array.isArray(item.fields) ? item.fields : []).some(field =>
+      /^(?:product|item)(?:\s*\(|\s*$|\s+name\b)/i.test(
+        String(field.name || "").replace(/[*_`]/g, "").trim()))) &&
+    Boolean((() => {
+      const identity = checkoutIdentityFromDiscord(message);
+      return identity.orderNumber || identity.email;
+    })());
+  if (!headingConfirmsCheckout && !structuredGreenCheckout) return null;
   if (embeds.some(item => /NEW CHECKOUT SUCCESS/i.test(String(item.title || "")))) return null;
   const embed = embeds.find(item => (item.fields || []).some(field => /^(?:product|item)(?:\s*\(|\s*$|\s+name\b)/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))) ||
     embeds.find(item => isCheckout([item.title, item.description].join(" "))) || null;
@@ -38593,7 +38608,11 @@ async function scanDiscordSuccessChannel() {
             internalEcho, hasCheckoutWords, green, hasProductField,
             descriptionProduct: Boolean(checkoutProductFromDiscord(message)),
             embeds: embeds.length, webhook: Boolean(message.webhook_id),
-            bot: Boolean(message.author?.bot)
+            bot: Boolean(message.author?.bot),
+            orderIdentity: Boolean((() => {
+              const identity = checkoutIdentityFromDiscord(message);
+              return identity.orderNumber || identity.email;
+            })())
           });
           continue;
         }
