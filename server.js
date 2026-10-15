@@ -38362,11 +38362,59 @@ async function mirrorDiscordCheckoutHits(records, token, sourceChannelId) {
       await writeJson(DISCORD_HIT_MIRROR_FILE, state);
     }
 
+    // The sent ledger is not proof that a message still exists. Owners may
+    // remove channel messages or migrate channels after a successful POST.
+    // Verify tracked Discord message IDs directly, never blindly replay
+    // reserved/ambiguous posts. Only a verified HTTP 404 clears the receipt.
+    const auditNow = Date.now();
+    const auditCandidates = Object.entries(state.sent).filter(([id, receipt]) => {
+      const checkedAt = Date.parse(receipt?.lastVerifiedAt || "");
+      return /^\d{17,22}$/.test(id) &&
+        /^\d{17,22}$/.test(String(receipt?.messageId || "")) &&
+        (!Number.isFinite(checkedAt) || auditNow - checkedAt >= 15 * 60 * 1000);
+    }).sort((a, b) => {
+      const first = Date.parse(a[1]?.lastVerifiedAt || "");
+      const second = Date.parse(b[1]?.lastVerifiedAt || "");
+      if (!Number.isFinite(first) && Number.isFinite(second)) return -1;
+      if (Number.isFinite(first) && !Number.isFinite(second)) return 1;
+      if (Number.isFinite(first) && Number.isFinite(second) && first !== second)
+        return first - second;
+      return BigInt(a[0]) > BigInt(b[0]) ? -1 : BigInt(a[0]) < BigInt(b[0]) ? 1 : 0;
+    }).slice(0, 20);
+    const audit = { checked: 0, present: 0, missing: 0, failed: 0 };
+    let auditChanged = false;
+    for (const [id, receipt] of auditCandidates) {
+      audit.checked++;
+      try {
+        const found = await discordBotJson(token,
+          `/channels/${hitsChannelId}/messages/${receipt.messageId}`);
+        if (String(found?.id || "") !== String(receipt.messageId)) {
+          audit.failed++;
+          break;
+        }
+        audit.present++;
+        state.sent[id].lastVerifiedAt = new Date().toISOString();
+        auditChanged = true;
+      } catch (error) {
+        if (/HTTP 404\b/.test(String(error?.message || ""))) {
+          delete state.sent[id];
+          audit.missing++;
+          auditChanged = true;
+        } else {
+          audit.failed++;
+          console.error("Discord hit receipt audit failed:",
+            /HTTP \d+/.exec(String(error?.message || ""))?.[0] || "lookup_failed");
+          break;
+        }
+      }
+    }
+    if (auditChanged) await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+
     const plan = planDiscordCommunityHits(records, String(sourceChannelId),
       state.sent, DISCORD_HIT_RENDER_VERSION);
     const counts = { eligible: plan.eligible, unmatched: plan.unmatched,
       backfillPending: plan.newHits.length, posted: 0, edited: 0,
-      withdrawn: 0, reserved: 0 };
+      withdrawn: 0, reserved: 0, audit };
 
     // The persisted ledger identifies only messages our own bot posted.
     // When a checkout becomes red/orange, withdraw the public GREEN hit.
@@ -38653,6 +38701,7 @@ async function scanDiscordSuccessChannel() {
         });
       }
     }
+    let persistedStoreChanged = false;
     await withSuccessStoreLock(async () => {
       const existing = await getSuccessCheckouts();
       const original = JSON.stringify(existing);
@@ -38663,7 +38712,11 @@ async function scanDiscordSuccessChannel() {
         if (result.added) added++; else updated++;
         if (result.record.customerAccountId) attributed++;
       }
-      if (added || updated) {
+      // An earlier webhook for the same order can temporarily alter the
+      // in-memory accumulator before a newer one restores the same final
+      // result. Avoid resaving/broadcasting a no-op reconciliation.
+      persistedStoreChanged = JSON.stringify(existing) !== original;
+      if (persistedStoreChanged) {
         // Keep a restorable snapshot before correcting existing checkout values.
         if (updated) await fs.writeFile(path.join(DATA_DIR, 'success-before-webhook-reconciliation.json'), original, { flag: 'wx', mode: 0o600 }).catch(error => {
           if (error.code !== 'EEXIST') throw error;
@@ -38700,6 +38753,7 @@ async function scanDiscordSuccessChannel() {
       // Aggregate posting metrics only. Never log order or account identifiers.
       console.log("Discord hits mirror summary:", JSON.stringify(mirrorStats));
     }
+    discordSuccessScan.persistedStoreChanged = persistedStoreChanged;
     discordSuccessScan.added = added;
     discordSuccessScan.updated = updated;
     discordSuccessScan.attributed = attributed;
@@ -38711,7 +38765,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.identityDiagnostics = identityStats;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, rejectionReasons, rejectedSamples, identityStats }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, rejectionReasons, rejectedSamples, identityStats }));
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);

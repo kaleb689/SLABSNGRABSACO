@@ -461,7 +461,7 @@ if(tab==="success"){
   // arrive in the same minute and must remain separate.
   function ordersMarkup(rows,limit=60) {
     const orders=[...rows].sort((a,b)=>(Date.parse(b.checkoutAt)||0)-(Date.parse(a.checkoutAt)||0));
-    if(!orders.length)return '<p class="success-empty">No customer-linked orders in this period.</p>';
+    if(!orders.length)return '<p class="success-empty">No confirmed orders in this period.</p>';
     return '<div class="success-order-list">'+orders.slice(0,limit).map((order,index)=>{
       const date=Date.parse(order.checkoutAt);
       const stamp=Number.isFinite(date)?new Date(date).toLocaleString():"Date unavailable";
@@ -479,7 +479,7 @@ if(tab==="success"){
       return '<details class="success-order-card" data-success-order="'+esc(key)+'" '+
         (successOpenOrderCards.has(key)?'open':'')+'><summary>'+
         '<span class="success-order-title"><strong>Order '+(index+1)+' · '+esc(order.retailer||"Retailer")+'</strong>'+
-        '<small>'+esc(stamp)+' · '+esc(order.accountLabel||"Assigned account")+' · '+count+' item'+(count===1?'':'s')+'</small></span>'+
+        '<small>'+esc(stamp)+' · '+esc(order.accountLabel||(order.linked===false?"Unassigned checkout":order.linked===true||order.customerAccountId?"Linked checkout":"Unassigned checkout"))+' · '+count+' item'+(count===1?'':'s')+'</small></span>'+
         '<span class="success-order-total">'+paid+'<small class="'+(known?'':'success-order-warning')+'">'+
         (known?'Final charged total':'Amount awaiting receipt verification')+'</small></span>'+
         '</summary><div class="success-order-items">'+details+'</div></details>';
@@ -609,6 +609,14 @@ if(tab==="success"){
   const scanAt=Date.parse(data.success?.sourceCheckedAt||"");
   const scanStatus=Number.isFinite(scanAt)?'<p class="success-scan-status">Webhook source last scanned '+
     esc(new Date(scanAt).toLocaleString())+'</p>':"";
+  // Show every confirmed community checkout as a distinct order, even when
+  // its retailer login has not yet been matched to a paying customer.
+  // The full order list stays collapsed by default to keep the app compact.
+  const allOrdersDrop='<details class="success-overview-accordion" data-success-panel="checkouts" '+
+    (successOpenPanels.has("checkouts")?'open':'')+
+    '><summary><span>All confirmed checkout orders</span>'+
+    '<span class="success-accordion-count">'+total+' orders</span></summary>'+
+    '<div class="success-overview-accordion-body">'+ordersMarkup(filtered,filtered.length)+'</div></details>';
   const productsDrop='<details class="success-overview-accordion" data-success-panel="products" '+
     (successOpenPanels.has("products")?'open':'')+'><summary><span>Products purchased</span>'+
     '<span class="success-accordion-count">'+total+' orders</span></summary>'+
@@ -621,7 +629,7 @@ if(tab==="success"){
   c.innerHTML=buttons+customerSelect+accountSelect+hero+
     '<div class="metrics admin-success-metrics">'+metric("Confirmed orders",total)+
       metric("Retailers",groupedRetailers.size)+'</div>'+
-    panel("Orders by retailer",donut+legend)+productsDrop+customersDrop+
+    panel("Orders by retailer",donut+legend)+allOrdersDrop+productsDrop+customersDrop+
     priceReview+scanStatus+unmatchedPanel;
   c.querySelectorAll("[data-success-days]").forEach(b=>b.addEventListener("click",()=>{
     successDays=/^(ytd|all)$/.test(b.dataset.successDays)?b.dataset.successDays:Number(b.dataset.successDays);
