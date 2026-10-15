@@ -38621,6 +38621,8 @@ async function discordCheckoutOwners() {
     for (const assignment of assignments.filter(item => String(item.managedAccountId) === String(account.id))) {
       for (const [key, login] of Object.entries(credentials)) {
         if (!login?.username) continue;
+        const boundRetailer = assignment.rentalRetailer || assignment.assignmentRetailer || account.retailer;
+        if (boundRetailer && normalizeSuccessRetailer(key) !== normalizeSuccessRetailer(boundRetailer)) continue;
         candidates.push({ customerAccountId: assignment.customerAccountId, retailer: normalizeSuccessRetailer(key),
           email: normalizeEmail(login.username), profileName: account.profileName,
           managedAccountId: account.id, managedAssignmentId: assignment.id,
@@ -38958,6 +38960,58 @@ function isAuthoritativeCheckoutRecord(record, sourceChannelId) {
   return [record.id, ...(Array.isArray(record.sourceIds) ? record.sourceIds : [])]
     .some(id => String(id || "").startsWith(prefix));
 }
+
+// Authenticated, read-only support diagnostics. Source Account passwords
+// never leave checkoutIdentityFromDiscord; retailer emails are not persisted.
+app.get("/api/admin/checkout-link-diagnostics", requireAdmin, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const source = await discordCheckoutSourceChannels();
+    if (source.channels.length !== 1 || !source.token) return res.status(409).json({error:"One authoritative checkout source is required."});
+    const [messages, candidates, accounts, saved, managed, assignments] = await Promise.all([
+      discordBotJson(source.token, `/channels/${source.channels[0]}/messages?limit=100`),
+      discordCheckoutOwners(), getCustomerAccounts(), getSuccessCheckouts(), getManagedAccounts(), managedAssignmentHistory()
+    ]);
+    const names = new Map(accounts.map(account => [String(account.id), adminCheckoutCustomerName(account)]));
+    const rows = [];
+    for (const message of messages || []) {
+      const order = discordCheckoutFromMessage(message, source.channels[0]);
+      if (!order || !customerCheckoutPurchase(order)) continue;
+      const identity = discordCheckoutIdentity(message);
+      const exact = candidates.filter(candidate => candidate.retailer === order.retailer &&
+        identity.email && candidate.email === identity.email);
+      const prior = saved.find(record => sameCheckout(record, order));
+      rows.push({id:order.id,retailer:order.retailer,checkoutAt:order.checkoutAt,status:order.status,
+        profileLabel:identity.profileName,retailerLogin:identity.email,
+        orderNumber:identity.orderNumber,checkoutValue:checkoutOrderValue(order).amount,
+        owner:prior?.customerAccountId ? names.get(String(prior.customerAccountId)) || "Linked customer" : null,
+        exactLinkedAccounts:exact.map(candidate => ({customer:names.get(String(candidate.customerAccountId)) || "Linked customer",
+          eligible:discordCheckoutCandidateEligible(candidate,order),
+          linkedAt:candidate.assignment?.createdAt || candidate.createdAt || null,
+          activatedAt:candidate.assignment?.startsAt || null,
+          endedAt:candidate.assignment?.endedAt || candidate.assignment?.expiresAt || null})),
+        products:order.items.map(item => ({name:item.name,quantity:item.quantity}))});
+    }
+    const email = normalizeEmail(clean(req.query.email,254));
+    const inventory = [];
+    if (email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) for (const account of managed) {
+      let credentials = {};
+      try { if(account.credentials) credentials = normalizeRetailerCredentials(decryptJson(account.credentials)); } catch { continue; }
+      const canonical = normalizeEmail(account.accountEmail || account.displayEmail);
+      if (canonical !== email && !Object.values(credentials).some(login => normalizeEmail(login?.username) === email)) continue;
+      inventory.push({retailer:account.retailer || null,accountEmail:account.accountEmail || null,displayEmail:account.displayEmail || null,
+        populatedRetailers:Object.entries(credentials).filter(([,login])=>login.username).map(([key])=>key),
+        assignments:assignments.filter(item=>String(item.managedAccountId)===String(account.id)).map(item=>({
+          customer:names.get(String(item.customerAccountId)) || null,
+          retailer:item.assignmentRetailer || item.rentalRetailer || null,
+          createdAt:item.createdAt,startsAt:item.startsAt,endedAt:item.endedAt,expiresAt:item.expiresAt}))});
+    }
+    return res.json({ok:true,rows,inventory});
+  } catch (error) {
+    console.error("Checkout link diagnostics failed:", error?.code || error?.name);
+    return res.status(502).json({error:"Unable to check recent retailer-account links."});
+  }
+});
 
 app.get("/api/admin/discord-checkout-profile-matching", requireAdmin, async (_req, res) => {
   try {
@@ -39930,6 +39984,10 @@ function confirmedDiscordPurchase(record) {
   return !cancelledOrder(record) &&
     /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(String(record?.status || ""));
 }
+function customerCheckoutPurchase(record) {
+  // Customer order value includes placed preorders and review holds until cancelled.
+  return !cancelledOrder(record);
+}
 function reviewHoldDiscordCheckout(record) {
   return !cancelledOrder(record) && String(record?.status || "") === "review_hold";
 }
@@ -40621,7 +40679,7 @@ function buildSuccessSummary(
   preciseBounds = null
 ) {
   const safeRecords =
-    records.filter(confirmedDiscordPurchase).map(record => {
+    records.filter(customerCheckoutPurchase).map(record => {
       const safe = safeSuccessCheckout(record);
       // Existing installed apps read orderTotal. In the CUSTOMER view this
       // means confirmed order value, including preorders, rather than charges.
@@ -44475,7 +44533,7 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
           record && !record.customerAccountId);
         if ((!account || account.disabled === true) && !unmatchedBusinessReceipt) continue;
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
-        if (receiptTotal && confirmedDiscordPurchase(record) &&
+        if (receiptTotal && customerCheckoutPurchase(record) &&
             record.orderTotalBasis !== "retailer_receipt" &&
             record.priceSource !== "verified_retailer_receipt") {
           // Only attach amount to the existing, uniquely matched Discord
@@ -44560,7 +44618,7 @@ async function syncShippingTrackers() {
     const pendingChanges = [];
     const businessPriceCandidates = records.filter(record =>
       isVerifiedDiscordCheckout(record) && record.orderNumber &&
-      confirmedDiscordPurchase(record) && !cancelledOrder(record));
+      customerCheckoutPurchase(record) && !cancelledOrder(record));
     const trackable = businessPriceCandidates.filter(record =>
       accountsById.has(String(record.customerAccountId || "")));
     if (!businessPriceCandidates.length) return;
@@ -44637,7 +44695,7 @@ async function syncShippingTrackers() {
         );
         if (!record) continue;
         if (update.orderTotal) {
-          if (confirmedDiscordPurchase(record) &&
+          if (customerCheckoutPurchase(record) &&
               record.orderTotalBasis !== "retailer_receipt" &&
               record.priceSource !== "verified_retailer_receipt") {
             record.orderTotal = update.orderTotal;
@@ -48463,16 +48521,8 @@ summary.range = {
 
 // Cancellations are shown as status history only, never counted as
 // confirmed purchases, checkout value, products, or successful orders.
-const reviewHoldCheckouts = ownedRecords.filter(reviewHoldDiscordCheckout)
-  .filter(record => {
-    const day = successDateKey(record.checkoutAt);
-    const at = Date.parse(record.checkoutAt || "");
-    return day && day >= rangeStart && day <= rangeEnd &&
-      (!preciseBounds || at >= preciseBounds.start && at < preciseBounds.end);
-  })
-  .map(safeSuccessCheckout)
-  .sort((a, b) => new Date(b.checkoutAt || 0) - new Date(a.checkoutAt || 0))
-  .slice(0, req.query.appView === "1" ? 150 : 20);
+// Review holds are already included once in the customer's orders and value.
+const reviewHoldCheckouts = [];
 
 // Retain cancellations in the private source audit, but remove them from
 // customer pages and all confirmed checkout metrics immediately.
@@ -48728,7 +48778,7 @@ const ownedOrders =
           (await discordCheckoutSourceChannels()).channels
         ).filter(record =>
           String(record.customerAccountId) === String(account.id) &&
-          confirmedDiscordPurchase(record)
+          customerCheckoutPurchase(record)
         );
       } catch (error) {
         console.error("Customer retailer lifetime stats load failed:", account.id, error.message);
@@ -48751,8 +48801,8 @@ const ownedOrders =
           retailerCheckoutRecords.length,
 
         lifetimeSpend:
-          retailerCheckoutRecords.reduce((sum, order) =>
-            sum + (checkoutPaidAmount(order) ?? 0), 0)
+          retailerCheckoutRecords.reduce((cents, order) =>
+            cents + Math.round((checkoutOrderValue(order).amount ?? 0) * 100), 0) / 100
       };
 
       /*

@@ -28,6 +28,7 @@ function customerHandler(records) {
     getSuccessCheckouts:async()=>records,visibleDiscordSuccessRecords:rows=>rows,
     clean:(value,n)=>String(value||'').slice(0,n),
     confirmedDiscordPurchase:r=>r.status==='confirmed'&&!r.cancelledAt,
+    customerCheckoutPurchase:r=>!/cancel|refund|failed|declined/i.test(r.status||'')&&!r.cancelledAt,
     reviewHoldDiscordCheckout:r=>r.status==='review_hold'&&!r.cancelledAt,
     safeSuccessCheckout:r=>{const value=checkoutOrderValue(r),paid=checkoutPaidAmount(r);return {...r,checkoutValue:value.amount??0,checkoutValueKnown:value.amount!==null,orderTotal:paid??0,orderTotalKnown:paid!==null};},
     successDateKey:at=>new Date(at).toISOString().slice(0,10),buildSuccessActivity:()=>[]};
@@ -43,15 +44,15 @@ function customerHandler(records) {
 test('real customer handler includes preorders, removes cancels, isolates owners and agrees with app totals',async()=>{
   const rows=[{...base,id:'preorder'}, {...base,id:'charged',orderTotal:75.56,orderTotalBasis:'retailer_receipt'},
     {...base,id:'cancelled',status:'cancelled',cancelledAt:'2026-10-15T19:10:00Z'},
-    {...base,id:'other-customer',customerAccountId:'other'}];
+    {...base,id:'other-customer',customerAccountId:'other'}, {...base,id:'review',status:'review_hold'}];
   const {code,payload}=await customerHandler(rows)({appView:'1',...checkoutRequestRange(1,now)});
-  assert.equal(code,200);assert.equal(payload.totalCheckouts,2);assert.equal(payload.checkoutValue,155.54);
+  assert.equal(code,200);assert.equal(payload.totalCheckouts,3);assert.equal(payload.checkoutValue,235.52);
   assert.equal(payload.cancelledCheckouts.length,0);assert.equal(payload.checkouts.find(r=>r.id==='preorder').verifiedPaidTotal,null);
   assert.equal(payload.checkouts.find(r=>r.id==='preorder').orderTotal,79.98); // running older apps also update
   const selected=selectedOrders(payload.checkouts,1,now);
-  assert.equal(dashboardTotals(selected).spend,155.54);
-  assert.equal(Math.round(dashboardActivity(selected,1,now).reduce((n,b)=>n+b.value,0)*100),15554);
-  assert.equal(rows.length,4); // cancellations remain in the private audit
+  assert.equal(dashboardTotals(selected).spend,235.52);
+  assert.equal(Math.round(dashboardActivity(selected,1,now).reduce((n,b)=>n+b.value,0)*100),23552);
+  assert.equal(rows.length,5); // cancellations remain in the private audit
 });
 
 test('API and app share exact rolling boundaries, inclusive custom dates and lifetime history',async()=>{

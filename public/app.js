@@ -13529,9 +13529,9 @@ function renderSuccessCheckouts(
           </span>
 
           <h4>
-            ${reviewHold ? "Review hold — not confirmed" : "Successful Checkout"}
+            ${reviewHold ? "Review hold" : "Successful Checkout"}
           </h4>
-          ${reviewHold ? '<p role="status" style="color:#ffb458;font-weight:800">The retailer is reviewing this order and may still cancel it.</p>' : ''}
+          ${reviewHold ? '<p role="status" style="color:#ffb458;font-weight:800">The retailer is reviewing this order. Included in order value until cancelled.</p>' : ''}
 
           <p>
             ${escapeHtml(

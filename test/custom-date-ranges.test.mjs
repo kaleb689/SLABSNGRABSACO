@@ -31,11 +31,11 @@ test('custom date ranges include both local calendar endpoints and exclude adjac
     order(new Date(2026,9,3,12),99,'review_hold')
   ];
   const selected=selectedOrders(records,'custom',now,range);
-  assert.equal(selected.length,2);
-  assert.equal(dashboardTotals(selected).spend,40);
+  assert.equal(selected.length,3);
+  assert.equal(dashboardTotals(selected).spend,139);
   const bars=dashboardActivity(selected,'custom',now,range);
-  assert.equal(bars.reduce((sum,b)=>sum+b.count,0),2);
-  assert.equal(Math.round(bars.reduce((sum,b)=>sum+b.value,0)*100),4000);
+  assert.equal(bars.reduce((sum,b)=>sum+b.count,0),3);
+  assert.equal(Math.round(bars.reduce((sum,b)=>sum+b.value,0)*100),13900);
   assert.ok(bars.length<=24);
 });
 

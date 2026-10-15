@@ -131,7 +131,9 @@ test("PKC matching review includes only confirmed orders and safe item descripti
   assert.match(matching,/isSafeDiscordCheckoutProductName\(name\)/);
   assert.match(matching,/products: \[\.\.\.productCount\.values\(\)\]/);
   const page=readFileSync(new URL("../public/admin-checkout-match.html",import.meta.url),"utf8");
-  assert.match(page,/requestedRetailer/);
+  assert.match(page,/<script src="\/admin-checkout-match.js"><\/script>/);
+  const script=readFileSync(new URL("../public/admin-checkout-match.js",import.meta.url),"utf8");
+  assert.match(script,/requestedRetailer/);
   assert.match(page,/match-products/);
-  assert.match(page,/Choose a verified customer/);
+  assert.match(script,/Choose a verified customer/);
 });
