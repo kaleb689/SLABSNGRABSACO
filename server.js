@@ -38621,6 +38621,9 @@ async function scanDiscordSuccessChannel() {
     withoutIdentity: 0, matched: 0, noEligibleCandidates: 0, unmatchedEmail: 0,
     unmatchedProfile: 0, ambiguousOwner: 0, eligibleCandidates: 0, totalCandidates: 0 };
   const sourceStatusCounts = { confirmed: 0, review_hold: 0, cancelled: 0, unverified: 0 };
+  const confirmedOrderGroups = new Map();
+  const collisionStats = { repeatedConfirmedOrderNumbers: 0,
+    differentRetailerLogin: 0, differentProfileLabel: 0, knownOrderNumberGroups: 0 };
   // Structural diagnostics only; never record a checkout body, login, profile name,
   // retailer order number or other webhook/customer payload in application logs.
   const rejectionReasons = {
@@ -38684,6 +38687,23 @@ async function scanDiscordSuccessChannel() {
           imageUrl: publicSuccessProductImage(item.name, order.retailer, item.imageUrl) }));
         const identity = discordCheckoutIdentity(message);
         identityStats.recognized++;
+        if (order.status === "confirmed" && identity.orderNumber) {
+          const key = order.retailer + ":" + String(identity.orderNumber).trim().toLowerCase();
+          const prior = confirmedOrderGroups.get(key);
+          if (prior) {
+            collisionStats.repeatedConfirmedOrderNumbers++;
+            if (prior.email && identity.email && prior.email !== identity.email)
+              collisionStats.differentRetailerLogin++;
+            if (prior.profile && identity.profileName &&
+                prior.profile !== identity.profileName.trim().toLowerCase())
+              collisionStats.differentProfileLabel++;
+          } else {
+            confirmedOrderGroups.set(key, {
+              email: identity.email || "",
+              profile: String(identity.profileName || "").trim().toLowerCase()
+            });
+          }
+        }
         if (identity.email) identityStats.withEmail++;
         if (identity.profileName) identityStats.withProfileName++;
         if (identity.orderNumber) identityStats.withOrderNumber++;
@@ -38768,6 +38788,8 @@ async function scanDiscordSuccessChannel() {
       // Aggregate posting metrics only. Never log order or account identifiers.
       console.log("Discord hits mirror summary:", JSON.stringify(mirrorStats));
     }
+    collisionStats.knownOrderNumberGroups = confirmedOrderGroups.size;
+    discordSuccessScan.confirmedOrderCollisions = collisionStats;
     discordSuccessScan.persistedStoreChanged = persistedStoreChanged;
     discordSuccessScan.added = added;
     discordSuccessScan.updated = updated;
@@ -38780,7 +38802,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.identityDiagnostics = identityStats;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, rejectionReasons, rejectedSamples, identityStats }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedSamples, identityStats }));
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
