@@ -38695,7 +38695,11 @@ async function scanDiscordSuccessChannel() {
       discordSuccessScan.hitsError = error?.message || "Discord hits mirror failed.";
       return null;
     });
-    if (mirrorStats) discordSuccessScan.hitsMirror = mirrorStats;
+    if (mirrorStats) {
+      discordSuccessScan.hitsMirror = mirrorStats;
+      // Aggregate posting metrics only. Never log order or account identifiers.
+      console.log("Discord hits mirror summary:", JSON.stringify(mirrorStats));
+    }
     discordSuccessScan.added = added;
     discordSuccessScan.updated = updated;
     discordSuccessScan.attributed = attributed;
