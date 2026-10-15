@@ -69,12 +69,20 @@ function createPersonalImporter({requireAccess, chooseFiles, readFiles=readSelec
     for (const group of result.duplicates) {
       const imported = group.items.filter(x => x.scope === 'import');
       if (!imported.length) continue;
-      const saved = group.items.filter(x => x.scope !== 'import');
+      // Email reuse is valid across retailer pools. Target, Walmart and
+      // Pokemon Center may intentionally share the same account email.
+      // Only an existing profile in the SAME retailer pool is a duplicate.
+      const samePool = item => {
+        if (item.scope === 'import') return true;
+        try { return retailerId(item.retailer) === stage.retailer; }
+        catch { return false; }
+      };
+      const saved = group.items.filter(x => x.scope !== 'import' && samePool(x));
       const flagged = saved.length ? imported : imported.slice(1);
       for (const row of flagged) skipped.add(row.index);
       if (flagged.length) conflicts.push({email:stage.rows[imported[0].index].email, count:flagged.length,
-        reason:saved.some(x => x.scope === 'aco' || x.scope === 'website') ? 'Already in a customer or linked website bank' :
-          saved.length ? 'Already in your Personal bank' : 'Repeated within the selected files'});
+        reason:saved.some(x => x.scope === 'aco' || x.scope === 'website') ? 'Already in this retailer customer or linked website pool' :
+          saved.length ? 'Already in this Personal retailer pool' : 'Repeated within the selected files'});
     }
     const websiteComplete = site.complete === true;
     const fingerprint = JSON.stringify({skipped:[...skipped].sort((a,b)=>a-b), websiteComplete});
