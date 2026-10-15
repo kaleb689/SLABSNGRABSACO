@@ -38098,7 +38098,7 @@ async function discordCheckoutSourceChannels() {
 function discordCheckoutFromMessage(message, channelId) {
   const embeds = Array.isArray(message.embeds) ? message.embeds : [];
   const messageText = String(message.content || "");
-  const isCheckout = value => /success|checkout|order confirm|order cancel|order review|order on hold|cancellation/i.test(String(value || ""));
+  const isCheckout = value => /success|checkout|checked\s*out|order confirm|order cancel|order review|order on hold|cancellation/i.test(String(value || ""));
   const headingConfirmsCheckout = isCheckout(messageText) ||
     embeds.some(item => isCheckout([item.title, item.description].join(" ")));
   // Real green source webhooks can contain a valid product and retailer order
@@ -38127,21 +38127,31 @@ function discordCheckoutFromMessage(message, channelId) {
   const numbered = new Map();
   const fieldLabel = value => String(value || "").replace(/[*_`]/g, "").trim();
   const fieldValue = value => String(value || "").replace(/[*_`]/g, "").trim();
+  // Link labels can contain only a SKU; keep text after the markdown link
+  // instead of saving its URL or treating the bare SKU as the product name.
+  const productTitle = value => String(value || "").replace(/\|\|/g, "")
+    .replace(/\[([^\]\r\n]{2,240})\]\(https?:\/\/[^\s)]+\)/gi, "$1")
+    .replace(/<https?:\/\/[^>]+>/gi, "")
+    .split(/\r?\n/)[0].trim();
   for (const field of fields) {
-    const match = fieldLabel(field.name).match(/^(product|price|quantity)\s*\((\d+)\)$/i);
+    const match = fieldLabel(field.name).match(
+      /^(product(?: name| title)?|item(?: name| title)?|price|unit price|item price|quantity|qty)(?:\s*\((\d{1,2})\)|\s*#\s*(\d{1,2})|\s+(\d{1,2}))$/i);
     if (!match) continue;
-    const entry = numbered.get(match[2]) || {};
-    entry[match[1].toLowerCase()] = fieldValue(field.value);
-    numbered.set(match[2], entry);
+    const id = match[2] || match[3] || match[4];
+    const kind = /^(product|item)/i.test(match[1]) ? "product" :
+      /^(quantity|qty)/i.test(match[1]) ? "quantity" : "price";
+    const entry = numbered.get(id) || {};
+    entry[kind] = fieldValue(field.value);
+    numbered.set(id, entry);
   }
-  const itemField = fields.find(field => /^(item|product)(?: name)?$/i.test(fieldLabel(field.name)));
+  const itemField = fields.find(field => /^(item|product)(?: name| title)?$/i.test(fieldLabel(field.name)));
   const linkedProduct = checkoutProductFromDiscord(message);
   if (!numbered.size && (itemField || linkedProduct)) {
     const rawItem = itemField ? fieldValue(itemField.value) : linkedProduct;
     const priceMatch = rawItem.match(/\s*[-–]\s*\$([\d,]+(?:\.\d{1,2})?)\s*$/);
     const priceField = fields.find(field => /^(price|unit price)$/i.test(fieldLabel(field.name)));
-    const quantityField = fields.find(field => /^quantity$/i.test(fieldLabel(field.name)) ||
-      /^quantity\s*:/i.test(String(field.name || "")));
+    const quantityField = fields.find(field => /^(quantity|qty)$/i.test(fieldLabel(field.name)) ||
+      /^(quantity|qty)\s*:/i.test(String(field.name || "")));
     const descriptionQuantity = embed?.description?.match(/(?:^|\n)\s*(?:\*\*)?quantity(?:\*\*)?\s*(?::\s*|\n\s*)(\d+)\b/i)?.[1];
     numbered.set("1", { product: priceMatch ? rawItem.slice(0, priceMatch.index) : rawItem,
       quantity: fieldValue(quantityField?.value) || descriptionQuantity || "",
@@ -38149,7 +38159,7 @@ function discordCheckoutFromMessage(message, channelId) {
   }
   let subtotalCents = 0, completePrices = numbered.size > 0;
   for (const entry of numbered.values()) {
-    const name = publicSuccessProductName(entry.product);
+    const name = publicSuccessProductName(productTitle(entry.product));
     const quantity = String(entry.quantity || "").trim() ? Number(entry.quantity) : 1;
     if (!name || !isSafeDiscordCheckoutProductName(name) || /@|\b(?:address|email|phone|account|ship to)\b/i.test(name) ||
         !Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
@@ -38242,7 +38252,8 @@ async function resolveDiscordHitsChannelId(token) {
   for (const guild of await discordBotJson(token, "/users/@me/guilds")) {
     for (const channel of await discordBotJson(token, `/guilds/${guild.id}/channels`)) {
       const normalized = String(channel.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-      if (channel.type === 0 && normalized === "slabsngrabsacohits") found.push(String(channel.id));
+      if (channel.type === 0 && normalized === "slabsngrabsacohits")
+        found.push({ id: String(channel.id), guildId: String(guild.id), guildName: String(guild.name || "") });
     }
   }
   if (found.length !== 1) {
@@ -38250,8 +38261,12 @@ async function resolveDiscordHitsChannelId(token) {
       ? "Multiple slabsngrabsaco-hits channels are visible to the bot."
       : "The slabsngrabsaco-hits channel is not visible to the bot.");
   }
-  discordHitsChannelIdCache = found[0];
-  return found[0];
+  discordHitsChannelIdCache = found[0].id;
+  console.log("Discord hits destination:", JSON.stringify({
+    guildId: found[0].guildId, guildName: found[0].guildName,
+    channelId: found[0].id, channelName: "slabsngrabsaco-hits"
+  }));
+  return found[0].id;
 }
 
 function publicDiscordHitPayload(order) {
