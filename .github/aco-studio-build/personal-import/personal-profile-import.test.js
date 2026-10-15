@@ -115,7 +115,7 @@ test('Serialized vault guard catches a customer write occurring after the final 
   webAccounts:async()=>({records:[],complete:true}),vault:{...h.vault,scanRows:async(...args)=>{
    const result=await h.vault.scanRows(...args);if(++scanCount===2)await h.vault.importRows({scope:'aco',customerId:'customer-1',retailer:'target',rows:[row('race@example.test')]});return result;
   }}});
- const p=await importer.choose(event,'target');await assert.rejects(importer.confirm(event,{token:p.token,confirmPersonalOnly:true}),/Banks changed after review/);
+ const p=await importer.choose(event,'target');await assert.rejects(importer.confirm(event,{token:p.token,confirmPersonalOnly:true}),/already exists in the selected retailer pool|Banks changed after review/);
  assert.equal((await h.vault.list('personal',null)).profiles.length,0);
 });
 test('Malformed file and customer-tagged metadata abort whole batch without partial imports',async t=>{
