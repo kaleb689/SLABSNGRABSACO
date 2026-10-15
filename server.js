@@ -38184,7 +38184,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
     const rawQuantity = String(entry.quantity || "").trim();
     // Accept "2", "x2", "2x", "Qty: 2" without arbitrary quantity text.
     const quantityText = rawQuantity
-      .replace(/\|\||\u200b/g, "") // Discord spoiler and zero-width wrappers
+      .replace(/\|\||[\u200b\x60*_]/g, "") // Discord spoiler and markdown wrappers
       .replace(/[×✕]/g, "x")
       .replace(/\b(?:qty|quantity|items?|units?|pcs|pieces|each|ea|packs?)\b/gi, "")
       .replace(/[\[\](){}:=]/g, "").trim();
