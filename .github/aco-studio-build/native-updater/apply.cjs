@@ -24,7 +24,7 @@ app.setPath('userData',path.join(app.getPath('appData'),'SLABSNGRABSACO ACO Stud
   setTimeout(async()=>{
    if(!updateHealthy||win.isDestroyed())return;
    try{
-    const ready=await win.webContents.executeJavaScript('Boolean(document.getElementById("jigUpdateButton") && document.getElementById("importPersonalProfiles") && window.desktopAPI?.updates?.nativeMac)');
+    const ready=await win.webContents.executeJavaScript('Promise.resolve(window.desktopAPI?.updates?.info()).then(i=>Boolean(i?.mode === "full-app" && document.getElementById("jigUpdateButton") && document.getElementById("importPersonalProfiles")))');
     if(ready)await require('./mac-full-updates').markHealthy(app);
    }catch{}
   },3000);
