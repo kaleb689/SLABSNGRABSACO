@@ -1,10 +1,11 @@
-name: ACO Studio - profile workshop and native updates
+name: ACO Studio - Personal Jigs navigation and export repair
 on:
   push:
     branches: [build/aco-studio-macos-v4133-20261015]
     paths:
       - '.github/aco-studio-build/profile-workshop/**'
       - '.github/aco-studio-build/native-updater/**'
+      - '.github/aco-studio-build/personal-navigation/**'
       - '.github/aco-studio-build/release-v4139.cjs'
       - '.github/workflows/build-aco-studio-v4139.yml'
   workflow_dispatch:
@@ -14,10 +15,10 @@ concurrency:
   group: aco-studio-workshop-release
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.9'
+  ACO_VERSION: '4.13.10'
 jobs:
   mac:
-    name: ${{ matrix.arch }} workshop, installer, update and rollback
+    name: ${{ matrix.arch }} navigation, installer, update and rollback
     runs-on: ${{ matrix.os }}
     timeout-minutes: 50
     strategy:
@@ -79,10 +80,16 @@ jobs:
           ACO_ADHOC_MODE: ${{ steps.signing.outputs.adhoc }}
         shell: bash
         run: node .github/aco-studio-build/release-v4139.cjs build-src/App
+      - name: Apply separate Personal sidebar, scoped navigation and preview repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
       - name: Install build dependencies
         working-directory: build-src/App
         run: npm install --no-audit --no-fund
-      - name: Syntax and all profile, isolation and updater regression tests
+      - name: Syntax and all profile, isolation, navigation and updater regression tests
         working-directory: build-src/App
         shell: bash
         run: |
@@ -114,11 +121,11 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$ACO_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = 'com.slabsngrabsaco.jigstudio.owner'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$APP/Contents/Info.plist")" = 'ACO Studio'
-          for file in personal-profile-import.js profile-workshop-service.js profile-workshop-ui.js jig-field-core.js profile-draft-core.js mac-full-updates.js mac-full-update.sh mac-update-archive.js mac-updates-ui.js; do
+          for file in personal-profile-import.js profile-workshop-service.js profile-workshop-ui.js jig-field-core.js profile-draft-core.js mac-full-updates.js mac-full-update.sh mac-update-archive.js mac-updates-ui.js workspace-core.js personal-navigation.js personal-navigation.css; do
             test -f "$APP/Contents/Resources/app/$file"
           done
           grep -Fq 'profileWorkshop:Object.freeze' "$APP/Contents/Resources/app/preload.js"
-          grep -Fq 'profile-workshop-ui.js' "$APP/Contents/Resources/app/index.html"
+          grep -Fq 'personalJigsTab' "$APP/Contents/Resources/app/index.html"
           if [[ '${{ matrix.arch }}' == 'arm64' ]]; then
             lipo -archs "$APP/Contents/MacOS/ACO Studio" | grep -qw arm64
           else
@@ -136,7 +143,7 @@ jobs:
             xcrun stapler validate "$APP"
           fi
           shasum -a 256 "$DMG" "$ZIP"
-      - name: Verify application startup from the installed DMG copy
+      - name: Verify installed app loads Personal tab, retailer buttons and preview handlers
         shell: bash
         run: |
           set -euo pipefail
@@ -213,7 +220,7 @@ jobs:
           modes=[(root/f'signing-{a}.txt').read_text().strip() for a in ('arm64','x64')]
           assert modes[0]==modes[1] and modes[0] in ('adhoc','developer-id')
           mode=modes[0];suffix='adhoc' if mode=='adhoc' else 'notarized'
-          manifest={'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Independent Address / Card / Name controls, per-vault cards and addresses, Create Blank Profile, short ACO Studio icon label and tested whole-app updates.','platforms':{}}
+          manifest={'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Separate Personal Jigs and Customer Jigs sidebar tabs, PKC/Target/Walmart jig guides, compact address/card selection, and repaired Preview -> Review -> Export flow. Existing vault separation and updater retained.','platforms':{}}
           sums=[]
           for arch in ('arm64','x64'):
               results=json.loads((root/f'update-test-{arch}.json').read_text())
@@ -235,16 +242,16 @@ jobs:
           MODE="$(cat installers/release-mode.txt)"
           TAG="aco-studio-v${ACO_VERSION}-macos-${MODE}"
           cat > installers/RELEASE-NOTES.md <<'NOTES'
-          Address, Card information and Name checkboxes independently preserve unchecked fields. Cards and addresses are resolved only from the selected Personal or customer vault. Name generates random first and last names without changing the cardholder of an unchecked card.
-          Cards & Addresses Vault includes add-card/add-address forms and an unused-card filter based on assignments known to this app. Create Blank Profile saves a draft in the same vault, with editable account, shipping and billing fields. Reviewed changes can be saved to exact matching profiles or exported explicitly.
-          Mac icon/Finder label is ACO Studio; original internal application identity and data location are retained. The new Update panel downloads and validates a complete signed application bundle, restarts it and rolls back if startup fails. One initial installation is required to replace versions that still use the old updater.
-          Both architectures passed the existing and new automated regressions, installed signature checks, actual update/restart, failed-start rollback and synthetic-data preservation tests. Not tested on the owner's M5 Pro or with live user vaults. Ad-hoc releases are NOT Apple-notarized and may still require macOS approval. These tests do not establish end-to-end website Admin feature parity.
+          Personal Jigs now has its own left-sidebar tab, next to Customer Jigs. Switching workspaces filters existing imports without reassigning them; empty customer views do not fall back to Personal files. PIN/Touch ID gates and separate saved vault namespaces remain in place. Clearing imported files affects the active workspace, not the other one.
+          Fixed the missing-preview export flow: Preview selected changes now prepares the Review page immediately, and Review profiles can prepare the preview from the selected fields. Formatting edits retain checked addresses/cards and only invalidate the old preview. Missing previews are labelled Preview not prepared yet rather than falsely implying a rejected account or safety violation.
+          PKC Jig, Target Jig and Walmart Jig buttons open the existing formatting checkboxes with examples and editing guidance. Guidance is not a promise of retailer acceptance. Saved address/card lists now have search, selected counts, select-all, clear and six choices per page. Previous bank-management and test-card tools remain available in collapsed sections rather than duplicate expanded lists.
+          Existing blank-profile creation, imports, vaults, app identity and native updater retained. Both Mac builds passed automated regressions, signature checks, installed control-loading checks, update/restart and rollback tests with synthetic data. Navigation and preview handoff were additionally exercised in a browser harness using the real profile-preview backend and mocked desktop bindings. Not tested on the owner's M5 Pro or real vaults. Ad-hoc releases are NOT Apple-notarized and may still require local approval.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$GITHUB_SHA"
             gh release upload "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ACO Studio ${ACO_VERSION} - profile workshop and in-app updates (${MODE})" --notes-file installers/RELEASE-NOTES.md --prerelease
+            gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ACO Studio ${ACO_VERSION} - Personal Jigs sidebar and export repair (${MODE})" --notes-file installers/RELEASE-NOTES.md --prerelease
           fi
           if gh release view aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release download aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" --pattern mac-update.json --dir previous-feed
@@ -259,3 +266,23 @@ jobs:
             gh release create aco-studio-macos-updates installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio - tested Mac update feed' --notes 'Native Mac updates reference only architecture-specific installers that passed the release verification workflow.' --prerelease
           fi
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY"
+      - name: Verify live public update feed and downloads without authentication
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os,json,hashlib,urllib.request
+          expected=os.environ['ACO_VERSION']
+          url='https://github.com/kaleb689/SLABSNGRABSACO/releases/download/aco-studio-macos-updates/mac-update.json'
+          feed=json.load(urllib.request.urlopen(url,timeout=45))
+          assert feed['version']==expected
+          for arch in ('arm64','x64'):
+              entry=feed['platforms']['darwin-'+arch]
+              h=hashlib.sha256();size=0
+              with urllib.request.urlopen(entry['url'],timeout=90) as response:
+                  while True:
+                      chunk=response.read(1024*1024)
+                      if not chunk:break
+                      size+=len(chunk);h.update(chunk)
+              assert size==entry['size'] and h.hexdigest()==entry['sha256']
+              print('PASS public update package',arch,expected)
+          PY
