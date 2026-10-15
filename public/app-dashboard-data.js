@@ -56,7 +56,7 @@ export function periodStart(days, now = new Date(), range = null) {
 export function selectedOrders(orders, days, now = new Date(), range = null) {
   const {start, end} = periodBounds(days, now, range);
   return orders.filter(order => Date.parse(order.checkoutAt) >= start && Date.parse(order.checkoutAt) < end &&
-    !['cancelled', 'review_hold'].includes(shippingStage(order)))
+    shippingStage(order) !== 'cancelled')
     .sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
 }
 export function checkoutRequestRange(days, now = new Date(), range = null) {
@@ -91,7 +91,7 @@ export function customerOrderValue(order) {
   return verifiedOrderSpend(order);
 }
 export function dashboardTotals(orders) {
-  orders = orders.filter(order => !['cancelled', 'review_hold'].includes(shippingStage(order)));
+  orders = orders.filter(order => shippingStage(order) !== 'cancelled');
   return { orders: orders.length, items: orders.reduce((sum, r) => sum + (Number(r.itemCount) || 0), 0),
     spend: orders.reduce((sum, r) => sum + Math.round(customerOrderValue(r) * 100), 0) / 100,
     transit: orders.filter(r => ['shipped', 'in_transit', 'out_for_delivery'].includes(shippingStage(r))).length,
@@ -136,7 +136,7 @@ export function dashboardActivity(orders, days, now = new Date(), range = null) 
     // A purchase made exactly at the end of a period belongs to its last bar.
     const index = Math.min(length - 1, Math.floor((at - start.getTime()) / bucketMs));
     const bucket = buckets.get(index);
-    if (bucket && !['cancelled', 'review_hold'].includes(shippingStage(order))) { bucket.count++; bucket.value += customerOrderValue(order); }
+    if (bucket && shippingStage(order) !== 'cancelled') { bucket.count++; bucket.value += customerOrderValue(order); }
   }
   return [...buckets.values()];
 }

@@ -19,6 +19,15 @@ test("legacy PKC account email can be matched when an historical assignment expl
   assert.deepEqual(evidence,{email:"pkc-login@example.com",retailer:"PKC"});
 });
 
+test("a retailer-specific legacy pool can use its saved canonical email without borrowing another retailer's credentials", () => {
+  const account={retailer:'pokemoncenter',displayEmail:'nicholas_dixon663@web.de'};
+  const credentials={target:{username:'nicholas_dixon663@web.de'}};
+  assert.deepEqual(managedAccountEmailEvidence(account,credentials,{assignmentRetailer:'pokemoncenter'}),
+    {email:'nicholas_dixon663@web.de',retailer:'PKC'});
+  assert.equal(managedAccountEmailEvidence(account,credentials,{assignmentRetailer:'target'}),null);
+  assert.equal(managedAccountEmailEvidence({...account,retailer:''},credentials,{assignmentRetailer:'pokemoncenter'}),null);
+});
+
 test("never guess the retailer, owner or credentials from unrelated account fields", () => {
   const account={accountEmail:"managed@example.com",profileName:"PKC member"};
   assert.equal(managedAccountEmailEvidence(account,{},{}),null);

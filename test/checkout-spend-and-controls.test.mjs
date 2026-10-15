@@ -48,7 +48,7 @@ test("trusted business mailbox can enrich an ownerless confirmed Discord checkou
   assert.match(tracker,/matchVerifiedWebhookEmail\(records/);
   assert.match(tracker,/if \(!account \|\| !status\) continue/);
   assert.match(tracker,/businessPriceCandidates = records\.filter/);
-  assert.match(tracker,/confirmedDiscordPurchase\(record\)/);
+  assert.match(tracker,/customerCheckoutPurchase\(record\)/);
   assert.match(tracker,/}, businessPriceCandidates, accountsById, pendingChanges\)/);
   assert.match(tracker,/String\(update\.customerAccountId \|\| ""\)/);
   assert.match(tracker,/let receiptChanged = false/);
@@ -89,7 +89,7 @@ test("customer lifetime totals and charts exclude prices that were never verifie
   const buckets=dashboardActivity([priced,unknown],1,new Date("2026-10-09T18:00:00Z"));
   assert.equal(buckets.reduce((sum,x)=>sum+x.value,0),42.35);
   const server=source("server.js");
-  assert.match(server,/retailerCheckoutRecords\.reduce\(\(sum, order\) =>\s*sum \+ \(checkoutPaidAmount\(order\) \?\? 0\), 0\)/);
+  assert.match(server,/retailerCheckoutRecords\.reduce\(\(cents, order\) =>\s*cents \+ Math\.round\(\(checkoutOrderValue\(order\)\.amount \?\? 0\) \* 100\), 0\) \/ 100/);
 });
 
 test("Admin and customer style files load vivid controls with light/dark modes and tap-safe date filters",()=>{

@@ -47,7 +47,7 @@ export function recoverCheckoutAssignmentOwners(assignments, holds) {
   });
 }
 export function managedAccountEmailEvidence(account, credentials, assignment) {
-  const email = String(account?.accountEmail || "").trim().toLowerCase();
+  const email = String(account?.accountEmail || account?.displayEmail || "").trim().toLowerCase();
   if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(email)) return null;
   const saved = Object.entries(credentials || {})
     .filter(([, login]) => Boolean(String(login?.username || "").trim()))
@@ -56,7 +56,12 @@ export function managedAccountEmailEvidence(account, credentials, assignment) {
   const assignmentSite = retailer(assignment?.rentalRetailer ||
     assignment?.assignmentRetailer || assignment?.retailer || account?.retailer);
   // An explicit assignment cannot contradict the saved inventory retailers.
-  if (assignmentSite && possible.length && !possible.includes(assignmentSite)) return null;
+  const poolSite = retailer(account?.retailer);
+  if (assignmentSite && poolSite && assignmentSite !== poolSite) return null;
+  // Older retailer-specific pool imports put the login in a legacy credential
+  // slot. The explicit pool AND assignment must agree before using its saved
+  // canonical Account Email; a different retailer slot cannot override them.
+  if (assignmentSite && possible.length && !possible.includes(assignmentSite) && poolSite !== assignmentSite) return null;
   const site = assignmentSite || (possible.length === 1 ? possible[0] : "");
   if (!site) return null;
   // Do not duplicate a candidate already generated from the encrypted login.
