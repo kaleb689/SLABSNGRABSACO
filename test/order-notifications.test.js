@@ -6,6 +6,23 @@ import path from 'node:path';
 import { createOrderNotifications, orderEvents, validPushSubscription } from '../order-notifications.js';
 const order = (id = 'one', overrides = {}) => ({ id, customerAccountId: 'a', retailer: 'Target', orderNumber: id, status: 'confirmed', ...overrides });
 const subscription = { endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: 'A'.repeat(87), auth: 'B'.repeat(22) } };
+test('a newly linked preorder notifies only its owner once; cancellation retracts queued confirmation', async t => {
+  const f = await fixture(t);
+  await f.service.subscribe('a', subscription);
+  await f.service.subscribe('b', {...subscription,endpoint:subscription.endpoint+'-other'});
+  const preorder=order('preorder',{checkoutAt:new Date().toISOString(),orderTotal:79.98,orderTotalBasis:'item_subtotal',items:[{name:'Preorder pack',quantity:2,price:39.99}]});
+  f.records=[{...preorder,customerAccountId:null}];
+  await f.service.tick();assert.equal(f.sent.length,0);
+  f.records=[preorder];await f.service.tick();await f.service.tick();
+  assert.equal(f.sent.length,1);assert.equal(f.sent[0].endpoint,subscription.endpoint);
+  assert.equal((await f.service.list('a')).filter(n=>n.kind==='order_confirmed').length,1);
+  assert.equal((await f.service.list('b')).length,0);
+  const another=order('cancel-before-push',{checkoutAt:new Date().toISOString()});
+  f.records.push(another);await f.service.reconcile(f.records);
+  f.records[1]={...another,status:'cancelled',cancelledAt:new Date().toISOString()};
+  await f.service.tick();assert.equal(f.sent.length,1);
+  assert.equal((await f.service.list('a')).some(n=>n.orderKey?.endsWith(':cancel-before-push')),false);
+});
 async function fixture(t, original = []) {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sng-alerts-'));
   t.after(() => fs.rm(dataDir, { recursive: true, force: true }));

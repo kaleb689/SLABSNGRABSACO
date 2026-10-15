@@ -13414,8 +13414,8 @@ function renderSuccessCheckouts(
 
   const value =
     Number(
-      checkout.orderTotal ??
       checkout.checkoutValue ??
+      checkout.orderTotal ??
       checkout.value ??
       checkout.total ??
       checkout.amount ??
@@ -13434,7 +13434,7 @@ function renderSuccessCheckouts(
       : null;
 
   const reviewHold = checkout.status === "review_hold";
-  const totalCostText = checkout.orderTotalKnown === false ?
+  const totalCostText = (checkout.checkoutValueKnown ?? checkout.orderTotalKnown) === false ?
     "Total not provided" : formatSuccessCurrency(value);
   const shippingStatusLabel =
     reviewHold ? "Review hold" :
@@ -13848,8 +13848,8 @@ function renderSuccessAllOrders(
 
         const value =
           Number(
-            checkout.orderTotal ??
             checkout.checkoutValue ??
+            checkout.orderTotal ??
             checkout.value ??
             checkout.total ??
             checkout.amount ??
@@ -14366,6 +14366,7 @@ async function loadSuccessDashboard(
   if (
     successState.loading
   ) {
+    if (force) successState.refreshPending = true;
     return;
   }
 
@@ -14382,7 +14383,7 @@ async function loadSuccessDashboard(
 
   successState.loading = true;
 
-  renderSuccessLoading();
+  if (!successState.loaded) renderSuccessLoading();
 
   try {
     const successTestMode =
@@ -14454,6 +14455,12 @@ async function loadSuccessDashboard(
       accepted range. Keep the browser
       synchronized with it.
     */
+    const currentRange = getSuccessRange();
+    if (!successTestMode && (range.start !== currentRange.start || range.end !== currentRange.end)) {
+      successState.refreshPending = true;
+      return;
+    }
+
     if (
       !successTestMode &&
       data.range?.start &&
@@ -14487,6 +14494,10 @@ async function loadSuccessDashboard(
   } finally {
     successState.loading =
       false;
+    if (successState.refreshPending) {
+      successState.refreshPending = false;
+      queueMicrotask(() => void loadSuccessDashboard(true));
+    }
   }
 }
 

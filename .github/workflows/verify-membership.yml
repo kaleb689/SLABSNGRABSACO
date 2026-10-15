@@ -54,6 +54,7 @@ jobs:
       - run: node --check retailer-order-total.js
       - run: node --check public/app-dashboard-data.js
       - run: node --test test/checkout-spend-and-controls.test.mjs test/app-dashboard.test.mjs
+      - run: node --test test/customer-checkout-values.test.mjs
       - run: node --test test/customer-app-uniform-ui.test.mjs
       - run: node --check public/app-drop-controls.js
       - run: node --test test/customer-app-drop-controls.test.mjs

@@ -25,6 +25,28 @@ export function checkoutUnitPrice(item) {
     ? Math.round(amount * 100) / 100 : null;
 }
 
+// Order value is earned when the retailer confirms the checkout, including
+// preorders. It is distinct from a verified charge and never invents fees.
+export function checkoutOrderValue(order) {
+  const total = checkoutPaidAmount(order);
+  if (total !== null) return { amount: total, basis: "order_total" };
+  const subtotal = checkoutItemSubtotal(order);
+  if (subtotal !== null) return { amount: subtotal, basis: "item_subtotal" };
+  const items = Array.isArray(order?.items) ? order.items : [];
+  if (!items.length) return { amount: null, basis: "unknown" };
+  let cents = 0;
+  for (const item of items) {
+    const price = checkoutUnitPrice(item), quantity = Number(item?.quantity);
+    if (price === null || !Number.isSafeInteger(quantity) || quantity < 1) {
+      return { amount: null, basis: "unknown" };
+    }
+    cents += Math.round(price * 100) * quantity;
+  }
+  return Number.isSafeInteger(cents) && cents > 0 && cents <= 100000000
+    ? { amount: cents / 100, basis: "item_subtotal" }
+    : { amount: null, basis: "unknown" };
+}
+
 export function checkoutPriceSignature(order) {
   // Only price/quantity data; never store customer, retailer login,
   // source profile name, payment card, or retailer order number in this ledger.

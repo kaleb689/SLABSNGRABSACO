@@ -87,13 +87,12 @@ test("managed business mailbox cannot create a checkout or match other customers
   assert.equal(matchVerifiedWebhookEmail([confirmed], { ...evidence, senders: ["account@gmail.com"] }), null);
 });
 
-test("customer Success API and app both enforce 24-hour cancellation cutoff", async () => {
+test("customer Success API removes cancellations immediately while preserving private source history", async () => {
   const server = await fs.readFile(new URL("../server.js", import.meta.url), "utf8");
   const app = await fs.readFile(new URL("../public/app-dashboard.js", import.meta.url), "utf8");
-  assert.match(server, /ownedRecords\.filter\(lateCancellation\)/);
-  assert.match(server, /cancelledAt: record\?\.cancelledAt \|\| record\?\.canceledAt \|\| null/);
-  assert.match(server, /managedHost: managed\.host/);
+  const route = server.slice(server.indexOf('  "/api/account/success",'),server.indexOf('/* -------------------------------------------------------\n   MY PROFILE'));
+  assert.match(route, /const cancelledCheckouts = \[\]/);
+  assert.doesNotMatch(route, /ownedRecords\.filter\(lateCancellation\)/);
+  assert.match(app, /cancelledOrders = \[\]/);
   assert.match(server, /matchVerifiedWebhookEmail\(records/);
-  assert.match(app, /data\.cancelledCheckouts\.filter\(order => visibleLateCancellation\(order\)\)/);
-  assert.match(app, /'cancelled'\]\.map/);
 });

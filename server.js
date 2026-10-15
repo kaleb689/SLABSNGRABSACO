@@ -14,9 +14,9 @@ import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-t
 import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
-import { managedAccountEmailEvidence } from "./discord-checkout-owner-evidence.js";
+import { managedAccountEmailEvidence, checkoutAssignmentContains, recoverCheckoutAssignmentOwners } from "./discord-checkout-owner-evidence.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
-import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal } from "./checkout-price-policy.js";
+import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
 import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
@@ -38598,9 +38598,10 @@ function discordCheckoutIdentity(message) {
 }
 
 async function discordCheckoutOwners() {
-  const [profiles, managed, assignments] = await Promise.all([
-    getRetailerProfiles(), getManagedAccounts(), managedAssignmentHistory()
+  const [profiles, managed, rawAssignments, holds] = await Promise.all([
+    getRetailerProfiles(), getManagedAccounts(), managedAssignmentHistory(), getRestoreHolds()
   ]);
+  const assignments = recoverCheckoutAssignmentOwners(rawAssignments, holds);
   const candidates = [];
   for (const profile of profiles) {
     let credentials = {};
@@ -38616,7 +38617,7 @@ async function discordCheckoutOwners() {
   // currently/historically assigned managed retailer accounts are candidates.
   for (const account of managed) {
     let credentials = {};
-    try { credentials = normalizeRetailerCredentials(decryptJson(account.credentials)); } catch { continue; }
+    try { if (account.credentials) credentials = normalizeRetailerCredentials(decryptJson(account.credentials)); } catch { continue; }
     for (const assignment of assignments.filter(item => String(item.managedAccountId) === String(account.id))) {
       for (const [key, login] of Object.entries(credentials)) {
         if (!login?.username) continue;
@@ -38645,7 +38646,7 @@ async function discordCheckoutOwners() {
 function discordCheckoutCandidateEligible(item, order) {
   return Boolean(item.customerAccountId &&
     (!item.retailer || item.retailer === order.retailer) &&
-    (!item.assignment || assignmentTimeContainsCheckout(item.assignment, order.checkoutAt)) &&
+    (!item.assignment || checkoutAssignmentContains(item.assignment, order.checkoutAt)) &&
     (!item.createdAt || new Date(item.createdAt) <= new Date(order.checkoutAt)));
 }
 function discordCheckoutAttribution(order, identity, candidates, aliases = []) {
@@ -38831,7 +38832,7 @@ async function scanDiscordSuccessChannel() {
         if (identity.orderNumber) identityStats.withOrderNumber++;
         const eligible = candidates.filter(item => item.customerAccountId &&
           (!item.retailer || item.retailer === order.retailer) &&
-          (!item.assignment || assignmentTimeContainsCheckout(item.assignment, order.checkoutAt)) &&
+          (!item.assignment || checkoutAssignmentContains(item.assignment, order.checkoutAt)) &&
           (!item.createdAt || new Date(item.createdAt) <= new Date(order.checkoutAt)));
         identityStats.eligibleCandidates += eligible.length;
         const attribution = discordCheckoutAttribution(order, identity, candidates, approvedAliases);
@@ -38927,6 +38928,14 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.unmatched = unmatched;
     discordSuccessScan.identityDiagnostics = identityStats;
     discordSuccessScan.checkedAt = new Date().toISOString();
+    const lastDay = Date.now() - 24 * 60 * 60 * 1000;
+    const recentConfirmed = communityRecords.filter(record => confirmedDiscordPurchase(record) && Date.parse(record.checkoutAt || "") >= lastDay);
+    console.log("Customer checkout sync:", JSON.stringify({
+      recentConfirmed:recentConfirmed.length,
+      recentLinked:recentConfirmed.filter(record => record.customerAccountId).length,
+      recentUnmatched:recentConfirmed.filter(record => !record.customerAccountId).length,
+      linkedOrderValueCents:recentConfirmed.filter(record => record.customerAccountId).reduce((cents,record) => cents + Math.round((checkoutOrderValue(record).amount || 0) * 100),0)
+    }));
     discordSuccessScan.newestMessageId = newest;
     console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedQuantityClasses, ambiguousGreenShapes, rejectedSamples, identityStats }));
     return true;
@@ -39638,7 +39647,7 @@ async function saveSuccessCheckouts(records) {
   // Prevent any legacy email-import writer from persisting fake confirmations.
   const verified = webhookOnlyCheckouts(records);
   await writeJson(SUCCESS_CHECKOUTS_FILE, verified);
-  try { await appOrderNotifications.reconcile(verified); }
+  try { await appOrderNotifications.reconcile(verified); void appOrderNotifications.tick(); }
   catch (error) { console.error("Order alert persistence:", error.code || error.name); }
 }
 
@@ -39979,6 +39988,10 @@ function safeSuccessCheckout(
       record?.createdAt ||
       null,
 
+    // Confirmed order value includes preorders; charge verification remains separate.
+    checkoutValue: checkoutOrderValue(record).amount ?? 0,
+    checkoutValueKnown: checkoutOrderValue(record).amount !== null,
+    checkoutValueBasis: checkoutOrderValue(record).basis,
     // Never present an item subtotal as an amount actually charged.
     orderTotal: checkoutPaidAmount(record) ?? 0,
     // A known item subtotal is NOT the actual final charged amount.
@@ -40517,7 +40530,7 @@ function buildSuccessActivity(
 
     existing.count += 1;
 
-    existing.value += record.orderTotalKnown ? Number(record.orderTotal || 0) : 0;
+    existing.value += record.checkoutValueKnown ? Number(record.checkoutValue || 0) : 0;
 
     daily.set(
       key,
@@ -40604,16 +40617,26 @@ function buildSuccessSummary(
   records,
   startDate = null,
   endDate = null,
-  includeOrders = false
+  includeOrders = false,
+  preciseBounds = null
 ) {
   const safeRecords =
-    records.filter(confirmedDiscordPurchase).map(
-      safeSuccessCheckout
-    );
+    records.filter(confirmedDiscordPurchase).map(record => {
+      const safe = safeSuccessCheckout(record);
+      // Existing installed apps read orderTotal. In the CUSTOMER view this
+      // means confirmed order value, including preorders, rather than charges.
+      // Admin verified-spend reporting continues to use safeSuccessCheckout.
+      return {...safe,
+        verifiedPaidTotal: safe.orderTotalKnown ? safe.orderTotal : null,
+        orderTotal: safe.checkoutValue ?? safe.orderTotal,
+        orderTotalKnown: safe.checkoutValueKnown ?? safe.orderTotalKnown};
+    });
 
   const rangeRecords =
     safeRecords.filter(
       record => {
+        const at = Date.parse(record.checkoutAt || "");
+        if (preciseBounds && !(at >= preciseBounds.start && at < preciseBounds.end)) return false;
         const key =
           successDateKey(
             record.checkoutAt
@@ -40656,7 +40679,7 @@ function buildSuccessSummary(
 
   const checkoutValue =
     rangeRecords.reduce((sum, record) =>
-      sum + (record.orderTotalKnown ? Number(record.orderTotal || 0) : 0), 0);
+      sum + Math.round((record.checkoutValueKnown ? Number(record.checkoutValue || 0) : 0) * 100), 0) / 100;
 
   const dailyCounts =
     new Map();
@@ -40721,8 +40744,8 @@ function buildSuccessSummary(
     ...(includeOrders ? { checkouts: rangeRecords } : {}),
 
     activity:
-      buildSuccessActivity(
-        safeRecords,
+      includeOrders ? [] : buildSuccessActivity(
+        rangeRecords,
         startDate,
         endDate
       ),
@@ -45389,6 +45412,7 @@ async function managedAssignmentHistory() {
         managedAccountId:
           item.managedAccountId ||
           item.freeMembershipId ||
+          item.membershipId ||
           null
       })
     ),
@@ -45401,6 +45425,7 @@ async function managedAssignmentHistory() {
         managedAccountId:
           item.managedAccountId ||
           item.rentedMembershipId ||
+          item.membershipId ||
           null
       })
     )
@@ -48264,8 +48289,8 @@ app.get(
       const ownedRecords =
         records.filter(
           record =>
-            record.customerAccountId ===
-            accountId
+            String(record.customerAccountId) ===
+            String(accountId)
         );
 
       const requestedStart =
@@ -48398,7 +48423,8 @@ const rangeDays =
 */
 if (
   rangeDays < 1 ||
-  rangeDays > (req.query.appView === "1" ? 366 : 180)
+  (rangeDays > (req.query.appView === "1" ? 366 : 180) &&
+    !(req.query.appView === "1" && req.query.lifetime === "1" && rangeStart === "1970-01-01"))
 ) {
   return res
     .status(400)
@@ -48408,12 +48434,25 @@ if (
     });
 }
 
+let preciseBounds = null;
+if (req.query.startAt || req.query.endAt) {
+  const start = Date.parse(String(req.query.startAt || ""));
+  const end = Date.parse(String(req.query.endAt || ""));
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start ||
+      new Date(start).toISOString().slice(0,10) !== rangeStart ||
+      new Date(end - 1).toISOString().slice(0,10) !== rangeEnd) {
+    return res.status(400).json({error:"Invalid checkout time range."});
+  }
+  preciseBounds = {start, end};
+}
+
 const summary =
   buildSuccessSummary(
     ownedRecords,
     rangeStart,
     rangeEnd,
-    req.query.appView === "1"
+    req.query.appView === "1",
+    preciseBounds
   );
 
 summary.range = {
@@ -48427,22 +48466,17 @@ summary.range = {
 const reviewHoldCheckouts = ownedRecords.filter(reviewHoldDiscordCheckout)
   .filter(record => {
     const day = successDateKey(record.checkoutAt);
-    return day && day >= rangeStart && day <= rangeEnd;
+    const at = Date.parse(record.checkoutAt || "");
+    return day && day >= rangeStart && day <= rangeEnd &&
+      (!preciseBounds || at >= preciseBounds.start && at < preciseBounds.end);
   })
   .map(safeSuccessCheckout)
   .sort((a, b) => new Date(b.checkoutAt || 0) - new Date(a.checkoutAt || 0))
   .slice(0, req.query.appView === "1" ? 150 : 20);
 
-const cancelledCheckouts = req.query.appView === "1"
-  ? ownedRecords.filter(lateCancellation)
-    .filter(record => {
-      const day = successDateKey(record.checkoutAt);
-      return day && day >= rangeStart && day <= rangeEnd;
-    })
-    .map(safeSuccessCheckout)
-    .sort((a, b) => new Date(b.checkoutAt || 0) - new Date(a.checkoutAt || 0))
-    .slice(0, 150)
-  : [];
+// Retain cancellations in the private source audit, but remove them from
+// customer pages and all confirmed checkout metrics immediately.
+const cancelledCheckouts = [];
 
       return res.json({
         ok: true,
