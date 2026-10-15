@@ -5,6 +5,7 @@ const e=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",
 let groups=[]; let trackingOrders=[];
 
 let unmatchedEmailOrders = [];
+let linkableCustomers = [];
 function renderUnlinkedEmails(){
  const needle=String($("unlinked-email-search").value||"").toLowerCase().trim();
  const shown=unmatchedEmailOrders.filter(o=>
@@ -23,13 +24,23 @@ function renderUnlinkedEmails(){
   const whenText=Number.isFinite(when.getTime())?when.toLocaleString():"Unknown date";
   const itemLabels=(Array.isArray(o.products)?o.products:[]).slice(0,6).map(p=>
    '<span>'+e(p.name)+' x'+Math.max(0,Number(p.quantity)||0)+'</span>').join("");
+  const ix=unmatchedEmailOrders.indexOf(o);
+  const options=linkableCustomers.map(c=>
+   '<option value="'+e(c.id)+'">'+e(c.label)+'</option>').join("");
+  const assign=o.retailerLogin
+   ?'<details class="owner-review"><summary>Verify and recover this checkout</summary>'+
+    '<p class="notice">Confirm the exact retailer login and who owned it on the checkout date. This links only this original order and sends the customer notification.</p>'+
+    '<label for="owner-for-'+ix+'">Verified customer</label>'+
+    '<select id="owner-for-'+ix+'"><option value="">Choose a customer...</option>'+options+'</select>'+
+    '<button type="button" data-link-one="'+ix+'">VERIFY OWNERSHIP AND LINK THIS ORDER</button></details>'
+   :'<p class="notice">No source login email; verify this order manually with support.</p>';
   const amount=Number(o.checkoutValue);
   const valueText=Number.isFinite(amount)&&amount>0
    ?"Checkout value "+String.fromCharCode(36)+amount.toFixed(2):"Value not verified";
   return '<section class="match"><h3>'+e(o.retailerLogin||"Email not provided")+'</h3>'+
    '<div class="meta">'+e(o.retailer||"Retailer")+' - '+e(whenText)+' - '+e(current)+
    ' - '+e(valueText)+'<div>Profile: '+e(o.profileLabel||"Not provided")+'</div></div>'+
-   '<div class="match-products">'+itemLabels+'</div><p class="notice">'+e(explanation)+'</p></section>';
+   '<div class="match-products">'+itemLabels+'</div><p class="notice">'+e(explanation)+'</p>'+assign+'</section>';
  }).join("")||'<p class="notice">No unmatched checkout matches this search.</p>';
  if(shown.length>100)$("unlinked-email-results").insertAdjacentHTML("beforeend",
   '<p class="notice">Showing the first 100 matches. Narrow your search for more.</p>');
@@ -40,6 +51,7 @@ async function loadUnlinkedEmails(){
  });
  const data=await response.json().catch(()=>({}));
  if(!response.ok)throw new Error(data.error||"Could not read checkout diagnostics. Sign in as Admin.");
+ linkableCustomers=Array.isArray(data.customers)?data.customers:[];
  unmatchedEmailOrders=(Array.isArray(data.rows)?data.rows:[])
   .filter(o=>!o.owner&&!/cancel|refund|failed|declined/i.test(String(o.effectiveStatus||o.status||"")))
   .sort((a,b)=>Date.parse(b.checkoutAt||0)-Date.parse(a.checkoutAt||0));
@@ -55,6 +67,43 @@ function refreshUnlinkedEmails(){
   $("unlinked-email-status").textContent=error.message;
  });
 }
+$("unlinked-email-results").addEventListener("click",async event=>{
+ const button=event.target.closest("button[data-link-one]");
+ if(!button)return;
+ const index=Number(button.dataset.linkOne);
+ if(!Number.isInteger(index))return;
+ const order=unmatchedEmailOrders[index];
+ if(!order)return;
+ const customerAccountId=$("owner-for-"+index)?.value;
+ const customer=linkableCustomers.find(item=>String(item.id)===String(customerAccountId));
+ if(!customer){
+  $("unlinked-email-status").textContent="Choose the customer who owned this retailer account at checkout time.";
+  return;
+ }
+ if(!confirm("Have you verified in your retailer account records that "+
+  customer.label+" owned "+order.retailerLogin+" at "+(order.checkoutAt||"checkout time")+
+  "? Only this exact original Discord order will be linked. No order will be created."))return;
+ button.disabled=true;
+ $("unlinked-email-status").textContent="Verifying the original Discord checkout and customer assignment...";
+ try{
+  const response=await fetch("/api/admin/checkout-link-diagnostics/assign",{
+   method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({sourceId:order.id,customerAccountId:customer.id,verifiedByAdmin:true})
+  });
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(result.error||"Could not verify this checkout owner.");
+  await loadUnlinkedEmails();
+  await load().catch(()=>{});
+  $("unlinked-email-status").className="notice good";
+  $("unlinked-email-status").textContent=result.linked
+   ?"Verified original checkout linked to "+customer.label+". The Success tab and order notification will update."
+   :"Checkout already belonged to "+customer.label+".";
+ }catch(error){
+  $("unlinked-email-status").textContent=error.message;
+  $("unlinked-email-status").className="notice bad";
+  button.disabled=false;
+ }
+});
 $("unlinked-email-search").addEventListener("input",renderUnlinkedEmails);
 document.addEventListener("visibilitychange",refreshUnlinkedEmails);
 setInterval(refreshUnlinkedEmails,60000);
