@@ -118,3 +118,31 @@ test("identity is never copied from source fields into the saved checkout", () =
   assert.ok(result);
   assert.doesNotMatch(JSON.stringify(result), /private-buyer@example\.test/);
 });
+
+test("marked-up source quantities are recognized without an account link", () => {
+  for (const [i, label] of ["||2||", "**2**", "2 pcs", "Qty: (2)", "2×", "2.0"].entries()) {
+    const checkout = parse(message("1580000000000002" + String(i).padStart(3, "0"), {
+      fields: [
+        { name: "Site", value: "Pokemon Center US" },
+        { name: "Product (1)", value: product },
+        { name: "Quantity (1)", value: label },
+        { name: "Price (1)", value: "9.99" }
+      ]
+    }));
+    assert.ok(checkout, "Rejected safe quantity form");
+    assert.equal(checkout.status, "confirmed");
+    assert.equal(checkout.customerAccountId, null);
+    assert.equal(checkout.orderNumber, "");
+    assert.equal(checkout.itemCount, 2);
+    assert.equal(checkout.orderTotal, 19.98);
+  }
+});
+test("ambiguous quantities containing multiple numbers are not fabricated", () => {
+  const ambiguous = parse(message("1580000000000002555", {
+    fields: [
+      { name: "Product (1)", value: product },
+      { name: "Quantity (1)", value: "2/4" }
+    ]
+  }));
+  assert.equal(ambiguous, null);
+});
