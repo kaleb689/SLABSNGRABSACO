@@ -1,0 +1,106 @@
+name: Build ACO Studio v4.13.5 macOS
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    env:
+      CSC_LINK: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require exact v4.13.5 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .github/aco-studio-build/aco-studio-v4.13.5-source.zip || { echo "::error::v4.13.5 source has not been uploaded. Do not substitute the v4.13.0 bundle."; exit 1; }
+          unzip -t .github/aco-studio-build/aco-studio-v4.13.5-source.zip
+          mkdir -p build-src
+          unzip -q .github/aco-studio-build/aco-studio-v4.13.5-source.zip -d build-src
+          node -e "if(require('./build-src/App/package.json').version!=='4.13.5')process.exit(1)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Apple signing credentials
+        id: credentials
+        shell: bash
+        run: |
+          if [[ -n "$CSC_LINK" && -n "$CSC_KEY_PASSWORD" && -n "$APPLE_ID" && -n "$APPLE_APP_SPECIFIC_PASSWORD" && -n "$APPLE_TEAM_ID" ]]; then
+            echo "kind=signed-notarized" >> "$GITHUB_OUTPUT"
+          elif [[ -z "$CSC_LINK" && -z "$CSC_KEY_PASSWORD" && -z "$APPLE_ID" && -z "$APPLE_APP_SPECIFIC_PASSWORD" && -z "$APPLE_TEAM_ID" ]]; then
+            echo "kind=unsigned" >> "$GITHUB_OUTPUT"
+            echo "::warning::Unsigned build is NOT Gatekeeper-safe."
+          else
+            echo "::error::Apple credentials are only partially configured."
+            exit 1
+          fi
+      - name: Install Electron and run tests
+        working-directory: build-src/App
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+      - name: Build actual app and DMG
+        working-directory: build-src/App
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.credentials.outputs.kind == 'signed-notarized' && 'true' || 'false' }}
+        run: npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
+      - name: Inspect disk image and bundled Electron
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find dist -maxdepth 2 -type d -name '*.app' -print -quit)"
+          DMG="$(find dist -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$APP" && test -n "$DMG"
+          test -d "$APP/Contents/Frameworks/Electron Framework.framework"
+          test -f "$APP/Contents/Resources/app/address-distribution.js"
+          EXE="$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          test -n "$EXE"
+          if [[ '${{ matrix.arch }}' == 'arm64' ]]; then lipo -archs "$EXE" | grep -qw arm64; else lipo -archs "$EXE" | grep -qw x86_64; fi
+          hdiutil verify "$DMG"
+          mkdir -p "$RUNNER_TEMP/aco-mounted"
+          hdiutil attach -readonly -nobrowse -mountpoint "$RUNNER_TEMP/aco-mounted" "$DMG"
+          test -n "$(find "$RUNNER_TEMP/aco-mounted" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          hdiutil detach "$RUNNER_TEMP/aco-mounted"
+          if [[ '${{ steps.credentials.outputs.kind }}' == 'signed-notarized' ]]; then
+            codesign --verify --deep --strict "$APP"
+            spctl --assess --type execute "$APP"
+            xcrun stapler validate "$APP"
+          fi
+          shasum -a 256 dist/*.dmg dist/*.zip
+      - name: Launch packaged Electron on macOS
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find dist -maxdepth 2 -type d -name '*.app' -print -quit)"
+          EXE="$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          export ACO_STUDIO_SMOKE_FILE="$RUNNER_TEMP/aco-smoke.txt"
+          "$EXE" --aco-studio-ci-smoke > "$RUNNER_TEMP/aco-launch.log" 2>&1 &
+          PID=$!
+          for i in $(seq 1 45); do
+            [[ -s "$ACO_STUDIO_SMOKE_FILE" ]] && break
+            kill -0 "$PID" 2>/dev/null || break
+            sleep 1
+          done
+          test -s "$ACO_STUDIO_SMOKE_FILE" || { cat "$RUNNER_TEMP/aco-launch.log"; exit 1; }
+          grep -q 'ACO Studio desktop renderer launched' "$ACO_STUDIO_SMOKE_FILE"
+          wait "$PID" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ACO-Studio-v4.13.5-macOS-${{ matrix.arch }}-${{ steps.credentials.outputs.kind }}
+          path: |
+            build-src/App/dist/*.dmg
+            build-src/App/dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
