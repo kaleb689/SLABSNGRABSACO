@@ -38109,11 +38109,21 @@ function discordCheckoutFromMessage(message, channelId) {
   const hasProductField = embeds.some(item =>
     (Array.isArray(item.fields) ? item.fields : []).some(field => isProductField(field.name)));
   const descriptionProduct = checkoutProductFromDiscord(message);
+  // A plain status/log sentence can look like a product name. Description-
+  // only checkouts need an explicit linked product or quantity/price detail,
+  // never just arbitrary GREEN informational text.
+  const descriptionHasItemEvidence = embeds.some(item => {
+    const description = String(item.description || "");
+    const product = checkoutProductFromDiscord({ embeds: [item] });
+    const linkedProduct = /\[[^\]\r\n]{3,240}\]\(https?:\/\/[^\s)]+\)/i.test(description);
+    const itemDetails = /(?:^|\n)\s*(?:\*\*)?(?:quantity|qty|unit price|price)\s*(?:\*\*)?\s*(?::|\n)/i.test(description);
+    return (linkedProduct || itemDetails) && isSafeDiscordCheckoutProductName(product);
+  });
   const headingConfirmsCheckout = isCheckout(messageText) ||
     embeds.some(item => isCheckout([item.title, item.description].join(" ")));
   const structuredGreenCheckout = Boolean(message.webhook_id) &&
     checkoutStatusFromDiscord(message) === "confirmed" &&
-    (hasProductField || isSafeDiscordCheckoutProductName(descriptionProduct));
+    (hasProductField || descriptionHasItemEvidence);
   if (!headingConfirmsCheckout && !structuredGreenCheckout) return null;
   if (embeds.some(item => /NEW CHECKOUT SUCCESS/i.test(String(item.title || "")))) return null;
   const embed = embeds.find(item =>
