@@ -38543,6 +38543,13 @@ async function scanDiscordSuccessChannel() {
     withoutIdentity: 0, matched: 0, noEligibleCandidates: 0, unmatchedEmail: 0,
     unmatchedProfile: 0, ambiguousOwner: 0, eligibleCandidates: 0, totalCandidates: 0 };
   const sourceStatusCounts = { confirmed: 0, review_hold: 0, cancelled: 0, unverified: 0 };
+  // Structural diagnostics only; never record a checkout body, login, profile name,
+  // retailer order number or other webhook/customer payload in application logs.
+  const rejectionReasons = {
+    internalEcho: 0, noCheckoutWording: 0, noExtractableProduct: 0,
+    greenRejected: 0, webhookRejected: 0
+  };
+  const rejectedSamples = [];
   try {
     const { token, channels, webhookSourceFound } = await discordCheckoutSourceChannels();
     if (!token || !channels.length) throw new Error('Checkout source channel is not configured.');
@@ -38566,7 +38573,30 @@ async function scanDiscordSuccessChannel() {
       if (!newest) newest = batch.newestMessageId;
       for (const message of batch.messages) {
         const order = discordCheckoutFromMessage(message, channelId);
-        if (!order) { skipped++; unrecognized++; continue; }
+        if (!order) {
+          skipped++; unrecognized++;
+          const embeds = Array.isArray(message.embeds) ? message.embeds : [];
+          const hasCheckoutWords = /success|checkout|order confirm|order cancel|order review|order on hold|cancellation/i.test(
+            [message.content || "", ...embeds.flatMap(e => [e.title || "", e.description || ""])].join(" "));
+          const internalEcho = embeds.some(e => /NEW CHECKOUT SUCCESS/i.test(String(e.title || "")));
+          const green = checkoutStatusFromDiscord(message) === "confirmed";
+          const hasProductField = embeds.some(e => (Array.isArray(e.fields) ? e.fields : [])
+            .some(f => /^(?:product|item|sku|title|items)/i.test(
+              String(f.name || "").replace(/[*_`]/g, "").trim())));
+          if (internalEcho) rejectionReasons.internalEcho++;
+          else if (!hasCheckoutWords) rejectionReasons.noCheckoutWording++;
+          else rejectionReasons.noExtractableProduct++;
+          if (green) rejectionReasons.greenRejected++;
+          if (message.webhook_id) rejectionReasons.webhookRejected++;
+          // Newest first. Keep a small, sanitized structural sample for triage.
+          if (rejectedSamples.length < 5) rejectedSamples.push({
+            internalEcho, hasCheckoutWords, green, hasProductField,
+            descriptionProduct: Boolean(checkoutProductFromDiscord(message)),
+            embeds: embeds.length, webhook: Boolean(message.webhook_id),
+            bot: Boolean(message.author?.bot)
+          });
+          continue;
+        }
         sourceStatusCounts[Object.hasOwn(sourceStatusCounts, order.status) ? order.status : "unverified"]++;
         order.items = order.items.map(item => ({ ...item,
           imageUrl: publicSuccessProductImage(item.name, order.retailer, item.imageUrl) }));
@@ -38638,6 +38668,8 @@ async function scanDiscordSuccessChannel() {
     const communityRecords = authoritativeDiscordCheckouts(
       await getSuccessCheckouts(), channels);
     discordSuccessScan.hitsError = null;
+    discordSuccessScan.rejectionReasons = rejectionReasons;
+    discordSuccessScan.rejectedSamples = rejectedSamples;
     const mirrorStats = await mirrorDiscordCheckoutHits(
       communityRecords, token, channels[0]).catch(error => {
       console.error("Discord hits mirror failed:", error?.message || error?.code || "discord_hits_mirror_error");
@@ -38656,7 +38688,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.identityDiagnostics = identityStats;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, identityStats }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, rejectionReasons, rejectedSamples, identityStats }));
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
