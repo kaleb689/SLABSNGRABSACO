@@ -91,3 +91,20 @@ test('Discord profile labels backfill on the same source ID without new orders o
   assert.equal(records[0].sourceProfileLabel,'External Profile 27');
   assert.equal(reconcileWebhookCheckout(records,received).changed,false);
 });
+
+
+test("a later unknown-product webhook never discards an earlier confirmed item list",()=>{
+  const old={...order,id:"discord:1532179373292257290:1580000000000003001",
+    checkoutAt:"2026-10-15T17:30:00Z",statusUpdatedAt:"2026-10-15T17:30:00Z",
+    orderNumber:"ABC123456",itemCount:2,
+    items:[{name:"Pokemon Elite Trainer Box",quantity:2,price:39.99}]};
+  const statusOnly={...old,id:"discord:1532179373292257290:1580000000000003002",
+    checkoutAt:"2026-10-15T17:35:00Z",statusUpdatedAt:"2026-10-15T17:35:00Z",
+    itemCount:0,items:[{name:"Product details unavailable",quantity:0,price:0}]};
+  const records=[old];
+  reconcileWebhookCheckout(records,statusOnly);
+  assert.equal(records.length,1);
+  assert.equal(records[0].itemCount,2);
+  assert.equal(records[0].items[0].name,"Pokemon Elite Trainer Box");
+  assert.equal(records[0].items[0].quantity,2);
+});
