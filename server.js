@@ -39069,10 +39069,97 @@ app.get("/api/admin/checkout-link-diagnostics", requireAdmin, async (req, res) =
           retailer:item.assignmentRetailer || item.rentalRetailer || null,
           createdAt:item.createdAt,startsAt:item.startsAt,endedAt:item.endedAt,expiresAt:item.expiresAt}))});
     }
-    return res.json({ok:true,rows,inventory});
+    const customers = accounts.map(account => ({
+      id:String(account.id),
+      label:names.get(String(account.id)) || "Customer account"
+    })).filter(account => account.id).sort((a,b) => a.label.localeCompare(b.label));
+    return res.json({ok:true,rows,inventory,customers});
   } catch (error) {
     console.error("Checkout link diagnostics failed:", error?.code || error?.name);
     return res.status(502).json({error:"Unable to check recent retailer-account links."});
+  }
+});
+
+
+// An authenticated admin can attest a single original Discord checkout owner
+// when legacy inventory does not contain historical assignment evidence.
+// This never invents a purchase or reassigns an already-owned order.
+app.post("/api/admin/checkout-link-diagnostics/assign", requireAdmin, async (req,res) => {
+  res.setHeader("Cache-Control","no-store");
+  try {
+    const sourceId=clean(req.body?.sourceId,170);
+    const customerAccountId=clean(req.body?.customerAccountId,150);
+    if (!sourceId || !customerAccountId || req.body?.verifiedByAdmin !== true)
+      return res.status(400).json({error:"Select the verified customer and explicitly confirm checkout ownership."});
+    const source=await discordCheckoutSourceChannels();
+    if(source.channels.length!==1 || !source.token)
+      return res.status(409).json({error:"One authorized Discord checkout source is required."});
+    const prefix="discord:"+String(source.channels[0])+":";
+    if(!sourceId.startsWith(prefix))
+      return res.status(400).json({error:"Checkout is not from the authoritative Discord source."});
+    const messageId=sourceId.slice(prefix.length);
+    if(!/^\d{17,22}$/.test(messageId))
+      return res.status(400).json({error:"Invalid Discord checkout message."});
+    const [message, accounts, candidates]=await Promise.all([
+      discordBotJson(source.token,"/channels/"+source.channels[0]+"/messages/"+messageId),
+      getCustomerAccounts(),
+      discordCheckoutOwners()
+    ]);
+    const order=discordCheckoutFromMessage(message,source.channels[0]);
+    const identity=discordCheckoutIdentity(message);
+    if(!order || order.id!==sourceId ||
+        !(confirmedDiscordPurchase(order) || reviewHoldDiscordCheckout(order)) ||
+        !identity.email)
+      return res.status(409).json({error:"Only a real active Discord checkout containing a retailer login may be manually verified."});
+    const customer=accounts.find(account=>String(account.id)===customerAccountId);
+    if(!customer)
+      return res.status(404).json({error:"The selected customer account no longer exists."});
+    const matching=candidates.filter(item=>item.retailer===order.retailer &&
+      item.email===identity.email && item.customerAccountId);
+    const eligibleOwners=new Set(matching.filter(item=>
+      discordCheckoutCandidateEligible(item,order)).map(item=>String(item.customerAccountId)));
+    if(eligibleOwners.size && (eligibleOwners.size!==1 || !eligibleOwners.has(customerAccountId)))
+      return res.status(409).json({error:"Another customer has a verified historical assignment for this retailer login at checkout time. No order was changed."});
+    const linkedCandidate=matching.find(item=>
+      String(item.customerAccountId)===customerAccountId &&
+      discordCheckoutCandidateEligible(item,order)) ||
+      matching.find(item=>String(item.customerAccountId)===customerAccountId) || null;
+    const result=await withSuccessStoreLock(async()=>{
+      const records=await getSuccessCheckouts();
+      const persisted=records.find(record=>isAuthoritativeCheckoutRecord(record,source.channels[0]) &&
+        [record.id,...(Array.isArray(record.sourceIds)?record.sourceIds:[])].map(String).includes(sourceId));
+      if(!persisted)
+        return {status:404,error:"This Discord checkout has not yet been ingested. Retry after the next checkout scan."};
+      if(!(confirmedDiscordPurchase(persisted)||reviewHoldDiscordCheckout(persisted)))
+        return {status:409,error:"This checkout is cancelled or no longer confirmed."};
+      if(persisted.customerAccountId)
+        return String(persisted.customerAccountId)===customerAccountId
+          ? {status:200,ok:true,linked:0,alreadyLinked:true}
+          : {status:409,error:"This checkout already belongs to a different customer. No order was changed."};
+      if(linkedCandidate){
+        const keys=["profileName","profileSlot","managedAccountId","managedAssignmentId","managedAssignmentType"];
+        for(const key of keys)if(linkedCandidate[key]!=null)persisted[key]=linkedCandidate[key];
+      }
+      persisted.customerAccountId=customerAccountId;
+      persisted.attributionSource="admin_verified_original_discord_checkout";
+      persisted.attributionVerifiedAt=new Date().toISOString();
+      persisted.attributionAudit={
+        sourceId,retailer:order.retailer,customerAccountId,
+        retailerLoginHash:crypto.createHash("sha256").update(identity.email).digest("hex"),
+        verification:"owner_confirmed_historical_retailer_account",
+        exactInventoryEvidence:Boolean(linkedCandidate)
+      };
+      // This save wakes the existing customer push/outbox queue. Announce
+      // only after persistence, never create a duplicate checkout.
+      await saveSuccessCheckouts(records);
+      announceSuccessCheckout(customerAccountId);
+      broadcastLiveDataChange("admin-verified-discord-checkout-owner");
+      return {status:200,ok:true,linked:1,retailer:order.retailer};
+    });
+    return res.status(result.status).json(result);
+  }catch(error){
+    console.error("Verify Discord checkout owner:",error?.code||error?.name||"verification_failed");
+    return res.status(502).json({error:"Unable to verify this Discord checkout owner."});
   }
 });
 
