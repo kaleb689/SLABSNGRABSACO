@@ -129,3 +129,13 @@ test("community total logic counts unassigned confirmed checkouts but not cancel
   assert.match(handler, /pricePendingCheckouts/);
   assert.match(handler, /publicSuccessProductImage/);
 });
+
+
+test("green Discord hits show missing quantities honestly instead of inventing an item",()=>{
+  const payload=renderHit({status:"confirmed",retailer:"PKC",
+    items:[{name:"Product details unavailable",quantity:0,price:0}]});
+  assert.ok(payload);
+  assert.equal(payload.embeds[0].color,0x00ff00);
+  assert.equal(payload.embeds[0].fields.find(f=>f.name==="Quantity (1)")?.value,"Not provided");
+  assert.equal(payload.embeds[0].fields.find(f=>f.name==="Total paid at checkout")?.value,"Pending verification");
+});

@@ -44,6 +44,15 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
   let nextCancelledAt = prior.cancelledAt || prior.canceledAt || null;
   if (updateStatus) nextCancelledAt = nextStatus === 'cancelled' ?
     (order.cancelledAt || nextStatusAt) : null;
+  // Later webhook status-only messages sometimes omit all product details.
+  // Do not replace an earlier complete item list with an unknown placeholder.
+  const informative = items => Array.isArray(items) && items.some(item =>
+    Number(item?.quantity) > 0 && String(item?.name || "").trim() &&
+    String(item.name).trim().toLowerCase() !== "product details unavailable");
+  const incomingItems = Array.isArray(order.items) ? order.items : [];
+  const priorItems = Array.isArray(prior.items) ? prior.items : [];
+  const preservePriorItems = informative(priorItems) && !informative(incomingItems);
+  const effectiveItems = preservePriorItems ? priorItems : incomingItems;
   let placedAt = prior.checkoutAt || order.checkoutAt;
   // A cancellation-only webhook is not proof of the original placement
   // time. A later-discovered older GREEN/ORANGE hook supplies that time.
@@ -64,8 +73,8 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
     priceSource: priced ? (order.orderTotalBasis === 'item_subtotal' ?
       'checkout_item_subtotal' : order.priceSource || 'checkout_webhook') :
       prior.priceSource || null,
-    itemCount: order.itemCount,
-    items: order.items.map(item => {
+    itemCount: preservePriorItems ? prior.itemCount : order.itemCount,
+    items: effectiveItems.map(item => {
       const previous = (prior.items || []).find(old => old.name === item.name);
       const newUnitPrice = Number(item.price);
       const previousUnitPrice = Number(previous?.price);

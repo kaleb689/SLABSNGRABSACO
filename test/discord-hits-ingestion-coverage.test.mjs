@@ -118,3 +118,41 @@ test("identity is never copied from source fields into the saved checkout", () =
   assert.ok(result);
   assert.doesNotMatch(JSON.stringify(result), /private-buyer@example\.test/);
 });
+
+
+test("trusted green success with merchandise-only description is community-eligible but quantity stays unknown", () => {
+  const result = parse(message("1580000000000001011", {
+    description: "Pokemon TCG: 30th Celebration Mini Tin"
+  }));
+  assert.ok(result);
+  assert.equal(result.status, "confirmed");
+  assert.equal(result.customerAccountId, null);
+  assert.equal(result.items[0].name, product);
+  assert.equal(result.items[0].quantity, 0);
+  assert.equal(result.itemCount, 0);
+  assert.equal(result.orderTotal, 0);
+});
+
+test("green checkout heading without any product gets an honest unspecified-product hit", () => {
+  const result = parse(message("1580000000000001012", {
+    title: "Successful Checkout!"
+  }));
+  assert.ok(result);
+  assert.equal(result.status, "confirmed");
+  assert.equal(result.items[0].name, "Product details unavailable");
+  assert.equal(result.items[0].quantity, 0);
+  assert.equal(result.itemCount, 0);
+});
+test("a bare retailer site name is not sufficient merchandise evidence", () => {
+  assert.equal(parse(message("1580000000000001013", {
+    title: "Retailer report", description: "Pokemon Center US"
+  })), null);
+});
+test("cancellation or status-only green messages cannot use the product fallback", () => {
+  assert.equal(parse(message("1580000000000001014", {
+    title: "Inventory Sync Success"
+  })), null);
+  assert.equal(parse(message("1580000000000001015", {
+    title: "Order Cancellation Success"
+  })), null);
+});
