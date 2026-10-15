@@ -16,7 +16,7 @@ concurrency:
   group: aco-studio-workshop-release
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.10'
+  ACO_VERSION: '4.13.11'
 jobs:
   mac:
     name: ${{ matrix.arch }} navigation, installer, update and rollback
@@ -222,7 +222,7 @@ jobs:
           modes=[(root/f'signing-{a}.txt').read_text().strip() for a in ('arm64','x64')]
           assert modes[0]==modes[1] and modes[0] in ('adhoc','developer-id')
           mode=modes[0];suffix='adhoc' if mode=='adhoc' else 'notarized'
-          manifest={'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Separate Personal Jigs and Customer Jigs sidebar tabs, PKC/Target/Walmart jig guides, compact address/card selection, and repaired Preview -> Review -> Export flow. Existing vault separation and updater retained.','platforms':{}}
+          manifest={'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Saved Personal profiles load into Personal Jigs by retailer. Duplicate email checks apply to the selected retailer pool and import batch; matching emails in different retailers are allowed. Existing vault separation and updater retained.','platforms':{}}
           sums=[]
           for arch in ('arm64','x64'):
               results=json.loads((root/f'update-test-{arch}.json').read_text())
@@ -244,6 +244,7 @@ jobs:
           MODE="$(cat installers/release-mode.txt)"
           TAG="aco-studio-v${ACO_VERSION}-macos-${MODE}"
           cat > installers/RELEASE-NOTES.md <<'NOTES'
+          Saved Personal-vault profiles load into Personal Jigs, grouped by retailer. Import preview and final write checks allow matching emails across different retailer pools while blocking duplicates within the selected retailer pool or the same import batch.
           Personal Jigs now has its own left-sidebar tab, next to Customer Jigs. Switching workspaces filters existing imports without reassigning them; empty customer views do not fall back to Personal files. PIN/Touch ID gates and separate saved vault namespaces remain in place. Clearing imported files affects the active workspace, not the other one.
           Fixed the missing-preview export flow: Preview selected changes now prepares the Review page immediately, and Review profiles can prepare the preview from the selected fields. Formatting edits retain checked addresses/cards and only invalidate the old preview. Missing previews are labelled Preview not prepared yet rather than falsely implying a rejected account or safety violation.
           PKC Jig, Target Jig and Walmart Jig buttons open the existing formatting checkboxes with examples and editing guidance. Guidance is not a promise of retailer acceptance. Saved address/card lists now have search, selected counts, select-all, clear and six choices per page. Previous bank-management and test-card tools remain available in collapsed sections rather than duplicate expanded lists.
@@ -253,7 +254,7 @@ jobs:
             test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$GITHUB_SHA"
             gh release upload "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ACO Studio ${ACO_VERSION} - Personal Jigs sidebar and export repair (${MODE})" --notes-file installers/RELEASE-NOTES.md --prerelease
+            gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ACO Studio ${ACO_VERSION} - Personal profiles and retailer-pool imports (${MODE})" --notes-file installers/RELEASE-NOTES.md --prerelease
           fi
           if gh release view aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release download aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" --pattern mac-update.json --dir previous-feed
