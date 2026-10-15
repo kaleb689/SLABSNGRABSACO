@@ -9,7 +9,7 @@ import sys
 
 root = pathlib.Path(__file__).resolve().parent
 compressed = base64.b64decode((root / 'source.b64').read_text().strip(), validate=True)
-expected_sha = '8a4ad55fd08d6698010dd1a427478b8eafd23a8269ebf680e9328aab15420ad7'
+expected_sha = '96841b5c5258e1314bfbe96c414b50b0db28e299fd8bea2b8e6bb595592bfc8d'
 if hashlib.sha256(compressed).hexdigest() != expected_sha:
     raise SystemExit('Personal navigation source checksum mismatch')
 files = json.loads(bz2.decompress(compressed))
