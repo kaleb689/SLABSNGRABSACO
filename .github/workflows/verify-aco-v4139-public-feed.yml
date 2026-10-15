@@ -19,6 +19,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          printf '{"type":"commonjs"}\n' > .github/aco-studio-build/native-updater/package.json
           node <<'NODE'
           const assert=require('node:assert/strict');
           const fs=require('node:fs/promises');
