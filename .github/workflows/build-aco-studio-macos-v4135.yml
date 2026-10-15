@@ -1,4 +1,4 @@
-name: Build ACO Studio v4.13.6 Mac startup fix
+name: Build ACO Studio v4.13.7 Personal-only imports
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - build/aco-studio-macos-v4133-20261015
     paths:
       - '.github/aco-studio-build/aco-studio-v4.13.5.part-*.b64'
+      - '.github/aco-studio-build/personal-import/**'
       - '.github/workflows/build-aco-studio-macos-v4135.yml'
   workflow_dispatch:
 
@@ -56,6 +57,16 @@ jobs:
           test -f build-src/App/desktop-updates.js
           test -f build-src/App/build/after-sign.cjs
           node -e "if(require('./build-src/App/package.json').version!=='4.13.5')process.exit(1)"
+      - name: Add Personal-only importer without replacing existing desktop features
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+          node --check build-src/App/main.js
+          node --check build-src/App/app.js
+          node --check build-src/App/preload.js
+          node --check build-src/App/personal-profile-import.js
+          node --check build-src/App/personal-profile-import-ui.js
       - name: Confirm Developer ID credentials or prepare ad-hoc signing
         id: creds
         shell: bash
@@ -72,7 +83,7 @@ jobs:
       - name: Install builder and Electron on macOS build host
         working-directory: build-src/App
         run: npm install --no-audit --no-fund
-      - name: Verify existing security, exports, distribution and updater tests
+      - name: Verify existing tests plus Personal import isolation regressions
         working-directory: build-src/App
         run: npm run check
       - name: Build native macOS application, DMG installer and updater ZIP
@@ -88,7 +99,7 @@ jobs:
           const packagePath = 'package.json';
           const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
           if (pkg.version !== '4.13.5') throw Error('Original ACO Studio v4.13.5 package expected before patch');
-          pkg.version = '4.13.6';
+          pkg.version = '4.13.7';
           pkg.build ??= {};
           pkg.build.mac ??= {};
           if (process.env.ACO_ADHOC_MODE === 'true') {
@@ -98,7 +109,7 @@ jobs:
             const plist = fs.readFileSync(entitlementPath, 'utf8');
             if (!plist.includes('</dict>')) throw Error('Mac entitlement property list not recognized');
             if (!plist.includes(entry)) fs.writeFileSync(entitlementPath, plist.replace('</dict>', entry + '\n</dict>'));
-            console.log('Mac v4.13.6 uses ad-hoc signing with hardened runtime and library-validation exception; Apple notarization still unavailable.');
+            console.log('Mac v4.13.7 retains ad-hoc signing with hardened runtime and library-validation exception; Apple notarization still unavailable.');
           }
           fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
           PATCH_MAC_PACKAGE
@@ -125,10 +136,15 @@ jobs:
           test "$(stat -f '%z' "$DMG")" -gt 50000000
           test "$(stat -f '%z' "$UPDATE_ZIP")" -gt 50000000
           test -d "$APP_DIR/Contents/Frameworks/Electron Framework.framework"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_DIR/Contents/Info.plist")" = '4.13.6'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_DIR/Contents/Info.plist")" = '4.13.7'
           test -f "$APP_DIR/Contents/Resources/app/address-distribution.js"
           test -f "$APP_DIR/Contents/Resources/app/personal-access.js"
           test -f "$APP_DIR/Contents/Resources/app/desktop-updates.js"
+          test -f "$APP_DIR/Contents/Resources/app/personal-profile-import.js"
+          test -f "$APP_DIR/Contents/Resources/app/personal-profile-import-ui.js"
+          test -f "$APP_DIR/Contents/Resources/app/personal-profile-import.css"
+          grep -Fq 'personal:profiles:choose' "$APP_DIR/Contents/Resources/app/preload.js"
+          grep -Fq 'personal-profile-import-ui.js' "$APP_DIR/Contents/Resources/app/index.html"
           test -f "$APP_DIR/Contents/Resources/JigStudio.icns"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_DIR/Contents/Info.plist")" = 'com.slabsngrabsaco.jigstudio.owner'
           EXE="$(find "$APP_DIR/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
@@ -215,7 +231,7 @@ jobs:
         run: echo '${{ steps.creds.outputs.status }}' > "dist/signing-status-${{ matrix.arch }}.txt"
       - uses: actions/upload-artifact@v4
         with:
-          name: ACO-Studio-v4.13.6-macOS-${{ matrix.arch }}-${{ steps.creds.outputs.status }}
+          name: ACO-Studio-v4.13.7-macOS-${{ matrix.arch }}-${{ steps.creds.outputs.status }}
           path: |
             build-src/App/dist/*.dmg
             build-src/App/dist/*.zip
@@ -232,7 +248,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-v4.13.6-macOS-*
+          pattern: ACO-Studio-v4.13.7-macOS-*
           path: installers
           merge-multiple: true
       - name: Check both architecture installers and signing status
@@ -240,8 +256,8 @@ jobs:
         run: |
           set -euo pipefail
           ls -lh installers
-          test -f installers/ACO-Studio-4.13.6-arm64.dmg
-          test -f installers/ACO-Studio-4.13.6-x64.dmg
+          test -f installers/ACO-Studio-4.13.7-arm64.dmg
+          test -f installers/ACO-Studio-4.13.7-x64.dmg
           test -f installers/signing-status-arm64.txt
           test -f installers/signing-status-x64.txt
           cmp installers/signing-status-arm64.txt installers/signing-status-x64.txt
@@ -255,13 +271,13 @@ jobs:
           set -euo pipefail
           STATUS="$(cat installers/signing-status-arm64.txt)"
           if [[ "$STATUS" == 'signed-notarized' ]]; then
-            TAG='aco-studio-v4.13.6-macos-notarized'
-            TITLE='ACO Studio v4.13.6 - Mac installers (signed and notarized)'
-            NOTE='Native macOS ARM64 and Intel installers built on macOS 26, with full 20-second ordinary launch verification after installation copy, DMG signature validation, and Apple Developer ID notarization checks. Not tested on an owner M5 Pro. Production website Admin end-to-end parity and updater installation on an owner Mac were NOT tested.'
+            TAG='aco-studio-v4.13.7-macos-notarized'
+            TITLE='ACO Studio v4.13.7 - Personal-only profile import'
+            NOTE='Dedicated Import Personal Profiles button in Personal Jigs, immutable Personal destination, read-only duplicate review, atomic Personal-only writes, and preservation tests for customer/address/card banks. Existing features and v4.13.6 Mac signing corrections preserved. Both architectures passed regression tests, signature checks and 20-second normal startup. Apple Developer ID signing and notarization validated. Not tested on the owner M5 Pro or with live customer imports.'
           elif [[ "$STATUS" == 'adhoc-signed' ]]; then
-            TAG='aco-studio-v4.13.6-macos-adhoc'
-            TITLE='ACO Studio v4.13.6 - Mac installers (ad-hoc signed preview)'
-            NOTE='ARM64 and Intel v4.13.6 startup fix built on macOS 26 with an ad-hoc Hardened Runtime entitlement for Electron library validation. Both architectures passed complete signature checks and survived 20 seconds of ordinary startup from the copied installer. GitHub runners use Apple Silicon M1 rather than the owner M5 Pro, so an owner-device crash has NOT been ruled out. Not Apple Developer ID signed or notarized; Gatekeeper may still block first launch. Existing local data and updater files were not modified.'
+            TAG='aco-studio-v4.13.7-macos-adhoc'
+            TITLE='ACO Studio v4.13.7 - Personal-only profile import (ad-hoc signed preview)'
+            NOTE='Dedicated Import Personal Profiles button in Personal Jigs. Preview and confirm with destination locked to Personal, no customer assignment or shared-pool writes. Duplicate email review is read-only; flagged rows are skipped only after confirmation. Existing Personal addresses, card pools, customer banks and updater files are not reset. Both Mac architectures passed existing and new regression tests, signature validation and 20-second normal startup. Ad-hoc signed, NOT Apple-notarized; Gatekeeper may still require approval. Not tested on the owner M5 Pro or with live customer imports.'
           else
             echo 'Unexpected signing status'; exit 1
           fi
