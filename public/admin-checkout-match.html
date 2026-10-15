@@ -34,6 +34,15 @@ button:disabled{opacity:.5;cursor:not-allowed}.notice{font-size:13px;color:#9ba9
 <p>Review confirmed Discord checkout profiles, including recent Pokémon Center and morning orders. Check the exact retailer account owner and assignment date before selecting a customer. Unverified, cancelled and review-hold orders are not counted as successful purchases. No new orders are created.</p>
 <div class="stats"><div class="stat"><strong id="unmatched">—</strong><span>Unlinked checkouts</span></div><div class="stat"><strong id="groups">—</strong><span>Distinct profile labels</span></div></div>
 <div class="panel">
+<h2>Unlinked checkout emails</h2>
+<p>Real retailer emails from the authoritative Discord success feed, visible only to signed-in admins. Unmatched orders remain in community totals until an exact linked retailer account is verified. Customer passwords are never shown.</p>
+<div class="stats"><div class="stat"><strong id="email-unmatched-count">—</strong><span>Unlinked orders in the recent Discord feed</span></div></div>
+<label for="unlinked-email-search">Search retailer email, profile, or product</label>
+<input id="unlinked-email-search" type="search" autocomplete="off" placeholder="Search unmatched checkout emails">
+<p class="notice" id="unlinked-email-status" role="status" aria-live="polite">Loading unmatched checkout emails…</p>
+<div id="unlinked-email-results"></div>
+</div>
+<div class="panel">
 <label for="search">Search Discord profile labels</label>
 <input id="search" type="search" autocomplete="off" placeholder="Search by profile or retailer">
 <p class="notice" id="status" role="status" aria-live="polite">Loading checkout profile labels…</p>

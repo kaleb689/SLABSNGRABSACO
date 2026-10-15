@@ -3,6 +3,63 @@
 const $=id=>document.getElementById(id);
 const e=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let groups=[]; let trackingOrders=[];
+
+let unmatchedEmailOrders = [];
+function renderUnlinkedEmails(){
+ const needle=String($("unlinked-email-search").value||"").toLowerCase().trim();
+ const shown=unmatchedEmailOrders.filter(o=>
+  [o.retailerLogin,o.profileLabel,o.retailer,o.orderNumber,...(o.products||[]).map(p=>p.name)]
+   .join(" ").toLowerCase().includes(needle));
+ $("unlinked-email-results").innerHTML=shown.slice(0,100).map(o=>{
+  const current=String(o.effectiveStatus||o.status||"").toLowerCase();
+  const candidates=Array.isArray(o.exactLinkedAccounts)?o.exactLinkedAccounts:[];
+  const owners=[...new Set(candidates.filter(x=>x.eligible).map(x=>x.customer).filter(Boolean))];
+  const explanation=owners.length===1
+   ?"One eligible linked account: "+owners[0]+". Review assignment details if still unmatched."
+   :owners.length>1?"Conflicting eligible owners. Verify the assignment before linking."
+   :candidates.length?"Retailer login found, but its ownership dates do not cover this checkout."
+   :"This retailer email was not found on any correctly linked retailer account.";
+  const when=new Date(o.checkoutAt||0);
+  const whenText=Number.isFinite(when.getTime())?when.toLocaleString():"Unknown date";
+  const itemLabels=(Array.isArray(o.products)?o.products:[]).slice(0,6).map(p=>
+   '<span>'+e(p.name)+' x'+Math.max(0,Number(p.quantity)||0)+'</span>').join("");
+  const amount=Number(o.checkoutValue);
+  const valueText=Number.isFinite(amount)&&amount>0
+   ?"Checkout value "+String.fromCharCode(36)+amount.toFixed(2):"Value not verified";
+  return '<section class="match"><h3>'+e(o.retailerLogin||"Email not provided")+'</h3>'+
+   '<div class="meta">'+e(o.retailer||"Retailer")+' - '+e(whenText)+' - '+e(current)+
+   ' - '+e(valueText)+'<div>Profile: '+e(o.profileLabel||"Not provided")+'</div></div>'+
+   '<div class="match-products">'+itemLabels+'</div><p class="notice">'+e(explanation)+'</p></section>';
+ }).join("")||'<p class="notice">No unmatched checkout matches this search.</p>';
+ if(shown.length>100)$("unlinked-email-results").insertAdjacentHTML("beforeend",
+  '<p class="notice">Showing the first 100 matches. Narrow your search for more.</p>');
+}
+async function loadUnlinkedEmails(){
+ const response=await fetch("/api/admin/checkout-link-diagnostics",{
+  credentials:"same-origin",cache:"no-store"
+ });
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw new Error(data.error||"Could not read checkout diagnostics. Sign in as Admin.");
+ unmatchedEmailOrders=(Array.isArray(data.rows)?data.rows:[])
+  .filter(o=>!o.owner&&!/cancel|refund|failed|declined/i.test(String(o.effectiveStatus||o.status||"")))
+  .sort((a,b)=>Date.parse(b.checkoutAt||0)-Date.parse(a.checkoutAt||0));
+ $("email-unmatched-count").textContent=unmatchedEmailOrders.length.toLocaleString();
+ $("unlinked-email-status").className="notice";
+ $("unlinked-email-status").textContent="Recent unlinked checkouts from the original Discord success feed.";
+ renderUnlinkedEmails();
+}
+function refreshUnlinkedEmails(){
+ if(document.hidden)return;
+ void loadUnlinkedEmails().catch(error=>{
+  $("unlinked-email-status").className="notice bad";
+  $("unlinked-email-status").textContent=error.message;
+ });
+}
+$("unlinked-email-search").addEventListener("input",renderUnlinkedEmails);
+document.addEventListener("visibilitychange",refreshUnlinkedEmails);
+setInterval(refreshUnlinkedEmails,60000);
+refreshUnlinkedEmails();
+
 const requestedRetailer=new URLSearchParams(location.search).get("retailer")||"";
 if(/^(?:pkc|pokemon center)$/i.test(requestedRetailer))$("search").value="PKC";
 function render(){
