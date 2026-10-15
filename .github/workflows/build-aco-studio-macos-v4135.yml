@@ -79,7 +79,15 @@ jobs:
         working-directory: build-src/App
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.creds.outputs.status == 'signed-notarized' && 'true' || 'false' }}
-        run: npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
+        run: |
+          node <<'NODE'
+          const {build, Platform}=require('electron-builder');
+          build({targets:Platform.MAC.createTarget(['dmg','zip']),publish:'never'}).catch(error=>{
+            console.error('ACO_STUDIO_ELECTRON_BUILDER_DIAGNOSTIC_STACK');
+            console.error(error && error.stack || String(error));
+            process.exit(1);
+          });
+          NODE
       - name: Validate actual app bundle, architecture and mounted installer
         working-directory: build-src/App
         shell: bash
