@@ -38631,6 +38631,12 @@ async function scanDiscordSuccessChannel() {
     greenRejected: 0, webhookRejected: 0
   };
   const rejectedSamples = [];
+  const rejectedFieldShapes = {
+    greenExactProduct:0, greenNumberedProduct:0,
+    greenTitleOnly:0, greenSkuOnly:0, greenItemsLabel:0,
+    greenMixedUnnumberedAndNumbered:0, greenOther:0,
+    greenRejectedWithAccountIdentity:0
+  };
   try {
     const { token, channels, webhookSourceFound } = await discordCheckoutSourceChannels();
     if (!token || !channels.length) throw new Error('Checkout source channel is not configured.');
@@ -38667,7 +38673,24 @@ async function scanDiscordSuccessChannel() {
           if (internalEcho) rejectionReasons.internalEcho++;
           else if (!hasCheckoutWords) rejectionReasons.noCheckoutWording++;
           else rejectionReasons.noExtractableProduct++;
-          if (green) rejectionReasons.greenRejected++;
+          if (green) {
+            rejectionReasons.greenRejected++;
+            const allFields = embeds.flatMap(e => Array.isArray(e.fields) ? e.fields : []);
+            const labels = allFields.map(f =>
+              String(f.name || "").replace(/[*_`]/g, "").trim().toLowerCase());
+            const direct = labels.some(v => /^(?:product|item)(?: name| title)?$/.test(v));
+            const numbered = labels.some(v => /^(?:product|item)(?: name| title)?\s*\(\d+\)$/.test(v));
+            const otherNumbered = labels.some(v => /^(?:price|quantity|qty|unit price)\s*\(\d+\)$/.test(v));
+            if (direct) rejectedFieldShapes.greenExactProduct++;
+            if (numbered) rejectedFieldShapes.greenNumberedProduct++;
+            if (labels.some(v => v === "title" || v === "item title")) rejectedFieldShapes.greenTitleOnly++;
+            if (labels.some(v => v === "sku" || v === "sku name")) rejectedFieldShapes.greenSkuOnly++;
+            if (labels.some(v => /^items?\b/.test(v))) rejectedFieldShapes.greenItemsLabel++;
+            if (direct && otherNumbered) rejectedFieldShapes.greenMixedUnnumberedAndNumbered++;
+            if (!direct && !numbered) rejectedFieldShapes.greenOther++;
+            const identity = checkoutIdentityFromDiscord(message);
+            if (identity.orderNumber || identity.email) rejectedFieldShapes.greenRejectedWithAccountIdentity++;
+          }
           if (message.webhook_id) rejectionReasons.webhookRejected++;
           // Newest first. Keep a small, sanitized structural sample for triage.
           if (rejectedSamples.length < 5) rejectedSamples.push({
@@ -38790,6 +38813,7 @@ async function scanDiscordSuccessChannel() {
     }
     collisionStats.knownOrderNumberGroups = confirmedOrderGroups.size;
     discordSuccessScan.confirmedOrderCollisions = collisionStats;
+    discordSuccessScan.rejectedFieldShapes = rejectedFieldShapes;
     discordSuccessScan.persistedStoreChanged = persistedStoreChanged;
     discordSuccessScan.added = added;
     discordSuccessScan.updated = updated;
@@ -38802,7 +38826,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.identityDiagnostics = identityStats;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedSamples, identityStats }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedSamples, identityStats }));
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
