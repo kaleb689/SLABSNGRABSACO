@@ -38172,7 +38172,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
   // No quantity was reported in a neutral-heading, text-only product hook.
   // Preserve that uncertainty instead of turning it into a fictional item.
   const quantityUnavailable = !itemField && merchandiseDescription &&
-    !headingConfirmsCheckout && !hasProductField && !descriptionHasItemEvidence;
+    !hasProductField && !descriptionHasItemEvidence;
   // Some bots mix a plain Product field with numbered Qty/Price fields.
   if (numbered.size && ![...numbered.values()].some(entry => entry.product)) {
     const first = numbered.keys().next().value;
