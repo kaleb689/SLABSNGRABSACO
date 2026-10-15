@@ -38183,8 +38183,12 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
     const name = publicSuccessProductName(productTitle(entry.product));
     const rawQuantity = String(entry.quantity || "").trim();
     // Accept "2", "x2", "2x", "Qty: 2" without arbitrary quantity text.
-    const quantityText = rawQuantity.replace(/^(?:qty|quantity)\s*[:=]\s*/i, "");
-    const quantityMatch = quantityText.match(/^(?:x\s*)?(\d{1,3})\s*x?$/i);
+    const quantityText = rawQuantity
+      .replace(/\|\||\u200b/g, "") // Discord spoiler and zero-width wrappers
+      .replace(/[×✕]/g, "x")
+      .replace(/\b(?:qty|quantity|items?|units?|pcs|pieces|each|ea|packs?)\b/gi, "")
+      .replace(/[\[\](){}:=]/g, "").trim();
+    const quantityMatch = quantityText.match(/^(?:x\s*)?(\d{1,3})(?:\.0+)?\s*x?$/i);
     const quantity = rawQuantity ? (quantityMatch ? Number(quantityMatch[1]) : NaN) : 1;
     if (!name) {
       if (diagnostics) diagnostics.itemRejectReason = "missing_product";
@@ -38197,7 +38201,15 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
       continue;
     }
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
-      if (diagnostics) diagnostics.itemRejectReason = "invalid_quantity";
+      if (diagnostics) {
+        diagnostics.itemRejectReason = "invalid_quantity";
+        const hasDigits = /\d/.test(rawQuantity);
+        const groups = (rawQuantity.match(/\d+/g) || []).length;
+        diagnostics.quantityClass = !hasDigits ? "no_digits" : groups > 1 ? "multiple_numbers" :
+          /\|\|/.test(rawQuantity) ? "spoiler" :
+          /[a-z]/i.test(rawQuantity) ? "contains_letters" :
+          /[^\dx×✕\s.]/i.test(rawQuantity) ? "other_punctuation" : "single_number_unparsed";
+      }
       completePrices = false;
       continue;
     }
@@ -38667,6 +38679,7 @@ async function scanDiscordSuccessChannel() {
   };
   const rejectedSamples = [];
   const rejectedParseReasons = {};
+  const rejectedQuantityClasses = {};
   const rejectedFieldShapes = {
     greenExactProduct:0, greenNumberedProduct:0,
     greenTitleOnly:0, greenSkuOnly:0, greenItemsLabel:0,
@@ -38701,6 +38714,10 @@ async function scanDiscordSuccessChannel() {
           skipped++; unrecognized++;
           const parseReason = parsedDiagnostics.reason || "unspecified";
           rejectedParseReasons[parseReason] = (rejectedParseReasons[parseReason] || 0) + 1;
+          if (parsedDiagnostics.quantityClass) {
+            const cls = parsedDiagnostics.quantityClass;
+            rejectedQuantityClasses[cls] = (rejectedQuantityClasses[cls] || 0) + 1;
+          }
           const embeds = Array.isArray(message.embeds) ? message.embeds : [];
           const hasCheckoutWords = /success|checkout|order confirm|order cancel|order review|order on hold|cancellation/i.test(
             [message.content || "", ...embeds.flatMap(e => [e.title || "", e.description || ""])].join(" "));
@@ -38858,6 +38875,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.confirmedOrderCollisions = collisionStats;
     discordSuccessScan.rejectedFieldShapes = rejectedFieldShapes;
     discordSuccessScan.rejectedParseReasons = rejectedParseReasons;
+    discordSuccessScan.rejectedQuantityClasses = rejectedQuantityClasses;
     discordSuccessScan.persistedStoreChanged = persistedStoreChanged;
     discordSuccessScan.added = added;
     discordSuccessScan.updated = updated;
@@ -38870,7 +38888,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.identityDiagnostics = identityStats;
     discordSuccessScan.checkedAt = new Date().toISOString();
     discordSuccessScan.newestMessageId = newest;
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedSamples, identityStats }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedQuantityClasses, rejectedSamples, identityStats }));
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
