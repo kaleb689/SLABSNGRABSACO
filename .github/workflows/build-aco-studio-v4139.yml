@@ -26,7 +26,8 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            os: macos-26
+            # Native Apple Silicon fallback while the macos-26 queue is stalled.
+            os: macos-15
           - arch: x64
             os: macos-26-intel
     env:
@@ -245,7 +246,7 @@ jobs:
           Personal Jigs now has its own left-sidebar tab, next to Customer Jigs. Switching workspaces filters existing imports without reassigning them; empty customer views do not fall back to Personal files. PIN/Touch ID gates and separate saved vault namespaces remain in place. Clearing imported files affects the active workspace, not the other one.
           Fixed the missing-preview export flow: Preview selected changes now prepares the Review page immediately, and Review profiles can prepare the preview from the selected fields. Formatting edits retain checked addresses/cards and only invalidate the old preview. Missing previews are labelled Preview not prepared yet rather than falsely implying a rejected account or safety violation.
           PKC Jig, Target Jig and Walmart Jig buttons open the existing formatting checkboxes with examples and editing guidance. Guidance is not a promise of retailer acceptance. Saved address/card lists now have search, selected counts, select-all, clear and six choices per page. Previous bank-management and test-card tools remain available in collapsed sections rather than duplicate expanded lists.
-          Existing blank-profile creation, imports, vaults, app identity and native updater retained. Both Mac builds passed automated regressions, signature checks, installed control-loading checks, update/restart and rollback tests with synthetic data. Navigation and preview handoff were additionally exercised in a browser harness using the real profile-preview backend and mocked desktop bindings. Not tested on the owner's M5 Pro or real vaults. Ad-hoc releases are NOT Apple-notarized and may still require local approval.
+          Existing blank-profile creation, imports, vaults, app identity and native updater retained. Apple Silicon was built and tested natively on macOS 15; Intel on macOS 26. Both builds passed automated regressions, signature checks, installed control-loading checks, update/restart and rollback tests with synthetic data. Navigation and preview handoff were additionally exercised in a browser harness using the real profile-preview backend and mocked desktop bindings. Not tested on the owner's M5 Pro or real vaults. Ad-hoc releases are NOT Apple-notarized and may still require local approval.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$GITHUB_SHA"
