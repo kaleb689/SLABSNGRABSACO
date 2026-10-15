@@ -85,7 +85,7 @@ test('MTD and 6M are removed from visible period presets; custom calendar is ava
   assert.match(customer,/data-app-date-form/);
   assert.match(customer,/type="date"/);
   assert.match(customer,/days='custom'/);
-  assert.match(customer,/queryStart = days==='custom'/);
+  assert.match(customer,/checkoutRequestRange\(days, new Date\(\), customRange\)/);
   assert.match(admin,/data-success-calendar/);
   assert.match(admin,/data-success-user-calendar/);
   assert.match(admin,/data-success-date-form/);

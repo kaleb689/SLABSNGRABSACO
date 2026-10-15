@@ -1,4 +1,4 @@
-import { shippingStage, visibleLateCancellation, periodStart, periodBounds, customDateBounds, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges } from './app-dashboard-data.js';
+import { checkoutRequestRange, shippingStage, visibleLateCancellation, periodStart, periodBounds, customDateBounds, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges } from './app-dashboard-data.js';
 import { createCustomerDropEditor } from './app-drop-controls.js';
 
 const appEnabled = window.self === window.top && (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true ||
@@ -28,7 +28,7 @@ if (appEnabled) {
   const dateLabel = value => value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Pending';
   let view = ({ success: 'home', membership: 'profile', drops: 'drops', notifications: 'notifications', tracking: 'tracking' })[new URLSearchParams(location.search).get('appTab')] || 'home';
   let days = 30, status = 'all', query = '', orders = [], cancelledOrders = [], reviewHoldOrders = [], busy = false, queued = false, error = '', accountId = null;
-  let profileTab = 'membership', stream = null;
+  let profileTab = 'membership', stream = null, streamAccountId = null;
   let calendarOpen = false, calendarError = '', customRange = null;
   let calendarDraft = {from:'',to:''};
   const dayKey = date => [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),
@@ -108,7 +108,8 @@ if (appEnabled) {
       const step = stage === 'out_for_delivery' ? 2 : steps.indexOf(stage);
       const address = shipping.address || {};
       const trackingUrl = /^https:\/\//i.test(shipping.trackingUrl || '') ? shipping.trackingUrl : '';
-      const totalLabel = order.orderTotalKnown === false ? 'Total not provided' : money(order.orderTotal);
+      const known = order.checkoutValueKnown ?? order.orderTotalKnown;
+      const totalLabel = known === false ? 'Value not provided' : money(order.checkoutValue ?? order.orderTotal);
       return `<details class="sng-order-card stage-${stage}" data-order-id="${e(order.id || order.orderNumber)}" ${expanded.has(order.id || order.orderNumber) ? 'open' : ''}>
         <summary><div class="sng-product-image">${image(item)}</div><div class="sng-row-main"><strong>${e(item.name || `${order.retailer} order`)}</strong><small>${e(order.retailer)} · ${dateLabel(order.checkoutAt)} · ${Number(order.itemCount) || 0} items</small></div><div class="sng-row-value"><strong>${e(totalLabel)}</strong><small class="sng-stage">● ${stageLabels[stage]}</small></div></summary>
         ${stage === 'review_hold' ? '<p class="sng-delivery">Review hold — the retailer is reviewing this order and may still cancel it. Not yet confirmed.</p>' :
@@ -135,6 +136,7 @@ if (appEnabled) {
     // Keep the native iOS/Android date picker mounted during live refreshes.
     if (calendarOpen && document.activeElement?.matches?.('[data-app-date-from],[data-app-date-to]')) return;
     if (!state.customer) { root.hidden = true; document.body.classList.remove('app-signed-in'); orders = []; cancelledOrders = []; reviewHoldOrders = []; accountId = null; snapshots.clear(); changes.clear(); stream?.close(); stream = null; return; }
+    if (accountId && String(accountId) !== String(state.customer.id)) {orders=[];cancelledOrders=[];reviewHoldOrders=[];accountId=null;snapshots.clear();changes.clear();}
     root.hidden = false; document.body.classList.add('app-signed-in'); document.body.dataset.appView = view;
     document.body.dataset.profileTab = profileTab;
     document.body.dataset.appTheme = theme;
@@ -310,19 +312,16 @@ if (appEnabled) {
         cancelledOrders = [];
         reviewHoldOrders = [];
       } else {
-        const end = new Date(), start = new Date(); start.setUTCDate(start.getUTCDate() - 365);
-        // Fetch the entire requested custom window, even when it predates
-        // the default 365-day app window. The API remains authoritative.
-        const queryStart = days==='custom' && customRange ? customRange.from :
-          days==='all' ? '1970-01-01' : start.toISOString().slice(0,10);
-        const queryEnd = days==='custom' && customRange ? customRange.to : end.toISOString().slice(0,10);
-        const response = await fetch(`/api/account/success?appView=1&start=${encodeURIComponent(queryStart)}&end=${encodeURIComponent(queryEnd)}`, { credentials: 'same-origin', cache: 'no-store' });
+        const requestedRange = checkoutRequestRange(days, new Date(), customRange);
+        const rangeKey = JSON.stringify([days, customRange]);
+        const params = new URLSearchParams({appView:'1', ...requestedRange});
+        const response = await fetch(`/api/account/success?${params}`, { credentials: 'same-origin', cache: 'no-store' });
         const data = await readJson(response);
         if (!response.ok) throw new Error(data.error || 'Unable to refresh order data.');
         if (state.customer?.id !== id) return;
+        if (rangeKey !== JSON.stringify([days, customRange])) { queued = true; return; }
         orders = Array.isArray(data.checkouts) ? data.checkouts : data.recentCheckouts || [];
-        cancelledOrders = Array.isArray(data.cancelledCheckouts) ?
-          data.cancelledCheckouts.filter(order => visibleLateCancellation(order)) : [];
+        cancelledOrders = [];
         reviewHoldOrders = Array.isArray(data.reviewHoldCheckouts) ?
           data.reviewHoldCheckouts.filter(order => order.status === 'review_hold') : [];
       }
@@ -332,9 +331,11 @@ if (appEnabled) {
   }
   function connect() {
     if (!state.customer || document.hidden || ADMIN_PREVIEW_MODE) { stream?.close(); stream = null; return; }
+    if (stream && streamAccountId !== String(state.customer.id)) {stream.close();stream=null;}
     if (stream) return;
+    streamAccountId = String(state.customer.id);
     stream = new EventSource('/api/account/success/events');
-    stream.addEventListener('checkout', () => void refresh());
+    stream.addEventListener('checkout', () => { void refresh(); void loadCustomerNotifications({showPopup:true}); });
     stream.addEventListener('data-change', () => void refresh());
     stream.addEventListener('open', () => void refresh());
   }

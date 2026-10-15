@@ -59,6 +59,14 @@ export function selectedOrders(orders, days, now = new Date(), range = null) {
     !['cancelled', 'review_hold'].includes(shippingStage(order)))
     .sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
 }
+export function checkoutRequestRange(days, now = new Date(), range = null) {
+  const {start, end} = periodBounds(days, now, range);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw Error('Choose a valid checkout date range.');
+  return { start: new Date(start).toISOString().slice(0, 10),
+    end: new Date(end - 1).toISOString().slice(0, 10),
+    startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString(),
+    ...(days === 'all' || days === 'lifetime' ? {lifetime:'1'} : {}) };
+}
 export function metricChanges(previous, next) {
   return Object.fromEntries(['orders', 'transit', 'delivered'].map(key => [key, previous ? next[key] - previous[key] : 0]));
 }
@@ -77,9 +85,15 @@ export function verifiedOrderSpend(order) {
   return verified && Number.isFinite(amount) && amount > 0 && amount <= 1000000
     ? Math.round(amount * 100) / 100 : 0;
 }
+export function customerOrderValue(order) {
+  const value = Number(order?.checkoutValue);
+  if (order?.checkoutValueKnown === true && Number.isFinite(value) && value > 0 && value <= 1000000) return Math.round(value * 100) / 100;
+  return verifiedOrderSpend(order);
+}
 export function dashboardTotals(orders) {
+  orders = orders.filter(order => !['cancelled', 'review_hold'].includes(shippingStage(order)));
   return { orders: orders.length, items: orders.reduce((sum, r) => sum + (Number(r.itemCount) || 0), 0),
-    spend: orders.reduce((sum, r) => sum + verifiedOrderSpend(r), 0),
+    spend: orders.reduce((sum, r) => sum + Math.round(customerOrderValue(r) * 100), 0) / 100,
     transit: orders.filter(r => ['shipped', 'in_transit', 'out_for_delivery'].includes(shippingStage(r))).length,
     delivered: orders.filter(r => shippingStage(r) === 'delivered').length,
     awaiting: orders.filter(r => shippingStage(r) === 'ordered').length };
@@ -122,7 +136,7 @@ export function dashboardActivity(orders, days, now = new Date(), range = null) 
     // A purchase made exactly at the end of a period belongs to its last bar.
     const index = Math.min(length - 1, Math.floor((at - start.getTime()) / bucketMs));
     const bucket = buckets.get(index);
-    if (bucket) { bucket.count++; bucket.value += verifiedOrderSpend(order); }
+    if (bucket && !['cancelled', 'review_hold'].includes(shippingStage(order))) { bucket.count++; bucket.value += customerOrderValue(order); }
   }
   return [...buckets.values()];
 }
