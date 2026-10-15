@@ -38099,24 +38099,37 @@ function discordCheckoutFromMessage(message, channelId) {
   const embeds = Array.isArray(message.embeds) ? message.embeds : [];
   const messageText = String(message.content || "");
   const isCheckout = value => /success|checkout|checked\s*out|order confirm|order cancel|order review|order on hold|cancellation/i.test(String(value || ""));
+  const normalizeProductFieldLabel = value => String(value || "")
+    .replace(/[*_\x60]/g, "").replace(/\u200b/g, "")
+    .replace(/\(s\)/gi, "s").replace(/:\s*$/, "").trim();
+  // All messages come from one explicitly configured checkout webhook source.
+  // Green is authoritative when a bot uses a neutral title and no customer ID.
+  const isProductField = value => /^(?:products?|items?)(?:\s+(?:name|title|purchased))?(?:\s*(?:\(\d{1,2}\)|#\s*\d{1,2}|\d{1,2}))?$/i
+    .test(normalizeProductFieldLabel(value));
+  const hasProductField = embeds.some(item =>
+    (Array.isArray(item.fields) ? item.fields : []).some(field => isProductField(field.name)));
+  const descriptionProduct = checkoutProductFromDiscord(message);
+  // A plain status/log sentence can look like a product name. Description-
+  // only checkouts need an explicit linked product or quantity/price detail,
+  // never just arbitrary GREEN informational text.
+  const descriptionHasItemEvidence = embeds.some(item => {
+    const description = String(item.description || "");
+    const product = checkoutProductFromDiscord({ embeds: [item] });
+    const linkedProduct = /\[[^\]\r\n]{3,240}\]\(https?:\/\/[^\s)]+\)/i.test(description);
+    const itemDetails = /(?:^|\n)\s*(?:\*\*)?(?:quantity|qty|unit price|price)\s*(?:\*\*)?\s*(?::|\n)/i.test(description);
+    return (linkedProduct || itemDetails) && isSafeDiscordCheckoutProductName(product);
+  });
   const headingConfirmsCheckout = isCheckout(messageText) ||
     embeds.some(item => isCheckout([item.title, item.description].join(" ")));
-  // Real green source webhooks can contain a valid product and retailer order
-  // identity without using the literal words "success" or "checkout" in
-  // their message headings. Do not drop those completed purchases.
-  const structuredGreenCheckout = !headingConfirmsCheckout &&
-    Boolean(message.webhook_id) &&
+  const structuredGreenCheckout = Boolean(message.webhook_id) &&
     checkoutStatusFromDiscord(message) === "confirmed" &&
-    embeds.some(item => (Array.isArray(item.fields) ? item.fields : []).some(field =>
-      /^(?:product|item)(?:\s*\(|\s*$|\s+name\b)/i.test(
-        String(field.name || "").replace(/[*_`]/g, "").trim()))) &&
-    Boolean((() => {
-      const identity = checkoutIdentityFromDiscord(message);
-      return identity.orderNumber || identity.email;
-    })());
+    (hasProductField || descriptionHasItemEvidence);
   if (!headingConfirmsCheckout && !structuredGreenCheckout) return null;
   if (embeds.some(item => /NEW CHECKOUT SUCCESS/i.test(String(item.title || "")))) return null;
-  const embed = embeds.find(item => (item.fields || []).some(field => /^(?:product|item)(?:\s*\(|\s*$|\s+name\b)/i.test(String(field.name || "").replace(/[*_`]/g, "").trim()))) ||
+  const embed = embeds.find(item =>
+    (Array.isArray(item.fields) ? item.fields : []).some(field => isProductField(field.name))) ||
+    embeds.find(item => isSafeDiscordCheckoutProductName(
+      checkoutProductFromDiscord({ embeds: [item] }))) ||
     embeds.find(item => isCheckout([item.title, item.description].join(" "))) || null;
   const body = [messageText, embed?.description || "", ...(embed?.fields || []).map(field => `${field.name}: ${field.value}`)].join("\n");
   const items = [];
@@ -38125,7 +38138,7 @@ function discordCheckoutFromMessage(message, channelId) {
   );
   const fields = embed?.fields || [];
   const numbered = new Map();
-  const fieldLabel = value => String(value || "").replace(/[*_`]/g, "").trim();
+  const fieldLabel = normalizeProductFieldLabel;
   const fieldValue = value => String(value || "").replace(/[*_`]/g, "").trim();
   // Link labels can contain only a SKU; keep text after the markdown link
   // instead of saving its URL or treating the bare SKU as the product name.
@@ -38135,7 +38148,7 @@ function discordCheckoutFromMessage(message, channelId) {
     .split(/\r?\n/)[0].trim();
   for (const field of fields) {
     const match = fieldLabel(field.name).match(
-      /^(product(?: name| title)?|item(?: name| title)?|price|unit price|item price|quantity|qty)(?:\s*\((\d{1,2})\)|\s*#\s*(\d{1,2})|\s+(\d{1,2}))$/i);
+      /^(products?(?: name| title| purchased)?|items?(?: name| title| purchased)?|price|unit price|item price|quantity|qty)(?:\s*\((\d{1,2})\)|\s*#\s*(\d{1,2})|\s+(\d{1,2}))$/i);
     if (!match) continue;
     const id = match[2] || match[3] || match[4];
     const kind = /^(product|item)/i.test(match[1]) ? "product" :
@@ -38144,8 +38157,14 @@ function discordCheckoutFromMessage(message, channelId) {
     entry[kind] = fieldValue(field.value);
     numbered.set(id, entry);
   }
-  const itemField = fields.find(field => /^(item|product)(?: name| title)?$/i.test(fieldLabel(field.name)));
-  const linkedProduct = checkoutProductFromDiscord(message);
+  const itemField = fields.find(field =>
+    /^(?:products?|items?)(?: name| title| purchased)?$/i.test(fieldLabel(field.name)));
+  const linkedProduct = descriptionProduct;
+  // Some bots mix a plain Product field with numbered Qty/Price fields.
+  if (numbered.size && ![...numbered.values()].some(entry => entry.product)) {
+    const first = numbered.keys().next().value;
+    if (first) numbered.get(first).product = itemField ? fieldValue(itemField.value) : linkedProduct;
+  }
   if (!numbered.size && (itemField || linkedProduct)) {
     const rawItem = itemField ? fieldValue(itemField.value) : linkedProduct;
     const priceMatch = rawItem.match(/\s*[-–]\s*\$([\d,]+(?:\.\d{1,2})?)\s*$/);
@@ -38160,7 +38179,11 @@ function discordCheckoutFromMessage(message, channelId) {
   let subtotalCents = 0, completePrices = numbered.size > 0;
   for (const entry of numbered.values()) {
     const name = publicSuccessProductName(productTitle(entry.product));
-    const quantity = String(entry.quantity || "").trim() ? Number(entry.quantity) : 1;
+    const rawQuantity = String(entry.quantity || "").trim();
+    // Accept "2", "x2", "2x", "Qty: 2" without arbitrary quantity text.
+    const quantityText = rawQuantity.replace(/^(?:qty|quantity)\s*[:=]\s*/i, "");
+    const quantityMatch = quantityText.match(/^(?:x\s*)?(\d{1,3})\s*x?$/i);
+    const quantity = rawQuantity ? (quantityMatch ? Number(quantityMatch[1]) : NaN) : 1;
     if (!name || !isSafeDiscordCheckoutProductName(name) || /@|\b(?:address|email|phone|account|ship to)\b/i.test(name) ||
         !Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
       completePrices = false;
