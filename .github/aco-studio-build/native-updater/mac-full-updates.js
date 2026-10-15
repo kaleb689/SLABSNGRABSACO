@@ -142,7 +142,16 @@ function createMacUpdater({app,execPath=process.execPath,arch=process.arch,loadF
   const target=bundleFromExecutable(execPath),stage=path.join(path.dirname(target),'.ACO-Studio-incoming-'+token+'.app');
   let lock=null,helper=null,started=false;
   try{
-   if(!app.isPackaged||!approvedTarget(target))throw Error('Install ACO Studio in Applications before using in-app updates.');
+   if(!app.isPackaged)throw Error('Install ACO Studio before using in-app updates.');
+   if(!approvedTarget(target)){
+    if(typeof app.moveToApplicationsFolder!=='function')throw Error('ACO Studio must be installed in Applications before updating.');
+    emit('installing','Moving ACO Studio to Applications so in-app updates can work...');
+    let moved=false;
+    try{moved=app.moveToApplicationsFolder({conflictHandler:()=>true});}
+    catch(error){throw Error('Could not move ACO Studio to Applications: '+String(error?.message||error));}
+    if(!moved)throw Error('ACO Studio needs to be in Applications to update. The move was cancelled.');
+    return {started:true,relaunching:true,message:'ACO Studio was moved to Applications and is restarting. Open Updates again after restart to finish the update.'};
+   }
    if((await fs.lstat(target)).isSymbolicLink())throw Error('Update the installed app, not an application symlink.');
    await fs.access(path.dirname(target),fsSync.constants.W_OK);
    emit('checking','Checking the official Mac update feed...');
