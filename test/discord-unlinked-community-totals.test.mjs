@@ -94,5 +94,6 @@ test("the real public community success handler counts unmatched green checkouts
   assert.equal(code,200);
   assert.equal(payload.checkouts,2);
   assert.equal(payload.products[0].quantity,4);
-  assert.equal(payload.unknownPrices,0);
+  // Item unit prices are not proof of the final amount paid.
+  assert.equal(payload.unknownPrices,2);
 });
