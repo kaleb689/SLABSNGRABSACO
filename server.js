@@ -38625,7 +38625,13 @@ async function discordCheckoutOwners() {
       for (const [key, login] of Object.entries(credentials)) {
         if (!login?.username) continue;
         const boundRetailer = assignment.rentalRetailer || assignment.assignmentRetailer || account.retailer;
-        if (boundRetailer && normalizeSuccessRetailer(key) !== normalizeSuccessRetailer(boundRetailer)) continue;
+        const knownRetailers = new Set(["Target", "Walmart", "PKC", "Costco", "Sam's Club"]);
+        const normalizedBoundRetailer = normalizeSuccessRetailer(boundRetailer);
+        // Legacy records can have a placeholder "Retailer" while their
+        // encrypted login slot is explicitly PKC/Target/Walmart. Never use a
+        // different retailer's login when there IS a specific retailer scope.
+        if (knownRetailers.has(normalizedBoundRetailer) &&
+            normalizeSuccessRetailer(key) !== normalizedBoundRetailer) continue;
         candidates.push({ customerAccountId: assignment.customerAccountId, retailer: normalizeSuccessRetailer(key),
           email: normalizeEmail(login.username), profileName: account.profileName,
           managedAccountId: account.id, managedAssignmentId: assignment.id,
@@ -38693,7 +38699,7 @@ function queueDiscordSuccessScan(delay = 75) {
   timer.unref?.();
 }
 
-async function scanDiscordSuccessChannel() {
+async function scanDiscordSuccessChannel({ quick = false } = {}) {
   if (discordSuccessScan.running) return false;
   discordSuccessScan.running = true;
   discordSuccessScan.error = null;
@@ -38733,7 +38739,7 @@ async function scanDiscordSuccessChannel() {
     const candidates = await discordCheckoutOwners();
     // Transient exact-email probes reduce to structural COUNTS only. No login,
     // profile, customer identity, source body or order number is logged.
-    const [probeManaged, probeAssignments] = await Promise.all([getManagedAccounts(),managedAssignmentHistory()]);
+    const [probeManaged, probeAssignments] = quick ? [[], []] : await Promise.all([getManagedAccounts(),managedAssignmentHistory()]);
     const probeLogins = [];
     for (const account of probeManaged) {
       let credentials = {};
@@ -38745,7 +38751,7 @@ async function scanDiscordSuccessChannel() {
     }
     const approvedAliases = await readJson(DISCORD_PROFILE_ALIASES_FILE, []);
     identityStats.totalCandidates = candidates.length;
-    await refreshSuccessRetailerImages();
+    if (!quick) await refreshSuccessRetailerImages();
     const imports = [];
     const historyCheckpoints = [];
     const previousHistory = await readJson(DISCORD_SOURCE_HISTORY_FILE, {});
@@ -38753,7 +38759,7 @@ async function scanDiscordSuccessChannel() {
       const batch = await collectDiscordCheckoutPages(
         before => discordBotJson(token,
           `/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`),
-        { channelId, previous: previousHistory, recentPages: 10, historyPages: 5 }
+        { channelId, previous: previousHistory, recentPages: quick ? 1 : 10, historyPages: quick ? 0 : 5 }
       );
       historyCheckpoints.push(batch.history);
       if (!newest) newest = batch.newestMessageId;
@@ -38921,7 +38927,7 @@ async function scanDiscordSuccessChannel() {
     // Advance the historical Discord pagination cursor ONLY after the
     // upstream checkout records were successfully reconciled and saved.
     // A failed batch can be replayed safely on the next scan.
-    if (historyCheckpoints.length === 1) {
+    if (!quick && historyCheckpoints.length === 1) {
       await writeJson(DISCORD_SOURCE_HISTORY_FILE, historyCheckpoints[0]);
       discordSuccessScan.historicalBackfill = historyCheckpoints[0];
     }
@@ -38933,6 +38939,8 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.hitsError = null;
     discordSuccessScan.rejectionReasons = rejectionReasons;
     discordSuccessScan.rejectedSamples = rejectedSamples;
+    // Only mirror when fast polling actually stored a new checkout/status, or during the full audit.
+    if (!quick || persistedStoreChanged) {
     const mirrorStats = await mirrorDiscordCheckoutHits(
       communityRecords, token, channels[0]).catch(error => {
       console.error("Discord hits mirror failed:", error?.message || error?.code || "discord_hits_mirror_error");
@@ -38943,6 +38951,7 @@ async function scanDiscordSuccessChannel() {
       discordSuccessScan.hitsMirror = mirrorStats;
       // Aggregate posting metrics only. Never log order or account identifiers.
       console.log("Discord hits mirror summary:", JSON.stringify(mirrorStats));
+    }
     }
     collisionStats.knownOrderNumberGroups = confirmedOrderGroups.size;
     discordSuccessScan.confirmedOrderCollisions = collisionStats;
@@ -38963,6 +38972,8 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.checkedAt = new Date().toISOString();
     const lastDay = Date.now() - 24 * 60 * 60 * 1000;
     const recentConfirmed = communityRecords.filter(record => confirmedDiscordPurchase(record) && Date.parse(record.checkoutAt || "") >= lastDay);
+    discordSuccessScan.newestMessageId = newest;
+    if (!quick || persistedStoreChanged) {
     console.log("Unmatched checkout link shapes:", JSON.stringify(unmatchedLinkShapes));
     console.log("Customer checkout sync:", JSON.stringify({
       recentConfirmed:recentConfirmed.length,
@@ -38970,8 +38981,8 @@ async function scanDiscordSuccessChannel() {
       recentUnmatched:recentConfirmed.filter(record => !record.customerAccountId).length,
       linkedOrderValueCents:recentConfirmed.filter(record => record.customerAccountId).reduce((cents,record) => cents + Math.round((checkoutOrderValue(record).amount || 0) * 100),0)
     }));
-    discordSuccessScan.newestMessageId = newest;
     console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedQuantityClasses, ambiguousGreenShapes, rejectedSamples, identityStats }));
+    }
     return true;
   } catch (error) {
     console.error('Discord checkout reconciliation failed:', error?.code || error?.message);
@@ -39001,11 +39012,27 @@ app.get("/api/admin/checkout-link-diagnostics", requireAdmin, async (req, res) =
     const source = await discordCheckoutSourceChannels();
     if (source.channels.length !== 1 || !source.token) return res.status(409).json({error:"One authoritative checkout source is required."});
     const [messages, candidates, accounts, saved, managed, assignments] = await Promise.all([
-      discordBotJson(source.token, `/channels/${source.channels[0]}/messages?limit=100`),
+      (async () => {
+        // Private admin-only diagnosis, never log or persist checkout emails.
+        // The latest 500 source messages support multiple busy drop periods.
+        const all = [];
+        let before = "";
+        for (let page = 0; page < 5; page++) {
+          const batch = await discordBotJson(source.token,
+            `/channels/${source.channels[0]}/messages?limit=100${before ? `&before=${before}` : ""}`);
+          if (!Array.isArray(batch)) throw new Error("Invalid Discord checkout history.");
+          all.push(...batch);
+          if (batch.length < 100) break;
+          before = String(batch[batch.length - 1]?.id || "");
+          if (!/^\d{17,22}$/.test(before)) break;
+        }
+        return all;
+      })(),
       discordCheckoutOwners(), getCustomerAccounts(), getSuccessCheckouts(), getManagedAccounts(), managedAssignmentHistory()
     ]);
     const names = new Map(accounts.map(account => [String(account.id), adminCheckoutCustomerName(account)]));
     const rows = [];
+    const seenOrderIds = new Set();
     for (const message of messages || []) {
       const order = discordCheckoutFromMessage(message, source.channels[0]);
       if (!order || !customerCheckoutPurchase(order)) continue;
@@ -39013,7 +39040,11 @@ app.get("/api/admin/checkout-link-diagnostics", requireAdmin, async (req, res) =
       const exact = candidates.filter(candidate => candidate.retailer === order.retailer &&
         identity.email && candidate.email === identity.email);
       const prior = saved.find(record => sameCheckout(record, order));
+      const canonicalId = String(prior?.id || order.id);
+      if (seenOrderIds.has(canonicalId)) continue;
+      seenOrderIds.add(canonicalId);
       rows.push({id:order.id,retailer:order.retailer,checkoutAt:order.checkoutAt,status:order.status,
+        effectiveStatus:prior?.status || order.status,
         profileLabel:identity.profileName,retailerLogin:identity.email,
         orderNumber:identity.orderNumber,checkoutValue:checkoutOrderValue(order).amount,
         owner:prior?.customerAccountId ? names.get(String(prior.customerAccountId)) || "Linked customer" : null,
@@ -49838,8 +49869,16 @@ await initializeArrayFile(
           }
         });
         if (discordSuccessConfig().token) {
-          setTimeout(() => scanDiscordSuccessChannel(), 12000);
-          const discordTimer = setInterval(() => scanDiscordSuccessChannel(), 60 * 1000);
+          // Existing successes keep one stable source/order ID. Read new
+          // Discord messages on a lightweight 10-second cycle and run the
+          // full historical and hits audit every 60 seconds.
+          setTimeout(() => void scanDiscordSuccessChannel(), 12_000).unref?.();
+          let discordPollCount = 0;
+          const discordTimer = setInterval(() => {
+            if (discordSuccessScan.running) return;
+            discordPollCount++;
+            void scanDiscordSuccessChannel({ quick: discordPollCount % 6 !== 0 });
+          }, 10_000);
           discordTimer.unref?.();
         }
       }

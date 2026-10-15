@@ -55,6 +55,8 @@ jobs:
       - run: node --check public/app-dashboard-data.js
       - run: node --test test/checkout-spend-and-controls.test.mjs test/app-dashboard.test.mjs
       - run: node --test test/customer-checkout-values.test.mjs
+      - run: node --check public/admin-checkout-match.js
+      - run: node --test test/stellar-fast-checkouts.test.mjs
       - run: node --check checkout-owner-backfills.js
       - run: node --test test/checkout-owner-backfills.test.mjs
       - run: node --test test/customer-app-uniform-ui.test.mjs
