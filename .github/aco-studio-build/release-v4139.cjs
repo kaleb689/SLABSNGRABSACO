@@ -30,6 +30,10 @@ if(!/^4\.13\.[1-9][0-9]*$/.test(version||''))throw Error('Invalid release versio
 pkg.version=version;
 pkg.build.productName='ACO Studio';
 pkg.build.mac.artifactName='ACO-Studio-${version}-${arch}.${ext}';
+// The registry advertised node-abi 4.38.0 but returned HTTP 404 for its tarball
+// during the 2026-10-15 build. Pin the published 4.x release for the builder;
+// preserve any independent node-abi 3.x dependency and the Electron runtime.
+pkg.overrides={...(pkg.overrides||{}),'node-abi@>=4 <5':'4.37.0'};
 // The visible Finder/icon label is short. Internal appId, app.setName and
 // userData namespace are unchanged; the existing encrypted vaults remain in place.
 if(pkg.build.appId!=='com.slabsngrabsaco.jigstudio.owner')throw Error('Refusing to change application identity');
