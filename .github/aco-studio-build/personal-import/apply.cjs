@@ -27,8 +27,11 @@ edit('profile-vault.js',[
    // introduce an already-owned customer email into Personal after preview.
    if(personalImportGuard){
     const other=await read('aco');
-    const used=new Set([...existing,...Object.values(other.groups).flat()].map(x=>x.email));
-    for(const row of mapped){if(used.has(row.email))throw Error('Banks changed after review. Choose files again to recheck duplicates; nothing was imported.');used.add(row.email);}
+    // Cross-retailer email reuse is intentional. The serialized guard only
+    // rejects an email that already exists in the SAME retailer pool.
+    const used=new Set([...existing,...Object.values(other.groups).flat()]
+      .filter(x=>x.retailer===retailer).map(x=>x.email));
+    for(const row of mapped){if(used.has(row.email))throw Error('This email already exists in the selected retailer pool. Choose files again to recheck duplicates; nothing was imported.');used.add(row.email);}
    }
    // A repeated exact email/retailer entry in one bank is not reimported automatically.`],
  ["d.groups[key]=existing;for(const item of added)auditRecord(d,key,'import',item.email,{retailer:item.retailer});await write(scope,d);", "d.groups[key]=existing;for(const item of added)auditRecord(d,key,'import',item.email,{retailer:item.retailer});if(personalImportGuard)beforeWrite();await write(scope,d);"]
