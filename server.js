@@ -38248,7 +38248,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
   // product quantity or unit price. Never apply this to generic sync/status
   // notices or to review/cancellation events.
   const plainHeading = [messageText, ...embeds.flatMap(e => [e.title || "",e.description || ""])].join(" ");
-  const genericNonCheckout = /\b(?:sync|synchroniz|inventory|heartbeat|debug|restock|stock alert|failed|declined|cancel(?:led)?|review|on hold)\b/i.test(plainHeading);
+  const genericNonCheckout = /\b(?:sync|synchroniz|inventory|heartbeat|debug|restock|stock alert|failed|declined|cancel(?:led|lation)?|review|on hold)\b/i.test(plainHeading);
   if (!items.length && Boolean(message.webhook_id) &&
       checkoutStatusFromDiscord(message) === "confirmed" &&
       headingConfirmsCheckout && !genericNonCheckout) {
