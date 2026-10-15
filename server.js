@@ -38702,6 +38702,8 @@ async function scanDiscordSuccessChannel() {
     withoutIdentity: 0, matched: 0, noEligibleCandidates: 0, unmatchedEmail: 0,
     unmatchedProfile: 0, ambiguousOwner: 0, eligibleCandidates: 0, totalCandidates: 0 };
   const sourceStatusCounts = { confirmed: 0, review_hold: 0, cancelled: 0, unverified: 0 };
+  const unmatchedLinkShapes = {};
+
   const confirmedOrderGroups = new Map();
   const collisionStats = { repeatedConfirmedOrderNumbers: 0,
     differentRetailerLogin: 0, differentProfileLabel: 0, knownOrderNumberGroups: 0 };
@@ -38728,6 +38730,18 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.source = (await discordCheckoutSourceChannels()).source;
     discordSuccessScan.webhookSourceFound = webhookSourceFound ?? true;
     const candidates = await discordCheckoutOwners();
+    // Transient exact-email probes reduce to structural COUNTS only. No login,
+    // profile, customer identity, source body or order number is logged.
+    const [probeManaged, probeAssignments] = await Promise.all([getManagedAccounts(),managedAssignmentHistory()]);
+    const probeLogins = [];
+    for (const account of probeManaged) {
+      let credentials = {};
+      try { if(account.credentials) credentials=normalizeRetailerCredentials(decryptJson(account.credentials)); } catch { continue; }
+      const emails = [...new Set([account.accountEmail,account.displayEmail,
+        ...Object.values(credentials).map(login=>login?.username)].map(normalizeEmail).filter(Boolean))];
+      const assignments = probeAssignments.filter(item=>String(item.managedAccountId)===String(account.id));
+      for (const email of emails) probeLogins.push({email,account,credentials,assignments});
+    }
     const approvedAliases = await readJson(DISCORD_PROFILE_ALIASES_FILE, []);
     identityStats.totalCandidates = candidates.length;
     await refreshSuccessRetailerImages();
@@ -38843,6 +38857,20 @@ async function scanDiscordSuccessChannel() {
         if (attribution) identityStats.matched++;
         else {
           unmatched++;
+          if (identity.email && customerCheckoutPurchase(order) && Date.parse(order.checkoutAt) > Date.now()-86400000) {
+            const pools = probeLogins.filter(item=>item.email===identity.email);
+            const shapes = pools.map(pool=>({
+              poolRetailer:normalizeSuccessRetailer(pool.account.retailer),
+              canonicalMatches:normalizeEmail(pool.account.accountEmail||pool.account.displayEmail)===identity.email,
+              credentialRetailers:Object.entries(pool.credentials).filter(([,login])=>normalizeEmail(login?.username)===identity.email).map(([key])=>key).sort(),
+              canonicalEvidence:pool.assignments.map(assignment=>Boolean(managedAccountEmailEvidence(pool.account,pool.credentials,assignment))),
+              assignmentShapes:pool.assignments.map(assignment=>({retailer:assignment.assignmentRetailer||assignment.rentalRetailer||"unknown",
+                hasOwner:Boolean(assignment.customerAccountId),withinDates:checkoutAssignmentContains(assignment,order.checkoutAt),
+                hasCreatedAt:Boolean(assignment.createdAt),hasStartsAt:Boolean(assignment.startsAt),hasEnd:Boolean(assignment.endedAt||assignment.expiresAt)}))
+            }));
+            const key=JSON.stringify({retailer:order.retailer,pools:shapes});
+            unmatchedLinkShapes[key]=(unmatchedLinkShapes[key]||0)+1;
+          }
           if (!identity.email && !identity.profileName) identityStats.withoutIdentity++;
           else if (!eligible.length) identityStats.noEligibleCandidates++;
           else {
@@ -38934,6 +38962,7 @@ async function scanDiscordSuccessChannel() {
     discordSuccessScan.checkedAt = new Date().toISOString();
     const lastDay = Date.now() - 24 * 60 * 60 * 1000;
     const recentConfirmed = communityRecords.filter(record => confirmedDiscordPurchase(record) && Date.parse(record.checkoutAt || "") >= lastDay);
+    console.log("Unmatched checkout link shapes:", JSON.stringify(unmatchedLinkShapes));
     console.log("Customer checkout sync:", JSON.stringify({
       recentConfirmed:recentConfirmed.length,
       recentLinked:recentConfirmed.filter(record => record.customerAccountId).length,
