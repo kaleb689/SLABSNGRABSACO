@@ -4,6 +4,7 @@ on:
     branches: [build/aco-studio-macos-v4133-20261015]
     paths:
       - '.github/aco-studio-build/profile-workshop/**'
+      - '.github/aco-studio-build/personal-import/**'
       - '.github/aco-studio-build/native-updater/**'
       - '.github/aco-studio-build/personal-navigation/**'
       - '.github/aco-studio-build/release-v4139.cjs'
