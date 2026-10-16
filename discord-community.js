@@ -154,7 +154,7 @@ export function parseDropSkus(message) {
     for (const raw of section.split(/\r?\n/)) {
       const line = raw.replace(/[*_`~]/g, "").trim();
       if (!line) continue;
-      const sku = /\bSKU\s*(?:#|:|-|\s)\s*([A-Z0-9][A-Z0-9._-]{2,79})\b/i.exec(line);
+      const sku = /\bSKU\s*(?:#|:|-|\s)\s*[|(\[]*\s*([A-Z0-9][A-Z0-9._-]{2,79})\b/i.exec(line);
       if (sku) {
         const prefix = line.slice(0, sku.index).replace(/[-:|\s]+$/, "").trim();
         const name = (prefix || title).slice(0, 100);
@@ -2373,37 +2373,86 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         await writeSkuFile(skuMenusFile, menus);
       }
     });
+    if (shouldShow) console.log("Discord SKU controls ready:", JSON.stringify({
+      channelId: message.channel_id, sourceId: message.id, skuCount: products.length
+    }));
     await ensureOwnerSkuReminderPanel(message, products);
     return products.length;
   }
+  // Rebuild only current drop panels. Large channel histories previously
+  // delayed gateway startup by hours while older menus were created.
   async function backfillDropMenus() {
     for (const channelId of dropChannelIds) {
-      const active = [];
-      let before = "", foundMain = false, keptUpcomingMain = false;
-      for (let page = 0; page < 20 && !foundMain; page++) {
-        const history = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
-        for (const message of history) {
-          if (!message.message_reference?.message_id && message.type === 0 && !message.author?.bot && !message.webhook_id && parseDropSkus(message).length) {
-            active.push(message);
-            foundMain = true;
-            break;
-          }
-          if (!message.author?.bot && !message.webhook_id && (message.type === 0 || message.type === 19)) {
-            if (parseDropSkus(message).length) active.push(message);
-            else if (channelId !== tonightChannelId && isNewDropPost(message) && !keptUpcomingMain) {
+      try {
+        const active = [];
+        let before = "", foundMain = false, keptUpcomingMain = false;
+        for (let page = 0; page < 2 && !foundMain; page++) {
+          const history = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
+          for (const message of history) {
+            if (!message.message_reference?.message_id && message.type === 0 &&
+                !message.author?.bot && !message.webhook_id && parseDropSkus(message).length) {
               active.push(message);
-              keptUpcomingMain = true;
+              foundMain = true;
+              break;
+            }
+            if (!message.author?.bot && !message.webhook_id && (message.type === 0 || message.type === 19)) {
+              if (parseDropSkus(message).length) active.push(message);
+              else if (channelId !== tonightChannelId && isNewDropPost(message) && !keptUpcomingMain) {
+                active.push(message);
+                keptUpcomingMain = true;
+              }
             }
           }
+          if (history.length < 100) break;
+          before = history.at(-1).id;
         }
-        if (history.length < 100) break;
-        before = history.at(-1).id;
+        // Most recent replies plus the current original. No bulk reposting
+        // of hundreds of retired SKU panels during a restart.
+        const recent = active.slice(0, 8);
+        const original = active.find(message => !message.message_reference?.message_id &&
+          message.type === 0 && parseDropSkus(message).length);
+        if (original && !recent.some(message => message.id === original.id)) recent.push(original);
+        for (const message of recent.reverse()) await ensureSkuControls(message);
+        console.log("Discord drop controls refreshed:", JSON.stringify({
+          channelId, kind: retailerDropLabels[channelId] ||
+            (channelId === tonightChannelId ? "tonight" : "upcoming"),
+          sourcePosts: recent.length, skuPosts: recent.filter(message => parseDropSkus(message).length).length
+        }));
+      } catch (error) {
+        discordCommunityStatus.error = `SKU menu backfill: ${error.message}`;
+        console.error("Discord SKU menu backfill channel:", channelId, error.message);
       }
-      for (const message of active.reverse()) await ensureSkuControls(message);
-      console.log("Discord drop controls refreshed:", JSON.stringify({
-        channelId, kind: channelId === tonightChannelId ? "tonight" : "upcoming",
-        sourcePosts: active.length, skuPosts: active.filter(message => parseDropSkus(message).length).length
-      }));
+    }
+  }
+
+  // If the gateway misses a post, or a menu is deleted manually, repair it
+  // without resending selections or changing saved quantities.
+  async function repairLatestDropMenus() {
+    for (const channelId of dropChannelIds) {
+      try {
+        const history = await api(`/channels/${channelId}/messages?limit=40`);
+        const sources = history.filter(message => !message.author?.bot && !message.webhook_id &&
+          [0, 19].includes(message.type ?? 0) && parseDropSkus(message).length).slice(0, 2);
+        if (!sources.length) continue;
+        const menus = await readSkuFile(skuMenusFile);
+        for (const message of sources.reverse()) {
+          const id = menus[message.id]?.[0];
+          if (id) {
+            try {
+              await api(`/channels/${channelId}/messages/${id}`);
+              continue;
+            } catch (error) {
+              if (!/HTTP 404/.test(error.message)) throw error;
+            }
+          }
+          await ensureSkuControls(message);
+          console.log("Discord missing SKU controls repaired:", JSON.stringify({
+            channelId, sourceId: message.id, skuCount: parseDropSkus(message).length
+          }));
+        }
+      } catch (error) {
+        console.error("Discord SKU controls self-repair:", channelId, error.message);
+      }
     }
   }
   async function notifyRetailerSkuChange(message) {
@@ -2539,6 +2588,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id ||
       d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0)) return;
     // A reply must leave the entire existing drop and its controls intact.
+    // Publish SKU buttons and notify members before any slow cleanup of past posts.
+    await ensureSkuControls(d);
+    await notifyRetailerSkuChange(d);
     if (isNewDropPost(d)) {
       try {
         const retiredSources = new Set();
@@ -2572,8 +2624,6 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         console.error("Discord drop message cleanup:", error.message);
       }
     }
-    await ensureSkuControls(d);
-    await notifyRetailerSkuChange(d);
   }
   function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = []) {
     const summary = skuOwnerDetails(items);
@@ -3390,6 +3440,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             reconnectDelay = 1000;
             discordCommunityStatus.gatewayReady = true;
             discordCommunityStatus.messageContentReady = contentIntentEnabled;
+            console.log("Discord gateway ready:", JSON.stringify({
+              dropChannels: dropChannelIds.size, messageContentIntent: contentIntentEnabled
+            }));
           }
           if (packet.t === "INTERACTION_CREATE") void interaction(packet);
           if (packet.t === "MESSAGE_CREATE") void (async () => {
@@ -3607,16 +3660,22 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function setup() {
     try {
       await provision();
+      // Start the live event listener before potentially slow REST maintenance.
+      await connect();
+      // Historical recovery must never block live message creation.
+      void backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
       await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));
-      await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
-      await syncAll(); await connect(); void verifyAiConnection();
+      await syncAll(); void verifyAiConnection();
     }
     catch (error) { discordCommunityStatus.error = error.message; console.error("Discord community setup:", error.message); setTimeout(setup, 60000).unref?.(); }
   }
   setTimeout(setup, 5000).unref?.();
   setInterval(syncAll, 60000).unref?.();
+  // Self-heal missed retailer posts and deleted buttons, without touching selections.
+  setInterval(() => void repairLatestDropMenus().catch(error =>
+    console.error("Discord SKU controls repair:", error.message)), 2 * 60000).unref?.();
   setInterval(() => {
     if (!discordCommunityStatus.oneOnOneReady) return;
     void withSessions(async () => reconcileSessions(await readSessions())).catch(error => {
