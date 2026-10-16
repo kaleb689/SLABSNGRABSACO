@@ -16,7 +16,7 @@ import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFro
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { managedAccountEmailEvidence, checkoutAssignmentContains, recoverCheckoutAssignmentOwners } from "./discord-checkout-owner-evidence.js";
 import { resolveOwnerVerifiedBackfill } from "./checkout-owner-backfills.js";
-import { resolveOwnerVerifiedScreenshots, verifiedScreenshotMatchStatus } from "./checkout-owner-screenshot-evidence.js";
+import { resolveOwnerVerifiedScreenshots, verifiedScreenshotMatchStatus, ownerVerifiedScreenshotRef } from "./checkout-owner-screenshot-evidence.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
 import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
@@ -38893,8 +38893,9 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
         // Exact email + exact external profile + retailer + date + product set
         // and one uniquely named enabled website account must ALL agree.
         // A conflicting retailer account history prevents recovery.
-        const attribution = regularAttribution ||
-          resolveOwnerVerifiedScreenshots(order, identity, customerAccounts, candidates);
+        const screenshotAttribution = screenshotStatus === "eligible" ?
+          resolveOwnerVerifiedScreenshots(order, identity, customerAccounts, candidates) : null;
+        const attribution = regularAttribution || screenshotAttribution;
         if (attribution) identityStats.matched++;
         else {
           unmatched++;
@@ -38928,7 +38929,10 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
           order,
           sourceChannelId: String(channelId),
           sourceMessageId: String(message.id),
-          attribution
+          attribution,
+          screenshotRef: screenshotStatus === "eligible" ?
+            ownerVerifiedScreenshotRef(order, identity) : null,
+          screenshotOwner: screenshotAttribution?.customerAccountId || null
         });
       }
     }
@@ -38979,6 +38983,29 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
     // matched; ownership affects customer views, never community hits.
     const communityRecords = authoritativeDiscordCheckouts(
       await getSuccessCheckouts(), channels);
+    // Privacy-preserving, per-proof status for the two administrator-confirmed
+    // source screenshots. Do NOT log names, emails, order/message IDs, or the
+    // customer ID. A matching screenshot can legitimately be cancelled or
+    // collide with an already-owned historic order.
+    const screenshotStates = {};
+    for (const proof of imports) {
+      if (!proof.screenshotRef) continue;
+      const saved = communityRecords.find(record =>
+        String(record.id || "") === proof.order.id ||
+        (Array.isArray(record.sourceIds) && record.sourceIds.includes(proof.order.id)));
+      const owner = String(saved?.customerAccountId || "");
+      screenshotStates[proof.screenshotRef] = {
+        saved:Boolean(saved),
+        confirmed:Boolean(saved && confirmedDiscordPurchase(saved)),
+        reviewHold:Boolean(saved && reviewHoldDiscordCheckout(saved)),
+        cancelled:Boolean(saved && cancelledOrder(saved)),
+        linkedToVerifiedOwner:Boolean(owner && owner === String(proof.screenshotOwner || "")),
+        linkedToOtherOwner:Boolean(owner && owner !== String(proof.screenshotOwner || "")),
+        unlinked:Boolean(saved && !owner)
+      };
+    }
+    if (Object.keys(screenshotStates).length)
+      console.log("Verified screenshot checkout states:", JSON.stringify(screenshotStates));
     discordSuccessScan.hitsError = null;
     discordSuccessScan.rejectionReasons = rejectionReasons;
     discordSuccessScan.rejectedSamples = rejectedSamples;
