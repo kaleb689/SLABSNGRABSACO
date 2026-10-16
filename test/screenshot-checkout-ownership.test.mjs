@@ -68,9 +68,18 @@ test("an original, uniquely identified Discord success is valid even without ret
   assert.equal(ownerVerifiedScreenshotRef(numberless,identity,snapshot),snapshot[0].ref);
   assert.equal(resolveOwnerVerifiedScreenshots(numberless,identity,accounts,[],snapshot)?.customerAccountId,"member-a");
   assert.equal(verifiedScreenshotMatchStatus(numberless,identity,accounts,[],snapshot),"eligible");
-  assert.equal(verifiedScreenshotMatchStatus(numberless,identity,[...accounts,{id:"another",firstName:"Sample"}],[],snapshot),"owner_not_unique");
+  assert.equal(verifiedScreenshotMatchStatus(numberless,identity,[...accounts,{id:"another",firstName:"Sample"}],[],snapshot),"owner_ambiguous");
   assert.equal(verifiedScreenshotMatchStatus({...numberless,items:[]},identity,accounts,[],snapshot),"source_not_exact");
   assert.equal(verifiedScreenshotMatchStatus(numberless,identity,accounts,[{retailer:"PKC",email:login,customerAccountId:"other"}],snapshot),"conflicting_account_history");
+});
+
+test("real website signup records resolve membership holder names from adminProfile and paid profile",()=>{
+  const adminRecord={id:"member-a",email:"customer@example.test",adminProfile:{firstName:"Sample"}};
+  const noAdminRecord={id:"member-a",email:"customer@example.test",paidProfileFirstName:"Sample"};
+  assert.equal(resolveOwnerVerifiedScreenshots(order,identity,[adminRecord],[],snapshot)?.customerAccountId,"member-a");
+  assert.equal(resolveOwnerVerifiedScreenshots(order,identity,[noAdminRecord],[],snapshot)?.customerAccountId,"member-a");
+  assert.equal(verifiedScreenshotMatchStatus(order,identity,[{id:"member-a",email:"customer@example.test"}],[],snapshot),"owner_missing");
+  assert.equal(verifiedScreenshotMatchStatus(order,identity,[adminRecord,{id:"other",adminProfile:{firstName:"Sample"}}],[],snapshot),"owner_ambiguous");
 });
 
 test("matching a saved, uniquely assigned retailer login retains its managed profile evidence",()=>{

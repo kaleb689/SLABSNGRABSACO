@@ -60,7 +60,8 @@ export function resolveOwnerVerifiedScreenshots(order, identity, customers = [],
   if (!ref) return null;
   const evidence = approvedScreenshots.find(item => item.ref === ref);
   const eligibleCustomers = customers.filter(account => {
-    const firstName = normalize(account?.firstName || account?.profile?.firstName ||
+    const firstName = normalize(account?.adminProfile?.firstName || account?.profile?.firstName ||
+      account?.paidProfileFirstName || account?.firstName ||
       String(account?.name || account?.displayName || "").split(/\s+/)[0]);
     return Boolean(account?.id) && !account.disabled && hash(firstName) === evidence.firstNameHash;
   });
@@ -98,11 +99,13 @@ export function verifiedScreenshotMatchStatus(order, identity, customers = [], c
   if (!evidence) return null;
   if (!ownerVerifiedScreenshotRef(order, identity, approvedScreenshots)) return "source_not_exact";
   const potentialOwners = customers.filter(account => {
-    const firstName = normalize(account?.firstName || account?.profile?.firstName ||
+    const firstName = normalize(account?.adminProfile?.firstName || account?.profile?.firstName ||
+      account?.paidProfileFirstName || account?.firstName ||
       String(account?.name || account?.displayName || "").split(/\s+/)[0]);
     return Boolean(account?.id) && !account.disabled && hash(firstName) === evidence.firstNameHash;
   });
-  if (potentialOwners.length !== 1) return "owner_not_unique";
+  if (potentialOwners.length !== 1)
+    return potentialOwners.length ? "owner_ambiguous" : "owner_missing";
   const conflicting = candidates.some(item => item.retailer === order.retailer &&
     normalize(item.email) === login && item.customerAccountId &&
     String(item.customerAccountId) !== String(potentialOwners[0].id));
