@@ -16289,18 +16289,30 @@ if (!SUCCESS_DEMO_MODE && typeof EventSource !== "undefined") {
 
 let customerSuccessEvents = null;
 function updateCustomerSuccessEvents() {
-  const panel = document.getElementById("account-tab-success");
-  const visible = !SUCCESS_DEMO_MODE && document.visibilityState === "visible" &&
-    panel && !panel.hidden && document.getElementById("my-profile")?.classList.contains("active");
-  if (!visible && customerSuccessEvents) {
+  // Keep the customer-specific checkout stream connected on every signed-in
+  // page. Checkout events may arrive while Membership/Home/Tracking is open;
+  // invalidate the cached Success view without navigating or scrolling.
+  const enabled = !SUCCESS_DEMO_MODE && !ADMIN_PREVIEW_MODE &&
+    Boolean(state.customer) && document.visibilityState === "visible";
+  if (!enabled && customerSuccessEvents) {
     customerSuccessEvents.close();
     customerSuccessEvents = null;
-  } else if (visible && !customerSuccessEvents && typeof EventSource !== "undefined") {
+  } else if (enabled && !customerSuccessEvents && typeof EventSource !== "undefined") {
     customerSuccessEvents = new EventSource("/api/account/success/events");
-    customerSuccessEvents.addEventListener("checkout", () => loadSuccessDashboard(true));
+    const refreshVisibleSuccess = () => {
+      successState.loaded = false;
+      const panel = document.getElementById("account-tab-success");
+      if (panel && !panel.hidden &&
+          document.getElementById("my-profile")?.classList.contains("active")) {
+        void loadSuccessDashboard(true);
+      }
+    };
+    customerSuccessEvents.addEventListener("checkout", refreshVisibleSuccess);
+    customerSuccessEvents.addEventListener("open", refreshVisibleSuccess);
   }
 }
 
+document.addEventListener("account-session-changed", updateCustomerSuccessEvents);
 document.querySelectorAll("[data-account-tab]").forEach(button => {
   button.addEventListener("click", () => setTimeout(updateCustomerSuccessEvents, 0));
 });
@@ -16314,6 +16326,7 @@ document.addEventListener("visibilitychange", () => {
     if (customerSuccessEvents) loadSuccessDashboard(true);
   }
 });
+updateCustomerSuccessEvents();
 
 /*
   Keep signed-in customer data synchronized in place. This deliberately
