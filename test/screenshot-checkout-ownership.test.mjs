@@ -94,8 +94,12 @@ test("matching a saved, uniquely assigned retailer login retains its managed pro
 test("scan invokes the narrow recovery only after ordinary exact-link attribution",()=>{
   const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
   assert.match(server,/regularAttribution = discordCheckoutAttribution\(order, identity, candidates, approvedAliases\)/);
-  assert.match(server,/regularAttribution \|\|\s*resolveOwnerVerifiedScreenshots\(order, identity, customerAccounts, candidates\)/);
+  assert.match(server,/const screenshotAttribution = screenshotStatus === "eligible" \?/);
+  assert.match(server,/const attribution = regularAttribution \|\| screenshotAttribution;/);
   assert.match(server,/changedCustomerIds\.add\(String\(result\.record\.customerAccountId\)\)/);
+  assert.match(server,/console\.log\("Verified screenshot checkout states:"/);
+  assert.match(server,/linkedToVerifiedOwner:Boolean\(owner && owner === String\(proof\.screenshotOwner/);
+
   assert.match(server,/for \(const accountId of changedCustomerIds\) announceSuccessCheckout\(accountId\)/);
   assert.doesNotMatch(server,/for \(const accountId of new Set\(existing\.map\(record => record\.customerAccountId\)/);
   const app=readFileSync(new URL("../public/app.js",import.meta.url),"utf8");
