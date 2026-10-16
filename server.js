@@ -16,7 +16,7 @@ import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFro
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { managedAccountEmailEvidence, checkoutAssignmentContains, recoverCheckoutAssignmentOwners } from "./discord-checkout-owner-evidence.js";
 import { resolveOwnerVerifiedBackfill } from "./checkout-owner-backfills.js";
-import { resolveOwnerVerifiedScreenshots } from "./checkout-owner-screenshot-evidence.js";
+import { resolveOwnerVerifiedScreenshots, verifiedScreenshotMatchStatus } from "./checkout-owner-screenshot-evidence.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
 import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
@@ -38708,7 +38708,8 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
   // Aggregate diagnostics ONLY. Never log retailer account emails, profile names or order numbers.
   const identityStats = { recognized: 0, withEmail: 0, withProfileName: 0, withOrderNumber: 0,
     withoutIdentity: 0, matched: 0, noEligibleCandidates: 0, unmatchedEmail: 0,
-    unmatchedProfile: 0, ambiguousOwner: 0, eligibleCandidates: 0, totalCandidates: 0 };
+    unmatchedProfile: 0, ambiguousOwner: 0, eligibleCandidates: 0, totalCandidates: 0,
+    screenshotMatches:{ source_not_exact:0, owner_not_unique:0, conflicting_account_history:0, eligible:0 } };
   const sourceStatusCounts = { confirmed: 0, review_hold: 0, cancelled: 0, unverified: 0 };
   const unmatchedLinkShapes = {};
 
@@ -38861,6 +38862,9 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
           (!item.assignment || checkoutAssignmentContains(item.assignment, order.checkoutAt)) &&
           (!item.createdAt || new Date(item.createdAt) <= new Date(order.checkoutAt)));
         identityStats.eligibleCandidates += eligible.length;
+        const screenshotStatus = verifiedScreenshotMatchStatus(order, identity, customerAccounts, candidates);
+        if (screenshotStatus && Object.hasOwn(identityStats.screenshotMatches, screenshotStatus))
+          identityStats.screenshotMatches[screenshotStatus]++;
         const regularAttribution = discordCheckoutAttribution(order, identity, candidates, approvedAliases);
         // Only these two account-administrator-confirmed October 15 source
         // screenshots may recover a checkout without an inventory assignment.

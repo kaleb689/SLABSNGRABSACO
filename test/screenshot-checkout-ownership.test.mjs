@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   ownerVerifiedScreenshotRef,
-  resolveOwnerVerifiedScreenshots
+  resolveOwnerVerifiedScreenshots,
+  verifiedScreenshotMatchStatus
 } from "../checkout-owner-screenshot-evidence.js";
 
 const sha = v => createHash("sha256").update(String(v).toLowerCase()).digest("hex");
@@ -54,13 +55,22 @@ test("screenshot recovery is limited by exact retailer, login, profile, date, st
     [order,{...identity,profileName:"Different profile"}],
     [{...order,checkoutAt:"2026-10-16T17:13:00Z"},identity],
     [{...order,status:"cancelled"},identity],
-    [{...order,orderNumber:""},identity],
     [{...order,items:[items[0]]},identity],
     [{...order,items:items.map((item,i)=>i===0?{...item,name:"Different product"}:item)},identity],
     [{...order,id:"IMAP-UNTRUSTED"},identity]
   ];
   for(const [o,ident] of invalid)
     assert.equal(resolveOwnerVerifiedScreenshots(o,ident,accounts,[],snapshot),null);
+});
+
+test("an original, uniquely identified Discord success is valid even without retailer order number",()=>{
+  const numberless={...order,orderNumber:""};
+  assert.equal(ownerVerifiedScreenshotRef(numberless,identity,snapshot),snapshot[0].ref);
+  assert.equal(resolveOwnerVerifiedScreenshots(numberless,identity,accounts,[],snapshot)?.customerAccountId,"member-a");
+  assert.equal(verifiedScreenshotMatchStatus(numberless,identity,accounts,[],snapshot),"eligible");
+  assert.equal(verifiedScreenshotMatchStatus(numberless,identity,[...accounts,{id:"another",firstName:"Sample"}],[],snapshot),"owner_not_unique");
+  assert.equal(verifiedScreenshotMatchStatus({...numberless,items:[]},identity,accounts,[],snapshot),"source_not_exact");
+  assert.equal(verifiedScreenshotMatchStatus(numberless,identity,accounts,[{retailer:"PKC",email:login,customerAccountId:"other"}],snapshot),"conflicting_account_history");
 });
 
 test("matching a saved, uniquely assigned retailer login retains its managed profile evidence",()=>{

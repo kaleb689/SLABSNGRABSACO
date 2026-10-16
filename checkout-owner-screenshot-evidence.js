@@ -30,7 +30,7 @@ const localDay = timestamp => {
 
 export function ownerVerifiedScreenshotRef(order, identity, approvedScreenshots = screenshots) {
   if (!/^discord:\d{17,22}:\d{17,22}$/.test(String(order?.id || "")) ||
-      order?.retailer !== "PKC" || !order?.orderNumber ||
+      order?.retailer !== "PKC" ||
       order?.status !== "confirmed" || !Array.isArray(order?.items) ||
       !order.items.length) return null;
 
@@ -85,4 +85,26 @@ export function resolveOwnerVerifiedScreenshots(order, identity, customers = [],
     "profileName","profileSlot","managedAccountId","managedAssignmentId","managedAssignmentType"
   ]) if (sameOwner[key] != null) attribution[key] = sameOwner[key];
   return attribution;
+}
+
+// Structural diagnostic only: callers may log the reason count, never the
+// source email, external profile label, or customer name.
+export function verifiedScreenshotMatchStatus(order, identity, customers = [], candidates = [], approvedScreenshots = screenshots) {
+  const login = normalize(identity?.email);
+  const label = normalize(identity?.profileName);
+  if (!login || !label) return null;
+  const evidence = approvedScreenshots.find(item => item.loginHash === hash(login) &&
+    item.profileHash === hash(label));
+  if (!evidence) return null;
+  if (!ownerVerifiedScreenshotRef(order, identity, approvedScreenshots)) return "source_not_exact";
+  const potentialOwners = customers.filter(account => {
+    const firstName = normalize(account?.firstName || account?.profile?.firstName ||
+      String(account?.name || account?.displayName || "").split(/\s+/)[0]);
+    return Boolean(account?.id) && !account.disabled && hash(firstName) === evidence.firstNameHash;
+  });
+  if (potentialOwners.length !== 1) return "owner_not_unique";
+  const conflicting = candidates.some(item => item.retailer === order.retailer &&
+    normalize(item.email) === login && item.customerAccountId &&
+    String(item.customerAccountId) !== String(potentialOwners[0].id));
+  return conflicting ? "conflicting_account_history" : "eligible";
 }
