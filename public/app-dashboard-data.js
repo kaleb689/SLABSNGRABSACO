@@ -70,6 +70,45 @@ export function checkoutRequestRange(days, now = new Date(), range = null) {
 export function metricChanges(previous, next) {
   return Object.fromEntries(['orders', 'transit', 'delivered'].map(key => [key, previous ? next[key] - previous[key] : 0]));
 }
+
+/* Checkpoints span foreground sessions, not repeated 15-second refreshes.
+ * Only hashed source IDs are stored on-device, never retailer login details. */
+export function visitOrderKey(order) {
+  const id = String(order?.id ?? '').trim();
+  const number = String(order?.orderNumber ?? '').trim();
+  const raw = id ? 'id:' + id : number
+    ? 'retailer:' + String(order?.retailer ?? '') + '|number:' + number + '|date:' + String(order?.checkoutAt ?? '')
+    : '';
+  if (!raw) return '';
+  let a = 2166136261, b = 2166136261 ^ 0x9e3779b9;
+  for (let i = 0; i < raw.length; i++) {
+    const code = raw.charCodeAt(i);
+    a = Math.imul(a ^ code, 16777619);
+    b = Math.imul(b ^ code, 2246822519);
+  }
+  return raw.length + ':' + (a >>> 0).toString(36) + ':' + (b >>> 0).toString(36);
+}
+export function visitOrderSnapshot(orders) {
+  const snapshot = Object.create(null);
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const stage = shippingStage(order);
+    const id = visitOrderKey(order);
+    if (id && stage !== 'cancelled') snapshot[id] = stage;
+  }
+  return snapshot;
+}
+export function visitMetricChanges(previous, orders) {
+  const delta = {orders:0, transit:0, delivered:0};
+  if (!previous || typeof previous !== 'object' || Array.isArray(previous)) return delta;
+  const transit = stage => ['shipped','in_transit','out_for_delivery'].includes(stage);
+  for (const [id, stage] of Object.entries(visitOrderSnapshot(orders))) {
+    const last = Object.hasOwn(previous, id) ? previous[id] : null;
+    if (last === null) delta.orders++;
+    if (transit(stage) && !transit(last)) delta.transit++;
+    if (stage === 'delivered' && last !== 'delivered') delta.delivered++;
+  }
+  return delta;
+}
 // Unknown subtotals are not verified charges, even if legacy payloads still
 // contain a numeric orderTotal. Customer and Admin spending must agree.
 export function verifiedOrderSpend(order) {
