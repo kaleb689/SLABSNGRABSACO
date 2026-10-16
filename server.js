@@ -16,6 +16,7 @@ import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFro
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { managedAccountEmailEvidence, checkoutAssignmentContains, recoverCheckoutAssignmentOwners } from "./discord-checkout-owner-evidence.js";
 import { resolveOwnerVerifiedBackfill } from "./checkout-owner-backfills.js";
+import { resolveOwnerVerifiedScreenshots } from "./checkout-owner-screenshot-evidence.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
 import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
@@ -38736,7 +38737,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
     discordSuccessScan.sourceChannels = channels;
     discordSuccessScan.source = (await discordCheckoutSourceChannels()).source;
     discordSuccessScan.webhookSourceFound = webhookSourceFound ?? true;
-    const candidates = await discordCheckoutOwners();
+    const [candidates, customerAccounts] = await Promise.all([discordCheckoutOwners(), getCustomerAccounts()]);
     // Transient exact-email probes reduce to structural COUNTS only. No login,
     // profile, customer identity, source body or order number is logged.
     const [probeManaged, probeAssignments] = quick ? [[], []] : await Promise.all([getManagedAccounts(),managedAssignmentHistory()]);
@@ -38860,7 +38861,14 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
           (!item.assignment || checkoutAssignmentContains(item.assignment, order.checkoutAt)) &&
           (!item.createdAt || new Date(item.createdAt) <= new Date(order.checkoutAt)));
         identityStats.eligibleCandidates += eligible.length;
-        const attribution = discordCheckoutAttribution(order, identity, candidates, approvedAliases);
+        const regularAttribution = discordCheckoutAttribution(order, identity, candidates, approvedAliases);
+        // Only these two account-administrator-confirmed October 15 source
+        // screenshots may recover a checkout without an inventory assignment.
+        // Exact email + exact external profile + retailer + date + product set
+        // and one uniquely named enabled website account must ALL agree.
+        // A conflicting retailer account history prevents recovery.
+        const attribution = regularAttribution ||
+          resolveOwnerVerifiedScreenshots(order, identity, customerAccounts, candidates);
         if (attribution) identityStats.matched++;
         else {
           unmatched++;
@@ -38899,6 +38907,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
       }
     }
     let persistedStoreChanged = false;
+    const changedCustomerIds = new Set();
     await withSuccessStoreLock(async () => {
       const existing = await getSuccessCheckouts();
       const original = JSON.stringify(existing);
@@ -38907,7 +38916,10 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
         if (result.conflict) { conflicts++; skipped++; continue; }
         if (!result.changed) { unchanged++; skipped++; continue; }
         if (result.added) added++; else updated++;
-        if (result.record.customerAccountId) attributed++;
+        if (result.record.customerAccountId) {
+          attributed++;
+          changedCustomerIds.add(String(result.record.customerAccountId));
+        }
       }
       // An earlier webhook for the same order can temporarily alter the
       // in-memory accumulator before a newer one restores the same final
@@ -38919,9 +38931,14 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
           if (error.code !== 'EEXIST') throw error;
         });
         await saveSuccessCheckouts(existing);
-        for (const accountId of new Set(existing.map(record => record.customerAccountId).filter(Boolean))) announceSuccessCheckout(accountId);
-        if (!attributed) for (const listener of publicSuccessListeners) listener.write("event: checkout\ndata: {}\n\n");
-        broadcastLiveDataChange("discord-success");
+        // Only customers whose own checkout changed receive a customer
+        // Success refresh, preventing every member's page from re-rendering.
+        for (const accountId of changedCustomerIds) announceSuccessCheckout(accountId);
+        if (!changedCustomerIds.size)
+          for (const listener of publicSuccessListeners) listener.write("event: checkout\ndata: {}\n\n");
+        // Admin and public community dashboards still update for unassigned
+        // hits; customer Success SSE already targets the matching owner.
+        sendLiveDataEvent(adminLiveDataListeners, "discord-success");
       }
     });
     // Advance the historical Discord pagination cursor ONLY after the
