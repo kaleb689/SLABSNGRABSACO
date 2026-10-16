@@ -38709,7 +38709,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
   const identityStats = { recognized: 0, withEmail: 0, withProfileName: 0, withOrderNumber: 0,
     withoutIdentity: 0, matched: 0, noEligibleCandidates: 0, unmatchedEmail: 0,
     unmatchedProfile: 0, ambiguousOwner: 0, eligibleCandidates: 0, totalCandidates: 0,
-    screenshotMatches:{ source_not_exact:0, owner_not_unique:0, conflicting_account_history:0, eligible:0 } };
+    screenshotMatches:{ source_not_exact:0, owner_missing:0, owner_ambiguous:0, conflicting_account_history:0, eligible:0 } };
   const sourceStatusCounts = { confirmed: 0, review_hold: 0, cancelled: 0, unverified: 0 };
   const unmatchedLinkShapes = {};
 
@@ -38738,7 +38738,29 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
     discordSuccessScan.sourceChannels = channels;
     discordSuccessScan.source = (await discordCheckoutSourceChannels()).source;
     discordSuccessScan.webhookSourceFound = webhookSourceFound ?? true;
-    const [candidates, customerAccounts] = await Promise.all([discordCheckoutOwners(), getCustomerAccounts()]);
+    const [candidates, registeredCustomers, paidRaw] = await Promise.all([
+      discordCheckoutOwners(), getCustomerAccounts(), readJson(PAID_FILE, [])
+    ]);
+    // Website signup records store email, not the customer's first name.
+    // The verified first/last name is saved on adminProfile or on a paid
+    // membership profile. Resolve only the ORIGINAL membership's own
+    // customerAccountId (or exact registered signup email for legacy paid
+    // rows), never a retailer checkout email or shipping-jig name.
+    const accountBySignupEmail = new Map(registeredCustomers.map(account =>
+      [normalizeEmail(account.email), String(account.id)]).filter(item => item[0]));
+    const paidFirstNames = new Map();
+    for (const paid of Array.isArray(paidRaw) ? paidRaw : []) {
+      const id = String(paid.customerAccountId ||
+        accountBySignupEmail.get(normalizeEmail(paid.profile?.email)) || "");
+      const name = clean(paid.profile?.firstName, 100).trim();
+      if (!id || !name) continue;
+      if (!paidFirstNames.has(id)) paidFirstNames.set(id, new Set());
+      paidFirstNames.get(id).add(name.toLowerCase());
+    }
+    const customerAccounts = registeredCustomers.map(account => {
+      const names = paidFirstNames.get(String(account.id)) || new Set();
+      return {...account, paidProfileFirstName: names.size === 1 ? [...names][0] : ""};
+    });
     // Transient exact-email probes reduce to structural COUNTS only. No login,
     // profile, customer identity, source body or order number is logged.
     const [probeManaged, probeAssignments] = quick ? [[], []] : await Promise.all([getManagedAccounts(),managedAssignmentHistory()]);
