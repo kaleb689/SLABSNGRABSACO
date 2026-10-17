@@ -49,10 +49,11 @@ test("Closing parent immediately closes all nested details and saved keys", () =
   assert.ok([...store.entries()].some(([key,value])=>key.includes("customer-a")&&value==="closed"));
 });
 
-test("Live Admin does not redraw unchanged lists, and iPad blocks redraw while details are open",()=>{
+test("Live Admin does not redraw unchanged lists, and iPad updates without closing open details",()=>{
   assert.match(admin,/adminPaidRowsFingerprint === nextPaidFingerprint/);
   assert.match(admin,/adminLastActivationFingerprint/);
   assert.match(admin,/await load\(\{ background: true \}\)/);
-  assert.match(mobile,/#content details\[open\]/);
+  assert.match(mobile,/return mobileFetchBlocked\(\);/);
+  assert.match(mobile,/successOpenOrderCards/);
   assert.match(reset,/parent\.querySelectorAll\("details\[open\]"\)/);
 });
