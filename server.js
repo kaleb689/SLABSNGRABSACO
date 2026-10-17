@@ -19,6 +19,7 @@ import { resolveOwnerVerifiedBackfill } from "./checkout-owner-backfills.js";
 import { resolveOwnerVerifiedScreenshots, verifiedScreenshotMatchStatus } from "./checkout-owner-screenshot-evidence.js";
 import { verifiedSameDayCheckoutOwner } from "./checkout-owner-verified-day.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
+import { isModuleUnlockNoticeMessage, isModuleUnlockNoticeRecord, isModuleUnlockNoticeText } from "./checkout-status-notice.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
 import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
@@ -37955,6 +37956,7 @@ function visibleDiscordSuccessRecords(records, excludedChannelId = null, authori
   return authoritativeDiscordCheckouts(records, authorizedChannelIds)
     .filter(record =>
       isDiscordSuccessRecord(record) &&
+      !isModuleUnlockNoticeRecord(record) &&
       (!excluded || discordRecordChannelId(record) !== excluded)
     )
     .map(record => {
@@ -38101,6 +38103,9 @@ async function discordCheckoutSourceChannels() {
 function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
   // Diagnostics expose only reason categories, never webhook values or identities.
   const reject = reason => { if (diagnostics) diagnostics.reason = reason; return null; };
+  // A successful MODULE UNLOCK is a bot state change, not a retailer checkout.
+  // Product photos, SKUs and prices remain OPTIONAL for genuine checkouts.
+  if (isModuleUnlockNoticeMessage(message)) return reject("module_unlock_notice");
   const embeds = Array.isArray(message.embeds) ? message.embeds : [];
   const messageText = String(message.content || "");
   const isCheckout = value => /success|checkout|checked\s*out|order confirm|order cancel|order review|order on hold|cancellation/i.test(String(value || ""));
@@ -39719,7 +39724,7 @@ function isPublicSuccessProduct(name) {
 // as a product word: Pokemon Trading Card Game is legitimate merchandise.
 function isSafeDiscordCheckoutProductName(name) {
   const value = publicSuccessProductName(name);
-  return value.length >= 3 &&
+  return value.length >= 3 && !isModuleUnlockNoticeText(value) &&
     !/@|\b(?:order\s*(?:number|id|#)|address|phone|email|account|password|cvv|security\s*code|card\s*(?:number|no\.?|#)|(?:credit|debit)\s+card|ship(?:ping)?\s+to|username)\b/i.test(value) &&
     !/(?:\d[ -]*?){13,19}/.test(value);
 }
@@ -40198,15 +40203,15 @@ function safeSuccessItem(item) {
 // Review holds are visible to the customer with a warning, but are never
 // counted as a confirmed purchase or as money definitively spent.
 function confirmedDiscordPurchase(record) {
-  return !cancelledOrder(record) &&
+  return !isModuleUnlockNoticeRecord(record) && !cancelledOrder(record) &&
     /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(String(record?.status || ""));
 }
 function customerCheckoutPurchase(record) {
   // Customer order value includes placed preorders and review holds until cancelled.
-  return !cancelledOrder(record);
+  return !isModuleUnlockNoticeRecord(record) && !cancelledOrder(record);
 }
 function reviewHoldDiscordCheckout(record) {
-  return !cancelledOrder(record) && String(record?.status || "") === "review_hold";
+  return !isModuleUnlockNoticeRecord(record) && !cancelledOrder(record) && String(record?.status || "") === "review_hold";
 }
 function safeSuccessCheckout(
   record
