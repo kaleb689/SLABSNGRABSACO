@@ -65,5 +65,6 @@ test("Admin and customer paths expose placed values separately from payments",()
   assert.match(mobile,/TOTAL CHECKOUT VALUE/);
   assert.match(mobile,/Order value unavailable from checkout source/);
   assert.doesNotMatch(mobile,/known\?dollars\(order.orderTotal\):"\$0.00"/);
-  assert.match(mobile,/return mobileFetchBlocked\(\);/);
+  assert.match(mobile,/tab!=="success"/);
+  assert.match(mobile,/#content details\[open\]/);
 });
