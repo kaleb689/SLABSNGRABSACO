@@ -36,7 +36,7 @@ test("Mobile Admin keeps bundled items inside one actual checkout, does not pric
   assert.match(markup,/Tin/);
   assert.match(markup,/62\.51/);
   assert.doesNotMatch(markup,/999\.99/);
-  assert.match(markup,/Amount awaiting receipt verification/);
+  assert.match(markup,/Order value unavailable from checkout source/);
   assert.match(markup,/3 items/);
   assert.match(markup,/Mike paid 1/);
 });
@@ -87,7 +87,7 @@ test("Full-status-color outline wraps all sides of customer recent order and tra
   for(const file of [app,site,admin,secure]){
     assert.match(file,/sng-premium-controls\.css\?v=2/);
   }
-  assert.ok(app.includes("/admin-mobile.js?v=20261013-stable-1"));
+  assert.ok(app.includes("/admin-mobile.js?v=20261016-order-value-1"));
 });
 
 test("Admin overview keeps membership KPIs visible and removes duplicate sections",()=>{
