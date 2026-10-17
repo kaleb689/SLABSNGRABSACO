@@ -26,7 +26,7 @@
   }
   const hasValue = row => checkoutValue(row) > 0;
   function quantity(row) {
-    return Array.isArray(row?.items) ? row.items.reduce((sum, item) => sum + Math.max(1, Number(item?.quantity) || 1), 0) : 0;
+    return Array.isArray(row?.items) ? row.items.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item?.quantity) || 0)), 0) : 0;
   }
   function selectedWindow(now = new Date()) {
     if (period === "all") return {start:0,end:Infinity,label:"All time"};
@@ -86,7 +86,7 @@
       const name = String(item?.name || item?.title || item?.product || "Product");
       const key = name.toLowerCase();
       const current = map.get(key) || {name, qty:0, image:item?.image || item?.imageUrl || ""};
-      current.qty += Math.max(1, Number(item?.quantity) || 1); if (!current.image) current.image = item?.image || item?.imageUrl || ""; map.set(key,current);
+      current.qty += Math.max(0, Math.floor(Number(item?.quantity) || 0)); if (!current.image) current.image = item?.image || item?.imageUrl || ""; map.set(key,current);
     }
     $("products").innerHTML = map.size ? `<div class="products">${[...map.values()].sort((a,b)=>b.qty-a.qty).map(item => `<div class="product">${item.image?`<img src="${esc(item.image)}" alt="">`:'<div class="product-placeholder">SNG</div>'}<div><strong>${esc(item.name)}</strong><small>Purchased quantity</small></div><span class="pill">× ${item.qty}</span></div>`).join("")}</div>` : '<p>No products in this period.</p>';
   }
