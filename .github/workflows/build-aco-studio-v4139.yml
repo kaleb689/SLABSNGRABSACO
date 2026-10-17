@@ -1,4 +1,4 @@
-name: ACO Studio - Personal Jigs navigation and export repair
+name: ACO Studio - Profile libraries and duplicate repair
 on:
   push:
     branches: [build/aco-studio-macos-v4133-20261015]
@@ -7,6 +7,7 @@ on:
       - '.github/aco-studio-build/personal-import/**'
       - '.github/aco-studio-build/email-vaults/**'
       - '.github/aco-studio-build/completed-profiles/**'
+      - '.github/aco-studio-build/profile-library/**'
       - '.github/aco-studio-build/native-updater/**'
       - '.github/aco-studio-build/personal-navigation/**'
       - '.github/aco-studio-build/release-v4139.cjs'
@@ -18,7 +19,7 @@ concurrency:
   group: aco-studio-workshop-release
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.13'
+  ACO_VERSION: '4.13.14'
 jobs:
   mac:
     name: ${{ matrix.arch }} navigation, installer, update and rollback
@@ -94,6 +95,8 @@ jobs:
         run: node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
       - name: Add completed profile sections and authorized full card views
         run: node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+      - name: Add scoped profile library and linked customer preparation
+        run: node .github/aco-studio-build/profile-library/apply.cjs build-src/App
       - name: Install build dependencies
         working-directory: build-src/App
         run: npm install --no-audit --no-fund
@@ -206,6 +209,7 @@ jobs:
             ~/Library/Application Support/SLABSNGRABSACO ACO Studio - Owner/aco-native-update-status.json
           if-no-files-found: ignore
           retention-days: 3
+
   publish:
     name: Publish installers and advance the tested in-app update feed
     needs: mac
@@ -250,6 +254,7 @@ jobs:
           MODE="$(cat installers/release-mode.txt)"
           TAG="aco-studio-v${ACO_VERSION}-macos-${MODE}"
           cat > installers/RELEASE-NOTES.md <<'NOTES'
+          Customer Jigs and Personal Jigs each have their own Profiles tab. Personal tools sit below all customer tools, with dividers before Personal and Settings. Retailer/group card views include Completed and In Progress sections, full payment details, and separate Profile/Payment editing tabs. Import preview flags duplicate emails, names and cards; repairs draw unused emails and cards from the same owner’s vault. Completed profiles export to Shikari CSV for Target or Valor JSON for Walmart and Pokémon Center. Linked customer accounts prepare profiles using only that customer’s submitted details and saved retailer rules. Sync is idempotent, preserves local edits for review, and keeps incomplete profiles out of export. Live customer sync requires an authenticated Studio session.
           Completed Profiles now groups profiles after a saved jig and complete email, names, shipping/billing addresses, phone numbers, card number/cardholder and expiration. In Progress shows missing details and profiles return there if required details are removed. Pool counters show unused emails/cards. Full card numbers and expiration are shown in authorized vault/profile detail views; private-lock cleanup clears those views. Customer and private vault boundaries are preserved.
           New Email Vault / Create Profiles button: import TXT, CSV or JSON emails into an explicit private or customer vault and retailer. Duplicate checks are case-insensitive within the retailer, including emails already assigned in another local vault; the same email is allowed for different retailers. Generation selects unused emails, cards and addresses only from that vault, saves and consumes the email atomically, balances selected addresses/cards, and optionally randomizes matching shipping/billing names. Concurrent creation cannot reuse an email. Existing profile and payment vault files and app identity are preserved.
           Saved Personal-vault profiles load into Personal Jigs, grouped by retailer. Import preview and final write checks allow matching emails across different retailer pools while blocking duplicates within the selected retailer pool or the same import batch.
@@ -262,7 +267,7 @@ jobs:
             test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$GITHUB_SHA"
             gh release upload "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ACO Studio ${ACO_VERSION} - Completed profiles and full card views (${MODE})" --notes-file installers/RELEASE-NOTES.md --prerelease
+            gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ACO Studio ${ACO_VERSION} - Personal and customer profile libraries (${MODE})" --notes-file installers/RELEASE-NOTES.md --prerelease
           fi
           if gh release view aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release download aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" --pattern mac-update.json --dir previous-feed
