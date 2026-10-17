@@ -70,7 +70,7 @@ test("Admin Success renders period-matched unmatched, customer products and hit 
   assert.match(html,/Which accounts checked out/);
   assert.match(html,/Target paid profile 1/);
   assert.match(html,/Ascended Heroes Tin/);
-  assert.match(html,/2 confirmed orders/);
+  assert.match(html,/2 non-cancelled orders/);
   // The new all-orders scope must be discoverable, while unmatched source
   // records are never mixed into individual customer ownership reports.
   assert.match(html,/Unmatched confirmed checkouts/);

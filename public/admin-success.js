@@ -17,8 +17,16 @@
   function paid(row) {
     return row?.orderTotalKnown === true && Number(row?.orderTotal) > 0 ? Number(row.orderTotal) : 0;
   }
+  // Purchase value is recorded when the retailer places a preorder, even if
+  // no money has been captured yet. Actual charges remain a separate metric.
+  function checkoutValue(row) {
+    const value = Number(row?.checkoutValue);
+    return row?.checkoutValueKnown === true && Number.isFinite(value) && value > 0
+      ? Math.round(value * 100) / 100 : paid(row);
+  }
+  const hasValue = row => checkoutValue(row) > 0;
   function quantity(row) {
-    return Array.isArray(row?.items) ? row.items.reduce((sum, item) => sum + Math.max(1, Number(item?.quantity) || 1), 0) : 0;
+    return Array.isArray(row?.items) ? row.items.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item?.quantity) || 0)), 0) : 0;
   }
   function selectedWindow(now = new Date()) {
     if (period === "all") return {start:0,end:Infinity,label:"All time"};
@@ -58,7 +66,7 @@
     for (const row of Array.isArray(report.records) ? report.records : []) {
       if (row?.customerAccountId) names.set(String(row.customerAccountId), String(row.customerName || row.customerEmail || "Customer"));
     }
-    select.innerHTML = '<option value="all">All confirmed checkouts</option><option value="linked">Linked customer checkouts</option><option value="unmatched">Unmatched community checkouts</option>' +
+    select.innerHTML = '<option value="all">All non-cancelled checkouts</option><option value="linked">Linked customer checkouts</option><option value="unmatched">Unmatched community checkouts</option>' +
       [...names.entries()].sort((a,b)=>a[1].localeCompare(b[1])).map(([id,name]) => `<option value="customer:${esc(id)}">${esc(name)}</option>`).join("");
     if ([...select.options].some(option => option.value === scope)) select.value = scope;
     else { scope = "all"; select.value = scope; }
@@ -68,7 +76,7 @@
     for (const row of rows) {
       const name = String(row?.retailer || row?.store || "Unknown retailer");
       const current = map.get(name) || {orders:0, spend:0, items:0};
-      current.orders += 1; current.spend += paid(row); current.items += quantity(row); map.set(name,current);
+      current.orders += 1; current.spend += checkoutValue(row); current.items += quantity(row); map.set(name,current);
     }
     $("retailers").innerHTML = map.size ? `<div class="rows">${[...map.entries()].sort((a,b)=>b[1].orders-a[1].orders).map(([name,x]) => `<div class="line"><div><strong>${esc(name)}</strong><small>${x.orders} order${x.orders===1?"":"s"} · ${x.items} item${x.items===1?"":"s"}</small></div><span class="money">${money(x.spend)}</span></div>`).join("")}</div>` : '<p>No retailer orders in this period.</p>';
   }
@@ -78,7 +86,7 @@
       const name = String(item?.name || item?.title || item?.product || "Product");
       const key = name.toLowerCase();
       const current = map.get(key) || {name, qty:0, image:item?.image || item?.imageUrl || ""};
-      current.qty += Math.max(1, Number(item?.quantity) || 1); if (!current.image) current.image = item?.image || item?.imageUrl || ""; map.set(key,current);
+      current.qty += Math.max(0, Math.floor(Number(item?.quantity) || 0)); if (!current.image) current.image = item?.image || item?.imageUrl || ""; map.set(key,current);
     }
     $("products").innerHTML = map.size ? `<div class="products">${[...map.values()].sort((a,b)=>b.qty-a.qty).map(item => `<div class="product">${item.image?`<img src="${esc(item.image)}" alt="">`:'<div class="product-placeholder">SNG</div>'}<div><strong>${esc(item.name)}</strong><small>Purchased quantity</small></div><span class="pill">× ${item.qty}</span></div>`).join("")}</div>` : '<p>No products in this period.</p>';
   }
@@ -91,18 +99,18 @@
       current.rows.push(row); map.set(id,current);
     }
     $("customers").innerHTML = map.size ? [...map.entries()].map(([id,user]) => {
-      const spend = user.rows.reduce((sum,row)=>sum+paid(row),0);
+      const spend = user.rows.reduce((sum,row)=>sum+checkoutValue(row),0);
       const items = user.rows.reduce((sum,row)=>sum+quantity(row),0);
-      const details = user.rows.slice().sort((a,b)=>recordDate(b)-recordDate(a)).slice(0,40).map(row => `<div class="detail-item"><strong>${esc(row?.retailer || row?.store || "Retailer")}</strong> · ${new Date(recordDate(row)).toLocaleString()} · ${row?.orderTotalKnown === true ? money(row.orderTotal) : "price pending"}</div>`).join("");
-      return `<details class="user-card"><summary><span>${esc(user.name)}</span><span class="pill">${user.rows.length} orders</span></summary><div class="body"><div class="user-metrics"><div><small>Confirmed orders</small><strong>${user.rows.length}</strong></div><div><small>Verified spend</small><strong>${money(spend)}</strong></div><div><small>Items</small><strong>${items}</strong></div></div><div class="detail-list">${details}</div></div></details>`;
+      const details = user.rows.slice().sort((a,b)=>recordDate(b)-recordDate(a)).slice(0,40).map(row => `<div class="detail-item"><strong>${esc(row?.retailer || row?.store || "Retailer")}</strong> · ${new Date(recordDate(row)).toLocaleString()} · ${hasValue(row) ? money(checkoutValue(row)) : "value unavailable"}</div>`).join("");
+      return `<details class="user-card"><summary><span>${esc(user.name)}</span><span class="pill">${user.rows.length} orders</span></summary><div class="body"><div class="user-metrics"><div><small>Confirmed orders</small><strong>${user.rows.length}</strong></div><div><small>Checkout value</small><strong>${money(spend)}</strong></div><div><small>Items</small><strong>${items}</strong></div></div><div class="detail-list">${details}</div></div></details>`;
     }).join("") : '<p>No linked customer orders in this period.</p>';
   }
   function render() {
     const rows = visibleRows();
-    const spend = rows.reduce((sum,row)=>sum+paid(row),0);
-    const unknown = rows.filter(row => row?.orderTotalKnown !== true).length;
-    $("period-stats").innerHTML = stat("Confirmed checkouts", rows.length) + stat("Verified paid total", money(spend)) + stat("Items purchased", rows.reduce((sum,row)=>sum+quantity(row),0)) + stat("Prices pending", unknown);
-    $("period-caption").textContent = `${selectedWindow().label}. Only verified retailer totals are included in spend.`;
+    const spend = rows.reduce((sum,row)=>sum+checkoutValue(row),0);
+    const unknown = rows.filter(row => !hasValue(row)).length;
+    $("period-stats").innerHTML = stat("Non-cancelled orders", rows.length) + stat("Checkout value", money(spend)) + stat("Verified charges", money(rows.reduce((sum,row)=>sum+paid(row),0))) + stat("Items purchased", rows.reduce((sum,row)=>sum+quantity(row),0)) + stat("Values unavailable", unknown);
+    $("period-caption").textContent = `${selectedWindow().label}. Checkout value includes placed preorders. Verified charges are tracked separately; cancelled orders are excluded.`;
     renderRetailers(rows); renderProducts(rows); renderCustomers(rows);
     document.querySelectorAll("[data-period]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.period === String(period))));
     $("customDates").hidden = period !== "custom";
@@ -116,7 +124,7 @@
       report = {...json, records:Array.isArray(json?.records)?json.records:[], communityRecords:Array.isArray(json?.communityRecords)?json.communityRecords:[]};
       const all = report.communityRecords.length ? report.communityRecords : report.records;
       const liveOrders = all.length;
-      const liveSpend = all.reduce((sum,row)=>sum+paid(row),0);
+      const liveSpend = all.reduce((sum,row)=>sum+checkoutValue(row),0);
       $("liveOrders").textContent = String(liveOrders);
       $("combinedSpend").textContent = money(historicalSpend + liveSpend);
       rebuildScope(); render();
