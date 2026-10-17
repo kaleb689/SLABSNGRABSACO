@@ -53,7 +53,8 @@ test("Live Admin does not redraw unchanged lists, and iPad updates without closi
   assert.match(admin,/adminPaidRowsFingerprint === nextPaidFingerprint/);
   assert.match(admin,/adminLastActivationFingerprint/);
   assert.match(admin,/await load\(\{ background: true \}\)/);
-  assert.match(mobile,/return mobileFetchBlocked\(\);/);
+  assert.match(mobile,/tab!=="success"/);
+  assert.match(mobile,/#content details\[open\]/);
   assert.match(mobile,/successOpenOrderCards/);
   assert.match(reset,/parent\.querySelectorAll\("details\[open\]"\)/);
 });
