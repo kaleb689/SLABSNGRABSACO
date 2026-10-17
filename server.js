@@ -17,6 +17,7 @@ import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checko
 import { managedAccountEmailEvidence, checkoutAssignmentContains, recoverCheckoutAssignmentOwners } from "./discord-checkout-owner-evidence.js";
 import { resolveOwnerVerifiedBackfill } from "./checkout-owner-backfills.js";
 import { resolveOwnerVerifiedScreenshots, verifiedScreenshotMatchStatus } from "./checkout-owner-screenshot-evidence.js";
+import { verifiedSameDayCheckoutOwner } from "./checkout-owner-verified-day.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
 import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
@@ -38694,7 +38695,9 @@ function queueDiscordSuccessScan(delay = 75) {
       return;
     }
 
-    await scanDiscordSuccessChannel();
+    // The Discord MESSAGE_CREATE event takes the fast path. A separate
+    // minute audit still recovers older posts and missing hits.
+    await scanDiscordSuccessChannel({ quick: true });
   }, Math.max(0, Number(delay) || 0));
 
   timer.unref?.();
@@ -38738,8 +38741,8 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
     discordSuccessScan.sourceChannels = channels;
     discordSuccessScan.source = (await discordCheckoutSourceChannels()).source;
     discordSuccessScan.webhookSourceFound = webhookSourceFound ?? true;
-    const [candidates, registeredCustomers, paidRaw] = await Promise.all([
-      discordCheckoutOwners(), getCustomerAccounts(), readJson(PAID_FILE, [])
+    const [candidates, registeredCustomers, paidRaw, verifiedPastOrders] = await Promise.all([
+      discordCheckoutOwners(), getCustomerAccounts(), readJson(PAID_FILE, []), getSuccessCheckouts()
     ]);
     // Website signup records store email, not the customer's first name.
     // The verified first/last name is saved on adminProfile or on a paid
@@ -38894,7 +38897,9 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
         // and one uniquely named enabled website account must ALL agree.
         // A conflicting retailer account history prevents recovery.
         const attribution = regularAttribution ||
-          resolveOwnerVerifiedScreenshots(order, identity, customerAccounts, candidates);
+          resolveOwnerVerifiedScreenshots(order, identity, customerAccounts, candidates) ||
+          verifiedSameDayCheckoutOwner(order, identity, verifiedPastOrders, candidates,
+            discordCheckoutCandidateEligible);
         if (attribution) identityStats.matched++;
         else {
           unmatched++;
@@ -39199,6 +39204,9 @@ app.post("/api/admin/checkout-link-diagnostics/assign", requireAdmin, async (req
       broadcastLiveDataChange("admin-verified-discord-checkout-owner");
       return {status:200,ok:true,linked:1,retailer:order.retailer};
     });
+    // A single verified original checkout can also restore other same-day
+    // posts with the same retailer login, subject to owner conflict checks.
+    if (result.ok && result.linked) queueDiscordSuccessScan(50);
     return res.status(result.status).json(result);
   }catch(error){
     console.error("Verify Discord checkout owner:",error?.code||error?.name||"verification_failed");
@@ -39422,7 +39430,10 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     // including unmatched purchases. Individual Admin Success records and
     // period/customer/product/account analytics include ONLY checkout orders
     // explicitly attributed to an existing website customer account.
-    const confirmed = allRecords.filter(confirmedDiscordPurchase);
+    // A placed order (including a preorder or review hold) remains in the
+    // customer/admin checkout ledger until the order is cancelled.
+    const confirmed = allRecords.filter(record =>
+      confirmedDiscordPurchase(record) || reviewHoldDiscordCheckout(record));
     const customersById = new Map(customers.map(item => [String(item.id), item]));
     const unassignedConfirmed = confirmed.filter(record =>
       !record.customerAccountId || !customersById.has(String(record.customerAccountId)));
@@ -39448,6 +39459,11 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
         return {
           retailer: safe.retailer,
           checkoutAt: safe.checkoutAt,
+          status: safe.status,
+          orderNumber: safe.orderNumber,
+          checkoutValue: safe.checkoutValue,
+          checkoutValueKnown: safe.checkoutValueKnown,
+          checkoutValueBasis: safe.checkoutValueBasis,
           orderTotal: safe.orderTotal,
           orderTotalKnown: safe.orderTotalKnown,
           itemSubtotal: checkoutItemSubtotal(record),
@@ -39469,7 +39485,9 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     const communityRecords = confirmed.map(record => {
       const safe = safeSuccessCheckout(record);
       return {
-        retailer: safe.retailer, checkoutAt: safe.checkoutAt,
+        retailer: safe.retailer, checkoutAt: safe.checkoutAt, status: safe.status,
+        checkoutValue: safe.checkoutValue, checkoutValueKnown: safe.checkoutValueKnown,
+        checkoutValueBasis: safe.checkoutValueBasis,
         orderTotal: safe.orderTotal, orderTotalKnown: safe.orderTotalKnown,
         itemSubtotal: checkoutItemSubtotal(record),
         itemCount: safe.itemCount,
@@ -39491,6 +39509,12 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
       unknownPrices: confirmed.filter(record =>
         checkoutPaidAmount(record) === null).length
     });
+    // Keep the old verified-paid total for audit, while checkout value
+    // includes priced preorders and review holds from the moment of placement.
+    communityTotals.totalCheckoutValue = Math.round((communityTotals.historicalSpent +
+      confirmed.reduce((sum, record) => sum + (checkoutOrderValue(record).amount ?? 0), 0)) * 100) / 100;
+    communityTotals.checkoutValuePending = confirmed.filter(record =>
+      checkoutOrderValue(record).amount === null).length;
     return res.json({
       ok:true,records,communityRecords,unmatchedCount,unmatchedRecent,
       sourceCheckedAt: discordSuccessScan.checkedAt || null,communityTotals,
