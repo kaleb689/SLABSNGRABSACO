@@ -52,7 +52,17 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
   const incomingItems = Array.isArray(order.items) ? order.items : [];
   const priorItems = Array.isArray(prior.items) ? prior.items : [];
   const preservePriorItems = informative(priorItems) && !informative(incomingItems);
-  const effectiveItems = preservePriorItems ? priorItems : incomingItems;
+  // Some success/status webhooks repeat only a subset of the products in
+  // one retailer order. Preserve previously reported product lines instead
+  // of silently dropping an Ultra Premium Collection or another SKU.
+  // Identical product names are never counted twice on a repeated hook.
+  const incomingNames = new Set(incomingItems.map(item => String(item?.name || "").trim().toLowerCase()));
+  const priorMissingItems = !preservePriorItems && informative(incomingItems)
+    ? priorItems.filter(item => Number(item?.quantity) > 0 &&
+        String(item?.name || "").trim().toLowerCase() !== "product details unavailable" &&
+        !incomingNames.has(String(item.name || "").trim().toLowerCase()))
+    : [];
+  const effectiveItems = preservePriorItems ? priorItems : [...incomingItems, ...priorMissingItems];
   let placedAt = prior.checkoutAt || order.checkoutAt;
   // A cancellation-only webhook is not proof of the original placement
   // time. A later-discovered older GREEN/ORANGE hook supplies that time.
@@ -89,6 +99,25 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
     status: nextStatus,
     sourceIds: [...new Set([...matches.flatMap(record => [record.id, ...(record.sourceIds || [])]), order.id])]
   };
+  // A partial webhook may carry only one product's subtotal. For any order
+  // without an explicit retailer total, recompute the subtotal from the
+  // preserved product lines when every price and quantity is known.
+  if (merged.orderTotalBasis === "item_subtotal") {
+    let cents = 0, complete = merged.items.length > 0;
+    for (const item of merged.items) {
+      const price = Number(item.price), qty = Number(item.quantity);
+      if (!Number.isFinite(price) || price <= 0 || !Number.isSafeInteger(qty) || qty <= 0) {
+        complete = false; break;
+      }
+      cents += Math.round(price * 100) * qty;
+    }
+    if (complete && Number.isSafeInteger(cents) && cents > 0 && cents <= 100000000)
+      merged.orderTotal = cents / 100;
+  }
+  // Item count is derived from the final preserved line items, not the last
+  // webhook's sometimes-incomplete count field.
+  merged.itemCount = merged.items.reduce((sum, item) =>
+    sum + Math.max(0, Math.floor(Number(item?.quantity) || 0)), 0);
   const changed = matches.length !== 1 || JSON.stringify(merged) !== JSON.stringify(prior);
   if (changed) {
     const index = matches.length ? records.indexOf(matches[0]) : records.length;
