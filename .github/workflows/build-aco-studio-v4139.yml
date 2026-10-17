@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/aco-studio-build/profile-workshop/**'
       - '.github/aco-studio-build/personal-import/**'
+      - '.github/aco-studio-build/email-vaults/**'
       - '.github/aco-studio-build/native-updater/**'
       - '.github/aco-studio-build/personal-navigation/**'
       - '.github/aco-studio-build/release-v4139.cjs'
@@ -16,7 +17,7 @@ concurrency:
   group: aco-studio-workshop-release
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.11'
+  ACO_VERSION: '4.13.12'
 jobs:
   mac:
     name: ${{ matrix.arch }} navigation, installer, update and rollback
@@ -88,6 +89,8 @@ jobs:
           set -euo pipefail
           python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
           node navigation-overlay/apply.cjs build-src/App
+      - name: Add retailer email banks and same-vault profile generation
+        run: node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
       - name: Install build dependencies
         working-directory: build-src/App
         run: npm install --no-audit --no-fund
@@ -123,7 +126,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$ACO_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = 'com.slabsngrabsaco.jigstudio.owner'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$APP/Contents/Info.plist")" = 'ACO Studio'
-          for file in personal-profile-import.js profile-workshop-service.js profile-workshop-ui.js jig-field-core.js profile-draft-core.js mac-full-updates.js mac-full-update.sh mac-update-archive.js mac-updates-ui.js workspace-core.js personal-navigation.js personal-navigation.css; do
+          for file in personal-profile-import.js profile-workshop-service.js profile-workshop-ui.js jig-field-core.js profile-draft-core.js mac-full-updates.js mac-full-update.sh mac-update-archive.js mac-updates-ui.js workspace-core.js personal-navigation.js personal-navigation.css email-vault-ui.js; do
             test -f "$APP/Contents/Resources/app/$file"
           done
           grep -Fq 'profileWorkshop:Object.freeze' "$APP/Contents/Resources/app/preload.js"
@@ -222,7 +225,7 @@ jobs:
           modes=[(root/f'signing-{a}.txt').read_text().strip() for a in ('arm64','x64')]
           assert modes[0]==modes[1] and modes[0] in ('adhoc','developer-id')
           mode=modes[0];suffix='adhoc' if mode=='adhoc' else 'notarized'
-          manifest={'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Saved Personal profiles load into Personal Jigs by retailer. Duplicate email checks apply to the selected retailer pool and import batch; matching emails in different retailers are allowed. Existing vault separation and updater retained.','platforms':{}}
+          manifest={'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Import emails into a private or individual customer vault by retailer. Skip duplicates and used emails. Create profiles atomically from unused emails and same-vault saved cards and addresses. Existing vaults and updater retained.','platforms':{}}
           sums=[]
           for arch in ('arm64','x64'):
               results=json.loads((root/f'update-test-{arch}.json').read_text())
@@ -244,6 +247,7 @@ jobs:
           MODE="$(cat installers/release-mode.txt)"
           TAG="aco-studio-v${ACO_VERSION}-macos-${MODE}"
           cat > installers/RELEASE-NOTES.md <<'NOTES'
+          New Email Vault / Create Profiles button: import TXT, CSV or JSON emails into an explicit private or customer vault and retailer. Duplicate checks are case-insensitive within the retailer, including emails already assigned in another local vault; the same email is allowed for different retailers. Generation selects unused emails, cards and addresses only from that vault, saves and consumes the email atomically, balances selected addresses/cards, and optionally randomizes matching shipping/billing names. Concurrent creation cannot reuse an email. Existing profile and payment vault files and app identity are preserved.
           Saved Personal-vault profiles load into Personal Jigs, grouped by retailer. Import preview and final write checks allow matching emails across different retailer pools while blocking duplicates within the selected retailer pool or the same import batch.
           Personal Jigs now has its own left-sidebar tab, next to Customer Jigs. Switching workspaces filters existing imports without reassigning them; empty customer views do not fall back to Personal files. PIN/Touch ID gates and separate saved vault namespaces remain in place. Clearing imported files affects the active workspace, not the other one.
           Fixed the missing-preview export flow: Preview selected changes now prepares the Review page immediately, and Review profiles can prepare the preview from the selected fields. Formatting edits retain checked addresses/cards and only invalidate the old preview. Missing previews are labelled Preview not prepared yet rather than falsely implying a rejected account or safety violation.
@@ -254,7 +258,7 @@ jobs:
             test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$GITHUB_SHA"
             gh release upload "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ACO Studio ${ACO_VERSION} - Personal profiles and retailer-pool imports (${MODE})" --notes-file installers/RELEASE-NOTES.md --prerelease
+            gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ACO Studio ${ACO_VERSION} - Retailer email vaults and profile creation (${MODE})" --notes-file installers/RELEASE-NOTES.md --prerelease
           fi
           if gh release view aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release download aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" --pattern mac-update.json --dir previous-feed
