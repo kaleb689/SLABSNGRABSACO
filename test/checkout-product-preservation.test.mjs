@@ -34,6 +34,10 @@ test("a later partial webhook cannot erase Ultra Premium Collection, quantities,
   reconcileWebhookCheckout(records,partial);
   assert.equal(records.length,1);
   assert.equal(records[0].itemCount,3);
+  const withHigherSourceTotal=[];
+  reconcileWebhookCheckout(withHigherSourceTotal,{...original,orderTotal:200},{customerAccountId:"mike"});
+  reconcileWebhookCheckout(withHigherSourceTotal,partial);
+  assert.equal(withHigherSourceTotal[0].orderTotal,200,"an explicitly reported higher checkout total cannot be replaced by a reconstructed subtotal");
 });
 
 test("verified retailer receipts remain authoritative and cancelled orders stop counting",()=>{
