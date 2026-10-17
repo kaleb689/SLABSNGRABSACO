@@ -79,7 +79,9 @@ function mobileFetchBlocked(){
     Date.now()-mobileLastScrollAt < 2800;
 }
 function mobileRefreshBlocked(){
-  return mobileFetchBlocked() || (document.querySelectorAll?.("#content details[open]")?.length || 0)>0;
+  // Open order/customer details are not a reason to freeze live checkout totals.
+  // Their disclosure state is restored from the tracked sets during render.
+  return mobileFetchBlocked();
 }
 let mobileIdleCatchupTimer=null;
 function retryMobileWhenIdle(){
@@ -89,7 +91,7 @@ function retryMobileWhenIdle(){
     if(!mobileRefreshPending || document.hidden)return;
     if(!mobileRefreshBlocked())scheduleMobileRefresh();
     else if(Date.now()-mobileLastScrollAt<2800)retryMobileWhenIdle();
-    // Open details and focused edits resume via toggle/focusout.
+    // Focused edits resume when focus leaves; open details remain live.
   },3000);
 }
 function mobileRestoreScroll(x,y){
@@ -293,7 +295,8 @@ if(tab==="overview"){
   // archive) distinct from customer-specific verified receipt spending.
   const community=data.success?.communityTotals||{};
   const dollars=n=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(n)||0);
-  const allTimeSpent=community.totalSpent==null?"—":dollars(community.totalSpent);
+  const allTimeSpent=community.totalCheckoutValue==null && community.totalSpent==null
+    ?"—":dollars(community.totalCheckoutValue??community.totalSpent);
   const allTimeOrders=community.totalCheckouts??"—";
   const recent=Array.isArray(data.success?.communityRecords)
     ? [...data.success.communityRecords].sort((a,b)=>(Date.parse(b.checkoutAt)||0)-(Date.parse(a.checkoutAt)||0)).slice(0,5)
