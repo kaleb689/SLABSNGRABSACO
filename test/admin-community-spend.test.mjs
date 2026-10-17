@@ -93,9 +93,9 @@ test("Admin Success shows all webhook orders, verified paid spending, and keeps 
   el("tabs").listeners.get("click")({target:{closest:()=>({dataset:{tab:"success"}})}});
   for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));
   const html=()=>el("content").innerHTML;
-  assert.match(html(),/TOTAL VERIFIED SPENT · LAST 30 DAYS · ALL CONFIRMED ORDERS/);
+  assert.match(html(),/TOTAL CHECKOUT VALUE · LAST 30 DAYS · ALL NON-CANCELLED ORDERS/);
   assert.match(html(),/\$81\.37/);
-  assert.match(html(),/3 confirmed orders/);
+  assert.match(html(),/3 non-cancelled orders/);
   assert.match(html(),/Community unmatched-only-product/);
   assert.match(html(),/All confirmed checkouts · linked & unmatched/);
   assert.match(html(),/All linked customer checkouts/);
@@ -107,12 +107,12 @@ test("Admin Success shows all webhook orders, verified paid spending, and keeps 
   filters["#success-customer-filter"]({target:{value:"linked"}});
   assert.match(html(),/LINKED CUSTOMER ORDERS/);
   assert.match(html(),/\$17\.25/);
-  assert.match(html(),/2 confirmed orders/);
+  assert.match(html(),/2 non-cancelled orders/);
   assert.doesNotMatch(html(),/Community unmatched-only-product/);
   filters["#success-customer-filter"]({target:{value:"unmatched"}});
-  assert.match(html(),/UNMATCHED CONFIRMED ORDERS/);
+  assert.match(html(),/UNMATCHED NON-CANCELLED ORDERS/);
   assert.match(html(),/\$64\.12/);
-  assert.match(html(),/1 confirmed order/);
+  assert.match(html(),/1 non-cancelled order/);
   assert.match(html(),/Community unmatched-only-product/);
   assert.doesNotMatch(html(),/class="panel success-user-panel/);
   filters["#success-customer-filter"]({target:{value:"alice"}});
