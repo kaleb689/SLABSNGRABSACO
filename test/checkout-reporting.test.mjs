@@ -101,7 +101,8 @@ test("public and Admin endpoints read one authoritative live source and keep the
   assert.match(publicRoute,/visibleDiscordSuccessRecords/);
   assert.ok(adminRoute.includes("const unmatchedCount = unassignedConfirmed.length;"));
   assert.ok(adminRoute.includes("!record.customerAccountId || !customersById.has"));
-  assert.ok(adminRoute.includes("const confirmed = allRecords.filter(confirmedDiscordPurchase)"));
+  assert.match(adminRoute,/const confirmed = allRecords\.filter\(record =>/);
+  assert.match(adminRoute,/confirmedDiscordPurchase\(record\) \|\| reviewHoldDiscordCheckout\(record\)/);
   assert.doesNotMatch(adminRoute,/filter\(record => Boolean\(record\.customerAccountId\) && confirmedDiscordPurchase/);
   assert.match(adminRoute,/safeAdminProfileLabel/);
   assert.match(adminRoute,/adminCheckoutCustomerName/);
