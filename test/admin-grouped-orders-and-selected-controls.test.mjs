@@ -26,8 +26,12 @@ function extractFunction(source,begin,end){
 test("Mobile Admin keeps bundled items inside one actual checkout, does not price from item subtotals",()=>{
   const source=read("public/admin-mobile.js");
   const fn=extractFunction(source,"  function ordersMarkup(","  function accountsMarkup(");
+  const verifiedAmount=row=>row.orderTotalKnown===true&&Number(row.orderTotal)>0?Number(row.orderTotal):0;
+  const amount=row=>row.checkoutValueKnown===true?Number(row.checkoutValue):verifiedAmount(row);
+  const hasCheckoutValue=row=>amount(row)>0;
   const markup=vm.runInNewContext(fn+"\nordersMarkup(rows)",{
     rows,esc,dollars:money,safeImage:()=>false,successOpenOrderCards:new Set(),
+    amount,verifiedAmount,hasCheckoutValue,
     Math,Number,Date,Intl,String,Array
   },{timeout:1000});
   assert.equal((markup.match(/class="success-order-card"/g)||[]).length,2);
@@ -49,7 +53,7 @@ test("Full Admin Success groups checkouts per customer and does not invent purch
   const total=row=>row.orderTotalKnown===true?Number(row.orderTotal)||0:0;
   const quantity=row=>row.items.reduce((sum,item)=>sum+item.quantity,0);
   vm.runInNewContext(customers+"\n"+products+"\nrenderCustomers(rows); renderProducts(rows);",{
-    rows:linked,$:id=>nodes[id],esc,money,paid:total,quantity,
+    rows:linked,$:id=>nodes[id],esc,money,paid:total,checkoutValue:total,hasValue:row=>total(row)>0,quantity,
     recordDate:row=>Date.parse(row.checkoutAt)||0,
     Map,Math,Number,Date,Intl,String,Array
   },{timeout:1000});
@@ -57,7 +61,7 @@ test("Full Admin Success groups checkouts per customer and does not invent purch
   assert.match(nodes.customers.innerHTML,/2 orders/);
   assert.ok(nodes.customers.innerHTML.includes("62.51"));
   assert.ok(!nodes.customers.innerHTML.includes("999.99"));
-  assert.match(nodes.customers.innerHTML,/price pending/);
+  assert.match(nodes.customers.innerHTML,/value unavailable/);
   for(const name of ["Booster Bundle","Elite Trainer Box","Tin"])
     assert.ok(nodes.products.innerHTML.includes(name),name);
 });
