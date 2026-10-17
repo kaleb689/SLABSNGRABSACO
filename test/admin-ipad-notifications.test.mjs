@@ -29,7 +29,8 @@ test("notification tray fits both iPad app and full website without clipping",()
 });
 test("live updates preserve open disclosure state without freezing checkout totals",()=>{
   assert.match(mobile,/function mobileRefreshBlocked\(/);
-  assert.match(mobile,/return mobileFetchBlocked\(\);/);
+  assert.match(mobile,/tab!=="success"/);
+  assert.match(mobile,/#content details\[open\]/);
   assert.match(mobile,/successOpenOrderCards/);
   assert.match(mobile,/mobileRestoreScroll\(x,y\)/);
   assert.match(mobile,/admin-push-disclosure/);
