@@ -89,7 +89,7 @@ test("per-customer breakdowns respect the selected global period",async()=>{
   assert.equal(userCount(),3);
   assert.match(html(),/Amy Example checkout breakdown/);
   assert.match(html(),/Ben Example checkout breakdown/);
-  assert.match(html(),/Ben Example checkout breakdown[\s\S]*?<small>Verified spent<\/small><strong>\$0\.00<\/strong>/);
+  assert.match(html(),/Ben Example checkout breakdown[\s\S]*?<small>Checkout value<\/small><strong>\$0\.00<\/strong>/);
   assert.doesNotMatch(html(),/<strong>Pending<\/strong>/);
   assert.match(html(),/Pokémon Center booster box/);
   assert.match(html(),/Pokémon Center ETB/);
@@ -102,7 +102,7 @@ test("per-customer breakdowns respect the selected global period",async()=>{
   // The parent period limits all visible customer breakdowns.
   press("global",1);
   assert.equal(userCount(),1);
-  assert.match(html(),/1 confirmed order/);
+  assert.match(html(),/1 non-cancelled order/);
   press("user",7);
   assert.equal(userCount(),1);
   assert.doesNotMatch(html(),/Pokémon Center booster box/);
@@ -115,7 +115,7 @@ test("per-customer breakdowns respect the selected global period",async()=>{
   assert.match(html(),/success-user-accordion/);
   // MTD was removed from the interface; the calendar can choose exact days.
   press("global","ytd");
-  assert.match(html(),/TOTAL VERIFIED SPENT · YEAR TO DATE/);
+  assert.match(html(),/TOTAL CHECKOUT VALUE · YEAR TO DATE/);
   assert.match(html(),/data-success-days="ytd" aria-pressed="true"/);
   assert.match(html(),/data-success-calendar/);
   assert.match(html(),/data-success-user-calendar="member-a"/);
