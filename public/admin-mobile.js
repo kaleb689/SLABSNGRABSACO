@@ -79,9 +79,11 @@ function mobileFetchBlocked(){
     Date.now()-mobileLastScrollAt < 2800;
 }
 function mobileRefreshBlocked(){
-  // Open order/customer details are not a reason to freeze live checkout totals.
-  // Their disclosure state is restored from the tracked sets during render.
-  return mobileFetchBlocked();
+  // Success order disclosure state is retained across renders, so new checkouts
+  // must update even while an order is expanded. Other Admin customer forms
+  // defer redraw to avoid closing unsaved in-progress edits.
+  return mobileFetchBlocked() ||
+    (tab!=="success" && (document.querySelectorAll?.("#content details[open]")?.length || 0)>0);
 }
 let mobileIdleCatchupTimer=null;
 function retryMobileWhenIdle(){
