@@ -102,7 +102,7 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
   // A partial webhook may carry only one product's subtotal. For any order
   // without an explicit retailer total, recompute the subtotal from the
   // preserved product lines when every price and quantity is known.
-  if (merged.orderTotalBasis === "item_subtotal") {
+  if (merged.orderTotalBasis === "item_subtotal" && priorMissingItems.length > 0) {
     let cents = 0, complete = merged.items.length > 0;
     for (const item of merged.items) {
       const price = Number(item.price), qty = Number(item.quantity);
