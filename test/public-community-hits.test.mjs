@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature } from "../checkout-price-policy.js";
 import { planDiscordCommunityHits } from "../discord-hit-mirror-policy.js";
+import { isModuleLifecycleCheckout } from "../discord-checkout-event-policy.js";
 
 const server = readFileSync(new URL("../server.js", import.meta.url), "utf8");
 
@@ -14,6 +15,7 @@ function renderHit(order) {
   const context = {
     order, payload: null,
     confirmedDiscordPurchase: o => o.status === "confirmed",
+    isModuleLifecycleCheckout,
     normalizeSuccessRetailer: r => r === "PKC" ? "PKC" : String(r || "Retailer"),
     publicSuccessProductName: s => String(s || "").trim().replace(/^\*\*(.+)\*\*$/, "$1"),
     publicSuccessProductImage: (_n, _r, url) => url || null,

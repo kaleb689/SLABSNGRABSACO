@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { isModuleLifecycleDiscordMessage } from "../discord-checkout-event-policy.js";
 import {
   checkoutIdentityFromDiscord, checkoutStatusFromDiscord, checkoutProductFromDiscord
 } from "../discord-checkout-identity.js";
@@ -18,6 +19,7 @@ function parse(message) {
   const scope = {
     message, channel, parsed:null, discordCheckoutIdentity:checkoutIdentityFromDiscord,
     checkoutStatusFromDiscord, checkoutProductFromDiscord, checkoutExplicitPaidTotal,
+    isModuleLifecycleDiscordMessage,
     publicSuccessProductName:s=>String(s||"").slice(0,120).trim(),
     isSafeDiscordCheckoutProductName:s=>Boolean(String(s||"").length>=3 &&
       !/@|https?:|password|account/i.test(s)),

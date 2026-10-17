@@ -1,3 +1,5 @@
+import { isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
+
 // Customer orders may originate only from an actual Discord Success webhook message.
 // Mailbox imports, including customer-owned purchases, are never checkouts.
 const DISCORD_CHECKOUT_ID = /^discord:(\d{17,22}):(\d{17,22})$/;
@@ -27,6 +29,7 @@ export function webhookOnlyCheckouts(records, { resetLegacyShipping = false } = 
   const seen = new Set();
   return records.flatMap(record => {
     if (!record || typeof record !== "object") return [];
+    if (isModuleLifecycleCheckout(record)) return [];
     const ids = discordCheckoutIds(record);
     if (!ids.length) return [];
     const canonicalId = DISCORD_CHECKOUT_ID.test(String(record.id || "")) ? record.id : ids[0];
@@ -129,5 +132,6 @@ export function authoritativeDiscordCheckouts(records, channelIds) {
     .map(String).filter(value => /^\d{17,22}$/.test(value)));
   if (!allowed.size) return [];
   return (Array.isArray(records) ? records : []).filter(record =>
+    !isModuleLifecycleCheckout(record) &&
     discordCheckoutIds(record).some(id => allowed.has(id.split(":")[1])));
 }

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { isModuleLifecycleDiscordMessage } from "../discord-checkout-event-policy.js";
 import { checkoutStatusFromDiscord, checkoutIdentityFromDiscord, checkoutProductFromDiscord } from "../discord-checkout-identity.js";
 import { checkoutExplicitPaidTotal, checkoutPaidAmount } from "../checkout-price-policy.js";
 import { authoritativeDiscordCheckouts } from "../success-source-policy.js";
@@ -19,6 +20,7 @@ function parse(message) {
     checkoutStatusFromDiscord, checkoutIdentityFromDiscord, checkoutProductFromDiscord,
     checkoutExplicitPaidTotal,
     discordCheckoutIdentity: checkoutIdentityFromDiscord,
+    isModuleLifecycleDiscordMessage,
     publicSuccessProductName: s => String(s || "").slice(0,120).trim(),
     isSafeDiscordCheckoutProductName: s => Boolean(String(s || "").trim().length>=3 && !/@|password|account|address/i.test(s)),
     publicSuccessImageUrl: () => null,

@@ -9,7 +9,8 @@ import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder, lateCancellation } from "./order-notifications.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
-import { webhookOnlyCheckouts, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
+import { webhookOnlyCheckouts, discordCheckoutIds, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
+import { isModuleLifecycleDiscordMessage, isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
 import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
 import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
@@ -37900,9 +37901,27 @@ async function getSuccessCheckouts() {
   return webhookOnlyCheckouts(records);
 }
 
+const MODULE_LIFECYCLE_EXCLUSIONS_FILE = path.join(DATA_DIR, "discord-module-lifecycle-exclusions.json");
 async function migrateWebhookOnlySuccessCheckouts() {
   const raw = await readJson(SUCCESS_CHECKOUTS_FILE, []);
   const original = Array.isArray(raw) ? raw : [];
+  // Before removing old module-status records, reserve only their source
+  // Discord message IDs to retract matching bot-posted public hits safely.
+  const moduleLifecycleRecords = original.filter(isModuleLifecycleCheckout);
+  if (moduleLifecycleRecords.length) {
+    const past = await readJson(MODULE_LIFECYCLE_EXCLUSIONS_FILE, []);
+    const previousIds = Array.isArray(past) ? past : [];
+    const excludedIds = [...new Set([...previousIds,
+      ...moduleLifecycleRecords.flatMap(discordCheckoutIds)])]
+      .filter(id => /^discord:\d{17,22}:\d{17,22}$/.test(String(id)));
+    if (JSON.stringify(excludedIds) !== JSON.stringify(previousIds)) {
+      await fs.writeFile(
+        path.join(DATA_DIR, "success-before-module-lifecycle-cleanup-20261017.json"),
+        JSON.stringify(original), { flag: "wx", mode: 0o600 }
+      ).catch(error => { if (error.code !== "EEXIST") throw error; });
+      await writeJson(MODULE_LIFECYCLE_EXCLUSIONS_FILE, excludedIds);
+    }
+  }
   const verified = webhookOnlyCheckouts(original, { resetLegacyShipping: true });
   if (JSON.stringify(original) === JSON.stringify(verified)) return;
   // On-disk snapshot is saved before modifying historical customer data.
@@ -37955,6 +37974,7 @@ function visibleDiscordSuccessRecords(records, excludedChannelId = null, authori
   return authoritativeDiscordCheckouts(records, authorizedChannelIds)
     .filter(record =>
       isDiscordSuccessRecord(record) &&
+      !isModuleLifecycleCheckout(record) &&
       (!excluded || discordRecordChannelId(record) !== excluded)
     )
     .map(record => {
@@ -38101,6 +38121,7 @@ async function discordCheckoutSourceChannels() {
 function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
   // Diagnostics expose only reason categories, never webhook values or identities.
   const reject = reason => { if (diagnostics) diagnostics.reason = reason; return null; };
+  if (isModuleLifecycleDiscordMessage(message)) return reject("module_lifecycle_notice");
   const embeds = Array.isArray(message.embeds) ? message.embeds : [];
   const messageText = String(message.content || "");
   const isCheckout = value => /success|checkout|checked\s*out|order confirm|order cancel|order review|order on hold|cancellation/i.test(String(value || ""));
@@ -38352,7 +38373,7 @@ async function resolveDiscordHitsChannelId(token) {
 function publicDiscordHitPayload(order) {
   // Public community hits may display product prices and verified paid totals,
   // but never order identifiers, retailer accounts, passwords or customer data.
-  if (!confirmedDiscordPurchase(order)) return null;
+  if (isModuleLifecycleCheckout(order) || !confirmedDiscordPurchase(order)) return null;
   const retailer = normalizeSuccessRetailer(order?.retailer);
   const items = (Array.isArray(order?.items) ? order.items : [])
     .map(item => {
@@ -38984,6 +39005,18 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
     // matched; ownership affects customer views, never community hits.
     const communityRecords = authoritativeDiscordCheckouts(
       await getSuccessCheckouts(), channels);
+    // Old false checkouts are gone from the store. Send non-purchase tombstones
+    // to the mirror planner to DELETE only ledger-tracked bot-generated hits.
+    const excludedModuleIds = await readJson(MODULE_LIFECYCLE_EXCLUSIONS_FILE, []);
+    if (Array.isArray(excludedModuleIds)) {
+      const activeSourceIds = new Set(communityRecords.flatMap(discordCheckoutIds));
+      const ignoredIds = [...new Set(excludedModuleIds)].filter(id =>
+        /^discord:\d{17,22}:\d{17,22}$/.test(String(id)) && !activeSourceIds.has(id));
+      communityRecords.push(...ignoredIds.map(id => ({
+        id, sourceIds: [id], customerAccountId: null,
+        status: "excluded_non_checkout", items: []
+      })));
+    }
     discordSuccessScan.hitsError = null;
     discordSuccessScan.rejectionReasons = rejectionReasons;
     discordSuccessScan.rejectedSamples = rejectedSamples;
@@ -40198,12 +40231,12 @@ function safeSuccessItem(item) {
 // Review holds are visible to the customer with a warning, but are never
 // counted as a confirmed purchase or as money definitively spent.
 function confirmedDiscordPurchase(record) {
-  return !cancelledOrder(record) &&
+  return !isModuleLifecycleCheckout(record) && !cancelledOrder(record) &&
     /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(String(record?.status || ""));
 }
 function customerCheckoutPurchase(record) {
   // Customer order value includes placed preorders and review holds until cancelled.
-  return !cancelledOrder(record);
+  return !isModuleLifecycleCheckout(record) && !cancelledOrder(record);
 }
 function reviewHoldDiscordCheckout(record) {
   return !cancelledOrder(record) && String(record?.status || "") === "review_hold";
