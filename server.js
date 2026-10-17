@@ -38429,6 +38429,58 @@ async function clearBotHitMessages(token, channelId) {
   }
 }
 
+/**
+ * One-time bounded audit of our own public hit messages. Earlier versions
+ * accidentally echoed bot module-unlock status notices as purchases, sometimes
+ * without a recorded mirror receipt. Only delete posts from THIS bot with the
+ * exact "Successful Checkout!" embed heading and module-unlock text.
+ * Work through older pages over several full audits, retaining a cursor.
+ */
+async function cleanFalseModuleUnlockHits(token, hitsChannelId, state) {
+  if (state.moduleUnlockSweepVersion === 1) return { scanned: 0, removed: 0, complete: true };
+  const self = await discordBotJson(token, "/users/@me");
+  if (!/^\d{17,22}$/.test(String(self?.id || "")))
+    throw new Error("Bot identity missing for false-hit cleanup.");
+  let cursor = String(state.moduleUnlockSweepBefore || "");
+  let scanned = 0, removed = 0, complete = false;
+  for (let page = 0; page < 4; page++) {
+    const messages = await discordBotJson(token,
+      `/channels/${hitsChannelId}/messages?limit=100${cursor ? `&before=${cursor}` : ""}`);
+    if (!Array.isArray(messages)) throw new Error("Unexpected Discord hits history.");
+    scanned += messages.length;
+    for (const msg of messages) {
+      if (String(msg.author?.id || "") !== String(self.id) ||
+          !Array.isArray(msg.embeds) ||
+          !msg.embeds.some(e => /^successful checkout!?$/i.test(String(e?.title || "").trim())) ||
+          !isModuleUnlockNoticeMessage(msg)) continue;
+      try {
+        await discordBotJson(token, `/channels/${hitsChannelId}/messages/${msg.id}`,
+          { method: "DELETE" });
+      } catch (error) {
+        if (!/HTTP 404\b/.test(String(error?.message || ""))) throw error;
+      }
+      removed++;
+      for (const [sourceId, receipt] of Object.entries(state.sent || {})) {
+        if (String(receipt?.messageId || "") !== String(msg.id)) continue;
+        state.sent[sourceId] = { ...receipt, messageId: "", posting: false,
+          withdrawnAt: new Date().toISOString(), withdrawnReason: "module_unlock_notice" };
+      }
+    }
+    if (messages.length < 100) { complete = true; break; }
+    cursor = String(messages[messages.length - 1]?.id || "");
+    if (!/^\d{17,22}$/.test(cursor)) break;
+  }
+  if (complete) {
+    state.moduleUnlockSweepVersion = 1;
+    delete state.moduleUnlockSweepBefore;
+  } else if (cursor) {
+    state.moduleUnlockSweepBefore = cursor;
+  }
+  state.moduleUnlockSweepRemoved = Math.max(0, Number(state.moduleUnlockSweepRemoved) || 0) + removed;
+  await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+  return { scanned, removed, complete };
+}
+
 // Mirror EVERY confirmed checkout from the authoritative Discord webhook
 // source. Linked and unmatched orders are equally eligible. The reconciled
 // store supplies the FINAL status, so later red cancellations and orange holds
@@ -38436,7 +38488,7 @@ async function clearBotHitMessages(token, channelId) {
 // Keep the legacy 11-message baseline for audit; never clear or replay already
 // sent messages when migrating to full historical backfill.
 async function mirrorDiscordCheckoutHits(records, token, sourceChannelId) {
-  if (!token || !Array.isArray(records) || !records.length ||
+  if (!token || !Array.isArray(records) ||
       !/^\d{17,22}$/.test(String(sourceChannelId || ""))) return null;
 
   return discordHitMirrorState(async () => {
@@ -38461,6 +38513,16 @@ async function mirrorDiscordCheckoutHits(records, token, sourceChannelId) {
       // Existing source IDs, including the former 11-hit baseline, must
       // prevent duplicate posts during the newly expanded backfill.
       await writeJson(DISCORD_HIT_MIRROR_FILE, state);
+    }
+
+    // Clean historical false successes from the public channel, including
+    // posts missed by old ledgers. Never delete someone else's messages.
+    let moduleUnlockCleanup = null;
+    try {
+      moduleUnlockCleanup = await cleanFalseModuleUnlockHits(token, hitsChannelId, state);
+    } catch (error) {
+      console.error("Module unlock hit cleanup deferred:",
+        /HTTP \d+/.exec(String(error?.message || ""))?.[0] || "audit_retry");
     }
 
     // The sent ledger is not proof that a message still exists. Owners may
@@ -38515,7 +38577,7 @@ async function mirrorDiscordCheckoutHits(records, token, sourceChannelId) {
       state.sent, DISCORD_HIT_RENDER_VERSION);
     const counts = { eligible: plan.eligible, unmatched: plan.unmatched,
       backfillPending: plan.newHits.length, posted: 0, edited: 0,
-      withdrawn: 0, reserved: 0, audit };
+      withdrawn: 0, reserved: 0, audit, moduleUnlockCleanup };
 
     // The persisted ledger identifies only messages our own bot posted.
     // When a checkout becomes red/orange, withdraw the public GREEN hit.
