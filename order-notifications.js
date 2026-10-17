@@ -87,6 +87,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
   let keys;
   let queue = Promise.resolve();
   let running = false;
+  let rerunRequested = false;
   const locked = operation => { const result = queue.then(operation); queue = result.catch(() => {}); return result; };
   async function save() {
     const temp = `${storePath}.tmp`;
@@ -252,7 +253,10 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
     });
   }
   async function tick() {
-    if (running) return;
+    // A new checkout may be saved while a previous delivery pass is still
+    // sending pushes. Schedule an immediate second pass instead of making
+    // that customer wait for the 30-second timer.
+    if (running) { rerunRequested = true; return; }
     running = true;
     try {
       const records = await getRecords();
@@ -287,7 +291,13 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         await save();
       });
     } catch (error) { console.error("App order alerts:", error.code || error.name); }
-    finally { running = false; }
+    finally {
+      running = false;
+      if (rerunRequested) {
+        rerunRequested = false;
+        void tick();
+      }
+    }
   }
   return {
     initialize, reconcile, tick,
