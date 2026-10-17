@@ -1,6 +1,7 @@
 import { sameCheckout } from "./webhook-success.js";
 import { cancelledOrder } from "./order-notifications.js";
 import { checkoutPriceSignature } from "./checkout-price-policy.js";
+import { isModuleUnlockNoticeRecord } from "./checkout-status-notice.js";
 
 const SOURCE_CHANNEL = /^\d{17,22}$/;
 const SOURCE_MESSAGE = /^\d{17,22}$/;
@@ -17,7 +18,8 @@ export function sourceMessageIdsForHit(record, channelId) {
 }
 
 function confirmed(record) {
-  return Boolean(record && !cancelledOrder(record) && CONFIRMED_STATUS.test(String(record.status || "")));
+  return Boolean(record && !isModuleUnlockNoticeRecord(record) &&
+    !cancelledOrder(record) && CONFIRMED_STATUS.test(String(record.status || "")));
 }
 function updatedAt(record) {
   const at = Date.parse(record?.statusUpdatedAt || record?.checkoutAt || "");
