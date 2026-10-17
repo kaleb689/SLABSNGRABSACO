@@ -1,0 +1,28 @@
+'use strict';
+const Core=require('./app'),Draft=require('./profile-draft-core'),Fields=require('./jig-field-core');
+const clone=structuredClone,clean=v=>String(v??'').trim(),digits=v=>clean(v).replace(/\D/g,''),email=v=>clean(v).toLowerCase();
+const retailer=v=>{if(!['target','walmart','pokemoncenter','costco','sams'].includes(v))throw Error('Choose a retailer.');return v;};
+const format=r=>retailer(r)==='target'?'shikari':'valor';
+function values(data){const v=Draft.toValues(data),s=data.shipping||{},b=data.billing||{},names=(v.first+' '+v.last).trim();
+ v.first=v.first||v['shipping.first']||v['billing.first']||'';v.last=v.last||v['shipping.last']||v['billing.last']||'';
+ for(const role of ['shipping','billing']){v[role+'.first']||=v.first;v[role+'.last']||=v.last;v[role+'.phone']||=v.phone||data.phone_num||data.phoneNumber||'';}
+ v.phone||=v['shipping.phone']||v['billing.phone']||'';v.email=v.email||data.loginEmail||data.accountEmail||s.email||'';
+ return v;
+}
+function payment(data){const sh=Draft.formatOf(data)==='shikari',c=data.card||{},v=values(data),exp=clean(c.expiration).split('/');
+ let year=clean(sh?data.cc_exp_year:exp[1]||c.expYear);if(/^\d{2}$/.test(year))year='20'+year;
+ return {number:digits(sh?data.cc_number:c.number||c.cardNumber),cardholder:clean(sh?data.cc_name||data.cc_holder:c.holder||c.cardholder)||(v['billing.first']+' '+v['billing.last']).trim(),month:clean(sh?data.cc_exp_month:exp[0]||c.expMonth).padStart(2,'0'),year,type:clean(sh?data.cc_type:c.type||c.brand),customSecurityCode:clean(data.custom_security_code||c.custom_security_code||'')};
+}
+function normalized(data,r){const v=values(data),out=Draft.blank(r,format(r),v);const c=payment(data);if(format(r)==='shikari')Object.assign(out,{cc_number:c.number,cc_name:c.cardholder,cc_exp_month:c.month,cc_exp_year:c.year,cc_type:c.type,custom_security_code:c.customSecurityCode});else Object.assign(out.card,{number:c.number,holder:c.cardholder,expiration:c.month&&c.year?c.month+'/'+c.year.slice(-2):'',type:c.type,custom_security_code:c.customSecurityCode});return out;}
+const nameKey=data=>{const v=values(data);return (v['shipping.first']+' '+v['shipping.last']).normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim();};
+function collisions(records,existing,r){const index={email:new Set(),name:new Set(),card:new Set()};for(const row of existing.filter(x=>x.retailer===r)){const v=values(row.data);if(v.email)index.email.add(email(v.email));if(nameKey(row.data))index.name.add(nameKey(row.data));if(payment(row.data).number)index.card.add(payment(row.data).number);}
+ return records.map(data=>{const keys={email:email(values(data).email),name:nameKey(data),card:payment(data).number},flags=Object.keys(keys).filter(k=>keys[k]&&index[k].has(keys[k]));for(const k of Object.keys(keys))if(keys[k])index[k].add(keys[k]);return flags;});}
+function putCard(data,c){if(Draft.formatOf(data)==='shikari')Object.assign(data,{cc_number:c.number,cc_exp_month:c.month,cc_exp_year:c.year,cc_name:c.cardholder,cc_type:c.type||'',custom_security_code:c.customSecurityCode||''});else Object.assign(data.card,{number:c.number,expiration:c.month+'/'+c.year.slice(-2),holder:c.cardholder,type:c.type||'',custom_security_code:c.customSecurityCode||''});}
+function randomName(data,used){for(let n=0;n<1000;n++){const person=Fields.personFor(data,Core.autoMap([data]),new Set());const next=Draft.manualEdit(data,{...values(data),first:person.first,last:person.last,'shipping.first':person.first,'shipping.last':person.last,'billing.first':person.first,'billing.last':person.last});if(!used.has(nameKey(next))){used.add(nameKey(next));return next;}}throw Error('Unable to generate another unused name.');}
+function exportRows(rows,r,customerName='Personal'){if(!rows.length)throw Error('Choose completed profiles to export.');const model=require('./site-model'),profiles=rows.map(x=>{const v=values(x.data),c=payment(x.data),address=role=>({firstName:v[role+'.first'],lastName:v[role+'.last'],phone:v[role+'.phone'],address:v[role+'.address1'],address2:v[role+'.address2'],city:v[role+'.city'],state:v[role+'.state'],zip:v[role+'.zip'],country:v[role+'.country']||'US'});return {email:v.email,phone:v.phone,shipping:address('shipping'),billing:address('billing'),card:c};});
+ const out=model.exportTemplates(r==='costco'||r==='sams'?'walmart':r,customerName,profiles,null,{localOwnerCards:profiles.map(x=>({...x.card,expiration:x.card.month+'/'+x.card.year.slice(-2),cvv:x.card.customSecurityCode||''}))});
+ out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(format(r)==='shikari'?'.csv':'.json');return out;
+}
+const defaultRules=()=>Core.defaultRuleIDs.filter(id=>!/(prefix|fraction|fictitious|fabricated|phone)/i.test(id));
+function jig(data,r,index,rules=defaultRules()){retailer(r);if(!Array.isArray(rules)||rules.some(id=>!Core.RULES.some(x=>x.id===id)))throw Error('Unknown retailer jig rule.');const out=clone(data);if(index===0)return out;const map=Core.autoMap([out]);for(const role of ['shipping','billing']){const addr={};for(const k of ['address1','address2','city','state','zip'])addr[k]=Core.get(out,map[role+'.'+k])||'';for(const id of rules.map((_,k)=>rules[(Math.max(0,index-1)+k)%rules.length])){let variant;try{variant=Core.RULES.find(x=>x.id===id).apply(addr);}catch{continue;}if(!variant)continue;for(const k of Object.keys(addr))if(map[role+'.'+k]&&variant[k]!=null){const path=JSON.parse(map[role+'.'+k]);let target=out;for(const part of path.slice(0,-1))target=target[part];target[path.at(-1)]=variant[k];}break;}}return out;}
+module.exports={values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules};
