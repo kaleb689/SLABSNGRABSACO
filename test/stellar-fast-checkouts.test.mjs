@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import { isModuleLifecycleDiscordMessage } from "../discord-checkout-event-policy.js";
 import {checkoutIdentityFromDiscord, checkoutStatusFromDiscord,
   checkoutProductFromDiscord} from '../discord-checkout-identity.js';
 import {checkoutAssignmentContains, recoverCheckoutAssignmentOwners} from '../discord-checkout-owner-evidence.js';
@@ -29,6 +30,7 @@ function stellarMessage(){
 function parse(msg){
  const context={msg,sourceChannel,result:null,discordCheckoutIdentity:checkoutIdentityFromDiscord,
   checkoutStatusFromDiscord,checkoutProductFromDiscord,checkoutExplicitPaidTotal:()=>null,
+  isModuleLifecycleDiscordMessage,
   publicSuccessProductName:s=>String(s||'').slice(0,240),
   isSafeDiscordCheckoutProductName:s=>Boolean(s)&&!/@|password/i.test(s),
   publicSuccessImageUrl:()=>null,

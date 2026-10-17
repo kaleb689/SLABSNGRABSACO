@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { isModuleLifecycleDiscordMessage } from "../discord-checkout-event-policy.js";
 import { checkoutIdentityFromDiscord, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "../discord-checkout-identity.js";
 import { reconcileWebhookCheckout, uniqueCheckoutOwner } from "../webhook-success.js";
 import { lateCancellation } from "../order-notifications.js";
@@ -32,6 +33,7 @@ function parseLiveWebhook(message) {
   const sandbox = {
     message, channel, parsed: null, discordCheckoutIdentity: checkoutIdentityFromDiscord,
     checkoutStatusFromDiscord, checkoutProductFromDiscord, checkoutExplicitPaidTotal,
+    isModuleLifecycleDiscordMessage,
     publicSuccessProductName: s => String(s || "").slice(0, 120).trim(),
     isSafeDiscordCheckoutProductName: s => !/@|password/i.test(s),
     publicSuccessImageUrl: s => s || null,
