@@ -112,7 +112,7 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
       cents += Math.round(price * 100) * qty;
     }
     if (complete && Number.isSafeInteger(cents) && cents > 0 && cents <= 100000000)
-      merged.orderTotal = cents / 100;
+      merged.orderTotal = Math.max(Number(prior.orderTotal) || 0, Number(merged.orderTotal) || 0, cents / 100);
   }
   // Item count is derived from the final preserved line items, not the last
   // webhook's sometimes-incomplete count field.
