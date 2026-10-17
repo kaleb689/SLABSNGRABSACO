@@ -17,7 +17,7 @@ function scenario(){
  let handler, stored=[{id:originalId,sourceIds:[originalId],retailer:'PKC',
   status:'confirmed',checkoutAt:'2026-10-15T20:17:00Z',
   customerAccountId:null,items:[{name:'Synthetic card tin',price:9.99,quantity:1}]}];
- let candidates=[], saved=0, notices=[], broadcasts=[];
+ let candidates=[], saved=0, notices=[], broadcasts=[], quickScans=0;
  const context={
   crypto,app:{post:(_path,_auth,fn)=>{handler=fn;}},requireAdmin:()=>{},
   clean:(value,max)=>String(value||'').trim().slice(0,max),
@@ -37,6 +37,7 @@ function scenario(){
   saveSuccessCheckouts:async()=>{saved++;},
   announceSuccessCheckout:id=>{notices.push(id);},
   broadcastLiveDataChange:why=>{broadcasts.push(why);},
+  queueDiscordSuccessScan:()=>{quickScans++;},
   console
  };
  vm.runInNewContext(server.slice(start,end),context);
@@ -53,7 +54,7 @@ function scenario(){
  return {invoke,order:()=>stored[0],setOrders:value=>{stored=value;},
   setCandidates:value=>{candidates=value;},
   notifications:()=>notices,changes:()=>broadcasts,
-  saves:()=>saved};
+  saves:()=>saved,quickScans:()=>quickScans};
 }
 
 test('admin-verified original Discord checkout is safely attributed once and customer is notified',async()=>{
@@ -68,6 +69,7 @@ test('admin-verified original Discord checkout is safely attributed once and cus
  assert.ok(app.order().attributionAudit.retailerLoginHash);
  assert.ok(!JSON.stringify(app.order()).includes(login));
  assert.equal(app.saves(),1);
+ assert.equal(app.quickScans(),1,"verified login should immediately trigger sibling checkout recovery");
  assert.equal(app.notifications().length,1);
  assert.equal(app.notifications()[0],'member-a');
  assert.deepEqual(app.changes(),['admin-verified-discord-checkout-owner']);
