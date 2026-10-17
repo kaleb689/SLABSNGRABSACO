@@ -375,9 +375,14 @@ if(tab==="success"){
     return Number.isFinite(time)&&time>=cutoff&&time<periodEnd;
   });
   const dollars=n=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(n)||0);
-  const amount=x=>x?.orderTotalKnown&&Number(x.orderTotal)>0?Number(x.orderTotal):0;
-  const verifiedSpent=rows=>rows.reduce((cents,x)=>cents+Math.round(amount(x)*100),0)/100;
-  const missingPrices=rows=>rows.filter(x=>!x.orderTotalKnown).length;
+  // A placed preorder counts even when its charge has not settled.
+  const verifiedAmount=x=>x?.orderTotalKnown===true&&Number(x.orderTotal)>0?Number(x.orderTotal):0;
+  const amount=x=>x?.checkoutValueKnown===true&&Number(x.checkoutValue)>0
+    ? Number(x.checkoutValue):verifiedAmount(x);
+  const hasCheckoutValue=x=>amount(x)>0;
+  const checkoutValueTotal=rows=>rows.reduce((cents,x)=>cents+Math.round(amount(x)*100),0)/100;
+  const verifiedSpent=rows=>rows.reduce((cents,x)=>cents+Math.round(verifiedAmount(x)*100),0)/100;
+  const missingPrices=rows=>rows.filter(x=>!hasCheckoutValue(x)).length;
   const safeImage=url=>typeof url==="string"&&/^https:\/\/[^ "'<>]+$/i.test(url);
   const customerList=new Map();
   allSuccess.filter(x=>x.customerAccountId).forEach(x=>{
@@ -412,7 +417,7 @@ if(tab==="success"){
   }else successAccountKey="all";
   const groupedRetailers=new Map();
   filtered.forEach(x=>{const key=String(x.retailer||"Other");groupedRetailers.set(key,(groupedRetailers.get(key)||0)+1);});
-  const total=filtered.length,spent=verifiedSpent(filtered),pending=missingPrices(filtered);
+  const total=filtered.length,spent=checkoutValueTotal(filtered),paid=verifiedSpent(filtered),pending=missingPrices(filtered);
   const shownSpend=dollars(spent);
   const rangeNames={1:"LAST 24 HOURS",7:"LAST 7 DAYS",30:"LAST 30 DAYS",90:"LAST 90 DAYS",ytd:"YEAR TO DATE",all:"ALL TIME",custom:mobileCustomLabel(successCustomRange).toUpperCase()};
   const ranges=[[1,"24H"],[7,"7D"],[30,"30D"],[90,"90D"],["ytd","YTD"],["all","ALL"]];
@@ -421,18 +426,18 @@ if(tab==="success"){
     '<button type="button" data-success-calendar aria-label="Choose custom date range" aria-expanded="'+successCalendarOpen+'" aria-pressed="'+(days==="custom")+'" class="sng-calendar-button">'+
     mobileCalendarIcon+' Custom</button></div>'+
     mobileCalendarMarkup("global","",successCustomRange,successCalendarDraft,successCalendarOpen,successCalendarError);
-  const note=!total?'No confirmed checkouts in this period.':pending?pending+' of '+total+' confirmed checkouts without verified paid amounts.':'All displayed checkout amounts are verified.';
+  const note=!total?'No non-cancelled checkouts in this period.':pending?pending+' of '+total+' orders have no amount in the checkout source.':'All shown checkout values come from checkout records or verified receipts.';
   const ticks=days===1?8:days===7?7:12;
   const min=cutoff||Math.min(currentTime,...filtered.map(x=>Date.parse(x.checkoutAt)).filter(Number.isFinite));
   const span=Math.max(1,periodEnd-min),buckets=Array(ticks).fill(0);
   filtered.forEach(x=>{const time=Date.parse(x.checkoutAt);if(Number.isFinite(time)){const pos=Math.min(ticks-1,Math.max(0,Math.floor((time-min)/span*ticks)));buckets[pos]+=amount(x);}});
   const max=Math.max(1,...buckets);
   const line=buckets.map((v,i)=>(i?"L":"M")+(16+i*(288/(ticks-1))).toFixed(1)+" "+(76-v/max*56).toFixed(1)).join(" ");
-  const trend='<svg class="admin-spend-trend" viewBox="0 0 320 100" preserveAspectRatio="none" role="img" aria-label="Verified spending trend for selected period"><path d="'+line+'" fill="none" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  const scopeLabel=successCustomerId==="all"?"ALL CONFIRMED ORDERS":
+  const trend='<svg class="admin-spend-trend" viewBox="0 0 320 100" preserveAspectRatio="none" role="img" aria-label="Checkout-value trend for selected period"><path d="'+line+'" fill="none" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const scopeLabel=successCustomerId==="all"?"ALL NON-CANCELLED ORDERS":
     successCustomerId==="linked"?"LINKED CUSTOMER ORDERS":
-    successCustomerId==="unmatched"?"UNMATCHED CONFIRMED ORDERS":"SELECTED CUSTOMER";
-  const hero='<section class="admin-spend-hero"><span class="admin-spend-kicker">TOTAL VERIFIED SPENT · '+rangeNames[days]+' · '+scopeLabel+'</span><strong>'+shownSpend+'</strong><p>'+total+' confirmed order'+(total===1?'':'s')+' · '+groupedRetailers.size+' retailers · '+esc(note)+'</p>'+trend+'</section>';
+    successCustomerId==="unmatched"?"UNMATCHED NON-CANCELLED ORDERS":"SELECTED CUSTOMER";
+  const hero='<section class="admin-spend-hero"><span class="admin-spend-kicker">TOTAL CHECKOUT VALUE · '+rangeNames[days]+' · '+scopeLabel+'</span><strong>'+shownSpend+'</strong><p>'+total+' non-cancelled order'+(total===1?'':'s')+' · '+groupedRetailers.size+' retailers · '+esc(note)+'</p><p>Verified retailer totals: '+dollars(paid)+' · Preorders and review holds are included in checkout value.</p>'+trend+'</section>';
   function productsMarkup(rows,limit=30) {
     const goods=new Map();
     rows.forEach(order=>(order.items||[]).forEach(item=>{
@@ -468,8 +473,11 @@ if(tab==="success"){
       const products=Array.isArray(order.items)?order.items:[];
       const count=products.reduce((sum,item)=>sum+Math.max(0,Math.floor(Number(item.quantity)||0)),0);
       const key=String(order.id||order.orderId||[order.checkoutAt,order.retailer,order.accountKey,index].join("|"));
-      const known=order.orderTotalKnown===true&&Number(order.orderTotal)>0;
-      const paid=known?dollars(order.orderTotal):"$0.00";
+      const known=hasCheckoutValue(order);
+      const chargeKnown=verifiedAmount(order)>0;
+      const displayed=known?dollars(amount(order)):"—";
+      const priceLabel=chargeKnown?"Verified retailer total":
+        known?"Checkout value · preorder included":"Order value unavailable from checkout source";
       const details=products.map(item=>{
         const qty=Math.max(0,Math.floor(Number(item.quantity)||0));
         const image=safeImage(item.imageUrl)?item.imageUrl:"/slabsngrabs-aco-logo-transparent.png";
@@ -480,8 +488,8 @@ if(tab==="success"){
         (successOpenOrderCards.has(key)?'open':'')+'><summary>'+
         '<span class="success-order-title"><strong>Order '+(index+1)+' · '+esc(order.retailer||"Retailer")+'</strong>'+
         '<small>'+esc(stamp)+' · '+esc(order.accountLabel||(order.linked===false?"Unassigned checkout":order.linked===true||order.customerAccountId?"Linked checkout":"Unassigned checkout"))+' · '+count+' item'+(count===1?'':'s')+'</small></span>'+
-        '<span class="success-order-total">'+paid+'<small class="'+(known?'':'success-order-warning')+'">'+
-        (known?'Final charged total':'Amount awaiting receipt verification')+'</small></span>'+
+        '<span class="success-order-total">'+displayed+'<small class="'+(known?'':'success-order-warning')+'">'+
+        priceLabel+'</small></span>'+
         '</summary><div class="success-order-items">'+details+'</div></details>';
     }).join("")+'</div>'+
     (orders.length>limit?'<p class="success-overflow">+'+(orders.length-limit)+' more confirmed orders in this period</p>':'');
@@ -508,7 +516,7 @@ if(tab==="success"){
         '<div class="success-account-title"><strong>'+esc(x.name)+'</strong><span>'+esc(x.retailer)+'</span></div>'+
         '<div class="success-account-meta"><span>'+esc(x.kind==='linked'?"Linked account":x.kind==='paid'?"Paid customer profile":"Verified assigned profile")+'</span>'+
         '<span>'+x.orders.length+' order'+(x.orders.length===1?'':'s')+'</span>'+
-        '<span>'+esc(dollars(verifiedSpent(x.orders)))+'</span></div>'+
+        '<span>'+esc(dollars(checkoutValueTotal(x.orders)))+'</span></div>'+
         (productSummary?'<p class="success-account-products">'+productSummary+'</p>':'')+
         '</div>';
     }).join("")+'</div>';
@@ -523,14 +531,15 @@ if(tab==="success"){
   const archive=data.success?.historicalSummary||{};
   const combinedNote='Includes '+(archive.historicalCheckouts||0)+' previously reported historical checkouts ('+dollars(archive.historicalSpent||0)+
     '); their individual receipts and dates are unavailable. '+
-    'Historical receipts cannot be assigned to a customer or period. Only verified final charged amounts count as live spending.';
-  const lifetime=panel("Lifetime community checkouts",'<div class="metrics">'+metric("Total confirmed checkouts",community.totalCheckouts??allSuccess.length)+
-    metric("Reported total checkout spend",dollars(community.totalSpent||0))+'</div><p>'+esc(combinedNote)+'</p>');
+    'Historical receipts cannot be assigned to a customer or period. Checkout value includes priced preorders; verified charges remain separate.';
+  const lifetime=panel("Lifetime community checkouts",'<div class="metrics">'+metric("Total non-cancelled checkouts",community.totalCheckouts??allSuccess.length)+
+    metric("Reported total checkout value",dollars(community.totalCheckoutValue??community.totalSpent??0))+
+    metric("Historical and verified charges",dollars(community.totalSpent||0))+'</div><p>'+esc(combinedNote)+'</p>');
   // A separate, audited Admin-only receipt workflow can fill genuinely
   // missing final prices without creating orders or guessing their owners.
-  const priceReview=pending||Number(community.pricePendingCheckouts||0)>0
-    ?'<section class="panel success-price-action"><h2>Verify missing checkout prices</h2>'+
-     '<p>Confirmed checkouts without a final charged amount cannot increase verified spend. Check real retailer receipts to update totals.</p>'+
+  const priceReview=pending||Number(community.checkoutValuePending??community.pricePendingCheckouts??0)>0
+    ?'<section class="panel success-price-action"><h2>Verify missing checkout values</h2>'+
+     '<p>Orders lacking a source price remain visible with an unavailable amount, never a misleading $0.00. Verify the original order total from retailer receipts to update the tracker.</p>'+
      '<a href="/admin-checkout-prices.html">REVIEW UNVERIFIED TOTALS ↗</a></section>':"";
   const unmatchedMeta=data.success?.unmatchedRecent||{};
   const unmatchedByRetailer=Array.isArray(unmatchedMeta.byRetailer)?unmatchedMeta.byRetailer:[];
@@ -578,7 +587,7 @@ if(tab==="success"){
       userRows=userRows.filter(order=>String(order.accountKey||"unknown")===successAccountKey);
     const accountCount=new Set(userRows.map(order=>order.accountKey||"unknown")).size;
     const userPending=missingPrices(userRows);
-    const userSpend=dollars(verifiedSpent(userRows));
+    const userSpend=dollars(checkoutValueTotal(userRows));
     const periodButtons='<div class="success-user-period" role="group" aria-label="'+esc(x.name)+' breakdown time range">'+
       [[1,"24H"],[7,"7D"],[30,"30D"]].map(([num,label])=>
         '<button type="button" data-success-user-days="'+num+'" data-success-user-id="'+esc(x.id)+
@@ -594,10 +603,10 @@ if(tab==="success"){
       (userDays==="custom"?esc(mobileCustomLabel(userCustomRange)):userDays===1?'24 hours':userDays+' days')+'</span></div>'+periodButtons+
       '<div class="success-user-stats">'+
       '<div><small>Confirmed orders</small><strong>'+userRows.length+'</strong></div>'+
-      '<div><small>Verified spent</small><strong>'+userSpend+'</strong></div>'+
+      '<div><small>Checkout value</small><strong>'+userSpend+'</strong></div>'+
       '<div><small>Accounts with hits</small><strong>'+accountCount+'</strong></div></div>'+
-      (userPending?'<p class="success-pending">'+userPending+' confirmed order'+(userPending===1?'':'s')+
-        ' awaiting a verified paid total.</p>':'')+
+      (userPending?'<p class="success-pending">'+userPending+' order'+(userPending===1?'':'s')+
+        ' with no amount reported by the source. Orders remain counted and visible.</p>':'')+
       '<details class="success-user-details" data-success-user="'+esc(x.id)+'" '+
         (successExpandedUsers.has(x.id)||successCustomerId===x.id?'open':'')+'>'+
       '<summary>View orders, purchased products & accounts that checked out</summary>'+
