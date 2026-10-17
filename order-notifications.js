@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import webpush from "web-push";
+import { isModuleUnlockNoticeRecord } from "./checkout-status-notice.js";
 
 const shippingLabels = { shipped: "Shipped", in_transit: "In transit", out_for_delivery: "Out for delivery", delivered: "Delivered" };
 export function cancelledOrder(record) {
@@ -23,8 +24,9 @@ export function orderKey(record) {
 }
 export function orderSnapshot(record) {
   const cancelled = cancelledOrder(record);
-  return { eligible: !cancelled && /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(record.status || ""),
-    reviewHold: !cancelled && record.status === "review_hold",
+  const statusOnly = isModuleUnlockNoticeRecord(record);
+  return { eligible: !statusOnly && !cancelled && /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(record.status || ""),
+    reviewHold: !statusOnly && !cancelled && record.status === "review_hold",
     cancelled, shipping: JSON.stringify([record.shipping?.status || "", record.shipping?.estimatedDelivery || "", record.shipping?.trackingUrl || ""]) };
 }
 export function orderEvents(record, previous) {
