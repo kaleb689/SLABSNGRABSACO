@@ -11,9 +11,12 @@ test("all-order Admin reporting includes unmatched confirmed webhooks but does n
   assert.ok(from>0&&to>from);
   const endpoint=server.slice(from,to);
   assert.match(endpoint,/app.get\("\/api\/admin\/success-overview", requireAdmin/);
-  assert.match(endpoint,/const confirmed = allRecords.filter\(confirmedDiscordPurchase\)/);
+  assert.match(endpoint,/const confirmed = allRecords\.filter\(record =>/);
+  assert.match(endpoint,/reviewHoldDiscordCheckout\(record\)/);
   assert.match(endpoint,/const communityRecords = confirmed.map\(record =>/);
-  assert.match(endpoint,/orderTotal: safe.orderTotal, orderTotalKnown: safe.orderTotalKnown/);
+  assert.match(endpoint,/checkoutValue: safe.checkoutValue/);
+  assert.match(endpoint,/orderTotal: safe.orderTotal/);
+  assert.match(endpoint,/orderTotalKnown: safe.orderTotalKnown/);
   assert.match(endpoint,/ok:true,records,communityRecords,unmatchedCount/);
   const community=endpoint.slice(endpoint.indexOf("const communityRecords ="),endpoint.indexOf('res.setHeader("Cache-Control"',endpoint.indexOf("const communityRecords =")));
   assert.doesNotMatch(community,/orderNumber\s*:/);
