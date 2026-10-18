@@ -19,7 +19,7 @@ concurrency:
   group: aco-studio-workshop-release
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.14'
+  ACO_VERSION: '4.13.15'
 jobs:
   mac:
     name: ${{ matrix.arch }} navigation, installer, update and rollback
