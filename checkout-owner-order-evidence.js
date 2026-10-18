@@ -109,7 +109,7 @@ export function ownerOrderEvidenceAudit(records, entries=approved) {
   const safe = Array.isArray(records) ? records : [];
   const evidenceByHash = new Map(entries.map(item => [String(item.orderHash),item]));
   const result = { sourceMatches:0, eligible:0, linked:0,
-    tenItems:0, verifiedFullTotals:0 };
+    tenItems:0, verifiedFullTotals:0, fullyPriced:0 };
   for (const record of safe) {
     if (!record || !isVerifiedDiscordCheckout(record) ||
         String(record.retailer || "").toLowerCase() !== "pkc" ||
@@ -122,6 +122,9 @@ export function ownerOrderEvidenceAudit(records, entries=approved) {
     const quantity = (Array.isArray(record.items) ? record.items : [])
       .reduce((sum,item) => sum + Math.max(0,Math.floor(Number(item.quantity)||0)),0);
     if (quantity===10 && Array.isArray(record.items) && record.items.length===10) result.tenItems++;
+    if (record.items?.length === 10 && Number(evidence.displayUnitPrice) > 0 &&
+        record.items.every(item => Math.round(Number(item.price || 0) * 100) ===
+          Math.round(evidence.displayUnitPrice * 100))) result.fullyPriced++;
     if ((checkoutPaidAmount(record) ?? 0) >= evidence.total) result.verifiedFullTotals++;
   }
   return result;
