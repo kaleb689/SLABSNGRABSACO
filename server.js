@@ -38731,6 +38731,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
   discordSuccessScan.running = true;
   discordSuccessScan.error = null;
   let added = 0, updated = 0, attributed = 0, skipped = 0, unrecognized = 0, unchanged = 0, conflicts = 0, unmatched = 0, before = "", newest = null;
+  let ownerEvidenceAppliedCount = 0;
   // Aggregate diagnostics ONLY. Never log retailer account emails, profile names or order numbers.
   const identityStats = { recognized: 0, withEmail: 0, withProfileName: 0, withOrderNumber: 0,
     withoutIdentity: 0, matched: 0, noEligibleCandidates: 0, unmatchedEmail: 0,
@@ -38979,6 +38980,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
       // to the EXACT original Discord checkout. This also repairs a partial
       // four-product webhook without creating an email-derived purchase.
       const verifiedOwnerEvidence = applyOwnerVerifiedOrderEvidence(existing);
+      ownerEvidenceAppliedCount = verifiedOwnerEvidence.corrected;
       if (verifiedOwnerEvidence.changed) {
         updated += verifiedOwnerEvidence.corrected;
         for (const id of verifiedOwnerEvidence.changedCustomerIds) changedCustomerIds.add(id);
@@ -39053,6 +39055,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
     discordSuccessScan.persistedStoreChanged = persistedStoreChanged;
     discordSuccessScan.added = added;
     discordSuccessScan.updated = updated;
+    discordSuccessScan.ownerEvidenceApplied = ownerEvidenceAppliedCount;
     discordSuccessScan.attributed = attributed;
     discordSuccessScan.skipped = skipped;
     discordSuccessScan.unrecognized = unrecognized;
@@ -39072,7 +39075,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
       recentUnmatched:recentConfirmed.filter(record => !record.customerAccountId).length,
       linkedOrderValueCents:recentConfirmed.filter(record => record.customerAccountId).reduce((cents,record) => cents + Math.round((checkoutOrderValue(record).amount || 0) * 100),0)
     }));
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedQuantityClasses, ambiguousGreenShapes, rejectedSamples, identityStats }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, ownerEvidenceApplied: ownerEvidenceAppliedCount, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedQuantityClasses, ambiguousGreenShapes, rejectedSamples, identityStats }));
     }
     return true;
   } catch (error) {
