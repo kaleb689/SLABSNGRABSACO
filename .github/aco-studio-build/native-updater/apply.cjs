@@ -41,6 +41,11 @@ edit('main.js',[
   // Restore an authenticated existing website session without an extra login.
   if(siteBridge.isReady()){try{await siteBridge.read('roster',{});return;}catch{}}
   siteBridge.signIn();
+  // The full-app updater should consider a healthy *secure login screen*
+  // a successful relaunch. Waiting for an Admin account to authenticate
+  // would incorrectly trigger the native installer's automatic rollback.
+  if(process.platform==='darwin')
+   void require('./mac-full-updates').markHealthy(app).catch(()=>{});
   for(;;){
    if(!siteBridge.isReady()){await new Promise(r=>setTimeout(r,1200));continue;}
    try{await siteBridge.read('roster',{});return;}
