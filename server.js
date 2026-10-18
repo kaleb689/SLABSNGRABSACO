@@ -44639,6 +44639,9 @@ function shippingTrackingUrl(html = "", text = "") {
 }
 
 function compactShippingAddress(address = {}) {
+  // Shipping emails may arrive before an address is matched. Null is a
+  // legitimate unknown value, not a reason to suppress the shipping DM.
+  if (!address || typeof address !== "object") address = {};
   const first = clean(address.firstName || address.first || "", 60);
   const last = clean(address.lastName || address.last || "", 60);
   return {
