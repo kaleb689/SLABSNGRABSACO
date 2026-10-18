@@ -260,23 +260,39 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    const arr=index.get(key)||[];arr.push({...entry,retailer,email});index.set(key,arr);
   };
   for(const row of personal.groups.owner||[])include({scope:'personal',owner:'owner',id:row.id,retailer:row.retailer,email:row.email,label:row.label,status:row.status});
-  const linkedMirrors=new Set();
+  const linkedMirrors=new Set(),localCounts=new Map();
   for(const [owner,rows] of Object.entries(aco.groups))for(const row of rows){
-   include({scope:'aco',owner,id:row.id,retailer:row.retailer,email:row.email,label:row.label,status:row.status});
-   // A synced local profile and its linked website assignment represent one
-   // logical account, not two duplicates. Only exact assignment IDs qualify.
+   const retailer=retailerId(row.retailer),email=normalizeEmail(row.email),key=owner+'|'+retailer+'|'+email;
+   include({scope:'aco',owner,id:row.id,retailer,email,label:row.label,status:row.status});
+   if(email)localCounts.set(key,(localCounts.get(key)||0)+1);
+   // A locally synchronized website assignment already represents one
+   // physical retailer account. Do not count it twice in the web feed.
    if(row.source==='website-linked-profile'&&row.remoteKey)
-    linkedMirrors.add(owner+'|'+retailerId(row.retailer)+'|'+row.remoteKey+'|'+normalizeEmail(row.email));
+    linkedMirrors.add(key+'|'+row.remoteKey);
   }
-  const seenWeb=new Set();
+  const seenWeb=new Set(),uniqueWeb=[];
   for(const w of webRecords){
    if(!w||!w.email)continue;
    const owner=memberId(w.customerId),retailer=retailerId(w.retailer),email=normalizeEmail(w.email),id=name(w.id);
    if(!email)continue;
-   const identity=owner+'|'+retailer+'|'+id+'|'+email;
-   if(seenWeb.has(identity))continue;seenWeb.add(identity);
-   if(id&&linkedMirrors.has(owner+'|'+retailer+'|'+retailer+'|'+id+'|'+email))continue;
-   include({scope:'website',owner,id,retailer,email,label:'Website linked account',status:'linked'});
+   const key=owner+'|'+retailer+'|'+email,identity=key+'|'+id;
+   if(seenWeb.has(identity))continue;
+   seenWeb.add(identity);uniqueWeb.push({scope:'website',owner,id,retailer,email,label:'Website linked account',status:'linked',key});
+  }
+  const mirroredCount=new Map(),unmatchedWeb=[];
+  for(const entry of uniqueWeb){
+   if(entry.id&&linkedMirrors.has(entry.key+'|'+entry.retailer+'|'+entry.id)){
+    mirroredCount.set(entry.key,(mirroredCount.get(entry.key)||0)+1);
+   }else unmatchedWeb.push(entry);
+  }
+  // Older imported ACO cards have no remoteKey. If exactly the same account
+  // is linked to the same customer and retailer on the website, pair the
+  // records rather than creating an artificial second hit. Excess distinct
+  // website assignments remain visible as genuine same-retailer collisions.
+  for(const entry of unmatchedWeb){
+   const paired=mirroredCount.get(entry.key)||0,available=(localCounts.get(entry.key)||0)-paired;
+   if(available>0){mirroredCount.set(entry.key,paired+1);continue;}
+   include(entry);
   }
   for(let i=0;i<imports.length;i++){
    const imp=imports[i],email=normalizeEmail(imp.email||emailFrom(imp.data||imp));if(!email)continue;
