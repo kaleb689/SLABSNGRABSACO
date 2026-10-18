@@ -109,3 +109,29 @@ test('Website vault version conflict cannot be mistaken for a successful sync',a
  await assert.rejects(h.lib.saveWebsitePayment(sender,{...owner,paymentId:'pay-1',expectedRevision:'a'.repeat(64),payment:{cardholder:'Not Saved'},confirmed:true}),/Stale website revision/);
  assert.equal(h.changes.length,1);
 });
+
+test('Explicit saved record IDs and separate billing address survive website to Studio import',()=>{
+ const {sourceForCustomer}=require('../customer-profile-source');
+ const customer={id:'customer-a',name:'Alex Sample',shipping:{address:'Origin',city:'Sample',state:'FL',zip:'33324'}};
+ const saved={
+  addresses:[
+   {id:'addr-other',firstName:'Other',lastName:'Person',address:'99 Wrong Lane',city:'Other',state:'FL',zip:'33325'},
+   {id:'addr-selected',firstName:'Alex',lastName:'Sample',address:'123 Selected Street',city:'Selected',state:'FL',zip:'33324'}],
+  paymentMethods:[
+   {id:'card-other',acoCardNumber:'5555555555554444',expMonth:'01',expYear:'2030',cardholder:'Wrong'},
+   {id:'card-selected',acoCardNumber:'4242424242424242',expMonth:'08',expYear:'2031',cardholder:'Alex Sample'}]
+ };
+ const memberships={memberships:[{id:'managed-1',assignmentId:'assignment-1',customerAccountId:'customer-a',type:'free',active:true,
+  assignmentRetailer:'pkc',accountEmail:'account@example.test',
+  retailers:{pkc:{username:'account@example.test'}},savedAddressId:'addr-selected',savedPaymentMethodId:'card-selected',
+  customerBillingProfile:{profileName:'Billing profile',firstName:'Bill',lastName:'Example',email:'customer@example.test',phone:'9545550100',
+   address:'425 Billing Court',city:'Billing',state:'FL',zip:'33325',country:'US'}}]};
+ const result=sourceForCustomer(customer,saved,memberships);
+ assert.equal(result.linked.length,1);
+ const row=result.linked[0];
+ assert.equal(row.managedAccountId,'managed-1');
+ assert.equal(row.assignmentType,'free');
+ assert.equal(row.data.shipping.addressLine1,'123 Selected Street');
+ assert.equal(row.data.billing.addressLine1,'425 Billing Court');
+ assert.equal(row.data.card.number,'4242424242424242');
+});
