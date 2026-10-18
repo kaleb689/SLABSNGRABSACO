@@ -61,14 +61,28 @@ test("an already higher verified final total is never lowered",()=>{
 
 test("private audit shows whether exact PKC order is present, complete and attributed without identifiers",()=>{
   const before=ownerOrderEvidenceAudit([make()],entries);
-  assert.deepEqual(before,{sourceMatches:1,eligible:1,linked:1,tenItems:0,verifiedFullTotals:0});
+  assert.deepEqual(before,{sourceMatches:1,eligible:1,linked:1,tenItems:0,verifiedFullTotals:0,fullyPriced:0});
   const corrected=[make()];
   applyOwnerVerifiedOrderEvidence(corrected,entries);
   const after=ownerOrderEvidenceAudit(corrected,entries);
-  assert.deepEqual(after,{sourceMatches:1,eligible:1,linked:1,tenItems:1,verifiedFullTotals:1});
+  assert.deepEqual(after,{sourceMatches:1,eligible:1,linked:1,tenItems:1,verifiedFullTotals:1,fullyPriced:0});
   assert.deepEqual(ownerOrderEvidenceAudit([{
     ...make(),orderNumber:"OTHER-PKC-ORDER"
-  }],entries),{sourceMatches:0,eligible:0,linked:0,tenItems:0,verifiedFullTotals:0});
+  }],entries),{sourceMatches:0,eligible:0,linked:0,tenItems:0,verifiedFullTotals:0,fullyPriced:0});
   const printed=JSON.stringify(after);
   assert.doesNotMatch(printed,/SYNTHETIC-PKC-ORDER|member-test|@|sourceIds/);
+});
+
+test("fully verified ten-tin receipt restores every tax-inclusive displayed unit price", () => {
+  const pricedEntries = entries.map(item=>({...item,displayUnitPrice:10.64}));
+  const records=[make()];
+  assert.equal(ownerOrderEvidenceAudit(records,pricedEntries).fullyPriced,0);
+  applyOwnerVerifiedOrderEvidence(records,pricedEntries);
+  assert.equal(records[0].items.length,10);
+  assert.equal(records[0].itemCount,10);
+  assert.ok(records[0].items.every(item=>item.price===10.64));
+  assert.equal(records[0].items.reduce((sum,item)=>sum+item.price*item.quantity,0).toFixed(2),"106.40");
+  assert.equal(records[0].orderTotal,106.40);
+  assert.equal(ownerOrderEvidenceAudit(records,pricedEntries).fullyPriced,1);
+  assert.equal(applyOwnerVerifiedOrderEvidence(records,pricedEntries).changed,false);
 });
