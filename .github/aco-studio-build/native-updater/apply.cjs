@@ -47,6 +47,17 @@ edit('main.js',[
    }catch(error){console.error('Automatic update not installed:',String(error?.message||error));}
    finally{if(splash&&!splash.isDestroyed())splash.close();}
   }
+  // The existing website Admin authentication is the program's sign-in.
+  // A successful authenticated API read, not merely an open browser window,
+  // is required before any protected desktop workspace is created.
+  if(!process.argv.includes('--aco-studio-ci-smoke')){
+   siteBridge.signIn();
+   for(;;){
+    if(!siteBridge.isReady()){await new Promise(r=>setTimeout(r,1200));continue;}
+    try{await siteBridge.read('roster',{});break;}
+    catch{await new Promise(r=>setTimeout(r,1500));}
+   }
+  }
   startupFinished=true;launch();
  }
  void openAfterNativeStartup();
