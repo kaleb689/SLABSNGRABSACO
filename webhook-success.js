@@ -26,11 +26,17 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
   // with an item subtotal or an unknown amount.
   const incomingAmount = Number(order.orderTotal);
   const previousAmount = Number(prior.orderTotal) || 0;
-  // Partial follow-up hooks can report a four-item subtotal after a verified
-  // PKC shipment restored ten items and their larger merchandise subtotal.
-  // A same-priority ITEM subtotal must not reduce the existing order value.
+  // Protect restored multi-item orders from partial follow-up webhooks:
+  // a four-item subtotal must not replace the ten-item value. Still allow a
+  // correction to a formerly inflated same-item subtotal when the new webhook
+  // contains the complete item list.
+  const meaningfulItems = value => (Array.isArray(value) ? value : []).filter(item =>
+    Number(item?.quantity) > 0 &&
+    String(item?.name || "").trim().toLowerCase() !== "product details unavailable");
+  const priorLines = meaningfulItems(prior.items).length;
+  const incomingLines = meaningfulItems(order.items).length;
   const smallerPartialSubtotal = incomingPriceRank === 1 && previousPriceRank === 1 &&
-    incomingAmount < previousAmount;
+    incomingAmount < previousAmount && priorLines > incomingLines;
   const priced = !smallerPartialSubtotal && incomingPriceRank > 0 &&
     incomingPriceRank >= previousPriceRank &&
     Number.isFinite(incomingAmount) && incomingAmount > 0;
