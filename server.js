@@ -38218,6 +38218,9 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
       quantity: fieldValue(quantityField?.value) || descriptionQuantity || "",
       price: priceMatch?.[1] || fieldValue(priceField?.value) || descriptionPrice, priceIsLineTotal: Boolean(priceMatch) });
   }
+  // A thumbnail on a one-item embed belongs ONLY to that item.
+  if (numbered.size === 1 && messageImageUrl)
+    numbered.values().next().value.imageUrl = messageImageUrl;
   // A Discord checkout can contain MORE THAN ONE product-bearing embed.
   // Keep each embed's numbered fields separate to avoid overwriting Item (1)
   // with Item (1) from the next embed. Do not invent extra checkout records.
