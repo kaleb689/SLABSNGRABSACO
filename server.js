@@ -12,12 +12,14 @@ import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity,
 import { webhookOnlyCheckouts, discordCheckoutIds, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { isModuleLifecycleDiscordMessage, isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
 import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
+import { pokemonCenterFulfillmentDetails, mergeRetailerFulfillmentItems } from "./retailer-order-enrichment.js";
 import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
 import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checkout-profile-aliases.js";
 import { managedAccountEmailEvidence, checkoutAssignmentContains, recoverCheckoutAssignmentOwners } from "./discord-checkout-owner-evidence.js";
 import { resolveOwnerVerifiedBackfill } from "./checkout-owner-backfills.js";
 import { resolveOwnerVerifiedScreenshots, verifiedScreenshotMatchStatus } from "./checkout-owner-screenshot-evidence.js";
+import { applyOwnerVerifiedOrderEvidence } from "./checkout-owner-order-evidence.js";
 import { verifiedSameDayCheckoutOwner } from "./checkout-owner-verified-day.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
@@ -38312,7 +38314,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
 
 const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
 const DISCORD_HIT_MIRROR_VERSION = 9;
-const DISCORD_HIT_RENDER_VERSION = 4;
+const DISCORD_HIT_RENDER_VERSION = 5;
 let discordHitsChannelIdCache = null;
 let discordHitMirrorMutation = Promise.resolve();
 
@@ -38409,7 +38411,7 @@ function publicDiscordHitPayload(order) {
     money(paid) : "Pending verification", inline: false });
   const main = { title: "Successful Checkout!", color: 0x00ff00, fields };
   if (items[0].imageUrl) main.thumbnail = { url: items[0].imageUrl };
-  const extra = items.slice(1, 9).map(item => ({
+  const extra = items.slice(1, 10).map(item => ({
     color: 0x00ff00,
     description: item.name + (item.quantity ? " ×" + item.quantity : " (quantity not provided)") + "\nUnit price: " +
       (item.unitPrice !== null ? money(item.unitPrice) : "Pending verification"),
@@ -38729,6 +38731,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
   discordSuccessScan.running = true;
   discordSuccessScan.error = null;
   let added = 0, updated = 0, attributed = 0, skipped = 0, unrecognized = 0, unchanged = 0, conflicts = 0, unmatched = 0, before = "", newest = null;
+  let ownerEvidenceAppliedCount = 0;
   // Aggregate diagnostics ONLY. Never log retailer account emails, profile names or order numbers.
   const identityStats = { recognized: 0, withEmail: 0, withProfileName: 0, withOrderNumber: 0,
     withoutIdentity: 0, matched: 0, noEligibleCandidates: 0, unmatchedEmail: 0,
@@ -38973,6 +38976,15 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
           changedCustomerIds.add(String(result.record.customerAccountId));
         }
       }
+      // Apply the owner's documented, tax-inclusive receipt evidence only
+      // to the EXACT original Discord checkout. This also repairs a partial
+      // four-product webhook without creating an email-derived purchase.
+      const verifiedOwnerEvidence = applyOwnerVerifiedOrderEvidence(existing);
+      ownerEvidenceAppliedCount = verifiedOwnerEvidence.corrected;
+      if (verifiedOwnerEvidence.changed) {
+        updated += verifiedOwnerEvidence.corrected;
+        for (const id of verifiedOwnerEvidence.changedCustomerIds) changedCustomerIds.add(id);
+      }
       // An earlier webhook for the same order can temporarily alter the
       // in-memory accumulator before a newer one restores the same final
       // result. Avoid resaving/broadcasting a no-op reconciliation.
@@ -39043,6 +39055,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
     discordSuccessScan.persistedStoreChanged = persistedStoreChanged;
     discordSuccessScan.added = added;
     discordSuccessScan.updated = updated;
+    discordSuccessScan.ownerEvidenceApplied = ownerEvidenceAppliedCount;
     discordSuccessScan.attributed = attributed;
     discordSuccessScan.skipped = skipped;
     discordSuccessScan.unrecognized = unrecognized;
@@ -39062,7 +39075,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
       recentUnmatched:recentConfirmed.filter(record => !record.customerAccountId).length,
       linkedOrderValueCents:recentConfirmed.filter(record => record.customerAccountId).reduce((cents,record) => cents + Math.round((checkoutOrderValue(record).amount || 0) * 100),0)
     }));
-    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedQuantityClasses, ambiguousGreenShapes, rejectedSamples, identityStats }));
+    console.log('Discord checkout reconciliation completed:', JSON.stringify({ added, updated, ownerEvidenceApplied: ownerEvidenceAppliedCount, attributed, skipped, unrecognized, alreadyImported: unchanged, conflicts, unmatched, source: discordSuccessScan.source, channels: discordSuccessScan.sourceChannels?.length || 0, sourceStatusCounts, persistedStoreChanged, collisionStats, rejectionReasons, rejectedFieldShapes, rejectedParseReasons, rejectedQuantityClasses, ambiguousGreenShapes, rejectedSamples, identityStats }));
     }
     return true;
   } catch (error) {
@@ -40334,6 +40347,8 @@ function safeSuccessCheckout(
             estimatedDelivery: clean(record.shipping.estimatedDelivery, 80) || null,
             deliveredAt: record.shipping.deliveredAt || null,
             trackingUrl: safeSuccessImageUrl(record.shipping.trackingUrl),
+            carrier: clean(record.shipping.carrier, 60) || null,
+            trackingNumber: clean(record.shipping.trackingNumber, 60) || null,
             address: record.shipping.address ? compactShippingAddress(record.shipping.address) : null,
             updatedAt: record.shipping.updatedAt || null
           }
@@ -44763,7 +44778,10 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const cancellation = cancellationFromSubject(subject);
         const status = cancellation || shippingStatusFromMessage(subject, combined);
         const receiptTotal = verifiedRetailerOrderTotal(decoded.text, decoded.html);
-        if (!status && !receiptTotal) continue;
+        const pkcDetails = pokemonCenterFulfillmentDetails({
+          subject, text: decoded.text || "", html: decoded.html || ""
+        });
+        if (!status && !receiptTotal && !pkcDetails.items.length) continue;
 
         // A customer's inbox can include purchases outside this ACO service.
         // Require an exact existing webhook order number, one unique match,
@@ -44782,6 +44800,36 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const unmatchedBusinessReceipt = Boolean(mailbox.managedHost &&
           record && !record.customerAccountId);
         if ((!account || account.disabled === true) && !unmatchedBusinessReceipt) continue;
+        // Never create checkouts from mailbox evidence. Require an exact
+        // order number, an authorized retailer sender and a Discord source.
+        if (normalizeSuccessRetailer(record.retailer) === "PKC" &&
+            customerCheckoutPurchase(record) && pkcDetails.items.length) {
+          const receiptItems = mergeRetailerFulfillmentItems(record.items, pkcDetails.items);
+          if (receiptItems.changed || Number(record.itemCount || 0) !== receiptItems.itemCount) {
+            record.items = receiptItems.items;
+            record.itemCount = receiptItems.itemCount;
+            pendingChanges.push({
+              id: record.id, customerAccountId: account ? String(account.id) : "",
+              retailer: record.retailer, orderNumber: record.orderNumber,
+              fulfillmentItems: pkcDetails.items
+            });
+            changed = true;
+          }
+          // Subtotals are provisional, and cannot override an explicit final
+          // total or erase a larger previously reported checkout value.
+          if (pkcDetails.subtotal !== null &&
+              checkoutPaidAmount(record) === null &&
+              pkcDetails.subtotal > (Number(record.orderTotal) || 0)) {
+            record.orderTotal = pkcDetails.subtotal;
+            record.orderTotalBasis = "item_subtotal";
+            pendingChanges.push({
+              id: record.id, customerAccountId: account ? String(account.id) : "",
+              retailer: record.retailer, orderNumber: record.orderNumber,
+              itemSubtotal: pkcDetails.subtotal
+            });
+            changed = true;
+          }
+        }
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
         if (receiptTotal && customerCheckoutPurchase(record) &&
             record.orderTotalBasis !== "retailer_receipt" &&
@@ -44825,6 +44873,8 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
           estimatedDelivery: shippingEstimateFromText(combined) || prior.estimatedDelivery || null,
           deliveredAt: status === "delivered" ? messageAt : prior.deliveredAt || null,
           trackingUrl: shippingTrackingUrl(decoded.html, decoded.text) || prior.trackingUrl || null,
+          carrier: pkcDetails.carrier || prior.carrier || null,
+          trackingNumber: pkcDetails.trackingNumber || prior.trackingNumber || null,
           address: matchCustomerShippingAddress(account, combined) || prior.address || null,
           updatedAt: messageAt,
           source: "retailer_email"
@@ -44833,9 +44883,9 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         // Do not persist a new updatedAt or notify when the mailbox repeats
         // an unchanged status or the same tracking details.
         const before = JSON.stringify([prior.status, prior.enRouteAt, prior.estimatedDelivery,
-          prior.deliveredAt, prior.trackingUrl, prior.address]);
+          prior.deliveredAt, prior.trackingUrl, prior.address, prior.carrier, prior.trackingNumber]);
         const after = JSON.stringify([next.status, next.enRouteAt, next.estimatedDelivery,
-          next.deliveredAt, next.trackingUrl, next.address]);
+          next.deliveredAt, next.trackingUrl, next.address, next.carrier, next.trackingNumber]);
         if (before === after) continue;
         record.shipping = next;
         pendingChanges.push({
@@ -44944,6 +44994,28 @@ async function syncShippingTrackers() {
           String(item.orderNumber || "") === String(update.orderNumber || "")
         );
         if (!record) continue;
+        if (Array.isArray(update.fulfillmentItems) &&
+            normalizeSuccessRetailer(record.retailer) === "PKC" &&
+            customerCheckoutPurchase(record)) {
+          const mergedItems = mergeRetailerFulfillmentItems(record.items, update.fulfillmentItems);
+          if (mergedItems.changed || Number(record.itemCount || 0) !== mergedItems.itemCount) {
+            record.items = mergedItems.items;
+            record.itemCount = mergedItems.itemCount;
+            receiptChanged = true;
+            if (update.customerAccountId) changedAccounts.add(update.customerAccountId);
+          }
+          continue;
+        }
+        if (update.itemSubtotal) {
+          if (customerCheckoutPurchase(record) && checkoutPaidAmount(record) === null &&
+              Number(update.itemSubtotal) > (Number(record.orderTotal) || 0)) {
+            record.orderTotal = Number(update.itemSubtotal);
+            record.orderTotalBasis = "item_subtotal";
+            receiptChanged = true;
+            if (update.customerAccountId) changedAccounts.add(update.customerAccountId);
+          }
+          continue;
+        }
         if (update.orderTotal) {
           if (customerCheckoutPurchase(record) &&
               record.orderTotalBasis !== "retailer_receipt" &&
@@ -44973,9 +45045,9 @@ async function syncShippingTrackers() {
         if (shippingStatusRank(next.status) < shippingStatusRank(prior.status)) continue;
         if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(next.updatedAt)) continue;
         const before = JSON.stringify([prior.status, prior.enRouteAt, prior.estimatedDelivery,
-          prior.deliveredAt, prior.trackingUrl, prior.address]);
+          prior.deliveredAt, prior.trackingUrl, prior.address, prior.carrier, prior.trackingNumber]);
         const after = JSON.stringify([next.status, next.enRouteAt, next.estimatedDelivery,
-          next.deliveredAt, next.trackingUrl, next.address]);
+          next.deliveredAt, next.trackingUrl, next.address, next.carrier, next.trackingNumber]);
         if (before === after) continue;
         record.shipping = next;
         changedAccounts.add(update.customerAccountId);
@@ -44990,7 +45062,7 @@ async function syncShippingTrackers() {
         broadcastLiveDataChange("verified-shipping-update");
         // Edit an existing community hit when its verified receipt changes.
         // The durable mirror ledger forbids duplicate posting.
-        if (pendingChanges.some(change => change.orderTotal)) queueDiscordSuccessScan(350);
+        if (receiptChanged) queueDiscordSuccessScan(350);
       }
     });
     // Push alerts and Discord DMs only after the order update is durable.

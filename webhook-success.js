@@ -24,8 +24,22 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
   const previousPriceRank = priceRank(prior.orderTotalBasis);
   // A later duplicate webhook must not overwrite an exact verified receipt
   // with an item subtotal or an unknown amount.
-  const priced = incomingPriceRank > 0 && incomingPriceRank >= previousPriceRank &&
-    Number.isFinite(order.orderTotal) && order.orderTotal > 0;
+  const incomingAmount = Number(order.orderTotal);
+  const previousAmount = Number(prior.orderTotal) || 0;
+  // Protect restored multi-item orders from partial follow-up webhooks:
+  // a four-item subtotal must not replace the ten-item value. Still allow a
+  // correction to a formerly inflated same-item subtotal when the new webhook
+  // contains the complete item list.
+  const meaningfulItems = value => (Array.isArray(value) ? value : []).filter(item =>
+    Number(item?.quantity) > 0 &&
+    String(item?.name || "").trim().toLowerCase() !== "product details unavailable");
+  const priorLines = meaningfulItems(prior.items).length;
+  const incomingLines = meaningfulItems(order.items).length;
+  const smallerPartialSubtotal = incomingPriceRank === 1 && previousPriceRank === 1 &&
+    incomingAmount < previousAmount && priorLines > incomingLines;
+  const priced = !smallerPartialSubtotal && incomingPriceRank > 0 &&
+    incomingPriceRank >= previousPriceRank &&
+    Number.isFinite(incomingAmount) && incomingAmount > 0;
   // Discord webhooks about the SAME retailer order can arrive as green,
   // orange and red messages at different times. Use only the newest event
   // color for status, not whichever webhook happens to be scanned last.

@@ -45,12 +45,29 @@ if (appEnabled) {
   const selected = rows => selectedOrders(rows,days,new Date(),customRange);
   const activityFor = rows => dashboardActivity(rows,days,new Date(),customRange);
   const expanded = new Set();
+  let activeTrackingOrderId = null, latestSheetMarkup = '';
+  const recordKey = order => String(order?.id || order?.orderNumber || '');
   const root = document.createElement('div');
   root.id = 'app-dashboard'; root.hidden = true;
   root.innerHTML = `<header class="sng-app-header"><div class="sng-app-brand"><img src="/slabsngrabs-aco-logo-transparent.png" alt=""><div><strong>SLABSNGRABSACO</strong><span id="sng-app-title"></span></div></div>
     <div class="sng-app-header-actions"><button type="button" data-app-theme aria-label="Switch to day mode">${icon('sun')}</button><button type="button" data-app-view="settings" aria-label="Settings">${icon('settings')}</button><button type="button" data-app-view="notifications" aria-label="Notifications">${icon('notifications')}<span id="sng-app-unread" hidden></span></button></div></header>
     <div id="sng-app-content"></div><nav class="sng-app-nav" aria-label="App navigation">${navLabels.map(([id, label]) => `<button type="button" data-app-view="${id}" aria-label="${label}">${icon(id)}<span>${label}</span></button>`).join('')}</nav>`;
   document.getElementById('customer-dashboard').before(root);
+  const trackingSheet = document.createElement('dialog');
+  trackingSheet.className = 'sng-tracking-sheet';
+  trackingSheet.setAttribute('aria-label', 'Your order tracking details');
+  root.append(trackingSheet);
+  const closeTrackingSheet = () => {
+    if (typeof trackingSheet.close === 'function' && trackingSheet.open) trackingSheet.close();
+    else trackingSheet.removeAttribute('open');
+    activeTrackingOrderId = null; latestSheetMarkup = '';
+  };
+  trackingSheet.addEventListener('close', () => {
+    activeTrackingOrderId = null; latestSheetMarkup = '';
+  });
+  trackingSheet.addEventListener('click', event => {
+    if (event.target === trackingSheet) closeTrackingSheet();
+  });
   document.body.classList.add('app-dashboard');
   document.body.dataset.appView = view;
   const dropEditor = createCustomerDropEditor({escape:e,onUpdate:()=>{ if(view==='drops') render(); }});
@@ -101,6 +118,110 @@ if (appEnabled) {
     return `<img src="${e(src)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${fallback}'">`;
   };
   const productRows = (products, ranked = false) => products.map((product, index) => `<article class="sng-product-row">${ranked ? `<b class="sng-rank">${index + 1}</b>` : ''}<div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong>${money(product.value)}</strong><small>ITEM VALUE (EXCL. FEES)</small></div></article>`).join('') || '<p class="sng-empty">No products in this date range.</p>';
+
+  const trackingRecords = () => [...orders, ...reviewHoldOrders, ...cancelledOrders];
+  const trackingSheetHtml = order => {
+    const shipping = order.shipping || {}, address = shipping.address || {};
+    const products = Array.isArray(order.items) ? order.items : [];
+    const itemCount = products.reduce((sum, product) => sum + Math.max(0, Number(product.quantity) || 0), 0);
+    const quantity = Math.max(itemCount, Math.max(0, Number(order.itemCount) || 0));
+    const status = shippingStage(order);
+    const steps = ['ordered', 'shipped', 'in_transit', 'delivered'];
+    const activeStep = status === 'out_for_delivery' ? 2 : Math.max(0, steps.indexOf(status));
+    const value = Number(order.checkoutValueKnown === true ? order.checkoutValue :
+      order.orderTotalKnown === true ? order.orderTotal : 0);
+    const total = Number.isFinite(value) && value > 0 ? money(value) : 'Pending total';
+    const provisional = order.checkoutValueBasis === 'item_subtotal';
+    const orderNumber = String(order.orderNumber || '');
+    const trackingNumber = String(shipping.trackingNumber || '');
+    const carrier = String(shipping.carrier || 'Carrier pending');
+    const carrierUrl = /^https:\/\//i.test(String(shipping.trackingUrl || '')) ? shipping.trackingUrl : '';
+    const date = order.checkoutAt ? new Date(order.checkoutAt).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric'
+    }) : 'Date pending';
+    const shipTo = [
+      address.name, address.address, address.address2,
+      [address.city, address.state, address.zip].filter(Boolean).join(', '),
+      address.country
+    ].filter(Boolean).join(' · ');
+    const first = products[0] || {};
+    const history = Array.isArray(shipping.events) ? shipping.events.filter(event => event?.status) : [];
+    const updates = history.length ? history.map(event =>
+      '<div class="sng-sheet-history-entry"><strong>' + e(event.status) +
+      '</strong><small>' + e(event.date || event.at || '') + '</small></div>').join('') :
+      shipping.updatedAt ? '<div class="sng-sheet-history-entry"><strong>' +
+        e(stageLabels[status] || 'Shipping updated') + '</strong><small>' +
+        e(new Date(shipping.updatedAt).toLocaleString('en-US')) + '</small></div>' :
+        '<p>Carrier events will appear when confirmed.</p>';
+    const detail = (label, value) => '<div class="sng-sheet-detail-row"><span>' +
+      e(label) + '</span><strong>' + e(value || 'Pending') + '</strong></div>';
+    return `<div class="sng-sheet-handle" aria-hidden="true"></div>
+      <header class="sng-sheet-header">
+        <div><strong>Order #${e(orderNumber || 'Pending')}</strong>
+        <small>${e(order.retailer || 'Retailer')} · ${e(date)}</small></div>
+        <button type="button" class="sng-sheet-close" data-app-sheet-close aria-label="Close tracking details">×</button>
+      </header>
+      <div class="sng-sheet-body">
+        <section class="sng-sheet-hero">
+          <div class="sng-sheet-hero-top">
+            <div class="sng-sheet-hero-photo">${image(first)}</div>
+            <div class="sng-sheet-hero-main"><strong>${e(first.name || order.retailer || 'Order')}</strong>
+              <span>${e(order.retailer || 'Retailer')}</span>
+              <small class="sng-sheet-stage">● ${e(stageLabels[status] || 'Ordered')}</small>
+            </div>
+            <div class="sng-sheet-total"><strong>${e(total)}</strong></div>
+          </div>
+          <div class="sng-sheet-progress" aria-label="Shipping progress">${steps.map((step, i) =>
+            '<span class="' + (i <= activeStep ? 'complete' : '') + '" title="' + e(stageLabels[step]) + '"></span>').join('')}</div>
+          ${provisional ? '<small class="sng-sheet-provisional">Merchandise subtotal — final total including tax is pending verification</small>' : ''}
+        </section>
+        <section class="sng-sheet-section">
+          <div class="sng-sheet-section-heading"><strong>Items</strong><span>${quantity} total · ${products.length} product lines</span></div>
+          <div class="sng-sheet-items">${products.map(product =>
+            '<div class="sng-sheet-item"><span class="sng-sheet-item-image">' + image(product) +
+            '</span><div><strong>' + e(product.name || 'Product') +
+            '</strong><small>Qty ' + e(Math.max(0, Number(product.quantity) || 0)) +
+            (Number(product.price) > 0 ? ' · ' + money(product.price) + ' each' : ' · Unit price pending') +
+            '</small></div><span class="sng-sheet-item-stage">' + e(stageLabels[status] || 'Ordered') + '</span></div>'
+          ).join('')}</div>
+        </section>
+        <div class="sng-sheet-actions">
+          <button type="button" data-app-copy-order ${orderNumber ? '' : 'disabled'}>Copy order #</button>
+          <button type="button" data-app-copy-tracking ${trackingNumber ? '' : 'disabled'}>Copy tracking</button>
+          ${carrierUrl ? '<a target="_blank" rel="noopener noreferrer" href="' + e(carrierUrl) + '">Track with carrier ↗</a>' : ''}
+        </div>
+        <p class="sng-sheet-copy-feedback" data-app-copy-feedback aria-live="polite"></p>
+        <section class="sng-sheet-section"><div class="sng-sheet-section-heading"><strong>Order details</strong></div>
+          <div class="sng-sheet-details">${detail('Retailer', order.retailer)}
+            ${detail('Order #',orderNumber)}${detail('Order date',date)}
+            ${detail('Quantity',String(quantity))}${detail(provisional ? 'Subtotal (before tax)' : 'Total (including tax when verified)',total)}
+          </div>
+        </section>
+        ${shipTo ? '<section class="sng-sheet-section"><div class="sng-sheet-section-heading"><strong>Ships to</strong></div><div class="sng-sheet-address">' + e(shipTo) + '</div></section>' : ''}
+        <section class="sng-sheet-section"><div class="sng-sheet-section-heading"><strong>Tracking</strong></div>
+          <div class="sng-sheet-details">${detail('Status',stageLabels[status] || 'Ordered')}
+            ${detail('Carrier',carrier)}${detail('Tracking #',trackingNumber)}
+            ${detail('Estimated delivery',shipping.estimatedDelivery)}
+          </div>
+        </section>
+        <details class="sng-sheet-history">
+          <summary>Tracking history</summary><div class="sng-sheet-history-content">${updates}</div>
+        </details>
+      </div>`;
+  };
+  function openTrackingSheet(id) {
+    const order = trackingRecords().find(item => recordKey(item) === String(id));
+    if (!order) return;
+    activeTrackingOrderId = recordKey(order);
+    const markup = trackingSheetHtml(order);
+    if (markup !== latestSheetMarkup) {
+      trackingSheet.innerHTML = markup; latestSheetMarkup = markup;
+    }
+    if (!trackingSheet.open) {
+      if (typeof trackingSheet.showModal === 'function') trackingSheet.showModal();
+      else trackingSheet.setAttribute('open', '');
+    }
+  }
   function orderRows(records, tracking = false) {
     return records.map(order => {
       const stage = shippingStage(order), item = order.items?.[0] || {}, shipping = order.shipping || {};
@@ -110,6 +231,14 @@ if (appEnabled) {
       const trackingUrl = /^https:\/\//i.test(shipping.trackingUrl || '') ? shipping.trackingUrl : '';
       const known = order.checkoutValueKnown ?? order.orderTotalKnown;
       const totalLabel = known === false ? 'Value not provided' : money(order.checkoutValue ?? order.orderTotal);
+      if (tracking) return `<button type="button" class="sng-tracking-row stage-${e(stage)}"
+        data-app-order-open="${e(recordKey(order))}">
+        <span class="sng-product-image">${image(item)}</span>
+        <span class="sng-row-main"><strong>${e(item.name || (order.retailer + ' order'))}</strong>
+          <small>${e(order.retailer)} · ${dateLabel(order.checkoutAt)} · ${Number(order.itemCount) || 0} items</small>
+          <small class="sng-stage">● ${e(stageLabels[stage] || 'Ordered')}</small></span>
+        <span class="sng-row-value"><strong>${e(totalLabel)}</strong><small>VIEW ORDER →</small></span>
+      </button>`;
       return `<details class="sng-order-card stage-${stage}" data-order-id="${e(order.id || order.orderNumber)}" ${expanded.has(order.id || order.orderNumber) ? 'open' : ''}>
         <summary><div class="sng-product-image">${image(item)}</div><div class="sng-row-main"><strong>${e(item.name || `${order.retailer} order`)}</strong><small>${e(order.retailer)} · ${dateLabel(order.checkoutAt)} · ${Number(order.itemCount) || 0} items</small></div><div class="sng-row-value"><strong>${e(totalLabel)}</strong><small class="sng-stage">● ${stageLabels[stage]}</small></div></summary>
         ${stage === 'review_hold' ? '<p class="sng-delivery">Review hold — the retailer is reviewing this order and may still cancel it. Included in order value until cancelled.</p>' :
@@ -135,7 +264,15 @@ if (appEnabled) {
   function render() {
     // Keep the native iOS/Android date picker mounted during live refreshes.
     if (calendarOpen && document.activeElement?.matches?.('[data-app-date-from],[data-app-date-to]')) return;
-    if (!state.customer) { root.hidden = true; document.body.classList.remove('app-signed-in'); orders = []; cancelledOrders = []; reviewHoldOrders = []; accountId = null; snapshots.clear(); changes.clear(); stream?.close(); stream = null; return; }
+    if (!state.customer) {
+      root.hidden = true; document.body.classList.remove('app-signed-in');
+      orders = []; cancelledOrders = []; reviewHoldOrders = []; accountId = null;
+      snapshots.clear(); changes.clear(); stream?.close(); stream = null;
+      closeTrackingSheet();
+      const target = document.getElementById('sng-app-content');
+      if (target) { target.innerHTML = ''; target._sngMarkup = null; }
+      return;
+    }
     if (accountId && String(accountId) !== String(state.customer.id)) {orders=[];cancelledOrders=[];reviewHoldOrders=[];accountId=null;snapshots.clear();changes.clear();}
     root.hidden = false; document.body.classList.add('app-signed-in'); document.body.dataset.appView = view;
     document.body.dataset.profileTab = profileTab;
@@ -229,8 +366,20 @@ if (appEnabled) {
         (profileTab === 'membership' ? `<button type="button" class="sng-drop-shortcut sng-membership-drop" data-app-view="drops"><span><b>Choose drop SKUs</b><small>Target · Walmart · PKC · Costco · Sam’s Club</small></span><strong>Open →</strong></button>` : '');
     }
     if (view === 'drops') html = dropEditor.render();
-    content.innerHTML = html;
+    // Refreshing identical HTML detached every lazy-loaded image and caused
+    // visible flickering every 15 seconds. Keep DOM nodes when data is the same.
+    if (content._sngMarkup !== html) { content.innerHTML = html; content._sngMarkup = html; }
     renderSearch();
+    if (trackingSheet.open && activeTrackingOrderId) {
+      const current = trackingRecords().find(item => recordKey(item) === activeTrackingOrderId);
+      if (!current) closeTrackingSheet();
+      else {
+        const markup = trackingSheetHtml(current);
+        if (markup !== latestSheetMarkup) {
+          trackingSheet.innerHTML = markup; latestSheetMarkup = markup;
+        }
+      }
+    }
     if (currentFocus === 'sng-search') { const input = document.getElementById(currentFocus); input?.focus({ preventScroll: true }); if (input && cursor !== null) input.setSelectionRange(cursor, cursor); }
     renderSetupChecklist();
   }
@@ -239,8 +388,9 @@ if (appEnabled) {
     const successes = selected(orders);
     const records = view === 'tracking' ? [...successes, ...holdsInPeriod(), ...cancelledInPeriod()] : successes;
     const needle = query.toLowerCase();
-    target.innerHTML = view === 'products' ? productRows(dashboardProducts(successes).filter(p => `${p.name} ${p.retailer}`.toLowerCase().includes(needle))) :
+    const nextMarkup = view === 'products' ? productRows(dashboardProducts(successes).filter(p => `${p.name} ${p.retailer}`.toLowerCase().includes(needle))) :
       orderRows(records.filter(order => (status === 'all' || shippingStage(order) === status) && `${order.retailer} ${order.orderNumber} ${order.shipping?.trackingNumber || ''} ${(order.items || []).map(p => p.name).join(' ')}`.toLowerCase().includes(needle)), true);
+    if (target._sngMarkup !== nextMarkup) { target.innerHTML = nextMarkup; target._sngMarkup = nextMarkup; }
   }
   function setView(next, { preserveProfileTab = false } = {}) {
     if (!labels[next]) return;
@@ -256,6 +406,20 @@ if (appEnabled) {
   }
   root.addEventListener('click', event => {
     const button = event.target.closest('button'); if (!button) return;
+    if (button.hasAttribute('data-app-order-open')) { openTrackingSheet(button.dataset.appOrderOpen); return; }
+    if (button.hasAttribute('data-app-sheet-close')) { closeTrackingSheet(); return; }
+    if (button.hasAttribute('data-app-copy-order') || button.hasAttribute('data-app-copy-tracking')) {
+      const order = trackingRecords().find(item => recordKey(item) === activeTrackingOrderId);
+      const value = button.hasAttribute('data-app-copy-order')
+        ? String(order?.orderNumber || '') : String(order?.shipping?.trackingNumber || '');
+      const feedback = trackingSheet.querySelector('[data-app-copy-feedback]');
+      if (value && navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(value).then(() => {
+          if (feedback) feedback.textContent = 'Copied to clipboard';
+        }).catch(() => { if (feedback) feedback.textContent = 'Copy was unavailable'; });
+      } else if (feedback) feedback.textContent = 'Copy was unavailable';
+      return;
+    }
     if (dropEditor.handleClick(button)) return;
     if (button.dataset.appView) setView(button.dataset.appView);
     if (button.dataset.appDays) {

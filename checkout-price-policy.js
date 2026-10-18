@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * Checkout totals must originate from an explicit paid total on the
  * authoritative Discord checkout webhook or a verified retailer receipt.
@@ -48,14 +49,21 @@ export function checkoutOrderValue(order) {
 }
 
 export function checkoutPriceSignature(order) {
-  // Only price/quantity data; never store customer, retailer login,
-  // source profile name, payment card, or retailer order number in this ledger.
-  return JSON.stringify({
+  // All visible item details and the final verified amount affect the public
+  // hit. Hash the signature so the ledger does not retain product image URLs
+  // or display text, and changes to item 10+ still refresh existing hits.
+  const detail = JSON.stringify({
     paid: checkoutPaidAmount(order),
     subtotal: checkoutItemSubtotal(order),
-    items: (Array.isArray(order?.items) ? order.items : []).slice(0, 9)
-      .map(item => [checkoutUnitPrice(item), Math.max(0,Math.floor(Number(item?.quantity)||0))])
+    items: (Array.isArray(order?.items) ? order.items : [])
+      .map(item => [
+        String(item?.name || "").slice(0, 300),
+        checkoutUnitPrice(item),
+        Math.max(0, Math.floor(Number(item?.quantity) || 0)),
+        String(item?.imageUrl || "").slice(0, 2000)
+      ])
   });
+  return createHash("sha256").update(detail).digest("hex");
 }
 
 /**
