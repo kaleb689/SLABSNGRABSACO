@@ -49,14 +49,32 @@ replace('site-bridge.js','return {open,signIn,hide,reload,bounds,read,adminRead,
   };
   if(!profile.firstName||!profile.lastName||!profile.address||!profile.city||!profile.state||!profile.zip)
    throw Error('Complete customer shipping information before saving to the website.');
+  const billing=f['billing.address1']?{
+   profileName:String(previous.customerBillingProfile?.profileName||profile.profileName),
+   firstName:str(f['billing.first']||f.first||profile.firstName),
+   lastName:str(f['billing.last']||f.last||profile.lastName),
+   email:String(previous.customerBillingProfile?.email||profile.email),
+   phone:str(f['billing.phone']||f.phone||profile.phone),
+   address:str(f['billing.address1']),address2:str(f['billing.address2']),
+   city:str(f['billing.city']),state:str(f['billing.state']),
+   zip:str(f['billing.zip']),country:str(f['billing.country']||profile.country||'US')
+  }:null;
+  if(billing&&(!billing.firstName||!billing.lastName||!billing.email||!billing.phone||!billing.city||!billing.state||!billing.zip))
+   throw Error('Complete billing information before saving both addresses to the website.');
   const card=change?.card||{},customerCard=String(card.number||'').replace(/\D/g,'')?{
    cardLabel:String(previous.customerCard?.cardLabel||'Saved profile card'),
    cardholder:str(card.cardholder),acoCardNumber:String(card.number||'').replace(/\D/g,''),
    expMonth:str(card.month),expYear:str(card.year)
   }:undefined;
-  const saved=await api('/api/admin/managed-memberships/'+kind+'/'+encodeURIComponent(managedId)+'/customer-details','PUT',{customerProfile:profile,...(customerCard?{customerCard}:{})});
+  const saved=await api('/api/admin/managed-memberships/'+kind+'/'+encodeURIComponent(managedId)+'/customer-details','PUT',{customerProfile:profile,...(billing?{customerBillingProfile:billing}:{}),...(customerCard?{customerCard}:{})});
   if(saved?.ok!==true)throw Error('Website did not confirm the profile update.');
   const verified=await readAssignment();
+  if(String(verified.customerProfile?.address||'').trim()!==profile.address||
+     String(verified.customerProfile?.city||'').trim()!==profile.city)
+   throw Error('Website shipping confirmation failed; the local profile was not marked saved.');
+  if(billing&&(String(verified.customerBillingProfile?.address||'').trim()!==billing.address||
+      String(verified.customerBillingProfile?.city||'').trim()!==billing.city))
+   throw Error('Website billing confirmation failed; the local profile was not marked saved.');
   indexUntil=0;lastRosterAt=0;notifyOwner();
   return {saved:true,updatedAt:String(verified.updatedAt||''),verifiedProfile:verified.customerProfile||null};
  }
