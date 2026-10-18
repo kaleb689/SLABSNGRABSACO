@@ -19,6 +19,10 @@ const approved = Object.freeze([{
   orderHash: "979d1293cac1f01a77b47fe19c1d28d68f0000e134ce2608f225d9c317996d90",
   after: "2026-10-13", before: "2026-10-18",
   total: 106.40,
+  // The administrator's full-order screenshot shows ten $10.64 item values
+  // including the allocated tax. The retailer receipt separately identifies
+  // the $99.90 pre-tax merchandise subtotal; do not use that as total spend.
+  displayUnitPrice: 10.64,
   items: [
     ["Mew", "Day", "166"], ["Lapras", "Day", "169"],
     ["Pikachu", "Night", "172"], ["Pikachu", "Day", "167"],
@@ -56,7 +60,15 @@ export function ownerVerifiedOrderEvidence(record, entries=approved) {
   // variants. Never add a quantity beyond those ten.
   if (enriched.items.length!==10 || enriched.itemCount!==10 ||
       enriched.items.some(item=>Number(item.quantity)!==1)) return null;
-  return { evidence, items:enriched.items, total:evidence.total };
+  // This one verified screenshot explicitly shows the per-item displayed
+  // tax-inclusive value. Fill only this order's missing unit prices, never
+  // estimate prices for another customer's unrelated shipment.
+  const price = Number(evidence.displayUnitPrice);
+  const items = Number.isFinite(price) && price > 0 &&
+    Math.round(price * 100) * enriched.itemCount === Math.round(evidence.total * 100)
+      ? enriched.items.map(item => ({...item, price}))
+      : enriched.items;
+  return { evidence, items, total:evidence.total };
 }
 
 export function applyOwnerVerifiedOrderEvidence(records, entries=approved) {
