@@ -38170,7 +38170,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
   const body = [messageText, embed?.description || "", ...(embed?.fields || []).map(field => `${field.name}: ${field.value}`)].join("\n");
   const items = [];
   const messageImageUrl = publicSuccessImageUrl(
-    embeds.map(item => item?.thumbnail?.url || item?.image?.url).find(Boolean)
+    embed?.thumbnail?.url || embed?.image?.url
   );
   const fields = embed?.fields || [];
   const numbered = new Map();
