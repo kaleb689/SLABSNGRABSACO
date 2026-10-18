@@ -24,6 +24,9 @@ jobs:
       - run: node --check public/app-dashboard.js
       - run: node --check public/app-dashboard-data.js
       - run: node --check shipping-tracking-policy.js
+      - run: node --check carrier-tracking-links.js
+      - run: node --test test/carrier-tracking-links.test.mjs
+      - run: node --test test/shipping-ui-and-image-fallback.test.mjs
       - run: node --check public/admin-pool-search.js
       - run: node --check public/admin-mobile.js
       - run: node --check public/admin-live-notifications.js

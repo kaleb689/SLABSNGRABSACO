@@ -4,6 +4,8 @@ import {isModuleLifecycleCheckout} from "./discord-checkout-event-policy.js";
 import {cancelledOrder} from "./order-notifications.js";
 import {checkoutPaidAmount} from "./checkout-price-policy.js";
 import {mergeRetailerFulfillmentItems} from "./retailer-order-enrichment.js";
+import {verifiedCarrierTracking} from "./carrier-tracking-links.js";
+import {verifiedSkuProductImage} from "./checkout-product-image-policy.js";
 
 /**
  * Time-bounded, administrator-attested order screenshots and the corresponding
@@ -126,6 +128,36 @@ export function ownerOrderEvidenceAudit(records, entries=approved) {
         record.items.every(item => Math.round(Number(item.price || 0) * 100) ===
           Math.round(evidence.displayUnitPrice * 100))) result.fullyPriced++;
     if ((checkoutPaidAmount(record) ?? 0) >= evidence.total) result.verifiedFullTotals++;
+  }
+  return result;
+}
+
+/**
+ * No account, order number, address, tracking identifier, image URL or
+ * retailer credentials are ever logged. These booleans make it possible
+ * to verify whether the specifically approved order actually has its
+ * shipping fields populated in production (not just passing a unit test).
+ */
+export function ownerOrderShippingAudit(records, entries=approved) {
+  const hashes=new Set(entries.map(entry=>entry.orderHash));
+  const result={sourceMatches:0,shippedOrLater:0,carrierKnown:0,trackingPresent:0,
+    directCarrierLink:0,estimatedDeliveryPresent:0,tenSkuImagesMapped:0};
+  for(const record of Array.isArray(records)?records:[]) {
+    if(!record || !isVerifiedDiscordCheckout(record) ||
+        String(record.retailer||"").toLowerCase()!=="pkc")continue;
+    if(!hashes.has(digest("pkc:"+normalizeNumber(record.orderNumber))))continue;
+    result.sourceMatches++;
+    const status=String(record.shipping?.status||"");
+    if(["shipped","in_transit","out_for_delivery","delivered"].includes(status))
+      result.shippedOrLater++;
+    const tracking=verifiedCarrierTracking(record.shipping);
+    if(tracking.carrier)result.carrierKnown++;
+    if(tracking.trackingNumber)result.trackingPresent++;
+    if(tracking.url)result.directCarrierLink++;
+    if(String(record.shipping?.estimatedDelivery||"").trim())result.estimatedDeliveryPresent++;
+    if(Array.isArray(record.items) && record.items.length===10 &&
+      record.items.every(item=>verifiedSkuProductImage(item?.name, "PKC", item?.sku)))
+      result.tenSkuImagesMapped++;
   }
   return result;
 }

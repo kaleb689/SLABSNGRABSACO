@@ -459,7 +459,7 @@ if(tab==="success"){
     if(!visible.length)return '<p class="success-empty">No products from linked customer checkouts in this period.</p>';
     return '<div class="success-products-list">'+visible.map(x=>
       '<div class="success-product-row">'+
-      '<img alt="" loading="lazy" src="'+esc(safeImage(x.imageUrl)?x.imageUrl:"/slabsngrabs-aco-logo-transparent.png")+'">'+
+      '<img alt="" loading="lazy" onerror="this.onerror=null;this.src=\'/product-image-pending.svg\'" src="'+esc(safeImage(x.imageUrl)?x.imageUrl:"/product-image-pending.svg")+'">'+
       '<div class="success-product-copy"><strong>'+esc(x.name)+'</strong><small>'+esc(x.retailer)+'</small></div>'+
       '<span class="success-product-quantity">×'+x.quantity+'</span></div>').join("")+'</div>'+
       (products.length>visible.length?'<p class="success-overflow">+'+(products.length-visible.length)+' more products in this period</p>':'');
@@ -485,7 +485,7 @@ if(tab==="success"){
         known?"Checkout value · preorder included":"Order value unavailable from checkout source";
       const details=products.map(item=>{
         const qty=Math.max(0,Math.floor(Number(item.quantity)||0));
-        const image=safeImage(item.imageUrl)?item.imageUrl:"/slabsngrabs-aco-logo-transparent.png";
+        const image=safeImage(item.imageUrl)?item.imageUrl:"/product-image-pending.svg";
         return '<div class="success-order-item"><img src="'+esc(image)+'" loading="lazy" alt="">'+
           '<strong>'+esc(item.name||"Product")+'</strong><span class="success-qty">×'+qty+'</span></div>';
       }).join("")||'<p class="success-empty">Product details unavailable for this order.</p>';

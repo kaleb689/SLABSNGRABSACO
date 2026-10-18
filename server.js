@@ -1,6 +1,7 @@
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
+import {verifiedCarrierTracking,parseOfficialCarrierTrackingUrl} from "./carrier-tracking-links.js";
 import { historicalPlusVerified, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
 import { searchManagedPoolProfiles } from "./managed-pool-search.js";
 import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
@@ -19,7 +20,7 @@ import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checko
 import { managedAccountEmailEvidence, checkoutAssignmentContains, recoverCheckoutAssignmentOwners } from "./discord-checkout-owner-evidence.js";
 import { resolveOwnerVerifiedBackfill } from "./checkout-owner-backfills.js";
 import { resolveOwnerVerifiedScreenshots, verifiedScreenshotMatchStatus } from "./checkout-owner-screenshot-evidence.js";
-import { applyOwnerVerifiedOrderEvidence, ownerOrderEvidenceAudit } from "./checkout-owner-order-evidence.js";
+import { applyOwnerVerifiedOrderEvidence, ownerOrderEvidenceAudit, ownerOrderShippingAudit } from "./checkout-owner-order-evidence.js";
 import { verifiedSameDayCheckoutOwner } from "./checkout-owner-verified-day.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
@@ -39043,6 +39044,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
       if (!quick) console.log("PKC exact owner order audit:", JSON.stringify({
         ...ownerOrderEvidenceAudit(existing), corrected: verifiedOwnerEvidence.corrected
       }));
+      if (!quick) console.log("PKC exact order shipment audit:", JSON.stringify(ownerOrderShippingAudit(existing)));
       if (verifiedOwnerEvidence.changed) {
         updated += verifiedOwnerEvidence.corrected;
         for (const id of verifiedOwnerEvidence.changedCustomerIds) changedCustomerIds.add(id);
@@ -40413,9 +40415,14 @@ function safeSuccessCheckout(
             enRouteAt: record.shipping.enRouteAt || null,
             estimatedDelivery: clean(record.shipping.estimatedDelivery, 80) || null,
             deliveredAt: record.shipping.deliveredAt || null,
-            trackingUrl: safeSuccessImageUrl(record.shipping.trackingUrl),
-            carrier: clean(record.shipping.carrier, 60) || null,
-            trackingNumber: clean(record.shipping.trackingNumber, 60) || null,
+            trackingUrl: verifiedCarrierTracking(record.shipping).url,
+            carrier: clean(verifiedCarrierTracking(record.shipping).carrier || record.shipping.carrier, 60) || null,
+            trackingNumber: clean(verifiedCarrierTracking(record.shipping).trackingNumber, 60) || null,
+            events: Array.isArray(record.shipping.events) ? record.shipping.events.slice(-40).filter(event =>
+              /^(shipped|in_transit|out_for_delivery|delivered)$/.test(String(event?.status || ""))).map(event => ({
+                status: clean(event.status, 40),
+                at: clean(event.at, 50) || null
+              })) : [],
             address: record.shipping.address ? compactShippingAddress(record.shipping.address) : null,
             updatedAt: record.shipping.updatedAt || null
           }
@@ -44692,17 +44699,14 @@ function shippingEstimateFromText(text = "") {
 }
 
 function shippingTrackingUrl(html = "", text = "") {
-  const all = `${html}\n${text}`;
-  const urls = all.match(/https?:\/\/[^\s"'<>]+/gi) || [];
-  const preferred = urls.find(url => /(?:ups\.com|fedex\.com|usps\.com|tracking|track(?:ing)?[?/=])/i.test(url));
-  if (!preferred) return null;
-  try {
-    const parsed = new URL(preferred.replace(/&amp;/gi, "&"));
-    if (!/^https:$/.test(parsed.protocol) || parsed.username || parsed.password) return null;
-    return clean(parsed.toString(), 2000);
-  } catch {
-    return null;
+  // Read a tracking number only from official carrier tracking URLs, not from
+  // email-marketing redirects, generic retailer pages or tracking homepages.
+  const urls = (`${html}\n${text}`).match(/https?:\/\/[^\s"'<>]+/gi) || [];
+  for (const raw of urls) {
+    const parsed = parseOfficialCarrierTrackingUrl(raw);
+    if (parsed) return verifiedCarrierTracking(parsed).url;
   }
+  return null;
 }
 
 function compactShippingAddress(address = {}) {
@@ -44936,15 +44940,26 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         if (shippingStatusRank(status) < shippingStatusRank(prior.status)) continue;
         if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(messageAt)) continue;
 
+        const tracking = verifiedCarrierTracking({
+          carrier: pkcDetails.carrier || prior.carrier || null,
+          trackingNumber: pkcDetails.trackingNumber || prior.trackingNumber || null,
+          trackingUrl: shippingTrackingUrl(decoded.html, decoded.text) || prior.trackingUrl || null
+        });
+        // A verified retailer message adds one event for a real status
+        // transition. Never invent carrier-scan locations or repeat events.
+        const history = Array.isArray(prior.events) ? prior.events.slice(-39) : [];
+        if (String(prior.status || "") !== status)
+          history.push({status, at: messageAt, source: "retailer_email"});
         const next = {
           status,
           enRouteAt: prior.enRouteAt || (status !== "delivered" ? messageAt : null),
           estimatedDelivery: shippingEstimateFromText(combined) || prior.estimatedDelivery || null,
           deliveredAt: status === "delivered" ? messageAt : prior.deliveredAt || null,
-          trackingUrl: shippingTrackingUrl(decoded.html, decoded.text) || prior.trackingUrl || null,
-          carrier: pkcDetails.carrier || prior.carrier || null,
-          trackingNumber: pkcDetails.trackingNumber || prior.trackingNumber || null,
+          trackingUrl: tracking.url,
+          carrier: tracking.carrier || pkcDetails.carrier || prior.carrier || null,
+          trackingNumber: tracking.trackingNumber || prior.trackingNumber || null,
           address: matchCustomerShippingAddress(account, combined) || prior.address || null,
+          events: history,
           updatedAt: messageAt,
           source: "retailer_email"
         };
