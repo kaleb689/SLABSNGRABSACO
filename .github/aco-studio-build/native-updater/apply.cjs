@@ -2,11 +2,12 @@
 const fs=require('node:fs'),path=require('node:path');
 const root=path.resolve(process.argv[2]||'build-src/App');
 function edit(file,changes){let text=fs.readFileSync(path.join(root,file),'utf8');for(const [a,b]of changes){if(text.split(a).length!==2)throw Error(file+': expected one integration anchor: '+a.slice(0,90));text=text.replace(a,b);}fs.writeFileSync(path.join(root,file),text);}
-const files=['mac-full-updates.js','mac-update-archive.js','mac-full-update.sh','mac-updates-ui.js'];
+const files=['mac-full-updates.js','mac-update-archive.js','mac-full-update.sh','mac-updates-ui.js','win-full-updates.js'];
 for(const f of files)fs.copyFileSync(path.join(__dirname,f),path.join(root,f));
-fs.mkdirSync(path.join(root,'tests'),{recursive:true});fs.copyFileSync(path.join(__dirname,'mac-full-updates.test.js'),path.join(root,'tests/mac-full-updates.test.js'));
+fs.mkdirSync(path.join(root,'tests'),{recursive:true});for(const f of ['mac-full-updates.test.js','win-full-updates.test.js'])fs.copyFileSync(path.join(__dirname,f),path.join(root,'tests',f));
 edit('desktop-updates.js',[["function register({app,ipcMain,dialog,BrowserWindow}) {",`function register(options) {
   if(process.platform==='darwin')return require('./mac-full-updates').register(options);
+  if(process.platform==='win32')return require('./win-full-updates').register(options);
   const {app,ipcMain,dialog,BrowserWindow}=options;`]]);
 edit('main.js',[
  ["require('./desktop-updates').register({app,ipcMain,dialog,BrowserWindow});","const nativeUpdater=require('./desktop-updates').register({app,ipcMain,dialog,BrowserWindow,requireOwner:ownerSender});"],
@@ -48,7 +49,7 @@ edit('main.js',[
  }
  async function openAfterNativeStartup(){
   let splash=null;
-  if(process.platform==='darwin'&&!process.argv.includes('--aco-studio-ci-smoke')){
+  if(['darwin','win32'].includes(process.platform)&&!process.argv.includes('--aco-studio-ci-smoke')){
    splash=new BrowserWindow({width:960,height:600,frame:false,resizable:false,skipTaskbar:true,center:true,backgroundColor:'#060918',show:true,
     webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,devTools:false}});
    splash.loadFile(path.join(__dirname,'splash.html')).catch(()=>{});
@@ -94,5 +95,12 @@ edit('index.html',[["<script src=\"./updates-ui.js\"></script>","<script src=\".
 edit('index.html',[["</head>","<style>#siteConnect{display:none!important}</style></head>"]]);
 const pkgPath=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(pkgPath,'utf8'));
 for(const f of files)if(!pkg.build.files.includes(f))pkg.build.files.push(f);
+// Full NSIS updates require runtime updater dependency in the installed app.
+pkg.dependencies={...(pkg.dependencies||{}),'electron-updater':'^6.8.9'};
+// One-click per-user installer allows subsequent full updates to run silently.
+// The application ID, executable name and existing encrypted userData remain.
+pkg.win=pkg.win||{};
+pkg.win.artifactName='ACO-Studio-Setup-${version}-${arch}.${ext}';
+pkg.nsis={...(pkg.nsis||{}),oneClick:true,perMachine:false,allowToChangeInstallationDirectory:false};
 fs.writeFileSync(pkgPath,JSON.stringify(pkg,null,2)+'\n');
 console.log('Mac full-bundle updater integrated; Windows updater and original data directory preserved.');
