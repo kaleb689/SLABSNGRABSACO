@@ -38439,7 +38439,7 @@ function publicDiscordHitPayload(order) {
       return { name, quantity: Number(item?.quantity) === 0 ? 0 :
         Math.max(1, Math.floor(Number(item?.quantity) || 1)),
         unitPrice: checkoutUnitPrice(item),
-        imageUrl: publicSuccessProductImage(name, retailer, item?.imageUrl || item?.image) };
+        imageUrl: publicSuccessProductImage(name, retailer, item?.imageUrl || item?.image, item?.sku) };
     })
     .filter(item => item.name &&
       !/@|\b(?:order\s*(?:number|id|#)|address|phone|email|account|password|cvv|security\s*code|card\s*(?:number|no\.?|#)|(?:credit|debit)\s+card|ship(?:ping)?\s+to|username|mode)\b/i.test(item.name));
@@ -39921,7 +39921,11 @@ async function refreshSuccessRetailerImages() {
   console.log('Success retailer stock images:', JSON.stringify({ available: Object.keys(successRetailerImages).length, expected: successRetailerCatalog.length }));
 }
 
-function publicSuccessProductImage(name, retailer, value) {
+function publicSuccessProductImage(name, retailer, value, sku = "") {
+  // Exact SKU/variant images outrank generic bot thumbnails. Never display
+  // one unrelated product photo for every item in a multi-item checkout.
+  const skuPhoto = verifiedSkuProductImage(name, retailer, sku);
+  if (skuPhoto) return skuPhoto;
   const catalog = successRetailerCatalog.find(item => item.retailer === retailer && item.match.test(name));
   const verified = verifiedPublicProductImages.find(item =>
     item.retailer.toLowerCase() === String(retailer || "").toLowerCase() && item.match.test(name)
@@ -39929,7 +39933,7 @@ function publicSuccessProductImage(name, retailer, value) {
   if (verified) return verified.imageUrl;
   if (catalog && successRetailerImages[catalog.key]) return successRetailerImages[catalog.key];
   const url = publicSuccessImageUrl(value);
-  return url && !/\/gray-bag(?:[?/#]|$)|\/no[-_]?image(?:[?/#]|$)/i.test(url) ? url : null;
+  return url && !/\/gray-bag(?:[?/#]|$)|\/no[-_]?image(?:[?/#]|$)|\/slabsngrabs-aco-logo/i.test(url) ? url : null;
 }
 
 function publicSuccessImageUrl(value) {
@@ -39991,7 +39995,7 @@ app.get(
           products.set(key, {
             name: prior?.name || name,
             quantity: (prior?.quantity || 0) + quantity,
-            imageUrl: prior?.imageUrl || publicSuccessProductImage(name, record.retailer, item?.imageUrl),
+            imageUrl: prior?.imageUrl || publicSuccessProductImage(name, record.retailer, item?.imageUrl, item?.sku),
             latestPurchasedAt: Math.max(prior?.latestPurchasedAt || 0, Number.isFinite(purchasedAt) ? purchasedAt : 0)
           });
         }
@@ -40179,7 +40183,7 @@ async function recordCommunitySuccessCheckoutUnlocked(order) {
     checkoutAt: order.checkoutAt || order.date || null,
     orderTotal: Math.max(0, Number(order.orderTotal) || 0),
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
-    items: items.map(item => ({ ...item, imageUrl: publicSuccessProductImage(item.name, normalizeSuccessRetailer(order?.retailer), item.imageUrl) })),
+    items: items.map(item => ({ ...item, imageUrl: publicSuccessProductImage(item.name, normalizeSuccessRetailer(order?.retailer), item.imageUrl, item.sku) })),
     status: "confirmed"
   });
   await saveSuccessCheckouts(records);
@@ -40288,6 +40292,7 @@ function safeSuccessItem(item) {
         300
       ),
 
+    sku: /^[A-Za-z0-9][A-Za-z0-9-]{2,49}$/.test(String(item?.sku || "")) ? String(item.sku) : null,
     quantity,
 
     price:
@@ -40320,7 +40325,7 @@ function safeSuccessCheckout(
     Array.isArray(record?.items)
       ? record.items.map(item => {
           const safe = safeSuccessItem(item);
-          return { ...safe, imageUrl: publicSuccessProductImage(safe.name, normalizeSuccessRetailer(record.retailer), safe.imageUrl) };
+          return { ...safe, imageUrl: publicSuccessProductImage(safe.name, normalizeSuccessRetailer(record.retailer), safe.imageUrl, safe.sku) };
         })
       : [];
 
