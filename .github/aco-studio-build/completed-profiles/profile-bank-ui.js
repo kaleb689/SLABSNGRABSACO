@@ -55,9 +55,10 @@
   const available=await api.jigAddresses(store.scope,currentId());
   if(!available.addresses.length){msg('Save an address in this specific Personal/customer address bank before jigging.',true);return;}
   const win=d.createElement('div');win.className='profileReviewModal';
-  win.innerHTML='<div class="profileReviewBox profileJigBox" role="dialog" aria-modal="true"><div class="profileReviewHead"><div><div class="eyebrow">PROFILE SHIPPING ADDRESS</div><h2>Choose address & jig styles</h2><p>Only this profile and its authorized local address bank will be changed. Nothing will be pushed to the website without an explicit separate action.</p></div><button class="btn plain slim" data-close>✕</button></div><label>Saved address <select data-address></select></label><p data-hint></p><details><summary>Choose formatting checkboxes</summary><div data-rules class="profileJigRules"></div></details><label class="profileJigCombine"><input type="checkbox" data-combine> Allow combining selected rules</label><pre data-preview>Choose a saved address and generate a preview.</pre><div class="buttons"><button class="btn secondary slim" data-preview-btn>Preview jig</button><button class="btn primary slim" data-save disabled>Apply jig to this local profile</button></div><p data-status role="status"></p></div>';
+  win.innerHTML='<div class="profileReviewBox profileJigBox" role="dialog" aria-modal="true"><div class="profileReviewHead"><div><div class="eyebrow">PROFILE SHIPPING ADDRESS</div><h2>Choose address & jig styles</h2><p>A linked website customer profile will publish the confirmed jig to the website and app. Personal and unlinked profiles remain local. The customer’s original saved address bank is not overwritten.</p></div><button class="btn plain slim" data-close>✕</button></div><label>Saved address <select data-address></select></label><p data-hint></p><details><summary>Choose formatting checkboxes</summary><div data-rules class="profileJigRules"></div></details><label class="profileJigCombine"><input type="checkbox" data-combine> Allow combining selected rules</label><pre data-preview>Choose a saved address and generate a preview.</pre><div class="buttons"><button class="btn secondary slim" data-preview-btn>Preview jig</button><button class="btn primary slim" data-save disabled>Apply jig to this local profile</button></div><p data-status role="status"></p></div>';
   const select=win.querySelector('[data-address]'),preview=win.querySelector('[data-preview]'),save=win.querySelector('[data-save]'),hint=win.querySelector('[data-hint]');
   const rulesContainer=win.querySelector('[data-rules]');
+   if(store.scope==='aco'&&before.profile?.source==='website-linked-profile')save.textContent='Publish jig to website & app';
   for(const a of available.addresses)select.append(new Option(a.label+' · '+a.address1+' · '+a.uses+' uses',a.id));
   select.value=available.addresses[0].id;hint.textContent='Least-used saved address is preselected. You can choose a different address.';
   for(const r of (window.JigCore?.RULES||[])){
@@ -69,12 +70,12 @@
   }
   const value=()=>({scope:store.scope,customerId:currentId(),profileId:profile.id,addressId:select.value,
     ruleIds:[...rulesContainer.querySelectorAll('input:checked')].map(x=>x.value),combine:win.querySelector('[data-combine]').checked});
-  let last=null;const close=()=>win.remove();win.querySelector('[data-close]').addEventListener('click',close);
+  let last=null,lastPreview=null;const close=()=>win.remove();win.querySelector('[data-close]').addEventListener('click',close);
   win.addEventListener('click',event=>{if(event.target===win)close();});
-  function invalidate(){last=null;save.disabled=true;preview.textContent='Generate a new preview to confirm these settings.';}
+  function invalidate(){last=null;lastPreview=null;save.disabled=true;preview.textContent='Generate a new preview to confirm these settings.';}
   select.addEventListener('change',invalidate);rulesContainer.addEventListener('change',invalidate);win.querySelector('[data-combine]').addEventListener('change',invalidate);
   win.querySelector('[data-preview-btn]').addEventListener('click',async()=>{
-    try{last=value();const result=await api.jig({...last,commit:false});
+    try{last=value();const result=await api.jig({...last,commit:false});lastPreview=result.preview;
       preview.textContent=JSON.stringify({customer:store.scope==='personal'?'Personal':store.customerId,retailer:profile.retailer,account:profile.email,from:result.original,to:result.preview,usedRules:result.ruleIds,availableVariants:result.availableVariants},null,2);
       save.disabled=false;win.querySelector('[data-status]').textContent='Preview ready. Review the address before saving.';
     }catch(e){last=null;save.disabled=true;win.querySelector('[data-status]').textContent=e.message;}
@@ -82,9 +83,18 @@
   save.addEventListener('click',async()=>{
     if(!last)return;
     if(store.scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.())return;
-    if(!confirm('Save this jigged address to this LOCAL '+store.scope+' profile? The website account will not be reassigned.'))return;
+    const linked=store.scope==='aco'&&before.profile?.source==='website-linked-profile';
+    if(!confirm(linked?'Publish this jigged shipping address to the exact linked website account and save to ACO Studio?':'Save this jigged address only to this LOCAL '+store.scope+' profile?'))return;
     save.disabled=true;
-    try{await api.jig({...last,commit:true,confirmed:true});close();await refresh();msg('Jigged shipping address saved to this local '+store.scope+' profile. Usage count and encrypted audit updated.');}
+    try{
+      if(linked){
+       const published=await window.desktopAPI.profileLibrary.publishLinkedJig({scope:'aco',customerId:store.customerId,profileId:profile.id,expectedRevision:before.profile.revision,address:lastPreview,confirmed:true});
+       if(!published?.remoteSaved)throw Error('The website did not confirm the jig.');
+       close();await refresh();msg('Shipping jig published to the website/app linked profile and saved in ACO Studio.');
+      }else{
+       await api.jig({...last,commit:true,confirmed:true});close();await refresh();msg('Jigged shipping address saved to this local '+store.scope+' profile.');
+      }
+     }
     catch(e){win.querySelector('[data-status]').textContent=e.message;save.disabled=false;}
   });
   d.body.append(win);
