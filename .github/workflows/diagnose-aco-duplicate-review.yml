@@ -4,6 +4,8 @@ on:
     branches: [fix/aco-studio-duplicate-email-review-20261018]
     paths: ['.github/workflows/diagnose-aco-duplicate-review.yml']
   workflow_dispatch:
+env:
+  ACO_VERSION: '4.13.14'
 permissions:
   contents: read
 jobs:
