@@ -21,6 +21,13 @@ export function shippingStatusFromMessage(subject = "", text = "") {
   // A subject can be authoritative on its own; it outranks informational
   // email footers such as "once delivered, contact support".
   if (cancellationFromSubject(subjectText)) return null;
+  // PKC may say "your order is on its way" while its shipment details still
+  // say "Label Created" or "Just Shipped". A label is not proof of in-transit
+  // carrier scans; report shipped until the carrier actually advances it.
+  if (/\bon (?:its|the) way\b/.test(subjectText) &&
+      /\b(?:label created|just shipped)\b/.test(body) &&
+      !/\b(?:out for delivery|arrived at facility|picked up by carrier|has been delivered)\b/.test(body))
+    return "shipped";
   if (/\b(?:has been |was |is )?delivered\b|\bdelivery (?:complete|confirmation)\b|\bpackage arrived\b/.test(subjectText) &&
       !/\b(?:not|will|when|once|expected|scheduled|pending)\b/.test(subjectText)) return "delivered";
   if (/\bout for delivery\b/.test(subjectText)) return "out_for_delivery";
