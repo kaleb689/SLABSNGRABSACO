@@ -1,0 +1,133 @@
+name: Publish verified ACO Studio Mac installers
+on:
+  push:
+    branches: [fix/aco-studio-duplicate-email-review-20261018]
+    paths:
+      - '.github/workflows/publish-verified-aco-macos.yml'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+env:
+  ACO_VERSION: '4.13.15'
+jobs:
+  publish:
+    name: Publish tested Apple Silicon and Intel installers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Get already-tested Mac installers without rebuilding
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ACO-Studio-4.13.15-*
+          run-id: 39159358316
+          repository: kaleb689/SLABSNGRABSACO
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: installers
+          merge-multiple: true
+      - name: Verify both platform builds and create pinned update manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,hashlib,pathlib
+          root=pathlib.Path('installers')
+          v='4.13.15'
+          sums=[]
+          manifest={'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,
+             'notes':'ACO Studio starts with a verified automatic full-app update check before secure Admin sign-in. Duplicate email review is scoped to the same retailer and does not double-count the website account mirror. Private vaults remain separate.','platforms':{}}
+          for arch in ('arm64','x64'):
+              mode=(root/f'signing-{arch}.txt').read_text().strip()
+              assert mode in ('adhoc','developer-id'),(arch,'invalid signing status',mode)
+              # A mixed signing release is never permitted.
+              assert mode==(root/'signing-arm64.txt').read_text().strip()
+              tests=json.loads((root/f'update-test-{arch}.json').read_text())
+              assert tests['version']==v,tests
+              assert all(tests.get(k) is True for k in ('update','restart','rollback','dataPreserved')),tests
+              regression=(root/f'regression-{arch}.txt').read_text()
+              assert '# fail 0' in regression,('regression not green',arch)
+              for ext in ('dmg','zip'):
+                  file=root/f'ACO-Studio-{v}-{arch}.{ext}'
+                  assert file.is_file() and file.stat().st_size>50_000_000,(arch,ext)
+                  with file.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
+                  sums.append(f'{digest}  {file.name}')
+                  if ext=='zip':
+                      suffix='adhoc' if mode=='adhoc' else 'notarized'
+                      manifest['platforms']['darwin-'+arch]={
+                        'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/aco-studio-v{v}-macos-{suffix}/{file.name}',
+                        'size':file.stat().st_size,'sha256':digest,'bundleName':'ACO Studio.app','signing':mode}
+          (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n')
+          (root/'mac-update.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          (root/'signing-mode.txt').write_text(mode)
+          print('Both independent CI runner architectures passed source tests, bundle build, launch, full update, restart, rollback and data isolation.')
+          print('Prepared SHA-256-checked DMGs and ZIPs for release.')
+          PY
+      - name: Publish the tested version-specific installers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODE="$(cat installers/signing-mode.txt)"
+          if [ "$MODE" = "developer-id" ]; then MODE="notarized";fi
+          TAG="aco-studio-v$ACO_VERSION-macos-$MODE"
+          cat > installers/RELEASE-NOTES.md <<'NOTES'
+          ACO Studio 4.13.15 for Mac Apple Silicon and Intel. The native application checks for verified updates automatically on startup, installs a newer signed full application before opening the workspace, and restarts itself. Admin login happens before the workspace; the obsolete Connect button is hidden. Duplicate-account review compares matching emails within each retailer, not across different retailers; linked website copies are not double-counted.
+          
+          Reuses the existing local customer and private profile banks without migrating stored data. Tested on both native macOS CI architectures for real DMG and ZIP creation, app signature, extracted DMG, first-run smoke, full-app update, restart and rollback. Not yet verified on the owner's Mac or actual profile data. These packages are ad-hoc signed if no Apple certificate is configured, NOT Apple-notarized, and initial Gatekeeper approval may be required; unattended install cannot be guaranteed without Developer ID notarization. The previous app version may require this one-time installer to gain the new startup auto-updater.
+          NOTES
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1;then
+            gh release upload "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ACO Studio $ACO_VERSION - Mac Apple Silicon and Intel" --notes-file installers/RELEASE-NOTES.md --prerelease
+          fi
+      - name: Advance Mac automatic-update feed only after released installers exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,urllib.request
+          v=os.environ['ACO_VERSION'];repo=os.environ['GITHUB_REPOSITORY']
+          with open('installers/mac-update.json') as f:manifest=json.load(f)
+          mode=manifest['platforms']['darwin-arm64']['signing']
+          suffix='adhoc' if mode=='adhoc' else 'notarized'
+          tag=f'aco-studio-v{v}-macos-{suffix}'
+          req=urllib.request.Request(f'https://api.github.com/repos/{repo}/releases/tags/{tag}',headers={'User-Agent':'aco-studio-mac-publisher'})
+          with urllib.request.urlopen(req,timeout=45) as response:release=json.load(response)
+          assets={f['name']:f for f in release['assets']}
+          for arch in ('arm64','x64'):
+              for ext in ('dmg','zip'):
+                  name=f'ACO-Studio-{v}-{arch}.{ext}'
+                  assert name in assets and assets[name]['size']>50_000_000,(tag,name)
+          print('Both official Mac download assets are published before changing updater feed.')
+          PY
+          if gh release view aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1;then
+            mkdir -p previous-feed
+            gh release download aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" --pattern mac-update.json --dir previous-feed
+            python3 - <<'PY'
+          import json
+          old=json.load(open('previous-feed/mac-update.json'))['version']
+          new=json.load(open('installers/mac-update.json'))['version']
+          assert tuple(map(int,old.split('.'))) <= tuple(map(int,new.split('.'))),'Cannot downgrade updater feed'
+          PY
+            gh release upload aco-studio-macos-updates installers/mac-update.json --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create aco-studio-macos-updates installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio verified Mac update feed' --notes 'Architecture-specific full app updates, signatures and SHA-256 verified.' --prerelease
+          fi
+      - name: Verify the final public Mac release and updater feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,urllib.request
+          repo=os.environ['GITHUB_REPOSITORY'];v=os.environ['ACO_VERSION']
+          for tag,names in [(f'aco-studio-v{v}-macos-adhoc',[f'ACO-Studio-{v}-arm64.dmg',f'ACO-Studio-{v}-x64.dmg']),
+                            ('aco-studio-macos-updates',['mac-update.json'])]:
+              req=urllib.request.Request(f'https://api.github.com/repos/{repo}/releases/tags/{tag}',headers={'User-Agent':'aco-studio-macos-verification'})
+              with urllib.request.urlopen(req,timeout=45) as response:data=json.load(response)
+              assets={a['name']:a for a in data['assets']}
+              assert all(name in assets for name in names),(tag,names)
+              print('Verified live GitHub release',tag,[(name,assets[name]['size']) for name in names])
+          PY

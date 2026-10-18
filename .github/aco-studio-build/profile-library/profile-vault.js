@@ -251,26 +251,65 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function scanRows(imports=[],webRecords=[],allowPersonalDetail=false){await pending;
   if(!Array.isArray(imports)||imports.length>500)throw Error('Too many imported rows to scan.');
   const [personal,aco]=await Promise.all([read('personal'),read('aco')]);
-  const index=new Map();const details=[];
-  const include=(entry)=>{if(!entry.email)return;const email=normalizeEmail(entry.email);if(!email)return;
-   const arr=index.get(email)||[];arr.push(entry);index.set(email,arr);};
+  // Retailers intentionally use separate email namespaces. Never report
+  // Target and Pokemon Center use of one login as the same retailer account.
+  const index=new Map(),details=[];
+  const include=entry=>{
+   const email=normalizeEmail(entry.email);if(!email)return;
+   const retailer=retailerId(entry.retailer),key=retailer+'|'+email;
+   const arr=index.get(key)||[];arr.push({...entry,retailer,email});index.set(key,arr);
+  };
   for(const row of personal.groups.owner||[])include({scope:'personal',owner:'owner',id:row.id,retailer:row.retailer,email:row.email,label:row.label,status:row.status});
-  for(const [owner,rows] of Object.entries(aco.groups))for(const row of rows)include({scope:'aco',owner,id:row.id,retailer:row.retailer,email:row.email,label:row.label,status:row.status});
-  for(const w of webRecords){if(!w||!w.email)continue;include({scope:'website',owner:memberId(w.customerId),id:name(w.id),retailer:retailerId(w.retailer),email:normalizeEmail(w.email),label:'Website linked account',status:'linked'});}
+  const linkedMirrors=new Set(),localCounts=new Map();
+  for(const [owner,rows] of Object.entries(aco.groups))for(const row of rows){
+   const retailer=retailerId(row.retailer),email=normalizeEmail(row.email),key=owner+'|'+retailer+'|'+email;
+   include({scope:'aco',owner,id:row.id,retailer,email,label:row.label,status:row.status});
+   if(email)localCounts.set(key,(localCounts.get(key)||0)+1);
+   // A locally synchronized website assignment already represents one
+   // physical retailer account. Do not count it twice in the web feed.
+   if(row.source==='website-linked-profile'&&row.remoteKey)
+    linkedMirrors.add(key+'|'+row.remoteKey);
+  }
+  const seenWeb=new Set(),uniqueWeb=[];
+  for(const w of webRecords){
+   if(!w||!w.email)continue;
+   const owner=memberId(w.customerId),retailer=retailerId(w.retailer),email=normalizeEmail(w.email),id=name(w.id);
+   if(!email)continue;
+   const key=owner+'|'+retailer+'|'+email,identity=key+'|'+id;
+   if(seenWeb.has(identity))continue;
+   seenWeb.add(identity);uniqueWeb.push({scope:'website',owner,id,retailer,email,label:'Website linked account',status:'linked',key});
+  }
+  const mirroredCount=new Map(),unmatchedWeb=[];
+  for(const entry of uniqueWeb){
+   if(entry.id&&linkedMirrors.has(entry.key+'|'+entry.retailer+'|'+entry.id)){
+    mirroredCount.set(entry.key,(mirroredCount.get(entry.key)||0)+1);
+   }else unmatchedWeb.push(entry);
+  }
+  // Older imported ACO cards have no remoteKey. If exactly the same account
+  // is linked to the same customer and retailer on the website, pair the
+  // records rather than creating an artificial second hit. Excess distinct
+  // website assignments remain visible as genuine same-retailer collisions.
+  for(const entry of unmatchedWeb){
+   const paired=mirroredCount.get(entry.key)||0,available=(localCounts.get(entry.key)||0)-paired;
+   if(available>0){mirroredCount.set(entry.key,paired+1);continue;}
+   include(entry);
+  }
   for(let i=0;i<imports.length;i++){
    const imp=imports[i],email=normalizeEmail(imp.email||emailFrom(imp.data||imp));if(!email)continue;
    const scope=imp.scope||'personal',owner=scope==='aco'?memberId(imp.customerId):'owner';
    include({scope:'import',owner,importScope:scope,id:'import-'+i,index:i,retailer:retailerId(imp.retailer),email,label:'Import row '+(i+1),status:'pending'});
   }
-  for(const [email,group] of index){if(group.length<2)continue;
-   // A customer can see that a Personal collision exists, but never retrieve
-   // any Personal bank details without unlocking the Personal gate.
+  for(const group of index.values()){
+   if(group.length<2)continue;
+   const email=group[0].email,retailer=group[0].retailer,hasPersonal=group.some(x=>x.scope==='personal');
+   // When locked, never disclose a Personal profile's email or ID, even
+   // indirectly by putting its matching email in a dialog heading.
    const publicItems=group.map(item=>item.scope==='personal'&&!allowPersonalDetail?
-    {scope:'personal',owner:'Personal vault · locked',id:null,retailer:item.retailer,status:'private match',label:'Owner Personal vault (locked)',email:null}:
-    {...item,email:item.scope==='personal'?email:item.email});
-   details.push({email:group.some(x=>x.scope==='personal')&&!allowPersonalDetail?'Email also exists in locked Personal vault':email,count:group.length,items:publicItems});
+    {scope:'personal',owner:'Personal vault - locked',id:null,retailer:item.retailer,status:'private match',label:'Owner Personal vault (locked)',email:null}:
+    {...item,email:item.email});
+   details.push({email:hasPersonal&&!allowPersonalDetail?'Email also exists in locked Personal vault':email,retailer,count:group.length,items:publicItems});
   }
-  return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count),scanned: [...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
+  return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count||a.retailer.localeCompare(b.retailer)),scanned:[...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
  }
  return Object.freeze({paths,retailers:RETAILERS,librarySettings,libraryTransaction,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }

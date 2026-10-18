@@ -1,9 +1,10 @@
 name: ACO Studio - Profile Library verification
 on:
   push:
-    branches: [build/aco-studio-macos-v4133-20261015]
+    branches: [build/aco-studio-macos-v4133-20261015, fix/aco-studio-duplicate-email-review-20261018]
     paths:
       - '.github/aco-studio-build/profile-library/**'
+      - '.github/aco-studio-build/native-updater/**'
       - '.github/workflows/check-aco-studio-profile-library.yml'
   workflow_dispatch:
 permissions:
@@ -12,7 +13,7 @@ concurrency:
   group: aco-studio-profile-library-check
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.14'
+  ACO_VERSION: '4.13.15'
 jobs:
   mac:
     name: ${{ matrix.arch }} navigation, installer, update and rollback

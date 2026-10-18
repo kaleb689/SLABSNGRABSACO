@@ -1,7 +1,7 @@
 name: ACO Studio - Profile libraries and duplicate repair
 on:
   push:
-    branches: [build/aco-studio-macos-v4133-20261015]
+    branches: [build/aco-studio-macos-v4133-20261015, fix/aco-studio-duplicate-email-review-20261018]
     paths:
       - '.github/aco-studio-build/profile-workshop/**'
       - '.github/aco-studio-build/personal-import/**'
@@ -19,7 +19,7 @@ concurrency:
   group: aco-studio-workshop-release
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.14'
+  ACO_VERSION: '4.13.15'
 jobs:
   mac:
     name: ${{ matrix.arch }} navigation, installer, update and rollback
@@ -254,6 +254,7 @@ jobs:
           MODE="$(cat installers/release-mode.txt)"
           TAG="aco-studio-v${ACO_VERSION}-macos-${MODE}"
           cat > installers/RELEASE-NOTES.md <<'NOTES'
+          Startup automatically installs newer verified full Mac app releases before showing the login or admin workspace. The secure website Admin session gates access; the old Connect button is not required. A sign-out re-locks the private vault. Duplicate emails only conflict inside the same retailer; website account mirrors are counted once. The original owner/customer vault data locations are retained.
           Customer Jigs and Personal Jigs each have their own Profiles tab. Personal tools sit below all customer tools, with dividers before Personal and Settings. Retailer/group card views include Completed and In Progress sections, full payment details, and separate Profile/Payment editing tabs. Import preview flags duplicate emails, names and cards; repairs draw unused emails and cards from the same owner’s vault. Completed profiles export to Shikari CSV for Target or Valor JSON for Walmart and Pokémon Center. Linked customer accounts prepare profiles using only that customer’s submitted details and saved retailer rules. Sync is idempotent, preserves local edits for review, and keeps incomplete profiles out of export. Live customer sync requires an authenticated Studio session.
           Completed Profiles now groups profiles after a saved jig and complete email, names, shipping/billing addresses, phone numbers, card number/cardholder and expiration. In Progress shows missing details and profiles return there if required details are removed. Pool counters show unused emails/cards. Full card numbers and expiration are shown in authorized vault/profile detail views; private-lock cleanup clears those views. Customer and private vault boundaries are preserved.
           New Email Vault / Create Profiles button: import TXT, CSV or JSON emails into an explicit private or customer vault and retailer. Duplicate checks are case-insensitive within the retailer, including emails already assigned in another local vault; the same email is allowed for different retailers. Generation selects unused emails, cards and addresses only from that vault, saves and consumes the email atomically, balances selected addresses/cards, and optionally randomizes matching shipping/billing names. Concurrent creation cannot reuse an email. Existing profile and payment vault files and app identity are preserved.
@@ -261,7 +262,7 @@ jobs:
           Personal Jigs now has its own left-sidebar tab, next to Customer Jigs. Switching workspaces filters existing imports without reassigning them; empty customer views do not fall back to Personal files. PIN/Touch ID gates and separate saved vault namespaces remain in place. Clearing imported files affects the active workspace, not the other one.
           Fixed the missing-preview export flow: Preview selected changes now prepares the Review page immediately, and Review profiles can prepare the preview from the selected fields. Formatting edits retain checked addresses/cards and only invalidate the old preview. Missing previews are labelled Preview not prepared yet rather than falsely implying a rejected account or safety violation.
           PKC Jig, Target Jig and Walmart Jig buttons open the existing formatting checkboxes with examples and editing guidance. Guidance is not a promise of retailer acceptance. Saved address/card lists now have search, selected counts, select-all, clear and six choices per page. Previous bank-management and test-card tools remain available in collapsed sections rather than duplicate expanded lists.
-          Existing blank-profile creation, imports, vaults, app identity and native updater retained. Apple Silicon was built and tested natively on macOS 15; Intel on macOS 26. Both builds passed automated regressions, signature checks, installed control-loading checks, update/restart and rollback tests with synthetic data. Navigation and preview handoff were additionally exercised in a browser harness using the real profile-preview backend and mocked desktop bindings. Not tested on the owner's M5 Pro or real vaults. Ad-hoc releases are NOT Apple-notarized and may still require local approval.
+          Release 4.13.15 includes full-bundle automatic updates on startup; the older existing application may need this one-time installer before it can automatically update. Without Apple Developer ID notarization the ad-hoc preview may require manual macOS approval. Existing blank-profile creation, imports, vaults, app identity and native updater retained. Apple Silicon was built and tested natively on macOS 15; Intel on macOS 26. Both builds passed automated regressions, signature checks, installed control-loading checks, update/restart and rollback tests with synthetic data. Navigation and preview handoff were additionally exercised in a browser harness using the real profile-preview backend and mocked desktop bindings. Not tested on the owner's M5 Pro or real vaults. Ad-hoc releases are NOT Apple-notarized and may still require local approval.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$GITHUB_SHA"

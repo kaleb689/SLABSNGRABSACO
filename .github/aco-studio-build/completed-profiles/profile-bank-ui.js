@@ -5,7 +5,7 @@
  if(!api||!$('jigPage'))return;
  const store={scope:'personal',customerId:null,profiles:[],websiteLinked:[],counts:{},scanned:null,scanImports:[],dirty:false,ready:false,activeRetailer:'all',stage:'in-progress',poolCounts:null};
  const panel=d.createElement('section');panel.id='profileBanksPanel';panel.className='panel profileBanksPanel';
- panel.innerHTML=`<div class="profileBanksHead"><div><div class="eyebrow">SEPARATE OS-ENCRYPTED PROFILE BANKS</div><h2>Retailer Profile Vault & Duplicate Scanner</h2><p>Finished profiles stay in Personal or in the exact selected customer's bank. No automatic cross-bank transfers.</p></div><span class="profileScanBadge" id="profileScanBadge">Scan ready</span></div>
+ panel.innerHTML=`<div class="profileBanksHead"><div><div class="eyebrow">SEPARATE OS-ENCRYPTED PROFILE BANKS</div><h2>Retailer Profile Vault & Duplicate Scanner</h2><p>Finished profiles stay in Personal or in the exact selected customer's bank. No automatic cross-bank transfers.</p></div><button type="button" class="profileScanBadge" id="profileScanBadge" title="Review detected same-retailer duplicate accounts">Scan ready</button></div>
  <div class="profileBankActions"><label>Vault<select id="profileBankScope"><option value="personal">🔒 Personal · owner only</option><option value="aco">ACO customer profiles</option></select></label><label id="profileCustomerPicker" hidden>Membership customer<select id="profileCustomer"><option value="">Select a customer</option></select></label><label>Imported file retailer<select id="profileImportRetailer"><option value="target">Target</option><option value="walmart">Walmart</option><option value="pokemoncenter">Pokémon Center</option><option value="costco">Costco</option><option value="sams">Sam’s Club</option></select></label><button type="button" id="profileImportBank" class="btn primary slim">Import selected profile cards</button><button type="button" id="profileScanNow" class="btn secondary slim">Scan duplicate emails</button><button type="button" id="personalBankLock" class="btn plain slim">🔒 Lock Personal</button></div>
  <div class="profileBankSummary" id="profileBankSummary" role="status">Choose a vault and import your completed profile file.</div>
  <div class="profileBankRetailerTabs" id="profileBankRetailers"><button data-filter="all" aria-pressed="true">All</button><button data-filter="target">Target</button><button data-filter="walmart">Walmart</button><button data-filter="pokemoncenter">PKC</button><button data-filter="costco">Costco</button><button data-filter="sams">Sam’s</button></div>
@@ -121,11 +121,68 @@
   if(count)showReview(result);
   else msg('Scanned '+result.scanned+' profile references across saved banks and this import. '+(result.websiteComplete?'Website-linked accounts included.':'Website scan incomplete: '+result.websiteReason));
  }
+ // Inspect an entire conflict before deciding which exact record to change.
+ // The normal website and Personal authorization checks still apply.
+ async function compareConflict(dup){
+  const inspector=d.createElement('div');inspector.className='profileReviewModal profileCompareModal';
+  inspector.innerHTML='<div class="profileReviewBox" role="dialog" aria-modal="true"><div class="profileReviewHead"><div><div class="eyebrow">COMPARE BEFORE CHANGING ANYTHING</div><h2>Compare both accounts</h2><p data-count></p></div><button type="button" class="btn secondary slim" data-close>Close</button></div><div data-accounts></div><p role="status" data-error></p><div class="profileReviewFooter"><small>Customer and Personal banks remain separate. Nothing is deleted until you explicitly choose a record and confirm.</small></div></div>';
+  inspector.querySelector('[data-count]').textContent=(retailerNames[dup.retailer]||dup.retailer)+' · '+dup.email+' · '+dup.items.length+' records';
+  const accounts=inspector.querySelector('[data-accounts]');accounts.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:14px;max-height:60vh;overflow:auto;';
+  inspector.querySelector('[data-close]').onclick=()=>inspector.remove();
+  inspector.addEventListener('click',e=>{if(e.target===inspector)inspector.remove();});
+  for(const entry of dup.items){
+   const card=d.createElement('section');card.style.cssText='border:1px solid #55738c;border-radius:12px;padding:16px;min-width:0;overflow-wrap:anywhere';
+   const heading=d.createElement('h3');heading.textContent=(entry.scope==='website'?'Live Website':entry.scope==='aco'?'Customer Vault':entry.scope==='personal'?'Private Vault':'Imported File')+' · '+(retailerNames[entry.retailer]||entry.retailer);
+   const details=d.createElement('div');details.style.cssText='white-space:pre-wrap;line-height:1.6;margin:12px 0;color:inherit';
+   details.textContent=['Email: '+(entry.email||'Locked Personal record'),'Owner: '+(entry.scope==='personal'?'Private':entry.owner||'Not assigned'),'Status: '+(entry.status||'Unknown'),'Label: '+(entry.label||''),'Record ID: '+(entry.id||'Not available')].join('\n');
+   const actions=d.createElement('div');actions.className='buttons';actions.style.cssText='display:flex;flex-wrap:wrap;gap:8px';
+   card.append(heading,details,actions);accounts.append(card);
+   const makeButton=(title,handler,variant='secondary')=>{const b=d.createElement('button');b.type='button';b.className='btn slim '+variant;b.textContent=title;b.onclick=handler;actions.append(b);return b;};
+   if((entry.scope==='aco'||entry.scope==='personal')&&entry.id){
+    const more=d.createElement('div');more.textContent='Loading authorized local profile details…';card.append(more);
+    void api.view(entry.scope,entry.scope==='aco'?entry.owner:null,entry.id).then(result=>{
+     if(!inspector.isConnected)return;
+     const p=result?.profile||{},data=p.data||{},shipping=data.shipping||{},billing=data.billing||{};
+     const pan=String(data.cc_number||data.card?.number||'').replace(/\D/g,'');
+     const lines=['Profile name: '+String(data.profile_name||data.name||data.profileName||p.label||''),
+       'Phone: '+String(data.phone_num||data.phoneNumber||data.phone||''),
+       'Shipping: '+[shipping.addressLine1||data.shipping_street||data.shipping_address||'',shipping.city||data.shipping_city||'',shipping.state||data.shipping_state||'',shipping.zipCode||data.shipping_zip_code||''].filter(Boolean).join(', '),
+       'Billing: '+[billing.addressLine1||data.billing_street||'',billing.city||data.billing_city||'',billing.state||data.billing_state||'',billing.zipCode||data.billing_zip_code||''].filter(Boolean).join(', '),
+       'Card: '+(pan?'•••• '+pan.slice(-4):'No card')];
+     more.textContent=lines.join('\n');more.style.whiteSpace='pre-wrap';
+    }).catch(error=>{more.textContent='Details protected: '+String(error?.message||error);});
+    makeButton('Edit this profile',()=>{inspector.remove();modal.hidden=true;d.dispatchEvent(new CustomEvent('aco-studio:edit-profile',{detail:{scope:entry.scope,customerId:entry.scope==='aco'?entry.owner:null,profileId:entry.id}}));});
+    makeButton('Delete this LOCAL record',async()=>{
+     if(!confirm('Delete ONLY the local '+(retailerNames[entry.retailer]||entry.retailer)+' record '+(entry.label||entry.id)+'? This will not delete a website account. If it is synced from the website, it may be re-imported.'))return;
+     try{
+      await api.remove(entry.scope,entry.scope==='aco'?entry.owner:null,entry.id);
+      inspector.remove();modal.hidden=true;await refresh();await scan([],false);
+      msg('Deleted the selected LOCAL profile only. Live website accounts are unchanged.');
+     }catch(e){inspector.querySelector('[data-error]').textContent=String(e.message||e);}
+    },'plain');
+   }else if(entry.scope==='website'){
+    makeButton('Edit in website Admin',()=>{
+     inspector.remove();modal.hidden=true;d.querySelector('.tabButton[data-tab="site"]')?.click();
+     const search=$('siteSearch');if(search){search.value=entry.email||'';search.dispatchEvent(new Event('input',{bubbles:true}));search.focus();}
+     msg('Opened website-linked account view for '+(entry.email||'selected account')+'. Changes there save to the live site and customer app.');
+    });
+    const warning=d.createElement('small');warning.textContent='Remote account: no deletion happens here. Open website Admin to edit or remove the authoritative linked account.';card.append(warning);
+   }else if(entry.scope==='import'&&Number.isSafeInteger(entry.index)){
+    makeButton('Remove this IMPORT row',()=>{
+     if(!confirm('Remove only this row from the current import?'))return;
+     try{window.JigStudioLocalImport.removeImportedRow(entry.index);inspector.remove();modal.hidden=true;void scan([],false);}
+     catch(e){inspector.querySelector('[data-error]').textContent=String(e.message||e);}
+    });
+   }
+  }
+  d.body.append(inspector);
+ }
  function showReview(result){modal.hidden=false;$('profileReviewList').replaceChildren();
   $('profileReviewSub').textContent=result.duplicates.length+' email(s) appear more than once. '+(result.websiteComplete?'All linked website account pages checked.':'Website inventory not fully available: '+result.websiteReason);
   for(const dup of result.duplicates.slice(0,90)){
    const wrap=d.createElement('div');wrap.className='profileDuplicateEntry';
    const h=d.createElement('strong');h.textContent=dup.email+' ('+dup.count+' matches)';wrap.append(h);
+    const compare=d.createElement('button');compare.type='button';compare.className='btn primary slim';compare.textContent='Compare both records · View / Edit / Delete';compare.style.margin='10px 0';compare.onclick=()=>void compareConflict(dup);wrap.append(compare);
    for(const entry of dup.items){const row=d.createElement('div');row.className='profileDuplicateRow';
     const label=d.createElement('span');label.textContent=[entry.scope==='import'?'Current import':entry.scope==='personal'?'Personal · private':entry.scope==='website'?'Live website linked':'ACO customer '+entry.owner,retailerNames[entry.retailer]||entry.retailer,entry.status||'',entry.label||''].filter(Boolean).join(' · ');row.append(label);
     // Local deletions and replacements are scoped to a single bank/customer.
@@ -181,7 +238,7 @@
  async function scan(imports=normalizeImports(),show=true){try{
   $('profileScanBadge').textContent='Scanning accounts…';const result=await api.scan(imports);
   if(show)scanOutput(result,imports);
-  else{$('profileScanBadge').textContent=result.duplicates.length?'⚠ '+result.duplicates.length+' duplicates':'✓ Scan clear';if(result.duplicates.length)showReview(result);}
+  else{store.scanned=result;store.scanImports=imports;$('profileScanBadge').textContent=result.duplicates.length?'⚠ '+result.duplicates.length+' to review · click':'✓ Scan clear';$('profileScanBadge').classList.toggle('profileScanAlert',Boolean(result.duplicates.length));/* Never reopen a dismissed review from an automatic scan. */}
   return result;
  }catch(e){$('profileScanBadge').textContent='Scan unavailable';msg(e.message,true);return null;}}
  async function importCurrent(){const target=context();if(!target||!target.count)throw Error('Import profiles into Profile Studio first.');
@@ -199,14 +256,15 @@
  $('profileBankSearch').addEventListener('input',render);
  $('profileBankRetailers').addEventListener('click',event=>{const btn=event.target.closest('[data-filter]');if(btn){store.activeRetailer=btn.dataset.filter;render();}});
  $('profileImportBank').addEventListener('click',async()=>{try{await importCurrent();}catch(error){msg(error.message,true);}});
- $('profileScanNow').addEventListener('click',()=>void scan());
- $('profileImportRetailer').addEventListener('change',()=>void scan());
+ $('profileScanNow').addEventListener('click',()=>void scan(normalizeImports(),true));
+ $('profileScanBadge').addEventListener('click',()=>{if(store.scanned?.duplicates?.length)showReview(store.scanned);else void scan(normalizeImports(),true);});
+ $('profileImportRetailer').addEventListener('change',()=>void scan(normalizeImports(),false));
  $('personalBankLock').addEventListener('click',async()=>{await window.JigPersonalGuard?.lock();msg('Personal bank locked. Enter PIN or Touch ID to open it again.');});
  $('profileReviewClose').addEventListener('click',()=>modal.hidden=true);$('profileReviewDone').addEventListener('click',()=>modal.hidden=true);
  modal.addEventListener('click',event=>{if(event.target===modal)modal.hidden=true;});
  // Auto scans happen after every profile file import and roster change, not
  // while a user is typing in the bank editor.
- let debounce;function backgroundScan(){clearTimeout(debounce);if(context()?.savedToProfileBank)return;debounce=setTimeout(()=>void scan(normalizeImports(),true),550);}
+ let debounce;function backgroundScan(){clearTimeout(debounce);if(context()?.savedToProfileBank)return;debounce=setTimeout(()=>void scan(normalizeImports(),false),550);}
  d.addEventListener('jigstudio:bank-context-updated',()=>{const target=context();if(!target){void choose(window.JigStudioLocalImport.workspaceScope(),null);return;}
   void choose(target.scope,target.customerId).then(backgroundScan);});
  d.addEventListener('jigstudio:customers-updated',()=>{renderCustomers();if(window.JigWebsiteCustomers?.connected?.())backgroundScan();});
