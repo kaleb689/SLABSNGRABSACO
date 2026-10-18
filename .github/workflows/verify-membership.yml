@@ -58,6 +58,7 @@ jobs:
       - run: node --check retailer-order-enrichment.js
       - run: node --test test/pkc-receipt-enrichment.test.mjs
       - run: node --check checkout-owner-order-evidence.js
+      - run: node --test test/checkout-images-and-embeds.test.mjs
       - run: node --test test/pkc-owner-evidence.test.mjs
       - run: node --check public/admin-checkout-match.js
       - run: node --test test/stellar-fast-checkouts.test.mjs
