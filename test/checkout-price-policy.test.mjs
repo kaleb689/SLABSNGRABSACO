@@ -62,17 +62,20 @@ test("receipt verified paid amount is not overwritten by later unpriced or subto
   assert.equal(records[0].orderTotalBasis,"retailer_receipt");
 });
 
-test("Admin and public totals count paid totals only, not item subtotals", () => {
+test("Admin and public show the same placed checkout value while preserving verified-paid audit totals", () => {
   const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
   const publicRoute=server.slice(server.indexOf('"/api/public/success"'),
     server.indexOf("async function saveSuccessCheckouts("));
   const adminRoute=server.slice(server.indexOf('"/api/admin/success-overview"'),
     server.indexOf('app.get("/api/admin/discord-success-status"'));
-  assert.match(publicRoute,/const paidTotal = checkoutPaidAmount\(record\)/);
-  assert.match(publicRoute,/if \(paidTotal !== null\) totalSpent \+= paidTotal/);
-  assert.match(publicRoute,/if \(!confirmedDiscordPurchase\(record\)\) continue/);
-  assert.match(adminRoute,/sum \+ \(checkoutPaidAmount\(record\) \?\? 0\)/);
-  assert.match(adminRoute,/checkoutPaidAmount\(record\) === null/);
+  const totals=readFileSync(new URL("../checkout-reporting.js",import.meta.url),"utf8");
+  assert.match(publicRoute,/communityEligibleOrders\(records\)/);
+  assert.match(publicRoute,/communityCheckoutTotals\(confirmed\)/);
+  assert.match(adminRoute,/communityEligibleOrders\(allRecords\)/);
+  assert.match(adminRoute,/communityCheckoutTotals\(confirmed\)/);
+  assert.match(totals,/const paidAmount = checkoutPaidAmount\(record\)/);
+  assert.match(totals,/const checkoutValue = checkoutOrderValue\(record\)\.amount/);
+  assert.match(totals,/totalCheckoutValue: \(HISTORICAL_COMMUNITY_SNAPSHOT\.spentCents \+ checkoutValueCents\)/);
   const customerResponse=server.slice(server.indexOf("function safeSuccessCheckout("),
     server.indexOf("async function sendDiscordSuccessNotification("));
   assert.match(customerResponse,/orderTotal: checkoutPaidAmount\(record\) \?\? 0/);
