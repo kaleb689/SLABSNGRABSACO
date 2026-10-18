@@ -1,3 +1,4 @@
+import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
@@ -28756,11 +28757,11 @@ async function adminOrderCustomerAccount(
 
 // Authenticated ACO Studio shares the existing website/app customer vault,
 // with optimistic revisions, no new customer database and no exposed PAN.
-require('./server-studio-customer-sync').registerStudioCustomerRoutes({
+registerStudioCustomerRoutes({
   app,requireAdmin,getCustomerAccounts,saveCustomerAccounts,getCustomerVault,
   saveCustomerVault,customerSavedAddresses,sanitizeShippingAddress,
   validShippingAddress,sanitizeSavedPaymentMethod,validSavedPaymentMethod,
-  syncCustomerMissingNotification,revisionSecret:process.env.SUBMISSION_ENCRYPTION_KEY
+  syncCustomerMissingNotification,broadcastLiveDataChange,revisionSecret:process.env.SUBMISSION_ENCRYPTION_KEY
 });
 
 app.get(
