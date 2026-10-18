@@ -6263,6 +6263,7 @@ function fillSavedAddressForm(item = null) {
   const form = document.getElementById("saved-address-form");
   if (!form) return;
   form.hidden = false;
+  form.dataset.expectedRevision = item?.revision || "";
 
   [
     "id", "label", "firstName", "lastName", "address",
@@ -6278,6 +6279,7 @@ function fillSavedPaymentForm(item = null) {
   const form = document.getElementById("saved-payment-form");
   if (!form) return;
   form.hidden = false;
+  form.dataset.expectedRevision = item?.revision || "";
 
   if (form.elements.id) form.elements.id.value = item?.id || "";
   if (form.elements.cardLabel) form.elements.cardLabel.value = item?.cardLabel || "";
@@ -6443,6 +6445,7 @@ document.getElementById("saved-address-form")
     const id = String(form.elements.id?.value || "").trim();
     const body = Object.fromEntries(new FormData(form).entries());
     delete body.id;
+    if (id) body.expectedRevision = form.dataset.expectedRevision || "";
     body.authorizeRequestedPurchases = true;
 
     const response = await fetch(
@@ -6483,6 +6486,7 @@ document.getElementById("saved-payment-form")
     const id = String(form.elements.id?.value || "").trim();
     const body = Object.fromEntries(new FormData(form).entries());
     delete body.id;
+    if (id) body.expectedRevision = form.dataset.expectedRevision || "";
 
     const response = await fetch(
       id
@@ -6522,7 +6526,7 @@ document.getElementById("delete-saved-address")
 
     const response = await fetch(
       `/api/account/shipping-addresses/${encodeURIComponent(id)}`,
-      { method: "DELETE", credentials: "same-origin" }
+      { method: "DELETE", credentials: "same-origin", headers:{"Content-Type":"application/json"}, body:JSON.stringify({expectedRevision:savedAddressById(id)?.revision||""}) }
     );
 
     const data = await readJson(response);
@@ -6545,7 +6549,7 @@ document.getElementById("delete-saved-payment")
 
     const response = await fetch(
       `/api/account/payment-methods/${encodeURIComponent(id)}`,
-      { method: "DELETE", credentials: "same-origin" }
+      { method: "DELETE", credentials: "same-origin", headers:{"Content-Type":"application/json"}, body:JSON.stringify({expectedRevision:savedPaymentById(id)?.revision||""}) }
     );
 
     const data = await readJson(response);
@@ -8629,19 +8633,7 @@ function retailerProfileCardHtml(
                       </label>
                     </div>
 
-                    <label>
-                      Security Code
-                      <input
-                        type="text"
-                        name="securityCode"
-                        autocomplete="off"
-                        value="${escapeHtml(
-                          customerCard.securityCode ||
-                          ""
-                        )}"
-                        placeholder="Security Code"
-                      >
-                    </label>
+
 
                     </div>
                   </details>
@@ -9025,6 +9017,7 @@ function managedMembershipCardHtml(
   return `
     <article
       class="retailer-profile-card special-retailer-profile managed-static-profile"
+      data-managed-updated-at="${escapeHtml(membership.updatedAt || "")}"
       data-managed-membership="${escapeHtml(type)}"
       data-managed-assignment="${escapeHtml(
         membership.assignmentId || ""
@@ -9608,7 +9601,8 @@ async function applyManagedSavedInfo(
           body:
             JSON.stringify({
               shippingAddressId,
-              paymentMethodId
+              paymentMethodId,
+              expectedUpdatedAt: card.dataset.managedUpdatedAt || ""
             })
         }
       );
@@ -9933,6 +9927,8 @@ function bindManagedMembershipForms() {
     )
     .forEach(form => {
 
+      const initialMembership=[...state.freeMemberships,...state.rentedMemberships].find(x=>String(x.assignmentId)===String(form.dataset.managedCustomerForm));
+      form.dataset.expectedUpdatedAt=initialMembership?.updatedAt||'';
       const addressSelect =
         form.querySelector(
           "[data-managed-address-source]"
@@ -10182,7 +10178,8 @@ function bindManagedMembershipForms() {
                   body:
                     JSON.stringify({
                       customerProfile,
-                      customerCard
+                      customerCard,
+                      expectedUpdatedAt: form.dataset.expectedUpdatedAt || ''
                     })
                 }
               );

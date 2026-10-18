@@ -17,6 +17,7 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - run: node --test test/*.test.js test/*.test.mjs
       - run: node --check checkout-reporting.js
       - run: node --check server.js
       - run: node --test test/managed-customer-write-policy.test.mjs test/studio-customer-sync.test.mjs test/studio-linked-billing.test.mjs test/studio-live-http.test.mjs

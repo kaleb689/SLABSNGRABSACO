@@ -4,7 +4,7 @@ import { registerStudioCustomerRoutes } from '../server-studio-customer-sync.js'
 
 function harness(){
  const routes=new Map(),events=[],writes=[];
- const app={get:(route,auth,fn)=>routes.set('GET '+route,{auth,fn}),put:(route,auth,...handlers)=>routes.set('PUT '+route,{auth,fn:handlers.at(-1)})};
+ const app={post:(route,auth,...handlers)=>routes.set('POST '+route,{auth,fn:handlers.at(-1)}),delete:(route,auth,...handlers)=>routes.set('DELETE '+route,{auth,fn:handlers.at(-1)}),get:(route,auth,fn)=>routes.set('GET '+route,{auth,fn}),put:(route,auth,...handlers)=>routes.set('PUT '+route,{auth,fn:handlers.at(-1)})};
  const auth=()=>{};
  const account={id:'customer-a',email:'customer@example.test',firstName:'Alex',lastName:'Example',updatedAt:'2026-10-18T00:00:00Z',
   shippingAddresses:[{id:'address-1',label:'Home',firstName:'Alex',lastName:'Example',address:'12 Main St',address2:'',city:'Sample',state:'FL',zip:'33324',country:'US'}]};

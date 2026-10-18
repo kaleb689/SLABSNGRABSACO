@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { authenticator } from "otplib";
 
-test("startup reset replaces legacy jigs, caps each Main at four, flags overflow, and runs once", async () => {
+test("startup reset replaces legacy jigs, keeps one original plus four jigs per Main, flags overflow, and runs once", async () => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "signup-consent-test-"));
   const port = 46000 + Math.floor(Math.random() * 4000);
   const base = `http://127.0.0.1:${port}`;
@@ -26,7 +26,7 @@ test("startup reset replaces legacy jigs, caps each Main at four, flags overflow
   const main = { address: "3350 NW 2ND AVE", address2: "Ste A2", city: "Boca raton", state: "FL", zip: "33431", country: "US" };
   await fs.writeFile(path.join(dataDir, "customer-accounts.json"), JSON.stringify([{ id: "seed-customer", email: "seed@example.test", adminProfile: main }]));
   await fs.writeFile(path.join(dataDir, "paid-submissions.json"), JSON.stringify([{ id: "seed-order", customerAccountId: "seed-customer", profile: main }]));
-  await fs.writeFile(path.join(dataDir, "retailer-profiles.json"), JSON.stringify(Array.from({ length: 5 }, (_, index) => ({
+  await fs.writeFile(path.join(dataDir, "retailer-profiles.json"), JSON.stringify(Array.from({ length: 6 }, (_, index) => ({
     id: `profile-${index}`, customerAccountId: "seed-customer", jigSourceAddress: main,
     jiggedAddress: { ...main, address2: "SUITE A2" }, jigHistoryKeys: ["old-key"], exportAttemptStatus: "successful",
     customerProfile: { ...main, firstName: "Preserved", email: `user${index}@example.test` }
@@ -59,7 +59,9 @@ test("startup reset replaces legacy jigs, caps each Main at four, flags overflow
     const profiles = JSON.parse(await fs.readFile(path.join(dataDir, "retailer-profiles.json"), "utf8"));
     assert.equal(new Set(profiles.filter(item => item.jiggedAddress).map(item => JSON.stringify(item.jiggedAddress))).size, 4);
     assert.equal(profiles.filter(item => item.jigNeeded).length, 1);
-    assert.equal(profiles[4].jiggedAddress, null);
+    assert.equal(profiles[5].jiggedAddress, null);
+    assert.equal(profiles[0].jiggedAddress, null);
+    assert.equal(profiles[0].jigNeeded, false);
     for (const [index, item] of profiles.entries()) {
       assert.equal(item.customerProfile.email, `user${index}@example.test`);
       assert.equal(item.customerProfile.firstName, "Preserved");
@@ -80,7 +82,7 @@ test("startup reset replaces legacy jigs, caps each Main at four, flags overflow
     assert.equal(rejig.status, 200);
     assert.notDeepEqual(rejig.data.variant.address, first.address);
     const updated = JSON.parse(await fs.readFile(path.join(dataDir, "retailer-profiles.json"), "utf8"));
-    assert.deepEqual(updated[0].jiggedAddress, rejig.data.variant.address);
+    assert.deepEqual(updated[1].jiggedAddress, rejig.data.variant.address);
     assert.equal((await request(firstUrl, "PUT", { address: first.address }, admin.cookie)).status, 409);
     const remove = await request(firstUrl, "DELETE", { block: true }, admin.cookie);
     assert.equal(remove.status, 200);
@@ -102,8 +104,8 @@ test("startup reset replaces legacy jigs, caps each Main at four, flags overflow
     assert.equal((await request(mainUrl, "POST", { address: addedMain.data.source.variants[0].address }, admin.cookie)).status, 409);
     assert.equal((await request(mainUrl, "POST", { address: { address: "Incomplete" } }, admin.cookie)).status, 400);
     const profilesAfterActions = JSON.parse(await fs.readFile(path.join(dataDir, "retailer-profiles.json"), "utf8"));
-    assert.equal(profilesAfterActions[0].jigNeeded, true);
-    assert.equal(profilesAfterActions[0].customerProfile.address, main.address);
+    assert.equal(profilesAfterActions[1].jigNeeded, true);
+    assert.equal(profilesAfterActions[1].customerProfile.address, main.address);
     const backups = await fs.readdir(path.join(dataDir, "secure-packages", "jig-reset-backups"));
     assert.equal(backups.length, 1);
     const backup = await fs.readFile(path.join(dataDir, "secure-packages", "jig-reset-backups", backups[0]), "utf8");

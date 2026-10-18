@@ -23,7 +23,7 @@ test("records a signup and individual checkbox changes without storing card data
     },
     stdio: "ignore"
   };
-  let server = spawn("node", ["server.js"], serverOptions);
+  let server = spawn("node", ["--import", "./test/fixtures/stripe-discounts.mjs", "server.js"], serverOptions);
   const request = async (route, method = "GET", body, cookie = "") => {
     const response = await fetch(base + route, {
       method, headers: { Origin: base, Cookie: cookie, "Content-Type": "application/json" },
@@ -45,7 +45,7 @@ test("records a signup and individual checkbox changes without storing card data
     const flowId = "11111111-1111-4111-8111-111111111111";
     for (const [checkbox, checked] of [
       ["confirm", true], ["acknowledgeAcoOutcome", true],
-      ["authorizeRequestedPurchases", true], ["authorizeRequestedPurchases", false]
+      ["authorizeRequestedPurchases", true], ["confirm", false]
     ]) {
       const event = await request("/api/account/purchase-consent-event", "POST", {
         flowId, checkbox, checked, clientClickedAt: new Date().toISOString()
@@ -87,7 +87,7 @@ test("records a signup and individual checkbox changes without storing card data
 
     server.kill();
     await new Promise(resolve => server.once("exit", resolve));
-    server = spawn("node", ["server.js"], serverOptions);
+    server = spawn("node", ["--import", "./test/fixtures/stripe-discounts.mjs", "server.js"], serverOptions);
     let restarted = false;
     for (let i = 0; i < 60; i++) {
       try { await fetch(base); restarted = true; break; }

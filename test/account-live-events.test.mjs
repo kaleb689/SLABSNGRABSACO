@@ -12,14 +12,16 @@ function surface() {
   const document = { visibilityState: 'visible', events: {}, addEventListener(k, fn) { this.events[k] = fn; } };
   const window = { events: {}, addEventListener(k, fn) { this.events[k] = fn; } };
   let refreshes = 0;
+  const intervals=[];
   class EventSource {
     constructor(url) { this.url = url; this.events = {}; this.closed = false; connections.push(this); }
     addEventListener(k, fn) { this.events[k] = fn; }
     close() { this.closed = true; }
   }
   vm.runInNewContext(source, { document, window, state, EventSource, ADMIN_PREVIEW_MODE: false,
+    setInterval(fn,ms) { intervals.push({fn,ms}); },
     scheduleCustomerLiveRefresh() { refreshes++; } });
-  return { state, document, window, connections, refreshes: () => refreshes };
+  return { state, document, window, connections, refreshes: () => refreshes, intervals };
 }
 
 test('account live feed starts on login, avoids duplicates and closes on logout', () => {
@@ -51,7 +53,7 @@ test('returning from suspension reconnects and refreshes missed account changes'
   s.window.events.pageshow();
   assert.equal(s.connections.length, 2);
   s.connections[1].events.open();
-  assert.equal(s.refreshes(), 1);
+  assert.equal(s.refreshes(), 3);
   s.window.events.pagehide();
   assert.equal(s.connections[1].closed, true);
   s.window.events.pageshow();
@@ -65,3 +67,5 @@ test('sign-in and sign-out rendering notify the live feed', () => {
     assert.match(app.slice(start, end), /document\.dispatchEvent\(new CustomEvent\("account-session-changed"\)\)/);
   }
 });
+
+ test('periodic catch-up refresh recovers missed changes only while signed in and visible',()=>{const s=surface();assert.equal(s.intervals.length,1);assert.equal(s.intervals[0].ms,60000);s.intervals[0].fn();assert.equal(s.refreshes(),0);s.state.customer={id:'a'};s.intervals[0].fn();assert.equal(s.refreshes(),1);s.document.visibilityState='hidden';s.intervals[0].fn();assert.equal(s.refreshes(),1);});

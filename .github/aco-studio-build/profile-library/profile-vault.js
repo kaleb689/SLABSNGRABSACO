@@ -85,15 +85,16 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function remove(scope,customerId,profileId){const key=bank(scope,customerId);return serial(async()=>{
   const d=await read(scope),rows=d.groups[key]||[],rest=rows.filter(row=>row.id!==profileId);
   if(rest.length===rows.length)throw Error('The profile is no longer in this specific bank.');
-  const old=rows.find(row=>row.id===profileId);auditRecord(d,key,'delete',old.email,{retailer:old.retailer});
+  const old=rows.find(row=>row.id===profileId);if(old.source==='website-linked-profile'&&old.sourceLinked===true)throw Error('Unlink the authoritative website account before removing this local mirror.');auditRecord(d,key,'delete',old.email,{retailer:old.retailer});
   d.groups[key]=rest;await write(scope,d);return {deleted:true,scope};
  });}
  async function setStatus(scope,customerId,profileId,status){const key=bank(scope,customerId);if(!['active','available','needs-repair'].includes(status))throw Error('Invalid status.');return serial(async()=>{
-  const d=await read(scope),p=(d.groups[key]||[]).find(x=>x.id===profileId);if(!p)throw Error('Profile is not in this bank.');p.status=status;p.revision=(p.revision||0)+1;await write(scope,d);return brief(p);
+  const d=await read(scope),p=(d.groups[key]||[]).find(x=>x.id===profileId);if(!p)throw Error('Profile is not in this bank.');if(p.source==='website-linked-profile'&&p.sourceLinked===true)throw Error('Change the linked account status in the live website pool controls.');p.status=status;p.revision=(p.revision||0)+1;await write(scope,d);return brief(p);
  });}
  async function swapWithAvailable(scope,customerId,duplicateId,replacementId){const key=bank(scope,customerId);return serial(async()=>{
   const d=await read(scope),rows=d.groups[key]||[],old=rows.find(x=>x.id===duplicateId),fresh=rows.find(x=>x.id===replacementId);
   if(!old||!fresh||old.id===fresh.id||old.retailer!==fresh.retailer||fresh.status!=='available')throw Error('Choose an unused replacement from the same retailer and the SAME Personal/customer bank.');
+  if([old,fresh].some(x=>x.source==='website-linked-profile'&&x.sourceLinked===true))throw Error('Replace active website accounts through Linked account actions.');
   if(rows.some(x=>x.id!==fresh.id&&x.email===fresh.email))throw Error('Replacement profile email is already in use; choose another unused account.');
   d.groups[key]=rows.filter(x=>x.id!==old.id);fresh.status='active';fresh.revision=(fresh.revision||0)+1;fresh.replacedProfile=old.id;auditRecord(d,key,'same-bank-replace',old.email,{retailer:old.retailer,replacementEmail:fresh.email});await write(scope,d);return {replaced:brief(old),with:brief(fresh)};
  });}
@@ -123,6 +124,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   return serial(async()=>{
    const d=await read(scope),profile=(d.groups[key]||[]).find(x=>x.id===profileId);
    if(!profile)throw Error('The profile does not belong to this customer/Personal bank.');
+   if(commit&&profile.source==='website-linked-profile'&&profile.sourceLinked===true)throw Error('Use the linked profile jig preview to publish changes to the website.');
    const mapping=JigCore.autoMap([profile.data]);
    const changed=JigAssignments.assign({records:[profile.data],mapping,indices:[0],addresses:[chosen.address],scope,origin:scope,
     customerId:scope==='aco'?key:null,sourceCustomerId:scope==='aco'?key:null},JigCore);
@@ -152,6 +154,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    for(const change of planRows){
     const profile=bankRows.find(x=>x.id===change.profileId&&x.retailer===r);
     if(!profile)throw Error('A selected profile is no longer in the authorized bank and retailer.');
+    if(profile.source==='website-linked-profile'&&profile.sourceLinked===true)throw Error('Publish linked address changes through the live Profiles editor.');
     if((Number.isSafeInteger(profile.revision)?profile.revision:0)!==change.expectedRevision)throw Error('This saved profile changed since preview. Review the batch again; nothing was modified.');
     if(!change.address1||!change.city||!change.state||!change.zip)throw Error('Incomplete shipping address in reviewed plan.');
     const mapping=JigCore.autoMap([profile.data]);
@@ -182,6 +185,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function editBlank(scope,customerId,profileId,revision,fields,beforeWrite){const key=bank(scope,customerId);return serial(async()=>{
   const d=await read(scope),rows=d.groups[key]||[],row=rows.find(x=>x.id===profileId);
   if(!row||row.source!=='owner-created-profile')throw Error('Choose a profile created in this vault to edit its form.');
+  if(row.sourceLinked===true)throw Error('Edit linked profiles through the live Profiles editor.');
   if(row.revision!==revision)throw Error('This profile changed. Reopen its form before editing.');
   const next=require('./profile-draft-core').manualEdit(row.data,fields),email=emailFrom(next);
   if(email&&rows.some(x=>x.id!==profileId&&x.email===email&&x.retailer===row.retailer))throw Error('Duplicate email in this vault and retailer.');
@@ -196,6 +200,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    const updates=changes.map(c=>{
     const row=rows.find(x=>x.id===c.profileId&&x.retailer===c.retailer);
     if(!row||(row.revision||0)!==c.expectedRevision||Fields.hash(row.data)!==c.expectedHash)throw Error('A saved profile changed since preview. Nothing was overwritten.');
+    if(row.source==='website-linked-profile'&&row.sourceLinked===true)throw Error('Edit linked profiles in the live Profiles editor so changes synchronize.');
     Fields.verify([row.data],[c.data],[new Set(c.allowed)],[0]);
     return {row,data:structuredClone(c.data),refs:c.assetRefs};
    });
@@ -268,7 +273,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    // A locally synchronized website assignment already represents one
    // physical retailer account. Do not count it twice in the web feed.
    if(row.source==='website-linked-profile'&&row.remoteKey)
-    linkedMirrors.add(key+'|'+row.remoteKey);
+    linkedMirrors.add(key+'|'+retailer+'|'+(row.remoteManagedId||String(row.remoteKey).split('|').slice(1).join('|')));
   }
   const seenWeb=new Set(),uniqueWeb=[];
   for(const w of webRecords){

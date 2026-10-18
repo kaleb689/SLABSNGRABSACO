@@ -1,3 +1,6 @@
+import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
+import { savedDataRevision, savedDataPrecondition } from "./saved-data-revisions.js";
+import { stripPaymentVerifiers, purgeLegacyPaymentVerifiers } from "./payment-verification-policy.js";
 import { managedWriteConflict, nextManagedRevision, serializeManagedWrites, mergeManagedCard } from "./managed-customer-write-policy.js";
 import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
@@ -57,6 +60,8 @@ import { lookupPostalJigOptions, selectedPostalJigs, uspsAddressLookupConfigured
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+const serializeCustomerSavedWrites = serializeManagedWrites();
+const serializeManagedCustomerDetails = serializeManagedWrites();
 
 const adminLiveDataListeners = new Set();
 const customerLiveDataListeners = new Set();
@@ -1663,8 +1668,7 @@ function validSecrets(secrets) {
     secrets.cardholder &&
     secrets.cardLabel &&
     secrets.expMonth &&
-    secrets.expYear &&
-    secrets.securityCode
+    secrets.expYear
   );
 }
 
@@ -1701,7 +1705,7 @@ function encryptJson(object) {
 
   const plaintext =
     Buffer.from(
-      JSON.stringify(object),
+      JSON.stringify(stripPaymentVerifiers(object)),
       "utf8"
     );
 
@@ -1722,7 +1726,7 @@ function encryptJson(object) {
   };
 }
 
-function decryptJson(payload) {
+function decryptRawJson(payload) {
   const key = encryptionKey();
 
   const iv =
@@ -1757,6 +1761,10 @@ function decryptJson(payload) {
       decipher.final()
     ]).toString("utf8")
   );
+}
+
+function decryptJson(payload) {
+  return stripPaymentVerifiers(decryptRawJson(payload));
 }
 
 const PURCHASE_CONSENT_VERSION = "membership-checkout-2026-09-29";
@@ -5258,6 +5266,7 @@ function publicSavedPaymentMethod(
   return {
     id:
       method.id,
+    revision: method.revision || savedDataRevision("payment", method),
 
     cardLabel:
       method.cardLabel ||
@@ -5527,6 +5536,7 @@ async function allCustomerSavedDetails(
           "saved"
       };
 
+      normalized.revision = savedDataRevision('address', item);
       const key =
         savedAddressDedupeKey(
           normalized
@@ -5615,6 +5625,7 @@ async function allCustomerSavedDetails(
           null
       };
 
+      normalized.revision = savedDataRevision('payment', item);
       const key =
         savedPaymentDedupeKey(
           normalized
@@ -11292,6 +11303,7 @@ function clearManagedAssignmentCustomerData(
     null;
 
   delete assignment.customerProfile;
+  delete assignment.customerBillingProfile;
   delete assignment.customerSecrets;
   delete assignment.customerUpdatedAt;
 
@@ -12823,9 +12835,7 @@ function profileMissingFieldLabels(
     );
   }
 
-  if (!String(secrets?.securityCode || "").trim()) {
-    missing.push(`${label}: Security Code`);
-  }
+
 
   return missing;
 }
@@ -12866,7 +12876,7 @@ function paidProfileMissingItems(
 const PROFILE_SETUP_FIELDS = [
   "first name", "last name", "email", "phone", "street address",
   "city", "state", "ZIP code", "country", "cardholder name",
-  "card number", "expiration month", "expiration year", "Security Code"
+  "card number", "expiration month", "expiration year"
 ];
 
 // Return statuses and field names only. Checkout and retailer secrets never leave the server.
@@ -14341,6 +14351,7 @@ try {
 
               assignmentId:
                 assignment.id,
+              updatedAt: assignment.updatedAt || "",
 
               profileType:
                 "free",
@@ -14410,7 +14421,7 @@ try {
                 null,
 
               updatedAt:
-                membership.updatedAt ||
+                assignment.updatedAt ||
                 null
             };
           })
@@ -14657,6 +14668,7 @@ try {
 
               assignmentId:
                 assignment.id,
+              updatedAt: assignment.updatedAt || "",
 
               profileType:
                 "rented",
@@ -24695,6 +24707,7 @@ app.post(
 app.post(
   "/api/admin/linked-memberships/:type/:id/rtp-fill-spot",
   requireAdmin,
+  serializeManagedCustomerDetails,
   async (req, res) => {
     try {
       const type = clean(req.params.type, 20);
@@ -24717,6 +24730,9 @@ app.post(
       if (!assignment || assignment.active !== true || !assignment.customerAccountId) {
         return res.status(404).json({ error: "This linked profile is no longer actively assigned." });
       }
+
+      const refused = managedWriteConflict(assignment,req.body);
+      if(refused)return res.status(refused.status).json({error:refused.error});
 
       const oldManagedAccountId = String(
         assignment.managedAccountId ||
@@ -24765,7 +24781,9 @@ app.post(
         });
       }
 
-      const replacement = available[0];
+      const requestedReplacement = clean(req.body?.replacementManagedAccountId,150);
+      const replacement = requestedReplacement ? available.find(x=>String(x.id)===requestedReplacement) : available[0];
+      if(!replacement)return res.status(409).json({error:'The selected replacement is not unused in this retailer pool. The original assignment was preserved.'});
       const now = new Date();
       const nowIso = now.toISOString();
       const customerAccountId = String(assignment.customerAccountId);
@@ -24789,6 +24807,8 @@ app.post(
         startsAt: assignment.startsAt || null,
         expiresAt: assignment.expiresAt || null,
         customerProfile: assignment.customerProfile || {},
+        customerBillingProfile: assignment.customerBillingProfile || null,
+        savedAddressId: assignment.savedAddressId || null,
         customerSecrets: assignment.customerSecrets || null,
         selectedAddressId: assignment.selectedAddressId || null,
         selectedPaymentId: assignment.selectedPaymentId || null,
@@ -24884,6 +24904,7 @@ app.post(
 app.post(
   "/api/admin/linked-memberships/:type/:id/return-to-pool",
   requireAdmin,
+  serializeManagedCustomerDetails,
   async (req, res) => {
     try {
       const type =
@@ -24945,6 +24966,9 @@ app.post(
           error: "This assignment changed. Refresh the pool search before unlinking."
         });
       }
+
+      const refused = managedWriteConflict(assignment,req.body);
+      if(refused)return res.status(refused.status).json({error:refused.error});
 
       const now =
         new Date()
@@ -25087,16 +25111,7 @@ function exportProfileMissingFields(
     );
   }
 
-  if (
-    !String(
-      secrets?.securityCode ||
-      ""
-    ).trim()
-  ) {
-    missing.push(
-      "Security Code"
-    );
-  }
+
 
   return missing;
 }
@@ -25435,17 +25450,8 @@ function hayhaProfileObject(
           0
         ) || "",
 
-      /*
-        The .hayha schema names this field "cvv".
-        For this export format, populate that required schema field
-        from the customer's SLABSNGRABSACO Security Code.
-        The site UI continues to label the stored value Security Code.
-      */
-      cvv:
-        String(
-          secrets?.securityCode ||
-          ""
-        ).trim()
+      /* Preserve the schema field without persisting or exporting verification codes. */
+      cvv: ""
     },
 
     sameAsBilling:
@@ -27709,8 +27715,7 @@ app.post(
                 "card number",
                 "cardholder name",
                 "expiration month",
-                "expiration year",
-                "Security Code"
+                "expiration year"
               ].includes(
                 item
               )
@@ -28777,8 +28782,15 @@ registerStudioCustomerRoutes({
   app,requireAdmin,getCustomerAccounts,saveCustomerAccounts,getCustomerVault,
   saveCustomerVault,customerSavedAddresses,sanitizeShippingAddress,
   validShippingAddress,sanitizeSavedPaymentMethod,validSavedPaymentMethod,
-  syncCustomerMissingNotification,broadcastLiveDataChange,revisionSecret:process.env.SUBMISSION_ENCRYPTION_KEY
+  syncCustomerMissingNotification,broadcastLiveDataChange,serializeCustomerSavedWrites,revisionSecret:process.env.SUBMISSION_ENCRYPTION_KEY
 });
+
+registerStudioAssignmentActions({app,requireAdmin,serialize:serializeManagedCustomerDetails,getCustomerAccounts,
+  getAssignments:type=>type==='free'?getFreeAssignments():getRentalAssignments(),
+  saveAssignments:(type,rows)=>type==='free'?saveFreeAssignments(rows):saveRentalAssignments(rows),
+  findAssignment:(type,rows,id)=>type==='free'?linkedFreeAssignment(rows,id):linkedRentalAssignment(rows,id),
+  activeMembershipForCustomer:async id=>activeMembershipRecordForCustomer(id,await readJson(PAID_FILE,[])),
+  clearAssignment:clearManagedAssignmentCustomerData,normalizeDuration:normalizeSpecialProfileDuration,broadcastLiveDataChange});
 
 app.get(
   "/api/admin/submissions/:id/saved-details",
@@ -30189,6 +30201,7 @@ function mergeManagedCustomerSecrets(existingSecrets, submittedCard) {
 app.post(
   "/api/account/managed-memberships/:type/:assignmentId/autofill",
   requireCustomer,
+  serializeManagedCustomerDetails,
   async (req, res) => {
     try {
       const type =
@@ -30252,6 +30265,10 @@ app.post(
               "Managed membership assignment could not be found."
           });
       }
+
+      if (!Object.hasOwn(req.body||{},'expectedUpdatedAt')) return res.status(428).json({error:'Reopen this profile before saving; its current version is required.'});
+      const refused = managedWriteConflict(assignment,{...req.body,expectedCustomerAccountId:req.customerAccount.id});
+      if(refused)return res.status(refused.status).json({error:refused.error});
 
       const addressId =
         clean(
@@ -30353,8 +30370,7 @@ app.post(
         null;
 
       assignment.customerUpdatedAt =
-        new Date()
-          .toISOString();
+        nextManagedRevision(assignment.updatedAt);
 
       assignment.updatedAt =
         assignment.customerUpdatedAt;
@@ -30454,6 +30470,7 @@ app.post(
 app.put(
   "/api/account/managed-memberships/:type/:assignmentId",
   requireCustomer,
+  serializeManagedCustomerDetails,
   async (req, res) => {
     try {
       const type =
@@ -30515,6 +30532,10 @@ app.put(
           });
       }
 
+      if (!Object.hasOwn(req.body||{},'expectedUpdatedAt')) return res.status(428).json({error:'Reopen this profile before saving; its current version is required.'});
+      const refused = managedWriteConflict(assignment,{...req.body,expectedCustomerAccountId:req.customerAccount.id});
+      if(refused)return res.status(refused.status).json({error:refused.error});
+
       let existingSecrets = {};
 
       try {
@@ -30552,8 +30573,7 @@ app.put(
         );
 
       assignment.customerUpdatedAt =
-        new Date()
-          .toISOString();
+        nextManagedRevision(assignment.updatedAt);
 
       assignment.updatedAt =
         assignment.customerUpdatedAt;
@@ -31718,7 +31738,6 @@ app.get(
 );
 
 
-const serializeManagedCustomerDetails = serializeManagedWrites();
 app.put(
   "/api/admin/managed-memberships/:type/:id/customer-details",
   requireAdmin,
@@ -35453,6 +35472,7 @@ app.get(
 app.post(
   "/api/account/shipping-addresses",
   requireCustomer,
+  serializeCustomerSavedWrites,
   async (req, res) => {
     try {
       const accounts =
@@ -35551,6 +35571,7 @@ app.post(
 app.put(
   "/api/account/shipping-addresses/:id",
   requireCustomer,
+  serializeCustomerSavedWrites,
   async (req, res) => {
     try {
       const id =
@@ -35600,6 +35621,8 @@ app.put(
               "Shipping address not found."
           });
       }
+
+      if (!savedDataPrecondition(req,res,"address",addresses[addressIndex])) return;
 
       const next =
         sanitizeShippingAddress(
@@ -35663,6 +35686,7 @@ app.put(
 app.delete(
   "/api/account/shipping-addresses/:id",
   requireCustomer,
+  serializeCustomerSavedWrites,
   async (req, res) => {
     try {
       const id =
@@ -35696,6 +35720,10 @@ app.delete(
             accountIndex
           ]
         );
+
+      const current = before.find(item=>String(item.id)===id);
+      if (!current) return res.status(404).json({error:'Saved record not found.'});
+      if (!savedDataPrecondition(req,res,"address",current)) return;
 
       const after =
         before.filter(
@@ -35755,6 +35783,7 @@ app.delete(
 app.post(
   "/api/account/payment-methods",
   requireCustomer,
+  serializeCustomerSavedWrites,
   async (req, res) => {
     try {
       if (req.body?.authorizeRequestedPurchases !== true) {
@@ -35852,6 +35881,7 @@ app.post(
 app.put(
   "/api/account/payment-methods/:id",
   requireCustomer,
+  serializeCustomerSavedWrites,
   async (req, res) => {
     try {
       const id =
@@ -35881,6 +35911,8 @@ app.put(
               "Payment card not found."
           });
       }
+
+      if (!savedDataPrecondition(req,res,"payment",vault.paymentMethods[index])) return;
 
       const next =
         sanitizeSavedPaymentMethod(
@@ -35936,6 +35968,7 @@ app.put(
 app.delete(
   "/api/account/payment-methods/:id",
   requireCustomer,
+  serializeCustomerSavedWrites,
   async (req, res) => {
     try {
       const id =
@@ -35951,6 +35984,10 @@ app.delete(
 
       const before =
         vault.paymentMethods;
+
+      const current = before.find(item=>String(item.id)===id);
+      if (!current) return res.status(404).json({error:'Saved record not found.'});
+      if (!savedDataPrecondition(req,res,"payment",current)) return;
 
       const after =
         before.filter(
@@ -49858,6 +49895,8 @@ await initializeArrayFile(
     await initializeArrayFile(
   SUCCESS_CHECKOUTS_FILE
 );
+    const paymentCleanup = await purgeLegacyPaymentVerifiers({directory:DATA_DIR,decryptRaw:decryptRawJson,encrypt:encryptJson});
+    console.log("Payment verifier cleanup completed:", JSON.stringify(paymentCleanup));
     await migrateWebhookOnlySuccessCheckouts();
 
     await removeLegacyDiscordUserIds();
