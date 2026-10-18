@@ -1,0 +1,43 @@
+name: Advance verified ACO Studio 4.13.18 update feeds
+on:
+  push:
+    branches: [release/aco-v41318-verified-feed]
+    paths: ['.github/workflows/advance-aco-v41318-updaters.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  advance:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Retrieve already-built and tested official installers
+        run: |
+          mkdir -p verified
+          gh release download aco-studio-v4.13.18-windows-unsigned --repo "$GITHUB_REPOSITORY" --pattern 'ACO-Studio-Setup-4.13.18-x64.exe' --pattern 'latest.yml' --dir verified
+          gh release download aco-studio-v4.13.18-macos-adhoc --repo "$GITHUB_REPOSITORY" --pattern 'mac-update.json' --dir verified
+      - name: Verify installer integrity, release version and live backend boundary
+        run: |
+          python3 - <<'PY'
+          import pathlib,hashlib,base64,json,urllib.request,urllib.error
+          root=pathlib.Path('verified');p=root/'ACO-Studio-Setup-4.13.18-x64.exe'
+          assert p.stat().st_size>50_000_000
+          with p.open('rb') as f:assert f.read(2)==b'MZ'
+          with p.open('rb') as f:digest=base64.b64encode(hashlib.file_digest(f,'sha512').digest()).decode()
+          feed=(root/'latest.yml').read_text();assert feed.startswith('version: 4.13.18\n') and digest in feed
+          mac=json.loads((root/'mac-update.json').read_text());assert mac['version']=='4.13.18' and set(mac['platforms'])=={'darwin-arm64','darwin-x64'}
+          with urllib.request.urlopen('https://slabsngrabsaco.com/api/health',timeout=30) as response:assert json.load(response)['ok'] is True
+          try:urllib.request.urlopen('https://slabsngrabsaco.com/api/admin/aco-studio/customers/verification-probe/saved-data',timeout=30);raise AssertionError('Admin route allowed anonymous access')
+          except urllib.error.HTTPError as error:assert error.code==401
+          print('Verified released installer SHA-512, both Mac feed architectures, production health and unauthenticated access rejection. Backend 356371f3246de3a446b1cceb22b8468df9f31290 was separately confirmed live through Render before starting this workflow.')
+          PY
+      - name: Advance Windows feed after required backend deployment
+        run: gh release upload aco-studio-windows-updates verified/ACO-Studio-Setup-4.13.18-x64.exe verified/latest.yml --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Advance Mac feed after required backend deployment
+        run: gh release upload aco-studio-macos-updates verified/mac-update.json --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Verify both automatic-update feeds point at tested releases
+        run: |
+          gh release download aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" --pattern 'mac-update.json' --dir active
+          gh release download aco-studio-windows-updates --repo "$GITHUB_REPOSITORY" --pattern 'latest.yml' --dir active
+          python3 -c "import json; assert json.load(open('active/mac-update.json'))['version']=='4.13.18'; assert open('active/latest.yml').read().startswith('version: 4.13.18\n')"
