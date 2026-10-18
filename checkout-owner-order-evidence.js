@@ -86,3 +86,31 @@ export function applyOwnerVerifiedOrderEvidence(records, entries=approved) {
   }
   return {changed:corrected>0,corrected,changedCustomerIds:[...changedCustomerIds]};
 }
+
+/**
+ * Aggregate production reconciliation diagnostics. Never log the order number,
+ * customer name, account email, source message ID or checkout contents.
+ * A zero in sourceMatches means the exact screenshot order is absent from the
+ * stored Discord checkout ledger; it is not proof that a customer has zero hits.
+ */
+export function ownerOrderEvidenceAudit(records, entries=approved) {
+  const safe = Array.isArray(records) ? records : [];
+  const evidenceByHash = new Map(entries.map(item => [String(item.orderHash),item]));
+  const result = { sourceMatches:0, eligible:0, linked:0,
+    tenItems:0, verifiedFullTotals:0 };
+  for (const record of safe) {
+    if (!record || !isVerifiedDiscordCheckout(record) ||
+        String(record.retailer || "").toLowerCase() !== "pkc" ||
+        !record.orderNumber) continue;
+    const evidence=evidenceByHash.get(digest("pkc:" + normalizeNumber(record.orderNumber)));
+    if (!evidence) continue;
+    result.sourceMatches++;
+    if (record.customerAccountId) result.linked++;
+    if (ownerVerifiedOrderEvidence(record,entries)) result.eligible++;
+    const quantity = (Array.isArray(record.items) ? record.items : [])
+      .reduce((sum,item) => sum + Math.max(0,Math.floor(Number(item.quantity)||0)),0);
+    if (quantity===10 && Array.isArray(record.items) && record.items.length===10) result.tenItems++;
+    if ((checkoutPaidAmount(record) ?? 0) >= evidence.total) result.verifiedFullTotals++;
+  }
+  return result;
+}

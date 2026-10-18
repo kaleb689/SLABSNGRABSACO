@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
-import {applyOwnerVerifiedOrderEvidence,ownerVerifiedOrderEvidence} from "../checkout-owner-order-evidence.js";
+import {applyOwnerVerifiedOrderEvidence,ownerVerifiedOrderEvidence,ownerOrderEvidenceAudit} from "../checkout-owner-order-evidence.js";
 import {checkoutPaidAmount,checkoutOrderValue} from "../checkout-price-policy.js";
 
 const id="discord:1532179373292257290:1580000000000007777";
@@ -57,4 +57,18 @@ test("an already higher verified final total is never lowered",()=>{
   const result=applyOwnerVerifiedOrderEvidence(rows,entries);
   assert.equal(result.changed,false);
   assert.equal(rows[0].orderTotal,108);
+});
+
+test("private audit shows whether exact PKC order is present, complete and attributed without identifiers",()=>{
+  const before=ownerOrderEvidenceAudit([make()],entries);
+  assert.deepEqual(before,{sourceMatches:1,eligible:1,linked:1,tenItems:0,verifiedFullTotals:0});
+  const corrected=[make()];
+  applyOwnerVerifiedOrderEvidence(corrected,entries);
+  const after=ownerOrderEvidenceAudit(corrected,entries);
+  assert.deepEqual(after,{sourceMatches:1,eligible:1,linked:1,tenItems:1,verifiedFullTotals:1});
+  assert.deepEqual(ownerOrderEvidenceAudit([{
+    ...make(),orderNumber:"OTHER-PKC-ORDER"
+  }],entries),{sourceMatches:0,eligible:0,linked:0,tenItems:0,verifiedFullTotals:0});
+  const printed=JSON.stringify(after);
+  assert.doesNotMatch(printed,/SYNTHETIC-PKC-ORDER|member-test|@|sourceIds/);
 });
