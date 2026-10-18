@@ -108,3 +108,54 @@ test("customer payload exposes shipment status, carrier and tracking but no busi
   assert.match(source,/mergeRetailerFulfillmentItems\(record\.items, pkcDetails\.items\)/);
   assert.match(source,/queueDiscordSuccessScan\(350\)/);
 });
+
+test("PKC HTML numeric entities produce the same ten distinct products", () => {
+  const embedded = "<div>Order Summary</div>" + products.map(row =>
+    "<div>Pok&#233;mon TCG: 30th Celebration Mini Tin &#8211; " +
+    row[0] + " (" + row[1] + ")</div>" +
+    "<div>SKU # : 10-10465-" + row[2] + "</div>" +
+    "<div>Qty : 1</div>").join("") +
+    "<div>The Pok&#233;mon Company</div>";
+  const parsed = pokemonCenterFulfillmentDetails({html:embedded});
+  assert.equal(parsed.items.length,10);
+  assert.equal(parsed.items[0].name,"Pokémon TCG: 30th Celebration Mini Tin – Mew (Day)");
+});
+
+test("another partial green webhook cannot downgrade restored PKC subtotal or item count", async () => {
+  const {reconcileWebhookCheckout} = await import("../webhook-success.js");
+  const channel = "1532179373292257290";
+  const id = "discord:" + channel + ":1580000000000000501";
+  const complete = {
+    id, retailer:"PKC", status:"confirmed", customerAccountId:"mike",
+    checkoutAt:"2026-10-15T11:00:00Z", statusUpdatedAt:"2026-10-15T11:00:00Z",
+    orderTotal:99.90,orderTotalBasis:"item_subtotal",itemCount:10,
+    items:receipt().items.map((item,index)=>({
+      ...item,price:index<4?10.64:0
+    }))
+  };
+  const records=[complete];
+  const partial={
+    ...complete, id:"discord:" + channel + ":1580000000000000502",
+    checkoutAt:"2026-10-15T11:05:00Z",statusUpdatedAt:"2026-10-15T11:05:00Z",
+    orderTotal:42.56,itemCount:4,items:complete.items.slice(0,4)
+  };
+  reconcileWebhookCheckout(records,partial);
+  assert.equal(records.length,1);
+  assert.equal(records[0].itemCount,10);
+  assert.equal(records[0].items.length,10);
+  assert.equal(records[0].orderTotal,99.90);
+  assert.equal(records[0].orderTotalBasis,"item_subtotal");
+});
+test("customer tracking UI loads its style and never renders retailer-account or master-inbox fields",() => {
+  const page=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
+  const app=readFileSync(new URL("../public/app-dashboard.js",import.meta.url),"utf8");
+  const style=readFileSync(new URL("../public/app-tracking-sheet.css",import.meta.url),"utf8");
+  assert.match(page,/app-tracking-sheet\.css\?v=20261018-pkc-orders/);
+  assert.match(page,/app-dashboard\.js\?v=20261018-pkc-tracking/);
+  assert.match(app,/const trackingSheetHtml = order =>/);
+  const sheet=app.slice(app.indexOf("const trackingSheetHtml"),app.indexOf("function orderRows("));
+  assert.doesNotMatch(sheet,/accountEmail|masterInbox|sourceProfileLabel|account\.email/);
+  assert.match(style,/sng-tracking-sheet/);
+  assert.match(app,/if \(content\._sngMarkup !== html\)/);
+  assert.match(app,/if \(target\._sngMarkup !== nextMarkup\)/);
+});
