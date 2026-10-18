@@ -121,3 +121,25 @@ jobs:
           echo 'Verified launch-updater + secure-login source syntax and duplicate classifier regressions.'
       - name: Inspect source regressions
         run: sed -n '44,70p' build-src/App/tests/personal-profiles-security.test.js
+      - name: Inspect Windows packaging and desktop full update support
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('build-src/App')
+          p=json.loads((root/'package.json').read_text())
+          print('WINDOWS_PACKAGE',json.dumps({k:p.get(k) for k in ('name','version','scripts','dependencies','devDependencies')},indent=2)[:10000])
+          print('WINDOWS_BUILDER',json.dumps(p.get('build'),indent=2)[:20000])
+          for name in ['desktop-updates.js','updates-ui.js','desktop-native.js','main.js','preload.js']:
+           f=root/name
+           if not f.exists():continue
+           lines=f.read_text().splitlines()
+           print('====',name,len(lines),'====')
+           if name in ('desktop-updates.js','updates-ui.js'):
+            for i,line in enumerate(lines):print(f'{i+1}: '+line[:700])
+           else:
+            for i,line in enumerate(lines):
+             if any(term in line.lower() for term in ('update','site:signin','app.whenready','app.quit','showapp','download','windows','win32')):
+              print(f'{i+1}: '+line[:700])
+          PY
