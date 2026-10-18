@@ -24,8 +24,16 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
   const previousPriceRank = priceRank(prior.orderTotalBasis);
   // A later duplicate webhook must not overwrite an exact verified receipt
   // with an item subtotal or an unknown amount.
-  const priced = incomingPriceRank > 0 && incomingPriceRank >= previousPriceRank &&
-    Number.isFinite(order.orderTotal) && order.orderTotal > 0;
+  const incomingAmount = Number(order.orderTotal);
+  const previousAmount = Number(prior.orderTotal) || 0;
+  // Partial follow-up hooks can report a four-item subtotal after a verified
+  // PKC shipment restored ten items and their larger merchandise subtotal.
+  // A same-priority ITEM subtotal must not reduce the existing order value.
+  const smallerPartialSubtotal = incomingPriceRank === 1 && previousPriceRank === 1 &&
+    incomingAmount < previousAmount;
+  const priced = !smallerPartialSubtotal && incomingPriceRank > 0 &&
+    incomingPriceRank >= previousPriceRank &&
+    Number.isFinite(incomingAmount) && incomingAmount > 0;
   // Discord webhooks about the SAME retailer order can arrive as green,
   // orange and red messages at different times. Use only the newest event
   // color for status, not whichever webhook happens to be scanned last.
