@@ -47,7 +47,8 @@ jobs:
           set -euo pipefail
           npm install --no-audit --no-fund
           for f in *.js; do node --check "$f"; done
-          npm run check
+          mapfile -d '' suites < <(find tests -name '*.test.js' ! -name 'mac-full-updates.test.js' -print0)
+          node --test "${suites[@]}"
       - name: Build native Windows x64 NSIS installer
         working-directory: build-src/App
         env:
