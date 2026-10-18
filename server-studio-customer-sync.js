@@ -13,8 +13,7 @@ export function registerStudioCustomerRoutes({
  validShippingAddress,sanitizeSavedPaymentMethod,validSavedPaymentMethod,
  syncCustomerMissingNotification=async()=>{},broadcastLiveDataChange=()=>{},revisionSecret
 }){
- if(!revisionSecret)throw Error('Studio sync requires the existing encrypted vault secret.');
- const fingerprint=(kind,item)=>crypto.createHmac('sha256',revisionSecret).update(kind+'\0'+JSON.stringify(item)).digest('hex');
+ const fingerprint=(kind,item)=>{if(!revisionSecret)throw Error('Studio sync is unavailable without encrypted vault configuration.');return crypto.createHmac('sha256',revisionSecret).update(kind+'\0'+JSON.stringify(item)).digest('hex');};
  const id=v=>String(v||'').trim().slice(0,150);
  const select=async req=>{
   const accounts=await getCustomerAccounts(),index=accounts.findIndex(x=>String(x.id)===id(req.params.id));
