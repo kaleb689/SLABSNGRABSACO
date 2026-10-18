@@ -103,10 +103,19 @@ export function dashboardProducts(orders) {
   for (const order of orders) for (const item of order.items || []) {
     const key = `${order.retailer}:${item.name}`;
     const product = products.get(key) || { name: item.name || 'Product', retailer: order.retailer, imageUrl: item.imageUrl,
-      quantity: 0, value: 0, delivered: 0, orders: 0 };
+      quantity: 0, value: 0, delivered: 0, orders: 0, pricedQuantity: 0, unpricedQuantity: 0 };
     if (!product.imageUrl && item.imageUrl) product.imageUrl = item.imageUrl;
     const qty = Math.max(0, Number(item.quantity) || 1);
-    product.quantity += qty; product.value += qty * (Number(item.price) || 0); product.orders++;
+    const unitPrice = Number(item.price);
+    product.quantity += qty;
+    if (Number.isFinite(unitPrice) && unitPrice > 0 && unitPrice <= 1000000) {
+      product.value += qty * unitPrice;
+      product.pricedQuantity += qty;
+    } else {
+      // Do NOT claim $0.00 item value when the webhook omitted a price.
+      product.unpricedQuantity += qty;
+    }
+    product.orders++;
     if (shippingStage(order) === 'delivered') product.delivered += qty;
     products.set(key, product);
   }
