@@ -5,13 +5,13 @@
  * create a second database or permit access to the owner's Personal vault.
  * Read responses never include payment PAN, password or verification codes.
  */
-const crypto=require('node:crypto');
+import crypto from 'node:crypto';
 const own=(x,k)=>Object.prototype.hasOwnProperty.call(x||{},k);
-function registerStudioCustomerRoutes({
+export function registerStudioCustomerRoutes({
  app,requireAdmin,getCustomerAccounts,saveCustomerAccounts,getCustomerVault,
  saveCustomerVault,customerSavedAddresses,sanitizeShippingAddress,
  validShippingAddress,sanitizeSavedPaymentMethod,validSavedPaymentMethod,
- syncCustomerMissingNotification=async()=>{},revisionSecret
+ syncCustomerMissingNotification=async()=>{},broadcastLiveDataChange=()=>{},revisionSecret
 }){
  if(!revisionSecret)throw Error('Studio sync requires the existing encrypted vault secret.');
  const fingerprint=(kind,item)=>crypto.createHmac('sha256',revisionSecret).update(kind+'\0'+JSON.stringify(item)).digest('hex');
@@ -48,7 +48,7 @@ function registerStudioCustomerRoutes({
    const next=sanitizeShippingAddress(req.body?.address||{},items[index].id);
    if(!validShippingAddress(next))return res.status(400).json({error:'Complete the shipping name, street, city, state, postal code and country.'});
    items[index]=next;a.account.shippingAddresses=items;a.account.updatedAt=new Date().toISOString();
-   await saveCustomerAccounts(a.accounts);await saved(a.account.id);
+   await saveCustomerAccounts(a.accounts);broadcastLiveDataChange('customer-shipping-updated');await saved(a.account.id);
    return res.json({ok:true,saved:true,address:addressPublic(next),message:'Saved in the live customer website and app address vault.'});
   }catch(e){console.error('Studio address save:',e?.message);return res.status(503).json({error:'Unable to save this website address.'});}
  });
@@ -69,10 +69,10 @@ function registerStudioCustomerRoutes({
    if(!validSavedPaymentMethod(next))return res.status(400).json({error:'Enter a valid cardholder, number (if changing it), month and year.'});
    items[index]=next;vault.paymentMethods=items;
    await saveCustomerVault(a.account.id,vault);
-   a.account.updatedAt=new Date().toISOString();await saveCustomerAccounts(a.accounts);await saved(a.account.id);
+   a.account.updatedAt=new Date().toISOString();await saveCustomerAccounts(a.accounts);broadcastLiveDataChange('customer-payment-updated');await saved(a.account.id);
    return res.json({ok:true,saved:true,paymentMethod:paymentPublic(next),message:'Saved in the live customer website and app payment vault.'});
   }catch(e){console.error('Studio payment save:',e?.message);return res.status(503).json({error:'Unable to save this website payment method.'});}
  });
  return {addressPublic,paymentPublic};
 }
-module.exports={registerStudioCustomerRoutes};
+
