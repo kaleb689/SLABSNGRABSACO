@@ -1,7 +1,7 @@
 name: Verify ACO Studio 4.13.19 Mac two-way sync and native installers
 on:
   push:
-    branches: [complete/aco-lifecycle-v41319]
+    branches: [main]
     paths:
       - '.github/aco-studio-build/profile-library/**'
       - '.github/aco-studio-build/native-updater/**'
@@ -128,10 +128,12 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$ACO_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = 'com.slabsngrabsaco.jigstudio.owner'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$APP/Contents/Info.plist")" = 'ACO Studio'
-          for file in personal-profile-import.js profile-workshop-service.js profile-workshop-ui.js jig-field-core.js profile-draft-core.js mac-full-updates.js mac-full-update.sh mac-update-archive.js mac-updates-ui.js workspace-core.js personal-navigation.js personal-navigation.css email-vault-ui.js profile-completion-core.js; do
+          for file in personal-profile-import.js profile-workshop-service.js profile-workshop-ui.js jig-field-core.js profile-draft-core.js mac-full-updates.js mac-full-update.sh mac-update-archive.js mac-updates-ui.js workspace-core.js personal-navigation.js personal-navigation.css email-vault-ui.js profile-completion-core.js native-admin-ui.js native-touchid.js; do
             test -f "$APP/Contents/Resources/app/$file"
           done
           grep -Fq 'profileWorkshop:Object.freeze' "$APP/Contents/Resources/app/preload.js"
+          grep -Fq 'ownerSecurity:Object.freeze' "$APP/Contents/Resources/app/preload.js"
+          grep -Fq "owner:touch-id" "$APP/Contents/Resources/app/main.js"
           grep -Fq 'personalJigsTab' "$APP/Contents/Resources/app/index.html"
           if [[ '${{ matrix.arch }}' == 'arm64' ]]; then
             lipo -archs "$APP/Contents/MacOS/ACO Studio" | grep -qw arm64
