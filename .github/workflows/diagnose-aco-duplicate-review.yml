@@ -119,3 +119,5 @@ jobs:
           node --test tests/personal-profile-import.test.js
           node --test tests/profile-library.test.js
           echo 'Verified launch-updater + secure-login source syntax and duplicate classifier regressions.'
+      - name: Inspect source regressions
+        run: sed -n '44,70p' build-src/App/tests/personal-profiles-security.test.js
