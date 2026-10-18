@@ -19,6 +19,9 @@ replace('site-bridge.js','return {open,signIn,hide,reload,bounds,read,adminRead,
   return require('./customer-profile-source').sourceForCustomer(member,saved,resolved);
  }
  return {open,signIn,hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource};`);
+replace('tests/personal-profiles-security.test.js',"customerId:'customer1',retailer:'walmart',rows:","customerId:'customer1',retailer:'target',rows:");
+replace('tests/personal-profiles-security.test.js',"customerId:'customer2',retailer:'pokemoncenter',data:","customerId:'customer2',retailer:'target',data:");
+replace('tests/personal-profiles-security.test.js',"customerId:'u2',retailer:'walmart',email:'shared@sample.test'","customerId:'u2',retailer:'target',email:'shared@sample.test'");
 replace('profile-bank-ui.js',"h.textContent=dup.email+' ('+dup.count+' matches)'","h.textContent=(retailerNames[dup.retailer]||dup.retailer)+' · '+dup.email+' ('+dup.count+' distinct accounts)'");
 replace('profile-bank-ui.js',"' email(s) appear more than once. '","' retailer email(s) are reused within the same retailer. '");
 replace('index.html','</body>','<link rel="stylesheet" href="profile-library.css"><script src="profile-library-ui.js"></script>\n</body>');
