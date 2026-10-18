@@ -64,6 +64,7 @@ edit('main.js',[
  app.on('activate',()=>{if(!startupFinished){siteBridge.signIn();return;}if(BrowserWindow.getAllWindows().length===0)launch();});`]
 ]);
 edit('preload.js',[["updates:Object.freeze({info:","updates:Object.freeze({nativeMac:process.platform==='darwin',progress:()=>ipcRenderer.invoke('updates:progress'),info:"]]);
+edit('site-ui.js',[["renderNotices();renderJigGroups();setConnection(false);","renderNotices();renderJigGroups();setConnection(false);void sync(false);"]]);
 edit('updates-ui.js',[["(() => {","(() => {\n if(window.desktopAPI?.updates?.nativeMac)return;"]]);
 edit('index.html',[["<script src=\"./updates-ui.js\"></script>","<script src=\"./updates-ui.js\"></script><script src=\"./mac-updates-ui.js\"></script>"]]);
 // Website Admin login now runs before the workspace opens. No Connect button is needed.
