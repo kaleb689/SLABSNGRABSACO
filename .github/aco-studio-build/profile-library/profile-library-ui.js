@@ -40,5 +40,20 @@
  q('rules').onclick=async()=>{try{const win=dialog(retailName[q('retailer').value]+' jig rules'),r=q('retailer').value,settings=await api.rules({...win.owner,retailer:r});if(!win.valid())return;const choices=d.createElement('div');for(const option of settings.options){const label=text('label',option.label),c=d.createElement('input');label.className='check';c.type='checkbox';c.value=option.id;c.checked=settings.selected.includes(option.id);label.prepend(c);choices.append(label);}const save=text('button','Save rules for this vault and retailer');save.type='button';save.className='btn primary';save.onclick=async()=>{try{await api.saveRules({...win.owner,retailer:r,rules:[...choices.querySelectorAll('input:checked')].map(x=>x.value)});win.wrap.remove();note('Saved retailer jig rules for '+customerName()+'.');}catch(e){win.status().textContent=e.message;}};win.body.append(choices,save);}catch(e){note(e.message);}};
  q('sync').onclick=()=>customerId?void syncCustomer(customerId,true):note('Select a customer first.');
  const queuedCustomers=new Set();let autoRunning=false;async function autoSync(){for(const c of window.JigWebsiteCustomers?.list?.()||[])if(c.id&&c.paid)queuedCustomers.add(c.id);if(autoRunning)return;autoRunning=true;try{while(queuedCustomers.size){const id=queuedCustomers.values().next().value;queuedCustomers.delete(id);await syncCustomer(id);}}finally{autoRunning=false;}}
+ d.addEventListener('aco-studio:edit-profile',async event=>{
+  const detail=event.detail||{};
+  if(!['aco','personal'].includes(detail.scope)||!detail.profileId)return;
+  if(detail.scope==='aco'&&!detail.customerId)return;
+  try{
+   await open(detail.scope);
+   if(main.hidden)return;
+   if(detail.scope==='aco'){customerId=detail.customerId;q('customer').value=customerId;}
+   await refresh();
+   const match=rows.find(r=>r.id===detail.profileId);
+   if(!match){note('This specific profile is no longer present. Choose a customer and refresh.');return;}
+   q('retailer').value=match.retailer;stage=match.stage;group='all';draw();
+   await edit(match);
+  }catch(error){note('Unable to open this profile: '+String(error?.message||error));}
+ });
  d.addEventListener('jigstudio:customers-updated',()=>{if(window.JigWebsiteCustomers?.connected?.()===false){queuedCustomers.clear();if(scope==='aco')close();return;}if(scope==='aco'&&!main.hidden)customerList();void autoSync();});d.addEventListener('jigstudio:personal-locked',()=>{if(scope==='personal')close();});d.addEventListener('jigstudio:bank-context-updated',()=>{if(!main.hidden)void refresh();});
 })();
