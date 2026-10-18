@@ -126,7 +126,7 @@ test("another partial green webhook cannot downgrade restored PKC subtotal or it
   const channel = "1532179373292257290";
   const id = "discord:" + channel + ":1580000000000000501";
   const complete = {
-    id, retailer:"PKC", status:"confirmed", customerAccountId:"mike",
+    id, retailer:"PKC", orderNumber:"SYNTHETIC-PKC-ORDER-2026", status:"confirmed", customerAccountId:"mike",
     checkoutAt:"2026-10-15T11:00:00Z", statusUpdatedAt:"2026-10-15T11:00:00Z",
     orderTotal:99.90,orderTotalBasis:"item_subtotal",itemCount:10,
     items:receipt().items.map((item,index)=>({
