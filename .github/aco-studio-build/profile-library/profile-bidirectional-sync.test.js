@@ -148,6 +148,13 @@ test('Applying a jig to a linked customer publishes its shipping address to webs
  const next=(await h.lib.list(sender,owner)).profiles[0];
  assert.ok(next.revision>row.revision);
  assert.equal((await h.lib.list(sender,{scope:'personal',customerId:null})).profiles.length,0);
+ // A remote change event must not apply the retailer jig a second time.
+ await h.lib.syncCustomer(sender,owner);
+ const imported=(await h.lib.list(sender,owner)).profiles[0];
+ assert.equal(Draft.toValues(imported.data)['shipping.address1'],'531 Verified Jig Lane');
+ await h.lib.syncCustomer(sender,owner);
+ const stable=(await h.lib.list(sender,owner)).profiles[0];
+ assert.equal(Draft.toValues(stable.data)['shipping.address1'],'531 Verified Jig Lane');
 });
 test('A stale linked jig cannot publish or change an existing profile',async t=>{
  const h=await harness(t);await h.lib.syncCustomer(sender,owner);
