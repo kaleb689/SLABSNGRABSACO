@@ -130,6 +130,12 @@ test('complete native app resources, icon and retained Full Website Admin fallba
  assert.match(source('preload.js'),/ownerSecurity:Object\.freeze/);
  assert.match(source('main.js'),/owner:touch-id/);
  assert.match(source('main.js'),/systemPreferences\.promptTouchID/);
+ assert.match(source('main.js'),/unlockDesktopAdmin/);
+ assert.match(source('site-bridge.js'),/desktop-device\/enroll/);
+ assert.match(source('site-bridge.js'),/desktop-device\/unlock/);
+ assert.match(source('site-bridge.js'),/safeStorage\.encryptString/);
+ assert.match(source('site-bridge.js'),/safeStorage\.decryptString/);
+ assert.match(source('native-touchid.js'),/aco:admin-session-ready/);
  assert.deepEqual(config.build.extraResources,[{from:'../Branding/JigStudio.icns',to:'JigStudio.icns'}]);
  assert.ok(fs.existsSync(path.join(appRoot,'../Branding/JigStudio.icns')));
 });
