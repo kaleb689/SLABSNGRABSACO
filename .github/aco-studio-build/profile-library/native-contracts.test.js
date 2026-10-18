@@ -136,6 +136,11 @@ test('complete native app resources, icon and retained Full Website Admin fallba
  assert.match(source('site-bridge.js'),/safeStorage\.encryptString/);
  assert.match(source('site-bridge.js'),/safeStorage\.decryptString/);
  assert.match(source('native-touchid.js'),/aco:admin-session-ready/);
+ assert.doesNotMatch(source('site-bridge.js'),/owner\.show\(\);owner\.focus\(\)/);
+ assert.match(source('site-bridge.js'),/Replacement is still in the available/);
+ assert.match(source('site-bridge.js'),/replacementId!==id\(payload\.replacementId\)/);
+ assert.match(source('desktop-native.js'),/JigWebsiteCustomers/);
+ assert.match(source('desktop-native.js'),/SITE ONLINE/);
  assert.deepEqual(config.build.extraResources,[{from:'../Branding/JigStudio.icns',to:'JigStudio.icns'}]);
  assert.ok(fs.existsSync(path.join(appRoot,'../Branding/JigStudio.icns')));
 });
