@@ -61,11 +61,13 @@ edit('main.js',[
   startupFinished=true;launch();
  }
  void openAfterNativeStartup();
- app.on('activate',()=>{if(startupFinished&&BrowserWindow.getAllWindows().length===0)launch();});`]
+ app.on('activate',()=>{if(!startupFinished){siteBridge.signIn();return;}if(BrowserWindow.getAllWindows().length===0)launch();});`]
 ]);
 edit('preload.js',[["updates:Object.freeze({info:","updates:Object.freeze({nativeMac:process.platform==='darwin',progress:()=>ipcRenderer.invoke('updates:progress'),info:"]]);
 edit('updates-ui.js',[["(() => {","(() => {\n if(window.desktopAPI?.updates?.nativeMac)return;"]]);
 edit('index.html',[["<script src=\"./updates-ui.js\"></script>","<script src=\"./updates-ui.js\"></script><script src=\"./mac-updates-ui.js\"></script>"]]);
+// Website Admin login now runs before the workspace opens. No Connect button is needed.
+edit('index.html',[["</head>","<style>#siteConnect{display:none!important}</style></head>"]]);
 const pkgPath=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(pkgPath,'utf8'));
 for(const f of files)if(!pkg.build.files.includes(f))pkg.build.files.push(f);
 fs.writeFileSync(pkgPath,JSON.stringify(pkg,null,2)+'\n');
