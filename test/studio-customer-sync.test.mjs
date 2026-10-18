@@ -4,7 +4,7 @@ import { registerStudioCustomerRoutes } from '../server-studio-customer-sync.js'
 
 function harness(){
  const routes=new Map(),events=[],writes=[];
- const app={get:(route,auth,fn)=>routes.set('GET '+route,{auth,fn}),put:(route,auth,fn)=>routes.set('PUT '+route,{auth,fn})};
+ const app={get:(route,auth,fn)=>routes.set('GET '+route,{auth,fn}),put:(route,auth,...handlers)=>routes.set('PUT '+route,{auth,fn:handlers.at(-1)})};
  const auth=()=>{};
  const account={id:'customer-a',email:'customer@example.test',firstName:'Alex',lastName:'Example',updatedAt:'2026-10-18T00:00:00Z',
   shippingAddresses:[{id:'address-1',label:'Home',firstName:'Alex',lastName:'Example',address:'12 Main St',address2:'',city:'Sample',state:'FL',zip:'33324',country:'US'}]};
@@ -48,12 +48,12 @@ test('Website address edit is revision-guarded, preserves identity and sends rea
  {expectedRevision:current.revision,address:{...current,address:'8 Stale Road'}});
  assert.equal(stale.statusCode,409);assert.equal(h.account.shippingAddresses[0].address,'99 New Lane');
 });
-test('Website payment edit retains original secret and PAN when not changed',async()=>{
+test('Website payment edit preserves PAN and removes legacy verification codes',async()=>{
  const h=harness(),current=(await h.snapshot('customer-a')).body.paymentMethods[0];
  const r=await h.invoke('PUT','/api/admin/aco-studio/customers/:id/payment-methods/:paymentId',{id:'customer-a',paymentId:'card-1'},
  {expectedRevision:current.revision,payment:{cardLabel:'Main Visa',cardholder:'Alex Updated',expMonth:'09',expYear:'2033',securityCode:'do-not-save'}});
  assert.equal(r.statusCode,200);assert.equal(h.vault.paymentMethods[0].acoCardNumber,'4242424242424242');
- assert.equal(h.vault.paymentMethods[0].securityCode,'stored-old-secret');
+ assert.equal(h.vault.paymentMethods[0].securityCode,undefined);
  assert.equal(h.vault.paymentMethods[0].cardholder,'Alex Updated');
  assert.ok(!JSON.stringify(r.body).includes('4242424242424242'));
  assert.equal(h.events[0],'customer-payment-updated');

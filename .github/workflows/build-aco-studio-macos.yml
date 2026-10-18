@@ -1,0 +1,68 @@
+name: Build ACO Studio macOS First-Time Installers
+on:
+  push:
+    branches:
+      - build/aco-studio-macos-v413-20261014
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos:
+    name: Mac standalone installer (${{ matrix.arch }})
+    runs-on: macos-15
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Expand public ACO Studio app source
+        run: |
+          mkdir -p build-src
+          unzip -q .github/aco-studio-build/aco-studio-v4.13.0-source.zip -d build-src
+          test -f build-src/App/main.js
+          test -f build-src/App/JigStudio.icns
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Apply ACO Studio desktop display name
+        working-directory: build-src/App
+        run: |
+          python3 - <<'PY'
+          import json
+          with open('package.json') as f: obj=json.load(f)
+          assert obj['version']=='4.13.0'
+          assert obj['build']['appId']=='com.slabsngrabsaco.jigstudio.owner'
+          obj['build']['productName']='SLABSNGRABSACO ACO Studio'
+          obj['build']['mac']['artifactName']='ACO-Studio-${version}-${arch}.${ext}'
+          with open('package.json','w') as f: json.dump(obj,f,indent=2)
+          PY
+      - name: Install builder and Electron (on build runner only)
+        working-directory: build-src/App
+        run: npm install --no-audit --no-fund
+      - name: Run ACO Studio regression suite
+        working-directory: build-src/App
+        run: npm run check
+      - name: Package Mac app with embedded Electron runtime
+        working-directory: build-src/App
+        run: npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
+      - name: Verify DMG and app bundle were produced
+        working-directory: build-src/App
+        run: |
+          ls -lh dist/*.dmg dist/*.zip
+          find dist -name "Electron Framework.framework" -type d -print
+          test -n "$(find dist -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$(find dist -name '*.app' -type d -print -quit)"
+          shasum -a 256 dist/*.dmg dist/*.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ACO-Studio-v4.13.0-macOS-${{ matrix.arch }}-unsigned
+          path: |
+            build-src/App/dist/*.dmg
+            build-src/App/dist/*.zip
+          if-no-files-found: error
+          retention-days: 14

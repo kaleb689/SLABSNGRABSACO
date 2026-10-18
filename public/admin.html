@@ -13417,6 +13417,7 @@ function managedMembershipCardHtml(
 
             <form
               class="admin-retailer-wrap managed-customer-details-form"
+              data-expected-updated-at="${escapeHtml(membership.updatedAt || '')}"
               data-managed-customer-details-id="${escapeHtml(
                 membership.id
               )}"
@@ -17836,6 +17837,7 @@ function bindManagedMembershipDashboard(
 
                   body:
                     JSON.stringify({
+                      expectedUpdatedAt: form.dataset.expectedUpdatedAt || "",
                       customerProfile,
                       customerCard
                     })

@@ -1,0 +1,43 @@
+name: Inspect existing ACO Studio v4.13.5 source
+
+on:
+  push:
+    branches:
+      - build/aco-studio-macos-v4133-20261015
+    paths:
+      - '.github/workflows/inspect-aco-v4135-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify original v4.13.5 source without modification
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find .github/aco-studio-build -name 'aco-studio-v4.13.5.part-*.b64' -type f | wc -l | tr -d ' ')" = 11
+          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > "$RUNNER_TEMP/aco-original-source.zip"
+          printf '%s  %s\n' '8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570' "$RUNNER_TEMP/aco-original-source.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/aco-original-source.zip" -d extracted
+          test -f extracted/App/package.json
+          test -f extracted/App/main.js
+          test -f extracted/App/build/after-sign.cjs
+      - name: Export for secure build diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: aco-v4135-source-diagnostics
+          path: |
+            extracted/App/main.js
+            extracted/App/package.json
+            extracted/App/build/
+            extracted/App/*.js
+            extracted/App/*.json
+            extracted/App/test/
+          if-no-files-found: error
+          retention-days: 2

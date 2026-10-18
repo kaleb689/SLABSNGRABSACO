@@ -1,0 +1,76 @@
+name: ACO Studio 4.13.15 Windows Installer
+on:
+  push:
+    branches: [fix/aco-studio-duplicate-email-review-20261018]
+    paths:
+      - '.github/workflows/build-aco-studio-windows-v41315.yml'
+      - '.github/aco-studio-build/profile-library/**'
+      - '.github/aco-studio-build/native-updater/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  ACO_VERSION: '4.13.15'
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Reconstruct and verify existing desktop source
+        run: |
+          set -euo pipefail
+          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > original.zip
+          echo "8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570  original.zip" | sha256sum -c -
+          mkdir -p build-src
+          unzip -q original.zip -d build-src
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+          python .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+          ACO_ADHOC_MODE=true node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python -c "from pathlib import Path; root=Path('build-src/App'); [(p.write_bytes(p.read_bytes().replace(bytes([13,10]),bytes([10])))) for p in root.glob('*.js')]"
+          python .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+          node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+          node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+      - name: Install packages and run complete automated tests
+        working-directory: build-src/App
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund
+          for f in *.js; do node --check "$f"; done
+          mapfile -d '' suites < <(find tests -name '*.test.js' ! -name 'mac-full-updates.test.js' -print0)
+          node --test "${suites[@]}"
+      - name: Build native Windows x64 NSIS installer
+        working-directory: build-src/App
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          node -e "const {build,Platform,Arch}=require('electron-builder');build({targets:Platform.WINDOWS.createTarget(['nsis'],Arch.x64),publish:'never'}).catch(e=>{console.error(e.stack);process.exit(1)})"
+          find dist -maxdepth 2 -type f -name '*.exe' -print
+          test "$(find dist -maxdepth 2 -type f -name '*.exe' | wc -l)" -ge 1
+      - name: Archive Windows installer and checksum
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem -Path build-src/App/dist -Filter *.exe -File -Recurse)
+          if ($installers.Count -lt 1) { throw 'No Windows installer produced' }
+          foreach ($f in $installers) {
+            if ($f.Length -lt 50000000) { throw 'Installer is unexpectedly small' }
+            $hash = Get-FileHash -Algorithm SHA256 $f.FullName
+            Write-Output ("SHA256 {0} {1}" -f $hash.Hash,$f.Name)
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ACO-Studio-4.13.15-Windows-x64-installer
+          path: build-src/App/dist/*.exe
+          if-no-files-found: error
+          retention-days: 30

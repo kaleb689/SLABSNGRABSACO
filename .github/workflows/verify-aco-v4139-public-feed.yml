@@ -1,0 +1,49 @@
+name: Verify published ACO Studio 4.13.9 updater feed
+on:
+  push:
+    branches: [build/aco-studio-macos-v4133-20261015]
+    paths: ['.github/workflows/verify-aco-v4139-public-feed.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-download:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read live feed and verify both public downloads with real updater code
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '{"type":"commonjs"}\n' > .github/aco-studio-build/native-updater/package.json
+          node <<'NODE'
+          const assert=require('node:assert/strict');
+          const fs=require('node:fs/promises');
+          const path=require('node:path');
+          const U=require('./.github/aco-studio-build/native-updater/mac-full-updates');
+          const Z=require('./.github/aco-studio-build/native-updater/mac-update-archive');
+          (async()=>{
+            const feed=await U.readFeed();
+            assert.equal(feed.version,'4.13.9');
+            console.log('LIVE_PUBLIC_FEED',JSON.stringify(feed));
+            const results=[];
+            for(const arch of ['arm64','x64']){
+              const release=U.validateManifest(feed,'4.13.7',arch);
+              assert.equal(release.available,true);
+              assert.equal(U.validateManifest(feed,'4.13.9',arch).available,false);
+              const file=path.join(process.env.RUNNER_TEMP,'aco-public-'+arch+'.zip');
+              await U.transfer(release.url,{file,max:Z.MAX_ARCHIVE,size:release.size});
+              assert.equal(await U.sha256File(file),release.sha256);
+              const archive=await Z.inspectArchive(file);
+              assert.equal(archive.bundleName,'ACO Studio.app');
+              results.push({arch,version:release.version,size:release.size,sha256:release.sha256,publicDownload:true,archiveVerified:true});
+              console.log('PASS public download, production checksum and archive verification:',arch);
+              await fs.unlink(file);
+            }
+            console.log('PUBLIC_UPDATE_VERIFIED',JSON.stringify({version:feed.version,authenticated:false,results}));
+          })().catch(e=>{console.error(e.stack);process.exit(1);});
+          NODE

@@ -1,3 +1,4 @@
+import { mergeManagedCard, serializeManagedWrites } from './managed-customer-write-policy.js';
 'use strict';
 /**
  * Authenticated ACO Studio bridge for the very same customer saved-address
@@ -13,6 +14,7 @@ export function registerStudioCustomerRoutes({
  validShippingAddress,sanitizeSavedPaymentMethod,validSavedPaymentMethod,
  syncCustomerMissingNotification=async()=>{},broadcastLiveDataChange=()=>{},revisionSecret
 }){
+ const serialize = serializeManagedWrites();
  const fingerprint=(kind,item)=>{if(!revisionSecret)throw Error('Studio sync is unavailable without encrypted vault configuration.');return crypto.createHmac('sha256',revisionSecret).update(kind+'\0'+JSON.stringify(item)).digest('hex');};
  const id=v=>String(v||'').trim().slice(0,150);
  const select=async req=>{
@@ -37,7 +39,7 @@ export function registerStudioCustomerRoutes({
     addresses:customerSavedAddresses(a.account).map(addressPublic),paymentMethods:(vault.paymentMethods||[]).map(paymentPublic)});
   }catch(e){console.error('Studio customer snapshot:',e?.message);return res.status(503).json({error:'Unable to load saved customer data.'});}
  });
- app.put('/api/admin/aco-studio/customers/:id/shipping-addresses/:addressId',requireAdmin,async(req,res)=>{
+ app.put('/api/admin/aco-studio/customers/:id/shipping-addresses/:addressId',requireAdmin,serialize,async(req,res)=>{
   res.set('Cache-Control','no-store');
   try{
    const a=await select(req);if(!a)return res.status(404).json({error:'Customer does not exist.'});
@@ -51,7 +53,7 @@ export function registerStudioCustomerRoutes({
    return res.json({ok:true,saved:true,address:addressPublic(next),message:'Saved in the live customer website and app address vault.'});
   }catch(e){console.error('Studio address save:',e?.message);return res.status(503).json({error:'Unable to save this website address.'});}
  });
- app.put('/api/admin/aco-studio/customers/:id/payment-methods/:paymentId',requireAdmin,async(req,res)=>{
+ app.put('/api/admin/aco-studio/customers/:id/payment-methods/:paymentId',requireAdmin,serialize,async(req,res)=>{
   res.set('Cache-Control','no-store');
   try{
    const a=await select(req);if(!a)return res.status(404).json({error:'Customer does not exist.'});
@@ -63,8 +65,8 @@ export function registerStudioCustomerRoutes({
    // Only explicit card identity and expiration fields are accepted here.
    // The server validator preserves the original PAN if number is omitted.
    // Never accept or echo a CVV/security code from this desktop bridge.
-   const next=sanitizeSavedPaymentMethod({cardLabel:input.cardLabel,cardholder:input.cardholder,
-    acoCardNumber:input.acoCardNumber,expMonth:input.expMonth,expYear:input.expYear},items[index]);
+   const next=mergeManagedCard(sanitizeSavedPaymentMethod({cardLabel:input.cardLabel,cardholder:input.cardholder,
+    acoCardNumber:input.acoCardNumber,expMonth:input.expMonth,expYear:input.expYear},items[index]));
    if(!validSavedPaymentMethod(next))return res.status(400).json({error:'Enter a valid cardholder, number (if changing it), month and year.'});
    items[index]=next;vault.paymentMethods=items;
    await saveCustomerVault(a.account.id,vault);

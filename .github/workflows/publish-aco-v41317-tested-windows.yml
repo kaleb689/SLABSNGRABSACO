@@ -1,0 +1,44 @@
+name: Publish tested ACO Studio 4.13.17 Windows artifact
+on:
+  push:
+    branches: [complete/aco-studio-20261018]
+    paths: ['.github/workflows/publish-aco-v41317-tested-windows.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 39165209825
+          repository: kaleb689/SLABSNGRABSACO
+          name: ACO-Studio-4.13.17-windows-x64
+          path: installers
+      - name: Verify and publish tested Windows installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import pathlib,hashlib,base64,shutil
+          root=pathlib.Path('installers')
+          for name in ('ACO-Studio-Setup-4.13.17-x64.exe','latest.yml','windows-signing-status.txt'):
+            matches=list(root.rglob(name));assert len(matches)==1,(name,matches)
+            if matches[0]!=root/name:shutil.copyfile(matches[0],root/name)
+          regression=list(root.rglob('regression-results.txt'));assert len(regression)==1 and '# fail 0' in regression[0].read_text()
+          p=root/'ACO-Studio-Setup-4.13.17-x64.exe'
+          assert p.stat().st_size>50_000_000
+          with p.open('rb') as f:assert f.read(2)==b'MZ'
+          with p.open('rb') as f:digest=base64.b64encode(hashlib.file_digest(f,'sha512').digest()).decode()
+          assert digest in (root/'latest.yml').read_text()
+          PY
+          cat > notes.md <<'NOTES'
+          ACO Studio 4.13.17 preserves the existing application and vault identity. Revision-checked linked-profile saves preserve omitted payment fields. Duplicate history persists, intentional reuse can be resolved, and live profile redraws defer while an editor is open. Includes reconnect recovery and exclusion of verification codes from profile storage.
+
+          Windows runner passes the source regressions, actual NSIS build and packaged app launch smoke. Installer is unsigned unless the attached signing report says Valid; SmartScreen may require approval. Production customer synchronization, owner-device operation, full native Admin parity and all requested end-to-end cases remain unverified. This is not a completion claim.
+          NOTES
+          gh release create aco-studio-v4.13.17-windows-unsigned installers/*.exe installers/latest.yml installers/windows-signing-status.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.17 Windows' --notes-file notes.md --prerelease
+          # Stable updater feed is advanced only after the required backend is deployed.
