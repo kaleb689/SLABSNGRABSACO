@@ -1,0 +1,52 @@
+name: Diagnose ACO Studio duplicate-review source
+on:
+  push:
+    branches: [fix/aco-studio-duplicate-email-review-20261018]
+    paths: ['.github/workflows/diagnose-aco-duplicate-review.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  locate-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Extract exact pinned ACO Studio source and overlays
+        run: |
+          set -euo pipefail
+          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > /tmp/aco-studio-original.zip
+          echo "8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570  /tmp/aco-studio-original.zip" | sha256sum -c -
+          mkdir -p build-src && unzip -q /tmp/aco-studio-original.zip -d build-src
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+          python3 .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+          node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+          node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+          node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+      - name: Inspect startup review, scan and UI anchors (code only)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('build-src/App')
+          needles=['Review reused email accounts','Duplicate profile check','All linked website account pages checked','Delete local duplicate','getLinkedAccountEmails','duplicateReview','reusedEmail','duplicates-modal']
+          for p in sorted(root.glob('*.js')):
+              try: data=p.read_text()
+              except UnicodeError: continue
+              for q in needles:
+                  start=0
+                  for _ in range(4):
+                      n=data.lower().find(q.lower(),start)
+                      if n<0: break
+                      line=data.count('\n',0,n)+1
+                      print(f'=== {p.name}:{line} FOUND {q!r} ===')
+                      print(data[max(0,n-1700):min(len(data),n+3000)])
+                      start=n+len(q)
+          PY
