@@ -34,7 +34,7 @@ app.setPath('userData',path.join(app.getPath('appData'),'SLABSNGRABSACO ACO Stud
 // Mac update is downloaded and installed. A successful update quits/relaunches.
 // A network failure must not erase offline/local data or trap the application.
 edit('main.js',[
- [" launch();\\n app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)launch();});",\` let startupFinished=false;
+ [" launch();\n app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)launch();});",` let startupFinished=false;
  async function openAfterNativeStartup(){
   let splash=null;
   if(process.platform==='darwin'&&!process.argv.includes('--aco-studio-ci-smoke')){
@@ -50,7 +50,7 @@ edit('main.js',[
   startupFinished=true;launch();
  }
  void openAfterNativeStartup();
- app.on('activate',()=>{if(startupFinished&&BrowserWindow.getAllWindows().length===0)launch();});\`]
+ app.on('activate',()=>{if(startupFinished&&BrowserWindow.getAllWindows().length===0)launch();});`]
 ]);
 edit('preload.js',[["updates:Object.freeze({info:","updates:Object.freeze({nativeMac:process.platform==='darwin',progress:()=>ipcRenderer.invoke('updates:progress'),info:"]]);
 edit('updates-ui.js',[["(() => {","(() => {\n if(window.desktopAPI?.updates?.nativeMac)return;"]]);
