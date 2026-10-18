@@ -35,6 +35,7 @@ jobs:
           node workshop-overlay/apply.cjs build-src/App
           node .github/aco-studio-build/native-updater/apply.cjs build-src/App
           ACO_ADHOC_MODE=true node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python -c "from pathlib import Path; root=Path('build-src/App'); [(p.write_bytes(p.read_bytes().replace(bytes([13,10]),bytes([10])))) for p in root.glob('*.js')]"
           python .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
           node navigation-overlay/apply.cjs build-src/App
           node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
