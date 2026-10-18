@@ -243,7 +243,7 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.21 preserves the existing application and vault identity. Adds native macOS Touch ID trusted-device Admin session handoff after one full Admin sign-in, keeps verified Admin dashboard data during partial live refreshes, and formats membership currency values in dollars. Existing two-way sync, profile libraries, duplicate review, updater and Personal separation remain intact.
+          ACO Studio 4.13.21 preserves the existing application and vault identity. Adds the scoped Card Bank and Address Bank directly inside both Personal Profiles and Customer Profiles, including available/in-use card status and saved-address usage counts. Existing native Touch ID Admin sessions, two-way sync, duplicate review, updater, and Personal/customer separation remain intact.
 
           Native source regressions, packaging and launch/update checks must pass before these assets publish. Mac builds remain ad-hoc and unnotarized; Windows builds remain unsigned without signing credentials. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
           NOTES
