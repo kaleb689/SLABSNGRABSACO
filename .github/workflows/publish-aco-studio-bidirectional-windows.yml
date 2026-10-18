@@ -1,0 +1,96 @@
+name: Publish verified ACO Studio 4.13.16 Windows two-way sync
+on:
+  push:
+    branches: [fix/aco-studio-bidirectional-integrity-20261018]
+    paths:
+      - '.github/workflows/publish-aco-studio-bidirectional-windows.yml'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+env:
+  ACO_VERSION: '4.13.16'
+jobs:
+  publish:
+    name: Publish previously tested Windows NSIS installer and update feed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ACO-Studio-4.13.16-windows-x64
+          run-id: 39162340365
+          repository: kaleb689/SLABSNGRABSACO
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: installers
+      - name: Locate verified installer, validate executable and official SHA512 feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          for filename in 'ACO-Studio-Setup-4.13.16-x64.exe' 'latest.yml' 'windows-signing-status.txt'; do
+            file="$(find installers -type f -name "$filename" -print -quit)"
+            test -n "$file"
+            cp "$file" "release/$filename"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib
+          v='4.13.16'
+          root=Path('release')
+          exe=root/f'ACO-Studio-Setup-{v}-x64.exe'
+          feed=(root/'latest.yml').read_text()
+          assert exe.stat().st_size>50_000_000,'Windows NSIS setup file is missing'
+          with exe.open('rb') as f:assert f.read(2)==b'MZ','Not a Windows PE executable'
+          digest=base64.b64encode(hashlib.sha512(exe.read_bytes()).digest()).decode()
+          assert f'version: {v}' in feed and exe.name in feed and str(exe.stat().st_size) in feed,'Update feed version, name or size mismatch'
+          assert 'sha512: '+digest in feed,'Update feed SHA512 mismatch'
+          signature=(root/'windows-signing-status.txt').read_text().strip()
+          assert signature in ('Valid','NotSigned','UnknownError'),f'Unexpected signing status: {signature}'
+          print(f'Verified {exe.name} ({exe.stat().st_size} bytes), exact SHA512 update feed; Authenticode: {signature}')
+          PY
+      - name: Publish permanent verified Windows installer and stable automatic update feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO="$GITHUB_REPOSITORY"
+          VERSION_TAG="aco-studio-v${ACO_VERSION}-windows-unsigned"
+          FEED_TAG="aco-studio-windows-updates"
+          SETUP="release/ACO-Studio-Setup-${ACO_VERSION}-x64.exe"
+          cat > release/RELEASE-NOTES.md <<'NOTES'
+          Native Windows x64 ACO Studio version 4.13.16 with authenticated two-way customer saved-address/payment updates, website-linked profile edits and shipping-jig publishing, and a nonrepeating duplicate-review window with record comparison, preserving the existing customer and Personal vaults, account profiles, exports and jig controls. After this initial download, the application checks the official SHA512-verified Windows full-installer release feed automatically when launched; a newer version is downloaded and installed before the secure website Admin sign-in. The desktop workspace requires authenticated Admin access, without clicking Connect. Duplicate-account review distinguishes retailers and excludes repeated website-linked mirrors.
+          
+          Build verified on Windows CI with profile/security regression tests, actual native unpacked-app launch, and the built NSIS PE installer. Testing uses synthetic vaults, not the owner's actual machine/data. This installer has no Microsoft Authenticode certificate; Windows SmartScreen may ask for approval on first install, and subsequent silent auto-installs are not guaranteed to bypass Windows approval. This release provides the new updater; older installed versions may need one initial manual update.
+          NOTES
+          if gh release view "$VERSION_TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$VERSION_TAG" "$SETUP" release/latest.yml release/windows-signing-status.txt --clobber --repo "$REPO"
+          else
+            gh release create "$VERSION_TAG" "$SETUP" release/latest.yml release/windows-signing-status.txt --repo "$REPO" --target "$GITHUB_SHA" --title "ACO Studio ${ACO_VERSION} - Windows x64" --notes-file release/RELEASE-NOTES.md --prerelease
+          fi
+          # Upload the binary first, then publish latest.yml last.
+          if gh release view "$FEED_TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$FEED_TAG" "$SETUP" --clobber --repo "$REPO"
+            gh release upload "$FEED_TAG" release/latest.yml --clobber --repo "$REPO"
+          else
+            gh release create "$FEED_TAG" "$SETUP" release/latest.yml --repo "$REPO" --target "$GITHUB_SHA" --title 'ACO Studio Windows full-bundle update feed' --notes 'Official versioned NSIS installers and matching SHA512 feed.' --prerelease
+          fi
+      - name: Confirm exact public GitHub release files are present
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,urllib.request,os
+          repo=os.environ['GITHUB_REPOSITORY'];v=os.environ['ACO_VERSION']
+          for tag,names in [
+           (f'aco-studio-v{v}-windows-unsigned',[f'ACO-Studio-Setup-{v}-x64.exe','latest.yml']),
+           ('aco-studio-windows-updates',[f'ACO-Studio-Setup-{v}-x64.exe','latest.yml'])
+          ]:
+           url=f'https://api.github.com/repos/{repo}/releases/tags/{tag}'
+           req=urllib.request.Request(url,headers={'User-Agent':'aco-studio-release-verification'})
+           with urllib.request.urlopen(req,timeout=35) as resp:obj=json.load(resp)
+           files={a['name']:a for a in obj['assets']}
+           for n in names:assert n in files and files[n]['size']>0,(tag,n)
+           print('Verified public release:',tag,[(n,files[n]['size']) for n in names])
+          PY

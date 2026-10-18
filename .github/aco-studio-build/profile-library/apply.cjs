@@ -1,12 +1,12 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path');const root=path.resolve(process.argv[2]);
 const files=['profile-vault.js','profile-library-core.js','profile-library-service.js','profile-library-ui.js','profile-library.css','customer-profile-source.js','profile-completion-core.js'];for(const file of files)fs.copyFileSync(path.join(__dirname,file),path.join(root,file));
-for(const file of ['profile-library.test.js','profile-duplicate-scan.test.js'])fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
+for(const file of ['profile-library.test.js','profile-duplicate-scan.test.js','profile-bidirectional-sync.test.js'])fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
 function replace(file,anchor,value){const p=path.join(root,file),s=fs.readFileSync(p,'utf8');if(s.split(anchor).length!==2)throw Error(file+': library integration anchor changed');fs.writeFileSync(p,s.replace(anchor,value));}
 replace('profile-workshop-service.js','const service=createWorkshop(options);',"const service=createWorkshop(options);require('./profile-library-service').registerLibrary(options);");
 replace('main.js','window.JigStudioLocalImport?.workspaceState)', 'window.JigStudioLocalImport?.workspaceState && document.getElementById("profileLibraryPage") && window.desktopAPI?.profileLibrary && document.querySelectorAll(".profileNavChild").length===2)');
 replace('main.js','requireOwner:workshopOwner,authorize:',"getCustomerProfileSource:id=>siteBridge.profileSource(id),saveCustomerProfile:(id,remote,fields)=>siteBridge.saveCustomerProfile(id,remote,fields),getCustomerSavedData:id=>siteBridge.savedCustomerData(id),updateCustomerSavedData:(id,kind,recordId,payload)=>siteBridge.saveCustomerSavedData(id,kind,recordId,payload),requireOwner:workshopOwner,authorize:");
-replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.freeze(Object.fromEntries(['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','rules','saveRules'].map(method=>[method,payload=>ipcRenderer.invoke('profile:library:'+method,payload)]).concat([['cancel',()=>ipcRenderer.invoke('profile:library:cancel')]]))),\n profileWorkshop:Object.freeze({");
+replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.freeze(Object.fromEntries(['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','publishLinkedJig','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','rules','saveRules'].map(method=>[method,payload=>ipcRenderer.invoke('profile:library:'+method,payload)]).concat([['cancel',()=>ipcRenderer.invoke('profile:library:cancel')]]))),\n profileWorkshop:Object.freeze({");
 replace('site-bridge.js',"const now=Date.now();if(now-lastEvent<750)return;lastEvent=now;","indexUntil=0;lastRosterAt=0;const now=Date.now();if(now-lastEvent<750)return;lastEvent=now;");
 replace('site-bridge.js','async function read(kind,opts={}){','let lastRoster=null,lastRosterAt=0;\n async function read(kind,opts={}){');
 replace('site-bridge.js',"return {customers,linkedInventoryComplete:complete,at:new Date().toISOString()};", "lastRoster=customers;lastRosterAt=Date.now();return {customers,linkedInventoryComplete:complete,at:new Date().toISOString()};");
@@ -49,14 +49,32 @@ replace('site-bridge.js','return {open,signIn,hide,reload,bounds,read,adminRead,
   };
   if(!profile.firstName||!profile.lastName||!profile.address||!profile.city||!profile.state||!profile.zip)
    throw Error('Complete customer shipping information before saving to the website.');
+  const billing=f['billing.address1']?{
+   profileName:String(previous.customerBillingProfile?.profileName||profile.profileName),
+   firstName:str(f['billing.first']||f.first||profile.firstName),
+   lastName:str(f['billing.last']||f.last||profile.lastName),
+   email:String(previous.customerBillingProfile?.email||profile.email),
+   phone:str(f['billing.phone']||f.phone||profile.phone),
+   address:str(f['billing.address1']),address2:str(f['billing.address2']),
+   city:str(f['billing.city']),state:str(f['billing.state']),
+   zip:str(f['billing.zip']),country:str(f['billing.country']||profile.country||'US')
+  }:null;
+  if(billing&&(!billing.firstName||!billing.lastName||!billing.email||!billing.phone||!billing.city||!billing.state||!billing.zip))
+   throw Error('Complete billing information before saving both addresses to the website.');
   const card=change?.card||{},customerCard=String(card.number||'').replace(/\D/g,'')?{
    cardLabel:String(previous.customerCard?.cardLabel||'Saved profile card'),
    cardholder:str(card.cardholder),acoCardNumber:String(card.number||'').replace(/\D/g,''),
    expMonth:str(card.month),expYear:str(card.year)
   }:undefined;
-  const saved=await api('/api/admin/managed-memberships/'+kind+'/'+encodeURIComponent(managedId)+'/customer-details','PUT',{customerProfile:profile,...(customerCard?{customerCard}:{})});
+  const saved=await api('/api/admin/managed-memberships/'+kind+'/'+encodeURIComponent(managedId)+'/customer-details','PUT',{customerProfile:profile,...(billing?{customerBillingProfile:billing}:{}),...(customerCard?{customerCard}:{})});
   if(saved?.ok!==true)throw Error('Website did not confirm the profile update.');
   const verified=await readAssignment();
+  if(String(verified.customerProfile?.address||'').trim()!==profile.address||
+     String(verified.customerProfile?.city||'').trim()!==profile.city)
+   throw Error('Website shipping confirmation failed; the local profile was not marked saved.');
+  if(billing&&(String(verified.customerBillingProfile?.address||'').trim()!==billing.address||
+      String(verified.customerBillingProfile?.city||'').trim()!==billing.city))
+   throw Error('Website billing confirmation failed; the local profile was not marked saved.');
   indexUntil=0;lastRosterAt=0;notifyOwner();
   return {saved:true,updatedAt:String(verified.updatedAt||''),verifiedProfile:verified.customerProfile||null};
  }
