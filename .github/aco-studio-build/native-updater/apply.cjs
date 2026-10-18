@@ -70,6 +70,22 @@ edit('main.js',[
   if(!ownerWindow||ownerWindow.isDestroyed())void signInAndVerifyAdmin().then(()=>launch()).catch(error=>console.error('Admin sign-in failed:',error.message));
  });`]
 ]);
+edit('main.js',[
+ ["ipcMain.handle('site:logout',event=>{ownerSender(event);return siteBridge.logout();});",`ipcMain.handle('site:logout',async event=>{
+  ownerSender(event);
+  const result=await siteBridge.logout();
+  await personalAccess.lock();
+  const win=ownerWindow;
+  if(win&&!win.isDestroyed())win.hide();
+  void signInAndVerifyAdmin().then(async()=>{
+   const current=ownerWindow;
+   if(!current||current.isDestroyed())return;
+   await current.loadFile(path.join(__dirname,'index.html'));
+   current.show();current.focus();
+  }).catch(error=>console.error('Secure Admin reauthentication error:',String(error?.message||error)));
+  return result;
+ });`]
+]);
 edit('preload.js',[["updates:Object.freeze({info:","updates:Object.freeze({nativeMac:process.platform==='darwin',progress:()=>ipcRenderer.invoke('updates:progress'),info:"]]);
 edit('site-ui.js',[["renderNotices();renderJigGroups();setConnection(false);","renderNotices();renderJigGroups();setConnection(false);void sync(false);"]]);
 edit('updates-ui.js',[["(() => {","(() => {\n if(window.desktopAPI?.updates?.nativeMac)return;"]]);
