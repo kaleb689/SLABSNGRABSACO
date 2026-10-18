@@ -230,6 +230,7 @@ root.addEventListener('submit',async e=>{
 // Avoid reloading while a user is editing a form, opening a disclosure or navigating.
 function refreshLive(){if(refreshTimer)clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{refreshTimer=null;if(active==='customers')return;void load(active,true);},1250);}
 api.onChange?.(refreshLive);
+document.addEventListener('aco:admin-session-ready',()=>{connected=true;void load(active,true);});
 document.addEventListener('jigstudio:customers-updated',event=>{if(event.detail?.connected&&!connected){connected=true;void load(active,true);}if(!event.detail?.connected)connected=false;});
 // Customer edits are sent to the same website Admin route, not a second local copy.
 const mainForm=document.createElement('form');mainForm.className='aco-native-profile-form aco-native-card';mainForm.id='acoMainCustomerProfile';mainForm.hidden=true;

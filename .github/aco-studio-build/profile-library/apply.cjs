@@ -5,7 +5,7 @@ for(const file of ['profile-library.test.js','profile-duplicate-scan.test.js','p
 function replace(file,anchor,value){const p=path.join(root,file),s=fs.readFileSync(p,'utf8');if(s.split(anchor).length!==2)throw Error(file+': library integration anchor changed');fs.writeFileSync(p,s.replace(anchor,value));}
 replace('profile-workshop-service.js','const service=createWorkshop(options);',"const service=createWorkshop(options);require('./profile-library-service').registerLibrary(options);");
 replace('main.js','window.JigStudioLocalImport?.workspaceState)', 'window.JigStudioLocalImport?.workspaceState && document.getElementById("profileLibraryPage") && window.desktopAPI?.profileLibrary && document.querySelectorAll(".profileNavChild").length===2)');
-replace('main.js',"ipcMain.handle('site:open'",`ipcMain.handle('owner:touch-id',async event=>{ownerSender(event);if(process.platform!=='darwin')return {available:false,verified:false,reason:'unsupported'};const {systemPreferences}=require('electron');if(!systemPreferences.canPromptTouchID())return {available:false,verified:false,reason:'unavailable'};try{await systemPreferences.promptTouchID('Unlock ACO Studio');return {available:true,verified:true};}catch(error){return {available:true,verified:false,reason:String(error?.message||error||'Touch ID was not completed.')};}});\nipcMain.handle('site:open'`);
+replace('main.js',"ipcMain.handle('site:open'",`ipcMain.handle('owner:touch-id',async event=>{ownerSender(event);if(process.platform!=='darwin')return {available:false,verified:false,reason:'unsupported'};const {systemPreferences}=require('electron');if(!systemPreferences.canPromptTouchID())return {available:false,verified:false,reason:'unavailable'};try{await systemPreferences.promptTouchID('Unlock ACO Studio');const session=await siteBridge.unlockDesktopAdmin();return {available:true,verified:true,session:session?.ok===true,needsEnrollment:session?.needsEnrollment===true,reason:session?.reason||''};}catch(error){return {available:true,verified:false,session:false,reason:String(error?.message||error||'Touch ID was not completed.')};}});\nipcMain.handle('site:open'`);
 replace('main.js','requireOwner:workshopOwner,authorize:',"getCustomerProfileSource:id=>siteBridge.profileSource(id),saveCustomerProfile:(id,remote,fields)=>siteBridge.saveCustomerProfile(id,remote,fields),getCustomerSavedData:id=>siteBridge.savedCustomerData(id),updateCustomerSavedData:(id,kind,recordId,payload)=>siteBridge.saveCustomerSavedData(id,kind,recordId,payload),changeCustomerAssignment:(id,remote,operation,payload)=>siteBridge.changeCustomerAssignment(id,remote,operation,payload),requireOwner:workshopOwner,authorize:");
 replace('preload.js','site:Object.freeze({',"ownerSecurity:Object.freeze({touchId:()=>ipcRenderer.invoke('owner:touch-id')}),\n site:Object.freeze({");
 replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.freeze(Object.fromEntries(['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','previewLinkedJig','publishLinkedJig','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'].map(method=>[method,payload=>ipcRenderer.invoke('profile:library:'+method,payload)]).concat([['cancel',()=>ipcRenderer.invoke('profile:library:cancel')]]))),\n profileWorkshop:Object.freeze({");
@@ -118,7 +118,32 @@ replace('site-bridge.js','return {open,signIn,hide,reload,bounds,read,adminRead,
   if(operation==='reassign'){const receiver=await profileSource(id(payload.targetCustomerId));if(!receiver.linked.some(x=>x.managedAccountId===id(remote.id)&&x.active))throw Error('Receiving customer assignment readback failed.');}
   notifyOwner();return {saved:true,replacementManagedAccountId:result.replacementManagedAccountId||null,customerAccountId:result.customerAccountId||null};
  }
- return {open,signIn,hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile,savedCustomerData,saveCustomerSavedData,changeCustomerAssignment};`);
+ const {safeStorage,app}=require('electron'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+ const desktopAuthFile=path.join(app.getPath('userData'),'aco-desktop-admin-auth.json');
+ function readDesktopAuth(){try{const value=JSON.parse(fs.readFileSync(desktopAuthFile,'utf8'));return value&&typeof value==='object'?value:null;}catch{return null;}}
+ function writeDesktopAuth(value){fs.mkdirSync(path.dirname(desktopAuthFile),{recursive:true});fs.writeFileSync(desktopAuthFile,JSON.stringify(value),{mode:0o600});}
+ function desktopDevice(){const current=readDesktopAuth();if(current?.deviceId)return current;const next={deviceId:crypto.randomUUID()};writeDesktopAuth(next);return next;}
+ async function enrollDesktopDevice(){
+  if(!safeStorage.isEncryptionAvailable())throw Error('macOS secure storage is unavailable. Touch ID enrollment was not saved.');
+  const current=desktopDevice(),result=await api('/api/admin/desktop-device/enroll','POST',{deviceId:current.deviceId});
+  if(result?.ok!==true||!result.token)throw Error('Website did not confirm Touch ID enrollment.');
+  writeDesktopAuth({deviceId:current.deviceId,token:safeStorage.encryptString(String(result.token)).toString('base64'),expiresAt:result.expiresAt||null});
+  return {ok:true};
+ }
+ async function unlockDesktopAdmin(){
+  const current=readDesktopAuth();
+  if(!current?.deviceId||!current?.token)return {ok:false,needsEnrollment:true,reason:'Sign in once with the Admin password and authenticator to enable Touch ID on this Mac.'};
+  if(!safeStorage.isEncryptionAvailable())return {ok:false,needsEnrollment:true,reason:'macOS secure storage is unavailable.'};
+  try{
+   const token=safeStorage.decryptString(Buffer.from(current.token,'base64'));
+   const result=await api('/api/admin/desktop-device/unlock','POST',{deviceId:current.deviceId,token});
+   return result?.ok===true?{ok:true}:{ok:false,needsEnrollment:true,reason:'This Mac must be enrolled again.'};
+  }catch(error){
+   if(/not enrolled|authorization|unauthorized|401/i.test(String(error?.message||error)))return {ok:false,needsEnrollment:true,reason:'Sign in once with the Admin password and authenticator to re-enable Touch ID on this Mac.'};
+   throw error;
+  }
+ }
+ return {open,signIn:async(...args)=>{const result=await signIn(...args);if(process.platform==='darwin'){try{await enrollDesktopDevice();}catch(error){console.error('Desktop Touch ID enrollment:',error?.message||error);}}return result;},hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile,savedCustomerData,saveCustomerSavedData,changeCustomerAssignment,enrollDesktopDevice,unlockDesktopAdmin};`);
 replace('tests/personal-profiles-security.test.js',"customerId:'customer1',retailer:'walmart',rows:","customerId:'customer1',retailer:'target',rows:");
 replace('tests/personal-profiles-security.test.js',"customerId:'customer2',retailer:'pokemoncenter',data:","customerId:'customer2',retailer:'target',data:");
 replace('tests/personal-profiles-security.test.js',"customerId:'u2',retailer:'walmart',email:'shared@sample.test'","customerId:'u2',retailer:'target',email:'shared@sample.test'");

@@ -11,6 +11,14 @@
   const setupStatus=byId("adminPasskeySetupStatus");
   const loginStatus=byId("adminPasskeyLoginStatus");
   if(!setup&&!login)return;
+  const desktopAco=/Electron/i.test(navigator.userAgent||"");
+  if(desktopAco){
+    if(login)login.hidden=true;
+    if(setup)setup.hidden=true;
+    if(loginStatus)loginStatus.textContent="ACO Studio uses native macOS Touch ID after one full Admin password + authenticator sign-in on this Mac.";
+    if(setupStatus)setupStatus.textContent="Desktop Touch ID enrollment is managed by ACO Studio.";
+    return;
+  }
 
   function assertSupported(){
     if(!window.isSecureContext||!window.PublicKeyCredential||!navigator.credentials?.create||!navigator.credentials?.get)
