@@ -55,6 +55,8 @@ jobs:
       - run: node --check public/app-dashboard-data.js
       - run: node --test test/checkout-spend-and-controls.test.mjs test/app-dashboard.test.mjs
       - run: node --test test/customer-checkout-values.test.mjs
+      - run: node --check retailer-order-enrichment.js
+      - run: node --test test/pkc-receipt-enrichment.test.mjs
       - run: node --check public/admin-checkout-match.js
       - run: node --test test/stellar-fast-checkouts.test.mjs
       - run: node --test test/checkout-owner-admin-recovery.test.mjs
