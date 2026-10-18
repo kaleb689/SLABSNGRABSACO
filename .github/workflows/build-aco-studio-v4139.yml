@@ -1,7 +1,7 @@
 name: ACO Studio - Profile libraries and duplicate repair
 on:
   push:
-    branches: [build/aco-studio-macos-v4133-20261015]
+    branches: [build/aco-studio-macos-v4133-20261015, fix/aco-studio-duplicate-email-review-20261018]
     paths:
       - '.github/aco-studio-build/profile-workshop/**'
       - '.github/aco-studio-build/personal-import/**'
