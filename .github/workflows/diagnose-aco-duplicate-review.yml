@@ -2,7 +2,10 @@ name: Diagnose ACO Studio duplicate-review source
 on:
   push:
     branches: [fix/aco-studio-duplicate-email-review-20261018]
-    paths: ['.github/workflows/diagnose-aco-duplicate-review.yml']
+    paths:
+      - '.github/workflows/diagnose-aco-duplicate-review.yml'
+      - '.github/aco-studio-build/native-updater/**'
+      - '.github/aco-studio-build/profile-library/**'
   workflow_dispatch:
 env:
   ACO_VERSION: '4.13.14'
@@ -100,3 +103,19 @@ jobs:
               for i in selected:
                   print(f'{i+1}: {lines[i][:1000]}')
           PY
+
+      - name: Verify overlays and retailer duplicate tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check .github/aco-studio-build/native-updater/apply.cjs
+          node --check .github/aco-studio-build/profile-library/apply.cjs
+          node --check build-src/App/main.js
+          node --check build-src/App/mac-full-updates.js
+          node --check build-src/App/profile-vault.js
+          cd build-src/App
+          npm install --no-audit --no-fund
+          node --test tests/profile-duplicate-scan.test.js
+          node --test tests/personal-profile-import.test.js
+          node --test tests/profile-library.test.js
+          echo 'Verified launch-updater + secure-login source syntax and duplicate classifier regressions.'
