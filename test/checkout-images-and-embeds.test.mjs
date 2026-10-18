@@ -124,7 +124,7 @@ test("customer server displays SKUs but never retailer logins or master inbox",(
   const end=src.indexOf("async function sendDiscordSuccessNotification(",start);
   const customer=src.slice(start,end);
   assert.match(customer,/safe\.sku/);
-  assert.match(customer,/verifiedSkuProductImage/);
+  assert.match(src,/const skuPhoto = verifiedSkuProductImage/);
   assert.doesNotMatch(customer,/masterInbox:|accountEmail:|retailerPassword:/);
   assert.match(src,/const extraImage = localNumbered\.size === 1/);
 });
