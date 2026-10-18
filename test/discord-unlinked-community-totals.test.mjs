@@ -4,7 +4,10 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { isModuleLifecycleDiscordMessage } from "../discord-checkout-event-policy.js";
 import { checkoutStatusFromDiscord, checkoutIdentityFromDiscord, checkoutProductFromDiscord } from "../discord-checkout-identity.js";
-import { checkoutExplicitPaidTotal, checkoutPaidAmount } from "../checkout-price-policy.js";
+import { checkoutExplicitPaidTotal } from "../checkout-price-policy.js";
+import { communityCheckoutTotals } from "../checkout-reporting.js";
+import { isModuleLifecycleCheckout } from "../discord-checkout-event-policy.js";
+import { cancelledOrder } from "../order-notifications.js";
 import { authoritativeDiscordCheckouts } from "../success-source-policy.js";
 import { planDiscordCommunityHits } from "../discord-hit-mirror-policy.js";
 
@@ -58,7 +61,7 @@ test("quantity text accepts unambiguous units and rejects ambiguous multi-values
   assert.equal(parse(rawGreen("1580000000000002004","Qty: x3")).items[0].quantity,3);
   assert.equal(parse(rawGreen("1580000000000002005","1/2")),null);
 });
-test("the real public community success handler counts unmatched green checkouts, excluding holds and cancels",async()=>{
+test("public tracker matches Admin checkout-value totals for unmatched, linked, and review-hold orders, excluding cancels",async()=>{
   const green=parse(rawGreen("1580000000000002006","2"));
   const linked={...green,id:"discord:"+sourceChannelId+":1580000000000002007",
     customerAccountId:"member-123"};
@@ -69,7 +72,11 @@ test("the real public community success handler counts unmatched green checkouts
   const records=[green,linked,cancelled,hold];
   const routeStart=server.indexOf('app.get(\n  "/api/public/success",');
   const routeEnd=server.indexOf("\nasync function saveSuccessCheckouts(",routeStart);
-  assert.ok(routeStart>=0&&routeEnd>routeStart);
+  const filterStart=server.indexOf("function communityEligibleOrders(");
+  const filterEnd=server.indexOf("// Admin Success overview:",filterStart);
+  const purchaseStart=server.indexOf("function confirmedDiscordPurchase(");
+  const purchaseEnd=server.indexOf("function safeSuccessCheckout(",purchaseStart);
+  assert.ok(routeStart>=0&&routeEnd>routeStart&&filterStart>=0&&filterEnd>filterStart&&purchaseStart>=0&&purchaseEnd>purchaseStart);
   let handler;
   const context={
     app:{get:(route,h)=>{assert.equal(route,"/api/public/success");handler=h;}},
@@ -78,15 +85,14 @@ test("the real public community success handler counts unmatched green checkouts
     getSuccessCheckouts:async()=>records,
     discordCheckoutSourceChannels:async()=>({channels:[sourceChannelId]}),
     visibleDiscordSuccessRecords:(arr,excluded,allowed)=>authoritativeDiscordCheckouts(arr,allowed),
-    confirmedDiscordPurchase:r=>r.status==="confirmed",
+    isModuleLifecycleCheckout, cancelledOrder,
     publicSuccessProductName:s=>String(s||"").trim(),
     isSafeDiscordCheckoutProductName:s=>Boolean(s),
-    checkoutPaidAmount,
     publicSuccessProductImage:()=>null,
-    historicalPlusVerified:current=>current,
+    communityCheckoutTotals,
     console
   };
-  vm.runInNewContext(server.slice(routeStart,routeEnd),context);
+  vm.runInNewContext(server.slice(purchaseStart,purchaseEnd)+server.slice(filterStart,filterEnd)+server.slice(routeStart,routeEnd),context);
   let payload=null,code=200;
   const response={
     setHeader(){},json(value){payload=value;return value;},
@@ -94,8 +100,10 @@ test("the real public community success handler counts unmatched green checkouts
   };
   await handler({},response);
   assert.equal(code,200);
-  assert.equal(payload.checkouts,2);
-  assert.equal(payload.products[0].quantity,4);
-  // Item unit prices are not proof of the final amount paid.
-  assert.equal(payload.unknownPrices,2);
+  assert.equal(payload.totalCheckouts,243); // 240 historical + 3 live
+  assert.equal(payload.products[0].quantity,6);
+  assert.equal(payload.totalSpent,15876.11); // Unverified item price is not verified payment
+  assert.equal(payload.totalCheckoutValue,15936.05); // Includes preorders & review holds
+  assert.equal(payload.pricePendingCheckouts,3);
+  assert.equal(payload.checkoutValuePending,0);
 });

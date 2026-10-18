@@ -2,7 +2,7 @@ import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
-import { historicalPlusVerified, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
+import { historicalPlusVerified, communityCheckoutTotals, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
 import { searchManagedPoolProfiles } from "./managed-pool-search.js";
 import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
@@ -39559,6 +39559,13 @@ app.post("/api/admin/discord-checkout-tracking-link", requireAdmin, async (req, 
   }
 });
 
+// The public tracker and secure Admin app must count the exact same orders.
+// Include priced preorders and review holds; never count cancelled/module hits.
+function communityEligibleOrders(records) {
+  return (Array.isArray(records) ? records : []).filter(record =>
+    confirmedDiscordPurchase(record) || reviewHoldDiscordCheckout(record));
+}
+
 // Admin Success overview: use only already-attributed Discord success checkouts.
 // Unmatched hits cannot be counted as belonging to a paid, personal, or linked profile.
 app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
@@ -39579,8 +39586,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     // explicitly attributed to an existing website customer account.
     // A placed order (including a preorder or review hold) remains in the
     // customer/admin checkout ledger until the order is cancelled.
-    const confirmed = allRecords.filter(record =>
-      confirmedDiscordPurchase(record) || reviewHoldDiscordCheckout(record));
+    const confirmed = communityEligibleOrders(allRecords);
     const customersById = new Map(customers.map(item => [String(item.id), item]));
     const unassignedConfirmed = confirmed.filter(record =>
       !record.customerAccountId || !customersById.has(String(record.customerAccountId)));
@@ -39649,19 +39655,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
     }).filter(record => Number.isFinite(Date.parse(record.checkoutAt || "")))
       .sort((a,b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
     res.setHeader("Cache-Control", "no-store");
-    const communityTotals = historicalPlusVerified({
-      checkouts: confirmed.length,
-      spent: confirmed.reduce((sum, record) =>
-        sum + (checkoutPaidAmount(record) ?? 0), 0),
-      unknownPrices: confirmed.filter(record =>
-        checkoutPaidAmount(record) === null).length
-    });
-    // Keep the old verified-paid total for audit, while checkout value
-    // includes priced preorders and review holds from the moment of placement.
-    communityTotals.totalCheckoutValue = Math.round((communityTotals.historicalSpent +
-      confirmed.reduce((sum, record) => sum + (checkoutOrderValue(record).amount ?? 0), 0)) * 100) / 100;
-    communityTotals.checkoutValuePending = confirmed.filter(record =>
-      checkoutOrderValue(record).amount === null).length;
+    const communityTotals = communityCheckoutTotals(confirmed);
     return res.json({
       ok:true,records,communityRecords,unmatchedCount,unmatchedRecent,
       sourceCheckedAt: discordSuccessScan.checkedAt || null,communityTotals,
@@ -40009,24 +40003,14 @@ app.get(
           hitsChannelId,
           (await discordCheckoutSourceChannels()).channels
         );
+      const confirmed = communityEligibleOrders(records);
       const products = new Map();
-      let totalSpent = 0;
-      let totalCheckouts = 0;
-      let pricePendingCheckouts = 0;
 
-      for (const record of records) {
-        if (!confirmedDiscordPurchase(record)) continue;
+      for (const record of confirmed) {
         const eligibleItems = (Array.isArray(record.items) ? record.items : []).filter(item => {
           const name = publicSuccessProductName(item?.name);
           return name && isSafeDiscordCheckoutProductName(name) && !/@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name) && Number(item?.quantity) > 0;
         });
-        totalCheckouts += 1;
-        // An item subtotal excludes tax, shipping and fees. It is never
-        // counted as the verified amount paid by the customer.
-        const paidTotal = checkoutPaidAmount(record);
-        if (paidTotal !== null) totalSpent += paidTotal;
-        else pricePendingCheckouts += 1;
-
         const purchasedAt = new Date(record.checkoutAt || record.updatedAt || record.createdAt || 0).getTime();
         for (const item of eligibleItems) {
           const name = publicSuccessProductName(item?.name);
@@ -40055,7 +40039,7 @@ app.get(
       // individual receipts are unavailable. Never convert it into fake hits.
       // Add it once to the live authoritative Discord order totals.
       res.json({
-        ...historicalPlusVerified({checkouts:totalCheckouts,spent:totalSpent,unknownPrices:pricePendingCheckouts}),
+        ...communityCheckoutTotals(confirmed),
         products: orderedProducts
       });
     } catch (error) {

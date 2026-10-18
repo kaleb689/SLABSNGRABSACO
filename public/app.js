@@ -16256,7 +16256,7 @@ async function refreshPublicSuccess() {
     if (!response.ok) throw new Error("Totals unavailable");
     const data = await response.json();
     rollSuccessMetric("public-success-checkouts", data.totalCheckouts);
-    rollSuccessMetric("public-success-spent", data.totalSpent, true);
+    rollSuccessMetric("public-success-spent", data.totalCheckoutValue ?? data.totalSpent, true);
     publicSuccessState.products = Array.isArray(data.products) ? data.products : [];
     publicSuccessState.index = Math.min(publicSuccessState.index, Math.max(0, publicSuccessState.products.length - 1));
     renderPublicSuccessProduct();
