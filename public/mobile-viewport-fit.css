@@ -1,0 +1,195 @@
+/* Native-width layouts for the Admin and Customer installed web apps.
+ * Keeps wide data within its card instead of enlarging the page viewport.
+ */
+@media (max-width: 700px) {
+  body.sng-admin-app,
+  body.app-dashboard.app-signed-in {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  /* The Admin logo, long title, biometric action and three icon buttons
+     cannot all fit on one iPhone row. Give the actions their own row. */
+  body.sng-admin-app > header {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) repeat(3, 40px);
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 7px;
+    row-gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: calc(env(safe-area-inset-top) + 9px) 10px 9px;
+  }
+  body.sng-admin-app > header > img {
+    grid-column: 1;
+    grid-row: 1;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px;
+    max-width: 40px !important;
+    max-height: 40px !important;
+  }
+  body.sng-admin-app > header > div {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    min-width: 0;
+    max-width: 100%;
+  }
+  body.sng-admin-app > header > div b {
+    font-size: clamp(12px, 3.4vw, 14px);
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+  body.sng-admin-app > header > #mobile-biometric-setup:not([hidden]) {
+    grid-column: 1 / 3;
+    grid-row: 2;
+    width: 100% !important;
+    max-width: none;
+    min-width: 0 !important;
+    height: 40px;
+    padding: 4px 6px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  body.sng-admin-app > header > #admin-theme-toggle { grid-column: 3; grid-row: 2; }
+  body.sng-admin-app > header > #sng-admin-live-bell { grid-column: 4; grid-row: 2; }
+  body.sng-admin-app > header > #refresh { grid-column: 5; grid-row: 2; }
+  body.sng-admin-app > header > :is(#refresh, #admin-theme-toggle, #sng-admin-live-bell) {
+    width: 40px !important;
+    height: 40px;
+    min-width: 40px !important;
+    max-width: 40px;
+    padding: 0;
+    justify-self: stretch;
+  }
+  body.sng-admin-app > main,
+  body.sng-admin-app #workspace,
+  body.sng-admin-app #content {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  body.sng-admin-app > main { padding-inline: 12px; }
+  body.sng-admin-app #workspace :is(.metric, .panel, .item, .success-overview-accordion, .success-order-card) {
+    min-width: 0;
+    max-width: 100%;
+  }
+  body.sng-admin-app .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.sng-admin-app .metric strong,
+  body.sng-admin-app .item strong,
+  body.sng-admin-app .panel { overflow-wrap: anywhere; }
+  body.sng-admin-app .admin-overview-hero > strong,
+  body.sng-admin-app .admin-spend-hero > strong {
+    font-size: clamp(30px, 9vw, 49px);
+    overflow-wrap: anywhere;
+  }
+  body.sng-admin-app #tabs {
+    width: min(620px, calc(100% - 16px));
+    max-width: calc(100% - 16px);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  body.sng-admin-app #tabs button span {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  /* Customer screens: constrain flex/grid children rather than shrinking the
+     entire page. Buttons and the five navigation tabs remain tappable. */
+  body.app-dashboard.app-signed-in #my-profile,
+  body.app-dashboard.app-signed-in #my-profile .wrap,
+  body.app-dashboard.app-signed-in #app-dashboard,
+  body.app-dashboard.app-signed-in #customer-dashboard {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  body.app-dashboard.app-signed-in #my-profile { padding-inline: 12px; }
+  body.app-dashboard.app-signed-in #my-profile :is(.account-card, .account-tab-panel, .account-dashboard-grid, .success-dashboard, .success-stats, .success-checkouts, .success-shipping-showcase, .success-shipping-panel, .success-recent-shell),
+  body.app-dashboard.app-signed-in #app-dashboard :is(.sng-hero, .sng-metric, .sng-chart-card, .sng-product-row, .sng-order-card, .sng-settings-list) {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-app-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+    align-items: center;
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-app-brand { min-width: 0; }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-app-brand img { flex: 0 0 auto; }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-app-brand strong {
+    font-size: clamp(10px, 3vw, 13px);
+    overflow-wrap: anywhere;
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-app-header-actions { gap: 5px; }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-app-header-actions > button {
+    width: clamp(34px, 9vw, 40px);
+    height: 40px;
+    padding: 6px;
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-metrics.three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-metrics.three > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-breakdown {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-legend { flex: 1 1 145px; }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-range,
+  body.app-dashboard.app-signed-in #app-dashboard .sng-status-filters {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+  }
+  body.app-dashboard.app-signed-in #my-profile .success-chart-layout,
+  body.app-dashboard.app-signed-in #my-profile .success-chart-plot {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  body.app-dashboard.app-signed-in #my-profile :is(input, select, textarea) {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-app-nav {
+    width: min(620px, calc(100% - 16px));
+    max-width: calc(100% - 16px);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  body.app-dashboard.app-signed-in #app-dashboard .sng-app-nav > button span {
+    min-width: 0;
+    max-width: 100%;
+    font-size: clamp(8px, 2.4vw, 10px);
+    line-height: 1.15;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+}
+
+/* The customer Success chart also has a desktop minimum width. Reset it
+   on tablets so portrait view does not trigger an automatic page zoom. */
+@media (min-width: 701px) and (max-width: 1024px) {
+  body.app-dashboard.app-signed-in {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+  body.app-dashboard.app-signed-in #my-profile .success-chart-layout,
+  body.app-dashboard.app-signed-in #my-profile .success-chart-plot {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+}
