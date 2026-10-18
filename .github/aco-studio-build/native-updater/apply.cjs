@@ -30,6 +30,28 @@ app.setPath('userData',path.join(app.getPath('appData'),'SLABSNGRABSACO ACO Stud
   },3000);
  });`]
 ]);
+// Hold the native workspace behind the normal splash while a verified full
+// Mac update is downloaded and installed. A successful update quits/relaunches.
+// A network failure must not erase offline/local data or trap the application.
+edit('main.js',[
+ [" launch();\\n app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)launch();});",\` let startupFinished=false;
+ async function openAfterNativeStartup(){
+  let splash=null;
+  if(process.platform==='darwin'&&!process.argv.includes('--aco-studio-ci-smoke')){
+   splash=new BrowserWindow({width:960,height:600,frame:false,resizable:false,skipTaskbar:true,center:true,backgroundColor:'#060918',show:true,
+    webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,devTools:false}});
+   splash.loadFile(path.join(__dirname,'splash.html')).catch(()=>{});
+   try{
+    const update=await nativeUpdater.autoStartup();
+    if(update?.started)return;
+   }catch(error){console.error('Automatic update not installed:',String(error?.message||error));}
+   finally{if(splash&&!splash.isDestroyed())splash.close();}
+  }
+  startupFinished=true;launch();
+ }
+ void openAfterNativeStartup();
+ app.on('activate',()=>{if(startupFinished&&BrowserWindow.getAllWindows().length===0)launch();});\`]
+]);
 edit('preload.js',[["updates:Object.freeze({info:","updates:Object.freeze({nativeMac:process.platform==='darwin',progress:()=>ipcRenderer.invoke('updates:progress'),info:"]]);
 edit('updates-ui.js',[["(() => {","(() => {\n if(window.desktopAPI?.updates?.nativeMac)return;"]]);
 edit('index.html',[["<script src=\"./updates-ui.js\"></script>","<script src=\"./updates-ui.js\"></script><script src=\"./mac-updates-ui.js\"></script>"]]);
