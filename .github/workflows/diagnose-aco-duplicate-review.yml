@@ -73,3 +73,30 @@ jobs:
               for i in sorted(picked):
                   print(f'{i+1}: {lines[i][:600]}')
           PY
+
+      - name: Inspect sign-in and startup integration points
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('build-src/App')
+          for filename in ['main.js','site-bridge.js','site-ui.js','mac-updates-ui.js','index.html']:
+              p=root/filename
+              if not p.exists():continue
+              lines=p.read_text().splitlines()
+              print('=== TARGET FILE',filename,'LINES',len(lines),'===')
+              if filename=='main.js':
+                  selected=list(range(0,min(105,len(lines))))+list(range(345,min(492,len(lines))))
+              elif filename=='site-bridge.js':
+                  selected=[i for i in range(len(lines)) if any(t in lines[i].lower() for t in ['signIn('.lower(),'async function open','const open','isready','createwindow','login','const signin'])]
+                  selected=sorted(set(j for i in selected for j in range(max(0,i-4),min(len(lines),i+19))))
+              elif filename=='index.html':
+                  selected=[i for i,line in enumerate(lines) if any(t in line.lower() for t in ['connect','login','signin','sign in','site-ui','update','</head>','</body>'])]
+              elif filename=='site-ui.js':
+                  selected=[i for i,line in enumerate(lines) if any(t in line.lower() for t in ['connect','signin','sign in','login','isready','site:','sitebridge'])]
+                  selected=sorted(set(j for i in selected for j in range(max(0,i-3),min(len(lines),i+8))))
+              else:
+                  selected=[i for i in range(len(lines))]
+              for i in selected:
+                  print(f'{i+1}: {lines[i][:1000]}')
+          PY
