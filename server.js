@@ -19,6 +19,7 @@ import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checko
 import { managedAccountEmailEvidence, checkoutAssignmentContains, recoverCheckoutAssignmentOwners } from "./discord-checkout-owner-evidence.js";
 import { resolveOwnerVerifiedBackfill } from "./checkout-owner-backfills.js";
 import { resolveOwnerVerifiedScreenshots, verifiedScreenshotMatchStatus } from "./checkout-owner-screenshot-evidence.js";
+import { applyOwnerVerifiedOrderEvidence } from "./checkout-owner-order-evidence.js";
 import { verifiedSameDayCheckoutOwner } from "./checkout-owner-verified-day.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
@@ -38973,6 +38974,14 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
           attributed++;
           changedCustomerIds.add(String(result.record.customerAccountId));
         }
+      }
+      // Apply the owner's documented, tax-inclusive receipt evidence only
+      // to the EXACT original Discord checkout. This also repairs a partial
+      // four-product webhook without creating an email-derived purchase.
+      const verifiedOwnerEvidence = applyOwnerVerifiedOrderEvidence(existing);
+      if (verifiedOwnerEvidence.changed) {
+        updated += verifiedOwnerEvidence.corrected;
+        for (const id of verifiedOwnerEvidence.changedCustomerIds) changedCustomerIds.add(id);
       }
       // An earlier webhook for the same order can temporarily alter the
       // in-memory accumulator before a newer one restores the same final
