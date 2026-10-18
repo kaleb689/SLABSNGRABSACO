@@ -74,7 +74,9 @@ jobs:
         run: |
           set -euo pipefail
           for f in *.js; do node --check "$f"; done
-          npm run check | tee regression-results.txt
+          # mac-full-updates.test.js validates /Applications paths and Unix symlinks;
+          # its tests are exercised on both native Mac runners, not Windows.
+          node --test $(find tests -maxdepth 1 -type f -name '*.test.js' ! -name 'mac-full-updates.test.js' | sort) | tee regression-results.txt
           test -f node_modules/electron-updater/package.json
       - name: Produce actual Windows x64 NSIS setup installer
         working-directory: build-src/App
