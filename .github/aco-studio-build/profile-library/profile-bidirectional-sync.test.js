@@ -135,3 +135,27 @@ test('Explicit saved record IDs and separate billing address survive website to 
  assert.equal(row.data.billing.addressLine1,'425 Billing Court');
  assert.equal(row.data.card.number,'4242424242424242');
 });
+
+test('Applying a jig to a linked customer publishes its shipping address to website and Studio',async t=>{
+ const h=await harness(t);await h.lib.syncCustomer(sender,owner);
+ const row=(await h.lib.list(sender,owner)).profiles[0];
+ const result=await h.lib.publishLinkedJig(sender,{...owner,profileId:row.id,expectedRevision:row.revision,
+   confirmed:true,address:{address1:'531 Verified Jig Lane',address2:'',city:'New City',state:'FL',zip:'33325'}});
+ assert.equal(result.saved,true);assert.equal(result.remoteSaved,true);
+ assert.equal(h.calls.length,1);
+ assert.equal(h.calls[0].payload.fields['shipping.address1'],'531 Verified Jig Lane');
+ assert.equal(h.calls[0].payload.fields['shipping.city'],'New City');
+ const next=(await h.lib.list(sender,owner)).profiles[0];
+ assert.ok(next.revision>row.revision);
+ assert.equal((await h.lib.list(sender,{scope:'personal',customerId:null})).profiles.length,0);
+});
+test('A stale linked jig cannot publish or change an existing profile',async t=>{
+ const h=await harness(t);await h.lib.syncCustomer(sender,owner);
+ const row=(await h.lib.list(sender,owner)).profiles[0];
+ await assert.rejects(h.lib.publishLinkedJig(sender,{...owner,profileId:row.id,expectedRevision:row.revision-1,
+  confirmed:true,address:{address1:'700 Stale Street',city:'Example',state:'FL',zip:'33324'}}),/changed after your preview/);
+ assert.equal(h.calls.length,0);
+ await assert.rejects(h.lib.publishLinkedJig(sender,{scope:'personal',customerId:null,profileId:row.id,expectedRevision:row.revision,
+  confirmed:true,address:{address1:'700 Stale Street',city:'Example',state:'FL',zip:'33324'}}),/website-linked/);
+ assert.equal(h.calls.length,0);
+});
