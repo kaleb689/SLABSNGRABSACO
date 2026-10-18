@@ -7,7 +7,9 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const $=id=>document.getElementById(id);
 const arr=v=>Array.isArray(v)?v:[];
 const short=(v,n=120)=>String(v??'').slice(0,n);
-const amount=v=>'v=>{const d=new Date(v||'');return Number.isFinite(d.getTime())?d.toLocaleString():'—';};
+const amount=v=>'$'+(Number(v)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const centsAmount=v=>amount((Number(v)||0)/100);
+const when=v=>{const d=new Date(v||'');return Number.isFinite(d.getTime())?d.toLocaleString():'—';};
 const flatten=(v,prefix='',out=[],depth=0)=>{
  if(depth>2||!v||typeof v!=='object')return out;
  for(const [key,value] of Object.entries(v)){
