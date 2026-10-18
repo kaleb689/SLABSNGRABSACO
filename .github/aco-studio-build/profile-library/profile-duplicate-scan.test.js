@@ -16,7 +16,7 @@ test('Different retailer pools may reuse one email without a startup alert',asyn
 });
 test('An explicitly linked local account and its website mirror count once',async t=>{
  const h=await harness(t);await h.add('david','pokemoncenter','linked@example.test');
- await h.vault.libraryTransaction('aco','david',ctx=>{ctx.rows[0].source='website-linked-profile';ctx.rows[0].remoteKey='pokemoncenter|assignment-1';});
+ await h.vault.libraryTransaction('aco','david',ctx=>{ctx.rows[0].source='website-linked-profile';ctx.rows[0].remoteKey='pokemoncenter|assignment-1';},()=>{});
  const records=[h.website('david','pokemoncenter','linked@example.test','assignment-1'),h.website('david','pokemoncenter','linked@example.test','assignment-1')];
  const r=await h.vault.scanRows([],records);
  assert.equal(r.scanned,1);assert.equal(r.duplicates.length,0);
@@ -28,6 +28,7 @@ test('Real same-retailer reuse in separate customers remains flagged',async t=>{
 });
 test('Distinct linked assignments remain flagged while duplicate pages are ignored',async t=>{
  const h=await harness(t);await h.add('david','target','used@example.test');
+ await h.vault.libraryTransaction('aco','david',ctx=>{ctx.rows[0].source='website-linked-profile';ctx.rows[0].remoteKey='target|a';},()=>{});
  const one=h.website('david','target','used@example.test','a'),two=h.website('david','target','used@example.test','b');
  const r=await h.vault.scanRows([],[one,two,two]);
  assert.equal(r.duplicates.length,1);assert.equal(r.duplicates[0].count,2);
