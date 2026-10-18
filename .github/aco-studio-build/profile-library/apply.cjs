@@ -114,7 +114,13 @@ replace('site-bridge.js','return {open,signIn,hide,reload,bounds,read,adminRead,
   indexUntil=0;lastRosterAt=0;
   const verified=await profileSource(key);
   if(verified.linked.some(x=>x.managedAccountId===id(remote.id)&&x.active))throw Error('Website readback still shows the original assignment.');
-  if(operation==='replace'&&!verified.linked.some(x=>x.managedAccountId===String(result.replacementManagedAccountId)&&x.retailer===remote.retailer&&x.active))throw Error('Replacement account verification failed.');
+  if(operation==='replace'){
+   const replacementId=String(result.replacementManagedAccountId||'');
+   if(!replacementId||replacementId!==id(payload.replacementId))throw Error('Website replaced a different account than the one selected. Refresh before trying again.');
+   if(!verified.linked.some(x=>x.managedAccountId===replacementId&&x.retailer===remote.retailer&&x.active))throw Error('Replacement account verification failed.');
+   const pool=await read('pool',{status:'available',retailer:remote.retailer,query:replacementId,page:1});
+   if(pool.profiles.some(x=>String(x.id)===replacementId&&x.status==='available'))throw Error('Replacement is still in the available '+remote.retailer+' pool. The swap was not accepted as complete.');
+  }
   if(operation==='reassign'){const receiver=await profileSource(id(payload.targetCustomerId));if(!receiver.linked.some(x=>x.managedAccountId===id(remote.id)&&x.active))throw Error('Receiving customer assignment readback failed.');}
   notifyOwner();return {saved:true,replacementManagedAccountId:result.replacementManagedAccountId||null,customerAccountId:result.customerAccountId||null};
  }
@@ -153,3 +159,8 @@ replace('index.html','<script src="./profile-bank-ui.js"></script>','<script src
 replace('index.html','</body>','<link rel="stylesheet" href="profile-library.css"><script src="profile-library-ui.js"></script><script src="native-touchid.js"></script><script src="full-admin-access.js"></script>\n</body>');
 const p=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(p,'utf8'));for(const file of files)if(!pkg.build.files.includes(file))pkg.build.files.push(file);fs.writeFileSync(p,JSON.stringify(pkg,null,2)+'\n');
 console.log('Scoped customer/personal profile library, duplicate repairs and linked-customer preparation integrated.');
+
+replace('site-bridge.js',"   try{const owner=mainWindow();if(owner&&!owner.isDestroyed()){owner.show();owner.focus();}}catch{/* Ignore a window that closed while syncing. */}","   // Background roster refresh must never steal macOS/Windows focus from the user's current app.\n   // The main window is only focused in response to an explicit user action.");
+
+replace('desktop-native.js'," const updateConn=()=>{\n  const live=Boolean(conn?.classList.contains('ready'));\n  nativeStatus.classList.toggle('connected',live);\n  const line=$('nativeSiteStatus');if(line)line.textContent=live?'Website connected':'Website disconnected';\n };"," const updateConn=()=>{\n  const source=window.JigWebsiteCustomers;\n  const live=Boolean(conn?.classList.contains('ready')||source?.connected?.());\n  nativeStatus.classList.toggle('connected',live);\n  const line=$('nativeSiteStatus');if(line)line.textContent=live?'Website connected':'Website disconnected';\n  for(const badge of document.querySelectorAll('.lozenge,[class*=site-status],[class*=siteStatus]')){\n   const label=String(badge.textContent||'').trim();\n   if(/^(site|website)\\s+(offline|online|disconnected|connected)$/i.test(label)){badge.textContent=live?'SITE ONLINE':'SITE OFFLINE';badge.classList.toggle('connected',live);badge.classList.toggle('offline',!live);}\n  }\n };");
+replace('desktop-native.js'," d.addEventListener('jigstudio:customers-updated',refreshCustomerList);"," d.addEventListener('jigstudio:customers-updated',()=>{updateConn();refreshCustomerList();});");
