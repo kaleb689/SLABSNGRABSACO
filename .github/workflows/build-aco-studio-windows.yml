@@ -51,6 +51,14 @@ jobs:
           node workshop-overlay/apply.cjs build-src/App
           node .github/aco-studio-build/native-updater/apply.cjs build-src/App
           node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python - <<'PY'
+          from pathlib import Path
+          # Extracted original Windows sources use CRLF. Every existing
+          # overlay anchor was authored for LF; normalize source scripts only.
+          for p in Path('build-src/App').glob('*.js'):
+           data=p.read_bytes()
+           if b'\r\n' in data:p.write_bytes(data.replace(b'\r\n',b'\n'))
+          PY
           python .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
           node navigation-overlay/apply.cjs build-src/App
           node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
