@@ -184,3 +184,14 @@ body.app-dashboard[data-app-theme="day"] .sng-tracking-row .sng-row-value strong
     border-bottom:1px solid #453658;
   }
 }
+
+/* Unpriced merchandise is not a zero-dollar checkout. Keep pending text
+   legible on phones instead of squeezing it into the old $0.00 slot. */
+body.app-dashboard .sng-row-value strong.sng-awaiting-value {
+  font-size:12px; line-height:1.2; display:block;
+  white-space:normal; overflow-wrap:normal; color:#c9bafa;
+}
+body.app-dashboard .sng-product-row .sng-row-value { max-width:118px; }
+body.app-dashboard .sng-product-row .sng-row-value small {
+  font-size:9px; line-height:1.35; overflow-wrap:normal;
+}
