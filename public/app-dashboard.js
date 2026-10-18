@@ -111,13 +111,23 @@ if (appEnabled) {
     return `<section class="sng-hero ${tone}"><div>${e(label)}</div><strong>${e(value)}</strong><p>${e(note)}</p><svg viewBox="0 0 300 55" preserveAspectRatio="none" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="2"/></svg></section>`;
   };
   const image = product => {
-    const fallback = '/slabsngrabs-aco-logo-transparent.png';
+    const fallback = '/product-image-pending.svg';
     const url = String(product?.imageUrl || '');
     const safe = /^(https:\/\/|\/(?!\/))/.test(url);
     const src = safe ? url : fallback;
-    return `<img src="${e(src)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${fallback}'">`;
+    return `<img src="${e(src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${fallback}'">`;
   };
-  const productRows = (products, ranked = false) => products.map((product, index) => `<article class="sng-product-row">${ranked ? `<b class="sng-rank">${index + 1}</b>` : ''}<div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong>${money(product.value)}</strong><small>ITEM VALUE (EXCL. FEES)</small></div></article>`).join('') || '<p class="sng-empty">No products in this date range.</p>';
+  const productPriceText = product => {
+    if (Number(product.unpricedQuantity || 0) > 0)
+      return Number(product.pricedQuantity || 0) > 0
+        ? { value: money(product.value) + '+', label: 'PARTIAL ITEM VALUE' }
+        : { value: 'Price pending', label: 'NOT PROVIDED BY WEBHOOK' };
+    return { value: money(product.value), label: 'ITEM VALUE (EXCL. FEES)' };
+  };
+  const productRows = (products, ranked = false) => products.map((product, index) => {
+    const display = productPriceText(product);
+    return `<article class="sng-product-row">${ranked ? `<b class="sng-rank">${index + 1}</b>` : ''}<div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong class="${display.value === 'Price pending' ? 'sng-awaiting-value' : ''}">${e(display.value)}</strong><small>${e(display.label)}</small></div></article>`;
+  }).join('') || '<p class="sng-empty">No products in this date range.</p>';
 
   const trackingRecords = () => [...orders, ...reviewHoldOrders, ...cancelledOrders];
   const trackingSheetHtml = order => {

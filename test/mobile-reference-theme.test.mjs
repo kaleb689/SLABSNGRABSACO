@@ -16,7 +16,7 @@ test('reference theme loads after legacy controls without changing customer data
   const customerTheme = customerPage.indexOf('/mobile-reference-theme.css?v=20261010');
   assert.ok(adminControls !== -1 && adminTheme > adminControls);
   assert.ok(customerControls !== -1 && customerTheme > customerControls);
-  assert.match(customerPage, /src="\/app-dashboard\.js\?v=20261018-pkc-tracking"/);
+  assert.match(customerPage, /src="\/app-dashboard\.js\?v=20261018-complete-items-images-1"/);
   assert.match(adminPage, /src="\/admin-mobile\.js\?v=20261016-order-value-1"/);
   assert.match(theme, /html\[data-admin-mobile-theme="light"\]/);
   assert.match(theme, /body\.app-dashboard\.app-signed-in\[data-app-theme="day"\]/);

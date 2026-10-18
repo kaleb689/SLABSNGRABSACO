@@ -23,6 +23,7 @@ import { applyOwnerVerifiedOrderEvidence, ownerOrderEvidenceAudit } from "./chec
 import { verifiedSameDayCheckoutOwner } from "./checkout-owner-verified-day.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
+import { verifiedSkuProductImage } from "./checkout-product-image-policy.js";
 import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
@@ -38169,7 +38170,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
   const body = [messageText, embed?.description || "", ...(embed?.fields || []).map(field => `${field.name}: ${field.value}`)].join("\n");
   const items = [];
   const messageImageUrl = publicSuccessImageUrl(
-    embeds.map(item => item?.thumbnail?.url || item?.image?.url).find(Boolean)
+    embed?.thumbnail?.url || embed?.image?.url
   );
   const fields = embed?.fields || [];
   const numbered = new Map();
@@ -38217,6 +38218,64 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
       quantity: fieldValue(quantityField?.value) || descriptionQuantity || "",
       price: priceMatch?.[1] || fieldValue(priceField?.value) || descriptionPrice, priceIsLineTotal: Boolean(priceMatch) });
   }
+  // A thumbnail on a one-item embed belongs ONLY to that item.
+  if (numbered.size === 1 && messageImageUrl)
+    numbered.values().next().value.imageUrl = messageImageUrl;
+  // A Discord checkout can contain MORE THAN ONE product-bearing embed.
+  // Keep each embed's numbered fields separate to avoid overwriting Item (1)
+  // with Item (1) from the next embed. Do not invent extra checkout records.
+  for (const [embedIndex, otherEmbed] of embeds.entries()) {
+    if (otherEmbed === embed) continue;
+    const extraFields = Array.isArray(otherEmbed?.fields) ? otherEmbed.fields : [];
+    const localNumbered = new Map();
+    for (const field of extraFields) {
+      const match = fieldLabel(field.name).match(
+        /^(products?(?: name| title| purchased)?|items?(?: name| title| purchased)?|price|unit price|item price|quantity|qty)(?:\s*\((\d{1,2})\)|\s*#\s*(\d{1,2})|\s+(\d{1,2}))$/i);
+      if (!match) continue;
+      const key = match[2] || match[3] || match[4];
+      const kind = /^(product|item)/i.test(match[1]) ? "product" :
+        /^(quantity|qty)/i.test(match[1]) ? "quantity" : "price";
+      const entry = localNumbered.get(key) || {};
+      entry[kind] = fieldValue(field.value);
+      localNumbered.set(key, entry);
+    }
+    const extraProductField = extraFields.find(field =>
+      /^(?:products?|items?)(?: name| title| purchased)?$/i.test(fieldLabel(field.name)));
+    const extraDescription = String(otherEmbed?.description || "");
+    const extraQuantity = extraFields.find(field => /^(?:quantity|qty)$/i.test(fieldLabel(field.name)))?.value ||
+      extraDescription.match(/(?:^|\n)\s*(?:\*\*)?(?:quantity|qty)(?:\*\*)?\s*(?::\s*|\n\s*)(\d+)\b/i)?.[1] || "";
+    const extraPrice = extraFields.find(field => /^(?:price|unit price|item price)$/i.test(fieldLabel(field.name)))?.value ||
+      extraDescription.replace(/[*_\x60]/g, "").match(/(?:^|\n)\s*(?:unit price|item price|price)\s*(?::\s*|\n\s*)([^\n]+)/i)?.[1] || "";
+    // Description-only product cards need a real product link AND item
+    // evidence. Shipping updates, modules and notices are never extra items.
+    const linkedLine = /\[[^\]\r\n]{3,240}\]\(https?:\/\/[^\s)]+\)/i.test(extraDescription) &&
+      Boolean(extraQuantity || extraPrice);
+    const singleProduct = extraProductField ? fieldValue(extraProductField.value) :
+      linkedLine ? checkoutProductFromDiscord({ embeds: [otherEmbed] }) : "";
+    if (localNumbered.size && ![...localNumbered.values()].some(entry => entry.product) &&
+        singleProduct) {
+      const first = localNumbered.keys().next().value;
+      if (first) localNumbered.get(first).product = singleProduct;
+    }
+    if (!localNumbered.size && singleProduct) {
+      localNumbered.set("1", { product: singleProduct,
+        quantity: fieldValue(extraQuantity), price: fieldValue(extraPrice) });
+    }
+    const extraImage = localNumbered.size === 1 ? publicSuccessImageUrl(
+      otherEmbed?.thumbnail?.url || otherEmbed?.image?.url) : null;
+    for (const [key, candidate] of localNumbered) {
+      const name = publicSuccessProductName(productTitle(candidate.product));
+      if (!isSafeDiscordCheckoutProductName(name) ||
+          !/(?:pok[eé]mon|trading\s*card|\btcg\b|booster|mini.?tin|elite trainer|\betb\b|blister|bundle|collection|trainer box)/i.test(name))
+        continue;
+      // A repeated embed must not double-count the very same order line.
+      if ([...numbered.values()].some(entry =>
+        publicSuccessProductName(productTitle(entry.product)).toLowerCase() === name.toLowerCase()))
+        continue;
+      numbered.set("embed:" + embedIndex + ":" + key,
+        { ...candidate, imageUrl: extraImage });
+    }
+  }
   let subtotalCents = 0, completePrices = numbered.size > 0;
   for (const entry of numbered.values()) {
     const name = publicSuccessProductName(productTitle(entry.product));
@@ -38261,7 +38320,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
     if (priceCents === null || !Number.isSafeInteger(priceCents) || priceCents <= 0) completePrices = false;
     else subtotalCents += entry.priceIsLineTotal ? priceCents : priceCents * quantity;
     items.push({ name, quantity, price: priceCents === null ? 0 : priceCents / 100 / (entry.priceIsLineTotal ? quantity : 1),
-      imageUrl: messageImageUrl });
+      imageUrl: entry.imageUrl || (numbered.size === 1 ? messageImageUrl : null) });
   }
   for (const line of numbered.size ? [] : body.split(/\n+/)) {
     const match = line.match(/^\s*(?:[•*\-]\s*)?(.{5,120}?)\s*(?:[×xX]\s*(\d+)|\(\s*(\d+)\s*\))\s*$/);
@@ -38314,7 +38373,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
 
 const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
 const DISCORD_HIT_MIRROR_VERSION = 9;
-const DISCORD_HIT_RENDER_VERSION = 5;
+const DISCORD_HIT_RENDER_VERSION = 6;
 let discordHitsChannelIdCache = null;
 let discordHitMirrorMutation = Promise.resolve();
 
@@ -38383,7 +38442,7 @@ function publicDiscordHitPayload(order) {
       return { name, quantity: Number(item?.quantity) === 0 ? 0 :
         Math.max(1, Math.floor(Number(item?.quantity) || 1)),
         unitPrice: checkoutUnitPrice(item),
-        imageUrl: publicSuccessProductImage(name, retailer, item?.imageUrl || item?.image) };
+        imageUrl: publicSuccessProductImage(name, retailer, item?.imageUrl || item?.image, item?.sku) };
     })
     .filter(item => item.name &&
       !/@|\b(?:order\s*(?:number|id|#)|address|phone|email|account|password|cvv|security\s*code|card\s*(?:number|no\.?|#)|(?:credit|debit)\s+card|ship(?:ping)?\s+to|username|mode)\b/i.test(item.name));
@@ -39865,7 +39924,11 @@ async function refreshSuccessRetailerImages() {
   console.log('Success retailer stock images:', JSON.stringify({ available: Object.keys(successRetailerImages).length, expected: successRetailerCatalog.length }));
 }
 
-function publicSuccessProductImage(name, retailer, value) {
+function publicSuccessProductImage(name, retailer, value, sku = "") {
+  // Exact SKU/variant images outrank generic bot thumbnails. Never display
+  // one unrelated product photo for every item in a multi-item checkout.
+  const skuPhoto = verifiedSkuProductImage(name, retailer, sku);
+  if (skuPhoto) return skuPhoto;
   const catalog = successRetailerCatalog.find(item => item.retailer === retailer && item.match.test(name));
   const verified = verifiedPublicProductImages.find(item =>
     item.retailer.toLowerCase() === String(retailer || "").toLowerCase() && item.match.test(name)
@@ -39873,7 +39936,7 @@ function publicSuccessProductImage(name, retailer, value) {
   if (verified) return verified.imageUrl;
   if (catalog && successRetailerImages[catalog.key]) return successRetailerImages[catalog.key];
   const url = publicSuccessImageUrl(value);
-  return url && !/\/gray-bag(?:[?/#]|$)|\/no[-_]?image(?:[?/#]|$)/i.test(url) ? url : null;
+  return url && !/\/gray-bag(?:[?/#]|$)|\/no[-_]?image(?:[?/#]|$)|\/slabsngrabs-aco-logo/i.test(url) ? url : null;
 }
 
 function publicSuccessImageUrl(value) {
@@ -39935,7 +39998,7 @@ app.get(
           products.set(key, {
             name: prior?.name || name,
             quantity: (prior?.quantity || 0) + quantity,
-            imageUrl: prior?.imageUrl || publicSuccessProductImage(name, record.retailer, item?.imageUrl),
+            imageUrl: prior?.imageUrl || publicSuccessProductImage(name, record.retailer, item?.imageUrl, item?.sku),
             latestPurchasedAt: Math.max(prior?.latestPurchasedAt || 0, Number.isFinite(purchasedAt) ? purchasedAt : 0)
           });
         }
@@ -40123,7 +40186,7 @@ async function recordCommunitySuccessCheckoutUnlocked(order) {
     checkoutAt: order.checkoutAt || order.date || null,
     orderTotal: Math.max(0, Number(order.orderTotal) || 0),
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
-    items: items.map(item => ({ ...item, imageUrl: publicSuccessProductImage(item.name, normalizeSuccessRetailer(order?.retailer), item.imageUrl) })),
+    items: items.map(item => ({ ...item, imageUrl: publicSuccessProductImage(item.name, normalizeSuccessRetailer(order?.retailer), item.imageUrl, item.sku) })),
     status: "confirmed"
   });
   await saveSuccessCheckouts(records);
@@ -40232,6 +40295,7 @@ function safeSuccessItem(item) {
         300
       ),
 
+    sku: /^[A-Za-z0-9][A-Za-z0-9-]{2,49}$/.test(String(item?.sku || "")) ? String(item.sku) : null,
     quantity,
 
     price:
@@ -40264,7 +40328,7 @@ function safeSuccessCheckout(
     Array.isArray(record?.items)
       ? record.items.map(item => {
           const safe = safeSuccessItem(item);
-          return { ...safe, imageUrl: publicSuccessProductImage(safe.name, normalizeSuccessRetailer(record.retailer), safe.imageUrl) };
+          return { ...safe, imageUrl: publicSuccessProductImage(safe.name, normalizeSuccessRetailer(record.retailer), safe.imageUrl, safe.sku) };
         })
       : [];
 
