@@ -27,7 +27,9 @@ test("admin and customer product photographs never fall back to company logo", (
   for(const path of ["public/admin-mobile.js","public/admin-success.js","public/app.js","public/app-dashboard.js"]){
     const source=read(path);
     const productSection=path==="public/app.js"?
-      source.slice(source.indexOf("function renderSuccessProductPreview("),source.indexOf("function renderSuccessError(")):source;
+      source.slice(source.indexOf("function renderSuccessProductPreview("),source.indexOf("function renderSuccessError(")):
+      path==="public/app-dashboard.js"?
+        source.slice(source.indexOf("const image = product =>")) : source;
     assert.doesNotMatch(productSection,/slabsngrabs-aco-logo-transparent\.png/,
       path+" must not use brand image for a missing product");
   }
