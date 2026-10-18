@@ -19,6 +19,8 @@ replace('site-bridge.js','return {open,signIn,hide,reload,bounds,read,adminRead,
   return require('./customer-profile-source').sourceForCustomer(member,saved,resolved);
  }
  return {open,signIn,hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource};`);
+replace('profile-bank-ui.js',"h.textContent=dup.email+' ('+dup.count+' matches)'","h.textContent=(retailerNames[dup.retailer]||dup.retailer)+' · '+dup.email+' ('+dup.count+' distinct accounts)'");
+replace('profile-bank-ui.js',"' email(s) appear more than once. '","' retailer email(s) are reused within the same retailer. '");
 replace('index.html','</body>','<link rel="stylesheet" href="profile-library.css"><script src="profile-library-ui.js"></script>\n</body>');
 const p=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(p,'utf8'));for(const file of files)if(!pkg.build.files.includes(file))pkg.build.files.push(file);fs.writeFileSync(p,JSON.stringify(pkg,null,2)+'\n');
 console.log('Scoped customer/personal profile library, duplicate repairs and linked-customer preparation integrated.');
