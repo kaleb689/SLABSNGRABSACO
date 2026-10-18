@@ -34,7 +34,7 @@ jobs:
           python .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
           node workshop-overlay/apply.cjs build-src/App
           node .github/aco-studio-build/native-updater/apply.cjs build-src/App
-          node .github/aco-studio-build/release-v4139.cjs build-src/App
+          ACO_ADHOC_MODE=true node .github/aco-studio-build/release-v4139.cjs build-src/App
           python .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
           node navigation-overlay/apply.cjs build-src/App
           node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
