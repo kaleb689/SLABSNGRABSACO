@@ -62,6 +62,25 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
  async function syncCustomer(e,p){if(p?.scope!=='aco')throw Error('Linked website profiles can only enter that customer vault.');const a=await access(e,p);if(!getCustomerProfileSource)throw Error('Customer profile synchronization unavailable.');const source=await getCustomerProfileSource(a.id);if(source.customer?.id!==a.id)throw Error('Website customer identity mismatch.');a.check();if((source.linked||[]).some(x=>x.customerId!==a.id))throw Error('Linked source contains a different customer.');const active=(source.linked||[]).filter(x=>x.active),createdAt=new Date(now()).toISOString();
  return profiles.libraryTransaction('aco',a.id,ctx=>{let created=0,updated=0,needsReview=0;const keys=new Set();for(let i=0;i<active.length;i++){const item=active[i],r=C.retailer(item.retailer),key=r+'|'+item.assignmentId;keys.add(key);const previous=ctx.rows.find(x=>x.remoteKey===key)||ctx.rows.find(x=>x.retailer===r&&x.email===C.email(item.data.email)&&!x.remoteKey&&!x.manualOverride),data=C.jig(C.normalized(item.data,r),r,i,ctx.settings[r]?.rules||C.defaultRules());if(C.format(r)==='valor'){const hex=crypto.createHash('sha256').update(a.id+'|'+key).digest('hex');data.id=previous?.data?.id||hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20,32);}const hash=require('./jig-field-core').hash(data);if(previous){previous.remoteKey=key;previous.source='website-linked-profile';previous.remoteManagedId=item.managedAccountId||previous.remoteManagedId||null;previous.remoteType=item.assignmentType||previous.remoteType||null;previous.remoteUpdatedAt=item.remoteUpdatedAt||previous.remoteUpdatedAt||'';if(previous.sourceLinked===false)previous.revision++;previous.sourceLinked=true;if(previous.sourceHash!==hash){if(previous.manualOverride){previous.needsReview=true;previous.pendingSourceHash=hash;needsReview++;}else{previous.data=data;previous.email=C.email(data.email);previous.revision++;previous.sourceHash=hash;updated++;}}continue;}if(ctx.rows.some(x=>x.retailer===r&&x.email===C.email(data.email))){needsReview++;continue;}ctx.rows.push({id:uuid(),retailer:r,email:C.email(data.email),label:source.customer.name+' '+(i+1),group:source.customer.name,source:'website-linked-profile',status:'active',createdAt,revision:0,data,format:C.format(r),remoteKey:key,remoteManagedId:item.managedAccountId||null,remoteType:item.assignmentType||null,remoteUpdatedAt:item.remoteUpdatedAt||'',sourceHash:hash,sourceLinked:true,jiggedAt:createdAt,assetRefs:{}});created++;ctx.audit('linked-profile-created',C.email(data.email),{retailer:r});}
  for(const row of ctx.rows)if(row.source==='website-linked-profile'&&row.sourceLinked!==false&&!keys.has(row.remoteKey)){row.sourceLinked=false;row.revision++;}return {created,updated,needsReview};},a.check);}
+ async function publishLinkedJig(e,p){
+  const a=await access(e,p);
+  if(a.scope!=='aco'||p.confirmed!==true)throw Error('Confirm the website-linked customer profile before publishing a jig.');
+  const address=p.address||{};
+  if(!address.address1||!address.city||!address.state||!address.zip||
+      ['address1','address2','city','state','zip'].some(k=>typeof (address[k]??'')!=='string'||String(address[k]??'').length>300))
+   throw Error('Choose a complete approved address-jig preview before publishing.');
+  const result=await profiles.preview(a.scope,a.id,p.profileId);
+  a.check();
+  const row=result.profile;
+  if(row.revision!==p.expectedRevision)throw Error('The linked profile changed after your preview. Reopen and preview it again.');
+  if(row.source!=='website-linked-profile'||row.sourceLinked!==true)
+   throw Error('This profile is local-only. Use the local jig button or link it to the website first.');
+  const fields=D.toValues(row.data);
+  for(const k of ['address1','address2','city','state','zip'])fields['shipping.'+k]=String(address[k]??'').trim();
+  const saved=await edit(e,{scope:'aco',customerId:a.id,profileId:row.id,revision:row.revision,fields,group:row.group});
+  if(saved?.remoteSaved!==true)throw Error('Website did not confirm this jig. Do not treat it as a synchronized change.');
+  return {saved:true,remoteSaved:true,profileId:row.id,retailer:row.retailer};
+ }
  async function websiteSnapshot(e,p){
   const a=await access(e,p);
   if(a.scope!=='aco'||!getCustomerSavedData)throw Error('Website saved data is only available to the authorized customer vault.');
@@ -87,7 +106,7 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
  }
  async function rules(e,p){const a=await access(e,p);C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id);a.check();return {selected:settings[p.retailer]?.rules||C.defaultRules(),options:Core.RULES.filter(x=>!/^prefix_three/.test(x.id)).map(x=>({id:x.id,label:x.label}))};}
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!Core.RULES.some(x=>x.id===id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules};return {saved:true};},a.check);}
- return {list,detail,importPreview,importCommit,repair,edit,exportFile,syncCustomer,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,rules,saveRules,cancel};
+ return {list,detail,importPreview,importCommit,repair,edit,exportFile,syncCustomer,publishLinkedJig,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,rules,saveRules,cancel};
 }
-function registerLibrary(options){const service=createLibrary(options);for(const method of ['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});return service;}
+function registerLibrary(options){const service=createLibrary(options);for(const method of ['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','publishLinkedJig','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});return service;}
 module.exports={createLibrary,registerLibrary};
