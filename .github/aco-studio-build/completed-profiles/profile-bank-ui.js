@@ -5,7 +5,7 @@
  if(!api||!$('jigPage'))return;
  const store={scope:'personal',customerId:null,profiles:[],websiteLinked:[],counts:{},scanned:null,scanImports:[],dirty:false,ready:false,activeRetailer:'all',stage:'in-progress',poolCounts:null};
  const panel=d.createElement('section');panel.id='profileBanksPanel';panel.className='panel profileBanksPanel';
- panel.innerHTML=`<div class="profileBanksHead"><div><div class="eyebrow">SEPARATE OS-ENCRYPTED PROFILE BANKS</div><h2>Retailer Profile Vault & Duplicate Scanner</h2><p>Finished profiles stay in Personal or in the exact selected customer's bank. No automatic cross-bank transfers.</p></div><span class="profileScanBadge" id="profileScanBadge">Scan ready</span></div>
+ panel.innerHTML=`<div class="profileBanksHead"><div><div class="eyebrow">SEPARATE OS-ENCRYPTED PROFILE BANKS</div><h2>Retailer Profile Vault & Duplicate Scanner</h2><p>Finished profiles stay in Personal or in the exact selected customer's bank. No automatic cross-bank transfers.</p></div><button type="button" class="profileScanBadge" id="profileScanBadge" title="Review detected same-retailer duplicate accounts">Scan ready</button></div>
  <div class="profileBankActions"><label>Vault<select id="profileBankScope"><option value="personal">🔒 Personal · owner only</option><option value="aco">ACO customer profiles</option></select></label><label id="profileCustomerPicker" hidden>Membership customer<select id="profileCustomer"><option value="">Select a customer</option></select></label><label>Imported file retailer<select id="profileImportRetailer"><option value="target">Target</option><option value="walmart">Walmart</option><option value="pokemoncenter">Pokémon Center</option><option value="costco">Costco</option><option value="sams">Sam’s Club</option></select></label><button type="button" id="profileImportBank" class="btn primary slim">Import selected profile cards</button><button type="button" id="profileScanNow" class="btn secondary slim">Scan duplicate emails</button><button type="button" id="personalBankLock" class="btn plain slim">🔒 Lock Personal</button></div>
  <div class="profileBankSummary" id="profileBankSummary" role="status">Choose a vault and import your completed profile file.</div>
  <div class="profileBankRetailerTabs" id="profileBankRetailers"><button data-filter="all" aria-pressed="true">All</button><button data-filter="target">Target</button><button data-filter="walmart">Walmart</button><button data-filter="pokemoncenter">PKC</button><button data-filter="costco">Costco</button><button data-filter="sams">Sam’s</button></div>
@@ -181,7 +181,7 @@
  async function scan(imports=normalizeImports(),show=true){try{
   $('profileScanBadge').textContent='Scanning accounts…';const result=await api.scan(imports);
   if(show)scanOutput(result,imports);
-  else{$('profileScanBadge').textContent=result.duplicates.length?'⚠ '+result.duplicates.length+' duplicates':'✓ Scan clear';if(result.duplicates.length)showReview(result);}
+  else{store.scanned=result;store.scanImports=imports;$('profileScanBadge').textContent=result.duplicates.length?'⚠ '+result.duplicates.length+' to review · click':'✓ Scan clear';$('profileScanBadge').classList.toggle('profileScanAlert',Boolean(result.duplicates.length));/* Never reopen a dismissed review from an automatic scan. */}
   return result;
  }catch(e){$('profileScanBadge').textContent='Scan unavailable';msg(e.message,true);return null;}}
  async function importCurrent(){const target=context();if(!target||!target.count)throw Error('Import profiles into Profile Studio first.');
@@ -199,14 +199,15 @@
  $('profileBankSearch').addEventListener('input',render);
  $('profileBankRetailers').addEventListener('click',event=>{const btn=event.target.closest('[data-filter]');if(btn){store.activeRetailer=btn.dataset.filter;render();}});
  $('profileImportBank').addEventListener('click',async()=>{try{await importCurrent();}catch(error){msg(error.message,true);}});
- $('profileScanNow').addEventListener('click',()=>void scan());
- $('profileImportRetailer').addEventListener('change',()=>void scan());
+ $('profileScanNow').addEventListener('click',()=>void scan(normalizeImports(),true));
+ $('profileScanBadge').addEventListener('click',()=>{if(store.scanned?.duplicates?.length)showReview(store.scanned);else void scan(normalizeImports(),true);});
+ $('profileImportRetailer').addEventListener('change',()=>void scan(normalizeImports(),false));
  $('personalBankLock').addEventListener('click',async()=>{await window.JigPersonalGuard?.lock();msg('Personal bank locked. Enter PIN or Touch ID to open it again.');});
  $('profileReviewClose').addEventListener('click',()=>modal.hidden=true);$('profileReviewDone').addEventListener('click',()=>modal.hidden=true);
  modal.addEventListener('click',event=>{if(event.target===modal)modal.hidden=true;});
  // Auto scans happen after every profile file import and roster change, not
  // while a user is typing in the bank editor.
- let debounce;function backgroundScan(){clearTimeout(debounce);if(context()?.savedToProfileBank)return;debounce=setTimeout(()=>void scan(normalizeImports(),true),550);}
+ let debounce;function backgroundScan(){clearTimeout(debounce);if(context()?.savedToProfileBank)return;debounce=setTimeout(()=>void scan(normalizeImports(),false),550);}
  d.addEventListener('jigstudio:bank-context-updated',()=>{const target=context();if(!target){void choose(window.JigStudioLocalImport.workspaceScope(),null);return;}
   void choose(target.scope,target.customerId).then(backgroundScan);});
  d.addEventListener('jigstudio:customers-updated',()=>{renderCustomers();if(window.JigWebsiteCustomers?.connected?.())backgroundScan();});
