@@ -1,3 +1,4 @@
+import { managedWriteConflict, nextManagedRevision, serializeManagedWrites, mergeManagedCard } from "./managed-customer-write-policy.js";
 import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
@@ -30179,68 +30180,9 @@ function mergeManagedCustomerProfile(
 }
 
 
-function mergeManagedCustomerSecrets(
-  existingSecrets,
-  submittedCard
-) {
-  const existing =
-    existingSecrets &&
-    typeof existingSecrets ===
-      "object"
-      ? existingSecrets
-      : {};
-
-  const submitted =
-    submittedCard &&
-    typeof submittedCard ===
-      "object"
-      ? submittedCard
-      : {};
-
-  return {
-    ...existing,
-
-    cardLabel:
-      clean(
-        submitted.cardLabel,
-        100
-      ),
-
-    cardholder:
-      clean(
-        submitted.cardholder,
-        150
-      ),
-
-    acoCardNumber:
-      clean(
-        submitted.acoCardNumber,
-        30
-      ).replace(
-        /[^\d]/g,
-        ""
-      ),
-
-    expMonth:
-      clean(
-        submitted.expMonth,
-        2
-      ),
-
-    expYear:
-      clean(
-        submitted.expYear,
-        4
-      ),
-
-    securityCode:
-      clean(
-        submitted.securityCode,
-        300
-      )
-  };
+function mergeManagedCustomerSecrets(existingSecrets, submittedCard) {
+  return mergeManagedCard(existingSecrets, submittedCard);
 }
-
 
 
 app.post(
@@ -31775,9 +31717,11 @@ app.get(
 );
 
 
+const serializeManagedCustomerDetails = serializeManagedWrites();
 app.put(
   "/api/admin/managed-memberships/:type/:id/customer-details",
   requireAdmin,
+  serializeManagedCustomerDetails,
   async (req, res) => {
     try {
       const type =
@@ -31829,6 +31773,9 @@ app.put(
           });
       }
 
+      const refused = managedWriteConflict(assignment, req.body);
+      if (refused) return res.status(refused.status).json({error:refused.error});
+
       let existingSecrets = {};
 
       try {
@@ -31856,8 +31803,6 @@ app.put(
           req.body?.customerCard
         );
 
-      assignment.customerProfile =
-        customerProfile;
 
       // Billing is a separate linked-profile address, not the customer's
       // shared saved shipping address or card vault.
@@ -31871,6 +31816,8 @@ app.put(
         }
         assignment.customerBillingProfile = nextBilling;
       }
+
+      assignment.customerProfile = customerProfile;
 
       assignment.customerSecrets =
         encryptJson(
@@ -31903,9 +31850,7 @@ app.put(
           );
       }
 
-      assignment.customerUpdatedAt =
-        new Date()
-          .toISOString();
+      assignment.customerUpdatedAt = nextManagedRevision(assignment.updatedAt);
 
       assignment.updatedAt =
         assignment.customerUpdatedAt;
@@ -31920,6 +31865,8 @@ app.put(
         );
       }
 
+      broadcastLiveDataChange("managed-customer-details-updated");
+
       if (
         assignment.customerAccountId
       ) {
@@ -31930,6 +31877,7 @@ app.put(
 
       return res.json({
         ok: true,
+        updatedAt: assignment.updatedAt,
 
         customerProfile,
 

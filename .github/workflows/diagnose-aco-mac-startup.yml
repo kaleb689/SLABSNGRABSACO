@@ -1,0 +1,62 @@
+name: Reproduce installed ACO Studio Mac startup failure
+
+on:
+  push:
+    branches:
+      - build/aco-studio-macos-v4133-20261015
+    paths:
+      - '.github/workflows/diagnose-aco-mac-startup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce-launch:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reproduce ordinary launch of archived v4.13.5 ad-hoc ARM64 installer on macOS 26
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/aco-reproduce"
+          gh release download aco-studio-v4.13.5-macos-adhoc --repo "$GITHUB_REPOSITORY" --pattern '*arm64.dmg' --dir "$RUNNER_TEMP/aco-reproduce"
+          DMG="$(find "$RUNNER_TEMP/aco-reproduce" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -f "$DMG"
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/aco-reproduce/mounted" "$DMG"
+          mkdir -p "$RUNNER_TEMP/aco-reproduce/installed"
+          SOURCE_APP="$(find "$RUNNER_TEMP/aco-reproduce/mounted" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          APP="$RUNNER_TEMP/aco-reproduce/installed/$(basename "$SOURCE_APP")"
+          ditto "$SOURCE_APP" "$APP"
+          hdiutil detach "$RUNNER_TEMP/aco-reproduce/mounted"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv --verbose=4 "$APP" 2>&1 | grep -E 'Signature|Runtime|Identifier|Authority|TeamIdentifier|CodeDirectory|flags=' || true
+          codesign -d --entitlements :- "$APP" 2>&1 | head -75 || true
+          EXE="$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm -111 -print -quit)"
+          echo "macOS: $(sw_vers -productVersion)"
+          echo "CPU: $(uname -m)"
+          set +e
+          "$EXE" > "$RUNNER_TEMP/aco-reproduce/application.log" 2>&1 &
+          PID=$!
+          sleep 18
+          if kill -0 "$PID" 2>/dev/null; then
+            echo 'ACO_NORMAL_LAUNCH_ALIVE_AFTER_18_SECONDS'
+            kill -TERM "$PID" 2>/dev/null || true
+            wait "$PID"
+            echo "Post-stop exit status: $?"
+          else
+            wait "$PID"
+            CODE=$?
+            echo "ACO_NORMAL_LAUNCH_TERMINATED_EARLY exit_status=$CODE"
+          fi
+          set -e
+          echo '--- Startup stdout/stderr ---'
+          tail -n 150 "$RUNNER_TEMP/aco-reproduce/application.log"
+          echo '--- Crash report filenames ---'
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -newermt '-10 minutes' -print 2>/dev/null | head -20 || true
+          echo '--- Crash report key lines ---'
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f \( -name '*.ips' -o -name '*.crash' \) -newermt '-10 minutes' -print0 2>/dev/null | xargs -0 -I{} sh -c "grep -E -m 12 'Exception Type|Termination Reason|SIGABRT|SIGKILL|SIGTRAP|CODESIGNING|DYLD|Namespace|Library Validation|Code Signature|exception|termination' '{}' || true" | head -100 || true

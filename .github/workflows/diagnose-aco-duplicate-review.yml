@@ -1,0 +1,145 @@
+name: Diagnose ACO Studio duplicate-review source
+on:
+  push:
+    branches: [fix/aco-studio-duplicate-email-review-20261018]
+    paths:
+      - '.github/workflows/diagnose-aco-duplicate-review.yml'
+      - '.github/aco-studio-build/native-updater/**'
+      - '.github/aco-studio-build/profile-library/**'
+  workflow_dispatch:
+env:
+  ACO_VERSION: '4.13.14'
+permissions:
+  contents: read
+jobs:
+  locate-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Extract exact pinned ACO Studio source and overlays
+        run: |
+          set -euo pipefail
+          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > /tmp/aco-studio-original.zip
+          echo "8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570  /tmp/aco-studio-original.zip" | sha256sum -c -
+          mkdir -p build-src && unzip -q /tmp/aco-studio-original.zip -d build-src
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+          python3 .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+          node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+          node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+          node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+      - name: Inspect startup review, scan and UI anchors (code only)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('build-src/App')
+          needles=['Review reused email accounts','Duplicate profile check','All linked website account pages checked','Delete local duplicate','getLinkedAccountEmails','duplicateReview','reusedEmail','duplicates-modal']
+          for p in sorted(root.glob('*.js')):
+              try: data=p.read_text()
+              except UnicodeError: continue
+              for q in needles:
+                  start=0
+                  for _ in range(4):
+                      n=data.lower().find(q.lower(),start)
+                      if n<0: break
+                      line=data.count('\n',0,n)+1
+                      print(f'=== {p.name}:{line} FOUND {q!r} ===')
+                      print(data[max(0,n-1700):min(len(data),n+3000)])
+                      start=n+len(q)
+          PY
+      - name: Examine exact duplicate classifier and scanner call sites
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for filename,terms in {
+            'profile-vault.js':['async function scanRows','function scanRows','scanRows(','duplicate','websiteLinked'],
+            'profile-bank-ui.js':['async function scan(','async function backgroundScan(','function backgroundScan(','api.scan(','profile:scan'],
+            'main.js':['profile:banks:scan','profileBanks','getLinkedAccountEmails']
+          }.items():
+              p=Path('build-src/App')/filename
+              if not p.exists(): continue
+              lines=p.read_text().splitlines()
+              picked=set()
+              for i,line in enumerate(lines):
+                  if any(t.lower() in line.lower() for t in terms):
+                      picked.update(range(max(0,i-16),min(len(lines),i+45)))
+              print('===== FILE',filename,'total lines',len(lines),'=====')
+              for i in sorted(picked):
+                  print(f'{i+1}: {lines[i][:600]}')
+          PY
+
+      - name: Inspect sign-in and startup integration points
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('build-src/App')
+          for filename in ['main.js','site-bridge.js','site-ui.js','mac-updates-ui.js','index.html']:
+              p=root/filename
+              if not p.exists():continue
+              lines=p.read_text().splitlines()
+              print('=== TARGET FILE',filename,'LINES',len(lines),'===')
+              if filename=='main.js':
+                  selected=list(range(0,min(105,len(lines))))+list(range(345,min(492,len(lines))))
+              elif filename=='site-bridge.js':
+                  selected=[i for i in range(len(lines)) if any(t in lines[i].lower() for t in ['signIn('.lower(),'async function open','const open','isready','createwindow','login','const signin'])]
+                  selected=sorted(set(j for i in selected for j in range(max(0,i-4),min(len(lines),i+19))))
+              elif filename=='index.html':
+                  selected=[i for i,line in enumerate(lines) if any(t in line.lower() for t in ['connect','login','signin','sign in','site-ui','update','</head>','</body>'])]
+              elif filename=='site-ui.js':
+                  selected=[i for i,line in enumerate(lines) if any(t in line.lower() for t in ['connect','signin','sign in','login','isready','site:','sitebridge'])]
+                  selected=sorted(set(j for i in selected for j in range(max(0,i-3),min(len(lines),i+8))))
+              else:
+                  selected=[i for i in range(len(lines))]
+              for i in selected:
+                  print(f'{i+1}: {lines[i][:1000]}')
+          PY
+
+      - name: Verify overlays and retailer duplicate tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check .github/aco-studio-build/native-updater/apply.cjs
+          node --check .github/aco-studio-build/profile-library/apply.cjs
+          node --check build-src/App/main.js
+          node --check build-src/App/mac-full-updates.js
+          node --check build-src/App/profile-vault.js
+          cd build-src/App
+          npm install --no-audit --no-fund
+          node --test tests/profile-duplicate-scan.test.js
+          node --test tests/personal-profile-import.test.js
+          node --test tests/profile-library.test.js
+          echo 'Verified launch-updater + secure-login source syntax and duplicate classifier regressions.'
+      - name: Inspect source regressions
+        run: sed -n '44,70p' build-src/App/tests/personal-profiles-security.test.js
+      - name: Inspect Windows packaging and desktop full update support
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('build-src/App')
+          p=json.loads((root/'package.json').read_text())
+          print('WINDOWS_PACKAGE',json.dumps({k:p.get(k) for k in ('name','version','scripts','dependencies','devDependencies')},indent=2)[:10000])
+          print('WINDOWS_BUILDER',json.dumps(p.get('build'),indent=2)[:20000])
+          for name in ['desktop-updates.js','updates-ui.js','desktop-native.js','main.js','preload.js']:
+           f=root/name
+           if not f.exists():continue
+           lines=f.read_text().splitlines()
+           print('====',name,len(lines),'====')
+           if name in ('desktop-updates.js','updates-ui.js'):
+            for i,line in enumerate(lines):print(f'{i+1}: '+line[:700])
+           else:
+            for i,line in enumerate(lines):
+             if any(term in line.lower() for term in ('update','site:signin','app.whenready','app.quit','showapp','download','windows','win32')):
+              print(f'{i+1}: '+line[:700])
+          PY

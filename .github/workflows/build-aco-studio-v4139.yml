@@ -1,0 +1,305 @@
+name: ACO Studio - Profile libraries and duplicate repair
+on:
+  push:
+    branches: [build/aco-studio-macos-v4133-20261015, fix/aco-studio-duplicate-email-review-20261018]
+    paths:
+      - '.github/aco-studio-build/profile-workshop/**'
+      - '.github/aco-studio-build/personal-import/**'
+      - '.github/aco-studio-build/email-vaults/**'
+      - '.github/aco-studio-build/completed-profiles/**'
+      - '.github/aco-studio-build/profile-library/**'
+      - '.github/aco-studio-build/native-updater/**'
+      - '.github/aco-studio-build/personal-navigation/**'
+      - '.github/aco-studio-build/release-v4139.cjs'
+      - '.github/workflows/build-aco-studio-v4139.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: aco-studio-workshop-release
+  cancel-in-progress: true
+env:
+  ACO_VERSION: '4.13.15'
+jobs:
+  mac:
+    name: ${{ matrix.arch }} navigation, installer, update and rollback
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            # Native Apple Silicon fallback while the macos-26 queue is stalled.
+            os: macos-15
+          - arch: x64
+            os: macos-26-intel
+    env:
+      CSC_LINK: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Recover verified original and preserve existing Personal importer
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="$RUNNER_TEMP/aco-original-source.zip"
+          test "$(find .github/aco-studio-build -name 'aco-studio-v4.13.5.part-*.b64' -type f | wc -l | tr -d ' ')" = 11
+          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > "$ZIP"
+          test "$(shasum -a 256 "$ZIP" | awk '{print $1}')" = '8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570'
+          unzip -t "$ZIP"
+          mkdir -p build-src
+          unzip -q "$ZIP" -d build-src
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+      - name: Apply tested independent fields, vault forms and blank profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+      - name: Resolve signing mode without exposing credentials
+        id: signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "$CSC_LINK" && -n "$CSC_KEY_PASSWORD" && -n "$APPLE_ID" && -n "$APPLE_APP_SPECIFIC_PASSWORD" && -n "$APPLE_TEAM_ID" ]]; then
+            echo 'mode=developer-id' >> "$GITHUB_OUTPUT"
+            echo 'adhoc=false' >> "$GITHUB_OUTPUT"
+          elif [[ -z "$CSC_LINK" && -z "$CSC_KEY_PASSWORD" && -z "$APPLE_ID" && -z "$APPLE_APP_SPECIFIC_PASSWORD" && -z "$APPLE_TEAM_ID" ]]; then
+            echo 'mode=adhoc' >> "$GITHUB_OUTPUT"
+            echo 'adhoc=true' >> "$GITHUB_OUTPUT"
+            echo '::warning::This is an ad-hoc signed preview, not Apple-notarized.'
+          else
+            echo '::error::Apple signing secrets are incomplete.'
+            exit 1
+          fi
+      - name: Prepare shorter Finder label and preserve original data identity
+        env:
+          ACO_ADHOC_MODE: ${{ steps.signing.outputs.adhoc }}
+        shell: bash
+        run: node .github/aco-studio-build/release-v4139.cjs build-src/App
+      - name: Apply separate Personal sidebar, scoped navigation and preview repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+      - name: Add retailer email banks and same-vault profile generation
+        run: node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+      - name: Add completed profile sections and authorized full card views
+        run: node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+      - name: Add scoped profile library and linked customer preparation
+        run: node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+      - name: Install build dependencies
+        working-directory: build-src/App
+        run: npm install --no-audit --no-fund
+      - name: Syntax and all profile, isolation, navigation and updater regression tests
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in *.js; do node --check "$file"; done
+          bash -n mac-full-update.sh
+          npm run check | tee regression-results.txt
+      - name: Build real Mac DMG and complete signed app update ZIP
+        working-directory: build-src/App
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.signing.outputs.adhoc == 'true' && 'false' || 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ '${{ steps.signing.outputs.adhoc }}' == 'true' ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
+          node -e "const {build,Platform}=require('electron-builder');build({targets:Platform.MAC.createTarget(['dmg','zip']),publish:'never'}).catch(e=>{console.error(e.stack);process.exit(1)})"
+      - name: Verify DMG copy, architecture, full code signature and shipped controls
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find dist -maxdepth 2 -type d -name 'ACO Studio.app' -print -quit)"
+          DMG="dist/ACO-Studio-${ACO_VERSION}-${{ matrix.arch }}.dmg"
+          ZIP="dist/ACO-Studio-${ACO_VERSION}-${{ matrix.arch }}.zip"
+          test -d "$APP" && test -f "$DMG" && test -f "$ZIP"
+          test "$(stat -f '%z' "$DMG")" -gt 50000000
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$ACO_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = 'com.slabsngrabsaco.jigstudio.owner'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$APP/Contents/Info.plist")" = 'ACO Studio'
+          for file in personal-profile-import.js profile-workshop-service.js profile-workshop-ui.js jig-field-core.js profile-draft-core.js mac-full-updates.js mac-full-update.sh mac-update-archive.js mac-updates-ui.js workspace-core.js personal-navigation.js personal-navigation.css email-vault-ui.js profile-completion-core.js; do
+            test -f "$APP/Contents/Resources/app/$file"
+          done
+          grep -Fq 'profileWorkshop:Object.freeze' "$APP/Contents/Resources/app/preload.js"
+          grep -Fq 'personalJigsTab' "$APP/Contents/Resources/app/index.html"
+          if [[ '${{ matrix.arch }}' == 'arm64' ]]; then
+            lipo -archs "$APP/Contents/MacOS/ACO Studio" | grep -qw arm64
+          else
+            lipo -archs "$APP/Contents/MacOS/ACO Studio" | grep -qw x86_64
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          hdiutil verify "$DMG"
+          mkdir -p "$RUNNER_TEMP/aco-mount" "$RUNNER_TEMP/aco-install-copy"
+          hdiutil attach -readonly -nobrowse -mountpoint "$RUNNER_TEMP/aco-mount" "$DMG"
+          ditto "$RUNNER_TEMP/aco-mount/ACO Studio.app" "$RUNNER_TEMP/aco-install-copy/ACO Studio.app"
+          hdiutil detach "$RUNNER_TEMP/aco-mount"
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/aco-install-copy/ACO Studio.app"
+          if [[ '${{ steps.signing.outputs.mode }}' == 'developer-id' ]]; then
+            spctl --assess --type execute "$APP"
+            xcrun stapler validate "$APP"
+          fi
+          shasum -a 256 "$DMG" "$ZIP"
+      - name: Verify installed app loads Personal tab, retailer buttons and preview handlers
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/aco-install-copy/ACO Studio.app"
+          export ACO_STUDIO_SMOKE_FILE="$RUNNER_TEMP/aco-renderer-ready.txt"
+          "$APP/Contents/MacOS/ACO Studio" --aco-studio-ci-smoke > "$RUNNER_TEMP/aco-smoke.log" 2>&1 &
+          PID=$!
+          for i in $(seq 1 50); do
+            [[ -s "$ACO_STUDIO_SMOKE_FILE" ]] && break
+            kill -0 "$PID" 2>/dev/null || break
+            sleep 1
+          done
+          if [[ ! -s "$ACO_STUDIO_SMOKE_FILE" ]]; then cat "$RUNNER_TEMP/aco-smoke.log"; exit 1; fi
+          grep -q 'ACO Studio desktop renderer launched' "$ACO_STUDIO_SMOKE_FILE"
+          wait "$PID"
+      - name: Full-app update, real restart, failed-launch rollback and data preservation
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.signing.outputs.adhoc == 'true' && 'false' || 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ '${{ steps.signing.outputs.adhoc }}' == 'true' ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
+          node .github/aco-studio-build/native-updater/ci-self-update.cjs build-src/App
+      - name: Record signing and source verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '${{ steps.signing.outputs.mode }}' > "build-src/App/dist/signing-${{ matrix.arch }}.txt"
+          cp build-src/App/regression-results.txt "build-src/App/dist/regression-${{ matrix.arch }}.txt"
+          test -s "build-src/App/dist/update-test-${{ matrix.arch }}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ACO-Studio-${{ env.ACO_VERSION }}-${{ matrix.arch }}
+          path: |
+            build-src/App/dist/*.dmg
+            build-src/App/dist/*.zip
+            build-src/App/dist/signing-*.txt
+            build-src/App/dist/update-test-*.json
+            build-src/App/dist/regression-*.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save diagnostic logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ACO-Studio-failure-${{ matrix.arch }}
+          path: |
+            build-src/App/regression-results.txt
+            ~/Library/Application Support/SLABSNGRABSACO ACO Studio - Owner/aco-native-updates/*/install.log
+            ~/Library/Application Support/SLABSNGRABSACO ACO Studio - Owner/aco-native-update-status.json
+          if-no-files-found: ignore
+          retention-days: 3
+
+  publish:
+    name: Publish installers and advance the tested in-app update feed
+    needs: mac
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ACO-Studio-${{ env.ACO_VERSION }}-*
+          path: installers
+          merge-multiple: true
+      - name: Validate all results and generate native Mac manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,json,pathlib,hashlib
+          root=pathlib.Path('installers'); v=os.environ['ACO_VERSION']
+          modes=[(root/f'signing-{a}.txt').read_text().strip() for a in ('arm64','x64')]
+          assert modes[0]==modes[1] and modes[0] in ('adhoc','developer-id')
+          mode=modes[0];suffix='adhoc' if mode=='adhoc' else 'notarized'
+          manifest={'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Completed Profiles automatically groups saved jigged profiles once names, phones, shipping/billing and card details are complete. Full saved card details are visible in authorized vault/profile views. Unused email/card indicators and separate private/customer retailer vaults are retained.','platforms':{}}
+          sums=[]
+          for arch in ('arm64','x64'):
+              results=json.loads((root/f'update-test-{arch}.json').read_text())
+              assert results['version']==v and all(results[k] is True for k in ('update','restart','rollback','dataPreserved'))
+              for ext in ('dmg','zip'):
+                  p=root/f'ACO-Studio-{v}-{arch}.{ext}';assert p.stat().st_size>50000000
+                  digest=hashlib.file_digest(p.open('rb'),'sha256').hexdigest();sums.append(f'{digest}  {p.name}')
+                  if ext=='zip':manifest['platforms']['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/aco-studio-v{v}-macos-{suffix}/{p.name}','size':p.stat().st_size,'sha256':digest,'bundleName':'ACO Studio.app','signing':mode}
+          (root/'mac-update.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n')
+          (root/'release-mode.txt').write_text(suffix)
+          PY
+      - name: Publish versioned installers before updating the stable feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODE="$(cat installers/release-mode.txt)"
+          TAG="aco-studio-v${ACO_VERSION}-macos-${MODE}"
+          cat > installers/RELEASE-NOTES.md <<'NOTES'
+          Startup automatically installs newer verified full Mac app releases before showing the login or admin workspace. The secure website Admin session gates access; the old Connect button is not required. A sign-out re-locks the private vault. Duplicate emails only conflict inside the same retailer; website account mirrors are counted once. The original owner/customer vault data locations are retained.
+          Customer Jigs and Personal Jigs each have their own Profiles tab. Personal tools sit below all customer tools, with dividers before Personal and Settings. Retailer/group card views include Completed and In Progress sections, full payment details, and separate Profile/Payment editing tabs. Import preview flags duplicate emails, names and cards; repairs draw unused emails and cards from the same owner’s vault. Completed profiles export to Shikari CSV for Target or Valor JSON for Walmart and Pokémon Center. Linked customer accounts prepare profiles using only that customer’s submitted details and saved retailer rules. Sync is idempotent, preserves local edits for review, and keeps incomplete profiles out of export. Live customer sync requires an authenticated Studio session.
+          Completed Profiles now groups profiles after a saved jig and complete email, names, shipping/billing addresses, phone numbers, card number/cardholder and expiration. In Progress shows missing details and profiles return there if required details are removed. Pool counters show unused emails/cards. Full card numbers and expiration are shown in authorized vault/profile detail views; private-lock cleanup clears those views. Customer and private vault boundaries are preserved.
+          New Email Vault / Create Profiles button: import TXT, CSV or JSON emails into an explicit private or customer vault and retailer. Duplicate checks are case-insensitive within the retailer, including emails already assigned in another local vault; the same email is allowed for different retailers. Generation selects unused emails, cards and addresses only from that vault, saves and consumes the email atomically, balances selected addresses/cards, and optionally randomizes matching shipping/billing names. Concurrent creation cannot reuse an email. Existing profile and payment vault files and app identity are preserved.
+          Saved Personal-vault profiles load into Personal Jigs, grouped by retailer. Import preview and final write checks allow matching emails across different retailer pools while blocking duplicates within the selected retailer pool or the same import batch.
+          Personal Jigs now has its own left-sidebar tab, next to Customer Jigs. Switching workspaces filters existing imports without reassigning them; empty customer views do not fall back to Personal files. PIN/Touch ID gates and separate saved vault namespaces remain in place. Clearing imported files affects the active workspace, not the other one.
+          Fixed the missing-preview export flow: Preview selected changes now prepares the Review page immediately, and Review profiles can prepare the preview from the selected fields. Formatting edits retain checked addresses/cards and only invalidate the old preview. Missing previews are labelled Preview not prepared yet rather than falsely implying a rejected account or safety violation.
+          PKC Jig, Target Jig and Walmart Jig buttons open the existing formatting checkboxes with examples and editing guidance. Guidance is not a promise of retailer acceptance. Saved address/card lists now have search, selected counts, select-all, clear and six choices per page. Previous bank-management and test-card tools remain available in collapsed sections rather than duplicate expanded lists.
+          Release 4.13.15 includes full-bundle automatic updates on startup; the older existing application may need this one-time installer before it can automatically update. Without Apple Developer ID notarization the ad-hoc preview may require manual macOS approval. Existing blank-profile creation, imports, vaults, app identity and native updater retained. Apple Silicon was built and tested natively on macOS 15; Intel on macOS 26. Both builds passed automated regressions, signature checks, installed control-loading checks, update/restart and rollback tests with synthetic data. Navigation and preview handoff were additionally exercised in a browser harness using the real profile-preview backend and mocked desktop bindings. Not tested on the owner's M5 Pro or real vaults. Ad-hoc releases are NOT Apple-notarized and may still require local approval.
+          NOTES
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$GITHUB_SHA"
+            gh release upload "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/update-test-*.json installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "ACO Studio ${ACO_VERSION} - Personal and customer profile libraries (${MODE})" --notes-file installers/RELEASE-NOTES.md --prerelease
+          fi
+          if gh release view aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release download aco-studio-macos-updates --repo "$GITHUB_REPOSITORY" --pattern mac-update.json --dir previous-feed
+            python3 - <<'PY'
+          import json
+          current=json.load(open('previous-feed/mac-update.json'))['version']
+          next_version=json.load(open('installers/mac-update.json'))['version']
+          assert tuple(map(int,current.split('.'))) <= tuple(map(int,next_version.split('.'))), 'Refusing to move the update feed backwards'
+          PY
+            gh release upload aco-studio-macos-updates installers/mac-update.json --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create aco-studio-macos-updates installers/mac-update.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio - tested Mac update feed' --notes 'Native Mac updates reference only architecture-specific installers that passed the release verification workflow.' --prerelease
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY"
+      - name: Verify live public update feed and downloads without authentication
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os,json,hashlib,urllib.request
+          expected=os.environ['ACO_VERSION']
+          url='https://github.com/kaleb689/SLABSNGRABSACO/releases/download/aco-studio-macos-updates/mac-update.json'
+          feed=json.load(urllib.request.urlopen(url,timeout=45))
+          assert feed['version']==expected
+          for arch in ('arm64','x64'):
+              entry=feed['platforms']['darwin-'+arch]
+              h=hashlib.sha256();size=0
+              with urllib.request.urlopen(entry['url'],timeout=90) as response:
+                  while True:
+                      chunk=response.read(1024*1024)
+                      if not chunk:break
+                      size+=len(chunk);h.update(chunk)
+              assert size==entry['size'] and h.hexdigest()==entry['sha256']
+              print('PASS public update package',arch,expected)
+          PY

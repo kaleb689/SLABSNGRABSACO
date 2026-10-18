@@ -1,0 +1,10 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path');
+const root=path.resolve(process.argv[2]);
+for(const f of ['profile-vault.js','profile-workshop-service.js','email-vault-ui.js'])fs.copyFileSync(path.join(__dirname,f),path.join(root,f));
+fs.copyFileSync(path.join(__dirname,'email-vaults.test.js'),path.join(root,'tests/email-vaults.test.js'));
+const edit=(f,anchor,value)=>{const p=path.join(root,f),s=fs.readFileSync(p,'utf8');if(s.split(anchor).length!==2)throw Error(f+': integration anchor changed');fs.writeFileSync(p,s.replace(anchor,value));};
+edit('preload.js','profileWorkshop:Object.freeze({',"profileWorkshop:Object.freeze({emails:payload=>ipcRenderer.invoke('profile:workshop:emails',payload),importEmails:payload=>ipcRenderer.invoke('profile:workshop:importEmails',payload),generate:payload=>ipcRenderer.invoke('profile:workshop:generate',payload),");
+edit('index.html','</body>','<script src="email-vault-ui.js"></script>\n</body>');
+const p=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(p,'utf8'));pkg.build.files.push('email-vault-ui.js');fs.writeFileSync(p,JSON.stringify(pkg,null,2)+'\n');
+console.log('Added retailer email banks and atomic same-vault profile creation; preserved existing encrypted stores.');

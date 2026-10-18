@@ -1,0 +1,77 @@
+name: Verify ACO Studio bidirectional customer synchronization
+on:
+  push:
+    branches: [fix/aco-studio-bidirectional-integrity-20261018]
+    paths:
+      - '.github/aco-studio-build/profile-library/**'
+      - '.github/aco-studio-build/completed-profiles/**'
+      - '.github/workflows/check-aco-studio-bidirectional.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  ACO_VERSION: '4.13.16'
+jobs:
+  test:
+    name: Rebuild desktop source and check both synchronization directions
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Recover original desktop application with known source hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > original.zip
+          echo '8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570  original.zip' | sha256sum -c -
+          mkdir -p build-src
+          unzip -q original.zip -d build-src
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+      - name: Apply original release overlays, unchanged app identity and vaults
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+          ACO_ADHOC_MODE=true node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+          node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+          node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+      - name: Syntax and website bridge tests
+        shell: bash
+        working-directory: build-src/App
+        run: |
+          set -euo pipefail
+          node --check main.js
+          node --check site-bridge.js
+          node --check profile-library-service.js
+          node --check profile-library-ui.js
+          node --check profile-bank-ui.js
+          node --check profile-vault.js
+          npm install --no-audit --no-fund
+          node --test tests/profile-bidirectional-sync.test.js
+          node --test tests/profile-library.test.js
+          node --test tests/profile-duplicate-scan.test.js
+          node --test tests/personal-profiles-security.test.js
+      - name: Validate release identity and linked customer RPC binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const assert=require('node:assert/strict'),fs=require('node:fs'),pkg=require('./build-src/App/package.json');
+          assert.equal(pkg.version,'4.13.16');
+          assert.equal(pkg.build.appId,'com.slabsngrabsaco.jigstudio.owner');
+          const bridge=fs.readFileSync('build-src/App/site-bridge.js','utf8');
+          const preload=fs.readFileSync('build-src/App/preload.js','utf8');
+          assert.match(bridge,/saveCustomerSavedData/);
+          assert.match(bridge,/savedCustomerData/);
+          assert.match(bridge,/saveCustomerProfile/);
+          for(const method of ['websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','syncCustomer'])assert.ok(preload.includes("'"+method+"'"));
+          console.log('Verified same app identity and all supported customer sync RPC endpoints');
+          NODE
