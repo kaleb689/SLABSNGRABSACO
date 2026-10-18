@@ -20,7 +20,7 @@ import { checkoutAliasKey, resolveApprovedCheckoutAlias } from "./discord-checko
 import { managedAccountEmailEvidence, checkoutAssignmentContains, recoverCheckoutAssignmentOwners } from "./discord-checkout-owner-evidence.js";
 import { resolveOwnerVerifiedBackfill } from "./checkout-owner-backfills.js";
 import { resolveOwnerVerifiedScreenshots, verifiedScreenshotMatchStatus } from "./checkout-owner-screenshot-evidence.js";
-import { applyOwnerVerifiedOrderEvidence, ownerOrderEvidenceAudit } from "./checkout-owner-order-evidence.js";
+import { applyOwnerVerifiedOrderEvidence, ownerOrderEvidenceAudit, ownerOrderShippingAudit } from "./checkout-owner-order-evidence.js";
 import { verifiedSameDayCheckoutOwner } from "./checkout-owner-verified-day.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
@@ -39044,6 +39044,7 @@ async function scanDiscordSuccessChannel({ quick = false } = {}) {
       if (!quick) console.log("PKC exact owner order audit:", JSON.stringify({
         ...ownerOrderEvidenceAudit(existing), corrected: verifiedOwnerEvidence.corrected
       }));
+      if (!quick) console.log("PKC exact order shipment audit:", JSON.stringify(ownerOrderShippingAudit(existing)));
       if (verifiedOwnerEvidence.changed) {
         updated += verifiedOwnerEvidence.corrected;
         for (const id of verifiedOwnerEvidence.changedCustomerIds) changedCustomerIds.add(id);
