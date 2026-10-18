@@ -1,7 +1,7 @@
 name: Verify ACO Studio 4.13.19 Windows two-way sync installer
 on:
   push:
-    branches: [complete/aco-lifecycle-v41319]
+    branches: [main]
     paths:
       - '.github/aco-studio-build/**'
       - '.github/workflows/release-aco-studio-v41319-windows.yml'
@@ -100,7 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f dist/win-unpacked/JigStudio.exe
-          for f in main.js profile-vault.js profile-library-ui.js win-full-updates.js mac-full-updates.js personal-access.js ACOStudioIcon.png JigStudio.ico; do
+          for f in main.js profile-vault.js profile-library-ui.js native-admin-ui.js native-touchid.js win-full-updates.js mac-full-updates.js personal-access.js ACOStudioIcon.png JigStudio.ico; do
             test -s "dist/win-unpacked/resources/app/$f"
           done
           test -f dist/win-unpacked/resources/app/node_modules/electron-updater/package.json
