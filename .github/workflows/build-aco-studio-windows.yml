@@ -84,7 +84,16 @@ jobs:
         run: |
           set -euo pipefail
           npx electron-builder --win nsis --x64 --publish never
-          test -f "dist/ACO-Studio-Setup-${ACO_VERSION}-x64.exe"
+          EXPECTED="dist/ACO-Studio-Setup-${ACO_VERSION}-x64.exe"
+          if [[ ! -f "$EXPECTED" ]]; then
+            # Electron Builder can select its default NSIS setup filename.
+            # Keep the validated PE bytes unchanged; name the release asset
+            # consistently for the permanent automatic-update feed.
+            mapfile -t matches < <(find dist -maxdepth 1 -type f -iname '*setup*.exe')
+            test "${#matches[@]}" -eq 1
+            cp "${matches[0]}" "$EXPECTED"
+          fi
+          test -f "$EXPECTED"
       - name: Verify packaged ACO Studio code, updater, icon and executable
         working-directory: build-src/App
         shell: bash
