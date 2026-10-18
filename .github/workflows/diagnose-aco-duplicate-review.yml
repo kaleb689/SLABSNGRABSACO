@@ -52,3 +52,24 @@ jobs:
                       print(data[max(0,n-1700):min(len(data),n+3000)])
                       start=n+len(q)
           PY
+      - name: Examine exact duplicate classifier and scanner call sites
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for filename,terms in {
+            'profile-vault.js':['async function scanRows','function scanRows','scanRows(','duplicate','websiteLinked'],
+            'profile-bank-ui.js':['async function scan(','async function backgroundScan(','function backgroundScan(','api.scan(','profile:scan'],
+            'main.js':['profile:banks:scan','profileBanks','getLinkedAccountEmails']
+          }.items():
+              p=Path('build-src/App')/filename
+              if not p.exists(): continue
+              lines=p.read_text().splitlines()
+              picked=set()
+              for i,line in enumerate(lines):
+                  if any(t.lower() in line.lower() for t in terms):
+                      picked.update(range(max(0,i-16),min(len(lines),i+45)))
+              print('===== FILE',filename,'total lines',len(lines),'=====')
+              for i in sorted(picked):
+                  print(f'{i+1}: {lines[i][:600]}')
+          PY
