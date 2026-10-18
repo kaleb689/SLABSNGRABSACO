@@ -23,6 +23,7 @@ import { applyOwnerVerifiedOrderEvidence, ownerOrderEvidenceAudit } from "./chec
 import { verifiedSameDayCheckoutOwner } from "./checkout-owner-verified-day.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
+import { verifiedSkuProductImage } from "./checkout-product-image-policy.js";
 import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
@@ -38217,6 +38218,61 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
       quantity: fieldValue(quantityField?.value) || descriptionQuantity || "",
       price: priceMatch?.[1] || fieldValue(priceField?.value) || descriptionPrice, priceIsLineTotal: Boolean(priceMatch) });
   }
+  // A Discord checkout can contain MORE THAN ONE product-bearing embed.
+  // Keep each embed's numbered fields separate to avoid overwriting Item (1)
+  // with Item (1) from the next embed. Do not invent extra checkout records.
+  for (const [embedIndex, otherEmbed] of embeds.entries()) {
+    if (otherEmbed === embed) continue;
+    const extraFields = Array.isArray(otherEmbed?.fields) ? otherEmbed.fields : [];
+    const localNumbered = new Map();
+    for (const field of extraFields) {
+      const match = fieldLabel(field.name).match(
+        /^(products?(?: name| title| purchased)?|items?(?: name| title| purchased)?|price|unit price|item price|quantity|qty)(?:\s*\((\d{1,2})\)|\s*#\s*(\d{1,2})|\s+(\d{1,2}))$/i);
+      if (!match) continue;
+      const key = match[2] || match[3] || match[4];
+      const kind = /^(product|item)/i.test(match[1]) ? "product" :
+        /^(quantity|qty)/i.test(match[1]) ? "quantity" : "price";
+      const entry = localNumbered.get(key) || {};
+      entry[kind] = fieldValue(field.value);
+      localNumbered.set(key, entry);
+    }
+    const extraProductField = extraFields.find(field =>
+      /^(?:products?|items?)(?: name| title| purchased)?$/i.test(fieldLabel(field.name)));
+    const extraDescription = String(otherEmbed?.description || "");
+    const extraQuantity = extraFields.find(field => /^(?:quantity|qty)$/i.test(fieldLabel(field.name)))?.value ||
+      extraDescription.match(/(?:^|\n)\s*(?:\*\*)?(?:quantity|qty)(?:\*\*)?\s*(?::\s*|\n\s*)(\d+)\b/i)?.[1] || "";
+    const extraPrice = extraFields.find(field => /^(?:price|unit price|item price)$/i.test(fieldLabel(field.name)))?.value ||
+      extraDescription.replace(/[*_\x60]/g, "").match(/(?:^|\n)\s*(?:unit price|item price|price)\s*(?::\s*|\n\s*)([^\n]+)/i)?.[1] || "";
+    // Description-only product cards need a real product link AND item
+    // evidence. Shipping updates, modules and notices are never extra items.
+    const linkedLine = /\[[^\]\r\n]{3,240}\]\(https?:\/\/[^\s)]+\)/i.test(extraDescription) &&
+      Boolean(extraQuantity || extraPrice);
+    const singleProduct = extraProductField ? fieldValue(extraProductField.value) :
+      linkedLine ? checkoutProductFromDiscord({ embeds: [otherEmbed] }) : "";
+    if (localNumbered.size && ![...localNumbered.values()].some(entry => entry.product) &&
+        singleProduct) {
+      const first = localNumbered.keys().next().value;
+      if (first) localNumbered.get(first).product = singleProduct;
+    }
+    if (!localNumbered.size && singleProduct) {
+      localNumbered.set("1", { product: singleProduct,
+        quantity: fieldValue(extraQuantity), price: fieldValue(extraPrice) });
+    }
+    const extraImage = localNumbered.size === 1 ? publicSuccessImageUrl(
+      otherEmbed?.thumbnail?.url || otherEmbed?.image?.url) : null;
+    for (const [key, candidate] of localNumbered) {
+      const name = publicSuccessProductName(productTitle(candidate.product));
+      if (!isSafeDiscordCheckoutProductName(name) ||
+          !/(?:pok[eé]mon|trading\s*card|\btcg\b|booster|mini.?tin|elite trainer|\betb\b|blister|bundle|collection|trainer box)/i.test(name))
+        continue;
+      // A repeated embed must not double-count the very same order line.
+      if ([...numbered.values()].some(entry =>
+        publicSuccessProductName(productTitle(entry.product)).toLowerCase() === name.toLowerCase()))
+        continue;
+      numbered.set("embed:" + embedIndex + ":" + key,
+        { ...candidate, imageUrl: extraImage });
+    }
+  }
   let subtotalCents = 0, completePrices = numbered.size > 0;
   for (const entry of numbered.values()) {
     const name = publicSuccessProductName(productTitle(entry.product));
@@ -38261,7 +38317,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
     if (priceCents === null || !Number.isSafeInteger(priceCents) || priceCents <= 0) completePrices = false;
     else subtotalCents += entry.priceIsLineTotal ? priceCents : priceCents * quantity;
     items.push({ name, quantity, price: priceCents === null ? 0 : priceCents / 100 / (entry.priceIsLineTotal ? quantity : 1),
-      imageUrl: messageImageUrl });
+      imageUrl: entry.imageUrl || (numbered.size === 1 ? messageImageUrl : null) });
   }
   for (const line of numbered.size ? [] : body.split(/\n+/)) {
     const match = line.match(/^\s*(?:[•*\-]\s*)?(.{5,120}?)\s*(?:[×xX]\s*(\d+)|\(\s*(\d+)\s*\))\s*$/);
