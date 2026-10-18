@@ -118,6 +118,16 @@ function createMacUpdater({app,execPath=process.execPath,arch=process.arch,loadF
   return {...await info(),status:release.available?'available':'current',latest:release.version,
    message:release.available?'ACO Studio '+release.version+' is ready. Download, install and restart from this panel.':'ACO Studio is up to date.',notes:release.notes};
  }
+ async function autoStartup(){
+  if(!app.isPackaged)return {started:false,skipped:'development'};
+  const release=await check();
+  if(release.status!=='available')return {started:false,current:true};
+  // ACO Studio is owner-operated. This is invoked during native boot,
+  // before the workspace or website sign-in is shown. Downloaded packages
+  // still pass the same feed, checksum, signature, identity and rollback
+  // validations as an interactive update.
+  return install();
+ }
  async function lastResult(){
   try{const v=JSON.parse(await fs.readFile(statusFile,'utf8'));if(!UUID.test(v.token||''))return null;
    return {phase:String(v.phase||'').slice(0,30),currentVersion:String(v.currentVersion||'').slice(0,32),targetVersion:String(v.targetVersion||'').slice(0,32),message:String(v.message||'').slice(0,400),logFile:path.join(data,'aco-native-updates',v.token,'install.log')};
@@ -199,7 +209,7 @@ function createMacUpdater({app,execPath=process.execPath,arch=process.arch,loadF
    if(!started){busy=false;if(lock)await fs.unlink(lock).catch(()=>{});await fs.rm(stage,{recursive:true,force:true}).catch(()=>{});}
   }
  }
- return {info,check,install,lastResult,onProgress:cb=>{subscribers.add(cb);return()=>subscribers.delete(cb);},progress:()=>({...progress,busy})};
+ return {info,check,autoStartup,install,lastResult,onProgress:cb=>{subscribers.add(cb);return()=>subscribers.delete(cb);},progress:()=>({...progress,busy})};
 }
 async function pendingLaunch(app){
  const arg=process.argv.find(x=>x.startsWith('--aco-update-token=')),token=arg?.split('=')[1];
