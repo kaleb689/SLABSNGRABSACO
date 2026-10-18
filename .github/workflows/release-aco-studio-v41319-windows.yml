@@ -1,10 +1,5 @@
 name: Verify ACO Studio 4.13.19 Windows two-way sync installer
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/aco-studio-build/**'
-      - '.github/workflows/release-aco-studio-v41319-windows.yml'
   workflow_dispatch:
 permissions:
   contents: write
