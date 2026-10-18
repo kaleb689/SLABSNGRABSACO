@@ -38373,7 +38373,7 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
 
 const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
 const DISCORD_HIT_MIRROR_VERSION = 9;
-const DISCORD_HIT_RENDER_VERSION = 5;
+const DISCORD_HIT_RENDER_VERSION = 6;
 let discordHitsChannelIdCache = null;
 let discordHitMirrorMutation = Promise.resolve();
 
