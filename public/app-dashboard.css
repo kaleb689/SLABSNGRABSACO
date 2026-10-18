@@ -216,3 +216,140 @@
 .sng-order-card.stage-review_hold { border-color: rgba(255,174,61,.52); }
 .sng-order-card.stage-review_hold .sng-stage { color: #ffad4e; font-weight: 900; }
 .sng-order-card.stage-review_hold .sng-delivery { color: #ffd8a1; border-radius: 12px; padding: 12px; background: rgba(255,146,0,.12); }
+
+
+/* Customer tracking sheet: native scrollable bottom sheet; account emails and
+   managed/master mailbox fields are intentionally not rendered. */
+.app-dashboard .sng-tracking-row {
+  display:flex;align-items:center;gap:12px;width:100%;min-width:0;min-height:94px;
+  box-sizing:border-box;padding:14px 15px;margin:0 0 12px;border-radius:20px;
+  border:1px solid #343041;border-left:3px solid #8b57ea;
+  background:#15141e;color:#f3f2fa;text-align:left;cursor:pointer;
+}
+.app-dashboard .sng-tracking-row.stage-delivered {border-left-color:#29d8a0}
+.app-dashboard .sng-tracking-row.stage-in_transit {border-left-color:#3dcdf3}
+.app-dashboard .sng-tracking-row.stage-cancelled {border-left-color:#df5375}
+.app-dashboard .sng-tracking-row .sng-row-main {flex:1;min-width:0}
+.app-dashboard .sng-tracking-row .sng-row-main strong {
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;white-space:normal;font-size:12px;line-height:1.4
+}
+.app-dashboard .sng-tracking-row .sng-row-main small {line-height:1.45}
+.app-dashboard .sng-tracking-row .sng-row-value {width:86px;max-width:86px;flex-shrink:0}
+.app-dashboard .sng-tracking-row .sng-row-value strong {font-size:13px;white-space:nowrap}
+.app-dashboard .sng-tracking-sheet {
+  position:fixed;inset:auto 0 0;margin:0 auto;padding:0;
+  width:min(700px,100vw);max-width:100vw;max-height:min(91dvh,1000px);
+  box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain;
+  border:1px solid #3d3149;border-radius:29px 29px 0 0;
+  background:linear-gradient(152deg,#28232f 0%,#17151f 36%,#11141b 100%);
+  box-shadow:0 -14px 48px #0009;color:#f2f0fa;
+  -webkit-overflow-scrolling:touch;scrollbar-width:thin
+}
+.app-dashboard .sng-tracking-sheet::backdrop {background:rgba(2,3,9,.76)}
+.app-dashboard .sng-sheet-handle {
+  position:sticky;top:0;margin:13px auto 0;z-index:3;
+  height:5px;width:58px;border-radius:99px;background:#53515b
+}
+.app-dashboard .sng-sheet-header {
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  position:sticky;top:0;z-index:2;padding:18px 22px 13px;
+  background:linear-gradient(135deg,rgba(35,32,44,.98),rgba(21,20,28,.98));
+  border-bottom:1px solid #292934
+}
+.app-dashboard .sng-sheet-header > div {min-width:0}
+.app-dashboard .sng-sheet-header strong {display:block;font-size:20px;overflow-wrap:anywhere}
+.app-dashboard .sng-sheet-header small {display:block;margin-top:4px;color:#a29dab;font-size:12px}
+.app-dashboard .sng-sheet-close {
+  width:39px;height:39px;border:0;border-radius:12px;background:#252530;
+  color:#d1ccd7;font-size:28px;font-weight:300;cursor:pointer
+}
+.app-dashboard .sng-sheet-body {padding:14px 20px max(32px,env(safe-area-inset-bottom))}
+.app-dashboard .sng-sheet-hero {
+  padding:20px 17px;border-radius:24px;
+  background:radial-gradient(circle at 85% 0%,#49325d 0%,#302245 38%,#211d34 100%);
+  border:1px solid #584273
+}
+.app-dashboard .sng-sheet-hero-top {display:flex;align-items:center;gap:13px;min-width:0}
+.app-dashboard .sng-sheet-hero-photo,.app-dashboard .sng-sheet-item-image {
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+  flex-shrink:0;background:#1e202a;border:1px solid #343543;border-radius:17px
+}
+.app-dashboard .sng-sheet-hero-photo {width:77px;height:77px}
+.app-dashboard .sng-sheet-hero-photo img,.app-dashboard .sng-sheet-item-image img {width:100%;height:100%;object-fit:contain}
+.app-dashboard .sng-sheet-hero-main {flex:1;min-width:0}
+.app-dashboard .sng-sheet-hero-main strong {
+  font-size:14px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;
+  -webkit-box-orient:vertical;overflow:hidden
+}
+.app-dashboard .sng-sheet-hero-main > span {
+  display:block;width:max-content;max-width:100%;padding:6px 10px;
+  border:1px solid #796984;border-radius:22px;color:#e1ddea;
+  font-size:9px;letter-spacing:.8px;font-weight:800;margin:7px 0
+}
+.app-dashboard .sng-sheet-stage {display:block;color:#a56aff;font-size:12px}
+.app-dashboard .sng-sheet-total {flex-shrink:0;max-width:95px;text-align:right;align-self:end}
+.app-dashboard .sng-sheet-total strong {font-size:14px;overflow-wrap:anywhere}
+.app-dashboard .sng-sheet-progress {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:16px}
+.app-dashboard .sng-sheet-progress > span {height:6px;border-radius:9px;background:#514363}
+.app-dashboard .sng-sheet-progress > span.complete {background:#a65aff}
+.app-dashboard .sng-sheet-provisional {display:block;color:#d2bfe7;margin-top:10px;line-height:1.5;font-size:11px}
+.app-dashboard .sng-sheet-section {
+  margin-top:18px;padding:16px 15px;border-radius:22px;background:#14161d;
+  border:1px solid #2b2d38
+}
+.app-dashboard .sng-sheet-section-heading {
+  display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:0 2px 14px;color:#dcdbe4
+}
+.app-dashboard .sng-sheet-section-heading strong {font-size:13px}
+.app-dashboard .sng-sheet-section-heading span {font-size:11px;color:#9993a7;text-align:right}
+.app-dashboard .sng-sheet-item {
+  display:flex;align-items:flex-start;gap:11px;padding:13px 0;border-top:1px solid #242831
+}
+.app-dashboard .sng-sheet-item-image {width:55px;height:55px;border-radius:14px}
+.app-dashboard .sng-sheet-item > div {flex:1;min-width:0}
+.app-dashboard .sng-sheet-item > div > strong {display:block;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.app-dashboard .sng-sheet-item small {display:block;margin-top:4px;font-size:10px;color:#a4a2ac}
+.app-dashboard .sng-sheet-item-stage {
+  color:#ae82e8;white-space:nowrap;font-size:10px;border-radius:50px;
+  background:#292039;padding:5px 7px;flex-shrink:0
+}
+.app-dashboard .sng-sheet-actions {display:flex;flex-wrap:wrap;gap:9px;margin-top:18px}
+.app-dashboard .sng-sheet-actions > button,.app-dashboard .sng-sheet-actions > a {
+  display:flex;align-items:center;justify-content:center;flex:1 1 115px;min-height:44px;
+  border:1px solid #33445a;background:#11151d;color:#4ccfff;border-radius:15px;
+  font-size:12px;font-weight:800;padding:10px;text-decoration:none;text-align:center
+}
+.app-dashboard .sng-sheet-actions > button:disabled {opacity:.42;cursor:not-allowed}
+.app-dashboard .sng-sheet-copy-feedback {min-height:14px;margin:7px 3px 0;color:#4ccfff;font-size:11px}
+.app-dashboard .sng-sheet-details {overflow:hidden;border-radius:15px;border:1px solid #272c38}
+.app-dashboard .sng-sheet-detail-row {
+  display:grid;grid-template-columns:minmax(0,39%) minmax(0,1fr);
+  gap:11px;align-items:start;padding:14px 12px;border-top:1px solid #262b35
+}
+.app-dashboard .sng-sheet-detail-row:first-child {border-top:none}
+.app-dashboard .sng-sheet-detail-row span {color:#888c9b;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.app-dashboard .sng-sheet-detail-row strong {
+  font-size:12px;line-height:1.5;font-weight:700;overflow-wrap:anywhere
+}
+.app-dashboard .sng-sheet-address {
+  padding:14px 13px;border:1px solid #292d36;border-radius:16px;
+  color:#d4d7df;font-size:12px;line-height:1.65;overflow-wrap:anywhere
+}
+.app-dashboard .sng-sheet-history {
+  margin:16px 0;border:1px solid #292d38;background:#151820;
+  border-radius:17px;padding:16px
+}
+.app-dashboard .sng-sheet-history > summary {cursor:pointer;color:#eeeaf2;font-size:13px;font-weight:700}
+.app-dashboard .sng-sheet-history-content {margin-top:12px;color:#a8abb6;font-size:12px}
+.app-dashboard .sng-sheet-history-entry {display:flex;justify-content:space-between;gap:10px}
+.app-dashboard .sng-sheet-history-entry small {color:#9e9ea9;text-align:right}
+@media(max-width:390px) {
+ .app-dashboard .sng-sheet-body {padding-inline:11px}
+ .app-dashboard .sng-sheet-header {padding-inline:15px}
+ .app-dashboard .sng-sheet-hero {padding-inline:11px}
+ .app-dashboard .sng-sheet-hero-photo {width:60px;height:60px}
+ .app-dashboard .sng-sheet-item-stage {font-size:9px;padding:5px}
+ .app-dashboard .sng-tracking-row {gap:8px;padding-inline:10px}
+}
