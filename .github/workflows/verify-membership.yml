@@ -45,7 +45,7 @@ jobs:
       - run: node --check discord-checkout-owner-evidence.js
       - run: node --test test/discord-checkout-owner-evidence.test.mjs
       - run: node --test test/drop-sku-alerts.test.mjs test/sku-reminders.test.mjs test/pwa-worker.test.mjs
-      - run: node --test test/checkout-reporting.test.mjs
+      - run: node --test test/checkout-reporting.test.mjs test/community-product-identity.test.mjs
       - run: node --test test/admin-success-ui.test.mjs
       - run: node --test test/admin-success-breakdowns.test.mjs
       - run: node --test test/admin-grouped-orders-and-selected-controls.test.mjs

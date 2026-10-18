@@ -48,5 +48,5 @@ test("registered and unpaid website signups are included in Admin live data, not
   for(const page of [customerPage,adminPage,fullAdminPage]){
     assert.match(page,/custom-date-controls\.css\?v=20261010-fit2/);
   }
-  assert.ok(adminPage.includes("/admin-mobile.js?v=20261016-order-value-1"));
+  assert.ok(adminPage.includes("/admin-mobile.js?v=20261018-cross-retailer-products-1"));
 });

@@ -4,6 +4,7 @@ import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
 import { historicalPlusVerified, communityCheckoutTotals, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
+import { communityProductKey, consolidateCommunityProducts } from "./community-product-identity.js";
 import { searchManagedPoolProfiles } from "./managed-pool-search.js";
 import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
@@ -39570,6 +39571,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
           itemSubtotal: checkoutItemSubtotal(record),
           items: safe.items.map(item => ({
             name: clean(item.name, 120),
+            productKey: communityProductKey(item.name, item.sku),
             quantity: Math.max(0, Math.floor(Number(item.quantity) || 0)),
             imageUrl: item.imageUrl
           })),
@@ -39596,6 +39598,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
           customersById.has(String(record.customerAccountId))),
         items: safe.items.map(item => ({
           name: clean(item.name, 120),
+          productKey: communityProductKey(item.name, item.sku),
           quantity: Math.max(0, Math.floor(Number(item.quantity) || 0)),
           imageUrl: item.imageUrl
         }))
@@ -39952,36 +39955,15 @@ app.get(
           (await discordCheckoutSourceChannels()).channels
         );
       const confirmed = communityEligibleOrders(records);
-      const products = new Map();
-
-      for (const record of confirmed) {
-        const eligibleItems = (Array.isArray(record.items) ? record.items : []).filter(item => {
-          const name = publicSuccessProductName(item?.name);
-          return name && isSafeDiscordCheckoutProductName(name) && !/@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name) && Number(item?.quantity) > 0;
-        });
-        const purchasedAt = new Date(record.checkoutAt || record.updatedAt || record.createdAt || 0).getTime();
-        for (const item of eligibleItems) {
-          const name = publicSuccessProductName(item?.name);
-          const quantity = Math.max(0, Math.floor(Number(item?.quantity) || 0));
-          if (!quantity) continue;
-          const key = name.toLowerCase();
-          const prior = products.get(key);
-          products.set(key, {
-            name: prior?.name || name,
-            quantity: (prior?.quantity || 0) + quantity,
-            imageUrl: prior?.imageUrl || publicSuccessProductImage(name, record.retailer, item?.imageUrl, item?.sku),
-            latestPurchasedAt: Math.max(prior?.latestPurchasedAt || 0, Number.isFinite(purchasedAt) ? purchasedAt : 0)
-          });
-        }
-      }
-
-      const orderedProducts = [...products.values()]
-        .sort((a, b) =>
-          b.latestPurchasedAt - a.latestPurchasedAt ||
-          b.quantity - a.quantity ||
-          a.name.localeCompare(b.name)
-        )
-        .map(({ latestPurchasedAt, ...product }) => product);
+      // Public and Admin use retailer-independent product identity. Review
+      // holds count until cancellation; distinct variants remain distinct.
+      const orderedProducts = consolidateCommunityProducts(confirmed, {
+        normalizeName: publicSuccessProductName,
+        allowItem: name => isSafeDiscordCheckoutProductName(name) &&
+          !/@|\b(?:order|address|phone|email|account|ship(?:ping)? to)\b|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/i.test(name),
+        imageFor: (name, order, item) =>
+          publicSuccessProductImage(name, order.retailer, item?.imageUrl, item?.sku)
+      });
 
       // The previous community summary was preserved by the owner but its
       // individual receipts are unavailable. Never convert it into fake hits.
