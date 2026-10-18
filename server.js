@@ -44642,6 +44642,8 @@ function shippingTrackingUrl(html = "", text = "") {
 }
 
 function compactShippingAddress(address = {}) {
+  // The retailer may report tracking before a shipping address is known.
+  if (!address || typeof address !== "object") address = {};
   const first = clean(address.firstName || address.first || "", 60);
   const last = clean(address.lastName || address.last || "", 60);
   return {

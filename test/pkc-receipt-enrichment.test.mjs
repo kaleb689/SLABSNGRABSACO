@@ -159,3 +159,17 @@ test("customer tracking UI loads its style and never renders retailer-account or
   assert.match(app,/if \(content\._sngMarkup !== html\)/);
   assert.match(app,/if \(target\._sngMarkup !== nextMarkup\)/);
 });
+
+
+test("pending shipping address does not break Discord shipping DM formatting", () => {
+  const source=readFileSync(new URL("../server.js",import.meta.url),"utf8");
+  const start=source.indexOf("function compactShippingAddress(");
+  const end=source.indexOf("function matchCustomerShippingAddress(",start);
+  assert.ok(start>0 && end>start);
+  const context={clean:(value,max)=>String(value||"").slice(0,max), result:null, known:null};
+  vm.runInNewContext(source.slice(start,end)+
+    '\nresult=shippingAddressLabel(null);known=shippingAddressLabel({firstName:"Example",address:"123 Main St",city:"Springfield",state:"FL",zip:"33333"});',context);
+  assert.equal(context.result,"");
+  assert.match(context.known,/Example/);
+  assert.match(context.known,/123 Main St/);
+});
