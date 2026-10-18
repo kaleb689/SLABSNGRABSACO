@@ -178,12 +178,10 @@
      }catch(e){inspector.querySelector('[data-error]').textContent=String(e.message||e);}
     },'plain');
    }else if(entry.scope==='website'){
-    makeButton('Edit in website Admin',()=>{
-     inspector.remove();modal.hidden=true;d.querySelector('.tabButton[data-tab="site"]')?.click();
-     const search=$('siteSearch');if(search){search.value=entry.email||'';search.dispatchEvent(new Event('input',{bubbles:true}));search.focus();}
-     msg('Opened website-linked account view for '+(entry.email||'selected account')+'. Changes there save to the live site and customer app.');
-    });
-    const warning=d.createElement('small');warning.textContent='Remote account: no deletion happens here. Open website Admin to edit or remove the authoritative linked account.';card.append(warning);
+    const more=d.createElement('pre');more.textContent='Loading authoritative customer profile…';card.append(more);
+    let exact=null;const lib=window.desktopAPI.profileLibrary;
+    void (async()=>{try{await lib.syncCustomer({scope:'aco',customerId:entry.owner});const result=await lib.list({scope:'aco',customerId:entry.owner});if(!inspector.isConnected)return;exact=result.profiles.find(x=>x.remoteManagedId===entry.id&&x.retailer===entry.retailer&&x.sourceLinked);if(!exact)throw Error('The assignment changed; reopen its customer account.');const data=exact.data||{},s=data.shipping||{},b=data.billing||{},pan=String(data.cc_number||data.card?.number||'').replace(/\D/g,'');more.textContent=['Source: authoritative website assignment','Customer: '+entry.owner,'Email: '+exact.email,'Shipping: '+[s.firstName||data.first_name,s.lastName||data.last_name,s.addressLine1||data.shipping_street,s.city||data.shipping_city,s.state||data.shipping_state,s.zipCode||data.shipping_zip_code].filter(Boolean).join(', '),'Billing: '+[b.addressLine1||data.billing_street,b.city||data.billing_city,b.state||data.billing_state].filter(Boolean).join(', '),'Payment: '+(pan?'•••• '+pan.slice(-4):'Not saved')].join('\n');}catch(error){more.textContent=String(error.message||error);}})();
+    makeButton('Edit / manage this exact live profile',()=>{if(!exact){inspector.querySelector('[data-error]').textContent='Wait for the exact website profile to load.';return;}inspector.remove();modal.hidden=true;d.dispatchEvent(new CustomEvent('aco-studio:edit-profile',{detail:{scope:'aco',customerId:entry.owner,profileId:exact.id}}));});
    }else if(entry.scope==='import'&&Number.isSafeInteger(entry.index)){
     makeButton('Remove this IMPORT row',()=>{
      if(!confirm('Remove only this row from the current import?'))return;

@@ -7,15 +7,16 @@ import { mergeManagedCard, serializeManagedWrites } from './managed-customer-wri
  * Read responses never include payment PAN, password or verification codes.
  */
 import crypto from 'node:crypto';
+import {savedDataRevision} from './saved-data-revisions.js';
 const own=(x,k)=>Object.prototype.hasOwnProperty.call(x||{},k);
 export function registerStudioCustomerRoutes({
  app,requireAdmin,getCustomerAccounts,saveCustomerAccounts,getCustomerVault,
  saveCustomerVault,customerSavedAddresses,sanitizeShippingAddress,
  validShippingAddress,sanitizeSavedPaymentMethod,validSavedPaymentMethod,
- syncCustomerMissingNotification=async()=>{},broadcastLiveDataChange=()=>{},revisionSecret
+ syncCustomerMissingNotification=async()=>{},broadcastLiveDataChange=()=>{},revisionSecret,serializeCustomerSavedWrites
 }){
- const serialize = serializeManagedWrites();
- const fingerprint=(kind,item)=>{if(!revisionSecret)throw Error('Studio sync is unavailable without encrypted vault configuration.');return crypto.createHmac('sha256',revisionSecret).update(kind+'\0'+JSON.stringify(item)).digest('hex');};
+ const serialize = serializeCustomerSavedWrites||serializeManagedWrites();
+ const fingerprint=(kind,item)=>savedDataRevision(kind,item,revisionSecret);
  const id=v=>String(v||'').trim().slice(0,150);
  const select=async req=>{
   const accounts=await getCustomerAccounts(),index=accounts.findIndex(x=>String(x.id)===id(req.params.id));
@@ -74,6 +75,40 @@ export function registerStudioCustomerRoutes({
    return res.json({ok:true,saved:true,paymentMethod:paymentPublic(next),message:'Saved in the live customer website and app payment vault.'});
   }catch(e){console.error('Studio payment save:',e?.message);return res.status(503).json({error:'Unable to save this website payment method.'});}
  });
+ for(const kind of ['address','payment']){
+  const segment=kind==='address'?'shipping-addresses':'payment-methods';
+  app.post('/api/admin/aco-studio/customers/:id/'+segment,requireAdmin,serialize,async(req,res)=>{
+   res.set('Cache-Control','no-store');
+   try{
+    if(req.body?.confirmed!==true)return res.status(400).json({error:'Confirm creation in this customer account.'});
+    const a=await select(req);if(!a)return res.status(404).json({error:'Customer does not exist.'});
+    const vault=kind==='payment'?await getCustomerVault(a.account.id):null;
+    const items=kind==='address'?customerSavedAddresses(a.account):vault.paymentMethods||[];
+    if(items.length>=20)return res.status(400).json({error:'This customer bank already contains 20 records.'});
+    const input=req.body[kind]||{},next=kind==='address'?sanitizeShippingAddress(input):mergeManagedCard(sanitizeSavedPaymentMethod(input));
+    if(!(kind==='address'?validShippingAddress(next):validSavedPaymentMethod(next)))return res.status(400).json({error:'Complete all required fields.'});
+    items.push(next);
+    if(kind==='address'){a.account.shippingAddresses=items;await saveCustomerAccounts(a.accounts);}else{vault.paymentMethods=items;await saveCustomerVault(a.account.id,vault);}
+    broadcastLiveDataChange('customer-'+kind+'-created');await saved(a.account.id);
+    return res.json({ok:true,saved:true,[kind==='address'?'address':'paymentMethod']:kind==='address'?addressPublic(next):paymentPublic(next)});
+   }catch{return res.status(503).json({error:'Unable to create the customer record.'});}
+  });
+  app.delete('/api/admin/aco-studio/customers/:id/'+segment+'/:recordId',requireAdmin,serialize,async(req,res)=>{
+   res.set('Cache-Control','no-store');
+   try{
+    if(req.body?.confirmed!==true)return res.status(400).json({error:'Confirm deletion of this exact record.'});
+    const a=await select(req);if(!a)return res.status(404).json({error:'Customer does not exist.'});
+    const vault=kind==='payment'?await getCustomerVault(a.account.id):null;
+    const items=kind==='address'?customerSavedAddresses(a.account):vault.paymentMethods||[];
+    const at=items.findIndex(x=>String(x.id)===id(req.params.recordId));if(at<0)return res.status(404).json({error:'The selected record no longer exists.'});
+    const refused=conflict(req,res,items[at],kind);if(refused)return refused;
+    items.splice(at,1);
+    if(kind==='address'){a.account.shippingAddresses=items;await saveCustomerAccounts(a.accounts);}else{vault.paymentMethods=items;await saveCustomerVault(a.account.id,vault);}
+    broadcastLiveDataChange('customer-'+kind+'-deleted');await saved(a.account.id);
+    return res.json({ok:true,saved:true,deletedId:id(req.params.recordId)});
+   }catch{return res.status(503).json({error:'Unable to delete the selected customer record.'});}
+  });
+ }
  return {addressPublic,paymentPublic};
 }
 

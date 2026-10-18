@@ -17,9 +17,9 @@ async function harness(t){
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-bidirectional-test-'));
  t.after(()=>fs.rm(dir,{recursive:true,force:true}));
  const profiles=makeProfileVault({baseDir:dir,safeStorage});
- const calls=[],changes=[];let remoteAddress='100 Example Avenue',reject=false;
+ const calls=[],changes=[];let active=true;let remoteAddress='100 Example Avenue',reject=false;
  const source=async id=>({customer:{id,name:'Sample Customer'},linked:[{customerId:id,retailer:'pokemoncenter',
-  assignmentId:'assignment-1',managedAccountId:'managed-1',assignmentType:'free',remoteUpdatedAt:'2026-10-18T00:00:00Z',active:true,
+  assignmentId:'assignment-1',managedAccountId:'managed-1',assignmentType:'free',remoteUpdatedAt:remoteAddress==='100 Example Avenue'?'2026-10-18T00:00:00Z':'2026-10-18T00:02:00Z',active,
   data:fullData(remoteAddress)}]});
  const auth=async(e,scope,id)=>{
   if(e.sender.id!==111)throw Error('Not the owner window');
@@ -36,6 +36,7 @@ async function harness(t){
    remoteAddress=payload.fields['shipping.address1']||remoteAddress;
    return {saved:true,updatedAt:'2026-10-18T00:01:00Z'};
   },
+  changeCustomerAssignment:async(id,remote,operation)=>{calls.push({id,remote,operation});active=false;return {saved:true};},
   getCustomerSavedData:async id=>({customer:{id},addresses:[{id:'addr-1',address:'100 Example Avenue',revision:'a'.repeat(64)}],paymentMethods:[{id:'pay-1',last4:'4242',revision:'b'.repeat(64)}]}),
   updateCustomerSavedData:async(id,kind,recordId,payload)=>{
    changes.push({id,kind,recordId,payload});
@@ -166,3 +167,29 @@ test('A stale linked jig cannot publish or change an existing profile',async t=>
   confirmed:true,address:{address1:'700 Stale Street',city:'Example',state:'FL',zip:'33324'}}),/website-linked/);
  assert.equal(h.calls.length,0);
 });
+
+test('upstream conflict invalidates old editors and requires an explicit choice',async t=>{
+ const h=await harness(t);await h.lib.syncCustomer(sender,owner);
+ let row=(await h.lib.list(sender,owner)).profiles[0];
+ await h.profiles.libraryTransaction('aco','customer-a',ctx=>{ctx.rows[0].manualOverride=true;},()=>{});
+ const previousRevision=row.revision;h.setAddress('900 Latest Website Street');await h.lib.syncCustomer(sender,owner);
+ row=(await h.lib.list(sender,owner)).profiles[0];assert.ok(row.revision>previousRevision);assert.equal(row.needsReview,true);assert.equal(Core.values(row.pendingWebsiteData)['shipping.address1'],'900 Latest Website Street');
+ await assert.rejects(h.lib.edit(sender,{...owner,profileId:row.id,revision:previousRevision,fields:{email:row.email}}),/changed/);
+ await assert.rejects(h.lib.edit(sender,{...owner,profileId:row.id,revision:row.revision,fields:{email:row.email}}),/Resolve the website conflict/);
+ assert.equal(h.calls.length,0);await h.lib.resolveSourceConflict(sender,{...owner,profileId:row.id,revision:row.revision,choice:'website',confirmed:true});
+ row=(await h.lib.list(sender,owner)).profiles[0];assert.equal(row.needsReview,false);assert.equal(Core.values(row.data)['shipping.address1'],'900 Latest Website Street');
+});
+test('confirmed unlink updates website before local status and permits exact local deletion afterward',async t=>{
+ const h=await harness(t);await h.lib.syncCustomer(sender,owner);let row=(await h.lib.list(sender,owner)).profiles[0];
+ await assert.rejects(h.lib.removeLocal(sender,{...owner,profileId:row.id,revision:row.revision,confirmed:true}),/Return this linked account/);
+ await assert.rejects(h.lib.changeAssignment(sender,{...owner,profileId:row.id,revision:row.revision,operation:'unlink'}),/Confirm/);
+ await h.lib.changeAssignment(sender,{...owner,profileId:row.id,revision:row.revision,operation:'unlink',confirmed:true});
+ row=(await h.lib.list(sender,owner)).profiles[0];assert.equal(row.sourceLinked,false);assert.equal(row.stage,'in-progress');assert.equal(h.calls[0].operation,'unlink');
+ await h.lib.removeLocal(sender,{...owner,profileId:row.id,revision:row.revision,confirmed:true});assert.equal((await h.lib.list(sender,owner)).profiles.length,0);
+});
+test('local imports are never implicitly converted to website-linked records by matching email',async t=>{
+ const h=await harness(t);await h.profiles.importRows({scope:'aco',customerId:'customer-a',retailer:'pokemoncenter',rows:[fullData()]});
+ await h.lib.syncCustomer(sender,owner);const list=(await h.lib.list(sender,owner)).profiles;assert.equal(list.length,2);assert.equal(list.filter(x=>x.source==='website-linked-profile').length,1);assert.equal(list.filter(x=>x.localOnly).length,1);
+});
+
+test('explicit local-to-website linking confirms the server save before replacing the exact local mirror',async t=>{const h=await harness(t);await h.profiles.importRows({scope:'aco',customerId:'customer-a',retailer:'pokemoncenter',rows:[fullData('700 Local Street')]});await h.lib.syncCustomer(sender,owner);let rows=(await h.lib.list(sender,owner)).profiles,local=rows.find(x=>x.localOnly),mirror=rows.find(x=>x.sourceLinked);const request={...owner,profileId:local.id,revision:local.revision,mirrorId:mirror.id,mirrorRevision:mirror.revision,confirmed:true};h.setReject(true);await assert.rejects(h.lib.linkLocal(sender,request),/Website conflict/);assert.equal((await h.lib.list(sender,owner)).profiles.length,2);h.setReject(false);await h.lib.linkLocal(sender,request);rows=(await h.lib.list(sender,owner)).profiles;assert.equal(rows.length,1);assert.equal(rows[0].id,local.id);assert.equal(rows[0].sourceLinked,true);assert.equal(h.calls.at(-1).payload.fields['shipping.address1'],'700 Local Street');await assert.rejects(h.lib.linkLocal(sender,{...request,scope:'personal',customerId:null}),/Confirm linking/);});

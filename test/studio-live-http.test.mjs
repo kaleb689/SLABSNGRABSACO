@@ -25,12 +25,49 @@ test('real authenticated HTTP: customer and Studio edit the same saved address/c
  let result=await call(prefix+'/shipping-addresses/'+addressId,{method:'PUT',cookie:admin.cookie,body:{expectedRevision:stale,address:{...address,address:'200 Studio Lane'}}});assert.equal(result.status,200);
  let consumer=(await call('/api/account/saved-details',{cookie:customer.cookie})).body;assert.equal(consumer.addresses[0].address,'200 Studio Lane');
  result=await call(prefix+'/shipping-addresses/'+addressId,{method:'PUT',cookie:admin.cookie,body:{expectedRevision:stale,address:{...address,address:'STALE'}}});assert.equal(result.status,409);
- result=await call('/api/account/shipping-addresses/'+addressId,{method:'PUT',cookie:customer.cookie,body:{...address,address:'300 Website Avenue'}});assert.equal(result.status,200);
+ result=await call('/api/account/shipping-addresses/'+addressId,{method:'PUT',cookie:customer.cookie,body:{...address,address:'300 Website Avenue',expectedRevision:result.status===409?(await call(prefix+'/saved-data',{cookie:admin.cookie})).body.addresses[0].revision:''}});assert.equal(result.status,200);
  snapshot=(await call(prefix+'/saved-data',{cookie:admin.cookie})).body;assert.equal(snapshot.addresses[0].address,'300 Website Avenue');
  const payment=await call('/api/account/payment-methods',{method:'POST',cookie:customer.cookie,body:{cardLabel:'Test Visa',cardholder:'Alex Example',acoCardNumber:'4242424242424242',expMonth:'08',expYear:'2032',authorizeRequestedPurchases:true}});assert.equal(payment.status,200);
  snapshot=(await call(prefix+'/saved-data',{cookie:admin.cookie})).body;const card=snapshot.paymentMethods[0];assert.equal(card.last4,'4242');assert.ok(!JSON.stringify(card).includes('4242424242424242'));
  result=await call(prefix+'/payment-methods/'+card.id,{method:'PUT',cookie:admin.cookie,body:{expectedRevision:card.revision,payment:{cardholder:'Updated Holder',expMonth:'09',expYear:'2033'}}});assert.equal(result.status,200);
  consumer=(await call('/api/account/saved-details',{cookie:customer.cookie})).body;assert.equal(consumer.paymentMethods[0].cardholder,'Updated Holder');assert.equal(consumer.paymentMethods[0].expYear,'2033');
+ // Two editors sharing one revision: exactly one commit, one explicit conflict.
+ const shared=snapshot.addresses[0];
+ const raced=await Promise.all([
+  call(prefix+'/shipping-addresses/'+addressId,{method:'PUT',cookie:admin.cookie,body:{expectedRevision:shared.revision,address:{...address,address:'400 First Writer Street'}}}),
+  call('/api/account/shipping-addresses/'+addressId,{method:'PUT',cookie:customer.cookie,body:{...address,address:'500 Second Writer Street',expectedRevision:shared.revision}})
+ ]);assert.deepEqual(raced.map(x=>x.status).sort(),[200,409]);
+ const raceSaved=(await call(prefix+'/saved-data',{cookie:admin.cookie})).body.addresses[0];
+ assert.ok(['400 First Writer Street','500 Second Writer Street'].includes(raceSaved.address));
+ // Restore through the same revision-checked production route for restart proof.
+ assert.equal((await call(prefix+'/shipping-addresses/'+addressId,{method:'PUT',cookie:admin.cookie,body:{expectedRevision:raceSaved.revision,address:{...address,address:'300 Website Avenue'}}})).status,200);
+ // The website/mobile and Studio profile editors share one retailer assignment.
+ const initialVersion='2026-10-01T00:00:00.000Z',assignmentId='synthetic-assignment',managedId='synthetic-target-account';
+ await fs.writeFile(path.join(dir,'managed-accounts.json'),JSON.stringify([{id:managedId,accountEmail:'retailer@example.test',retailer:'target',profileName:'Synthetic retailer account'}]));
+ await fs.writeFile(path.join(dir,'free-assignments.json'),JSON.stringify([{id:assignmentId,managedAccountId:managedId,freeMembershipId:managedId,customerAccountId:id,assignmentRetailer:'target',active:true,activationStatus:'activated',durationType:'indefinite',updatedAt:initialVersion,customerProfile:{...address,email:'aco-http@example.test',phone:'9545550123',profileName:'Synthetic profile'}}]));
+ const managedRoute='/api/account/managed-memberships/free/'+assignmentId,adminManaged='/api/admin/managed-memberships/free/'+managedId+'/customer-details';
+ let managed=await call(managedRoute,{method:'PUT',cookie:customer.cookie,body:{expectedUpdatedAt:initialVersion,customerProfile:{...address,address:'700 Website Profile Street',email:'aco-http@example.test',phone:'9545550123'}}});assert.equal(managed.status,200);
+ let storedAssignment=JSON.parse(await fs.readFile(path.join(dir,'free-assignments.json'),'utf8'))[0];assert.equal(storedAssignment.customerProfile.address,'700 Website Profile Street');
+ const websiteVersion=managed.body.updatedAt;
+ managed=await call(adminManaged,{method:'PUT',cookie:admin.cookie,body:{expectedCustomerAccountId:id,expectedUpdatedAt:websiteVersion,customerProfile:{...address,address:'800 Studio Profile Street',email:'aco-http@example.test',phone:'9545550123'}}});assert.equal(managed.status,200);
+ const customerProfiles=await call('/api/account/free-memberships',{cookie:customer.cookie});assert.equal(customerProfiles.status,200);assert.equal(customerProfiles.body.memberships[0].customerProfile.address,'800 Studio Profile Street');assert.equal(customerProfiles.body.memberships[0].updatedAt,managed.body.updatedAt);
+ assert.equal((await call(managedRoute,{method:'PUT',cookie:customer.cookie,body:{expectedUpdatedAt:websiteVersion,customerProfile:{address:'STALE PROFILE'}}})).status,409);
+ const abort=new AbortController();t.after(()=>abort.abort());
+ const stream=await fetch(base+'/api/account/live/events',{headers:{Cookie:customer.cookie},signal:abort.signal});assert.equal(stream.status,200);
+ const reader=stream.body.getReader(),decoder=new TextDecoder();await reader.read();
+ let live='';const nextEvent=(async()=>{while(!live.includes('event: data-change')){const {done,value}=await reader.read();if(done)break;live+=decoder.decode(value);}})();
+ const studioCreated=await call(prefix+'/shipping-addresses',{method:'POST',cookie:admin.cookie,body:{confirmed:true,address:{...address,address:'600 Created In Studio Street'}}});assert.equal(studioCreated.status,200);
+ await Promise.race([nextEvent,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('No live customer update arrived')),4000);timer.unref();})]);
+ assert.match(live,/event: data-change/);assert.ok(!live.includes('600 Created In Studio Street'));assert.ok(!live.includes('4242424242424242'));abort.abort();
+ const temporary=studioCreated.body.address;
+ assert.ok((await call('/api/account/saved-details',{cookie:customer.cookie})).body.addresses.some(x=>x.id===temporary.id));
+ assert.equal((await call(prefix+'/shipping-addresses/'+temporary.id,{method:'DELETE',cookie:admin.cookie,body:{confirmed:true,expectedRevision:'stale'}})).status,409);
+ assert.equal((await call(prefix+'/shipping-addresses/'+temporary.id,{method:'DELETE',cookie:admin.cookie,body:{confirmed:true,expectedRevision:temporary.revision}})).status,200);
+ assert.ok(!(await call('/api/account/saved-details',{cookie:customer.cookie})).body.addresses.some(x=>x.id===temporary.id));
+ const studioCard=await call(prefix+'/payment-methods',{method:'POST',cookie:admin.cookie,body:{confirmed:true,payment:{cardLabel:'Temporary',cardholder:'Example Holder',acoCardNumber:'4242424242424242',expMonth:'10',expYear:'2034',cvv:'123'}}});assert.equal(studioCard.status,200);
+ const temporaryCard=studioCard.body.paymentMethod;assert.ok(!JSON.stringify(temporaryCard).includes('123'));assert.ok((await call('/api/account/saved-details',{cookie:customer.cookie})).body.paymentMethods.some(x=>x.id===temporaryCard.id));
+ assert.equal((await call(prefix+'/payment-methods/'+temporaryCard.id,{method:'DELETE',cookie:admin.cookie,body:{confirmed:true,expectedRevision:temporaryCard.revision}})).status,200);
+ assert.ok(!(await call('/api/account/saved-details',{cookie:customer.cookie})).body.paymentMethods.some(x=>x.id===temporaryCard.id));
  await stop();await start();const relogin=await call('/api/admin/login',{method:'POST',body:{password:'synthetic-admin-password',code:authenticator.generate(secret)}});assert.equal(relogin.status,200);
  snapshot=(await call(prefix+'/saved-data',{cookie:relogin.cookie})).body;assert.equal(snapshot.addresses[0].address,'300 Website Avenue');assert.equal(snapshot.paymentMethods[0].cardholder,'Updated Holder');
 });

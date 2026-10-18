@@ -2,15 +2,23 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { isModuleLifecycleDiscordMessage } from '../discord-checkout-event-policy.js';
+import { checkoutIdentityFromDiscord,checkoutStatusFromDiscord,checkoutProductFromDiscord } from '../discord-checkout-identity.js';
+import { checkoutExplicitPaidTotal } from '../checkout-price-policy.js';
+import { checkoutAssignmentContains } from '../discord-checkout-owner-evidence.js';
+import { resolveOwnerVerifiedBackfill } from '../checkout-owner-backfills.js';
+import { resolveApprovedCheckoutAlias } from '../discord-checkout-profile-aliases.js';
 import { uniqueCheckoutOwner } from '../webhook-success.js';
 const source = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
 const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
-const context = { clean: (v,n) => String(v || "").slice(0,n), normalizeEmail: v => String(v || '').trim().toLowerCase(), publicSuccessImageUrl: () => null, uniqueCheckoutOwner,
+const context = { clean: (v,n) => String(v || "").slice(0,n), normalizeEmail: v => String(v || '').trim().toLowerCase(), publicSuccessImageUrl: () => null, uniqueCheckoutOwner,checkoutAssignmentContains,resolveOwnerVerifiedBackfill,resolveApprovedCheckoutAlias,isModuleLifecycleDiscordMessage,checkoutStatusFromDiscord,checkoutProductFromDiscord,checkoutExplicitPaidTotal,
+ discordCheckoutIdentity:checkoutIdentityFromDiscord,
  assignmentTimeContainsCheckout: (a,t) => new Date(t) >= new Date(a.startsAt) && (!a.endedAt || new Date(t) <= new Date(a.endedAt)) };
 vm.createContext(context);
 vm.runInContext(section("function isPublicSuccessProduct", "const verifiedPublicProductImages") +
  section("function normalizeSuccessRetailer", "function safeSuccessImageUrl") +
- section("function discordCheckoutFromMessage", "async function scanDiscordSuccessChannel") +
+ section("function discordCheckoutFromMessage", "const DISCORD_HIT_MIRROR_FILE") +
+ section("function discordCheckoutCandidateEligible", "let discordSuccessScanQueued") +
  section("function preferPreviouslyAssignedManagedAccounts", "/* -------------------------------------------------------"), context);
 const message = fields => ({id:"123",timestamp:"2026-09-30T16:00:00Z", embeds:[{title:"Successful Checkout!",fields}]});
 const field = (name,value) => ({name,value:String(value)});
@@ -28,7 +36,8 @@ test("Hayha separate item, price suffix, quantity, and encoded product name", ()
  const order=context.discordCheckoutFromMessage(message([field("Site","Target"),field("Item","Pok&#233;mon Trading Card Game: 30th Celebration Elite Trainer Box - $139.98"),field("Quantity",2),field("Profile Name","private-profile")]),"456");
  assert.equal(order.items[0].name,"Pokémon Trading Card Game: 30th Celebration Elite Trainer Box");
  assert.equal(order.itemCount,2); assert.equal(order.orderTotal,139.98);
- assert.ok(!JSON.stringify(order).includes("private-profile"));
+ assert.equal(order.sourceProfileLabel,"private-profile");
+ assert.ok(!JSON.stringify(order.items).includes("private-profile"));
 });
 test("single numbered product and invalid quantity handling", () => {
  const fields=[field("Product (1)","Pokemon TCG: Booster Bundle"),field("Price (1)",26.94),field("Quantity (1)",1)];

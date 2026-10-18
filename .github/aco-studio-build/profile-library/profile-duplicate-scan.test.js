@@ -52,3 +52,5 @@ test('email alone cannot hide a distinct website assignment as a local mirror',a
  assert.equal(r.duplicates.length,1);assert.equal(r.duplicates[0].count,2);
  assert.match(r.duplicates[0].conflictId,/^[a-f0-9]{64}$/);
 });
+
+test('managed account identity pairs its website mirror even when assignment IDs differ',async t=>{const h=await harness(t);await h.add('david','target','identity@example.test');await h.vault.libraryTransaction('aco','david',ctx=>{Object.assign(ctx.rows[0],{source:'website-linked-profile',remoteKey:'target|assignment-123',remoteManagedId:'pool-456'});},()=>{});const result=await h.vault.scanRows([],[h.website('david','target','identity@example.test','pool-456')]);assert.equal(result.duplicates.length,0);});
