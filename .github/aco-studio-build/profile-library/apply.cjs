@@ -143,7 +143,7 @@ replace('site-bridge.js','return {open,signIn,hide,reload,bounds,read,adminRead,
    throw error;
   }
  }
- return {open,signIn:async(...args)=>{const result=await signIn(...args);try{await enrollDesktopDevice();}catch(error){console.error('Desktop Touch ID enrollment:',error?.message||error);}return result;},hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile,savedCustomerData,saveCustomerSavedData,changeCustomerAssignment,enrollDesktopDevice,unlockDesktopAdmin};`);
+ return {open,signIn:async(...args)=>{const result=await signIn(...args);if(process.platform==='darwin'){try{await enrollDesktopDevice();}catch(error){console.error('Desktop Touch ID enrollment:',error?.message||error);}}return result;},hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile,savedCustomerData,saveCustomerSavedData,changeCustomerAssignment,enrollDesktopDevice,unlockDesktopAdmin};`);
 replace('tests/personal-profiles-security.test.js',"customerId:'customer1',retailer:'walmart',rows:","customerId:'customer1',retailer:'target',rows:");
 replace('tests/personal-profiles-security.test.js',"customerId:'customer2',retailer:'pokemoncenter',data:","customerId:'customer2',retailer:'target',data:");
 replace('tests/personal-profiles-security.test.js',"customerId:'u2',retailer:'walmart',email:'shared@sample.test'","customerId:'u2',retailer:'target',email:'shared@sample.test'");
