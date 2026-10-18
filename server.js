@@ -1,3 +1,4 @@
+import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
@@ -28753,6 +28754,15 @@ async function adminOrderCustomerAccount(
     null
   );
 }
+
+// Authenticated ACO Studio shares the existing website/app customer vault,
+// with optimistic revisions, no new customer database and no exposed PAN.
+registerStudioCustomerRoutes({
+  app,requireAdmin,getCustomerAccounts,saveCustomerAccounts,getCustomerVault,
+  saveCustomerVault,customerSavedAddresses,sanitizeShippingAddress,
+  validShippingAddress,sanitizeSavedPaymentMethod,validSavedPaymentMethod,
+  syncCustomerMissingNotification,broadcastLiveDataChange,revisionSecret:process.env.SUBMISSION_ENCRYPTION_KEY
+});
 
 app.get(
   "/api/admin/submissions/:id/saved-details",

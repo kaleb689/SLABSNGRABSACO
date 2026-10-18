@@ -1,0 +1,23 @@
+name: Verify ACO Studio live customer vault bridge
+on:
+  push:
+    branches: [fix/studio-bidirectional-customer-vault-api-20261018]
+    paths:
+      - 'server.js'
+      - 'server-studio-customer-sync.js'
+      - 'test/studio-customer-sync.test.mjs'
+      - '.github/workflows/check-studio-customer-sync.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check server.js && node --check server-studio-customer-sync.js
+      - run: node --test test/studio-customer-sync.test.mjs
