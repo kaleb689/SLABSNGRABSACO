@@ -16,7 +16,7 @@ test("all confirmed community checkouts are exposed to Admin without checkout id
   assert.match(route, /const communityRecords = confirmed\.map\(record =>/);
   assert.match(route, /linked: Boolean\(record\.customerAccountId/);
   assert.match(route, /communityRecords,unmatchedCount/);
-  assert.match(route, /sum \+ \(checkoutPaidAmount\(record\) \?\? 0\)/);
+  assert.match(route, /communityCheckoutTotals\(confirmed\)/);
   const onlyGlobal = route.slice(route.indexOf("const communityRecords ="), route.indexOf('res.setHeader("Cache-Control"', route.indexOf("const communityRecords =")));
   assert.doesNotMatch(onlyGlobal, /orderNumber:\s*|sourceProfileLabel:\s*|password:\s*|managedAccountId:\s*|customerAccountId:\s*/);
   assert.match(onlyGlobal, /orderTotalKnown: safe\.orderTotalKnown/);

@@ -3,6 +3,8 @@
  * Do not invent order IDs, customers, dates, or retailer receipts for this
  * aggregate. Itemized history from the older screenshots is unavailable.
  */
+import { checkoutPaidAmount, checkoutOrderValue } from "./checkout-price-policy.js";
+
 export const HISTORICAL_COMMUNITY_SNAPSHOT = Object.freeze({
   checkoutCount: 240,
   spentCents: 1587611,
@@ -35,6 +37,39 @@ export function historicalPlusVerified({checkouts=0, spent=0, unknownPrices=0}) 
     liveConfirmedCheckouts: liveCheckouts,
     liveVerifiedSpent: liveSpendCents / 100,
     pricePendingCheckouts: Math.max(0, Math.floor(Number(unknownPrices) || 0))
+  };
+}
+
+/**
+ * Single authoritative community summary for Admin and the public home page.
+ * Callers pass the same filtered, non-cancelled Discord checkout rows.
+ * Checkout value counts placed preorders (and review holds) while totalSpent
+ * retains verified retailer-paid totals for audit. Historical history is
+ * appended ONCE and never materialized as fabricated individual orders.
+ */
+export function communityCheckoutTotals(eligibleRecords) {
+  const records = Array.isArray(eligibleRecords) ? eligibleRecords : [];
+  let paidCents = 0;
+  let checkoutValueCents = 0;
+  let pricePendingCheckouts = 0;
+  let checkoutValuePending = 0;
+  for (const record of records) {
+    const paidAmount = checkoutPaidAmount(record);
+    if (paidAmount === null) pricePendingCheckouts += 1;
+    else paidCents += moneyToCents(paidAmount);
+
+    const checkoutValue = checkoutOrderValue(record).amount;
+    if (checkoutValue === null) checkoutValuePending += 1;
+    else checkoutValueCents += moneyToCents(checkoutValue);
+  }
+  return {
+    ...historicalPlusVerified({
+      checkouts: records.length,
+      spent: paidCents / 100,
+      unknownPrices: pricePendingCheckouts
+    }),
+    totalCheckoutValue: (HISTORICAL_COMMUNITY_SNAPSHOT.spentCents + checkoutValueCents) / 100,
+    checkoutValuePending
   };
 }
 /** Avoid passing raw retailer login emails or secrets to UI. */

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   HISTORICAL_COMMUNITY_SNAPSHOT,
   historicalPlusVerified,
+  communityCheckoutTotals,
   moneyToCents,
   safeAdminProfileLabel,
   adminCheckoutCustomerName,
@@ -97,12 +98,17 @@ test("public and Admin endpoints read one authoritative live source and keep the
   const adminStart=server.indexOf('"/api/admin/success-overview"');
   const publicRoute=server.slice(publicStart,server.indexOf("async function saveSuccessCheckouts(",publicStart));
   const adminRoute=server.slice(adminStart,server.indexOf('app.get("/api/admin/discord-success-status"',adminStart));
-  assert.match(publicRoute,/historicalPlusVerified\(/);
+  assert.match(publicRoute,/communityCheckoutTotals\(confirmed\)/);
   assert.match(publicRoute,/visibleDiscordSuccessRecords/);
   assert.ok(adminRoute.includes("const unmatchedCount = unassignedConfirmed.length;"));
   assert.ok(adminRoute.includes("!record.customerAccountId || !customersById.has"));
-  assert.match(adminRoute,/const confirmed = allRecords\.filter\(record =>/);
-  assert.match(adminRoute,/confirmedDiscordPurchase\(record\) \|\| reviewHoldDiscordCheckout\(record\)/);
+  assert.match(adminRoute,/const confirmed = communityEligibleOrders\(allRecords\)/);
+  assert.match(adminRoute,/communityCheckoutTotals\(confirmed\)/);
+  const eligibleSource=server.slice(server.indexOf("function communityEligibleOrders("),
+    server.indexOf('app.get("/api/admin/success-overview"'));
+  assert.match(eligibleSource,/confirmedDiscordPurchase\(record\) \|\| reviewHoldDiscordCheckout\(record\)/);
+  assert.match(publicRoute,/communityEligibleOrders\(records\)/);
+  assert.match(site,/data\.totalCheckoutValue \?\? data\.totalSpent/);
   assert.doesNotMatch(adminRoute,/filter\(record => Boolean\(record\.customerAccountId\) && confirmedDiscordPurchase/);
   assert.match(adminRoute,/safeAdminProfileLabel/);
   assert.match(adminRoute,/adminCheckoutCustomerName/);
@@ -137,4 +143,22 @@ test("PKC matching review includes only confirmed orders and safe item descripti
   assert.match(script,/requestedRetailer/);
   assert.match(page,/match-products/);
   assert.match(script,/Choose a verified customer/);
+});
+
+test("shared dashboard summary includes preorders and holds without inventing paid totals", () => {
+  const preorder={status:"confirmed",orderTotal:80,orderTotalBasis:"item_subtotal",
+    items:[{name:"Preorder",price:40,quantity:2}]};
+  const charged={status:"confirmed",orderTotal:86.10,orderTotalBasis:"retailer_receipt",
+    items:[{name:"Charged",price:40,quantity:2}]};
+  const hold={status:"review_hold",items:[{name:"On hold",price:20,quantity:1}]};
+  const unpriced={status:"confirmed",items:[{name:"Unknown",price:0,quantity:1}]};
+  const orders=[preorder,charged,hold,unpriced];
+  const result=communityCheckoutTotals(orders);
+  assert.equal(result.totalCheckouts,244);
+  assert.equal(result.totalCheckoutValue,16062.21);
+  assert.equal(result.totalSpent,15962.21);
+  assert.equal(result.pricePendingCheckouts,3);
+  assert.equal(result.checkoutValuePending,1);
+  assert.deepEqual(communityCheckoutTotals(orders),result);
+  assert.equal(communityCheckoutTotals(orders.slice(0,2)).totalCheckoutValue,16042.21);
 });

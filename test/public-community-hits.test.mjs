@@ -120,15 +120,15 @@ test("Discord scanner mirrors reconciled orders, not raw green-only imports", ()
   assert.doesNotMatch(scan, /mirrorDiscordCheckoutHits\(imports\.filter/);
 });
 
-test("community total logic counts unassigned confirmed checkouts but not cancellations or holds", () => {
+test("public tracker shares Admin totals, including review holds until cancellation", () => {
   const start = server.indexOf('"/api/public/success"');
   const end = server.indexOf("async function saveSuccessCheckouts(", start);
   assert.ok(start > 0 && end > start);
   const handler = server.slice(start, end);
   assert.match(handler, /visibleDiscordSuccessRecords/);
-  assert.match(handler, /totalCheckouts \+= 1/);
+  assert.match(handler, /communityEligibleOrders\(records\)/);
+  assert.match(handler, /communityCheckoutTotals\(confirmed\)/);
   assert.doesNotMatch(handler, /customerAccountId/);
-  assert.match(handler, /pricePendingCheckouts/);
   assert.match(handler, /publicSuccessProductImage/);
 });
 

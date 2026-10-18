@@ -11,8 +11,9 @@ test("all-order Admin reporting includes unmatched confirmed webhooks but does n
   assert.ok(from>0&&to>from);
   const endpoint=server.slice(from,to);
   assert.match(endpoint,/app.get\("\/api\/admin\/success-overview", requireAdmin/);
-  assert.match(endpoint,/const confirmed = allRecords\.filter\(record =>/);
-  assert.match(endpoint,/reviewHoldDiscordCheckout\(record\)/);
+  assert.match(endpoint,/const confirmed = communityEligibleOrders\(allRecords\)/);
+  const sharedEligibility=server.slice(server.indexOf("function communityEligibleOrders("),from);
+  assert.match(sharedEligibility,/confirmedDiscordPurchase\(record\) \|\| reviewHoldDiscordCheckout\(record\)/);
   assert.match(endpoint,/const communityRecords = confirmed.map\(record =>/);
   assert.match(endpoint,/checkoutValue: safe.checkoutValue/);
   assert.match(endpoint,/orderTotal: safe.orderTotal/);
@@ -23,7 +24,7 @@ test("all-order Admin reporting includes unmatched confirmed webhooks but does n
   assert.doesNotMatch(community,/customerAccountId\s*:/);
   assert.doesNotMatch(community,/sourceProfileLabel\s*:/);
   assert.match(endpoint,/\.filter\(record => record.customerAccountId &&/);
-  assert.match(endpoint,/spent: confirmed.reduce\(\(sum, record\) =>/);
+  assert.match(endpoint,/communityCheckoutTotals\(confirmed\)/);
 });
 
 test("hiding a product from a public view cannot mutate the verified final amount charged",()=>{
