@@ -5,8 +5,8 @@ for(const file of ['profile-library.test.js','profile-duplicate-scan.test.js'])f
 function replace(file,anchor,value){const p=path.join(root,file),s=fs.readFileSync(p,'utf8');if(s.split(anchor).length!==2)throw Error(file+': library integration anchor changed');fs.writeFileSync(p,s.replace(anchor,value));}
 replace('profile-workshop-service.js','const service=createWorkshop(options);',"const service=createWorkshop(options);require('./profile-library-service').registerLibrary(options);");
 replace('main.js','window.JigStudioLocalImport?.workspaceState)', 'window.JigStudioLocalImport?.workspaceState && document.getElementById("profileLibraryPage") && window.desktopAPI?.profileLibrary && document.querySelectorAll(".profileNavChild").length===2)');
-replace('main.js','requireOwner:workshopOwner,authorize:',"getCustomerProfileSource:id=>siteBridge.profileSource(id),saveCustomerProfile:(id,remote,fields)=>siteBridge.saveCustomerProfile(id,remote,fields),requireOwner:workshopOwner,authorize:");
-replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.freeze(Object.fromEntries(['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','rules','saveRules'].map(method=>[method,payload=>ipcRenderer.invoke('profile:library:'+method,payload)]).concat([['cancel',()=>ipcRenderer.invoke('profile:library:cancel')]]))),\n profileWorkshop:Object.freeze({");
+replace('main.js','requireOwner:workshopOwner,authorize:',"getCustomerProfileSource:id=>siteBridge.profileSource(id),saveCustomerProfile:(id,remote,fields)=>siteBridge.saveCustomerProfile(id,remote,fields),getCustomerSavedData:id=>siteBridge.savedCustomerData(id),updateCustomerSavedData:(id,kind,recordId,payload)=>siteBridge.saveCustomerSavedData(id,kind,recordId,payload),requireOwner:workshopOwner,authorize:");
+replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.freeze(Object.fromEntries(['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','rules','saveRules'].map(method=>[method,payload=>ipcRenderer.invoke('profile:library:'+method,payload)]).concat([['cancel',()=>ipcRenderer.invoke('profile:library:cancel')]]))),\n profileWorkshop:Object.freeze({");
 replace('site-bridge.js',"const now=Date.now();if(now-lastEvent<750)return;lastEvent=now;","indexUntil=0;lastRosterAt=0;const now=Date.now();if(now-lastEvent<750)return;lastEvent=now;");
 replace('site-bridge.js','async function read(kind,opts={}){','let lastRoster=null,lastRosterAt=0;\n async function read(kind,opts={}){');
 replace('site-bridge.js',"return {customers,linkedInventoryComplete:complete,at:new Date().toISOString()};", "lastRoster=customers;lastRosterAt=Date.now();return {customers,linkedInventoryComplete:complete,at:new Date().toISOString()};");
@@ -60,7 +60,28 @@ replace('site-bridge.js','return {open,signIn,hide,reload,bounds,read,adminRead,
   indexUntil=0;lastRosterAt=0;notifyOwner();
   return {saved:true,updatedAt:String(verified.updatedAt||''),verifiedProfile:verified.customerProfile||null};
  }
- return {open,signIn,hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile};`);
+ async function savedCustomerData(customerId){
+  const key=id(customerId);
+  const roster=lastRoster&&Date.now()-lastRosterAt<15000?lastRoster:(await read('roster',{})).customers;
+  const member=roster.find(x=>x.id===key&&x.paid&&x.orderId);
+  if(!member)throw Error('Only an authorized customer account can be opened.');
+  const result=await api('/api/admin/aco-studio/customers/'+encodeURIComponent(key)+'/saved-data');
+  if(result?.customer?.id!==key)throw Error('Website customer ID mismatch. Data was discarded.');
+  await enableLive();return result;
+ }
+ async function saveCustomerSavedData(customerId,kind,recordId,payload){
+  const key=id(customerId),record=id(recordId);
+  if(!record||!['address','payment'].includes(kind))throw Error('Choose an exact saved website record.');
+  if(!payload?.expectedRevision||!/^[-a-f0-9]{64}$/i.test(payload.expectedRevision))throw Error('Reopen the record before making a live change.');
+  const roster=lastRoster&&Date.now()-lastRosterAt<15000?lastRoster:(await read('roster',{})).customers;
+  const member=roster.find(x=>x.id===key&&x.paid&&x.orderId);
+  if(!member)throw Error('Customer is not in the authorized website roster.');
+  const subpath=kind==='address'?'shipping-addresses':'payment-methods';
+  const result=await api('/api/admin/aco-studio/customers/'+encodeURIComponent(key)+'/'+subpath+'/'+encodeURIComponent(record),'PUT',payload);
+  if(result?.saved!==true)throw Error('Website refused the update. Nothing is marked synchronized.');
+  indexUntil=0;lastRosterAt=0;notifyOwner();return result;
+ }
+ return {open,signIn,hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile,savedCustomerData,saveCustomerSavedData};`);
 replace('tests/personal-profiles-security.test.js',"customerId:'customer1',retailer:'walmart',rows:","customerId:'customer1',retailer:'target',rows:");
 replace('tests/personal-profiles-security.test.js',"customerId:'customer2',retailer:'pokemoncenter',data:","customerId:'customer2',retailer:'target',data:");
 replace('tests/personal-profiles-security.test.js',"customerId:'u2',retailer:'walmart',email:'shared@sample.test'","customerId:'u2',retailer:'target',email:'shared@sample.test'");
