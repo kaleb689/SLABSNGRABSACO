@@ -62,7 +62,11 @@ function mergeSnapshot(previous,response){
   const fresh=next.get(key),prior=old.get(key);
   // Live reads are independent requests. A transient failure for one endpoint
   // must never erase a previously verified panel while the other endpoints load.
-  items.push(fresh&&fresh.data!=null?fresh:(prior?.data!=null?prior:fresh||prior));
+  const freshEmptyOverview=key==='success-overview'&&fresh?.data&&prior?.data&&
+   Number(fresh.data?.communityTotals?.checkouts||0)===0&&Number(fresh.data?.communityTotals?.spent||0)===0&&
+   arr(fresh.data?.records).length===0&&
+   (Number(prior.data?.communityTotals?.checkouts||0)>0||Number(prior.data?.communityTotals?.spent||0)>0||arr(prior.data?.records).length>0);
+  items.push(freshEmptyOverview?prior:(fresh&&fresh.data!=null?fresh:(prior?.data!=null?prior:fresh||prior)));
  }
  return {...previous,...response,items};
 }
@@ -112,7 +116,7 @@ function renderHome(response){
  const rev=dataKey(response,'membership-revenue'),orders=dataKey(response,'success-overview'),usage=dataKey(response,'app-usage'),notification=dataKey(response,'site-notification');
  const rows=arr(orders?.records).slice(0,8);
  const total=orders?.communityTotals||{};
- resultBox('home').innerHTML=`<div class="aco-native-stats"><div class="aco-native-stat"><small>Confirmed checkouts</small><b>${esc(total.checkouts??rows.length)}</b></div><div class="aco-native-stat"><small>Community spend</small><b>${amount(total.spent)}</b></div><div class="aco-native-stat"><small>Unmatched orders</small><b>${esc(orders?.unmatchedCount??'—')}</b></div><div class="aco-native-stat"><small>Membership billing</small><b>${esc(rev?.monthlyRevenueFormatted||rev?.totalMonthlyRevenueFormatted||rev?.monthlyTotalFormatted||'Open breakdown')}</b></div></div>
+ resultBox('home').innerHTML=`<div class="aco-native-stats"><div class="aco-native-stat"><small>Confirmed checkouts</small><b>${esc(total.checkouts??rows.length)}</b></div><div class="aco-native-stat"><small>Community spend</small><b>${amount(total.spent)}</b></div><div class="aco-native-stat"><small>Unmatched orders</small><b>${esc(orders?.unmatchedCount??'—')}</b></div><div class="aco-native-stat"><small>Membership billing</small><b>${esc(rev?.monthlyRevenueFormatted||rev?.totalMonthlyRevenueFormatted||rev?.monthlyTotalFormatted||(rev?.monthlyRecurringCents!=null?centsAmount(rev.monthlyRecurringCents):'Open breakdown'))}</b></div></div>
  <div class="aco-native-columns">${panel('Membership revenue',rev?stats(rev):empty(errKey(response,'membership-revenue')||'Revenue unavailable'))}
  ${panel('App usage',usage?stats(usage):empty(errKey(response,'app-usage')||'App usage unavailable'))}</div>
  ${panel('Recent checkouts',rows.length?ordersTable(rows):empty('No attributed orders loaded.'),'<button type="button" class="btn slim plain" data-go="orders">See all →</button>')}
