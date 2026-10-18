@@ -88,7 +88,7 @@
       const current = map.get(key) || {name, qty:0, image:item?.image || item?.imageUrl || ""};
       current.qty += Math.max(0, Math.floor(Number(item?.quantity) || 0)); if (!current.image) current.image = item?.image || item?.imageUrl || ""; map.set(key,current);
     }
-    $("products").innerHTML = map.size ? `<div class="products">${[...map.values()].sort((a,b)=>b.qty-a.qty).map(item => `<div class="product">${item.image?`<img src="${esc(item.image)}" alt="">`:'<div class="product-placeholder">SNG</div>'}<div><strong>${esc(item.name)}</strong><small>Purchased quantity</small></div><span class="pill">× ${item.qty}</span></div>`).join("")}</div>` : '<p>No products in this period.</p>';
+    $("products").innerHTML = map.size ? `<div class="products">${[...map.values()].sort((a,b)=>b.qty-a.qty).map(item => `<div class="product">${item.image?`<img src="${esc(item.image)}" alt="">`:'<div class="product-placeholder">Image pending</div>'}<div><strong>${esc(item.name)}</strong><small>Purchased quantity</small></div><span class="pill">× ${item.qty}</span></div>`).join("")}</div>` : '<p>No products in this period.</p>';
   }
   function renderCustomers(rows) {
     const map = new Map();
