@@ -55,7 +55,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           set -euo pipefail
-          node -e "const {build,Platform}=require('electron-builder');build({targets:Platform.WINDOWS.createTarget(['nsis'],'x64'),publish:'never'}).catch(e=>{console.error(e.stack);process.exit(1)})"
+          node -e "const {build,Platform,Arch}=require('electron-builder');build({targets:Platform.WINDOWS.createTarget(['nsis'],Arch.x64),publish:'never'}).catch(e=>{console.error(e.stack);process.exit(1)})"
           find dist -maxdepth 2 -type f -name '*.exe' -print
           test "$(find dist -maxdepth 2 -type f -name '*.exe' | wc -l)" -ge 1
       - name: Archive Windows installer and checksum
