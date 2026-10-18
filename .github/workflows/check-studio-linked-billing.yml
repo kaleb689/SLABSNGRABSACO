@@ -1,0 +1,26 @@
+name: Validate Studio linked customer billing sync
+on:
+  push:
+    branches: [fix/studio-billing-fields-two-way-20261018]
+    paths:
+      - 'server.js'
+      - 'test/studio-linked-billing.test.mjs'
+      - '.github/workflows/check-studio-linked-billing.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify website routes syntax and remote billing/readback contract
+        run: |
+          node --check server.js
+          node --check server-studio-customer-sync.js
+          node --test test/studio-linked-billing.test.mjs
+          node --test test/studio-customer-sync.test.mjs
