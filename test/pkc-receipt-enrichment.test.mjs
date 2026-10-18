@@ -150,8 +150,8 @@ test("customer tracking UI loads its style and never renders retailer-account or
   const page=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
   const app=readFileSync(new URL("../public/app-dashboard.js",import.meta.url),"utf8");
   const style=readFileSync(new URL("../public/app-tracking-sheet.css",import.meta.url),"utf8");
-  assert.match(page,/app-tracking-sheet\.css\?v=20261018-pkc-orders/);
-  assert.match(page,/app-dashboard\.js\?v=20261018-pkc-tracking/);
+  assert.match(page,/app-tracking-sheet\.css\?v=20261018-complete-items-images-1/);
+  assert.match(page,/app-dashboard\.js\?v=20261018-complete-items-images-1/);
   assert.match(app,/const trackingSheetHtml = order =>/);
   const sheet=app.slice(app.indexOf("const trackingSheetHtml"),app.indexOf("function orderRows("));
   assert.doesNotMatch(sheet,/accountEmail|masterInbox|sourceProfileLabel|account\.email/);
