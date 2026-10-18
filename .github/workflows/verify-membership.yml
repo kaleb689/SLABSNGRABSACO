@@ -19,6 +19,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: node --check checkout-reporting.js
       - run: node --check server.js
+      - run: node --test test/managed-customer-write-policy.test.mjs test/studio-customer-sync.test.mjs test/studio-linked-billing.test.mjs test/studio-live-http.test.mjs
       - run: node --test test/membership-gift-billing.test.mjs test/membership-billing-math.test.mjs
       - run: node --check public/app.js
       - run: node --check public/app-dashboard.js
@@ -44,7 +45,7 @@ jobs:
       - run: node --check discord-checkout-owner-evidence.js
       - run: node --test test/discord-checkout-owner-evidence.test.mjs
       - run: node --test test/drop-sku-alerts.test.mjs test/sku-reminders.test.mjs test/pwa-worker.test.mjs
-      - run: node --test test/checkout-reporting.test.mjs
+      - run: node --test test/checkout-reporting.test.mjs test/community-product-identity.test.mjs
       - run: node --test test/admin-success-ui.test.mjs
       - run: node --test test/admin-success-breakdowns.test.mjs
       - run: node --test test/admin-grouped-orders-and-selected-controls.test.mjs

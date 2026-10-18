@@ -6,6 +6,7 @@ import { isModuleLifecycleDiscordMessage } from "../discord-checkout-event-polic
 import { checkoutStatusFromDiscord, checkoutIdentityFromDiscord, checkoutProductFromDiscord } from "../discord-checkout-identity.js";
 import { checkoutExplicitPaidTotal } from "../checkout-price-policy.js";
 import { communityCheckoutTotals } from "../checkout-reporting.js";
+import { consolidateCommunityProducts } from "../community-product-identity.js";
 import { isModuleLifecycleCheckout } from "../discord-checkout-event-policy.js";
 import { cancelledOrder } from "../order-notifications.js";
 import { authoritativeDiscordCheckouts } from "../success-source-policy.js";
@@ -89,7 +90,7 @@ test("public tracker matches Admin checkout-value totals for unmatched, linked, 
     publicSuccessProductName:s=>String(s||"").trim(),
     isSafeDiscordCheckoutProductName:s=>Boolean(s),
     publicSuccessProductImage:()=>null,
-    communityCheckoutTotals,
+    communityCheckoutTotals, consolidateCommunityProducts,
     console
   };
   vm.runInNewContext(server.slice(purchaseStart,purchaseEnd)+server.slice(filterStart,filterEnd)+server.slice(routeStart,routeEnd),context);

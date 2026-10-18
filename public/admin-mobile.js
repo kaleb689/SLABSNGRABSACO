@@ -448,8 +448,9 @@ if(tab==="success"){
     rows.forEach(order=>(order.items||[]).forEach(item=>{
       const name=String(item.name||"Product");
       const retailer=String(order.retailer||"Retailer");
-      const key=retailer.toLowerCase()+"|"+name.toLowerCase();
-      const entry=goods.get(key)||{name,retailer,quantity:0,imageUrl:item.imageUrl||""};
+      const key=String(item.productKey||name.toLowerCase());
+      const entry=goods.get(key)||{name,retailers:new Set(),quantity:0,imageUrl:item.imageUrl||""};
+      entry.retailers.add(retailer);
       entry.quantity+=Math.max(0,Math.floor(Number(item.quantity)||0));
       if(!entry.imageUrl)entry.imageUrl=item.imageUrl||"";
       goods.set(key,entry);
@@ -460,7 +461,7 @@ if(tab==="success"){
     return '<div class="success-products-list">'+visible.map(x=>
       '<div class="success-product-row">'+
       '<img alt="" loading="lazy" src="'+esc(safeImage(x.imageUrl)?x.imageUrl:"/slabsngrabs-aco-logo-transparent.png")+'">'+
-      '<div class="success-product-copy"><strong>'+esc(x.name)+'</strong><small>'+esc(x.retailer)+'</small></div>'+
+      '<div class="success-product-copy"><strong>'+esc(x.name)+'</strong><small>'+esc([...x.retailers].join(" · "))+'</small></div>'+
       '<span class="success-product-quantity">×'+x.quantity+'</span></div>').join("")+'</div>'+
       (products.length>visible.length?'<p class="success-overflow">+'+(products.length-visible.length)+' more products in this period</p>':'');
   }
