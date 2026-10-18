@@ -22,11 +22,17 @@ const normalizedName = name => {
 function linesFromEmail(value, html = false) {
   let source = String(value || "").slice(0, 250000);
   if (html) source = source
+    .replace(/<\s*(?:script|style)\b[^>]*>[\s\S]*?<\s*\/\s*(?:script|style)\s*>/gi, " ")
     .replace(/<\s*br\b[^>]*>/gi, "\n")
     .replace(/<\s*\/(?:div|p|tr|li|h[1-6]|table|section)\s*>/gi, "\n")
     .replace(/<\s*\/?(?:td|th)\b[^>]*>/gi, "\n")
     .replace(/<[^>]*>/g, " ");
   return source
+    .replace(/&#(?:x([0-9a-f]{1,6})|(\d{1,7}));/gi, (whole,hex,dec) => {
+      const code = parseInt(hex || dec, hex ? 16 : 10);
+      return Number.isInteger(code) && code > 31 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : " ";
+    })
+    .replace(/&eacute;/gi, "é")
     .replace(/&nbsp;|&#160;|&#xA0;/gi, " ")
     .replace(/&amp;/gi, "&").replace(/&ndash;|&#8211;/gi, "–")
     .replace(/&mdash;|&#8212;/gi, "—")
@@ -54,7 +60,7 @@ function scanSummary(lines) {
       break;
     }
     const product = line.match(/^(Pok[eé]mon\s+TCG\s*:\s*[^<>]{5,220})$/i);
-    if (product) {
+    if (product && !/@|\b(?:password|login|address|phone|security code|credit card|cvv)\b/i.test(product[1])) {
       finish();
       current = {name: product[1].replace(/\s+/g, " ").trim(), sku: null, quantity: null};
       if (items.length >= MAX_PRODUCTS) break;
@@ -106,21 +112,30 @@ export function pokemonCenterFulfillmentDetails({subject = "", text = "", html =
 export function mergeRetailerFulfillmentItems(existing, receipt) {
   const prior = Array.isArray(existing) ? existing : [];
   const sourced = Array.isArray(receipt) ? receipt : [];
-  const final = prior.map(item => ({...item}));
-  const keys = new Map(final.map((item, index) => [normalizedName(item.name), index]));
+  const final = prior.filter(item =>
+    String(item?.name || "").trim().toLowerCase() !== "product details unavailable"
+  ).map(item => ({...item}));
+  const keys = new Map();
+  for (const [index, item] of final.entries()) {
+    if (item.sku) keys.set("sku:" + String(item.sku).toLowerCase(), index);
+    keys.set("name:" + normalizedName(item.name), index);
+  }
   for (const source of sourced) {
     if (!source || !source.name || !source.sku ||
         !Number.isInteger(source.quantity) || source.quantity < 1) continue;
-    const key = normalizedName(source.name);
-    if (!key) continue;
-    if (keys.has(key)) {
-      const target = final[keys.get(key)];
+    const nameKey = "name:" + normalizedName(source.name);
+    const skuKey = "sku:" + String(source.sku).toLowerCase();
+    if (!normalizedName(source.name)) continue;
+    const index = keys.has(skuKey) ? keys.get(skuKey) : keys.get(nameKey);
+    if (index !== undefined) {
+      const target = final[index];
       // Shipment emails are not evidence of a unit price or an increase in
       // quantity when the trusted webhook already carries a larger amount.
       target.quantity = Math.max(Number(target.quantity) || 0, source.quantity);
       if (!target.sku) target.sku = source.sku;
     } else {
-      keys.set(key, final.length);
+      keys.set(nameKey, final.length);
+      keys.set(skuKey, final.length);
       final.push({ name: source.name, sku: source.sku,
         quantity: source.quantity, price: 0, imageUrl: null });
     }
