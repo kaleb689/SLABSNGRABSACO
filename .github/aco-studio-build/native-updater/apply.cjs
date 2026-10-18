@@ -9,7 +9,7 @@ edit('desktop-updates.js',[["function register({app,ipcMain,dialog,BrowserWindow
   if(process.platform==='darwin')return require('./mac-full-updates').register(options);
   const {app,ipcMain,dialog,BrowserWindow}=options;`]]);
 edit('main.js',[
- ["require('./desktop-updates').register({app,ipcMain,dialog,BrowserWindow});","require('./desktop-updates').register({app,ipcMain,dialog,BrowserWindow,requireOwner:ownerSender});"],
+ ["require('./desktop-updates').register({app,ipcMain,dialog,BrowserWindow});","const nativeUpdater=require('./desktop-updates').register({app,ipcMain,dialog,BrowserWindow,requireOwner:ownerSender});"],
  ["app.setName('SLABSNGRABSACO ACO Studio - Owner');",`// Keep the original runtime name and data directory despite the shorter Finder label.
 app.setName('SLABSNGRABSACO ACO Studio - Owner');
 app.setPath('userData',path.join(app.getPath('appData'),'SLABSNGRABSACO ACO Studio - Owner'));`],
