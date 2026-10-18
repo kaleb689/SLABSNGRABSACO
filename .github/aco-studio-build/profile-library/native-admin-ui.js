@@ -8,11 +8,12 @@ const $=id=>document.getElementById(id);
 const arr=v=>Array.isArray(v)?v:[];
 const short=(v,n=120)=>String(v??'').slice(0,n);
 const amount=v=>'$'+(Number(v)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const centsAmount=v=>amount((Number(v)||0)/100);
 const when=v=>{const d=new Date(v||'');return Number.isFinite(d.getTime())?d.toLocaleString():'—';};
 const flatten=(v,prefix='',out=[],depth=0)=>{
  if(depth>2||!v||typeof v!=='object')return out;
  for(const [key,value] of Object.entries(v)){
-  if(['ok','records','communityRecords','memberships','codes','customers','profiles','items','notification','addresses','paymentMethods','unmatchedRecent'].includes(key))continue;
+  if(['ok','records','communityRecords','memberships','codes','customers','profiles','items','notification','addresses','paymentMethods','unmatchedRecent','recurringCalculation','calculatedAt'].includes(key))continue;
   const label=(prefix?prefix+' · ':'')+key.replace(/([a-z])([A-Z])/g,'$1 $2').replace(/_/g,' ');
   if(typeof value==='string'||typeof value==='number'||typeof value==='boolean')out.push([label,value]);
   else if(value&&typeof value==='object'&&!Array.isArray(value))flatten(value,label,out,depth+1);
@@ -54,11 +55,25 @@ function clearPending(section){pendingSections.delete(section);const hint=panes.
 function deferLive(section){return dirtySections.has(section)||focusedEditor(section)||editing;}
 
 function resultBox(section){return panes.get(section).querySelector('.aco-native-result');}
+function itemMap(response){return new Map(arr(response?.items).map(item=>[item?.key,item]).filter(([key])=>key));}
+function mergeSnapshot(previous,response){
+ if(!previous)return response;
+ const old=itemMap(previous),next=itemMap(response),keys=new Set([...old.keys(),...next.keys()]),items=[];
+ for(const key of keys){
+  const fresh=next.get(key),prior=old.get(key);
+  const freshEmptyOverview=key==='success-overview'&&fresh?.data&&prior?.data&&
+   Number(fresh.data?.communityTotals?.checkouts||0)===0&&Number(fresh.data?.communityTotals?.spent||0)===0&&
+   arr(fresh.data?.records).length===0&&
+   (Number(prior.data?.communityTotals?.checkouts||0)>0||Number(prior.data?.communityTotals?.spent||0)>0||arr(prior.data?.records).length>0);
+  items.push(freshEmptyOverview?prior:(fresh&&fresh.data!=null?fresh:(prior?.data!=null?prior:fresh||prior)));
+ }
+ return {...previous,...response,items};
+}
 function sectionStatus(section,message,error=false){const p=resultBox(section);if(!p)return;p.textContent=message;p.classList.toggle('is-error',error);}
 function groupData(item,field){return arr(item?.[field]);}
 function panel(title,content='',extra=''){return `<section class="aco-native-card"><header><h3>${esc(title)}</h3>${extra}</header>${content}</section>`;}
 function empty(text){return `<p class="aco-native-empty">${esc(text)}</p>`;}
-function stats(data){return `<div class="aco-native-stats">${flatten(data).filter(([k,v])=>typeof v==='number'||typeof v==='string'&&v.length<70).slice(0,8).map(([key,value])=>`<div class="aco-native-stat"><small>${esc(key)}</small><b>${esc(value)}</b></div>`).join('')}</div>`;}
+function stats(data){return `<div class="aco-native-stats">${flatten(data).filter(([k,v])=>typeof v==='number'||typeof v==='string'&&v.length<70).slice(0,8).map(([key,value])=>{const isCents=/\bcents$/i.test(key.trim()),label=isCents?key.replace(/\s*cents$/i,''):key;const shown=isCents?centsAmount(value):/^currency$/i.test(label)?String(value).toUpperCase():value;return `<div class="aco-native-stat"><small>${esc(label)}</small><b>${esc(shown)}</b></div>`;}).join('')}</div>`;}
 async function load(section,silent=false){
  if(!api?.adminRead||loading.has(section))return;
  if(silent&&deferLive(section)){markPending(section);return;}
@@ -73,13 +88,18 @@ async function load(section,silent=false){
   if(silent&&renderedFingerprints.get(section)===fingerprint){clearPending(section);connected=true;return;}
   // The network may finish after the owner has started typing. Never destroy a live form.
   if(silent&&deferLive(section)){markPending(section);connected=true;return;}
-  if(section==='home'){dashboardSnapshot=response;renderHome(response);}
-  if(section==='orders'){ordersSnapshot=response;renderOrders(response);}
-  if(section==='memberships'){memberSnapshot=response;renderMemberships(response);}
-  if(section==='accounts'){poolSnapshot=response;renderAccounts(response);}
-  if(section==='operations'){operationsSnapshot=response;renderOperations(response);}
-  renderedFingerprints.set(section,fingerprint);clearPending(section);connected=true;
- }catch(e){sectionStatus(section,e.message||'Unable to load Admin.',true);connected=false;}
+  if(section==='home'){dashboardSnapshot=mergeSnapshot(dashboardSnapshot,response);renderHome(dashboardSnapshot);}
+  if(section==='orders'){ordersSnapshot=mergeSnapshot(ordersSnapshot,response);renderOrders(ordersSnapshot);}
+  if(section==='memberships'){memberSnapshot=mergeSnapshot(memberSnapshot,response);renderMemberships(memberSnapshot);}
+  if(section==='accounts'){poolSnapshot=mergeSnapshot(poolSnapshot,response);renderAccounts(poolSnapshot);}
+  if(section==='operations'){operationsSnapshot=mergeSnapshot(operationsSnapshot,response);renderOperations(operationsSnapshot);}
+  const rendered={home:dashboardSnapshot,orders:ordersSnapshot,memberships:memberSnapshot,accounts:poolSnapshot,operations:operationsSnapshot}[section]||response;
+  renderedFingerprints.set(section,JSON.stringify(rendered?.items||[]));clearPending(section);connected=true;
+ }catch(e){
+  const prior={home:dashboardSnapshot,orders:ordersSnapshot,memberships:memberSnapshot,accounts:poolSnapshot,operations:operationsSnapshot}[section];
+  if(prior?.items?.some(item=>item?.data!=null)){connected=true;markPending(section);}
+  else {sectionStatus(section,e.message||'Unable to load Admin.',true);connected=false;}
+ }
  finally{loading.delete(section);}
 }
 function selectTab(id){
@@ -95,7 +115,7 @@ function renderHome(response){
  const rev=dataKey(response,'membership-revenue'),orders=dataKey(response,'success-overview'),usage=dataKey(response,'app-usage'),notification=dataKey(response,'site-notification');
  const rows=arr(orders?.records).slice(0,8);
  const total=orders?.communityTotals||{};
- resultBox('home').innerHTML=`<div class="aco-native-stats"><div class="aco-native-stat"><small>Confirmed checkouts</small><b>${esc(total.checkouts??rows.length)}</b></div><div class="aco-native-stat"><small>Community spend</small><b>${amount(total.spent)}</b></div><div class="aco-native-stat"><small>Unmatched orders</small><b>${esc(orders?.unmatchedCount??'—')}</b></div><div class="aco-native-stat"><small>Membership billing</small><b>${esc(rev?.monthlyRevenueFormatted||rev?.totalMonthlyRevenueFormatted||rev?.monthlyTotalFormatted||'Open breakdown')}</b></div></div>
+ resultBox('home').innerHTML=`<div class="aco-native-stats"><div class="aco-native-stat"><small>Confirmed checkouts</small><b>${esc(total.checkouts??rows.length)}</b></div><div class="aco-native-stat"><small>Community spend</small><b>${amount(total.spent)}</b></div><div class="aco-native-stat"><small>Unmatched orders</small><b>${esc(orders?.unmatchedCount??'—')}</b></div><div class="aco-native-stat"><small>Membership billing</small><b>${esc(rev?.monthlyRevenueFormatted||rev?.totalMonthlyRevenueFormatted||rev?.monthlyTotalFormatted||(rev?.monthlyRecurringCents!=null?centsAmount(rev.monthlyRecurringCents):'Open breakdown'))}</b></div></div>
  <div class="aco-native-columns">${panel('Membership revenue',rev?stats(rev):empty(errKey(response,'membership-revenue')||'Revenue unavailable'))}
  ${panel('App usage',usage?stats(usage):empty(errKey(response,'app-usage')||'App usage unavailable'))}</div>
  ${panel('Recent checkouts',rows.length?ordersTable(rows):empty('No attributed orders loaded.'),'<button type="button" class="btn slim plain" data-go="orders">See all →</button>')}

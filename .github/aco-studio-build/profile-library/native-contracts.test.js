@@ -99,6 +99,10 @@ test('native UI contains all operational sections, preserves filters and avoids 
  assert.match(code,/customer-og/);
  assert.match(code,/customer-message/);
  assert.match(code,/Confirmed website actions/i);
+ assert.match(code,/mergeSnapshot\(/);
+ assert.match(code,/freshEmptyOverview/);
+ assert.match(code,/centsAmount/);
+ assert.doesNotMatch(code,/current_subscription_prices.*<\/b>/);
 });
 
 test('complete native app resources, icon and retained Full Website Admin fallback package correctly',()=>{
@@ -119,6 +123,13 @@ test('complete native app resources, icon and retained Full Website Admin fallba
  assert.match(source('desktop-native.js'),/ACOStudioIcon\.png/);
  assert.equal(fs.readFileSync(path.join(appRoot,'JigStudio.icns')).toString('ascii',0,4),'icns');
  for(const file of config.build.files){assert.ok(fs.existsSync(path.join(appRoot,file)),'packaged asset missing: '+file);}
+ assert.ok(config.build.files.includes('native-touchid.js'));
+ const touch=source('native-touchid.js');
+ assert.match(touch,/ownerSecurity/);
+ assert.match(touch,/touchId\(\)/);
+ assert.match(source('preload.js'),/ownerSecurity:Object\.freeze/);
+ assert.match(source('main.js'),/owner:touch-id/);
+ assert.match(source('main.js'),/systemPreferences\.promptTouchID/);
  assert.deepEqual(config.build.extraResources,[{from:'../Branding/JigStudio.icns',to:'JigStudio.icns'}]);
  assert.ok(fs.existsSync(path.join(appRoot,'../Branding/JigStudio.icns')));
 });
