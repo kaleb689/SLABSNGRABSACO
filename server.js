@@ -28754,6 +28754,15 @@ async function adminOrderCustomerAccount(
   );
 }
 
+// Authenticated ACO Studio shares the existing website/app customer vault,
+// with optimistic revisions, no new customer database and no exposed PAN.
+require('./server-studio-customer-sync').registerStudioCustomerRoutes({
+  app,requireAdmin,getCustomerAccounts,saveCustomerAccounts,getCustomerVault,
+  saveCustomerVault,customerSavedAddresses,sanitizeShippingAddress,
+  validShippingAddress,sanitizeSavedPaymentMethod,validSavedPaymentMethod,
+  syncCustomerMissingNotification,revisionSecret:process.env.SUBMISSION_ENCRYPTION_KEY
+});
+
 app.get(
   "/api/admin/submissions/:id/saved-details",
   requireAdmin,
