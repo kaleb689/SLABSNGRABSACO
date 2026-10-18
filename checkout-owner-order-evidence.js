@@ -19,6 +19,8 @@ const approved = Object.freeze([{
   orderHash: "979d1293cac1f01a77b47fe19c1d28d68f0000e134ce2608f225d9c317996d90",
   after: "2026-10-13", before: "2026-10-18",
   total: 106.40,
+  subtotal: 99.90,
+  unitPrice: 9.99,
   items: [
     ["Mew", "Day", "166"], ["Lapras", "Day", "169"],
     ["Pikachu", "Night", "172"], ["Pikachu", "Day", "167"],
@@ -56,7 +58,16 @@ export function ownerVerifiedOrderEvidence(record, entries=approved) {
   // variants. Never add a quantity beyond those ten.
   if (enriched.items.length!==10 || enriched.itemCount!==10 ||
       enriched.items.some(item=>Number(item.quantity)!==1)) return null;
-  return { evidence, items:enriched.items, total:evidence.total };
+  // For this specifically attested ten-variant PKC order, the screenshot
+  // confirms one $9.99 tin and the receipt confirms ten tins totalling
+  // exactly $99.90 before tax. Do not infer prices for unrelated orders.
+  const consistentUnitPrice = Number(evidence.unitPrice) > 0 &&
+    Math.round(Number(evidence.unitPrice) * 10 * 100) ===
+      Math.round(Number(evidence.subtotal) * 100);
+  const items = consistentUnitPrice
+    ? enriched.items.map(item => ({...item, price:Number(evidence.unitPrice)}))
+    : enriched.items;
+  return { evidence, items, total:evidence.total };
 }
 
 export function applyOwnerVerifiedOrderEvidence(records, entries=approved) {
