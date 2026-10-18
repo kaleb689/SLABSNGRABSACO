@@ -28344,6 +28344,13 @@ app.get(
             assignment.customerProfile ||
             {},
 
+          customerBillingProfile:
+            assignment.customerBillingProfile ||
+            {},
+
+          savedAddressId: assignment.savedAddressId || null,
+          savedPaymentMethodId: assignment.savedPaymentMethodId || null,
+
           jigNeeded: assignment.jigNeeded === true,
           exportAttemptStatus: assignment.exportAttemptStatus || null,
           exportAttemptedAt: assignment.exportAttemptedAt || null,
@@ -28501,6 +28508,13 @@ app.get(
           customerProfile:
             assignment.customerProfile ||
             {},
+
+          customerBillingProfile:
+            assignment.customerBillingProfile ||
+            {},
+
+          savedAddressId: assignment.savedAddressId || null,
+          savedPaymentMethodId: assignment.savedPaymentMethodId || null,
 
           jigNeeded: assignment.jigNeeded === true,
           exportAttemptStatus: assignment.exportAttemptStatus || null,
@@ -31845,6 +31859,19 @@ app.put(
       assignment.customerProfile =
         customerProfile;
 
+      // Billing is a separate linked-profile address, not the customer's
+      // shared saved shipping address or card vault.
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, "customerBillingProfile")) {
+        const nextBilling = mergeManagedCustomerProfile(
+          assignment.customerBillingProfile,
+          req.body.customerBillingProfile
+        );
+        if (!validProfile(nextBilling)) {
+          return res.status(400).json({ error: "Complete the billing profile before saving." });
+        }
+        assignment.customerBillingProfile = nextBilling;
+      }
+
       assignment.customerSecrets =
         encryptJson(
           customerSecrets
@@ -31905,6 +31932,8 @@ app.put(
         ok: true,
 
         customerProfile,
+
+        customerBillingProfile: assignment.customerBillingProfile || null,
 
         customerCard:
           managedCustomerCardFromSecrets(
