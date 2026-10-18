@@ -13192,7 +13192,7 @@ function renderSuccessProductPreview(
             alt="${escapeHtml(name)}"
             class="success-product-image"
             loading="lazy"
-            referrerpolicy="no-referrer"
+            referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'/product-image-pending.svg\'"
           />
 
           ${
@@ -13562,7 +13562,7 @@ function renderSuccessCheckouts(
         <div class="success-shipping-showcase">
           <div class="success-shipping-product">
             <div class="success-shipping-main-image ${primaryImage ? "" : "success-product-placeholder"}">
-              ${primaryImage ? `<img src="${escapeHtml(primaryImage)}" alt="${escapeHtml(primaryName)}" loading="lazy" referrerpolicy="no-referrer" />` : "<span>ITEM</span>"}
+              ${primaryImage ? `<img src="${escapeHtml(primaryImage)}" alt="${escapeHtml(primaryName)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'/product-image-pending.svg\'" />` : "<span>ITEM</span>"}
             </div>
             <div>
               <span class="success-checkout-retailer">${escapeHtml(retailer)}</span>
@@ -13911,7 +13911,7 @@ function renderSuccessAllOrders(
                                   name
                                 )}"
                                 loading="lazy"
-                                referrerpolicy="no-referrer"
+                                referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'/product-image-pending.svg\'"
                               />
                             `
                             : `
