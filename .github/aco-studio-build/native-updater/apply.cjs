@@ -35,6 +35,17 @@ app.setPath('userData',path.join(app.getPath('appData'),'SLABSNGRABSACO ACO Stud
 // A network failure must not erase offline/local data or trap the application.
 edit('main.js',[
  [" launch();\n app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)launch();});",` let startupFinished=false;
+ async function signInAndVerifyAdmin(){
+  if(process.argv.includes('--aco-studio-ci-smoke'))return;
+  // Restore an authenticated existing website session without an extra login.
+  if(siteBridge.isReady()){try{await siteBridge.read('roster',{});return;}catch{}}
+  siteBridge.signIn();
+  for(;;){
+   if(!siteBridge.isReady()){await new Promise(r=>setTimeout(r,1200));continue;}
+   try{await siteBridge.read('roster',{});return;}
+   catch{await new Promise(r=>setTimeout(r,1500));}
+  }
+ }
  async function openAfterNativeStartup(){
   let splash=null;
   if(process.platform==='darwin'&&!process.argv.includes('--aco-studio-ci-smoke')){
@@ -50,18 +61,14 @@ edit('main.js',[
   // The existing website Admin authentication is the program's sign-in.
   // A successful authenticated API read, not merely an open browser window,
   // is required before any protected desktop workspace is created.
-  if(!process.argv.includes('--aco-studio-ci-smoke')){
-   siteBridge.signIn();
-   for(;;){
-    if(!siteBridge.isReady()){await new Promise(r=>setTimeout(r,1200));continue;}
-    try{await siteBridge.read('roster',{});break;}
-    catch{await new Promise(r=>setTimeout(r,1500));}
-   }
-  }
+  await signInAndVerifyAdmin();
   startupFinished=true;launch();
  }
  void openAfterNativeStartup();
- app.on('activate',()=>{if(!startupFinished){siteBridge.signIn();return;}if(BrowserWindow.getAllWindows().length===0)launch();});`]
+ app.on('activate',()=>{
+  if(!startupFinished){siteBridge.signIn();return;}
+  if(!ownerWindow||ownerWindow.isDestroyed())void signInAndVerifyAdmin().then(()=>launch()).catch(error=>console.error('Admin sign-in failed:',error.message));
+ });`]
 ]);
 edit('preload.js',[["updates:Object.freeze({info:","updates:Object.freeze({nativeMac:process.platform==='darwin',progress:()=>ipcRenderer.invoke('updates:progress'),info:"]]);
 edit('site-ui.js',[["renderNotices();renderJigGroups();setConnection(false);","renderNotices();renderJigGroups();setConnection(false);void sync(false);"]]);
