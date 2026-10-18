@@ -104,8 +104,8 @@ for(const f of files)if(!pkg.build.files.includes(f))pkg.build.files.push(f);
 pkg.dependencies={...(pkg.dependencies||{}),'electron-updater':'^6.8.9'};
 // One-click per-user installer allows subsequent full updates to run silently.
 // The application ID, executable name and existing encrypted userData remain.
-pkg.win=pkg.win||{};
-pkg.win.artifactName='ACO-Studio-Setup-${version}-${arch}.${ext}';
-pkg.nsis={...(pkg.nsis||{}),oneClick:true,perMachine:false,allowToChangeInstallationDirectory:false};
+pkg.build.win=pkg.build.win||{};
+pkg.build.win.artifactName='ACO-Studio-Setup-${version}-${arch}.${ext}';
+pkg.build.nsis={...(pkg.build.nsis||{}),oneClick:true,perMachine:false,allowToChangeInstallationDirectory:false};
 fs.writeFileSync(pkgPath,JSON.stringify(pkg,null,2)+'\n');
 console.log('Mac full-bundle updater integrated; Windows updater and original data directory preserved.');
