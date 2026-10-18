@@ -104,7 +104,7 @@ jobs:
             test -s "dist/win-unpacked/resources/app/$f"
           done
           test -f dist/win-unpacked/resources/app/node_modules/electron-updater/package.json
-          node -e "const p=require('./dist/win-unpacked/resources/app/package.json');if(p.version!==process.env.ACO_VERSION||p.build.appId!=='com.slabsngrabsaco.jigstudio.owner')process.exit(1)"
+          node -e "const p=require('./dist/win-unpacked/resources/app/package.json');if(p.version!==process.env.ACO_VERSION||p.name!=='slabsngrabsaco-jig-studio'||p.main!=='main.js')process.exit(1)"
           python - <<'PY'
           import pathlib,os
           p=pathlib.Path('dist')/('ACO-Studio-Setup-'+os.environ['ACO_VERSION']+'-x64.exe')
