@@ -36,6 +36,8 @@ test("WebAuthn controls compile and use the existing verified passkey endpoints"
   assert.match(passkeys, /\/api\/admin\/passkeys\/login\/verify/);
   assert.match(passkeys, /authenticatorAttachment:"platform"/);
   assert.match(passkeys, /credentials:"same-origin"/);
+  assert.match(passkeys, /acoDesktop/);
+  assert.match(passkeys, /desktopAco/);
 });
 test("iPad live refresh does not rebuild unchanged content or repeatedly restore scroll",()=>{
   assert.match(mobile, /mobileRenderedFingerprint===mobileVisibleFingerprint\(\)/);

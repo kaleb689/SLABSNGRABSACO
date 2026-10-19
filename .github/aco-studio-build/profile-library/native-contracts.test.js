@@ -136,6 +136,15 @@ test('complete native app resources, icon and retained Full Website Admin fallba
  assert.match(source('site-bridge.js'),/safeStorage\.encryptString/);
  assert.match(source('site-bridge.js'),/safeStorage\.decryptString/);
  assert.match(source('native-touchid.js'),/aco:admin-session-ready/);
+ assert.match(source('native-touchid.js'),/aco:touch-id-request/);
+ assert.doesNotMatch(source('native-touchid.js'),/DOMContentLoaded',promptTouchId/);
+ assert.match(source('site-bridge.js'),/prepareDesktopUnlock/);
+ assert.match(source('site-bridge.js'),/desktopUnlockState/);
+ assert.match(source('site-bridge.js'),/show:false/);
+ assert.match(source('site-bridge.js'),/admin\.html\?acoDesktop=1/);
+ assert.match(source('main.js'),/tryStartupTouchId/);
+ assert.match(source('main.js'),/systemPreferences\.promptTouchID\('Unlock ACO Studio'\)/);
+ assert.match(source('main.js'),/signInAndVerifyAdmin\(\{allowTouchId:false\}\)/);
  assert.match(source('preload.js'),/manageResource:payload=>ipcRenderer\.invoke\('profile:workshop:manageResource'/);
  assert.match(source('profile-workshop-service.js'),/manageResource/);
  assert.match(source('local-card-vault.js'),/updateWorkshopCard/);

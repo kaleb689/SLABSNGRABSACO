@@ -23,16 +23,11 @@ function profileNameFor(row){
  const last=String(d.shipping_last_name||s.lastName||d.last_name||d.lastName||b.lastName||'').trim();
  return (first+' '+last).trim();
 }
-function normalizeCardIdentity(record,adoptProfileHolder=false){
+function normalizeCardIdentity(record,selectedCard){
  const number=numberOf(record);if(!number)return record;
- const brand=brandFromNumber(number),holder=profileNameFor({data:record}),format=Draft.formatOf(record);
- if(format==='shikari'){
-  if(adoptProfileHolder&&holder)record.cc_name=holder;
-  record.cc_type=brand;
- }else if(record.card){
-  if(adoptProfileHolder&&holder)record.card.holder=holder;
-  record.card.type=brand;
- }
+ const brand=brandFromNumber(number),profileHolder=profileNameFor({data:record}),savedHolder=String(selectedCard?.cardholder||'').trim(),holder=(!savedHolder||/^unassigned$/i.test(savedHolder))?profileHolder:savedHolder,format=Draft.formatOf(record);
+ if(format==='shikari'){if(holder)record.cc_name=holder;record.cc_type=brand;}
+ else if(record.card){if(holder)record.card.holder=holder;record.card.type=brand;}
  return record;
 }
 
@@ -98,8 +93,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    if(p.allowCardReuse!==true&&cards.length<emails.length)throw Error('Select one unused card per profile or enable balanced card reuse.');
    const records=emails.map((email,i)=>Draft.blank(p.retailer,p.format,{email,label:(p.label||'Profile')+' '+(i+1)},uuid));
    const result=Fields.build({records,indices:records.map((_,i)=>i),scope,customerId:id,addresses,cards,choices:{address:true,card:true,name:p.randomNames===true},allowCardReuse:p.allowCardReuse===true,mirrorBilling:true});
-   const autoHolderCards=new Set(cards.filter(card=>!String(card.cardholder||'').trim()||/^unassigned$/i.test(String(card.cardholder||'').trim())).map(card=>String(card.id)));
-   result.records.forEach((record,i)=>normalizeCardIdentity(record,autoHolderCards.has(String(result.summary[i]?.cardId||''))));
+   result.records.forEach((record,i)=>normalizeCardIdentity(record,cards.find(card=>String(card.id)===String(result.summary[i]?.cardId||''))));
    return result.records.map((data,i)=>({data,format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}}));
   },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');})));
  }
@@ -145,7 +139,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
     // Legacy assignment state was captured under the same card-vault lock.
     if(r.cards.some(c=>inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)||legacy.has(c.id)))throw Error('A selected card is already in use. Choose unused cards or disable the Unused only filter.');
    }
-   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});if(choices.card){const autoHolderCards=new Set(r.cards.filter(card=>!String(card.cardholder||'').trim()||/^unassigned$/i.test(String(card.cardholder||'').trim())).map(card=>String(card.id)));result.records.forEach((record,i)=>normalizeCardIdentity(record,autoHolderCards.has(String(result.summary[i]?.cardId||''))));}resourcesHash=r.hash;
+   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});if(choices.card)result.records.forEach((record,i)=>normalizeCardIdentity(record,r.cards.find(card=>String(card.id)===String(result.summary[i]?.cardId||''))));resourcesHash=r.hash;
   });
   const text=Core.serialize(src.parsed,result.records);if(!same(Core.parseFile(src.parsed.name,text).records,result.records))throw Error('Output validation failed. Nothing was changed.');
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed during preview.');

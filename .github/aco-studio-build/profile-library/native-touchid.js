@@ -1,9 +1,9 @@
 (()=>{'use strict';
 const security=window.desktopAPI?.ownerSecurity;
 if(!security?.touchId)return;
-let prompted=false;
+let prompting=false;
 async function promptTouchId(){
- if(prompted)return;prompted=true;
+ if(prompting)return;prompting=true;
  const notice=document.getElementById('siteNotice');
  try{
   const result=await security.touchId();
@@ -28,9 +28,8 @@ async function promptTouchId(){
  }catch(error){
   if(notice){notice.textContent=String(error?.message||error||'Unable to open Touch ID.');notice.dataset.error='true';}
   document.documentElement.dataset.ownerTouchId='failed';
- }
+ }finally{prompting=false;}
 }
-window.addEventListener('focus',()=>{if(document.documentElement.dataset.ownerTouchId==='needs-enrollment')prompted=false;},{passive:true});
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',promptTouchId,{once:true});
-else void promptTouchId();
+document.addEventListener('aco:touch-id-request',()=>void promptTouchId());
+window.ACOOwnerTouchId=Object.freeze({unlock:promptTouchId});
 })();
