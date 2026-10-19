@@ -11,7 +11,7 @@
   const setupStatus=byId("adminPasskeySetupStatus");
   const loginStatus=byId("adminPasskeyLoginStatus");
   if(!setup&&!login)return;
-  const desktopAco=/Electron/i.test(navigator.userAgent||"");
+  const desktopAco=/Electron/i.test(navigator.userAgent||"")||new URLSearchParams(location.search).get("acoDesktop")==="1";
   if(desktopAco){
     if(login)login.hidden=true;
     if(setup)setup.hidden=true;
