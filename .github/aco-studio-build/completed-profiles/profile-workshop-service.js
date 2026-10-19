@@ -30,6 +30,19 @@ function normalizeCardIdentity(record,selectedCard){
  else if(record.card){if(holder)record.card.holder=holder;record.card.type=brand;}
  return record;
 }
+function originalCardIdentity(record){
+ const format=Draft.formatOf(record);
+ return {
+  number:numberOf(record),
+  holder:String(format==='shikari'?(record?.cc_name||record?.cc_holder||''):(record?.card?.holder||record?.card?.cardholder||'')).trim()
+ };
+}
+function restoreOriginalHolderWhenSameCard(record,original){
+ if(!original?.holder||!original?.number||numberOf(record)!==original.number)return false;
+ if(Draft.formatOf(record)==='shikari')record.cc_name=original.holder;
+ else if(record.card)record.card.holder=original.holder;
+ return true;
+}
 
 function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseSave,confirmExport,writeFile=fs.writeFile,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),epochs=new Map();
@@ -139,7 +152,14 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
     // Legacy assignment state was captured under the same card-vault lock.
     if(r.cards.some(c=>inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)||legacy.has(c.id)))throw Error('A selected card is already in use. Choose unused cards or disable the Unused only filter.');
    }
-   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});if(choices.card)result.records.forEach((record,i)=>{const selected=r.cards.find(card=>String(card.id)===String(result.summary[i]?.cardId||''))||r.cards.find(card=>String(card.number||'').replace(/\D/g,'')===numberOf(record));normalizeCardIdentity(record,selected);});resourcesHash=r.hash;
+   const originalCards=src.parsed.records.map(originalCardIdentity);
+   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});
+   if(choices.card)result.records.forEach((record,i)=>{
+    const selected=r.cards.find(card=>String(card.id)===String(result.summary[i]?.cardId||''))||r.cards.find(card=>String(card.number||'').replace(/\D/g,'')===numberOf(record));
+    if(!restoreOriginalHolderWhenSameCard(record,originalCards[i]))normalizeCardIdentity(record,selected);
+    else record.cc_type?record.cc_type=brandFromNumber(numberOf(record)):record.card&&(record.card.type=brandFromNumber(numberOf(record)));
+   });
+   resourcesHash=r.hash;
   });
   const text=Core.serialize(src.parsed,result.records);if(!same(Core.parseFile(src.parsed.name,text).records,result.records))throw Error('Output validation failed. Nothing was changed.');
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed during preview.');
