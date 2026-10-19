@@ -8,7 +8,31 @@ replace('main.js','window.JigStudioLocalImport?.workspaceState)', 'window.JigStu
 replace('main.js',"ipcMain.handle('site:open'",`ipcMain.handle('owner:touch-id',async event=>{ownerSender(event);if(process.platform!=='darwin')return {available:false,verified:false,reason:'unsupported'};const {systemPreferences}=require('electron');if(!systemPreferences.canPromptTouchID())return {available:false,verified:false,reason:'unavailable'};try{await systemPreferences.promptTouchID('Unlock ACO Studio');const session=await siteBridge.unlockDesktopAdmin();return {available:true,verified:true,session:session?.ok===true,needsEnrollment:session?.needsEnrollment===true,reason:session?.reason||''};}catch(error){return {available:true,verified:false,session:false,reason:String(error?.message||error||'Touch ID was not completed.')};}});\nipcMain.handle('site:open'`);
 replace('main.js','requireOwner:workshopOwner,authorize:',"getCustomerProfileSource:id=>siteBridge.profileSource(id),saveCustomerProfile:(id,remote,fields)=>siteBridge.saveCustomerProfile(id,remote,fields),getCustomerSavedData:id=>siteBridge.savedCustomerData(id),updateCustomerSavedData:(id,kind,recordId,payload)=>siteBridge.saveCustomerSavedData(id,kind,recordId,payload),changeCustomerAssignment:(id,remote,operation,payload)=>siteBridge.changeCustomerAssignment(id,remote,operation,payload),requireOwner:workshopOwner,authorize:");
 replace('preload.js','site:Object.freeze({',"ownerSecurity:Object.freeze({touchId:()=>ipcRenderer.invoke('owner:touch-id')}),\n site:Object.freeze({");
-replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.freeze(Object.fromEntries(['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','previewLinkedJig','publishLinkedJig','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'].map(method=>[method,payload=>ipcRenderer.invoke('profile:library:'+method,payload)]).concat([['cancel',()=>ipcRenderer.invoke('profile:library:cancel')]]))),\n profileWorkshop:Object.freeze({");
+replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.freeze(Object.fromEntries(['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','previewLinkedJig','publishLinkedJig','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'].map(method=>[method,payload=>ipcRenderer.invoke('profile:library:'+method,payload)]).concat([['cancel',()=>ipcRenderer.invoke('profile:library:cancel')]]))),\n profileWorkshop:Object.freeze({manageResource:payload=>ipcRenderer.invoke('profile:workshop:manageResource',payload),");
+
+// Extend the existing OS-encrypted card/address vaults with in-place edits that
+// preserve resource IDs already referenced by saved profiles.
+replace('local-card-vault.js',"  async addWorkshopCard(rawKey,data,beforeWrite){const k=customerKey(rawKey),fields=validateCard(data);return schedule(async()=>{",`  async updateWorkshopCard(rawKey,cardId,data,beforeWrite){const k=customerKey(rawKey),id=text(cardId),fields=validateCard(data);return schedule(async()=>{
+   const d=await read(),e=entry(d,k),card=e.cards.find(x=>x.id===id);if(!card)throw Error('Saved card is no longer in this vault.');
+   if(e.cards.some(x=>x.id!==id&&x.number===fields.number))throw Error('This card is already saved in this vault.');
+   Object.assign(card,fields,{id:card.id,createdAt:card.createdAt,updatedAt:now()});e.updatedAt=now();d.customers[k]=e;beforeWrite();await write(d);return summary(card);
+  });},
+  async addWorkshopCard(rawKey,data,beforeWrite){const k=customerKey(rawKey),fields=validateCard(data);return schedule(async()=>{`);
+replace('jig-address-banks.js',"  async addWorkshopAddress(scope,customerId,input,beforeWrite){",`  async updateWorkshopAddress(scope,customerId,addressId,input,beforeWrite){
+   if(scope!=='personal'&&scope!=='aco'||scope==='personal'&&customerId)throw Error('Invalid address vault.');
+   const id=scope==='aco'?memberKey(customerId):null,normalized=normalizeAddress(input),key=asString(addressId);
+   return exclusive(async()=>{
+    const file=scope==='personal'?personalFile:acoFile,d=await read(file,scope==='personal'?{addresses:[],updatedAt:null}:{customers:{}});
+    const e=scope==='personal'?d:(d.customers[id]||{addresses:[],updatedAt:null}),index=e.addresses.findIndex(x=>x.id===key);
+    if(index<0)throw Error('Saved address is no longer in this vault.');
+    const current=e.addresses[index];if(current.source==='website')throw Error('This address comes from the customer website. Edit that saved website address from the customer profile instead.');
+    if(e.addresses.some((x,i)=>i!==index&&addressKey(x)===addressKey(normalized)))throw Error('This address already exists in this vault.');
+    e.addresses[index]={...current,...normalized,id:current.id,source:current.source,createdAt:current.createdAt,uses:current.uses||0};e.updatedAt=now();if(scope==='aco')d.customers[id]=e;
+    beforeWrite();await write(file,d);return structuredClone(e.addresses[index]);
+   });
+  },
+  async addWorkshopAddress(scope,customerId,input,beforeWrite){`);
+
 replace('site-bridge.js',"const now=Date.now();if(now-lastEvent<750)return;lastEvent=now;","indexUntil=0;lastRosterAt=0;const now=Date.now();if(now-lastEvent<750)return;lastEvent=now;");
 replace('site-bridge.js',"s.addEventListener('data-change',","s.addEventListener('open',()=>window.jigSignals?.changed());s.addEventListener('data-change',");
 replace('site-bridge.js','async function read(kind,opts={}){','let lastRoster=null,lastRosterAt=0;\n async function read(kind,opts={}){');
