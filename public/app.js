@@ -6298,6 +6298,16 @@ function fillSavedPaymentForm(item = null) {
   if (form.elements.securityCode) {
     form.elements.securityCode.value = "";
   }
+  // Adding a card requires fresh, explicit purchase authorization.
+  // Editing an already-authorized card must not ask for new consent.
+  const consent = form.elements.authorizeRequestedPurchases;
+  if (consent) {
+    consent.checked = false;
+    consent.required = !item;
+    consent.disabled = Boolean(item);
+    const label = consent.closest("label");
+    if (label) label.hidden = Boolean(item);
+  }
 }
 
 
@@ -6483,40 +6493,57 @@ document.getElementById("saved-payment-form")
   ?.addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    const message = document.getElementById("saved-details-message");
     const id = String(form.elements.id?.value || "").trim();
     const body = Object.fromEntries(new FormData(form).entries());
     delete body.id;
-    if (id) body.expectedRevision = form.dataset.expectedRevision || "";
-
-    const response = await fetch(
-      id
-        ? `/api/account/payment-methods/${encodeURIComponent(id)}`
-        : "/api/account/payment-methods",
-      {
-        method: id ? "PUT" : "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+    if (id) {
+      body.expectedRevision = form.dataset.expectedRevision || "";
+      delete body.authorizeRequestedPurchases;
+    } else {
+      body.authorizeRequestedPurchases =
+        form.elements.authorizeRequestedPurchases?.checked === true;
+      if (!body.authorizeRequestedPurchases) {
+        setMessage(message, "Confirm purchase authorization to save the card.", "error");
+        return;
       }
-    );
-
-    const data = await readJson(response);
-    const message = document.getElementById("saved-details-message");
-
-    if (!response.ok) {
-      setMessage(message, data.error || "Unable to save payment card.", "error");
-      return;
     }
 
-    form.hidden = true;
-    await loadSavedDetails();
-    const selectedPayment = document.getElementById("saved-payment-select");
-    if (selectedPayment && (data.id || id)) {
-      selectedPayment.value = data.id || id;
-      selectedPayment.dispatchEvent(new Event("change"));
+    try {
+      setButtonBusy(button, true, "Saving…");
+      const response = await fetch(
+        id ? `/api/account/payment-methods/${encodeURIComponent(id)}`
+           : "/api/account/payment-methods",
+        {
+          method: id ? "PUT" : "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }
+      );
+      const data = await readJson(response);
+      if (!response.ok) {
+        if (response.status === 409 || response.status === 428)
+          await loadSavedDetails();
+        throw new Error(data.error || "Unable to save payment card.");
+      }
+
+      form.hidden = true;
+      await loadSavedDetails();
+      const selected = document.getElementById("saved-payment-select");
+      if (selected && (data.id || id)) {
+        selected.value = data.id || id;
+        selected.dispatchEvent(new Event("change"));
+      }
+      await loadCustomerNotifications({ showPopup: false });
+      setMessage(message, data.message || "Payment card saved.", "success");
+    } catch (error) {
+      setMessage(message, error.message || "Unable to save payment card. Check your connection.", "error");
+    } finally {
+      setButtonBusy(button, false);
     }
-    await loadCustomerNotifications({ showPopup: false });
-    setMessage(message, data.message || "Payment card saved.", "success");
   });
 
 document.getElementById("delete-saved-address")
@@ -6543,26 +6570,34 @@ document.getElementById("delete-saved-address")
   });
 
 document.getElementById("delete-saved-payment")
-  ?.addEventListener("click", async () => {
+  ?.addEventListener("click", async event => {
     const id = document.getElementById("saved-payment-select")?.value;
-    if (!id || !confirm("Delete this saved payment card?")) return;
-
-    const response = await fetch(
-      `/api/account/payment-methods/${encodeURIComponent(id)}`,
-      { method: "DELETE", credentials: "same-origin", headers:{"Content-Type":"application/json"}, body:JSON.stringify({expectedRevision:savedPaymentById(id)?.revision||""}) }
-    );
-
-    const data = await readJson(response);
+    if (!id || !confirm("Delete this saved payment card? It will no longer be available for future checkouts.")) return;
+    const button = event.currentTarget;
     const message = document.getElementById("saved-details-message");
-
-    if (!response.ok) {
-      setMessage(message, data.error || "Unable to delete payment card.", "error");
-      return;
+    try {
+      setButtonBusy(button, true, "Deleting…");
+      const response = await fetch(`/api/account/payment-methods/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: savedPaymentById(id)?.revision || "" })
+      });
+      const data = await readJson(response);
+      if (!response.ok) {
+        if (response.status === 409 || response.status === 428)
+          await loadSavedDetails();
+        throw new Error(data.error || "Unable to delete payment card.");
+      }
+      await loadSavedDetails();
+      await loadCustomerNotifications({ showPopup: false });
+      setMessage(message, data.message || "Payment card deleted.", "success");
+    } catch (error) {
+      setMessage(message, error.message || "Unable to delete payment card. Check your connection.", "error");
+    } finally {
+      setButtonBusy(button, false);
     }
-
-    await loadSavedDetails();
-    await loadCustomerNotifications({ showPopup: false });
-    setMessage(message, data.message || "Payment card deleted.", "success");
   });
 
 
