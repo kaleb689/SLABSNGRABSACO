@@ -67,31 +67,18 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   if(!['card','address'].includes(kind)||!['update','remove'].includes(operation)||!resourceId)throw Error('Choose a saved card or address from this vault.');
   const beforeWrite=()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');};
   if(kind==='card'){
-   const vault=cardVault(scope),key=cardKey(scope,id);
-   const inventory=await vault.list(key),item=(inventory.cards||[]).find(x=>String(x.id)===resourceId);
+   const vault=cardVault(scope),key=cardKey(scope,id),inventory=await vault.list(key),item=(inventory.cards||[]).find(x=>String(x.id)===resourceId);
    if(!item)throw Error('Saved card is no longer in this vault.');
-   if(operation==='remove'){
-    const fn=resourceMethod(vault,['removeWorkshopCard','deleteWorkshopCard','removeCard','deleteCard']);
-    if(!fn)throw Error('This card vault does not support safe removal in this build.');
-    return fn.call(vault,key,resourceId,beforeWrite);
-   }
+   if(operation==='remove'){beforeWrite();return vault.remove(key,resourceId);}
    const number=String(p?.value?.number||'').replace(/\D/g,'');
    if(!/^\d{12,19}$/.test(number))throw Error('Enter a valid card number.');
-   const value={...p.value,id:resourceId,label:item.label||'Unlinked card',cardholder:item.cardholder||'Unassigned',brand:brandFromNumber(number),number};
-   const fn=resourceMethod(vault,['updateWorkshopCard','editWorkshopCard','updateCard','editCard']);
-   if(!fn)throw Error('This card vault does not support safe editing in this build.');
-   return fn.call(vault,key,resourceId,value,beforeWrite);
+   const full=(await vault.selectedForJig(key,[resourceId]))[0];
+   return vault.updateWorkshopCard(key,resourceId,{...p.value,label:item.label||'Unlinked card',cardholder:full.cardholder||'Unassigned',brand:brandFromNumber(number),number},beforeWrite);
   }
   const inventory=await bank(scope,id),item=(inventory.addresses||[]).find(x=>String(x.id)===resourceId);
   if(!item)throw Error('Saved address is no longer in this vault.');
-  if(operation==='remove'){
-   const fn=resourceMethod(addressBanks,['removeWorkshopAddress','deleteWorkshopAddress','removeAddress','deleteAddress']);
-   if(!fn)throw Error('This address bank does not support safe removal in this build.');
-   return fn.call(addressBanks,scope,id,resourceId,beforeWrite);
-  }
-  const fn=resourceMethod(addressBanks,['updateWorkshopAddress','editWorkshopAddress','updateAddress','editAddress']);
-  if(!fn)throw Error('This address bank does not support safe editing in this build.');
-  return fn.call(addressBanks,scope,id,resourceId,p.value,beforeWrite);
+  if(operation==='remove'){beforeWrite();return scope==='personal'?addressBanks.removePersonal(resourceId):addressBanks.removeAco(id,resourceId);}
+  return addressBanks.updateWorkshopAddress(scope,id,resourceId,p.value,beforeWrite);
  }
  async function create(e,p){const {scope,id}=await access(e,p),generation=epoch(e);const data=Draft.blank(p.retailer,p.format,p.fields||{},uuid);
   return profiles.createBlank(scope,id,p.retailer,p.format,data,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before saving draft.');});}
