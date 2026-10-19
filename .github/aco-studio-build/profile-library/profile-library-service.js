@@ -187,7 +187,7 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
  }
  function addressView(data){
   const v=C.values(data);
-  return Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,String(v['shipping.'+k]||'')]));
+  return {...Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,String(v['shipping.'+k]||'')])),phone:String(v['shipping.phone']||v.phone||'')};
  }
  function bulkJigData(row,ruleIds,index,combine,billingSameAsShipping,phoneSeed){
   let data=structuredClone(row.data),addressRules=ruleIds.filter(id=>id!==C.FL_PHONE_RULE),phoneJig=ruleIds.includes(C.FL_PHONE_RULE);
