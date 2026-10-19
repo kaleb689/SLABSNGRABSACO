@@ -6256,50 +6256,19 @@ function managedProfileReadiness(
 }
 
 
-async function savedCheckoutSelection(
-  account,
-  addressId,
-  paymentId
-) {
-  const address =
-    addressId
-      ? customerSavedAddresses(
-          account
-        ).find(
-          item =>
-            String(
-              item.id
-            ) ===
-            String(
-              addressId
-            )
-        ) || null
-      : null;
-
-  const vault =
-    await getCustomerVault(
-      account.id
-    );
-
-  const payment =
-    paymentId
-      ? vault.paymentMethods.find(
-          item =>
-            String(
-              item.id
-            ) ===
-            String(
-              paymentId
-            )
-        ) || null
-      : null;
-
-  return {
-    address,
-    payment
-  };
+async function savedCheckoutSelection(account, addressId, paymentId) {
+  // The customer card/address selectors and the profile autofill endpoint
+  // must consult the same owner-scoped sources (saved vault, paid profiles
+  // and historical checkouts). Otherwise a visible selection cannot be saved.
+  const details = await allCustomerSavedDetails(account);
+  const address = addressId
+    ? details.addresses.find(item => String(item.id) === String(addressId)) || null
+    : null;
+  const payment = paymentId
+    ? details.paymentMethods.find(item => String(item.id) === String(paymentId)) || null
+    : null;
+  return {address, payment};
 }
-
 
 function shippingProfileFromSavedAddress(
   address,
