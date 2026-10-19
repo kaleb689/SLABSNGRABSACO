@@ -23,6 +23,13 @@ function profileNameFor(row){
  const last=String(d.shipping_last_name||s.lastName||d.last_name||d.lastName||b.lastName||'').trim();
  return (first+' '+last).trim();
 }
+function syncCardholderToProfileName(row){
+ const out=structuredClone(row),v=Draft.toValues(out),holder=(String(v.first||'')+' '+String(v.last||'')).replace(/\s+/g,' ').trim();
+ if(!holder||!numberOf(out))return out;
+ if(Draft.formatOf(out)==='shikari')out.cc_name=holder;
+ else out.card={...(out.card||{}),holder,cardholder:holder};
+ return out;
+}
 function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseSave,confirmExport,writeFile=fs.writeFile,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),epochs=new Map();
  const epoch=e=>epochs.get(e.sender.id)||0;
@@ -130,7 +137,9 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
     // Legacy assignment state was captured under the same card-vault lock.
     if(r.cards.some(c=>inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)||legacy.has(c.id)))throw Error('A selected card is already in use. Choose unused cards or disable the Unused only filter.');
    }
-   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});resourcesHash=r.hash;
+   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});
+   if(choices.address||choices.card||choices.name)for(const index of src.indices)result.records[index]=syncCardholderToProfileName(result.records[index]);
+   resourcesHash=r.hash;
   });
   const text=Core.serialize(src.parsed,result.records);if(!same(Core.parseFile(src.parsed.name,text).records,result.records))throw Error('Output validation failed. Nothing was changed.');
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed during preview.');
