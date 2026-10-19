@@ -4,7 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/aco-studio-build/**'
-      - '.github/workflows/release-aco-studio-v41324-windows.yml'
+      - '.github/workflows/release-aco-studio-v41325-windows.yml'
   workflow_dispatch:
 permissions:
   contents: write
@@ -202,7 +202,7 @@ jobs:
           cat > notes.md <<'NOTES'
           ACO Studio 4.13.25 adds direct one/many/all saved-profile selection inside Jig, persistent Target/Walmart/PKC retailer presets that can be edited at any time, removes Saved jig as a blocking/missing requirement, and lets the owner export selected profiles even when fields are incomplete. Existing bulk jigging, Touch ID, two-way sync, encrypted vault separation and updater behavior remain intact.
 
-Native source regressions, packaging and launch/update checks must pass before these assets publish. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
+          Native source regressions, packaging and launch/update checks must pass before these assets publish. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
           NOTES
           gh release create aco-studio-v4.13.25-windows-unsigned installers/*.exe installers/latest.yml installers/windows-signing-status.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.25 Windows' --notes-file notes.md --prerelease
           gh release upload aco-studio-windows-updates installers/ACO-Studio-Setup-4.13.25-x64.exe installers/latest.yml --repo "$GITHUB_REPOSITORY" --clobber
