@@ -1,0 +1,35 @@
+name: Customer payment synchronization checks
+on:
+  push:
+    branches:
+      - fix/customer-payment-sync-20261019
+  pull_request:
+    paths:
+      - 'customer-payment-records.js'
+      - 'server.js'
+      - 'server-studio-customer-sync.js'
+      - 'public/app.js'
+      - 'public/index.html'
+      - 'tests/customer-payment-records.test.js'
+      - '.github/workflows/customer-payment-sync-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-payment-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check syntax
+        run: |
+          node --check server.js
+          node --check public/app.js
+          node --check server-studio-customer-sync.js
+          node --check customer-payment-records.js
+      - name: Test payment edits and tenant isolation
+        run: node --test tests/customer-payment-records.test.js

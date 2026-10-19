@@ -1,4 +1,5 @@
 import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
+import { createCustomerPaymentActions } from "./customer-payment-records.js";
 import { savedDataRevision, savedDataPrecondition } from "./saved-data-revisions.js";
 import { stripPaymentVerifiers, purgeLegacyPaymentVerifiers } from "./payment-verification-policy.js";
 import { managedWriteConflict, nextManagedRevision, serializeManagedWrites, mergeManagedCard } from "./managed-customer-write-policy.js";
@@ -5020,7 +5021,9 @@ async function getCustomerVault(
 
     if (!encrypted) {
       return {
-        paymentMethods: []
+        paymentMethods: [],
+        paymentOverrides: {},
+        hiddenPaymentKeys: []
       };
     }
 
@@ -5031,10 +5034,13 @@ async function getCustomerVault(
 
     return {
       paymentMethods:
-        Array.isArray(
-          vault?.paymentMethods
-        )
-          ? vault.paymentMethods
+        Array.isArray(vault?.paymentMethods) ? vault.paymentMethods : [],
+      paymentOverrides:
+        vault?.paymentOverrides && typeof vault.paymentOverrides === "object" &&
+        !Array.isArray(vault.paymentOverrides) ? vault.paymentOverrides : {},
+      hiddenPaymentKeys:
+        Array.isArray(vault?.hiddenPaymentKeys)
+          ? vault.hiddenPaymentKeys.filter(key => typeof key === "string")
           : []
     };
   } catch (error) {
@@ -5043,7 +5049,9 @@ async function getCustomerVault(
       "ENOENT"
     ) {
       return {
-        paymentMethods: []
+        paymentMethods: [],
+        paymentOverrides: {},
+        hiddenPaymentKeys: []
       };
     }
 
@@ -5061,10 +5069,13 @@ async function saveCustomerVault(
     ),
     encryptJson({
       paymentMethods:
-        Array.isArray(
-          vault?.paymentMethods
-        )
-          ? vault.paymentMethods
+        Array.isArray(vault?.paymentMethods) ? vault.paymentMethods : [],
+      paymentOverrides:
+        vault?.paymentOverrides && typeof vault.paymentOverrides === "object" &&
+        !Array.isArray(vault.paymentOverrides) ? vault.paymentOverrides : {},
+      hiddenPaymentKeys:
+        Array.isArray(vault?.hiddenPaymentKeys)
+          ? vault.hiddenPaymentKeys.filter(key => typeof key === "string")
           : []
     })
   );
@@ -5462,6 +5473,7 @@ async function allCustomerSavedDetails(
 
   const paymentKeys =
     new Set();
+  const hiddenPaymentKeys = new Set(vault.hiddenPaymentKeys || []);
 
   const addAddress =
     (
@@ -5583,9 +5595,9 @@ async function allCustomerSavedDetails(
 
       const normalized = {
         id:
-          item.id ||
-          fallbackId ||
-          crypto.randomUUID(),
+          source === "paid_order" || source === "paid_profile"
+            ? (fallbackId || item.id || crypto.randomUUID())
+            : (item.id || fallbackId || crypto.randomUUID()),
 
         cardLabel:
           item.cardLabel ||
@@ -5634,7 +5646,8 @@ async function allCustomerSavedDetails(
 
       if (
         !key ||
-        paymentKeys.has(key)
+        paymentKeys.has(key) ||
+        hiddenPaymentKeys.has(key)
       ) {
         return;
       }
@@ -5749,13 +5762,16 @@ async function allCustomerSavedDetails(
         record.id
       );
 
-    addPayment(
-      checkoutSecrets ||
-      {},
-      `Checkout Card ${index + 1}`,
-      `paid-order-card:${record.id || index + 1}`,
-      "paid_order"
-    );
+    const orderCardId = `paid-order-card:${record.id || index + 1}`;
+    const paymentOverride = vault.paymentOverrides?.[orderCardId];
+    if (paymentOverride?.deleted !== true) {
+      addPayment(
+        paymentOverride?.payment || checkoutSecrets || {},
+        `Checkout Card ${index + 1}`,
+        orderCardId,
+        "paid_order"
+      );
+    }
   }
 
   const retailerProfiles =
@@ -28787,12 +28803,26 @@ async function adminOrderCustomerAccount(
   );
 }
 
+// A single customer-owned mutation path backs app, website and authenticated Studio.
+const customerPaymentActions = createCustomerPaymentActions({
+  getCustomerVault, saveCustomerVault,
+  getRetailerProfiles, saveRetailerProfiles,
+  getFreeAssignments, saveFreeAssignments,
+  getRentalAssignments, saveRentalAssignments,
+  getPaidOrders: () => readJson(PAID_FILE, []),
+  loadEncryptedPackage, savedPaymentDedupeKey,
+  decryptJson, encryptJson,
+  sanitizeSavedPaymentMethod, validSavedPaymentMethod
+});
+
 // Authenticated ACO Studio shares the existing website/app customer vault,
 // with optimistic revisions, no new customer database and no exposed PAN.
 registerStudioCustomerRoutes({
   app,requireAdmin,getCustomerAccounts,saveCustomerAccounts,getCustomerVault,
   saveCustomerVault,customerSavedAddresses,sanitizeShippingAddress,
   validShippingAddress,sanitizeSavedPaymentMethod,validSavedPaymentMethod,
+  customerPaymentActions,
+  getAllCustomerSavedDetails: adminCustomerSavedDetailsPayload,
   syncCustomerMissingNotification,broadcastLiveDataChange,serializeCustomerSavedWrites,revisionSecret:process.env.SUBMISSION_ENCRYPTION_KEY
 });
 
@@ -35841,6 +35871,10 @@ app.post(
       vault.paymentMethods.push(
         method
       );
+      // Re-adding a card should undo the historical-card tombstone.
+      const restoredKey = savedPaymentDedupeKey(method);
+      vault.hiddenPaymentKeys = (vault.hiddenPaymentKeys || [])
+        .filter(key => key !== restoredKey);
 
       await saveCustomerVault(
         req.customerAccount.id,
@@ -35889,165 +35923,36 @@ app.post(
   }
 );
 
-app.put(
-  "/api/account/payment-methods/:id",
-  requireCustomer,
-  serializeCustomerSavedWrites,
-  async (req, res) => {
-    try {
-      const id =
-        clean(
-          req.params.id,
-          120
-        );
-
-      const vault =
-        await getCustomerVault(
-          req.customerAccount.id
-        );
-
-      const index =
-        vault.paymentMethods
-          .findIndex(
-            item =>
-              String(item.id) ===
-              id
-          );
-
-      if (index < 0) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Payment card not found."
-          });
-      }
-
-      if (!savedDataPrecondition(req,res,"payment",vault.paymentMethods[index])) return;
-
-      const next =
-        sanitizeSavedPaymentMethod(
-          req.body,
-          vault.paymentMethods[
-            index
-          ]
-        );
-
-      if (
-        !validSavedPaymentMethod(
-          next
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Enter a card label, cardholder, valid card number, expiration month, and expiration year."
-          });
-      }
-
-      vault.paymentMethods[
-        index
-      ] = next;
-
-      await saveCustomerVault(
-        req.customerAccount.id,
-        vault
-      );
-
-      return res.json({
-        ok: true,
-        message:
-          "Payment card updated."
-      });
-    } catch (error) {
-      console.error(
-        "Update payment method error:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          error:
-            "Unable to update payment card."
-        });
-    }
+app.put("/api/account/payment-methods/:id", requireCustomer, serializeCustomerSavedWrites, async (req, res) => {
+  try {
+    const result = await customerPaymentActions.update({
+      accountId: req.customerAccount.id, id: req.params.id,
+      body: req.body || {},
+      expectedRevision: req.body?.expectedRevision || req.get("If-Match")
+    });
+    return res.json(result);
+  } catch (error) {
+    if (error?.status >= 400 && error.status < 500)
+      return res.status(error.status).json({error: error.message});
+    console.error("Update payment method error:", error?.message);
+    return res.status(500).json({error:"Unable to update payment card."});
   }
-);
+});
 
-app.delete(
-  "/api/account/payment-methods/:id",
-  requireCustomer,
-  serializeCustomerSavedWrites,
-  async (req, res) => {
-    try {
-      const id =
-        clean(
-          req.params.id,
-          120
-        );
-
-      const vault =
-        await getCustomerVault(
-          req.customerAccount.id
-        );
-
-      const before =
-        vault.paymentMethods;
-
-      const current = before.find(item=>String(item.id)===id);
-      if (!current) return res.status(404).json({error:'Saved record not found.'});
-      if (!savedDataPrecondition(req,res,"payment",current)) return;
-
-      const after =
-        before.filter(
-          item =>
-            String(item.id) !==
-            id
-        );
-
-      if (
-        after.length ===
-        before.length
-      ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Payment card not found."
-          });
-      }
-
-      vault.paymentMethods =
-        after;
-
-      await saveCustomerVault(
-        req.customerAccount.id,
-        vault
-      );
-
-      return res.json({
-        ok: true,
-        message:
-          "Payment card deleted."
-      });
-    } catch (error) {
-      console.error(
-        "Delete payment method error:",
-        error
-      );
-
-      return res
-        .status(500)
-        .json({
-          error:
-            "Unable to delete payment card."
-        });
-    }
+app.delete("/api/account/payment-methods/:id", requireCustomer, serializeCustomerSavedWrites, async (req, res) => {
+  try {
+    const result = await customerPaymentActions.remove({
+      accountId: req.customerAccount.id, id: req.params.id,
+      expectedRevision: req.body?.expectedRevision || req.get("If-Match")
+    });
+    return res.json(result);
+  } catch (error) {
+    if (error?.status >= 400 && error.status < 500)
+      return res.status(error.status).json({error: error.message});
+    console.error("Delete payment method error:", error?.message);
+    return res.status(500).json({error:"Unable to delete payment card."});
   }
-);
-
+});
 
 /* -------------------------------------------------------
    CUSTOMER PROFILE / ORDER HELPERS
