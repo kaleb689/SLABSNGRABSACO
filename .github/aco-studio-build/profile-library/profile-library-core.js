@@ -1,5 +1,5 @@
 'use strict';
-const Core=require('./app'),Draft=require('./profile-draft-core'),Fields=require('./jig-field-core');
+const Core=require('./app'),Draft=require('./profile-draft-core'),Fields=require('./jig-field-core'),crypto=require('node:crypto');
 const clone=structuredClone,clean=v=>String(v??'').trim(),digits=v=>clean(v).replace(/\D/g,''),email=v=>clean(v).toLowerCase();
 const retailer=v=>{if(!['target','walmart','pokemoncenter','costco','sams'].includes(v))throw Error('Choose a retailer.');return v;};
 const format=r=>retailer(r)==='target'?'shikari':'valor';
@@ -24,6 +24,20 @@ function exportRows(rows,r,customerName='Personal'){if(!rows.length)throw Error(
  const out=model.exportTemplates(r==='costco'||r==='sams'?'walmart':r,customerName,profiles,null,{localOwnerCards:profiles.map(x=>({...x.card,expiration:x.card.month+'/'+x.card.year.slice(-2),cvv:x.card.customSecurityCode||''}))});
  out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(format(r)==='shikari'?'.csv':'.json');return out;
 }
+const FL_PHONE_RULE='phone_florida_random';
+const FL_AREA_CODES=['239','305','321','324','352','386','407','448','561','645','656','689','727','728','754','772','786','813','850','863','904','941','954'];
+function floridaPhone(seed,index=0){
+ const digest=crypto.createHash('sha256').update(String(seed||'')+'|'+String(index)).digest();
+ const total=FL_AREA_CODES.length*100;
+ const base=digest.readUInt32BE(0)%total;
+ const slot=(base+(Math.max(0,index)*37))%total;
+ const area=FL_AREA_CODES[Math.floor(slot/100)],line=String(100+(slot%100)).padStart(4,'0');
+ return area+'555'+line;
+}
+function applyFloridaPhone(data,seed,index=0){
+ const phone=floridaPhone(seed,index),v=values(data);
+ return Draft.manualEdit(data,{...v,phone,'shipping.phone':phone,'billing.phone':phone});
+}
 const defaultRules=()=>Core.defaultRuleIDs.filter(id=>!/(prefix|fraction|fictitious|fabricated|phone)/i.test(id));
 function jig(data,r,index,rules=defaultRules()){retailer(r);if(!Array.isArray(rules)||rules.some(id=>!Core.RULES.some(x=>x.id===id)))throw Error('Unknown retailer jig rule.');const out=clone(data);if(index===0)return out;const map=Core.autoMap([out]);for(const role of ['shipping','billing']){const addr={};for(const k of ['address1','address2','city','state','zip'])addr[k]=Core.get(out,map[role+'.'+k])||'';for(const id of rules.map((_,k)=>rules[(Math.max(0,index-1)+k)%rules.length])){let variant;try{variant=Core.RULES.find(x=>x.id===id).apply(addr);}catch{continue;}if(!variant)continue;for(const k of Object.keys(addr))if(map[role+'.'+k]&&variant[k]!=null){const path=JSON.parse(map[role+'.'+k]);let target=out;for(const part of path.slice(0,-1))target=target[part];target[path.at(-1)]=variant[k];}break;}}return out;}
-module.exports={values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules};
+module.exports={values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone};
