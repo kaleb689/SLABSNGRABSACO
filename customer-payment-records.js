@@ -85,15 +85,21 @@ export function createCustomerPaymentActions({
     throw error(404, "Payment card not found in this customer account.");
   }
 
-  async function syncLinkedProfiles(accountId, paymentId, card, removing) {
+  async function syncLinkedProfiles(accountId, paymentId, card, removing, previous) {
+    const priorDigits = digits(previous);
+    const matchesPriorCard = item => Boolean(priorDigits) &&
+      digits(item) === priorDigits &&
+      eq(item?.expMonth || "", previous?.expMonth || "") &&
+      eq(item?.expYear || "", previous?.expYear || "");
     const profiles = await getRetailerProfiles();
     let changed = false;
     for (const profile of profiles) {
-      if (!own(profile, accountId) ||
-          (!eq(profile.selectedPaymentId, paymentId) &&
-           !eq(profile.savedPaymentMethodId, paymentId))) continue;
+      if (!own(profile, accountId)) continue;
       const existing = profile.customerSecrets
         ? decryptJson(profile.customerSecrets) || {} : {};
+      if (!eq(profile.selectedPaymentId, paymentId) &&
+          !eq(profile.savedPaymentMethodId, paymentId) &&
+          !matchesPriorCard(existing)) continue;
       const nextCard = removing ? erased : fields(card);
       // A jigged profile keeps its own profile/cardholder identity.
       if (!removing) {
@@ -118,11 +124,12 @@ export function createCustomerPaymentActions({
       const assignments = await load();
       let touched = false;
       for (const assignment of assignments) {
-        if (!own(assignment, accountId) ||
-            (!eq(assignment.selectedPaymentId, paymentId) &&
-             !eq(assignment.savedPaymentMethodId, paymentId))) continue;
+        if (!own(assignment, accountId)) continue;
         const original = assignment.customerSecrets
           ? decryptJson(assignment.customerSecrets) || {} : {};
+        if (!eq(assignment.selectedPaymentId, paymentId) &&
+            !eq(assignment.savedPaymentMethodId, paymentId) &&
+            !matchesPriorCard(original)) continue;
         const update = removing ? erased : fields(card);
         if (!removing) {
           const name = [assignment.customerProfile?.firstName, assignment.customerProfile?.lastName]
@@ -162,12 +169,14 @@ export function createCustomerPaymentActions({
       if (removing) selected.vault.paymentMethods.splice(selected.index, 1);
       else selected.vault.paymentMethods[selected.index] = next;
       await saveCustomerVault(accountId, selected.vault);
-      await syncLinkedProfiles(accountId, selected.id, next, removing);
+      await syncLinkedProfiles(accountId, selected.id, next, removing, selected.current);
     } else if (selected.source === "paid_profile") {
       const profile = selected.profiles[selected.index];
-      profile.customerSecrets = encryptJson({
-        ...selected.current, ...(removing ? erased : fields(next))
-      });
+      const applied = removing ? erased : fields(next);
+      const profileName = [profile.customerProfile?.firstName, profile.customerProfile?.lastName]
+        .filter(Boolean).join(" ").trim();
+      if (!removing && profileName) applied.cardholder = profileName;
+      profile.customerSecrets = encryptJson({...selected.current, ...applied});
       if (removing && eq(profile.selectedPaymentId, selected.id)) {
         profile.selectedPaymentId = null;
       }
@@ -175,6 +184,7 @@ export function createCustomerPaymentActions({
       suppressOriginal(selected.vault, selected.current, next);
       await saveRetailerProfiles(selected.profiles);
       await saveCustomerVault(accountId, selected.vault);
+      await syncLinkedProfiles(accountId, selected.id, next, removing, selected.current);
     } else {
       suppressOriginal(selected.vault, selected.current, next);
       const overrides = {...(selected.vault.paymentOverrides || {})};
@@ -189,6 +199,7 @@ export function createCustomerPaymentActions({
         }};
       selected.vault.paymentOverrides = overrides;
       await saveCustomerVault(accountId, selected.vault);
+      await syncLinkedProfiles(accountId, selected.id, next, removing, selected.current);
     }
 
     return {ok: true, id: selected.id, source: selected.source,
