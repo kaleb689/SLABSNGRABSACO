@@ -131,7 +131,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    const before=JigCore.get(profile.data,mapping['shipping.address1']);
    const after=JigCore.get(changed.records[0],mapping['shipping.address1']);
    if(!after||before===after&&chosen.address.address2===JigCore.get(profile.data,mapping['shipping.address2']))throw Error('No shipping address fields would change.');
-   if(commit){profile.jiggedAt=now();profile.data=stripVerifiers(changed.records[0]);profile.revision=(profile.revision||0)+1;auditRecord(d,key,'address-jig',profile.email,{retailer:profile.retailer,addressId:baseAddress.id,ruleIds:chosen.ruleIds});await write(scope,d);}
+   if(commit){profile.jiggedAt=now();profile.data=stripVerifiers(require('./profile-library-core').syncCardholderToProfile(changed.records[0]));profile.revision=(profile.revision||0)+1;auditRecord(d,key,'address-jig',profile.email,{retailer:profile.retailer,addressId:baseAddress.id,ruleIds:chosen.ruleIds});await write(scope,d);}
    return {profileId:profile.id,email:profile.email,retailer:profile.retailer,original:before,preview:chosen.address,ruleIds:chosen.ruleIds,availableVariants:chosen.variants,saved:commit};
   });
  }
@@ -163,7 +163,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     if(change.address2&&!mapping['shipping.address2'])throw Error('Profile has no address line 2 field to preserve its real unit. All edits were cancelled.');
     const rewritten=JigAssignments.assign({records:[profile.data],mapping,indices:[0],addresses:[change],scope,origin:scope,
       customerId:scope==='aco'?key:null,sourceCustomerId:scope==='aco'?key:null},JigCore);
-    changes.push({profile,data:stripVerifiers(rewritten.records[0]),addressId:change.addressId});
+    changes.push({profile,data:stripVerifiers(require('./profile-library-core').syncCardholderToProfile(rewritten.records[0])),addressId:change.addressId});
    }
    for(const update of changes){
     update.profile.jiggedAt=now();update.profile.data=update.data;update.profile.revision=(update.profile.revision||0)+1;
@@ -202,7 +202,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     if(!row||(row.revision||0)!==c.expectedRevision||Fields.hash(row.data)!==c.expectedHash)throw Error('A saved profile changed since preview. Nothing was overwritten.');
     if(row.source==='website-linked-profile'&&row.sourceLinked===true)throw Error('Edit linked profiles in the live Profiles editor so changes synchronize.');
     Fields.verify([row.data],[c.data],[new Set(c.allowed)],[0]);
-    return {row,data:structuredClone(c.data),refs:c.assetRefs};
+    return {row,data:require('./profile-library-core').syncCardholderToProfile(structuredClone(c.data)),refs:c.assetRefs};
    });
    for(const u of updates){if(resources.jigged)u.row.jiggedAt=now();u.row.data=u.data;u.row.revision=(u.row.revision||0)+1;u.row.assetRefs||={};
     if(choices.address)u.row.assetRefs.addressId=u.refs.addressId;
