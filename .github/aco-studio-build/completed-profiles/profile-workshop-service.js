@@ -5,6 +5,32 @@ function ids(v,label){if(!Array.isArray(v)||!v.length||v.length>500||v.some(x=>t
 const cardKey=(scope,id)=>scope==='personal'?'personal:owner':id;
 const same=(a,b)=>Fields.hash(a)===Fields.hash(b);
 function numberOf(row){return String(row?.cc_number||row?.card?.number||'').replace(/[ -]/g,'');}
+function brandFromNumber(value){
+ const n=String(value||'').replace(/\D/g,'');
+ if(/^4\d{6,}$/.test(n))return 'Visa';
+ const first2=Number(n.slice(0,2)),first4=Number(n.slice(0,4));
+ if((first2>=51&&first2<=55)||(first4>=2221&&first4<=2720))return 'Mastercard';
+ if(/^3[47]/.test(n))return 'American Express';
+ if(/^6(?:011|5|4[4-9])/.test(n))return 'Discover';
+ if(/^(?:2131|1800|35)/.test(n))return 'JCB';
+ if(/^3(?:0[0-5]|[68])/.test(n))return 'Diners Club';
+ return 'Card';
+}
+const resourceMethod=(target,names)=>names.map(name=>target?.[name]).find(fn=>typeof fn==='function');
+function profileNameFor(row){
+ const d=row?.data||{},s=d.shipping||{},b=d.billing||{};
+ const first=String(d.shipping_first_name||s.firstName||d.first_name||d.firstName||b.firstName||'').trim();
+ const last=String(d.shipping_last_name||s.lastName||d.last_name||d.lastName||b.lastName||'').trim();
+ return (first+' '+last).trim();
+}
+function normalizeCardIdentity(record){
+ const number=numberOf(record);if(!number)return record;
+ const brand=brandFromNumber(number),holder=profileNameFor({data:record});
+ if(Draft.formatOf(record)==='shikari'){if(holder)record.cc_name=holder;record.cc_type=brand;}
+ else if(record.card){if(holder)record.card.holder=holder;record.card.type=brand;}
+ return record;
+}
+
 function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseSave,confirmExport,writeFile=fs.writeFile,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),epochs=new Map();
  const epoch=e=>epochs.get(e.sender.id)||0;
@@ -16,14 +42,44 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   const [a,c,rows]=await Promise.all([bank(scope,id),cardVault(scope).list(cardKey(scope,id)),profiles.fieldSnapshot(scope,id)]);
   const full=c.cards.length?await cardVault(scope).selectedForJig(cardKey(scope,id),c.cards.map(x=>x.id)):[];
   const assigned=new Set((c.assignments||[]).map(x=>x.cardId));
-  const result={scope,customerId:id,addresses:a.addresses.map(x=>({...x,uses:rows.filter(r=>r.assetRefs?.addressId===x.id).length})),cards:c.cards.map(x=>{
-   const raw=full.find(y=>y.id===x.id),used=rows.filter(r=>r.assetRefs?.cardId===x.id||numberOf(r.data)===raw?.number).length;
-   return {...x,...(p.showFullCards===true?{number:raw.number,cardholder:raw.cardholder,expMonth:raw.month,expYear:raw.year,customReference:raw.customSecurityCode||''}:{}),usedCount:used,unused:used===0&&!assigned.has(x.id),previouslyAssigned:assigned.has(x.id)};
-  }),profiles:rows.map(x=>({id:x.id,label:x.label,email:x.email,retailer:x.retailer,status:x.status,stage:x.stage||'in-progress',missing:require('./profile-completion-core').inspect(x).missing,revision:x.revision,createdInWorkshop:x.source==='owner-created-profile'}))};
+  const retailerSeq={};
+  const cards=c.cards.map((x,index)=>{
+   const raw=full.find(y=>y.id===x.id),users=rows.filter(r=>r.assetRefs?.cardId===x.id||numberOf(r.data)===raw?.number),used=users.length,first=users[0];
+   let label='Unlinked card '+(index+1),displayHolder='';
+   if(first?.retailer){retailerSeq[first.retailer]=(retailerSeq[first.retailer]||0)+1;label=({target:'Target',walmart:'Walmart',pokemoncenter:'PKC',costco:'Costco',sams:"Sam's"}[first.retailer]||first.retailer)+' '+retailerSeq[first.retailer];displayHolder=profileNameFor(first);}
+   return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:brandFromNumber(raw.number),customReference:raw.customSecurityCode||''}:{}),usedCount:used,unused:used===0&&!assigned.has(x.id),previouslyAssigned:assigned.has(x.id)};
+  });
+  const result={scope,customerId:id,addresses:a.addresses.map(x=>({...x,uses:rows.filter(r=>r.assetRefs?.addressId===x.id).length})),cards,profiles:rows.map(x=>({id:x.id,label:x.label,email:x.email,retailer:x.retailer,status:x.status,stage:x.stage||'in-progress',missing:require('./profile-completion-core').inspect(x).missing,revision:x.revision,createdInWorkshop:x.source==='owner-created-profile'}))};
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed while loading.');return result;
  }
- async function addCard(e,p){const {scope,id}=await access(e,p);const generation=epoch(e);return cardVault(scope).addWorkshopCard(cardKey(scope,id),p.card,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');});}
+ async function addCard(e,p){
+  const {scope,id}=await access(e,p),generation=epoch(e),vault=cardVault(scope),key=cardKey(scope,id);
+  const current=await vault.list(key),number=String(p?.card?.number||'').replace(/\D/g,'');
+  if(!/^\d{12,19}$/.test(number))throw Error('Enter a valid card number.');
+  const next=(current?.cards?.length||0)+1;
+  const card={...p.card,number,label:'Unlinked card '+next,cardholder:'Unassigned',brand:brandFromNumber(number)};
+  delete card.id;
+  return vault.addWorkshopCard(key,card,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');});
+ }
  async function addAddress(e,p){const {scope,id}=await access(e,p),generation=epoch(e);return addressBanks.addWorkshopAddress(scope,id,p.address,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');});}
+ async function manageResource(e,p){
+  const {scope,id}=await access(e,p),generation=epoch(e),kind=p?.kind,operation=p?.operation,resourceId=String(p?.resourceId||'');
+  if(!['card','address'].includes(kind)||!['update','remove'].includes(operation)||!resourceId)throw Error('Choose a saved card or address from this vault.');
+  const beforeWrite=()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');};
+  if(kind==='card'){
+   const vault=cardVault(scope),key=cardKey(scope,id),inventory=await vault.list(key),item=(inventory.cards||[]).find(x=>String(x.id)===resourceId);
+   if(!item)throw Error('Saved card is no longer in this vault.');
+   if(operation==='remove'){beforeWrite();return vault.remove(key,resourceId);}
+   const number=String(p?.value?.number||'').replace(/\D/g,'');
+   if(!/^\d{12,19}$/.test(number))throw Error('Enter a valid card number.');
+   const full=(await vault.selectedForJig(key,[resourceId]))[0];
+   return vault.updateWorkshopCard(key,resourceId,{...p.value,label:item.label||'Unlinked card',cardholder:full.cardholder||'Unassigned',brand:brandFromNumber(number),number},beforeWrite);
+  }
+  const inventory=await bank(scope,id),item=(inventory.addresses||[]).find(x=>String(x.id)===resourceId);
+  if(!item)throw Error('Saved address is no longer in this vault.');
+  if(operation==='remove'){beforeWrite();return scope==='personal'?addressBanks.removePersonal(resourceId):addressBanks.removeAco(id,resourceId);}
+  return addressBanks.updateWorkshopAddress(scope,id,resourceId,p.value,beforeWrite);
+ }
  async function create(e,p){const {scope,id}=await access(e,p),generation=epoch(e);const data=Draft.blank(p.retailer,p.format,p.fields||{},uuid);
   return profiles.createBlank(scope,id,p.retailer,p.format,data,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before saving draft.');});}
 
@@ -37,6 +93,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    if(p.allowCardReuse!==true&&cards.length<emails.length)throw Error('Select one unused card per profile or enable balanced card reuse.');
    const records=emails.map((email,i)=>Draft.blank(p.retailer,p.format,{email,label:(p.label||'Profile')+' '+(i+1)},uuid));
    const result=Fields.build({records,indices:records.map((_,i)=>i),scope,customerId:id,addresses,cards,choices:{address:true,card:true,name:p.randomNames===true},allowCardReuse:p.allowCardReuse===true,mirrorBilling:true});
+   for(const record of result.records)normalizeCardIdentity(record);
    return result.records.map((data,i)=>({data,format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}}));
   },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');})));
  }
@@ -82,7 +139,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
     // Legacy assignment state was captured under the same card-vault lock.
     if(r.cards.some(c=>inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)||legacy.has(c.id)))throw Error('A selected card is already in use. Choose unused cards or disable the Unused only filter.');
    }
-   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});resourcesHash=r.hash;
+   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});if(choices.card)for(const record of result.records)normalizeCardIdentity(record);resourcesHash=r.hash;
   });
   const text=Core.serialize(src.parsed,result.records);if(!same(Core.parseFile(src.parsed.name,text).records,result.records))throw Error('Output validation failed. Nothing was changed.');
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed during preview.');
@@ -117,7 +174,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
  async function exportSaved(e,p){const {scope,id}=await access(e,p),v=await profiles.preview(scope,id,p.profileId);if(!await confirmExport(e))return {cancelled:true};const entry=Draft.serializeProfile(v.profile),ext=path.extname(entry.name),choice=await chooseSave(e,{name:entry.name,extension:ext.slice(1)});
   if(choice.canceled||!choice.filePath)return {cancelled:true};if(path.extname(choice.filePath).toLowerCase()!==ext)throw Error('Keep the selected profile format.');const latest=await profiles.preview(scope,id,p.profileId);if(latest.profile.revision!==v.profile.revision)throw Error('Profile changed before export. Try again.');guard(e,scope);await writeFile(choice.filePath,entry.text,{encoding:'utf8',mode:0o600});return {saved:true};
  }
- return Object.freeze({assets,addCard,addAddress,emails,importEmails,generate,create,edit,load,preview,apply,save,exportFile,exportSaved,cancel});
+ return Object.freeze({assets,addCard,addAddress,manageResource,emails,importEmails,generate,create,edit,load,preview,apply,save,exportFile,exportSaved,cancel});
 }
-function registerWorkshop(options){const service=createWorkshop(options);for(const method of ['assets','addCard','addAddress','emails','importEmails','generate','create','edit','load','preview','apply','save','exportFile','exportSaved'])options.ipcMain.handle('profile:workshop:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:workshop:cancel',(e,t)=>{options.requireOwner(e);return service.cancel(e,t);});return service;}
+function registerWorkshop(options){const service=createWorkshop(options);for(const method of ['assets','addCard','addAddress','manageResource','emails','importEmails','generate','create','edit','load','preview','apply','save','exportFile','exportSaved'])options.ipcMain.handle('profile:workshop:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:workshop:cancel',(e,t)=>{options.requireOwner(e);return service.cancel(e,t);});return service;}
 module.exports={createWorkshop,registerWorkshop,numberOf};

@@ -136,6 +136,10 @@ test('complete native app resources, icon and retained Full Website Admin fallba
  assert.match(source('site-bridge.js'),/safeStorage\.encryptString/);
  assert.match(source('site-bridge.js'),/safeStorage\.decryptString/);
  assert.match(source('native-touchid.js'),/aco:admin-session-ready/);
+ assert.match(source('preload.js'),/manageResource:payload=>ipcRenderer\.invoke\('profile:workshop:manageResource'/);
+ assert.match(source('profile-workshop-service.js'),/manageResource/);
+ assert.match(source('local-card-vault.js'),/updateWorkshopCard/);
+ assert.match(source('jig-address-banks.js'),/updateWorkshopAddress/);
  assert.doesNotMatch(source('site-bridge.js'),/owner\.show\(\);owner\.focus\(\)/);
  assert.match(source('site-bridge.js'),/Replacement is still in the available/);
  assert.match(source('site-bridge.js'),/replacementId!==id\(payload\.replacementId\)/);
