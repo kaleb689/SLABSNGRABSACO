@@ -49,7 +49,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   const current=await vault.list(key),number=String(p?.card?.number||'').replace(/\D/g,'');
   if(!/^\d{12,19}$/.test(number))throw Error('Enter a valid card number.');
   const next=(current?.cards?.length||0)+1;
-  const card={...p.card,number,label:'Unlinked card '+next,cardholder:'Unassigned',brand:brandFromNumber(number)};
+  const card={...p.card,number,label:'Unlinked card '+next,cardholder:String(p?.card?.cardholder||'').trim()||'Unassigned',brand:brandFromNumber(number)};
   delete card.id;
   return vault.addWorkshopCard(key,card,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');});
  }
