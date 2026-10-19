@@ -25,9 +25,16 @@ function profileNameFor(row){
 }
 function normalizeCardIdentity(record){
  const number=numberOf(record);if(!number)return record;
- const brand=brandFromNumber(number),holder=profileNameFor({data:record});
- if(Draft.formatOf(record)==='shikari'){if(holder)record.cc_name=holder;record.cc_type=brand;}
- else if(record.card){if(holder)record.card.holder=holder;record.card.type=brand;}
+ const brand=brandFromNumber(number),holder=profileNameFor({data:record}),format=Draft.formatOf(record);
+ if(format==='shikari'){
+  const current=String(record.cc_name||record.cc_holder||'').trim();
+  if(holder&&(!current||/^unassigned$/i.test(current)))record.cc_name=holder;
+  record.cc_type=brand;
+ }else if(record.card){
+  const current=String(record.card.holder||record.card.cardholder||'').trim();
+  if(holder&&(!current||/^unassigned$/i.test(current)))record.card.holder=holder;
+  record.card.type=brand;
+ }
  return record;
 }
 
