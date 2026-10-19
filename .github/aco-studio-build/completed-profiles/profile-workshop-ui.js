@@ -84,7 +84,7 @@
   }catch(error){bulkStatus(error.message,true);}finally{bulkLoading=false;bulkControls();}});
  bq('apply').addEventListener('click',async()=>{if(!bulkToken)return;if(!confirm('Apply this reviewed jig to all '+bulkSelected.size+' selected profiles?'))return;bulkLoading=true;bulkControls();try{const result=await library.batchJigCommit({token:bulkToken,confirmed:true});bulkToken=null;await loadBulk(bulkRetailer);bulkStatus('Jigged '+result.updated+' selected profile(s) together'+(result.remoteSaved?' · '+result.remoteSaved+' synced to website/app':'')+'.');}catch(error){bulkStatus(error.message,true);}finally{bulkLoading=false;bulkControls();}});
  d.addEventListener('jigstudio:bank-context-updated',()=>{const owner=bulkOwner();if(bulkKey(owner)!==bulkOwnerKey)void loadBulk(bulkRetailer);});
- void loadBulk('target');
+ bulkStatus('Choose Target Jig, Walmart Jig, or PKC Jig to load that retailer preset and saved profiles.');
 
  for(const id of ['workshopAddress','workshopCard','workshopName'])$(id).addEventListener('change',async()=>{invalidate();importer()?.beginWorkshop?.();const c=checked();$('workshopAddresses').hidden=!c.address;$('workshopCards').hidden=!c.card;if((c.address||c.card)&&!assets)await loadAssets();controls();});
  for(const id of ['workshopMirror','workshopStyles','workshopReuse'])$(id).addEventListener('change',invalidate);
