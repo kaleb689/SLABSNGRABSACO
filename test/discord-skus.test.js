@@ -299,3 +299,48 @@ test("owner's Discord SKU summary scales without leaking mixed quantities or exc
   assert.ok(admin.embeds.every(e=>e.description.length<=4096));
   assert.match(admin.embeds[0].description,/\*\*Qty: 2/);
 });
+
+
+test("Discord HTTP 429 responses honor retry-after and retry the same SKU panel write", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { discordRateLimitDelayMs } = await import("../discord-community.js");
+  const source = readFileSync(new URL("../discord-community.js", import.meta.url), "utf8");
+  const from = source.indexOf('  async function api(route, method = "GET", payload) {');
+  const to = source.indexOf('  let guildId,', from);
+  assert.ok(from > 0 && to > from, "Discord API handler exists");
+  const block = source.slice(from, to);
+  const sent = [], delays = [];
+  const fetch = async (_url, options) => {
+    sent.push(options);
+    if (sent.length === 1) return {
+      status: 429, ok: false,
+      headers: { get: key => key === "retry-after" ? "0.4" : null },
+      json: async () => ({ retry_after: 0.75, global: false })
+    };
+    return { status: 200, ok: true, json: async () => ({ id: "pkc-panel-id" }) };
+  };
+  const make = new Function("fetch", "API", "headers", "discordRateLimitDelayMs", "AbortSignal", "setTimeout",
+    block + "return api;");
+  const api = make(fetch, "https://discord.com/api/v10", { Authorization: "Bot test" },
+    discordRateLimitDelayMs, AbortSignal, (callback, delay) => { delays.push(delay); callback(); });
+  const payload = { components: [{ type: 1, components: [{ type: 2, label: "Choose Multiple SKUs" }] }] };
+  const result = await api("/channels/pkc/messages/panel", "PATCH", payload);
+  assert.equal(result.id, "pkc-panel-id");
+  assert.equal(sent.length, 2, "rate-limited PKC panel should be retried");
+  assert.equal(sent[0].method, "PATCH");
+  assert.equal(sent[1].body, sent[0].body, "retry must preserve exact original controls");
+  assert.deepEqual(delays, [850], "Discord's 750ms retry_after plus margin is respected");
+
+  const rejected = make(async () => ({
+    status: 403, ok: false, json: async () => ({ message: "Missing Permissions" })
+  }), "https://discord.com/api/v10", {}, discordRateLimitDelayMs, AbortSignal,
+    () => { throw new Error("must not wait on 403"); });
+  await assert.rejects(rejected("/channels/pkc/messages/panel", "PATCH", payload), /HTTP 403/);
+});
+
+test("Discord rate-limit delay supports body, headers and backoff fallback", async () => {
+  const { discordRateLimitDelayMs } = await import("../discord-community.js");
+  assert.equal(discordRateLimitDelayMs({ retryAfter: 2, headerRetryAfter: 1 }), 2100);
+  assert.equal(discordRateLimitDelayMs({ retryAfter: null, headerRetryAfter: "0.2" }), 300);
+  assert.equal(discordRateLimitDelayMs({ retryAfter: null, headerRetryAfter: null, attempt: 2 }), 4100);
+});
