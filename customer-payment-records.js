@@ -138,7 +138,11 @@ export function createCustomerPaymentActions({
     const selected = await select(accountId, id);
     checkRevision(selected.current, expectedRevision);
     const removing = action === "delete";
-    const next = removing ? null : sanitizeSavedPaymentMethod(body, selected.current);
+    // Legacy encrypted checkout cards can store the PAN as cardNumber
+    // instead of acoCardNumber. Preserve the existing card when the user
+    // changes only its name or expiration.
+    const existing = {...selected.current, acoCardNumber: digits(selected.current)};
+    const next = removing ? null : sanitizeSavedPaymentMethod(body, existing);
     if (!removing && !validSavedPaymentMethod(next)) {
       throw error(400, "Enter a cardholder, valid card number, expiration month and expiration year.");
     }
@@ -158,7 +162,9 @@ export function createCustomerPaymentActions({
         profile.selectedPaymentId = null;
       }
       profile.updatedAt = new Date().toISOString();
+      suppressOriginal(selected.vault, selected.current, next);
       await saveRetailerProfiles(selected.profiles);
+      await saveCustomerVault(accountId, selected.vault);
     } else {
       suppressOriginal(selected.vault, selected.current, next);
       const overrides = {...(selected.vault.paymentOverrides || {})};
