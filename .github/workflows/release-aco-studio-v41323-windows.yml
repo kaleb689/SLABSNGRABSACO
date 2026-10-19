@@ -1,0 +1,208 @@
+name: Verify ACO Studio 4.13.23 Windows two-way sync installer
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/aco-studio-build/**'
+      - '.github/workflows/release-aco-studio-v41323-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: aco-studio-bidirectional-423-windows
+  cancel-in-progress: true
+env:
+  ACO_VERSION: '4.13.23'
+jobs:
+  windows:
+    name: Windows x64 installer, source tests and installed application smoke
+    runs-on: windows-2025
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore verified existing application source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,hashlib,pathlib,zipfile,io
+          root=pathlib.Path('.github/aco-studio-build')
+          parts=sorted(root.glob('aco-studio-v4.13.5.part-*.b64'))
+          assert len(parts)==11,'Existing source archive is incomplete'
+          contents=base64.b64decode(b''.join(p.read_bytes() for p in parts))
+          assert hashlib.sha256(contents).hexdigest()=='8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570','Original source hash mismatch'
+          with zipfile.ZipFile(io.BytesIO(contents)) as z:
+              assert all(not pathlib.PurePosixPath(n).is_absolute() and '..' not in pathlib.PurePosixPath(n).parts for n in z.namelist())
+              z.extractall('build-src')
+          assert pathlib.Path('build-src/App/main.js').is_file()
+          PY
+      - name: Apply every preserved ACO Studio feature overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+          python .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+          node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python - <<'PY'
+          from pathlib import Path
+          # Extracted original Windows sources use CRLF. Every existing
+          # overlay anchor was authored for LF; normalize source scripts only.
+          for p in Path('build-src/App').glob('*.js'):
+           data=p.read_bytes()
+           if b'\r\n' in data:p.write_bytes(data.replace(b'\r\n',b'\n'))
+          PY
+          python .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+          node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+          node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+          node -e "const p=require('./build-src/App/package.json');if(p.version!==process.env.ACO_VERSION || !p.dependencies['electron-updater'] || p.build.appId!=='com.slabsngrabsaco.jigstudio.owner') process.exit(1)"
+      - name: Install runtime and build dependencies
+        working-directory: build-src/App
+        run: npm install --no-audit --no-fund
+      - name: Test Windows auto-update, Personal isolation, profile scans and old functions
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in *.js; do node --check "$f"; done
+          # mac-full-updates.test.js validates /Applications paths and Unix symlinks;
+          # its tests are exercised on both native Mac runners, not Windows.
+          node --test $(find tests -maxdepth 1 -type f -name '*.test.js' ! -name 'mac-full-updates.test.js' | sort) | tee regression-results.txt
+          test -f node_modules/electron-updater/package.json
+      - name: Produce actual Windows x64 NSIS setup installer
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx electron-builder --win nsis --x64 --publish never
+          EXPECTED="dist/ACO-Studio-Setup-${ACO_VERSION}-x64.exe"
+          if [[ ! -f "$EXPECTED" ]]; then
+            # Electron Builder can select its default NSIS setup filename.
+            # Keep the validated PE bytes unchanged; name the release asset
+            # consistently for the permanent automatic-update feed.
+            mapfile -t matches < <(find dist -maxdepth 1 -type f -iname '*setup*.exe')
+            test "${#matches[@]}" -eq 1
+            cp "${matches[0]}" "$EXPECTED"
+          fi
+          test -f "$EXPECTED"
+      - name: Verify packaged ACO Studio code, updater, icon and executable
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/win-unpacked/JigStudio.exe
+          for f in main.js profile-vault.js profile-library-ui.js native-admin-ui.js native-touchid.js win-full-updates.js mac-full-updates.js personal-access.js ACOStudioIcon.png JigStudio.ico; do
+            test -s "dist/win-unpacked/resources/app/$f"
+          done
+          test -f dist/win-unpacked/resources/app/node_modules/electron-updater/package.json
+          node -e "const p=require('./dist/win-unpacked/resources/app/package.json');if(p.version!==process.env.ACO_VERSION||p.name!=='slabsngrabsaco-jig-studio'||p.main!=='main.js')process.exit(1)"
+          python - <<'PY'
+          import pathlib,os
+          p=pathlib.Path('dist')/('ACO-Studio-Setup-'+os.environ['ACO_VERSION']+'-x64.exe')
+          assert p.stat().st_size>50_000_000, 'NSIS output missing or unusually small'
+          with p.open('rb') as f: assert f.read(2)==b'MZ', 'Installer is not Windows PE executable'
+          print('Validated Windows NSIS setup:',p.name,'bytes:',p.stat().st_size)
+          PY
+      - name: Launch packaged Windows native application in isolated smoke mode
+        shell: pwsh
+        working-directory: build-src/App
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:ACO_STUDIO_SMOKE_FILE = (Join-Path $env:RUNNER_TEMP 'aco-windows-renderer-smoke.txt')
+          $p=Start-Process -FilePath (Join-Path (Get-Location) 'dist/win-unpacked/JigStudio.exe') -ArgumentList '--aco-studio-ci-smoke' -PassThru
+          $ready=$false
+          try {
+            for ($i=0;$i -lt 60;$i++) {
+              if(Test-Path $env:ACO_STUDIO_SMOKE_FILE) {$ready=$true;break}
+              if($p.HasExited){break}
+              Start-Sleep -Seconds 1
+              $p.Refresh()
+            }
+            if(-not $ready){throw 'Installed Windows ACO Studio did not initialize the native renderer'}
+            if(-not ((Get-Content $env:ACO_STUDIO_SMOKE_FILE -Raw) -match 'ACO Studio desktop renderer launched')){throw 'Desktop renderer controls are incomplete'}
+          } finally {if(-not $p.HasExited){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue}}
+      - name: Generate a SHA-512-verified stable Windows full installer feed
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os,pathlib,hashlib,base64,datetime
+          root=pathlib.Path('dist');v=os.environ['ACO_VERSION'];p=root/f'ACO-Studio-Setup-{v}-x64.exe'
+          h=hashlib.sha512()
+          with p.open('rb') as f:
+           for chunk in iter(lambda:f.read(1024*1024),b''):h.update(chunk)
+          digest=base64.b64encode(h.digest()).decode()
+          feed=(f'version: {v}\nfiles:\n  - url: {p.name}\n    sha512: {digest}\n    size: {p.stat().st_size}\npath: {p.name}\nsha512: {digest}\nreleaseDate: {datetime.datetime.now(datetime.timezone.utc).isoformat()}\n')
+          (root/'latest.yml').write_text(feed,encoding='utf-8')
+          print('Validated Windows update feed, SHA-512, installer size and version')
+          PY
+      - name: Record Windows signing availability
+        working-directory: build-src/App
+        shell: pwsh
+        run: |
+          $file = Join-Path (Get-Location) "dist/ACO-Studio-Setup-$env:ACO_VERSION-x64.exe"
+          $signature = Get-AuthenticodeSignature $file
+          $signature.Status.ToString() | Set-Content -Path dist/windows-signing-status.txt
+          Write-Host "Windows installer signature status: $($signature.Status)"
+          if ($signature.Status -ne 'Valid') {Write-Warning 'Windows SmartScreen or installer approval may be required without Authenticode code signing.'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ACO-Studio-${{ env.ACO_VERSION }}-windows-x64
+          path: |
+            build-src/App/dist/ACO-Studio-Setup-*.exe
+            build-src/App/dist/latest.yml
+            build-src/App/dist/*.blockmap
+            build-src/App/dist/windows-signing-status.txt
+            build-src/App/regression-results.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ACO-Studio-windows-failure
+          path: |
+            build-src/App/regression-results.txt
+            build-src/App/dist/builder-debug.yml
+          if-no-files-found: ignore
+  publish:
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ACO-Studio-4.13.23-windows-x64
+          path: installers
+      - name: Verify and publish tested Windows installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import pathlib,hashlib,base64,shutil
+          root=pathlib.Path('installers')
+          for name in ['ACO-Studio-Setup-4.13.23-x64.exe','latest.yml','windows-signing-status.txt','regression-results.txt']:
+           matches=list(root.rglob(name));assert len(matches)==1,(name,matches)
+           if matches[0]!=root/name:shutil.copyfile(matches[0],root/name)
+          assert '# fail 0' in (root/'regression-results.txt').read_text()
+          p=root/'ACO-Studio-Setup-4.13.23-x64.exe'
+          assert p.stat().st_size>50_000_000
+          with p.open('rb') as f:assert f.read(2)==b'MZ'
+          with p.open('rb') as f:digest=base64.b64encode(hashlib.file_digest(f,'sha512').digest()).decode()
+          assert digest in (root/'latest.yml').read_text()
+          PY
+          cat > notes.md <<'NOTES'
+          ACO Studio 4.13.23 preserves the existing application and vault identity. Adds native macOS Touch ID trusted-device Admin session handoff after one full Admin sign-in, keeps verified Admin dashboard data during partial live refreshes, and formats membership currency values in dollars. Existing two-way sync, profile libraries, duplicate review, updater and Personal separation remain intact.
+
+          Native source regressions, packaging and launch/update checks must pass before these assets publish. Mac builds remain ad-hoc and unnotarized; Windows builds remain unsigned without signing credentials. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
+          NOTES
+          gh release create aco-studio-v4.13.23-windows-unsigned installers/*.exe installers/latest.yml installers/windows-signing-status.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.23 Windows' --notes-file notes.md --prerelease
+          gh release upload aco-studio-windows-updates installers/ACO-Studio-Setup-4.13.23-x64.exe installers/latest.yml --repo "$GITHUB_REPOSITORY" --clobber
