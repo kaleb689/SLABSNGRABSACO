@@ -181,7 +181,8 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
    throw Error('This profile is local-only. Use the local jig button or link it to the website first.');
   const fields=D.toValues(row.data);
   for(const k of ['address1','address2','city','state','zip']){fields['shipping.'+k]=String(address[k]??'').trim();if(p.billingSameAsShipping)fields['billing.'+k]=String(address[k]??'').trim();}
-  const saved=await edit(e,{scope:'aco',customerId:a.id,profileId:row.id,revision:row.revision,fields,group:row.group});
+  const jigged=C.syncCardholderToProfile(D.manualEdit(row.data,fields));
+  const saved=await edit(e,{scope:'aco',customerId:a.id,profileId:row.id,revision:row.revision,fields:C.values(jigged),group:row.group,card:C.payment(jigged)});
   if(saved?.remoteSaved!==true)throw Error('Website did not confirm this jig. Do not treat it as a synchronized change.');
   return {saved:true,remoteSaved:true,profileId:row.id,retailer:row.retailer};
  }
@@ -196,7 +197,7 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   const before=D.toValues(row.data),after=D.toValues(data),edits={...after};
   if(billingSameAsShipping){for(const key of ['address1','address2','city','state','zip'])edits['billing.'+key]=after['shipping.'+key];}
   else for(const key of ['first','last','phone','address1','address2','city','state','zip','country'])if(!(phoneJig&&key==='phone'))edits['billing.'+key]=before['billing.'+key];
-  return D.manualEdit(data,edits);
+  return C.syncCardholderToProfile(D.manualEdit(data,edits));
  }
  async function batchJigPreview(e,p){
   const a=await access(e,p),retailer=C.retailer(p.retailer);
@@ -228,7 +229,7 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   }
   let updated=0,remoteSaved=0;
   for(const change of plan.rows){
-   const result=await edit(e,{scope:plan.scope,customerId:plan.id,profileId:change.profileId,revision:change.revision,fields:C.values(change.data),group:change.group});
+   const result=await edit(e,{scope:plan.scope,customerId:plan.id,profileId:change.profileId,revision:change.revision,fields:C.values(change.data),group:change.group,card:C.payment(change.data)});
    updated++;if(result?.remoteSaved)remoteSaved++;
   }
   jigPlans.delete(p.token);a.check();
