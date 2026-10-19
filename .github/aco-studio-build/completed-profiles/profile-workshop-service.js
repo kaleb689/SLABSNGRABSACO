@@ -93,7 +93,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    if(p.allowCardReuse!==true&&cards.length<emails.length)throw Error('Select one unused card per profile or enable balanced card reuse.');
    const records=emails.map((email,i)=>Draft.blank(p.retailer,p.format,{email,label:(p.label||'Profile')+' '+(i+1)},uuid));
    const result=Fields.build({records,indices:records.map((_,i)=>i),scope,customerId:id,addresses,cards,choices:{address:true,card:true,name:p.randomNames===true},allowCardReuse:p.allowCardReuse===true,mirrorBilling:true});
-   result.records.forEach((record,i)=>normalizeCardIdentity(record,cards.find(card=>String(card.id)===String(result.summary[i]?.cardId||''))));
+   result.records.forEach((record,i)=>{const selected=cards.find(card=>String(card.id)===String(result.summary[i]?.cardId||''))||cards.find(card=>String(card.number||'').replace(/\D/g,'')===numberOf(record));normalizeCardIdentity(record,selected);});
    return result.records.map((data,i)=>({data,format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}}));
   },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');})));
  }
@@ -139,7 +139,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
     // Legacy assignment state was captured under the same card-vault lock.
     if(r.cards.some(c=>inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)||legacy.has(c.id)))throw Error('A selected card is already in use. Choose unused cards or disable the Unused only filter.');
    }
-   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});if(choices.card)result.records.forEach((record,i)=>normalizeCardIdentity(record,r.cards.find(card=>String(card.id)===String(result.summary[i]?.cardId||''))));resourcesHash=r.hash;
+   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});if(choices.card)result.records.forEach((record,i)=>{const selected=r.cards.find(card=>String(card.id)===String(result.summary[i]?.cardId||''))||r.cards.find(card=>String(card.number||'').replace(/\D/g,'')===numberOf(record));normalizeCardIdentity(record,selected);});resourcesHash=r.hash;
   });
   const text=Core.serialize(src.parsed,result.records);if(!same(Core.parseFile(src.parsed.name,text).records,result.records))throw Error('Output validation failed. Nothing was changed.');
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed during preview.');
