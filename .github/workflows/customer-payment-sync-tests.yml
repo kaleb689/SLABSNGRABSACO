@@ -1,0 +1,29 @@
+name: Customer payment sync regression
+on:
+  push:
+    branches:
+      - fix/customer-payment-sync-20261019
+  pull_request:
+    paths:
+      - customer-payment-records.js
+      - server.js
+      - server-studio-customer-sync.js
+      - public/app.js
+      - public/index.html
+      - tests/customer-payment-records.test.js
+jobs:
+  verify-payment-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify JavaScript syntax
+        run: |
+          node --check server.js
+          node --check customer-payment-records.js
+          node --check server-studio-customer-sync.js
+          node --check public/app.js
+      - name: Test customer payment synchronization
+        run: node --test tests/customer-payment-records.test.js
