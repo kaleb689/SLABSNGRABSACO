@@ -21,6 +21,7 @@ async function api(route, method='GET', payload) {
   const match = /^\/channels\/([^/]+)\/messages(?:\/([^?]+))?/.exec(route);
   assert.ok(match, `Unexpected route ${route}`);
   const [,channel,id] = match;
+  if (!id && method==='GET' && channel==='1551070928039845960') throw new Error('HTTP 403');
   if (!id && method==='GET') return histories.get(channel) || [];
   if (!id && method==='POST') { const p={id:String(serial++),channel_id:channel,...payload};messages.set(p.id,p);changes.push(p);return p; }
   if (method==='DELETE') { messages.delete(id);return null; }
@@ -123,5 +124,32 @@ try {
   const finalOwnerPanels = [...messages.values()].filter(p => p.channel_id === 'private' &&
     p.components?.some(row => row.components.some(button => button.custom_id?.startsWith('sku:remind:'))));
   assert.equal(finalOwnerPanels.length, 1, 'Removing SKUs retires its owner-only reminder button');
+  // Regression: an inaccessible retailer must not block PKC controls from appearing.
+  const inaccessibleId='1551070928039845960', pkcId='1551070928039845961';
+  const pkcPost=post('1551070928039845962',pkcId,
+    'Pokemon Center Elite Trainer Box\nSKU: PKC123456\nPokemon Center Booster Bundle\nSKU: PKC987654');
+  messages.set(pkcPost.id,pkcPost);
+  histories.set(pkcId,[pkcPost]);
+  deps.dropChannelIds.add(inaccessibleId);
+  deps.dropChannelIds.add(pkcId);
+  deps.retailerDropLabels[pkcId]='PKC Drops';
+  await controls.backfillDropMenus();
+  menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
+  assert.ok(menus[pkcPost.id], 'PKC SKU menus must backfill even if another drop channel is forbidden');
+  const pkcPanel=messages.get(menus[pkcPost.id][0]);
+  assert.equal(pkcPanel.embeds[0].title,'PKC Drops — products');
+  assert.match(pkcPanel.embeds[0].description,/PKC123456/);
+  assert.match(pkcPanel.embeds[0].description,/PKC987654/);
+  assert.ok(pkcPanel.components[0].components.some(item=>item.label==='Choose Multiple SKUs'));
+  assert.ok(pkcPanel.components[0].components.some(item=>item.label==='Run all SKUs'));
+  assert.ok(pkcPanel.components[0].components.some(item=>item.label==='My selected SKUs'));
+  const pkcDraft=await controls.mutateSkuDraft(batchUser,pkcId,pkcPost.id,
+    items=>changeSkuItems(items,parseDropSkus(pkcPost),pkcPost.id,pkcId,2));
+  assert.equal(pkcDraft.length,2);
+  const pkcSaved=await controls.confirmSkuDraft(batchUser,'batch-member',pkcPost.id,pkcId);
+  assert.equal(pkcSaved.length,4, 'Confirming PKC must preserve existing retailer selections');
+  assert.ok(pkcSaved.every(item=>item.quantity===2));
+  console.log('PASS: PKC channel gets SKU controls despite another channel HTTP 403; saved cross-retailer selections remain');
+
   console.log('PASS: channel aliases, existing Upcoming controls, tonight and per-post Upcoming opt-out/reversal, no-SKU opt-out, owner notifications, preserved other-drop selections, idempotency, menu growth and stale-control cleanup');
 } finally { await fs.rm(dataDir,{recursive:true,force:true}); }

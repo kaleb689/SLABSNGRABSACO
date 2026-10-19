@@ -1021,17 +1021,29 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       for (const [index, channel] of found.entries()) {
         if (!channel) continue;
         const formatted = `❗️│${["upcoming-drops", "dropping-tonight", "announcements"][index]}`;
-        if (channel.name !== formatted) await api(`/channels/${channel.id}`, "PATCH", { name: formatted });
+        // A cosmetic rename is optional; lacking Manage Channels must not block SKU menus.
+        if (normalizeName(channel.name) !== normalizeName(formatted)) {
+          try { await api(`/channels/${channel.id}`, "PATCH", { name: formatted }); }
+          catch (error) {
+            if (!/HTTP 403/.test(error.message)) throw error;
+            console.warn("Discord legacy drop rename unavailable:", channel.name, error.message);
+          }
+        }
         if (index < 2) {
           const botOverwrite = (channel.permission_overwrites || []).find(item => item.id === appId);
           const required = 1024n | 2048n | 8192n | 16384n | 65536n;
           if ((BigInt(botOverwrite?.allow || "0") & required) !== required ||
             (BigInt(botOverwrite?.deny || "0") & required) !== 0n) {
-            await api(`/channels/${channel.id}/permissions/${appId}`, "PUT", {
-              type: 1,
-              allow: (BigInt(botOverwrite?.allow || "0") | required).toString(),
-              deny: (BigInt(botOverwrite?.deny || "0") & ~required).toString()
-            });
+            try {
+              await api(`/channels/${channel.id}/permissions/${appId}`, "PUT", {
+                type: 1,
+                allow: (BigInt(botOverwrite?.allow || "0") | required).toString(),
+                deny: (BigInt(botOverwrite?.deny || "0") & ~required).toString()
+              });
+            } catch (error) {
+              if (!/HTTP 403/.test(error.message)) throw error;
+              console.warn("Discord legacy drop bot permission repair unavailable:", channel.name, error.message);
+            }
           }
         }
       }
@@ -1053,17 +1065,29 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
          let channel = channels.find(item =>
            [0, 5].includes(item.type) && normalizeName(item.name) === spec.key);
          if (!channel) {
-           channel = await api(`/guilds/${guildId}/channels`, "POST", {
-             name: channelName, type: 0, parent_id: important.id,
-             topic, permission_overwrites: overwrites
-           });
-         } else if (channel.name !== channelName || channel.parent_id !== important.id ||
-           channel.topic !== topic || !sameOverwrites(channel.permission_overwrites, overwrites)) {
-           channel = await api(`/channels/${channel.id}`, "PATCH", {
-             name: channelName, parent_id: important.id, topic,
-             permission_overwrites: overwrites
-           });
+           try {
+             channel = await api(`/guilds/${guildId}/channels`, "POST", {
+               name: channelName, type: 0, parent_id: important.id,
+               topic, permission_overwrites: overwrites
+             });
+           } catch (error) {
+             console.error("Discord retailer drop channel creation unavailable:", spec.slug, error.message);
+           }
+         } else if (normalizeName(channel.name) !== normalizeName(channelName) ||
+           channel.parent_id !== important.id || channel.topic !== topic ||
+           !sameOverwrites(channel.permission_overwrites, overwrites)) {
+           try {
+             channel = await api(`/channels/${channel.id}`, "PATCH", {
+               name: channelName, parent_id: important.id, topic,
+               permission_overwrites: overwrites
+             });
+           } catch (error) {
+             // Keep the existing channel ID and its working SKU controls even
+             // when the bot lacks Manage Channels or permission override access.
+             console.warn("Discord retailer drop settings update unavailable:", spec.slug, error.message);
+           }
          }
+         if (!channel) continue;
          dropChannelIds.add(channel.id);
          retailerDropLabels[channel.id] = spec.label;
          retailerChannels.push({ name: channel.name, id: channel.id });
@@ -2378,6 +2402,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   async function backfillDropMenus() {
     for (const channelId of dropChannelIds) {
+      try {
       const active = [];
       let before = "", foundMain = false, keptUpcomingMain = false;
       for (let page = 0; page < 20 && !foundMain; page++) {
@@ -2401,9 +2426,15 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
       for (const message of active.reverse()) await ensureSkuControls(message);
       console.log("Discord drop controls refreshed:", JSON.stringify({
-        channelId, kind: channelId === tonightChannelId ? "tonight" : "upcoming",
+        channelId, kind: retailerDropLabels[channelId] || (channelId === tonightChannelId ? "tonight" : "upcoming"),
         sourcePosts: active.length, skuPosts: active.filter(message => parseDropSkus(message).length).length
       }));
+      } catch (error) {
+        // One inaccessible retailer channel cannot prevent the others from being repaired.
+        console.error("Discord drop controls refresh failed:", JSON.stringify({
+          channelId, retailer: retailerDropLabels[channelId] || null, error: error.message
+        }));
+      }
     }
   }
   async function notifyRetailerSkuChange(message) {
