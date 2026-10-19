@@ -58,3 +58,26 @@ test('Florida phone jig is available as a persistent retailer rule',async t=>{
  await h.lib.saveRules(event,{...h.p,retailer:'pokemoncenter',rules:[LC.FL_PHONE_RULE]});
  assert.deepEqual((await h.lib.rules(event,{...h.p,retailer:'pokemoncenter'})).selected,[LC.FL_PHONE_RULE]);
 });
+
+test('Jig commit changes cardholder to the profile first and last name for Target and PKC',async t=>{
+ const h=await library(t);
+ for(const retailer of ['target','pokemoncenter']){
+  await commit(h,await preview(h,[complete(retailer,retailer+'-holder@example.test')],h.p,retailer));
+  let row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
+  assert.equal(LC.payment(row.data).cardholder,'Saved Holder');
+  const plan=await h.lib.batchJigPreview(event,{...h.p,retailer,profileIds:[row.id],ruleIds:['avenue_short'],combine:false,billingSameAsShipping:false});
+  await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+  row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
+  assert.equal(LC.payment(row.data).cardholder,'Alex Example');
+  if(retailer==='target')assert.equal(row.data.cc_name,'Alex Example');
+  else assert.equal(row.data.card.holder,'Alex Example');
+ }
+});
+
+test('Cardholder sync helper preserves blank cards but fixes an attached card holder',()=>{
+ const blank=D.blank('target','shikari',{first:'Jordan',last:'Smith',email:'blank@example.test'});
+ assert.equal(LC.syncCardholderToProfile(blank).cc_name,'');
+ const filled=complete('target','filled@example.test');
+ assert.equal(LC.payment(filled).cardholder,'Saved Holder');
+ assert.equal(LC.payment(LC.syncCardholderToProfile(filled)).cardholder,'Alex Example');
+});
