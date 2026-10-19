@@ -13,13 +13,38 @@
  <details class="profileBankHelp"><summary>How imports, duplicate resolution and website accounts work ▾</summary><p>Open a CSV/JSON in Profile Studio, select its source vault/customer, choose its retailer, then click Import selected profile cards. Imports are scanned automatically first. The scan compares emails in files and encrypted banks, plus live website-linked retailer accounts when Admin is connected. A collision does not modify anything until you choose. Replacements may only use an unused completed profile in the same retailer and same vault/customer. Website-linked records must be managed through the authorized website Admin, never deleted by a local scanner.</p></details>`;
  const destination=$('studioJigBanks');destination.after(panel);
  const modal=d.createElement('div');modal.id='profileDuplicatesModal';modal.className='profileReviewModal';modal.hidden=true;modal.innerHTML=`<div class="profileReviewBox" role="dialog" aria-modal="true" aria-labelledby="profileReviewTitle"><div class="profileReviewHead"><div><div class="eyebrow">DUPLICATE PROFILE CHECK · READ ONLY</div><h2 id="profileReviewTitle">Review reused email accounts</h2><p id="profileReviewSub"></p></div><button class="btn plain slim" id="profileReviewClose" type="button">✕ Close</button></div><div class="profileReviewList" id="profileReviewList"></div><div class="profileReviewFooter"><small>Nothing is automatically removed or reassigned; no Personal records are copied to ACO or vice versa.</small><button class="btn primary slim" type="button" id="profileReviewDone">Close review</button></div></div>`;d.body.append(modal);
- const historyKey='aco-duplicate-notification-ledger-v1';
- const ledger=window.ACODuplicateNotifications?.createLedger({load:()=>{try{return JSON.parse(localStorage.getItem(historyKey)||'{}');}catch{return {};}},save:value=>localStorage.setItem(historyKey,JSON.stringify(value))});
+ const ledgers=new Map();
+ function ledgerKey(){
+  const owner=store.scope==='personal'?'personal-owner':'aco-'+String(store.customerId||'none').replace(/[^a-zA-Z0-9_-]/g,'_');
+  return 'aco-duplicate-notification-ledger-v2-'+owner;
+ }
+ function ledger(){
+  const key=ledgerKey();
+  if(!ledgers.has(key))ledgers.set(key,window.ACODuplicateNotifications?.createLedger({
+   load:()=>{try{return JSON.parse(localStorage.getItem(key)||'{}');}catch{return {};}},
+   save:value=>localStorage.setItem(key,JSON.stringify(value))
+  }));
+  return ledgers.get(key);
+ }
+ function conflictBelongsHere(conflict){
+  if(!conflict||!Array.isArray(conflict.items))return false;
+  if(store.scope==='personal'){
+   return conflict.items.length>1&&conflict.items.every(item=>
+    item.scope==='personal'||(item.scope==='import'&&item.importScope==='personal')
+   );
+  }
+  if(!store.customerId)return false;
+  return conflict.items.length>1&&conflict.items.every(item=>
+   (item.scope==='aco'&&item.owner===store.customerId)||
+   (item.scope==='website'&&item.owner===store.customerId)||
+   (item.scope==='import'&&item.importScope==='aco'&&item.owner===store.customerId)
+  );
+ }
  let allConflicts=[];
  const history=d.createElement('details');history.className='profileBankHelp';history.innerHTML='<summary>Duplicate notification history</summary><button type="button" data-clear-all>Clear history</button><div data-history></div>';panel.append(history);
- function renderHistory(){const list=history.querySelector('[data-history]');list.replaceChildren();for(const entry of ledger?.history()||[]){const row=d.createElement('div');row.className='profileDuplicateRow';const label=d.createElement('span');label.textContent=(entry.resolved?'Resolved conflict':entry.kept?'Intentional reuse':entry.dismissed?'Dismissed conflict':'Conflict to review')+' · '+new Date(entry.at).toLocaleString();row.append(label);const conflict=allConflicts.find(c=>c.conflictId===entry.id);if(conflict){const open=d.createElement('button');open.type='button';open.textContent='Review records';open.onclick=()=>void compareConflict(conflict);row.append(open);}const clear=d.createElement('button');clear.type='button';clear.textContent='Clear';clear.onclick=()=>{ledger.action(entry.id,'clear');renderHistory();};row.append(clear);list.append(row);}}
- history.querySelector('[data-clear-all]').onclick=()=>{ledger?.clearAll();renderHistory();};
- function dismissReview(){for(const c of store.scanned?.duplicates||[])ledger?.action(c.conflictId,'dismiss');modal.hidden=true;renderHistory();}
+ function renderHistory(){const list=history.querySelector('[data-history]');list.replaceChildren();for(const entry of ledger()?.history()||[]){const row=d.createElement('div');row.className='profileDuplicateRow';const label=d.createElement('span');label.textContent=(entry.resolved?'Resolved conflict':entry.kept?'Intentional reuse':entry.dismissed?'Dismissed conflict':'Conflict to review')+' · '+new Date(entry.at).toLocaleString();row.append(label);const conflict=allConflicts.find(c=>c.conflictId===entry.id);if(conflict){const open=d.createElement('button');open.type='button';open.textContent='Review records';open.onclick=()=>void compareConflict(conflict);row.append(open);}const clear=d.createElement('button');clear.type='button';clear.textContent='Clear';clear.onclick=()=>{ledger()?.action(entry.id,'clear');renderHistory();};row.append(clear);list.append(row);}}
+ history.querySelector('[data-clear-all]').onclick=()=>{ledger()?.clearAll();renderHistory();};
+ function dismissReview(){for(const c of store.scanned?.duplicates||[])ledger()?.action(c.conflictId,'dismiss');modal.hidden=true;renderHistory();}
  const context=()=>window.JigStudioLocalImport?.bankTargets?.()||null;
  const msg=(value,error=false)=>{$('profileBankSummary').textContent=value;$('profileBankSummary').classList.toggle('profileBankError',error);};
  function customers(){return(window.JigWebsiteCustomers?.list?.()||[]).filter(x=>x.id&&Number(x.tierCount)>0);}
@@ -31,8 +56,8 @@
   $('profileImportBank').disabled=store.scope==='aco'&&!pick.value;
  }
  let bankReadEpoch=0;
- async function choose(scope,customerId){d.querySelectorAll('.profileFullDetails').forEach(x=>x.remove());bankReadEpoch++;store.poolCounts=null;store.profiles=[];store.websiteLinked=[];store.counts={};store.scope=scope;store.customerId=scope==='aco'?customerId||null:null;
-  $('profileBankScope').value=scope;renderCustomers();render();await refresh();}
+ async function choose(scope,customerId){d.querySelectorAll('.profileFullDetails').forEach(x=>x.remove());bankReadEpoch++;store.poolCounts=null;store.profiles=[];store.websiteLinked=[];store.counts={};store.scanned=null;store.scanImports=[];allConflicts=[];modal.hidden=true;store.scope=scope;store.customerId=scope==='aco'?customerId||null:null;
+  $('profileBankScope').value=scope;renderCustomers();render();renderHistory();await refresh();}
  function currentId(){return store.scope==='aco'?store.customerId:null;}
  async function refresh(){const ticket=++bankReadEpoch,scope=store.scope,id=currentId();renderCustomers();if(store.scope==='aco'&&!store.customerId){store.profiles=[];store.websiteLinked=[];store.counts={};render();return;}
   if(store.scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.()){msg('Personal vault is locked. Your private accounts remain protected.',true);return;}
@@ -196,7 +221,7 @@
   $('profileReviewSub').textContent=result.duplicates.length+' email(s) appear more than once. '+(result.websiteComplete?'All linked website account pages checked.':'Website inventory not fully available: '+result.websiteReason);
   for(const dup of result.duplicates.slice(0,90)){
    const wrap=d.createElement('div');wrap.className='profileDuplicateEntry';
-   const h=d.createElement('strong');h.textContent=dup.email+' ('+dup.count+' matches)';wrap.append(h);const keep=d.createElement('button');keep.type='button';keep.className='btn secondary slim';keep.textContent='Keep both · intentional reuse';keep.onclick=()=>{ledger?.action(dup.conflictId,'keep');store.scanned.duplicates=store.scanned.duplicates.filter(x=>x.conflictId!==dup.conflictId);showReview(store.scanned);renderHistory();};wrap.append(keep);
+   const h=d.createElement('strong');h.textContent=dup.email+' ('+dup.count+' matches)';wrap.append(h);const keep=d.createElement('button');keep.type='button';keep.className='btn secondary slim';keep.textContent='Keep both · intentional reuse';keep.onclick=()=>{ledger()?.action(dup.conflictId,'keep');store.scanned.duplicates=store.scanned.duplicates.filter(x=>x.conflictId!==dup.conflictId);showReview(store.scanned);renderHistory();};wrap.append(keep);
     const compare=d.createElement('button');compare.type='button';compare.className='btn primary slim';compare.textContent='Compare both records · View / Edit / Delete';compare.style.margin='10px 0';compare.onclick=()=>void compareConflict(dup);wrap.append(compare);
    for(const entry of dup.items){const row=d.createElement('div');row.className='profileDuplicateRow';
     const label=d.createElement('span');label.textContent=[entry.scope==='import'?'Current import':entry.scope==='personal'?'Personal · private':entry.scope==='website'?'Live website linked':'ACO customer '+entry.owner,retailerNames[entry.retailer]||entry.retailer,entry.status||'',entry.label||''].filter(Boolean).join(' · ');row.append(label);
@@ -251,7 +276,10 @@
   await refresh();modal.hidden=true;await scan([],false);
  }catch(e){msg(e.message,true);}}
  async function scan(imports=normalizeImports(),show=true){try{
-  $('profileScanBadge').textContent='Scanning accounts…';let result=await api.scan(imports);allConflicts=result.duplicates;result={...result,duplicates:ledger?ledger.observe(allConflicts):allConflicts};renderHistory();
+  $('profileScanBadge').textContent='Scanning accounts…';let result=await api.scan(imports);
+  allConflicts=(result.duplicates||[]).filter(conflictBelongsHere);
+  const scopedLedger=ledger();
+  result={...result,duplicates:scopedLedger?scopedLedger.observe(allConflicts):allConflicts};renderHistory();
   if(show)scanOutput(result,imports);
   else{store.scanned=result;store.scanImports=imports;$('profileScanBadge').textContent=result.duplicates.length?'⚠ '+result.duplicates.length+' to review · click':'✓ Scan clear';$('profileScanBadge').classList.toggle('profileScanAlert',Boolean(result.duplicates.length));/* Never reopen a dismissed review from an automatic scan. */}
   return result;
