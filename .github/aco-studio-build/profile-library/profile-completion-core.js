@@ -2,7 +2,7 @@
 const Draft=require('./profile-draft-core');
 const validPhone=value=>{const s=String(value||'').replace(/\D/g,'');return s.length>=10&&s.length<=15;};
 function inspect(row){const original=row.data||{},data=require('./profile-library-core').normalized(original,row.retailer||(Draft.formatOf(original)==='shikari'?'target':'pokemoncenter')),v=Draft.toValues(data),missing=[];
- if(!row.jiggedAt)missing.push('Saved jig');if(row.source==='website-linked-profile'&&row.sourceLinked===false)missing.push('Active linked account');
+if(row.source==='website-linked-profile'&&row.sourceLinked===false)missing.push('Active linked account');
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email||''))missing.push('Account email');
  if(!v.first||!v.last)missing.push('First and last name');
  for(const role of ['shipping','billing']){
