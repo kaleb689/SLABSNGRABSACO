@@ -65,3 +65,20 @@ test('Profiles can jig every selected visible profile as one batch',()=>{
  assert.match(source,/selectedVisible/);
  assert.match(workshopService,/brandFromNumber/);
 });
+
+test('Jig page can select one, multiple or all saved profiles and edit retailer presets',()=>{
+ assert.match(workshopSource,/Jig saved profiles/);
+ assert.match(workshopSource,/Target Jig/);
+ assert.match(workshopSource,/Walmart Jig/);
+ assert.match(workshopSource,/PKC Jig/);
+ assert.match(workshopSource,/Select all/);
+ assert.match(workshopSource,/batchJigPreview/);
+ assert.match(workshopSource,/batchJigCommit/);
+ assert.match(workshopSource,/saveRules/);
+ assert.match(workshopSource,/Retailer buttons load that retailer's saved jig settings automatically/);
+});
+
+test('Profiles export is not disabled just because the profile is in progress',()=>{
+ assert.match(source,/q\('export'\)\.disabled=busy;/);
+ assert.doesNotMatch(source,/q\('export'\)\.disabled=busy\|\|stage!=='completed'/);
+});
