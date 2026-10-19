@@ -275,15 +275,17 @@
   }
   await refresh();modal.hidden=true;await scan([],false);
  }catch(e){msg(e.message,true);}}
- async function scan(imports=normalizeImports(),show=true){try{
-  $('profileScanBadge').textContent='Scanning accounts…';let result=await api.scan(imports);
+ let lastQuietScan='';
+ async function scan(imports=normalizeImports(),show=true,quiet=false){try{
+  if(!quiet)$('profileScanBadge').textContent='Scanning accounts…';let result=await api.scan(imports);
   allConflicts=(result.duplicates||[]).filter(conflictBelongsHere);
+  const signature=allConflicts.map(x=>x.conflictId+':'+x.signature).sort().join('|'),changed=signature!==lastQuietScan;lastQuietScan=signature;
   const scopedLedger=ledger();
-  result={...result,duplicates:scopedLedger?scopedLedger.observe(allConflicts):allConflicts};renderHistory();
+  result={...result,duplicates:scopedLedger?scopedLedger.observe(allConflicts):allConflicts};if(changed||show)renderHistory();
   if(show)scanOutput(result,imports);
-  else{store.scanned=result;store.scanImports=imports;$('profileScanBadge').textContent=result.duplicates.length?'⚠ '+result.duplicates.length+' to review · click':'✓ Scan clear';$('profileScanBadge').classList.toggle('profileScanAlert',Boolean(result.duplicates.length));/* Never reopen a dismissed review from an automatic scan. */}
+  else if(changed||!store.scanned){store.scanned=result;store.scanImports=imports;$('profileScanBadge').textContent=result.duplicates.length?'⚠ '+result.duplicates.length+' to review · click':'✓ Scan clear';$('profileScanBadge').classList.toggle('profileScanAlert',Boolean(result.duplicates.length));}
   return result;
- }catch(e){$('profileScanBadge').textContent='Scan unavailable';msg(e.message,true);return null;}}
+ }catch(e){if(!quiet){$('profileScanBadge').textContent='Scan unavailable';msg(e.message,true);}return null;}}
  async function importCurrent(){const target=context();if(!target||!target.count)throw Error('Import profiles into Profile Studio first.');
   if(target.scope!==store.scope||(store.scope==='aco'&&target.customerId!==store.customerId))throw Error('The selected file belongs to a different Personal/customer bank. Change its source first.');
   const raw=window.JigStudioLocalImport?.currentAllProfiles?.();if(!raw||raw.importKey!==target.importKey)throw Error('Profile import changed. Choose the matching file again.');
@@ -307,7 +309,7 @@
  modal.addEventListener('click',event=>{if(event.target===modal)dismissReview();});
  // Auto scans happen after every profile file import and roster change, not
  // while a user is typing in the bank editor.
- let debounce;function backgroundScan(){clearTimeout(debounce);if(context()?.savedToProfileBank)return;debounce=setTimeout(()=>void scan(normalizeImports(),false),550);}
+ let debounce;function backgroundScan(){clearTimeout(debounce);if(context()?.savedToProfileBank)return;debounce=setTimeout(()=>void scan(normalizeImports(),false,true),550);}
  d.addEventListener('jigstudio:bank-context-updated',()=>{const target=context();if(!target){void choose(window.JigStudioLocalImport.workspaceScope(),null);return;}
   void choose(target.scope,target.customerId).then(backgroundScan);});
  d.addEventListener('jigstudio:customers-updated',()=>{renderCustomers();if(window.JigWebsiteCustomers?.connected?.())backgroundScan();});
