@@ -5,6 +5,17 @@ import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload 
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 
 const API = "https://discord.com/api/v10";
+// Retry-After from Discord's JSON body and headers is in seconds.
+export function discordRateLimitDelayMs({ retryAfter, headerRetryAfter, resetAfter, attempt = 0 } = {}) {
+  const candidates = [retryAfter, headerRetryAfter, resetAfter]
+    .filter(value => value !== null && value !== undefined && String(value).trim() !== "")
+    .map(Number).filter(value => Number.isFinite(value) && value >= 0);
+  const seconds = candidates.length
+    ? Math.max(...candidates)
+    : Math.min(2 ** Math.max(0, attempt), 30);
+  return Math.max(250, Math.ceil(seconds * 1000) + 100);
+}
+
 let lapseChecklistRuntime = null;
 const lapseBulkSelections = new Map();
 
@@ -597,12 +608,28 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     catch (error) { if (error?.code === "ENOENT") return fallback; throw error; }
   }
   async function api(route, method = "GET", payload) {
-    const response = await fetch(`${API}${route}`, {
-      method, headers, body: payload === undefined ? undefined : JSON.stringify(payload),
-      signal: AbortSignal.timeout(15000)
-    });
-    if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
-    return response.status === 204 ? null : response.json();
+    // Honor Discord's rate-limit window instead of dropping critical SKU panel
+    // writes (or other Discord actions) on the first HTTP 429 response.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const response = await fetch(`${API}${route}`, {
+        method, headers, body: payload === undefined ? undefined : JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000)
+      });
+      if (response.status === 429) {
+        const rateLimit = await response.json().catch(() => ({}));
+        const retryMs = discordRateLimitDelayMs({
+          retryAfter: rateLimit?.retry_after,
+          headerRetryAfter: response.headers?.get?.("retry-after"),
+          resetAfter: response.headers?.get?.("x-ratelimit-reset-after"),
+          attempt
+        });
+        if (attempt === 5) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP 429 after retries`);
+        await new Promise(resolve => setTimeout(resolve, retryMs));
+        continue;
+      }
+      if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
+      return response.status === 204 ? null : response.json();
+    }
   }
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   async function cleanupLegacyLapseAlerts() {
