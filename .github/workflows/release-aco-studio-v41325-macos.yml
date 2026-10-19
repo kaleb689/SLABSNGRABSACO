@@ -25,10 +25,7 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            # Native Apple Silicon fallback while the macos-26 queue is stalled.
             os: macos-15
-          - arch: x64
-            os: macos-26-intel
     env:
       CSC_LINK: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
       CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
@@ -216,24 +213,24 @@ jobs:
           pattern: ACO-Studio-4.13.25-*
           path: installers
           merge-multiple: true
-      - name: Verify both architectures before publishing
+      - name: Verify Apple Silicon before publishing
         shell: bash
         run: |
           python3 - <<'PY'
           import pathlib,json,hashlib
           root=pathlib.Path('installers');v='4.13.25';platforms={};sums=[]
-          modes=[(root/f'signing-{a}.txt').read_text().strip() for a in ('arm64','x64')]
-          assert modes[0]==modes[1] and modes[0] in ('adhoc','developer-id')
-          mode=modes[0];tag=f'aco-studio-v{v}-macos-'+('adhoc' if mode=='adhoc' else 'notarized')
-          for arch in ('arm64','x64'):
-            tests=json.loads((root/f'update-test-{arch}.json').read_text())
-            assert tests['version']==v and all(tests.get(k) is True for k in ('update','restart','rollback','dataPreserved'))
-            assert '# fail 0' in (root/f'regression-{arch}.txt').read_text()
-            for ext in ('dmg','zip'):
-              p=root/f'ACO-Studio-{v}-{arch}.{ext}';assert p.stat().st_size>50_000_000
-              with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
-              sums.append(digest+'  '+p.name)
-              if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
+          arch='arm64'
+          mode=(root/f'signing-{arch}.txt').read_text().strip()
+          assert mode in ('adhoc','developer-id')
+          tag=f'aco-studio-v{v}-macos-'+('adhoc' if mode=='adhoc' else 'notarized')
+          tests=json.loads((root/f'update-test-{arch}.json').read_text())
+          assert tests['version']==v and all(tests.get(k) is True for k in ('update','restart','rollback','dataPreserved'))
+          assert '# fail 0' in (root/f'regression-{arch}.txt').read_text()
+          for ext in ('dmg','zip'):
+            p=root/f'ACO-Studio-{v}-{arch}.{ext}';assert p.stat().st_size>50_000_000
+            with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
+            sums.append(digest+'  '+p.name)
+            if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
           (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Native Touch ID trusted-device Admin session handoff, stable Admin live data and dollar formatting.','platforms':platforms},indent=2))
           (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n');(root/'release-tag.txt').write_text(tag)
           PY
@@ -247,5 +244,5 @@ jobs:
 
           Native source regressions, packaging and launch/update checks must pass before these assets publish. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
           NOTES
-          gh release create "$TAG" installers/*.dmg installers/*.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-*.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.25 Mac' --notes-file notes.md --prerelease
+          gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.25 Mac' --notes-file notes.md --prerelease
           gh release upload aco-studio-macos-updates installers/mac-update.json --repo "$GITHUB_REPOSITORY" --clobber
