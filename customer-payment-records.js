@@ -89,7 +89,9 @@ export function createCustomerPaymentActions({
     const profiles = await getRetailerProfiles();
     let changed = false;
     for (const profile of profiles) {
-      if (!own(profile, accountId) || !eq(profile.selectedPaymentId, paymentId)) continue;
+      if (!own(profile, accountId) ||
+          (!eq(profile.selectedPaymentId, paymentId) &&
+           !eq(profile.savedPaymentMethodId, paymentId))) continue;
       const existing = profile.customerSecrets
         ? decryptJson(profile.customerSecrets) || {} : {};
       const nextCard = removing ? erased : fields(card);
@@ -100,7 +102,10 @@ export function createCustomerPaymentActions({
         if (jiggedName) nextCard.cardholder = jiggedName;
       }
       profile.customerSecrets = encryptJson({...existing, ...nextCard});
-      if (removing) profile.selectedPaymentId = null;
+      if (removing) {
+        if (eq(profile.selectedPaymentId, paymentId)) profile.selectedPaymentId = null;
+        if (eq(profile.savedPaymentMethodId, paymentId)) profile.savedPaymentMethodId = null;
+      }
       profile.updatedAt = new Date().toISOString();
       changed = true;
     }
@@ -113,7 +118,9 @@ export function createCustomerPaymentActions({
       const assignments = await load();
       let touched = false;
       for (const assignment of assignments) {
-        if (!own(assignment, accountId) || !eq(assignment.selectedPaymentId, paymentId)) continue;
+        if (!own(assignment, accountId) ||
+            (!eq(assignment.selectedPaymentId, paymentId) &&
+             !eq(assignment.savedPaymentMethodId, paymentId))) continue;
         const original = assignment.customerSecrets
           ? decryptJson(assignment.customerSecrets) || {} : {};
         const update = removing ? erased : fields(card);
@@ -123,7 +130,10 @@ export function createCustomerPaymentActions({
           if (name) update.cardholder = name;
         }
         assignment.customerSecrets = encryptJson({...original, ...update});
-        if (removing) assignment.selectedPaymentId = null;
+        if (removing) {
+          if (eq(assignment.selectedPaymentId, paymentId)) assignment.selectedPaymentId = null;
+          if (eq(assignment.savedPaymentMethodId, paymentId)) assignment.savedPaymentMethodId = null;
+        }
         assignment.updatedAt = new Date().toISOString();
         touched = true;
       }
