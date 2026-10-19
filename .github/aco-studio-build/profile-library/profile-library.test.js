@@ -36,3 +36,25 @@ test('Customer source uses submitted cards/address/phone and leaves absent cards
 test('Retailer jig settings are saved per owner and retailer',async t=>{const h=await library(t);await h.lib.saveRules(event,{...h.p,retailer:'pokemoncenter',rules:['avenue_short']});assert.deepEqual((await h.lib.rules(event,{...h.p,retailer:'pokemoncenter'})).selected,['avenue_short']);assert.notDeepEqual((await h.lib.rules(event,{...h.a,retailer:'pokemoncenter'})).selected,['avenue_short']);await assert.rejects(h.lib.saveRules(event,{...h.p,retailer:'target',rules:['prefix_three_1']}),/supported/);});
 test('Concurrent import confirmation saves one batch only',async t=>{const h=await library(t),p=await preview(h,[complete('target','once@example.test')]),results=await Promise.allSettled([commit(h,p),commit(h,p)]);assert.equal(results.filter(x=>x.status==='fulfilled').length,1);assert.equal((await h.lib.list(event,h.p)).profiles.length,1);});
 test('Explicit repair keeps profile ownership and updates only selected fields',async t=>{const h=await library(t);await commit(h,await preview(h,[complete('target','before@example.test')]));await h.service.importEmails(event,{...h.p,retailer:'target',emails:['after@example.test']});const row=(await h.lib.list(event,h.p)).profiles[0],prior=structuredClone(row.data);await h.lib.repair(event,{...h.p,profileId:row.id,revision:row.revision,repairs:{email:true},cardIds:[]});const updated=(await h.lib.list(event,h.p)).profiles[0];assert.equal(updated.email,'after@example.test');prior.email='after@example.test';assert.deepEqual(updated.data,prior);assert.equal((await h.lib.list(event,h.a)).profiles.length,0);});
+
+test('Florida phone jig generates distinct reserved-format Florida numbers across a selected batch',async t=>{
+ const h=await library(t);
+ for(let i=0;i<3;i++)await commit(h,await preview(h,[complete('target','phone'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const previewed=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),ruleIds:[LC.FL_PHONE_RULE],combine:false,billingSameAsShipping:false});
+ assert.equal(previewed.count,3);
+ const phones=previewed.profiles.map(x=>x.after.phone);
+ assert.equal(new Set(phones).size,3);
+ for(const phone of phones){
+  assert.match(phone,/^\d{3}55501\d{2}$/);
+  assert.ok(LC.FL_AREA_CODES.includes(phone.slice(0,3)));
+ }
+});
+
+test('Florida phone jig is available as a persistent retailer rule',async t=>{
+ const h=await library(t);
+ const settings=await h.lib.rules(event,{...h.p,retailer:'pokemoncenter'});
+ assert.ok(settings.options.some(x=>x.id===LC.FL_PHONE_RULE&&/Florida phone/i.test(x.label)));
+ await h.lib.saveRules(event,{...h.p,retailer:'pokemoncenter',rules:[LC.FL_PHONE_RULE]});
+ assert.deepEqual((await h.lib.rules(event,{...h.p,retailer:'pokemoncenter'})).selected,[LC.FL_PHONE_RULE]);
+});
