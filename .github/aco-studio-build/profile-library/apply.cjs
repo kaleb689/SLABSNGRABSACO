@@ -27,6 +27,7 @@ replace('main.js',` async function signInAndVerifyAdmin(){
   if(!state?.enrolled)return false;
   try{
    await siteBridge.prepareDesktopUnlock();
+   void require('./mac-full-updates').markHealthy(app).catch(()=>{});
    await systemPreferences.promptTouchID('Unlock ACO Studio');
    const unlocked=await siteBridge.unlockDesktopAdmin();
    if(unlocked?.ok!==true)return false;
@@ -37,10 +38,10 @@ replace('main.js',` async function signInAndVerifyAdmin(){
    return false;
   }
  }
- async function signInAndVerifyAdmin(){
+ async function signInAndVerifyAdmin({allowTouchId=true}={}){
   if(process.argv.includes('--aco-studio-ci-smoke'))return;
   if(siteBridge.isReady()){try{await siteBridge.read('roster',{});return;}catch{}}
-  if(await tryStartupTouchId())return;
+  if(allowTouchId&&await tryStartupTouchId())return;
   siteBridge.signIn();
   if(process.platform==='darwin')
    void require('./mac-full-updates').markHealthy(app).catch(()=>{});
@@ -53,6 +54,7 @@ replace('main.js',` async function signInAndVerifyAdmin(){
    }catch{await new Promise(r=>setTimeout(r,1500));}
   }
  }`);
+replace('main.js',"void signInAndVerifyAdmin().then(async()=>{\n   const current=ownerWindow;","void signInAndVerifyAdmin({allowTouchId:false}).then(async()=>{\n   const current=ownerWindow;");
 replace('main.js','requireOwner:workshopOwner,authorize:',"getCustomerProfileSource:id=>siteBridge.profileSource(id),saveCustomerProfile:(id,remote,fields)=>siteBridge.saveCustomerProfile(id,remote,fields),getCustomerSavedData:id=>siteBridge.savedCustomerData(id),updateCustomerSavedData:(id,kind,recordId,payload)=>siteBridge.saveCustomerSavedData(id,kind,recordId,payload),changeCustomerAssignment:(id,remote,operation,payload)=>siteBridge.changeCustomerAssignment(id,remote,operation,payload),requireOwner:workshopOwner,authorize:");
 replace('preload.js','site:Object.freeze({',"ownerSecurity:Object.freeze({touchId:()=>ipcRenderer.invoke('owner:touch-id')}),\n site:Object.freeze({");
 replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.freeze(Object.fromEntries(['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','previewLinkedJig','publishLinkedJig','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'].map(method=>[method,payload=>ipcRenderer.invoke('profile:library:'+method,payload)]).concat([['cancel',()=>ipcRenderer.invoke('profile:library:cancel')]]))),\n profileWorkshop:Object.freeze({manageResource:payload=>ipcRenderer.invoke('profile:workshop:manageResource',payload),");
