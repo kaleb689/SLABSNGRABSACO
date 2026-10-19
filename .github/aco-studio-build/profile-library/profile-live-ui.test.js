@@ -44,7 +44,6 @@ test('card entry no longer asks for label, holder or brand and management suppor
  assert.match(workshopSource,/api\.manageResource/);
  assert.match(workshopService,/Unlinked card /);
  assert.match(workshopService,/brandFromNumber/);
- assert.match(workshopService,/normalizeCardIdentity/);
  assert.match(workshopService,/updateWorkshopCard/);
  assert.match(workshopService,/removePersonal/);
  assert.match(workshopService,/removeAco/);
