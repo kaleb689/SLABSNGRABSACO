@@ -67,7 +67,7 @@
   if(!library)return;bulkRetailer=retailerId;bulkToken=null;bq('review').hidden=true;bulkLoading=true;bulkControls();
   const owner=bulkOwner();try{await unlock(owner);const [list,settings]=await Promise.all([library.list(owner),library.rules({...owner,retailer:bulkRetailer})]);bulkOwnerKey=bulkKey(owner);bulkRows=list.profiles||[];bulkSelected=new Set([...bulkSelected].filter(id=>bulkRows.some(x=>x.id===id&&x.retailer===bulkRetailer)));renderBulkProfiles();renderBulkRules(settings);
    for(const button of bulkPanel.querySelectorAll('[data-retailer]'))button.setAttribute('aria-pressed',String(button.dataset.retailer===bulkRetailer));
-   bq('bulkJigOwner')?.remove?.();const ownerEl=bulkPanel.querySelector('#bulkJigOwner');if(ownerEl)ownerEl.textContent=ownerText(owner)+' | '+(retail[bulkRetailer]||bulkRetailer)+' saved preset loaded';
+   const ownerEl=bulkPanel.querySelector('#bulkJigOwner');if(ownerEl)ownerEl.textContent=ownerText(owner)+' | '+(retail[bulkRetailer]||bulkRetailer)+' saved preset loaded';
    bulkStatus((retail[bulkRetailer]||bulkRetailer)+' settings loaded. Select one, multiple, or all profiles. You can add/remove jig choices before previewing.');
   }catch(error){bulkRows=[];bulkSelected.clear();renderBulkProfiles();bulkStatus(error.message,true);}finally{bulkLoading=false;bulkControls();}
  }
