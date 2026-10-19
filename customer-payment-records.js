@@ -12,6 +12,9 @@ export function createCustomerPaymentActions({
   getCustomerVault, saveCustomerVault,
   getRetailerProfiles, saveRetailerProfiles,
   getPaidOrders, loadEncryptedPackage,
+  getFreeAssignments, saveFreeAssignments,
+  getRentalAssignments, saveRentalAssignments,
+  savedPaymentDedupeKey,
   decryptJson, encryptJson,
   sanitizeSavedPaymentMethod, validSavedPaymentMethod
 }) {
@@ -28,6 +31,16 @@ export function createCustomerPaymentActions({
     expYear: card?.expYear || ""
   });
   const erased = fields({});
+  const unique = values => [...new Set(values.filter(Boolean))];
+  const cardKey = item => savedPaymentDedupeKey(item);
+  function suppressOriginal(vault, current, next = null) {
+    const previous = cardKey(current);
+    const currentKey = next ? cardKey(next) : "";
+    const hidden = new Set(vault.hiddenPaymentKeys || []);
+    if (previous && previous !== currentKey) hidden.add(previous);
+    if (currentKey) hidden.delete(currentKey);
+    vault.hiddenPaymentKeys = unique([...hidden]);
+  }
   function checkRevision(actual, supplied) {
     if (typeof supplied !== "string" || !supplied.trim()) {
       throw error(428, "Reopen the latest payment record before editing or deleting it.");
@@ -92,6 +105,30 @@ export function createCustomerPaymentActions({
       changed = true;
     }
     if (changed) await saveRetailerProfiles(profiles);
+    for (const [load, save] of [
+      [getFreeAssignments, saveFreeAssignments],
+      [getRentalAssignments, saveRentalAssignments]
+    ]) {
+      if (typeof load !== "function" || typeof save !== "function") continue;
+      const assignments = await load();
+      let touched = false;
+      for (const assignment of assignments) {
+        if (!own(assignment, accountId) || !eq(assignment.selectedPaymentId, paymentId)) continue;
+        const original = assignment.customerSecrets
+          ? decryptJson(assignment.customerSecrets) || {} : {};
+        const update = removing ? erased : fields(card);
+        if (!removing) {
+          const name = [assignment.customerProfile?.firstName, assignment.customerProfile?.lastName]
+            .filter(Boolean).join(" ").trim();
+          if (name) update.cardholder = name;
+        }
+        assignment.customerSecrets = encryptJson({...original, ...update});
+        if (removing) assignment.selectedPaymentId = null;
+        assignment.updatedAt = new Date().toISOString();
+        touched = true;
+      }
+      if (touched) await save(assignments);
+    }
   }
 
   async function mutate({accountId, id, body = {}, expectedRevision, action}) {
@@ -107,6 +144,7 @@ export function createCustomerPaymentActions({
     }
 
     if (selected.source === "saved") {
+      suppressOriginal(selected.vault, selected.current, next);
       if (removing) selected.vault.paymentMethods.splice(selected.index, 1);
       else selected.vault.paymentMethods[selected.index] = next;
       await saveCustomerVault(accountId, selected.vault);
@@ -122,6 +160,7 @@ export function createCustomerPaymentActions({
       profile.updatedAt = new Date().toISOString();
       await saveRetailerProfiles(selected.profiles);
     } else {
+      suppressOriginal(selected.vault, selected.current, next);
       const overrides = {...(selected.vault.paymentOverrides || {})};
       overrides[selected.id] = removing
         ? {deleted: true, updatedAt: new Date().toISOString()}
