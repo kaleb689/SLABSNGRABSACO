@@ -66,7 +66,9 @@
   for(const r of rows.slice(page*10,page*10+10)){const line=d.createElement('article');line.className='workshopVaultRow';const text=d.createElement('span');text.textContent=tab==='cards'?[r.label,r.cardholder,r.number||('ending '+r.last4),r.expMonth+'/'+r.expYear,r.unused?'Unused':r.usedCount?'Used in '+r.usedCount+' profile(s)':'Previously assigned'].join(' | '):tab==='addresses'?[r.label,r.address1,r.address2,r.city,r.state,r.zip].filter(Boolean).join(' | '):[r.label,retail[r.retailer],r.email||'Email not yet entered',r.stage==='completed'?'Completed':r.status,...(r.stage!=='completed'&&r.missing?.length?['Needs: '+r.missing.join(', ')]:[])].join(' | ');line.append(text);
    if(tab==='profiles'||tab==='completed'){for(const [title,action]of [['Full profile','full'],['Open in Studio','open'],['Export profile','export'],...(r.createdInWorkshop?[['Edit fields','edit']]:[])]){const b=d.createElement('button');b.className='btn slim secondary';b.type='button';b.textContent=title;b.addEventListener('click',async()=>{try{if(action==='full'){const fixed={...vaultScope},result=await window.desktopAPI.profileBanks.view(fixed.scope,fixed.customerId,r.id);if(modal.hidden||fixed.scope!==vaultScope.scope||fixed.customerId!==vaultScope.customerId)return;const box=d.createElement('div');box.className='workshopModal profileFullDetails';box.style.zIndex='12500';const body=d.createElement('div');body.className='workshopBox';const heading=d.createElement('h2');heading.textContent=ownerText(fixed)+' | Full profile';const pre=d.createElement('pre');pre.style.whiteSpace='pre-wrap';pre.textContent=JSON.stringify(result.profile.data,null,2);const close=d.createElement('button');close.type='button';close.className='btn secondary';close.textContent='Close';close.onclick=()=>box.remove();body.append(heading,pre,close);box.append(body);d.body.append(box);}else if(action==='export')await api.exportSaved({...vaultScope,profileId:r.id});else if(action==='edit'){const data=await api.load({...vaultScope,profileId:r.id});openDraft(vaultScope,data);}else{const data=await api.load({...vaultScope,profileId:r.id});await importer().loadWorkshopProfile(data);closeVault();d.dispatchEvent(new CustomEvent('jigstudio:navigate-stage',{detail:{stage:'settings'}}));panel.scrollIntoView({block:'center'});note('Profile loaded from '+ownerText(data)+'. Select the fields to fill from this vault.');}}catch(e){vnote(e.message,true);}});line.append(b);}}
    if(tab==='cards'||tab==='addresses'){
-    const kind=tab,b=d.createElement('button'),c=context();b.type='button';b.className='btn slim secondary';b.textContent=kind==='cards'?'Use card':'Use address';
+    const kind=tab,b=d.createElement('button'),edit=d.createElement('button'),remove=d.createElement('button'),c=context();
+    b.type=edit.type=remove.type='button';b.className='btn slim secondary';edit.className='btn slim secondary';remove.className='btn slim plain';
+    b.textContent=kind==='cards'?'Use card':'Use address';edit.textContent='Edit';remove.textContent='Remove';
     b.disabled=busy||!c||!c.indices.length||c.scope!==vaultScope.scope||(c.customerId||null)!==(vaultScope.customerId||null);
     b.addEventListener('click',async()=>{try{
      const selected=context();if(busy||!selected||selected.scope!==vaultScope.scope||(selected.customerId||null)!==(vaultScope.customerId||null))throw Error('Open a profile in this same vault first.');
@@ -77,7 +79,10 @@
      $('workshopAddresses').hidden=!checked().address;$('workshopCards').hidden=!checked().card;
      closeVault();controls();panel.scrollIntoView({block:'center'});
      note((kind==='cards'?'Saved card selected. ':'Saved address selected. ')+'Click Preview selected changes before saving. Other checkboxes were not changed.');
-    }catch(error){vnote(error.message,true);}});line.append(b);
+    }catch(error){vnote(error.message,true);}});
+    edit.addEventListener('click',()=>openResourceForm(kind,r));
+    remove.addEventListener('click',async()=>{if(!confirm('Remove this saved '+(kind==='cards'?'card':'address')+' from this exact vault? Profiles already containing its copied values are not moved to another vault.'))return;remove.disabled=true;try{await api.manageResource({...vaultScope,kind:kind==='cards'?'card':'address',operation:'remove',resourceId:r.id});await refreshVault();vnote('Removed from this vault.');}catch(error){vnote(error.message,true);remove.disabled=false;}});
+    line.append(b,edit,remove);
    }
    $('workshopVaultRows').append(line);
   }if(!rows.length)$('workshopVaultRows').textContent='Nothing saved here yet. Use the Add button.';
@@ -87,13 +92,24 @@
  for(const b of modal.querySelectorAll('[data-tab]'))b.addEventListener('click',()=>{tab=b.dataset.tab;page=0;$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;renderVault();});
  $('workshopVaultSearch').addEventListener('input',()=>{page=0;renderVault();});modal.querySelector('[data-prev]').addEventListener('click',()=>{page--;renderVault();});modal.querySelector('[data-next]').addEventListener('click',()=>{page++;renderVault();});
  modal.querySelector('[data-close]').addEventListener('click',closeVault);modal.addEventListener('click',e=>{if(e.target===modal)closeVault();});
- modal.querySelector('[data-add]').addEventListener('click',()=>{if(tab==='profiles'||tab==='completed'){openDraft(vaultScope);return;}const type=tab,holder=$('workshopVaultForm');holder.hidden=false;const form=d.createElement('form');form.autocomplete='off';form.className='workshopForm';
-  form.innerHTML=type==='cards'?field('label','Card label','text','maxlength="70" required')+field('cardholder','Cardholder name','text','maxlength="120" required')+field('number','Card number','password','inputmode="numeric" maxlength="26" required')+field('expMonth','Expiration month','text','inputmode="numeric" maxlength="2" placeholder="MM" required')+field('expYear','Expiration year','text','inputmode="numeric" maxlength="4" placeholder="YYYY" required')+field('brand','Brand','text','maxlength="35"')+field('customCode','Optional custom reference (not CVV)','password','maxlength="64"'):
-   field('label','Address label','text','maxlength="100" required')+field('address1','Street address','text','maxlength="160" required')+field('address2','Apartment / unit','text','maxlength="120"')+field('city','City','text','maxlength="120" required')+field('state','State','text','maxlength="2" required')+field('zip','ZIP / verified ZIP+4','text','maxlength="10" required');
-  form.insertAdjacentHTML('beforeend','<div class="buttons"><button class="btn primary" type="submit">Save to this vault</button><button class="btn plain" data-cancel type="button">Cancel</button></div>');holder.replaceChildren(form);
+ function openResourceForm(type,existing=null){
+  const holder=$('workshopVaultForm');holder.hidden=false;const form=d.createElement('form');form.autocomplete='off';form.className='workshopForm';
+  form.innerHTML=type==='cards'
+   ?field('number','Card number','password','inputmode="numeric" maxlength="26" required')+field('expMonth','Expiration month','text','inputmode="numeric" maxlength="2" placeholder="MM" required')+field('expYear','Expiration year','text','inputmode="numeric" maxlength="4" placeholder="YYYY" required')+field('customCode','Optional custom reference (not CVV)','password','maxlength="64"')
+   :field('label','Address label','text','maxlength="100" required')+field('address1','Street address','text','maxlength="160" required')+field('address2','Apartment / unit','text','maxlength="120"')+field('city','City','text','maxlength="120" required')+field('state','State','text','maxlength="2" required')+field('zip','ZIP / verified ZIP+4','text','maxlength="10" required');
+  form.insertAdjacentHTML('beforeend','<div class="buttons"><button class="btn primary" type="submit">'+(existing?'Save changes':'Save to this vault')+'</button><button class="btn plain" data-cancel type="button">Cancel</button></div>');
+  holder.replaceChildren(form);
+  if(existing){for(const [k,v] of Object.entries(existing)){const el=form.elements.namedItem(k);if(el&&v!=null)el.value=v;}}
   form.querySelector('[data-cancel]').addEventListener('click',()=>{holder.replaceChildren();holder.hidden=true;});const scope={...vaultScope};
-  form.addEventListener('submit',async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]');submit.disabled=true;try{const value=Object.fromEntries(new FormData(form));if(type==='cards')await api.addCard({...scope,card:value});else await api.addAddress({...scope,address:value});holder.replaceChildren();holder.hidden=true;await refreshVault();vnote('Saved to '+ownerText(scope)+' only. No other pool was changed.');}catch(error){vnote(error.message,true);submit.disabled=false;}});form.querySelector('input').focus();
- });
+  form.addEventListener('submit',async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]');submit.disabled=true;try{
+   const value=Object.fromEntries(new FormData(form));
+   if(existing)await api.manageResource({...scope,kind:type==='cards'?'card':'address',operation:'update',resourceId:existing.id,value});
+   else if(type==='cards')await api.addCard({...scope,card:value});
+   else await api.addAddress({...scope,address:value});
+   holder.replaceChildren();holder.hidden=true;await refreshVault();vnote((existing?'Updated':'Saved')+' in '+ownerText(scope)+' only. No other vault was changed.');
+  }catch(error){vnote(error.message,true);submit.disabled=false;}});form.querySelector('input').focus();
+ }
+ modal.querySelector('[data-add]').addEventListener('click',()=>{if(tab==='profiles'||tab==='completed'){openDraft(vaultScope);return;}openResourceForm(tab);});
  // Create an empty structured profile or edit only its non-payment form fields.
  const draftModal=d.createElement('div');draftModal.className='workshopModal';draftModal.hidden=true;
  draftModal.innerHTML=`<div class="workshopBox" role="dialog" aria-modal="true" aria-labelledby="workshopDraftTitle"><div class="workshopHead"><div><h2 id="workshopDraftTitle">Create Blank Profile</h2><p id="workshopDraftOwner"></p></div><button class="btn slim plain" data-close type="button" aria-label="Close profile form">X</button></div><form id="workshopDraftForm" autocomplete="off"></form><p id="workshopDraftStatus" role="status"></p></div>`;d.body.append(draftModal);
