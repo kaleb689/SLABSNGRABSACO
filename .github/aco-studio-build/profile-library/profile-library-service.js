@@ -1,9 +1,9 @@
 'use strict';
 const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core');
 function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,now=Date.now,uuid=crypto.randomUUID}={}){
- const plans=new Map(),epochs=new Map();
+ const plans=new Map(),jigPlans=new Map(),epochs=new Map();
  const ep=e=>epochs.get(e.sender.id)||0;
- function cancel(e){epochs.set(e.sender.id,ep(e)+1);for(const [id,p] of plans)if(p.sender===e.sender.id)plans.delete(id);}
+ function cancel(e){epochs.set(e.sender.id,ep(e)+1);for(const [id,p] of plans)if(p.sender===e.sender.id)plans.delete(id);for(const [id,p] of jigPlans)if(p.sender===e.sender.id)jigPlans.delete(id);}
  async function access(e,p){require('./jig-field-core').scopeKey(p?.scope,p?.customerId);const epoch=ep(e);const id=await authorize(e,p.scope,p.customerId);if(p.scope==='aco'&&id!==p.customerId)throw Error('Customer vault mismatch.');guard(e,p.scope);if(ep(e)!==epoch)throw Error('Vault closed during authorization.');return {scope:p.scope,id,check:()=>{guard(e,p.scope);if(ep(e)!==epoch)throw Error('Vault closed during this operation.');}};}
  const cardKey=(s,id)=>s==='personal'?'personal:owner':id;
  function view(row){const result=Completion.inspect(row);return {id:row.id,revision:row.revision||0,retailer:row.retailer,group:row.group||row.retailer,stage:result.ready?'completed':'in-progress',status:row.status||'active',missing:result.missing,label:row.label,email:row.email,data:structuredClone(row.data),source:row.source,sourceLinked:row.source==='website-linked-profile'&&row.sourceLinked===true,localOnly:row.source!=='website-linked-profile'||row.sourceLinked===false,pendingWebsiteData:row.pendingSourceData?structuredClone(row.pendingSourceData):null,remoteManagedId:row.remoteManagedId||null,remoteType:row.remoteType||null,remoteUpdatedAt:row.remoteUpdatedAt||null,needsReview:!!row.needsReview};}
@@ -184,6 +184,54 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   if(saved?.remoteSaved!==true)throw Error('Website did not confirm this jig. Do not treat it as a synchronized change.');
   return {saved:true,remoteSaved:true,profileId:row.id,retailer:row.retailer};
  }
+ function addressView(data){
+  const v=C.values(data);
+  return Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,String(v['shipping.'+k]||'')]));
+ }
+ function bulkJigData(row,ruleIds,index,combine,billingSameAsShipping){
+  let data=structuredClone(row.data);
+  if(combine){for(const id of ruleIds.slice(0,3))data=C.jig(data,row.retailer,1,[id]);}
+  else data=C.jig(data,row.retailer,index+1,ruleIds);
+  const before=D.toValues(row.data),after=D.toValues(data),edits={...after};
+  if(billingSameAsShipping){for(const key of ['address1','address2','city','state','zip'])edits['billing.'+key]=after['shipping.'+key];}
+  else for(const key of ['first','last','phone','address1','address2','city','state','zip','country'])edits['billing.'+key]=before['billing.'+key];
+  return D.manualEdit(data,edits);
+ }
+ async function batchJigPreview(e,p){
+  const a=await access(e,p),retailer=C.retailer(p.retailer);
+  if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles to jig together.');
+  if(!Array.isArray(p.ruleIds)||!p.ruleIds.length||p.ruleIds.length>100||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!Core.RULES.some(x=>x.id===id)))throw Error('Choose one or more supported retailer jig rules.');
+  const all=await profiles.fieldSnapshot(a.scope,a.id),selected=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===retailer));
+  if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
+  if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
+  const rows=selected.map((row,index)=>{
+   const data=bulkJigData(row,p.ruleIds,index,p.combine===true,p.billingSameAsShipping===true),before=addressView(row.data),after=addressView(data);
+   if(!after.address1||!after.city||!after.state||!after.zip)throw Error('A selected profile is missing a complete shipping address.');
+   return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),email:row.email,label:row.label,retailer:row.retailer,linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer};
+  });
+  if(rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('The selected jig rules did not change any selected profile.');
+  const token=uuid();
+  for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
+  jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,at:now(),epoch:ep(e)});
+  return {token,count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,linked:rows.filter(x=>x.linked).length,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked}))};
+ }
+ async function batchJigCommit(e,p){
+  const plan=jigPlans.get(p.token);
+  if(!plan||plan.sender!==e.sender.id||now()-plan.at>600000||plan.epoch!==ep(e))throw Error('Bulk jig preview expired. Preview the selected profiles again.');
+  if(p.confirmed!==true)throw Error('Confirm the reviewed bulk jig before saving.');
+  const a=await access(e,{scope:plan.scope,customerId:plan.id}),latest=await profiles.fieldSnapshot(plan.scope,plan.id);
+  for(const change of plan.rows){
+   const row=latest.find(x=>x.id===change.profileId&&x.retailer===plan.retailer);
+   if(!row||(row.revision||0)!==change.revision||require('./jig-field-core').hash(row.data)!==change.hash)throw Error('A selected profile changed after preview. Nothing was saved; preview the batch again.');
+  }
+  let updated=0,remoteSaved=0;
+  for(const change of plan.rows){
+   const result=await edit(e,{scope:plan.scope,customerId:plan.id,profileId:change.profileId,revision:change.revision,fields:C.values(change.data),group:change.group});
+   updated++;if(result?.remoteSaved)remoteSaved++;
+  }
+  jigPlans.delete(p.token);a.check();
+  return {saved:true,updated,remoteSaved,localSaved:updated-remoteSaved};
+ }
  async function websiteSnapshot(e,p){
   const a=await access(e,p);
   if(a.scope!=='aco'||!getCustomerSavedData)throw Error('Website saved data is only available to the authorized customer vault.');
@@ -219,7 +267,7 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
  }
  async function rules(e,p){const a=await access(e,p);C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id);a.check();return {selected:settings[p.retailer]?.rules||C.defaultRules(),options:Core.RULES.filter(x=>!/^prefix_three/.test(x.id)).map(x=>({id:x.id,label:x.label}))};}
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!Core.RULES.some(x=>x.id===id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules};return {saved:true};},a.check);}
- return {list,detail,importPreview,importCommit,repair,edit,exportFile,syncCustomer,previewLinkedJig,publishLinkedJig,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,rules,saveRules,cancel};
+ return {list,detail,importPreview,importCommit,repair,edit,exportFile,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,rules,saveRules,cancel};
 }
-function registerLibrary(options){const service=createLibrary(options);for(const method of ['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','previewLinkedJig','publishLinkedJig','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});return service;}
+function registerLibrary(options){const service=createLibrary(options);for(const method of ['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});return service;}
 module.exports={createLibrary,registerLibrary};
