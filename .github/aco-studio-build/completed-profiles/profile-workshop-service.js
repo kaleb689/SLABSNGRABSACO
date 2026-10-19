@@ -17,6 +17,19 @@ function brandFromNumber(value){
  return 'Card';
 }
 const resourceMethod=(target,names)=>names.map(name=>target?.[name]).find(fn=>typeof fn==='function');
+function profileNameFor(row){
+ const d=row?.data||{},s=d.shipping||{},b=d.billing||{};
+ const first=String(d.shipping_first_name||s.firstName||d.first_name||d.firstName||b.firstName||'').trim();
+ const last=String(d.shipping_last_name||s.lastName||d.last_name||d.lastName||b.lastName||'').trim();
+ return (first+' '+last).trim();
+}
+function normalizeCardIdentity(record){
+ const number=numberOf(record);if(!number)return record;
+ const brand=brandFromNumber(number),holder=profileNameFor({data:record});
+ if(Draft.formatOf(record)==='shikari'){if(holder)record.cc_name=holder;record.cc_type=brand;}
+ else if(record.card){if(holder)record.card.holder=holder;record.card.type=brand;}
+ return record;
+}
 
 function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseSave,confirmExport,writeFile=fs.writeFile,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),epochs=new Map();
@@ -29,10 +42,14 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   const [a,c,rows]=await Promise.all([bank(scope,id),cardVault(scope).list(cardKey(scope,id)),profiles.fieldSnapshot(scope,id)]);
   const full=c.cards.length?await cardVault(scope).selectedForJig(cardKey(scope,id),c.cards.map(x=>x.id)):[];
   const assigned=new Set((c.assignments||[]).map(x=>x.cardId));
-  const result={scope,customerId:id,addresses:a.addresses.map(x=>({...x,uses:rows.filter(r=>r.assetRefs?.addressId===x.id).length})),cards:c.cards.map(x=>{
-   const raw=full.find(y=>y.id===x.id),used=rows.filter(r=>r.assetRefs?.cardId===x.id||numberOf(r.data)===raw?.number).length;
-   return {...x,...(p.showFullCards===true?{number:raw.number,cardholder:raw.cardholder,expMonth:raw.month,expYear:raw.year,customReference:raw.customSecurityCode||''}:{}),usedCount:used,unused:used===0&&!assigned.has(x.id),previouslyAssigned:assigned.has(x.id)};
-  }),profiles:rows.map(x=>({id:x.id,label:x.label,email:x.email,retailer:x.retailer,status:x.status,stage:x.stage||'in-progress',missing:require('./profile-completion-core').inspect(x).missing,revision:x.revision,createdInWorkshop:x.source==='owner-created-profile'}))};
+  const retailerSeq={};
+  const cards=c.cards.map((x,index)=>{
+   const raw=full.find(y=>y.id===x.id),users=rows.filter(r=>r.assetRefs?.cardId===x.id||numberOf(r.data)===raw?.number),used=users.length,first=users[0];
+   let label='Unlinked card '+(index+1),displayHolder='';
+   if(first?.retailer){retailerSeq[first.retailer]=(retailerSeq[first.retailer]||0)+1;label=({target:'Target',walmart:'Walmart',pokemoncenter:'PKC',costco:'Costco',sams:"Sam's"}[first.retailer]||first.retailer)+' '+retailerSeq[first.retailer];displayHolder=profileNameFor(first);}
+   return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:brandFromNumber(raw.number),customReference:raw.customSecurityCode||''}:{}),usedCount:used,unused:used===0&&!assigned.has(x.id),previouslyAssigned:assigned.has(x.id)};
+  });
+  const result={scope,customerId:id,addresses:a.addresses.map(x=>({...x,uses:rows.filter(r=>r.assetRefs?.addressId===x.id).length})),cards,profiles:rows.map(x=>({id:x.id,label:x.label,email:x.email,retailer:x.retailer,status:x.status,stage:x.stage||'in-progress',missing:require('./profile-completion-core').inspect(x).missing,revision:x.revision,createdInWorkshop:x.source==='owner-created-profile'}))};
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed while loading.');return result;
  }
  async function addCard(e,p){
@@ -89,6 +106,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    if(p.allowCardReuse!==true&&cards.length<emails.length)throw Error('Select one unused card per profile or enable balanced card reuse.');
    const records=emails.map((email,i)=>Draft.blank(p.retailer,p.format,{email,label:(p.label||'Profile')+' '+(i+1)},uuid));
    const result=Fields.build({records,indices:records.map((_,i)=>i),scope,customerId:id,addresses,cards,choices:{address:true,card:true,name:p.randomNames===true},allowCardReuse:p.allowCardReuse===true,mirrorBilling:true});
+   for(const record of result.records)normalizeCardIdentity(record);
    return result.records.map((data,i)=>({data,format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}}));
   },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');})));
  }
@@ -134,7 +152,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
     // Legacy assignment state was captured under the same card-vault lock.
     if(r.cards.some(c=>inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)||legacy.has(c.id)))throw Error('A selected card is already in use. Choose unused cards or disable the Unused only filter.');
    }
-   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});resourcesHash=r.hash;
+   result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});if(choices.card)for(const record of result.records)normalizeCardIdentity(record);resourcesHash=r.hash;
   });
   const text=Core.serialize(src.parsed,result.records);if(!same(Core.parseFile(src.parsed.name,text).records,result.records))throw Error('Output validation failed. Nothing was changed.');
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed during preview.');
