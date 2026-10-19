@@ -13,6 +13,7 @@ export function registerStudioCustomerRoutes({
  app,requireAdmin,getCustomerAccounts,saveCustomerAccounts,getCustomerVault,
  saveCustomerVault,customerSavedAddresses,sanitizeShippingAddress,
  validShippingAddress,sanitizeSavedPaymentMethod,validSavedPaymentMethod,
+ getAllCustomerSavedDetails,customerPaymentActions,
  syncCustomerMissingNotification=async()=>{},broadcastLiveDataChange=()=>{},revisionSecret,serializeCustomerSavedWrites
 }){
  const serialize = serializeCustomerSavedWrites||serializeManagedWrites();
@@ -30,14 +31,17 @@ export function registerStudioCustomerRoutes({
  };
  const saved=async accountId=>{try{await syncCustomerMissingNotification(accountId);}catch(e){console.error('Studio sync: saved, but follow-up notification failed:',e?.message);}};
  const addressPublic=a=>({id:a.id,label:a.label,firstName:a.firstName,lastName:a.lastName,address:a.address,address2:a.address2,city:a.city,state:a.state,zip:a.zip,country:a.country,revision:fingerprint('address',a)});
- const paymentPublic=c=>({id:c.id,cardLabel:c.cardLabel,cardholder:c.cardholder,maskedNumber:'•••• '+String(c.acoCardNumber||'').replace(/\D/g,'').slice(-4),last4:String(c.acoCardNumber||'').replace(/\D/g,'').slice(-4),expMonth:c.expMonth,expYear:c.expYear,revision:fingerprint('payment',c)});
+ const paymentPublic=c=>({id:c.id,source:c.source||'saved',cardLabel:c.cardLabel,cardholder:c.cardholder,maskedNumber:'•••• '+String(c.acoCardNumber||c.cardNumber||'').replace(/\D/g,'').slice(-4),last4:String(c.acoCardNumber||c.cardNumber||'').replace(/\D/g,'').slice(-4),expMonth:c.expMonth,expYear:c.expYear,revision:c.revision||fingerprint('payment',c)});
  app.get('/api/admin/aco-studio/customers/:id/saved-data',requireAdmin,async(req,res)=>{
   res.set('Cache-Control','no-store');
   try{
    const a=await select(req);if(!a)return res.status(404).json({error:'Customer does not exist.'});
-   const vault=await getCustomerVault(a.account.id);
+   const details=typeof getAllCustomerSavedDetails==='function'
+     ? await getAllCustomerSavedDetails(a.account) : null;
+   const vault=details ? null : await getCustomerVault(a.account.id);
    return res.json({ok:true,customer:{id:a.account.id,email:a.account.email,firstName:a.account.firstName||'',lastName:a.account.lastName||'',updatedAt:a.account.updatedAt||null},
-    addresses:customerSavedAddresses(a.account).map(addressPublic),paymentMethods:(vault.paymentMethods||[]).map(paymentPublic)});
+    addresses:customerSavedAddresses(a.account).map(addressPublic),
+    paymentMethods:(details?.paymentMethods || vault?.paymentMethods || []).map(paymentPublic)});
   }catch(e){console.error('Studio customer snapshot:',e?.message);return res.status(503).json({error:'Unable to load saved customer data.'});}
  });
  app.put('/api/admin/aco-studio/customers/:id/shipping-addresses/:addressId',requireAdmin,serialize,async(req,res)=>{
@@ -58,6 +62,20 @@ export function registerStudioCustomerRoutes({
   res.set('Cache-Control','no-store');
   try{
    const a=await select(req);if(!a)return res.status(404).json({error:'Customer does not exist.'});
+   if (customerPaymentActions) {
+    const input=req.body?.payment||{};
+    const result=await customerPaymentActions.update({
+     accountId:a.account.id,id:req.params.paymentId,
+     expectedRevision:req.body?.expectedRevision,
+     body:{cardLabel:input.cardLabel,cardholder:input.cardholder,
+      acoCardNumber:input.acoCardNumber,expMonth:input.expMonth,expYear:input.expYear}
+    });
+    broadcastLiveDataChange('customer-payment-updated');
+    await saved(a.account.id);
+    const latest=await getAllCustomerSavedDetails(a.account);
+    const updated=(latest.paymentMethods||[]).find(x=>String(x.id)===id(req.params.paymentId));
+    return res.json({...result,saved:true,paymentMethod:updated?paymentPublic(updated):null});
+   }
    const vault=await getCustomerVault(a.account.id),items=Array.isArray(vault.paymentMethods)?vault.paymentMethods:[];
    const index=items.findIndex(x=>String(x.id)===id(req.params.paymentId));
    if(index<0)return res.status(404).json({error:'This saved payment card no longer exists. Reload first.'});
@@ -73,7 +91,8 @@ export function registerStudioCustomerRoutes({
    await saveCustomerVault(a.account.id,vault);
    a.account.updatedAt=new Date().toISOString();await saveCustomerAccounts(a.accounts);broadcastLiveDataChange('customer-payment-updated');await saved(a.account.id);
    return res.json({ok:true,saved:true,paymentMethod:paymentPublic(next),message:'Saved in the live customer website and app payment vault.'});
-  }catch(e){console.error('Studio payment save:',e?.message);return res.status(503).json({error:'Unable to save this website payment method.'});}
+  }catch(e){if(e?.status>=400&&e.status<500)return res.status(e.status).json({error:e.message});
+   console.error('Studio payment save:',e?.message);return res.status(503).json({error:'Unable to save this website payment method.'});}
  });
  for(const kind of ['address','payment']){
   const segment=kind==='address'?'shipping-addresses':'payment-methods';
@@ -88,7 +107,13 @@ export function registerStudioCustomerRoutes({
     const input=req.body[kind]||{},next=kind==='address'?sanitizeShippingAddress(input):mergeManagedCard(sanitizeSavedPaymentMethod(input));
     if(!(kind==='address'?validShippingAddress(next):validSavedPaymentMethod(next)))return res.status(400).json({error:'Complete all required fields.'});
     items.push(next);
-    if(kind==='address'){a.account.shippingAddresses=items;await saveCustomerAccounts(a.accounts);}else{vault.paymentMethods=items;await saveCustomerVault(a.account.id,vault);}
+    if(kind==='address'){a.account.shippingAddresses=items;await saveCustomerAccounts(a.accounts);}
+    else {
+     vault.paymentMethods=items;
+     const key=JSON.stringify({number:String(next.acoCardNumber||'').replace(/\D/g,''),expMonth:next.expMonth,expYear:next.expYear,cardholder:String(next.cardholder||'').toUpperCase()});
+     vault.hiddenPaymentKeys=(vault.hiddenPaymentKeys||[]).filter(x=>x!==key);
+     await saveCustomerVault(a.account.id,vault);
+    }
     broadcastLiveDataChange('customer-'+kind+'-created');await saved(a.account.id);
     return res.json({ok:true,saved:true,[kind==='address'?'address':'paymentMethod']:kind==='address'?addressPublic(next):paymentPublic(next)});
    }catch{return res.status(503).json({error:'Unable to create the customer record.'});}
@@ -98,6 +123,15 @@ export function registerStudioCustomerRoutes({
    try{
     if(req.body?.confirmed!==true)return res.status(400).json({error:'Confirm deletion of this exact record.'});
     const a=await select(req);if(!a)return res.status(404).json({error:'Customer does not exist.'});
+    if (kind==='payment' && customerPaymentActions) {
+     const result=await customerPaymentActions.remove({
+      accountId:a.account.id,id:req.params.recordId,
+      expectedRevision:req.body?.expectedRevision
+     });
+     broadcastLiveDataChange('customer-payment-deleted');
+     await saved(a.account.id);
+     return res.json({...result,saved:true,deletedId:id(req.params.recordId)});
+    }
     const vault=kind==='payment'?await getCustomerVault(a.account.id):null;
     const items=kind==='address'?customerSavedAddresses(a.account):vault.paymentMethods||[];
     const at=items.findIndex(x=>String(x.id)===id(req.params.recordId));if(at<0)return res.status(404).json({error:'The selected record no longer exists.'});
@@ -106,7 +140,8 @@ export function registerStudioCustomerRoutes({
     if(kind==='address'){a.account.shippingAddresses=items;await saveCustomerAccounts(a.accounts);}else{vault.paymentMethods=items;await saveCustomerVault(a.account.id,vault);}
     broadcastLiveDataChange('customer-'+kind+'-deleted');await saved(a.account.id);
     return res.json({ok:true,saved:true,deletedId:id(req.params.recordId)});
-   }catch{return res.status(503).json({error:'Unable to delete the selected customer record.'});}
+   }catch(e){if(e?.status>=400&&e.status<500)return res.status(e.status).json({error:e.message});
+    return res.status(503).json({error:'Unable to delete the selected customer record.'});}
   });
  }
  return {addressPublic,paymentPublic};
