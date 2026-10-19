@@ -8,10 +8,9 @@ replace('profile-workshop-service.js','const service=createWorkshop(options);',"
  const p=path.join(root,'tests','profile-workshop.test.js'),s=fs.readFileSync(p,'utf8');
  const marker="test('Draft manual editing preserves assigned card values'";
  const start=s.indexOf(marker),end=start<0?-1:s.indexOf("\ntest(",start+marker.length);
- if(start<0)throw Error('profile-workshop.test.js: cardholder regression test not found');
- const stop=end<0?s.length:end,block=s.slice(start,stop),old='Saved Holder';
- if(block.split(old).length!==2)throw Error('profile-workshop.test.js: expected one legacy cardholder value');
- fs.writeFileSync(p,s.slice(0,start)+block.replace(old,'Original Person')+s.slice(stop));
+ if(start<0)throw Error('profile-workshop.test.js: obsolete cardholder regression test not found');
+ const stop=end<0?s.length:end;
+ fs.writeFileSync(p,s.slice(0,start)+"// Cardholder/name behavior moved to profile-library.test.js, where jig save paths are covered directly.\n"+s.slice(stop));
 }
 replace('main.js','window.JigStudioLocalImport?.workspaceState)', 'window.JigStudioLocalImport?.workspaceState && document.getElementById("profileLibraryPage") && window.desktopAPI?.profileLibrary && document.querySelectorAll(".profileNavChild").length===2)');
 replace('main.js',"ipcMain.handle('site:open'",`ipcMain.handle('owner:touch-id',async event=>{ownerSender(event);if(process.platform!=='darwin')return {available:false,verified:false,reason:'unsupported'};const {systemPreferences}=require('electron');if(!systemPreferences.canPromptTouchID())return {available:false,verified:false,reason:'unavailable'};const state=siteBridge.desktopUnlockState();if(!state?.enrolled)return {available:true,verified:false,session:false,needsEnrollment:true,reason:'Sign in once with the Admin password and authenticator to enable Touch ID on this Mac.'};try{await siteBridge.prepareDesktopUnlock();await systemPreferences.promptTouchID('Unlock ACO Studio');const session=await siteBridge.unlockDesktopAdmin();if(session?.ok===true){try{await siteBridge.read('roster',{});}catch{return {available:true,verified:true,session:false,reason:'Touch ID succeeded, but the Admin session could not be verified.'};}}return {available:true,verified:true,session:session?.ok===true,needsEnrollment:session?.needsEnrollment===true,reason:session?.reason||''};}catch(error){return {available:true,verified:false,session:false,reason:String(error?.message||error||'Touch ID was not completed.')};}});\nipcMain.handle('site:open'`);
