@@ -147,3 +147,20 @@ test("historical checkout card edits preserve original order, support cardNumber
   assert.equal(t.vaults.customerA.paymentOverrides["paid-order-card:order-a"].deleted,true);
   assert.deepEqual(t.packages["order-a"],original);
 });
+
+test("a previously copied card with no saved-card link also synchronizes within the same customer",async()=>{
+  const t=fixture();
+  t.profiles().push({
+    id:"unlinked-a",customerAccountId:"customerA",
+    customerProfile:{firstName:"Another",lastName:"Jig"},
+    customerSecrets:card("4242424242424242"),updatedAt:"old"
+  });
+  await t.actions.update({accountId:"customerA",id:"card-1",
+    expectedRevision:fingerprint(t.vaults.customerA.paymentMethods[0]),
+    body:{acoCardNumber:"4000000000000010",expMonth:"10"}});
+  const updated=t.profiles().find(x=>x.id==="unlinked-a");
+  assert.equal(updated.customerSecrets.acoCardNumber,"4000000000000010");
+  assert.equal(updated.customerSecrets.expMonth,"10");
+  assert.equal(updated.customerSecrets.cardholder,"Another Jig");
+  assert.equal(t.profiles().find(x=>x.id==="profile-b").customerSecrets.acoCardNumber,"5555555555554444");
+});
