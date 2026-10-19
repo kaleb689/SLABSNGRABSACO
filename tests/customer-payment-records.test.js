@@ -122,7 +122,8 @@ test("profile-sourced cards can be edited and deleted by the owner",async()=>{
   const orig=t.profiles()[0].customerSecrets;
   await t.actions.update({accountId:"customerA",id:"paid-profile-card:profile-a",
     expectedRevision:fingerprint(orig),body:{cardholder:"Changed Cardholder",expYear:"2033"}});
-  assert.equal(t.profiles()[0].customerSecrets.cardholder,"Changed Cardholder");
+  // JIGGED customer profiles keep their payment holder in sync with profile name.
+  assert.equal(t.profiles()[0].customerSecrets.cardholder,"Jigged Person");
   assert.equal(t.profiles()[0].customerSecrets.expYear,"2033");
   const changed=t.profiles()[0].customerSecrets;
   await t.actions.remove({accountId:"customerA",id:"paid-profile-card:profile-a",
