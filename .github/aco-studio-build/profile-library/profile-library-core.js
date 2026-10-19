@@ -38,6 +38,16 @@ function applyFloridaPhone(data,seed,index=0){
  const phone=floridaPhone(seed,index),v=values(data);
  return Draft.manualEdit(data,{...v,phone,'shipping.phone':phone,'billing.phone':phone});
 }
+function syncCardholderToProfile(data){
+ const out=clone(data),v=values(out),holder=(v.first+' '+v.last).replace(/\s+/g,' ').trim();
+ if(!holder)return out;
+ if(Draft.formatOf(out)==='shikari'){
+  if(digits(out.cc_number))out.cc_name=holder;
+ }else if(digits(out.card?.number||out.card?.cardNumber)){
+  out.card={...(out.card||{}),holder,cardholder:holder};
+ }
+ return out;
+}
 const defaultRules=()=>Core.defaultRuleIDs.filter(id=>!/(prefix|fraction|fictitious|fabricated|phone)/i.test(id));
 function jig(data,r,index,rules=defaultRules()){retailer(r);if(!Array.isArray(rules)||rules.some(id=>!Core.RULES.some(x=>x.id===id)))throw Error('Unknown retailer jig rule.');const out=clone(data);if(index===0)return out;const map=Core.autoMap([out]);for(const role of ['shipping','billing']){const addr={};for(const k of ['address1','address2','city','state','zip'])addr[k]=Core.get(out,map[role+'.'+k])||'';for(const id of rules.map((_,k)=>rules[(Math.max(0,index-1)+k)%rules.length])){let variant;try{variant=Core.RULES.find(x=>x.id===id).apply(addr);}catch{continue;}if(!variant)continue;for(const k of Object.keys(addr))if(map[role+'.'+k]&&variant[k]!=null){const path=JSON.parse(map[role+'.'+k]);let target=out;for(const part of path.slice(0,-1))target=target[part];target[path.at(-1)]=variant[k];}break;}}return out;}
-module.exports={values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone};
+module.exports={values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
