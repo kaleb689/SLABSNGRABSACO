@@ -55,3 +55,13 @@ test('background duplicate scan stays quiet until the result changes',()=>{
  assert.match(bankSource,/if\(!quiet\).*Scanning accounts/);
  assert.match(bankSource,/changed\|\|!store\.scanned/);
 });
+
+test('Profiles can jig every selected visible profile as one batch',()=>{
+ assert.match(source,/data-jig-selected/);
+ assert.match(source,/bulkJigSelected/);
+ assert.match(source,/batchJigPreview/);
+ assert.match(source,/batchJigCommit/);
+ assert.match(source,/Jig selected \('/);
+ assert.match(source,/selectedVisible/);
+ assert.match(workshopService,/brandFromNumber/);
+});
