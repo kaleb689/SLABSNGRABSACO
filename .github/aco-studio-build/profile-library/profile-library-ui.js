@@ -202,7 +202,7 @@
      const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),ruleIds:[...rules.querySelectorAll('input:checked')].map(x=>x.value),combine:combineBox.checked,billingSameAsShipping:billingBox.checked});
      if(!win.valid())return;token=result.token;
      review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+'.'));
-     for(const row of result.profiles.slice(0,100)){const line=d.createElement('pre');line.textContent=(row.label||row.email)+'\n'+[row.before.address1,row.before.address2,row.before.city,row.before.state,row.before.zip].filter(Boolean).join(', ')+'\n→ '+[row.after.address1,row.after.address2,row.after.city,row.after.state,row.after.zip].filter(Boolean).join(', ');review.append(line);}
+     for(const row of result.profiles.slice(0,100)){const line=d.createElement('pre');line.textContent=(row.label||row.email)+'\n'+[row.before.address1,row.before.address2,row.before.city,row.before.state,row.before.zip,row.before.phone&&('Phone '+row.before.phone)].filter(Boolean).join(', ')+'\n→ '+[row.after.address1,row.after.address2,row.after.city,row.after.state,row.after.zip,row.after.phone&&('Phone '+row.after.phone)].filter(Boolean).join(', ');review.append(line);}
      if(result.profiles.length>100)review.append(text('p','+'+(result.profiles.length-100)+' more selected profiles included in this batch.'));
      save.disabled=false;win.status().textContent='Preview ready. One Apply action will process the whole selected set.';
     }catch(error){win.status().textContent=error.message;}finally{preview.disabled=false;}
