@@ -5595,9 +5595,9 @@ async function allCustomerSavedDetails(
 
       const normalized = {
         id:
-          item.id ||
-          fallbackId ||
-          crypto.randomUUID(),
+          source === "paid_order" || source === "paid_profile"
+            ? (fallbackId || item.id || crypto.randomUUID())
+            : (item.id || fallbackId || crypto.randomUUID()),
 
         cardLabel:
           item.cardLabel ||
