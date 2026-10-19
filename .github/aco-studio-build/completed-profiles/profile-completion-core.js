@@ -2,7 +2,7 @@
 const Draft=require('./profile-draft-core');
 const validPhone=value=>{const s=String(value||'').replace(/\D/g,'');return s.length>=10&&s.length<=15;};
 function inspect(row){const data=row.data||{},v=Draft.toValues(data),missing=[];
- if(!row.jiggedAt)missing.push('Saved jig');
+
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email||''))missing.push('Account email');
  if(!v.first||!v.last)missing.push('First and last name');
  for(const role of ['shipping','billing']){
