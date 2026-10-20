@@ -1,0 +1,42 @@
+name: Verify carrier tracking (site and app)
+on:
+  push:
+    branches: [feature/carrier-tracking-site-app-20261020]
+    paths:
+      - carrier-tracking.js
+      - order-notifications.js
+      - server.js
+      - public/app.js
+      - public/app-dashboard.js
+      - public/index.html
+      - public/carrier-tracking.css
+      - tests/carrier-tracking.test.js
+      - .github/workflows/check-carrier-tracking.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - carrier-tracking.js
+      - order-notifications.js
+      - server.js
+      - public/app.js
+      - public/app-dashboard.js
+      - public/index.html
+      - public/carrier-tracking.css
+      - tests/carrier-tracking.test.js
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          node --check carrier-tracking.js
+          node --check order-notifications.js
+          node --check server.js
+          node --check public/app.js
+          node --check public/app-dashboard.js
+      - name: Carrier API contract and event tests
+        run: node --test tests/carrier-tracking.test.js
