@@ -13451,6 +13451,20 @@ function renderSuccessCheckouts(
       ? checkout.shipping
       : null;
 
+  const scanHistory = Array.isArray(shipping?.events) ?
+    shipping.events.filter(event => event && event.status).slice(0, 50) : [];
+  const scanHistoryHtml = scanHistory.length ? scanHistory.map(event => {
+    const at = event.at || event.date;
+    const parsed = at ? new Date(at) : null;
+    const dateText = parsed && Number.isFinite(parsed.getTime()) ?
+      parsed.toLocaleString("en-US", {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"}) : "Date unavailable";
+    return `<li class="sng-carrier-event"><strong>${escapeHtml(String(event.status))}</strong>` +
+      `<small>${escapeHtml(dateText)}${event.location ? " · " + escapeHtml(String(event.location)) : ""}</small></li>`;
+  }).join("") : `<li class="sng-carrier-event sng-carrier-empty">Carrier scan history will appear when the carrier reports events. Use Track Package for its latest tracking page.</li>`;
+  const carrierLabel = shipping?.carrier ? String(shipping.carrier) : "";
+  const trackingNumberLabel = shipping?.trackingNumber ? String(shipping.trackingNumber) : "";
+  const trackingLink = typeof shipping?.trackingUrl === "string" && /^https:\/\//i.test(shipping.trackingUrl) ? shipping.trackingUrl : "";
+
   const reviewHold = checkout.status === "review_hold";
   const totalCostText = (checkout.checkoutValueKnown ?? checkout.orderTotalKnown) === false ?
     "Total not provided" : formatSuccessCurrency(value);
@@ -13598,8 +13612,14 @@ function renderSuccessCheckouts(
               <div><span>EN ROUTE</span><strong>${shipping?.enRouteAt ? escapeHtml(formatSuccessDate(shipping.enRouteAt)) : "—"}</strong></div>
               <div><span>ESTIMATED DELIVERY</span><strong>${shipping?.estimatedDelivery ? escapeHtml(shipping.estimatedDelivery) : "—"}</strong></div>
               <div><span>SHIPPED TO</span><strong>${shippingAddress ? escapeHtml(shippingAddress) : "Waiting for retailer update"}</strong></div>
+              <div><span>CARRIER</span><strong>${escapeHtml(carrierLabel || "Pending")}</strong></div>
+              <div><span>TRACKING NUMBER</span><strong>${escapeHtml(trackingNumberLabel || "Pending")}</strong></div>
             </div>
-            ${shipping?.trackingUrl ? `<a class="success-track-package" href="${escapeHtml(shipping.trackingUrl)}" target="_blank" rel="noopener noreferrer">Track Package ↗</a>` : ""}
+            ${trackingLink ? `<a class="success-track-package" href="${escapeHtml(trackingLink)}" target="_blank" rel="noopener noreferrer">Track Package ↗</a>` : ""}
+            <details class="sng-carrier-history">
+              <summary>Carrier tracking history (${scanHistory.length})</summary>
+              <ol class="sng-carrier-events">${scanHistoryHtml}</ol>
+            </details>
           </div>
         </div>
       `}
@@ -13695,9 +13715,11 @@ function renderSuccessCheckouts(
             <span>SHIPPED TO</span>
             <strong>${escapeHtml(shippingAddress)}</strong>
           </div>` : ""}
-        ${shipping?.trackingUrl ? `
+        ${trackingNumberLabel ? `<div><span>TRACKING NUMBER</span><strong>${escapeHtml(trackingNumberLabel)}</strong></div>` : ""}
+        ${carrierLabel ? `<div><span>CARRIER</span><strong>${escapeHtml(carrierLabel)}</strong></div>` : ""}
+        ${trackingLink ? `
           <div style="grid-column:1/-1">
-            <a href="${escapeHtml(shipping.trackingUrl)}" target="_blank" rel="noopener noreferrer">TRACK PACKAGE →</a>
+            <a href="${escapeHtml(trackingLink)}" target="_blank" rel="noopener noreferrer">TRACK PACKAGE →</a>
           </div>` : ""}
       </div>
 
