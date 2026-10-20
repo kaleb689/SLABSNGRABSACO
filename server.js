@@ -20,6 +20,7 @@ import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity,
 import { webhookOnlyCheckouts, discordCheckoutIds, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { isModuleLifecycleDiscordMessage, isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
 import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
+import { createCarrierTrackingClient, trackingEvidenceFromEmail, officialTrackingUrl, knownCarrier, cleanTrackingNumber, mergeCarrierShipping } from "./carrier-tracking.js";
 import { pokemonCenterFulfillmentDetails, mergeRetailerFulfillmentItems } from "./retailer-order-enrichment.js";
 import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
 import { checkoutIdentityFromDiscord, checkoutSourceSelection, checkoutStatusFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
@@ -40319,9 +40320,19 @@ function safeSuccessCheckout(
             enRouteAt: record.shipping.enRouteAt || null,
             estimatedDelivery: clean(record.shipping.estimatedDelivery, 80) || null,
             deliveredAt: record.shipping.deliveredAt || null,
-            trackingUrl: safeSuccessImageUrl(record.shipping.trackingUrl),
+            trackingUrl: safeSuccessImageUrl(officialTrackingUrl(record.shipping.carrier, record.shipping.trackingNumber) || record.shipping.trackingUrl),
             carrier: clean(record.shipping.carrier, 60) || null,
             trackingNumber: clean(record.shipping.trackingNumber, 60) || null,
+            // Same sanitized shipping events drive the customer website and mobile app.
+            events: Array.isArray(record.shipping.events) ? record.shipping.events
+              .filter(event => event && typeof event === "object" && event.status)
+              .slice(0, 50).map(event => ({
+                status: clean(event.status, 160),
+                at: Number.isFinite(Date.parse(event.at || event.date || "")) ? new Date(event.at || event.date).toISOString() : null,
+                location: clean(event.location, 160) || null,
+                stage: ["shipped","in_transit","out_for_delivery","delivered"].includes(event.stage) ? event.stage : null,
+                source: event.source === "carrier_api" ? "carrier_api" : "retailer_email"
+              })) : [],
             address: record.shipping.address ? compactShippingAddress(record.shipping.address) : null,
             updatedAt: record.shipping.updatedAt || null
           }
@@ -44756,7 +44767,10 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const pkcDetails = pokemonCenterFulfillmentDetails({
           subject, text: decoded.text || "", html: decoded.html || ""
         });
-        if (!status && !receiptTotal && !pkcDetails.items.length) continue;
+        const emailTracking = trackingEvidenceFromEmail({
+          subject, text: decoded.text || "", html: decoded.html || ""
+        });
+        if (!status && !receiptTotal && !pkcDetails.items.length && !emailTracking.trackingNumber) continue;
 
         // A customer's inbox can include purchases outside this ACO service.
         // Require an exact existing webhook order number, one unique match,
@@ -44823,7 +44837,7 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         }
         // Ownership-free business receipts may update spending only. They
         // must never create customer shipment alerts or change attribution.
-        if (!account || !status) continue;
+        if (!account || (!status && !emailTracking.trackingNumber)) continue;
         if (cancellation) {
           if (!cancelledOrder(record)) {
             record.status = cancellation;
@@ -44839,17 +44853,19 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         }
         if (cancelledOrder(record)) continue;
         const prior = record.shipping && typeof record.shipping === "object" ? record.shipping : {};
-        if (shippingStatusRank(status) < shippingStatusRank(prior.status)) continue;
+        if (status && shippingStatusRank(status) < shippingStatusRank(prior.status)) continue;
         if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(messageAt)) continue;
-
+        const trackingNumber = emailTracking.trackingNumber || pkcDetails.trackingNumber || prior.trackingNumber || null;
+        const carrier = emailTracking.carrier || pkcDetails.carrier || knownCarrier(prior.carrier, trackingNumber) || null;
         const next = {
-          status,
-          enRouteAt: prior.enRouteAt || (status !== "delivered" ? messageAt : null),
+          ...prior,
+          status: status || prior.status || null,
+          enRouteAt: prior.enRouteAt || (status && status !== "delivered" ? messageAt : null),
           estimatedDelivery: shippingEstimateFromText(combined) || prior.estimatedDelivery || null,
           deliveredAt: status === "delivered" ? messageAt : prior.deliveredAt || null,
-          trackingUrl: shippingTrackingUrl(decoded.html, decoded.text) || prior.trackingUrl || null,
-          carrier: pkcDetails.carrier || prior.carrier || null,
-          trackingNumber: pkcDetails.trackingNumber || prior.trackingNumber || null,
+          trackingUrl: officialTrackingUrl(carrier, trackingNumber) ||
+            emailTracking.trackingUrl || shippingTrackingUrl(decoded.html, decoded.text) || prior.trackingUrl || null,
+          carrier, trackingNumber,
           address: matchCustomerShippingAddress(account, combined) || prior.address || null,
           updatedAt: messageAt,
           source: "retailer_email"
@@ -45059,6 +45075,109 @@ function startShippingTrackerScheduler() {
   const timer = setInterval(() => void syncShippingTrackers(), SHIPPING_SCAN_INTERVAL_MS);
   timer.unref?.();
   console.log("Shipping tracker scheduler ready.");
+}
+
+
+// Direct carrier scans update only previously verified, attributed checkout records.
+// The retailer email scanner remains active if a carrier API is unavailable or denies access.
+const carrierTrackingClient = createCarrierTrackingClient();
+const CARRIER_POLL_INTERVAL_MS = 15 * 60 * 1000;
+const CARRIER_POLL_MINIMUM_MS = 30 * 60 * 1000;
+const CARRIER_MAX_PER_PASS = 20;
+const carrierLookupsAttemptedAt = new Map();
+let carrierTrackingCursor = 0;
+let carrierScanInProgress = false;
+
+async function syncOfficialCarrierTracking() {
+  if (carrierScanInProgress) return;
+  carrierScanInProgress = true;
+  try {
+    const sources = await discordCheckoutSourceChannels();
+    const verified = authoritativeDiscordCheckouts(await getSuccessCheckouts(), sources.channels);
+    const pending = verified.filter(record =>
+      isVerifiedDiscordCheckout(record) &&
+      record.customerAccountId &&
+      record.orderNumber &&
+      customerCheckoutPurchase(record) &&
+      !cancelledOrder(record) && record.status !== "review_hold" &&
+      record.shipping && cleanTrackingNumber(record.shipping.trackingNumber) &&
+      carrierTrackingClient.configured(knownCarrier(record.shipping.carrier, record.shipping.trackingNumber)) &&
+      (!record.shipping.deliveredAt ||
+        Date.now() - Date.parse(record.shipping.deliveredAt) < 2 * 24 * 60 * 60 * 1000) &&
+      (!record.checkoutAt || Date.now() - Date.parse(record.checkoutAt) < 120 * 24 * 60 * 60 * 1000)
+    );
+    if (!pending.length) return;
+    const toApply = [];
+    const seen = new Set();
+    const startingAt = carrierTrackingCursor % pending.length;
+    let scanned = 0;
+    for (let i = 0; i < pending.length && scanned < CARRIER_MAX_PER_PASS; i++) {
+      const record = pending[(startingAt + i) % pending.length];
+      const number = cleanTrackingNumber(record.shipping.trackingNumber);
+      const carrier = knownCarrier(record.shipping.carrier, number);
+      const key = carrier + ":" + number;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const now = Date.now();
+      if (now - (carrierLookupsAttemptedAt.get(key) || 0) < CARRIER_POLL_MINIMUM_MS) continue;
+      carrierLookupsAttemptedAt.set(key, now);
+      scanned++;
+      try {
+        const update = await carrierTrackingClient.lookup(carrier, number);
+        if (update) toApply.push({
+          id: record.id, customerAccountId: String(record.customerAccountId),
+          retailer: record.retailer, orderNumber: String(record.orderNumber),
+          trackingNumber: number, update
+        });
+      } catch (error) {
+        // Logs intentionally exclude the tracking number, address and customer.
+        console.error("Official carrier scan:", carrier, String(error?.message || "carrier_api_error").slice(0, 80));
+      }
+    }
+    carrierTrackingCursor = (startingAt + Math.max(1, scanned)) % pending.length;
+    if (carrierLookupsAttemptedAt.size > 10000) {
+      const oldest = Date.now() - 2 * 24 * 60 * 60 * 1000;
+      for (const [key, at] of carrierLookupsAttemptedAt) if (at < oldest) carrierLookupsAttemptedAt.delete(key);
+    }
+    if (!toApply.length) return;
+    await withSuccessStoreLock(async () => {
+      const latest = await getSuccessCheckouts();
+      const changedAccounts = new Set();
+      for (const change of toApply) {
+        const record = latest.find(item =>
+          isVerifiedDiscordCheckout(item) && item.id === change.id &&
+          String(item.customerAccountId || "") === change.customerAccountId &&
+          item.retailer === change.retailer &&
+          String(item.orderNumber || "") === change.orderNumber &&
+          cleanTrackingNumber(item.shipping?.trackingNumber) === change.trackingNumber &&
+          !cancelledOrder(item) && item.status !== "review_hold");
+        if (!record) continue;
+        const next = mergeCarrierShipping(record.shipping, change.update);
+        if (!next) continue;
+        record.shipping = next;
+        changedAccounts.add(change.customerAccountId);
+      }
+      if (changedAccounts.size) {
+        await saveSuccessCheckouts(latest);
+        for (const accountId of changedAccounts) announceSuccessCheckout(accountId);
+        broadcastLiveDataChange("verified-carrier-tracking-update");
+      }
+    });
+  } catch (error) {
+    console.error("Official carrier tracking:", String(error?.message || "carrier_tracking_error").slice(0, 120));
+  } finally {
+    carrierScanInProgress = false;
+  }
+}
+
+function startOfficialCarrierTrackingScheduler() {
+  const configured = ["UPS", "FedEx", "USPS"].filter(carrier => carrierTrackingClient.configured(carrier));
+  console.log("Official carrier tracking configured:", configured.join(", ") || "none (email fallback active)");
+  if (!configured.length) return;
+  const first = setTimeout(() => void syncOfficialCarrierTracking(), 90_000);
+  first.unref?.();
+  const timer = setInterval(() => void syncOfficialCarrierTracking(), CARRIER_POLL_INTERVAL_MS);
+  timer.unref?.();
 }
 
 async function syncCustomerTargetSuccess(
@@ -49836,6 +49955,7 @@ await initializeArrayFile(
         startLiveSuccessScheduler();
         startManagedExpirationScheduler();
         startShippingTrackerScheduler();
+        startOfficialCarrierTrackingScheduler();
         startCheckoutDmSummaryScheduler({
           dataDir: DATA_DIR,
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),

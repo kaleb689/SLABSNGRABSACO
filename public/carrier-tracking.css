@@ -1,0 +1,53 @@
+/* Shared carrier history presentation for the customer website's Success Shipping Tracker. */
+.sng-carrier-history {
+  margin-top: 12px;
+  border: 1px solid rgba(125, 192, 228, 0.25);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(4, 23, 43, 0.45);
+  color: inherit;
+}
+.sng-carrier-history summary {
+  padding: 12px 14px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+}
+.sng-carrier-history summary:focus-visible { outline: 2px solid #61c5ff; outline-offset: -2px; }
+.sng-carrier-events {
+  display: grid;
+  gap: 0;
+  padding: 2px 16px 12px 20px;
+  margin: 0;
+  list-style: none;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.sng-carrier-event {
+  display: grid;
+  gap: 3px;
+  position: relative;
+  padding: 10px 0 11px 14px;
+  border-left: 2px solid rgba(96, 189, 237, 0.32);
+  overflow-wrap: anywhere;
+}
+.sng-carrier-event::before {
+  content: "";
+  position: absolute;
+  top: 15px;
+  left: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #53bdee;
+}
+.sng-carrier-event strong { font-size: 0.86rem; line-height: 1.4; }
+.sng-carrier-event small { color: #acc6d6; font-size: 0.78rem; line-height: 1.35; }
+.sng-carrier-empty { border-left: 0; color: #acc6d6; }
+.sng-carrier-empty::before { display: none; }
+@media (max-width: 600px) {
+  .sng-carrier-history { width: 100%; }
+  .sng-carrier-events { max-height: 250px; padding-inline: 14px; }
+  .sng-carrier-event { padding-left: 11px; }
+}

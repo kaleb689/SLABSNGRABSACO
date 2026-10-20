@@ -25,7 +25,7 @@ export function orderSnapshot(record) {
   const cancelled = cancelledOrder(record);
   return { eligible: !cancelled && /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(record.status || ""),
     reviewHold: !cancelled && record.status === "review_hold",
-    cancelled, shipping: JSON.stringify([record.shipping?.status || "", record.shipping?.estimatedDelivery || "", record.shipping?.trackingUrl || ""]) };
+    cancelled, shipping: JSON.stringify([record.shipping?.status || "", record.shipping?.estimatedDelivery || "", record.shipping?.trackingUrl || "", record.shipping?.trackingNumber || "", record.shipping?.events?.[0]?.status || "", record.shipping?.events?.[0]?.at || "", record.shipping?.events?.[0]?.location || ""]) };
 }
 export function orderEvents(record, previous) {
   const next = orderSnapshot(record);
@@ -51,7 +51,7 @@ export function orderEvents(record, previous) {
     events.push({
       kind: "shipping_update",
       title: `${retailer} order ${status.toLowerCase()}`,
-      message: `${product} • ${orderNumber}${record.shipping.estimatedDelivery ? ` • Est. delivery ${String(record.shipping.estimatedDelivery).slice(0, 80)}` : ""}`,
+      message: `${product} • ${orderNumber}${record.shipping?.events?.[0]?.source === "carrier_api" ? ` • ${String(record.shipping.events[0].status || "").slice(0, 90)}${record.shipping.events[0].location ? ` (${String(record.shipping.events[0].location).slice(0, 60)})` : ""}` : ""}${record.shipping.estimatedDelivery ? ` • Est. delivery ${String(record.shipping.estimatedDelivery).slice(0, 80)}` : ""}`,
       tab: "success"
     });
   }
