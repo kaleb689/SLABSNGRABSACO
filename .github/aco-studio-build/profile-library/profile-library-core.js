@@ -53,6 +53,36 @@ function syncCardholderToProfile(data){
  }
  return out;
 }
-const defaultRules=()=>Core.defaultRuleIDs.filter(id=>!/(prefix|fraction|fictitious|fabricated|phone)/i.test(id));
-function jig(data,r,index,rules=defaultRules()){retailer(r);if(!Array.isArray(rules)||rules.some(id=>!Core.RULES.some(x=>x.id===id)))throw Error('Unknown retailer jig rule.');const out=clone(data);if(index===0)return out;const map=Core.autoMap([out]);for(const role of ['shipping','billing']){const addr={};for(const k of ['address1','address2','city','state','zip'])addr[k]=Core.get(out,map[role+'.'+k])||'';for(const id of rules.map((_,k)=>rules[(Math.max(0,index-1)+k)%rules.length])){let variant;try{variant=Core.RULES.find(x=>x.id===id).apply(addr);}catch{continue;}if(!variant)continue;for(const k of Object.keys(addr))if(map[role+'.'+k]&&variant[k]!=null){const path=JSON.parse(map[role+'.'+k]);let target=out;for(const part of path.slice(0,-1))target=target[part];target[path.at(-1)]=variant[k];}break;}}return out;}
-module.exports={values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
+const TARGET_PRIMARY_RULES=Object.freeze([
+ ...[['target.house.fraction.half','1/2'],['target.house.fraction.third','1/3'],['target.house.fraction.quarter','1/4']].map(([id,value])=>({id,label:'Target house number + '+value,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\\d+\\s/.test(street))return null;const changed=street.replace(/^(\\d+)(?=\\s)/,'$1 '+value);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}})),
+ ...'ABCDEFGH'.split('').map(letter=>({id:'target.house.hyphen.'+letter.toLowerCase(),label:'Target house number -'+letter,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\\d+\\s/.test(street))return null;const changed=street.replace(/^(\\d+)(?=\\s)/,'$1-'+letter);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}}))
+]);
+const coreRule=id=>Core.RULES.find(x=>x.id===id),targetRule=id=>TARGET_PRIMARY_RULES.find(x=>x.id===id),ruleById=id=>coreRule(id)||targetRule(id);
+function ruleOptions(r){
+ retailer(r);
+ const standard=Core.RULES.filter(x=>!/^prefix_three/.test(x.id)).map(x=>({id:x.id,label:x.label,risk:'standard',family:'standard'}));
+ return r==='target'?[...standard,...TARGET_PRIMARY_RULES.map(({id,label,risk,family})=>({id,label,risk,family}))]:standard;
+}
+const defaultRules=r=>{
+ const safe=Core.defaultRuleIDs.filter(id=>!/(prefix|fraction|fictitious|fabricated|phone)/i.test(id));
+ return retailer(r)==='target'?[...safe,...TARGET_PRIMARY_RULES.map(x=>x.id)]:safe;
+};
+function jig(data,r,index,rules=defaultRules(r)){
+ retailer(r);
+ if(!Array.isArray(rules)||rules.some(id=>!ruleById(id)))throw Error('Unknown retailer jig rule.');
+ const out=clone(data);if(index===0)return out;const map=Core.autoMap([out]);
+ for(const role of ['shipping','billing']){
+  const addr={};for(const k of ['address1','address2','city','state','zip'])addr[k]=Core.get(out,map[role+'.'+k])||'';
+  let primaryApplied=false;
+  for(const id of rules.map((_,k)=>rules[(Math.max(0,index-1)+k)%rules.length])){
+   const rule=ruleById(id);if(!rule)continue;
+   if(rule.family==='target-primary'&&primaryApplied)continue;
+   let variant;try{variant=rule.apply(addr);}catch{continue;}if(!variant)continue;
+   if(rule.family==='target-primary')primaryApplied=true;
+   for(const k of Object.keys(addr))if(map[role+'.'+k]&&variant[k]!=null){const path=JSON.parse(map[role+'.'+k]);let target=out;for(const part of path.slice(0,-1))target=target[part];target[path.at(-1)]=variant[k];}
+   break;
+  }
+ }
+ return out;
+}
+module.exports={values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
