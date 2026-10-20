@@ -8059,9 +8059,21 @@ function retailerProfileCardHtml(
   slot,
   savedProfile = null
 ) {
+  const customerProfile =
+    savedProfile
+      ?.customerProfile ||
+    {};
+
+  const simpleOwnerName =
+    String(
+      customerProfile.firstName ||
+      state.savedDetails?.addresses?.[0]?.firstName ||
+      state.customer?.email?.split("@")[0] ||
+      "Profile"
+    ).trim().split(/\s+/)[0] || "Profile";
+
   const profileName =
-    savedProfile?.profileName ||
-    `Profile ${slot}`;
+    `${simpleOwnerName} ${slot}`;
 
   const locked =
     slot >
@@ -8069,11 +8081,6 @@ function retailerProfileCardHtml(
 
   const retailers =
     savedProfile?.retailers ||
-    {};
-
-  const customerProfile =
-    savedProfile
-      ?.customerProfile ||
     {};
 
   const customerCard =
@@ -8351,19 +8358,14 @@ function retailerProfileCardHtml(
                       PROFILE DETAILS
                     </span>
 
-                    <label>
-                      Profile Name
-                      <input
-                        type="text"
-                        name="profileName"
-                        value="${escapeHtml(
-                          profileName
-                        )}"
-                        maxlength="80"
-                        placeholder="Example: Personal"
-                        required
-                        >
-                    </label>
+                    <input
+                      type="hidden"
+                      name="profileName"
+                      value="${escapeHtml(profileName)}"
+                    >
+                    <p class="account-muted">
+                      Profile name: <strong>${escapeHtml(profileName)}</strong>. It is assigned automatically.
+                    </p>
                   </section>
 
                   <details
@@ -8607,17 +8609,9 @@ function retailerProfileCardHtml(
                         >
                       </label>
 
-                      <label>
-                        Cardholder Name
-                        <input
-                          name="cardholder"
-                          value="${escapeHtml(
-                            customerCard
-                              .cardholder ||
-                            ""
-                          )}"
-                        >
-                      </label>
+                      <p class="account-muted">
+                        Cardholder name automatically matches this profile's first and last name.
+                      </p>
                     </div>
 
                     <label>
@@ -9510,7 +9504,7 @@ async function applyManagedSavedInfo(
         cardLabel:
           payment.cardLabel || "",
         cardholder:
-          payment.cardholder || "",
+          `${item.customerProfile?.firstName || ""} ${item.customerProfile?.lastName || ""}`.trim(),
         acoCardNumber:
           payment.testCardNumber ||
           "4111111111111111",
@@ -10108,7 +10102,7 @@ function bindManagedMembershipForms() {
               formData.get("cardLabel") || "",
 
             cardholder:
-              formData.get("cardholder") || "",
+              `${formData.get("firstName") || ""} ${formData.get("lastName") || ""}`.trim(),
 
             acoCardNumber:
               formData.get("acoCardNumber") || "",
@@ -11582,11 +11576,7 @@ async function saveRetailerProfile(
       ).trim(),
 
     cardholder:
-      String(
-        formData.get(
-          "cardholder"
-        ) || ""
-      ).trim(),
+      `${customerProfile.firstName || ""} ${customerProfile.lastName || ""}`.trim(),
 
     acoCardNumber:
       String(
