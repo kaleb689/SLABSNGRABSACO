@@ -187,7 +187,28 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
     if(r.cards.some(c=>inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)||legacy.has(c.id)))throw Error('A selected card is already in use. Choose unused cards or disable the Unused only filter.');
    }
    result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});
-   if(choices.address)applyTargetPrimary(result,src.parsed.records,src.indices,p.addressOptions||{},p.mirrorBilling===true);
+   if(choices.address){
+    const extras=p.addressOptions?.extraAllocation||{},addressMap=new Map(r.addresses.map(a=>[a.id,a]));
+    if(Object.keys(extras).some(id=>!addressMap.has(id)||!Number.isInteger(extras[id])||extras[id]<0||extras[id]>500))throw Error('Extra allocation must be a whole number for a selected address.');
+    const total=Object.values(extras).reduce((sum,n)=>sum+n,0);
+    if(total>src.indices.length)throw Error('Extra address allocation exceeds selected profile count.');
+    if(total){
+     const quotas=new Map(r.addresses.map(a=>[a.id,extras[a.id]||0]));
+     for(let i=0;i<src.indices.length-total;i++){const a=r.addresses[i%r.addresses.length];quotas.set(a.id,quotas.get(a.id)+1);}
+     const allocation=[];let left=true;
+     while(left){left=false;for(const address of r.addresses){const count=quotas.get(address.id)||0;if(count>0){allocation.push(address);quotas.set(address.id,count-1);left=true;}}}
+     src.indices.forEach((index,pos)=>{
+      const addr=allocation[pos],values=Draft.toValues(result.records[index]),changes={...values};
+      for(const k of ['address1','address2','city','state','zip']){
+       changes['shipping.'+k]=String(addr[k]||'');
+       if(p.mirrorBilling===true)changes['billing.'+k]=changes['shipping.'+k];
+      }
+      result.records[index]=Draft.manualEdit(result.records[index],changes);
+      const summary=result.summary?.find(x=>x.index===index);
+      if(summary){summary.addressId=addr.id;summary.address=[{role:'shipping',text:[addr.address1,addr.address2,addr.city,addr.state,addr.zip].filter(Boolean).join(', ')}];}
+     });
+    }else applyTargetPrimary(result,src.parsed.records,src.indices,p.addressOptions||{},p.mirrorBilling===true);
+   }
    if(choices.address||choices.card||choices.name)for(const index of src.indices)result.records[index]=syncCardholderToProfileName(result.records[index]);
    resourcesHash=r.hash;
   });
