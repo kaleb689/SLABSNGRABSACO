@@ -1,4 +1,4 @@
-name: Verify ACO Studio 4.13.27 Windows two-way sync installer
+name: Verify ACO Studio 4.13.28 Windows two-way sync installer
 on:
   push:
     branches: [main]
@@ -9,10 +9,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-bidirectional-427-windows
+  group: aco-studio-bidirectional-428-windows
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.27'
+  ACO_VERSION: '4.13.28'
 jobs:
   windows:
     name: Windows x64 installer, source tests and installed application smoke
@@ -180,7 +180,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ACO-Studio-4.13.27-windows-x64
+          name: ACO-Studio-4.13.28-windows-x64
           path: installers
       - name: Verify and publish tested Windows installer
         env:
@@ -189,20 +189,20 @@ jobs:
           python3 - <<'PY'
           import pathlib,hashlib,base64,shutil
           root=pathlib.Path('installers')
-          for name in ['ACO-Studio-Setup-4.13.27-x64.exe','latest.yml','windows-signing-status.txt','regression-results.txt']:
+          for name in ['ACO-Studio-Setup-4.13.28-x64.exe','latest.yml','windows-signing-status.txt','regression-results.txt']:
            matches=list(root.rglob(name));assert len(matches)==1,(name,matches)
            if matches[0]!=root/name:shutil.copyfile(matches[0],root/name)
           assert '# fail 0' in (root/'regression-results.txt').read_text()
-          p=root/'ACO-Studio-Setup-4.13.27-x64.exe'
+          p=root/'ACO-Studio-Setup-4.13.28-x64.exe'
           assert p.stat().st_size>50_000_000
           with p.open('rb') as f:assert f.read(2)==b'MZ'
           with p.open('rb') as f:digest=base64.b64encode(hashlib.file_digest(f,'sha512').digest()).decode()
           assert digest in (root/'latest.yml').read_text()
           PY
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.27 makes every jigged profile's cardholder name match that profile's current first and last name after jigging. The change applies to Target/Shikari and Valor-format retailers, including saved-profile bulk jigging and Profile Studio jig saves, while preserving blank cards. Existing Florida phone jigging, bulk profile selection, retailer presets, unrestricted owner export, Touch ID, two-way sync, encrypted vault separation and updater behavior remain intact.
+          ACO Studio 4.13.28 makes every jigged profile's cardholder name match that profile's current first and last name after jigging. The change applies to Target/Shikari and Valor-format retailers, including saved-profile bulk jigging and Profile Studio jig saves, while preserving blank cards. Existing Florida phone jigging, bulk profile selection, retailer presets, unrestricted owner export, Touch ID, two-way sync, encrypted vault separation and updater behavior remain intact.
 
           Native source regressions, packaging and launch/update checks must pass before these assets publish. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
           NOTES
-          gh release create aco-studio-v4.13.27-windows-unsigned installers/*.exe installers/latest.yml installers/windows-signing-status.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.27 Windows' --notes-file notes.md --prerelease
-          gh release upload aco-studio-windows-updates installers/ACO-Studio-Setup-4.13.27-x64.exe installers/latest.yml --repo "$GITHUB_REPOSITORY" --clobber
+          gh release create aco-studio-v4.13.28-windows-unsigned installers/*.exe installers/latest.yml installers/windows-signing-status.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.28 Windows' --notes-file notes.md --prerelease
+          gh release upload aco-studio-windows-updates installers/ACO-Studio-Setup-4.13.28-x64.exe installers/latest.yml --repo "$GITHUB_REPOSITORY" --clobber
