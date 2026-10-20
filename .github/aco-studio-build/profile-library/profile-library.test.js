@@ -127,3 +127,25 @@ test('Cardholder sync helper preserves blank cards but fixes an attached card ho
  assert.equal(LC.payment(filled).cardholder,'Alex Example');
  assert.equal(LC.payment(LC.syncCardholderToProfile(filled)).cardholder,'Alex Example');
 });
+
+
+test('Counted Target hard jig keeps one base and creates 17 unique variants for 18 profiles',async t=>{
+ const h=await library(t);
+ for(let i=0;i<18;i++)await commit(h,await preview(h,[complete('target','hard-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),ruleIds:[],hardCounts:{fraction:3,hyphen:8,doubleLetter:6,randomUnit:0},combine:false,billingSameAsShipping:true});
+ assert.equal(result.count,18);
+ assert.equal(result.profiles[0].category,'original');
+ assert.equal(result.profiles[0].after.address1,'100 Example Avenue');
+ assert.equal(result.profiles.filter(x=>x.category==='fraction').length,3);
+ assert.equal(result.profiles.filter(x=>x.category==='hyphen').length,8);
+ assert.equal(result.profiles.filter(x=>x.category==='doubleLetter').length,6);
+ assert.equal(new Set(result.profiles.map(x=>x.after.address1+'|'+x.after.address2)).size,18);
+});
+test('Random unit Jig rejects a base address that already contains an apartment',async t=>{
+ const h=await library(t);
+ const data=complete('target','apt-block@example.test');data.shipping_street_2='Apt 2';
+ await commit(h,await preview(h,[data]));
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[row.id],ruleIds:[],hardCounts:{fraction:0,hyphen:0,doubleLetter:0,randomUnit:1},combine:false,billingSameAsShipping:false}),/Not enough unique eligible jig variations/);
+});
