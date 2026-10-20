@@ -253,4 +253,5 @@
  renamePersonalJigs();
  new MutationObserver(renamePersonalJigs).observe(d.body,{childList:true,subtree:true});
  d.addEventListener('jigstudio:customers-updated',()=>{if(!main.hidden&&scope==='aco'&&websiteVault.open&&!d.querySelector('.profileLibraryModal'))void loadWebsiteVault();if(window.JigWebsiteCustomers?.connected?.()===false){queuedCustomers.clear();if(scope==='aco')close();return;}if(scope==='aco'&&!main.hidden&&!editorBusy())customerList();void autoSync();});d.addEventListener('jigstudio:personal-locked',()=>{if(scope==='personal')close();});d.addEventListener('jigstudio:bank-context-updated',()=>{if(!main.hidden)void refresh();});
+ window.ACOProfileLibraryRefresh=Object.freeze({async all(){await autoSync();if(!main.hidden)await refresh();return {ok:true};},async current(){if(!main.hidden)await refresh();return {ok:true};}});
 })();
