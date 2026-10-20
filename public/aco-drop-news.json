@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "publishedAt": "2026-10-20T20:58:35.206247Z",
+  "summary": "Initial policy baseline from a limited review of official pages. This is not a confirmed drop calendar or a claim that these policies changed this week. Dated drops, product names and identifiers will be included when verified. New editions publish Monday mornings, Eastern time.",
+  "retailers": [
+    {
+      "id": "target",
+      "coverage": "Official Pokémon category checked. A category listing does not establish a scheduled retailer drop. No dated drop or specific new purchase-limit change was verified in this limited initial review.",
+      "confirmed": [],
+      "checks": [
+        "Verify the exact product page, TCIN and seller before selecting a Target SKU.",
+        "Check the current item quantity cap and shipping availability; distinguish Target inventory from marketplace offers."
+      ]
+    },
+    {
+      "id": "walmart",
+      "coverage": "Current official quantity policy reviewed; no claim that it changed this week.",
+      "confirmed": [
+        {
+          "title": "Quantity limits can apply across account, payment and address",
+          "kind": "policy_baseline",
+          "productName": "",
+          "sku": "",
+          "dropAt": "",
+          "details": "Walmart may restrict quantities by person, household or order, including shared accounts, payment methods and billing or shipping addresses. Its policy also permits restrictions on dealers or resellers.",
+          "planningImpact": "Review the published item and household restrictions before planning quantities. Separate profiles do not establish separate purchase allowances.",
+          "checks": [
+            "Verify item ID, seller, fulfillment method and the displayed limit.",
+            "Confirm a specific retailer drop time through an official announcement."
+          ],
+          "sources": [
+            {
+              "title": "Quantity limits can apply across account, payment and address",
+              "url": "https://www.walmart.com/help/article/quantity-limits-and-bulk-purchases/825450266d4245b29e242d06a01bd91d",
+              "checkedAt": "2026-10-20T20:58:35.206247Z"
+            }
+          ]
+        }
+      ],
+      "checks": []
+    },
+    {
+      "id": "pokemoncenter",
+      "coverage": "Current official virtual-queue guidance reviewed; no dated drop verified in this limited review.",
+      "confirmed": [
+        {
+          "title": "Queue activity does not confirm a product launch",
+          "kind": "policy_baseline",
+          "productName": "",
+          "sku": "",
+          "dropAt": "",
+          "details": "Pokémon Center says a queue does not necessarily signal a launch and does not guarantee availability. Keep the queue page open without refreshing. Follow product-page quantity limits and do not mix preorder and non-preorder items in one cart.",
+          "planningImpact": "Confirm each product identifier and cart eligibility before SKU selection. Plan preorder and in-stock items separately under the published checkout rules.",
+          "checks": [
+            "Check the US product page for current limits and preorder status.",
+            "Recheck the official announcement for date and timezone."
+          ],
+          "sources": [
+            {
+              "title": "Queue activity does not confirm a product launch",
+              "url": "https://support.pokemoncenter.com/hc/en-us/articles/37286495522452-Pok%C3%A9mon-Center-Virtual-Queue",
+              "checkedAt": "2026-10-20T20:58:35.206247Z"
+            }
+          ]
+        }
+      ],
+      "checks": []
+    },
+    {
+      "id": "costco",
+      "coverage": "Current official membership conditions reviewed. No dated TCG drop, item number or TCG-specific quantity cap was verified in this limited initial review.",
+      "confirmed": [
+        {
+          "title": "Membership eligibility and warehouse checkout",
+          "kind": "policy_baseline",
+          "productName": "",
+          "sku": "",
+          "dropAt": "",
+          "details": "Costco memberships are not transferable. Warehouse entry and checkout require the membership card. Online and warehouse prices can differ, and nonmember online eligibility applies only to certain merchandise.",
+          "planningImpact": "Confirm the item number, membership eligibility and whether the offer is online or warehouse-specific before planning quantities.",
+          "checks": [
+            "Verify the exact item page and any limit per membership or household.",
+            "Check the intended warehouse separately from online shipping stock."
+          ],
+          "sources": [
+            {
+              "title": "Membership eligibility and warehouse checkout",
+              "url": "https://www.costco.com/f/-/member-privileges-conditions",
+              "checkedAt": "2026-10-20T20:58:35.206247Z"
+            }
+          ]
+        }
+      ],
+      "checks": []
+    },
+    {
+      "id": "sams",
+      "coverage": "Current official membership terms reviewed. No dated TCG drop, item number or TCG-specific quantity cap was verified in this limited initial review.",
+      "confirmed": [
+        {
+          "title": "Membership and club-specific availability",
+          "kind": "policy_baseline",
+          "productName": "",
+          "sku": "",
+          "dropAt": "",
+          "details": "Sam’s Club membership cards are non-transferable. Merchandise is subject to availability, and available quantities may vary by club and date.",
+          "planningImpact": "Verify the item number, membership eligibility and fulfillment channel before planning a drop. Do not treat a local club report as nationwide online stock.",
+          "checks": [
+            "Verify the exact product page and its current purchase limit.",
+            "Confirm whether any early-access or Plus requirement applies to the specific offer."
+          ],
+          "sources": [
+            {
+              "title": "Membership and club-specific availability",
+              "url": "https://help.samsclub.com/app/answers/detail/a_id/4075/~/terms-and-conditions---sams-club",
+              "checkedAt": "2026-10-20T20:58:35.206247Z"
+            }
+          ]
+        }
+      ],
+      "checks": []
+    }
+  ],
+  "rumors": []
+}

@@ -1,8 +1,9 @@
-name: Verify ACO Studio 4.13.29 Mac two-way sync and native installers
+name: Verify ACO Studio 4.13.30 Mac two-way sync and native installers
 on:
   push:
     branches: [main]
     paths:
+      - '.github/aco-studio-build/drop-news/**'
       - '.github/aco-studio-build/profile-library/**'
       - '.github/aco-studio-build/native-updater/**'
       - '.github/aco-studio-build/completed-profiles/**'
@@ -11,10 +12,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-bidirectional-429-macos
+  group: aco-studio-drop-news-430-macos
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.29'
+  ACO_VERSION: '4.13.30'
 jobs:
   mac:
     name: ${{ matrix.arch }} navigation, installer, update and rollback
@@ -89,6 +90,8 @@ jobs:
         run: node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
       - name: Add scoped profile library and linked customer preparation
         run: node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+      - name: Add Drop News retailer briefing
+        run: node .github/aco-studio-build/drop-news/apply.cjs build-src/App
       - name: Install build dependencies
         working-directory: build-src/App
         run: npm install --no-audit --no-fund
@@ -99,7 +102,7 @@ jobs:
           set -euo pipefail
           for file in *.js; do node --check "$file"; done
           bash -n mac-full-update.sh
-          npm run check | tee regression-results.txt
+          node --test --test-reporter=tap tests/*.test.js | tee regression-results.txt
           node --test tests/profile-bidirectional-sync.test.js
       - name: Build real Mac DMG and complete signed app update ZIP
         working-directory: build-src/App
@@ -210,7 +213,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-4.13.29-*
+          pattern: ACO-Studio-4.13.30-*
           path: installers
           merge-multiple: true
       - name: Verify Apple Silicon before publishing
@@ -218,7 +221,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,json,hashlib
-          root=pathlib.Path('installers');v='4.13.29';platforms={};sums=[]
+          root=pathlib.Path('installers');v='4.13.30';platforms={};sums=[]
           arch='arm64'
           mode=(root/f'signing-{arch}.txt').read_text().strip()
           assert mode in ('adhoc','developer-id')
@@ -231,7 +234,7 @@ jobs:
             with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
             sums.append(digest+'  '+p.name)
             if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
-          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Native Touch ID trusted-device Admin session handoff, stable Admin live data and dollar formatting.','platforms':platforms},indent=2))
+          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Drop News: five-retailer Monday briefing with official sources and separate rumors.','platforms':platforms},indent=2))
           (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n');(root/'release-tag.txt').write_text(tag)
           PY
       - name: Release the tested installers and advance verified feed
@@ -240,14 +243,14 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.29 adds per-main-address hard Jig category counts (fractional, hyphen, double-letter, and optional new-unit variants), selected-address extra allocation, and main-address grouped review. It also keeps jigged cardholder names aligned with profile names. The change applies to Target/Shikari and Valor-format retailers, including saved-profile bulk jigging and Profile Studio jig saves, while preserving blank cards. Existing Florida phone jigging, bulk profile selection, retailer presets, unrestricted owner export, Touch ID, two-way sync, encrypted vault separation and updater behavior remain intact.
+          ACO Studio 4.13.30 adds Drop News at the top of the left sidebar. The Monday briefing covers Target, Walmart, Pokémon Center, Costco and Sam’s Club with retailer filters, checked official sources, product identifiers when available, planning implications and a separate rumor section. News refreshes automatically while open and retains the last verified edition offline. Existing customer data, SKU selections, checkout controls, profiles, jig rules and updater behavior are preserved.
 
           Native source regressions, packaging and launch/update checks must pass before these assets publish. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.29 Mac' --notes-file notes.md --prerelease
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.30 Mac' --notes-file notes.md --prerelease
           else
-            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.29 Mac' --notes-file notes.md --prerelease
+            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.30 Mac' --notes-file notes.md --prerelease
           fi
           gh release upload aco-studio-macos-updates installers/mac-update.json --repo "$GITHUB_REPOSITORY" --clobber
