@@ -67,6 +67,35 @@ test('Target preset keeps fractional 1/2 through 1/4 and A-H hyphen house-number
  for(const id of ['target.house.fraction.half','target.house.fraction.third','target.house.fraction.quarter',...'abcdefgh'.split('').map(x=>'target.house.hyphen.'+x)])assert.ok(settings.selected.includes(id),id+' default');
 });
 
+test('Bulk Target jig leaves one original per main address and then distributes soft and hard variants',async t=>{
+ const h=await library(t);
+ for(let i=0;i<4;i++)await commit(h,await preview(h,[complete('target','mix'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:['avenue_short','target.house.fraction.half','target.house.fraction.third','target.house.hyphen.a'],combine:false,billingSameAsShipping:false});
+ const streets=plan.profiles.map(x=>x.after.address1);
+ assert.equal(streets[0],'100 Example Avenue');
+ assert.equal(streets[1],'100 Example Ave');
+ assert.match(streets[2],/^100 1\/2 Example Ave$/i);
+ assert.match(streets[3],/^100 1\/3 Example Ave$/i);
+ assert.equal(new Set(streets).size,4);
+});
+
+test('Multiple hard Target primary jigs stack only when Combine is explicitly enabled',async t=>{
+ const h=await library(t);
+ for(let i=0;i<2;i++)await commit(h,await preview(h,[complete('target','combine'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const normal=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:['target.house.fraction.half','target.house.hyphen.a'],combine:false,billingSameAsShipping:false});
+ assert.equal(normal.profiles[0].after.address1,'100 Example Avenue');
+ assert.match(normal.profiles[1].after.address1,/^100 1\/2 Example Avenue$/i);
+ assert.doesNotMatch(normal.profiles[1].after.address1,/-A/i);
+ const mixed=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:['target.house.fraction.half','target.house.hyphen.a'],combine:true,billingSameAsShipping:false});
+ assert.equal(mixed.profiles[0].after.address1,'100 Example Avenue');
+ assert.match(mixed.profiles[1].after.address1,/^100-A 1\/2 Example Avenue$/i);
+});
+
 test('Target primary-number jigs never stack when combine is enabled',()=>{
  const row=complete('target','target-primary@example.test');
  row.shipping_street='123 MAIN STREET';row.billing_street='123 MAIN STREET';
