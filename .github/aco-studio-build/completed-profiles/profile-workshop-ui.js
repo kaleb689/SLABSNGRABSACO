@@ -60,7 +60,7 @@
  }
  function renderBulkRules(settings){
   const box=bq('rules');box.replaceChildren();const selected=new Set(settings.selected||[]);
-  for(const option of settings.options||[]){const label=d.createElement('label'),cb=d.createElement('input'),span=d.createElement('span');cb.type='checkbox';cb.value=option.id;cb.checked=selected.has(option.id);span.textContent=option.label;cb.addEventListener('change',()=>{bulkToken=null;bq('review').hidden=true;bulkControls();});label.append(cb,span);box.append(label);}
+  for(const option of settings.options||[]){const label=d.createElement('label'),cb=d.createElement('input'),span=d.createElement('span');cb.type='checkbox';cb.value=option.id;cb.checked=selected.has(option.id);span.textContent=option.label+(option.risk==='higher'?' · Target primary-number jig':'');cb.addEventListener('change',()=>{bulkToken=null;bq('review').hidden=true;bulkControls();});label.append(cb,span);box.append(label);}
   bulkControls();
  }
  async function loadBulk(retailerId=bulkRetailer){
@@ -68,7 +68,7 @@
   const owner=bulkOwner();try{await unlock(owner);const [list,settings]=await Promise.all([library.list(owner),library.rules({...owner,retailer:bulkRetailer})]);bulkOwnerKey=bulkKey(owner);bulkRows=list.profiles||[];bulkSelected=new Set([...bulkSelected].filter(id=>bulkRows.some(x=>x.id===id&&x.retailer===bulkRetailer)));renderBulkProfiles();renderBulkRules(settings);
    for(const button of bulkPanel.querySelectorAll('[data-retailer]'))button.setAttribute('aria-pressed',String(button.dataset.retailer===bulkRetailer));
    const ownerEl=bulkPanel.querySelector('#bulkJigOwner');if(ownerEl)ownerEl.textContent=ownerText(owner)+' | '+(retail[bulkRetailer]||bulkRetailer)+' saved preset loaded';
-   bulkStatus((retail[bulkRetailer]||bulkRetailer)+' settings loaded. Select one, multiple, or all profiles. You can add/remove jig choices before previewing.');
+   bulkStatus((retail[bulkRetailer]||bulkRetailer)+' settings loaded. Select one, multiple, or all profiles. '+(bulkRetailer==='target'?'Fractional 1/2–1/4 and A–H hyphen house-number jigs stay enabled in the Target preset and are never stacked with another primary-number jig. ':'')+'You can add/remove jig choices before previewing.');
   }catch(error){bulkRows=[];bulkSelected.clear();renderBulkProfiles();bulkStatus(error.message,true);}finally{bulkLoading=false;bulkControls();}
  }
  for(const button of bulkPanel.querySelectorAll('[data-retailer]'))button.addEventListener('click',()=>void loadBulk(button.dataset.retailer));
