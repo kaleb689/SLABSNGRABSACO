@@ -66,16 +66,18 @@ test('Profiles can jig every selected visible profile as one batch',()=>{
  assert.match(workshopService,/brandFromNumber/);
 });
 
-test('Jig page can select one, multiple or all saved profiles and edit retailer presets',()=>{
- assert.match(workshopSource,/Jig saved profiles/);
- assert.match(workshopSource,/Target Jig/);
- assert.match(workshopSource,/Walmart Jig/);
- assert.match(workshopSource,/PKC Jig/);
+test('Jig page keeps one authoritative retailer preset and supports one, multiple or all saved profiles',()=>{
+ assert.match(workshopSource,/Saved profiles/);
  assert.match(workshopSource,/Select all/);
  assert.match(workshopSource,/batchJigPreview/);
  assert.match(workshopSource,/batchJigCommit/);
- assert.match(workshopSource,/saveRules/);
- assert.match(workshopSource,/Retailer buttons load that retailer's saved jig settings automatically/);
+ assert.match(workshopSource,/chooseRetailerPreset/);
+ assert.match(workshopSource,/retailerPresetActive/);
+ assert.match(workshopSource,/Fractional house numbers/);
+ assert.match(workshopSource,/Alphanumeric house number/);
+ assert.match(workshopSource,/setChecked\(\/Fractional house numbers\/i,true\)/);
+ assert.match(workshopSource,/setChecked\(\/Alphanumeric house number\/i,true\)/);
+ assert.doesNotMatch(workshopSource,/Retailer buttons load that retailer's saved jig settings automatically/);
 });
 
 test('Profiles export is not disabled just because the profile is in progress',()=>{
