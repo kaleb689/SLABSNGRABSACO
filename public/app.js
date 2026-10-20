@@ -11705,7 +11705,7 @@ async function saveRetailerProfile(
           "",
 
         cardholder:
-          `${profileRecord?.customerProfile?.firstName || customerProfile.firstName || address?.firstName || ""} ${profileRecord?.customerProfile?.lastName || customerProfile.lastName || address?.lastName || ""}`.trim(),
+          `${customerProfile.firstName || address?.firstName || ""} ${customerProfile.lastName || address?.lastName || ""}`.trim(),
 
         maskedNumber:
           customerCard.acoCardNumber
