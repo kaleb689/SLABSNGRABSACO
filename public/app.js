@@ -11705,9 +11705,7 @@ async function saveRetailerProfile(
           "",
 
         cardholder:
-          customerCard.cardholder ||
-          payment?.cardholder ||
-          "",
+          `${profileRecord?.customerProfile?.firstName || customerProfile.firstName || address?.firstName || ""} ${profileRecord?.customerProfile?.lastName || customerProfile.lastName || address?.lastName || ""}`.trim(),
 
         maskedNumber:
           customerCard.acoCardNumber
@@ -11771,9 +11769,7 @@ async function saveRetailerProfile(
                     payment?.cardLabel ||
                     "",
                   cardholder:
-                    customerCard.cardholder ||
-                    payment?.cardholder ||
-                    "",
+                    `${profileRecord.customerProfile?.firstName || ""} ${profileRecord.customerProfile?.lastName || ""}`.trim(),
                   acoCardNumber:
                     customerCard.acoCardNumber ||
                     payment?.testCardNumber ||
