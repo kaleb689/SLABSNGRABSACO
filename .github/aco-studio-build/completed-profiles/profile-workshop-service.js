@@ -30,6 +30,31 @@ function syncCardholderToProfileName(row){
  else out.card={...(out.card||{}),holder,cardholder:holder};
  return out;
 }
+function targetPrimaryVariant(row,position,options,mirrorBilling){
+ if(options?.retailerPreset!=='target'||options?.applyStyles!==true)return row;
+ const selected=options.targetPrimary||{},variants=[];
+ if(selected.fraction)variants.push({kind:'fraction',value:'1/2'},{kind:'fraction',value:'1/3'},{kind:'fraction',value:'1/4'});
+ if(selected.alpha)for(const letter of 'ABCDEFGH')variants.push({kind:'alpha',value:letter});
+ if(!variants.length)return row;
+ const variant=variants[Math.max(0,position)%variants.length],v=Draft.toValues(row),street=String(v['shipping.address1']||'').trim();
+ if(!/^\d+\s/.test(street))return row;
+ const changed=variant.kind==='fraction'?street.replace(/^(\d+)(?=\s)/,'$1 '+variant.value):street.replace(/^(\d+)(?=\s)/,'$1-'+variant.value);
+ const edits={...v,'shipping.address1':changed};
+ if(mirrorBilling)edits['billing.address1']=changed;
+ return Draft.manualEdit(row,edits);
+}
+function applyTargetPrimary(result,indices,options,mirrorBilling){
+ if(options?.retailerPreset!=='target'||options?.applyStyles!==true||(!options?.targetPrimary?.fraction&&!options?.targetPrimary?.alpha))return;
+ indices.forEach((index,position)=>{
+  const before=result.records[index],after=targetPrimaryVariant(before,position,options,mirrorBilling);
+  if(same(before,after))return;
+  result.records[index]=after;
+  const summary=result.summary?.find(x=>x.index===index),v=Draft.toValues(after);
+  if(summary){
+   summary.address=[{role:'shipping',text:[v['shipping.address1'],v['shipping.address2'],v['shipping.city'],v['shipping.state'],v['shipping.zip']].filter(Boolean).join(', ')}];
+  }
+ });
+}
 function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseSave,confirmExport,writeFile=fs.writeFile,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),epochs=new Map();
  const epoch=e=>epochs.get(e.sender.id)||0;
@@ -138,6 +163,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
     if(r.cards.some(c=>inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)||legacy.has(c.id)))throw Error('A selected card is already in use. Choose unused cards or disable the Unused only filter.');
    }
    result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});
+   if(choices.address)applyTargetPrimary(result,src.indices,p.addressOptions||{},p.mirrorBilling===true);
    if(choices.address||choices.card||choices.name)for(const index of src.indices)result.records[index]=syncCardholderToProfileName(result.records[index]);
    resourcesHash=r.hash;
   });
