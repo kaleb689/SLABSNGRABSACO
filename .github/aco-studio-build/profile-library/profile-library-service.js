@@ -228,29 +228,119 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   else for(const key of ['first','last','phone','address1','address2','city','state','zip','country'])if(!(phoneJig&&key==='phone'))edits['billing.'+key]=before['billing.'+key];
   return C.syncCardholderToProfile(D.manualEdit(data,edits));
  }
+
+ const HARD_KINDS=['fraction','hyphen','doubleLetter','randomUnit'];
+ function hardCounts(value){
+  if(value==null)return null;
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!HARD_KINDS.includes(k)))throw Error('Invalid hard jig categories.');
+  const counts={};
+  for(const kind of HARD_KINDS){const n=value[kind]??0;if(!Number.isInteger(n)||n<0||n>500)throw Error('Hard jig counts must be whole numbers between 0 and 500.');counts[kind]=n;}
+  return counts;
+ }
+ function hardEdit(data,kind,variant){
+  const v=D.toValues(data),street=String(v['shipping.address1']||'').trim(),unit=String(v['shipping.address2']||'').trim();
+  if(!street)return null;
+  let next=street,nextUnit=unit;
+  if(kind==='fraction'){
+   if(!/^\d+\s+/.test(street))return null;
+   const values=['1/2','1/3','1/4'];if(variant>=values.length)return null;
+   next=street.replace(/^(\d+)(\s+)/,'$1 '+values[variant]+' ');
+  }else if(kind==='hyphen'){
+   if(!/^\d+\s+/.test(street)||variant>=8)return null;
+   next=street.replace(/^(\d+)(?=\s)/,'$1-'+String.fromCharCode(65+variant));
+  }else if(kind==='doubleLetter'){
+   const match=/^(\d+\s+)([A-Za-z]{3,})(.*)$/.exec(street);
+   if(!match||variant>=match[2].length)return null;
+   const pos=variant,word=match[2];next=match[1]+word.slice(0,pos+1)+word[pos]+word.slice(pos+1)+match[3];
+  }else if(kind==='randomUnit'){
+   // Never manufacture an additional unit for an address with an existing one.
+   if(unit||/(?:\b(?:apt|apartment|unit|suite|ste|condo|floor|fl|room|rm)\b|#\s*\w)/i.test(street)||variant>=500)return null;
+   nextUnit='Unit '+String(101+variant);
+  }else return null;
+  if(next===street&&nextUnit===unit)return null;
+  return D.manualEdit(data,{...v,'shipping.address1':next,'shipping.address2':nextUnit});
+ }
+ function newBulkJigData(row,kind,variant,soft,combine,billingSameAsShipping,phoneSeed,globalIndex){
+  let data=structuredClone(row.data);
+  const before=D.toValues(row.data);
+  if(kind){
+   const changed=hardEdit(data,kind,variant);if(!changed)return null;data=changed;
+   // Soft formatting may accompany one hard jig, but another hard category may not.
+   if(soft?.length){const attempt=C.jig(data,row.retailer,1+(globalIndex%soft.length),soft);if(attempt)data=attempt;}
+  }else if(soft?.length)data=C.jig(data,row.retailer,1+globalIndex,soft);
+  const after=D.toValues(data),edits={...after};
+  if(billingSameAsShipping)for(const key of ['address1','address2','city','state','zip'])edits['billing.'+key]=after['shipping.'+key];
+  else for(const key of ['first','last','phone','address1','address2','city','state','zip','country'])edits['billing.'+key]=before['billing.'+key];
+  if(combine&&kind==='fraction'){/* Explicit combine retained as opt-in, never implicit. */}
+  return C.syncCardholderToProfile(D.manualEdit(data,edits));
+ }
+ function perAddressHardRows(selected,p,phoneSeed){
+  const counts=hardCounts(p.hardCounts),soft=p.ruleIds.filter(id=>id!==C.FL_PHONE_RULE&&!isHardRule(id)),phone=p.ruleIds.includes(C.FL_PHONE_RULE);
+  const groups=new Map();
+  selected.forEach((row,index)=>{const key=mainAddressKey(row);if(!groups.has(key))groups.set(key,[]);groups.get(key).push({row,index});});
+  const outcome=new Array(selected.length);
+  for(const [key,items] of groups){
+   const seen=new Set(),remaining={...counts},used={fraction:0,hyphen:0,doubleLetter:0,randomUnit:0};
+   const originalRequired=items.length>1;
+   const originalAddress=addressView(items[0].row.data);
+   for(let i=0;i<items.length;i++){
+    const {row,index}=items[i],original=originalRequired&&i===0;
+    let data=structuredClone(row.data),kind=original?'original':'soft',selectedVariant=null;
+    if(!original){
+     let found=false;
+     // Rotate category choices so per-address counts apply to categories,
+     // not specific 1/2, 1/3, -A, etc. Every category has a strict cap.
+     const available=HARD_KINDS.filter(k=>remaining[k]>0);
+     const priorities=available.sort((a,b)=>(used[a]-used[b])||(HARD_KINDS.indexOf(a)-HARD_KINDS.indexOf(b)));
+     for(const category of priorities){
+      for(let attempt=0;attempt<500;attempt++){
+       const next=newBulkJigData(row,category,attempt,soft,p.combine===true,p.billingSameAsShipping===true,phoneSeed,index);
+       if(!next)break;
+       const candidate=mainAddressKey({data:next});
+       if(candidate!==key&&!seen.has(candidate)){data=next;kind=category;selectedVariant=attempt;remaining[category]--;used[category]++;found=true;break;}
+      }
+      if(found)break;
+     }
+     if(!found&&soft.length){
+      for(let attempt=0;attempt<soft.length;attempt++){
+       const next=newBulkJigData(row,null,0,[soft[(i+attempt)%soft.length]],false,p.billingSameAsShipping===true,phoneSeed,index);
+       const candidate=mainAddressKey({data:next});
+       if(candidate!==key&&!seen.has(candidate)){data=next;kind='soft';found=true;break;}
+      }
+     }
+     if(!found)throw Error('Not enough unique eligible jig variations for '+originalAddress.address1+'. Adjust category counts, enable more soft rules, or select fewer profiles. Existing unit addresses cannot use Random unit.');
+    }
+    if(phone)data=C.applyFloridaPhone(data,phoneSeed,index);
+    const addressKey=mainAddressKey({data});if(seen.has(addressKey))throw Error('A jig would duplicate an existing address. Adjust category counts.');seen.add(addressKey);
+    outcome[index]={data,kind,variant:selectedVariant,original,mainAddress:originalAddress};
+   }
+  }
+  return outcome;
+ }
  async function batchJigPreview(e,p){
   const a=await access(e,p),retailer=C.retailer(p.retailer);
   if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles to jig together.');
-  if(!Array.isArray(p.ruleIds)||!p.ruleIds.length||p.ruleIds.length>100||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose one or more supported retailer jig rules.');
+  const requestedCounts=hardCounts(p.hardCounts),hasHard=requestedCounts&&HARD_KINDS.some(k=>requestedCounts[k]>0);
+  if(!Array.isArray(p.ruleIds)||p.ruleIds.length>100||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id))||(!p.ruleIds.length&&!hasHard))throw Error('Choose supported retailer rules or enable at least one hard jig category.');
   const all=await profiles.fieldSnapshot(a.scope,a.id),selected=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===retailer));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
-  const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map();
+  const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=requestedCounts?perAddressHardRows(selected,p,phoneSeed):null;
   for(const row of selected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
   const rows=selected.map((row,index)=>{
    const key=mainAddressKey(row),groupPosition=positions.get(key)||0;positions.set(key,groupPosition+1);
    // A singleton must still be jigged when explicitly selected. Reserve an
    // untouched original only when this batch contains multiple same-base profiles.
    const jigPosition=groupSizes.get(key)===1?1:groupPosition;
-   const data=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,index),before=addressView(row.data),after=addressView(data);
+   const data=hardResults?hardResults[index].data:bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,index),before=addressView(row.data),after=addressView(data);
    if(!after.address1||!after.city||!after.state||!after.zip)throw Error('A selected profile is missing a complete shipping address.');
-   return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),email:row.email,label:row.label,retailer:row.retailer,linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer};
+   return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),email:row.email,label:row.label,retailer:row.retailer,linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer,category:hardResults?.[index].kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),mainAddress:hardResults?.[index].mainAddress||before};
   });
   if(rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('The selected jig rules did not change any selected profile.');
   const token=uuid();
   for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
   jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,at:now(),epoch:ep(e)});
-  return {token,count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,linked:rows.filter(x=>x.linked).length,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked}))};
+  return {token,count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,linked:rows.filter(x=>x.linked).length,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress}))};
  }
  async function batchJigCommit(e,p){
   const plan=jigPlans.get(p.token);
