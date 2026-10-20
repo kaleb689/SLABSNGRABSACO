@@ -59,12 +59,29 @@ test('Florida phone jig is available as a persistent retailer rule',async t=>{
  assert.deepEqual((await h.lib.rules(event,{...h.p,retailer:'pokemoncenter'})).selected,[LC.FL_PHONE_RULE]);
 });
 
+
+test('Target preset keeps fractional 1/2 through 1/4 and A-H hyphen house-number jigs',async t=>{
+ const h=await library(t);
+ const settings=await h.lib.rules(event,{...h.p,retailer:'target'});
+ for(const id of ['target.house.fraction.half','target.house.fraction.third','target.house.fraction.quarter',...'abcdefgh'.split('').map(x=>'target.house.hyphen.'+x)])assert.ok(settings.options.some(x=>x.id===id),id);
+ for(const id of ['target.house.fraction.half','target.house.fraction.third','target.house.fraction.quarter',...'abcdefgh'.split('').map(x=>'target.house.hyphen.'+x)])assert.ok(settings.selected.includes(id),id+' default');
+});
+
+test('Target primary-number jigs never stack when combine is enabled',()=>{
+ const row=complete('target','target-primary@example.test');
+ row.shipping_street='123 MAIN STREET';row.billing_street='123 MAIN STREET';
+ const out=LC.jig(row,'target',1,['target.house.fraction.half','target.house.hyphen.a']);
+ assert.equal(out.shipping_street,'123 1/2 MAIN STREET');
+ assert.equal(out.billing_street,'123 1/2 MAIN STREET');
+ assert.doesNotMatch(out.shipping_street,/-A/);
+});
+
 test('Jig commit changes cardholder to the profile first and last name for Target and PKC',async t=>{
  const h=await library(t);
  for(const retailer of ['target','pokemoncenter']){
   await commit(h,await preview(h,[complete(retailer,retailer+'-holder@example.test')],h.p,retailer));
   let row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
-  assert.equal(LC.payment(row.data).cardholder,'Saved Holder');
+  assert.equal(LC.payment(row.data).cardholder,'Alex Example');
   const plan=await h.lib.batchJigPreview(event,{...h.p,retailer,profileIds:[row.id],ruleIds:['avenue_short'],combine:false,billingSameAsShipping:false});
   await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
   row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
@@ -78,6 +95,6 @@ test('Cardholder sync helper preserves blank cards but fixes an attached card ho
  const blank=D.blank('target','shikari',{first:'Jordan',last:'Smith',email:'blank@example.test'});
  assert.equal(LC.syncCardholderToProfile(blank).cc_name,'');
  const filled=complete('target','filled@example.test');
- assert.equal(LC.payment(filled).cardholder,'Saved Holder');
+ assert.equal(LC.payment(filled).cardholder,'Alex Example');
  assert.equal(LC.payment(LC.syncCardholderToProfile(filled)).cardholder,'Alex Example');
 });
