@@ -149,16 +149,28 @@
   }
   paintPreset();void loadBulk(retailerId);
  }
+ function presetId(button){
+  const t=String(button?.textContent||'').replace(/\s+/g,' ').trim();
+  return /^Target Jig$/i.test(t)?'target':/^Walmart Jig$/i.test(t)?'walmart':/^PKC Jig$/i.test(t)?'pokemoncenter':null;
+ }
  function bindPresetButtons(){
   for(const button of d.querySelectorAll('button')){
-   const t=String(button.textContent||'').replace(/\s+/g,' ').trim();
-   const retailerId=/^Target Jig$/i.test(t)?'target':/^Walmart Jig$/i.test(t)?'walmart':/^PKC Jig$/i.test(t)?'pokemoncenter':null;
+   const retailerId=presetId(button);
    if(!retailerId||button.dataset.simplePresetBound==='true')continue;
-   button.dataset.simplePresetBound='true';button.addEventListener('click',()=>setTimeout(()=>chooseRetailerPreset(retailerId),0));
+   button.dataset.simplePresetBound='true';
+   button.addEventListener('click',()=>{
+    chooseRetailerPreset(retailerId);
+    // Legacy controls can repaint after their own click handler. Re-assert the
+    // single authoritative preset after those updates so the active button and
+    // Target defaults never visually fall out of sync.
+    for(const delay of [0,50,200])setTimeout(()=>{chooseRetailerPreset(retailerId);paintPreset();},delay);
+   });
   }
   paintPreset();
  }
- const simpleStyle=d.createElement('style');simpleStyle.textContent='.retailerPresetActive{border-color:#24e8ff!important;box-shadow:0 0 0 2px rgba(36,232,255,.28)!important;background:rgba(36,232,255,.12)!important;color:#fff!important}';d.head.append(simpleStyle);
+ const simpleStyle=d.createElement('style');simpleStyle.textContent='.retailerPresetActive{border-color:#24e8ff!important;box-shadow:0 0 0 2px rgba(36,232,255,.28)!important;background:rgba(36,232,255,.18)!important;color:#fff!important;outline:1px solid #24e8ff!important;outline-offset:1px!important}';d.head.append(simpleStyle);
+ const presetObserver=new MutationObserver(()=>{bindPresetButtons();paintPreset();});
+ presetObserver.observe($('studioJigBanks'),{childList:true,subtree:true});
  simplifyLegacyJigUI();bindPresetButtons();setTimeout(()=>{simplifyLegacyJigUI();bindPresetButtons();chooseRetailerPreset(activeRetailerPreset);},0);
 
  for(const id of ['workshopAddress','workshopCard','workshopName'])$(id).addEventListener('change',async()=>{invalidate();importer()?.beginWorkshop?.();const c=checked();$('workshopAddresses').hidden=!c.address;$('workshopCards').hidden=!c.card;if((c.address||c.card)&&!assets)await loadAssets();controls();});
