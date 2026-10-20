@@ -79,6 +79,65 @@ function applyTargetPrimary(result,baseRecords,indices,options,mirrorBilling){
  }
  result.stats={...(result.stats||{}),changed:indices.filter(index=>!same(baseRecords[index],result.records[index])).length};
 }
+function applyCategoryCounts(result,indices,options,selectedAddresses,mirrorBilling){
+ const input=options?.hardCounts;if(!input)return false;
+ const names=['fraction','hyphen','doubleLetter','randomUnit'],limits={};
+ if(Object.keys(input).some(k=>!names.includes(k)))throw Error('Unknown hard Jig category.');
+ for(const name of names){const n=input[name]??0;if(!Number.isInteger(n)||n<0||n>500)throw Error('Hard Jig counts must be whole numbers from 0 to 500.');limits[name]=n;}
+ if(!names.some(k=>limits[k]))return false;
+ const lookup=new Map(selectedAddresses.map(a=>[a.id,a])),groups=new Map();
+ for(const index of indices){
+  const info=result.summary?.find(x=>x.index===index);
+  const key=info?.addressId||mainAddressKey(result.records[index]);
+  if(!groups.has(key))groups.set(key,[]);
+  groups.get(key).push({index,info,key});
+ }
+ for(const entries of groups.values()){
+  const first=entries[0],addr=lookup.get(first.key),values=Draft.toValues(result.records[first.index]);
+  const base={address1:addr?.address1||values['shipping.address1'],address2:addr?.address2||values['shipping.address2'],city:addr?.city||values['shipping.city'],state:addr?.state||values['shipping.state'],zip:addr?.zip||values['shipping.zip']};
+  const used={fraction:0,hyphen:0,doubleLetter:0,randomUnit:0},taken=new Set();
+  for(let position=0;position<entries.length;position++){
+   const {index,info}=entries[position],original=position===0&&entries.length>1;
+   let out={...base},kind='original';
+   if(!original){
+    const candidates=names.filter(k=>used[k]<limits[k]).sort((a,b)=>(used[a]-used[b])||(names.indexOf(a)-names.indexOf(b)));
+    let found=false;
+    for(const candidate of candidates){
+     const variants=candidate==='fraction'?['1/2','1/3','1/4']:candidate==='hyphen'?'ABCDEFGH'.split(''):candidate==='doubleLetter'?String(base.address1).replace(/^\d+\s+/,'').split(/\W/)[0].split(''):Array.from({length:500},(_,i)=>String(101+i));
+     for(let i=0;i<variants.length;i++){
+      const next={...base},street=String(base.address1||'');
+      if(candidate==='fraction'&&/^\d+\s+/.test(street))next.address1=street.replace(/^(\d+)(?=\s)/,'$1 '+variants[i]);
+      else if(candidate==='hyphen'&&/^\d+\s+/.test(street))next.address1=street.replace(/^(\d+)(?=\s)/,'$1-'+variants[i]);
+      else if(candidate==='doubleLetter'){
+       const m=/^(\d+\s+)([A-Za-z]{3,})(.*)$/.exec(street);
+       if(!m||i>=m[2].length)break;
+       next.address1=m[1]+m[2].slice(0,i+1)+m[2][i]+m[2].slice(i+1)+m[3];
+      }else if(candidate==='randomUnit'){
+       if(base.address2||/\b(?:apt|apartment|unit|suite|ste|condo)\b|#\s*\w/i.test(street))break;
+       next.address2='Unit '+variants[i];
+      }else break;
+      const key=[next.address1,next.address2,next.city,next.state,next.zip].join('|').toUpperCase();
+      if(key!==[base.address1,base.address2,base.city,base.state,base.zip].join('|').toUpperCase()&&!taken.has(key)){out=next;kind=candidate;used[candidate]++;found=true;break;}
+     }
+     if(found)break;
+    }
+    if(!found){
+     const v=Draft.toValues(result.records[index]),soft={address1:v['shipping.address1'],address2:v['shipping.address2'],city:v['shipping.city'],state:v['shipping.state'],zip:v['shipping.zip']};
+     const key=Object.values(soft).join('|').toUpperCase();
+     if(key!==Object.values(base).join('|').toUpperCase()&&!taken.has(key)){out=soft;kind='soft';found=true;}
+    }
+    if(!found)throw Error('Not enough unique address Jig variations for '+base.address1+'. Increase eligible category counts, enable soft rules, or reduce profiles.');
+   }
+   const id=[out.address1,out.address2,out.city,out.state,out.zip].join('|').toUpperCase();
+   if(taken.has(id))throw Error('Duplicate jig address blocked.');taken.add(id);
+   const changes={...Draft.toValues(result.records[index])};
+   for(const key of ['address1','address2','city','state','zip']){changes['shipping.'+key]=out[key]||'';if(mirrorBilling)changes['billing.'+key]=out[key]||'';}
+   result.records[index]=Draft.manualEdit(result.records[index],changes);
+   if(info){info.category=kind;info.mainAddress=base;info.address=[{role:'shipping',text:[out.address1,out.address2,out.city,out.state,out.zip].filter(Boolean).join(', ')}];}
+  }
+ }
+ return true;
+}
 function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseSave,confirmExport,writeFile=fs.writeFile,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),epochs=new Map();
  const epoch=e=>epochs.get(e.sender.id)||0;
@@ -207,7 +266,8 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
       const summary=result.summary?.find(x=>x.index===index);
       if(summary){summary.addressId=addr.id;summary.address=[{role:'shipping',text:[addr.address1,addr.address2,addr.city,addr.state,addr.zip].filter(Boolean).join(', ')}];}
      });
-    }else applyTargetPrimary(result,src.parsed.records,src.indices,p.addressOptions||{},p.mirrorBilling===true);
+    }
+    if(!applyCategoryCounts(result,src.indices,p.addressOptions||{},r.addresses,p.mirrorBilling===true)&&!total)applyTargetPrimary(result,src.parsed.records,src.indices,p.addressOptions||{},p.mirrorBilling===true);
    }
    if(choices.address||choices.card||choices.name)for(const index of src.indices)result.records[index]=syncCardholderToProfileName(result.records[index]);
    resourcesHash=r.hash;
