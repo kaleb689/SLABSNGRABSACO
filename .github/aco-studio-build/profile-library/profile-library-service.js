@@ -235,10 +235,14 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   const all=await profiles.fieldSnapshot(a.scope,a.id),selected=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===retailer));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
-  const phoneSeed=uuid(),positions=new Map();
+  const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map();
+  for(const row of selected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
   const rows=selected.map((row,index)=>{
    const key=mainAddressKey(row),groupPosition=positions.get(key)||0;positions.set(key,groupPosition+1);
-   const data=bulkJigData(row,p.ruleIds,groupPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,index),before=addressView(row.data),after=addressView(data);
+   // A singleton must still be jigged when explicitly selected. Reserve an
+   // untouched original only when this batch contains multiple same-base profiles.
+   const jigPosition=groupSizes.get(key)===1?1:groupPosition;
+   const data=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,index),before=addressView(row.data),after=addressView(data);
    if(!after.address1||!after.city||!after.state||!after.zip)throw Error('A selected profile is missing a complete shipping address.');
    return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),email:row.email,label:row.label,retailer:row.retailer,linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer};
   });
