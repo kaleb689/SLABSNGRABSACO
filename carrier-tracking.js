@@ -279,8 +279,9 @@ export function createCarrierTrackingClient({config = process.env, fetchImpl = f
         body: JSON.stringify({includeDetailedScans: true, trackingInfo: [{trackingNumberInfo: {trackingNumber: normalizedNumber}}]})
       });
     } else {
-      result = await jsonRequest("https://apis.usps.com/tracking/v3r2/tracking/" + encodeURIComponent(normalizedNumber), {
-        method: "GET", headers: {Authorization: "Bearer " + token, Accept: "application/json"}
+      result = await jsonRequest("https://apis.usps.com/tracking/v3r2/tracking", {
+        method: "POST", headers: {Authorization: "Bearer " + token, Accept: "application/json", "Content-Type": "application/json"},
+        body: JSON.stringify([{trackingNumber: normalizedNumber}])
       });
     }
     return normalizeCarrierResponse(selected, normalizedNumber, result);
