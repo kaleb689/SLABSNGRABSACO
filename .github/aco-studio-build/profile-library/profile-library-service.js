@@ -2,7 +2,8 @@
 const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core');
 function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),jigPlans=new Map(),epochs=new Map();
- const supportedRule=id=>id===C.FL_PHONE_RULE||Core.RULES.some(x=>x.id===id);
+ const supportedRule=id=>id===C.FL_PHONE_RULE||Boolean(C.ruleById(id));
+ const nonStackingRules=ids=>{let targetPrimary=false;return ids.filter(id=>{if(C.ruleById(id)?.family!=='target-primary')return true;if(targetPrimary)return false;targetPrimary=true;return true;});};
  const ep=e=>epochs.get(e.sender.id)||0;
  function cancel(e){epochs.set(e.sender.id,ep(e)+1);for(const [id,p] of plans)if(p.sender===e.sender.id)plans.delete(id);for(const [id,p] of jigPlans)if(p.sender===e.sender.id)jigPlans.delete(id);}
  async function access(e,p){require('./jig-field-core').scopeKey(p?.scope,p?.customerId);const epoch=ep(e);const id=await authorize(e,p.scope,p.customerId);if(p.scope==='aco'&&id!==p.customerId)throw Error('Customer vault mismatch.');guard(e,p.scope);if(ep(e)!==epoch)throw Error('Vault closed during authorization.');return {scope:p.scope,id,check:()=>{guard(e,p.scope);if(ep(e)!==epoch)throw Error('Vault closed during this operation.');}};}
@@ -162,7 +163,7 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   const row=(await profiles.preview(a.scope,a.id,p.profileId)).profile;a.check();
   if(row.revision!==p.revision||row.source!=='website-linked-profile'||row.sourceLinked!==true||row.needsReview)throw Error('Reopen the current linked profile before previewing jigs.');
   if(!Array.isArray(p.ruleIds)||!p.ruleIds.length||p.ruleIds.length>100||p.ruleIds.some(id=>/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported retailer jig options.');
-  const batches=p.combine?[p.ruleIds]:p.ruleIds.map(id=>[id]),candidates=[];
+  const batches=p.combine?[nonStackingRules(p.ruleIds)]:p.ruleIds.map(id=>[id]),candidates=[];
   for(const batch of batches){let data=structuredClone(row.data);const addressRules=batch.filter(id=>id!==C.FL_PHONE_RULE);for(const rule of addressRules)data=C.jig(data,row.retailer,1,[rule]);if(batch.includes(C.FL_PHONE_RULE))data=C.applyFloridaPhone(data,uuid(),0);const v=C.values(data),address=Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,v['shipping.'+k]]));if(address.address1&&JSON.stringify(address)!==JSON.stringify(Object.fromEntries(Object.keys(address).map(k=>[k,C.values(row.data)['shipping.'+k]])))||batch.includes(C.FL_PHONE_RULE))candidates.push({ruleIds:batch,address,phone:v.phone});}
   return {revision:row.revision,candidates};
  }
@@ -191,7 +192,7 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   return {...Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,String(v['shipping.'+k]||'')])),phone:String(v['shipping.phone']||v.phone||'')};
  }
  function bulkJigData(row,ruleIds,index,combine,billingSameAsShipping,phoneSeed){
-  let data=structuredClone(row.data),addressRules=ruleIds.filter(id=>id!==C.FL_PHONE_RULE),phoneJig=ruleIds.includes(C.FL_PHONE_RULE);
+  let data=structuredClone(row.data),addressRules=ruleIds.filter(id=>id!==C.FL_PHONE_RULE),phoneJig=ruleIds.includes(C.FL_PHONE_RULE);if(combine)addressRules=nonStackingRules(addressRules);
   if(addressRules.length){if(combine){for(const id of addressRules.slice(0,3))data=C.jig(data,row.retailer,1,[id]);}else data=C.jig(data,row.retailer,index+1,addressRules);}
   if(phoneJig)data=C.applyFloridaPhone(data,phoneSeed,index);
   const before=D.toValues(row.data),after=D.toValues(data),edits={...after};
@@ -268,7 +269,7 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   a.check();if(result?.saved!==true)throw Error('The website did not confirm this action.');
   return result;
  }
- async function rules(e,p){const a=await access(e,p);C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id);a.check();return {selected:settings[p.retailer]?.rules||C.defaultRules(),options:[...Core.RULES.filter(x=>!/^prefix_three/.test(x.id)).map(x=>({id:x.id,label:x.label})),{id:C.FL_PHONE_RULE,label:'Random Florida phone number'}]};}
+ async function rules(e,p){const a=await access(e,p),retailer=C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id);a.check();return {selected:settings[retailer]?.rules||C.defaultRules(retailer),options:[...C.ruleOptions(retailer),{id:C.FL_PHONE_RULE,label:'Random Florida phone number',risk:'standard',family:'phone'}]};}
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules};return {saved:true};},a.check);}
  return {list,detail,importPreview,importCommit,repair,edit,exportFile,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,rules,saveRules,cancel};
 }
