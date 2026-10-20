@@ -155,14 +155,19 @@ if (appEnabled) {
       address.country
     ].filter(Boolean).join(' · ');
     const first = products[0] || {};
-    const history = Array.isArray(shipping.events) ? shipping.events.filter(event => event?.status) : [];
-    const updates = history.length ? history.map(event =>
-      '<div class="sng-sheet-history-entry"><strong>' + e(event.status) +
-      '</strong><small>' + e(event.date || event.at || '') + '</small></div>').join('') :
+    const history = Array.isArray(shipping.events) ? shipping.events.filter(event => event?.status).slice(0, 50) : [];
+    const updates = history.length ? history.map(event => {
+      const when = event.at || event.date;
+      const parsed = when ? new Date(when) : null;
+      const dateLabel = parsed && Number.isFinite(parsed.getTime()) ?
+        parsed.toLocaleString('en-US', {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'Date unavailable';
+      return '<div class="sng-sheet-history-entry"><strong>' + e(event.status) + '</strong><small>' +
+        e(dateLabel) + (event.location ? ' · ' + e(event.location) : '') + '</small></div>';
+    }).join('') :
       shipping.updatedAt ? '<div class="sng-sheet-history-entry"><strong>' +
         e(stageLabels[status] || 'Shipping updated') + '</strong><small>' +
         e(new Date(shipping.updatedAt).toLocaleString('en-US')) + '</small></div>' :
-        '<p>Carrier events will appear when confirmed.</p>';
+        '<p>Carrier events will appear when the carrier supplies them. Use Track with carrier for the latest status.</p>';
     const detail = (label, value) => '<div class="sng-sheet-detail-row"><span>' +
       e(label) + '</span><strong>' + e(value || 'Pending') + '</strong></div>';
     return `<div class="sng-sheet-handle" aria-hidden="true"></div>
