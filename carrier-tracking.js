@@ -50,7 +50,7 @@ export function trackingEvidenceFromEmail({subject = "", text = "", html = ""} =
     if (separated) { number = separated; break; }
   }
   // Carrier URLs in legitimate retailer emails may include the number when text does not.
-  const urls = combined.match(/https?:\/\/[^\s"'<>\u0000-\u001f]+/gi) || [];
+  const urls = [String(text || ""), String(html || "")].join("\n").match(/https?:\/\/[^\s"'<>\u0000-\u001f]+/gi) || [];
   for (const url of urls.slice(0, 80)) {
     try {
       const parsed = new URL(url.replace(/&amp;/gi, "&"));
@@ -135,8 +135,9 @@ export function normalizeCarrierResponse(carrier, requestedNumber, data) {
   let rawEvents = [], status = null, estimatedDelivery = null;
   if (selected === "UPS") {
     const shipment = array(data.trackResponse?.shipment)[0];
-    const pack = array(shipment?.package).find(p => cleanTrackingNumber(p?.trackingNumber) === number) ||
-      (array(shipment?.package).length === 1 ? array(shipment?.package)[0] : null);
+    const packages = array(shipment?.package);
+    const pack = packages.find(p => cleanTrackingNumber(p?.trackingNumber) === number) ||
+      (packages.length === 1 && !cleanTrackingNumber(packages[0]?.trackingNumber) ? packages[0] : null);
     if (!pack) return null;
     rawEvents = array(pack.activity).map(item => toEvent({
       description: item?.status?.description || item?.status?.simplifiedTextDescription,
@@ -149,7 +150,7 @@ export function normalizeCarrierResponse(carrier, requestedNumber, data) {
   } else if (selected === "FedEx") {
     const matches = array(data.output?.completeTrackResults).flatMap(group => array(group.trackResults));
     const result = matches.find(t => cleanTrackingNumber(t?.trackingNumberInfo?.trackingNumber) === number) ||
-      (matches.length === 1 ? matches[0] : null);
+      (matches.length === 1 && !cleanTrackingNumber(matches[0]?.trackingNumberInfo?.trackingNumber) ? matches[0] : null);
     if (!result || result.error) return null;
     rawEvents = array(result.scanEvents).map(item => toEvent({
       description: item?.eventDescription || item?.derivedStatus || item?.eventType,
