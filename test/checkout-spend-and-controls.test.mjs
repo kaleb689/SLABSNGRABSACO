@@ -46,7 +46,7 @@ test("trusted business mailbox can enrich an ownerless confirmed Discord checkou
   assert.ok(start>0&&finish>start);
   assert.match(tracker,/const unmatchedBusinessReceipt = Boolean\(mailbox\.managedHost/);
   assert.match(tracker,/matchVerifiedWebhookEmail\(records/);
-  assert.match(tracker,/if \(!account \|\| !status\) continue/);
+  assert.ok(tracker.includes("if (!account || (!status && !emailTracking.trackingNumber)) continue;"));
   assert.match(tracker,/businessPriceCandidates = records\.filter/);
   assert.match(tracker,/customerCheckoutPurchase\(record\)/);
   assert.match(tracker,/}, businessPriceCandidates, accountsById, pendingChanges\)/);
