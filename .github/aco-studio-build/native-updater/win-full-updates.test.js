@@ -22,6 +22,12 @@ test('Startup opens current Windows build when official feed has no upgrade',asy
  assert.deepEqual(r,{started:false,current:true});assert.equal(f.counts().installs,0);
  assert.equal(f.counts().feed.url,FEED);assert.equal(f.updater.autoDownload,true);
 });
+test('Running Windows app can check for an update without installing it',async()=>{
+ const f=fixture({action:'updated'}),r=await f.engine.check();
+ assert.equal(r.status,'available');assert.equal(r.latest,'4.13.15');
+ assert.equal(f.counts().installs,0);assert.equal(f.counts().checks,1);
+ assert.equal(f.updater.autoDownload,true);
+});
 test('Verified full Windows installer is automatically launched for an upgrade',async()=>{
  const f=fixture({action:'updated'}),r=await f.engine.autoStartup();
  assert.equal(r.started,true);assert.equal(r.relaunching,true);
