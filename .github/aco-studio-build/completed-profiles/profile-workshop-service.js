@@ -57,11 +57,15 @@ function restoreBaseAddress(row,base,mirrorBilling){
 }
 function applyTargetPrimary(result,baseRecords,indices,options,mirrorBilling){
  if(options?.applyStyles!==true)return;
- const groups=new Map(),softCount=Math.max(0,Array.isArray(options?.rules)?options.rules.length:0);
+ const groups=new Map(),groupSizes=new Map(),softCount=Math.max(0,Array.isArray(options?.rules)?options.rules.length:0);
+ for(const index of indices){const key=mainAddressKey(baseRecords[index]);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
  for(const index of indices){
   const base=baseRecords[index],key=mainAddressKey(base),position=groups.get(key)||0;groups.set(key,position+1);
   let after=result.records[index];
-  if(position===0)after=restoreBaseAddress(after,base,mirrorBilling);
+  // Preserve an original only when multiple source profiles already share a
+  // complete base address. Blank drafts must receive their selected vault address.
+  const source=Draft.toValues(base),hasOriginal=['shipping.address1','shipping.city','shipping.state','shipping.zip'].every(k=>String(source[k]||'').trim());
+  if(position===0&&groupSizes.get(key)>1&&hasOriginal)after=restoreBaseAddress(after,base,mirrorBilling);
   else if(options?.retailerPreset==='target'&&(options?.targetPrimary?.fraction||options?.targetPrimary?.alpha)){
    // Use the standard/soft formatting choices first for this main address.
    // Hard Target primary-number variants begin only after those have had a
