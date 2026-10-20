@@ -18,7 +18,16 @@
  function fallback(){const c=context();if(c)return {scope:c.scope,customerId:c.customerId};const scope=importer()?.workspaceScope?.()||'personal',bank=window.ACOProfileBank?.context?.();return scope==='personal'?{scope:'personal',customerId:null}:{scope:'aco',customerId:bank?.scope==='aco'?bank.customerId:null};}
  async function unlock(p){if(p.scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.())throw Error('Unlock Personal before opening its vault.');if(p.scope==='aco'&&!p.customerId)throw Error('Select a customer in the Retailer Profile Vault first.');}
  function note(text,error=false){$('workshopStatus').textContent=text;$('workshopStatus').classList.toggle('profileBankError',error);}
- function controls(){const c=context(),ch=checked();$('workshopPreview').disabled=busy||!c||!c.indices.length||!Object.values(ch).some(Boolean)||((ch.address||ch.card)&&(!assets||loading>0));
+ function applyScopeSimplicity(c){
+  const customer=c?.scope==='aco'||fallback()?.scope==='aco';
+  // Customer Jigs uses the exact same single jig workflow. Owner-only creation
+  // and vault-management shortcuts do not need a second customer-side control.
+  $('workshopVault').hidden=customer;
+  $('workshopCreate').hidden=customer;
+  const personalImport=[...d.querySelectorAll('section,article,div')].find(el=>/Personal profile imports/i.test(String(el.querySelector?.('h1,h2,h3,h4,summary')?.textContent||'')));
+  if(personalImport)personalImport.hidden=customer;
+ }
+ function controls(){const c=context(),ch=checked();applyScopeSimplicity(c);$('workshopPreview').disabled=busy||!c||!c.indices.length||!Object.values(ch).some(Boolean)||((ch.address||ch.card)&&(!assets||loading>0));
   $('workshopApply').disabled=busy||!plan;$('workshopSave').disabled=busy||!plan?.canSave||plan.saved;$('workshopExport').disabled=busy||!plan?.applied;
   $('workshopContext').textContent=c?ownerText(c)+' | '+c.indices.length+' of '+c.count+' profiles selected':'No profile file selected. Create a blank profile or import one.';
   for(const id of ['workshopAddress','workshopCard','workshopName','workshopMirror','workshopStyles','workshopReuse','workshopUnused'])$(id).disabled=busy;
@@ -114,7 +123,12 @@
   const examples=[...d.querySelectorAll('details')].find(el=>/jig types and examples/i.test(el.textContent||''));if(examples)examples.hidden=true;
   for(const label of d.querySelectorAll('label')){
    const t=String(label.textContent||'').replace(/\s+/g,' ').trim();
-   if(/Three-letter address prefixes|Custom ZIP\+4 suffix/i.test(t)){const row=label.closest('article,div,label');if(row)row.hidden=true;}
+   if(/Three-letter address prefixes|Custom ZIP\+4 suffix|Use the same name for shipping\s*&\s*billing|Edit billing recipient name|Cardholder name and payment data/i.test(t)){const row=label.closest('article,div,label');if(row)row.hidden=true;}
+  }
+  // Do not expose a second copy of the same retailer/rule actions in customer scope.
+  for(const el of d.querySelectorAll('section,article,details')){
+   const title=String(el.querySelector?.(':scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > summary')?.textContent||'').replace(/\s+/g,' ').trim();
+   if(/^(Jig saved profiles|Names\s*&\s*profile information)$/i.test(title)&&el!==bulkPanel)el.hidden=true;
   }
  }
  function paintPreset(){
