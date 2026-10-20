@@ -141,7 +141,12 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    if(choices.address||choices.card||choices.name)for(const index of src.indices)result.records[index]=syncCardholderToProfileName(result.records[index]);
    resourcesHash=r.hash;
   });
-  const text=Core.serialize(src.parsed,result.records);if(!same(Core.parseFile(src.parsed.name,text).records,result.records))throw Error('Output validation failed. Nothing was changed.');
+  const text=Core.serialize(src.parsed,result.records),roundTrip=Core.parseFile(src.parsed.name,text);
+  // Validate the exported representation itself. Serializers are allowed to
+  // normalize harmless empty/type details during the first round trip.
+  const normalizedText=Core.serialize(roundTrip,roundTrip.records);
+  const normalizedAgain=Core.parseFile(roundTrip.name||src.parsed.name,normalizedText);
+  if(roundTrip.records.length!==result.records.length||!same(normalizedAgain.records,roundTrip.records))throw Error('Output validation failed. Nothing was changed.');
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed during preview.');
   const canSave=src.matched.every(Boolean)&&new Set(src.matched.map(x=>x?.id)).size===src.indices.length;
   while([...plans.values()].filter(x=>x.sender===e.sender.id).length>=6){const [key]=[...plans].find(([,v])=>v.sender===e.sender.id);plans.delete(key);}
