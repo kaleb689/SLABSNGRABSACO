@@ -32,3 +32,17 @@ test('A fully populated profile does not require a saved jig marker',()=>{const 
 test('Explicit full card view returns number only from authorized selected vault',async t=>{const {h,owner}=await ready(t);const full=await h.service.assets(event,{...owner,showFullCards:true});assert.equal(full.cards[0].number,card.number);assert.equal(full.cards[0].expYear,'2031');assert.equal(full.cards[0].unused,false);assert.equal((await h.service.assets(event,{...h.a,showFullCards:true})).cards.length,0);h.lock();await assert.rejects(h.service.assets(event,{...owner,showFullCards:true}),/locked/);});
 test('Customer completion stays separate from private and other customer profiles',async t=>{const {h,owner,id}=await ready(t,'aco');assert.equal((await h.profiles.list('aco',owner.customerId)).profiles[0].stage,'completed');assert.equal((await h.profiles.list('aco',h.b.customerId)).profiles.length,0);assert.equal((await h.profiles.list('personal',null)).profiles.length,0);await assert.rejects(h.profiles.preview('aco',h.b.customerId,id),/not found/);await assert.rejects(h.service.assets(foreign,{...owner,showFullCards:true}));});
 test('Valor requires complete names/address/phones/card and jig without requiring a password',()=>{const data=D.blank('walmart','valor',{email:'valor@example.test',first:'Alex',last:'Example',phone:'9545550100','shipping.address1':'100 Example Ave','shipping.city':'Example','shipping.state':'FL','shipping.zip':'33324','billing.address1':'100 Example Ave','billing.city':'Example','billing.state':'FL','billing.zip':'33324'});Object.assign(data.card,{number:card.number,holder:card.cardholder,expiration:'08/31'});assert.equal(Completion.inspect({data,jiggedAt:'now'}).ready,true);data.card.expiration='13/31';assert.ok(Completion.inspect({data,jiggedAt:'now'}).missing.includes('Card expiration'));});
+
+
+test('Selected saved address extra allocation distributes remainder evenly',async t=>{
+ const {h,owner}=await ready(t);
+ const second=await h.service.addAddress(event,{...owner,address:{...address,label:'Other',address1:'200 Second Avenue'}});
+ const list=await h.profiles.list(owner.scope,owner.customerId);
+ for(let i=0;i<5;i++)await h.service.create(event,{...owner,retailer:'target',format:'shikari',fields:{email:'extra'+i+'@example.test',first:'Alex',last:'Example',phone:'9545550100'}});
+ const all=(await h.profiles.list(owner.scope,owner.customerId)).profiles;
+ const first=(await h.service.assets(event,owner)).addresses.find(x=>x.address1===address.address1);
+ const output=await h.service.preview(event,{...owner,profileIds:all.map(x=>x.id),contextKey:'address-extras',choices:{address:true,card:false,name:false},addressIds:[first.id,second.id],cardIds:[],mirrorBilling:true,addressOptions:{applyStyles:false,extraAllocation:{[first.id]:2,[second.id]:0}}});
+ const assigned=output.preview.map(x=>x.addressId);
+ assert.equal(assigned.filter(x=>x===first.id).length,4);
+ assert.equal(assigned.filter(x=>x===second.id).length,2);
+});
