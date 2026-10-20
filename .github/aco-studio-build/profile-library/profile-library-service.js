@@ -192,10 +192,37 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   const v=C.values(data);
   return {...Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,String(v['shipping.'+k]||'')])),phone:String(v['shipping.phone']||v.phone||'')};
  }
- function bulkJigData(row,ruleIds,index,combine,billingSameAsShipping,phoneSeed){
-  let data=structuredClone(row.data),addressRules=ruleIds.filter(id=>id!==C.FL_PHONE_RULE),phoneJig=ruleIds.includes(C.FL_PHONE_RULE);if(combine)addressRules=nonStackingRules(addressRules);
-  if(addressRules.length){if(combine){for(const id of addressRules.slice(0,3))data=C.jig(data,row.retailer,1,[id]);}else data=C.jig(data,row.retailer,index+1,addressRules);}
-  if(phoneJig)data=C.applyFloridaPhone(data,phoneSeed,index);
+ function normalizedAddressPart(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,' ');}
+ function mainAddressKey(row){
+  const v=C.values(row.data);
+  return ['shipping.address1','shipping.address2','shipping.city','shipping.state','shipping.zip'].map(k=>normalizedAddressPart(v[k])).join('|');
+ }
+ function isHardRule(id){return C.ruleById(id)?.family==='target-primary';}
+ function applyOne(data,row,id){return C.jig(data,row.retailer,1,[id]);}
+ function bulkJigData(row,ruleIds,groupPosition,combine,billingSameAsShipping,phoneSeed,globalIndex=0){
+  let data=structuredClone(row.data),addressRules=ruleIds.filter(id=>id!==C.FL_PHONE_RULE),phoneJig=ruleIds.includes(C.FL_PHONE_RULE);
+  // Position zero in every main-address group is intentionally untouched.
+  if(groupPosition>0&&addressRules.length){
+   const soft=addressRules.filter(id=>!isHardRule(id)),hard=addressRules.filter(isHardRule);
+   if(combine){
+    // Explicit Combine is the only mode allowed to stack multiple hard Target
+    // primary-number changes. Soft formatting can accompany them.
+    const ordered=[...soft,...hard];
+    for(const id of ordered.slice(0,Math.max(1,Math.min(ordered.length,4))))data=applyOne(data,row,id);
+   }else{
+    // First use each applicable soft style by itself. After that, rotate the
+    // harder variants and pair each with a soft style when one exists. This
+    // keeps a batch varied without stacking two hard jigs.
+    const slot=groupPosition-1;
+    if(slot<soft.length)data=C.jig(data,row.retailer,slot+1,soft);
+    else if(hard.length){
+     const hardId=hard[(slot-soft.length)%hard.length];
+     data=applyOne(data,row,hardId);
+     if(soft.length)data=applyOne(data,row,soft[(slot-soft.length)%soft.length]);
+    }else data=C.jig(data,row.retailer,groupPosition,addressRules);
+   }
+  }
+  if(phoneJig)data=C.applyFloridaPhone(data,phoneSeed,globalIndex);
   const before=D.toValues(row.data),after=D.toValues(data),edits={...after};
   if(billingSameAsShipping){for(const key of ['address1','address2','city','state','zip'])edits['billing.'+key]=after['shipping.'+key];}
   else for(const key of ['first','last','phone','address1','address2','city','state','zip','country'])if(!(phoneJig&&key==='phone'))edits['billing.'+key]=before['billing.'+key];
@@ -208,9 +235,10 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   const all=await profiles.fieldSnapshot(a.scope,a.id),selected=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===retailer));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
-  const phoneSeed=uuid();
+  const phoneSeed=uuid(),positions=new Map();
   const rows=selected.map((row,index)=>{
-   const data=bulkJigData(row,p.ruleIds,index,p.combine===true,p.billingSameAsShipping===true,phoneSeed),before=addressView(row.data),after=addressView(data);
+   const key=mainAddressKey(row),groupPosition=positions.get(key)||0;positions.set(key,groupPosition+1);
+   const data=bulkJigData(row,p.ruleIds,groupPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,index),before=addressView(row.data),after=addressView(data);
    if(!after.address1||!after.city||!after.state||!after.zip)throw Error('A selected profile is missing a complete shipping address.');
    return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),email:row.email,label:row.label,retailer:row.retailer,linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer};
   });
