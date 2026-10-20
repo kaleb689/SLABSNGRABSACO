@@ -1,4 +1,4 @@
-name: Verify ACO Studio 4.13.28 Mac two-way sync and native installers
+name: Verify ACO Studio 4.13.29 Mac two-way sync and native installers
 on:
   push:
     branches: [main]
@@ -11,10 +11,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-bidirectional-428-macos
+  group: aco-studio-bidirectional-429-macos
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.28'
+  ACO_VERSION: '4.13.29'
 jobs:
   mac:
     name: ${{ matrix.arch }} navigation, installer, update and rollback
@@ -210,7 +210,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-4.13.28-*
+          pattern: ACO-Studio-4.13.29-*
           path: installers
           merge-multiple: true
       - name: Verify Apple Silicon before publishing
@@ -218,7 +218,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,json,hashlib
-          root=pathlib.Path('installers');v='4.13.28';platforms={};sums=[]
+          root=pathlib.Path('installers');v='4.13.29';platforms={};sums=[]
           arch='arm64'
           mode=(root/f'signing-{arch}.txt').read_text().strip()
           assert mode in ('adhoc','developer-id')
@@ -240,14 +240,14 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.28 makes every jigged profile's cardholder name match that profile's current first and last name after jigging. The change applies to Target/Shikari and Valor-format retailers, including saved-profile bulk jigging and Profile Studio jig saves, while preserving blank cards. Existing Florida phone jigging, bulk profile selection, retailer presets, unrestricted owner export, Touch ID, two-way sync, encrypted vault separation and updater behavior remain intact.
+          ACO Studio 4.13.29 adds per-main-address hard Jig category counts (fractional, hyphen, double-letter, and optional new-unit variants), selected-address extra allocation, and main-address grouped review. It also keeps jigged cardholder names aligned with profile names. The change applies to Target/Shikari and Valor-format retailers, including saved-profile bulk jigging and Profile Studio jig saves, while preserving blank cards. Existing Florida phone jigging, bulk profile selection, retailer presets, unrestricted owner export, Touch ID, two-way sync, encrypted vault separation and updater behavior remain intact.
 
           Native source regressions, packaging and launch/update checks must pass before these assets publish. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.28 Mac' --notes-file notes.md --prerelease
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.29 Mac' --notes-file notes.md --prerelease
           else
-            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.28 Mac' --notes-file notes.md --prerelease
+            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.29 Mac' --notes-file notes.md --prerelease
           fi
           gh release upload aco-studio-macos-updates installers/mac-update.json --repo "$GITHUB_REPOSITORY" --clobber
