@@ -23,11 +23,13 @@ function emailFrom(row){
 }
 function normalizeEmail(value){const v=name(value).toLowerCase();return EMAIL.test(v)?v:'';}
 const redactKeys=new Set(['cvv','cvc','cid','cc_cvv','securitycode','security_code','verificationcode','cvv2','cardverificationvalue','custom_security_code','customsecuritycode','accountsecuritycode']);
-function stripVerifiers(input,depth=0){if(depth>8)throw Error('Profile nesting limit exceeded.');if(Array.isArray(input))return input.map(x=>stripVerifiers(x,depth+1));if(input&&typeof input==='object'){
+const personalCvvKeys=new Set(['cvv','cvc','cid','cc_cvv','securitycode','security_code','cvv2','cardverificationvalue']);
+const personalReferenceKeys=new Set(['custom_security_code','customsecuritycode','accountsecuritycode']);
+function stripVerifiers(input,depth=0,scope='redacted'){if(depth>8)throw Error('Profile nesting limit exceeded.');if(Array.isArray(input))return input.map(x=>stripVerifiers(x,depth+1,scope));if(input&&typeof input==='object'){
   const out={};for(const [key,value] of Object.entries(input)){
-   if(redactKeys.has(key.toLowerCase())){out[key]='';continue;}
+   if(redactKeys.has(key.toLowerCase())){const k=key.toLowerCase(),v=String(value??'');out[key]=scope==='personal'&&((personalCvvKeys.has(k))||personalReferenceKeys.has(k))?v.slice(0,64):'';continue;}
    if(key==='__proto__'||key==='constructor'||key==='prototype')continue;
-   out[key]=stripVerifiers(value,depth+1);
+   out[key]=stripVerifiers(value,depth+1,scope);
   }return out;
  }return typeof input==='string'?input.slice(0,5000):input;
 }
@@ -39,7 +41,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function read(scope){requireCrypto();try{const body=JSON.parse(safeStorage.decryptString(await fs.readFile(paths[scope])));
   if(body?.version!==1||!body?.groups||typeof body.groups!=='object')throw Error('Unrecognized encrypted profile file.');for(const [key,rows] of Object.entries(body.groups))for(const row of rows)Completion.synchronize(row,body.audit?.[key]||[],now);return body;
  }catch(e){if(e.code==='ENOENT')return {version:1,groups:{},audit:{}};throw Error('Unable to open encrypted '+scope+' profile bank; data was preserved.');}}
- async function write(scope,data){for(const rows of Object.values(data.groups))for(const row of rows)row.data=stripVerifiers(row.data);for(const [key,rows] of Object.entries(data.groups))for(const row of rows)Completion.synchronize(row,data.audit?.[key]||[],now);requireCrypto();await fs.mkdir(baseDir,{recursive:true,mode:0o700});const tmp=paths[scope]+'.'+uuid()+'.tmp';try{await fs.writeFile(tmp,safeStorage.encryptString(JSON.stringify(data)),{mode:0o600,flag:'wx'});await fs.rename(tmp,paths[scope]);}catch(e){await fs.rm(tmp,{force:true}).catch(()=>{});throw e;}}
+ async function write(scope,data){for(const rows of Object.values(data.groups))for(const row of rows)row.data=stripVerifiers(row.data,0,scope);for(const [key,rows] of Object.entries(data.groups))for(const row of rows)Completion.synchronize(row,data.audit?.[key]||[],now);requireCrypto();await fs.mkdir(baseDir,{recursive:true,mode:0o700});const tmp=paths[scope]+'.'+uuid()+'.tmp';try{await fs.writeFile(tmp,safeStorage.encryptString(JSON.stringify(data)),{mode:0o600,flag:'wx'});await fs.rename(tmp,paths[scope]);}catch(e){await fs.rm(tmp,{force:true}).catch(()=>{});throw e;}}
  function serial(action){const task=pending.catch(()=>{}).then(action);pending=task.then(()=>{},()=>{});return task;}
  const bank=(scope,id)=>{if(scope==='personal'){if(id)throw Error('Personal profiles cannot belong to ACO customers.');return 'owner';}if(scope!=='aco')throw Error('Unknown Personal/ACO profile bank.');return memberId(id);};
  const brief=p=>{const completion=Completion.synchronize(p,[],now);return {stage:p.stage,missing:completion.missing,completedAt:p.completedAt||null,bank:p.bank||'working',id:p.id,email:p.email,retailer:p.retailer,label:p.label,status:p.status,source:p.source,createdAt:p.createdAt,revision:Number.isSafeInteger(p.revision)?p.revision:0};};
@@ -59,7 +61,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   if(!Array.isArray(rows)||rows.length<1||rows.length>500)throw Error('Import between 1 and 500 profiles at once.');
   if(!['active','available','needs-repair'].includes(status))throw Error('Invalid profile state.');
   const mapped=rows.map((item,i)=>{
-   const data=stripVerifiers(item),email=emailFrom(data);if(!email)throw Error('Profile '+(i+1)+' has no valid account email; complete it before import.');
+   const data=stripVerifiers(item,0,scope),email=emailFrom(data);if(!email)throw Error('Profile '+(i+1)+' has no valid account email; complete it before import.');
    if(JSON.stringify(data).length>16000)throw Error('Profile '+(i+1)+' exceeds the encrypted bank record size limit.');
    return {id:uuid(),label:name(data.profile_name||data.profileName||data.name||data.id||email),email,retailer:r,status,source:name(source).slice(0,50),createdAt:now(),revision:0,data};
   });
@@ -131,7 +133,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    const before=JigCore.get(profile.data,mapping['shipping.address1']);
    const after=JigCore.get(changed.records[0],mapping['shipping.address1']);
    if(!after||before===after&&chosen.address.address2===JigCore.get(profile.data,mapping['shipping.address2']))throw Error('No shipping address fields would change.');
-   if(commit){profile.jiggedAt=now();profile.data=stripVerifiers(require('./profile-library-core').syncCardholderToProfile(changed.records[0]));profile.revision=(profile.revision||0)+1;auditRecord(d,key,'address-jig',profile.email,{retailer:profile.retailer,addressId:baseAddress.id,ruleIds:chosen.ruleIds});await write(scope,d);}
+   if(commit){profile.jiggedAt=now();profile.data=stripVerifiers(require('./profile-library-core').syncCardholderToProfile(changed.records[0]),0,scope);profile.revision=(profile.revision||0)+1;auditRecord(d,key,'address-jig',profile.email,{retailer:profile.retailer,addressId:baseAddress.id,ruleIds:chosen.ruleIds});await write(scope,d);}
    return {profileId:profile.id,email:profile.email,retailer:profile.retailer,original:before,preview:chosen.address,ruleIds:chosen.ruleIds,availableVariants:chosen.variants,saved:commit};
   });
  }
@@ -163,7 +165,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     if(change.address2&&!mapping['shipping.address2'])throw Error('Profile has no address line 2 field to preserve its real unit. All edits were cancelled.');
     const rewritten=JigAssignments.assign({records:[profile.data],mapping,indices:[0],addresses:[change],scope,origin:scope,
       customerId:scope==='aco'?key:null,sourceCustomerId:scope==='aco'?key:null},JigCore);
-    changes.push({profile,data:stripVerifiers(require('./profile-library-core').syncCardholderToProfile(rewritten.records[0])),addressId:change.addressId});
+    changes.push({profile,data:stripVerifiers(require('./profile-library-core').syncCardholderToProfile(rewritten.records[0]),0,scope),addressId:change.addressId});
    }
    for(const update of changes){
     update.profile.jiggedAt=now();update.profile.data=update.data;update.profile.revision=(update.profile.revision||0)+1;
@@ -179,7 +181,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function createBlank(scope,customerId,retailer,format,data,beforeWrite){const key=bank(scope,customerId),r=retailerId(retailer);return serial(async()=>{
   const d=await read(scope),rows=d.groups[key]||[],email=emailFrom(data);if(rows.length>=10000)throw Error('Profile vault is full.');
   if(email&&rows.some(x=>x.email===email&&x.retailer===r))throw Error('This account email already has a profile in the same vault and retailer.');
-  const row={id:uuid(),label:name(data.profile_name||data.name||'Blank profile'),email,retailer:r,format,status:'draft',source:'owner-created-profile',createdAt:now(),revision:0,assetRefs:{},data:stripVerifiers(data)};
+  const row={id:uuid(),label:name(data.profile_name||data.name||'Blank profile'),email,retailer:r,format,status:'draft',source:'owner-created-profile',createdAt:now(),revision:0,assetRefs:{},data:stripVerifiers(data,0,scope)};
   d.groups[key]=[...rows,row];auditRecord(d,key,'create-blank-profile',email,{retailer:r});beforeWrite();await write(scope,d);return {...brief(row),format};
  });}
  async function editBlank(scope,customerId,profileId,revision,fields,beforeWrite){const key=bank(scope,customerId);return serial(async()=>{
@@ -256,7 +258,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    if(rows.length+newCount>10000)throw Error('Profile vault is full.');
    const built=await build(chosen.map(x=>x.email),structuredClone(rows),chosen.map(x=>x.account?structuredClone(x.account):null));
    if(!Array.isArray(built)||built.length!==count)throw Error('Profile generation failed. Nothing was saved.');
-   const added=built.map((item,i)=>{if(emailFrom(item.data)!==chosen[i].email)throw Error('Email assignment mismatch.');const prior=chosen[i].account;return {...prior,id:prior?.id||uuid(),email:chosen[i].email,label:name(item.data.profile_name||item.data.name),retailer:r,format:item.format,status:'draft',source:'owner-created-profile',createdAt:prior?.createdAt||now(),revision:(prior?.revision??-1)+1,assetRefs:{...item.assetRefs,...(chosen[i].entry?{emailId:chosen[i].entry.id}:{})},data:stripVerifiers(item.data)};});
+   const added=built.map((item,i)=>{if(emailFrom(item.data)!==chosen[i].email)throw Error('Email assignment mismatch.');const prior=chosen[i].account;return {...prior,id:prior?.id||uuid(),email:chosen[i].email,label:name(item.data.profile_name||item.data.name),retailer:r,format:item.format,status:'draft',source:'owner-created-profile',createdAt:prior?.createdAt||now(),revision:(prior?.revision??-1)+1,assetRefs:{...item.assetRefs,...(chosen[i].entry?{emailId:chosen[i].entry.id}:{})},data:stripVerifiers(item.data,0,scope)};});
    for(let i=0;i<added.length;i++){const entry=chosen[i].entry;if(entry){entry.profileId=added[i].id;entry.usedAt=now();}for(const e of emailRows(d,key))if(e.retailer===r&&e.email===added[i].email){e.profileId=added[i].id;e.usedAt=now();}auditRecord(d,key,'create-from-pools',added[i].email,{retailer:r});}
    const consumed=new Set(chosen.filter(x=>x.account).map(x=>x.account.id));
    d.groups[key]=[...rows.filter(x=>!consumed.has(x.id)),...added];beforeWrite();await write(scope,d);return {scope,customerId:scope==='aco'?key:null,retailer:r,created:added.length,profiles:added.map(brief)};
@@ -270,7 +272,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   return serial(async()=>{
    const d=await read(scope),other=await read(scope==='personal'?'aco':'personal'),rows=d.groups[key]||[],seen=new Set(),prepared=[];
    for(const item of entries){
-    const retailer=retailerId(item.retailer),data=stripVerifiers(item.data),email=normalizeEmail(emailFrom(data)),token=retailer+'|'+email;
+    const retailer=retailerId(item.retailer),data=stripVerifiers(item.data,0,scope),email=normalizeEmail(emailFrom(data)),token=retailer+'|'+email;
     if(!email)throw Error('Every live profile needs a valid account email.');
     if(seen.has(token))throw Error('The import contains the same email more than once for '+retailer+'. Remove that duplicate before importing.');seen.add(token);
     const matches=rows.filter(x=>x.retailer===retailer&&x.email===email);

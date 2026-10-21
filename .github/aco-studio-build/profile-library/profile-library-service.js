@@ -82,6 +82,14 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
     if(!/^\d{12,19}$/.test(String(c.number||'').replace(/\D/g,''))||!/^(0[1-9]|1[0-2])$/.test(c.month||'')||!/^20\d\d$/.test(c.year||'')||!String(c.cardholder||'').trim()||String(c.cardholder).length>120||String(c.customSecurityCode||'').length>64)throw Error('Enter complete card number, holder and expiration.');
     C.putCard(data,c);
    }
+   if(p.cardCvv!==undefined){
+    if(a.scope!=='personal')throw Error('Card-code editing is available only in your unlocked Personal vault.');
+    if(row.sourceLinked||row.websiteAuthoritative||row.source==='website-linked-profile')throw Error('Use the local imported profile to edit its card code.');
+    if(typeof p.cardCvv!=='string'||!/^\d{3,4}$|^$/.test(p.cardCvv))throw Error('Enter a 3- or 4-digit CVV, or leave it blank.');
+    for(const holder of [data,data.card])if(holder)for(const key of ['cvv','cvc','cid','cc_cvv','cvv2','securityCode','security_code'])if(Object.hasOwn(holder,key))holder[key]='';
+    for(const holder of [data,data.card])if(holder&&/^\d{3,4}$/.test(String(holder.custom_security_code||'')))holder.custom_security_code='';
+    if(D.formatOf(data)==='shikari')data.cc_cvv=p.cardCvv;else{data.card||={};data.card.cvv=p.cardCvv;}
+   }
    const linked=a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false;
    let remote=null;
    if(linked){

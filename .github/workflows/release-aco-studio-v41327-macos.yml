@@ -1,4 +1,4 @@
-name: Verify ACO Studio 4.13.32 Mac two-way sync and native installers
+name: Verify ACO Studio 4.13.33 Mac two-way sync and native installers
 on:
   push:
     branches: [main]
@@ -12,10 +12,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-live-profiles-432-macos
+  group: aco-studio-import-retention-433-macos
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.32'
+  ACO_VERSION: '4.13.33'
 jobs:
   mac:
     name: ${{ matrix.arch }} navigation, installer, update and rollback
@@ -213,7 +213,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-4.13.32-*
+          pattern: ACO-Studio-4.13.33-*
           path: installers
           merge-multiple: true
       - name: Verify Apple Silicon before publishing
@@ -221,7 +221,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,json,hashlib
-          root=pathlib.Path('installers');v='4.13.32';platforms={};sums=[]
+          root=pathlib.Path('installers');v='4.13.33';platforms={};sums=[]
           arch='arm64'
           mode=(root/f'signing-{arch}.txt').read_text().strip()
           assert mode in ('adhoc','developer-id')
@@ -234,7 +234,7 @@ jobs:
             with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
             sums.append(digest+'  '+p.name)
             if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
-          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Live Profiles bank with retailer sorting, editable stored profiles and automatic unused PKC email pooling.','platforms':platforms},indent=2))
+          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Restore owner Personal profile card-code retention, viewing and editing.','platforms':platforms},indent=2))
           (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n');(root/'release-tag.txt').write_text(tag)
           PY
       - name: Release the tested installers and advance verified feed
@@ -243,15 +243,15 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.32 adds Live Profiles for current profiles, separate from working and completed preparation banks. Import multiple Shikari CSV and Valor JSON files, review retailer assignments for Target, Walmart, PKC, Costco and Sam’s, then store profiles without changing their current details. Edit, jig and export while keeping Live membership. Matching stored profiles require reviewed replacement and stale previews cannot overwrite newer edits. Unclaimed emails are automatically added once to the same owner vault’s PKC email pool, excluding existing PKC profiles and reservations across vaults. Existing pool creation, Drop News and native updates are preserved.
+          ACO Studio 4.13.33 corrects imported card-code retention in the owner’s encrypted Personal vault. Personal imports preserve supplied CVV/CVC values, the Personal profile payment editor includes a masked code with Show/Hide controls, edits and jigs retain the code, and explicit local profile exports include it. The older Personal importer uses the same retention behavior. Codes removed by earlier versions must be restored from the original files or entered in the profile editor. Customer and website-linked payment handling is unchanged.
 
           Native source regressions, packaging and launch/update checks must pass before these assets publish. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.32 Mac' --notes-file notes.md --prerelease
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.33 Mac' --notes-file notes.md --prerelease
           else
-            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.32 Mac' --notes-file notes.md --prerelease
+            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.33 Mac' --notes-file notes.md --prerelease
           fi
           gh release upload aco-studio-macos-updates installers/mac-update.json --repo "$GITHUB_REPOSITORY" --clobber
 
