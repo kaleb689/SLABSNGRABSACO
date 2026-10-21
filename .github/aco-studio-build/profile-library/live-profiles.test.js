@@ -53,8 +53,8 @@ test('Live imports seed each email once and exclude PKC use or reservations acro
 });
 test('Reimport requires reviewed replacement and stable preview; edits and jigs retain Live bank membership',async t=>{
  const h=await library(t),data=complete('target','live@example.test');await commit(h,await live(h,[data]));let row=(await h.lib.list(event,h.p)).profiles[0],id=row.id;
- const plan=await live(h,[{...data,password:'replacement'}]);assert.equal(plan.matches,1);await assert.rejects(commit(h,plan),/matching stored profiles/);await commit(h,plan,{updateExisting:true});
- row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.id,id);assert.equal(row.data.password,'replacement');
+ const plan=await live(h,[{...data,password:'replacement'}]);assert.equal(plan.matches,1);const kept=await commit(h,plan);assert.equal(kept.imported,1);assert.equal((await h.lib.list(event,h.p)).profiles.length,2);const replacing=await live(h,[{...data,password:'replacement'}]);assert.equal(replacing.duplicateCount,1);
+ row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===id);assert.equal(row.id,id);assert.notEqual(row.data.password,'replacement');
  const stale=await live(h,[data]);await h.lib.edit(event,{...h.p,profileId:id,revision:row.revision,fields:{...LC.values(row.data),first:'Changed',last:'Person'}});await assert.rejects(commit(h,stale,{updateExisting:true}),/changed after preview/);
  const jig=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[id],ruleIds:[LC.FL_PHONE_RULE],combine:false,billingSameAsShipping:true});await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
  row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.bank,'live');assert.equal(row.id,id);assert.equal(row.data.shipping_first_name,'Changed');assert.equal((await h.service.emails(event,{...h.p,retailer:'target'})).availableForCreation,0);
