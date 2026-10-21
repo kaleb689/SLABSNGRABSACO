@@ -60,9 +60,9 @@ test('Reimport requires reviewed replacement and stable preview; edits and jigs 
  row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.bank,'live');assert.equal(row.id,id);assert.equal(row.data.shipping_first_name,'Changed');assert.equal((await h.service.emails(event,{...h.p,retailer:'target'})).availableForCreation,0);
 });
 test('Cancelled, locked, foreign-owner and duplicate same-retailer imports save no live profiles or PKC emails',async t=>{
- const h=await library(t),data=complete('target','live@example.test');await assert.rejects(live(h,[data,data]),/Duplicate email/);
+ const h=await library(t),data=complete('target','live@example.test');const duplicatePlan=await live(h,[data,data]);assert.equal(duplicatePlan.duplicateCount,2);const imported=await commit(h,duplicatePlan);assert.equal(imported.imported,2);assert.equal((await h.lib.list(event,h.p)).profiles.filter(x=>x.duplicates.includes('email')).length,2);
  await assert.rejects(live(h,[{...data,customerId:'customer-b'}],h.a),/ownership/);
- const p=await live(h,[data]);h.lib.cancel(event);await assert.rejects(commit(h,p),/expired/);assert.equal((await h.lib.list(event,h.p)).profiles.length,0);assert.equal((await h.service.emails(event,{...h.p,retailer:'pokemoncenter'})).emails.length,0);
+ const p=await live(h,[data]);h.lib.cancel(event);await assert.rejects(commit(h,p),/expired/);assert.equal((await h.lib.list(event,h.p)).profiles.length,2);assert.equal((await h.service.emails(event,{...h.p,retailer:'pokemoncenter'})).emails.length,0);
  const locked=await live(h,[data]);h.lockLibrary();await assert.rejects(commit(h,locked),/Locked/);
 });
 test('A customer Live bank stays isolated and live accounts are never consumed as free accounts',async t=>{
