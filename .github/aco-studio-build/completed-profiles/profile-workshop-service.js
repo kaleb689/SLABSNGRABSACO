@@ -195,12 +195,12 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
  async function generate(e,p){const {scope,id}=await access(e,p),generation=epoch(e);
   Draft.blank(p.retailer,p.format,{}); // Validate retailer and format before selecting assets.
   const aIDs=ids(p.addressIds,'addresses'),cIDs=ids(p.cardIds,'cards');
-  return addressBanks.withWorkshopAddresses(scope,id,aIDs,addresses=>cardVault(scope).withSelectedForJig(cardKey(scope,id),cIDs,cards=>profiles.createEmailProfiles(scope,id,p.retailer,p.count,async(emails,inventory)=>{
+  return addressBanks.withWorkshopAddresses(scope,id,aIDs,addresses=>cardVault(scope).withSelectedForJig(cardKey(scope,id),cIDs,cards=>profiles.createEmailProfiles(scope,id,p.retailer,p.count,async(emails,inventory,accounts=[])=>{
    if(cards.some(c=>c.previouslyAssigned||inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)))throw Error('A selected card is already used. Choose unused cards.');
    if(p.allowCardReuse!==true&&cards.length<emails.length)throw Error('Select one unused card per profile or enable balanced card reuse.');
-   const records=emails.map((email,i)=>Draft.blank(p.retailer,p.format,{email,label:(p.label||'Profile')+' '+(i+1)},uuid));
+   const records=emails.map((email,i)=>Draft.blank(p.retailer,p.format,{...(accounts[i]?Draft.toValues(accounts[i].data):{}),email,label:(p.label||'Profile')+' '+(i+1)},uuid));
    const result=Fields.build({records,indices:records.map((_,i)=>i),scope,customerId:id,addresses,cards,choices:{address:true,card:true,name:p.randomNames===true},allowCardReuse:p.allowCardReuse===true,mirrorBilling:true});
-   return result.records.map((data,i)=>({data,format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}}));
+   return result.records.map((data,i)=>({data:syncCardholderToProfileName(data),format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}}));
   },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');})));
  }
 
@@ -314,3 +314,4 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
 }
 function registerWorkshop(options){const service=createWorkshop(options);for(const method of ['assets','addCard','addAddress','manageResource','emails','importEmails','generate','create','edit','load','preview','apply','save','exportFile','exportSaved'])options.ipcMain.handle('profile:workshop:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:workshop:cancel',(e,t)=>{options.requireOwner(e);return service.cancel(e,t);});return service;}
 module.exports={createWorkshop,registerWorkshop,numberOf};
+

@@ -221,9 +221,20 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function usedEmails(retailer){const stores=await Promise.all([read('personal'),read('aco')]);
   return new Set(stores.flatMap(d=>[...Object.values(d.groups).flat(),...Object.values(d.emailBanks||{}).flat()]).filter(x=>x.retailer===retailer).map(x=>normalizeEmail(x.email)).filter(Boolean));
  }
+ // An available retailer row is an account, not a second email to import.
+ function freeAccounts(rows,retailer){return rows.filter(x=>x.retailer===retailer&&x.status==='available'&&!x.sourceLinked&&!x.websiteAuthoritative);}
+ function creationInventory(rows,allProfiles,emails,retailer){
+  const free=freeAccounts(rows,retailer),freeIds=new Set(free.map(x=>x.id));
+  const used=new Set(allProfiles.filter(x=>x.retailer===retailer&&!freeIds.has(x.id)).map(x=>normalizeEmail(x.email)));
+  const seen=new Set(used),accounts=[];
+  for(const row of free){const email=normalizeEmail(row.email);if(email&&!seen.has(email)){seen.add(email);accounts.push({email,account:row});}}
+  for(const entry of emails){if(entry.retailer===retailer&&!entry.profileId&&!seen.has(entry.email)){seen.add(entry.email);accounts.push({email:entry.email,entry});}}
+  return {accounts,used};
+ }
  async function emailInventory(scope,customerId,retailer){await pending;const key=bank(scope,customerId),r=retailerId(retailer),d=await read(scope);
-  const other=await read(scope==='personal'?'aco':'personal'),used=new Set([...Object.values(d.groups).flat(),...Object.values(other.groups).flat()].filter(x=>x.retailer===r).map(x=>normalizeEmail(x.email)));
-  return {scope,customerId:scope==='aco'?key:null,retailer:r,emails:emailRows(d,key).filter(x=>x.retailer===r).map(x=>({id:x.id,email:x.email,status:x.profileId||used.has(x.email)?'used':'available'}))};
+  const other=await read(scope==='personal'?'aco':'personal'),rows=d.groups[key]||[],allProfiles=[...Object.values(d.groups).flat(),...Object.values(other.groups).flat()];
+  const inventory=creationInventory(rows,allProfiles,emailRows(d,key),r);
+  return {scope,customerId:scope==='aco'?key:null,retailer:r,freeAccounts:inventory.accounts.filter(x=>x.account).length,availableForCreation:inventory.accounts.length,emails:inventory.accounts.map(x=>({id:x.account?.id||x.entry.id,email:x.email,status:'available',source:x.account?'account':'email'})).concat(emailRows(d,key).filter(x=>x.retailer===r&&!inventory.accounts.some(a=>a.email===x.email)).map(x=>({id:x.id,email:x.email,status:'used'})))};
  }
  async function importEmails(scope,customerId,retailer,values,beforeWrite){const key=bank(scope,customerId),r=retailerId(retailer);
   if(!Array.isArray(values)||!values.length||values.length>5000||typeof beforeWrite!=='function')throw Error('Import 1-5000 emails.');
@@ -239,15 +250,16 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   if(!Number.isInteger(count)||count<1||count>500||typeof build!=='function'||typeof beforeWrite!=='function')throw Error('Create 1-500 profiles.');
   return serial(async()=>{const d=await read(scope),rows=d.groups[key]||[],other=await read(scope==='personal'?'aco':'personal');
    const allProfiles=[...Object.values(d.groups).flat(),...Object.values(other.groups).flat()];
-   const used=new Set(allProfiles.filter(x=>x.retailer===r).map(x=>normalizeEmail(x.email)));
-   const available=emailRows(d,key).filter(x=>x.retailer===r&&!x.profileId&&!used.has(x.email));
-   if(available.length<count)throw Error('Not enough unused emails in this vault and retailer.');
-   if(rows.length+count>10000)throw Error('Profile vault is full.');
-   const chosen=available.slice(0,count),built=await build(chosen.map(x=>x.email),structuredClone(rows));
+   const available=creationInventory(rows,allProfiles,emailRows(d,key),r).accounts;
+   if(available.length<count)throw Error('Not enough unused emails or free accounts in this vault and retailer.');
+   const chosen=available.slice(0,count),newCount=chosen.filter(x=>!x.account).length;
+   if(rows.length+newCount>10000)throw Error('Profile vault is full.');
+   const built=await build(chosen.map(x=>x.email),structuredClone(rows),chosen.map(x=>x.account?structuredClone(x.account):null));
    if(!Array.isArray(built)||built.length!==count)throw Error('Profile generation failed. Nothing was saved.');
-   const added=built.map((item,i)=>{if(emailFrom(item.data)!==chosen[i].email)throw Error('Email assignment mismatch.');return {id:uuid(),email:chosen[i].email,label:name(item.data.profile_name||item.data.name),retailer:r,format:item.format,status:'draft',source:'owner-created-profile',createdAt:now(),revision:0,assetRefs:{...item.assetRefs,emailId:chosen[i].id},data:stripVerifiers(item.data)};});
-   for(let i=0;i<added.length;i++){chosen[i].profileId=added[i].id;chosen[i].usedAt=now();auditRecord(d,key,'create-from-email',added[i].email,{retailer:r});}
-   d.groups[key]=[...rows,...added];beforeWrite();await write(scope,d);return {scope,customerId:scope==='aco'?key:null,retailer:r,created:added.length,profiles:added.map(brief)};
+   const added=built.map((item,i)=>{if(emailFrom(item.data)!==chosen[i].email)throw Error('Email assignment mismatch.');const prior=chosen[i].account;return {...prior,id:prior?.id||uuid(),email:chosen[i].email,label:name(item.data.profile_name||item.data.name),retailer:r,format:item.format,status:'draft',source:'owner-created-profile',createdAt:prior?.createdAt||now(),revision:(prior?.revision??-1)+1,assetRefs:{...item.assetRefs,...(chosen[i].entry?{emailId:chosen[i].entry.id}:{})},data:stripVerifiers(item.data)};});
+   for(let i=0;i<added.length;i++){const entry=chosen[i].entry;if(entry){entry.profileId=added[i].id;entry.usedAt=now();}for(const e of emailRows(d,key))if(e.retailer===r&&e.email===added[i].email){e.profileId=added[i].id;e.usedAt=now();}auditRecord(d,key,'create-from-pools',added[i].email,{retailer:r});}
+   const consumed=new Set(chosen.filter(x=>x.account).map(x=>x.account.id));
+   d.groups[key]=[...rows.filter(x=>!consumed.has(x.id)),...added];beforeWrite();await write(scope,d);return {scope,customerId:scope==='aco'?key:null,retailer:r,created:added.length,profiles:added.map(brief)};
   });
  }
 
@@ -315,3 +327,4 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  return Object.freeze({paths,retailers:RETAILERS,librarySettings,libraryTransaction,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
+
