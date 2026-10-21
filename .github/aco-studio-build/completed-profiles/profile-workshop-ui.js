@@ -68,7 +68,7 @@
   const box=bq('profiles');box.replaceChildren();
   for(const row of bulkRows.filter(x=>x.retailer===bulkRetailer)){
    const label=d.createElement('label'),cb=d.createElement('input'),span=d.createElement('span');cb.type='checkbox';cb.value=row.id;cb.checked=bulkSelected.has(row.id);
-   span.textContent=[row.label||row.email,row.email,row.stage==='completed'?'Completed':'In progress',row.missing?.length?'Missing: '+row.missing.join(', '):''].filter(Boolean).join(' | ');
+   span.textContent=[row.label||row.email,row.email,row.bank==='live'?'Live Profiles · currently in use':'Working profiles',row.stage==='completed'?'Completed':'In progress',row.missing?.length?'Missing: '+row.missing.join(', '):''].filter(Boolean).join(' | ');
    cb.addEventListener('change',()=>{cb.checked?bulkSelected.add(row.id):bulkSelected.delete(row.id);bulkToken=null;bq('review').hidden=true;bulkControls();});label.append(cb,span);box.append(label);
   }
   if(!box.children.length)box.textContent='No saved '+(retail[bulkRetailer]||bulkRetailer)+' profiles in this vault.';
@@ -295,3 +295,4 @@
  const shortcuts=d.createElement('div');shortcuts.className='buttons';for(const [label,fn]of [['+ Create Blank Profile',()=>openDraft()],['Cards & Addresses Vault',()=>openVault()]]){const b=d.createElement('button');b.type='button';b.className='btn secondary';b.textContent=label;b.addEventListener('click',()=>void fn());shortcuts.append(b);}$('studioStage-import')?.querySelector('header')?.after(shortcuts);
  controls();
 })();
+
