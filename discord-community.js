@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
+import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
@@ -2336,7 +2337,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   // Mirror the bell into the owner's private Users-SKUs / sku-requests channel.
   async function ensureOwnerSkuReminderPanel(message, products) {
     if (!skuRequestsChannelId || !ownerId || !isNewDropPost(message) || !dropChannelIds.has(message.channel_id) ||
-        message.author?.bot || message.webhook_id) return;
+        (message.author?.bot && !isFormattedDropPost(message, appId)) || message.webhook_id) return;
     await withSkuReminderPanelQueue(async () => {
       const panels = await readSkuFile(skuReminderPanelsFile);
       const previous = panels[message.id];
@@ -2385,7 +2386,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     });
   }
   async function ensureSkuControls(message) {
-    if (!dropChannelIds.has(message.channel_id) || message.author?.bot || message.webhook_id) return;
+    if (!dropChannelIds.has(message.channel_id) ||
+        (message.author?.bot && !isFormattedDropPost(message, appId)) || message.webhook_id) return;
     const products = parseDropSkus(message);
     const upcomingWithoutSkus = message.channel_id !== tonightChannelId &&
       isNewDropPost(message) && (message.type ?? 0) === 0;
@@ -2435,12 +2437,15 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       for (let page = 0; page < 20 && !foundMain; page++) {
         const history = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
         for (const message of history) {
-          if (!message.message_reference?.message_id && message.type === 0 && !message.author?.bot && !message.webhook_id && parseDropSkus(message).length) {
+          if (!message.message_reference?.message_id && message.type === 0 &&
+              (!message.author?.bot || isFormattedDropPost(message, appId)) &&
+              !message.webhook_id && parseDropSkus(message).length) {
             active.push(message);
             foundMain = true;
             break;
           }
-          if (!message.author?.bot && !message.webhook_id && (message.type === 0 || message.type === 19)) {
+          if ((!message.author?.bot || isFormattedDropPost(message, appId)) &&
+              !message.webhook_id && (message.type === 0 || message.type === 19)) {
             if (parseDropSkus(message).length) active.push(message);
             else if (channelId !== tonightChannelId && isNewDropPost(message) && !keptUpcomingMain) {
               active.push(message);
@@ -2466,7 +2471,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   async function notifyRetailerSkuChange(message) {
     if (typeof onRetailerSkuUpdate !== "function" ||
-        !isRetailerSkuPost(message, guildId, retailerDropLabels)) return;
+        !(isRetailerSkuPost(message, guildId, retailerDropLabels) ||
+          (isFormattedDropPost(message, appId) && message.guild_id === guildId &&
+            Object.hasOwn(retailerDropLabels, String(message.channel_id || ""))))) return;
     const products = parseDropSkus(message);
     const fingerprint = dropSkuFingerprint(products);
     if (!fingerprint) return;
@@ -2608,7 +2615,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             if (!previous.pinned && [0, 19].includes(previous.type)) {
               try { await api(`/channels/${d.channel_id}/messages/${previous.id}`, "DELETE"); }
               catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
-              if (!previous.author?.bot && !previous.webhook_id) retiredSources.add(previous.id);
+              if ((!previous.author?.bot && !previous.webhook_id) ||
+                  isFormattedDropPost(previous, appId)) retiredSources.add(previous.id);
             }
           }
           before = history.at(-1).id;
@@ -2628,6 +2636,36 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       } catch (error) {
         discordCommunityStatus.error = `Drop message cleanup: ${error.message}`;
         console.error("Discord drop message cleanup:", error.message);
+      }
+    }
+    // Only the owner can invoke automatic monitor-paste conversion. Regular
+    // staff drop posts and free-form messages keep their existing behavior.
+    const monitored = isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")
+      ? parseMonitorDropProducts(d.content) : [];
+    if (monitored.length) {
+      try {
+        const label = retailerDropLabels[d.channel_id] ||
+          (d.channel_id === tonightChannelId ? "Dropping Tonight" : "Upcoming Drops");
+        const payloads = formattedDropPayloads(monitored, label);
+        const rendered = [];
+        for (const payload of payloads) {
+          const saved = await api(`/channels/${d.channel_id}/messages`, "POST", payload);
+          const formatted = { ...saved, channel_id: d.channel_id, guild_id: guildId,
+            content: payload.content, embeds: payload.embeds, type: 0,
+            author: saved.author || { id: appId, bot: true } };
+          rendered.push(formatted);
+          await ensureSkuControls(formatted);
+          await notifyRetailerSkuChange(formatted);
+        }
+        if (rendered.length === payloads.length) {
+          // Delete the raw pasted monitor report only after the formatted
+          // products and their selection panels are successfully published.
+          await api(`/channels/${d.channel_id}/messages/${d.id}`, "DELETE")
+            .catch(error => console.warn("Formatted drop published; pasted source remains:", error.message));
+          return;
+        }
+      } catch (error) {
+        console.error("Discord monitor-paste formatting failed; original message preserved:", error.message);
       }
     }
     await ensureSkuControls(d);
@@ -3534,7 +3572,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const posts = await Promise.all([...dropChannelIds].map(async channelId => {
       const messages = await api("/channels/" + channelId + "/messages?limit=100");
       const candidates = (Array.isArray(messages) ? messages : []).filter(message =>
-        !message.author?.bot && !message.webhook_id && !message.message_reference?.message_id &&
+        (!message.author?.bot || isFormattedDropPost(message, appId)) &&
+        !message.webhook_id && !message.message_reference?.message_id &&
         (message.type === 0 || message.type === undefined));
       const source = candidates.find(message => parseDropSkus(message).length) ||
         (channelId === tonightChannelId || !retailerDropLabels[channelId] ? candidates[0] : null);
