@@ -1,0 +1,29 @@
+name: Verify drop monitor paste formatting
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'drop-monitor-format.js'
+      - 'discord-community.js'
+      - 'test/drop-monitor-format.test.js'
+      - 'test/discord-skus.test.js'
+      - 'verify-discord-controls.mjs'
+      - '.github/workflows/verify-drop-monitor-format.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node --check drop-monitor-format.js
+      - run: node --check discord-community.js
+      - run: node --test test/drop-monitor-format.test.js test/discord-skus.test.js test/drop-sku-alerts.test.mjs
+      - run: node verify-discord-controls.mjs
