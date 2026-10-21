@@ -1,4 +1,4 @@
-name: Verify ACO Studio 4.13.31 Windows two-way sync installer
+name: Verify ACO Studio 4.13.32 Windows two-way sync installer
 on:
   push:
     branches: [main]
@@ -9,10 +9,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-pool-creation-431-windows
+  group: aco-studio-live-profiles-432-windows
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.31'
+  ACO_VERSION: '4.13.32'
 jobs:
   windows:
     name: Windows x64 installer, source tests and installed application smoke
@@ -181,7 +181,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ACO-Studio-4.13.31-windows-x64
+          name: ACO-Studio-4.13.32-windows-x64
           path: installers
       - name: Verify and publish tested Windows installer
         env:
@@ -190,21 +190,21 @@ jobs:
           python3 - <<'PY'
           import pathlib,hashlib,base64,shutil
           root=pathlib.Path('installers')
-          for name in ['ACO-Studio-Setup-4.13.31-x64.exe','latest.yml','windows-signing-status.txt','regression-results.txt']:
+          for name in ['ACO-Studio-Setup-4.13.32-x64.exe','latest.yml','windows-signing-status.txt','regression-results.txt']:
            matches=list(root.rglob(name));assert len(matches)==1,(name,matches)
            if matches[0]!=root/name:shutil.copyfile(matches[0],root/name)
           assert '# fail 0' in (root/'regression-results.txt').read_text()
-          p=root/'ACO-Studio-Setup-4.13.31-x64.exe'
+          p=root/'ACO-Studio-Setup-4.13.32-x64.exe'
           assert p.stat().st_size>50_000_000
           with p.open('rb') as f:assert f.read(2)==b'MZ'
           with p.open('rb') as f:digest=base64.b64encode(hashlib.file_digest(f,'sha512').digest()).decode()
           assert digest in (root/'latest.yml').read_text()
           PY
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.31 adds Create profiles from pools directly to Profiles. View saved address, unused card, free retailer account and unused email counts, choose addresses and cards, and enter the bulk quantity without importing again. Existing available accounts retain their login details and are consumed once. Resource capacity updates with selections and after creation. Personal and customer pools remain isolated. Existing Drop News, jig controls, exports and native updates are preserved.
+          ACO Studio 4.13.32 adds Live Profiles for current profiles, separate from working and completed preparation banks. Import multiple Shikari CSV and Valor JSON files, review retailer assignments for Target, Walmart, PKC, Costco and Sam’s, then store profiles without changing their current details. Edit, jig and export while keeping Live membership. Matching stored profiles require reviewed replacement and stale previews cannot overwrite newer edits. Unclaimed emails are automatically added once to the same owner vault’s PKC email pool, excluding existing PKC profiles and reservations across vaults. Existing pool creation, Drop News and native updates are preserved.
 
           Native source regressions, packaging and launch/update checks must pass before these assets publish. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
           NOTES
-          gh release create aco-studio-v4.13.31-windows-unsigned installers/*.exe installers/latest.yml installers/windows-signing-status.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.31 Windows' --notes-file notes.md --prerelease
-          gh release upload aco-studio-windows-updates installers/ACO-Studio-Setup-4.13.31-x64.exe installers/latest.yml --repo "$GITHUB_REPOSITORY" --clobber
+          gh release create aco-studio-v4.13.32-windows-unsigned installers/*.exe installers/latest.yml installers/windows-signing-status.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.32 Windows' --notes-file notes.md --prerelease
+          gh release upload aco-studio-windows-updates installers/ACO-Studio-Setup-4.13.32-x64.exe installers/latest.yml --repo "$GITHUB_REPOSITORY" --clobber
 

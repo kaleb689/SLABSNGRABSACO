@@ -1,0 +1,74 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
+const {makeProfileVault}=require('../profile-vault'),{makeJigBanks}=require('../jig-address-banks'),{makeVault}=require('../local-card-vault');
+const D=require('../profile-draft-core'),F=require('../jig-field-core'),Core=require('../app'),{createWorkshop}=require('../profile-workshop-service');
+const event={sender:{id:1}},foreign={sender:{id:2}};
+const crypto={isEncryptionAvailable:()=>true,encryptString:s=>Buffer.from('ENCRYPTED:'+s),decryptString:b=>{assert.ok(b.toString().startsWith('ENCRYPTED:'));return b.toString().slice(10);}};
+const address={label:'Home',address1:'100 Example Avenue',address2:'Apt 2',city:'Sample',state:'FL',zip:'33324'};
+const card={label:'Test card',number:'4242424242424242',cardholder:'Saved Holder',expMonth:'08',expYear:'2031',brand:'Visa'};
+const fullCard={id:'card-a',label:'Test card',number:card.number,cardholder:card.cardholder,month:card.expMonth,year:card.expYear,type:card.brand};
+const choices=(n)=>({address:!!(n&1),card:!!(n&2),name:!!(n&4)});
+async function env(t){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-workshop-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));let unlocked=true,time=1000,allowExport=false;const writes=[];
+ const profiles=makeProfileVault({baseDir:dir,safeStorage:crypto}),addresses=makeJigBanks({baseDir:dir,safeStorage:crypto});
+ const personal=makeVault({baseDir:dir,safeStorage:crypto,fileName:'jig-studio-personal-cards.encrypted'}),customers=makeVault({baseDir:dir,safeStorage:crypto});
+ function guard(e,scope){if(e.sender.id!==1)throw Error('Not the owner window');if(scope==='personal'&&!unlocked)throw Error('Personal locked');}
+ const service=createWorkshop({profiles,addressBanks:addresses,cardVault:s=>s==='personal'?personal:customers,
+  authorize:async(e,s,id)=>{guard(e,s);if(s==='aco'&&!['customer-a','customer-b'].includes(id))throw Error('Unauthorized customer');return s==='personal'?null:id;},guard,now:()=>time,
+  chooseSave:async(_e,o)=>({filePath:path.join(dir,o.name)}),confirmExport:async()=>allowExport,writeFile:async(...args)=>writes.push(args)});
+ const p={scope:'personal',customerId:null},a={scope:'aco',customerId:'customer-a'},b={scope:'aco',customerId:'customer-b'};
+ return {dir,profiles,addresses,personal,customers,service,p,a,b,writes,lock:()=>{unlocked=false;},setTime:v=>time=v,export:()=>allowExport=true};
+}
+
+const {createLibrary}=require('../profile-library-service'),LC=require('../profile-library-core');
+async function library(t){const h=await env(t);let allowed=true;const lib=createLibrary({profiles:h.profiles,cardVault:s=>s==='personal'?h.personal:h.customers,authorize:async(e,s,id)=>{if(e.sender.id!==1)throw Error('Not owner');if(s==='aco'&&!['customer-a','customer-b'].includes(id))throw Error('Unauthorized customer');return s==='personal'?null:id;},guard:(e,s)=>{if(e.sender.id!==1||!allowed)throw Error('Locked');},chooseSave:async(_e,o)=>({filePath:path.join(h.dir,o.name)}),confirmExport:async()=>true,writeFile:async(...args)=>h.writes.push(args),getCustomerProfileSource:async id=>({customer:{id,name:id},linked:[{customerId:id,assignmentId:'linked-1',retailer:'pokemoncenter',active:true,data:complete('pokemoncenter','linked@example.test')}]})});return {...h,lib,lockLibrary:()=>allowed=false};}
+function complete(retailer,email){const data=D.blank(retailer,LC.format(retailer),{email,first:'Alex',last:'Example',phone:'9545550100','shipping.address1':'100 Example Avenue','shipping.city':'Sample','shipping.state':'FL','shipping.zip':'33324','billing.address1':'100 Example Avenue','billing.city':'Sample','billing.state':'FL','billing.zip':'33324'});LC.putCard(data,fullCard);return data;}
+async function preview(h,data,owner=h.p,retailer='target'){return h.lib.importPreview(event,{...owner,retailer,fileName:'profiles.json',text:JSON.stringify(data)});}
+async function commit(h,preview,extra={}){return h.lib.importCommit(event,{token:preview.token,confirmed:true,alreadyJigged:true,repairs:{allowShared:true},...extra});}
+
+async function live(h,rows,owner=h.p,retailer='target',fileName='profiles.json'){
+ return h.lib.importPreview(event,{...owner,bank:'live',retailer,fileName,text:JSON.stringify(rows)});
+}
+test('Live imports keep current data, credentials and retailer banks, with no duplicate PKC seeding',async t=>{
+ const h=await library(t),retailers=['target','walmart','pokemoncenter','costco','sams'];
+ const files=retailers.map(r=>{const data=complete(r,r+'@example.test');data.password='current-login';data.extraSetting='keep-current';return {fileName:(r==='pokemoncenter'?'PKC':r)+' profiles.json',text:JSON.stringify([data])};});
+ const plan=await h.lib.importPreview(event,{...h.p,bank:'live',retailer:'target',files});assert.deepEqual(plan.counts,Object.fromEntries(retailers.map(r=>[r,1])));
+ const result=await commit(h,plan);assert.equal(result.imported,5);assert.equal(result.pkcEmailsAdded,4);
+ const rows=(await h.lib.list(event,h.p)).profiles;assert.equal(rows.length,5);assert.ok(rows.every(x=>x.bank==='live'&&x.liveSince));
+ for(const row of rows){assert.equal(row.data.password,'current-login');assert.equal(row.data.extraSetting,'keep-current');assert.equal(row.data.shipping_street||row.data.shipping.addressLine1,address.address1);}
+ const emails=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});assert.equal(emails.availableForCreation,4);assert.ok(!emails.emails.some(x=>x.email==='pokemoncenter@example.test'&&x.status==='available'));
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
+});
+test('Retailer metadata overrides filenames; unlabeled Valor uses the selected retailer',async t=>{
+ const h=await library(t),a=complete('walmart','a@example.test');a.retailer='Sam’s Club';
+ const p=await live(h,[a],h.p,'target','Walmart profiles.json');assert.equal(p.profiles[0].retailer,'sams');await commit(h,p);
+ const b=await live(h,[complete('costco','b@example.test')],h.p,'costco');assert.equal(b.profiles[0].retailer,'costco');await commit(h,b);
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,2);
+});
+test('Live imports seed each email once and exclude PKC use or reservations across customer/private pools',async t=>{
+ const h=await library(t);await h.profiles.importRows({...h.a,retailer:'pokemoncenter',rows:[complete('pokemoncenter','used@example.test')]});
+ await h.service.importEmails(event,{...h.b,retailer:'pokemoncenter',emails:['reserved@example.test']});
+ const plan=await live(h,[{...complete('target','new@example.test'),retailer:'target'},{...complete('walmart','new@example.test'),retailer:'walmart'},complete('target','used@example.test'),complete('target','reserved@example.test')]);
+ const result=await commit(h,plan);assert.equal(result.pkcEmailsAdded,1);const inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});assert.deepEqual(inventory.emails.map(x=>x.email),['new@example.test']);
+ const another=await live(h,[complete('costco','new@example.test')],h.p,'costco');assert.equal((await commit(h,another)).pkcEmailsAdded,0);
+});
+test('Reimport requires reviewed replacement and stable preview; edits and jigs retain Live bank membership',async t=>{
+ const h=await library(t),data=complete('target','live@example.test');await commit(h,await live(h,[data]));let row=(await h.lib.list(event,h.p)).profiles[0],id=row.id;
+ const plan=await live(h,[{...data,password:'replacement'}]);assert.equal(plan.matches,1);await assert.rejects(commit(h,plan),/matching stored profiles/);await commit(h,plan,{updateExisting:true});
+ row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.id,id);assert.equal(row.data.password,'replacement');
+ const stale=await live(h,[data]);await h.lib.edit(event,{...h.p,profileId:id,revision:row.revision,fields:{...LC.values(row.data),first:'Changed',last:'Person'}});await assert.rejects(commit(h,stale,{updateExisting:true}),/changed after preview/);
+ const jig=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[id],ruleIds:[LC.FL_PHONE_RULE],combine:false,billingSameAsShipping:true});await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
+ row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.bank,'live');assert.equal(row.id,id);assert.equal(row.data.shipping_first_name,'Changed');assert.equal((await h.service.emails(event,{...h.p,retailer:'target'})).availableForCreation,0);
+});
+test('Cancelled, locked, foreign-owner and duplicate same-retailer imports save no live profiles or PKC emails',async t=>{
+ const h=await library(t),data=complete('target','live@example.test');await assert.rejects(live(h,[data,data]),/Duplicate email/);
+ await assert.rejects(live(h,[{...data,customerId:'customer-b'}],h.a),/ownership/);
+ const p=await live(h,[data]);h.lib.cancel(event);await assert.rejects(commit(h,p),/expired/);assert.equal((await h.lib.list(event,h.p)).profiles.length,0);assert.equal((await h.service.emails(event,{...h.p,retailer:'pokemoncenter'})).emails.length,0);
+ const locked=await live(h,[data]);h.lockLibrary();await assert.rejects(commit(h,locked),/Locked/);
+});
+test('A customer Live bank stays isolated and live accounts are never consumed as free accounts',async t=>{
+ const h=await library(t);await commit(h,await live(h,[complete('target','customer@example.test')],h.a));
+ const row=(await h.lib.list(event,h.a)).profiles[0];assert.equal(row.bank,'live');assert.equal((await h.lib.list(event,h.b)).profiles.length,0);assert.equal((await h.lib.list(event,h.p)).profiles.length,0);
+ await h.profiles.setStatus('aco','customer-a',row.id,'available');assert.equal((await h.service.emails(event,{...h.a,retailer:'target'})).freeAccounts,0);
+ const plan=await live(h,[{...complete('target','other@example.test'),retailer:'target'},{...complete('pokemoncenter','other@example.test'),retailer:'pkc'}],h.a);
+ assert.equal((await commit(h,plan)).pkcEmailsAdded,0);
+});
