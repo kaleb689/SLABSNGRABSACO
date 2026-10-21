@@ -19,20 +19,21 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   if(v.includes('costco')||v.includes('cosco'))return 'costco';if(v.includes('sams'))return 'sams';return null;
  }
  async function livePreview(e,p,a,parsed){
-  const existing=await profiles.fieldSnapshot(a.scope,a.id),entries=[],seen=new Set(),counts={};
+  const existing=await profiles.fieldSnapshot(a.scope,a.id),entries=[],occurrences=new Map(),counts={};
   for(const raw of parsed.records){
    const retailer=detectedRetailer(raw.retailerId||raw.retailer||raw.store||raw.site)||detectedRetailer(p.fileName.replace(/\.[^.]+$/,''))||p.retailer;C.retailer(retailer);
    const native=(Object.hasOwn(raw,'cc_number')&&C.format(retailer)==='shikari')||(raw.card&&raw.shipping&&C.format(retailer)==='valor');
    const data=native?structuredClone(raw):C.normalized(raw,retailer),email=C.email(C.values(data).email);
    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('Every live profile needs a valid account email.');data.email=email;
    if(JSON.stringify(data).length>16000)throw Error('A profile exceeds the supported record size.');
-   const key=retailer+'|'+email;if(seen.has(key))throw Error('Duplicate email in the same retailer in this import: '+email);seen.add(key);
-   const matches=existing.filter(x=>x.retailer===retailer&&x.email===email);if(matches.length>1)throw Error('Resolve existing same-retailer duplicates for '+email+' first.');
-   entries.push({retailer,data,format:C.format(retailer),expectedHash:matches[0]?require('./jig-field-core').hash(matches[0]):null});counts[retailer]=(counts[retailer]||0)+1;
+   const key=retailer+'|'+email,occurrence=occurrences.get(key)||0;occurrences.set(key,occurrence+1);
+   const matches=existing.filter(x=>x.retailer===retailer&&x.email===email);
+   entries.push({retailer,data,format:C.format(retailer),occurrence,expectedHash:matches.length===1?require('./jig-field-core').hash(matches[0]):null,storedMatches:matches.length});counts[retailer]=(counts[retailer]||0)+1;
   }
   const token=uuid();a.check();for(const [id,plan]of plans)if(now()-plan.at>600000)plans.delete(id);if(plans.size>30)throw Error('Close an older import preview first.');
   plans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,bank:'live',entries,at:now(),epoch:ep(e)});
-  return {token,bank:'live',count:entries.length,counts,matches:entries.filter(x=>x.expectedHash).length,profiles:entries.map(x=>({email:x.data.email,retailer:x.retailer,duplicates:x.expectedHash?['email']:[]}))};
+  const duplicates=entries.filter(x=>x.storedMatches>0||occurrences.get(x.retailer+'|'+x.data.email)>1);
+   return {token,bank:'live',count:entries.length,counts,matches:entries.filter(x=>x.expectedHash&&x.occurrence===0).length,duplicateCount:duplicates.length,duplicateGroups:[...new Set(duplicates.map(x=>x.retailer+'|'+x.data.email))].length,profiles:entries.map(x=>({email:x.data.email,retailer:x.retailer,duplicates:x.storedMatches>0||occurrences.get(x.retailer+'|'+x.data.email)>1?['email']:[]}))};
  }
  async function importPreview(e,p){const a=await access(e,p);C.retailer(p.retailer);
  if(p.bank==='live'&&Array.isArray(p.files)){
@@ -77,6 +78,12 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
    if(row.needsReview)throw Error('Resolve the website conflict before editing this profile. Nothing was overwritten.');
    const data=D.manualEdit(row.data,p.fields),email=C.email(data.email);
    if(email!==row.email&&ctx.rows.some(x=>x.id!==row.id&&x.retailer===row.retailer&&x.email===email))throw Error('Email already used in this retailer pool.');
+   const requestedPoolEmail=p.poolEmail!==undefined?C.email(p.poolEmail):null;
+   if(requestedPoolEmail!==null){
+    if(row.sourceLinked||row.websiteAuthoritative||row.source==='website-linked-profile')throw Error('Website-linked logins must be replaced through their authorized retailer account pool.');
+    if(!requestedPoolEmail||requestedPoolEmail!==email||requestedPoolEmail===row.email)throw Error('Select a different unused email from the same retailer pool.');
+    if(!ctx.emails.some(x=>x.retailer===row.retailer&&x.email===requestedPoolEmail&&!x.profileId))throw Error('Selected email is no longer available in this retailer email pool. Refresh and try again.');
+   }
    if(p.card){
     const c=p.card;
     if(!/^\d{12,19}$/.test(String(c.number||'').replace(/\D/g,''))||!/^(0[1-9]|1[0-2])$/.test(c.month||'')||!/^20\d\d$/.test(c.year||'')||!String(c.cardholder||'').trim()||String(c.cardholder).length>120||String(c.customSecurityCode||'').length>64)throw Error('Enter complete card number, holder and expiration.');
@@ -109,7 +116,10 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
     // the website is the canonical copy. Never jig its returned value again.
     row.websiteAuthoritative=true;}
    else if(row.pendingSourceHash){row.sourceHash=row.pendingSourceHash;delete row.pendingSourceHash;}
-   for(const bank of ctx.emails)if(bank.email===email&&bank.retailer===row.retailer&&!bank.profileId)bank.profileId=row.id;
+   if(requestedPoolEmail!==null){
+    for(const bank of ctx.emails)if(bank.retailer===row.retailer&&bank.profileId===row.id&&bank.email!==email){bank.profileId=null;bank.usedAt=null;}
+   }
+   for(const bank of ctx.emails)if(bank.email===email&&bank.retailer===row.retailer&&!bank.profileId){bank.profileId=row.id;bank.usedAt=now();}
    ctx.audit(linked?'website-and-library-edit':'library-edit',email,{retailer:row.retailer});
    return {updated:true,remoteSaved:linked,localOnly:!linked};
   },a.check);
