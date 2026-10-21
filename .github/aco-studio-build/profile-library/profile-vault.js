@@ -270,17 +270,18 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   const key=bank(scope,customerId);
   if(!Array.isArray(entries)||!entries.length||entries.length>10000||typeof beforeWrite!=='function')throw Error('Choose 1-10000 live profiles.');
   return serial(async()=>{
-   const d=await read(scope),other=await read(scope==='personal'?'aco':'personal'),rows=d.groups[key]||[],seen=new Set(),prepared=[];
+   const d=await read(scope),other=await read(scope==='personal'?'aco':'personal'),rows=d.groups[key]||[],seen=new Map(),prepared=[];
    for(const item of entries){
     const retailer=retailerId(item.retailer),data=stripVerifiers(item.data,0,scope),email=normalizeEmail(emailFrom(data)),token=retailer+'|'+email;
     if(!email)throw Error('Every live profile needs a valid account email.');
-    if(seen.has(token))throw Error('The import contains the same email more than once for '+retailer+'. Remove that duplicate before importing.');seen.add(token);
+    const occurrence=seen.get(token)||0;seen.set(token,occurrence+1);
     const matches=rows.filter(x=>x.retailer===retailer&&x.email===email);
-    if(matches.length>1)throw Error('Multiple stored profiles match '+retailer+' / '+email+'. Resolve those duplicates first.');
-    const prior=matches[0];
+    // Existing duplicates are retained for review; importing must not erase or block them.
+    const prior=updateExisting&&occurrence===0&&matches.length===1?matches[0]:null;
     if(prior&&(prior.sourceLinked||prior.websiteAuthoritative||prior.source==='website-linked-profile'))throw Error('Edit this website-linked account through its customer profile; a live import cannot replace it.');
-    if(prior&&!updateExisting)throw Error('Matching profiles already exist. Review and enable replacing matching stored profiles.');
-    if((prior?require('./jig-field-core').hash(prior):null)!==item.expectedHash)throw Error('Stored profile changed after preview. Preview the import again.');
+    // Without explicit replacement, create an independently editable Live record.
+    if(prior&&require('./jig-field-core').hash(prior)!==item.expectedHash)throw Error('Stored profile changed after preview. Preview the import again.');
+    if(!prior&&item.expectedHash&&updateExisting&&occurrence===0&&matches.length===1)throw Error('Stored profile changed after preview. Preview the import again.');
     prepared.push({...prior,id:prior?.id||uuid(),retailer,email,label:name(data.profile_name||data.name||email),group:retailer,source:'owner-created-profile',status:'active',bank:'live',liveSince:prior?.liveSince||now(),createdAt:prior?.createdAt||now(),revision:(prior?.revision??-1)+1,data,format:item.format,assetRefs:prior?.assetRefs||{}});
    }
    if(rows.length+prepared.filter(x=>!rows.some(r=>r.id===x.id)).length>10000)throw Error('Profile vault is full.');
