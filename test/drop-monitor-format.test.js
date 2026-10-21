@@ -101,7 +101,7 @@ test("owner can paste raw monitoring paragraph: exact product name, price, PID a
   for(const embed of rendered.embeds) {
     assert.equal(embed.color, 0x38dce8);
     assert.equal(embed.footer.text, FORMATTED_DROP_MARKER);
-    assert.match(embed.description, /^\\*\\*.+\\*\\*\\nPrice \\$\\d+\\.\\d{2}\\nSKU: \\d+/);
+    assert.match(embed.description, /^\*\*.+\*\*\nPrice \$\d+\.\d{2}\nSKU: \d+/);
   }
   assert.deepEqual(parseDropSkus({content:rendered.content,embeds:rendered.embeds}).map(x => x.sku),items.map(x => x.sku));
 });
@@ -113,9 +113,9 @@ test("formats monitor pastes for all retailer and shared drop channels", () => {
   }
 });
 test("supports inline Price and SKU and ignores unrecognized chatter", () => {
-  const items = parseMonitorDropProducts("Magic Booster\\nPrice $114.97\\nSKU: ABC-234\\nHi!\\nPrice?\\n42");
+  const items = parseMonitorDropProducts("Magic Booster\nPrice $114.97\nSKU: ABC-234\nHi!\nPrice?\n42");
   assert.deepEqual(items,[{name:"Magic Booster",price:"114.97",sku:"ABC-234"}]);
-  assert.deepEqual(parseMonitorDropProducts("hi there\\nnot a SKU\\n420"),[]);
+  assert.deepEqual(parseMonitorDropProducts("hi there\nnot a SKU\n420"),[]);
 });
 test("segments more than ten products, leaving all SKUs selectable", () => {
   const items = Array.from({length:21},(_,i)=>({name:"Pokemon Product "+i, price:"29.99",sku:String(21000000000+i)}));
