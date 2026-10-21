@@ -24,7 +24,7 @@ function parseFiles(entries, retailer) {
     const indices = [];
     for (const [i, raw] of parsed.records.entries()) {
       assertPersonalSource(raw);
-      const data = stripVerifiers(raw), email = emailFrom(data);
+      const data = stripVerifiers(raw,0,'personal'), email = emailFrom(data);
       if (!email) throw Error(entry.name + ': profile ' + (i + 1) + ' needs a valid account email. Nothing was imported.');
       if (JSON.stringify(data).length > 16000) throw Error(entry.name + ': profile ' + (i + 1) + ' is too large.');
       indices.push(rows.length);
@@ -156,3 +156,4 @@ function registerPersonalImporter(options) {
   return importer;
 }
 module.exports = {createPersonalImporter, registerPersonalImporter, parseFiles, selectedFile};
+
