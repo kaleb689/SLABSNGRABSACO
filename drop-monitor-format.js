@@ -5,7 +5,10 @@ const COLOR = 0x38dce8;
 const clean = value => String(value || "").replace(/[*_`~]/g, "").trim();
 const safe = value => String(value || "").replace(/[\r\n<>@`]/g, " ").trim();
 function isNoise(line) {
-  return /^(?:walmart draws?|target drops?|pkc drops?|pokemon(?: center)? drops?|costco drops?|sam.?s drops?|poke signals|app|monitors\b|links?\b|image\b|seller\b|type\b|new product\b|time\b|cart limit\b|pid\b|sku\b|ebay\b|report bugs\b|@)/i.test(line);
+  // Match exact monitor labels, not prefixes of real product names such as
+  // "Apple..." or "Image Comics...".
+  return /^(?:walmart draws?|target drops?|pkc drops?|pokemon(?: center)? drops?|costco drops?|sam.?s drops?|poke signals|app|links?|image|seller|type|new product|time|cart limit|pid|sku|ebay|report bugs)$/i.test(line) ||
+    /^monitors\b/i.test(line) || /^@/.test(line);
 }
 export function parseMonitorDropProducts(input) {
   const lines = String(input || "").split(/\r?\n/).map(clean).filter(Boolean);
