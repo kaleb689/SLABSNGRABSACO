@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { sendBackgroundAdminPush } from "./admin-push.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { sendDiscordLapseChecklistGroup, sendDiscordRtpReturnSummary } from "./discord-community.js";
+import { sendDiscordLapseChecklistGroup, rememberDiscordLapseChecklistGroup, sendDiscordRtpReturnSummary } from "./discord-community.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 
 const API = "https://discord.com/api/v10";
@@ -257,7 +257,10 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           })).digest("hex");
           const previous = state[groupStateKey];
           if (previous?.messageId && previous.fingerprint === fingerprint &&
-              group.notices.every(notice => Boolean(state[notice]))) continue;
+              group.notices.every(notice => Boolean(state[notice]))) {
+            rememberDiscordLapseChecklistGroup({...group, messageId: previous.messageId});
+            continue;
+          }
           const messageId = await sendDiscordLapseChecklistGroup({ ...group, messageId: previous?.messageId || "" });
           if (messageId) {
             state[groupStateKey] = { messageId: String(messageId), fingerprint, updatedAt: new Date().toISOString() };
