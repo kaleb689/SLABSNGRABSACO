@@ -58,6 +58,7 @@ const aliases={
   cardNumber:["cardnumber","ccnumber","creditcardnumber","paymentnumber","cardnum","number"],
   cardExpiry:["expiry","expiration","expirationdate","expmmyy","ccexp","cardexpiration","cardexpiry"],
   cardholder:["cardholder","cardholdername","billingname","nameoncard"],
+  cardSecurityCode:["securitycode","cardsecuritycode","cardverificationcode","cvv","cvc","cvv2","cvc2","ccv","ccv2","verificationcode"],
   billingAddress:["billingaddress","billingaddress1","billingstreet","billingstreet1"],
   billingCity:["billingcity"],billingState:["billingstate"],billingZip:["billingzip","billingpostalcode"]
 };
