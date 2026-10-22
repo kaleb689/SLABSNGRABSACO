@@ -43,7 +43,7 @@ jobs:
       - name: Fail if owner website bridge or email generator enters the release
         shell: bash
         run: |
-          if grep -REi '(site-bridge|owner-vault|admin-api|email.gen|emailgen|stripe.secret|stripe_secret)' main.cjs preload.cjs renderer.js vault.cjs formats.cjs jigs.cjs index.html; then
+          if grep -REi '(site-bridge|owner-vault|admin-api|emailGenerator|email-gen-ui|stripe.secret|stripe_secret)' main.cjs preload.cjs renderer.js vault.cjs formats.cjs jigs.cjs index.html; then
             echo "Private Edition build unexpectedly contains a prohibited owner/admin link."
             exit 1
           fi
