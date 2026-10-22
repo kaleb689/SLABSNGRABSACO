@@ -1,9 +1,9 @@
 (()=>{"use strict";
-const RELEASE="https://github.com/kaleb689/SLABSNGRABSACO/releases/download/aco-studio-v1.0.3-preview/";
+const RELEASE="https://github.com/kaleb689/SLABSNGRABSACO/releases/download/aco-studio-v1.0.4-preview/";
 const DOWNLOADS=[
- ["Mac — Apple Silicon (M1/M2/M3/M4)", "ACO.STUDIO-1.0.3-arm64.dmg"],
- ["Mac — Intel", "ACO.STUDIO-1.0.3.dmg"],
- ["Windows — x64", "ACO.STUDIO.Setup.1.0.3.exe"]
+ ["Mac — Apple Silicon (M1/M2/M3/M4)", "ACO.STUDIO-1.0.4-arm64.dmg"],
+ ["Mac — Intel", "ACO.STUDIO-1.0.4.dmg"],
+ ["Windows — x64", "ACO.STUDIO.Setup.1.0.4.exe"]
 ];
 const status=document.getElementById("status"),ready=document.getElementById("ready");
 async function api(url,options={}){
