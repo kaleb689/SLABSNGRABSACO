@@ -1,7 +1,7 @@
 name: Verify notifications once per event
 on:
   push:
-    branches: [fix/shipping-dm-once-per-order-stage-20261022]
+    branches: [main, fix/shipping-dm-once-per-order-stage-20261022]
     paths:
       - 'notification-delivery-guard.js'
       - 'shipping-discord-dm-ledger.js'
@@ -11,6 +11,7 @@ on:
       - 'discord-community.js'
       - 'server.js'
       - 'test/notification-delivery-guard.test.mjs'
+      - 'test/notification-wiring.test.mjs'
       - 'test/order-notifications.test.js'
       - '.github/workflows/verify-notification-delivery.yml'
   pull_request:
@@ -49,4 +50,4 @@ jobs:
       - name: Install web push test dependency
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run durable notification and gateway tests
-        run: node --test test/notification-delivery-guard.test.mjs test/order-notifications.test.js test/sku-reminders.test.mjs test/drop-sku-alerts.test.mjs test/discord-skus.test.js
+        run: node --test test/notification-delivery-guard.test.mjs test/notification-wiring.test.mjs test/order-notifications.test.js test/sku-reminders.test.mjs test/drop-sku-alerts.test.mjs test/discord-skus.test.js
