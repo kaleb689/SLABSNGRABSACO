@@ -10,6 +10,9 @@ on:
       - 'test/billing-receipts.test.mjs'
       - 'server.js'
       - 'public/private-studio-site.js'
+      - 'public/aco-studio-downloads.js'
+      - 'public/aco-studio-downloads.html'
+      - 'test/aco-studio-purchase-downloads.test.mjs'
       - 'public/private-studio-site.css'
       - 'public/index.html'
       - 'test/private-studio-license.test.mjs'
@@ -31,6 +34,8 @@ jobs:
       - run: node --check private-studio-jig-permissions.js
       - run: node --check billing-receipts.js
       - run: node --check public/private-studio-site.js
+      - run: node --check public/aco-studio-downloads.js
+      - run: node --test test/aco-studio-purchase-downloads.test.mjs
       - run: node --check server.js
       - run: node --test test/private-studio-license.test.mjs test/private-studio-owner-test-key.test.mjs test/private-studio-jig-permissions.test.mjs test/billing-receipts.test.mjs
       - name: Ensure standalone application cannot touch original owner data
