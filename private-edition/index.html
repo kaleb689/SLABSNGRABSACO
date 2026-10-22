@@ -9,7 +9,10 @@
 <button class="primary" type="submit">Activate license</button></form><p id="activate-status" role="status">Checking existing license…</p>
 <small>Purchase and manage your subscription from your SLABSNGRABSACO website profile.</small>
   <details><summary>Recover saved data if your encrypted vault cannot open</summary>
-   <p>Enter the passphrase for a previously exported .sngbackup file. Recovery does not need your existing vault to be readable.</p>
+   <p>Restore an automatic encrypted snapshot on this computer, or a portable .sngbackup file if you moved devices.</p>
+   <button id="locked-snapshots-refresh" type="button">Find local encrypted recovery snapshots</button>
+   <div id="locked-snapshots-list" class="file-list" role="status"></div>
+   <p>For a portable backup, enter the passphrase you chose when creating it.</p>
    <input id="locked-backup-password" type="password" autocomplete="off" placeholder="Backup passphrase">
    <button id="locked-backup-restore" type="button">Restore encrypted backup</button>
   </details></div></div>
