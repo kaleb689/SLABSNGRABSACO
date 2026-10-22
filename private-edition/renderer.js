@@ -8,7 +8,7 @@ function node(tag,text,cls){const element=document.createElement(tag);if(text!==
 function button(label,click,cls){const b=node("button",label,cls);b.type="button";b.addEventListener("click",click);return b;}
 function nav(view){page=view;for(const section of document.querySelectorAll(".page"))section.classList.toggle("hidden",section.id!==view);
   for(const b of document.querySelectorAll("[data-view]"))b.classList.toggle("selected",b.dataset.view===view);
-  const title={home:"Welcome to your private ACO Studio workspace",accounts:"Account Banks",cards:"Card Bank",
+  const title={home:"Welcome to your ACO STUDIO workspace",accounts:"Account Banks",cards:"Card Bank",
     addresses:"Address Bank",jig:"Jig Studio",transfer:"Import / Export",rules:"Rules",
     license:"License",settings:"Settings"};
   $("page-title").textContent=title[view]||"ACO STUDIO";
