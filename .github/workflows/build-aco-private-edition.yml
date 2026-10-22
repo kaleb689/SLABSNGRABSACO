@@ -83,6 +83,7 @@ jobs:
       - name: Publish a prerelease for licensed testers
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: kaleb689/SLABSNGRABSACO
         run: |
           TAG="aco-studio-private-v1.0.0-preview"
           if gh release view "$TAG" >/dev/null 2>&1; then
