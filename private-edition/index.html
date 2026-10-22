@@ -1,15 +1,15 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>ACO Studio Private Edition</title><link rel="stylesheet" href="./styles.css"></head>
+<title>ACO STUDIO</title><link rel="stylesheet" href="./styles.css"></head>
 <body>
-<div id="lock" class="lock"><div class="lock-card"><div class="brand">ACO <span>STUDIO</span></div><p class="eyebrow">PRIVATE EDITION</p>
+<div id="lock" class="lock"><div class="lock-card"><div class="brand">ACO <span>STUDIO</span></div><p class="eyebrow">PERSONAL WORKSPACE</p>
 <h1>Activate your private workspace</h1><p>Your account, payment, and address banks remain encrypted on this computer. The website only checks whether your license is active.</p>
 <form id="activate"><label>License key<input id="key" autocomplete="off" spellcheck="false" placeholder="ACOP-XXXX-XXXX-XXXX-XXXX" required></label>
 <button class="primary" type="submit">Activate license</button></form><p id="activate-status" role="status">Checking existing license…</p>
 <small>Purchase and manage your subscription from your SLABSNGRABSACO website profile.</small></div></div>
 <div id="application" class="app hidden">
-<aside><div class="brand">ACO <span>STUDIO</span><small>PRIVATE EDITION</small></div><nav id="nav">
+<aside><div class="brand">ACO <span>STUDIO</span><small>PERSONAL WORKSPACE</small></div><nav id="nav">
 <button class="selected" data-view="home">⌂ <span>Home</span></button>
 <button data-view="accounts">▦ <span>Account Banks</span></button>
 <button data-view="cards">▤ <span>Card Bank</span></button>
@@ -19,7 +19,7 @@
 <button data-view="rules">☷ <span>Rules</span></button>
 <button data-view="license">⚿ <span>License</span></button>
 <button data-view="settings">⚑ <span>Settings</span></button>
-</nav><div class="side-foot"><strong>🔒 Your Private Workspace</strong><p>Encrypted local vault</p><p>No shared data or owner access</p></div></aside>
+</nav><div class="side-foot"><strong>🔒 Your Private Workspace</strong><p>Encrypted local vault</p><p>Stored securely on this device</p></div></aside>
 <main><header><div><div class="eyebrow">PERSONAL WORKSPACE</div><h1 id="page-title">Welcome to your private <em>ACO Studio</em> workspace</h1><p id="page-desc">Your profiles, bank data and export files stay under your control.</p></div><span class="active-pill">● License Active</span></header>
 <section id="home" class="page"><div class="banner"><div><h2>Private local workspace</h2><p>Your card, account and address banks are encrypted on your device. Nothing from these banks uploads to the website.</p></div><div class="pill">✓ No shared data</div></div>
 <div class="stat-grid"><button class="stat" data-go="accounts"><small>ACCOUNT BANKS</small><strong id="total-accounts">0</strong><span>Stored profiles</span></button><button class="stat" data-go="cards"><small>CARD BANK</small><strong id="total-cards">0</strong><span>Saved cards</span></button><button class="stat" data-go="addresses"><small>ADDRESS BANK</small><strong id="total-addresses">0</strong><span>Saved addresses</span></button><button class="stat" data-go="jig"><small>JIG STUDIO</small><strong>9</strong><span>Available rule categories</span></button></div>
@@ -42,7 +42,7 @@
 <div class="actions"><label>Retailer<select id="transfer-retailer" class="retailer"></select></label><button id="transfer-import" class="primary">Import any supported file</button></div><div id="transfer-list" class="file-list"></div></div></section>
 <section id="rules" class="page hidden"><div class="panel"><h2>Jig rule categories</h2><p>Directional text, street suffix, ordinal, double letter, fractional number, hyphen, random unit, phone, and random name. Each can be enabled independently in Jig Studio. Your existing source field names are preserved.</p><button data-go="jig" class="primary">Configure jigs →</button></div></section>
 <section id="license" class="page hidden"><div class="panel"><h2>License and subscription</h2><p>Your $15/month subscription is managed through the SLABSNGRABSACO website. The desktop app contacts only the license verification endpoint; local bank data is never transmitted.</p><button id="check-license" class="primary">Check license status</button><p id="license-state"></p></div></section>
-<section id="settings" class="page hidden"><div class="panel"><h2>Private Edition settings</h2><p>No website admin, email generation, other-customer visibility or account syncing exists in this application. Imported content remains in its encrypted local vault until you explicitly export or delete it.</p></div></section>
+<section id="settings" class="page hidden"><div class="panel"><h2>ACO STUDIO settings</h2><p>Your profile data and imported files remain in your encrypted local vault until you choose to export or delete them.</p></div></section>
 <footer role="status" id="status">Ready. Your private workspace is local.</footer>
 <div id="inspect" class="hidden" role="dialog" aria-modal="true"></div>
 </main></div><script src="./renderer.js"></script></body></html>
