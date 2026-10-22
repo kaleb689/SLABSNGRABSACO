@@ -56,7 +56,7 @@ const aliases={
   city:["city","shippingcity"], state:["state","shippingstate"],zip:["zip","zipcode","postalcode","shippingzip"],
   unit:["address2","street2","unit","apt","apartment","shippingaddress2"],
   cardNumber:["cardnumber","ccnumber","creditcardnumber","paymentnumber","cardnum","number"],
-  cardExpiry:["expiry","expiration","expirationdate","expmmyy","ccexp","cardexpiration"],
+  cardExpiry:["expiry","expiration","expirationdate","expmmyy","ccexp","cardexpiration","cardexpiry"],
   cardholder:["cardholder","cardholdername","billingname","nameoncard"],
   billingAddress:["billingaddress","billingaddress1","billingstreet","billingstreet1"],
   billingCity:["billingcity"],billingState:["billingstate"],billingZip:["billingzip","billingpostalcode"]
