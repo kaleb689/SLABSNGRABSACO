@@ -10,7 +10,7 @@ export function shippingDiscordDmKey({accountId,discordUserId,retailer,orderNumb
  const a=String(accountId||"").trim(),r=String(retailer||"").trim().toLowerCase();
  const o=String(orderNumber||"").trim().toLowerCase();
  const stage=String(status||"").trim().toLowerCase();
- if(!/^\\d{17,22}$/.test(recipient)||!a||!r||!o||!stages.has(stage))return null;
+ if(!/^\d{17,22}$/.test(recipient)||!a||!r||!o||!stages.has(stage))return null;
  return crypto.createHash("sha256").update(JSON.stringify([a,r,o,stage])).digest("hex");
 }
 export function createShippingDiscordDmLedger({dataDir,guard=createNotificationDeliveryGuard({dataDir})}={}){
