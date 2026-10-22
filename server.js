@@ -9101,10 +9101,14 @@ app.get("/api/admin/signup-consent-log", requireAdmin, async (req, res) => {
     const pendingReceipts = await readConsentEmailQueue();
     const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
     const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
-    return res.json({ ok: true, total: entries.length, offset,
+    const search = String(req.query.search || "").trim().toLowerCase().slice(0,150);
+    const matched = !search ? entries : entries.filter(item =>
+      [item.accountId,item.email,item.signupEmail,item.purchaseEmail,item.submissionId].some(value =>
+        String(value || "").toLowerCase().includes(search)));
+    return res.json({ ok: true, total: matched.length, offset,
       pendingEmailReceipts: Array.isArray(pendingReceipts) ? pendingReceipts.length : 0,
       receiptEmail: CONSENT_RECEIPT_EMAIL,
-      entries: entries.slice(Math.max(0, entries.length - offset - limit), Math.max(0, entries.length - offset)).reverse() });
+      entries: matched.slice(Math.max(0, matched.length - offset - limit), Math.max(0, matched.length - offset)).reverse() });
   } catch (error) {
     console.error("Consent ledger read failed:", error.message);
     return res.status(503).json({ error: "Consent ledger is unavailable or failed its integrity check." });
