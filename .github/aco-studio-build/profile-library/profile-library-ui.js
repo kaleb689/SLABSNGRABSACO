@@ -8,7 +8,7 @@
  separator('PERSONAL');if(personal)nav.append(personal);const personalProfiles=customerProfiles.cloneNode(true);nav.append(personalProfiles);if(email)nav.append(email);
  separator('SETTINGS');if(settings)nav.append(settings);if(notifications)nav.append(notifications);
  const main=d.createElement('main');main.id='profileLibraryPage';main.className='shell main profileLibrary';main.hidden=true;
- main.innerHTML='<header><div><div class="eyebrow" data-owner-title></div><h1>Profiles</h1><p>Completed profiles ready to export, grouped by owner and retailer.</p></div><div class="buttons"><button type="button" class="btn primary" data-create-pools>Create profiles from pools</button><button type="button" class="btn secondary" data-import>Import</button><button type="button" class="btn secondary" data-import-live>Import live profiles</button><button type="button" class="btn secondary" data-jig-selected disabled>Jig selected</button><button type="button" class="btn primary" data-export>Export selected</button></div></header><div class="profileLibraryControls"><label data-customer-label>Customer<select data-customer></select></label><label>Retailer<select data-retailer><option value="target">Target · Shikari CSV</option><option value="walmart">Walmart · Valor JSON</option><option value="pokemoncenter">Pokémon Center · Valor JSON</option><option value="costco">Costco · Valor JSON</option><option value="sams">Sam’s · Valor JSON</option></select></label><label>Search<input type="search" data-search placeholder="Email, card or address"></label><label>View<select data-view><option value="all">All profiles</option><option value="issues">Issues only</option><option value="duplicates">Duplicates only</option></select></label><button type="button" class="btn secondary" data-rules>Retailer jig rules</button><button type="button" class="btn secondary" data-sync>Sync linked profiles</button></div><div class="profileLibraryTabs"><button type="button" class="btn secondary" data-stage="completed" aria-pressed="true">Completed Profiles</button><button type="button" class="btn secondary" data-stage="in-progress">In Progress</button><button type="button" class="btn secondary" data-stage="live">Live Profiles</button><button type="button" class="btn plain" data-all>Select all visible</button><button type="button" class="btn plain" data-clear>Clear selection</button></div><p data-pool-counts role="status"></p><section class="profileResourceBanks" data-resource-banks><div class="profileResourceBank"><header><div><span class="eyebrow">AVAILABLE RESOURCES</span><h3>Card Bank <span data-card-count></span></h3></div><button type="button" class="btn slim secondary" data-manage-cards>Manage cards</button></header><div class="profileResourceList" data-card-bank><p>Loading saved cards…</p></div></div><div class="profileResourceBank"><header><div><span class="eyebrow">AVAILABLE RESOURCES</span><h3>Address Bank <span data-address-count></span></h3></div><button type="button" class="btn slim secondary" data-manage-addresses>Manage addresses</button></header><div class="profileResourceList" data-address-bank><p>Loading saved addresses…</p></div></div></section><p class="profileLibrarySummary" data-status role="status"></p><div class="profileLibraryLayout"><aside class="profileLibraryGroups" data-groups></aside><section class="profileLibraryCards" data-cards></section></div><input type="file" data-file hidden accept=".csv,.json,.txt,.tsv"><input type="file" data-live-file hidden multiple accept=".csv,.json,.txt,.tsv">';
+ main.innerHTML='<header><div><div class="eyebrow" data-owner-title></div><h1>Profiles</h1><p>Completed profiles ready to export, grouped by owner and retailer.</p></div><div class="buttons"><button type="button" class="btn primary" data-create-pools>Create profiles from pools</button><button type="button" class="btn secondary" data-import>Import</button><button type="button" class="btn secondary" data-import-live>Import live profiles</button><button type="button" class="btn secondary" data-jig-selected disabled>Jig selected</button><button type="button" class="btn secondary" data-bulk-move disabled>Move All Selected</button><button type="button" class="btn plain" data-bulk-delete disabled>Delete All Selected</button><button type="button" class="btn secondary" data-import-history>Import History</button><button type="button" class="btn primary" data-export>Export selected</button></div></header><div class="profileLibraryControls"><label data-customer-label>Customer<select data-customer></select></label><label>Retailer<select data-retailer><option value="target">Target · Shikari CSV</option><option value="walmart">Walmart · Valor JSON</option><option value="pokemoncenter">Pokémon Center · Valor JSON</option><option value="costco">Costco · Valor JSON</option><option value="sams">Sam’s · Valor JSON</option></select></label><label>Search<input type="search" data-search placeholder="Email, card or address"></label><label>View<select data-view><option value="all">All profiles</option><option value="issues">Issues only</option><option value="duplicates">Duplicates only</option></select></label><button type="button" class="btn secondary" data-rules>Retailer jig rules</button><button type="button" class="btn secondary" data-sync>Sync linked profiles</button></div><div class="profileLibraryTabs"><button type="button" class="btn secondary" data-stage="completed" aria-pressed="true">Completed Profiles</button><button type="button" class="btn secondary" data-stage="in-progress">In Progress</button><button type="button" class="btn secondary" data-stage="live">Live Profiles</button><button type="button" class="btn plain" data-all>Select all visible</button><button type="button" class="btn plain" data-clear>Clear selection</button></div><p data-pool-counts role="status"></p><section class="profileResourceBanks" data-resource-banks><div class="profileResourceBank"><header><div><span class="eyebrow">AVAILABLE RESOURCES</span><h3>Card Bank <span data-card-count></span></h3></div><button type="button" class="btn slim secondary" data-manage-cards>Manage cards</button></header><div class="profileResourceList" data-card-bank><p>Loading saved cards…</p></div></div><div class="profileResourceBank"><header><div><span class="eyebrow">AVAILABLE RESOURCES</span><h3>Address Bank <span data-address-count></span></h3></div><button type="button" class="btn slim secondary" data-manage-addresses>Manage addresses</button></header><div class="profileResourceList" data-address-bank><p>Loading saved addresses…</p></div></div></section><p class="profileLibrarySummary" data-status role="status"></p><div class="profileLibraryLayout"><aside class="profileLibraryGroups" data-groups></aside><section class="profileLibraryCards" data-cards></section></div><input type="file" data-file hidden accept=".csv,.json,.txt,.tsv"><input type="file" data-live-file hidden multiple accept=".csv,.json,.txt,.tsv">';
  $('sitePage').before(main);const q=s=>main.querySelector('[data-'+s+']');let scope='personal',customerId=null,rows=[],stage='completed',group='all',issueView='all',epoch=0,busy=false,selected=new Set(),syncing=false,syncQueued=false,bankAssets={addresses:[],cards:[]};
  const retailName={target:'Target',walmart:'Walmart',pokemoncenter:'Pokémon Center',costco:'Costco',sams:'Sam’s'};
  const duplicatesButton=d.createElement('button');duplicatesButton.type='button';duplicatesButton.className='btn secondary';duplicatesButton.textContent='Duplicates (0)';duplicatesButton.onclick=()=>{issueView='duplicates';q('view').value='duplicates';selected.clear();group='all';q('search').value='';draw();note('Showing only duplicate profiles. Edit, delete, or select an unused email from the matching retailer pool.');};q('view').closest('label').after(duplicatesButton);
@@ -165,6 +165,9 @@
  const selectedVisible=matching.filter(x=>selected.has(x.id));
  q('jig-selected').disabled=busy||!selectedVisible.length;
  q('jig-selected').textContent=selectedVisible.length?'Jig selected ('+selectedVisible.length+')':'Jig selected';
+ for(const key of ['bulk-move','bulk-delete'])q(key).disabled=busy||!selectedVisible.length;
+ q('bulk-move').textContent=selectedVisible.length?'Move All Selected ('+selectedVisible.length+')':'Move All Selected';
+ q('bulk-delete').textContent=selectedVisible.length?'Delete All Selected ('+selectedVisible.length+')':'Delete All Selected';
  }
  let pendingRefresh=false,refreshTicket=0;
  function editorBusy(){return !!d.querySelector('.profileLibraryModal')||!!d.activeElement?.closest?.('#profileLibraryPage input, #profileLibraryPage select, #profileLibraryPage textarea');}
@@ -241,6 +244,70 @@
  function openJig(row){if(row.sourceLinked){void linkedJig(row);return;}const owner=request();close();(owner.scope==='personal'?personal:customer)?.click();setTimeout(()=>void window.ACOProfileWorkshop.openSaved({...owner,profileId:row.id}),0);}
  q('customer').onchange=()=>{epoch++;websiteLoad++;websiteVault.open=false;websiteVault.querySelector('[data-web-records]').replaceChildren();customerId=q('customer').value||null;rows=[];bankAssets={addresses:[],cards:[]};selected.clear();group='all';issueView='all';q('view').value='all';drawResourceBanks();void refresh();};q('retailer').onchange=()=>{selected.clear();group='all';draw();void refresh();};q('search').oninput=()=>{if(q('search').value.trim())group='all';draw();};q('view').onchange=()=>{issueView=q('view').value;selected.clear();group='all';draw();note(issueView==='duplicates'?'Showing only duplicate profiles.':issueView==='issues'?'Showing only profiles that need attention.':customerName()+' · '+visible().length+' profiles');};for(const b of main.querySelectorAll('[data-stage]'))b.onclick=()=>{stage=b.dataset.stage;group='all';selected.clear();for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab===b));draw();};q('all').onclick=()=>{for(const r of visible())selected.add(r.id);draw();};q('clear').onclick=()=>{selected.clear();draw();};
  q('jig-selected').onclick=()=>void bulkJigSelected();
+ function chosenForBulk(){
+  const retailer=q('retailer').value,selectedRows=visible().filter(x=>selected.has(x.id)&&x.retailer===retailer);
+  if(!selectedRows.length)throw Error('Select profiles from this retailer and current tab.');
+  if(selectedRows.length>500)throw Error('Select no more than 500 profiles.');
+  const fromBank=stage==='live'?'live':'working';
+  if(selectedRows.some(x=>(x.bank==='live'?'live':'working')!==fromBank))
+   throw Error('Selection belongs to another bank. Reload and choose again.');
+  return {selectedRows,retailer,fromBank};
+ }
+ q('bulk-move').onclick=async()=>{
+  try{
+   const {selectedRows,retailer,fromBank}=chosenForBulk(),toBank=fromBank==='live'?'working':'live';
+   if(selectedRows.some(x=>x.sourceLinked))throw Error('Website-linked accounts cannot be moved locally; manage those through linked-account controls.');
+   if(!confirm('Move '+selectedRows.length+' selected '+retailName[retailer]+' profile(s) from '+fromBank+' to '+toBank+'? No profile data or linked website account will be changed.'))return;
+   const result=await api.bulkManage({...request(),operation:'move',retailer,fromBank,toBank,
+    profileIds:selectedRows.map(x=>x.id),revisions:selectedRows.map(x=>x.revision||0),confirmed:true});
+   selected.clear();await refresh();note('Moved '+result.count+' selected profiles into '+toBank+' for '+retailName[retailer]+'.');
+  }catch(error){note('Move failed: '+error.message);}
+ };
+ q('bulk-delete').onclick=async()=>{
+  try{
+   const {selectedRows,retailer,fromBank}=chosenForBulk();
+   if(selectedRows.some(x=>x.sourceLinked))throw Error('Website-linked profiles cannot be deleted locally.');
+   if(!confirm('DELETE all '+selectedRows.length+' selected local '+retailName[retailer]+' profiles from '+fromBank+'? Saved customer accounts, card banks, address banks and other retailers remain intact. The encrypted recovery snapshot is created before the change.'))return;
+   const result=await api.bulkManage({...request(),operation:'delete',retailer,fromBank,
+    profileIds:selectedRows.map(x=>x.id),revisions:selectedRows.map(x=>x.revision||0),confirmed:true});
+   selected.clear();await refresh();note('Deleted '+result.count+' selected LOCAL profiles. Use encrypted vault recovery if necessary.');
+  }catch(error){note('Delete failed: '+error.message);}
+ };
+ q('import-history').onclick=async()=>{
+  const at=epoch,owner=request();
+  try{
+   const {batches}=await api.importHistory(owner);if(at!==epoch||main.hidden)return;
+   const win=dialog('Import History · '+customerName());
+   win.body.append(text('p','Each import is recorded separately. Removing one batch deletes only profiles created by that upload. Website-linked accounts, other batches and pre-existing profiles that were updated are preserved.'));
+   if(!batches.length)win.body.append(text('p','No recorded import batches yet. Older profiles remain in their original banks; they are not assigned an unverified import history.'));
+   for(const batch of batches){
+    const box=d.createElement('article');box.className='profileLibraryCard';
+    const names=(batch.fileNames||[]).join(', ').slice(0,600);
+    box.append(text('strong',new Date(batch.at).toLocaleString()+' · '+(batch.bank==='live'?'Live':'Working')+' · '+(batch.retailers||[]).map(r=>retailName[r]||r).join(', ')),
+      text('p',batch.imported+' imported · '+batch.created+' newly created · '+batch.remaining+' still present'+
+        (batch.updatedExisting?' · '+batch.updatedExisting+' pre-existing updated (protected)':'')),
+      text('small',names||'Imported profile file'));
+    if(batch.removedAt)box.append(text('small','Batch removed: '+new Date(batch.removedAt).toLocaleString()));
+    else if(batch.protectedCount)box.append(text('small','Contains '+batch.protectedCount+' website-linked profiles. Unlink before removing batch.'));
+    else{
+     const remove=text('button','Remove this import batch');remove.type='button';remove.className='btn plain slim';
+     remove.onclick=async()=>{
+      if(!confirm('Remove '+batch.remaining+' remaining local profiles created by THIS exact import? '+batch.updatedExisting+
+       ' previously-existing profiles updated by the import will stay. Encrypted backup snapshots preserve a recovery path.'))return;
+      remove.disabled=true;
+      try{
+       const result=await api.removeImportBatch({...owner,batchId:batch.id,fingerprint:batch.fingerprint,confirmed:true});
+       if(!win.valid())return;win.wrap.remove();selected.clear();await refresh();
+       note('Removed '+result.deleted+' profiles from that import; '+result.updatedExistingPreserved+' earlier profiles preserved.');
+      }catch(error){win.status().textContent=error.message;remove.disabled=false;}
+     };
+     box.append(remove);
+    }
+    win.body.append(box);
+   }
+  }catch(error){note('Import history unavailable: '+error.message);}
+ };
+
  q('export').onclick=async()=>{try{const result=await api.exportFile({...request(),retailer:q('retailer').value,profileIds:visible().filter(x=>selected.has(x.id)).map(x=>x.id),customerName:customerName()});if(result.saved)note('Exported '+result.count+' profiles: '+result.name);}catch(e){note(e.message);}};
  q('import').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}if(stage==='live'){q('live-file').value='';q('live-file').click();return;}q('file').value='';q('file').click();};
  q('import-live').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}q('live-file').value='';q('live-file').click();};
