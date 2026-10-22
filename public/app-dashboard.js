@@ -129,6 +129,45 @@ if (appEnabled) {
     return `<article class="sng-product-row">${ranked ? `<b class="sng-rank">${index + 1}</b>` : ''}<div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong class="${display.value === 'Price pending' ? 'sng-awaiting-value' : ''}">${e(display.value)}</strong><small>${e(display.label)}</small></div></article>`;
   }).join('') || '<p class="sng-empty">No products in this date range.</p>';
 
+  // Build a direct result link only for a recognized official carrier and
+  // a valid tracking number. Do not send customers to opaque email redirects.
+  const officialCarrierHref = (shipping = {}) => {
+    const normalize = value => String(value || '').toUpperCase().replace(/[\s-]/g, '');
+    let carrier = String(shipping.carrier || '').trim().toLowerCase();
+    carrier = /^(?:ups|united parcel service)$/.test(carrier) ? 'ups' :
+      /^(?:fedex|federal express)$/.test(carrier) ? 'fedex' :
+      /^(?:usps|united states postal service)$/.test(carrier) ? 'usps' : '';
+    let number = normalize(shipping.trackingNumber);
+    if (!carrier || !number) {
+      try {
+        const link = new URL(String(shipping.trackingUrl || ''));
+        if (link.protocol === 'https:' && !link.username && !link.password) {
+          const host = link.hostname.toLowerCase();
+          const fromHost = host === 'ups.com' || host.endsWith('.ups.com') ? 'ups' :
+            host === 'fedex.com' || host.endsWith('.fedex.com') ? 'fedex' :
+            host === 'usps.com' || host.endsWith('.usps.com') ? 'usps' : '';
+          const param = fromHost === 'ups' ? ['tracknum','tracknums','trackn'] :
+            fromHost === 'fedex' ? ['trknbr','tracknumbers','trackingnumber'] :
+            fromHost === 'usps' ? ['tlabels','trackingnumber','tracknum'] : [];
+          const item = [...link.searchParams].find(([key]) => param.includes(key.toLowerCase()));
+          if (fromHost && item && (!carrier || carrier === fromHost)) {
+            carrier = fromHost;
+            if (!number) number = normalize(item[1]);
+          }
+        }
+      } catch {}
+    }
+    if (!number || number.length > 34 || !/^[A-Z0-9]+$/.test(number) ||
+        /^([A-Z0-9])\1+$/.test(number)) return '';
+    if (carrier === 'ups' &&
+      (/^1Z[0-9A-Z]{16}$/.test(number) || /^\d{7,20}$/.test(number) || /^T\d{10}$/.test(number)))
+      return 'https://www.ups.com/track?loc=en_US&tracknum=' + encodeURIComponent(number);
+    if (carrier === 'fedex' && /^\d{10,34}$/.test(number))
+      return 'https://www.fedex.com/fedextrack/?trknbr=' + encodeURIComponent(number);
+    if (carrier === 'usps' && (/^\d{20,34}$/.test(number) || /^[A-Z]{2}\d{9}US$/.test(number)))
+      return 'https://tools.usps.com/go/TrackConfirmAction?tLabels=' + encodeURIComponent(number);
+    return '';
+  };
   const trackingRecords = () => [...orders, ...reviewHoldOrders, ...cancelledOrders];
   const trackingSheetHtml = order => {
     const shipping = order.shipping || {}, address = shipping.address || {};
@@ -145,7 +184,7 @@ if (appEnabled) {
     const orderNumber = String(order.orderNumber || '');
     const trackingNumber = String(shipping.trackingNumber || '');
     const carrier = String(shipping.carrier || 'Carrier pending');
-    const carrierUrl = /^https:\/\//i.test(String(shipping.trackingUrl || '')) ? shipping.trackingUrl : '';
+    const carrierUrl = officialCarrierHref(shipping);
     const date = order.checkoutAt ? new Date(order.checkoutAt).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric'
     }) : 'Date pending';
@@ -253,7 +292,7 @@ if (appEnabled) {
       const steps = ['ordered', 'shipped', 'in_transit', 'delivered'];
       const step = stage === 'out_for_delivery' ? 2 : steps.indexOf(stage);
       const address = shipping.address || {};
-      const trackingUrl = /^https:\/\//i.test(shipping.trackingUrl || '') ? shipping.trackingUrl : '';
+      const trackingUrl = officialCarrierHref(shipping);
       const known = order.checkoutValueKnown ?? order.orderTotalKnown;
       const totalLabel = known === false ? 'Value not provided' : money(order.checkoutValue ?? order.orderTotal);
       if (tracking) return `<button type="button" class="sng-tracking-row stage-${e(stage)}"
