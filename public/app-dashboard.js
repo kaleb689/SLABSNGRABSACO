@@ -203,7 +203,7 @@ if (appEnabled) {
         <div class="sng-sheet-actions">
           <button type="button" data-app-copy-order ${orderNumber ? '' : 'disabled'}>Copy order #</button>
           <button type="button" data-app-copy-tracking ${trackingNumber ? '' : 'disabled'}>Copy tracking</button>
-          ${carrierUrl ? '<a target="_blank" rel="noopener noreferrer" href="' + e(carrierUrl) + '">Track with carrier ↗</a>' : ''}
+          ${carrierUrl ? '<a target="_blank" rel="noopener noreferrer" href="' + e(carrierUrl) + '">Track with carrier ↗</a>' : '<span role="status" class="sng-tracking-pending">Carrier tracking link pending verification</span>'}
         </div>
         <p class="sng-sheet-copy-feedback" data-app-copy-feedback aria-live="polite"></p>
         <section class="sng-sheet-section"><div class="sng-sheet-section-heading"><strong>Order details</strong></div>
@@ -224,14 +224,24 @@ if (appEnabled) {
         </details>
       </div>`;
   };
+  function updateTrackingSheetMarkup(markup) {
+    if (markup === latestSheetMarkup) return;
+    // A carrier update must not close history or jump the scroll position.
+    const scroller = trackingSheet.querySelector('.sng-sheet-body');
+    const scrollTop = scroller?.scrollTop || 0;
+    const openHistory = Boolean(trackingSheet.querySelector('.sng-sheet-history')?.open);
+    trackingSheet.innerHTML = markup;
+    latestSheetMarkup = markup;
+    if (openHistory) trackingSheet.querySelector('.sng-sheet-history')?.setAttribute('open', '');
+    const nextScroller = trackingSheet.querySelector('.sng-sheet-body');
+    if (nextScroller) nextScroller.scrollTop = scrollTop;
+  }
   function openTrackingSheet(id) {
     const order = trackingRecords().find(item => recordKey(item) === String(id));
     if (!order) return;
     activeTrackingOrderId = recordKey(order);
     const markup = trackingSheetHtml(order);
-    if (markup !== latestSheetMarkup) {
-      trackingSheet.innerHTML = markup; latestSheetMarkup = markup;
-    }
+    updateTrackingSheetMarkup(markup);
     if (!trackingSheet.open) {
       if (typeof trackingSheet.showModal === 'function') trackingSheet.showModal();
       else trackingSheet.setAttribute('open', '');
@@ -261,7 +271,7 @@ if (appEnabled) {
           `<div class="sng-shipping-steps">${steps.map((s, i) => `<span class="${i <= step ? 'done' : ''}">${stageLabels[s]}</span>`).join('')}</div><p class="sng-delivery">${stage === 'delivered' ? 'Delivered' : 'Expected delivery'} · ${e(shipping.estimatedDelivery || 'Waiting for carrier update')}</p>` : ''}
         <div class="sng-order-details"><span>Order ${e(order.orderNumber || '—')}</span>${(order.items || []).map(product => `<p class="sng-detail-product"><span class="sng-product-image">${image(product)}</span>${e(product.name)} × ${Number(product.quantity) || 1}</p>`).join('')}
         <p>${e(shipping.carrier || 'Carrier pending')}${shipping.trackingNumber ? ` · ${e(shipping.trackingNumber)}` : ''}</p>
-        ${trackingUrl ? `<a href="${e(trackingUrl)}" target="_blank" rel="noopener noreferrer">Track with carrier ↗</a>` : ''}
+        ${trackingUrl ? `<a href="${e(trackingUrl)}" target="_blank" rel="noopener noreferrer">Track with carrier ↗</a>` : '<span>Tracking link pending carrier verification</span>'}
         ${address.address ? `<p>${e([address.name, address.address, address.address2, address.city, address.state, address.zip].filter(Boolean).join(', '))}</p>` : ''}</div></details>`;
     }).join('') || '<p class="sng-empty">No orders match this view.</p>';
   }
@@ -390,9 +400,7 @@ if (appEnabled) {
       if (!current) closeTrackingSheet();
       else {
         const markup = trackingSheetHtml(current);
-        if (markup !== latestSheetMarkup) {
-          trackingSheet.innerHTML = markup; latestSheetMarkup = markup;
-        }
+        updateTrackingSheetMarkup(markup);
       }
     }
     if (currentFocus === 'sng-search') { const input = document.getElementById(currentFocus); input?.focus({ preventScroll: true }); if (input && cursor !== null) input.setSelectionRange(cursor, cursor); }
