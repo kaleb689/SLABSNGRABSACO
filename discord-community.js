@@ -53,7 +53,13 @@ export function lapseGroupPayload(group = {}, requestedPage = 0) {
   const items = [...unique.values()], totalPages = Math.max(1, Math.ceil(items.length / LAPSE_PAGE_SIZE));
   const page = Number.isSafeInteger(requestedPage) ? Math.max(0, Math.min(requestedPage, totalPages - 1)) : 0;
   const offset = page * LAPSE_PAGE_SIZE, showing = items.slice(offset, offset + LAPSE_PAGE_SIZE);
+  // Keep a mapping for EVERY page. A Discord message may survive a process
+  // restart while the currently visible menu is on a later page.
   const optionKeys = {};
+  for (const item of items) {
+    const original = lapseItemKey(item);
+    optionKeys["l" + crypto.createHash("sha256").update(original).digest("hex").slice(0, 32)] = original;
+  }
   const lines = showing.map((item, index) => {
     const retailer = String(item.retailer || "Unknown").slice(0, 50);
     const email = String(item.retailerAccountEmail || item.profileLabel || "Profile").slice(0, 105);
@@ -109,6 +115,16 @@ export function lapseGroupPayload(group = {}, requestedPage = 0) {
     },
     page, totalPages, optionKeys, itemCount: items.length
   };
+}
+// Rehydrate staff-only selection tokens from persistent scheduler state without
+// posting or editing the Discord message every minute after a server restart.
+export function rememberDiscordLapseChecklistGroup(group = {}) {
+  const id = String(group.messageId || "");
+  if (!id || !lapseChecklistRuntime?.api) return false;
+  if (lapseChecklistMessages.has(id)) return true;
+  lapseChecklistMessages.set(id, {...lapseGroupPayload(group), group});
+  if (lapseChecklistMessages.size > 500) lapseChecklistMessages.delete(lapseChecklistMessages.keys().next().value);
+  return true;
 }
 export async function sendDiscordLapseChecklistGroup(group = {}) {
   if (!lapseChecklistRuntime?.api || !lapseChecklistRuntime?.adminChannelId) return false;
@@ -3115,7 +3131,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         const saved = lapseChecklistMessages.get(String(d.message?.id || ""));
         if (!saved) return await reply("This checklist is reloading. Open the refreshed message to continue.");
         const delta = d.data.custom_id.endsWith(":next") ? 1 : -1;
-        const built = lapseGroupPayload(saved.group, saved.page + delta);
+        const pageLabel = String(d.message?.embeds?.[0]?.description || "").match(/Page (\d+)\/(\d+)/);
+        const displayedPage = pageLabel ? Math.max(0, Number(pageLabel[1]) - 1) : saved.page;
+        const built = lapseGroupPayload(saved.group, displayedPage + delta);
         const result = await api(callback, "POST", {type: 7, data: built.payload});
         lapseChecklistMessages.set(String(d.message.id), {...built, group: saved.group});
         return result;
