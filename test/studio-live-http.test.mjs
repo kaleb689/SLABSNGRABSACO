@@ -13,7 +13,7 @@ test('real authenticated HTTP: customer and Studio edit the same saved address/c
  t.after(async()=>{await stop();await fs.rm(dir,{recursive:true,force:true});});
  const call=async(route,{method='GET',body,cookie=''}={})=>{const res=await fetch(base+route,{method,headers:{Origin:base,Cookie:cookie,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});return {status:res.status,body:await res.json(),cookie:res.headers.get('set-cookie')?.split(';')[0]};};
  await start();
- const customer=await call('/api/account/register',{method:'POST',body:{email:'aco-http@example.test',password:'synthetic-password-123'}});assert.equal(customer.status,201);
+ const customer=await call('/api/account/register',{method:'POST',body:{email:'aco-http@example.test',password:'synthetic-password-123',age18Confirmed:true}});assert.equal(customer.status,201);
  const accounts=JSON.parse(await fs.readFile(path.join(dir,'customer-accounts.json'),'utf8')),id=accounts[0].id;
  const admin=await call('/api/admin/login',{method:'POST',body:{password:'synthetic-admin-password',code:authenticator.generate(secret)}});assert.equal(admin.status,200);
  const prefix='/api/admin/aco-studio/customers/'+id;
