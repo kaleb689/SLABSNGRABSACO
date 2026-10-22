@@ -22,7 +22,7 @@ test('optional IMAP skip and notification settings persist behind account authen
   }
   assert.equal((await request('/api/account/push-preferences')).status, 401);
   assert.equal((await request('/api/account/imap-onboarding/skip', 'POST')).status, 401);
-  const signup = await request('/api/account/register', 'POST', { email: 'app-settings@example.test', password: 'synthetic-password-123' });
+  const signup = await request('/api/account/register', 'POST', { email: 'app-settings@example.test', password: 'synthetic-password-123', age18Confirmed: true });
   assert.equal(signup.status, 201);
   assert.equal((await request('/api/account/imap-onboarding/skip', 'POST', {}, signup.cookie)).status, 200);
   const session = await request('/api/account/session', 'GET', null, signup.cookie);
