@@ -67,3 +67,85 @@ test("checkout provisions only a license; only its purchaser can see the key; ow
   assert.equal(denied.code,401);
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+
+test("paid $15 purchase emails customer key receipt and owner contact copy only once, and admin may reveal key", async () => {
+  const {registerPrivateStudioLicensing}=await import("../private-studio-license.js");
+  const fs=await import("node:fs/promises"),os=await import("node:os"),path=await import("node:path");
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"studio-email-test-"));
+  try {
+    const routes={},mail=[];
+    const app={
+      get:(name,...handlers)=>{routes["GET "+name]=handlers.at(-1);},
+      post:(name,...handlers)=>{routes["POST "+name]=handlers.at(-1);}
+    };
+    const subscribed={id:"sub_1234",status:"active",items:{data:[{price:{id:PRIVATE_STUDIO_PRICE}}]},
+      latest_invoice:{hosted_invoice_url:"https://invoice.stripe.com/i/acct_receipt"}};
+    const stripe={
+      subscriptions:{retrieve:async()=>subscribed},
+      products:{retrieve:async()=>({active:false})},
+      prices:{retrieve:async()=>({active:false})},
+      checkout:{sessions:{retrieve:async()=>null}}
+    };
+    const engine=registerPrivateStudioLicensing({
+      app,stripe,requireCustomer:()=>{},requireAdmin:()=>{},
+      dataDir:dir,baseUrl:"https://example.test",secret,
+      ownerEmail:"owner@example.test",
+      lookupCustomer:async id=>id==="alice"?{email:"alice@example.test",firstName:"Alice",lastName:"Rivera"}:null,
+      sendEmail:async item=>{mail.push(item);}
+    });
+    const session={id:"cs_test_paid",mode:"subscription",customer:"cus_abc",subscription:"sub_1234",
+      metadata:{purchase_type:"studio_private",customer_account_id:"alice"}};
+    await engine.onStripeEvent({type:"checkout.session.completed",data:{object:session}});
+    await engine.onStripeEvent({type:"checkout.session.completed",data:{object:session}});
+    assert.equal(mail.length,2);
+    assert.deepEqual(mail.map(m=>m.to),["alice@example.test","owner@example.test"]);
+    for(const m of mail){
+      assert.match(m.subject,/\$15/);
+      assert.match(m.text,/\$15\.00 USD per month/);
+      assert.match(m.text,/ACOP-(?:[A-F0-9]{16}-){3}[A-F0-9]{16}/);
+      assert.doesNotMatch(m.text,/CVV|card number|shipping address|retailer account/i);
+    }
+    assert.match(mail[0].text,/invoice\.stripe\.com/);
+    const rows=JSON.parse(await fs.readFile(path.join(dir,"private-studio-licenses.json"),"utf8"));
+    assert.equal(rows.length,1);
+    assert.ok(rows[0].ownerReceiptSentAt&&rows[0].customerReceiptSentAt);
+    assert.ok(!JSON.stringify(rows).includes(mail[0].text.match(/ACOP-[A-F0-9-]+/)[0]));
+    const payload=await new Promise(resolve=>{
+      const res={code:200,headers:{},setHeader(k,v){this.headers[k]=v;return this;},
+        status(c){this.code=c;return this;},json(v){this.body=v;resolve(this);return this;}};
+      const id=rows[0].id;
+      routes["GET /api/admin/studio-private/license/:id/key"]({params:{id}},res);
+    });
+    assert.equal(payload.body.licenseKey,mail[0].text.match(/ACOP-[A-F0-9-]+/)[0]);
+    assert.equal(payload.headers["Cache-Control"],"no-store, private");
+    assert.equal(payload.body.customerEmail,"alice@example.test");
+    const res={json(v){this.body=v;return this;}};
+    await routes["GET /api/admin/studio-private/licenses"]({},res);
+    assert.equal(res.body.licenses[0].licenseKey,undefined,"bulk admin list should not expose license keys");
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test("owner email failure retries only owner copy, never duplicates customer's receipt",async()=>{
+  const {registerPrivateStudioLicensing}=await import("../private-studio-license.js");
+  const fs=await import("node:fs/promises"),os=await import("node:os"),path=await import("node:path");
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"studio-retry-test-"));
+  try{
+    const app={get(){},post(){}},messages=[];let fail=true;
+    const stripe={subscriptions:{retrieve:async()=>({id:"sub_123",status:"active",items:{data:[{price:{id:PRIVATE_STUDIO_PRICE}}]}})}};
+    const service=registerPrivateStudioLicensing({app,stripe,dataDir:dir,baseUrl:"https://example.test",secret,
+      ownerEmail:"owner@example.test",lookupCustomer:async()=>({email:"customer@example.test"}),
+      sendEmail:async data=>{if(data.to==="owner@example.test"&&fail){fail=false;throw Error("Temporary provider outage");}messages.push(data.to);}});
+    const event={type:"checkout.session.completed",data:{object:{id:"cs_paid",subscription:"sub_123",mode:"subscription",
+      metadata:{purchase_type:"studio_private",customer_account_id:"customer-1"}}}};
+    await assert.rejects(()=>service.onStripeEvent(event),/Temporary provider outage/);
+    assert.deepEqual(messages,["customer@example.test"]);
+    await service.onStripeEvent(event);
+    assert.deepEqual(messages,["customer@example.test","owner@example.test"]);
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test("original inactive $20 Stripe price never activates a $15 license",()=>{
+  const old={status:"active",items:{data:[{price:{id:"price_1UTClGAgnoiOBmXPeje4ptKR"}}]}};
+  assert.equal(subscriptionEntitled(old),false);
+  assert.equal(PRIVATE_STUDIO_PRICE,"price_1UTD7yAgnoiOBmXPwB5kR3ek");
+});
