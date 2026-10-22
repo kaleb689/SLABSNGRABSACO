@@ -1,7 +1,7 @@
 name: Build ACO STUDIO for Mac and Windows
 on:
   push:
-    branches: [main]
+    branches: [main, feature/customer-studio-live-jig-permissions-20261022]
     paths:
       - 'private-edition/**'
       - '.github/workflows/build-aco-private-edition.yml'
