@@ -1,5 +1,6 @@
 "use strict";
 const {app,BrowserWindow,ipcMain,dialog,shell}=require("electron");
+const ImportBatches=require("./import-batches.cjs");
 const fs=require("node:fs/promises");
 const path=require("node:path");
 const crypto=require("node:crypto");
@@ -111,7 +112,7 @@ async function edit(fn){return transact(async()=>{await allowed();const v=await 
 function displayState(v){
   return {sources:v.sources.map(s=>({id:s.id,retailer:s.retailer,bank:s.bank==='live'?'live':'working',...Formats.profileSummary(s.file)})),
     cards:v.cards.map(c=>({id:c.id,label:c.label,holder:c.holder,number:c.number,securityCode:c.securityCode||"",last4:String(c.number||"").slice(-4),expiry:c.expiry})),
-    addresses:v.addresses,activity:v.activity.slice(0,30),rules:v.rules};
+    addresses:v.addresses,activity:v.activity.slice(0,30),rules:v.rules,importHistory:ImportBatches.history(v)};
 }
 async function openWindow(){
   win=new BrowserWindow({width:1480,height:940,minWidth:1100,minHeight:730,show:false,
@@ -163,8 +164,9 @@ ipcMain.handle("vault:import",async (_e,selection)=>{
     const content=await fs.readFile(filename,"utf8");const parsed=Formats.readSource(path.basename(filename),content);
     files.push({id:crypto.randomUUID(),retailer,bank,file:parsed});
   }
-  return edit(v=>{v.sources.push(...files);addActivity(v,"Imported "+files.length+" "+retailer+" file(s)");
-    return {imported:files.length,profiles:files.reduce((total,item)=>total+item.file.rows.length,0)};});
+  return edit(v=>{const result=ImportBatches.appendImport(v,files,{retailer,bank});
+    addActivity(v,"Imported "+result.imported+" "+retailer+" file(s) in batch "+result.batchId.slice(0,8));
+    return result;});
 });
 ipcMain.handle("vault:export",async (_e,id)=>{
   await allowed();const v=await Vault.load(),source=v.sources.find(s=>s.id===id);
@@ -189,6 +191,21 @@ ipcMain.handle("vault:setBank",(_e,p)=>edit(v=>{
   source.bank=p.bank;
   addActivity(v,"Moved profile file to "+(p.bank==="live"?"Live":"Working")+" retailer bank");
   return {saved:true,bank:source.bank};
+}));
+ipcMain.handle("vault:bulkMove",(_e,p)=>edit(v=>{
+  const result=ImportBatches.moveSelected(v,p);
+  addActivity(v,"Moved "+result.moved+" "+p.retailer+" profile file(s) to "+result.bank);
+  return result;
+}));
+ipcMain.handle("vault:bulkDelete",(_e,p)=>edit(v=>{
+  const result=ImportBatches.deleteSelected(v,p);
+  addActivity(v,"Deleted "+result.deleted+" selected "+p.retailer+" local profile file(s)");
+  return result;
+}));
+ipcMain.handle("vault:removeImportBatch",(_e,p)=>edit(v=>{
+  const result=ImportBatches.deleteImport(v,p);
+  addActivity(v,"Removed "+result.removed+" file(s) from import batch "+result.batchId.slice(0,8));
+  return result;
 }));
 ipcMain.handle("vault:editRow",(_e,p)=>edit(v=>{
   const source=v.sources.find(x=>x.id===p?.fileId);
