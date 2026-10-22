@@ -26,3 +26,33 @@ export function attachAdminPush(app,{dataDir,requireAdmin,baseUrl}){
   await write(x);
  };
 }
+
+/** Send an admin push from background jobs without registering routes. */
+export async function sendBackgroundAdminPush(dataDir, category, title, body, url = "/admin-app.html") {
+  if (!categories.includes(category)) return false;
+  const settingFile = path.join(dataDir, "admin-push-settings.json");
+  const keyFile = path.join(dataDir, "app-push-vapid.json");
+  let settings;
+  try { settings = JSON.parse(await fs.readFile(settingFile, "utf8")); }
+  catch { return false; }
+  if (settings.preferences?.[category] === false) return false;
+  const keys = await fs.readFile(keyFile, "utf8").then(JSON.parse).catch(() => null);
+  if (!keys?.publicKey || !keys?.privateKey) return false;
+  webpush.setVapidDetails("mailto:admin@slabsngrabs.com", keys.publicKey, keys.privateKey);
+  const payload = JSON.stringify({ title: String(title).slice(0, 120), body: String(body).slice(0, 180), url });
+  let sent = false, changed = false;
+  const subscriptions = Array.isArray(settings.subscriptions) ? settings.subscriptions : [];
+  for (const sub of subscriptions) {
+    try { await webpush.sendNotification(sub, payload); sent = true; }
+    catch (e) {
+      if ([404, 410].includes(e.statusCode)) {
+        settings.subscriptions = subscriptions.filter(item => item.endpoint !== sub.endpoint);
+        changed = true;
+      } else console.error("Background admin push failed:", e.message);
+    }
+  }
+  if (changed) {
+    await fs.writeFile(settingFile, JSON.stringify(settings, null, 2), { mode: 0o600 });
+  }
+  return sent;
+}
