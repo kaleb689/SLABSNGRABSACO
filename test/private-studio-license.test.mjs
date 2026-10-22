@@ -119,7 +119,7 @@ test("paid $15 purchase emails customer key receipt and owner contact copy only 
     assert.equal(payload.body.licenseKey,mail[0].text.match(/ACOP-[A-F0-9-]+/)[0]);
     assert.equal(payload.headers["Cache-Control"],"no-store, private");
     assert.equal(payload.body.customerEmail,"alice@example.test");
-    const res={json(v){this.body=v;return this;}};
+    const res={setHeader(){return this;},json(v){this.body=v;return this;}};
     await routes["GET /api/admin/studio-private/licenses"]({},res);
     assert.equal(res.body.licenses[0].licenseKey,undefined,"bulk admin list should not expose license keys");
   }finally{await fs.rm(dir,{recursive:true,force:true});}
