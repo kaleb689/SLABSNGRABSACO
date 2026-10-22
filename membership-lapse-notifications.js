@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { sendBackgroundAdminPush } from "./admin-push.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { sendDiscordLapseChecklistGroup, sendDiscordRtpReturnSummary } from "./discord-community.js";
@@ -108,6 +109,46 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
         const account = accounts.get(String(record?.customerAccountId || ""));
         if (!end || !account || end.getTime() <= now || end.getTime() - now > 3 * DAY) continue;
         const stage = end.getTime() - now <= DAY ? "1d" : "3d";
+        // Private staff alerts are independent of customer Discord DMs.
+        const adminNotice = `admin-membership:${record?.stripeSubscriptionId || record?.id || account.id}:${end.toISOString()}:${stage}`;
+        const adminName = String(account.displayName || account.name || record?.profile?.name || account.email || "Member");
+        const adminBody = `${adminName} — ${String(account.email || record?.profile?.email || "").trim()} — ${String(record?.plan?.name || "Membership")}; access ends ${fmt(end)}.`;
+        if (!state[adminNotice]?.discord || !state[adminNotice]?.push) {
+          const delivered = { discord: false, push: false };
+          try {
+            if (adminWebhookUrl && !state[adminNotice]?.discord) {
+              const response = await fetch(adminWebhookUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  embeds: [{
+                    title: stage === "1d" ? "🚨 Membership expires within 24 hours" : "⚠️ Membership expires within 3 days",
+                    description: adminBody,
+                    color: stage === "1d" ? 15158332 : 15844367,
+                    timestamp: new Date().toISOString(),
+                    footer: { text: "Private SLABSNGRABSACO Admin alert" }
+                  }],
+                  allowed_mentions: { parse: [] }
+                }),
+                signal: AbortSignal.timeout(10000)
+              });
+              if (!response.ok) throw new Error(`Admin webhook HTTP ${response.status}`);
+              delivered.discord = true;
+            }
+          } catch (e) { console.error("Admin membership expiry Discord:", e.message); }
+          try {
+            delivered.push = state[adminNotice]?.push || await sendBackgroundAdminPush(
+              dataDir, "expirations",
+              stage === "1d" ? "Membership ends in 24 hours" : "Membership ends in 3 days",
+              adminBody
+            );
+          } catch (e) { console.error("Admin membership expiry push:", e.message); }
+          // Keep retrying destinations that failed without duplicating successful delivery.
+          const prior = state[adminNotice] && typeof state[adminNotice] === "object" ? state[adminNotice] : {};
+          state[adminNotice] = { discord: prior.discord || delivered.discord, push: prior.push || delivered.push };
+          changed = true;
+        }
+
         const notice = `membership:${record?.stripeSubscriptionId || record?.id || account.id}:${end.toISOString()}:${stage}`;
         if (state[notice]) continue;
         try {
