@@ -7,7 +7,7 @@ const read=name=>fs.readFileSync(path.join(__dirname,"..",name),"utf8");
 test("ACO STUDIO customer UI uses only the new product name",()=>{
  const html=read("index.html"),main=read("main.cjs"),render=read("renderer.js"),pkg=require("../package.json");
  assert.equal(pkg.build.productName,"ACO STUDIO");
- assert.equal(pkg.version,"1.0.1");
+ assert.equal(pkg.version,"1.0.2");
  assert.match(html,/<title>ACO STUDIO<\/title>/);
  assert.match(main,/app\.setName\("ACO STUDIO"\)/);
  for(const text of [html,main,render]){
