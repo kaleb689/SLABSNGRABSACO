@@ -14,12 +14,12 @@
         item.customerEmail || "Email unavailable",
         item.accountId,
         item.subscriptionId,
-        item.revoked?"REVOKED":"Issued",
+        item.revoked?"REVOKED":item.evaluation?"OWNER EVALUATION":"Issued",
         item.customerReceiptSentAt?"Customer receipt sent":"Customer receipt pending",
-        item.ownerReceiptSentAt?"Owner email sent":"Owner email pending"
+        item.evaluation?("Expires: "+String(item.expiresAt || "unknown")):(item.ownerReceiptSentAt?"Owner email sent":"Owner email pending")
       ].join(" · "));
         row.style.cssText="display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #304761;padding:12px 0;flex-wrap:wrap";
-        if(!item.revoked){
+        if(!item.revoked&&!item.evaluation){
           const reveal=text("button","Reveal license key");reveal.type="button";
           reveal.style.cssText="border:1px solid #25bec8;border-radius:8px;padding:8px 12px;background:#163349;color:#fff;cursor:pointer";
           const field=text("code","");field.style.cssText="display:none;width:100%;padding:10px;color:#9eeecf;overflow-wrap:anywhere;background:#0a1d30;border-radius:7px";
