@@ -357,7 +357,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  }
 
  // Live profiles stay in their owner vault, with durable bank membership independent of readiness.
- async function importLiveProfiles(scope,customerId,entries,{updateExisting=false}={},beforeWrite){
+ async function importLiveProfiles(scope,customerId,entries,{updateExisting=false,batchId=null,fileNames=[]}={},beforeWrite){
   const key=bank(scope,customerId);
   if(!Array.isArray(entries)||!entries.length||entries.length>10000||typeof beforeWrite!=='function')throw Error('Choose 1-10000 live profiles.');
   return serial(async()=>{
@@ -373,7 +373,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     // Without explicit replacement, create an independently editable Live record.
     if(prior&&require('./jig-field-core').hash(prior)!==item.expectedHash)throw Error('Stored profile changed after preview. Preview the import again.');
     if(!prior&&item.expectedHash&&updateExisting&&occurrence===0&&matches.length===1)throw Error('Stored profile changed after preview. Preview the import again.');
-    prepared.push({...prior,id:prior?.id||uuid(),retailer,email,label:name(data.profile_name||data.name||email),group:retailer,source:'owner-created-profile',status:'active',bank:'live',liveSince:prior?.liveSince||now(),createdAt:prior?.createdAt||now(),revision:(prior?.revision??-1)+1,data,format:item.format,assetRefs:prior?.assetRefs||{}});
+    prepared.push({...prior,id:prior?.id||uuid(),retailer,email,label:name(data.profile_name||data.name||email),group:retailer,source:'owner-created-profile',status:'active',bank:'live',liveSince:prior?.liveSince||now(),createdAt:prior?.createdAt||now(),revision:(prior?.revision??-1)+1,importBatchId:prior?.importBatchId||(!prior?batchId:null),data,format:item.format,assetRefs:prior?.assetRefs||{}});
    }
    if(rows.length+prepared.filter(x=>!rows.some(r=>r.id===x.id)).length>10000)throw Error('Profile vault is full.');
    const ids=new Set(prepared.map(x=>x.id));d.groups[key]=[...rows.filter(x=>!ids.has(x.id)),...prepared];
@@ -388,11 +388,86 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     auditRecord(d,key,'live-profile-import',row.email,{retailer:row.retailer,bank:'live'});
    }
    if(d.emailBanks[key].length>20000)throw Error('Email vault limit reached.');
-   beforeWrite();await write(scope,d);return {imported:prepared.length,pkcEmailsAdded,bank:'live'};
+   if(batchId){
+    if(typeof batchId!=='string'||batchId.length>100)throw Error('Invalid import batch ID.');
+    d.importBatches||={};d.importBatches[key]||=[];
+    const created=prepared.filter(x=>!rows.some(y=>y.id===x.id));
+    d.importBatches[key].push({id:batchId,at:now(),bank:'live',retailers:[...new Set(prepared.map(x=>x.retailer))],
+     fileNames:fileNames.slice(0,100).map(s=>String(s).slice(0,200)),createdIds:created.map(x=>x.id),
+     imported:prepared.length,updatedExisting:prepared.length-created.length,removedAt:null});
+   }
+   beforeWrite();await write(scope,d);return {imported:prepared.length,pkcEmailsAdded,bank:'live',batchId};
   });
  }
+ // History tracks only NEW local profile IDs created by each import; a batch
+ // cannot delete any pre-existing profile that was explicitly updated by a live import.
+ function importBatchFingerprint(rows,batch){
+  const profiles=(batch.createdIds||[]).map(id=>rows.find(x=>x.id===id))
+    .filter(x=>x&&x.importBatchId===batch.id);
+  return crypto.createHash('sha256').update(profiles.map(x=>x.id+':'+(x.revision||0)).sort().join('|')).digest('hex');
+ }
+ async function importHistory(scope,customerId){
+  await pending;const key=bank(scope,customerId),data=await read(scope),rows=data.groups[key]||[];
+  return (data.importBatches?.[key]||[]).map(batch=>{
+   const present=(batch.createdIds||[]).filter(id=>rows.some(x=>x.id===id&&x.importBatchId===batch.id));
+   const protectedCount=present.filter(id=>rows.some(x=>x.id===id&&x.source==='website-linked-profile'&&x.sourceLinked)).length;
+   return {id:batch.id,at:batch.at,bank:batch.bank,retailers:batch.retailers||[],fileNames:batch.fileNames||[],
+    imported:batch.imported,updatedExisting:batch.updatedExisting||0,created:(batch.createdIds||[]).length,
+    remaining:present.length,protectedCount,removedAt:batch.removedAt||null,
+    fingerprint:importBatchFingerprint(rows,batch)};
+  }).reverse();
+ }
+ async function removeImportBatch(scope,customerId,{batchId,fingerprint,confirmed}={},beforeWrite){
+  if(confirmed!==true||typeof batchId!=='string'||typeof fingerprint!=='string'||typeof beforeWrite!=='function')throw Error('Review and confirm an exact import batch.');
+  const key=bank(scope,customerId);
+  return serial(async()=>{
+   const d=await read(scope),batch=(d.importBatches?.[key]||[]).find(x=>x.id===batchId);
+   if(!batch||batch.removedAt)throw Error('Import history changed. Reload it.');
+   const rows=d.groups[key]||[];
+   if(importBatchFingerprint(rows,batch)!==fingerprint)throw Error('Profiles changed after import history loaded. Reload and review before removal.');
+   const ids=new Set(batch.createdIds||[]);
+   const removed=rows.filter(x=>ids.has(x.id)&&x.importBatchId===batchId);
+   if(removed.some(x=>x.source==='website-linked-profile'&&x.sourceLinked))throw Error('An imported profile is now linked to the website; unlink it before removing its batch.');
+   d.groups[key]=rows.filter(x=>!ids.has(x.id)||x.importBatchId!==batchId);
+   for(const item of d.emailBanks?.[key]||[])if(ids.has(item.profileId)){item.profileId=null;item.usedAt=null;}
+   batch.removedAt=now();
+   auditRecord(d,key,'remove-import-batch','',{batchId,removed:removed.length});
+   beforeWrite();await write(scope,d);
+   return {deleted:removed.length,updatedExistingPreserved:batch.updatedExisting||0};
+  });
+ }
+ async function bulkManage(scope,customerId,{operation,retailer,fromBank,toBank,profileIds,revisions,confirmed}={},beforeWrite){
+  if(confirmed!==true||!['move','delete'].includes(operation)||!RETAILERS.includes(retailer)||
+    !['working','live'].includes(fromBank)||!Array.isArray(profileIds)||!profileIds.length||profileIds.length>500||
+    new Set(profileIds).size!==profileIds.length||!Array.isArray(revisions)||revisions.length!==profileIds.length||
+    typeof beforeWrite!=='function')throw Error('Choose 1-500 profiles in one bank and confirm the bulk action.');
+  if(operation==='move'&&(!['working','live'].includes(toBank)||toBank===fromBank))throw Error('Choose a different Working/Live bank.');
+  const key=bank(scope,customerId);
+  return serial(async()=>{
+   const d=await read(scope),rows=d.groups[key]||[];
+   const found=profileIds.map((id,i)=>{
+    const row=rows.find(x=>x.id===id);
+    if(!row||row.retailer!==retailer||(row.bank==='live'?'live':'working')!==fromBank||
+      (row.revision||0)!==revisions[i])throw Error('A selected profile changed. Reload before any bulk change.');
+    if(row.source==='website-linked-profile'&&row.sourceLinked===true)
+      throw Error('Linked website accounts cannot be moved or deleted locally. Use the linked-account controls.');
+    return row;
+   });
+   if(operation==='move')for(const row of found){row.bank=toBank;if(toBank==='live')row.liveSince=row.liveSince||now();row.revision=(row.revision||0)+1;}
+   else{
+    const ids=new Set(profileIds);
+    d.groups[key]=rows.filter(x=>!ids.has(x.id));
+    for(const email of d.emailBanks?.[key]||[])if(ids.has(email.profileId)){email.profileId=null;email.usedAt=null;}
+   }
+   auditRecord(d,key,operation==='move'?'bulk-move-local':'bulk-delete-local','',
+    {retailer,fromBank,toBank:operation==='move'?toBank:null,count:found.length});
+   beforeWrite();await write(scope,d);
+   return {saved:true,count:found.length,operation,bank:toBank||fromBank};
+  });
+ }
+
  async function librarySettings(scope,customerId){await pending;const key=bank(scope,customerId),d=await read(scope);return structuredClone(d.librarySettings?.[key]||{});}
- async function libraryTransaction(scope,customerId,action,beforeWrite){const key=bank(scope,customerId);if(typeof action!=='function'||typeof beforeWrite!=='function')throw Error('Invalid profile transaction.');return serial(async()=>{const d=await read(scope);d.groups[key]||=[];d.emailBanks||={};d.emailBanks[key]||=[];const original=JSON.stringify(d);const context={rows:d.groups[key],emails:d.emailBanks[key],audit:(action,email,detail)=>auditRecord(d,key,action,email,detail),settings:d.librarySettings?.[key]||{}};const result=await action(context);if(context.rows.length>10000)throw Error('Profile vault limit reached.');d.groups[key]=context.rows;d.librarySettings||={};d.librarySettings[key]=context.settings;beforeWrite();if(JSON.stringify(d)!==original)await write(scope,d);return result;});}
+ async function libraryTransaction(scope,customerId,action,beforeWrite){const key=bank(scope,customerId);if(typeof action!=='function'||typeof beforeWrite!=='function')throw Error('Invalid profile transaction.');return serial(async()=>{const d=await read(scope);d.groups[key]||=[];d.emailBanks||={};d.emailBanks[key]||=[];d.importBatches||={};d.importBatches[key]||=[];const original=JSON.stringify(d);const context={rows:d.groups[key],emails:d.emailBanks[key],importBatches:d.importBatches[key],audit:(action,email,detail)=>auditRecord(d,key,action,email,detail),settings:d.librarySettings?.[key]||{}};const result=await action(context);if(context.rows.length>10000)throw Error('Profile vault limit reached.');d.groups[key]=context.rows;d.librarySettings||={};d.librarySettings[key]=context.settings;beforeWrite();if(JSON.stringify(d)!==original)await write(scope,d);return result;});}
  async function scanRows(imports=[],webRecords=[],allowPersonalDetail=false){await pending;
   if(!Array.isArray(imports)||imports.length>500)throw Error('Too many imported rows to scan.');
   const [personal,aco]=await Promise.all([read('personal'),read('aco')]);
@@ -452,7 +527,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   }
   return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count||a.retailer.localeCompare(b.retailer)),scanned:[...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
  }
- return Object.freeze({paths,backupList,backupRestore,retailers:RETAILERS,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+ return Object.freeze({paths,backupList,backupRestore,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 
