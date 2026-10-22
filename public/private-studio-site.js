@@ -12,9 +12,9 @@
     if(pricing&&!$("aco-private-price")){
       const block=el("article",undefined,"aco-private-price");block.id="aco-private-price";
       block.append(el("div","STANDALONE DESKTOP SOFTWARE","aco-private-eyebrow"),
-        el("h3","ACO Studio Private Edition"),el("div","$15 / month","aco-private-amount"),
+        el("h3","ACO STUDIO"),el("div","$15 / month","aco-private-amount"),
         el("p","Private account, card and address banks; Jig Studio; original-format import and export on Mac and Windows."),
-        el("p","Your files and saved profile data remain on your computer. No Email Gen or website administration."));
+        el("p","Your files and saved profile data remain on your computer."));
       const status=el("div","Checking availability…","aco-private-meta");
       const action=el("button","Checking access…","aco-private-buy");action.disabled=true;
       action.type="button";action.addEventListener("click",async()=>{
@@ -35,7 +35,7 @@
     const profile=$("my-profile");
     if(profile&&!$("aco-private-profile")){
       const panel=el("section",undefined,"aco-private-profile");panel.id="aco-private-profile";
-      panel.append(el("h3","ACO Studio Private Edition · License & downloads"),
+      panel.append(el("h3","ACO STUDIO · License & downloads"),
         el("p","This license is independent of your ACO membership. It unlocks a separate locally encrypted Mac/Windows desktop app. Your cards, addresses, retailer pools and import files are never uploaded here."));
       const status=el("p","Sign in to see your license status.","aco-private-license-status");
       const key=el("code","", "aco-private-license-key");
