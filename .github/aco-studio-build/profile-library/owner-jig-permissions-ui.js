@@ -71,3 +71,56 @@ reset.addEventListener('click',async()=>{
   finally{reset.disabled=false;}
 });
 })();
+
+(()=>{'use strict';
+const api=window.desktopAPI?.profileLibrary,root=document.getElementById('sitePage');
+if(!api?.backupList||!api?.backupRestore||!root)return;
+const panel=document.createElement('details');panel.id='acoStudioOwnerProfileRecovery';
+panel.style.cssText='margin:12px 0;padding:15px;border:1px solid #27b19a;border-radius:12px;background:#0c2430;color:#eefafa';
+const summary=document.createElement('summary');summary.textContent='ACO STUDIO · Encrypted Profile Backups';
+summary.style.cssText='cursor:pointer;font-weight:700';
+const status=document.createElement('p');status.setAttribute('role','status');
+status.textContent='Automatic OS-encrypted snapshots protect Personal and ACO profile banks before every save.';
+const scope=document.createElement('select');scope.style.cssText='margin:8px;padding:8px;border-radius:8px';
+scope.append(new Option('Personal · My retailer profiles','personal'),
+  new Option('ACO · All customer retailer profiles','aco'));
+const refresh=document.createElement('button');refresh.type='button';refresh.textContent='Refresh recovery snapshots';
+refresh.style.cssText='margin:8px;padding:8px 12px;border-radius:8px;cursor:pointer';
+const list=document.createElement('div');list.style.cssText='display:grid;gap:7px;padding:8px';
+panel.append(summary,status,scope,refresh,list);root.prepend(panel);
+async function load(){
+ list.replaceChildren();status.textContent='Checking encrypted snapshots…';
+ try{
+   const data=await api.backupList({scope:scope.value});
+   status.textContent=data.length?
+     data.length+' encrypted recovery snapshots available for '+(scope.value==='aco'?'all customer banks':'your personal bank')+'.':
+     'No snapshots yet. The first snapshot is created before modifying an existing profile bank.';
+   for(const row of data.slice(0,120)){
+     const container=document.createElement('div');
+     container.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap';
+     const label=document.createElement('span');
+     label.textContent=new Date(row.createdAt).toLocaleString()+' · '+Math.ceil((row.bytes||0)/1024)+' KB';
+     const button=document.createElement('button');button.type='button';button.textContent='Restore';
+     button.style.cssText='padding:7px 10px;border:1px solid #27b19a;border-radius:8px;cursor:pointer';
+     button.addEventListener('click',async()=>{
+       const description=scope.value==='aco'?'EVERY customer's local ACO profile bank':'your Personal local profile bank';
+       if(!window.confirm('Restore '+description+' to its state on '+new Date(row.createdAt).toLocaleString()+
+         '? The current encrypted vault will be backed up first. Website customer information is not modified.'))return;
+       button.disabled=true;
+       try{
+         const result=await api.backupRestore({scope:scope.value,name:row.name,confirmed:true});
+         if(!result?.restored)throw Error('Restoration was not confirmed.');
+         status.textContent='Restored '+scope.value+' local profile bank. Reopen your profile view to refresh the records.';
+         window.jigSignals?.changed?.();
+         await load();
+       }catch(error){status.textContent='Restore failed; current bank preserved: '+String(error.message||error);}
+       finally{button.disabled=false;}
+     });
+     container.append(label,button);list.append(container);
+   }
+ }catch(error){status.textContent='Backups unavailable until owner authentication: '+String(error.message||error);}
+}
+panel.addEventListener('toggle',()=>{if(panel.open)void load();});
+scope.addEventListener('change',()=>void load());
+refresh.addEventListener('click',()=>void load());
+})();
