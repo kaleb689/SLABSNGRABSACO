@@ -350,11 +350,10 @@ test('old carrier stages cannot replay Deep Steel shipping pushes or duplicate i
 });
 
 test('ambiguous provider timeout never retries the same customer push on restart',async t=>{
-  const f=await fixture(t);
+  const f=await fixture(t,[order('historical-baseline')]);
   await f.service.subscribe('a',subscription);
   let calls=0;
   f.options.sendPush=async()=>{calls++;throw Error('Synthetic timeout after remote acceptance');};
-  f.records.push(order('timeout-case'));
   f.service=createOrderNotifications(f.options);
   await f.service.initialize();
   // Baseline an old checkout, then introduce one new distinct checkout.
