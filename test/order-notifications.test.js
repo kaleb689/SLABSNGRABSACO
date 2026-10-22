@@ -366,3 +366,35 @@ test('ambiguous provider timeout never retries the same customer push on restart
   assert.equal(calls,1);
   assert.equal((await f.service.list('a')).filter(e=>e.kind==='order_confirmed').length,1);
 });
+
+test('membership 5/1-day app pushes persist and never replay after restart',async t=>{
+  const f=await fixture(t);
+  await f.service.subscribe('a',subscription);
+  const event={kind:'membership_reminder',title:'Membership renews in 5 days',message:'Upcoming automatic renewal'};
+  const key='membership:sub_123:2026-10-27T00:00:00.000Z:renewal:5d';
+  const first=await f.service.notifyMembershipReminder('a',event,key);
+  assert.equal(first.recorded,true);
+  assert.equal(first.pushQueued,true);
+  await f.service.tick();assert.equal(f.sent.length,1);
+  assert.equal(f.sent[0].tab,'membership');
+  assert.equal((await f.service.list('b')).length,0);
+  assert.equal((await f.service.list('a')).filter(x=>x.kind==='membership_reminder').length,1);
+  assert.equal((await f.service.notifyMembershipReminder('a',event,key)).alreadyQueued,true);
+  f.service=createOrderNotifications(f.options);await f.service.initialize();
+  assert.equal((await f.service.notifyMembershipReminder('a',event,key)).alreadyQueued,true);
+  await f.service.tick();assert.equal(f.sent.length,1);
+  const tomorrow=await f.service.notifyMembershipReminder('a',{...event,title:'Renews tomorrow'},
+    'membership:sub_123:2026-10-27T00:00:00.000Z:renewal:1d');
+  assert.equal(tomorrow.recorded,true);
+  await f.service.tick();assert.equal(f.sent.length,2);
+});
+test('account-notification preference prevents membership reminder pushes without losing inbox',async t=>{
+  const f=await fixture(t);await f.service.subscribe('a',subscription);
+  await f.service.setPreferences('a',{account:false});
+  const result=await f.service.notifyMembershipReminder('a',{
+    kind:'membership_reminder',title:'Membership ends soon',message:'Scheduled cancellation'
+  },'membership:sub_456:2026-10-27T00:00:00.000Z:cancellation:5d');
+  assert.equal(result.recorded,true);assert.equal(result.pushQueued,false);
+  await f.service.tick();assert.equal(f.sent.length,0);
+  assert.equal((await f.service.list('a')).filter(x=>x.kind==='membership_reminder').length,1);
+});
