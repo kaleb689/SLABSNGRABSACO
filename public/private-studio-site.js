@@ -27,7 +27,7 @@
       block.append(status,action);pricing.after(block);
       get("/api/studio-private/offer").then(offer=>{
         const ready=offer.available===true;
-        action.disabled=!ready;action.textContent=ready?"Subscribe to ACO Studio — $15/month":"Coming soon";
+        action.disabled=!ready;action.textContent=ready?"Subscribe to ACO STUDIO — $15/month":"Coming soon";
         status.textContent=ready?"Recurring monthly billing. License issued to your signed-in account.":
           "Preview only · Mac/Windows verification in progress · Not available for purchase yet.";
       }).catch(()=>{action.textContent="Temporarily unavailable";status.textContent="Availability could not be verified.";});
@@ -55,13 +55,13 @@
               const link=el("a","Download "+platform,"aco-private-download-link");link.href=release;link.target="_blank";link.rel="noopener noreferrer";buttons.append(link);
             }
           }
-        }catch(e){status.textContent=e.message==="Please sign in to your customer account."?"Sign in to My Profile to view your ACO Studio license.":e.message;}
+        }catch(e){status.textContent=e.message==="Please sign in to your customer account."?"Sign in to My Profile to view your ACO STUDIO license.":e.message;}
       };
       void reload();
       document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")void reload();});
       const params=new URLSearchParams(location.search);
       if(params.get("studio_private")==="success"&&params.has("session_id")){
-        status.textContent="Confirming your ACO Studio purchase…";
+        status.textContent="Confirming your ACO STUDIO purchase…";
         const sessionId=params.get("session_id");
         get("/api/account/studio-private/claim",{method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({sessionId})}).then(()=>{
