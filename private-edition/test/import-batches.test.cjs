@@ -38,3 +38,8 @@ test("private UI and IPC expose history plus bulk controls, including confirmati
  for(const action of ["vault:bulkMove","vault:bulkDelete","vault:removeImportBatch"])assert.ok(preload.includes(action));
  assert.match(main,/await Vault\.save\(v\)/);
 });
+
+test("Electron distribution explicitly packages the customer import batch module",()=>{
+ const p=require("../package.json");
+ assert.ok(p.build.files.includes("import-batches.cjs"),"Electron ASAR must include import-batches.cjs");
+});
