@@ -28,7 +28,7 @@ test("editing a retailer profile preserves all original columns and unrelated va
  assert.match(exportSource(source),/email,password,card_number,security_code,address/);
  assert.match(exportSource(source),/email@example\.test,updated-secret,4242424242424242,reference,Updated Street/);
  assert.throws(()=>editFields(source,0,{made_up_field:"x"}));
- assert.throws(()=>editFields(source,0,{"__proto__":"bad"}));
+ assert.throws(()=>editFields(source,0,{["__proto__"]:"bad"}));
 });
 test("customer has five distinct banks, existing data is never cleared by bank changes",()=>{
  const s=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
