@@ -8760,15 +8760,9 @@ app.post(
           false
       };
 
-      accounts.push(account);
-
-      await saveCustomerAccounts(
-        accounts
-      );
-      if (verifiedDiscord) discordPendingIdentities.delete(discordTicket);
-
-      // Registration has no card-consent checkboxes. Record that distinction
-      // explicitly; purchase authorization is recorded at membership checkout.
+      // Persist the age declaration in the tamper-evident ledger BEFORE
+      // making the new account active. Ledger unavailability must never
+      // create an account without a retrievable consent record.
       const signupRecord = await appendConsentRecord({
         type: "signup_completed", accountId: account.id, email: account.email,
         emailVerifiedAt: null, cardPurchaseConsentAtSignup: false,
@@ -8779,7 +8773,9 @@ app.post(
       // Keep the immutable consent record ID on the account for future checkouts
       // and Admin review, without exposing it to other customers.
       account.age18ConsentRecordId = signupRecord.id;
+      accounts.push(account);
       await saveCustomerAccounts(accounts);
+      if (verifiedDiscord) discordPendingIdentities.delete(discordTicket);
       await queueConsentReceipt(
         `New website signup — ${account.email}`,
         `Website account created\n\nAccount ID: ${account.id}\nEmail: ${account.email}\nServer signup time (UTC): ${signupRecord.recordedAt}\nAudit record ID: ${signupRecord.id}\n\nAge confirmation: ${SIGNUP_AGE_CONFIRMATION_TEXT}\nAge confirmed at (UTC): ${now}\nAge declaration version: ${SIGNUP_AGE_CONFIRMATION_VERSION}\n\nNo card or purchase authorization checkbox is presented during account registration. Those choices are recorded separately when a member starts a membership checkout. No card number or security code is included.`
