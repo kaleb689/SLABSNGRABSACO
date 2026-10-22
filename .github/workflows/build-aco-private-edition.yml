@@ -85,9 +85,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: kaleb689/SLABSNGRABSACO
         run: |
-          TAG="aco-studio-v1.0.1-preview"
+          TAG="aco-studio-v1.0.2-preview"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release/* --clobber
           else
-            gh release create "$TAG" release/* --title "ACO STUDIO 1.0.1 Preview" --notes "ACO STUDIO for macOS and Windows. Secure local profile, card and address banks, adjustable profile tools, and original-format import/export. Active license required." --prerelease
+            gh release create "$TAG" release/* --title "ACO STUDIO 1.0.2 Preview" --notes "ACO STUDIO for macOS and Windows. Secure local profile, card and address banks, adjustable profile tools, and original-format import/export. Active license required." --prerelease
           fi
