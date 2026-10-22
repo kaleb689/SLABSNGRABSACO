@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - 'membership-lapse-notifications.js'
+      - 'order-notifications.js'
+      - 'server.js'
+      - 'test/order-notifications.test.js'
       - 'test/membership-5day-1day-reminders.test.mjs'
       - '.github/workflows/verify-membership-reminders.yml'
   workflow_dispatch:
@@ -22,3 +25,5 @@ jobs:
       - run: node --check membership-lapse-notifications.js
       - run: node --test test/membership-5day-1day-reminders.test.mjs
       - run: node --test test/notification-delivery-guard.test.mjs
+      - run: node --test test/order-notifications.test.js
+      - run: node --check server.js
