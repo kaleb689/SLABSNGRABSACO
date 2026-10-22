@@ -52,7 +52,7 @@ test('customer IMAP edits synchronize admin copies, preserve unrelated data, and
     let ready=false;
     for(let i=0;i<80;i++){try{await fetch(base);ready=true;break;}catch{await new Promise(resolve=>setTimeout(resolve,100));}}
     assert.ok(ready);
-    const customer = await request('/api/account/register','POST',{email:'customer@example.test',password:'synthetic-customer-password'});
+    const customer = await request('/api/account/register','POST',{email:'customer@example.test',password:'synthetic-customer-password',age18Confirmed:true});
     assert.equal(customer.status,201);
     const accounts=await read('customer-accounts.json'), account=accounts[0];
     account.adminSecrets=encrypt({acoEmail:'original@gmail.com',acoPassword:'stale',retailerPassword:'free-untouched'});
