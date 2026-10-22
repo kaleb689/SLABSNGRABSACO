@@ -1,5 +1,6 @@
 import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
 import { registerPrivateStudioLicensing } from "./private-studio-license.js";
+import { createBillingReceiptHandler } from "./billing-receipts.js";
 import { createCustomerPaymentActions } from "./customer-payment-records.js";
 import { savedDataRevision, savedDataPrecondition } from "./saved-data-revisions.js";
 import { stripPaymentVerifiers, purgeLegacyPaymentVerifiers } from "./payment-verification-policy.js";
@@ -7070,6 +7071,7 @@ function preferManagedAccountsMatchingAssignedPoolEmails(
 }
 
 let privateStudioLicensing;
+let billingReceiptHandler;
 
 /* -------------------------------------------------------
    STRIPE WEBHOOK
@@ -7112,6 +7114,7 @@ app.post(
     try {
       // Standalone desktop licensing only; customer vault data is never accessed.
       if (privateStudioLicensing) await privateStudioLicensing.onStripeEvent(event);
+      if (billingReceiptHandler) await billingReceiptHandler.onStripeEvent(event);
 
       /* CHECKOUT COMPLETED */
 
@@ -8223,6 +8226,23 @@ app.use(createDemoMiddleware({
   sendTestNotification: (id, note) => appOrderNotifications.sendDemoNotification(id, note)
 }));
 
+const sendPurchaseReceiptEmail = async ({ to, subject, text, idempotencyKey }) => {
+  if (!process.env.RESEND_API_KEY) throw Error("Purchase receipt email service is not configured.");
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + process.env.RESEND_API_KEY,
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey
+    },
+    body: JSON.stringify({
+      from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
+      to: [to], subject, text
+    })
+  });
+  if (!response.ok) throw Error("Receipt delivery failed: HTTP " + response.status);
+  return true;
+};
 privateStudioLicensing = registerPrivateStudioLicensing({
   app, stripe, requireCustomer, requireAdmin,
   dataDir: DATA_DIR, baseUrl: BASE_URL,
@@ -8232,23 +8252,10 @@ privateStudioLicensing = registerPrivateStudioLicensing({
     const accounts = await getCustomerAccounts();
     return accounts.find(account => String(account.id) === String(accountId)) || null;
   },
-  sendEmail: async ({ to, subject, text, idempotencyKey }) => {
-    if (!process.env.RESEND_API_KEY) throw Error("Private Studio receipt email service is not configured.");
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + process.env.RESEND_API_KEY,
-        "Content-Type": "application/json",
-        "Idempotency-Key": idempotencyKey
-      },
-      body: JSON.stringify({
-        from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
-        to: [to], subject, text
-      })
-    });
-    if (!response.ok) throw Error("Private Studio receipt delivery failed: HTTP " + response.status);
-    return true;
-  }
+  sendEmail: sendPurchaseReceiptEmail
+});
+billingReceiptHandler = createBillingReceiptHandler({
+  dataDir: DATA_DIR, stripe, sendEmail: sendPurchaseReceiptEmail
 });
 
 
