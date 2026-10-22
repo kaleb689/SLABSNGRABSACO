@@ -40,7 +40,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  const requireCrypto=()=>{if(!safeStorage.isEncryptionAvailable())throw Error('OS keychain encryption is unavailable. Profile vault was not written.');};
  async function read(scope){requireCrypto();try{const body=JSON.parse(safeStorage.decryptString(await fs.readFile(paths[scope])));
   if(body?.version!==1||!body?.groups||typeof body.groups!=='object')throw Error('Unrecognized encrypted profile file.');for(const [key,rows] of Object.entries(body.groups))for(const row of rows)Completion.synchronize(row,body.audit?.[key]||[],now);return body;
- }catch(e){if(e.code==='ENOENT')return {version:1,groups:{},audit:{}};throw Error('Unable to open encrypted '+scope+' profile bank; data was preserved.');}}
+ }catch(e){if(e.code==='ENOENT'){if((await backupList(scope)).length)throw Error('Encrypted '+scope+' profile bank is missing, but recovery snapshots exist. Restore a snapshot before modifying saved information.');return {version:1,groups:{},audit:{}};}throw Error('Unable to open encrypted '+scope+' profile bank; data was preserved.');}}
 
  const snapshotsDir=path.join(baseDir,'encrypted-owner-profile-snapshots');
  const scopeValue=scope=>{if(scope!=='personal'&&scope!=='aco')throw Error('Unknown owner profile backup scope.');return scope;};
