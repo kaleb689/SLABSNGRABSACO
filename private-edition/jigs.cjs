@@ -30,7 +30,7 @@ function jigProfile(source,rowIndex,options={}){
     const digits=String(row[phoneKey]||"").replace(/\D/g,"");
     if(digits.length===10)changes.phone=digits.slice(0,3)+String(crypto.randomInt(1000000,10000000)).padStart(7,"0");
   }
-  if(options.name){const [first,last]=randomName().split(" ");changes.name=first;changes.last=last;}
+  if(options.name){const [first,last]=randomName().split(" ");changes.name=first;changes.last=last;changes.cardholder=first+" "+last;}
   const count=changeRow(source,rowIndex,changes);
   return {count,before,after:{...source.rows[rowIndex]}};
 }
