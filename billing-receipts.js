@@ -32,7 +32,7 @@ export function receiptPayload(event) {
     // subsequent private renewals are handled below with a billing-only email.
     const studio = invoiceIsPrivate(entity);
     if (studio && entity.billing_reason === "subscription_create") return null;
-    const title=studio?"ACO Studio Private Edition renewal":"SLABSNGRABSACO subscription payment";
+    const title=studio?"ACO STUDIO renewal":"SLABSNGRABSACO subscription payment";
     return {
       id:"invoice:"+entity.id, email:entity.customer_email || null,
       stripeCustomerId:typeof entity.customer==="string"?entity.customer:null,
