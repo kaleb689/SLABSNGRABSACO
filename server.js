@@ -1775,6 +1775,8 @@ function decryptJson(payload) {
   return stripPaymentVerifiers(decryptRawJson(payload));
 }
 
+const SIGNUP_AGE_CONFIRMATION_TEXT = "I confirm I am 18 or older.";
+const SIGNUP_AGE_CONFIRMATION_VERSION = "signup-18-plus-2026-10-22";
 const PURCHASE_CONSENT_VERSION = "membership-checkout-2026-09-29";
 const PURCHASE_CONSENT_TEXT = Object.freeze({
   confirm: "I confirm that the information above is accurate.",
@@ -8628,6 +8630,14 @@ app.post(
           req.body.password || ""
         );
 
+      // A checked browser box is required, but server validation is authoritative:
+      // direct HTTP submissions cannot bypass the age confirmation.
+      if (req.body?.age18Confirmed !== true) {
+        return res.status(400).json({
+          error: "You must confirm you are 18 or older to create an account."
+        });
+      }
+
       if (
         !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
           email
@@ -8706,6 +8716,9 @@ app.post(
           crypto.randomUUID(),
 
         email,
+        age18Confirmed: true,
+        age18ConfirmedAt: now,
+        age18ConfirmationVersion: SIGNUP_AGE_CONFIRMATION_VERSION,
 
         referredByDiscord,
 
@@ -8759,11 +8772,17 @@ app.post(
       const signupRecord = await appendConsentRecord({
         type: "signup_completed", accountId: account.id, email: account.email,
         emailVerifiedAt: null, cardPurchaseConsentAtSignup: false,
+        age18Confirmed: true, age18ConfirmationText: SIGNUP_AGE_CONFIRMATION_TEXT,
+        age18ConfirmedAt: now, age18ConfirmationVersion: SIGNUP_AGE_CONFIRMATION_VERSION,
         ...consentRequestMetadata(req)
       });
+      // Keep the immutable consent record ID on the account for future checkouts
+      // and Admin review, without exposing it to other customers.
+      account.age18ConsentRecordId = signupRecord.id;
+      await saveCustomerAccounts(accounts);
       await queueConsentReceipt(
         `New website signup — ${account.email}`,
-        `Website account created\n\nAccount ID: ${account.id}\nEmail: ${account.email}\nServer signup time (UTC): ${signupRecord.recordedAt}\nAudit record ID: ${signupRecord.id}\n\nNo card or purchase authorization checkbox is presented during account registration. Those choices are recorded separately when a member starts a membership checkout. No card number or security code is included.`
+        `Website account created\n\nAccount ID: ${account.id}\nEmail: ${account.email}\nServer signup time (UTC): ${signupRecord.recordedAt}\nAudit record ID: ${signupRecord.id}\n\nAge confirmation: ${SIGNUP_AGE_CONFIRMATION_TEXT}\nAge confirmed at (UTC): ${now}\nAge declaration version: ${SIGNUP_AGE_CONFIRMATION_VERSION}\n\nNo card or purchase authorization checkbox is presented during account registration. Those choices are recorded separately when a member starts a membership checkout. No card number or security code is included.`
       ).catch(error => console.error("Signup owner email queue:", error.message));
 
       if (referrer) {
@@ -37122,6 +37141,14 @@ app.post(
         signupEmail: req.customerAccount.email, purchaseEmail: profile.email,
         submissionId: id, planName: plan.name, consentVersion: PURCHASE_CONSENT_VERSION,
         checkboxes: accepted, checkoutStartedAt: now,
+        signupAgeConfirmation: {
+          confirmed: req.customerAccount.age18Confirmed === true,
+          text: req.customerAccount.age18Confirmed === true ? SIGNUP_AGE_CONFIRMATION_TEXT : null,
+          confirmedAt: req.customerAccount.age18ConfirmedAt || null,
+          consentRecordId: req.customerAccount.age18ConsentRecordId || null,
+          version: req.customerAccount.age18ConfirmationVersion || null,
+          legacyAccountWithoutConfirmation: req.customerAccount.age18Confirmed !== true
+        },
         paymentConfirmed: false, ...consentRequestMetadata(req)
       });
       const checkboxLines = PURCHASE_CONSENT_KEYS.map(key =>
@@ -37129,7 +37156,7 @@ app.post(
       ).join("\n\n");
       await queueConsentReceipt(
         `Membership checkout consent — ${req.customerAccount.email}`,
-        `Membership checkout consent recorded\n\nAccount ID: ${req.customerAccount.id}\nAccount email: ${req.customerAccount.email}\nCheckout contact email: ${profile.email}\nSubmission ID: ${id}\nPlan: ${plan.name}\nServer checkout time (UTC): ${now}\nConsent version: ${PURCHASE_CONSENT_VERSION}\nAudit record ID: ${consentRecord.id}\n\n${checkboxLines}\n\nThis records choices before Stripe Checkout. It does not state that payment completed or authorize unspecified future items. No card number or security code is included.`
+        `Membership checkout consent recorded\n\nAccount ID: ${req.customerAccount.id}\nAccount email: ${req.customerAccount.email}\nCheckout contact email: ${profile.email}\nSubmission ID: ${id}\nPlan: ${plan.name}\nServer checkout time (UTC): ${now}\nConsent version: ${PURCHASE_CONSENT_VERSION}\nAudit record ID: ${consentRecord.id}\n\nSignup age confirmation: ${req.customerAccount.age18Confirmed === true ? SIGNUP_AGE_CONFIRMATION_TEXT : "No age confirmation recorded for legacy account"}\nSignup age consent record: ${req.customerAccount.age18ConsentRecordId || "not available"}\nSignup confirmed at (UTC): ${req.customerAccount.age18ConfirmedAt || "not available"}\n\n${checkboxLines}\n\nThis records choices before Stripe Checkout. It does not state that payment completed or authorize unspecified future items. No card number or security code is included.`
       );
 
       const pending =
@@ -37163,6 +37190,12 @@ app.post(
 
         consentRecordId:
           consentRecord.id,
+
+        signupAgeConsentRecordId:
+          req.customerAccount.age18ConsentRecordId || null,
+
+        signupAgeConfirmedAt:
+          req.customerAccount.age18ConfirmedAt || null,
 
         createdAt:
           now
