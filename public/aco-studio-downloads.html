@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>ACO STUDIO — Your downloads</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{margin:0;min-height:100vh;background:linear-gradient(140deg,#081629,#16213c);color:#f1f7ff;padding:32px 18px;box-sizing:border-box}
+main{max-width:790px;margin:5vh auto;background:#102541;border:1px solid #278da6;border-radius:20px;padding:clamp(20px,5vw,42px);box-shadow:0 18px 64px #0004}
+.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:0.18em;color:#74ebf1}
+h1{font-size:clamp(28px,5vw,44px);margin:8px 0}p{line-height:1.55;color:#c8d7e6}
+#license{overflow-wrap:anywhere;background:#07182e;border:1px solid #466580;padding:16px;border-radius:10px;display:block;margin:15px 0;font-size:13px}
+.downloads{display:flex;flex-wrap:wrap;gap:12px;margin:20px 0}
+.downloads a{background:#59e4e5;color:#082032;border-radius:10px;padding:14px 18px;font-weight:750;text-decoration:none}
+.downloads a:hover{background:#96faff}
+#status{min-height:28px}a{color:#83f4fc}section[hidden]{display:none}
+</style>
+<script src="/aco-studio-downloads.js" defer></script>
+</head>
+<body><main>
+<div class="eyebrow">SLABSNGRABSACO · Standalone personal desktop application</div>
+<h1>ACO STUDIO</h1>
+<p id="status" role="status">Verifying your subscription and preparing your downloads…</p>
+<section id="ready" hidden>
+<h2>Your license key</h2><p>Use this key to activate your separate ACO STUDIO desktop application. A copy is also sent to your purchase email.</p>
+<code id="license"></code>
+<h2>Choose your installer</h2><div id="downloads" class="downloads"></div>
+<p>Apple Silicon is for M-series Macs. Choose Intel for older Macs. Windows requires x64. The Mac/Windows preview builds may trigger unsigned-app warnings; they have not yet passed full physical-device acceptance.</p>
+</section>
+<p><a href="/#my-profile">Return to My Profile</a> · <a href="/#pricing">Membership and subscription options</a></p>
+</main></body></html>
