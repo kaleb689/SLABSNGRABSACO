@@ -19,7 +19,7 @@ export function notificationClaimKey({channel, recipient, eventKey} = {}) {
   const destination = String(recipient || "").trim();
   const event = String(eventKey || "").trim();
   if (!/^[a-z][a-z0-9:-]{1,63}$/.test(transport) ||
-      !destination || destination.length > 500 || !event || event.length > 1024)
+      !destination || destination.length > 4096 || !event || event.length > 65536)
     return null;
   return crypto.createHash("sha256").update(JSON.stringify([transport,destination,event])).digest("hex");
 }
