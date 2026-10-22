@@ -1,0 +1,10 @@
+#aco-private-price,#aco-private-profile{color:#f3f8ff;background:linear-gradient(120deg,#0b1d38,#242049);border:1px solid #2eb8d3;border-radius:18px;padding:25px;margin:20px 0;box-shadow:0 12px 35px #0002}
+#aco-private-price{max-width:640px}#aco-private-price h3,#aco-private-profile h3{margin:10px 0 12px;font-size:23px}
+#aco-private-price p,#aco-private-profile p{line-height:1.6;color:#c5d4e6}
+.aco-private-eyebrow{font-size:12px;font-weight:800;letter-spacing:.15em;color:#3de9e9}
+.aco-private-amount{font-size:32px;font-weight:850;color:#46eced}.aco-private-meta{font-size:13px;color:#c5caed;margin:15px 0}
+.aco-private-buy{padding:14px 22px;background:linear-gradient(90deg,#11b7d5,#a65bea);border:0;color:white;border-radius:12px;font-weight:800}
+.aco-private-buy:disabled{opacity:.64;cursor:not-allowed}
+.aco-private-license-key{display:block;overflow-wrap:anywhere;padding:13px;color:#87fbe0;border:1px solid #385f7e;border-radius:9px;margin:12px 0;font-size:13px}
+.aco-private-license-key:empty{display:none}.aco-private-downloads{display:flex;flex-wrap:wrap;gap:13px}
+.aco-private-download-link{display:inline-block;color:#081d2c;background:#57dfe7;padding:13px 17px;border-radius:10px;text-decoration:none;font-weight:750}
