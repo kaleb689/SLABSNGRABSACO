@@ -314,3 +314,16 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  if(!pkg.build.files.includes(file))pkg.build.files.push(file);
  fs.writeFileSync(pkgPath,JSON.stringify(pkg,null,2)+'\n');
 }
+
+
+// Keep restored security regression aligned with encrypted owner snapshot directory.
+// Preserve both separately encrypted primary vaults and explicitly permit the
+// encrypted recovery snapshot directory that now exists after a second write.
+{
+ const file=path.join(root,'tests','personal-profiles-security.test.js');
+ const source=fs.readFileSync(file,'utf8');
+ const expected=/(\[\s*['"]aco-customer-retailer-profiles\.encrypted['"]\s*,\s*)(['"]personal-retailer-profiles\.encrypted['"]\s*\])/;
+ if(!expected.test(source))throw Error('Owner vault security test layout changed; update the encrypted backup assertion manually.');
+ const next=source.replace(expected,(_match,first,last)=>first+"'encrypted-owner-profile-snapshots', "+last);
+ fs.writeFileSync(file,next);
+}
