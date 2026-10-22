@@ -129,6 +129,45 @@ if (appEnabled) {
     return `<article class="sng-product-row">${ranked ? `<b class="sng-rank">${index + 1}</b>` : ''}<div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong class="${display.value === 'Price pending' ? 'sng-awaiting-value' : ''}">${e(display.value)}</strong><small>${e(display.label)}</small></div></article>`;
   }).join('') || '<p class="sng-empty">No products in this date range.</p>';
 
+  // Build a direct result link only for a recognized official carrier and
+  // a valid tracking number. Do not send customers to opaque email redirects.
+  const officialCarrierHref = (shipping = {}) => {
+    const normalize = value => String(value || '').toUpperCase().replace(/[\s-]/g, '');
+    let carrier = String(shipping.carrier || '').trim().toLowerCase();
+    carrier = /^(?:ups|united parcel service)$/.test(carrier) ? 'ups' :
+      /^(?:fedex|federal express)$/.test(carrier) ? 'fedex' :
+      /^(?:usps|united states postal service)$/.test(carrier) ? 'usps' : '';
+    let number = normalize(shipping.trackingNumber);
+    if (!carrier || !number) {
+      try {
+        const link = new URL(String(shipping.trackingUrl || ''));
+        if (link.protocol === 'https:' && !link.username && !link.password) {
+          const host = link.hostname.toLowerCase();
+          const fromHost = host === 'ups.com' || host.endsWith('.ups.com') ? 'ups' :
+            host === 'fedex.com' || host.endsWith('.fedex.com') ? 'fedex' :
+            host === 'usps.com' || host.endsWith('.usps.com') ? 'usps' : '';
+          const param = fromHost === 'ups' ? ['tracknum','tracknums','trackn'] :
+            fromHost === 'fedex' ? ['trknbr','tracknumbers','trackingnumber'] :
+            fromHost === 'usps' ? ['tlabels','trackingnumber','tracknum'] : [];
+          const item = [...link.searchParams].find(([key]) => param.includes(key.toLowerCase()));
+          if (fromHost && item && (!carrier || carrier === fromHost)) {
+            carrier = fromHost;
+            if (!number) number = normalize(item[1]);
+          }
+        }
+      } catch {}
+    }
+    if (!number || number.length > 34 || !/^[A-Z0-9]+$/.test(number) ||
+        /^([A-Z0-9])\1+$/.test(number)) return '';
+    if (carrier === 'ups' &&
+      (/^1Z[0-9A-Z]{16}$/.test(number) || /^\d{7,20}$/.test(number) || /^T\d{10}$/.test(number)))
+      return 'https://www.ups.com/track?loc=en_US&tracknum=' + encodeURIComponent(number);
+    if (carrier === 'fedex' && /^\d{10,34}$/.test(number))
+      return 'https://www.fedex.com/fedextrack/?trknbr=' + encodeURIComponent(number);
+    if (carrier === 'usps' && (/^\d{20,34}$/.test(number) || /^[A-Z]{2}\d{9}US$/.test(number)))
+      return 'https://tools.usps.com/go/TrackConfirmAction?tLabels=' + encodeURIComponent(number);
+    return '';
+  };
   const trackingRecords = () => [...orders, ...reviewHoldOrders, ...cancelledOrders];
   const trackingSheetHtml = order => {
     const shipping = order.shipping || {}, address = shipping.address || {};
@@ -145,7 +184,7 @@ if (appEnabled) {
     const orderNumber = String(order.orderNumber || '');
     const trackingNumber = String(shipping.trackingNumber || '');
     const carrier = String(shipping.carrier || 'Carrier pending');
-    const carrierUrl = /^https:\/\//i.test(String(shipping.trackingUrl || '')) ? shipping.trackingUrl : '';
+    const carrierUrl = officialCarrierHref(shipping);
     const date = order.checkoutAt ? new Date(order.checkoutAt).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric'
     }) : 'Date pending';
@@ -203,7 +242,7 @@ if (appEnabled) {
         <div class="sng-sheet-actions">
           <button type="button" data-app-copy-order ${orderNumber ? '' : 'disabled'}>Copy order #</button>
           <button type="button" data-app-copy-tracking ${trackingNumber ? '' : 'disabled'}>Copy tracking</button>
-          ${carrierUrl ? '<a target="_blank" rel="noopener noreferrer" href="' + e(carrierUrl) + '">Track with carrier ↗</a>' : ''}
+          ${carrierUrl ? '<a target="_blank" rel="noopener noreferrer" href="' + e(carrierUrl) + '">Track with carrier ↗</a>' : '<span role="status" class="sng-tracking-pending">Carrier tracking link pending verification</span>'}
         </div>
         <p class="sng-sheet-copy-feedback" data-app-copy-feedback aria-live="polite"></p>
         <section class="sng-sheet-section"><div class="sng-sheet-section-heading"><strong>Order details</strong></div>
@@ -224,14 +263,24 @@ if (appEnabled) {
         </details>
       </div>`;
   };
+  function updateTrackingSheetMarkup(markup) {
+    if (markup === latestSheetMarkup) return;
+    // A carrier update must not close history or jump the scroll position.
+    const scroller = trackingSheet.querySelector('.sng-sheet-body');
+    const scrollTop = scroller?.scrollTop || 0;
+    const openHistory = Boolean(trackingSheet.querySelector('.sng-sheet-history')?.open);
+    trackingSheet.innerHTML = markup;
+    latestSheetMarkup = markup;
+    if (openHistory) trackingSheet.querySelector('.sng-sheet-history')?.setAttribute('open', '');
+    const nextScroller = trackingSheet.querySelector('.sng-sheet-body');
+    if (nextScroller) nextScroller.scrollTop = scrollTop;
+  }
   function openTrackingSheet(id) {
     const order = trackingRecords().find(item => recordKey(item) === String(id));
     if (!order) return;
     activeTrackingOrderId = recordKey(order);
     const markup = trackingSheetHtml(order);
-    if (markup !== latestSheetMarkup) {
-      trackingSheet.innerHTML = markup; latestSheetMarkup = markup;
-    }
+    updateTrackingSheetMarkup(markup);
     if (!trackingSheet.open) {
       if (typeof trackingSheet.showModal === 'function') trackingSheet.showModal();
       else trackingSheet.setAttribute('open', '');
@@ -243,7 +292,7 @@ if (appEnabled) {
       const steps = ['ordered', 'shipped', 'in_transit', 'delivered'];
       const step = stage === 'out_for_delivery' ? 2 : steps.indexOf(stage);
       const address = shipping.address || {};
-      const trackingUrl = /^https:\/\//i.test(shipping.trackingUrl || '') ? shipping.trackingUrl : '';
+      const trackingUrl = officialCarrierHref(shipping);
       const known = order.checkoutValueKnown ?? order.orderTotalKnown;
       const totalLabel = known === false ? 'Value not provided' : money(order.checkoutValue ?? order.orderTotal);
       if (tracking) return `<button type="button" class="sng-tracking-row stage-${e(stage)}"
@@ -261,7 +310,7 @@ if (appEnabled) {
           `<div class="sng-shipping-steps">${steps.map((s, i) => `<span class="${i <= step ? 'done' : ''}">${stageLabels[s]}</span>`).join('')}</div><p class="sng-delivery">${stage === 'delivered' ? 'Delivered' : 'Expected delivery'} · ${e(shipping.estimatedDelivery || 'Waiting for carrier update')}</p>` : ''}
         <div class="sng-order-details"><span>Order ${e(order.orderNumber || '—')}</span>${(order.items || []).map(product => `<p class="sng-detail-product"><span class="sng-product-image">${image(product)}</span>${e(product.name)} × ${Number(product.quantity) || 1}</p>`).join('')}
         <p>${e(shipping.carrier || 'Carrier pending')}${shipping.trackingNumber ? ` · ${e(shipping.trackingNumber)}` : ''}</p>
-        ${trackingUrl ? `<a href="${e(trackingUrl)}" target="_blank" rel="noopener noreferrer">Track with carrier ↗</a>` : ''}
+        ${trackingUrl ? `<a href="${e(trackingUrl)}" target="_blank" rel="noopener noreferrer">Track with carrier ↗</a>` : '<span>Tracking link pending carrier verification</span>'}
         ${address.address ? `<p>${e([address.name, address.address, address.address2, address.city, address.state, address.zip].filter(Boolean).join(', '))}</p>` : ''}</div></details>`;
     }).join('') || '<p class="sng-empty">No orders match this view.</p>';
   }
@@ -390,9 +439,7 @@ if (appEnabled) {
       if (!current) closeTrackingSheet();
       else {
         const markup = trackingSheetHtml(current);
-        if (markup !== latestSheetMarkup) {
-          trackingSheet.innerHTML = markup; latestSheetMarkup = markup;
-        }
+        updateTrackingSheetMarkup(markup);
       }
     }
     if (currentFocus === 'sng-search') { const input = document.getElementById(currentFocus); input?.focus({ preventScroll: true }); if (input && cursor !== null) input.setSelectionRange(cursor, cursor); }
