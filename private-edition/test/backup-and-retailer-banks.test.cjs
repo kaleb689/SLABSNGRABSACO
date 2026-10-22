@@ -40,6 +40,8 @@ test("customer has five distinct banks, existing data is never cleared by bank c
  assert.match(html,/Retailer profile banks/);
  assert.match(html,/Working Profiles/);
  assert.match(html,/Live Profiles/);
+ assert.match(html,/id="locked-snapshots-refresh"/);
+ assert.match(fs.readFileSync(path.join(root,"renderer.js"),"utf8"),/loadLockedSnapshots/);
  assert.match(vault,/await preservePrevious\(\)/);
  assert.match(vault,/encrypted recovery snapshots exist/);
  assert.match(vault,/async function restoreSnapshot/);
