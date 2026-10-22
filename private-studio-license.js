@@ -33,7 +33,7 @@ export function subscriptionEntitled(subscription) {
   return Boolean(subscription && ACTIVE.has(subscription.status) &&
     subscription.items?.data?.some(item => String(item.price?.id || item.price || "") === PRIVATE_STUDIO_PRICE));
 }
-export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, requireAdmin, dataDir, baseUrl, secret }) {
+export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, requireAdmin, dataDir, baseUrl, secret, sendEmail, lookupCustomer, ownerEmail }) {
   const destination = path.join(dataDir, "private-studio-licenses.json");
   let chain = Promise.resolve();
   const serialize = callback => {
@@ -68,18 +68,95 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
         session.mode !== "subscription" || !session.id) return null;
     const verified = await subscription(subscriptionId);
     if (!subscriptionEntitled(verified)) return null;
-    return serialize(async () => {
+    const account = typeof lookupCustomer === "function" ? await lookupCustomer(accountId) : null;
+    const name = String([account?.firstName, account?.lastName].filter(Boolean).join(" ") ||
+      account?.name || session.customer_details?.name || "").trim().slice(0, 160);
+    const email = String(account?.email || session.customer_details?.email || session.customer_email || "").trim().toLowerCase().slice(0, 254);
+    // No cards, shipping addresses, retailer accounts or workstation profiles.
+    const record = await serialize(async () => {
       const rows = await read();
       const existing = rows.find(row => row.subscriptionId === subscriptionId);
-      if (existing) return existing;
+      if (existing) {
+        if (!existing.customerEmail && email) {
+          existing.customerEmail = email;
+          existing.customerName = name;
+          await save(rows);
+        }
+        return existing;
+      }
       const key = licenseKey();
-      const record = { id: crypto.randomUUID(), accountId, subscriptionId,
+      const created = { id: crypto.randomUUID(), accountId, subscriptionId,
         stripeCustomerId: safeId(session.customer), keyHash: sha(key),
         sealedKey: sealKey(key, secret), revokedAt: null,
+        customerEmail: email, customerName: name,
+        customerReceiptSentAt: null, ownerReceiptSentAt: null,
         createdAt: new Date().toISOString() };
-      rows.push(record);
+      rows.push(created);
       await save(rows);
-      return record;
+      return created;
+    });
+    await sendLicenseReceipt(record, verified);
+    return record;
+  }
+  async function sendLicenseReceipt(record, verified) {
+    // One delivery per recipient, even when Stripe retries the same event.
+    if (typeof sendEmail !== "function") return;
+    return serialize(async () => {
+      const rows = await read();
+      const row = rows.find(item => item.id === record.id);
+      if (!row || row.revokedAt) return;
+      const invoice = verified.latest_invoice && typeof verified.latest_invoice === "object"
+        ? verified.latest_invoice : null;
+      const invoiceUrl = typeof invoice?.hosted_invoice_url === "string" &&
+        invoice.hosted_invoice_url.startsWith("https://invoice.stripe.com/")
+        ? invoice.hosted_invoice_url : null;
+      const key = unsealKey(row.sealedKey, secret);
+      const detail = [
+        "ACO Studio Private Edition",
+        "Subscription: $15.00 USD per month",
+        "Customer: " + (row.customerName || "Not provided"),
+        "Customer email: " + (row.customerEmail || "Not provided"),
+        "Website account reference: " + row.accountId,
+        "Stripe subscription: " + row.subscriptionId,
+        "Stripe customer reference: " + row.stripeCustomerId,
+        "License issued: " + row.createdAt
+      ].join("\n");
+      if (!row.customerReceiptSentAt) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.customerEmail || ""))
+          throw Error("Private Studio receipt customer email is missing.");
+        const customerText = [
+          "Thank you for purchasing ACO Studio Private Edition.",
+          "Your purchase and license receipt:",
+          detail,
+          "YOUR LICENSE KEY:", key,
+          "Download the Mac or Windows app from " + baseUrl + "/#my-profile",
+          ...(invoiceUrl ? ["Stripe invoice/receipt: " + invoiceUrl] : []),
+          "Your subscription renews monthly until cancelled. Keep your license key private.",
+          "Your imported profiles, cards and addresses stay on your computer."
+        ].join("\n\n");
+        await sendEmail({ to: row.customerEmail,
+          subject: "ACO Studio Private Edition — $15/month receipt and license key",
+          text: customerText, idempotencyKey: "aco-private-customer-" + row.id });
+        row.customerReceiptSentAt = new Date().toISOString();
+        await save(rows);
+      }
+      if (!row.ownerReceiptSentAt) {
+        const recipient = String(ownerEmail || "").trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient))
+          throw Error("Private Studio owner receipt email is not configured.");
+        const text = [
+          "A customer purchased a $15/month ACO Studio Private Edition license.",
+          detail,
+          "License key: " + key,
+          "Status: active",
+          ...(invoiceUrl ? ["Stripe invoice: " + invoiceUrl] : []),
+          "Only purchase contact and licensing details are included, never private workstation records, cards or addresses."
+        ].join("\n\n");
+        await sendEmail({ to: recipient, subject: "ACO Studio Private Edition — $15 monthly purchase",
+          text, idempotencyKey: "aco-private-owner-" + row.id });
+        row.ownerReceiptSentAt = new Date().toISOString();
+        await save(rows);
+      }
     });
   }
   async function onStripeEvent(event) {
@@ -201,11 +278,28 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
     });
     return res.status(revoked ? 200 : 404).json({ revoked });
   });
+  app.get("/api/admin/studio-private/license/:id/key", requireAdmin, async (req, res) => {
+    try {
+      const row = (await read()).find(item => item.id === safeId(req.params.id));
+      if (!row) return res.status(404).json({ error: "License not found." });
+      const current = await subscription(row.subscriptionId).catch(() => null);
+      res.setHeader("Cache-Control", "no-store, private");
+      res.setHeader("Pragma", "no-cache");
+      res.json({ licenseId: row.id, customerEmail: row.customerEmail || null,
+        revoked: Boolean(row.revokedAt), active: !row.revokedAt && subscriptionEntitled(current),
+        licenseKey: row.revokedAt ? null : unsealKey(row.sealedKey, secret) });
+    } catch {
+      res.status(502).json({ error: "Could not retrieve license key." });
+    }
+  });
   app.get("/api/admin/studio-private/licenses", requireAdmin, async (_req, res) => {
     const rows = await read();
     // Admin receives license state only, never the key or any private workstation data.
     res.json({ licenses: rows.map(row => ({ id: row.id, accountId: row.accountId,
-      subscriptionId: row.subscriptionId, revoked: Boolean(row.revokedAt), createdAt: row.createdAt })) });
+      subscriptionId: row.subscriptionId, customerEmail: row.customerEmail || null,
+      customerName: row.customerName || null,
+      customerReceiptSentAt: row.customerReceiptSentAt || null, ownerReceiptSentAt: row.ownerReceiptSentAt || null,
+      revoked: Boolean(row.revokedAt), createdAt: row.createdAt })) });
   });
   return { onStripeEvent };
 }
