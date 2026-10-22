@@ -52,7 +52,7 @@ function findField(row,aliases) {
 const aliases={
   email:["email","accountemail","loginemail"], name:["name","profilename","fullname","first_name","firstname"],
   last:["lastname","last_name","surname"], phone:["phone","phonenumber","shippingphone"],
-  address:["address","address1","street","street1","shippingaddress","shippingaddress1","shippingline1"],
+  address:["address","address1","street","street1","streetaddress","shippingaddress","shippingaddress1","shippingline1"],
   city:["city","shippingcity"], state:["state","shippingstate"],zip:["zip","zipcode","postalcode","shippingzip"],
   unit:["address2","street2","unit","apt","apartment","shippingaddress2"]
 };
