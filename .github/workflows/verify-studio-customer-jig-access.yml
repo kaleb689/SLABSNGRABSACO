@@ -1,0 +1,64 @@
+name: Verify live customer jig access and owner Studio integration
+on:
+  push:
+    branches: [feature/customer-studio-live-jig-permissions-20261022]
+    paths:
+      - 'private-studio-jig-permissions.js'
+      - 'private-studio-license.js'
+      - 'test/private-studio-jig-permissions.test.mjs'
+      - 'public/admin-private-studio.js'
+      - 'private-edition/**'
+      - '.github/aco-studio-build/profile-library/**'
+      - '.github/workflows/verify-studio-customer-jig-access.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate production API and customer source
+        run: |
+          node --check private-studio-jig-permissions.js
+          node --check private-studio-license.js
+          node --check public/admin-private-studio.js
+          node --check public/private-studio-site.js
+          for f in private-edition/*.cjs private-edition/*.js; do node --check "$f"; done
+          node --test test/private-studio-jig-permissions.test.mjs
+          (cd private-edition && npm test)
+      - name: Reconstruct the original owner Studio build source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > original.zip
+          echo '8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570  original.zip' | sha256sum -c -
+          mkdir -p build-src
+          unzip -q original.zip -d build-src
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+          python3 .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+      - name: Rebuild original owner edition with new permissions UI
+        env:
+          ACO_VERSION: '4.13.37'
+          ACO_ADHOC_MODE: 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+          node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+          node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+          node .github/aco-studio-build/drop-news/apply.cjs build-src/App
+          node --check build-src/App/site-bridge.js
+          node --check build-src/App/main.js
+          node --check build-src/App/preload.js
+          node --check build-src/App/owner-jig-permissions-ui.js
+          test "$(node -e "console.log(require('./build-src/App/package.json').build.files.includes('owner-jig-permissions-ui.js'))")" = true
