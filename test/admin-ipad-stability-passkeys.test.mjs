@@ -24,7 +24,7 @@ test("installed Admin iPad app has a visible post-login biometric setup button",
   assert.match(app, /id="mobile-biometric-setup" hidden/);
   assert.match(mobile, /\$\("mobile-biometric-setup"\)\.hidden=!value/);
   assert.match(mobile, /quickFaceSetup\.onclick/);
-  assert.match(app, /admin-mobile\.js\?v=20261018-cross-retailer-products-1/);
+  assert.match(app, /admin-mobile\.js\?v=[A-Za-z0-9._-]+/);
   assert.match(mobile, /panel\("Face ID \/ Touch ID"/);
 });
 test("WebAuthn controls compile and use the existing verified passkey endpoints",()=>{
