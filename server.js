@@ -18,6 +18,7 @@ import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { attachAdminDesktopDevices } from "./admin-desktop-devices.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder, lateCancellation } from "./order-notifications.js";
+import { createShippingDiscordDmLedger } from "./shipping-discord-dm-ledger.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { webhookOnlyCheckouts, discordCheckoutIds, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { isModuleLifecycleDiscordMessage, isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
@@ -44656,6 +44657,7 @@ async function getCustomerSuccessMailboxes(
 
 
 const SHIPPING_SCAN_INTERVAL_MS = 5 * 60 * 1000;
+const shippingDiscordDms = createShippingDiscordDmLedger({dataDir:DATA_DIR});
 let shippingTrackerRunning = false;
 
 function normalizedShippingText(value = "") {
@@ -44746,6 +44748,13 @@ async function sendShippingDiscordDm(account, record, shipping) {
   });
   if (!channelResponse.ok) throw new Error(`Discord shipping DM channel HTTP ${channelResponse.status}`);
   const channel = await channelResponse.json();
+  // Claim before sending, not after: a process crash or provider timeout must
+  // never replay this same order/stage for this Discord recipient.
+  const claim = await shippingDiscordDms.claim({
+    accountId:account.id, discordUserId:discordId, retailer:record.retailer,
+    orderNumber:record.orderNumber, status:shipping.status
+  });
+  if (!claim.send) return false;
 
   const statusLabel = shipping.status === "delivered" ? "DELIVERED" :
     shipping.status === "out_for_delivery" ? "OUT FOR DELIVERY" :
