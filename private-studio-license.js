@@ -4,7 +4,7 @@ import path from "node:path";
 
 // Licensing metadata only. Never import customer vaults, admin data, cards or profiles.
 export const PRIVATE_STUDIO_PRODUCT = "prod_VUB7U1EyHig2l6";
-export const PRIVATE_STUDIO_PRICE = "price_1UTClGAgnoiOBmXPeje4ptKR";
+export const PRIVATE_STUDIO_PRICE = "price_1UTD7yAgnoiOBmXPwB5kR3ek";
 const ACTIVE = new Set(["active", "trialing"]);
 const publicMessage = "Unable to verify license. Check your key and subscription.";
 const sha = value => crypto.createHash("sha256").update(value).digest("hex");
@@ -98,13 +98,13 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
         stripe.products.retrieve(PRIVATE_STUDIO_PRODUCT),
         stripe.prices.retrieve(PRIVATE_STUDIO_PRICE)
       ]);
-      available = product.active === true && price.active === true && price.unit_amount === 2000 &&
+      available = product.active === true && price.active === true && price.unit_amount === 1500 &&
         price.recurring?.interval === "month" && price.product === PRIVATE_STUDIO_PRODUCT;
     } catch {
       // Fail closed until the approved subscription offer is verifiable.
     }
     res.setHeader("Cache-Control", "no-store");
-    res.json({ name: "ACO Studio Private Edition", amount: 2000, currency: "usd",
+    res.json({ name: "ACO Studio Private Edition", amount: 1500, currency: "usd",
       interval: "month", available, platforms: ["mac", "windows"] });
   });
   app.post("/api/account/studio-private/checkout", requireCustomer, async (req, res) => {
@@ -172,7 +172,7 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
     if (now - limit.first > 60_000) { limit.first = now; limit.count = 0; }
     limit.count += 1; attempts.set(ip, limit);
     if (limit.count > 15) return res.status(429).json({ active: false, error: "Too many attempts." });
-    if (attempts.size > 2000) for (const [key, value] of attempts) if (now - value.first > 60_000) attempts.delete(key);
+    if (attempts.size > 1500) for (const [key, value] of attempts) if (now - value.first > 60_000) attempts.delete(key);
     try {
       const key = String(req.body?.licenseKey || "");
       if (!/^ACOP-(?:[A-F0-9]{16}-){3}[A-F0-9]{16}$/.test(key))
