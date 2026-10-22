@@ -4,6 +4,7 @@ const stores={target:"Target",walmart:"Walmart",pokemoncenter:"Pokémon Center (
 const labels={suffix:"Street suffix swap",directional:"Directional abbreviations",ordinal:"Ordinal street numbers",doubleLetter:"Double-letter street name",fraction:"Fractional house number",hyphen:"Hyphen house number",randomUnit:"Random unit on unassigned addresses",phone:"Randomize phone digits",name:"Randomize first and last name"};
 let overview={sources:[],cards:[],addresses:[],activity:[]},page="home";
 let remoteAllowed=null;
+const selectedProfileFiles=new Set();
 function applyJigPermissions(permissions){
   if(!permissions||typeof permissions!=="object")return;
   remoteAllowed=permissions;
@@ -38,6 +39,7 @@ async function refresh(){const result=await call("vault_overview");if(!result)re
   $("total-accounts").textContent=String(result.sources.reduce((n,s)=>n+s.count,0));
   $("total-cards").textContent=String(result.cards.length);
   $("total-addresses").textContent=String(result.addresses.length);
+  for(const id of [...selectedProfileFiles])if(!result.sources.some(x=>x.id===id))selectedProfileFiles.delete(id);
   drawFiles();drawCards();drawAddresses();drawSources();
   const allowed=await call("jigs_permissions");
   if(allowed)applyJigPermissions(allowed);
@@ -52,6 +54,12 @@ function drawFiles(){
     const files=overview.sources.filter(s=>s.retailer===retailer&&
       (area!=="profiles"||(s.bank||"working")===$("profiles-bank").value));
     for(const f of files){const box=node("div",undefined,"file-row");const summary=node("div");
+      if(area==="profiles"){
+        const pick=document.createElement("input");pick.type="checkbox";pick.setAttribute("aria-label","Select "+f.filename);
+        pick.checked=selectedProfileFiles.has(f.id);
+        pick.addEventListener("change",()=>{pick.checked?selectedProfileFiles.add(f.id):selectedProfileFiles.delete(f.id);updateBulkToolbar();});
+        summary.append(pick);
+      }
       summary.append(node("strong",f.filename),node("small",f.kind.toUpperCase()+" · "+f.count+" profile(s) · "+((f.bank||"working")==="live"?"Live Profiles":"Working Profiles")+" · Original format "+(f.changed?"edited":"retained")));
       const actions=node("div",undefined,"mini-actions");
       actions.append(button("Export",async()=>{const r=await call("vault_export",f.id);if(r?.saved)message("Exported "+r.filename+" in its source format.");}),
@@ -111,7 +119,68 @@ function drawFiles(){
     }
     if(!files.length)target.append(node("p",area==="profiles"?"No profiles in this selected retailer and bank. Import or move a file here.":"No imported files for this retailer yet. Import an existing file or create a profile."));
   }
+  updateBulkToolbar();
 }
+// Actions work on exact imported source files inside the currently visible bank.
+// All writes go through the existing encrypted, pre-save-snapshot transaction.
+const bulkToolbar=node("div",undefined,"panel"),bulkActions=node("div",undefined,"mini-actions");
+const bulkCount=node("span","0 selected");bulkToolbar.append(node("h3","Bulk profile bank actions"),bulkCount,bulkActions);
+$("profiles-list").before(bulkToolbar);
+const currentFiles=()=>overview.sources.filter(x=>x.retailer===$("profiles-retailer").value&&
+ (x.bank||"working")===$("profiles-bank").value);
+const selectedFiles=()=>currentFiles().filter(x=>selectedProfileFiles.has(x.id));
+function updateBulkToolbar(){
+ const count=selectedFiles().length;bulkCount.textContent=count+" file(s) selected";
+ for(const b of bulkActions.querySelectorAll("button[data-requires-selection]"))b.disabled=!count;
+}
+bulkActions.append(
+ button("Select all visible",()=>{for(const x of currentFiles())selectedProfileFiles.add(x.id);drawFiles();}),
+ button("Clear selection",()=>{selectedProfileFiles.clear();drawFiles();})
+);
+const bulkMove=button("Move All Selected",async()=>{
+ const chosen=selectedFiles();if(!chosen.length)return;
+ const fromBank=$("profiles-bank").value,toBank=fromBank==="live"?"working":"live";
+ if(!confirm("Move "+chosen.length+" selected "+stores[$("profiles-retailer").value]+" file(s) from "+fromBank+
+    " to "+toBank+"? No profile details will change."))return;
+ const result=await call("vault_bulkMove",{retailer:$("profiles-retailer").value,fromBank,toBank,
+    fileIds:chosen.map(x=>x.id),confirmed:true});
+ if(result?.saved){selectedProfileFiles.clear();await refresh();message("Moved "+result.moved+" files to "+toBank+".");}
+});bulkMove.dataset.requiresSelection="true";
+const bulkDelete=button("Delete All Selected",async()=>{
+ const chosen=selectedFiles();if(!chosen.length)return;
+ if(!confirm("DELETE "+chosen.length+" selected local "+stores[$("profiles-retailer").value]+
+  " file(s)? This does not affect your other retailers, cards, addresses or website accounts. An encrypted recovery snapshot is saved before removal."))return;
+ const result=await call("vault_bulkDelete",{retailer:$("profiles-retailer").value,
+   fromBank:$("profiles-bank").value,fileIds:chosen.map(x=>x.id),confirmed:true});
+ if(result?.deleted){selectedProfileFiles.clear();await refresh();message("Deleted "+result.deleted+" selected local profile files. Recovery snapshots are available in Settings.");}
+},"danger");bulkDelete.dataset.requiresSelection="true";
+const historyButton=button("Import History",async()=>{
+ const modal=$("inspect");modal.replaceChildren();modal.classList.remove("hidden");
+ const pane=node("section",undefined,"inspect-panel");pane.append(node("h2","Import history"),
+  node("p","Each import session is tracked separately. Removing a batch deletes only the files originally created in that import; later imports and saved card/address banks are preserved."),
+  button("Close",()=>modal.classList.add("hidden")));
+ const rows=overview.importHistory||[];
+ if(!rows.length)pane.append(node("p","No tracked imports yet. Older files remain available but cannot be deleted by unverified batch association."));
+ for(const batch of rows){
+  const record=node("div",undefined,"file-row"),details=node("div");
+  const label=stores[batch.retailer]||batch.retailer;
+  details.append(node("strong",label+" · "+(batch.bank==="live"?"Live":"Working")+" · "+new Date(batch.at).toLocaleString()),
+    node("small",batch.fileCount+" imported files · "+batch.profileCount+" profiles · "+batch.remainingFiles+" currently present"),
+    node("small",(batch.filenames||[]).join(", ").slice(0,500)));
+  record.append(details);
+  if(!batch.removedAt&&batch.remainingFiles){
+   record.append(button("Remove this import",async()=>{
+    if(!confirm("Remove ONLY the "+batch.remainingFiles+" remaining files from this exact import batch? You can recover a previous encrypted vault snapshot in Settings."))return;
+    const result=await call("vault_removeImportBatch",{batchId:batch.id,confirmed:true});
+    if(result){modal.classList.add("hidden");selectedProfileFiles.clear();await refresh();message("Removed "+result.removed+" files from the selected import. Other batches are untouched.");}
+   },"danger"));
+  }else record.append(node("small",batch.removedAt?"Removed "+new Date(batch.removedAt).toLocaleString():"All files already deleted"));
+  pane.append(record);
+ }
+ modal.append(pane);
+});
+bulkActions.append(bulkMove,bulkDelete,historyButton);updateBulkToolbar();
+
 function drawCards(){const target=$("card-list");target.replaceChildren();
   for(const c of overview.cards){const row=node("div",undefined,"file-row");row.append(node("strong",(c.label||"Card")+" · "+(c.number||"")+" · "+(c.holder||"")+" · "+(c.expiry||"")+(c.securityCode?" · Code: "+c.securityCode:"")),button("Delete",async()=>{if(!confirm("Delete this local card?"))return;
     if(await call("vault_remove",{kind:"card",id:c.id}))await refresh();},"danger"));target.append(row);}
@@ -127,8 +196,8 @@ function drawSources(){const selector=$("jig-source"),previous=selector.value;se
 for(const buttonEl of document.querySelectorAll("[data-view]"))buttonEl.addEventListener("click",()=>nav(buttonEl.dataset.view));
 for(const buttonEl of document.querySelectorAll("[data-go]"))buttonEl.addEventListener("click",()=>nav(buttonEl.dataset.go));
 for(const selector of document.querySelectorAll(".retailer"))for(const [id,label] of Object.entries(stores))selector.append(new Option(label,id));
-$("profiles-retailer").addEventListener("change",drawFiles);
-$("profiles-bank").addEventListener("change",drawFiles);
+$("profiles-retailer").addEventListener("change",()=>{selectedProfileFiles.clear();drawFiles();});
+$("profiles-bank").addEventListener("change",()=>{selectedProfileFiles.clear();drawFiles();});
 $("account-retailer").addEventListener("change",drawFiles);
 $("transfer-retailer").addEventListener("change",drawFiles);
 $("add-account-open").addEventListener("click",()=>$("account-form").classList.toggle("hidden"));

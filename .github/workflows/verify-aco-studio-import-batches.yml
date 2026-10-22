@@ -1,0 +1,67 @@
+name: Verify ACO Studio import batch and bulk bank operations
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'private-edition/**'
+      - '.github/aco-studio-build/profile-library/**'
+      - '.github/workflows/verify-aco-studio-import-batches.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'private-edition/**'
+      - '.github/aco-studio-build/profile-library/**'
+      - '.github/workflows/verify-aco-studio-import-batches.yml'
+permissions:
+  contents: read
+jobs:
+  customer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check private-edition/main.cjs && node --check private-edition/renderer.js && node --check private-edition/import-batches.cjs
+      - run: node --test private-edition/test/import-batches.test.cjs private-edition/test/backup-and-retailer-banks.test.cjs
+  owner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ACO_VERSION: '4.13.40'
+      ACO_ADHOC_MODE: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore original owner app and apply existing overlays (no fresh application)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > base.zip
+          printf '%s  %s\n' '8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570' base.zip | sha256sum -c -
+          mkdir -p build-src
+          unzip -q base.zip -d build-src
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+          python3 .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+          node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+          node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+          node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+      - name: Syntax and regression suite for owner banks
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in *.js; do node --check "$f"; done
+          npm install --no-audit --no-fund
+          node --test tests/profile-library.test.js tests/live-profiles.test.js tests/owner-backups.test.js tests/profile-live-ui.test.js

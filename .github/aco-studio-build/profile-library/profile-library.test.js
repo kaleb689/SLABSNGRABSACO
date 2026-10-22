@@ -149,3 +149,47 @@ test('Random unit Jig rejects a base address that already contains an apartment'
  const row=(await h.lib.list(event,h.p)).profiles[0];
  await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[row.id],ruleIds:[],hardCounts:{fraction:0,hyphen:0,doubleLetter:0,randomUnit:1},combine:false,billingSameAsShipping:false}),/Not enough unique eligible jig variations/);
 });
+
+
+test('Owner import history removes only exact batch profiles and preserves later imports, cards and customers',async t=>{
+ const h=await library(t);
+ const first=await commit(h,await preview(h,[complete('target','first-batch@example.test')]));
+ const second=await commit(h,await preview(h,[complete('target','second-batch@example.test')]));
+ const customer=await commit(h,await preview(h,[complete('target','customer-a@example.test')],h.a));
+ const history=(await h.lib.importHistory(event,h.p)).batches;
+ assert.equal(history.length,2);
+ assert.equal(history[0].id,second.batchId);
+ assert.equal(history[1].id,first.batchId);
+ await assert.rejects(h.lib.removeImportBatch(event,{...h.a,batchId:first.batchId,fingerprint:history[1].fingerprint,confirmed:true}),/history|changed/i);
+ const removed=await h.lib.removeImportBatch(event,{...h.p,batchId:first.batchId,fingerprint:history[1].fingerprint,confirmed:true});
+ assert.equal(removed.deleted,1);
+ assert.deepEqual((await h.lib.list(event,h.p)).profiles.map(x=>x.email),['second-batch@example.test']);
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,1);
+ assert.equal(customer.imported,1);
+ assert.equal((await h.lib.importHistory(event,h.p)).batches.find(x=>x.id===first.batchId).removedAt!==null,true);
+});
+test('Owner bulk move/delete validates exact retailer and revision atomically',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','bulk-one@example.test')]));
+ await commit(h,await preview(h,[complete('target','bulk-two@example.test')]));
+ await commit(h,await preview(h,[complete('pokemoncenter','unrelated@example.test')],h.p,'pokemoncenter'));
+ const originals=(await h.lib.list(event,h.p)).profiles;
+ const selected=originals.filter(x=>x.retailer==='target');
+ const args={...h.p,retailer:'target',fromBank:'working',profileIds:selected.map(x=>x.id),revisions:selected.map(x=>x.revision),confirmed:true};
+ await assert.rejects(h.lib.bulkManage(event,{...args,revisions:[999,...args.revisions.slice(1)],operation:'delete'}),/changed/);
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,3);
+ const moved=await h.lib.bulkManage(event,{...args,operation:'move',toBank:'live'});
+ assert.equal(moved.count,2);
+ assert.deepEqual((await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target').map(x=>x.bank),['live','live']);
+ await assert.rejects(h.lib.bulkManage(event,{...args,operation:'delete'}),/changed/);
+ const next=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ assert.equal((await h.lib.bulkManage(event,{...args,fromBank:'live',revisions:next.map(x=>x.revision),operation:'delete'})).count,2);
+ assert.deepEqual((await h.lib.list(event,h.p)).profiles.map(x=>x.retailer),['pokemoncenter']);
+});
+test('Owner batch operations refuse connected website profile deletion and preserve snapshot on invalid calls',async t=>{
+ const h=await library(t);
+ await h.lib.syncCustomer(event,h.a);
+ const row=(await h.lib.list(event,h.a)).profiles[0];
+ await assert.rejects(h.lib.bulkManage(event,{...h.a,operation:'delete',retailer:'pokemoncenter',fromBank:'working',profileIds:[row.id],revisions:[row.revision],confirmed:true}),/Linked website/);
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,1);
+});
