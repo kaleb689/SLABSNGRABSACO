@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.slabsngrabsaco.aco-studio-private",
-    "productName": "ACO Studio Private Edition",
+    "productName": "ACO STUDIO",
     "asar": true,
     "files": [
       "main.cjs",
