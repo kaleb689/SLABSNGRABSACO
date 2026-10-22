@@ -1,6 +1,6 @@
 {
   "name": "aco-studio-private-edition",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Customer-only locally encrypted ACO Studio",
   "main": "main.cjs",
