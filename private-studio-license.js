@@ -91,9 +91,21 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
     }
     return false;
   }
-  app.get("/api/studio-private/offer", (_req, res) => {
+  app.get("/api/studio-private/offer", async (_req, res) => {
+    let available = false;
+    try {
+      const [product, price] = await Promise.all([
+        stripe.products.retrieve(PRIVATE_STUDIO_PRODUCT),
+        stripe.prices.retrieve(PRIVATE_STUDIO_PRICE)
+      ]);
+      available = product.active === true && price.active === true && price.unit_amount === 2000 &&
+        price.recurring?.interval === "month" && price.product === PRIVATE_STUDIO_PRODUCT;
+    } catch {
+      // Fail closed until the approved subscription offer is verifiable.
+    }
+    res.setHeader("Cache-Control", "no-store");
     res.json({ name: "ACO Studio Private Edition", amount: 2000, currency: "usd",
-      interval: "month", available: false, platforms: ["mac", "windows"] });
+      interval: "month", available, platforms: ["mac", "windows"] });
   });
   app.post("/api/account/studio-private/checkout", requireCustomer, async (req, res) => {
     try {
