@@ -60,12 +60,20 @@ function key(record, kind) {
   const id = record?.assignmentId || record?.id || record?.rentedMembershipId || record?.freeMembershipId || record?.managedAccountId;
   return id ? `${kind}:${id}` : "";
 }
-function reminder(kind, item, end, stage) {
-  const membership = kind === "membership";
+export function membershipBoundaryNotice(record, now = Date.now()) {
+  if (!record || !["active", "trialing"].includes(String(record.subscriptionStatus || "").toLowerCase())) return null;
+  const cancelling = record.cancelAtPeriodEnd === true;
+  const end = date(cancelling ? (record.cancelAt || record.currentPeriodEnd || record.subscriptionEndDate) : record.currentPeriodEnd);
+  const remaining = end ? end.getTime() - now : 0;
+  if (!end || remaining <= 0 || remaining > 5 * DAY) return null;
+  return {end, stage:remaining <= DAY ? "1d" : "5d", mode:cancelling ? "cancellation" : "renewal"};
+}
+function reminder(kind, item, end, stage, mode = "cancellation") {
+  const membership = kind === "membership", renewing = membership && mode === "renewal";
   return {
-    title: `${stage === "1d" ? "⚠️" : "⏰"} ${membership ? "Membership" : kind === "rented" ? "Rental" : "Gifted account"} ending soon`,
-    description: `**${item}**\n\nEnds: **${fmt(end)}**\n\n${membership
-      ? "Your membership is scheduled to stop renewing. Renew/reactivate it before this date if you want to continue."
+    title: `${stage === "1d" ? "⚠️" : "⏰"} ${membership ? "Membership" : kind === "rented" ? "Rental" : "Gifted account"} ${renewing ? "renews soon" : "ending soon"}`,
+    description: `**${item}**\n\n${renewing ? "Renews" : "Ends"}: **${fmt(end)}**\n\n${membership
+      ? renewing ? "Your membership is scheduled to renew automatically. Check your saved billing method or cancel before the renewal date if you do not wish to renew." : "Your membership is scheduled to stop renewing. Renew/reactivate it before this date if you want to continue."
       : "Renew this access before the expiration date if you want to continue using it."}`,
     color: stage === "1d" ? 0xe67e22 : 0xf1c40f,
     footer: { text: "SLABSNGRABSACO renewal reminder" },
@@ -108,11 +116,11 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
       const rtpReturned = [];
 
       for (const record of list(paidRaw)) {
-        if (record?.cancelAtPeriodEnd !== true) continue;
-        const end = date(record?.subscriptionEndDate || record?.currentPeriodEnd || record?.cancelAt);
+        const boundary = membershipBoundaryNotice(record, now);
         const account = accounts.get(String(record?.customerAccountId || ""));
-        if (!end || !account || end.getTime() <= now || end.getTime() - now > 3 * DAY) continue;
-        const stage = end.getTime() - now <= DAY ? "1d" : "3d";
+        if (!boundary || !account || !record?.stripeSubscriptionId) continue;
+        const {end,stage,mode} = boundary;
+        if(mode === "cancellation") {
         // Private staff alerts are independent of customer Discord DMs.
         const adminNotice = `admin-membership:${record?.stripeSubscriptionId || record?.id || account.id}:${end.toISOString()}:${stage}`;
         const adminName = String(account.displayName || account.name || record?.profile?.name || account.email || "Member");
@@ -130,7 +138,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   embeds: [{
-                    title: stage === "1d" ? "🚨 Membership expires within 24 hours" : "⚠️ Membership expires within 3 days",
+                    title: stage === "1d" ? "🚨 Membership expires within 24 hours" : "⚠️ Membership expires within 5 days",
                     description: adminBody,
                     color: stage === "1d" ? 15158332 : 15844367,
                     timestamp: new Date().toISOString(),
@@ -148,7 +156,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           try {
             delivered.push = state[adminNotice]?.push || await sendBackgroundAdminPush(
               dataDir, "expirations",
-              stage === "1d" ? "Membership ends in 24 hours" : "Membership ends in 3 days",
+              stage === "1d" ? "Membership ends in 24 hours" : "Membership ends in 5 days",
               adminBody, "/admin-app.html", adminNotice
             );
           } catch (e) { console.error("Admin membership expiry push:", e.message); }
@@ -158,10 +166,11 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           changed = true;
         }
 
-        const notice = `membership:${record?.stripeSubscriptionId || record?.id || account.id}:${end.toISOString()}:${stage}`;
+        }
+        const notice = `membership:${record.stripeSubscriptionId}:${end.toISOString()}:${mode}:${stage}`;
         if (state[notice]) continue;
         try {
-          if (await dm(token, discordId(account), reminder("membership", record?.plan?.name || "Membership", end, stage), [], guard, notice)) {
+          if (await dm(token, discordId(account), reminder("membership", record?.plan?.name || "Membership", end, stage, mode), [], guard, notice)) {
             state[notice] = new Date().toISOString(); changed = true;
           }
         } catch (e) { console.error("Membership lapse DM:", e.message); }
