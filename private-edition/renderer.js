@@ -56,10 +56,19 @@ function drawFiles(){
           const modal=$("inspect");modal.replaceChildren();modal.classList.remove("hidden");
           const pane=node("section",undefined,"inspect-panel");pane.append(node("h2",data.filename),
             button("Close",()=>modal.classList.add("hidden")));
-          for(const row of data.rows.slice(0,40)){
-            const p=node("pre",String(row.index+1)+". "+Object.entries(row.fields).map(([key,v])=>key+": "+String(v)).join(" | "));
-            pane.append(p);
-          }modal.append(pane);
+          const pageSize=50,container=node("div"),controls=node("div",undefined,"mini-actions"),pager=node("span");
+          let page=0;
+          const previous=button("Previous",()=>{page--;render();}),next=button("Next",()=>{page++;render();});
+          function render(){
+            container.replaceChildren();
+            for(const row of data.rows.slice(page*pageSize,(page+1)*pageSize)){
+              container.append(node("pre",String(row.index+1)+". "+Object.entries(row.fields).map(([key,v])=>key+": "+String(v)).join(" | ")));
+            }
+            const count=Math.max(1,Math.ceil(data.rows.length/pageSize));
+            pager.textContent="Page "+(page+1)+" of "+count;
+            previous.disabled=page===0;next.disabled=page>=count-1;
+          }
+          controls.append(previous,pager,next);pane.append(controls,container);render();modal.append(pane);
         }),button("Delete",async()=>{if(!confirm("Delete only "+f.filename+" from this private local vault?"))return;
           if(await call("vault_remove",{kind:"source",id:f.id})){message("Local file removed.");await refresh();}
         },"danger"));
