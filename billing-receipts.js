@@ -43,7 +43,7 @@ export function receiptPayload(event) {
           typeof entity.parent?.subscription_details?.subscription==="string"?entity.parent.subscription_details.subscription:"N/A"),
         ...(typeof entity.hosted_invoice_url==="string"&&entity.hosted_invoice_url.startsWith("https://")
           ? ["Your official Stripe invoice: "+entity.hosted_invoice_url]:[]),
-        "Your payment information is processed by Stripe. No payment card numbers are included in this email."
+        "Stripe processes your payment securely. Your saved payment details are not included here."
       ].join("\n\n")
     };
   }
