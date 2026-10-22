@@ -6325,50 +6325,18 @@ function managedProfileReadiness(
 }
 
 
-async function savedCheckoutSelection(
-  account,
-  addressId,
-  paymentId
-) {
-  const address =
-    addressId
-      ? customerSavedAddresses(
-          account
-        ).find(
-          item =>
-            String(
-              item.id
-            ) ===
-            String(
-              addressId
-            )
-        ) || null
-      : null;
-
-  const vault =
-    await getCustomerVault(
-      account.id
-    );
-
-  const payment =
-    paymentId
-      ? vault.paymentMethods.find(
-          item =>
-            String(
-              item.id
-            ) ===
-            String(
-              paymentId
-            )
-        ) || null
-      : null;
-
-  return {
-    address,
-    payment
-  };
+async function savedCheckoutSelection(account, addressId, paymentId) {
+  // The customer selectors and profile autofill must resolve the same
+  // account-owned records, including legacy checkout and linked-profile cards.
+  const details = await allCustomerSavedDetails(account);
+  const address = addressId
+    ? details.addresses.find(item => String(item.id) === String(addressId)) || null
+    : null;
+  const payment = paymentId
+    ? details.paymentMethods.find(item => String(item.id) === String(paymentId)) || null
+    : null;
+  return {address, payment};
 }
-
 
 function shippingProfileFromSavedAddress(
   address,
