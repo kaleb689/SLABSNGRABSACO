@@ -7,7 +7,7 @@ const Vault=require("./vault.cjs");
 const Formats=require("./formats.cjs");
 const Jigs=require("./jigs.cjs");
 const LICENSE_URL="https://slabsngrabsaco.com/api/studio-private/license/verify";
-app.setName("ACO Studio Private Edition");
+app.setName("ACO STUDIO");
 app.setPath("userData",path.join(app.getPath("appData"),"aco-studio-private-edition"));
 let win=null,document=null,authorizedUntil=0,verifyPending=null,queue=Promise.resolve();
 function transact(fn){const task=queue.then(fn,fn);queue=task.catch(()=>{});return task;}
@@ -41,7 +41,7 @@ async function licenseStatus(force=false){
   })();
   try{return await verifyPending;}finally{verifyPending=null;}
 }
-async function allowed(){if(!await licenseStatus())throw Error("License is inactive. Sign in with your ACO Studio Private Edition key.");}
+async function allowed(){if(!await licenseStatus())throw Error("License is inactive. Sign in with your ACO STUDIO key.");}
 async function edit(fn){return transact(async()=>{await allowed();const v=await Vault.load();const result=await fn(v);await Vault.save(v);return result;});}
 function displayState(v){
   return {sources:v.sources.map(s=>({id:s.id,retailer:s.retailer,...Formats.profileSummary(s.file)})),
@@ -50,7 +50,7 @@ function displayState(v){
 }
 async function openWindow(){
   win=new BrowserWindow({width:1480,height:940,minWidth:1100,minHeight:730,show:false,
-    title:"ACO Studio Private Edition",backgroundColor:"#090e22",
+    title:"ACO STUDIO",backgroundColor:"#090e22",
     webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,
       preload:path.join(__dirname,"preload.cjs"),webSecurity:true,webviewTag:false}});
   win.webContents.setWindowOpenHandler(()=>({action:"deny"}));
