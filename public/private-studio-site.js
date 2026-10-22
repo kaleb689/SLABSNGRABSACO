@@ -50,7 +50,7 @@
           key.textContent=first.active?first.licenseKey||"No key issued":"";
           buttons.replaceChildren();
           if(first.active){
-            const release="https://github.com/kaleb689/SLABSNGRABSACO/releases/tag/aco-studio-v1.0.3-preview";
+            const release="https://github.com/kaleb689/SLABSNGRABSACO/releases/tag/aco-studio-v1.0.4-preview";
             for(const platform of ["Mac installer","Windows installer"]){
               const link=el("a","Download "+platform,"aco-private-download-link");link.href=release;link.target="_blank";link.rel="noopener noreferrer";buttons.append(link);
             }
