@@ -149,7 +149,11 @@
    const [assets,accounts]=await Promise.all([workshop.assets(owner),workshop.emails({...owner,retailer:q('retailer').value})]);
    if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;
    bankAssets={addresses:Array.isArray(assets?.addresses)?assets.addresses:[],cards:Array.isArray(assets?.cards)?assets.cards:[]};
-   drawResourceBanks();q('pool-counts').textContent=assets.addresses.length+' saved addresses · '+assets.cards.filter(x=>x.unused).length+' unused cards · '+(accounts.freeAccounts||0)+' free '+retailName[q('retailer').value]+' accounts · '+accounts.emails.filter(x=>x.status==='available'&&x.source!=='account').length+' unused emails · '+(assets.addresses.length?Math.min(500,assets.cards.filter(x=>x.unused).length,accounts.availableForCreation??accounts.emails.filter(x=>x.status==='available').length):0)+' profiles available with one card each';
+   drawResourceBanks();q('pool-counts').textContent=assets.addresses.length+' saved addresses · '+assets.cards.filter(x=>x.unused).length+' unused cards · '+(accounts.freeAccounts||0)+' free '+retailName[q('retailer').value]+' accounts · '+accounts.emails.filter(x=>x.status==='available'&&x.source!=='account').length+' unused emails · '+(assets.addresses.length?Math.min(500,assets.cards.filter(x=>x.unused).length,accounts.availableForCreation??accounts.emails.filter(x=>x.status==='available').length):0)+' profiles available with one card each'+
+    (q('retailer').value==='pokemoncenter'&&accounts.targetLiveReconciliation?.targetLiveProfiles?
+     ' | Target Live: '+accounts.targetLiveReconciliation.targetLiveProfiles+' profiles ('+accounts.targetLiveReconciliation.targetUniqueEmails+' unique emails) | '+
+     accounts.targetLiveReconciliation.alreadyPkcProfiles+' Target emails already used as PKC profiles | '+
+     accounts.targetLiveReconciliation.pkcCoverage+'/'+accounts.targetLiveReconciliation.targetUniqueEmails+' Target emails accounted for in PKC profiles / email pools':'');
   }catch(error){
    if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;
    bankAssets={addresses:[],cards:[]};drawResourceBanks();
