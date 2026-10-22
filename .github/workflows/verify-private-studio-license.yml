@@ -11,6 +11,7 @@ on:
       - 'public/private-studio-site.css'
       - 'public/index.html'
       - 'test/private-studio-license.test.mjs'
+      - 'test/private-studio-owner-test-key.test.mjs'
       - '.github/workflows/verify-private-studio-license.yml'
   workflow_dispatch:
 permissions:
@@ -28,7 +29,7 @@ jobs:
       - run: node --check billing-receipts.js
       - run: node --check public/private-studio-site.js
       - run: node --check server.js
-      - run: node --test test/private-studio-license.test.mjs test/billing-receipts.test.mjs
+      - run: node --test test/private-studio-license.test.mjs test/private-studio-owner-test-key.test.mjs test/billing-receipts.test.mjs
       - name: Ensure standalone application cannot touch original owner data
         run: |
           test -f private-edition/main.cjs
