@@ -6,6 +6,9 @@ on:
       - 'private-edition/**'
       - '.github/workflows/build-aco-private-edition.yml'
   workflow_dispatch:
+concurrency:
+  group: aco-studio-private-edition-release
+  cancel-in-progress: true
 permissions:
   contents: write
 jobs:
