@@ -3219,6 +3219,16 @@ async function sendAdminSubscriptionInvoiceNotification(
             .toISOString()
   });
 
+  try {
+    await notifyAdminMobile(
+      "expirations",
+      isUpgrade ? "Membership upgraded" : "Membership renewed",
+      `${String(record?.profile?.name || record?.profile?.email || invoice?.customer_email || "Member")} — ${purchaseSummary}; payment ${moneyFromStripeCents(invoice?.amount_paid)}.`
+    );
+  } catch (error) {
+    console.error("Admin membership renewal push failed:", error.message);
+  }
+
   return true;
 }
 
