@@ -1,3 +1,4 @@
+import { registerPrivateStudioJigPermissions } from "./private-studio-jig-permissions.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -334,6 +335,20 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
     }
     res.setHeader("Cache-Control", "no-store, private");
     res.json({ licenses });
+  });
+  registerPrivateStudioJigPermissions({
+    app, requireAdmin, dataDir,
+    resolveLicenseKey: async key => {
+      const hash = sha(key);
+      if (ownerPreviewMatches(hash) && !await ownerPreviewRevoked()) return "owner-test";
+      const record = (await read()).find(row => row.keyHash === hash && !row.revokedAt);
+      if (!record || !subscriptionEntitled(await subscription(record.subscriptionId))) return null;
+      return record.accountId;
+    },
+    licenseAccounts: async () => {
+      const rows = await read();
+      return [...new Set(rows.filter(row => !row.revokedAt).map(row => row.accountId))];
+    }
   });
   return { onStripeEvent };
 }
