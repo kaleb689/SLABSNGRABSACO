@@ -11,8 +11,8 @@ function nav(view){page=view;for(const section of document.querySelectorAll(".pa
   const title={home:"Welcome to your private ACO Studio workspace",accounts:"Account Banks",cards:"Card Bank",
     addresses:"Address Bank",jig:"Jig Studio",transfer:"Import / Export",rules:"Rules",
     license:"License",settings:"Settings"};
-  $("page-title").textContent=title[view]||"ACO Studio Private Edition";
-  $("page-desc").textContent=view==="home"?"Your profiles, bank data and export files stay under your control.":"Your private edition. Your device. Your data.";
+  $("page-title").textContent=title[view]||"ACO STUDIO";
+  $("page-desc").textContent=view==="home"?"Your profiles, bank data and export files stay under your control.":"Your workspace. Your device. Your data.";
   if(view==="transfer"||view==="accounts")drawFiles();
 }
 async function call(name,arg){try{return await api[name](arg);}catch(e){message(e?.message||"Operation failed.",true);return null;}}
