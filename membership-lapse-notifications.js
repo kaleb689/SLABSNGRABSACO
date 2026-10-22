@@ -3,6 +3,7 @@ import { sendBackgroundAdminPush } from "./admin-push.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { sendDiscordLapseChecklistGroup, sendDiscordRtpReturnSummary } from "./discord-community.js";
+import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 
 const API = "https://discord.com/api/v10";
 const DAY = 86400000;
@@ -30,7 +31,7 @@ function fmt(value) {
 function discordId(account) {
   return String(account?.discordUserId || account?.discordId || "").trim();
 }
-async function dm(token, userId, embed, components = []) {
+async function dm(token, userId, embed, components = [], guard, eventKey) {
   if (!token || !/^\d{17,22}$/.test(userId)) return false;
   const headers = { Authorization: `Bot ${token}`, "Content-Type": "application/json" };
   const opened = await fetch(`${API}/users/@me/channels`, {
@@ -39,6 +40,8 @@ async function dm(token, userId, embed, components = []) {
   });
   if (!opened.ok) throw new Error(`DM open HTTP ${opened.status}`);
   const channel = await opened.json();
+  const claim=await guard.claim({channel:"discord:membership",recipient:userId,eventKey});
+  if(!claim.send)return claim.reason==="already_notified";
   const sent = await fetch(`${API}/channels/${channel.id}/messages`, {
     method: "POST", headers,
     body: JSON.stringify({ embeds: [embed], components, allowed_mentions: { parse: [] } }),
@@ -74,6 +77,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
   token = String(token || "").trim();
   adminWebhookUrl = String(adminWebhookUrl || "").trim();
   if (!token && !adminWebhookUrl) return;
+  const guard=createNotificationDeliveryGuard({dataDir});
 
   const paths = {
     accounts: path.join(dataDir, "customer-accounts.json"),
@@ -117,6 +121,10 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           const delivered = { discord: false, push: false };
           try {
             if (adminWebhookUrl && !state[adminNotice]?.discord) {
+              const claim=await guard.claim({channel:"discord:webhook:membership",recipient:"admin",eventKey:adminNotice});
+              if(!claim.send){
+                delivered.discord=claim.reason==="already_notified";
+              }else{
               const response = await fetch(adminWebhookUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -134,13 +142,14 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
               });
               if (!response.ok) throw new Error(`Admin webhook HTTP ${response.status}`);
               delivered.discord = true;
+              }
             }
           } catch (e) { console.error("Admin membership expiry Discord:", e.message); }
           try {
             delivered.push = state[adminNotice]?.push || await sendBackgroundAdminPush(
               dataDir, "expirations",
               stage === "1d" ? "Membership ends in 24 hours" : "Membership ends in 3 days",
-              adminBody
+              adminBody, "/admin-app.html", adminNotice
             );
           } catch (e) { console.error("Admin membership expiry push:", e.message); }
           // Keep retrying destinations that failed without duplicating successful delivery.
@@ -152,7 +161,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
         const notice = `membership:${record?.stripeSubscriptionId || record?.id || account.id}:${end.toISOString()}:${stage}`;
         if (state[notice]) continue;
         try {
-          if (await dm(token, discordId(account), reminder("membership", record?.plan?.name || "Membership", end, stage))) {
+          if (await dm(token, discordId(account), reminder("membership", record?.plan?.name || "Membership", end, stage), [], guard, notice)) {
             state[notice] = new Date().toISOString(); changed = true;
           }
         } catch (e) { console.error("Membership lapse DM:", e.message); }
@@ -282,6 +291,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
                 item.returnedAt = new Date().toISOString();
                 rtpReturned.push({
                   customerAccountId,
+                  managedAccountId:String(item.managedAccountId || ""),
                   retailer: String(
                     record?.rentalRetailer ||
                     record?.assignmentRetailer ||
@@ -366,7 +376,8 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
         };
 
         try {
-          if (await dm(token, discordId(group.account), embed, components)) {
+          if (await dm(token, discordId(group.account), embed, components, guard,
+            "rtp_final:" + group.account.id + ":" + sorted.map(entry => String(entry.item.managedAccountId) + ":" + entry.item.returnAt).sort().join("|"))) {
             for (const entry of sorted) {
               entry.item.sentAt = new Date().toISOString();
               rtpFinalChanged = true;
@@ -438,7 +449,7 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           ];
         }
         try {
-          if (await dm(token, discordId(group.account), embed, components)) {
+          if (await dm(token, discordId(group.account), embed, components, guard, notice)) {
             state[notice] = new Date().toISOString();
             changed = true;
           }
@@ -459,7 +470,10 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
           poolCounts[retailer] = (poolCounts[retailer] || 0) + 1;
         }
         try {
-          await sendDiscordRtpReturnSummary({
+          const eventKey="rtp_returned:" + rtpReturned.map(item=>
+            String(item.customerAccountId) + ":" + String(item.managedAccountId)).sort().join("|");
+          const claim=await guard.claim({channel:"discord:admin:rtp",recipient:"admin",eventKey});
+          if(claim.send)await sendDiscordRtpReturnSummary({
             userCount,
             profileCount: rtpReturned.length,
             poolCounts
