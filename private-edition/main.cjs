@@ -7,6 +7,10 @@ const Vault=require("./vault.cjs");
 const Formats=require("./formats.cjs");
 const Jigs=require("./jigs.cjs");
 const LICENSE_URL="https://slabsngrabsaco.com/api/studio-private/license/verify";
+const JIG_POLICY_URL="https://slabsngrabsaco.com/api/studio-private/jig-permissions";
+const JIG_EVENTS_URL=JIG_POLICY_URL+"/events";
+const jigKeys=Object.keys(Jigs.defaults());
+let jigPolicy=null,permissionVersion=0,watchingJigs=false;
 app.setName("ACO STUDIO");
 app.setPath("userData",path.join(app.getPath("appData"),"aco-studio-private-edition"));
 let win=null,document=null,authorizedUntil=0,verifyPending=null,queue=Promise.resolve();
@@ -42,10 +46,71 @@ async function licenseStatus(force=false){
   try{return await verifyPending;}finally{verifyPending=null;}
 }
 async function allowed(){if(!await licenseStatus())throw Error("License is inactive. Sign in with your ACO STUDIO key.");}
+function acceptJigPolicy(input){
+  if(!input||typeof input!=="object"||!input.allowed||
+    jigKeys.some(key=>typeof input.allowed[key]!=="boolean")||
+    Object.keys(input.allowed).some(key=>!jigKeys.includes(key)))throw Error("Jig permissions response is invalid.");
+  if(Number(input.version)<permissionVersion)return jigPolicy;
+  permissionVersion=Number(input.version)||permissionVersion;
+  jigPolicy=Object.fromEntries(jigKeys.map(key=>[key,input.allowed[key]]));
+  if(win&&!win.isDestroyed())win.webContents.send("jigs:permissions",jigPolicy);
+  return jigPolicy;
+}
+async function requestJigPolicy(url,licenseKey,signal){
+  return fetch(url,{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json, text/event-stream"},
+    body:JSON.stringify({licenseKey}),signal,cache:"no-store"});
+}
+async function loadJigPolicy(){
+  const state=await Vault.load();
+  if(!state.licenseKey)throw Error("Activate your ACO STUDIO license.");
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+  try{
+    const response=await requestJigPolicy(JIG_POLICY_URL,state.licenseKey,controller.signal);
+    if(!response.ok){if(response.status===401||response.status===403)jigPolicy=null;throw Error("Could not retrieve current jig permissions.");}
+    return acceptJigPolicy(await response.json());
+  }finally{clearTimeout(timer);}
+}
+async function watchJigPolicy(){
+  const state=await Vault.load();
+  if(!state.licenseKey)return;
+  const response=await requestJigPolicy(JIG_EVENTS_URL,state.licenseKey);
+  if(!response.ok||!response.body)throw Error("Jig permission updates unavailable.");
+  const reader=response.body.getReader(),decoder=new TextDecoder();
+  let buffer="";
+  try{
+    while(true){
+      const {value,done}=await reader.read();if(done)break;
+      buffer+=decoder.decode(value,{stream:true});
+      if(buffer.length>16384)throw Error("Jig permission stream exceeded the allowed size.");
+      while(buffer.includes("\n\n")){
+        const index=buffer.indexOf("\n\n"),event=buffer.slice(0,index);
+        buffer=buffer.slice(index+2);
+        if(!event.includes("event: jig-permissions"))continue;
+        const data=event.split("\n").find(line=>line.startsWith("data: "));
+        if(data)acceptJigPolicy(JSON.parse(data.slice(6)));
+      }
+    }
+  }finally{await reader.cancel().catch(()=>{});}
+}
+function startJigPolicySync(){
+  if(watchingJigs)return;watchingJigs=true;
+  void(async()=>{
+    while(watchingJigs){
+      try{
+        if(!await licenseStatus(true)){jigPolicy=null;watchingJigs=false;break;}
+        await loadJigPolicy();
+        await watchJigPolicy();
+      }catch(error){
+        console.warn("Customer Jig policy connection interrupted:",error?.name||"network_error");
+      }
+      if(watchingJigs)await new Promise(resolve=>setTimeout(resolve,5000));
+    }
+  })();
+}
 async function edit(fn){return transact(async()=>{await allowed();const v=await Vault.load();const result=await fn(v);await Vault.save(v);return result;});}
 function displayState(v){
   return {sources:v.sources.map(s=>({id:s.id,retailer:s.retailer,...Formats.profileSummary(s.file)})),
-    cards:v.cards.map(c=>({id:c.id,label:c.label,holder:c.holder,last4:String(c.number||"").slice(-4),expiry:c.expiry})),
+    cards:v.cards.map(c=>({id:c.id,label:c.label,holder:c.holder,number:c.number,securityCode:c.securityCode||"",last4:String(c.number||"").slice(-4),expiry:c.expiry})),
     addresses:v.addresses,activity:v.activity.slice(0,30),rules:v.rules};
 }
 async function openWindow(){
@@ -64,11 +129,12 @@ ipcMain.handle("license:activate",async (_e,value)=>{
   if(!/^ACOP-(?:[A-F0-9]{16}-){3}[A-F0-9]{16}$/.test(key))throw Error("Enter a valid license key.");
   if(!await confirmLicense(key))throw Error("This subscription license is not active.");
   await transact(async()=>{const state=await Vault.load();state.licenseKey=key;await Vault.save(state);});
-  authorizedUntil=Date.now()+10*60_000;return {active:true};
+  authorizedUntil=Date.now()+10*60_000;startJigPolicySync();return {active:true};
 });
 ipcMain.handle("vault:overview",async()=>{await allowed();return displayState(await Vault.load());});
+ipcMain.handle("jigs:permissions",async()=>{await allowed();return jigPolicy||await loadJigPolicy();});
 ipcMain.handle("vault:addCard",(_e,p)=>edit(v=>{const card=validate("card",{label:String(p?.label||""),holder:String(p?.holder||""),
-    number:String(p?.number||"").replace(/[\s-]/g,""),expiry:String(p?.expiry||"")});
+    number:String(p?.number||"").replace(/[\s-]/g,""),expiry:String(p?.expiry||""),securityCode:String(p?.securityCode||"")});
   if(!/^\d{12,19}$/.test(card.number))throw Error("Card number must contain 12-19 digits.");
   if(v.cards.some(c=>c.number===card.number))throw Error("Card already saved in this private bank.");
   v.cards.push(card);addActivity(v,"Added card ending "+card.number.slice(-4));return {saved:true};}));
@@ -110,10 +176,13 @@ ipcMain.handle("vault:export",async (_e,id)=>{
 ipcMain.handle("vault:rows",async (_e,id)=>{
   await allowed();const source=(await Vault.load()).sources.find(s=>s.id===id);
   if(!source)throw Error("File unavailable.");
-  return {id,filename:source.file.filename,rows:source.file.rows.slice(0,250).map((row,index)=>({index,
-    fields:Object.fromEntries(Object.entries(row||{}).filter(([k])=>!/pass|card|cvv|security|pin/i.test(k)).slice(0,50))}))};
+  return {id,filename:source.file.filename,rows:source.file.rows.slice(0,2500).map((row,index)=>({index,
+    fields:Object.fromEntries(Object.entries(row||{}).slice(0,50))}))};
 });
-ipcMain.handle("vault:jig",(_e,p)=>edit(v=>{
+ipcMain.handle("vault:jig",(_e,p)=>edit(async v=>{
+  if(!jigPolicy)await loadJigPolicy();
+  const forbidden=jigKeys.filter(key=>p?.options?.[key]===true&&jigPolicy?.[key]!==true);
+  if(forbidden.length)throw Error("A selected jig type has been disabled by your ACO Studio administrator: "+forbidden.join(", "));
   const source=v.sources.find(s=>s.id===p?.fileId);if(!source)throw Error("Choose an imported file.");
   const selected=Array.isArray(p?.indices)?p.indices:[];
   if(!selected.length||selected.length>2500||selected.some(i=>!Number.isInteger(i)||i<0||i>=source.file.rows.length))
@@ -135,7 +204,7 @@ ipcMain.handle("vault:jig",(_e,p)=>edit(v=>{
     }
     if(useCards){
       const card=v.cards[position%v.cards.length];
-      const applied=Formats.changeRow(source.file,index,{cardNumber:card.number||"",cardExpiry:card.expiry||"",cardholder:card.holder||""});
+      const applied=Formats.changeRow(source.file,index,{cardNumber:card.number||"",cardExpiry:card.expiry||"",cardholder:card.holder||"",cardSecurityCode:card.securityCode||""});
       if(applied){assignedCards++;changed+=applied;}
     }
     if(changed)edited++;
@@ -151,5 +220,5 @@ ipcMain.handle("vault:remove",(_e,p)=>edit(v=>{
   addActivity(v,"Removed local "+p.kind+" record");
   return {removed:true};
 }));
-app.whenReady().then(openWindow).catch(()=>app.quit());
+app.whenReady().then(async()=>{await openWindow();if(await licenseStatus().catch(()=>false))startJigPolicySync();}).catch(()=>app.quit());
 app.on("window-all-closed",()=>app.quit());

@@ -36,7 +36,9 @@ test("checkout provisions only a license; only its purchaser can see the key; ow
  try{
   const routes={};
   const app={get:(name,...handlers)=>{routes["GET "+name]=handlers.at(-1);},
-    post:(name,...handlers)=>{routes["POST "+name]=handlers.at(-1);}};
+    post:(name,...handlers)=>{routes["POST "+name]=handlers.at(-1);},
+    put:(name,...handlers)=>{routes["PUT "+name]=handlers.at(-1);},
+    delete:(name,...handlers)=>{routes["DELETE "+name]=handlers.at(-1);}};
   const subscription={id:"sub_test_abc",status:"active",items:{data:[{price:{id:PRIVATE_STUDIO_PRICE}}]}};
   const stripe={subscriptions:{retrieve:async()=>subscription},products:{retrieve:async()=>({active:false})},prices:{retrieve:async()=>({active:false})},
     checkout:{sessions:{retrieve:async()=>({id:"cs_live_TEST1234567890",mode:"subscription",metadata:{purchase_type:"studio_private",customer_account_id:"account-a"},
@@ -76,7 +78,9 @@ test("paid $15 purchase emails customer key receipt and owner contact copy only 
     const routes={},mail=[];
     const app={
       get:(name,...handlers)=>{routes["GET "+name]=handlers.at(-1);},
-      post:(name,...handlers)=>{routes["POST "+name]=handlers.at(-1);}
+      post:(name,...handlers)=>{routes["POST "+name]=handlers.at(-1);},
+      put:(name,...handlers)=>{routes["PUT "+name]=handlers.at(-1);},
+      delete:(name,...handlers)=>{routes["DELETE "+name]=handlers.at(-1);}
     };
     const subscribed={id:"sub_1234",status:"active",items:{data:[{price:{id:PRIVATE_STUDIO_PRICE}}]},
       latest_invoice:{hosted_invoice_url:"https://invoice.stripe.com/i/acct_receipt"}};
@@ -130,7 +134,7 @@ test("owner email failure retries only owner copy, never duplicates customer's r
   const fs=await import("node:fs/promises"),os=await import("node:os"),path=await import("node:path");
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),"studio-retry-test-"));
   try{
-    const app={get(){},post(){}},messages=[];let fail=true;
+    const app={get(){},post(){},put(){},delete(){}},messages=[];let fail=true;
     const stripe={subscriptions:{retrieve:async()=>({id:"sub_123",status:"active",items:{data:[{price:{id:PRIVATE_STUDIO_PRICE}}]}})}};
     const service=registerPrivateStudioLicensing({app,stripe,dataDir:dir,baseUrl:"https://example.test",secret,
       ownerEmail:"owner@example.test",lookupCustomer:async()=>({email:"customer@example.test"}),

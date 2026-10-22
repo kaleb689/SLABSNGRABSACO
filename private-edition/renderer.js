@@ -3,6 +3,22 @@ const $=id=>document.getElementById(id),api=window.PrivateStudio;
 const stores={target:"Target",walmart:"Walmart",pokemoncenter:"Pokémon Center (PKC)",costco:"Costco",sams:"Sam's"};
 const labels={suffix:"Street suffix swap",directional:"Directional abbreviations",ordinal:"Ordinal street numbers",doubleLetter:"Double-letter street name",fraction:"Fractional house number",hyphen:"Hyphen house number",randomUnit:"Random unit on unassigned addresses",phone:"Randomize phone digits",name:"Randomize first and last name"};
 let overview={sources:[],cards:[],addresses:[],activity:[]},page="home";
+let remoteAllowed=null;
+function applyJigPermissions(permissions){
+  if(!permissions||typeof permissions!=="object")return;
+  remoteAllowed=permissions;
+  for(const box of document.querySelectorAll("#rule-checks label.rule")){
+    const input=box.querySelector("input");
+    if(!input)continue;
+    const allowed=remoteAllowed[input.name]===true;
+    box.hidden=!allowed;
+    input.disabled=!allowed;
+    if(!allowed)input.checked=false;
+  }
+  const state=$("jig-permission-status");
+  if(state)state.textContent="Jig types are controlled by your ACO Studio administrator and update automatically.";
+}
+api.onJigPermissions?.(applyJigPermissions);
 const message=(text,bad=false)=>{const target=$("status");target.textContent=String(text);target.style.color=bad?"#ff94aa":"#9dd5de";};
 function node(tag,text,cls){const element=document.createElement(tag);if(text!==undefined)element.textContent=String(text);if(cls)element.className=cls;return element;}
 function button(label,click,cls){const b=node("button",label,cls);b.type="button";b.addEventListener("click",click);return b;}
@@ -21,6 +37,8 @@ async function refresh(){const result=await call("vault_overview");if(!result)re
   $("total-cards").textContent=String(result.cards.length);
   $("total-addresses").textContent=String(result.addresses.length);
   drawFiles();drawCards();drawAddresses();drawSources();
+  const allowed=await call("jigs_permissions");
+  if(allowed)applyJigPermissions(allowed);
   const a=$("activity");a.replaceChildren();
   for(const item of result.activity.slice(0,10))a.append(node("p",item.action+" · "+new Date(item.at).toLocaleString(),"activity-line"));
   if(!a.children.length)a.append(node("p","No recent activity."));
@@ -38,10 +56,19 @@ function drawFiles(){
           const modal=$("inspect");modal.replaceChildren();modal.classList.remove("hidden");
           const pane=node("section",undefined,"inspect-panel");pane.append(node("h2",data.filename),
             button("Close",()=>modal.classList.add("hidden")));
-          for(const row of data.rows.slice(0,40)){
-            const p=node("pre",String(row.index+1)+". "+Object.entries(row.fields).map(([key,v])=>key+": "+String(v)).join(" | "));
-            pane.append(p);
-          }modal.append(pane);
+          const pageSize=50,container=node("div"),controls=node("div",undefined,"mini-actions"),pager=node("span");
+          let page=0;
+          const previous=button("Previous",()=>{page--;render();}),next=button("Next",()=>{page++;render();});
+          function render(){
+            container.replaceChildren();
+            for(const row of data.rows.slice(page*pageSize,(page+1)*pageSize)){
+              container.append(node("pre",String(row.index+1)+". "+Object.entries(row.fields).map(([key,v])=>key+": "+String(v)).join(" | ")));
+            }
+            const count=Math.max(1,Math.ceil(data.rows.length/pageSize));
+            pager.textContent="Page "+(page+1)+" of "+count;
+            previous.disabled=page===0;next.disabled=page>=count-1;
+          }
+          controls.append(previous,pager,next);pane.append(controls,container);render();modal.append(pane);
         }),button("Delete",async()=>{if(!confirm("Delete only "+f.filename+" from this private local vault?"))return;
           if(await call("vault_remove",{kind:"source",id:f.id})){message("Local file removed.");await refresh();}
         },"danger"));
@@ -51,7 +78,7 @@ function drawFiles(){
   }
 }
 function drawCards(){const target=$("card-list");target.replaceChildren();
-  for(const c of overview.cards){const row=node("div",undefined,"file-row");row.append(node("strong",(c.label||"Card")+" · •••• "+c.last4+" · "+(c.holder||"")),button("Delete",async()=>{if(!confirm("Delete this local card?"))return;
+  for(const c of overview.cards){const row=node("div",undefined,"file-row");row.append(node("strong",(c.label||"Card")+" · "+(c.number||"")+" · "+(c.holder||"")+" · "+(c.expiry||"")+(c.securityCode?" · Code: "+c.securityCode:"")),button("Delete",async()=>{if(!confirm("Delete this local card?"))return;
     if(await call("vault_remove",{kind:"card",id:c.id}))await refresh();},"danger"));target.append(row);}
 }
 function drawAddresses(){const target=$("address-list");target.replaceChildren();
@@ -101,6 +128,9 @@ $("jig-apply").addEventListener("click",async()=>{
   options.useCardBank=$("jig-card-bank").checked;
   options.billingSameAsShipping=$("jig-billing-same").checked;
   if(!Object.values(options).some(Boolean)){message("Select at least one jig or bank option.",true);return;}
+  if(Object.entries(labels).some(([key])=>options[key]===true&&remoteAllowed?.[key]!==true)){
+    message("One of your selected jig types is no longer available.",true);return;
+  }
   if(!confirm("Apply these changes to "+indices.length+" local profile(s) in "+source.filename+"? You can still export the file in its original format."))return;
   const result=await call("vault_jig",{fileId:source.id,indices,options});
   if(result){message("Prepared "+result.edited+" profile(s) · "+result.assignedAddresses+" address assignment(s) · "+result.assignedCards+" card assignment(s). Original file format retained.");await refresh();}

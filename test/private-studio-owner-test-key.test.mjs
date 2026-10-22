@@ -16,7 +16,9 @@ test("a time-limited owner evaluation key activates independently of Stripe and 
   try{
     const routes={},app={
       get:(name,...handlers)=>{routes["GET "+name]=handlers.at(-1);},
-      post:(name,...handlers)=>{routes["POST "+name]=handlers.at(-1);}
+      post:(name,...handlers)=>{routes["POST "+name]=handlers.at(-1);},
+      put:(name,...handlers)=>{routes["PUT "+name]=handlers.at(-1);},
+      delete:(name,...handlers)=>{routes["DELETE "+name]=handlers.at(-1);}
     };
     registerPrivateStudioLicensing({app,stripe:{products:{retrieve:async()=>({active:false})},
       prices:{retrieve:async()=>({active:false})},subscriptions:{retrieve:async()=>{throw Error("No Stripe subscription should be retrieved for owner preview");}}},
