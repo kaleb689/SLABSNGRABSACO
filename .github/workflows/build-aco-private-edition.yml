@@ -1,0 +1,89 @@
+name: Build ACO Studio Private Edition for Mac and Windows
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'private-edition/**'
+      - '.github/workflows/build-aco-private-edition.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: mac
+          - os: windows-2022
+            platform: windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: private-edition
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated desktop dependencies
+        run: npm install --no-audit --no-fund
+      - name: Verify security-critical code syntax
+        run: |
+          node --check main.cjs
+          node --check preload.cjs
+          node --check renderer.js
+          node --check vault.cjs
+          node --check formats.cjs
+          node --check jigs.cjs
+      - name: Verify per-source import/export fidelity and jigs
+        run: npm test
+      - name: Fail if owner website bridge or email generator enters the release
+        shell: bash
+        run: |
+          if grep -REi '(site-bridge|owner-vault|admin-api|email.gen|emailgen|stripe.secret|stripe_secret)' main.cjs preload.cjs renderer.js vault.cjs formats.cjs jigs.cjs index.html; then
+            echo "Private Edition build unexpectedly contains a prohibited owner/admin link."
+            exit 1
+          fi
+      - name: Build native Mac DMG and ZIP
+        if: matrix.platform == 'mac'
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac dmg zip --arm64 --x64 --publish never
+      - name: Build native Windows NSIS installer
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: npx electron-builder --win nsis --x64 --publish never
+      - name: Upload verified platform installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: aco-private-${{ matrix.platform }}-${{ github.sha }}
+          path: |
+            private-edition/dist/*.dmg
+            private-edition/dist/*.zip
+            private-edition/dist/*.exe
+          if-no-files-found: error
+          retention-days: 30
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: aco-private-*-${{ github.sha }}
+          merge-multiple: true
+          path: release
+      - name: Publish a prerelease for licensed testers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="aco-studio-private-v1.0.0-preview"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* --title "ACO Studio Private Edition 1.0.0 Preview" --notes "Private local-only desktop edition. Requires active Stripe subscription license. No owner admin, Email Gen, or customer website data access." --prerelease
+          fi
