@@ -35,6 +35,18 @@ export function subscriptionEntitled(subscription) {
 }
 export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, requireAdmin, dataDir, baseUrl, secret, sendEmail, lookupCustomer, ownerEmail }) {
   const destination = path.join(dataDir, "private-studio-licenses.json");
+  // One owner evaluation key can be configured through Render as a SHA-256
+  // hash. The plaintext key is never embedded in code or database.
+  const ownerPreviewId = "owner-preview-license";
+  const testKeyHash = String(process.env.PRIVATE_STUDIO_OWNER_TEST_KEY_SHA256 || "").toLowerCase();
+  const ownerPreviewExpiresAt = Date.parse(String(process.env.PRIVATE_STUDIO_OWNER_TEST_KEY_EXPIRES_AT || ""));
+  const ownerPreviewEnabled = /^[a-f0-9]{64}$/.test(testKeyHash) && Number.isFinite(ownerPreviewExpiresAt);
+  const ownerPreviewMatches = hash => ownerPreviewEnabled && Date.now() < ownerPreviewExpiresAt &&
+    crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(testKeyHash, "hex"));
+  async function ownerPreviewRevoked() {
+    const rows = await read();
+    return Boolean(rows.find(row => row.id === ownerPreviewId)?.revokedAt);
+  }
   let chain = Promise.resolve();
   const serialize = callback => {
     const task = chain.then(callback, callback);
@@ -255,6 +267,13 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
       if (!/^ACOP-(?:[A-F0-9]{16}-){3}[A-F0-9]{16}$/.test(key))
         return res.status(401).json({ active: false, error: publicMessage });
       const hash = sha(key);
+      if (ownerPreviewMatches(hash)) {
+        if (await ownerPreviewRevoked())
+          return res.status(403).json({ active: false, error: "Owner evaluation key revoked." });
+        res.setHeader("Cache-Control", "no-store");
+        return res.json({ active: true, expiresInSeconds: 900, edition: "private",
+          evaluation: true, expiresAt: new Date(ownerPreviewExpiresAt).toISOString() });
+      }
       const row = (await read()).find(record => record.keyHash === hash && !record.revokedAt);
       if (!row) return res.status(401).json({ active: false, error: publicMessage });
       const active = subscriptionEntitled(await subscription(row.subscriptionId));
@@ -270,7 +289,12 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
     if (!id) return res.status(400).json({ error: "Select a license." });
     const revoked = await serialize(async () => {
       const rows = await read();
-      const row = rows.find(item => item.id === id);
+      let row = rows.find(item => item.id === id);
+      if (!row && id === ownerPreviewId && ownerPreviewEnabled) {
+        row = { id: ownerPreviewId, accountId: "owner-test",
+          subscriptionId: "evaluation-only", createdAt: new Date().toISOString() };
+        rows.push(row);
+      }
       if (!row) return false;
       row.revokedAt = row.revokedAt || new Date().toISOString();
       await save(rows);
@@ -295,11 +319,21 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
   app.get("/api/admin/studio-private/licenses", requireAdmin, async (_req, res) => {
     const rows = await read();
     // Admin receives license state only, never the key or any private workstation data.
-    res.json({ licenses: rows.map(row => ({ id: row.id, accountId: row.accountId,
+    const licenses = rows.filter(row => row.id !== ownerPreviewId).map(row => ({ id: row.id, accountId: row.accountId,
       subscriptionId: row.subscriptionId, customerEmail: row.customerEmail || null,
       customerName: row.customerName || null,
       customerReceiptSentAt: row.customerReceiptSentAt || null, ownerReceiptSentAt: row.ownerReceiptSentAt || null,
-      revoked: Boolean(row.revokedAt), createdAt: row.createdAt })) });
+      revoked: Boolean(row.revokedAt), createdAt: row.createdAt }));
+    if (ownerPreviewEnabled) {
+      const persisted = rows.find(row => row.id === ownerPreviewId);
+      licenses.push({ id: ownerPreviewId, accountId: "owner-test", subscriptionId: "evaluation-only",
+        customerName: "Owner evaluation license", customerEmail: ownerEmail || null,
+        evaluation: true, expiresAt: new Date(ownerPreviewExpiresAt).toISOString(),
+        revoked: Boolean(persisted?.revokedAt) || Date.now() >= ownerPreviewExpiresAt,
+        createdAt: persisted?.createdAt || null });
+    }
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({ licenses });
   });
   return { onStripeEvent };
 }
