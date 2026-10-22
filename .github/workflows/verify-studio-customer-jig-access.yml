@@ -1,7 +1,7 @@
 name: Verify live customer jig access and owner Studio integration
 on:
   push:
-    branches: [feature/customer-studio-live-jig-permissions-20261022]
+    branches: [main, feature/customer-studio-live-jig-permissions-20261022, fix/shipping-dm-once-per-order-stage-20261022]
     paths:
       - 'private-studio-jig-permissions.js'
       - 'private-studio-license.js'
@@ -45,7 +45,7 @@ jobs:
           node .github/aco-studio-build/native-updater/apply.cjs build-src/App
       - name: Rebuild original owner edition with new permissions UI
         env:
-          ACO_VERSION: '4.13.37'
+          ACO_VERSION: '4.13.38'
           ACO_ADHOC_MODE: 'true'
         shell: bash
         run: |
@@ -61,4 +61,6 @@ jobs:
           node --check build-src/App/main.js
           node --check build-src/App/preload.js
           node --check build-src/App/owner-jig-permissions-ui.js
+          node --test build-src/App/tests/owner-backups.test.js
           test "$(node -e "console.log(require('./build-src/App/package.json').build.files.includes('owner-jig-permissions-ui.js'))")" = true
+          test "$(node -e "console.log(require('./build-src/App/package.json').version)")" = '4.13.38'
