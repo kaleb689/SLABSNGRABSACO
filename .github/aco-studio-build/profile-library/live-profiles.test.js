@@ -121,3 +121,47 @@ test('PKC reconciliation stays in the authorized customer vault and never import
  assert.equal(personal.targetLiveReconciliation.targetLiveProfiles,0);
  assert.equal(personal.availableForCreation,0);
 });
+
+test('pasted email login pairs retain exact password values and enter the selected retailer account bank',async t=>{
+ const h=await library(t);
+ const input=[
+  {email:'test-one@example.test',password:'abc@#%$1:rest'},
+  {email:'test-two@example.test',password:'!Case:Sensitive#2$'}
+ ];
+ const preview=await h.lib.importPreview(event,{...h.p,retailer:'target',fileName:'pasted-logins.json',text:JSON.stringify(input)});
+ assert.equal(preview.count,2);
+ assert.ok(preview.profiles.every(p=>!Object.hasOwn(p,'password')),'Preview must not expose secrets');
+ const imported=await h.lib.importCommit(event,{token:preview.token,confirmed:true,asAvailable:true,repairs:{allowShared:true}});
+ assert.equal(imported.imported,2);
+ const rows=await h.profiles.fieldSnapshot('personal',null);
+ assert.equal(rows.length,2);
+ for(let i=0;i<2;i++){
+  assert.equal(rows[i].status,'available');
+  assert.equal(rows[i].data.password,input[i].password);
+  assert.equal(rows[i].email,input[i].email);
+ }
+ const pool=await h.service.emails(event,{...h.p,retailer:'target'});
+ assert.equal(pool.freeAccounts,2);
+ assert.equal(pool.availableForCreation,2);
+ const addedAddress=await h.service.addAddress(event,{...h.p,address});
+ const addedCard=await h.service.addCard(event,{...h.p,card});
+ const generated=await h.service.generate(event,{...h.p,retailer:'target',format:'shikari',count:1,randomNames:true,addressIds:[addedAddress.id],cardIds:[addedCard.id]});
+ assert.equal(generated.created,1);
+ const after=await h.profiles.fieldSnapshot('personal',null);
+ assert.equal(after.find(x=>x.email===input[0].email).data.password,input[0].password);
+ assert.equal((await h.profiles.fieldSnapshot('aco','customer-a')).length,0);
+});
+test('pasted login import remains scoped to its selected retailer and customer vault',async t=>{
+ const h=await library(t),input=[{email:'shared@example.test',password:'synthetic:!Test#3'}];
+ for(const [owner,retailer]of [[h.p,'target'],[h.a,'walmart']]){
+  const preview=await h.lib.importPreview(event,{...owner,retailer,fileName:'account-logins.json',text:JSON.stringify(input)});
+  await h.lib.importCommit(event,{token:preview.token,confirmed:true,asAvailable:true,repairs:{allowShared:true}});
+ }
+ const personal=await h.profiles.fieldSnapshot('personal',null);
+ const customer=await h.profiles.fieldSnapshot('aco','customer-a');
+ assert.equal(personal.length,1);assert.equal(customer.length,1);
+ assert.equal(personal[0].retailer,'target');assert.equal(customer[0].retailer,'walmart');
+ assert.equal(personal[0].data.password,input[0].password);
+ assert.equal(customer[0].data.password,input[0].password);
+ assert.equal((await h.service.emails(event,{...h.b,retailer:'walmart'})).freeAccounts,0);
+});
