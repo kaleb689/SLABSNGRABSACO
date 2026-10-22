@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'private-studio-license.js'
+      - 'billing-receipts.js'
+      - 'test/billing-receipts.test.mjs'
       - 'server.js'
       - 'public/private-studio-site.js'
       - 'public/private-studio-site.css'
@@ -23,9 +25,10 @@ jobs:
         with:
           node-version: '22'
       - run: node --check private-studio-license.js
+      - run: node --check billing-receipts.js
       - run: node --check public/private-studio-site.js
       - run: node --check server.js
-      - run: node --test test/private-studio-license.test.mjs
+      - run: node --test test/private-studio-license.test.mjs test/billing-receipts.test.mjs
       - name: Ensure standalone application cannot touch original owner data
         run: |
           test -f private-edition/main.cjs
