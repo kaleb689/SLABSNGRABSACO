@@ -1,4 +1,5 @@
 import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
+import { registerPrivateStudioLicensing } from "./private-studio-license.js";
 import { createCustomerPaymentActions } from "./customer-payment-records.js";
 import { savedDataRevision, savedDataPrecondition } from "./saved-data-revisions.js";
 import { stripPaymentVerifiers, purgeLegacyPaymentVerifiers } from "./payment-verification-policy.js";
@@ -7068,6 +7069,8 @@ function preferManagedAccountsMatchingAssignedPoolEmails(
   });
 }
 
+let privateStudioLicensing;
+
 /* -------------------------------------------------------
    STRIPE WEBHOOK
    MUST COME BEFORE express.json()
@@ -7107,6 +7110,8 @@ app.post(
     }
 
     try {
+      // Standalone desktop licensing only; customer vault data is never accessed.
+      if (privateStudioLicensing) await privateStudioLicensing.onStripeEvent(event);
 
       /* CHECKOUT COMPLETED */
 
@@ -8217,6 +8222,12 @@ app.use(createDemoMiddleware({
   loginRateLimit: customerAuthRateLimit,
   sendTestNotification: (id, note) => appOrderNotifications.sendDemoNotification(id, note)
 }));
+
+privateStudioLicensing = registerPrivateStudioLicensing({
+  app, stripe, requireCustomer, requireAdmin,
+  dataDir: DATA_DIR, baseUrl: BASE_URL,
+  secret: process.env.STRIPE_SECRET_KEY
+});
 
 
 /*
