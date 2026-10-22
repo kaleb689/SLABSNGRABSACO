@@ -72,3 +72,52 @@ test('A customer Live bank stays isolated and live accounts are never consumed a
  const plan=await live(h,[{...complete('target','other@example.test'),retailer:'target'},{...complete('pokemoncenter','other@example.test'),retailer:'pkc'}],h.a);
  assert.equal((await commit(h,plan)).pkcEmailsAdded,0);
 });
+
+
+test('192 Target Live profiles reconcile to PKC coverage without creating false duplicate PKC profiles',async t=>{
+ const h=await library(t);
+ const email=i=>'target-'+String(i+1).padStart(3,'0')+'@example.test';
+ // First 100 PKC emails already have actual PKC profiles, so only 92
+ // unused PKC pool emails should be available from 192 Target identities.
+ await h.profiles.importRows({...h.p,retailer:'pokemoncenter',
+  rows:Array.from({length:100},(_,i)=>complete('pokemoncenter',email(i)))});
+ const imported=await live(h,Array.from({length:192},(_,i)=>complete('target',email(i))));
+ const first=await commit(h,imported);
+ assert.equal(first.imported,192);
+ assert.equal(first.pkcEmailsAdded,92);
+ let inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});
+ assert.equal(inventory.availableForCreation,92);
+ assert.equal(inventory.targetLiveReconciliation.targetLiveProfiles,192);
+ assert.equal(inventory.targetLiveReconciliation.targetUniqueEmails,192);
+ assert.equal(inventory.targetLiveReconciliation.alreadyPkcProfiles,100);
+ assert.equal(inventory.targetLiveReconciliation.pkcCoverage,192);
+ // Simulate legacy version having lost the Target->PKC email-bank seeding.
+ await h.profiles.libraryTransaction('personal',null,context=>{
+  for(let i=context.emails.length-1;i>=0;i--)if(context.emails[i].source==='live-profile-import')context.emails.splice(i,1);
+ },()=>{});
+ inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});
+ assert.equal(inventory.targetLiveReconciliation.added,92);
+ assert.equal(inventory.targetLiveReconciliation.pkcCoverage,192);
+ assert.equal(inventory.availableForCreation,92);
+ const repeated=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});
+ assert.equal(repeated.targetLiveReconciliation.added,0);
+ assert.equal(repeated.emails.filter(x=>x.status==='available').length,92);
+ const stored=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(stored.filter(x=>x.retailer==='target'&&x.bank==='live').length,192);
+ assert.equal(stored.filter(x=>x.retailer==='pokemoncenter').length,100);
+});
+test('PKC reconciliation stays in the authorized customer vault and never imports other customers Target records',async t=>{
+ const h=await library(t);
+ const plan=await live(h,[complete('target','a-vault@example.test')],h.a,'target');
+ await commit(h,plan);
+ await h.profiles.libraryTransaction('aco','customer-a',ctx=>{ctx.emails.splice(0,ctx.emails.length);},()=>{});
+ const a=await h.service.emails(event,{...h.a,retailer:'pokemoncenter'});
+ assert.equal(a.targetLiveReconciliation.added,1);
+ assert.equal(a.targetLiveReconciliation.targetLiveProfiles,1);
+ const b=await h.service.emails(event,{...h.b,retailer:'pokemoncenter'});
+ assert.equal(b.targetLiveReconciliation.targetLiveProfiles,0);
+ assert.equal(b.availableForCreation,0);
+ const personal=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});
+ assert.equal(personal.targetLiveReconciliation.targetLiveProfiles,0);
+ assert.equal(personal.availableForCreation,0);
+});
