@@ -19,6 +19,7 @@
     "asar": true,
     "files": [
       "main.cjs",
+      "import-batches.cjs",
       "preload.cjs",
       "vault.cjs",
       "portable-backup.cjs",
