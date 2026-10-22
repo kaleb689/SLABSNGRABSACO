@@ -277,3 +277,40 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  if(!s.includes(before))throw Error('Personal importer retention regression anchor changed');
  fs.writeFileSync(p,s.replace(before,"assert.equal(saved.profile.data.card.cvv,'DO-NOT-KEEP');assert.equal(saved.profile.data.password,'EXAMPLE_ONLY');"));
 }
+
+
+// Owner desktop control for customer edition jig permissions. This does not
+// bridge customer workstation records, cards or imported profile files.
+{
+ const file='owner-jig-permissions-ui.js';
+ fs.copyFileSync(path.join(__dirname,file),path.join(root,file));
+ replace('preload.js','site:Object.freeze({',
+   "site:Object.freeze({customerJigPermissions:payload=>ipcRenderer.invoke('site:private-jigs',payload),");
+ replace('main.js',"ipcMain.handle('site:open'",
+   "ipcMain.handle('site:private-jigs',(event,payload)=>{ownerSender(event);return siteBridge.privateStudioJigPermissions(payload);});\nipcMain.handle('site:open'");
+ const p=path.join(root,'site-bridge.js'),source=fs.readFileSync(p,'utf8');
+ const anchor=' return {open,signIn,prepareDesktopUnlock,desktopUnlockState,hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile,savedCustomerData,saveCustomerSavedData,changeCustomerAssignment,enrollDesktopDevice,unlockDesktopAdmin};';
+ if(source.split(anchor).length!==2)throw Error('site-bridge.js: expected final owner Admin bridge export');
+ const code=` async function privateStudioJigPermissions(payload={}){
+   const action=String(payload.action||'read');
+   if(action==='read'){
+     const [policy,licenses]=await Promise.all([api('/api/admin/studio-private/jig-permissions'),api('/api/admin/studio-private/licenses')]);
+     return {policy,licenses:Array.isArray(licenses?.licenses)?licenses.licenses:[]};
+   }
+   if(action==='save'){
+     if(!['global','customer'].includes(payload.scope)||!payload.allowed||typeof payload.allowed!=='object')
+       throw Error('Choose the customer jig permissions to save.');
+     const input={scope:payload.scope,allowed:payload.allowed};
+     if(payload.scope==='customer')input.accountId=id(payload.accountId);
+     return api('/api/admin/studio-private/jig-permissions','PUT',input);
+   }
+   if(action==='reset')return api('/api/admin/studio-private/jig-permissions/'+encodeURIComponent(id(payload.accountId)),'DELETE');
+   throw Error('Unsupported customer jig permissions request.');
+ }
+ `;
+ fs.writeFileSync(p,source.replace(anchor,code+anchor.replace('unlockDesktopAdmin}', 'unlockDesktopAdmin,privateStudioJigPermissions}')));
+ replace('index.html','</body>','<script src="owner-jig-permissions-ui.js"></script>\n</body>');
+ const pkgPath=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(pkgPath,'utf8'));
+ if(!pkg.build.files.includes(file))pkg.build.files.push(file);
+ fs.writeFileSync(pkgPath,JSON.stringify(pkg,null,2)+'\n');
+}
