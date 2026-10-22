@@ -352,6 +352,27 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
     // Record an announcement for every eligible account. A subscribed device
     // receives an app push; callers can DM members with no eligible push
     // subscription. Persist event IDs so reconnects and restarts never replay.
+    notifyMembershipReminder: (accountId, notification, eventKey) => locked(async () => {
+      const ownerId=String(accountId || "").trim(),key=String(eventKey || "").trim();
+      if (!ownerId || !/^membership:[A-Za-z0-9:_-]{3,280}$/.test(key) ||
+          notification?.kind !== "membership_reminder" ||
+          typeof notification.title !== "string" || typeof notification.message !== "string" ||
+          notification.title.length > 200 || notification.message.length > 1200)
+        throw Error("Invalid membership reminder.");
+      state.membershipReminderEvents ||= {};
+      const logicalKey=key+":"+ownerId;
+      if (state.membershipReminderEvents[logicalKey]) return {alreadyQueued:true};
+      const issued=new Date().toISOString();
+      const event={...notification,id:crypto.randomUUID(),deliveryEventKey:logicalKey,
+        createdAt:issued,updatedAt:issued,tab:"membership"};
+      const inbox=state.inbox[ownerId] ||= [];
+      inbox.push(event);if(inbox.length>200)inbox.splice(0,inbox.length-200);
+      const prefs={...notificationDefaults,...state.preferences[ownerId]};
+      if (prefs.account && (state.subscriptions[ownerId]||[]).length) enqueue(ownerId,event);
+      state.membershipReminderEvents[logicalKey]=issued;
+      await save();
+      return {recorded:true,pushQueued:prefs.account&&(state.subscriptions[ownerId]||[]).length>0};
+    }),
     notifyDropUpdate: (accountIds, notification, eventKey) => locked(async () => {
       if (!String(eventKey || "").startsWith("drop:") || notification?.kind !== "drop_skus_updated") {
         throw new Error("Invalid drop announcement");
