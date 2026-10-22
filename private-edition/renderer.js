@@ -211,6 +211,29 @@ $("backup-import").addEventListener("click",async()=>{
   $("backup-passphrase").value="";
   if(output?.restored){message("Encrypted portable backup restored.");await refresh();await loadBackups();}
 });
+
+async function loadLockedSnapshots(){
+ const target=$("locked-snapshots-list");target.replaceChildren();
+ const backups=await call("vault_backupList");
+ if(!backups){target.append(node("p","Local snapshots are unavailable."));return;}
+ if(!backups.length){target.append(node("p","No automatic recovery snapshots were found on this computer."));return;}
+ target.append(node("p",backups.length+" encrypted snapshots available on this computer."));
+ for(const entry of backups){
+   const line=node("div",undefined,"file-row");
+   line.append(node("span",new Date(entry.createdAt).toLocaleString()),
+     button("Restore",async()=>{
+       if(!confirm("Restore saved profiles, cards, addresses and retailer banks from "+new Date(entry.createdAt).toLocaleString()+"?"))return;
+       const restored=await call("vault_backupRestore",entry.name);
+       if(!restored?.restored)return;
+       const active=await call("license_status");
+       $("activate-status").textContent=active?"Local encrypted vault restored and license verified.":"Local encrypted vault restored. Verify your license to continue.";
+       if(active){$("lock").classList.add("hidden");$("application").classList.remove("hidden");await refresh();nav("home");}
+     }));
+   target.append(line);
+ }
+}
+$("locked-snapshots-refresh").addEventListener("click",()=>void loadLockedSnapshots());
+
 $("locked-backup-restore").addEventListener("click",async()=>{
   const password=$("locked-backup-password").value;
   if(!password){$("activate-status").textContent="Enter your existing backup passphrase.";return;}
