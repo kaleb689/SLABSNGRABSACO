@@ -6531,18 +6531,25 @@ document.getElementById("saved-payment-form")
       );
       const data = await readJson(response);
       if (!response.ok) {
+        // A 409/428 means the server rejected a stale revision. Re-rendering
+        // during this error would interrupt typing and can jump the mobile
+        // viewport. Keep the unsaved form intact for explicit review.
         if (response.status === 409 || response.status === 428)
-          await loadSavedDetails();
+          throw new Error("This payment method changed elsewhere. Reopen the latest saved card before retrying; your unsaved fields have not been discarded.");
         throw new Error(data.error || "Unable to save payment card.");
       }
 
-      form.hidden = true;
+      // Do not hide a focused payment form after save: collapsing its height
+      // made Safari/iPad scroll to a different page position. Keep the form
+      // open, but immediately clear entered card/security values below.
       await loadSavedDetails();
       const selected = document.getElementById("saved-payment-select");
-      if (selected && (data.id || id)) {
-        selected.value = data.id || id;
+      const savedId = data.id || id;
+      if (selected && savedId) {
+        selected.value = savedId;
         selected.dispatchEvent(new Event("change"));
       }
+      fillSavedPaymentForm(savedPaymentById(savedId));
       await loadCustomerNotifications({ showPopup: false });
       setMessage(message, data.message || "Payment card saved.", "success");
     } catch (error) {
