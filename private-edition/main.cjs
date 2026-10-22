@@ -78,7 +78,7 @@ ipcMain.handle("vault:addAddress",(_e,p)=>edit(v=>{const a=validate("address",{
   v.addresses.push(a);addActivity(v,"Added local address");return {saved:true};}));
 ipcMain.handle("vault:addAccount",(_e,p)=>edit(v=>{
   const retailer=String(p?.retailer||"");if(!["target","walmart","pokemoncenter","costco","sams"].includes(retailer))throw Error("Choose a retailer.");
-  const account=validate("account",{email:String(p?.email||""),first_name:String(p?.first||""),last_name:String(p?.last||""),address:String(p?.address||""),city:String(p?.city||""),state:String(p?.state||""),zip:String(p?.zip||""),phone:String(p?.phone||"")});
+  const account=validate("account",{email:String(p?.email||""),first_name:String(p?.first||""),last_name:String(p?.last||""),address:String(p?.address||""),address2:"",city:String(p?.city||""),state:String(p?.state||""),zip:String(p?.zip||""),phone:String(p?.phone||""),billing_address:"",billing_city:"",billing_state:"",billing_zip:"",card_number:"",card_expiry:"",cardholder:""});
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account.email))throw Error("Enter a valid email.");
   const file=Formats.readSource("created-"+retailer+".json",JSON.stringify([account],null,2));
   v.sources.push({id:crypto.randomUUID(),retailer,file});addActivity(v,"Created "+retailer+" profile");
@@ -119,9 +119,29 @@ ipcMain.handle("vault:jig",(_e,p)=>edit(v=>{
   if(!selected.length||selected.length>2500||selected.some(i=>!Number.isInteger(i)||i<0||i>=source.file.rows.length))
     throw Error("Select the profiles to jig.");
   const options=Object.fromEntries(Object.keys(Jigs.defaults()).map(k=>[k,p?.options?.[k]===true]));
-  let edited=0;for(const index of [...new Set(selected)])edited+=Jigs.jigProfile(source.file,index,options).count?1:0;
-  if(edited)addActivity(v,"Jigged "+edited+" "+source.retailer+" profiles");
-  return {edited,filename:source.file.filename};
+  const useAddresses=p?.options?.useAddressBank===true;
+  const useCards=p?.options?.useCardBank===true;
+  if(useAddresses&&!v.addresses.length)throw Error("Add addresses to your private address bank first.");
+  if(useCards&&!v.cards.length)throw Error("Add cards to your private card bank first.");
+  let edited=0,assignedAddresses=0,assignedCards=0;
+  for(const [position,index] of [...new Set(selected)].entries()){
+    let changed=Jigs.jigProfile(source.file,index,options).count;
+    if(useAddresses){
+      const a=v.addresses[position%v.addresses.length];
+      const change={address:a.address||"",unit:a.unit||"",city:a.city||"",state:a.state||"",zip:a.zip||""};
+      if(p?.options?.billingSameAsShipping===true)Object.assign(change,{billingAddress:a.address||"",billingCity:a.city||"",billingState:a.state||"",billingZip:a.zip||""});
+      const applied=Formats.changeRow(source.file,index,change);
+      if(applied){assignedAddresses++;changed+=applied;}
+    }
+    if(useCards){
+      const card=v.cards[position%v.cards.length];
+      const applied=Formats.changeRow(source.file,index,{cardNumber:card.number||"",cardExpiry:card.expiry||"",cardholder:card.holder||""});
+      if(applied){assignedCards++;changed+=applied;}
+    }
+    if(changed)edited++;
+  }
+  if(edited)addActivity(v,"Prepared "+edited+" "+source.retailer+" profiles using private jigs/banks");
+  return {edited,assignedAddresses,assignedCards,filename:source.file.filename};
 }));
 ipcMain.handle("vault:remove",(_e,p)=>edit(v=>{
   if(p?.kind==="source")v.sources=v.sources.filter(s=>s.id!==p.id);
