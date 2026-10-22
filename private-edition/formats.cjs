@@ -54,7 +54,12 @@ const aliases={
   last:["lastname","last_name","surname"], phone:["phone","phonenumber","shippingphone"],
   address:["address","address1","street","street1","streetaddress","shippingaddress","shippingaddress1","shippingline1"],
   city:["city","shippingcity"], state:["state","shippingstate"],zip:["zip","zipcode","postalcode","shippingzip"],
-  unit:["address2","street2","unit","apt","apartment","shippingaddress2"]
+  unit:["address2","street2","unit","apt","apartment","shippingaddress2"],
+  cardNumber:["cardnumber","ccnumber","creditcardnumber","paymentnumber","cardnum","number"],
+  cardExpiry:["expiry","expiration","expirationdate","expmmyy","ccexp","cardexpiration"],
+  cardholder:["cardholder","cardholdername","billingname","nameoncard"],
+  billingAddress:["billingaddress","billingaddress1","billingstreet","billingstreet1"],
+  billingCity:["billingcity"],billingState:["billingstate"],billingZip:["billingzip","billingpostalcode"]
 };
 function changeRow(source,rowIndex,changes) {
   if(!["csv","tsv","json","txt"].includes(source.kind))throw Error("This file can be exported unchanged, but its structure is not editable.");
