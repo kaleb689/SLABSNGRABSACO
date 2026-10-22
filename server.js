@@ -19,6 +19,7 @@ import { attachAdminDesktopDevices } from "./admin-desktop-devices.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder, lateCancellation } from "./order-notifications.js";
 import { createShippingDiscordDmLedger } from "./shipping-discord-dm-ledger.js";
+import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { webhookOnlyCheckouts, discordCheckoutIds, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { isModuleLifecycleDiscordMessage, isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
@@ -143,6 +144,7 @@ app.disable("x-powered-by");
 const PORT = process.env.PORT || 4242;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 const DATA_DIR = process.env.DATA_DIR || "/var/data/slabsngrabsaco";
+const notificationDeliveryGuard=createNotificationDeliveryGuard({dataDir:DATA_DIR});
 
 const PENDING_FILE = path.join(DATA_DIR, "pending-submissions.json");
 const PAID_FILE = path.join(DATA_DIR, "paid-submissions.json");
@@ -2214,6 +2216,20 @@ async function sendDiscordAdminPaymentNotification(
     });
   }
 
+  // Stable payment identity across Stripe webhook retries. Keep monthly
+  // renewals distinct using their paid timestamp; manual test events use
+  // a fresh timestamp and remain repeatable.
+  const paymentKey=JSON.stringify([
+    String(payment?.paymentType||"Payment"),
+    String(payment?.orderId||payment?.customerEmail||customer.email||""),
+    String(payment?.paidAt||new Date().toISOString().slice(0,10)),
+    Number(amount||0),String(payment?.purchaseSummary||"")
+  ]);
+  const claim=await notificationDeliveryGuard.claim({
+    channel:"discord:webhook:payments",recipient:"admin",eventKey:paymentKey
+  });
+  if(!claim.send)return false;
+
   const separator =
     webhookUrl.includes("?")
       ? "&"
@@ -2652,6 +2668,16 @@ async function sendDiscordAdminProfileWorkflowNotification(
       inline: false
     });
   }
+
+  // Repeated workflow scans or webhook retries should not create a second
+  // admin message. New distinct workflow content remains a new event.
+  const profileEvent=JSON.stringify([title,description,customerEmail,
+    profileLabel,profileType,expiresAt]);
+  const claim=await notificationDeliveryGuard.claim({
+    channel:"discord:webhook:profiles",recipient:"admin",
+    eventKey:profileEvent,windowMs:24*60*60*1000
+  });
+  if(!claim.send)return null;
 
   const separator =
     webhookUrl.includes("?")
@@ -3226,7 +3252,9 @@ async function sendAdminSubscriptionInvoiceNotification(
     await notifyAdminMobile(
       "expirations",
       isUpgrade ? "Membership upgraded" : "Membership renewed",
-      `${String(record?.profile?.name || record?.profile?.email || invoice?.customer_email || "Member")} — ${purchaseSummary}; payment ${moneyFromStripeCents(invoice?.amount_paid)}.`
+      `${String(record?.profile?.name || record?.profile?.email || invoice?.customer_email || "Member")} — ${purchaseSummary}; payment ${moneyFromStripeCents(invoice?.amount_paid)}.`,
+      "/admin-app.html",
+      "membership-payment:" + String(invoice?.id || "") + ":" + String(record?.id || "") + ":" + String(invoice?.status_transitions?.paid_at || "") + ":" + String(isUpgrade)
     );
   } catch (error) {
     console.error("Admin membership renewal push failed:", error.message);
@@ -4673,13 +4701,27 @@ function discordChannelLabel(name) {
 async function sendDiscordReferralMessage(channelId, content, allowedUsers = []) {
   const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
   if (!token) throw new Error("Discord bot is not configured.");
-  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+  const claim=await notificationDeliveryGuard.claim({
+    channel:"discord:referrals",recipient:String(channelId),
+    eventKey:content,windowMs:30*86400000
+  });
+  if(!claim.send)return false;
+  let response;
+  try {
+  response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: "POST",
     headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ content, allowed_mentions: { parse: [], users: allowedUsers } }),
     signal: AbortSignal.timeout(12000)
   });
-  if (!response.ok) throw new Error(`Discord referral message HTTP ${response.status}`);
+  }catch(error){
+    // Do not fall back to a second webhook after an ambiguous Discord send.
+    error.notificationClaimed=true;throw error;
+  }
+  if (!response.ok) {
+    const error=new Error(`Discord referral message HTTP ${response.status}`);
+    error.notificationClaimed=true;throw error;
+  }
 }
 
 async function referralDiscordChannels() {
@@ -4709,8 +4751,14 @@ async function sendPrivateReferralNotice(content) {
     await sendDiscordReferralMessage(adminProfiles.id, `${ownerId ? `<@${ownerId}> — ` : ""}${content}`, ownerId ? [String(ownerId)] : []);
     return;
   } catch (error) {
+    if(error.notificationClaimed)throw error;
     const webhook = String(process.env.DISCORD_ADMIN_PROFILE_WEBHOOK_URL || "").trim();
     if (!webhook) throw error;
+    const claim=await notificationDeliveryGuard.claim({
+      channel:"discord:referral:fallback",recipient:"admin",
+      eventKey:content,windowMs:30*86400000
+    });
+    if(!claim.send)return;
     const response = await fetch(webhook, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content, allowed_mentions: { parse: [] } }), signal: AbortSignal.timeout(12000)
@@ -10206,7 +10254,12 @@ async function sendPaidOrderConfirmation(accountId, order, amount, details = "")
   if (!account?.email) throw new Error("Customer sign-in email is unavailable.");
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization:`Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type":"application/json",
+      "Idempotency-Key":"paid-order-"+crypto.createHash("sha256")
+        .update(JSON.stringify([accountId,order.id])).digest("hex")
+    },
     body: JSON.stringify({
       from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
       to: [account.email],
@@ -15774,7 +15827,8 @@ app.post("/api/admin/push/test", requireAdmin, async (_req, res) => {
       "expirations",
       "SLABSNGRABSACO — TEST subscription alert",
       "Test only: subscription expires in 3 days. No customer or billing data changed.",
-      "/admin-app.html"
+      "/admin-app.html",
+      "manual-push-test:" + crypto.randomUUID()
     );
     res.set("Cache-Control", "no-store").json({ ok: true, message: "Test push attempted. Check your iPhone notification center." });
   } catch (error) {
