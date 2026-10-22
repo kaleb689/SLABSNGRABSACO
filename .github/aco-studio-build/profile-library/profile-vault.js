@@ -41,7 +41,61 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function read(scope){requireCrypto();try{const body=JSON.parse(safeStorage.decryptString(await fs.readFile(paths[scope])));
   if(body?.version!==1||!body?.groups||typeof body.groups!=='object')throw Error('Unrecognized encrypted profile file.');for(const [key,rows] of Object.entries(body.groups))for(const row of rows)Completion.synchronize(row,body.audit?.[key]||[],now);return body;
  }catch(e){if(e.code==='ENOENT')return {version:1,groups:{},audit:{}};throw Error('Unable to open encrypted '+scope+' profile bank; data was preserved.');}}
- async function write(scope,data){for(const rows of Object.values(data.groups))for(const row of rows)row.data=stripVerifiers(row.data,0,scope);for(const [key,rows] of Object.entries(data.groups))for(const row of rows)Completion.synchronize(row,data.audit?.[key]||[],now);requireCrypto();await fs.mkdir(baseDir,{recursive:true,mode:0o700});const tmp=paths[scope]+'.'+uuid()+'.tmp';try{await fs.writeFile(tmp,safeStorage.encryptString(JSON.stringify(data)),{mode:0o600,flag:'wx'});await fs.rename(tmp,paths[scope]);}catch(e){await fs.rm(tmp,{force:true}).catch(()=>{});throw e;}}
+
+ const snapshotsDir=path.join(baseDir,'encrypted-owner-profile-snapshots');
+ const scopeValue=scope=>{if(scope!=='personal'&&scope!=='aco')throw Error('Unknown owner profile backup scope.');return scope;};
+ async function backupList(scope){
+   scopeValue(scope);requireCrypto();let names;
+   try{names=await fs.readdir(snapshotsDir);}
+   catch(e){if(e.code==='ENOENT')return [];throw e;}
+   const pattern=new RegExp('^'+scope+'-[0-9TZ-]{16,32}-[a-f0-9]{16}\\.encrypted$');
+   const rows=await Promise.all(names.filter(name=>pattern.test(name)).map(async name=>{
+     const st=await fs.stat(path.join(snapshotsDir,name));
+     return {name,scope,createdAt:st.mtime.toISOString(),mtimeMs:st.mtimeMs,bytes:st.size};
+   }));
+   return rows.sort((a,b)=>b.mtimeMs-a.mtimeMs);
+ }
+ async function backupPrevious(scope){
+   scopeValue(scope);let original;
+   try{original=await fs.readFile(paths[scope]);}
+   catch(e){if(e.code==='ENOENT')return;throw e;}
+   await fs.mkdir(snapshotsDir,{recursive:true,mode:0o700});
+   const iso=now().replace(/[:.]/g,'-');
+   const name=scope+'-'+iso+'-'+crypto.randomBytes(8).toString('hex')+'.encrypted';
+   await fs.writeFile(path.join(snapshotsDir,name),original,{mode:0o600,flag:'wx'});
+   const list=await backupList(scope);
+   for(const expired of list.slice(120))
+     await fs.rm(path.join(snapshotsDir,expired.name),{force:true}).catch(()=>{});
+ }
+ async function write(scope,data){
+   scopeValue(scope);
+   if(!data||data.version!==1||!data.groups||typeof data.groups!=='object')
+     throw Error('Refusing to overwrite profile data with an invalid vault.');
+   for(const rows of Object.values(data.groups))for(const row of rows)row.data=stripVerifiers(row.data,0,scope);
+   for(const [key,rows] of Object.entries(data.groups))for(const row of rows)Completion.synchronize(row,data.audit?.[key]||[],now);
+   requireCrypto();await fs.mkdir(baseDir,{recursive:true,mode:0o700});
+   const tmp=paths[scope]+'.'+uuid()+'.tmp';
+   try{
+     await backupPrevious(scope);
+     await fs.writeFile(tmp,safeStorage.encryptString(JSON.stringify(data)),{mode:0o600,flag:'wx'});
+     await fs.rename(tmp,paths[scope]);
+   }catch(e){await fs.rm(tmp,{force:true}).catch(()=>{});throw e;}
+ }
+ async function backupRestore(scope,name){
+   scopeValue(scope);requireCrypto();
+   return serial(async()=>{
+     if(typeof name!=='string'||!(await backupList(scope)).some(item=>item.name===name))
+       throw Error('Choose an existing encrypted owner profile recovery snapshot.');
+     let body;
+     try{
+       body=JSON.parse(safeStorage.decryptString(await fs.readFile(path.join(snapshotsDir,name))));
+       if(body?.version!==1||!body?.groups||typeof body.groups!=='object')throw Error('Invalid saved snapshot.');
+     }catch{throw Error('Encrypted owner profile backup cannot be decrypted on this device. Current vault preserved.');}
+     await write(scope,body);
+     return {restored:true,scope,groups:Object.keys(body.groups).length};
+   });
+ }
+
  function serial(action){const task=pending.catch(()=>{}).then(action);pending=task.then(()=>{},()=>{});return task;}
  const bank=(scope,id)=>{if(scope==='personal'){if(id)throw Error('Personal profiles cannot belong to ACO customers.');return 'owner';}if(scope!=='aco')throw Error('Unknown Personal/ACO profile bank.');return memberId(id);};
  const brief=p=>{const completion=Completion.synchronize(p,[],now);return {stage:p.stage,missing:completion.missing,completedAt:p.completedAt||null,bank:p.bank||'working',id:p.id,email:p.email,retailer:p.retailer,label:p.label,status:p.status,source:p.source,createdAt:p.createdAt,revision:Number.isSafeInteger(p.revision)?p.revision:0};};
@@ -398,7 +452,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   }
   return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count||a.retailer.localeCompare(b.retailer)),scanned:[...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
  }
- return Object.freeze({paths,retailers:RETAILERS,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+ return Object.freeze({paths,backupList,backupRestore,retailers:RETAILERS,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 
