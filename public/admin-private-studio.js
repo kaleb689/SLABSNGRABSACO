@@ -41,8 +41,84 @@
         results.append(row);
       }
     }catch(e){status.textContent=e.message;}}
+  const jigPanel=document.createElement("details");
+  jigPanel.id="studio-private-admin-jig-access";
+  jigPanel.style.cssText="margin:16px 0;border:1px solid #35a4bb;border-radius:12px;padding:14px;background:#121c34;color:#e9f7ff";
+  jigPanel.hidden=true;
+  const jigSummary=text("summary","ACO STUDIO · Customer Jig Access");
+  jigSummary.style.cssText="cursor:pointer;font-weight:750";
+  const jigStatus=text("p","Open to manage live customer jig types.");
+  const jigLabel=text("label","Apply jig types to ");
+  const jigScope=document.createElement("select");
+  jigScope.style.cssText="margin:8px;max-width:100%;padding:8px;border-radius:8px";
+  const jigRows=document.createElement("div");
+  jigRows.style.cssText="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin:12px 0";
+  const jigButtons=document.createElement("div");jigButtons.style.cssText="display:flex;gap:8px;flex-wrap:wrap";
+  const saveJigs=text("button","Save allowed jig types");
+  const resetJigs=text("button","Restore global jig types");
+  for(const button of [saveJigs,resetJigs]){button.type="button";button.style.cssText="border:1px solid #27bfce;border-radius:8px;padding:9px 14px;background:#163349;color:white;cursor:pointer";}
+  jigButtons.append(saveJigs,resetJigs);jigLabel.append(jigScope);
+  jigPanel.append(jigSummary,jigStatus,jigLabel,jigRows,jigButtons);
+  let policy=null;
+  function chosen(){
+    return jigScope.value==="global"?policy?.global:policy?.customers?.[jigScope.value]||policy?.global;
+  }
+  function drawJigs(){
+    jigRows.replaceChildren();if(!policy)return;
+    for(const [key,title] of Object.entries(policy.catalog||{})){
+      const label=document.createElement("label");
+      label.style.cssText="display:flex;gap:9px;align-items:center;cursor:pointer";
+      const control=document.createElement("input");control.type="checkbox";control.name=key;control.checked=chosen()?.[key]===true;
+      label.append(control,text("span",title));jigRows.append(label);
+    }
+    resetJigs.hidden=jigScope.value==="global";
+    jigStatus.textContent=jigScope.value==="global"?"Global defaults for all customer editions. Save to publish instantly.":"Customer-specific overrides. Unchecked jig types disappear from that customer's app.";
+  }
+  jigScope.addEventListener("change",drawJigs);
+  async function loadJigs(){
+    jigStatus.textContent="Loading live permissions…";
+    try{
+      const [current,registered]=await Promise.all([
+        api("/api/admin/studio-private/jig-permissions"),
+        api("/api/admin/studio-private/licenses")
+      ]);
+      policy=current;
+      const selected=jigScope.value||"global";jigScope.replaceChildren();
+      jigScope.append(new Option("All customers · Global defaults","global"));
+      for(const item of registered.licenses||[]){
+        if(!item.accountId||item.revoked||item.evaluation)continue;
+        jigScope.append(new Option([item.customerName,item.customerEmail].filter(Boolean).join(" · ")||item.accountId,item.accountId));
+      }
+      jigScope.value=[...jigScope.options].some(o=>o.value===selected)?selected:"global";
+      drawJigs();
+    }catch(error){jigStatus.textContent="Could not load jig permissions: "+error.message;}
+  }
+  saveJigs.addEventListener("click",async()=>{
+    if(!policy)return;
+    const selected=jigScope.value;
+    const allowed=Object.fromEntries([...jigRows.querySelectorAll("input")].map(c=>[c.name,c.checked]));
+    saveJigs.disabled=true;
+    try{
+      await api("/api/admin/studio-private/jig-permissions",{method:"PUT",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({scope:selected==="global"?"global":"customer",accountId:selected==="global"?undefined:selected,allowed})});
+      await loadJigs();
+      jigStatus.textContent="Saved. Connected customer apps will update automatically.";
+    }catch(error){jigStatus.textContent="Save failed: "+error.message;}
+    finally{saveJigs.disabled=false;}
+  });
+  resetJigs.addEventListener("click",async()=>{
+    if(!policy||jigScope.value==="global")return;
+    resetJigs.disabled=true;
+    try{
+      await api("/api/admin/studio-private/jig-permissions/"+encodeURIComponent(jigScope.value),{method:"DELETE"});
+      await loadJigs();jigStatus.textContent="Customer restored to global jig defaults.";
+    }catch(error){jigStatus.textContent="Reset failed: "+error.message;}
+    finally{resetJigs.disabled=false;}
+  });
+  jigPanel.addEventListener("toggle",()=>{if(jigPanel.open)void loadJigs();});
+
   root.addEventListener("toggle",()=>{if(root.open)void refresh();});
   const mount=()=>{const main=document.querySelector("main")||document.body;main.prepend(root);
-    api("/api/admin/studio-private/licenses").then(()=>{root.hidden=false;}).catch(()=>{root.remove();});};
+    api("/api/admin/studio-private/licenses").then(()=>{root.hidden=false;jigPanel.hidden=false;root.after(jigPanel);}).catch(()=>{root.remove();});};
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 })();
