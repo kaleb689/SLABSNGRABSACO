@@ -30,7 +30,8 @@ test("a time-limited owner evaluation key activates independently of Stripe and 
       await routes[method+" "+route]({ip:"127.0.0.1",body,params},res);
       return res;
     }
-    const denied=await call("POST","/api/studio-private/license/verify",{licenseKey:key.slice(0,-1)+"F"});
+    const wrongKey=key.slice(0,-1)+(key.endsWith("F")?"E":"F");
+    const denied=await call("POST","/api/studio-private/license/verify",{licenseKey:wrongKey});
     assert.equal(denied.code,401);
     const success=await call("POST","/api/studio-private/license/verify",{licenseKey:key});
     assert.equal(success.code,200);
