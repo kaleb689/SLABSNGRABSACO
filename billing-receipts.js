@@ -22,6 +22,10 @@ function invoiceIsPrivate(invoice) {
 export function receiptPayload(event) {
   const entity=event?.data?.object;
   if (!entity || !entity.id || !event.type) return null;
+  // A stable Stripe timestamp makes Resend idempotency work across webhook retries.
+  const timestamp = entity.status_transitions?.paid_at || entity.created || event.created;
+  const paidDate = Number.isInteger(timestamp) && timestamp > 0
+    ? new Date(timestamp * 1000).toISOString() : "Date available on the Stripe receipt";
   if (event.type === "invoice.payment_succeeded") {
     if (!Number.isInteger(entity.amount_paid) || entity.amount_paid < 1) return null;
     // First ACO Studio purchase gets its own key-bearing license receipt;
@@ -38,7 +42,7 @@ export function receiptPayload(event) {
         title+" receipt",
         "Amount paid: "+amount(entity.amount_paid,entity.currency),
         "Invoice number: "+(entity.number || entity.id),
-        "Paid: "+(new Date().toISOString()),
+        "Paid: "+paidDate,
         "Subscription: "+(typeof entity.subscription==="string"?entity.subscription:
           typeof entity.parent?.subscription_details?.subscription==="string"?entity.parent.subscription_details.subscription:"N/A"),
         ...(typeof entity.hosted_invoice_url==="string"&&entity.hosted_invoice_url.startsWith("https://")
