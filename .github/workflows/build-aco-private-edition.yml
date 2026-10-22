@@ -1,4 +1,4 @@
-name: Build ACO Studio Private Edition for Mac and Windows
+name: Build ACO STUDIO for Mac and Windows
 on:
   push:
     branches: [main]
@@ -89,5 +89,5 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release/* --clobber
           else
-            gh release create "$TAG" release/* --title "ACO Studio Private Edition 1.0.0 Preview" --notes "Private local-only desktop edition. Requires active Stripe subscription license. No owner admin, Email Gen, or customer website data access." --prerelease
+            gh release create "$TAG" release/* --title "ACO STUDIO 1.0.0 Preview" --notes "ACO STUDIO for macOS and Windows. Secure local profile, card and address banks, adjustable profile tools, and original-format import/export. Active license required." --prerelease
           fi
