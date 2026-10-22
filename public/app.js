@@ -3863,6 +3863,11 @@ registerForm?.addEventListener(
         new FormData(form).entries()
       );
 
+    if (data.age18Confirmed !== "on") {
+      showAccountMessage("You must confirm you are 18 or older to create an account.", "error");
+      return;
+    }
+
     if (
       data.password !==
       data.confirmPassword
@@ -3930,6 +3935,7 @@ registerForm?.addEventListener(
                   ""
                 ).trim(),
 
+              age18Confirmed: data.age18Confirmed === "on",
               discordVerificationTicket: pendingDiscordSignupTicket
             })
           }
