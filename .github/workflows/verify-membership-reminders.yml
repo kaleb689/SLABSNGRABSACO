@@ -1,0 +1,23 @@
+name: Verify 5 and 1 day membership renewal reminders
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'membership-lapse-notifications.js'
+      - 'test/membership-5day-1day-reminders.test.mjs'
+      - '.github/workflows/verify-membership-reminders.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reminders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check membership-lapse-notifications.js
+      - run: node --test test/membership-5day-1day-reminders.test.mjs
+      - run: node --test test/notification-delivery-guard.test.mjs
