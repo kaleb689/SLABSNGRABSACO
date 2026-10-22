@@ -97,6 +97,6 @@ function profileSummary(source){
     editable:["csv","tsv","json","txt"].includes(source.kind),
     changed:source.changed,rows:source.rows.slice(0,1000).map((row,i)=>({id:i,
       name:String(row?.[findField(row,aliases.name)]??"Profile "+(i+1)),
-      email:String(row?.[findField(row,aliases.email)]??""),retailer:""}) };
+      email:String(row?.[findField(row,aliases.email)]??""),retailer:""})) };
 }
 module.exports={readSource,exportSource,changeRow,profileSummary,findField,aliases,csvRows};
