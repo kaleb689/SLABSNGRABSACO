@@ -12,7 +12,7 @@
     if(pricing&&!$("aco-private-price")){
       const block=el("article",undefined,"aco-private-price");block.id="aco-private-price";
       block.append(el("div","STANDALONE DESKTOP SOFTWARE","aco-private-eyebrow"),
-        el("h3","ACO Studio Private Edition"),el("div","$20 / month","aco-private-amount"),
+        el("h3","ACO Studio Private Edition"),el("div","$15 / month","aco-private-amount"),
         el("p","Private account, card and address banks; Jig Studio; original-format import and export on Mac and Windows."),
         el("p","Your files and saved profile data remain on your computer. No Email Gen or website administration."));
       const status=el("div","Checking availability…","aco-private-meta");
@@ -27,7 +27,7 @@
       block.append(status,action);pricing.after(block);
       get("/api/studio-private/offer").then(offer=>{
         const ready=offer.available===true;
-        action.disabled=!ready;action.textContent=ready?"Subscribe to ACO Studio — $20/month":"Coming soon";
+        action.disabled=!ready;action.textContent=ready?"Subscribe to ACO Studio — $15/month":"Coming soon";
         status.textContent=ready?"Recurring monthly billing. License issued to your signed-in account.":
           "Preview only · Mac/Windows verification in progress · Not available for purchase yet.";
       }).catch(()=>{action.textContent="Temporarily unavailable";status.textContent="Availability could not be verified.";});
