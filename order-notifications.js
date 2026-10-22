@@ -118,6 +118,22 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       await save();
     }
     state.preferences ||= {};
+    if (!state.eventHistory) {
+      // Upgrade without replaying historical shipments or confirmations.
+      state.eventHistory = {};
+      for (const [key,snapshot] of Object.entries(state.snapshots || {})) {
+        if (snapshot.eligible || snapshot.reviewHold) {
+          state.eventHistory[key + ":" + (snapshot.reviewHold ? "order_review_hold" : "order_confirmed")] = true;
+        }
+        let stage=null;
+        try {stage=JSON.parse(snapshot.shipping||"[]")[0]||null;} catch {}
+        if (shippingLabels[stage])state.eventHistory[key + ":shipping_update:" + stage]=true;
+      }
+      for (const events of Object.values(state.inbox || {}))
+        for (const event of events)
+          if (event.deliveryEventKey)state.eventHistory[event.deliveryEventKey]=true;
+      await save();
+    }
     if (!state.webhookOnlyNotificationsVersion) {
       // The old IMAP importer could have created checkout alerts for personal
       // purchases. Rebuild order snapshots from the verified store once and
@@ -227,6 +243,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
           state.inbox[record.customerAccountId] = inbox.filter(item =>
             item.orderKey !== key || item.kind === "order_cancelled");
           if ((previous?.eligible || previous?.reviewHold) && !previous.cancelled && lateCancellation(record) &&
+              !state.eventHistory[key + ":order_cancelled"] &&
               Date.now() - Date.parse(record.cancelledAt || record.canceledAt) < 24 * 60 * 60 * 1000) {
             const retailer = String(record.retailer || "Retailer").slice(0, 50);
             const product = String(record.items?.[0]?.name || "Your order").slice(0, 110);
@@ -238,6 +255,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
               tab: "tracking", orderKey: key, deliveryEventKey:key + ":order_cancelled", createdAt: new Date().toISOString()
             };
             state.inbox[record.customerAccountId].push(event);
+            state.eventHistory[event.deliveryEventKey]=true;
             enqueue(record.customerAccountId, event, key);
           }
           state.snapshots[key] = next;
@@ -255,6 +273,8 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
             deliveryEventKey:key + ":" + event.kind +
               (event.kind === "shipping_update" ? ":" + String(record.shipping?.status || "") : ""),
             createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+          if (state.eventHistory[notification.deliveryEventKey]) continue;
+          state.eventHistory[notification.deliveryEventKey]=true;
           const inbox = state.inbox[record.customerAccountId] ||= [];
           inbox.push(notification);
           if (inbox.length > 200) inbox.splice(0, inbox.length - 200);
