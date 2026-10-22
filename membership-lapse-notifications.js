@@ -248,13 +248,43 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
       for (const group of lapseGroups.values()) {
         try {
           const groupStateKey = `lapse-group:${group.customerAccountId}`;
-          const messageId = await sendDiscordLapseChecklistGroup({ ...group, messageId: state[groupStateKey]?.messageId || "" });
+          const fingerprint = crypto.createHash("sha256").update(JSON.stringify({
+            name: group.customerName, email: group.customerEmail,
+            items: group.items.map(item => [
+              item.type, item.managedAccountId, item.retailer,
+              item.retailerAccountEmail, item.profileLabel
+            ]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+          })).digest("hex");
+          const previous = state[groupStateKey];
+          if (previous?.messageId && previous.fingerprint === fingerprint &&
+              group.notices.every(notice => Boolean(state[notice]))) continue;
+          const messageId = await sendDiscordLapseChecklistGroup({ ...group, messageId: previous?.messageId || "" });
           if (messageId) {
-            state[groupStateKey] = { messageId: String(messageId), updatedAt: new Date().toISOString() };
+            state[groupStateKey] = { messageId: String(messageId), fingerprint, updatedAt: new Date().toISOString() };
             for (const notice of group.notices) state[notice] = new Date().toISOString();
             changed = true;
           }
         } catch (e) { console.error("Grouped lapse admin alert:", e.message); }
+      }
+      // After the last account is restored or returned, edit the old staff
+      // checklist to an empty state rather than leaving stale restore buttons.
+      for (const [groupStateKey, entry] of Object.entries(state)) {
+        if (!groupStateKey.startsWith("lapse-group:") || !entry?.messageId ||
+            entry.fingerprint === "cleared") continue;
+        const customerAccountId = groupStateKey.slice("lapse-group:".length);
+        if (lapseGroups.has(customerAccountId)) continue;
+        try {
+          const account = accounts.get(customerAccountId);
+          const messageId = await sendDiscordLapseChecklistGroup({
+            customerName: account?.displayName || account?.name || "Customer",
+            customerEmail: account?.email || "",
+            items: [], messageId: entry.messageId
+          });
+          if (messageId) {
+            state[groupStateKey] = {messageId: String(messageId), fingerprint: "cleared", updatedAt: new Date().toISOString()};
+            changed = true;
+          }
+        } catch (e) { console.error("Grouped lapse admin alert clear:", e.message); }
       }
 
       // Admin-triggered RTP FINAL REMINDER queue. A single combined DM is sent

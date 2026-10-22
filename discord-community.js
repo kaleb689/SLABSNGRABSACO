@@ -20,71 +20,122 @@ export function discordRateLimitDelayMs({ retryAfter, headerRetryAfter, resetAft
 
 let lapseChecklistRuntime = null;
 const lapseBulkSelections = new Map();
+const lapseChecklistMessages = new Map();
+const LAPSE_PAGE_SIZE = 100; // 4 select rows, each <=25 options; fifth row is navigation.
+const LAPSE_DESCRIPTION_LIMIT = 3900; // Discord embed description limit is 4096.
 
 function lapseItemKey(item = {}) {
-  return `${item.type === "rented" ? "rented" : "free"}:${String(item.managedAccountId || "").trim()}`;
+  return (item.type === "rented" ? "rented" : "free") + ":" + String(item.managedAccountId || "").trim();
 }
-function lapseGroupPayload(group = {}) {
-  const items = Array.isArray(group.items) ? group.items.filter(item => item?.managedAccountId) : [];
-  const lines = items.map((item, index) => {
-    const retailer = String(item.retailer || "Unknown");
-    const email = String(item.retailerAccountEmail || item.profileLabel || "Profile");
+export function discordValidationFieldPaths(responseBody = {}) {
+  const result = [];
+  function walk(node, prefix = "", depth = 0) {
+    if (!node || typeof node !== "object" || depth > 8 || result.length >= 8) return;
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "_errors") {
+        if (Array.isArray(value) && value.length) result.push(prefix || "body");
+      } else if (/^(?:[a-z][a-z0-9_]*|[0-9]{1,4})$/i.test(key) && key.length <= 40) {
+        walk(value, prefix ? prefix + "." + key : key, depth + 1);
+      }
+    }
+  }
+  walk(responseBody?.errors);
+  return result;
+}
+export function lapseGroupPayload(group = {}, requestedPage = 0) {
+  const unique = new Map();
+  for (const item of Array.isArray(group.items) ? group.items : []) {
+    if (!item?.managedAccountId) continue;
+    const key = lapseItemKey(item);
+    if (key.length > 500 || unique.has(key)) continue;
+    unique.set(key, item);
+  }
+  const items = [...unique.values()], totalPages = Math.max(1, Math.ceil(items.length / LAPSE_PAGE_SIZE));
+  const page = Number.isSafeInteger(requestedPage) ? Math.max(0, Math.min(requestedPage, totalPages - 1)) : 0;
+  const offset = page * LAPSE_PAGE_SIZE, showing = items.slice(offset, offset + LAPSE_PAGE_SIZE);
+  const optionKeys = {};
+  const lines = showing.map((item, index) => {
+    const retailer = String(item.retailer || "Unknown").slice(0, 50);
+    const email = String(item.retailerAccountEmail || item.profileLabel || "Profile").slice(0, 105);
     const program = /target/i.test(retailer) ? "Shikari" : /(walmart|pokemon|pokémon)/i.test(retailer) ? "Valor" : "external program";
     const typeLabel = item.type === "rented" ? "Rented" : "Gifted";
-    return `**${index + 1}. ${retailer} — ${email}**\n${typeLabel} · Remove from ${program}`;
+    return "**" + (offset + index + 1) + ". " + retailer + " — " + email + "**\n" + typeLabel + " · Remove from " + program;
   });
   const components = [];
-  for (let offset = 0; offset < items.length; offset += 25) {
-    const chunk = items.slice(offset, offset + 25);
-    components.push({
-      type: 1,
-      components: [{
-        type: 3,
-        custom_id: `lapse:bulk:select:${offset}`,
-        placeholder: chunk.length === items.length ? "Select accounts to restore" : `Select accounts ${offset + 1}-${offset + chunk.length}`,
-        min_values: 1,
-        max_values: chunk.length,
-        options: chunk.map(item => ({
-          label: `${String(item.retailer || "Retailer")} — ${String(item.retailerAccountEmail || item.profileLabel || "Profile")}`.slice(0, 100),
-          description: `${item.type === "rented" ? "Rented" : "Gifted"} account`.slice(0, 100),
-          value: lapseItemKey(item)
-        }))
-      }]
+  for (let start = 0; start < showing.length; start += 25) {
+    const options = showing.slice(start, start + 25).map(item => {
+      const original = lapseItemKey(item);
+      const key = "l" + crypto.createHash("sha256").update(original).digest("hex").slice(0, 32);
+      optionKeys[key] = original;
+      return {
+        label: (String(item.retailer || "Retailer") + " — " + String(item.retailerAccountEmail || item.profileLabel || "Profile")).slice(0, 100),
+        description: item.type === "rented" ? "Rented account" : "Gifted account",
+        value: key
+      };
     });
+    components.push({type: 1, components: [{
+      type: 3, custom_id: "lapse:bulk:select:" + (offset + start),
+      placeholder: ("Select accounts " + (offset + start + 1) + "-" + (offset + start + options.length)).slice(0, 150),
+      min_values: 1, max_values: options.length, options
+    }]});
   }
+  if (totalPages > 1) {
+    components.push({type: 1, components: [
+      {type: 2, style: 2, custom_id: "lapse:bulk:page:prev", label: "Previous", disabled: page === 0},
+      {type: 2, style: 1, custom_id: "lapse:bulk:page:next", label: "Next", disabled: page === totalPages - 1}
+    ]});
+  }
+  const header = "**" + String(group.customerName || group.customerEmail || "Customer").slice(0, 130) +
+    "**\n" + String(group.customerEmail || "").slice(0, 180) + "\n\n";
+  const footer = "\n\nPage " + (page + 1) + "/" + totalPages + " · " + items.length +
+    " account(s). Select accounts to restore them in bulk. Restored accounts disappear from this checklist.";
+  const budget = LAPSE_DESCRIPTION_LIMIT - header.length - footer.length - 100;
+  const visible = [];
+  let length = 0;
+  for (const line of lines) {
+    if (length + line.length + 2 > budget) break;
+    visible.push(line); length += line.length + 2;
+  }
+  const more = visible.length < lines.length ? "\n\n…" + (lines.length - visible.length) +
+    " more on this page; use the dropdowns to select them." : "";
+  const description = (header + (visible.join("\n\n") || "No profiles remain to restore.") + more + footer)
+    .slice(0, LAPSE_DESCRIPTION_LIMIT);
   return {
-    allowed_mentions: { parse: [] },
-    embeds: [{
-      title: "❌ LAPSED PROFILES — ACTION NEEDED",
-      description: `**${String(group.customerName || group.customerEmail || "Customer")}**\n${String(group.customerEmail || "")}\n\n${lines.join("\n\n") || "No profiles remain to restore."}\n\nSelect one or more accounts below to restore them in bulk. Successfully restored accounts disappear from this notice; failed accounts stay listed.`,
-      color: 0xe74c3c,
-      footer: { text: "SLABSNGRABSACO bulk restore checklist" },
-      timestamp: new Date().toISOString()
-    }],
-    components
+    payload: {
+      allowed_mentions: {parse: []},
+      embeds: [{title: "❌ LAPSED PROFILES — ACTION NEEDED", description,
+        color: 0xe74c3c, footer: {text: "SLABSNGRABSACO bulk restore checklist"}, timestamp: new Date().toISOString()}],
+      components
+    },
+    page, totalPages, optionKeys, itemCount: items.length
   };
 }
 export async function sendDiscordLapseChecklistGroup(group = {}) {
   if (!lapseChecklistRuntime?.api || !lapseChecklistRuntime?.adminChannelId) return false;
-  const payload = lapseGroupPayload(group);
+  const previous = group.messageId ? lapseChecklistMessages.get(String(group.messageId)) : null;
+  const built = lapseGroupPayload(group, previous?.page || 0);
+  let posted, id;
   if (group.messageId) {
     try {
-      const patched = await lapseChecklistRuntime.api(
-        `/channels/${lapseChecklistRuntime.adminChannelId}/messages/${group.messageId}`,
-        "PATCH",
-        payload
-      );
-      return patched?.id || group.messageId;
+      posted = await lapseChecklistRuntime.api(
+        "/channels/" + lapseChecklistRuntime.adminChannelId + "/messages/" + group.messageId,
+        "PATCH", built.payload);
+      id = posted?.id || group.messageId;
     } catch (error) {
       if (!/HTTP 404/.test(error.message)) throw error;
     }
   }
-  const posted = await lapseChecklistRuntime.api(
-    `/channels/${lapseChecklistRuntime.adminChannelId}/messages`,
-    "POST",
-    payload
-  );
-  return posted?.id || true;
+  if (!id) {
+    posted = await lapseChecklistRuntime.api(
+      "/channels/" + lapseChecklistRuntime.adminChannelId + "/messages",
+      "POST", built.payload);
+    id = posted?.id;
+  }
+  if (!id) throw new Error("Discord did not confirm the lapse checklist message ID.");
+  if (group.messageId && String(group.messageId) !== String(id)) lapseChecklistMessages.delete(String(group.messageId));
+  lapseChecklistMessages.set(String(id), {...built, group});
+  if (lapseChecklistMessages.size > 500) lapseChecklistMessages.delete(lapseChecklistMessages.keys().next().value);
+  return id;
 }
 export async function sendDiscordLapseChecklistAlert({
   customerName = "Unknown",
@@ -630,7 +681,19 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         await new Promise(resolve => setTimeout(resolve, retryMs));
         continue;
       }
-      if (!response.ok) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP ${response.status}`);
+      if (!response.ok) {
+        let detail = "";
+        if (response.status === 400) {
+          // Only JSON field paths and a numeric code; never log submitted values.
+          const body = await response.json().catch(() => ({}));
+          const fields = discordValidationFieldPaths(body);
+          const code = Number(body?.code);
+          if (Number.isSafeInteger(code) && code > 0) detail += " code=" + code;
+          if (fields.length) detail += " invalid_fields=" + fields.join(",");
+        }
+        const safeRoute = route.split("?")[0].replace(/[0-9]{16,22}/g, "[id]");
+        throw new Error("Discord " + method + " " + safeRoute + ": HTTP " + response.status + detail);
+      }
       return response.status === 204 ? null : response.json();
     }
   }
@@ -3046,10 +3109,24 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             { content: error.message, components: [] });
         }
       }
+      if (d.type === 3 && /^lapse:bulk:page:(?:prev|next)$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId))
+          return await reply("Only the owner or Support Staff can manage these profiles.");
+        const saved = lapseChecklistMessages.get(String(d.message?.id || ""));
+        if (!saved) return await reply("This checklist is reloading. Open the refreshed message to continue.");
+        const delta = d.data.custom_id.endsWith(":next") ? 1 : -1;
+        const built = lapseGroupPayload(saved.group, saved.page + delta);
+        const result = await api(callback, "POST", {type: 7, data: built.payload});
+        lapseChecklistMessages.set(String(d.message.id), {...built, group: saved.group});
+        return result;
+      }
       if (d.type === 3 && /^lapse:bulk:select:\d+$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member, userId)) return await reply("Only the owner or Support Staff can manage these profiles.");
-        const selected = Array.isArray(d.data?.values) ? d.data.values.map(String) : [];
-        console.log("Discord lapse bulk selection:", JSON.stringify({ userId, channelId: d.channel_id, messageId: d.message?.id || null, selected }));
+        const saved = lapseChecklistMessages.get(String(d.message?.id || ""));
+        if (!saved) return await reply("This checklist is reloading. Use the refreshed message.");
+        const selected = (Array.isArray(d.data?.values) ? d.data.values : [])
+          .map(value => saved.optionKeys[String(value)]).filter(Boolean);
+        console.log("Discord lapse bulk selection count:", selected.length);
         if (!selected.length) return await reply("Select at least one profile.");
         const selectionKey = crypto.randomBytes(8).toString("hex");
         lapseBulkSelections.set(selectionKey, { selected, channelId: d.channel_id, messageId: d.message.id, createdAt: Date.now() });
