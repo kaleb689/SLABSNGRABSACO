@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import webpush from "web-push";
+import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 
 const shippingLabels = { shipped: "Shipped", in_transit: "In transit", out_for_delivery: "Out for delivery", delivered: "Delivered" };
 export function cancelledOrder(record) {
@@ -46,7 +47,11 @@ export function orderEvents(record, previous) {
     message: `${product} • ${orderNumber}`,
     tab: "success"
   });
-  if (shippingLabels[record.shipping?.status] && (!previous || !previous.eligible || previous.shipping !== next.shipping)) {
+  // Changing the ETA or receiving the same carrier stage again updates
+  // tracking, but must not generate another "shipped" push notification.
+  let previousStage = null;
+  try { previousStage = JSON.parse(previous?.shipping || "[]")[0] || null; } catch {}
+  if (shippingLabels[record.shipping?.status] && previousStage !== record.shipping.status) {
     const status = shippingLabels[record.shipping.status];
     events.push({
       kind: "shipping_update",
@@ -83,6 +88,7 @@ export function accountNoticeFingerprint(event) {
 export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAccounts, getAccountUpdates = async () => [], sendPush = webpush.sendNotification.bind(webpush) }) {
   const storePath = path.join(dataDir, "app-order-notifications.json");
   const keysPath = path.join(dataDir, "app-push-vapid.json");
+  const deliveryGuard = createNotificationDeliveryGuard({dataDir});
   let state;
   let keys;
   let queue = Promise.resolve();
@@ -141,6 +147,8 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
     return JSON.stringify([item.plan?.tier || "", item.status || "", Boolean(item.cancelAtPeriodEnd), item.subscriptionEndDate || item.currentPeriodEnd || ""]);
   }
   function enqueue(accountId, notification, key = null) {
+    if (!notification.deliveryEventKey && key && notification.kind)
+      notification.deliveryEventKey = key + ":" + notification.kind;
     for (const subscription of state.subscriptions[accountId] || []) {
       state.outbox.push({ accountId, key, endpoint: subscription.endpoint, notification, attempts: 0 });
     }
@@ -155,11 +163,13 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
             const old = previous.notices[notification.id];
             // Migrate old timestamp snapshots without replaying existing alerts.
             if (old === accountNoticeFingerprint(notification) || (old && !old.startsWith('content:'))) continue;
-            enqueue(account.id, { ...notification, tab: "notifications" });
+            enqueue(account.id, { ...notification, tab: "notifications",
+              deliveryEventKey: "notice:" + account.id + ":" + notification.id + ":" + accountNoticeFingerprint(notification) });
           }
           if (previous.verified !== next.verified) {
             const event = { id: crypto.randomUUID(), kind: "account_update", title: "Account updated", message: next.verified ? "Your email is now verified." : "Please verify your account email.", createdAt: new Date().toISOString(), tab: "notifications" };
             (state.inbox[account.id] ||= []).push(event);
+            event.deliveryEventKey = "account_verified:" + account.id + ":" + next.verified;
             enqueue(account.id, event);
           }
         }
@@ -171,6 +181,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         if (state.memberships[membership.id] !== next) {
           const event = { id: crypto.randomUUID(), kind: "account_update", title: "Membership updated", message: "Your membership details have changed. View your tier and account in My Profile.", createdAt: new Date().toISOString(), tab: "membership" };
           (state.inbox[membership.customerAccountId] ||= []).push(event);
+          event.deliveryEventKey = "membership:" + membership.id + ":" + next;
           enqueue(membership.customerAccountId, event);
           state.memberships[membership.id] = next;
         }
@@ -224,7 +235,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
               id: crypto.randomUUID(), kind: "order_cancelled",
               title: retailer + (refunded ? " order refunded" : " order cancelled"),
               message: product + (record.orderNumber ? " • Order #" + String(record.orderNumber).slice(0, 50) : ""),
-              tab: "tracking", orderKey: key, createdAt: new Date().toISOString()
+              tab: "tracking", orderKey: key, deliveryEventKey:key + ":order_cancelled", createdAt: new Date().toISOString()
             };
             state.inbox[record.customerAccountId].push(event);
             enqueue(record.customerAccountId, event, key);
@@ -240,7 +251,10 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
           if (historic && ["order_confirmed", "order_review_hold"].includes(event.kind)) continue;
           if (historic && event.kind === "shipping_update" &&
               Date.now() - Date.parse(record.shipping?.updatedAt || "") > 24 * 60 * 60 * 1000) continue;
-          const notification = { ...event, orderKey: key, id: crypto.randomUUID(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+          const notification = { ...event, orderKey: key, id: crypto.randomUUID(),
+            deliveryEventKey:key + ":" + event.kind +
+              (event.kind === "shipping_update" ? ":" + String(record.shipping?.status || "") : ""),
+            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
           const inbox = state.inbox[record.customerAccountId] ||= [];
           inbox.push(notification);
           if (inbox.length > 200) inbox.splice(0, inbox.length - 200);
@@ -278,13 +292,27 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
           if ((state.preferences[item.accountId] || notificationDefaults)[notificationCategory(item.notification)] === false) continue;
           const subscription = (state.subscriptions[item.accountId] || []).find(sub => sub.endpoint === item.endpoint);
           if (!subscription) continue;
+          let deliveryClaimed = false;
           try {
-            await sendPush(subscription, JSON.stringify({ title: item.notification.title, body: item.notification.message,
-              tag: item.key || item.notification.id, tab: item.notification.tab || "notifications" }), { TTL: 3600, timeout: 5000 });
+            // One provider attempt per logical event and subscribed device.
+            const claim = await deliveryGuard.claim({
+              channel:"push:customer",
+              recipient:String(item.accountId) + ":" + item.endpoint,
+              eventKey:item.notification.deliveryEventKey || item.notification.id
+            });
+            if (!claim.send) continue;
+            deliveryClaimed = true;
+            await sendPush(subscription, JSON.stringify({
+              title:item.notification.title, body:item.notification.message,
+              tag:item.key || item.notification.id, tab:item.notification.tab || "notifications"
+            }), {TTL:3600, timeout:5000});
           } catch (error) {
-            if ([404, 410].includes(error.statusCode)) state.subscriptions[item.accountId] = state.subscriptions[item.accountId].filter(sub => sub.endpoint !== item.endpoint);
-            else if (++item.attempts < 5) pending.push(item);
-            console.error("App push delivery failed:", error.statusCode || "network_error");
+            if ([404,410].includes(error.statusCode))
+              state.subscriptions[item.accountId] = state.subscriptions[item.accountId].filter(sub=>sub.endpoint!==item.endpoint);
+            // A ledger-write error may retry, but a provider failure after
+            // the claim is ambiguous and must not spam this same device.
+            if (!deliveryClaimed && ++item.attempts < 5) pending.push(item);
+            console.error("App push delivery failed:", error.statusCode || error.code || "network_error");
           }
         }
         state.outbox = pending;
@@ -342,6 +370,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         if (prefs.drops && (state.subscriptions[accountId] || []).length) {
           // key=null means this is not an order and must not be subjected to
           // confirmed-checkout validation by the order delivery loop.
+          event.deliveryEventKey = key;
           enqueue(accountId, event);
           pushAccountIds.push(accountId);
         } else if (prefs.drops) {
