@@ -1,0 +1,36 @@
+name: Verify customer backups and age confirmation
+on:
+  push:
+    branches: [main, fix/shipping-dm-once-per-order-stage-20261022]
+    paths:
+      - 'private-edition/**'
+      - 'public/index.html'
+      - 'public/app.js'
+      - 'server.js'
+      - 'test/consent-ledger.test.js'
+      - 'test/signup-onboarding.test.js'
+      - '.github/workflows/verify-customer-age-and-backups.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  customer-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify JavaScript syntax and customer tests
+        run: |
+          node --check server.js
+          node --check public/app.js
+          for f in private-edition/*.cjs private-edition/*.js; do node --check "$f"; done
+          (cd private-edition && npm test)
+      - name: Install website test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check signup confirmation, tamper-evident consent history and onboarding
+        run: node --test test/consent-ledger.test.js test/signup-onboarding.test.js
