@@ -81,7 +81,7 @@ function reminder(kind, item, end, stage, mode = "cancellation") {
   };
 }
 
-export function startMembershipLapseNotificationScheduler({ dataDir, token, adminWebhookUrl = "", getRentalExtensionPrices = null, onRtpFinalReminderExpired = null }) {
+export function startMembershipLapseNotificationScheduler({ dataDir, token, adminWebhookUrl = "", getRentalExtensionPrices = null, onRtpFinalReminderExpired = null, notifyCustomerMembership = null }) {
   token = String(token || "").trim();
   adminWebhookUrl = String(adminWebhookUrl || "").trim();
   if (!token && !adminWebhookUrl) return;
@@ -168,12 +168,30 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
 
         }
         const notice = `membership:${record.stripeSubscriptionId}:${end.toISOString()}:${mode}:${stage}`;
-        if (state[notice]) continue;
-        try {
-          if (await dm(token, discordId(account), reminder("membership", record?.plan?.name || "Membership", end, stage, mode), [], guard, notice)) {
-            state[notice] = new Date().toISOString(); changed = true;
-          }
-        } catch (e) { console.error("Membership lapse DM:", e.message); }
+        const previous = state[notice];
+        let dmDone = typeof previous === "string" || previous?.dm === true;
+        let pushDone = previous?.push === true;
+        if (!pushDone && typeof notifyCustomerMembership === "function") {
+          try {
+            const title = mode === "renewal" ? `Membership renewal ${stage === "1d" ? "tomorrow" : "in 5 days"}` :
+              `Membership ends ${stage === "1d" ? "tomorrow" : "in 5 days"}`;
+            const message = mode === "renewal" ?
+              `Your membership renews automatically on ${fmt(end)}. Review your saved payment method if needed.` :
+              `Your membership is scheduled to end on ${fmt(end)}. Reactivate to keep your access.`;
+            const result = await notifyCustomerMembership({accountId:String(account.id),eventKey:notice,title,message});
+            if (result?.recorded || result?.alreadyQueued) pushDone = true;
+          } catch (e) { console.error("Membership reminder app push:",e.message); }
+        }
+        if (!dmDone) {
+          try {
+            if(await dm(token,discordId(account),reminder("membership",record?.plan?.name||"Membership",end,stage,mode),[],guard,notice))
+              dmDone = true;
+          } catch (e) { console.error("Membership reminder Discord DM:", e.message); }
+        }
+        if (dmDone || pushDone) {
+          state[notice] = {dm:dmDone,push:pushDone,at:new Date().toISOString()};
+          changed = true;
+        }
       }
 
       const lapseGroups = new Map();
