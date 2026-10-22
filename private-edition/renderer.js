@@ -97,10 +97,13 @@ $("jig-apply").addEventListener("click",async()=>{
     $("jig-indices").value.split(",").map(t=>Number(t.trim())-1);
   if(!indices.length||indices.some(n=>!Number.isInteger(n)||n<0||n>=source.count)){message("Enter valid profile indexes.",true);return;}
   const options=Object.fromEntries([...ruleContainer.querySelectorAll("input")].map(x=>[x.name,x.checked]));
-  if(!Object.values(options).some(Boolean)){message("Select at least one jig option.",true);return;}
+  options.useAddressBank=$("jig-address-bank").checked;
+  options.useCardBank=$("jig-card-bank").checked;
+  options.billingSameAsShipping=$("jig-billing-same").checked;
+  if(!Object.values(options).some(Boolean)){message("Select at least one jig or bank option.",true);return;}
   if(!confirm("Apply these changes to "+indices.length+" local profile(s) in "+source.filename+"? You can still export the file in its original format."))return;
   const result=await call("vault_jig",{fileId:source.id,indices,options});
-  if(result){message("Applied jigs to "+result.edited+" profile(s) without changing the source file format.");await refresh();}
+  if(result){message("Prepared "+result.edited+" profile(s) · "+result.assignedAddresses+" address assignment(s) · "+result.assignedCards+" card assignment(s). Original file format retained.");await refresh();}
 });
 $("check-license").addEventListener("click",async()=>{const ok=await call("license_status");$("license-state").textContent=ok?"License is active.":"License is inactive or currently unverifiable.";});
 $("activate").addEventListener("submit",async e=>{e.preventDefault();$("activate-status").textContent="Verifying subscription…";
