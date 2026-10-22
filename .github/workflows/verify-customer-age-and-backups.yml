@@ -5,6 +5,8 @@ on:
     paths:
       - 'private-edition/**'
       - 'public/index.html'
+      - 'public/admin.html'
+      - 'test/age-consent-render.test.mjs'
       - 'public/app.js'
       - 'server.js'
       - 'test/consent-ledger.test.js'
@@ -33,4 +35,4 @@ jobs:
       - name: Install website test dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Check signup confirmation, tamper-evident consent history and onboarding
-        run: node --test test/consent-ledger.test.js test/signup-onboarding.test.js
+        run: node --test test/consent-ledger.test.js test/signup-onboarding.test.js test/age-consent-render.test.mjs
