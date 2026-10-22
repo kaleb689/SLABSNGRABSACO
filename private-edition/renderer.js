@@ -12,6 +12,7 @@ function applyJigPermissions(permissions){
     if(!input)continue;
     const allowed=remoteAllowed[input.name]===true;
     box.hidden=!allowed;
+    box.style.display=allowed?"":"none";
     input.disabled=!allowed;
     if(!allowed)input.checked=false;
   }
