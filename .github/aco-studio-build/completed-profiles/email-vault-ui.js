@@ -37,9 +37,17 @@
   const head=lines.length?parse(lines[0]):[],col=head.findIndex(x=>/^(email|account.?email|login.?email)$/i.test(x));
   return lines.slice(col<0?0:1).map(l=>parse(l)[Math.max(col,0)]);
  }
- $('file').addEventListener('change',async()=>{const file=$('file').files[0];if(!file)return;const ticket=epoch;try{if(file.size>2000000)throw Error('Import a file smaller than 2 MB.');const text=await file.text();if(ticket!==epoch||modal.hidden)return;$('emails').value=values(text,file.name).join('\n');note('File ready. Review the destination and click Import.');}catch(e){note(e.message);}});
+ $('file').addEventListener('change',async()=>{const file=$('file').files[0];if(!file)return;const ticket=epoch;try{if(file.size>2000000)throw Error('Import a file smaller than 2 MB.');const text=await file.text();if(ticket!==epoch||modal.hidden)return;if(/\.txt$/i.test(file.name)&&text.split(/\r?\n/).some(line=>/^[^\s:@]+@[^\s:@]+\.[^\s:@]+:/.test(line))){
+     $('login-pairs').value=text;$('emails').value='';note('TXT login pairs ready. Choose Review and save pasted logins.');
+    }else{$('emails').value=values(text,file.name).join('\n');note('File ready. Review the destination and click Import.');}}catch(e){note(e.message);}});
  for(const key of ['owner','retailer'])$(key).addEventListener('change',()=>{$('login-pairs').value='';$('emails').value='';$('file').value='';$('format').value=$('retailer').value==='target'?'shikari':'valor';void refresh();});
- $('import').addEventListener('click',async()=>{if(busy)return;if(!$('owner').value){note('Select a customer vault.');return;}const p=request(),ticket=epoch;pending(true);try{await unlock(p);const r=await api.importEmails({...p,emails:values($('emails').value)});if(ticket!==epoch)return;$('emails').value='';$('file').value='';await refresh();note('Imported '+r.added+' emails. Skipped '+r.skipped+' duplicates/already used; '+r.invalid+' invalid entries.');}catch(e){note(e.message);}finally{pending(false);}});
+ $('import').addEventListener('click',async()=>{if(busy)return;if(!$('owner').value){note('Select a customer vault.');return;}const raw=$('emails').value,lines=raw.replace(/^\uFEFF/,'').split(/\r?\n/).filter(x=>x.trim());
+  const pairs=lines.filter(x=>x.includes(':'));
+  if(pairs.length){
+   if(pairs.length!==lines.length){note('Separate plain email addresses and email:password logins into different batches.');return;}
+   $('login-pairs').value=raw;$('emails').value='';$('login-import').click();return;
+  }
+  const p=request(),ticket=epoch;pending(true);try{await unlock(p);const r=await api.importEmails({...p,emails:values($('emails').value)});if(ticket!==epoch)return;$('emails').value='';$('file').value='';await refresh();note('Imported '+r.added+' emails. Skipped '+r.skipped+' duplicates/already used; '+r.invalid+' invalid entries.');}catch(e){note(e.message);}finally{pending(false);}});
  $('login-import').addEventListener('click',async()=>{
   if(busy)return;
   if(!$('owner').value){note('Select a vault and retailer first.');return;}
