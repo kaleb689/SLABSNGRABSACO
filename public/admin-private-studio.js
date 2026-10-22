@@ -1,7 +1,7 @@
 (()=>{"use strict";
   const root=document.createElement("details");root.id="studio-private-admin-licenses";
   root.style.cssText="margin:16px 0;border:1px solid #35a4bb;border-radius:12px;padding:14px;background:#121c34;color:#e9f7ff";
-  root.hidden=true;const summary=document.createElement("summary");summary.textContent="ACO Studio Private Edition · Licenses and Revocations";summary.style.cursor="pointer";summary.style.fontWeight="750";
+  root.hidden=true;const summary=document.createElement("summary");summary.textContent="ACO STUDIO · Licenses and Revocations";summary.style.cursor="pointer";summary.style.fontWeight="750";
   const status=document.createElement("p");status.textContent="Open to load license status.";const results=document.createElement("div");
   root.append(summary,status,results);
   function text(tag,content){const e=document.createElement(tag);e.textContent=String(content);return e;}
