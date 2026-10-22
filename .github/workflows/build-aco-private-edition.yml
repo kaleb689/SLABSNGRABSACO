@@ -1,7 +1,7 @@
 name: Build ACO STUDIO for Mac and Windows
 on:
   push:
-    branches: [main, feature/customer-studio-live-jig-permissions-20261022]
+    branches: [main, feature/customer-studio-live-jig-permissions-20261022, fix/shipping-dm-once-per-order-stage-20261022]
     paths:
       - 'private-edition/**'
       - '.github/workflows/build-aco-private-edition.yml'
@@ -39,6 +39,7 @@ jobs:
           node --check preload.cjs
           node --check renderer.js
           node --check vault.cjs
+          node --check portable-backup.cjs
           node --check formats.cjs
           node --check jigs.cjs
       - name: Verify per-source import/export fidelity and jigs
@@ -85,9 +86,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: kaleb689/SLABSNGRABSACO
         run: |
-          TAG="aco-studio-v1.0.2-preview"
+          TAG="aco-studio-v1.0.3-preview"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release/* --clobber
           else
-            gh release create "$TAG" release/* --title "ACO STUDIO 1.0.2 Preview" --notes "ACO STUDIO for macOS and Windows. Secure local profile, card and address banks, adjustable profile tools, and original-format import/export. Active license required." --prerelease
+            gh release create "$TAG" release/* --title "ACO STUDIO 1.0.3 Preview" --notes "ACO STUDIO for macOS and Windows. Working and Live retailer profile banks, passphrase-protected portable backups, 60 local recovery snapshots, editable profile fields, original-format import/export, owner-controlled jig permissions. Active license required." --prerelease
           fi
