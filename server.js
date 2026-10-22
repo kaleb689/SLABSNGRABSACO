@@ -8226,7 +8226,29 @@ app.use(createDemoMiddleware({
 privateStudioLicensing = registerPrivateStudioLicensing({
   app, stripe, requireCustomer, requireAdmin,
   dataDir: DATA_DIR, baseUrl: BASE_URL,
-  secret: process.env.STRIPE_SECRET_KEY
+  secret: process.env.PRIVATE_STUDIO_LICENSE_SECRET || process.env.STRIPE_SECRET_KEY,
+  ownerEmail: process.env.BUSINESS_EMAIL || CONSENT_RECEIPT_EMAIL,
+  lookupCustomer: async accountId => {
+    const accounts = await getCustomerAccounts();
+    return accounts.find(account => String(account.id) === String(accountId)) || null;
+  },
+  sendEmail: async ({ to, subject, text, idempotencyKey }) => {
+    if (!process.env.RESEND_API_KEY) throw Error("Private Studio receipt email service is not configured.");
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + process.env.RESEND_API_KEY,
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey
+      },
+      body: JSON.stringify({
+        from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
+        to: [to], subject, text
+      })
+    });
+    if (!response.ok) throw Error("Private Studio receipt delivery failed: HTTP " + response.status);
+    return true;
+  }
 });
 
 
