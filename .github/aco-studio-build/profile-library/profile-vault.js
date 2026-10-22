@@ -233,10 +233,47 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   for(const entry of emails){if(entry.retailer===retailer&&!entry.profileId&&!seen.has(entry.email)){seen.add(entry.email);accounts.push({email:entry.email,entry});}}
   return {accounts,used};
  }
- async function emailInventory(scope,customerId,retailer){await pending;const key=bank(scope,customerId),r=retailerId(retailer),d=await read(scope);
+
+ // Repair historical Target Live imports without changing the Target records.
+ // An existing PKC profile or reserved PKC bank email already accounts for that
+ // email: only genuinely missing PKC email-bank entries are created.
+ function backfillTargetLivePkc(d,other,key){
+  const rows=d.groups[key]||[],targets=rows.filter(x=>x.retailer==='target'&&x.bank==='live');
+  const sourceEmails=[...new Set(targets.map(x=>normalizeEmail(x.email)).filter(Boolean))];
+  d.emailBanks||={};d.emailBanks[key]||=[];
+  const allProfiles=[...Object.values(d.groups).flat(),...Object.values(other.groups).flat()];
+  const pkcProfiles=new Set(allProfiles.filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
+  const bankEmails=new Set([...Object.values(d.emailBanks).flat(),...Object.values(other.emailBanks||{}).flat()]
+   .filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
+  let added=0;
+  for(const email of sourceEmails){
+   if(pkcProfiles.has(email)||bankEmails.has(email))continue;
+   d.emailBanks[key].push({id:uuid(),email,retailer:'pokemoncenter',createdAt:now(),profileId:null,source:'target-live-reconciliation'});
+   bankEmails.add(email);added++;
+  }
+  const covered=sourceEmails.filter(email=>pkcProfiles.has(email)||bankEmails.has(email)).length;
+  return {targetLiveProfiles:targets.length,targetUniqueEmails:sourceEmails.length,
+   targetDuplicateEmails:targets.length-sourceEmails.length,
+   alreadyPkcProfiles:sourceEmails.filter(email=>pkcProfiles.has(email)).length,
+   pkcCoverage:covered,unmatchedTargetEmails:sourceEmails.length-covered,added};
+ }
+ async function reconcileTargetLivePkcEmails(scope,customerId,beforeWrite){
+  const key=bank(scope,customerId);
+  return serial(async()=>{
+   const d=await read(scope),other=await read(scope==='personal'?'aco':'personal');
+   const report=backfillTargetLivePkc(d,other,key);
+   if(report.added){
+    auditRecord(d,key,'reconcile-target-live-pkc','',{added:report.added,sourceProfiles:report.targetLiveProfiles});
+    if(beforeWrite)beforeWrite();
+    await write(scope,d);
+   }
+   return {scope,customerId:scope==='aco'?key:null,...report};
+  });
+ }
+ async function emailInventory(scope,customerId,retailer){const r=retailerId(retailer);const reconciled=r==='pokemoncenter'?await reconcileTargetLivePkcEmails(scope,customerId):null;await pending;const key=bank(scope,customerId),d=await read(scope);
   const other=await read(scope==='personal'?'aco':'personal'),rows=d.groups[key]||[],allProfiles=[...Object.values(d.groups).flat(),...Object.values(other.groups).flat()];
   const inventory=creationInventory(rows,allProfiles,emailRows(d,key),r);
-  return {scope,customerId:scope==='aco'?key:null,retailer:r,freeAccounts:inventory.accounts.filter(x=>x.account).length,availableForCreation:inventory.accounts.length,emails:inventory.accounts.map(x=>({id:x.account?.id||x.entry.id,email:x.email,status:'available',source:x.account?'account':'email'})).concat(emailRows(d,key).filter(x=>x.retailer===r&&!inventory.accounts.some(a=>a.email===x.email)).map(x=>({id:x.id,email:x.email,status:'used'})))};
+  return {scope,customerId:scope==='aco'?key:null,retailer:r,freeAccounts:inventory.accounts.filter(x=>x.account).length,availableForCreation:inventory.accounts.length,...(reconciled?{targetLiveReconciliation:reconciled}:{}),emails:inventory.accounts.map(x=>({id:x.account?.id||x.entry.id,email:x.email,status:'available',source:x.account?'account':'email'})).concat(emailRows(d,key).filter(x=>x.retailer===r&&!inventory.accounts.some(a=>a.email===x.email)).map(x=>({id:x.id,email:x.email,status:'used'})))};
  }
  async function importEmails(scope,customerId,retailer,values,beforeWrite){const key=bank(scope,customerId),r=retailerId(retailer);
   if(!Array.isArray(values)||!values.length||values.length>5000||typeof beforeWrite!=='function')throw Error('Import 1-5000 emails.');
@@ -361,7 +398,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   }
   return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count||a.retailer.localeCompare(b.retailer)),scanned:[...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
  }
- return Object.freeze({paths,retailers:RETAILERS,librarySettings,libraryTransaction,importLiveProfiles,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+ return Object.freeze({paths,retailers:RETAILERS,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 
