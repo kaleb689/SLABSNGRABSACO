@@ -5715,7 +5715,10 @@ PAID SUBSCRIPTIONS
     <details class="admin-feature-panel" id="signupConsentPanel">
       <summary>Signup &amp; purchase consent log</summary>
       <p>Account signups and membership checkout choices are stored separately. Times shown are UTC; browser-reported click times are identified as such.</p>
-      <button id="loadSignupConsentLog" type="button" class="admin-edit-button">View log</button>
+      <label>Search consent history by account, email or submission
+        <input id="signupConsentSearch" type="search" autocomplete="off" placeholder="Customer email or account ID" maxlength="150">
+      </label>
+      <button id="loadSignupConsentLog" type="button" class="admin-edit-button">Search / view log</button>
       <p id="signupConsentReceiptStatus" role="status"></p>
       <div id="signupConsentLog" role="status"></div>
       <button id="moreSignupConsentLog" type="button" class="admin-edit-button" hidden>Older entries</button>
@@ -6486,7 +6489,8 @@ async function loadSignupConsentLog(append = false) {
   const more = document.getElementById("moreSignupConsentLog");
   if (!append) { signupConsentOffset = 0; output.textContent = "Loading…"; }
   try {
-    const response = await fetch(`/api/admin/signup-consent-log?limit=50&offset=${signupConsentOffset}`, {
+    const search = encodeURIComponent(document.getElementById("signupConsentSearch")?.value.trim() || "");
+    const response = await fetch(`/api/admin/signup-consent-log?limit=50&offset=${signupConsentOffset}&search=${search}`, {
       credentials: "same-origin", cache: "no-store"
     });
     const data = await response.json();
@@ -6500,9 +6504,16 @@ async function loadSignupConsentLog(append = false) {
       const choices = item.checkboxes ? Object.entries(item.checkboxes).map(([key, choice]) =>
         `<p><strong>${escapeHtml(key)}</strong>: ${escapeHtml(choice.text)}<br>Server click receipt: ${escapeHtml(choice.serverReceivedAt)}<br>Browser-reported click: ${escapeHtml(choice.clientReportedClickAt || "not available")}</p>`
       ).join("") : "";
+      const age = item.type === "signup_completed" ?
+        (item.age18Confirmed === true ?
+          `<p><strong>Age requirement confirmed:</strong> ${escapeHtml(item.age18ConfirmationText || "I confirm I am 18 or older.")}<br>Server confirmation time (UTC): ${escapeHtml(item.age18ConfirmedAt || item.recordedAt)}<br>Version: ${escapeHtml(item.age18ConfirmationVersion || "—")}<br>Audit record: ${escapeHtml(item.id)}</p>` :
+          "<p>Legacy signup: No age declaration recorded.</p>") :
+        item.type === "checkout_consent" ?
+          `<p><strong>18+ signup acknowledgment linked to checkout:</strong> ${item.signupAgeConfirmation?.confirmed ? "Confirmed" : "Legacy account — not recorded"}<br>Signup record: ${escapeHtml(item.signupAgeConfirmation?.consentRecordId || "—")}<br>Confirmed at (UTC): ${escapeHtml(item.signupAgeConfirmation?.confirmedAt || "—")}<br>Declaration: ${escapeHtml(item.signupAgeConfirmation?.text || "—")}</p>` : "";
       return `<details class="admin-feature-panel" style="margin:8px 0;padding:12px"><summary>${escapeHtml(heading)} · ${escapeHtml(item.recordedAt)} · ${escapeHtml(item.email || item.signupEmail || item.accountId || "")}</summary>
         <p>Record: ${escapeHtml(item.id)}<br>Account: ${escapeHtml(item.accountId)}<br>Submission: ${escapeHtml(item.submissionId || "—")}<br>Consent version: ${escapeHtml(item.consentVersion || "—")}</p>
         ${item.type === "checkbox_event" ? `<p>${escapeHtml(item.checkbox)}: ${item.checked ? "checked" : "unchecked"}<br>Server receipt: ${escapeHtml(item.recordedAt)}<br>Browser-reported click: ${escapeHtml(item.clientReportedClickAt || "not available")}</p>` : ""}
+        ${age}
         ${choices}</details>`;
     }).join("");
     if (append) output.insertAdjacentHTML("beforeend", html);
@@ -6512,6 +6523,9 @@ async function loadSignupConsentLog(append = false) {
   } catch (error) { output.textContent = error.message; }
 }
 document.getElementById("loadSignupConsentLog")?.addEventListener("click", () => void loadSignupConsentLog());
+document.getElementById("signupConsentSearch")?.addEventListener("keydown", event => {
+  if(event.key === "Enter"){event.preventDefault();void loadSignupConsentLog();}
+});
 document.getElementById("moreSignupConsentLog")?.addEventListener("click", () => void loadSignupConsentLog(true));
 
 

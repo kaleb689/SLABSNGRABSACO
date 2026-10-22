@@ -4,6 +4,7 @@ import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
+import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
@@ -603,6 +604,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
+  const deliveryGuard=createNotificationDeliveryGuard({dataDir});
   const headers = { Authorization: `Bot ${token}`, "Content-Type": "application/json" };
   async function readJsonSafe(file, fallback = {}) {
     try { return JSON.parse(await fs.readFile(file, "utf8")); }
@@ -2502,6 +2504,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         if (!/^\d{15,25}$/.test(String(userId))) continue;
         try {
           const channel = await api("/users/@me/channels", "POST", { recipient_id: String(userId) });
+          const claim=await deliveryGuard.claim({
+            channel:"discord:sku-updates",recipient:String(userId),eventKey
+          });
+          if(!claim.send)continue;
           await api("/channels/" + channel.id + "/messages", "POST", {
             allowed_mentions: { parse: [] },
             embeds: [{
@@ -2564,6 +2570,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         }
         try {
           const dmChannel = await api("/users/@me/channels", "POST", { recipient_id: id });
+          const claim=await deliveryGuard.claim({
+            channel:"discord:sku-reminders",recipient:String(id),
+            eventKey:"drop-reminder:" + sourceId + ":" + dropKey.today
+          });
+          if(!claim.send){
+            recent++;
+            continue;
+          }
           await api("/channels/" + dmChannel.id + "/messages", "POST", message);
           reminder.sentTo ||= {};
           reminder.sentTo[id] = new Date().toISOString();
@@ -3540,6 +3554,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       if (error?.code !== "ENOENT") throw error;
     }
     const dmChannel = await api("/users/@me/channels", "POST", { recipient_id: String(ownerId) });
+    const claim=await deliveryGuard.claim({channel:"discord:admin:preview",
+      recipient:String(ownerId),eventKey:"renewal-preview-v1"});
+    if(!claim.send)return false;
     await api(`/channels/${dmChannel.id}/messages`, "POST", {
       allowed_mentions: { parse: [] },
       embeds: [{

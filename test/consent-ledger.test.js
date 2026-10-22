@@ -38,8 +38,17 @@ test("records a signup and individual checkbox changes without storing card data
       catch { await new Promise(resolve => setTimeout(resolve, 100)); }
     }
     assert.ok(ready, "test server started");
-    const signup = await request("/api/account/register", "POST", {
+    const missingAge = await request("/api/account/register", "POST", {
       email: "consent-test@example.test", password: "synthetic-password-123"
+    });
+    assert.equal(missingAge.status, 400, "signup cannot bypass age confirmation");
+    assert.match(missingAge.data.error, /18 or older/i);
+    const explicitlyFalse = await request("/api/account/register", "POST", {
+      email: "consent-test@example.test", password: "synthetic-password-123", age18Confirmed: false
+    });
+    assert.equal(explicitlyFalse.status, 400);
+    const signup = await request("/api/account/register", "POST", {
+      email: "consent-test@example.test", password: "synthetic-password-123", age18Confirmed: true
     });
     assert.equal(signup.status, 201);
     const flowId = "11111111-1111-4111-8111-111111111111";
@@ -69,6 +78,10 @@ test("records a signup and individual checkbox changes without storing card data
     assert.equal(audit.data.total, 5);
     assert.equal(audit.data.entries[0].checked, false);
     assert.equal(audit.data.entries.at(-1).type, "signup_completed");
+    assert.equal(audit.data.entries.at(-1).age18Confirmed, true);
+    assert.equal(audit.data.entries.at(-1).age18ConfirmationText, "I confirm I am 18 or older.");
+    assert.ok(audit.data.entries.at(-1).age18ConfirmedAt);
+    assert.ok(audit.data.entries.at(-1).age18ConfirmationVersion);
     const ledger = await fs.readFile(path.join(dataDir, "secure-packages", "signup-consent-ledger.jsonl"), "utf8");
     assert.equal(ledger.trim().split("\n").length, 5);
     assert.ok(!ledger.includes("consent-test@example.test"));
@@ -83,6 +96,7 @@ test("records a signup and individual checkbox changes without storing card data
     ]).toString("utf8"));
     assert.equal(receipts.length, 1);
     assert.match(receipts[0].text, /No card or purchase authorization checkbox is presented during account registration/);
+    assert.match(receipts[0].text, /I confirm I am 18 or older/);
     assert.ok(!JSON.stringify(receipts).includes("4111111111111111"));
 
     server.kill();

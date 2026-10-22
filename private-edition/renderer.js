@@ -25,12 +25,13 @@ function node(tag,text,cls){const element=document.createElement(tag);if(text!==
 function button(label,click,cls){const b=node("button",label,cls);b.type="button";b.addEventListener("click",click);return b;}
 function nav(view){page=view;for(const section of document.querySelectorAll(".page"))section.classList.toggle("hidden",section.id!==view);
   for(const b of document.querySelectorAll("[data-view]"))b.classList.toggle("selected",b.dataset.view===view);
-  const title={home:"Welcome to your ACO STUDIO workspace",accounts:"Account Banks",cards:"Card Bank",
+  const title={home:"Welcome to your ACO STUDIO workspace",accounts:"Account Banks",profiles:"Retailer Profiles",cards:"Card Bank",
     addresses:"Address Bank",jig:"Jig Studio",transfer:"Import / Export",rules:"Rules",
     license:"License",settings:"Settings"};
   $("page-title").textContent=title[view]||"ACO STUDIO";
   $("page-desc").textContent=view==="home"?"Your profiles, bank data and export files stay under your control.":"Your workspace. Your device. Your data.";
-  if(view==="transfer"||view==="accounts")drawFiles();
+  if(view==="transfer"||view==="accounts"||view==="profiles")drawFiles();
+  if(view==="settings")void loadBackups();
 }
 async function call(name,arg){try{return await api[name](arg);}catch(e){message(e?.message||"Operation failed.",true);return null;}}
 async function refresh(){const result=await call("vault_overview");if(!result)return;overview=result;
@@ -45,12 +46,13 @@ async function refresh(){const result=await call("vault_overview");if(!result)re
   if(!a.children.length)a.append(node("p","No recent activity."));
 }
 function drawFiles(){
-  for(const [area,id] of [["accounts","account-files"],["transfer","transfer-list"]]){
+  for(const [area,id] of [["accounts","account-files"],["transfer","transfer-list"],["profiles","profiles-list"]]){
     const target=$(id);target.replaceChildren();
-    const retailer=$(area==="accounts"?"account-retailer":"transfer-retailer").value;
-    const files=overview.sources.filter(s=>s.retailer===retailer);
+    const retailer=$(area==="accounts"?"account-retailer":area==="transfer"?"transfer-retailer":"profiles-retailer").value;
+    const files=overview.sources.filter(s=>s.retailer===retailer&&
+      (area!=="profiles"||(s.bank||"working")===$("profiles-bank").value));
     for(const f of files){const box=node("div",undefined,"file-row");const summary=node("div");
-      summary.append(node("strong",f.filename),node("small",f.kind.toUpperCase()+" · "+f.count+" profile(s) · Original format "+(f.changed?"edited":"retained")));
+      summary.append(node("strong",f.filename),node("small",f.kind.toUpperCase()+" · "+f.count+" profile(s) · "+((f.bank||"working")==="live"?"Live Profiles":"Working Profiles")+" · Original format "+(f.changed?"edited":"retained")));
       const actions=node("div",undefined,"mini-actions");
       actions.append(button("Export",async()=>{const r=await call("vault_export",f.id);if(r?.saved)message("Exported "+r.filename+" in its source format.");}),
         button("Inspect",async()=>{const data=await call("vault_rows",f.id);if(!data)return;
@@ -63,19 +65,51 @@ function drawFiles(){
           function render(){
             container.replaceChildren();
             for(const row of data.rows.slice(page*pageSize,(page+1)*pageSize)){
-              container.append(node("pre",String(row.index+1)+". "+Object.entries(row.fields).map(([key,v])=>key+": "+String(v)).join(" | ")));
+              const item=node("div",undefined,"file-row");
+              item.append(node("pre",String(row.index+1)+". "+Object.entries(row.fields).map(([key,v])=>key+": "+String(v)).join(" | ")));
+              item.append(button("Edit profile",()=>{
+                const editor=node("form",undefined,"panel");
+                editor.append(node("h3","Edit profile "+(row.index+1)+" · "+data.filename));
+                const fields=node("div",undefined,"fields"),updates={};
+                for(const [key,value] of Object.entries(row.fields)){
+                  if(value!==null&&typeof value==="object")continue;
+                  const label=node("label",key),input=document.createElement("input");
+                  input.name=key;input.value=String(value??"");input.maxLength=5000;
+                  label.append(input);fields.append(label);
+                }
+                const save=button("Save profile changes",async()=>{
+                  for(const input of fields.querySelectorAll("input")){
+                    if(input.value!==String(row.fields[input.name]??""))updates[input.name]=input.value;
+                  }
+                  if(!Object.keys(updates).length){message("No profile fields changed.");return;}
+                  const saved=await call("vault_editRow",{fileId:f.id,rowIndex:row.index,updates});
+                  if(saved?.saved){
+                    Object.assign(row.fields,updates);editor.remove();render();
+                    await refresh();message("Profile fields saved in original retailer format.");
+                  }
+                },"primary");
+                const cancel=button("Cancel",()=>editor.remove());
+                editor.append(fields,save,cancel);
+                pane.insertBefore(editor,pane.querySelector(".mini-actions"));
+              }));
+              container.append(item);
             }
             const count=Math.max(1,Math.ceil(data.rows.length/pageSize));
             pager.textContent="Page "+(page+1)+" of "+count;
             previous.disabled=page===0;next.disabled=page>=count-1;
           }
           controls.append(previous,pager,next);pane.append(controls,container);render();modal.append(pane);
+        }),
+        button((f.bank||"working")==="live"?"Move to Working":"Move to Live",async()=>{
+          const destination=(f.bank||"working")==="live"?"working":"live";
+          const updated=await call("vault_setBank",{fileId:f.id,bank:destination});
+          if(updated?.saved){await refresh();message("File moved to "+destination+" bank. No profiles were removed.");}
         }),button("Delete",async()=>{if(!confirm("Delete only "+f.filename+" from this private local vault?"))return;
           if(await call("vault_remove",{kind:"source",id:f.id})){message("Local file removed.");await refresh();}
         },"danger"));
       box.append(summary,actions);target.append(box);
     }
-    if(!files.length)target.append(node("p","No imported files for this retailer yet. Import an existing file or create a profile."));
+    if(!files.length)target.append(node("p",area==="profiles"?"No profiles in this selected retailer and bank. Import or move a file here.":"No imported files for this retailer yet. Import an existing file or create a profile."));
   }
 }
 function drawCards(){const target=$("card-list");target.replaceChildren();
@@ -87,12 +121,14 @@ function drawAddresses(){const target=$("address-list");target.replaceChildren()
     button("Delete",async()=>{if(!confirm("Delete this local address?"))return;if(await call("vault_remove",{kind:"address",id:a.id}))await refresh();},"danger"));target.append(row);}
 }
 function drawSources(){const selector=$("jig-source"),previous=selector.value;selector.replaceChildren();
-  for(const f of overview.sources){const option=new Option(stores[f.retailer]+": "+f.filename+" ("+f.count+")",f.id);selector.append(option);}
+  for(const f of overview.sources){const option=new Option(stores[f.retailer]+": "+f.filename+" ("+f.count+", "+((f.bank||"working")==="live"?"Live":"Working")+")",f.id);selector.append(option);}
   if(overview.sources.some(s=>s.id===previous))selector.value=previous;
 }
 for(const buttonEl of document.querySelectorAll("[data-view]"))buttonEl.addEventListener("click",()=>nav(buttonEl.dataset.view));
 for(const buttonEl of document.querySelectorAll("[data-go]"))buttonEl.addEventListener("click",()=>nav(buttonEl.dataset.go));
 for(const selector of document.querySelectorAll(".retailer"))for(const [id,label] of Object.entries(stores))selector.append(new Option(label,id));
+$("profiles-retailer").addEventListener("change",drawFiles);
+$("profiles-bank").addEventListener("change",drawFiles);
 $("account-retailer").addEventListener("change",drawFiles);
 $("transfer-retailer").addEventListener("change",drawFiles);
 $("add-account-open").addEventListener("click",()=>$("account-form").classList.toggle("hidden"));
@@ -107,11 +143,12 @@ $("account-form").addEventListener("submit",async e=>{e.preventDefault();const f
   const result=await call("vault_addAccount",{...formData(form),retailer:$("account-retailer").value});
   if(result?.saved){form.reset();form.classList.add("hidden");message("Account profile saved in your private bank.");await refresh();}
 });
-async function importFiles(retailer){const result=await call("vault_import",retailer);
+async function importFiles(retailer,bank="working"){const result=await call("vault_import",{retailer,bank});
   if(result?.imported){message("Imported "+result.imported+" file(s) with "+result.profiles+" profile(s); original formats retained.");await refresh();}
 }
 $("import-accounts").addEventListener("click",()=>importFiles($("account-retailer").value));
 $("transfer-import").addEventListener("click",()=>importFiles($("transfer-retailer").value));
+$("profiles-import").addEventListener("click",()=>importFiles($("profiles-retailer").value,$("profiles-bank").value));
 const ruleContainer=$("rule-checks");
 for(const [id,title]of Object.entries(labels)){const l=node("label",undefined,"rule");
   const cb=document.createElement("input");cb.type="checkbox";cb.name=id;cb.checked=["suffix","directional","ordinal"].includes(id);
@@ -142,6 +179,74 @@ $("activate").addEventListener("submit",async e=>{e.preventDefault();$("activate
   if(response?.active){$("key").value="";$("lock").classList.add("hidden");$("application").classList.remove("hidden");
     await refresh();nav("home");}else $("activate-status").textContent="License inactive or unavailable. Verify your subscription and key.";
 });
+
+async function loadBackups(){
+  const backups=await call("vault_backupList");
+  const list=$("backup-list");list.replaceChildren();
+  if(!backups)return;
+  if(!backups.length){list.append(node("p","No automatic snapshots yet. A snapshot is saved before each change to an existing vault."));return;}
+  for(const entry of backups){
+    const line=node("div",undefined,"file-row");
+    line.append(node("span","Encrypted snapshot · "+new Date(entry.createdAt).toLocaleString()),
+      button("Restore",async()=>{
+        if(!confirm("Restore all saved information from "+new Date(entry.createdAt).toLocaleString()+"?"))return;
+        const result=await call("vault_backupRestore",entry.name);
+        if(result?.restored){await refresh();message("Encrypted profile bank restored.");await loadBackups();}
+      }));
+    list.append(line);
+  }
+}
+$("backup-refresh").addEventListener("click",()=>void loadBackups());
+$("backup-export").addEventListener("click",async()=>{
+  const password=$("backup-passphrase").value;
+  if(password.length<12){message("Backup passphrase must have at least 12 characters.",true);return;}
+  const output=await call("vault_backupExport",password);
+  if(output?.saved)message("Encrypted portable backup exported. Store the file and its passphrase separately.");
+  $("backup-passphrase").value="";
+});
+$("backup-import").addEventListener("click",async()=>{
+  const password=$("backup-passphrase").value;
+  if(!password){message("Enter the existing backup's passphrase first.",true);return;}
+  const output=await call("vault_backupImport",password);
+  $("backup-passphrase").value="";
+  if(output?.restored){message("Encrypted portable backup restored.");await refresh();await loadBackups();}
+});
+
+async function loadLockedSnapshots(){
+ const target=$("locked-snapshots-list");target.replaceChildren();
+ const backups=await call("vault_backupList");
+ if(!backups){target.append(node("p","Local snapshots are unavailable."));return;}
+ if(!backups.length){target.append(node("p","No automatic recovery snapshots were found on this computer."));return;}
+ target.append(node("p",backups.length+" encrypted snapshots available on this computer."));
+ for(const entry of backups){
+   const line=node("div",undefined,"file-row");
+   line.append(node("span",new Date(entry.createdAt).toLocaleString()),
+     button("Restore",async()=>{
+       if(!confirm("Restore saved profiles, cards, addresses and retailer banks from "+new Date(entry.createdAt).toLocaleString()+"?"))return;
+       const restored=await call("vault_backupRestore",entry.name);
+       if(!restored?.restored)return;
+       const active=await call("license_status");
+       $("activate-status").textContent=active?"Local encrypted vault restored and license verified.":"Local encrypted vault restored. Verify your license to continue.";
+       if(active){$("lock").classList.add("hidden");$("application").classList.remove("hidden");await refresh();nav("home");}
+     }));
+   target.append(line);
+ }
+}
+$("locked-snapshots-refresh").addEventListener("click",()=>void loadLockedSnapshots());
+
+$("locked-backup-restore").addEventListener("click",async()=>{
+  const password=$("locked-backup-password").value;
+  if(!password){$("activate-status").textContent="Enter your existing backup passphrase.";return;}
+  $("activate-status").textContent="Validating encrypted backup…";
+  const restored=await call("vault_backupImport",password);
+  $("locked-backup-password").value="";
+  if(restored?.restored){
+    const active=await call("license_status");
+    $("activate-status").textContent=active?"Backup restored and license active.":"Backup restored. Activate your license to continue.";
+    if(active){$("lock").classList.add("hidden");$("application").classList.remove("hidden");await refresh();nav("home");}
+  }else $("activate-status").textContent="Backup not restored. Original saved information was not replaced.";
+});
+
 (async()=>{const active=await call("license_status");$("activate-status").textContent=active?"License active.":"Enter the key shown in your website profile.";
   if(active){$("lock").classList.add("hidden");$("application").classList.remove("hidden");await refresh();nav("home");}
 })();

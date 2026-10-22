@@ -444,6 +444,20 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:2};return {saved:true,presetVersion:2};},a.check);}
  return {list,detail,importPreview,importCommit,repair,edit,exportFile,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,rules,saveRules,cancel};
 }
-function registerLibrary(options){const service=createLibrary(options);for(const method of ['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});return service;}
+function registerLibrary(options){const service=createLibrary(options);for(const method of ['list','detail','importPreview','importCommit','repair','edit','exportFile','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
+ // Owner-only encrypted backup recovery for complete Personal and ACO vaults.
+ // No customer website token or profile ID can access these snapshots.
+ options.ipcMain.handle('profile:library:backupList',(e,p)=>{
+   options.requireOwner(e);
+   if(!['personal','aco'].includes(p?.scope))throw Error('Choose an owner bank.');
+   return options.profiles.backupList(p.scope);
+ });
+ options.ipcMain.handle('profile:library:backupRestore',(e,p)=>{
+   options.requireOwner(e);
+   if(p?.confirmed!==true||!['personal','aco'].includes(p.scope)||typeof p.name!=='string')
+     throw Error('Explicit owner confirmation is required.');
+   return options.profiles.backupRestore(p.scope,p.name);
+ });
+ return service;}
 module.exports={createLibrary,registerLibrary};
 

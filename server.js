@@ -18,6 +18,8 @@ import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { attachAdminDesktopDevices } from "./admin-desktop-devices.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder, lateCancellation } from "./order-notifications.js";
+import { createShippingDiscordDmLedger } from "./shipping-discord-dm-ledger.js";
+import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { webhookOnlyCheckouts, discordCheckoutIds, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { isModuleLifecycleDiscordMessage, isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
@@ -142,6 +144,7 @@ app.disable("x-powered-by");
 const PORT = process.env.PORT || 4242;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 const DATA_DIR = process.env.DATA_DIR || "/var/data/slabsngrabsaco";
+const notificationDeliveryGuard=createNotificationDeliveryGuard({dataDir:DATA_DIR});
 
 const PENDING_FILE = path.join(DATA_DIR, "pending-submissions.json");
 const PAID_FILE = path.join(DATA_DIR, "paid-submissions.json");
@@ -1772,6 +1775,8 @@ function decryptJson(payload) {
   return stripPaymentVerifiers(decryptRawJson(payload));
 }
 
+const SIGNUP_AGE_CONFIRMATION_TEXT = "I confirm I am 18 or older.";
+const SIGNUP_AGE_CONFIRMATION_VERSION = "signup-18-plus-2026-10-22";
 const PURCHASE_CONSENT_VERSION = "membership-checkout-2026-09-29";
 const PURCHASE_CONSENT_TEXT = Object.freeze({
   confirm: "I confirm that the information above is accurate.",
@@ -1842,7 +1847,12 @@ async function flushConsentReceipts() {
       try {
         const response = await fetch("https://api.resend.com/emails", {
           method: "POST",
-          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+          headers: {
+            Authorization:`Bearer ${process.env.RESEND_API_KEY}`,
+            "Content-Type":"application/json",
+            "Idempotency-Key":"consent-receipt-"+crypto.createHash("sha256")
+              .update(JSON.stringify([item.subject,item.text])).digest("hex")
+          },
           body: JSON.stringify({
             from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
             to: [CONSENT_RECEIPT_EMAIL], subject: item.subject, text: item.text
@@ -2212,6 +2222,20 @@ async function sendDiscordAdminPaymentNotification(
         true
     });
   }
+
+  // Stable payment identity across Stripe webhook retries. Keep monthly
+  // renewals distinct using their paid timestamp; manual test events use
+  // a fresh timestamp and remain repeatable.
+  const paymentKey=JSON.stringify([
+    String(payment?.paymentType||"Payment"),
+    String(payment?.orderId||payment?.customerEmail||customer.email||""),
+    String(payment?.paidAt||new Date().toISOString().slice(0,10)),
+    Number(amount||0),String(payment?.purchaseSummary||"")
+  ]);
+  const claim=await notificationDeliveryGuard.claim({
+    channel:"discord:webhook:payments",recipient:"admin",eventKey:paymentKey
+  });
+  if(!claim.send)return false;
 
   const separator =
     webhookUrl.includes("?")
@@ -2651,6 +2675,16 @@ async function sendDiscordAdminProfileWorkflowNotification(
       inline: false
     });
   }
+
+  // Repeated workflow scans or webhook retries should not create a second
+  // admin message. New distinct workflow content remains a new event.
+  const profileEvent=JSON.stringify([title,description,customerEmail,
+    profileLabel,profileType,expiresAt]);
+  const claim=await notificationDeliveryGuard.claim({
+    channel:"discord:webhook:profiles",recipient:"admin",
+    eventKey:profileEvent,windowMs:24*60*60*1000
+  });
+  if(!claim.send)return null;
 
   const separator =
     webhookUrl.includes("?")
@@ -3225,7 +3259,9 @@ async function sendAdminSubscriptionInvoiceNotification(
     await notifyAdminMobile(
       "expirations",
       isUpgrade ? "Membership upgraded" : "Membership renewed",
-      `${String(record?.profile?.name || record?.profile?.email || invoice?.customer_email || "Member")} — ${purchaseSummary}; payment ${moneyFromStripeCents(invoice?.amount_paid)}.`
+      `${String(record?.profile?.name || record?.profile?.email || invoice?.customer_email || "Member")} — ${purchaseSummary}; payment ${moneyFromStripeCents(invoice?.amount_paid)}.`,
+      "/admin-app.html",
+      "membership-payment:" + String(invoice?.id || "") + ":" + String(record?.id || "") + ":" + String(invoice?.status_transitions?.paid_at || "") + ":" + String(isUpgrade)
     );
   } catch (error) {
     console.error("Admin membership renewal push failed:", error.message);
@@ -4672,13 +4708,27 @@ function discordChannelLabel(name) {
 async function sendDiscordReferralMessage(channelId, content, allowedUsers = []) {
   const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
   if (!token) throw new Error("Discord bot is not configured.");
-  const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+  const claim=await notificationDeliveryGuard.claim({
+    channel:"discord:referrals",recipient:String(channelId),
+    eventKey:content,windowMs:30*86400000
+  });
+  if(!claim.send)return false;
+  let response;
+  try {
+  response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: "POST",
     headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ content, allowed_mentions: { parse: [], users: allowedUsers } }),
     signal: AbortSignal.timeout(12000)
   });
-  if (!response.ok) throw new Error(`Discord referral message HTTP ${response.status}`);
+  }catch(error){
+    // Do not fall back to a second webhook after an ambiguous Discord send.
+    error.notificationClaimed=true;throw error;
+  }
+  if (!response.ok) {
+    const error=new Error(`Discord referral message HTTP ${response.status}`);
+    error.notificationClaimed=true;throw error;
+  }
 }
 
 async function referralDiscordChannels() {
@@ -4708,8 +4758,14 @@ async function sendPrivateReferralNotice(content) {
     await sendDiscordReferralMessage(adminProfiles.id, `${ownerId ? `<@${ownerId}> — ` : ""}${content}`, ownerId ? [String(ownerId)] : []);
     return;
   } catch (error) {
+    if(error.notificationClaimed)throw error;
     const webhook = String(process.env.DISCORD_ADMIN_PROFILE_WEBHOOK_URL || "").trim();
     if (!webhook) throw error;
+    const claim=await notificationDeliveryGuard.claim({
+      channel:"discord:referral:fallback",recipient:"admin",
+      eventKey:content,windowMs:30*86400000
+    });
+    if(!claim.send)return;
     const response = await fetch(webhook, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content, allowed_mentions: { parse: [] } }), signal: AbortSignal.timeout(12000)
@@ -6655,7 +6711,12 @@ async function sendSignupOrderConfirmation(account) {
   });
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    headers:{
+      Authorization:`Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type":"application/json",
+      "Idempotency-Key":"account-welcome-"+crypto.createHash("sha256")
+        .update(JSON.stringify([account.id,orders.map(order=>order.id)])).digest("hex")
+    },
     body: JSON.stringify({
       from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
       to: [account.email],
@@ -8569,6 +8630,14 @@ app.post(
           req.body.password || ""
         );
 
+      // A checked browser box is required, but server validation is authoritative:
+      // direct HTTP submissions cannot bypass the age confirmation.
+      if (req.body?.age18Confirmed !== true) {
+        return res.status(400).json({
+          error: "You must confirm you are 18 or older to create an account."
+        });
+      }
+
       if (
         !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
           email
@@ -8647,6 +8716,9 @@ app.post(
           crypto.randomUUID(),
 
         email,
+        age18Confirmed: true,
+        age18ConfirmedAt: now,
+        age18ConfirmationVersion: SIGNUP_AGE_CONFIRMATION_VERSION,
 
         referredByDiscord,
 
@@ -8688,23 +8760,25 @@ app.post(
           false
       };
 
-      accounts.push(account);
-
-      await saveCustomerAccounts(
-        accounts
-      );
-      if (verifiedDiscord) discordPendingIdentities.delete(discordTicket);
-
-      // Registration has no card-consent checkboxes. Record that distinction
-      // explicitly; purchase authorization is recorded at membership checkout.
+      // Persist the age declaration in the tamper-evident ledger BEFORE
+      // making the new account active. Ledger unavailability must never
+      // create an account without a retrievable consent record.
       const signupRecord = await appendConsentRecord({
         type: "signup_completed", accountId: account.id, email: account.email,
         emailVerifiedAt: null, cardPurchaseConsentAtSignup: false,
+        age18Confirmed: true, age18ConfirmationText: SIGNUP_AGE_CONFIRMATION_TEXT,
+        age18ConfirmedAt: now, age18ConfirmationVersion: SIGNUP_AGE_CONFIRMATION_VERSION,
         ...consentRequestMetadata(req)
       });
+      // Keep the immutable consent record ID on the account for future checkouts
+      // and Admin review, without exposing it to other customers.
+      account.age18ConsentRecordId = signupRecord.id;
+      accounts.push(account);
+      await saveCustomerAccounts(accounts);
+      if (verifiedDiscord) discordPendingIdentities.delete(discordTicket);
       await queueConsentReceipt(
         `New website signup — ${account.email}`,
-        `Website account created\n\nAccount ID: ${account.id}\nEmail: ${account.email}\nServer signup time (UTC): ${signupRecord.recordedAt}\nAudit record ID: ${signupRecord.id}\n\nNo card or purchase authorization checkbox is presented during account registration. Those choices are recorded separately when a member starts a membership checkout. No card number or security code is included.`
+        `Website account created\n\nAccount ID: ${account.id}\nEmail: ${account.email}\nServer signup time (UTC): ${signupRecord.recordedAt}\nAudit record ID: ${signupRecord.id}\n\nAge confirmation: ${SIGNUP_AGE_CONFIRMATION_TEXT}\nAge confirmed at (UTC): ${now}\nAge declaration version: ${SIGNUP_AGE_CONFIRMATION_VERSION}\n\nNo card or purchase authorization checkbox is presented during account registration. Those choices are recorded separately when a member starts a membership checkout. No card number or security code is included.`
       ).catch(error => console.error("Signup owner email queue:", error.message));
 
       if (referrer) {
@@ -9027,10 +9101,14 @@ app.get("/api/admin/signup-consent-log", requireAdmin, async (req, res) => {
     const pendingReceipts = await readConsentEmailQueue();
     const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
     const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
-    return res.json({ ok: true, total: entries.length, offset,
+    const search = String(req.query.search || "").trim().toLowerCase().slice(0,150);
+    const matched = !search ? entries : entries.filter(item =>
+      [item.accountId,item.email,item.signupEmail,item.purchaseEmail,item.submissionId].some(value =>
+        String(value || "").toLowerCase().includes(search)));
+    return res.json({ ok: true, total: matched.length, offset,
       pendingEmailReceipts: Array.isArray(pendingReceipts) ? pendingReceipts.length : 0,
       receiptEmail: CONSENT_RECEIPT_EMAIL,
-      entries: entries.slice(Math.max(0, entries.length - offset - limit), Math.max(0, entries.length - offset)).reverse() });
+      entries: matched.slice(Math.max(0, matched.length - offset - limit), Math.max(0, matched.length - offset)).reverse() });
   } catch (error) {
     console.error("Consent ledger read failed:", error.message);
     return res.status(503).json({ error: "Consent ledger is unavailable or failed its integrity check." });
@@ -10205,7 +10283,12 @@ async function sendPaidOrderConfirmation(accountId, order, amount, details = "")
   if (!account?.email) throw new Error("Customer sign-in email is unavailable.");
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization:`Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type":"application/json",
+      "Idempotency-Key":"paid-order-"+crypto.createHash("sha256")
+        .update(JSON.stringify([accountId,order.id])).digest("hex")
+    },
     body: JSON.stringify({
       from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
       to: [account.email],
@@ -15773,7 +15856,8 @@ app.post("/api/admin/push/test", requireAdmin, async (_req, res) => {
       "expirations",
       "SLABSNGRABSACO — TEST subscription alert",
       "Test only: subscription expires in 3 days. No customer or billing data changed.",
-      "/admin-app.html"
+      "/admin-app.html",
+      "manual-push-test:" + crypto.randomUUID()
     );
     res.set("Cache-Control", "no-store").json({ ok: true, message: "Test push attempted. Check your iPhone notification center." });
   } catch (error) {
@@ -37057,6 +37141,14 @@ app.post(
         signupEmail: req.customerAccount.email, purchaseEmail: profile.email,
         submissionId: id, planName: plan.name, consentVersion: PURCHASE_CONSENT_VERSION,
         checkboxes: accepted, checkoutStartedAt: now,
+        signupAgeConfirmation: {
+          confirmed: req.customerAccount.age18Confirmed === true,
+          text: req.customerAccount.age18Confirmed === true ? SIGNUP_AGE_CONFIRMATION_TEXT : null,
+          confirmedAt: req.customerAccount.age18ConfirmedAt || null,
+          consentRecordId: req.customerAccount.age18ConsentRecordId || null,
+          version: req.customerAccount.age18ConfirmationVersion || null,
+          legacyAccountWithoutConfirmation: req.customerAccount.age18Confirmed !== true
+        },
         paymentConfirmed: false, ...consentRequestMetadata(req)
       });
       const checkboxLines = PURCHASE_CONSENT_KEYS.map(key =>
@@ -37064,7 +37156,7 @@ app.post(
       ).join("\n\n");
       await queueConsentReceipt(
         `Membership checkout consent — ${req.customerAccount.email}`,
-        `Membership checkout consent recorded\n\nAccount ID: ${req.customerAccount.id}\nAccount email: ${req.customerAccount.email}\nCheckout contact email: ${profile.email}\nSubmission ID: ${id}\nPlan: ${plan.name}\nServer checkout time (UTC): ${now}\nConsent version: ${PURCHASE_CONSENT_VERSION}\nAudit record ID: ${consentRecord.id}\n\n${checkboxLines}\n\nThis records choices before Stripe Checkout. It does not state that payment completed or authorize unspecified future items. No card number or security code is included.`
+        `Membership checkout consent recorded\n\nAccount ID: ${req.customerAccount.id}\nAccount email: ${req.customerAccount.email}\nCheckout contact email: ${profile.email}\nSubmission ID: ${id}\nPlan: ${plan.name}\nServer checkout time (UTC): ${now}\nConsent version: ${PURCHASE_CONSENT_VERSION}\nAudit record ID: ${consentRecord.id}\n\nSignup age confirmation: ${req.customerAccount.age18Confirmed === true ? SIGNUP_AGE_CONFIRMATION_TEXT : "No age confirmation recorded for legacy account"}\nSignup age consent record: ${req.customerAccount.age18ConsentRecordId || "not available"}\nSignup confirmed at (UTC): ${req.customerAccount.age18ConfirmedAt || "not available"}\n\n${checkboxLines}\n\nThis records choices before Stripe Checkout. It does not state that payment completed or authorize unspecified future items. No card number or security code is included.`
       );
 
       const pending =
@@ -37098,6 +37190,12 @@ app.post(
 
         consentRecordId:
           consentRecord.id,
+
+        signupAgeConsentRecordId:
+          req.customerAccount.age18ConsentRecordId || null,
+
+        signupAgeConfirmedAt:
+          req.customerAccount.age18ConfirmedAt || null,
 
         createdAt:
           now
@@ -44656,6 +44754,7 @@ async function getCustomerSuccessMailboxes(
 
 
 const SHIPPING_SCAN_INTERVAL_MS = 5 * 60 * 1000;
+const shippingDiscordDms = createShippingDiscordDmLedger({dataDir:DATA_DIR});
 let shippingTrackerRunning = false;
 
 function normalizedShippingText(value = "") {
@@ -44746,6 +44845,13 @@ async function sendShippingDiscordDm(account, record, shipping) {
   });
   if (!channelResponse.ok) throw new Error(`Discord shipping DM channel HTTP ${channelResponse.status}`);
   const channel = await channelResponse.json();
+  // Claim before sending, not after: a process crash or provider timeout must
+  // never replay this same order/stage for this Discord recipient.
+  const claim = await shippingDiscordDms.claim({
+    accountId:account.id, discordUserId:discordId, retailer:record.retailer,
+    orderNumber:record.orderNumber, status:shipping.status
+  });
+  if (!claim.send) return false;
 
   const statusLabel = shipping.status === "delivered" ? "DELIVERED" :
     shipping.status === "out_for_delivery" ? "OUT FOR DELIVERY" :

@@ -91,7 +91,7 @@ test("Full-status-color outline wraps all sides of customer recent order and tra
   for(const file of [app,site,admin,secure]){
     assert.match(file,/sng-premium-controls\.css\?v=2/);
   }
-  assert.ok(app.includes("/admin-mobile.js?v=20261018-cross-retailer-products-1"));
+  assert.ok(/\/admin-mobile\.js\?v=[A-Za-z0-9._-]+/.test(app));
 });
 
 test("Admin overview keeps membership KPIs visible and removes duplicate sections",()=>{

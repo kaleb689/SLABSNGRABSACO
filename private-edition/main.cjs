@@ -109,7 +109,7 @@ function startJigPolicySync(){
 }
 async function edit(fn){return transact(async()=>{await allowed();const v=await Vault.load();const result=await fn(v);await Vault.save(v);return result;});}
 function displayState(v){
-  return {sources:v.sources.map(s=>({id:s.id,retailer:s.retailer,...Formats.profileSummary(s.file)})),
+  return {sources:v.sources.map(s=>({id:s.id,retailer:s.retailer,bank:s.bank==='live'?'live':'working',...Formats.profileSummary(s.file)})),
     cards:v.cards.map(c=>({id:c.id,label:c.label,holder:c.holder,number:c.number,securityCode:c.securityCode||"",last4:String(c.number||"").slice(-4),expiry:c.expiry})),
     addresses:v.addresses,activity:v.activity.slice(0,30),rules:v.rules};
 }
@@ -147,18 +147,21 @@ ipcMain.handle("vault:addAccount",(_e,p)=>edit(v=>{
   const account=validate("account",{email:String(p?.email||""),first_name:String(p?.first||""),last_name:String(p?.last||""),address:String(p?.address||""),address2:"",city:String(p?.city||""),state:String(p?.state||""),zip:String(p?.zip||""),phone:String(p?.phone||""),billing_address:"",billing_city:"",billing_state:"",billing_zip:"",card_number:"",card_expiry:"",cardholder:""});
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account.email))throw Error("Enter a valid email.");
   const file=Formats.readSource("created-"+retailer+".json",JSON.stringify([account],null,2));
-  v.sources.push({id:crypto.randomUUID(),retailer,file});addActivity(v,"Created "+retailer+" profile");
+  v.sources.push({id:crypto.randomUUID(),retailer,bank:"working",file});addActivity(v,"Created "+retailer+" profile");
   return {saved:true};
 }));
-ipcMain.handle("vault:import",async (_e,retailer)=>{
-  await allowed();if(!["target","walmart","pokemoncenter","costco","sams"].includes(retailer))throw Error("Choose a retailer.");
+ipcMain.handle("vault:import",async (_e,selection)=>{
+  await allowed();
+  const retailer=typeof selection==="string"?selection:String(selection?.retailer||"");
+  const bank=selection?.bank==="live"?"live":"working";
+  if(!["target","walmart","pokemoncenter","costco","sams"].includes(retailer))throw Error("Choose a retailer.");
   const select=await dialog.showOpenDialog(win,{properties:["openFile","multiSelections"],
     filters:[{name:"Profiles",extensions:["csv","tsv","json","txt"]},{name:"All files",extensions:["*"]}]});
   if(select.canceled)return {imported:0};
   const files=[];
   for(const filename of select.filePaths){const info=await fs.stat(filename);if(info.size>24*1024*1024)throw Error("Files must be under 24 MB each.");
     const content=await fs.readFile(filename,"utf8");const parsed=Formats.readSource(path.basename(filename),content);
-    files.push({id:crypto.randomUUID(),retailer,file:parsed});
+    files.push({id:crypto.randomUUID(),retailer,bank,file:parsed});
   }
   return edit(v=>{v.sources.push(...files);addActivity(v,"Imported "+files.length+" "+retailer+" file(s)");
     return {imported:files.length,profiles:files.reduce((total,item)=>total+item.file.rows.length,0)};});
@@ -179,6 +182,21 @@ ipcMain.handle("vault:rows",async (_e,id)=>{
   return {id,filename:source.file.filename,rows:source.file.rows.slice(0,2500).map((row,index)=>({index,
     fields:Object.fromEntries(Object.entries(row||{}).slice(0,50))}))};
 });
+ipcMain.handle("vault:setBank",(_e,p)=>edit(v=>{
+  const source=v.sources.find(x=>x.id===p?.fileId);
+  if(!source)throw Error("Choose a saved profile file.");
+  if(!["live","working"].includes(p?.bank))throw Error("Choose Live Profiles or Working Profiles.");
+  source.bank=p.bank;
+  addActivity(v,"Moved profile file to "+(p.bank==="live"?"Live":"Working")+" retailer bank");
+  return {saved:true,bank:source.bank};
+}));
+ipcMain.handle("vault:editRow",(_e,p)=>edit(v=>{
+  const source=v.sources.find(x=>x.id===p?.fileId);
+  if(!source)throw Error("Choose a saved profile file.");
+  const changed=Formats.editFields(source.file,p?.rowIndex,p?.updates);
+  if(changed)addActivity(v,"Edited "+changed+" field(s) in "+source.retailer+" profile");
+  return {saved:true,changed};
+}));
 ipcMain.handle("vault:jig",(_e,p)=>edit(async v=>{
   if(!jigPolicy)await loadJigPolicy();
   const forbidden=jigKeys.filter(key=>p?.options?.[key]===true&&jigPolicy?.[key]!==true);
@@ -220,5 +238,50 @@ ipcMain.handle("vault:remove",(_e,p)=>edit(v=>{
   addActivity(v,"Removed local "+p.kind+" record");
   return {removed:true};
 }));
+ipcMain.handle("vault:backupList",()=>Vault.snapshots());
+ipcMain.handle("vault:backupRestore",async(_e,name)=>{
+  if(typeof name!=="string")throw Error("Choose a backup.");
+  const confirmation=await dialog.showMessageBox(win,{
+    type:"warning",title:"Restore encrypted profile backup",
+    message:"Restore your encrypted profile snapshot?",
+    detail:"The current vault will first be preserved as another snapshot. This restores all saved retailer profiles, cards, addresses, and your license as of that snapshot.",
+    buttons:["Cancel","Restore backup"],cancelId:0,defaultId:0
+  });
+  if(confirmation.response!==1)return {restored:false};
+  return transact(()=>Vault.restoreSnapshot(name));
+});
+ipcMain.handle("vault:backupExport",async(_e,passphrase)=>{
+  await allowed();
+  // Portable exports are encrypted before they reach the filesystem.
+  const file=await dialog.showSaveDialog(win,{
+    title:"Export encrypted backup",
+    defaultPath:"ACO-STUDIO-personal-backup.sngbackup",
+    filters:[{name:"Encrypted ACO Studio Backup",extensions:["sngbackup"]}]
+  });
+  if(file.canceled||!file.filePath)return {saved:false};
+  const bytes=await Vault.exportPortable(passphrase);
+  await fs.writeFile(file.filePath,bytes,{mode:0o600,flag:"wx"});
+  return {saved:true};
+});
+ipcMain.handle("vault:backupImport",async(_e,passphrase)=>{
+  const file=await dialog.showOpenDialog(win,{
+    title:"Restore encrypted backup",
+    properties:["openFile"],
+    filters:[{name:"Encrypted ACO Studio Backup",extensions:["sngbackup"]}]
+  });
+  if(file.canceled||!file.filePaths?.[0])return {restored:false};
+  const stat=await fs.stat(file.filePaths[0]);
+  if(stat.size>100*1024*1024)throw Error("Encrypted backup is too large.");
+  const answer=await dialog.showMessageBox(win,{
+    type:"warning",title:"Restore private data",
+    message:"Restore all data from this encrypted backup?",
+    detail:"This replaces the current workspace with the backup. The current vault is first copied to an encrypted recovery snapshot. Nothing is sent to a server.",
+    buttons:["Cancel","Restore backup"],cancelId:0,defaultId:0
+  });
+  if(answer.response!==1)return {restored:false};
+  const data=await fs.readFile(file.filePaths[0],"utf8");
+  authorizedUntil=0;jigPolicy=null;
+  return transact(()=>Vault.restorePortable(data,passphrase));
+});
 app.whenReady().then(async()=>{await openWindow();if(await licenseStatus().catch(()=>false))startJigPolicySync();}).catch(()=>app.quit());
 app.on("window-all-closed",()=>app.quit());

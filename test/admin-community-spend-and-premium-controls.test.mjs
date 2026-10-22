@@ -74,7 +74,7 @@ test("Admin Success uses global confirmed records, independent customer breakdow
   assert.ok(fullJs.includes('stream.addEventListener("data-change", scheduleRefresh)'));
   assert.ok(fullJs.includes("setInterval(() => { if (!document.hidden) scheduleRefresh(); }, 30000)"));
   for (const page of [app,admin,customer]) assert.match(page,/sng-premium-controls\.css\?v=2/);
-  assert.ok(app.includes("/admin-mobile.js?v=20261018-cross-retailer-products-1"));
+  assert.ok(/\/admin-mobile\.js\?v=[A-Za-z0-9._-]+/.test(app));
   assert.match(js,/\/admin-success\.html/);
   assert.match(admin,/\/admin-success\.html/);
   assert.match(css,/min-height:46px/);

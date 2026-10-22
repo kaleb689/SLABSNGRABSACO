@@ -7,11 +7,20 @@
 <h1>Activate your private workspace</h1><p>Your account, payment, and address banks remain encrypted on this computer. The website only checks whether your license is active.</p>
 <form id="activate"><label>License key<input id="key" autocomplete="off" spellcheck="false" placeholder="ACOP-XXXX-XXXX-XXXX-XXXX" required></label>
 <button class="primary" type="submit">Activate license</button></form><p id="activate-status" role="status">Checking existing license…</p>
-<small>Purchase and manage your subscription from your SLABSNGRABSACO website profile.</small></div></div>
+<small>Purchase and manage your subscription from your SLABSNGRABSACO website profile.</small>
+  <details><summary>Recover saved data if your encrypted vault cannot open</summary>
+   <p>Restore an automatic encrypted snapshot on this computer, or a portable .sngbackup file if you moved devices.</p>
+   <button id="locked-snapshots-refresh" type="button">Find local encrypted recovery snapshots</button>
+   <div id="locked-snapshots-list" class="file-list" role="status"></div>
+   <p>For a portable backup, enter the passphrase you chose when creating it.</p>
+   <input id="locked-backup-password" type="password" autocomplete="off" placeholder="Backup passphrase">
+   <button id="locked-backup-restore" type="button">Restore encrypted backup</button>
+  </details></div></div>
 <div id="application" class="app hidden">
 <aside><div class="brand">ACO <span>STUDIO</span><small>PERSONAL WORKSPACE</small></div><nav id="nav">
 <button class="selected" data-view="home">⌂ <span>Home</span></button>
 <button data-view="accounts">▦ <span>Account Banks</span></button>
+<button data-view="profiles">▥ <span>Retailer Profiles</span></button>
 <button data-view="cards">▤ <span>Card Bank</span></button>
 <button data-view="addresses">⌖ <span>Address Bank</span></button>
 <button data-view="jig">⚙ <span>Jig Studio</span></button>
@@ -28,7 +37,13 @@
 <div class="panel intro"><h2>Import / Export · Original format retained</h2><p>Target, Walmart, Pokémon Center, Costco and Sam’s profiles preserve the file format they were imported in. Each imported file exports with its original extension, field naming and layout.</p><button data-go="transfer">Manage imports and exports →</button></div></section>
 <section id="accounts" class="page hidden"><div class="panel"><h2>Retailer account banks</h2><p>Your retailer pools are independent. The same email can appear in different retailers.</p><label>Choose bank<select id="account-retailer" class="retailer"></select></label><div class="actions"><button id="add-account-open" class="primary">+ Create profile</button><button id="import-accounts">Import profiles</button></div><div id="account-files" class="file-list"></div></div>
 <form id="account-form" class="panel hidden"><h2>Create a local account profile</h2><div class="fields"><label>Email<input name="email" required></label><label>First name<input name="first"></label><label>Last name<input name="last"></label><label>Address<input name="address"></label><label>City<input name="city"></label><label>State<input name="state"></label><label>ZIP<input name="zip"></label><label>Phone<input name="phone"></label></div><button class="primary">Save to this retailer bank</button></form></section>
-<section id="cards" class="page hidden"><div class="panel"><h2>Private card bank</h2><p>Card information stays together in your encrypted private vault and is never uploaded to the website or license server. Your saved fields remain available in local profile exports.</p><form id="card-form"><div class="fields"><label>Card label<input name="label" required></label><label>Cardholder<input name="holder"></label><label>Card number<input name="number" inputmode="numeric" autocomplete="off" required></label><label>Expiration MM/YY<input name="expiry" placeholder="MM/YY"></label><label>Security code<input name="securityCode" autocomplete="off"></label></div><button class="primary">Save card</button></form><div id="card-list" class="file-list"></div></div></section>
+<section id="profiles" class="page hidden"><div class="panel"><h2>Retailer profile banks · Working and Live</h2>
+  <p>Your saved profiles stay separated by retailer. Moving a profile between Working and Live does not remove, rewrite or change its account, address, password or payment fields.</p>
+  <div class="fields"><label>Retailer<select id="profiles-retailer" class="retailer"></select></label>
+  <label>Profile bank<select id="profiles-bank"><option value="working">Working Profiles</option><option value="live">Live Profiles (currently in use)</option></select></label></div>
+  <div class="actions"><button id="profiles-import" class="primary">Import into this bank</button></div>
+  <div id="profiles-list" class="file-list"></div></div></section>
+  <section id="cards" class="page hidden"><div class="panel"><h2>Private card bank</h2><p>Card information stays together in your encrypted private vault and is never uploaded to the website or license server. Your saved fields remain available in local profile exports.</p><form id="card-form"><div class="fields"><label>Card label<input name="label" required></label><label>Cardholder<input name="holder"></label><label>Card number<input name="number" inputmode="numeric" autocomplete="off" required></label><label>Expiration MM/YY<input name="expiry" placeholder="MM/YY"></label><label>Security code<input name="securityCode" autocomplete="off"></label></div><button class="primary">Save card</button></form><div id="card-list" class="file-list"></div></div></section>
 <section id="addresses" class="page hidden"><div class="panel"><h2>Private address bank</h2><form id="address-form"><div class="fields"><label>Label<input name="label"></label><label>Street address<input name="address" required></label><label>Unit / Apt<input name="unit"></label><label>City<input name="city" required></label><label>State<input name="state"></label><label>ZIP<input name="zip"></label></div><button class="primary">Save address</button></form><div id="address-list" class="file-list"></div></div></section>
 <section id="jig" class="page hidden"><div class="panel"><h2>Jig Studio</h2><p>Choose an imported file and retailer-specific changes. Fields that do not exist in that file are left unchanged so the original format is preserved.</p><label>Imported source file<select id="jig-source"></select></label><p><label><input id="jig-all" type="checkbox" checked> Apply to all profiles in this file</label></p><label id="jig-indices-label" class="hidden">Profile indexes (comma separated, starting at 1)<input id="jig-indices" placeholder="1,2,3"></label><p id="jig-permission-status" role="status">Connecting to your ACO Studio administrator’s jig settings…</p><div id="rule-checks" class="rule-grid"></div>
 <div class="panel" style="background:#0f1b35">
@@ -42,7 +57,12 @@
 <div class="actions"><label>Retailer<select id="transfer-retailer" class="retailer"></select></label><button id="transfer-import" class="primary">Import any supported file</button></div><div id="transfer-list" class="file-list"></div></div></section>
 <section id="rules" class="page hidden"><div class="panel"><h2>Jig rule categories</h2><p>Directional text, street suffix, ordinal, double letter, fractional number, hyphen, random unit, phone, and random name. Each can be enabled independently in Jig Studio. Your existing source field names are preserved.</p><button data-go="jig" class="primary">Configure jigs →</button></div></section>
 <section id="license" class="page hidden"><div class="panel"><h2>License and subscription</h2><p>Your $15/month subscription is managed through the SLABSNGRABSACO website. The desktop app contacts only the license verification endpoint; local bank data is never transmitted.</p><button id="check-license" class="primary">Check license status</button><p id="license-state"></p></div></section>
-<section id="settings" class="page hidden"><div class="panel"><h2>ACO STUDIO settings</h2><p>Your profile data and imported files remain in your encrypted local vault until you choose to export or delete them.</p></div></section>
+<section id="settings" class="page hidden"><div class="panel"><h2>Backup and restore</h2>
+   <p>Every save preserves a recent OS-encrypted recovery snapshot. Create a portable passphrase-encrypted backup so you can recover your own retailer profiles, saved addresses, cards and other bank data even after moving to another computer. Keep the backup password safe: it cannot be recovered by support.</p>
+   <div class="fields"><label>Backup passphrase (12 characters minimum)<input id="backup-passphrase" type="password" autocomplete="new-password" placeholder="Enter your private backup passphrase"></label></div>
+   <div class="actions"><button id="backup-export" class="primary">Export encrypted backup</button><button id="backup-import">Restore portable backup</button></div>
+   <h3>Automatic recovery snapshots</h3><button id="backup-refresh">Refresh available snapshots</button><div id="backup-list" class="file-list"></div>
+   </div></section>
 <footer role="status" id="status">Ready. Your private workspace is local.</footer>
 <div id="inspect" class="hidden" role="dialog" aria-modal="true"></div>
 </main></div><script src="./renderer.js"></script></body></html>

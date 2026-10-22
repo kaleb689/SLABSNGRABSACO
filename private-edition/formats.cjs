@@ -76,6 +76,31 @@ function changeRow(source,rowIndex,changes) {
   if(updated)source.changed=true;
   return updated;
 }
+// Manual editing changes only fields already present in the imported source.
+// This preserves every retailer's original column names, JSON envelope,
+// record ordering and original-format export contract.
+function editFields(source,rowIndex,updates){
+  if(!["csv","tsv","json","txt"].includes(source?.kind))
+    throw Error("This import format is not editable.");
+  if(!Number.isInteger(rowIndex)||rowIndex<0||rowIndex>=source.rows.length)
+    throw Error("Choose a valid saved profile.");
+  if(!updates||typeof updates!=="object"||Array.isArray(updates))
+    throw Error("Choose profile fields to edit.");
+  const row=source.rows[rowIndex];
+  if(!row||typeof row!=="object"||Array.isArray(row))
+    throw Error("Profile record cannot be edited.");
+  let changed=0;
+  for(const [field,value] of Object.entries(updates)){
+    if(field==="__proto__"||field==="constructor"||field==="prototype"||
+       !Object.hasOwn(row,field)||typeof value!=="string"||value.length>5000)
+      throw Error("The field cannot be edited in this retailer format.");
+    if(typeof row[field]==="object"&&row[field]!==null)
+      throw Error("Use import/export for nested retailer data.");
+    if(String(row[field]??"")!==value){row[field]=value;changed++;}
+  }
+  if(changed)source.changed=true;
+  return changed;
+}
 function quote(value,sep){const x=String(value??"");return /["\r\n]/.test(x)||x.includes(sep)?'"'+x.replace(/"/g,'""')+'"':x;}
 function exportSource(source) {
   if(!source.changed)return source.original;
@@ -105,4 +130,4 @@ function profileSummary(source){
       name:String(row?.[findField(row,aliases.name)]??"Profile "+(i+1)),
       email:String(row?.[findField(row,aliases.email)]??""),retailer:""})) };
 }
-module.exports={readSource,exportSource,changeRow,profileSummary,findField,aliases,csvRows};
+module.exports={readSource,exportSource,changeRow,editFields,profileSummary,findField,aliases,csvRows};

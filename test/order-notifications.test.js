@@ -67,12 +67,12 @@ test('rollout does not replay history; new orders notify only their owner and de
   f.service = createOrderNotifications(f.options); await f.service.initialize(); await f.service.tick();
   assert.equal(f.sent.length, 1);
 });
-test('shipping status and delivery date updates notify once; timestamps alone do not', async t => {
+test('shipping alerts send once per order stage; ETA edits update tracking without another alert', async t => {
   const f = await fixture(t, [order()]); await f.service.subscribe('a', subscription);
   f.records[0].shipping = { status: 'shipped', updatedAt: 'one', estimatedDelivery: 'Friday' }; await f.service.tick();
   f.records[0].shipping.updatedAt = 'two'; await f.service.tick(); assert.equal(f.sent.length, 1);
-  f.records[0].shipping.estimatedDelivery = 'Saturday'; await f.service.tick(); assert.equal(f.sent.length, 2);
-  f.records[0].shipping.status = 'delivered'; await f.service.tick(); assert.equal(f.sent.length, 3);
+  f.records[0].shipping.estimatedDelivery = 'Saturday'; await f.service.tick(); assert.equal(f.sent.length, 1);
+  f.records[0].shipping.status = 'delivered'; await f.service.tick(); assert.equal(f.sent.length, 2);
 });
 test('cancellation suppresses queued alerts before delivery and removes its inbox alerts', async t => {
   const f = await fixture(t); await f.service.subscribe('a', subscription);
@@ -319,4 +319,50 @@ test('drop notification preferences silence both push and DM fallback', async t 
   assert.equal(f.sent.length, 0);
   assert.equal((await f.service.list('a')).length, 1);
   await assert.rejects(f.service.notifyDropUpdate(['a'], notice, 'account:invalid'), /Invalid/);
+});
+
+
+test('old carrier stages cannot replay Deep Steel shipping pushes or duplicate in-app notices', async t => {
+  const f=await fixture(t,[order('deep-steel')]);
+  await f.service.subscribe('a',subscription);
+  const shipping=f.records[0].shipping={status:'shipped',estimatedDelivery:'Friday'};
+  await f.service.tick();
+  assert.equal(f.sent.length,1);
+  shipping.estimatedDelivery='Saturday';
+  await f.service.tick();
+  assert.equal(f.sent.length,1);
+  shipping.status='in_transit';
+  await f.service.tick();
+  assert.equal(f.sent.length,2);
+  // A stale scan may replay the earlier shipped state. Neither the push
+  // provider nor the app inbox should receive a duplicate.
+  shipping.status='shipped';
+  await f.service.tick();
+  assert.equal(f.sent.length,2);
+  assert.equal((await f.service.list('a')).filter(e=>e.kind==='shipping_update').length,2);
+  shipping.status='delivered';
+  await f.service.tick();
+  assert.equal(f.sent.length,3);
+  f.service=createOrderNotifications(f.options);
+  await f.service.initialize();
+  await f.service.tick();
+  assert.equal(f.sent.length,3);
+});
+
+test('ambiguous provider timeout never retries the same customer push on restart',async t=>{
+  const f=await fixture(t,[order('historical-baseline')]);
+  await f.service.subscribe('a',subscription);
+  let calls=0;
+  f.options.sendPush=async()=>{calls++;throw Error('Synthetic timeout after remote acceptance');};
+  f.service=createOrderNotifications(f.options);
+  await f.service.initialize();
+  // Baseline an old checkout, then introduce one new distinct checkout.
+  f.records.push(order('new-provider-timeout'));
+  await f.service.tick();
+  assert.equal(calls,1);
+  f.service=createOrderNotifications(f.options);
+  await f.service.initialize();
+  await f.service.tick();
+  assert.equal(calls,1);
+  assert.equal((await f.service.list('a')).filter(e=>e.kind==='order_confirmed').length,1);
 });
