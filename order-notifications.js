@@ -354,7 +354,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
     // subscription. Persist event IDs so reconnects and restarts never replay.
     notifyMembershipReminder: (accountId, notification, eventKey) => locked(async () => {
       const ownerId=String(accountId || "").trim(),key=String(eventKey || "").trim();
-      if (!ownerId || !/^membership:[A-Za-z0-9:_-]{3,280}$/.test(key) ||
+      if (!ownerId || !/^membership:[A-Za-z0-9:._-]{3,280}$/.test(key) ||
           notification?.kind !== "membership_reminder" ||
           typeof notification.title !== "string" || typeof notification.message !== "string" ||
           notification.title.length > 200 || notification.message.length > 1200)
