@@ -142,7 +142,7 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
           "Your purchase and license receipt:",
           detail,
           "YOUR LICENSE KEY:", key,
-          "Download the Mac or Windows app from " + baseUrl + "/#my-profile",
+          "Download the Mac or Windows app from " + baseUrl + "/aco-studio-downloads.html",
           ...(invoiceUrl ? ["Stripe invoice/receipt: " + invoiceUrl] : []),
           "Your subscription renews monthly until cancelled. Keep your license key private.",
           "Your imported profiles, cards and addresses stay on your computer."
@@ -210,7 +210,7 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
         line_items: [{ price: PRIVATE_STUDIO_PRICE, quantity: 1 }],
         client_reference_id: String(account.id),
         customer_email: account.email || undefined,
-        success_url: baseUrl + "/?studio_private=success&session_id={CHECKOUT_SESSION_ID}#my-profile",
+        success_url: baseUrl + "/aco-studio-downloads.html?session_id={CHECKOUT_SESSION_ID}",
         cancel_url: baseUrl + "/?studio_private=cancelled#pricing",
         metadata: { purchase_type: "studio_private", customer_account_id: String(account.id) },
         subscription_data: { metadata: { purchase_type: "studio_private", customer_account_id: String(account.id) } }
