@@ -50136,6 +50136,8 @@ await initializeArrayFile(
           dataDir: DATA_DIR,
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
           adminWebhookUrl: String(process.env.DISCORD_ADMIN_PAYMENT_WEBHOOK_URL || "").trim(),
+          notifyCustomerMembership: ({accountId,eventKey,title,message}) =>
+            appOrderNotifications.notifyMembershipReminder(accountId,{kind:"membership_reminder",title,message},eventKey),
           getRentalExtensionPrices: async () => ({
             week: await rentalAmountFor(1, "1_week"),
             month: await rentalAmountFor(1, "1_month")
