@@ -38,7 +38,7 @@ test("optional Costco/Sam's Club logins are encrypted, editable and isolated to 
     }
     assert.ok(ready, "test website starts");
     const reg = await request("/api/account/register", "POST", {
-      email: "optional@example.test", password: "test-long-account-password-2026"
+      email: "optional@example.test", password: "test-long-account-password-2026", age18Confirmed: true
     });
     assert.equal(reg.status, 201, JSON.stringify(reg.data));
     assert.ok(reg.cookie, "signup issues the customer's session");
