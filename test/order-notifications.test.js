@@ -67,12 +67,12 @@ test('rollout does not replay history; new orders notify only their owner and de
   f.service = createOrderNotifications(f.options); await f.service.initialize(); await f.service.tick();
   assert.equal(f.sent.length, 1);
 });
-test('shipping status and delivery date updates notify once; timestamps alone do not', async t => {
+test('shipping alerts send once per order stage; ETA edits update tracking without another alert', async t => {
   const f = await fixture(t, [order()]); await f.service.subscribe('a', subscription);
   f.records[0].shipping = { status: 'shipped', updatedAt: 'one', estimatedDelivery: 'Friday' }; await f.service.tick();
   f.records[0].shipping.updatedAt = 'two'; await f.service.tick(); assert.equal(f.sent.length, 1);
-  f.records[0].shipping.estimatedDelivery = 'Saturday'; await f.service.tick(); assert.equal(f.sent.length, 2);
-  f.records[0].shipping.status = 'delivered'; await f.service.tick(); assert.equal(f.sent.length, 3);
+  f.records[0].shipping.estimatedDelivery = 'Saturday'; await f.service.tick(); assert.equal(f.sent.length, 1);
+  f.records[0].shipping.status = 'delivered'; await f.service.tick(); assert.equal(f.sent.length, 2);
 });
 test('cancellation suppresses queued alerts before delivery and removes its inbox alerts', async t => {
   const f = await fixture(t); await f.service.subscribe('a', subscription);
