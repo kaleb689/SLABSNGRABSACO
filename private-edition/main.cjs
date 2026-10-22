@@ -176,7 +176,7 @@ ipcMain.handle("vault:export",async (_e,id)=>{
 ipcMain.handle("vault:rows",async (_e,id)=>{
   await allowed();const source=(await Vault.load()).sources.find(s=>s.id===id);
   if(!source)throw Error("File unavailable.");
-  return {id,filename:source.file.filename,rows:source.file.rows.slice(0,250).map((row,index)=>({index,
+  return {id,filename:source.file.filename,rows:source.file.rows.slice(0,2500).map((row,index)=>({index,
     fields:Object.fromEntries(Object.entries(row||{}).slice(0,50))}))};
 });
 ipcMain.handle("vault:jig",(_e,p)=>edit(async v=>{
