@@ -1845,7 +1845,12 @@ async function flushConsentReceipts() {
       try {
         const response = await fetch("https://api.resend.com/emails", {
           method: "POST",
-          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+          headers: {
+            Authorization:`Bearer ${process.env.RESEND_API_KEY}`,
+            "Content-Type":"application/json",
+            "Idempotency-Key":"consent-receipt-"+crypto.createHash("sha256")
+              .update(JSON.stringify([item.subject,item.text])).digest("hex")
+          },
           body: JSON.stringify({
             from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
             to: [CONSENT_RECEIPT_EMAIL], subject: item.subject, text: item.text
@@ -6704,7 +6709,12 @@ async function sendSignupOrderConfirmation(account) {
   });
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    headers:{
+      Authorization:`Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type":"application/json",
+      "Idempotency-Key":"account-welcome-"+crypto.createHash("sha256")
+        .update(JSON.stringify([account.id,orders.map(order=>order.id)])).digest("hex")
+    },
     body: JSON.stringify({
       from: process.env.FROM_EMAIL || "SLABSNGRABSACO <onboarding@resend.dev>",
       to: [account.email],
