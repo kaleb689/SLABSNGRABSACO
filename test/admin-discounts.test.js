@@ -42,7 +42,7 @@ test("admin discount edit, rollback, deactivation and deletion stay synchronized
       password: "synthetic-admin-password-123456789", code: authenticator.generate(adminSecret)
     });
     assert.equal(admin.status, 200);
-    const customer = await request("/api/account/register", "POST", { email: "jigs@example.test", password: "synthetic-password-123" });
+    const customer = await request("/api/account/register", "POST", { email: "jigs@example.test", password: "synthetic-password-123", age18Confirmed: true });
     assert.equal(customer.status, 201);
     const accounts = JSON.parse(await fs.readFile(path.join(dataDir, "customer-accounts.json"), "utf8"));
     const main = { address: "8275 Oceanus drive", address2: "", city: "boca raton", state: "Florida", zip: "33496", country: "US" };
