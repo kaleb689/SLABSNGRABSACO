@@ -42,3 +42,18 @@ test("all supported import formats export the unchanged original bytes",()=>{
  for(const [file,raw]of [["pkc.tsv","email\tstreet\nabc@example.test\t5 Bay Rd\n"],["misc.txt","Some original opaque note\r\nSecond line\r\n"],["target.csv","accountEmail,address\r\na@b.com,9 Street\r\n"]])
    assert.equal(exportSource(readSource(file,raw)),raw);
 });
+
+test("card/address bank allocation keeps imported CSV column names and order",()=>{
+ const raw="email,street_address,card_number,card_expiry,cardholder,billing_address\nu@example.test,10 Main St,,,,\n";
+ const source=readSource("walmart-bank-style.csv",raw);
+ assert.equal(changeRow(source,0,{address:"42 Road",cardNumber:"4111111111111111",cardExpiry:"12/29",cardholder:"Jordan Lane",billingAddress:"42 Road"}),5);
+ const out=exportSource(source);
+ assert.equal(out.split("\n")[0],raw.split("\n")[0]);
+ assert.match(out,/u@example\.test,42 Road,4111111111111111,12\/29,Jordan Lane,42 Road/);
+});
+test("name jig synchronizes cardholder first and last within source schema",()=>{
+ const src=readSource("target-names.json",'[{"first_name":"Old","last_name":"Name","cardholder":"Old Name"}]');
+ const result=jigProfile(src,0,{name:true});
+ assert.equal(result.count,3);
+ assert.equal(src.rows[0].cardholder,src.rows[0].first_name+" "+src.rows[0].last_name);
+});
