@@ -124,7 +124,7 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
         ? invoice.hosted_invoice_url : null;
       const key = unsealKey(row.sealedKey, secret);
       const detail = [
-        "ACO Studio Private Edition",
+        "ACO STUDIO",
         "Subscription: $15.00 USD per month",
         "Customer: " + (row.customerName || "Not provided"),
         "Customer email: " + (row.customerEmail || "Not provided"),
@@ -137,7 +137,7 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.customerEmail || ""))
           throw Error("Private Studio receipt customer email is missing.");
         const customerText = [
-          "Thank you for purchasing ACO Studio Private Edition.",
+          "Thank you for purchasing ACO STUDIO.",
           "Your purchase and license receipt:",
           detail,
           "YOUR LICENSE KEY:", key,
@@ -147,7 +147,7 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
           "Your imported profiles, cards and addresses stay on your computer."
         ].join("\n\n");
         await sendEmail({ to: row.customerEmail,
-          subject: "ACO Studio Private Edition — $15/month receipt and license key",
+          subject: "ACO STUDIO — $15/month receipt and license key",
           text: customerText, idempotencyKey: "aco-private-customer-" + row.id });
         row.customerReceiptSentAt = new Date().toISOString();
         await save(rows);
@@ -157,14 +157,14 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient))
           throw Error("Private Studio owner receipt email is not configured.");
         const text = [
-          "A customer purchased a $15/month ACO Studio Private Edition license.",
+          "A customer purchased a $15/month ACO STUDIO license.",
           detail,
           "License key: " + key,
           "Status: active",
           ...(invoiceUrl ? ["Stripe invoice: " + invoiceUrl] : []),
           "Only purchase contact and licensing details are included, never private workstation records, cards or addresses."
         ].join("\n\n");
-        await sendEmail({ to: recipient, subject: "ACO Studio Private Edition — $15 monthly purchase",
+        await sendEmail({ to: recipient, subject: "ACO STUDIO — $15 monthly purchase",
           text, idempotencyKey: "aco-private-owner-" + row.id });
         row.ownerReceiptSentAt = new Date().toISOString();
         await save(rows);
@@ -193,7 +193,7 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
       // Fail closed until the approved subscription offer is verifiable.
     }
     res.setHeader("Cache-Control", "no-store");
-    res.json({ name: "ACO Studio Private Edition", amount: 1500, currency: "usd",
+    res.json({ name: "ACO STUDIO", amount: 1500, currency: "usd",
       interval: "month", available, platforms: ["mac", "windows"] });
   });
   app.post("/api/account/studio-private/checkout", requireCustomer, async (req, res) => {
@@ -203,7 +203,7 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
       // Purchases remain disabled until verified Mac/Windows builds and privacy gates are available.
       const product = await stripe.products.retrieve(PRIVATE_STUDIO_PRODUCT);
       const price = await stripe.prices.retrieve(PRIVATE_STUDIO_PRICE);
-      if (!product.active || !price.active) return res.status(503).json({ error: "ACO Studio Private Edition is not yet available for purchase." });
+      if (!product.active || !price.active) return res.status(503).json({ error: "ACO STUDIO is not yet available for purchase." });
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         line_items: [{ price: PRIVATE_STUDIO_PRICE, quantity: 1 }],
