@@ -103,7 +103,7 @@ async function load(){
      const button=document.createElement('button');button.type='button';button.textContent='Restore';
      button.style.cssText='padding:7px 10px;border:1px solid #27b19a;border-radius:8px;cursor:pointer';
      button.addEventListener('click',async()=>{
-       const description=scope.value==='aco'?'EVERY customer's local ACO profile bank':'your Personal local profile bank';
+       const description=scope.value==='aco'?'all local ACO customer profile banks':'your Personal local profile bank';
        if(!window.confirm('Restore '+description+' to its state on '+new Date(row.createdAt).toLocaleString()+
          '? The current encrypted vault will be backed up first. Website customer information is not modified.'))return;
        button.disabled=true;
