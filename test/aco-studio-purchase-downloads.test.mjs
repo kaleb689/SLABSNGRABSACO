@@ -22,6 +22,6 @@ test("downloads are gated by verified account license, not a payment query strin
 });
 test("installer links are separate and point to published customer release, never owner version",()=>{
  for(const f of ["ACO.STUDIO-1.0.4-arm64.dmg","ACO.STUDIO-1.0.4.dmg","ACO.STUDIO.Setup.1.0.4.exe"])assert.ok(client.includes(f),f);
- assert.match(client,/aco-studio-v1\.0\.3-preview/);
+ assert.match(client,/aco-studio-v1\.0\.4-preview/);
  assert.doesNotMatch(client,/aco-studio-v4/);
 });
