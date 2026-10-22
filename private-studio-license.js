@@ -58,7 +58,7 @@ export function registerPrivateStudioLicensing({ app, stripe, requireCustomer, r
   }
   async function subscription(id) {
     if (!String(id || "").startsWith("sub_")) return null;
-    return stripe.subscriptions.retrieve(id, { expand: ["items.data.price"] });
+    return stripe.subscriptions.retrieve(id, { expand: ["items.data.price", "latest_invoice"] });
   }
   async function ensureFromSession(session) {
     const meta = session?.metadata || {};
