@@ -90,7 +90,18 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  }
  async function write(scope,data){
    scopeValue(scope);
-   if(scope==='personal')await seedPersonalPkc(data,await read('aco'));
+   if(scope==='personal'){
+    // Reconcile automatically when new non-PKC Personal profile/email identities
+    // arrive. A deliberate bank-entry removal alone is not re-created by that
+    // same transaction; the next PKC inventory scan still repairs legacy gaps.
+    const candidates=body=>new Set([
+     ...(body.groups?.owner||[]).filter(x=>x.retailer!=='pokemoncenter').map(x=>normalizeEmail(x.email)),
+     ...(body.emailBanks?.owner||[]).filter(x=>x.retailer!=='pokemoncenter').map(x=>normalizeEmail(x.email))
+    ].filter(Boolean));
+    const previous=candidates(await read('personal')),current=candidates(data);
+    if([...current].some(email=>!previous.has(email)))
+     await seedPersonalPkc(data,await read('aco'));
+   }
    if(!data||data.version!==1||!data.groups||typeof data.groups!=='object')
      throw Error('Refusing to overwrite profile data with an invalid vault.');
    for(const rows of Object.values(data.groups))for(const row of rows)row.data=stripVerifiers(row.data,0,scope);
