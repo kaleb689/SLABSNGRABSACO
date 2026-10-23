@@ -1,6 +1,8 @@
 import fsDefault from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+// A separate, non-payment profile access code is not a card verification value.
+// Store it under profileSecurityCode, never under CVV/CVC/securityCode fields.
 const forbidden=new Set(['cvv','cvv2','cvc','cvc2','cid','csc','cc_cvv','securitycode','security_code','accountsecuritycode','customsecuritycode','custom_security_code','cardverificationvalue']);
 export function stripPaymentVerifiers(value,depth=0){
  if(depth>60)throw Error('Payment data nesting exceeds supported depth.');
