@@ -18609,6 +18609,10 @@ async function loadProfileActivationTracker() {
             <button type="button" class="${allActive?"admin-edit-button":"admin-save-button"}"
               data-activation-customer-action="${action}" data-activation-customer-index="${index}"
               ${eligible.length?"":'disabled title="No eligible profiles"'}>${allActive?"Deactivate":"Set Active"}</button>
+            <button type="button" class="admin-save-button"
+              data-admin-extend-membership="${escapeHtml(group.customerAccountId||"")}"
+              ${group.customerAccountId?"":'disabled title="No linked customer account"'}
+              title="Extend paid membership renewal and update Stripe">Extend</button>
           </div>`;
         }).join("")
       : '<div class="empty-admin">No customer profiles to manage.</div>';
