@@ -10317,6 +10317,25 @@ function bindRetailerPasswordToggles() {
 }
 
 
+document.getElementById("walmart-profile-request-form")?.addEventListener("submit",async event=>{
+ event.preventDefault();
+ const form=event.currentTarget,button=form.querySelector('button[type="submit"]');
+ const message=document.getElementById("walmart-profile-request-message");
+ const quantity=Number(form.elements.quantity.value);
+ if(!Number.isSafeInteger(quantity)||quantity<1||quantity>state.retailerAllowance){
+  setMessage(message,"Choose a quantity within your current membership allowance.","error");return;
+ }
+ try{
+  setButtonBusy(button,true,"Submitting…");
+  const response=await fetch("/api/account/walmart-profile-request",{
+   method:"POST",credentials:"same-origin",
+   headers:{"Content-Type":"application/json"},body:JSON.stringify({quantity})});
+  const data=await readJson(response);
+  if(!response.ok)throw Error(data.error||"Could not submit Walmart request.");
+  setMessage(message,data.message||"Request submitted; Walmart is not linked automatically.","success");
+ }catch(error){setMessage(message,error.message,"error");}
+ finally{setButtonBusy(button,false);}
+});
 function bindRetailerProfileForms() {
   document
     .querySelectorAll(
