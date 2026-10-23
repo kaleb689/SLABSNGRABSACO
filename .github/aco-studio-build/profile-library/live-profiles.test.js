@@ -165,3 +165,29 @@ test('pasted login import remains scoped to its selected retailer and customer v
  assert.equal(customer[0].data.password,input[0].password);
  assert.equal((await h.service.emails(event,{...h.b,retailer:'walmart'})).freeAccounts,0);
 });
+
+test('all Personal retailer profiles and future email bank additions populate unused PKC emails without customer leakage',async t=>{
+ const h=await library(t);
+ await h.profiles.importRows({...h.p,retailer:'pokemoncenter',rows:[complete('pokemoncenter','already-pkc@example.test')]});
+ await h.profiles.importRows({...h.a,retailer:'walmart',rows:[complete('walmart','customer-only@example.test')]});
+ await h.profiles.importRows({...h.p,retailer:'walmart',rows:[complete('walmart','walmart-personal@example.test')]});
+ await h.profiles.importRows({...h.p,retailer:'costco',rows:[complete('costco','costco-personal@example.test')]});
+ await h.profiles.importRows({...h.p,retailer:'sams',rows:[complete('sams','sams-personal@example.test')]});
+ await h.profiles.importRows({...h.p,retailer:'target',rows:[complete('target','already-pkc@example.test')]});
+ let inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});
+ const available=inventory.emails.filter(x=>x.status==='available').map(x=>x.email).sort();
+ assert.deepEqual(available,['costco-personal@example.test','sams-personal@example.test','walmart-personal@example.test']);
+ assert.ok(!inventory.emails.some(x=>x.email==='customer-only@example.test'));
+ assert.ok(!inventory.emails.some(x=>x.email==='already-pkc@example.test'&&x.status==='available'));
+ // Future working profile imports and unused non-PKC emails reconcile on save.
+ await h.profiles.importRows({...h.p,retailer:'walmart',rows:[complete('walmart','future-personal@example.test')]});
+ await h.service.importEmails(event,{...h.p,retailer:'target',emails:['future-email-bank@example.test']});
+ inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});
+ const later=inventory.emails.filter(x=>x.status==='available').map(x=>x.email);
+ assert.ok(later.includes('future-personal@example.test'));
+ assert.ok(later.includes('future-email-bank@example.test'));
+ const before=later.length;
+ inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});
+ assert.equal(inventory.emails.filter(x=>x.status==='available').length,before);
+ assert.equal(inventory.targetLiveReconciliation.personalAllRetailers,true);
+});
