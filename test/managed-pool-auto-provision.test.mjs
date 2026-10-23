@@ -46,7 +46,9 @@ function harness(count=2){
  };
  vm.createContext(sandbox);
  vm.runInContext(server.slice(start,end)+"\nthis.runProvision=provisionPaidMembershipPool;this.runReconcile=reconcilePaidPoolAssignmentLimits;",sandbox);
- return {run:()=>sandbox.runProvision({id:"order-1",customerAccountId:"customer-1",subscriptionStatus:"active",autoPoolProvisioningRequestedAt:"2026-10-22T00:00:00Z",plan:{profiles:count}}),\n  reconcile:records=>sandbox.runReconcile(records),\n  addManual:row=>{assignments.push(row);},
+ return {run:()=>sandbox.runProvision({id:"order-1",customerAccountId:"customer-1",subscriptionStatus:"active",autoPoolProvisioningRequestedAt:"2026-10-22T00:00:00Z",plan:{profiles:count}}),
+  reconcile:records=>sandbox.runReconcile(records),
+  addManual:row=>{assignments.push(row);},
   assignments:()=>assignments,writes:()=>writes,alerts:()=>alerts};
 }
 test("Paid tiers auto link eligible Target and PKC inventory, prefer shared emails, never Walmart",async()=>{
