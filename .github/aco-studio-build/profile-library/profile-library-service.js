@@ -358,7 +358,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  async function resolveReuse(a,id){
   if(typeof id!=='string'||id.length>225||!/^(bank|profile):/.test(id))throw Error('Select an existing Main or Jigged address.');
   const entry=(await reusableShippingChoices(a)).find(x=>x.id===id);
-  if(!entry)throw Error('The selected address is no longer available. Reopen the picker.');
+  if(!entry)throw Error('The selected address is not available anymore. Reopen the picker.');
   return entry;
  }
  function isHardRule(id){return C.ruleById(id)?.family==='target-primary';}
