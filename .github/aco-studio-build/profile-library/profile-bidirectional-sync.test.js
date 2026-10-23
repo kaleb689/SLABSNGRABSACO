@@ -37,7 +37,7 @@ async function harness(t){
   return id;
  };
  const lib=createLibrary({profiles,authorize:auth,guard:(e)=>{if(e.sender.id!==111)throw Error('Not owner');},
-  cardVault:()=>({withSelectedForJig:(_key,_ids,fn)=>fn([])}),
+  cardVault:()=>({list:async()=>({cards:[]}),selectedForJig:async()=>[],withSelectedForJig:(_key,_ids,fn)=>fn([])}),
   getCustomerProfileSource:source,
   saveCustomerProfile:async(id,identity,payload)=>{
    calls.push({id,identity,payload});
