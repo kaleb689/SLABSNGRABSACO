@@ -1,6 +1,32 @@
 // Exact admin-selected no-charge subscription end; billing is controlled by
 // Stripe trial_end, never merely by a website-only time extension.
 const ISO_UTC=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+// Durations are applied to the later of the verified Stripe renewal date,
+// an existing trial, and an earlier admin extension; never to the click time.
+export function requestedMembershipDuration({durationUnit,durationQuantity,now=Date.now(),periodEnd=0,trialEnd=0,priorExtensionEnd=0}={}){
+ const unit=String(durationUnit||"").toLowerCase();
+ const quantity=Number(durationQuantity);
+ if(!["day","week","month","year"].includes(unit)||!Number.isSafeInteger(quantity)||quantity<1||quantity>1000000)
+  throw Error("Choose a positive whole number of days, weeks, months or years.");
+ const asMs=value=>{
+  if(typeof value==="number")return value>0&&value<1e11?value*1000:value;
+  const t=Date.parse(String(value||""));return Number.isFinite(t)?t:0;
+ };
+ const start=Math.max(now,asMs(periodEnd),asMs(trialEnd),asMs(priorExtensionEnd));
+ const date=new Date(start);
+ if(unit==="day"||unit==="week")date.setUTCDate(date.getUTCDate()+quantity*(unit==="week"?7:1));
+ else {
+  const day=date.getUTCDate();
+  date.setUTCDate(1);
+  if(unit==="month")date.setUTCMonth(date.getUTCMonth()+quantity);
+  else date.setUTCFullYear(date.getUTCFullYear()+quantity);
+  const finalDay=new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+1,0)).getUTCDate();
+  date.setUTCDate(Math.min(day,finalDay));
+ }
+ if(!Number.isFinite(date.getTime()))throw Error("Choose a valid extension duration.");
+ return requestedMembershipExtension({endAt:date.toISOString(),now,periodEnd,trialEnd,priorExtensionEnd});
+}
+
 export function requestedMembershipExtension({endAt,now=Date.now(),periodEnd=0,trialEnd=0,priorExtensionEnd=0}={}){
  const value=String(endAt||'');
  if(!ISO_UTC.test(value))throw Error('Choose a valid date and time for the new Stripe renewal.');
