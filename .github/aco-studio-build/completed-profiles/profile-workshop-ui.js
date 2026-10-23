@@ -54,7 +54,11 @@
  const bulkPanel=d.createElement('section');bulkPanel.className='workshopPanel';
  bulkPanel.innerHTML=`<div class="workshopHead"><div><h3>Saved profiles</h3><small id="bulkJigOwner">Select one, multiple, or all saved profiles. The retailer buttons and rule choices above control the jig.</small></div></div>
  <div class="buttons"><button class="btn plain slim" data-select-all type="button">Select all</button><button class="btn plain slim" data-clear type="button">Clear</button></div>
- <div class="workshopPickers"><details open><summary>Profiles to jig</summary><div class="workshopAssetChoices" data-profiles></div></details></div>
+ <div class="workshopPickers"><details open><summary>Profiles to jig</summary><div class="workshopAssetChoices" data-profiles></div></details>
+ <label class="workshopCheck"><input data-reuse-toggle type="checkbox"> Reuse a saved Main or Jigged shipping address across selected profiles</label>
+ <section data-reuse-panel hidden><p>Choose the exact Main or previously Jigged address to use. Its complete shipping fields are copied without generating another jig.</p>
+ <label>Choose Main or Jigged address<select data-reuse-choice></select></label>
+ <label>Number of profiles using this address<input data-reuse-count type="number" min="2" max="500" step="1" value="2"></label></section></div>
  <div class="buttons"><button class="btn secondary" data-preview type="button" disabled>Preview selected profiles</button><button class="btn primary" data-apply type="button" disabled>Apply jig to selected profiles</button></div>
  <details data-review hidden><summary>Batch preview</summary><div data-review-rows></div></details><p data-status role="status">No duplicate retailer or name settings here. Use the single retailer preset and rule section above.</p>`;
  panel.after(bulkPanel);
@@ -62,8 +66,33 @@
  let bulkRetailer='target',bulkRows=[],bulkSelected=new Set(),bulkToken=null,bulkOwnerKey='',bulkLoading=false,bulkSettings=null,activeRetailerPreset='target';
  const bulkOwner=()=>fallback();
  const bulkKey=p=>p.scope+':'+(p.customerId||'owner');
+ let reuseLoadedKey='';
+ function invalidateReuse(){bulkToken=null;bq('review').hidden=true;bulkControls();}
+ async function loadReuseChoices(){
+  const owner=bulkOwner(),key=bulkKey(owner);
+  if(reuseLoadedKey===key&&bq('reuse-choice').options.length)return;
+  bq('reuse-choice').disabled=true;
+  try{
+   await unlock(owner);
+   const data=await library.reuseChoices(owner);
+   if(bulkKey(bulkOwner())!==key)return;
+   const select=bq('reuse-choice');select.replaceChildren();
+   for(const type of ['main','jigged']){
+    const group=d.createElement('optgroup');group.label=type==='main'?'Main addresses':'Previously jigged addresses';
+    for(const a of (data.choices||[]).filter(x=>x.type===type)){
+     const item=d.createElement('option');item.value=a.id;item.textContent=(a.label||'Saved address')+' | '+a.summary;group.append(item);
+    }
+    if(group.children.length)select.append(group);
+   }
+   if(!select.options.length)throw Error('No saved Main or Jigged addresses exist in this vault.');
+   reuseLoadedKey=key;bulkStatus('Choose the saved Main/Jigged address and how many selected profiles should use it.');
+  }catch(e){reuseLoadedKey='';bq('reuse-toggle').checked=false;bq('reuse-panel').hidden=true;bulkStatus(e.message,true);}
+  finally{bq('reuse-choice').disabled=false;}
+ }
+ bq('reuse-toggle').addEventListener('change',()=>{invalidateReuse();bq('reuse-panel').hidden=!bq('reuse-toggle').checked;if(bq('reuse-toggle').checked)void loadReuseChoices();});
+ for(const name of ['reuse-choice','reuse-count'])bq(name).addEventListener('change',invalidateReuse);
  function bulkStatus(message,error=false){const el=bq('status');el.textContent=message;el.classList.toggle('profileBankError',error);}
- function bulkControls(){const count=bulkSelected.size;bq('preview').disabled=bulkLoading||!count||(!bulkSettings?.selected?.length&&!Object.values(selectedHardCounts()).some(Boolean));bq('apply').disabled=bulkLoading||!bulkToken;bq('preview').textContent=count?'Preview '+count+' selected profile'+(count===1?'':'s'):'Preview selected profiles';bq('apply').textContent=count?'Apply jig to '+count+' selected profile'+(count===1?'':'s'):'Apply jig to selected profiles';}
+ function bulkControls(){const count=bulkSelected.size;bq('preview').disabled=bulkLoading||!count||(!bq('reuse-toggle').checked&&!bulkSettings?.selected?.length&&!Object.values(selectedHardCounts()).some(Boolean));bq('apply').disabled=bulkLoading||!bulkToken;bq('preview').textContent=count?'Preview '+count+' selected profile'+(count===1?'':'s'):'Preview selected profiles';bq('apply').textContent=count?'Apply jig to '+count+' selected profile'+(count===1?'':'s'):'Apply jig to selected profiles';}
  function renderBulkProfiles(){
   const box=bq('profiles');box.replaceChildren();
   for(const row of bulkRows.filter(x=>x.retailer===bulkRetailer)){
@@ -91,7 +120,7 @@
  }
  async function loadBulk(retailerId=bulkRetailer){
   if(!library)return;bulkRetailer=retailerId;bulkToken=null;bq('review').hidden=true;bulkLoading=true;bulkControls();
-  const owner=bulkOwner();try{await unlock(owner);const [list,settings]=await Promise.all([library.list(owner),library.rules({...owner,retailer:bulkRetailer})]);bulkOwnerKey=bulkKey(owner);bulkRows=list.profiles||[];bulkSettings=settings;bulkSelected=new Set([...bulkSelected].filter(id=>bulkRows.some(x=>x.id===id&&x.retailer===bulkRetailer)));renderBulkProfiles();
+  const owner=bulkOwner();try{await unlock(owner);const [list,settings]=await Promise.all([library.list(owner),library.rules({...owner,retailer:bulkRetailer})]);if(bulkOwnerKey&&bulkOwnerKey!==bulkKey(owner)){reuseLoadedKey='';bq('reuse-choice').replaceChildren();bq('reuse-toggle').checked=false;bq('reuse-panel').hidden=true;}bulkOwnerKey=bulkKey(owner);bulkRows=list.profiles||[];bulkSettings=settings;bulkSelected=new Set([...bulkSelected].filter(id=>bulkRows.some(x=>x.id===id&&x.retailer===bulkRetailer)));renderBulkProfiles();
    if(settings.legacyMigrated)await library.saveRules({...owner,retailer:bulkRetailer,rules:settings.selected});
    const ownerEl=bulkPanel.querySelector('#bulkJigOwner');if(ownerEl)ownerEl.textContent=ownerText(owner)+' | '+(retail[bulkRetailer]||bulkRetailer)+' preset';
    bulkPanel.hidden=!bulkRows.some(x=>x.retailer===bulkRetailer);
@@ -101,8 +130,11 @@
  bq('select-all').addEventListener('click',()=>{for(const row of bulkRows)if(row.retailer===bulkRetailer)bulkSelected.add(row.id);bulkToken=null;bq('review').hidden=true;renderBulkProfiles();});
  bq('clear').addEventListener('click',()=>{bulkSelected.clear();bulkToken=null;bq('review').hidden=true;renderBulkProfiles();});
  bq('preview').addEventListener('click',async()=>{const owner=bulkOwner();bulkLoading=true;bulkToken=null;bq('review').hidden=true;bulkControls();try{
-   const ruleIds=bulkRuleIds(),profileIds=[...bulkSelected],state=mainRuleState();
-   const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:selectedHardCounts(),combine:state.combine,billingSameAsShipping:$('workshopMirror').checked});
+   const ruleIds=bulkRuleIds(),profileIds=[...bulkSelected],state=mainRuleState(),reuseCount=Number(bq('reuse-count').value);
+   if(bq('reuse-toggle').checked&&(!bq('reuse-choice').value||!Number.isSafeInteger(reuseCount)||reuseCount<2||reuseCount>profileIds.length))
+    throw Error('Select an exact Main/Jigged address and a number from 2 to '+profileIds.length+'.');
+   const reuse=bq('reuse-toggle').checked?{sourceId:bq('reuse-choice').value,count:reuseCount}:null;
+   const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:selectedHardCounts(),combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse});
    bulkToken=result.token;const out=bq('review-rows');out.replaceChildren();
    const groupViews=new Map();
     for(const row of result.profiles.slice(0,150)){
@@ -111,7 +143,7 @@
      const line=d.createElement('p');line.textContent=(row.label||row.email)+' | '+(row.category||'Jig')+' | '+[row.before.address1,row.before.address2].filter(Boolean).join(', ')+' → '+[row.after.address1,row.after.address2].filter(Boolean).join(', ');group.append(line);
     }
     for(const group of groupViews.values()){const qty=group.querySelectorAll('p').length;group.querySelector('summary').textContent+=' · '+qty+' profile'+(qty===1?'':'s');}
-   if(result.profiles.length>150){const more=d.createElement('p');more.textContent='+'+(result.profiles.length-150)+' more selected profiles included.';out.append(more);}bq('review').hidden=false;bq('review').open=true;bulkStatus('Preview ready: '+result.changed+' of '+result.count+' selected profiles will change.');
+   if(result.profiles.length>150){const more=d.createElement('p');more.textContent='+'+(result.profiles.length-150)+' more selected profiles included.';out.append(more);}bq('review').hidden=false;bq('review').open=true;bulkStatus('Preview ready: '+result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles will reuse the chosen Main/Jigged shipping address':'')+'.');
   }catch(error){bulkStatus(error.message,true);}finally{bulkLoading=false;bulkControls();}});
  bq('apply').addEventListener('click',async()=>{if(!bulkToken)return;if(!confirm('Apply this reviewed jig to all '+bulkSelected.size+' selected profiles?'))return;bulkLoading=true;bulkControls();try{const result=await library.batchJigCommit({token:bulkToken,confirmed:true});bulkToken=null;await loadBulk(bulkRetailer);bulkStatus('Jigged '+result.updated+' selected profile(s) together'+(result.remoteSaved?' · '+result.remoteSaved+' synced to website/app':'')+'.');}catch(error){bulkStatus(error.message,true);}finally{bulkLoading=false;bulkControls();}});
  d.addEventListener('jigstudio:bank-context-updated',()=>{const owner=bulkOwner();if(bulkKey(owner)!==bulkOwnerKey)void loadBulk(bulkRetailer);});

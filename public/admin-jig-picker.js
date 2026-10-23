@@ -84,7 +84,9 @@
     try {
       const options=await ensureCatalog();
       const remembered=JSON.parse(localStorage.getItem("adminJigCheckboxSelection")||"null");
-      const selected=Array.isArray(remembered)?new Set(remembered):null;
+      // Previously saved per-street toggles are now one address-aware control.
+      const selected=Array.isArray(remembered)?new Set(remembered.map(id=>
+        /^suffix\.(?:ln|ave|st|rd|dr|ter|blvd|ct|cir|pkwy|trl|hwy|pl|wy|ctr|mnr)(?:\.full)?$/.test(id)?"suffix.matching":id)):null;
       groups.replaceChildren();
       const grouped=new Map();
       for(const option of options) {

@@ -781,7 +781,8 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
               '<p><b>'+esc(renewal)+'</b></p><div class="admin-membership-track" role="progressbar" aria-label="Membership days remaining" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+tier.remainingPercent+'"><span style="width:'+tier.remainingPercent+'%;background:'+(tier.daysRemaining<=5?'#ef4444':tier.daysRemaining<=10?'#eab308':'var(--tier-accent,#25c977)')+'"></span></div>')+
             '<details class="admin-inline-notifications"><summary>Send Notification</summary><label>Notification type<select data-notice-type><option value="missing">Missing account setup information</option><option value="card">Missing payment card</option><option value="shipping">Missing shipping address</option><option value="retailer">Missing optional retailer information</option><option value="custom">Custom message</option></select></label><label>Customer message<textarea data-notice-message rows="3" placeholder="Optional details, required for custom messages"></textarea></label><button type="button" data-send-notice="'+esc(x.id)+'">SEND NOTIFICATION</button><p data-notice-result role="status"></p></details>'+
             '<p class="admin-customer-tip">Use the full Admin customer page for missing card, shipping, retailer info, and custom notifications.</p></div></details>'+
-          '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE <span aria-hidden="true">↗</span></button></article>';
+          '<button type="button" class="action" data-extend-membership="'+esc(x.customerAccountId||x.id)+'">EXTEND MEMBERSHIP</button>'+
+           '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE <span aria-hidden="true">↗</span></button></article>';
         }catch(error){
           console.error("Admin customer membership card could not be rendered",error);
           return '<article class="item admin-customer-tier-row admin-customer-standard">'+
@@ -792,7 +793,8 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
             '<div class="admin-customer-tier-badge"><small>MEMBERSHIP TIER</small>'+
             '<strong>Details unavailable</strong></div></div>'+
             '<p class="admin-period-unavailable">Unable to display membership details.</p>'+
-            '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE <span aria-hidden="true">↗</span></button></article>';
+            '<button type="button" class="action" data-extend-membership="'+esc(x.customerAccountId||x.id)+'">EXTEND MEMBERSHIP</button>'+
+           '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE <span aria-hidden="true">↗</span></button></article>';
         }
       }).join("")||
       "<p>No matching customers.</p>";
@@ -937,6 +939,52 @@ $("content").addEventListener("click",async e=>{
   }catch(error){result.textContent=error.message||"Notification failed";}
   finally{b.disabled=false;}
 });
+
+$("content").addEventListener("click",event=>{
+ const button=event.target.closest("[data-extend-membership]");
+ if(!button)return;
+ event.preventDefault();event.stopPropagation();
+ const customerAccountId=String(button.dataset.extendMembership||"");
+ if(!customerAccountId)return;
+ document.querySelector("#mobileSubscriptionExtensionDialog")?.remove();
+ const dialog=document.createElement("dialog");dialog.id="mobileSubscriptionExtensionDialog";
+ dialog.style.cssText="max-width:92vw;width:420px;background:#0b2639;color:white;border:1px solid #2889a4;border-radius:15px;padding:20px";
+ const heading=document.createElement("h3");heading.textContent="Extend subscription";
+ const description=document.createElement("p");description.textContent="Choose the new Stripe renewal date and time in your local timezone. No charge or proration will occur now.";
+ const form=document.createElement("form");form.style.cssText="display:grid;gap:12px";
+ const label=document.createElement("label");label.textContent="Next payment date / time";
+ const date=document.createElement("input");date.type="datetime-local";date.required=true;
+ const now=new Date();date.min=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+ date.style.cssText="display:block;width:100%;padding:10px;background:#12384c;color:white;border:1px solid #71abc1;border-radius:8px";
+ label.append(date);
+ const feedback=document.createElement("p");feedback.setAttribute("role","status");
+ const save=document.createElement("button");save.type="submit";save.textContent="CONFIRM NO-CHARGE EXTENSION";save.className="action";
+ const close=document.createElement("button");close.type="button";close.className="action";close.textContent="Close";close.onclick=()=>dialog.close();
+ form.append(label,save,close,feedback);dialog.append(heading,description,form);document.body.append(dialog);
+ dialog.addEventListener("close",()=>dialog.remove());
+ date.addEventListener("change",()=>{delete form.dataset.requestId;feedback.textContent="";});
+ form.addEventListener("submit",async e=>{
+  e.preventDefault();
+  const selected=new Date(date.value);
+  if(!Number.isFinite(selected.getTime())){feedback.textContent="Choose a valid date and time.";return;}
+  form.dataset.requestId ||= crypto.randomUUID();
+  save.disabled=true;feedback.textContent="Confirming the new payment date with Stripe…";
+  try{
+   const response=await fetch("/api/admin/membership-extensions",{
+    method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({customerAccountId,endAt:selected.toISOString(),requestId:form.dataset.requestId})
+   });
+   const body=await response.json().catch(()=>({}));
+   if(!response.ok||(!body.billingVerified&&!body.replayed))throw Error(body.error||"Stripe could not verify the extension.");
+   feedback.textContent="Confirmed with Stripe. No payment due before "+new Date(body.extension.expiresAt).toLocaleString()+".";
+   delete form.dataset.requestId;
+   void refresh(true);
+  }catch(error){feedback.textContent=error.message||"Unable to extend subscription.";}
+  finally{save.disabled=false;}
+ });
+ if(typeof dialog.showModal==="function")dialog.showModal();else dialog.setAttribute("open","");
+},true);
+
 $("content").addEventListener("click",async e=>{const b=e.target.closest("[data-view]");if(!b)return;b.disabled=true;try{const r=await fetch("/api/admin/customers/"+encodeURIComponent(b.dataset.view)+"/view-as-user",{method:"POST",credentials:"same-origin"});const j=await r.json();if(!r.ok)throw Error(j.error||"Unable to open customer");location.assign(j.url||"/admin.html");}catch(err){alert(err.message);b.disabled=false;}});
 document.addEventListener("focusout",()=>{if(mobileRefreshPending)scheduleMobileRefresh();},true);
 document.addEventListener("toggle",()=>{if(mobileRefreshPending)scheduleMobileRefresh();},true);

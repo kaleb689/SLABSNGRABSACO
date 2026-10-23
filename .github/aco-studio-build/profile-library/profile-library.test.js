@@ -20,7 +20,7 @@ async function env(t){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-work
 }
 
 const {createLibrary}=require('../profile-library-service'),LC=require('../profile-library-core');
-async function library(t){const h=await env(t);let allowed=true;const lib=createLibrary({profiles:h.profiles,cardVault:s=>s==='personal'?h.personal:h.customers,authorize:async(e,s,id)=>{if(e.sender.id!==1)throw Error('Not owner');if(s==='aco'&&!['customer-a','customer-b'].includes(id))throw Error('Unauthorized customer');return s==='personal'?null:id;},guard:(e,s)=>{if(e.sender.id!==1||!allowed)throw Error('Locked');},chooseSave:async(_e,o)=>({filePath:path.join(h.dir,o.name)}),confirmExport:async()=>true,writeFile:async(...args)=>h.writes.push(args),getCustomerProfileSource:async id=>({customer:{id,name:id},linked:[{customerId:id,assignmentId:'linked-1',retailer:'pokemoncenter',active:true,data:complete('pokemoncenter','linked@example.test')}]})});return {...h,lib,lockLibrary:()=>allowed=false};}
+async function library(t){const h=await env(t);let allowed=true;const lib=createLibrary({profiles:h.profiles,addressBanks:h.addresses,cardVault:s=>s==='personal'?h.personal:h.customers,authorize:async(e,s,id)=>{if(e.sender.id!==1)throw Error('Not owner');if(s==='aco'&&!['customer-a','customer-b'].includes(id))throw Error('Unauthorized customer');return s==='personal'?null:id;},guard:(e,s)=>{if(e.sender.id!==1||!allowed)throw Error('Locked');},chooseSave:async(_e,o)=>({filePath:path.join(h.dir,o.name)}),confirmExport:async()=>true,writeFile:async(...args)=>h.writes.push(args),getCustomerProfileSource:async id=>({customer:{id,name:id},linked:[{customerId:id,assignmentId:'linked-1',retailer:'pokemoncenter',active:true,data:complete('pokemoncenter','linked@example.test')}]})});return {...h,lib,lockLibrary:()=>allowed=false};}
 function complete(retailer,email){const data=D.blank(retailer,LC.format(retailer),{email,first:'Alex',last:'Example',phone:'9545550100','shipping.address1':'100 Example Avenue','shipping.city':'Sample','shipping.state':'FL','shipping.zip':'33324','billing.address1':'100 Example Avenue','billing.city':'Sample','billing.state':'FL','billing.zip':'33324'});LC.putCard(data,fullCard);return data;}
 async function preview(h,data,owner=h.p,retailer='target'){return h.lib.importPreview(event,{...owner,retailer,fileName:'profiles.json',text:JSON.stringify(data)});}
 async function commit(h,preview,extra={}){return h.lib.importCommit(event,{token:preview.token,confirmed:true,alreadyJigged:true,repairs:{allowShared:true},...extra});}
@@ -33,7 +33,7 @@ test('Linked website customer profile creation is idempotent and isolated',async
 test('Canonical source maps existing Shikari phone/names without inventing missing card data',()=>{const raw={email:'legacy@example.test',first_name:'Alex',last_name:'Example',phone_num:'9545550100',shipping_street:'100 Example Ave',shipping_city:'Sample',shipping_state:'FL',shipping_zip_code:'33324',billing_first_name:'Alex',billing_last_name:'Example',billing_street:'100 Example Ave',billing_city:'Sample',billing_state:'FL',billing_zip_code:'33324',cc_number:card.number,cc_exp_month:'08',cc_exp_year:'2031'};const normalized=LC.normalized(raw,'pokemoncenter');assert.equal(normalized.shipping.phoneNumber,raw.phone_num);assert.equal(normalized.card.holder,'Alex Example');assert.equal(normalized.card.number,card.number);});
 test('Raw customer source rejects another customer identity',()=>{const {sourceForCustomer}=require('../customer-profile-source');assert.throws(()=>sourceForCustomer({id:'customer-a',name:'A'},{},{memberships:[{active:true,customerAccountId:'customer-b'}]}),/another customer/);});
 test('Customer source uses submitted cards/address/phone and leaves absent cards incomplete',()=>{const {sourceForCustomer}=require('../customer-profile-source'),customer={id:'customer-a',name:'Annette',shipping:{firstName:'Annette',lastName:'Example',phone:'9545550100'}},saved={addresses:[{address:'100 Example Avenue',city:'Sample',state:'FL',zip:'33324',firstName:'Annette',lastName:'Example',phone:'9545550100'}],paymentMethods:[{acoCardNumber:card.number,cardholder:'Annette Example',expMonth:'08',expYear:'2031'}]},memberships={memberships:[{id:'pool-1',assignmentId:'assigned-1',active:true,customerAccountId:'customer-a',retailers:{pkc:{username:'annette@example.test'}},customerProfile:{}}]};const source=sourceForCustomer(customer,saved,memberships);assert.equal(source.linked[0].data.card.number,card.number);assert.equal(source.linked[0].data.shipping.phoneNumber,'9545550100');assert.equal(source.linked[0].data.shipping.addressLine1,'100 Example Avenue');const absent=sourceForCustomer(customer,{addresses:saved.addresses},memberships);assert.equal(absent.linked[0].data.card.number,'');});
-test('Retailer jig settings are saved per owner and retailer',async t=>{const h=await library(t);await h.lib.saveRules(event,{...h.p,retailer:'pokemoncenter',rules:['avenue_short']});assert.deepEqual((await h.lib.rules(event,{...h.p,retailer:'pokemoncenter'})).selected,['avenue_short']);assert.notDeepEqual((await h.lib.rules(event,{...h.a,retailer:'pokemoncenter'})).selected,['avenue_short']);await assert.rejects(h.lib.saveRules(event,{...h.p,retailer:'target',rules:['prefix_three_1']}),/supported/);});
+test('Retailer jig settings are saved per owner and retailer',async t=>{const h=await library(t);await h.lib.saveRules(event,{...h.p,retailer:'pokemoncenter',rules:['avenue_short']});assert.deepEqual((await h.lib.rules(event,{...h.p,retailer:'pokemoncenter'})).selected,['suffix.matching']);assert.notDeepEqual((await h.lib.rules(event,{...h.a,retailer:'pokemoncenter'})).selected,['suffix.matching']);await assert.rejects(h.lib.saveRules(event,{...h.p,retailer:'target',rules:['prefix_three_1']}),/supported/);});
 test('Concurrent import confirmation saves one batch only',async t=>{const h=await library(t),p=await preview(h,[complete('target','once@example.test')]),results=await Promise.allSettled([commit(h,p),commit(h,p)]);assert.equal(results.filter(x=>x.status==='fulfilled').length,1);assert.equal((await h.lib.list(event,h.p)).profiles.length,1);});
 test('Explicit repair keeps profile ownership and updates only selected fields',async t=>{const h=await library(t);await commit(h,await preview(h,[complete('target','before@example.test')]));await h.service.importEmails(event,{...h.p,retailer:'target',emails:['after@example.test']});const row=(await h.lib.list(event,h.p)).profiles[0],prior=structuredClone(row.data);await h.lib.repair(event,{...h.p,profileId:row.id,revision:row.revision,repairs:{email:true},cardIds:[]});const updated=(await h.lib.list(event,h.p)).profiles[0];assert.equal(updated.email,'after@example.test');prior.email='after@example.test';assert.deepEqual(updated.data,prior);assert.equal((await h.lib.list(event,h.a)).profiles.length,0);});
 
@@ -151,6 +151,64 @@ test('Random unit Jig rejects a base address that already contains an apartment'
 });
 
 
+
+test('Owner Jig lists saved Main addresses and existing Jigged profile addresses for exact reuse',async t=>{
+ const h=await library(t);
+ await h.service.addAddress(event,{...h.p,address:{...address,label:'Saved Main'}});
+ await commit(h,await preview(h,[complete('target','reuse-a@example.test')]));
+ await commit(h,await preview(h,[complete('target','reuse-b@example.test')]));
+ await commit(h,await preview(h,[complete('target','reuse-c@example.test')]));
+ const profiles=(await h.lib.list(event,h.p)).profiles.filter(p=>p.retailer==='target');
+ const jig=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[profiles[0].id],ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false});
+ await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
+ const choices=(await h.lib.reuseChoices(event,h.p)).choices;
+ assert.ok(choices.some(x=>x.type==='main'&&x.summary.includes('100 Example Avenue')&&x.summary.includes('Apt 2')),JSON.stringify(choices));
+ const variant=choices.find(x=>x.summary.includes('100 Example Ave')&&!x.summary.includes('Avenue'));
+ assert.ok(variant,JSON.stringify(choices));
+ assert.equal(variant.type,'jigged');
+ assert.equal((await h.lib.reuseChoices(event,h.a)).choices.some(x=>x.id===variant.id),false);
+ await assert.rejects(h.lib.reuseChoices(foreign,h.p),/Not owner/);
+});
+test('Exact Main/Jigged reuse count changes the chosen profiles only and can be reviewed before commit',async t=>{
+ const h=await library(t);
+ const main=await h.service.addAddress(event,{...h.p,address:{...address,label:'Private Main'}});
+ for(let i=0;i<4;i++)await commit(h,await preview(h,[complete('target','repeat-'+i+'@example.test')]));
+ const profiles=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const choices=(await h.lib.reuseChoices(event,h.p)).choices;
+ const choice=choices.find(x=>x.type==='main'&&x.summary.includes('Apt 2'));
+ assert.ok(choice);
+ const args={...h.p,retailer:'target',profileIds:profiles.map(x=>x.id),ruleIds:['suffix.matching'],reuse:{sourceId:choice.id,count:2},combine:false,billingSameAsShipping:false};
+ const result=await h.lib.batchJigPreview(event,args);
+ assert.equal(result.reused,2);
+ assert.equal(result.profiles.length,4);
+ for(const record of result.profiles.slice(0,2)){
+  assert.equal(record.after.address1,'100 Example Avenue');
+  assert.equal(record.after.address2,'Apt 2');
+  assert.equal(record.category,'reused saved address');
+ }
+ assert.equal(result.profiles[2].after.address2,'');
+ const before=(await h.lib.list(event,h.p)).profiles;
+ assert.ok(before.every(x=>!String(LC.values(x.data)['shipping.address2']||'').includes('Apt 2')));
+ await h.lib.batchJigCommit(event,{token:result.token,confirmed:true});
+ const after=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(after.filter(x=>String(LC.values(x.data)['shipping.address2']).toUpperCase()==='APT 2').length,2);
+ const noReuse={...args,reuse:{sourceId:choice.id,count:1}};
+ await assert.rejects(h.lib.batchJigPreview(event,noReuse),/Choose between 2/);
+ await assert.rejects(h.lib.batchJigPreview(event,{...args,reuse:{sourceId:'profile:unknown',count:2}}),/available/);
+});
+
+
+test('Exact reuse quantity rejects a hidden extra match on another selected profile',async t=>{
+ const h=await library(t);
+ await h.service.addAddress(event,{...h.p,address:{...address,address2:'',label:'Existing identical Main'}});
+ for(let n=0;n<3;n++)await commit(h,await preview(h,[complete('target','same-main-'+n+'@example.test')]));
+ const selected=(await h.lib.list(event,h.p)).profiles.filter(row=>row.retailer==='target');
+ const option=(await h.lib.reuseChoices(event,h.p)).choices.find(item=>item.type==='main'&&item.summary.includes('100 Example Avenue'));
+ assert.ok(option);
+ await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',
+  profileIds:selected.map(x=>x.id),ruleIds:[LC.FL_PHONE_RULE],combine:false,
+  billingSameAsShipping:false,reuse:{sourceId:option.id,count:2}}),/not the requested 2/);
+});
 test('Owner import history removes only exact batch profiles and preserves later imports, cards and customers',async t=>{
  const h=await library(t);
  const first=await commit(h,await preview(h,[complete('target','first-batch@example.test')]));
@@ -212,4 +270,18 @@ test('Separate profile code is editable, preserved and included in owner JSON ex
  assert.equal(archive.profiles[0].data.cc_cvv,undefined);
  assert.equal(archive.profiles[0].data.profileSecurityCode,'PICKUP-CODE-44');
  await assert.rejects(h.lib.exportArchive(event,{...h.a,retailer:'target',profileIds:[row.id]}),/belong/);
+});
+
+test('Consolidated street suffix option is Electron IPC clone-safe for every retailer',()=>{
+ for(const retailer of ['target','walmart','pokemoncenter','costco','sams']){
+  const options=LC.ruleOptions(retailer);
+  assert.doesNotThrow(()=>structuredClone(options));
+  const matching=options.filter(x=>x.id==='suffix.matching');
+  assert.equal(matching.length,1);
+  assert.match(matching[0].label,/Street|street/);
+  assert.equal(typeof matching[0].apply,'undefined','IPC must not expose rule functions');
+  assert.ok(options.every(x=>typeof x.apply==='undefined'));
+  const clean=LC.defaultRules(retailer);
+  assert.equal(clean.filter(id=>id==='suffix.matching').length,1);
+ }
 });

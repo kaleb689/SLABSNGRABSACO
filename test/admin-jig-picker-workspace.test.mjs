@@ -30,9 +30,9 @@ test("selected address changes are unique and never stacked",()=>{
  }
 });
 test("standard options retain the original house number and unit ID",()=>{
- const items=eligibleJigSelections(example,["direction.short","suffix.ln","unit.unit","city.alternate","zip.five"]);
+ const items=eligibleJigSelections(example,["direction.short","suffix.matching","unit.unit","city.alternate","zip.five"]);
  assert.equal(pick(items,"direction.short")?.address.address,"123 NW 9TH LANE");
- assert.equal(pick(items,"suffix.ln")?.address.address,"123 NORTHWEST 9TH LN");
+ assert.equal(pick(items,"suffix.matching")?.address.address,"123 NORTHWEST 9TH LN");
  assert.equal(pick(items,"unit.unit")?.address.address2,"UNIT 2B");
  assert.equal(pick(items,"city.alternate"),undefined,"City replacements require server-side postal verification");
  assert.equal(pick(items,"zip.five")?.address.zip,"33101");
@@ -42,8 +42,30 @@ test("inapplicable floor/grid variants are never forced",()=>{
 });
 test("street suffix is not applied to middle street-name tokens",()=>{
  const addr={...example,address:"10700 CITY CENTER BOULEVARD"};
- assert.equal(eligibleJigSelections(addr,["suffix.ctr"]).length,0);
- assert.equal(pick(eligibleJigSelections(addr,["suffix.blvd"]),"suffix.blvd")?.address.address,"10700 CITY CENTER BLVD");
+ assert.equal(pick(eligibleJigSelections(addr,["suffix.matching"]),"suffix.matching")?.address.address,"10700 CITY CENTER BLVD");
+ assert.ok(!eligibleJigSelections(addr,["suffix.matching"]).some(x=>x.address.address.includes("CITY CTR")));
+});
+
+test("One street-suffix button recognizes the existing street type without changing its identity",()=>{
+ const samples={"123 Main St":"123 MAIN STREET","123 Main Rd":"123 MAIN ROAD",
+  "123 Main Dr":"123 MAIN DRIVE","123 Main Boulevard":"123 MAIN BLVD",
+  "123 Main Street":"123 MAIN ST","123 Main Rd NW":"123 MAIN ROAD NW"};
+ for(const [before,after] of Object.entries(samples)){
+  const result=eligibleJigSelections({...example,address:before,address2:""},["suffix.matching"]);
+  assert.equal(result.length,1,before);
+  assert.equal(result[0].address.address,after,before);
+ }
+ assert.equal(ADDRESS_JIG_OPTIONS.filter(x=>x.id.startsWith("suffix.")).length,1);
+});
+test("Random second-line jig only generates a labeled numbered unit where no unit exists",()=>{
+ for(const before of ["123 MAIN ST","765 MAIN RD"]){
+  const result=eligibleJigSelections({...example,address:before,address2:""},["unit.random"]);
+  assert.equal(result.length,1);
+  assert.equal(result[0].address.address,before);
+  assert.match(result[0].address.address2,/^(APT|STE|UNIT|#|SUITE|APARTMENT|CONDO|RM) [1-9]\d{2}$/);
+ }
+ assert.deepEqual(eligibleJigSelections({...example,address2:"APT 12"},["unit.random"]),[]);
+ assert.deepEqual(eligibleJigSelections({...example,address:"123 MAIN ST APT 12",address2:""},["unit.random"]),[]);
 });
 test("Admin tabs, modal, and bell are wired to original admin page",()=>{
  const html=file("../public/admin.html");
@@ -95,4 +117,26 @@ test("available account search uses only three visible action buttons until assi
  assert.match(search,/pool-profile-assign-toggle/);
  assert.match(search,/assignmentPanel.hidden = true/);
  assert.match(search,/assignmentPanel.append\(customerLabel, typeLabel, durationLabel, button\)/);
+});
+
+test("street suffix picker has one rule and never changes the street type",()=>{
+ const suffixes=ADDRESS_JIG_OPTIONS.filter(option=>option.id.startsWith("suffix."));
+ assert.deepEqual(suffixes.map(x=>x.id),["suffix.matching"]);
+ const street={...example,address:"123 MAIN ST",address2:""};
+ const road={...example,address:"123 MAIN RD",address2:""};
+ const transformed=eligibleJigSelections(street,["suffix.matching"]);
+ assert.equal(transformed[0]?.address.address,"123 MAIN STREET");
+ assert.ok(!transformed[0].address.address.includes(" ROAD"));
+ assert.equal(eligibleJigSelections(road,["suffix.matching"])[0]?.address.address,"123 MAIN ROAD");
+ assert.equal(eligibleJigSelections({...street,address:"123 MAIN BOULEVARD"},["suffix.matching"])[0]?.address.address,"123 MAIN BLVD");
+});
+test("random unit option adds a second-line number only to unit-free shipping addresses",()=>{
+ assert.ok(ADDRESS_JIG_OPTIONS.some(x=>x.id==="unit.random"&&x.risk==="experimental"));
+ const base={...example,address:"123 MAIN ST",address2:""};
+ const result=eligibleJigSelections(base,["unit.random"]);
+ assert.equal(result.length,1);
+ assert.equal(result[0].address.address,base.address);
+ assert.match(result[0].address.address2,/^(APT|STE|UNIT|#|SUITE|APARTMENT|CONDO|RM) [0-9]{3}$/);
+ assert.deepEqual(eligibleJigSelections({...base,address2:"STE 14"},["unit.random"]),[]);
+ assert.deepEqual(eligibleJigSelections({...base,address:"123 MAIN ST APT 2"},["unit.random"]),[]);
 });
