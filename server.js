@@ -33242,14 +33242,12 @@ app.get(
                 assignment.customerAccountId,
               customerProfile:
                 assignment.customerProfile,
-              profileName:
-                type === "free"
-                  ? "Gifted Profile"
-                  : "Rented Profile",
-              type:
-                type === "free"
-                  ? "gifted"
-                  : "rented",
+              profileName: assignment.autoPaidPoolAssignment
+                ? (assignment.assignmentRetailer === "target" ? "Target Account" : "PKC Account")
+                : (type === "free" ? "Gifted Profile" : "Rented Profile"),
+              type: assignment.autoPaidPoolAssignment ? "paid" : (type === "free" ? "gifted" : "rented"),
+              managedActivation: true,
+              managedType: type,
               status,
               expiresAt:
                 assignment.expiresAt ||
