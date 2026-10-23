@@ -291,7 +291,26 @@
  function trap(modal,e){if(e.key==='Escape'){e.preventDefault();modal.querySelector('[data-close]')?.click();}if(e.key==='Tab'){const nodes=[...modal.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary')].filter(x=>x.getClientRects().length);const first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&d.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&d.activeElement===last){e.preventDefault();first?.focus();}}}
  modal.addEventListener('keydown',e=>trap(modal,e));draftModal.addEventListener('keydown',e=>trap(draftModal,e));
  d.addEventListener('jigstudio:personal-locked',()=>{if(vaultScope?.scope==='personal')closeVault();d.querySelectorAll('.profileFullDetails').forEach(x=>x.remove());draftModal.hidden=true;$('workshopDraftForm').replaceChildren();void api.cancel();assets=null;picks.cards.clear();picks.addresses.clear();invalidate();assetRows();});
- window.ACOProfileWorkshop=Object.freeze({prepareReview,openVault,create:openDraft,openSaved:async p=>{await unlock(p);const row=await api.load(p);await importer().loadWorkshopProfile(row);d.dispatchEvent(new CustomEvent('jigstudio:navigate-stage',{detail:{stage:'settings'}}));panel.scrollIntoView({block:'center'});}});
+ window.ACOProfileWorkshop=Object.freeze({prepareReview,openVault,create:openDraft,openSaved:async p=>{
+ await unlock(p);
+ const row=await api.load(p);
+ await importer().loadWorkshopProfile(row);
+ contextChanged();
+ $('workshopUnused').checked=false; // Used cards also belong to this customer's account.
+ await loadAssets();
+ if(!assets)throw Error('Could not load saved address/card resources for this customer.');
+ picks.addresses=new Set((assets.addresses||[]).map(x=>x.id));
+ picks.cards=new Set((assets.cards||[]).map(x=>x.id));
+ $('workshopAddress').checked=picks.addresses.size>0;
+ $('workshopCard').checked=picks.cards.size>0;
+ $('workshopAddresses').hidden=!picks.addresses.size;
+ $('workshopCards').hidden=!picks.cards.size;
+ $('workshopReuse').checked=true;
+ assetRows();invalidate();
+ d.dispatchEvent(new CustomEvent('jigstudio:navigate-stage',{detail:{stage:'settings'}}));
+ panel.scrollIntoView({block:'center'});
+ note('Loaded all '+picks.addresses.size+' saved addresses and '+picks.cards.size+' saved cards in this vault, including cards already used. Select the ones to apply, then preview.');
+}});
  const shortcuts=d.createElement('div');shortcuts.className='buttons';for(const [label,fn]of [['+ Create Blank Profile',()=>openDraft()],['Cards & Addresses Vault',()=>openVault()]]){const b=d.createElement('button');b.type='button';b.className='btn secondary';b.textContent=label;b.addEventListener('click',()=>void fn());shortcuts.append(b);}$('studioStage-import')?.querySelector('header')?.after(shortcuts);
  controls();
 })();
