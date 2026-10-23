@@ -194,7 +194,7 @@ test('Exact Main/Jigged reuse count changes the chosen profiles only and can be 
  assert.equal(after.filter(x=>String(LC.values(x.data)['shipping.address2']).toUpperCase()==='APT 2').length,2);
  const noReuse={...args,reuse:{sourceId:choice.id,count:1}};
  await assert.rejects(h.lib.batchJigPreview(event,noReuse),/Choose between 2/);
- await assert.rejects(h.lib.batchJigPreview(event,{...args,reuse:{sourceId:'profile:unknown',count:2}}),/not available/);
+ await assert.rejects(h.lib.batchJigPreview(event,{...args,reuse:{sourceId:'profile:unknown',count:2}}),/no longer available/);
 });
 
 test('Owner import history removes only exact batch profiles and preserves later imports, cards and customers',async t=>{
