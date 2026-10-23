@@ -4818,10 +4818,8 @@ async function assignReferralRewardProfiles(referralId) {
   }
   const already = new Set(assignments.filter(item => item.referralGiftId === grant.id).map(item => item.referralRetailer));
   const targets = await getAvailableManagedAccountsForRetailer("target");
-  const walmart = await getAvailableManagedAccountsForRetailer("walmart");
   const pokemon = await getAvailableManagedAccountsForRetailer("pokemoncenter");
   const targetEmail = item => managedRetailerEmailExact(item, "target");
-  const walmartEmail = item => managedRetailerEmailExact(item, "walmart");
   const pokemonEmail = item => managedRetailerEmailExact(item, "pokemoncenter");
 
   const existingTarget = assignments.find(
@@ -4837,23 +4835,18 @@ async function assignReferralRewardProfiles(referralId) {
     targets.find(item => {
       const email = targetEmail(item);
       return email && (
-        walmart.some(other => walmartEmail(other) === email) ||
         pokemon.some(other => pokemonEmail(other) === email)
       );
     }) ||
     targets[0];
 
   const emailToMatch = target ? targetEmail(target) : "";
-  const matchingWalmart = walmart.find(
-    item => emailToMatch && walmartEmail(item) === emailToMatch
-  );
   const matchingPokemon = pokemon.find(
     item => emailToMatch && pokemonEmail(item) === emailToMatch
   );
 
   const choices = {
     target: assignedTarget ? null : target,
-    walmart: matchingWalmart || walmart[0],
     pokemoncenter: matchingPokemon || pokemon[0]
   };
   const now = new Date().toISOString();
@@ -7026,6 +7019,131 @@ function preferPreviouslyAssignedManagedAccounts(availableAccounts, assignmentHi
   });
 }
 
+// Membership-funded pool assignment is separate from customer-created profiles.
+// Only Target and Pokemon Center are automatic; Walmart remains request-only.
+// Entries are tagged for idempotent retries and existing manually linked accounts
+// remain untouched. Assignments use the same staff-managed inventory/vault.
+let paidPoolAutoAssignmentTail=Promise.resolve();
+function queuePaidPoolAutoAssignment(job) {
+ const current=paidPoolAutoAssignmentTail.then(job);
+ paidPoolAutoAssignmentTail=current.catch(error=>{
+  console.error("Paid membership pool provisioning:",error);
+ });
+ return current;
+}
+async function provisionPaidMembershipPool(record) {
+ if(!record?.autoPoolProvisioningRequestedAt ||
+    !record.customerAccountId || !subscriptionAllowsProfiles(record))return;
+ const customerAccountId=String(record.customerAccountId);
+ const customer=(await getCustomerAccounts()).find(a=>String(a.id)===customerAccountId);
+ if(!customer)return;
+ const quantity=Math.min(100,Math.max(0,profileAllowanceForRecord(record)));
+ if(!quantity)return;
+ const retailers=["target","pokemoncenter"]; // NEVER automatically link Walmart.
+ const reservedJigs=new Set();
+ const managedAccounts=await getManagedAccounts();
+ for(const retailer of retailers){
+  const linked=[...await getFreeAssignments(),...await getRentalAssignments()]
+   .filter(a=>String(a.customerAccountId||"")===customerAccountId&&managedAssignmentIsLinked(a))
+   // Gifts and separately purchased rentals do not consume the paid tier.
+   .filter(a=>a.autoPaidPoolAssignment===true||String(a.paidSubmissionId||"")===String(record.id))
+   .filter(a=>normalizeManagedPoolRetailer(a.assignmentRetailer||a.rentalRetailer||a.referralRetailer)===retailer);
+  const missing=Math.max(0,quantity-linked.length);
+  if(!missing)continue;
+  let available=await getAvailableManagedAccountsForRetailer(retailer);
+  const allAssignments=[...await getFreeAssignments(),...await getRentalAssignments()];
+  available=preferManagedAccountsMatchingAssignedPoolEmails(
+    available,customerAccountId,retailer,allAssignments,managedAccounts);
+  if(retailer==="target"){
+   // On a first purchase, use Target emails that have a corresponding PKC
+   // account when possible, rather than assigning unmatched accounts first.
+   const pkc=await getAvailableManagedAccountsForRetailer("pokemoncenter");
+   const matchingEmails=new Set(pkc.map(a=>normalizeEmail(managedRetailerEmailExact(a,"pokemoncenter"))));
+   available=[...available].sort((a,b)=>
+    Number(matchingEmails.has(normalizeEmail(managedRetailerEmailExact(b,"target"))))-
+    Number(matchingEmails.has(normalizeEmail(managedRetailerEmailExact(a,"target")))));
+  }
+  for(const poolAccount of available.slice(0,missing)){
+   const newest=await getFreeAssignments();
+   if(newest.some(a=>managedAssignmentIsLinked(a)&&String(managedAssignmentMembershipId(a))===String(poolAccount.id)))continue;
+   const now=new Date().toISOString();
+   const assignment={
+    id:crypto.randomUUID(),freeMembershipId:poolAccount.id,managedAccountId:poolAccount.id,
+    customerAccountId,paidSubmissionId:record.id,
+    autoPaidPoolAssignment:true,active:true,durationType:"indefinite",
+    assignmentRetailer:retailer,activationStatus:"awaiting_activation",
+    activationRequestedAt:now,startsAt:null,expiresAt:null,
+    customerProfile:sanitizeProfile(record.profile||{}),
+    customerSecrets:null,createdAt:now,updatedAt:now,endedAt:null,endReason:null
+   };
+   await prepareNewManagedAssignment(assignment,poolAccount,customer,record,reservedJigs);
+   newest.push(assignment);
+   await saveFreeAssignments(newest);
+   try{
+    await ensureManagedProfileDiscordMessage(assignment,"free");
+    await saveFreeAssignments(newest);
+   }catch(error){
+    console.error("Paid pool profile alert:",error);
+   }
+  }
+ }
+ broadcastLiveDataChange("paid-profile-pool-assignment");
+}
+// Return only newly auto-pooled paid-tier accounts to inventory when the
+// member lapses or downgrades. Historical assignments remain in the ledger.
+// Never touch gifted/rented/manual accounts or delete customer profile data.
+async function reconcilePaidPoolAssignmentLimits(paidRecords) {
+ const allowance=new Map();
+ for(const record of (Array.isArray(paidRecords)?paidRecords:[])){
+  if(!record.customerAccountId||!subscriptionAllowsProfiles(record))continue;
+  const id=String(record.customerAccountId);
+  allowance.set(id,Math.min(100,Math.max(
+   allowance.get(id)||0,profileAllowanceForRecord(record)||0)));
+ }
+ const assignments=await getFreeAssignments();
+ const groups=new Map();
+ for(const item of assignments){
+  if(item.autoPaidPoolAssignment!==true||!managedAssignmentIsLinked(item))continue;
+  const retailer=normalizeManagedPoolRetailer(item.assignmentRetailer);
+  if(!["target","pokemoncenter"].includes(retailer))continue;
+  const key=String(item.customerAccountId)+"|"+retailer;
+  if(!groups.has(key))groups.set(key,[]);
+  groups.get(key).push(item);
+ }
+ let changed=false;
+ for(const [key,items] of groups){
+  const id=key.slice(0,key.lastIndexOf("|")),limit=allowance.get(id)||0;
+  items.sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))||
+   String(a.id||"").localeCompare(String(b.id||"")));
+  for(let i=limit;i<items.length;i++){
+   const record=items[i],now=new Date().toISOString();
+   record.active=false;
+   record.activationStatus=limit?"deactivated":"expired";
+   record.endedAt=now;record.updatedAt=now;
+   record.endReason=limit?"paid_tier_downgrade":"paid_membership_inactive";
+   changed=true;
+  }
+ }
+ if(changed){
+  await saveFreeAssignments(assignments);
+  broadcastLiveDataChange("paid-pool-entitlement-reconciled");
+ }
+ return {changed,groups:groups.size};
+}
+const paidPoolProvisioningScheduler=setInterval(()=>{
+ void queuePaidPoolAutoAssignment(async()=>{
+  const records=await readJson(PAID_FILE,[]);
+  await reconcilePaidPoolAssignmentLimits(records);
+  const newest=new Map();
+  for(const r of (Array.isArray(records)?records:[])){
+   if(r.autoPoolProvisioningRequestedAt&&r.customerAccountId&&subscriptionAllowsProfiles(r))
+    newest.set(String(r.customerAccountId),r);
+  }
+  for(const record of newest.values())await provisionPaidMembershipPool(record);
+ });
+},5*60*1000);
+paidPoolProvisioningScheduler.unref?.();
+
 function managedRetailerEmailExact(account, retailer) {
   try {
     const credentials = account?.credentials
@@ -7845,9 +7963,12 @@ app.post(
             ) {
               record.orderNumber = paid[existingIndex].orderNumber || record.orderNumber;
               record.customerConfirmationSentAt = paid[existingIndex].customerConfirmationSentAt || null;
+              record.autoPoolProvisioningRequestedAt =
+                paid[existingIndex].autoPoolProvisioningRequestedAt || record.autoPoolProvisioningRequestedAt || new Date().toISOString();
               paid[existingIndex] =
                 record;
             } else {
+              record.autoPoolProvisioningRequestedAt = new Date().toISOString();
               paid.push(record);
             }
 
@@ -7856,6 +7977,8 @@ app.post(
               paid
             );
 
+            // The paid membership is durable before its independent pool job starts.
+            void queuePaidPoolAutoAssignment(()=>provisionPaidMembershipPool(record));
             if (existingIndex < 0 && record.consentRecordId) {
               await appendConsentRecord({
                 type: "checkout_payment_confirmed", accountId: record.customerAccountId,
@@ -8581,6 +8704,48 @@ app.get("/api/discord/oauth/callback", async (req, res) => {
   const safePayload = JSON.stringify(payload).replace(/</g, "\\u003c");
   res.setHeader("Cache-Control", "no-store");
   res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Discord connection</title><p id="discord-callback-message">Returning to SLABSNGRABSACO…</p><script id="discord-callback-payload" type="application/json">${safePayload}</script><script src="/discord-oauth-callback.js" defer></script>`);
+});
+
+// Walmart is request-only. This endpoint records the request for staff; it
+// never reserves or links Walmart inventory automatically.
+app.post("/api/account/walmart-profile-request",requireCustomer,async(req,res)=>{
+ try{
+  const customerId=String(req.customerAccount?.id||"");
+  if(!customerId)return res.status(401).json({error:"Sign in to request Walmart profiles."});
+  const allowance=await getCustomerProfileAllowance(customerId);
+  if(!allowance)return res.status(403).json({error:"An active membership is required."});
+  const quantity=Number(req.body?.quantity);
+  if(!Number.isSafeInteger(quantity)||quantity<1||quantity>allowance)
+   return res.status(400).json({error:"Choose between 1 and "+allowance+" Walmart profiles."});
+  const accounts=await getCustomerAccounts();
+  const account=accounts.find(a=>String(a.id)===customerId);
+  if(!account)return res.status(404).json({error:"Customer account not found."});
+  const requests=Array.isArray(account.walmartProfileRequests)?account.walmartProfileRequests:[];
+  const pending=requests.find(r=>r.status==="pending");
+  if(pending){
+   return res.json({requested:true,status:"pending",quantity:pending.quantity,alreadyRequested:true,
+    message:"Your Walmart request is already pending. Contact support to change it."});
+  }
+  const now=new Date().toISOString();
+  requests.push({id:crypto.randomUUID(),quantity,status:"pending",createdAt:now});
+  account.walmartProfileRequests=requests;
+  account.updatedAt=now;
+  await saveCustomerAccounts(accounts);
+  try{
+   await sendDiscordAdminProfileWorkflowNotification({
+    title:"WALMART PROFILE REQUEST",
+    description:"Manual Walmart assignment requested: "+quantity+" account(s). No account has been linked.",
+    customerName:account.name||account.email,
+    customerEmail:account.email,profileLabel:"Walmart request",status:"pending"
+   });
+  }catch(error){console.error("Walmart request Discord notification:",error);}
+  broadcastLiveDataChange("walmart-profile-request");
+  return res.json({requested:true,status:"pending",quantity,
+   message:"Walmart request sent to Admin. No Walmart account has been linked yet."});
+ }catch(error){
+  console.error("Walmart request error:",error);
+  return res.status(500).json({error:"Unable to submit Walmart request."});
+ }
 });
 
 app.post(
@@ -12998,198 +13163,38 @@ const PROFILE_SETUP_FIELDS = [
   "card number", "expiration month", "expiration year"
 ];
 
-// Return statuses and field names only. Checkout and retailer secrets never leave the server.
+// The only required customer setup steps: a complete saved shipping address
+// and a complete saved payment card. Managed/pool retailer accounts never
+// require customers to enter retailer logins, IMAP, or profile jig details.
+// Extra resources are recommended up to the purchased profile count, not required.
+function savedSetupReadiness(details) {
+  const addresses=Array.isArray(details?.addresses)?details.addresses:[];
+  const cards=Array.isArray(details?.paymentMethods)?details.paymentMethods:[];
+  const validAddresses=addresses.filter(a=>
+    ["firstName","lastName","address","city","state","zip","country"]
+      .every(k=>String(a?.[k]||"").trim().length>0));
+  const validCards=cards.filter(c=>
+    String(c?.cardholder||"").trim().length>0 &&
+    /^\d{12,19}$/.test(String(c?.acoCardNumber||"").replace(/\D/g,"")) &&
+    /^(0[1-9]|1[0-2])$/.test(String(c?.expMonth||"")) &&
+    /^20\d{2}$/.test(String(c?.expYear||"")));
+  return {addresses:validAddresses.length,cards:validCards.length};
+}
 async function customerSetupChecklist(account) {
-  const missing = new Set(await customerMissingInformation(account.id));
-  const tasks = [];
-  const add = (label, target, complete = !missing.has(label)) => {
-    tasks.push({ label, target, complete: Boolean(complete) });
-  };
-
-  const allowance = Math.min(50, await getCustomerProfileAllowance(account.id));
-  for (let slot = 1; slot <= allowance; slot += 1) {
-    const label = `Paid Profile ${slot}`;
-    for (const field of PROFILE_SETUP_FIELDS) add(`${label}: ${field}`, { type: "paid", slot });
-  }
-
-  const [freeAssignments, rentalAssignments] = await Promise.all([
-    getFreeAssignments(), getRentalAssignments()
-  ]);
-  for (const [assignments, type, label] of [
-    [freeAssignments, "free", "Gifted"], [rentalAssignments, "rented", "Rented"]
-  ]) {
-    let number = 0;
-    for (const assignment of assignments) {
-      if (String(assignment.customerAccountId || "") !== String(account.id) ||
-          !managedAssignmentIsLinked(assignment)) continue;
-      number += 1;
-      for (const field of PROFILE_SETUP_FIELDS) {
-        add(`${label} Profile ${number}: ${field}`, { type, number });
-      }
-    }
-  }
-
-  // New accounts should see missing shipping/card tasks even before
-  // purchasing a membership. Closing onboarding never clears these reminders.
-  const details = await customerSavedDetailsPayload(account);
-  const hasAddress = details.addresses.some(address =>
-    ["firstName", "lastName", "address", "city", "state", "zip", "country"]
-      .every(key => String(address[key] || "").trim()));
-  const hasCard = details.paymentMethods.some(card =>
-    Boolean(String(card.cardholder || "").trim()) &&
-    /^\d{12,19}$/.test(String(card.acoCardNumber || "").replace(/\D/g, "")) &&
-    /^(0[1-9]|1[0-2])$/.test(String(card.expMonth || "")) &&
-    /^\d{4}$/.test(String(card.expYear || "")));
-  add("Account: one shipping address", { type: "shipping" }, hasAddress);
-  add("Account: one payment card", { type: "payment" }, hasCard);
-
-  // IMAP is optional and is never part of required setup notifications.
-
-  return tasks;
+  const saved=await customerSavedDetailsPayload(account);
+  const count=savedSetupReadiness(saved);
+  return [
+    {label:"Add at least 1 complete shipping address",target:{type:"shipping"},complete:count.addresses>0},
+    {label:"Add at least 1 complete payment card",target:{type:"payment"},complete:count.cards>0}
+  ];
 }
-
-async function customerMissingInformation(
-  customerAccountId
-) {
-  const [
-    retailerProfiles,
-    freeAssignments,
-    rentalAssignments
-  ] = await Promise.all([
-    getRetailerProfiles(),
-    getFreeAssignments(),
-    getRentalAssignments()
-  ]);
-
-  const missing = [];
-
-  const paid =
-    retailerProfiles.filter(
-      record =>
-        String(
-          record.customerAccountId ||
-          ""
-        ) ===
-          String(
-            customerAccountId
-          )
-    );
-
-  const paidAllowance = Math.min(50, await getCustomerProfileAllowance(customerAccountId));
-  const paidBySlot = new Map(paid.map(record => [Number(record.slot), record]));
-  for (let slot = 1; slot <= paidAllowance; slot += 1) {
-    const record = paidBySlot.get(slot);
-    missing.push(...paidProfileMissingItems(record, slot));
-  }
-
-  const inspectManaged =
-    (
-      assignment,
-      type,
-      number
-    ) => {
-      if (
-        String(
-          assignment.customerAccountId ||
-          ""
-        ) !==
-          String(
-            customerAccountId
-          ) ||
-        !managedAssignmentIsLinked(
-          assignment
-        )
-      ) {
-        return;
-      }
-
-      let secrets = {};
-
-      try {
-        if (
-          assignment.customerSecrets
-        ) {
-          secrets =
-            decryptJson(
-              assignment.customerSecrets
-            ) || {};
-        }
-      } catch {
-        secrets = {};
-      }
-
-      const label =
-        type === "free"
-          ? `Gifted Profile ${number}`
-          : `Rented Profile ${number}`;
-
-      missing.push(
-        ...profileMissingFieldLabels(
-          assignment.customerProfile ||
-            {},
-          secrets,
-          label
-        )
-      );
-    };
-
-  let giftedNumber = 0;
-
-  for (
-    const assignment of
-    freeAssignments
-  ) {
-    if (
-      String(
-        assignment.customerAccountId ||
-        ""
-      ) ===
-        String(
-          customerAccountId
-        ) &&
-      managedAssignmentIsLinked(
-        assignment
-      )
-    ) {
-      giftedNumber += 1;
-      inspectManaged(
-        assignment,
-        "free",
-        giftedNumber
-      );
-    }
-  }
-
-  let rentedNumber = 0;
-
-  for (
-    const assignment of
-    rentalAssignments
-  ) {
-    if (
-      String(
-        assignment.customerAccountId ||
-        ""
-      ) ===
-        String(
-          customerAccountId
-        ) &&
-      managedAssignmentIsLinked(
-        assignment
-      )
-    ) {
-      rentedNumber += 1;
-      inspectManaged(
-        assignment,
-        "rented",
-        rentedNumber
-      );
-    }
-  }
-
-  return missing;
+async function customerMissingInformation(customerAccountId) {
+  const customer=(await getCustomerAccounts()).find(a=>
+    String(a.id)===String(customerAccountId));
+  if(!customer)return [];
+  const tasks=await customerSetupChecklist(customer);
+  return tasks.filter(task=>!task.complete).map(task=>task.label);
 }
-
 
 async function syncCustomerMissingNotification(
   customerAccountId
@@ -13339,10 +13344,14 @@ async function syncCustomerMissingNotification(
     if (notifications[i].kind === "setup_complete") notifications.splice(i, 1);
   }
 
+  const allowance=await getCustomerProfileAllowance(customerAccountId);
+  const recommended=allowance>0
+    ? `For your ${allowance} purchased profile(s), we recommend adding approximately ${allowance} complete shipping addresses and ${allowance} complete cards when available. Only one of each is required.`
+    : "For best results, save as many complete shipping addresses and cards as you can, ideally one of each per purchased profile. Only one of each is required.";
   const message =
     `Important information is missing:\n• ${missing.join(
       "\n• "
-    )}`;
+    )}\n\n${recommended}`;
 
   if (existing && existing.message === message && JSON.stringify(existing.missingItems) === JSON.stringify(missing)) {
     return { account, missing, checklist };
@@ -13856,7 +13865,7 @@ function profileAllowanceForRecord(
   ) {
     return Math.min(
       planProfiles,
-      50
+      100
     );
   }
 
@@ -14475,9 +14484,11 @@ try {
               profileType:
                 "free",
 
-              profileName:
-                membership.profileName ||
-                "FREE MEMBERSHIP",
+              profileName: assignment.autoPaidPoolAssignment
+                ? (assignment.assignmentRetailer==="target" ? "Target Membership Account" : "PKC Membership Account")
+                : (membership.profileName||"FREE MEMBERSHIP"),
+              includedWithPaidMembership: assignment.autoPaidPoolAssignment===true,
+              assignmentRetailer: assignment.assignmentRetailer||null,
 
               status:
                 assignment.activationStatus ===
@@ -20396,6 +20407,25 @@ app.post(
               account.id
           )
       );
+
+      // Only a confirmed manual Walmart assignment fulfills a pending request.
+      // Do not use this request record to assign Walmart automatically.
+      if (retailer === "walmart") {
+        try {
+          const requestAccounts=await getCustomerAccounts();
+          const customer=requestAccounts.find(item=>String(item.id)===String(customerAccountId));
+          const request=customer?.walmartProfileRequests?.find(item=>item.status==="pending");
+          if(request){
+            request.fulfilled=Math.min(request.quantity,Math.max(0,Number(request.fulfilled)||0)+quantity);
+            request.status=request.fulfilled>=request.quantity?"fulfilled":"pending";
+            request.updatedAt=new Date().toISOString();
+            await saveCustomerAccounts(requestAccounts);
+          }
+        }catch(error){
+          console.error("Walmart request reconciliation:",error);
+          // Accounts were already assigned; do not turn success into a retryable 500.
+        }
+      }
 
       return res.json({
         ok: true,
@@ -33268,14 +33298,12 @@ app.get(
                 assignment.customerAccountId,
               customerProfile:
                 assignment.customerProfile,
-              profileName:
-                type === "free"
-                  ? "Gifted Profile"
-                  : "Rented Profile",
-              type:
-                type === "free"
-                  ? "gifted"
-                  : "rented",
+              profileName: assignment.autoPaidPoolAssignment
+                ? (assignment.assignmentRetailer === "target" ? "Target Account" : "PKC Account")
+                : (type === "free" ? "Gifted Profile" : "Rented Profile"),
+              type: assignment.autoPaidPoolAssignment ? "paid" : (type === "free" ? "gifted" : "rented"),
+              managedActivation: true,
+              managedType: type,
               status,
               expiresAt:
                 assignment.expiresAt ||

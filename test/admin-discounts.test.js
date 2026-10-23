@@ -33,7 +33,7 @@ test("admin discount edit, rollback, deactivation and deletion stay synchronized
   };
   try {
     let ready = false;
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 150; i++) {
       try { await fetch(base); ready = true; break; }
       catch { await new Promise(resolve => setTimeout(resolve, 100)); }
     }

@@ -120,6 +120,17 @@ function createMacUpdater({app,execPath=process.execPath,arch=process.arch,loadF
  }
  async function autoStartup(){
   if(!app.isPackaged)return {started:false,skipped:'development'};
+  // On a failed update, retain the restored app rather than immediately
+  // retrying the same release on the rollback-created fresh launch.
+  try{
+   const [status,metadata]=await Promise.all([
+    fs.readFile(statusFile,'utf8').then(JSON.parse),fs.stat(statusFile)
+   ]);
+   if(status?.phase==='rolledback'&&Date.now()-metadata.mtimeMs<30*60*1000){
+    emit('rolledback','Previous working app restored; automatic update retry paused.');
+    return {started:false,skipped:'recent-rollback'};
+   }
+  }catch(error){if(error.code!=='ENOENT')console.error('Mac rollback check:',error.message);}
   const release=await check();
   if(release.status!=='available')return {started:false,current:true};
   // ACO Studio is owner-operated. This is invoked during native boot,

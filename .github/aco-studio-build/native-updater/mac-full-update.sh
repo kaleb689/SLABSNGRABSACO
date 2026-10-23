@@ -71,7 +71,11 @@ status installing 'Installing the complete verified app. Saved Personal and cust
 /bin/mv "$STAGE" "$TARGET"
 /usr/bin/codesign --verify --deep --strict "$TARGET" >> "$LOG" 2>&1
 log "Launching $NEXT"
-/usr/bin/open -n "$TARGET" --args "--aco-update-token=$TOKEN" >> "$LOG" 2>&1
+if [[ "${ACO_SELF_UPDATE_CI:-}" == "1" ]]; then
+  /usr/bin/open -n "$TARGET" --args "--aco-update-token=$TOKEN" "--aco-ci-self-update" >> "$LOG" 2>&1
+else
+  /usr/bin/open -n "$TARGET" --args "--aco-update-token=$TOKEN" >> "$LOG" 2>&1
+fi
 for ((i=0;i<HEALTH_WAIT;i++)); do
  if [[ -f "$WORK/healthy" && "$(cat "$WORK/healthy")" == "$NEXT" ]]; then
   INSTALLED=1

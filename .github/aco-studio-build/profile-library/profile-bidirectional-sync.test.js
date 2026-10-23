@@ -20,7 +20,16 @@ async function harness(t){
  const calls=[],changes=[];let active=true;let remoteAddress='100 Example Avenue',reject=false;
  const source=async id=>({customer:{id,name:'Sample Customer'},linked:[{customerId:id,retailer:'pokemoncenter',
   assignmentId:'assignment-1',managedAccountId:'managed-1',assignmentType:'free',remoteUpdatedAt:remoteAddress==='100 Example Avenue'?'2026-10-18T00:00:00Z':'2026-10-18T00:02:00Z',active,
-  data:fullData(remoteAddress)}]});
+  data:fullData(remoteAddress)}],
+  jigResources:{
+   addresses:[
+    {id:'address-1',label:'Primary',address:'100 Example Avenue',city:'Example',state:'FL',zip:'33324'},
+    {id:'address-2',label:'Second',address:'300 Sample Avenue',city:'Sample',state:'FL',zip:'33325'}],
+   cards:[
+    {id:'card-1',cardLabel:'First',acoCardNumber:'4242424242424242',cardholder:'Alex Example',expMonth:'08',expYear:'2031'},
+    {id:'card-2',cardLabel:'Backup',acoCardNumber:'5555555555554444',cardholder:'Alex Example',expMonth:'09',expYear:'2032'},
+    {id:'card-3',cardLabel:'Masked',maskedNumber:'•••• 1007',expMonth:'09',expYear:'2032'}]
+  }});
  const auth=async(e,scope,id)=>{
   if(e.sender.id!==111)throw Error('Not the owner window');
   if(scope==='personal')return null;
@@ -28,7 +37,7 @@ async function harness(t){
   return id;
  };
  const lib=createLibrary({profiles,authorize:auth,guard:(e)=>{if(e.sender.id!==111)throw Error('Not owner');},
-  cardVault:()=>({withSelectedForJig:(_key,_ids,fn)=>fn([])}),
+  cardVault:()=>({list:async()=>({cards:[]}),selectedForJig:async()=>[],withSelectedForJig:(_key,_ids,fn)=>fn([])}),
   getCustomerProfileSource:source,
   saveCustomerProfile:async(id,identity,payload)=>{
    calls.push({id,identity,payload});
@@ -193,3 +202,39 @@ test('local imports are never implicitly converted to website-linked records by 
 });
 
 test('explicit local-to-website linking confirms the server save before replacing the exact local mirror',async t=>{const h=await harness(t);await h.profiles.importRows({scope:'aco',customerId:'customer-a',retailer:'pokemoncenter',rows:[fullData('700 Local Street')]});await h.lib.syncCustomer(sender,owner);let rows=(await h.lib.list(sender,owner)).profiles,local=rows.find(x=>x.localOnly),mirror=rows.find(x=>x.sourceLinked);const request={...owner,profileId:local.id,revision:local.revision,mirrorId:mirror.id,mirrorRevision:mirror.revision,confirmed:true};h.setReject(true);await assert.rejects(h.lib.linkLocal(sender,request),/Website conflict/);assert.equal((await h.lib.list(sender,owner)).profiles.length,2);h.setReject(false);await h.lib.linkLocal(sender,request);rows=(await h.lib.list(sender,owner)).profiles;assert.equal(rows.length,1);assert.equal(rows[0].id,local.id);assert.equal(rows[0].sourceLinked,true);assert.equal(h.calls.at(-1).payload.fields['shipping.address1'],'700 Local Street');await assert.rejects(h.lib.linkLocal(sender,{...request,scope:'personal',customerId:null}),/Confirm linking/);});
+
+test('Customer Jig shows all account addresses and cards, without displaying full PAN values',async t=>{
+ const h=await harness(t);await h.lib.syncCustomer(sender,owner);
+ const assets=await h.lib.jigAssets(sender,owner);
+ assert.equal(assets.customerId,'customer-a');
+ assert.equal(assets.addresses.length,2);
+ assert.equal(assets.cards.length,4); // Three website cards plus profile's currently linked card
+ assert.deepEqual(assets.addresses.map(x=>x.id),['website:address-1','website:address-2']);
+ assert.ok(assets.cards.some(x=>x.id==='website:card-2'&&x.last4==='4444'));
+ assert.ok(!JSON.stringify(assets).includes('5555555555554444'));
+ await assert.rejects(h.lib.jigAssets(intruder,owner),/owner/);
+ await assert.rejects(h.lib.jigAssets(sender,{scope:'aco',customerId:'customer-b'}),/mismatch/);
+});
+test('Linked customer Jig uses selected saved address and card, without crossing customers',async t=>{
+ const h=await harness(t);await h.lib.syncCustomer(sender,owner);
+ const row=(await h.lib.list(sender,owner)).profiles[0];
+ const preview=await h.lib.previewLinkedJig(sender,{...owner,profileId:row.id,revision:row.revision,
+  addressSourceId:'website:address-2',cardSourceId:'website:card-2',ruleIds:['avenue_short'],combine:false});
+ assert.ok(preview.candidates.length>0);
+ assert.match(preview.candidates[0].address.address1,/300 Sample/);
+ const confirmed=await h.lib.publishLinkedJig(sender,{...owner,profileId:row.id,expectedRevision:row.revision,
+  address:preview.candidates[0].address,cardSourceId:'website:card-2',confirmed:true});
+ assert.equal(confirmed.saved,true);
+ assert.equal(h.calls[0].payload.card.number,'5555555555554444');
+ const saved=(await h.lib.list(sender,owner)).profiles[0];
+ assert.equal(Core.payment(saved.data).number,'5555555555554444');
+});
+test('Masked-only website cards never overwrite an existing linked profile payment',async t=>{
+ const h=await harness(t);await h.lib.syncCustomer(sender,owner);
+ const row=(await h.lib.list(sender,owner)).profiles[0];
+ await assert.rejects(h.lib.publishLinkedJig(sender,{...owner,profileId:row.id,expectedRevision:row.revision,
+  address:{address1:'700 Test Street',city:'Sample',state:'FL',zip:'33325'},
+  cardSourceId:'website:card-3',confirmed:true}),/masked details/);
+ assert.equal(h.calls.length,0);
+ assert.equal(Core.payment((await h.lib.list(sender,owner)).profiles[0].data).number,'4242424242424242');
+});

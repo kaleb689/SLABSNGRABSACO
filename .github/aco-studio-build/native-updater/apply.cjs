@@ -54,7 +54,7 @@ edit('main.js',[
  }
  async function openAfterNativeStartup(){
   let splash=null;
-  if(['darwin','win32'].includes(process.platform)&&!process.argv.includes('--aco-studio-ci-smoke')){
+  if(['darwin','win32'].includes(process.platform)&&!process.argv.includes('--aco-studio-ci-smoke')&&!process.argv.includes('--aco-ci-self-update')&&!process.argv.some(arg=>arg.startsWith('--aco-update-token='))){
    splash=new BrowserWindow({width:960,height:600,frame:false,resizable:false,skipTaskbar:true,center:true,backgroundColor:'#060918',show:true,
     webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,devTools:false}});
    splash.loadFile(path.join(__dirname,'splash.html')).catch(()=>{});

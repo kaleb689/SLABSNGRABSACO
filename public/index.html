@@ -737,7 +737,7 @@
   <aside class="tier-planning-notice" aria-label="Plan your accounts before choosing a tier">
     <strong>Plan your retailer accounts before choosing a tier</strong>
     <p>
-      Target, Walmart and Pokémon Center accounts are supplied by SLABSNGRABSACO.
+      Target and Pokémon Center accounts are supplied from the available pool. Walmart accounts are provided on request.
       You do not need to provide those retailer logins. Costco and Sam’s Club accounts are optional.
     </p>
     <p>
@@ -1071,7 +1071,7 @@
       </strong>
 
       <p>
-        SLABSNGRABSACO supplies Target, Walmart and Pokémon Center retailer accounts. Optional Costco, Sam's Club and IMAP setup are explained here.
+        SLABSNGRABSACO supplies Target and Pokémon Center retailer accounts. Walmart accounts are request-only; optional personal profiles and IMAP setup are explained here.
       </p>
 
     </div>
@@ -1090,13 +1090,13 @@
       <div class="guide-content">
         <h3>Match your account setup to your tier</h3>
         <p>
-          Your tier determines your ACO profiles. We supply Target, Walmart and Pokémon Center retailer accounts. Your own Costco and Sam's Club logins are optional.
+          Your tier determines your included Target and Pokémon Center accounts. Walmart requires a separate request. Your own retailer profiles are optional.
         </p>
         <div class="guide-step">
           <span class="guide-step-number">1</span>
           <div>
             <h4>Retailer accounts supplied</h4>
-            <p>SLABSNGRABSACO supplies Target, Walmart and Pokémon Center accounts. Costco and Sam's Club are optional additions.</p>
+            <p>SLABSNGRABSACO supplies Target and Pokémon Center accounts. Walmart is request-only; personal retailer profiles are optional.</p>
           </div>
         </div>
 
@@ -1288,7 +1288,7 @@
         </h3>
 
         <p>
-          We supply Target, Walmart and Pokémon Center accounts. If you have Costco or Sam's Club logins, add them optionally under Saved Checkout Details.
+          We supply Target and Pokémon Center accounts. Walmart can be requested; personal retailer accounts are optional under Saved Checkout Details.
         </p>
 
 
@@ -1398,7 +1398,7 @@
             </h4>
 
             <p>
-              Target, Walmart and Pokémon Center accounts are provided by us.
+              Target and Pokémon Center accounts are provided by us. Walmart is available by request.
               Only add a login if you choose to run your own Costco or
               Sam’s Club account. Use Saved Checkout Details to add another.
             </p>
@@ -1451,7 +1451,7 @@
           <p>
             Your membership tier determines how many profiles can run.
             Add valid shipping addresses and payment cards as needed;
-            SLABSNGRABSACO provides the Target, Walmart and PKC accounts.
+            SLABSNGRABSACO provides Target and PKC accounts. Walmart is provided only when requested.
           </p>
 
         </div>
@@ -1953,7 +1953,7 @@
             </h4>
 
             <p>
-              Target, Walmart and Pokémon Center logins are supplied by staff. Costco and Sam's Club accounts can be added separately under Saved Checkout Details.
+              Target and Pokémon Center logins are supplied by staff; Walmart is request-only. Your own optional retailer accounts can be added under My Profile.
             </p>
 
             <p>
@@ -2565,7 +2565,7 @@
         </p>
 
         <p>
-          Only provide Costco or Sam's Club logins if you choose to use them. Target, Walmart and Pokémon Center accounts are provided by SLABSNGRABSACO.
+          You can add your own retailer logins if you choose. Target and Pokémon Center accounts are provided by SLABSNGRABSACO; Walmart is request-only.
         </p>
 
       </div>
@@ -3864,7 +3864,7 @@
             </h3>
 
             <p class="account-muted">
-              Your Target, Walmart and Pokémon Center accounts are provided by SLABSNGRABSACO. Add shipping and payment cards, and only add Costco or Sam's Club credentials if you have them.
+              Target and Pokémon Center accounts are supplied from available inventory with your paid membership. Walmart accounts are request-only. You can optionally create your own profiles in My Profile.
             </p>
 
           </div>
@@ -3914,6 +3914,15 @@
         </div>
 
 
+        <form id="walmart-profile-request-form" class="guide-alert info compact" style="margin-bottom:16px">
+          <strong>Walmart accounts — available by request only</strong>
+          <p>Target and Pokémon Center accounts are added from the available pool for your membership. Walmart is not linked automatically.</p>
+          <label>Walmart profiles to request
+            <input type="number" name="quantity" min="1" max="100" value="1" required style="max-width:110px" />
+          </label>
+          <button type="submit" class="secondary">Request Walmart profiles</button>
+          <p id="walmart-profile-request-message" class="form-message" role="status"></p>
+        </form>
         <div
           id="retailer-profiles"
           class="retailer-profiles"
@@ -4198,7 +4207,7 @@
               <p data-optional-message class="form-message" role="status"></p>
             </div>
           </details>
-          <section class="saved-detail-panel imap-detail-panel">
+          <section class="saved-detail-panel imap-detail-panel" hidden>
             <div class="saved-detail-head"><div><span class="eyebrow">EMAIL CONNECTION</span><h4>EMAIL (APP PASSWORD)</h4></div><span id="saved-imap-count" class="saved-detail-count">0</span></div>
             <p class="account-muted">Use the app password from your email provider, not your regular email password. See Chapter 2 in the guide.</p>
             <form id="edit-order-imap-form" class="saved-detail-form" hidden>
@@ -4988,8 +4997,14 @@
     <span id="setup-checklist-progress-fill"></span>
   </div>
   <strong id="setup-checklist-percent" class="setup-checklist-percent">0% complete</strong>
+  <p class="account-muted">These are the only two required setup items. IMAP and personal retailer profiles are optional.</p>
   <div id="setup-checklist-tasks" class="setup-checklist-tasks"></div>
 </details>
+<section id="profile-resource-guidance" class="guide-alert info compact" hidden aria-live="polite">
+  <strong>Recommended shipping addresses and cards</strong>
+  <p id="profile-resource-guidance-message">For best results, save about one shipping address and one payment card for each purchased profile, if available. Only one of each is required.</p>
+  <p class="account-muted" id="profile-resource-guidance-counts"></p>
+</section>
 
 <!-- =====================================================
      CUSTOMER ACTION NEEDED POPUP

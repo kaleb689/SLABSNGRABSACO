@@ -19,7 +19,7 @@ vm.runInContext(section("function isPublicSuccessProduct", "const verifiedPublic
  section("function normalizeSuccessRetailer", "function safeSuccessImageUrl") +
  section("function discordCheckoutFromMessage", "const DISCORD_HIT_MIRROR_FILE") +
  section("function discordCheckoutCandidateEligible", "let discordSuccessScanQueued") +
- section("function preferPreviouslyAssignedManagedAccounts", "/* -------------------------------------------------------"), context);
+ section("function preferPreviouslyAssignedManagedAccounts", "// Membership-funded pool assignment"), context);
 const message = fields => ({id:"123",timestamp:"2026-09-30T16:00:00Z", embeds:[{title:"Successful Checkout!",fields}]});
 const field = (name,value) => ({name,value:String(value)});
 test("Stellara numbered products pair quantities and prices without exposing other fields", () => {

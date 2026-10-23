@@ -193,3 +193,23 @@ test('Owner batch operations refuse connected website profile deletion and prese
  await assert.rejects(h.lib.bulkManage(event,{...h.a,operation:'delete',retailer:'pokemoncenter',fromBank:'working',profileIds:[row.id],revisions:[row.revision],confirmed:true}),/Linked website/);
  assert.equal((await h.lib.list(event,h.a)).profiles.length,1);
 });
+
+test('Separate profile code is editable, preserved and included in owner JSON export without card verifier',async t=>{
+ const h=await library(t),source=complete('target','separate-code@example.test');
+ source.profileSecurityCode='WAREHOUSE-ACCESS-73';
+ source.cc_cvv='123';
+ await commit(h,await preview(h,[source]));
+ let row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'WAREHOUSE-ACCESS-73');
+ const updated=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'PICKUP-CODE-44'});
+ assert.equal(updated.updated,true);
+ row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'PICKUP-CODE-44');
+ await h.lib.exportArchive(event,{...h.p,retailer:'target',profileIds:[row.id],customerName:'Owner'});
+ const archive=JSON.parse(h.writes.at(-1)[1]);
+ assert.equal(archive.profiles[0].profileSecurityCode,'PICKUP-CODE-44');
+ assert.equal(archive.profiles[0].data.cc_number,card.number);
+ assert.equal(archive.profiles[0].data.cc_cvv,undefined);
+ assert.equal(archive.profiles[0].data.profileSecurityCode,'PICKUP-CODE-44');
+ await assert.rejects(h.lib.exportArchive(event,{...h.a,retailer:'target',profileIds:[row.id]}),/belong/);
+});

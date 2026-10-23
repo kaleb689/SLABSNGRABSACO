@@ -611,14 +611,14 @@ function pricingCardsHtml() {
 
           <p class="plan-description">
             ${tierNumber === 7
-              ? "Automatically have 50 profiles loaded with purchase for Walmart, Target and PKC."
+              ? "Automatically have 50 profiles assigned from available Target and PKC inventory. Walmart accounts are request-only."
               : tierNumber === 8
-                ? "Automatically have 100 profiles loaded with purchase for Walmart, Target and PKC."
+                ? "Automatically have 100 profiles assigned from available Target and PKC inventory. Walmart accounts are request-only."
                 : `${plan.profiles} ${plan.profiles === 1 ? "profile" : "profiles"} at each supported retailer.`}
           </p>
 
           <p class="plan-login-note">
-            Target, Walmart and PKC retailer logins are provided. Add shipping and cards; Costco and Sam's Club logins are optional.
+            Target and PKC accounts are included from available inventory. Walmart is request-only; personal profiles and IMAP are optional.
           </p>
 
           <ul class="features">
@@ -3965,10 +3965,7 @@ registerForm?.addEventListener(
       );
 
       go("my-profile");
-      window.setTimeout(
-        () => openAccountCheckoutOnboarding("address"),
-        150
-      );
+      // Customers use staff-provided retailer accounts; never force profile/IMAP setup at signup.
 
     } catch (error) {
       showAccountMessage(
@@ -6237,6 +6234,11 @@ function updateSavedPosition(type) {
   });
 }
 
+function updateOwnProfileImapVisibility() {
+  const ownProfiles = Array.isArray(state.retailerProfiles) && state.retailerProfiles.length > 0;
+  const section = document.querySelector(".imap-detail-panel");
+  if (section) section.hidden = !ownProfiles;
+}
 function renderSavedImapManager(preferredId = "") {
   const select = document.getElementById("saved-imap-select");
   if (!select) return;
@@ -6352,6 +6354,7 @@ async function loadSavedDetails() {
       addresses: Array.isArray(data.addresses) ? data.addresses : [],
       paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : []
     };
+    renderProfileResourceGuidance();
 
     renderSavedDetailsManager();
     await loadSavedImap();
@@ -8985,15 +8988,11 @@ function managedMembershipCardHtml(
       ? "rented"
       : "free";
 
-  const title =
-    type === "rented"
-      ? "RENTED PROFILE"
-      : "GIFTED PROFILE";
-
-  const letter =
-    type === "rented"
-      ? "R"
-      : "F";
+  const included=membership.includedWithPaidMembership===true;
+  const title=included
+    ? (membership.assignmentRetailer==="target" ? "INCLUDED TARGET ACCOUNT" : "INCLUDED PKC ACCOUNT")
+    : (type==="rented" ? "RENTED PROFILE" : "GIFTED PROFILE");
+  const letter=included ? "A" : (type==="rented" ? "R" : "F");
 
   const profile =
     membership.customerProfile &&
@@ -10315,6 +10314,25 @@ function bindRetailerPasswordToggles() {
 }
 
 
+document.getElementById("walmart-profile-request-form")?.addEventListener("submit",async event=>{
+ event.preventDefault();
+ const form=event.currentTarget,button=form.querySelector('button[type="submit"]');
+ const message=document.getElementById("walmart-profile-request-message");
+ const quantity=Number(form.elements.quantity.value);
+ if(!Number.isSafeInteger(quantity)||quantity<1||quantity>state.retailerAllowance){
+  setMessage(message,"Choose a quantity within your current membership allowance.","error");return;
+ }
+ try{
+  setButtonBusy(button,true,"Submitting…");
+  const response=await fetch("/api/account/walmart-profile-request",{
+   method:"POST",credentials:"same-origin",
+   headers:{"Content-Type":"application/json"},body:JSON.stringify({quantity})});
+  const data=await readJson(response);
+  if(!response.ok)throw Error(data.error||"Could not submit Walmart request.");
+  setMessage(message,data.message||"Request submitted; Walmart is not linked automatically.","success");
+ }catch(error){setMessage(message,error.message,"error");}
+ finally{setButtonBusy(button,false);}
+});
 function bindRetailerProfileForms() {
   document
     .querySelectorAll(
@@ -10680,25 +10698,20 @@ const specialCards = [
         {}
       );
 
-    if (
-      readiness?.ready !==
-        true
-    ) {
-      missingPaidProfileCount +=
-        1;
+    // Unused paid-tier slots are optional, not missing required setup.
+    if (savedProfile && readiness?.ready !== true) {
+      missingPaidProfileCount += 1;
     }
   }
 
 
+  const includedManagedCards = state.freeMemberships
+    .filter(membership=>membership.includedWithPaidMembership===true)
+    .map(managedMembershipCardHtml).filter(Boolean);
   const freeManagedCards =
     state.freeMemberships
-      .map(
-        membership =>
-          managedMembershipCardHtml(
-            membership
-          )
-      )
-      .filter(Boolean);
+      .filter(membership=>membership.includedWithPaidMembership!==true)
+      .map(managedMembershipCardHtml).filter(Boolean);
 
   const rentedManagedCards =
     state.rentedMemberships
@@ -10716,16 +10729,15 @@ container.innerHTML = `
       ? `
           <details
             class="profile-group-dropdown"
-            open
           >
             <summary>
               <div>
                 <span class="eyebrow">
-                  PAID ACO ACCESS
+                  OPTIONAL PERSONAL PROFILES
                 </span>
 
                 <strong>
-                  Paid Profiles
+                  Add / Edit Your Own Retailer Profiles
                 </strong>
 
                 <span
@@ -10742,7 +10754,7 @@ container.innerHTML = `
                             ? "PROFILE"
                             : "PROFILES"
                         } MISSING INFORMATION`
-                      : "ALL PAID PROFILES COMPLETE"
+                      : "OWN PROFILES OPTIONAL — NO SETUP REQUIRED"
                   }
                 </span>
               </div>
@@ -10750,10 +10762,10 @@ container.innerHTML = `
               <span
                 class="profile-group-open"
                 data-profile-group-label
-                data-show-text="SHOW ALL PAID PROFILES"
-                data-hide-text="HIDE ALL PAID PROFILES"
+                data-show-text="SHOW OPTIONAL OWN PROFILES"
+                data-hide-text="HIDE OPTIONAL OWN PROFILES"
               >
-                SHOW ALL PAID PROFILES
+                SHOW OPTIONAL OWN PROFILES
               </span>
             </summary>
 
@@ -10772,6 +10784,11 @@ container.innerHTML = `
       : ""
   }
 
+  ${includedManagedCards.length ? `<details class="profile-group-dropdown" open>
+      <summary><strong>Included Target &amp; PKC Accounts</strong>
+      <span class="profile-group-open">VIEW INCLUDED ACCOUNTS</span></summary>
+      <div class="profile-group-dropdown-body">${includedManagedCards.join("")}</div>
+    </details>` : ""}
   ${
     specialCards.length
       ? `
@@ -10977,6 +10994,7 @@ state.retailerProfilesLoaded =
           data.allowance
         ) || 0
       );
+    renderProfileResourceGuidance();
 
     state.retailerProfiles =
   Array.isArray(
@@ -10984,6 +11002,7 @@ state.retailerProfilesLoaded =
   )
     ? data.profiles
     : [];
+updateOwnProfileImapVisibility();
 
 state.specialProfiles =
   Array.isArray(
@@ -11948,6 +11967,7 @@ async function saveRetailerProfile(
           savedProfile
         );
       }
+      updateOwnProfileImapVisibility();
     }
 
     state.retailerAllowance =
@@ -14788,24 +14808,10 @@ await loadManagedAvailabilityCustomer();
 
 await loadSavedDetails();
 
-if (
-  state.customer &&
-  (!state.customer.checkoutOnboardingComplete || !state.customer.imapOnboardingCompletedAt) &&
-  !ANY_ADMIN_PREVIEW_MODE && !background && !accountOnboardingWasDismissed()
-) {
-  const hasAddress =
-    (state.savedDetails?.addresses || []).length > 0;
-  const hasCard =
-    (state.savedDetails?.paymentMethods || []).length > 0;
+// Loading a purchased membership must never show shipping, card, or IMAP setup.
+// Members who create their own retailer profiles can manage IMAP from My Profile.
+setAccountOnboardingVisibility("");
 
-  if (!hasAddress) {
-    openAccountCheckoutOnboarding("address");
-  } else if (!hasCard) {
-    openAccountCheckoutOnboarding("card");
-  } else {
-    openAccountCheckoutOnboarding("imap");
-  }
-}
 
 renderOrders(
   state.orders
@@ -15146,6 +15152,14 @@ async function openSetupTask(task) {
   const target = task?.target;
   if (!target) return;
   switchAccountTab(target.type === "order" ? "orders" : "edit-profile");
+  if (target.type === "imap") {
+    const section = document.querySelector(".imap-detail-panel");
+    if (section) section.hidden = false;
+    const add = document.getElementById("add-saved-imap");
+    add?.scrollIntoView({ behavior: "smooth", block: "center" });
+    add?.focus({ preventScroll: true });
+    return;
+  }
   if (target.type === "order") {
     const select = document.getElementById("edit-order-select");
     if (select) {
@@ -15196,6 +15210,35 @@ async function openSetupTask(task) {
   control?.focus({ preventScroll: true });
 }
 
+function renderProfileResourceGuidance() {
+ const panel=document.getElementById("profile-resource-guidance");
+ if(!panel)return;
+ const profileVisible=!document.body.classList.contains("app-dashboard")||
+   document.body.dataset.appView==="profile";
+ const active=Boolean(document.getElementById("my-profile")?.classList.contains("active"));
+ panel.hidden=!state.customer||ADMIN_CUSTOMER_PREVIEW_MODE||!profileVisible||!active;
+ if(panel.hidden)return;
+ const targets=Math.max(0,Number(state.retailerAllowance)||0);
+ const addressCount=(state.savedDetails?.addresses||[]).filter(a=>
+  ["firstName","lastName","address","city","state","zip","country"]
+    .every(key=>String(a?.[key]||"").trim())).length;
+ const cardCount=(state.savedDetails?.paymentMethods||[]).filter(c=>
+  Boolean(String(c?.cardholder||"").trim()) &&
+  /^\d{12,19}$/.test(String(c?.acoCardNumber||"").replace(/\D/g,"")) &&
+  /^(0[1-9]|1[0-2])$/.test(String(c?.expMonth||"")) &&
+  /^20\d{2}$/.test(String(c?.expYear||""))).length;
+ const advice=document.getElementById("profile-resource-guidance-message");
+ const counts=document.getElementById("profile-resource-guidance-counts");
+ if(advice)advice.textContent=targets>0
+  ? "For your "+targets+" membership profile"+(targets===1?"":"s")+
+    ", we recommend saving about "+targets+" complete shipping address"+(targets===1?"":"es")+
+    " and "+targets+" complete payment card"+(targets===1?"":"s")+
+    " when available. This improves profile distribution. Only one of each is required."
+  : "For best results, save as many complete addresses and cards as you can—ideally one of each for every profile you purchase. Only one of each is required.";
+ if(counts)counts.textContent=targets>0
+  ? addressCount+" of "+targets+" recommended addresses · "+cardCount+" of "+targets+" recommended cards saved"
+  : addressCount+" complete addresses · "+cardCount+" complete cards saved";
+}
 function renderSetupChecklist() {
   const panel = document.getElementById("setup-checklist-panel");
   if (!panel) return;
@@ -15207,6 +15250,7 @@ function renderSetupChecklist() {
   const incomplete = tasks.some(item => !item.complete);
   const appProfileVisible = !document.body.classList.contains("app-dashboard") || document.body.dataset.appView === "profile";
   panel.hidden = !state.customer || !incomplete || !appProfileVisible || !document.getElementById("my-profile")?.classList.contains("active");
+  renderProfileResourceGuidance();
   if (panel.hidden) return;
   const complete = tasks.filter(item => item.complete).length;
   const percent = Math.round(complete / tasks.length * 100);
