@@ -3965,10 +3965,7 @@ registerForm?.addEventListener(
       );
 
       go("my-profile");
-      window.setTimeout(
-        () => openAccountCheckoutOnboarding("address"),
-        150
-      );
+      // Customers use staff-provided retailer accounts; never force profile/IMAP setup at signup.
 
     } catch (error) {
       showAccountMessage(
@@ -6237,6 +6234,11 @@ function updateSavedPosition(type) {
   });
 }
 
+function updateOwnProfileImapVisibility() {
+  const ownProfiles = Array.isArray(state.retailerProfiles) && state.retailerProfiles.length > 0;
+  const section = document.querySelector(".imap-detail-panel");
+  if (section) section.hidden = !ownProfiles;
+}
 function renderSavedImapManager(preferredId = "") {
   const select = document.getElementById("saved-imap-select");
   if (!select) return;
@@ -10984,6 +10986,7 @@ state.retailerProfilesLoaded =
   )
     ? data.profiles
     : [];
+updateOwnProfileImapVisibility();
 
 state.specialProfiles =
   Array.isArray(
@@ -11948,6 +11951,7 @@ async function saveRetailerProfile(
           savedProfile
         );
       }
+      updateOwnProfileImapVisibility();
     }
 
     state.retailerAllowance =
@@ -14788,24 +14792,10 @@ await loadManagedAvailabilityCustomer();
 
 await loadSavedDetails();
 
-if (
-  state.customer &&
-  (!state.customer.checkoutOnboardingComplete || !state.customer.imapOnboardingCompletedAt) &&
-  !ANY_ADMIN_PREVIEW_MODE && !background && !accountOnboardingWasDismissed()
-) {
-  const hasAddress =
-    (state.savedDetails?.addresses || []).length > 0;
-  const hasCard =
-    (state.savedDetails?.paymentMethods || []).length > 0;
+// Loading a purchased membership must never show shipping, card, or IMAP setup.
+// Members who create their own retailer profiles can manage IMAP from My Profile.
+setAccountOnboardingVisibility("");
 
-  if (!hasAddress) {
-    openAccountCheckoutOnboarding("address");
-  } else if (!hasCard) {
-    openAccountCheckoutOnboarding("card");
-  } else {
-    openAccountCheckoutOnboarding("imap");
-  }
-}
 
 renderOrders(
   state.orders
@@ -15146,6 +15136,14 @@ async function openSetupTask(task) {
   const target = task?.target;
   if (!target) return;
   switchAccountTab(target.type === "order" ? "orders" : "edit-profile");
+  if (target.type === "imap") {
+    const section = document.querySelector(".imap-detail-panel");
+    if (section) section.hidden = false;
+    const add = document.getElementById("add-saved-imap");
+    add?.scrollIntoView({ behavior: "smooth", block: "center" });
+    add?.focus({ preventScroll: true });
+    return;
+  }
   if (target.type === "order") {
     const select = document.getElementById("edit-order-select");
     if (select) {
@@ -15444,7 +15442,9 @@ async function loadCustomerNotifications(
     state.customerNotifications =
       notifications;
 
-    state.customerChecklist = Array.isArray(data.checklist) ? data.checklist : [];
+    state.customerChecklist = state.retailerProfiles?.length
+      ? (Array.isArray(data.checklist) ? data.checklist : [])
+      : [];
     renderSetupChecklist();
 
     applyMissingInformationMarkers();
