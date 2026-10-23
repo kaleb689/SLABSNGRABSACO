@@ -24,6 +24,35 @@ function exportRows(rows,r,customerName='Personal'){if(!rows.length)throw Error(
  const out=model.exportTemplates(r==='costco'||r==='sams'?'walmart':r,customerName,profiles,null,{localOwnerCards:profiles.map(x=>({...x.card,expiration:x.card.month+'/'+x.card.year.slice(-2),cvv:x.card.cvv||''}))});
  out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(format(r)==='shikari'?'.csv':'.json');return out;
 }
+// Independent profile access codes are kept apart from all card verification fields.
+// Export is explicitly initiated from the authenticated desktop owner/customer profile vault.
+// The original retailer export templates remain untouched.
+const VERIFIER_KEYS=new Set(['cvv','cvv2','cvc','cvc2','cid','csc','cc_cvv','securitycode','security_code','cardverificationvalue']);
+function archiveSafe(value){
+ if(Array.isArray(value))return value.map(archiveSafe);
+ if(!value||typeof value!=='object')return value;
+ const out={};
+ for(const [key,entry] of Object.entries(value)){
+  if(['__proto__','constructor','prototype'].includes(key))continue;
+  if(VERIFIER_KEYS.has(key.toLowerCase()))continue;
+  // The legacy custom_security_code was previously used as a CVV alias.
+  // Do not leak a card verification value via an ambiguous old field.
+  if(['custom_security_code','customsecuritycode','accountsecuritycode'].includes(key.toLowerCase()))continue;
+  out[key]=archiveSafe(entry);
+ }
+ return out;
+}
+function exportArchiveRows(rows,r,owner='Personal'){
+ retailer(r);
+ if(!rows.length)throw Error('Select profiles to export.');
+ const records=rows.map(row=>({
+  retailer:row.retailer,profileId:row.id,label:row.label,email:row.email,
+  profileSecurityCode:clean(row.data?.profileSecurityCode||''),
+  data:archiveSafe(row.data)
+ }));
+ const name=clean(owner).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' full profiles.json';
+ return {name,body:JSON.stringify({version:1,retailer:r,profiles:records},null,2)};
+}
 const FL_PHONE_RULE='phone_florida_random';
 const FL_AREA_CODES=['239','305','321','324','352','386','407','448','561','645','656','689','727','728','754','772','786','813','850','863','904','941','954'];
 function floridaPhone(seed,index=0){
@@ -85,5 +114,5 @@ function jig(data,r,index,rules=defaultRules(r)){
  }
  return out;
 }
-module.exports={values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
+module.exports={exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
 
