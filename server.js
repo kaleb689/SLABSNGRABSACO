@@ -13163,43 +13163,37 @@ const PROFILE_SETUP_FIELDS = [
   "card number", "expiration month", "expiration year"
 ];
 
-// Return statuses and field names only. Checkout and retailer secrets never leave the server.
-// Staff-provided Target / PKC membership slots never require customer setup.
-// Only a customer who explicitly saved their own retailer profiles receives
-// profile or IMAP checklist items. Existing own-profile data is not deleted.
+// The only required customer setup steps: a complete saved shipping address
+// and a complete saved payment card. Managed/pool retailer accounts never
+// require customers to enter retailer logins, IMAP, or profile jig details.
+// Extra resources are recommended up to the purchased profile count, not required.
+function savedSetupReadiness(details) {
+  const addresses=Array.isArray(details?.addresses)?details.addresses:[];
+  const cards=Array.isArray(details?.paymentMethods)?details.paymentMethods:[];
+  const validAddresses=addresses.filter(a=>
+    ["firstName","lastName","address","city","state","zip","country"]
+      .every(k=>String(a?.[k]||"").trim().length>0));
+  const validCards=cards.filter(c=>
+    String(c?.cardholder||"").trim().length>0 &&
+    /^\d{12,19}$/.test(String(c?.acoCardNumber||"").replace(/\D/g,"")) &&
+    /^(0[1-9]|1[0-2])$/.test(String(c?.expMonth||"")) &&
+    /^20\d{2}$/.test(String(c?.expYear||"")));
+  return {addresses:validAddresses.length,cards:validCards.length};
+}
 async function customerSetupChecklist(account) {
-  const owned=(await getRetailerProfiles()).filter(record=>
-    String(record.customerAccountId||"")===String(account.id) &&
-    Number.isInteger(Number(record.slot)) && Number(record.slot)>0);
-  if (!owned.length) return [];
-  const missing=new Set(await customerMissingInformation(account.id));
-  const tasks=[];
-  const add=(label,target)=>tasks.push({label,target,complete:!missing.has(label)});
-  for (const record of owned.sort((a,b)=>Number(a.slot)-Number(b.slot))) {
-    const slot=Number(record.slot),label="Paid Profile "+slot;
-    for (const field of PROFILE_SETUP_FIELDS)
-      add(label+": "+field,{type:"paid",slot});
-  }
-  add("Own profiles: IMAP email",{type:"imap"});
-  add("Own profiles: IMAP app password",{type:"imap"});
-  return tasks;
+  const saved=await customerSavedDetailsPayload(account);
+  const count=savedSetupReadiness(saved);
+  return [
+    {label:"Add at least 1 complete shipping address",target:{type:"shipping"},complete:count.addresses>0},
+    {label:"Add at least 1 complete payment card",target:{type:"payment"},complete:count.cards>0}
+  ];
 }
 async function customerMissingInformation(customerAccountId) {
-  const [profiles,accounts]=await Promise.all([getRetailerProfiles(),getCustomerAccounts()]);
-  const owned=profiles.filter(record=>
-    String(record.customerAccountId||"")===String(customerAccountId) &&
-    Number.isInteger(Number(record.slot)) && Number(record.slot)>0);
-  if (!owned.length) return [];
-  const missing=[];
-  for (const record of owned)
-    missing.push(...paidProfileMissingItems(record,Number(record.slot)));
-  const owner=accounts.find(a=>String(a.id)===String(customerAccountId));
-  const imap=owner?savedImapEntries(owner):[];
-  const hasEmail=imap.some(item=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(item.email||"")));
-  const hasPassword=imap.some(item=>Boolean(String(item.password||"").trim()));
-  if(!hasEmail)missing.push("Own profiles: IMAP email");
-  if(!hasPassword)missing.push("Own profiles: IMAP app password");
-  return missing;
+  const customer=(await getCustomerAccounts()).find(a=>
+    String(a.id)===String(customerAccountId));
+  if(!customer)return [];
+  const tasks=await customerSetupChecklist(customer);
+  return tasks.filter(task=>!task.complete).map(task=>task.label);
 }
 
 async function syncCustomerMissingNotification(
@@ -13350,10 +13344,14 @@ async function syncCustomerMissingNotification(
     if (notifications[i].kind === "setup_complete") notifications.splice(i, 1);
   }
 
+  const allowance=await getCustomerProfileAllowance(customerAccountId);
+  const recommended=allowance>0
+    ? `For your ${allowance} purchased profile(s), we recommend adding approximately ${allowance} complete shipping addresses and ${allowance} complete cards when available. Only one of each is required.`
+    : "For best results, save as many complete shipping addresses and cards as you can, ideally one of each per purchased profile. Only one of each is required.";
   const message =
     `Important information is missing:\n• ${missing.join(
       "\n• "
-    )}`;
+    )}\n\n${recommended}`;
 
   if (existing && existing.message === message && JSON.stringify(existing.missingItems) === JSON.stringify(missing)) {
     return { account, missing, checklist };
