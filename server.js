@@ -8669,6 +8669,48 @@ app.get("/api/discord/oauth/callback", async (req, res) => {
   res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Discord connection</title><p id="discord-callback-message">Returning to SLABSNGRABSACO…</p><script id="discord-callback-payload" type="application/json">${safePayload}</script><script src="/discord-oauth-callback.js" defer></script>`);
 });
 
+// Walmart is request-only. This endpoint records the request for staff; it
+// never reserves or links Walmart inventory automatically.
+app.post("/api/account/walmart-profile-request",requireCustomer,async(req,res)=>{
+ try{
+  const customerId=String(req.customerAccount?.id||"");
+  if(!customerId)return res.status(401).json({error:"Sign in to request Walmart profiles."});
+  const allowance=await getCustomerProfileAllowance(customerId);
+  if(!allowance)return res.status(403).json({error:"An active membership is required."});
+  const quantity=Number(req.body?.quantity);
+  if(!Number.isSafeInteger(quantity)||quantity<1||quantity>allowance)
+   return res.status(400).json({error:"Choose between 1 and "+allowance+" Walmart profiles."});
+  const accounts=await getCustomerAccounts();
+  const account=accounts.find(a=>String(a.id)===customerId);
+  if(!account)return res.status(404).json({error:"Customer account not found."});
+  const requests=Array.isArray(account.walmartProfileRequests)?account.walmartProfileRequests:[];
+  const pending=requests.find(r=>r.status==="pending");
+  if(pending){
+   return res.json({requested:true,status:"pending",quantity:pending.quantity,alreadyRequested:true,
+    message:"Your Walmart request is already pending. Contact support to change it."});
+  }
+  const now=new Date().toISOString();
+  requests.push({id:crypto.randomUUID(),quantity,status:"pending",createdAt:now});
+  account.walmartProfileRequests=requests;
+  account.updatedAt=now;
+  await saveCustomerAccounts(accounts);
+  try{
+   await sendDiscordAdminProfileWorkflowNotification({
+    title:"WALMART PROFILE REQUEST",
+    description:"Manual Walmart assignment requested: "+quantity+" account(s). No account has been linked.",
+    customerName:account.name||account.email,
+    customerEmail:account.email,profileLabel:"Walmart request",status:"pending"
+   });
+  }catch(error){console.error("Walmart request Discord notification:",error);}
+  broadcastLiveDataChange("walmart-profile-request");
+  return res.json({requested:true,status:"pending",quantity,
+   message:"Walmart request sent to Admin. No Walmart account has been linked yet."});
+ }catch(error){
+  console.error("Walmart request error:",error);
+  return res.status(500).json({error:"Unable to submit Walmart request."});
+ }
+});
+
 app.post(
   "/api/account/register",
   customerAuthRateLimit,
