@@ -950,7 +950,7 @@ $("content").addEventListener("click",event=>{
  const dialog=document.createElement("dialog");dialog.id="mobileSubscriptionExtensionDialog";
  dialog.style.cssText="max-width:92vw;width:420px;background:#0b2639;color:white;border:1px solid #2889a4;border-radius:15px;padding:20px";
  const heading=document.createElement("h3");heading.textContent="Extend subscription";
- const description=document.createElement("p");description.textContent="Choose the new Stripe renewal date and time in your local timezone. No charge or proration will occur now.";
+ const description=document.createElement("p");description.textContent="Add days, weeks, months or years after the existing renewal, or enter an exact later date. Stripe must confirm the new billing date.";
  const form=document.createElement("form");form.style.cssText="display:grid;gap:12px";
  const label=document.createElement("label");label.textContent="Next payment date / time";
  const date=document.createElement("input");date.type="datetime-local";date.required=true;
@@ -961,18 +961,19 @@ $("content").addEventListener("click",event=>{
  const save=document.createElement("button");save.type="submit";save.textContent="CONFIRM NO-CHARGE EXTENSION";save.className="action";
  const close=document.createElement("button");close.type="button";close.className="action";close.textContent="Close";close.onclick=()=>dialog.close();
  form.append(label,save,close,feedback);dialog.append(heading,description,form);document.body.append(dialog);
+ const picker=window.SNGMembershipExtensionPicker?.attach(form,{date,feedback});
  dialog.addEventListener("close",()=>dialog.remove());
  date.addEventListener("change",()=>{delete form.dataset.requestId;feedback.textContent="";});
  form.addEventListener("submit",async e=>{
   e.preventDefault();
-  const selected=new Date(date.value);
-  if(!Number.isFinite(selected.getTime())){feedback.textContent="Choose a valid date and time.";return;}
+  let selection;
+  try{selection=picker?picker.value():{endAt:new Date(date.value).toISOString()};}catch(error){feedback.textContent=error.message;return;}
   form.dataset.requestId ||= crypto.randomUUID();
   save.disabled=true;feedback.textContent="Confirming the new payment date with Stripe…";
   try{
    const response=await fetch("/api/admin/membership-extensions",{
     method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({customerAccountId,endAt:selected.toISOString(),requestId:form.dataset.requestId})
+    body:JSON.stringify({customerAccountId,...selection,requestId:form.dataset.requestId})
    });
    const body=await response.json().catch(()=>({}));
    if(!response.ok||(!body.billingVerified&&!body.replayed))throw Error(body.error||"Stripe could not verify the extension.");

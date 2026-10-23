@@ -40,7 +40,7 @@
   <link rel="stylesheet" href="/carrier-tracking.css?v=20261020-carrier-history-1">
   <link rel="stylesheet" href="/private-studio-site.css?v=aco-studio-20261022">
   <script src="/private-studio-site.js?v=aco-studio-20261022" defer></script>
-</head>
+<style>.customer-membership-track{height:11px;overflow:hidden;background:#263749;border-radius:15px;margin:10px 0;max-width:100%}.customer-membership-track>span{display:block;height:100%;border-radius:15px;background:linear-gradient(90deg,#1eb97c,#64e7ae);transition:width .2s}</style></head>
 
 <body>
 
@@ -3442,6 +3442,7 @@
             <div class="membership-stat">
               <span>Days Remaining</span>
               <strong id="membership-days-remaining">—</strong>
+              <div id="customer-membership-track" class="customer-membership-track" role="progressbar" aria-label="Membership time remaining" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><span style="width:0"></span></div>
             </div>
 
           </div>
