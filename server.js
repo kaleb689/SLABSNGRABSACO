@@ -7026,6 +7026,87 @@ function preferPreviouslyAssignedManagedAccounts(availableAccounts, assignmentHi
   });
 }
 
+// Membership-funded pool assignment is separate from customer-created profiles.
+// Only Target and Pokemon Center are automatic; Walmart remains request-only.
+// Entries are tagged for idempotent retries and existing manually linked accounts
+// remain untouched. Assignments use the same staff-managed inventory/vault.
+let paidPoolAutoAssignmentTail=Promise.resolve();
+function queuePaidPoolAutoAssignment(job) {
+ const current=paidPoolAutoAssignmentTail.then(job);
+ paidPoolAutoAssignmentTail=current.catch(error=>{
+  console.error("Paid membership pool provisioning:",error);
+ });
+ return current;
+}
+async function provisionPaidMembershipPool(record) {
+ if(!record?.autoPoolProvisioningRequestedAt ||
+    !record.customerAccountId || !subscriptionAllowsProfiles(record))return;
+ const customerAccountId=String(record.customerAccountId);
+ const customer=(await getCustomerAccounts()).find(a=>String(a.id)===customerAccountId);
+ if(!customer)return;
+ const quantity=Math.min(100,Math.max(0,profileAllowanceForRecord(record)));
+ if(!quantity)return;
+ const retailers=["target","pokemoncenter"]; // NEVER automatically link Walmart.
+ const reservedJigs=new Set();
+ const managedAccounts=await getManagedAccounts();
+ for(const retailer of retailers){
+  const linked=[...await getFreeAssignments(),...await getRentalAssignments()]
+   .filter(a=>String(a.customerAccountId||"")===customerAccountId&&managedAssignmentIsLinked(a))
+   .filter(a=>normalizeManagedPoolRetailer(a.assignmentRetailer||a.rentalRetailer||a.referralRetailer)===retailer);
+  const missing=Math.max(0,quantity-linked.length);
+  if(!missing)continue;
+  let available=await getAvailableManagedAccountsForRetailer(retailer);
+  const allAssignments=[...await getFreeAssignments(),...await getRentalAssignments()];
+  available=preferManagedAccountsMatchingAssignedPoolEmails(
+    available,customerAccountId,retailer,allAssignments,managedAccounts);
+  if(retailer==="target"){
+   // On a first purchase, use Target emails that have a corresponding PKC
+   // account when possible, rather than assigning unmatched accounts first.
+   const pkc=await getAvailableManagedAccountsForRetailer("pokemoncenter");
+   const matchingEmails=new Set(pkc.map(a=>normalizeEmail(managedRetailerEmailExact(a,"pokemoncenter"))));
+   available=[...available].sort((a,b)=>
+    Number(matchingEmails.has(normalizeEmail(managedRetailerEmailExact(b,"target"))))-
+    Number(matchingEmails.has(normalizeEmail(managedRetailerEmailExact(a,"target")))));
+  }
+  for(const poolAccount of available.slice(0,missing)){
+   const newest=await getFreeAssignments();
+   if(newest.some(a=>managedAssignmentIsLinked(a)&&String(managedAssignmentMembershipId(a))===String(poolAccount.id)))continue;
+   const now=new Date().toISOString();
+   const assignment={
+    id:crypto.randomUUID(),freeMembershipId:poolAccount.id,managedAccountId:poolAccount.id,
+    customerAccountId,paidSubmissionId:record.id,
+    autoPaidPoolAssignment:true,active:true,durationType:"indefinite",
+    assignmentRetailer:retailer,activationStatus:"awaiting_activation",
+    activationRequestedAt:now,startsAt:null,expiresAt:null,
+    customerProfile:sanitizeProfile(record.profile||{}),
+    customerSecrets:null,createdAt:now,updatedAt:now,endedAt:null,endReason:null
+   };
+   await prepareNewManagedAssignment(assignment,poolAccount,customer,record,reservedJigs);
+   newest.push(assignment);
+   await saveFreeAssignments(newest);
+   try{
+    await ensureManagedProfileDiscordMessage(assignment,"free");
+    await saveFreeAssignments(newest);
+   }catch(error){
+    console.error("Paid pool profile alert:",error);
+   }
+  }
+ }
+ broadcastLiveDataChange("paid-profile-pool-assignment");
+}
+const paidPoolProvisioningScheduler=setInterval(()=>{
+ void queuePaidPoolAutoAssignment(async()=>{
+  const records=await readJson(PAID_FILE,[]);
+  const newest=new Map();
+  for(const r of (Array.isArray(records)?records:[])){
+   if(r.autoPoolProvisioningRequestedAt&&r.customerAccountId&&subscriptionAllowsProfiles(r))
+    newest.set(String(r.customerAccountId),r);
+  }
+  for(const record of newest.values())await provisionPaidMembershipPool(record);
+ });
+},5*60*1000);
+paidPoolProvisioningScheduler.unref?.();
+
 function managedRetailerEmailExact(account, retailer) {
   try {
     const credentials = account?.credentials
@@ -7845,9 +7926,12 @@ app.post(
             ) {
               record.orderNumber = paid[existingIndex].orderNumber || record.orderNumber;
               record.customerConfirmationSentAt = paid[existingIndex].customerConfirmationSentAt || null;
+              record.autoPoolProvisioningRequestedAt =
+                paid[existingIndex].autoPoolProvisioningRequestedAt || record.autoPoolProvisioningRequestedAt || new Date().toISOString();
               paid[existingIndex] =
                 record;
             } else {
+              record.autoPoolProvisioningRequestedAt = new Date().toISOString();
               paid.push(record);
             }
 
@@ -7856,6 +7940,8 @@ app.post(
               paid
             );
 
+            // The paid membership is durable before its independent pool job starts.
+            void queuePaidPoolAutoAssignment(()=>provisionPaidMembershipPool(record));
             if (existingIndex < 0 && record.consentRecordId) {
               await appendConsentRecord({
                 type: "checkout_payment_confirmed", accountId: record.customerAccountId,
@@ -13702,7 +13788,7 @@ function profileAllowanceForRecord(
   ) {
     return Math.min(
       planProfiles,
-      50
+      100
     );
   }
 
