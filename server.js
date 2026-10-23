@@ -235,6 +235,11 @@ const FREE_ASSIGNMENTS_FILE =
 const GIFTED_MEMBERSHIPS_FILE =
   path.join(DATA_DIR, "gifted-memberships.json");
 
+// Stripe renewal adjustments are audits of paid memberships, not independent
+// free/gift entitlements. Preserve them in a separate durable store.
+const SUBSCRIPTION_EXTENSIONS_FILE =
+  path.join(DATA_DIR, "membership-extensions.json");
+
 const DISCOUNT_CODES_FILE =
   path.join(DATA_DIR, "discount-codes.json");
 
@@ -12433,11 +12438,35 @@ async function saveFreeMemberships(
 
 async function getGiftedMemberships() {
   const records = await readJson(GIFTED_MEMBERSHIPS_FILE, []);
-  return Array.isArray(records) ? records : [];
+  // Legacy extensions were briefly recorded as gifts. Their Stripe-only
+  // renewal adjustment must never grant membership on its own.
+  return Array.isArray(records) ? records.filter(x => x?.kind !== "admin_extension") : [];
 }
 
 async function saveGiftedMemberships(records) {
-  await writeJson(GIFTED_MEMBERSHIPS_FILE, records);
+  // Preserve legacy extension audits even if an unrelated admin gift changes.
+  const previous = await readJson(GIFTED_MEMBERSHIPS_FILE, []);
+  const legacyExtensions = (Array.isArray(previous) ? previous : []).filter(x => x?.kind === "admin_extension");
+  await writeJson(GIFTED_MEMBERSHIPS_FILE, [
+    ...(Array.isArray(records) ? records : []).filter(x => x?.kind !== "admin_extension"),
+    ...legacyExtensions
+  ]);
+}
+
+async function getSubscriptionExtensions() {
+  const [saved, historical] = await Promise.all([
+    readJson(SUBSCRIPTION_EXTENSIONS_FILE, []),
+    readJson(GIFTED_MEMBERSHIPS_FILE, [])
+  ]);
+  const byRequest = new Map();
+  for(const record of [...(Array.isArray(historical)?historical:[]), ...(Array.isArray(saved)?saved:[])]) {
+    if(record?.kind === "admin_extension" && record.requestId) byRequest.set(String(record.requestId),record);
+  }
+  return [...byRequest.values()];
+}
+
+async function saveSubscriptionExtensions(records) {
+  await writeJson(SUBSCRIPTION_EXTENSIONS_FILE, records);
 }
 
 async function activeMembershipRecordForCustomer(customerAccountId, paidRecords = []) {
@@ -16200,8 +16229,8 @@ app.post(
 ------------------------------------------------------- */
 
 app.get("/api/admin/gifted-memberships", requireAdmin, async (req, res) => {
-  const records = await getGiftedMemberships();
-  return res.json({ memberships: records });
+  const [gifts, extensions] = await Promise.all([getGiftedMemberships(), getSubscriptionExtensions()]);
+  return res.json({ memberships: [...gifts, ...extensions] });
 });
 
 app.get("/api/admin/giftable-customers", requireAdmin, async (req, res) => {
@@ -16319,7 +16348,7 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
   if(!["active","trialing"].includes(subscription.status)||subscription.cancel_at_period_end||
    subscription.cancel_at||subscription.pause_collection)
    return res.status(409).json({error:"Review this Stripe subscription's cancellation or pause before extending."});
-  const records=await getGiftedMemberships(),prior=records.find(x=>x.requestId===requestId);
+  const records=await getSubscriptionExtensions(),prior=records.find(x=>x.requestId===requestId);
   if(prior){
    if(String(prior.customerAccountId)!==customerAccountId||prior.expiresAt!==endAt||prior.kind!=="admin_extension")
     return res.status(409).json({error:"This extension request was already used for another date or customer."});
@@ -16353,16 +16382,21 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
   }
   if(Number(verified.trial_end)!==window.stripeTrialEnd)
    return res.status(502).json({error:"Stripe did not confirm the extended billing date. Check Stripe before retrying with this request ID."});
-  // Repair local billing windows immediately; do not show an earlier renewal
-  // while waiting for the asynchronous Stripe subscription.updated webhook.
-  for(const item of paid){
+  // The Stripe API call may have taken seconds. Re-read durable membership data
+  // after Stripe responds so a concurrent webhook is not clobbered by a stale
+  // snapshot captured before the network call.
+  const latestPaid=await readJson(PAID_FILE,[]);
+  let changed=0;
+  for(const item of (Array.isArray(latestPaid)?latestPaid:[])){
    if(String(item.customerAccountId)!==customerAccountId||String(item.stripeSubscriptionId)!==subscription.id)continue;
    await applySubscriptionInfo(item,verified);
    if(Date.parse(item.currentPeriodEnd||"")<Date.parse(window.expiresAt))
     item.currentPeriodEnd=window.expiresAt;
    item.billingDeferredUntil=window.expiresAt;
+   changed++;
   }
-  await writeJson(PAID_FILE,paid);
+  if(!changed)throw Error("No current paid record remains for the Stripe-confirmed extension.");
+  await writeJson(PAID_FILE,latestPaid);
   const existing=items.find(x=>x.plan?.profiles||x.plan?.name)||items[0],tier=Number(existing.plan?.tier||existing.tier||0);
   const grant={id:crypto.randomUUID(),kind:"admin_extension",requestId,customerAccountId,
    customerEmail:account.email||"",tier,tierName:existing.plan?.name||"Current membership",
@@ -16370,7 +16404,7 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
    durationUnit:"custom",durationQuantity:null,stripeSubscriptionId:subscription.id,
    billingDeferredUntil:window.expiresAt,createdAt:new Date().toISOString(),createdBy:"admin"};
   records.push(grant);
-  await saveGiftedMemberships(records);
+  await saveSubscriptionExtensions(records);
   return res.status(201).json({ok:true,extension:grant,billingVerified:true});
  }catch(error){
   if(/renewal date must be later|Choose a date within|Choose a valid|Stripe supports at most/.test(error?.message||""))
