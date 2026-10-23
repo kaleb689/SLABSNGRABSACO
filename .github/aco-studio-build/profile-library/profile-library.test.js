@@ -197,6 +197,18 @@ test('Exact Main/Jigged reuse count changes the chosen profiles only and can be 
  await assert.rejects(h.lib.batchJigPreview(event,{...args,reuse:{sourceId:'profile:unknown',count:2}}),/available/);
 });
 
+
+test('Exact reuse quantity rejects a hidden extra match on another selected profile',async t=>{
+ const h=await library(t);
+ await h.service.addAddress(event,{...h.p,address:{...address,address2:'',label:'Existing identical Main'}});
+ for(let n=0;n<3;n++)await commit(h,await preview(h,[complete('target','same-main-'+n+'@example.test')]));
+ const selected=(await h.lib.list(event,h.p)).profiles.filter(row=>row.retailer==='target');
+ const option=(await h.lib.reuseChoices(event,h.p)).choices.find(item=>item.type==='main'&&item.summary.includes('100 Example Avenue'));
+ assert.ok(option);
+ await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',
+  profileIds:selected.map(x=>x.id),ruleIds:[LC.FL_PHONE_RULE],combine:false,
+  billingSameAsShipping:false,reuse:{sourceId:option.id,count:2}}),/not the requested 2/);
+});
 test('Owner import history removes only exact batch profiles and preserves later imports, cards and customers',async t=>{
  const h=await library(t);
  const first=await commit(h,await preview(h,[complete('target','first-batch@example.test')]));
