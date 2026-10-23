@@ -18403,6 +18403,7 @@ function bindManagedMembershipDashboard(
   
 
 let adminLastActivationFingerprint = null;
+let adminVisibleActivationGroups = [];
 async function loadProfileActivationTracker() {
   if (!profileActivationGroups) {
     return;
@@ -18571,154 +18572,26 @@ async function loadProfileActivationTracker() {
               `;
     }
 
-    profileActivationGroups
-      .innerHTML =
-        customers.length
-          ? customers
-              .map(group => `
-                <details
-                  class="activation-group"
-                >
-                  <summary>
-                    <span>
-                      <strong>
-                        ${escapeHtml(
-                          group.customerName ||
-                          "Customer"
-                        )}
-                      </strong>
-
-                      <small>
-                        ${escapeHtml(
-                          group.customerEmail ||
-                          ""
-                        )}
-                      </small>
-                    </span>
-
-                    <span>
-                      ${group.profiles.length}
-                      ${
-                        group.profiles.length === 1
-                          ? "PROFILE"
-                          : "PROFILES"
-                      }
-                    </span>
-
-                    <span>▾</span>
-                  </summary>
-
-                  <div
-                    class="activation-profile-list"
-                  >
-                    ${group.profiles
-                      .map(profile => `
-                        <div
-                          class="activation-profile-row"
-                          data-activation-profile-id="${escapeHtml(
-                            profile.id
-                          )}"
-                        >
-                          <div>
-                            <strong>
-                              ${escapeHtml(
-                                profile.profileName ||
-                                `Profile ${profile.slot}`
-                              )}
-                            </strong>
-
-                            <small>
-                              ${
-                                profile.type ===
-                                  "paid"
-                                  ? `PAID PROFILE ${escapeHtml(
-                                      profile.slot ||
-                                      ""
-                                    )}`
-                                  : profile.type ===
-                                      "gifted"
-                                    ? "GIFTED PROFILE"
-                                    : "RENTED PROFILE"
-                              }
-                            </small>
-                          </div>
-
-                          <span
-                            class="activation-state ${escapeHtml(
-                              profile.status
-                            )}"
-                          >
-                            ${escapeHtml(
-                              profile.label
-                            )}
-                          </span>
-
-                          <div
-                            class="activation-actions"
-                          >
-                            ${
-                              profile.status !==
-                                "activated" &&
-                              profile.status !==
-                                "expired"
-                                ? `
-                                    <button
-                                      type="button"
-                                      class="admin-save-button"
-                                      ${
-                                        profile.type ===
-                                          "paid"
-                                          ? `data-activate-profile="${escapeHtml(
-                                              profile.id
-                                            )}"`
-                                          : `data-activate-managed-profile="${escapeHtml(
-                                              profile.id
-                                            )}" data-managed-profile-type="${escapeHtml(
-                                              profile.type === "gifted"
-                                                ? "free"
-                                                : "rented"
-                                            )}"`
-                                      }
-                                    >
-                                      Activate
-                                    </button>
-                                  `
-                                : ""
-                            }
-
-                            <button
-                              type="button"
-                              class="admin-edit-button"
-                              ${
-                                profile.type ===
-                                  "paid"
-                                  ? `data-deactivate-profile="${escapeHtml(
-                                      profile.id
-                                    )}"`
-                                  : `data-deactivate-managed-profile="${escapeHtml(
-                                      profile.id
-                                    )}" data-managed-profile-type="${escapeHtml(
-                                      profile.type === "gifted"
-                                        ? "free"
-                                        : "rented"
-                                    )}"`
-                              }
-                            >
-                              Deactivate
-                            </button>
-                          </div>
-                        </div>
-                      `)
-                      .join("")}
-                  </div>
-                </details>
-              `)
-              .join("")
-          : `
-              <div class="empty-admin">
-                No profiles are awaiting activation yet.
-              </div>
-            `;
+    adminVisibleActivationGroups = customers;
+    // One customer action per row; no per-profile dropdown or counter.
+    profileActivationGroups.innerHTML = customers.length
+      ? customers.map((group,index)=>{
+          const eligible=group.profiles.filter(profile=>profile.status!=="expired");
+          const active=eligible.filter(profile=>profile.status==="activated");
+          const allActive=eligible.length>0&&active.length===eligible.length;
+          const action=allActive?"deactivate":"activate";
+          return `<div class="activation-group activation-customer-row"
+             data-activation-group-index="${index}">
+            <span class="activation-customer-identity">
+              <strong>${escapeHtml(group.customerName||"Customer")}</strong>
+              <small>${escapeHtml(group.customerEmail||"")}</small>
+            </span>
+            <button type="button" class="${allActive?"admin-edit-button":"admin-save-button"}"
+              data-activation-customer-action="${action}" data-activation-customer-index="${index}"
+              ${eligible.length?"":'disabled title="No eligible profiles"'}>${allActive?"Deactivate":"Set Active"}</button>
+          </div>`;
+        }).join("")
+      : '<div class="empty-admin">No customer profiles to manage.</div>';
 
     bindProfileActivationButtons();
 
@@ -18738,173 +18611,58 @@ async function loadProfileActivationTracker() {
 
 
 
-function bindAdminNotificationLinks() {
-  document
-    .querySelectorAll(
-      "[data-notification-profile-id]"
-    )
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () => {
-          const id =
-            button.dataset
-              .notificationProfileId;
-
-          const target =
-            document.querySelector(
-              `[data-activation-profile-id="${CSS.escape(
-                id
-              )}"]`
-            );
-
-          if (!target) {
-            return;
-          }
-
-          const group =
-            target.closest(
-              ".activation-group"
-            );
-
-          if (group) {
-            group.open =
-              true;
-          }
-
-          if (adminNotifications) {
-            adminNotifications.open =
-              false;
-          }
-
-          target.scrollIntoView({
-            behavior:
-              "smooth",
-            block:
-              "center"
-          });
-
-          target.classList.add(
-            "notification-target"
-          );
-
-          window.setTimeout(
-            () =>
-              target.classList.remove(
-                "notification-target"
-              ),
-            1800
-          );
-        }
-      );
-    });
+function bindAdminNotificationLinks(){
+ document.querySelectorAll("[data-notification-profile-id]").forEach(button=>{
+  button.addEventListener("click",()=>{
+   const id=button.dataset.notificationProfileId;
+   const index=adminVisibleActivationGroups.findIndex(group=>group.profiles.some(profile=>String(profile.id)===id));
+   const target=index<0?null:profileActivationGroups?.querySelector('[data-activation-group-index="'+index+'"]');
+   if(!target)return;
+   if(adminNotifications)adminNotifications.open=false;
+   target.scrollIntoView({behavior:"smooth",block:"center"});
+   target.classList.add("notification-target");
+   window.setTimeout(()=>target.classList.remove("notification-target"),1800);
+  });
+ });
 }
 
-
+async function submitProfileActivation(profile,action){
+ const managed=profile.type!=="paid",managedType=profile.type==="gifted"?"free":"rented";
+ const endpoint=managed
+  ? "/api/admin/managed-profile-activation/"+encodeURIComponent(managedType)+"/"+encodeURIComponent(profile.id)
+  : "/api/admin/profile-activation/"+encodeURIComponent(profile.id);
+ const response=await fetch(endpoint,{method:"POST",credentials:"same-origin",
+  headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(data.error||"Unable to update activation.");
+}
 function bindProfileActivationButtons() {
-  document
-    .querySelectorAll(
-      "[data-activate-profile], [data-deactivate-profile], [data-activate-managed-profile], [data-deactivate-managed-profile]"
-    )
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        async () => {
-          const id =
-            button.dataset
-              .activateProfile ||
-            button.dataset
-              .deactivateProfile ||
-            button.dataset
-              .activateManagedProfile ||
-            button.dataset
-              .deactivateManagedProfile;
-
-          const managedType =
-            button.dataset
-              .managedProfileType ||
-            "";
-
-          const managed =
-            Boolean(
-              button.dataset
-                .activateManagedProfile ||
-              button.dataset
-                .deactivateManagedProfile
-            );
-
-          const action =
-            (
-              button.dataset
-                .activateProfile ||
-              button.dataset
-                .activateManagedProfile
-            )
-              ? "activate"
-              : "deactivate";
-
-          try {
-            button.disabled = true;
-
-            const endpoint =
-              managed
-                ? `/api/admin/managed-profile-activation/${encodeURIComponent(
-                    managedType
-                  )}/${encodeURIComponent(
-                    id
-                  )}`
-                : `/api/admin/profile-activation/${encodeURIComponent(
-                    id
-                  )}`;
-
-            const response =
-              await fetch(
-                endpoint,
-                {
-                  method:
-                    "POST",
-                  credentials:
-                    "same-origin",
-                  headers: {
-                    "Content-Type":
-                      "application/json"
-                  },
-                  body:
-                    JSON.stringify({
-                      action
-                    })
-                }
-              );
-
-            const data =
-              await response
-                .json()
-                .catch(
-                  () => ({})
-                );
-
-            if (!response.ok) {
-              throw new Error(
-                data.error ||
-                "Unable to update activation."
-              );
-            }
-
-            await loadProfileActivationTracker();
-
-          } catch (error) {
-            window.alert(
-              error.message
-            );
-            button.disabled =
-              false;
-          }
-        }
-      );
-    });
+ profileActivationGroups?.querySelectorAll("[data-activation-customer-action]").forEach(button=>{
+  button.addEventListener("click",async()=>{
+   const group=adminVisibleActivationGroups[Number(button.dataset.activationCustomerIndex)];
+   const action=button.dataset.activationCustomerAction;
+   if(!group||!["activate","deactivate"].includes(action))return;
+   const eligible=group.profiles.filter(p=>p.status!=="expired"&&
+    (action==="activate"?p.status!=="activated":p.status==="activated"));
+   if(!eligible.length)return;
+   if(!window.confirm((action==="activate"?"Set active":"Deactivate")+" "+eligible.length+
+    " eligible profile(s) for "+(group.customerName||"this customer")+"?"))return;
+   button.disabled=true;const label=button.textContent;button.textContent="Updating…";
+   let changed=0,failed=null;
+   try{
+    for(const profile of eligible){
+     try{await submitProfileActivation(profile,action);changed++;}
+     catch(error){failed=error;break;}
+    }
+   }finally{
+    adminLastActivationFingerprint=null;
+    try{await loadProfileActivationTracker();}catch{}
+    button.disabled=false;button.textContent=label;
+   }
+   if(failed)window.alert(changed+" profile(s) updated. The remaining profiles were not updated: "+failed.message);
+  });
+ });
 }
-
-
 
 refreshProfileActivationTracker
   ?.addEventListener(
