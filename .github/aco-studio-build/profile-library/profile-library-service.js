@@ -332,6 +332,35 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const v=C.values(row.data);
   return ['shipping.address1','shipping.address2','shipping.city','shipping.state','shipping.zip'].map(k=>normalizedAddressPart(v[k])).join('|');
  }
+ // Authorized exact address picker. Pulls Main bank entries and previously
+ // saved profile shipping (including jigged) from this one encrypted owner vault.
+ async function reusableShippingChoices(a,snapshot=null){
+  const saved=addressBanks?(a.scope==='personal'?await addressBanks.listPersonal():await addressBanks.listAco(a.id)):{addresses:[]};
+  const all=snapshot||await profiles.fieldSnapshot(a.scope,a.id),choices=[],seen=new Set();
+  function add(id,type,label,raw){
+   const address={address1:String(raw?.address1||raw?.address||'').trim(),address2:String(raw?.address2||raw?.unit||'').trim(),
+    city:String(raw?.city||'').trim(),state:String(raw?.state||'').trim(),zip:String(raw?.zip||'').trim()};
+   if(!address.address1||!address.city||!address.state||!address.zip)return;
+   const fingerprint=Object.values(address).map(normalizedAddressPart).join('|');
+   if(seen.has(fingerprint))return;seen.add(fingerprint);
+   choices.push({id,type,label,summary:Object.values(address).filter(Boolean).join(', '),address});
+  }
+  for(const entry of saved.addresses||[])add('bank:'+entry.id,entry.jiggedAt||entry.isJigged?'jigged':'main',entry.label||'Saved Main address',entry);
+  for(const row of all)add('profile:'+row.id,row.jiggedAt?'jigged':'main',(row.jiggedAt?'Jigged':'Profile Main')+' · '+(row.label||row.email||row.retailer),addressView(row.data));
+  a.check();
+  choices.sort((x,y)=>(x.type==='main'?0:1)-(y.type==='main'?0:1)||x.summary.localeCompare(y.summary));
+  return choices;
+ }
+ async function reuseChoices(e,p){
+  const a=await access(e,p),choices=await reusableShippingChoices(a);
+  return {choices:choices.map(({address,...item})=>item)};
+ }
+ async function resolveReuse(a,id){
+  if(typeof id!=='string'||id.length>225||!/^(bank|profile):/.test(id))throw Error('Select an existing Main or Jigged address.');
+  const entry=(await reusableShippingChoices(a)).find(x=>x.id===id);
+  if(!entry)throw Error('The selected address is no longer available. Reopen the picker.');
+  return entry;
+ }
  function isHardRule(id){return C.ruleById(id)?.family==='target-primary';}
  function applyOne(data,row,id){return C.jig(data,row.retailer,1,[id]);}
  function bulkJigData(row,ruleIds,groupPosition,combine,billingSameAsShipping,phoneSeed,globalIndex=0){
@@ -456,26 +485,51 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const a=await access(e,p),retailer=C.retailer(p.retailer);
   if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles to jig together.');
   const requestedCounts=hardCounts(p.hardCounts),hasHard=requestedCounts&&HARD_KINDS.some(k=>requestedCounts[k]>0);
-  if(!Array.isArray(p.ruleIds)||p.ruleIds.length>100||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id))||(!p.ruleIds.length&&!hasHard))throw Error('Choose supported retailer rules or enable at least one hard jig category.');
+  const reuse=p.reuse??null;
+  if(reuse!==null&&(!reuse||typeof reuse!=='object'||Array.isArray(reuse)||Object.keys(reuse).some(k=>!['sourceId','count'].includes(k))))
+   throw Error('Choose an existing address and a profile count.');
+  const reuseCount=reuse?reuse.count:0;
+  if(reuse&&(!Number.isSafeInteger(reuseCount)||reuseCount<2||reuseCount>p.profileIds.length))throw Error('Choose between 2 and the selected profile count for address reuse.');
+  if(!Array.isArray(p.ruleIds)||p.ruleIds.length>100||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id))||
+     (p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard))
+   throw Error('Choose supported jig rules for the remaining profiles, or explicitly reuse one saved address for the entire selection.');
   const all=await profiles.fieldSnapshot(a.scope,a.id),selected=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===retailer));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
-  const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=requestedCounts?perAddressHardRows(selected,p,phoneSeed):null;
-  for(const row of selected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
+  const source=reuse?await resolveReuse(a,reuse.sourceId):null;
+  const regularSelected=selected.slice(reuseCount);
+  const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&requestedCounts?perAddressHardRows(regularSelected,p,phoneSeed):null;
+  for(const row of regularSelected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
   const rows=selected.map((row,index)=>{
-   const key=mainAddressKey(row),groupPosition=positions.get(key)||0;positions.set(key,groupPosition+1);
-   // A singleton must still be jigged when explicitly selected. Reserve an
-   // untouched original only when this batch contains multiple same-base profiles.
+   const reuseThis=!!source&&index<reuseCount,regularIndex=index-reuseCount;
+   const key=mainAddressKey(row),groupPosition=positions.get(key)||0;
+   if(!reuseThis)positions.set(key,groupPosition+1);
    const jigPosition=groupSizes.get(key)===1?1:groupPosition;
-   const data=hardResults?hardResults[index].data:bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,index),before=addressView(row.data),after=addressView(data);
+   let data;
+   if(reuseThis){
+    const values={...D.toValues(row.data)};
+    for(const field of ['address1','address2','city','state','zip']){
+     values['shipping.'+field]=source.address[field];
+     if(p.billingSameAsShipping===true)values['billing.'+field]=source.address[field];
+    }
+    data=C.syncCardholderToProfile(D.manualEdit(row.data,values));
+   }else if(hardResults)data=hardResults[regularIndex].data;
+   else data=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);
+   const before=addressView(row.data),after=addressView(data);
    if(!after.address1||!after.city||!after.state||!after.zip)throw Error('A selected profile is missing a complete shipping address.');
-   return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),email:row.email,label:row.label,retailer:row.retailer,linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer,category:hardResults?.[index].kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),mainAddress:hardResults?.[index].mainAddress||before};
+   return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),email:row.email,label:row.label,retailer:row.retailer,
+    linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer,
+    category:reuseThis?'reused saved address':hardResults?.[regularIndex]?.kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),
+    mainAddress:reuseThis?source.address:hardResults?.[regularIndex]?.mainAddress||before};
   });
-  if(rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('The selected jig rules did not change any selected profile.');
+  if(rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('Every selected profile already has the requested address and no changes would be saved.');
   const token=uuid();
   for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
-  jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,at:now(),epoch:ep(e)});
-  return {token,count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,linked:rows.filter(x=>x.linked).length,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress}))};
+  jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,at:now(),epoch:ep(e),
+   reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
+  return {token,count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,
+   linked:rows.filter(x=>x.linked).length,reused:reuseCount,
+   profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress}))};
  }
  async function batchJigCommit(e,p){
   const plan=jigPlans.get(p.token);
@@ -485,6 +539,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   for(const change of plan.rows){
    const row=latest.find(x=>x.id===change.profileId&&x.retailer===plan.retailer);
    if(!row||(row.revision||0)!==change.revision||require('./jig-field-core').hash(row.data)!==change.hash)throw Error('A selected profile changed after preview. Nothing was saved; preview the batch again.');
+  }
+  // Reject a stale Main/Jigged source before making any recipient write.
+  if(plan.reusedSource){
+   const current=await resolveReuse(a,plan.reusedSource.id);
+   if(Object.values(current.address).map(normalizedAddressPart).join('|')!==plan.reusedSource.key)
+    throw Error('The saved address changed after preview. Review the batch again.');
   }
   let updated=0,remoteSaved=0;
   for(const change of plan.rows){
@@ -532,9 +592,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  async function bulkManage(e,p){const a=await access(e,p);return profiles.bulkManage(a.scope,a.id,p,a.check);}
  async function rules(e,p){const a=await access(e,p),retailer=C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id),saved=settings[retailer];a.check();const legacyTarget=retailer==='target'&&Array.isArray(saved?.rules)&&saved?.presetVersion!==2;const selected=legacyTarget?[...new Set([...saved.rules,...C.TARGET_PRIMARY_RULES.map(x=>x.id)])]:(saved?.rules||C.defaultRules(retailer));return {selected,legacyMigrated:legacyTarget,presetVersion:2,options:[...C.ruleOptions(retailer),{id:C.FL_PHONE_RULE,label:'Random Florida phone number',risk:'standard',family:'phone'}]};}
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:2};return {saved:true,presetVersion:2};},a.check);}
- return {jigAssets,list,detail,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,rules,saveRules,cancel};
+ return {jigAssets,reuseChoices,list,detail,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,rules,saveRules,cancel};
 }
-function registerLibrary(options){const service=createLibrary(options);for(const method of ['jigAssets','list','detail','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
+function registerLibrary(options){const service=createLibrary(options);for(const method of ['jigAssets','reuseChoices','list','detail','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
  // Owner-only encrypted backup recovery for complete Personal and ACO vaults.
  // No customer website token or profile ID can access these snapshots.
  options.ipcMain.handle('profile:library:backupList',(e,p)=>{
