@@ -341,7 +341,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const address={address1:String(raw?.address1||raw?.address||'').trim(),address2:String(raw?.address2||raw?.unit||'').trim(),
     city:String(raw?.city||'').trim(),state:String(raw?.state||'').trim(),zip:String(raw?.zip||'').trim()};
    if(!address.address1||!address.city||!address.state||!address.zip)return;
-   const fingerprint=Object.values(address).map(normalizedAddressPart).join('|');
+   const fingerprint=type+'|'+Object.values(address).map(normalizedAddressPart).join('|');
    if(seen.has(fingerprint))return;seen.add(fingerprint);
    choices.push({id,type,label,summary:Object.values(address).filter(Boolean).join(', '),address});
   }
