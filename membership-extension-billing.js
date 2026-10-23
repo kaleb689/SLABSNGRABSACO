@@ -63,6 +63,6 @@ export function requestedMembershipExtension({endAt,now=Date.now(),periodEnd=0,t
  // two-year limit. Never accept an extension the billing provider cannot honor.
  const latestAllowed=stripeMembershipExtensionLimit({now,billingCycleAnchor});
  if(requested>latestAllowed)
-  throw Error('This renewal date exceeds the maximum Stripe supports for this subscription (up to two years from its billing anchor). Choose a shorter extension; billing has not been changed.');
+  throw Error('This renewal date exceeds Stripe\'s two-year limit for this subscription. Choose a date within the allowed period; billing has not been changed.');
  return {expiresAt:new Date(requested).toISOString(),startsAt:new Date(baseline).toISOString(),stripeTrialEnd:Math.ceil(requested/1000)};
 }
