@@ -86,14 +86,32 @@ const TARGET_PRIMARY_RULES=Object.freeze([
  ...[['target.house.fraction.half','1/2'],['target.house.fraction.third','1/3'],['target.house.fraction.quarter','1/4']].map(([id,value])=>({id,label:'Target house number + '+value,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\d+\s/.test(street))return null;const changed=street.replace(/^(\d+)(?=\s)/,'$1 '+value);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}})),
  ...'ABCDEFGH'.split('').map(letter=>({id:'target.house.hyphen.'+letter.toLowerCase(),label:'Target house number -'+letter,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\d+\s/.test(street))return null;const changed=street.replace(/^(\d+)(?=\s)/,'$1-'+letter);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}}))
 ]);
-const coreRule=id=>Core.RULES.find(x=>x.id===id),targetRule=id=>TARGET_PRIMARY_RULES.find(x=>x.id===id),ruleById=id=>coreRule(id)||targetRule(id);
+const suffixEquivalents=[['Street','St'],['Road','Rd'],['Avenue','Ave'],['Drive','Dr'],['Lane','Ln'],['Boulevard','Blvd'],['Court','Ct'],['Terrace','Ter'],['Circle','Cir'],['Parkway','Pkwy'],['Trail','Trl'],['Highway','Hwy'],['Place','Pl'],['Way','Wy'],['Alley','Aly'],['Square','Sq']];
+const oldSuffixRule=id=>/^(?:street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)_(?:short|long|abbr|full)$/i.test(id)
+ ||/^suffix[._-](?:street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)(?:[._-](?:short|long|abbr|full))?$/i.test(id);
+const SUFFIX_MATCH_RULE={id:'suffix.matching',label:'Matching street type (St/Street, Rd/Road, etc.)',risk:'standard',family:'standard',
+ apply:address=>{
+  const raw=String(address.address1||address.address||'').trim(),words=raw.split(/\s+/),last=words.length-1;
+  const post=/^(?:N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST|NORTHWEST|NORTHEAST|SOUTHWEST|SOUTHEAST)$/i;
+  const position=post.test(words[last])?last-1:last;
+  const suffix=String(words[position]||'').replace(/\.$/,'').toLowerCase();
+  const pair=suffixEquivalents.find(([full,short])=>suffix===full.toLowerCase()||suffix===short.toLowerCase());
+  if(!pair)return null;
+  words[position]=suffix===pair[0].toLowerCase()?pair[1]:pair[0];
+  const next={...address};if(Object.hasOwn(next,'address1'))next.address1=words.join(' ');else next.address=words.join(' ');
+  return next;
+ }};
+const coreRule=id=>id===SUFFIX_MATCH_RULE.id?SUFFIX_MATCH_RULE:Core.RULES.find(x=>x.id===id);
+const targetRule=id=>TARGET_PRIMARY_RULES.find(x=>x.id===id),ruleById=id=>coreRule(id)||targetRule(id);
 function ruleOptions(r){
  retailer(r);
- const standard=Core.RULES.filter(x=>!/^prefix_three/.test(x.id)).map(x=>({id:x.id,label:x.label,risk:'standard',family:'standard'}));
- return r==='target'?[...standard,...TARGET_PRIMARY_RULES.map(({id,label,risk,family})=>({id,label,risk,family}))]:standard;
+ const standard=Core.RULES.filter(x=>!/^prefix_three/.test(x.id)&&!oldSuffixRule(x.id)).map(x=>({id:x.id,label:x.label,risk:'standard',family:'standard'}));
+ return r==='target'?[...standard,SUFFIX_MATCH_RULE,...TARGET_PRIMARY_RULES.map(({id,label,risk,family})=>({id,label,risk,family}))]:[...standard,SUFFIX_MATCH_RULE];
 }
 const defaultRules=r=>{
- const safe=Core.defaultRuleIDs.filter(id=>!/(prefix|fraction|fictitious|fabricated|phone)/i.test(id));
+ const safe=[...new Set(Core.defaultRuleIDs.filter(id=>!/(prefix|fraction|fictitious|fabricated|phone)/i.test(id))
+  .map(id=>oldSuffixRule(id)?SUFFIX_MATCH_RULE.id:id))];
+ if(!safe.includes(SUFFIX_MATCH_RULE.id))safe.push(SUFFIX_MATCH_RULE.id);
  return retailer(r)==='target'?[...safe,...TARGET_PRIMARY_RULES.map(x=>x.id)]:safe;
 };
 function jig(data,r,index,rules=defaultRules(r)){
