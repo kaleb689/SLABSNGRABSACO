@@ -4818,10 +4818,8 @@ async function assignReferralRewardProfiles(referralId) {
   }
   const already = new Set(assignments.filter(item => item.referralGiftId === grant.id).map(item => item.referralRetailer));
   const targets = await getAvailableManagedAccountsForRetailer("target");
-  const walmart = await getAvailableManagedAccountsForRetailer("walmart");
   const pokemon = await getAvailableManagedAccountsForRetailer("pokemoncenter");
   const targetEmail = item => managedRetailerEmailExact(item, "target");
-  const walmartEmail = item => managedRetailerEmailExact(item, "walmart");
   const pokemonEmail = item => managedRetailerEmailExact(item, "pokemoncenter");
 
   const existingTarget = assignments.find(
@@ -4837,23 +4835,18 @@ async function assignReferralRewardProfiles(referralId) {
     targets.find(item => {
       const email = targetEmail(item);
       return email && (
-        walmart.some(other => walmartEmail(other) === email) ||
         pokemon.some(other => pokemonEmail(other) === email)
       );
     }) ||
     targets[0];
 
   const emailToMatch = target ? targetEmail(target) : "";
-  const matchingWalmart = walmart.find(
-    item => emailToMatch && walmartEmail(item) === emailToMatch
-  );
   const matchingPokemon = pokemon.find(
     item => emailToMatch && pokemonEmail(item) === emailToMatch
   );
 
   const choices = {
     target: assignedTarget ? null : target,
-    walmart: matchingWalmart || walmart[0],
     pokemoncenter: matchingPokemon || pokemon[0]
   };
   const now = new Date().toISOString();
