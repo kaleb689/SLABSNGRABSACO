@@ -55,6 +55,9 @@
  bulkPanel.innerHTML=`<div class="workshopHead"><div><h3>Saved profiles</h3><small id="bulkJigOwner">Select one, multiple, or all saved profiles. The retailer buttons and rule choices above control the jig.</small></div></div>
  <div class="buttons"><button class="btn plain slim" data-select-all type="button">Select all</button><button class="btn plain slim" data-clear type="button">Clear</button></div>
  <div class="workshopPickers"><details open><summary>Profiles to jig</summary><div class="workshopAssetChoices" data-profiles></div></details>
+ <label class="workshopCheck"><input data-postal-scan type="checkbox" checked> Scan online ZIP/city crossovers during Jig Profiles preview</label>
+ <label class="workshopCheck"><input data-postal-apply type="checkbox" checked> Apply ZIP/state-matched alternate city names when available</label>
+ <small>City names come from an online ZIP listing, not a verified USPS street delivery address. Only ZIP is sent online; street, email, cards and personal details stay local.</small>
  <label class="workshopCheck"><input data-reuse-toggle type="checkbox"> Reuse a saved Main or Jigged shipping address across selected profiles</label>
  <section data-reuse-panel hidden><p>Choose the exact Main or previously Jigged address to use. Its complete shipping fields are copied without generating another jig.</p>
  <label>Choose Main or Jigged address<select data-reuse-choice></select></label>
@@ -89,6 +92,7 @@
   }catch(e){reuseLoadedKey='';bq('reuse-toggle').checked=false;bq('reuse-panel').hidden=true;bulkStatus(e.message,true);}
   finally{bq('reuse-choice').disabled=false;}
  }
+ for(const name of ['postal-scan','postal-apply'])bq(name).addEventListener('change',()=>{invalidateReuse();bq('postal-apply').disabled=!bq('postal-scan').checked;});
  bq('reuse-toggle').addEventListener('change',()=>{invalidateReuse();bq('reuse-panel').hidden=!bq('reuse-toggle').checked;if(bq('reuse-toggle').checked)void loadReuseChoices();});
  for(const name of ['reuse-choice','reuse-count'])bq(name).addEventListener('change',invalidateReuse);
  function bulkStatus(message,error=false){const el=bq('status');el.textContent=message;el.classList.toggle('profileBankError',error);}
@@ -134,8 +138,10 @@
    if(bq('reuse-toggle').checked&&(!bq('reuse-choice').value||!Number.isSafeInteger(reuseCount)||reuseCount<2||reuseCount>profileIds.length))
     throw Error('Select an exact Main/Jigged address and a number from 2 to '+profileIds.length+'.');
    const reuse=bq('reuse-toggle').checked?{sourceId:bq('reuse-choice').value,count:reuseCount}:null;
-   const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:selectedHardCounts(),combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse});
+   bulkStatus(bq('postal-scan').checked?'Checking online ZIP-to-city matches for selected addresses…':'Preparing offline jig preview…');
+   const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:selectedHardCounts(),combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse,postalScan:bq('postal-scan').checked,postalApplyCities:bq('postal-scan').checked&&bq('postal-apply').checked});
    bulkToken=result.token;const out=bq('review-rows');out.replaceChildren();
+   if(result.postalScanned){const info=d.createElement('p');info.textContent='Online ZIP directory: '+result.postalScanned+' ZIP/city source(s) checked · '+result.postalCityCandidates+' alternative cities found · '+result.postalCityApplied+' applied. These are not USPS street delivery confirmations.';out.append(info);}
    const groupViews=new Map();
     for(const row of result.profiles.slice(0,150)){
      const base=row.mainAddress||row.before,key=[base.address1,base.address2,base.city,base.state,base.zip].join('|');
