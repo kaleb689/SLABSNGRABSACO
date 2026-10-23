@@ -209,8 +209,8 @@ test('Customer Jig shows all account addresses and cards, without displaying ful
  assert.equal(assets.customerId,'customer-a');
  assert.equal(assets.addresses.length,2);
  assert.equal(assets.cards.length,4); // Three website cards plus profile's currently linked card
- assert.deepEqual(assets.addresses.map(x=>x.id),['website:0','website:1']);
- assert.ok(assets.cards.some(x=>x.id==='website:1'&&x.last4==='4444'));
+ assert.deepEqual(assets.addresses.map(x=>x.id),['website:address-1','website:address-2']);
+ assert.ok(assets.cards.some(x=>x.id==='website:card-2'&&x.last4==='4444'));
  assert.ok(!JSON.stringify(assets).includes('5555555555554444'));
  await assert.rejects(h.lib.jigAssets(intruder,owner),/owner/);
  await assert.rejects(h.lib.jigAssets(sender,{scope:'aco',customerId:'customer-b'}),/mismatch/);
@@ -219,11 +219,11 @@ test('Linked customer Jig uses selected saved address and card, without crossing
  const h=await harness(t);await h.lib.syncCustomer(sender,owner);
  const row=(await h.lib.list(sender,owner)).profiles[0];
  const preview=await h.lib.previewLinkedJig(sender,{...owner,profileId:row.id,revision:row.revision,
-  addressSourceId:'website:1',cardSourceId:'website:1',ruleIds:['avenue_short'],combine:false});
+  addressSourceId:'website:address-2',cardSourceId:'website:card-2',ruleIds:['avenue_short'],combine:false});
  assert.ok(preview.candidates.length>0);
  assert.match(preview.candidates[0].address.address1,/300 Sample/);
  const confirmed=await h.lib.publishLinkedJig(sender,{...owner,profileId:row.id,expectedRevision:row.revision,
-  address:preview.candidates[0].address,cardSourceId:'website:1',confirmed:true});
+  address:preview.candidates[0].address,cardSourceId:'website:card-2',confirmed:true});
  assert.equal(confirmed.saved,true);
  assert.equal(h.calls[0].payload.card.number,'5555555555554444');
  const saved=(await h.lib.list(sender,owner)).profiles[0];
@@ -234,7 +234,7 @@ test('Masked-only website cards never overwrite an existing linked profile payme
  const row=(await h.lib.list(sender,owner)).profiles[0];
  await assert.rejects(h.lib.publishLinkedJig(sender,{...owner,profileId:row.id,expectedRevision:row.revision,
   address:{address1:'700 Test Street',city:'Sample',state:'FL',zip:'33325'},
-  cardSourceId:'website:2',confirmed:true}),/masked details/);
+  cardSourceId:'website:card-3',confirmed:true}),/masked details/);
  assert.equal(h.calls.length,0);
  assert.equal(Core.payment((await h.lib.list(sender,owner)).profiles[0].data).number,'4242424242424242');
 });
