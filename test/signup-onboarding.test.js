@@ -26,7 +26,8 @@ test("Every onboarding window can be dismissed without requiring saved fields", 
   assert.ok(handler.includes("dismissAccountCheckoutOnboarding()"));
   assert.ok(!handler.includes("addresses?.length") && !handler.includes("paymentMethods?.length"));
   assert.ok(app.includes('localStorage.setItem(onboardingDismissalKey(), "1")'));
-  assert.ok(app.includes("!accountOnboardingWasDismissed()"));
+  assert.ok(app.includes("setAccountOnboardingVisibility(\"\")"));
+  assert.ok(!app.includes('() => openAccountCheckoutOnboarding("address")'));
 });
 
 test("Unfinished shipping and payment details remain checklist items for new accounts", () => {
