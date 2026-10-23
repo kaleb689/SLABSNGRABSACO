@@ -26,5 +26,8 @@ function sourceForCustomer(customer,saved,memberships){if(!customer?.id)throw Er
  }
  const data=D.blank(retailer,C.format(retailer),v),month=clean(card.expMonth).padStart(2,'0'),year=clean(card.expYear),pan=clean(card.acoCardNumber||card.cardNumber).replace(/\D/g,'');C.putCard(data,{number:pan,cardholder:clean(card.cardholder)||first+' '+last,month,year,type:clean(card.brand),customSecurityCode:''});
  linked.push({customerId:customer.id,assignmentId:String(m.assignmentId||m.id),managedAccountId:String(m.id||''),assignmentType:m.type==='rented'?'rented':m.type==='free'?'free':null,remoteUpdatedAt:String(m.updatedAt||''),retailer,active:true,data});
- }return {customer:{id:customer.id,name:customer.name},linked};}
+ }return {customer:{id:customer.id,name:customer.name},linked,
+  // Main-process-only source records: caller must authorize this exact customer.
+  // The renderer must receive only labels and last four digits, never this object.
+  jigResources:{addresses:addresses.map(x=>({...x})),cards:cards.map(x=>({...x}))}};}
 module.exports={sourceForCustomer};
