@@ -7149,6 +7149,7 @@ function renderOrder(x) {
   >
     ${escapeHtml(subscriptionState.label)}
   </span>
+  <button type="button" class="admin-edit-button" data-admin-extend-membership="${escapeHtml(x.customerAccountId || x.id)}" title="Choose an exact Stripe-verified no-charge membership extension">EXTEND</button>
 
   <div class="order-status-subline">
     ${escapeHtml(activeThrough)}
@@ -24039,7 +24040,8 @@ async function loadMembershipTools() {
       row.textContent = `${gift.customerEmail} · ${gift.tierName} · ${gift.durationQuantity ?? gift.months} ${gift.durationUnit ?? "months"} · ${new Date(gift.startsAt).toLocaleDateString()} – ${new Date(gift.expiresAt).toLocaleDateString()} `;
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = "Revoke";
+      button.textContent = gift.stripeSubscriptionId ? "Stripe renewal extended" : "Revoke";
+      button.disabled = Boolean(gift.stripeSubscriptionId);
       button.className = "admin-edit-button";
       button.onclick = async () => {
         try {
@@ -24189,6 +24191,56 @@ document.getElementById("discordSuccessScanButton")?.addEventListener("click", a
   finally { button.disabled = false; refreshDiscordSuccessStatus(); }
 });
 setInterval(() => { if (!document.hidden && !document.getElementById("dashboard")?.hidden) refreshDiscordSuccessStatus(); }, 6000);
+
+
+// Admin membership extension is an explicit no-charge Stripe billing action.
+// A local date/time is converted into a precise UTC Stripe renewal timestamp.
+document.addEventListener("click", event => {
+ const button=event.target.closest?.("[data-admin-extend-membership]");
+ if(!button)return;
+ event.preventDefault();event.stopPropagation();
+ const accountId=String(button.dataset.adminExtendMembership||"");
+ if(!accountId)return;
+ document.querySelector("#adminExtensionDialog")?.remove();
+ const dialog=document.createElement("dialog");dialog.id="adminExtensionDialog";
+ dialog.style.cssText="max-width:min(490px,92vw);border:1px solid #3886a7;border-radius:16px;padding:22px;background:#0d2333;color:#eefaff;box-shadow:0 18px 65px #0009";
+ const heading=document.createElement("h3");heading.textContent="Extend membership and defer Stripe billing";
+ const explain=document.createElement("p");explain.textContent="Choose the exact new renewal date and time in your local timezone. The membership and Stripe renewal are extended together without an immediate charge or proration. No other membership settings are changed.";
+ const form=document.createElement("form");form.style.cssText="display:grid;gap:13px";
+ const label=document.createElement("label");label.textContent="New next payment date / time";
+ const when=document.createElement("input");when.type="datetime-local";when.required=true;
+ const d=new Date();when.min=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+ when.style.cssText="display:block;width:100%;padding:12px;background:#112e43;color:white;border:1px solid #527f9b;border-radius:9px";
+ label.append(when);
+ const result=document.createElement("p");result.setAttribute("role","status");
+ const actions=document.createElement("div");actions.style.cssText="display:flex;gap:10px;flex-wrap:wrap";
+ const save=document.createElement("button");save.type="submit";save.className="admin-save-button";save.textContent="Confirm no-charge extension";
+ const cancel=document.createElement("button");cancel.type="button";cancel.className="admin-edit-button";cancel.textContent="Close";
+ cancel.onclick=()=>dialog.close();actions.append(save,cancel);
+ form.append(label,actions,result);dialog.append(heading,explain,form);document.body.append(dialog);
+ dialog.addEventListener("close",()=>dialog.remove());
+ when.addEventListener("change",()=>{delete form.dataset.extensionRequestId;result.textContent="";});
+ form.addEventListener("submit",async e=>{
+  e.preventDefault();if(!when.value)return;
+  const date=new Date(when.value);
+  if(!Number.isFinite(date.getTime())){result.textContent="Enter a valid date and time.";return;}
+  form.dataset.extensionRequestId ||= crypto.randomUUID();
+  save.disabled=true;result.textContent="Verifying the extension and new renewal date with Stripe…";
+  try{
+   const reply=await membershipApi("/api/admin/membership-extensions",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({customerAccountId:accountId,endAt:date.toISOString(),requestId:form.dataset.extensionRequestId})
+   });
+   if(!reply.billingVerified&&!reply.replayed)throw Error("Stripe billing was not verified.");
+   result.textContent="Confirmed: no payment due before "+new Date(reply.extension.expiresAt).toLocaleString()+". Stripe renewal and membership records were updated.";
+   delete form.dataset.extensionRequestId;
+   void load({background:true});
+  }catch(error){result.textContent=error.message||"Extension could not be confirmed.";}
+  finally{save.disabled=false;}
+ });
+ if(typeof dialog.showModal==="function")dialog.showModal();
+ else dialog.setAttribute("open","");
+},true);
 
 document.getElementById("giftTierForm")?.addEventListener("change", event => { delete event.currentTarget.dataset.giftRequestId; });
 document.getElementById("giftTierForm")?.addEventListener("submit", async event => {
