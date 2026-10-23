@@ -1,7 +1,7 @@
 name: ACO Studio - Profile Library verification
 on:
   push:
-    branches: [build/aco-studio-macos-v4133-20261015, fix/aco-studio-duplicate-email-review-20261018, fix/custom-profile-security-code-export-20261022]
+    branches: [build/aco-studio-macos-v4133-20261015, fix/aco-studio-duplicate-email-review-20261018]
     paths:
       - '.github/aco-studio-build/profile-library/**'
       - '.github/aco-studio-build/native-updater/**'
