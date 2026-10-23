@@ -7089,9 +7089,51 @@ async function provisionPaidMembershipPool(record) {
  }
  broadcastLiveDataChange("paid-profile-pool-assignment");
 }
+// Return only newly auto-pooled paid-tier accounts to inventory when the
+// member lapses or downgrades. Historical assignments remain in the ledger.
+// Never touch gifted/rented/manual accounts or delete customer profile data.
+async function reconcilePaidPoolAssignmentLimits(paidRecords) {
+ const allowance=new Map();
+ for(const record of (Array.isArray(paidRecords)?paidRecords:[])){
+  if(!record.customerAccountId||!subscriptionAllowsProfiles(record))continue;
+  const id=String(record.customerAccountId);
+  allowance.set(id,Math.min(100,Math.max(
+   allowance.get(id)||0,profileAllowanceForRecord(record)||0)));
+ }
+ const assignments=await getFreeAssignments();
+ const groups=new Map();
+ for(const item of assignments){
+  if(item.autoPaidPoolAssignment!==true||!managedAssignmentIsLinked(item))continue;
+  const retailer=normalizeManagedPoolRetailer(item.assignmentRetailer);
+  if(!["target","pokemoncenter"].includes(retailer))continue;
+  const key=String(item.customerAccountId)+"|"+retailer;
+  if(!groups.has(key))groups.set(key,[]);
+  groups.get(key).push(item);
+ }
+ let changed=false;
+ for(const [key,items] of groups){
+  const id=key.slice(0,key.lastIndexOf("|")),limit=allowance.get(id)||0;
+  items.sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))||
+   String(a.id||"").localeCompare(String(b.id||"")));
+  for(let i=limit;i<items.length;i++){
+   const record=items[i],now=new Date().toISOString();
+   record.active=false;
+   record.activationStatus=limit?"deactivated":"expired";
+   record.endedAt=now;record.updatedAt=now;
+   record.endReason=limit?"paid_tier_downgrade":"paid_membership_inactive";
+   changed=true;
+  }
+ }
+ if(changed){
+  await saveFreeAssignments(assignments);
+  broadcastLiveDataChange("paid-pool-entitlement-reconciled");
+ }
+ return {changed,groups:groups.size};
+}
 const paidPoolProvisioningScheduler=setInterval(()=>{
  void queuePaidPoolAutoAssignment(async()=>{
   const records=await readJson(PAID_FILE,[]);
+  await reconcilePaidPoolAssignmentLimits(records);
   const newest=new Map();
   for(const r of (Array.isArray(records)?records:[])){
    if(r.autoPoolProvisioningRequestedAt&&r.customerAccountId&&subscriptionAllowsProfiles(r))
