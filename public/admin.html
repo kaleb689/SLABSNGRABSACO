@@ -24041,7 +24041,9 @@ async function loadMembershipTools() {
     giftList.replaceChildren();
     for (const gift of (giftData.memberships || []).slice().reverse()) {
       const row = document.createElement("p");
-      row.textContent = `${gift.customerEmail} · ${gift.tierName} · ${gift.durationQuantity ?? gift.months} ${gift.durationUnit ?? "months"} · ${new Date(gift.startsAt).toLocaleDateString()} – ${new Date(gift.expiresAt).toLocaleDateString()} `;
+      row.textContent = gift.kind === "admin_extension"
+        ? `${gift.customerEmail} · ${gift.tierName} · Paid Stripe renewal extended until ${new Date(gift.expiresAt).toLocaleString()}`
+        : `${gift.customerEmail} · ${gift.tierName} · ${gift.durationQuantity ?? gift.months} ${gift.durationUnit ?? "months"} · ${new Date(gift.startsAt).toLocaleDateString()} – ${new Date(gift.expiresAt).toLocaleDateString()} `;
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = gift.stripeSubscriptionId ? "Stripe renewal extended" : "Revoke";
