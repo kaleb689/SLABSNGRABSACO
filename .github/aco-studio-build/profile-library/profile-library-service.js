@@ -125,6 +125,27 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
   },a.check);
  }
  async function exportFile(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles.');const all=await profiles.fieldSnapshot(a.scope,a.id),rows=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===p.retailer));if(rows.some(x=>!x))throw Error('Every exported profile must still belong to this vault and retailer.');const content=C.exportRows(rows,p.retailer,p.customerName||'Personal');if(!await confirmExport(e))return {cancelled:true};const ext=path.extname(content.name),choice=await chooseSave(e,{name:content.name,extension:ext.slice(1)});if(choice.canceled||!choice.filePath)return {cancelled:true};if(path.extname(choice.filePath)!==ext)throw Error('Keep the retailer export format.');const latest=await profiles.fieldSnapshot(a.scope,a.id);if(rows.some(x=>require('./jig-field-core').hash(x)!==require('./jig-field-core').hash(latest.find(y=>y.id===x.id))))throw Error('Profiles changed while exporting. Try again.');a.check();await writeFile(choice.filePath,content.body,{encoding:'utf8',mode:0o600});return {saved:true,count:rows.length,name:path.basename(choice.filePath)};}
+ async function exportArchive(e,p){
+  const a=await access(e,p);
+  C.retailer(p.retailer);
+  if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||
+    new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles.');
+  const before=await profiles.fieldSnapshot(a.scope,a.id);
+  const rows=p.profileIds.map(id=>before.find(row=>row.id===id&&row.retailer===p.retailer));
+  if(rows.some(row=>!row))throw Error('Profiles must belong to this vault and retailer.');
+  const content=C.exportArchiveRows(rows,p.retailer,p.customerName||'Personal');
+  if(!await confirmExport(e))return {cancelled:true};
+  const choice=await chooseSave(e,{name:content.name,extension:'json'});
+  if(choice.canceled||!choice.filePath)return {cancelled:true};
+  if(path.extname(choice.filePath).toLowerCase()!=='.json')throw Error('Choose a JSON file.');
+  const latest=await profiles.fieldSnapshot(a.scope,a.id);
+  if(rows.some(row=>require('./jig-field-core').hash(row)!==
+   require('./jig-field-core').hash(latest.find(item=>item.id===row.id))))
+    throw Error('Profiles changed during export. Try again.');
+  a.check();
+  await writeFile(choice.filePath,content.body,{encoding:'utf8',mode:0o600});
+  return {saved:true,count:rows.length,name:path.basename(choice.filePath)};
+ }
  async function syncCustomer(e,p){
   if(p?.scope!=='aco')throw Error('Linked website profiles can only enter that customer vault.');
   const a=await access(e,p);if(!getCustomerProfileSource)throw Error('Customer profile synchronization unavailable.');
@@ -445,9 +466,9 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
  async function bulkManage(e,p){const a=await access(e,p);return profiles.bulkManage(a.scope,a.id,p,a.check);}
  async function rules(e,p){const a=await access(e,p),retailer=C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id),saved=settings[retailer];a.check();const legacyTarget=retailer==='target'&&Array.isArray(saved?.rules)&&saved?.presetVersion!==2;const selected=legacyTarget?[...new Set([...saved.rules,...C.TARGET_PRIMARY_RULES.map(x=>x.id)])]:(saved?.rules||C.defaultRules(retailer));return {selected,legacyMigrated:legacyTarget,presetVersion:2,options:[...C.ruleOptions(retailer),{id:C.FL_PHONE_RULE,label:'Random Florida phone number',risk:'standard',family:'phone'}]};}
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:2};return {saved:true,presetVersion:2};},a.check);}
- return {list,detail,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,rules,saveRules,cancel};
+ return {list,detail,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,rules,saveRules,cancel};
 }
-function registerLibrary(options){const service=createLibrary(options);for(const method of ['list','detail','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
+function registerLibrary(options){const service=createLibrary(options);for(const method of ['list','detail','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
  // Owner-only encrypted backup recovery for complete Personal and ACO vaults.
  // No customer website token or profile ID can access these snapshots.
  options.ipcMain.handle('profile:library:backupList',(e,p)=>{
