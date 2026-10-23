@@ -7,6 +7,7 @@ import { stripPaymentVerifiers, purgeLegacyPaymentVerifiers } from "./payment-ve
 import { managedWriteConflict, nextManagedRevision, serializeManagedWrites, mergeManagedCard } from "./managed-customer-write-policy.js";
 import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
+import { membershipExtensionBounds, calculateMembershipExtension } from "./membership-extension-window.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
 import { historicalPlusVerified, communityCheckoutTotals, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
@@ -233,6 +234,8 @@ const FREE_ASSIGNMENTS_FILE =
 // from Stripe records so a grant never mutates a customer's paid history.
 const GIFTED_MEMBERSHIPS_FILE =
   path.join(DATA_DIR, "gifted-memberships.json");
+// Audit history is separate from gift grants; extending time must not add tiers or profiles.
+const MEMBERSHIP_EXTENSIONS_FILE = path.join(DATA_DIR, "membership-extensions.json");
 
 const DISCOUNT_CODES_FILE =
   path.join(DATA_DIR, "discount-codes.json");
@@ -1266,10 +1269,10 @@ function stripeTimestampToIso(value) {
 }
 
 async function getSubscriptionPeriodEnd(subscription) {
+  // Stripe may represent deferred renewal by trial_end before item dates refresh.
+  const trialEnd = Number(subscription?.trial_end) || 0;
   if (subscription?.current_period_end) {
-    return stripeTimestampToIso(
-      subscription.current_period_end
-    );
+    return stripeTimestampToIso(Math.max(Number(subscription.current_period_end), trialEnd));
   }
 
   let items =
@@ -1309,13 +1312,11 @@ async function getSubscriptionPeriodEnd(subscription) {
         value > 0
       );
 
-  if (!periodEnds.length) {
+  if (!periodEnds.length && !trialEnd) {
     return null;
   }
 
-  return stripeTimestampToIso(
-    Math.max(...periodEnds)
-  );
+  return stripeTimestampToIso(Math.max(trialEnd, ...periodEnds));
 }
 
 async function getSubscriptionPeriodStart(subscription) {
@@ -16192,6 +16193,159 @@ app.post(
 /* -------------------------------------------------------
    ADMIN MEMBERSHIP GRANTS / DISCOUNT CODES
 ------------------------------------------------------- */
+
+// Manual customer subscription extensions do NOT mint new memberships or profiles.
+// A verified Stripe trial boundary postpones renewal while preserving the tier and rate.
+let adminMembershipExtensionTail = Promise.resolve();
+function queueAdminMembershipExtension(task) {
+  const current = adminMembershipExtensionTail.then(task);
+  adminMembershipExtensionTail = current.catch(() => {});
+  return current;
+}
+function adminMembershipExtensionError(message, status = 409) {
+  return Object.assign(new Error(message), {status});
+}
+async function adminMembershipExtensionTarget(customerAccountId) {
+  const accountId = String(customerAccountId || "").trim();
+  const customers = await getCustomerAccounts();
+  const customer = customers.find(item => String(item.id) === accountId);
+  if (!customer) throw adminMembershipExtensionError("Customer account was not found.", 404);
+  const rawPaid = await readJson(PAID_FILE, []);
+  const paidRecords = Array.isArray(rawPaid) ? rawPaid : [];
+  const activeRecords = paidRecords.filter(item =>
+    String(item.customerAccountId) === accountId && subscriptionAllowsProfiles(item));
+  const ids = [...new Set(activeRecords.map(item => String(item.stripeSubscriptionId || "")).filter(Boolean))];
+  if (ids.length !== 1 || activeRecords.some(item => !item.stripeSubscriptionId)) {
+    throw adminMembershipExtensionError("A single active paid Stripe subscription is required to extend billing. Gift-only or unlinked accounts cannot be extended from this button.");
+  }
+  const subscription = await stripe.subscriptions.retrieve(ids[0]);
+  if (!["active", "trialing"].includes(subscription.status) ||
+      subscription.cancel_at_period_end || subscription.cancel_at || subscription.pause_collection) {
+    throw adminMembershipExtensionError("This subscription is canceled, ending, paused, or inactive. Resolve that status in Stripe before extending.");
+  }
+  const periodEnd = await getSubscriptionPeriodEnd(subscription);
+  if (!periodEnd) throw adminMembershipExtensionError("Stripe has not confirmed the current renewal date.");
+  const gifts = await getGiftedMemberships();
+  const previousGiftEnd = gifts.filter(item => String(item.customerAccountId) === accountId)
+    .map(item => item.expiresAt).filter(Boolean).sort().at(-1) || null;
+  return {
+    customer, paidRecords, subscription,
+    boundsInput: {periodEnd, trialEnd: subscription.trial_end,
+      previousGiftEnd, billingCycleAnchor: subscription.billing_cycle_anchor}
+  };
+}
+
+app.get("/api/admin/membership-extensions/:customerAccountId", requireAdmin, async (req, res) => {
+  res.set("Cache-Control", "private, no-store");
+  try {
+    const target = await adminMembershipExtensionTarget(req.params.customerAccountId);
+    return res.json({ok: true, ...membershipExtensionBounds(target.boundsInput),
+      customerEmail: target.customer.email || "", subscriptionStatus: target.subscription.status});
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({error: error.message});
+    console.error("Membership extension preview error:", error?.message || error);
+    return res.status(502).json({error: "Could not verify the subscription's next Stripe renewal date."});
+  }
+});
+
+app.post("/api/admin/membership-extensions/:customerAccountId", requireAdmin, async (req, res) => {
+  const customerAccountId = String(req.params.customerAccountId || "").trim();
+  const requestId = String(req.body?.requestId || "").trim();
+  const until = String(req.body?.until || "").trim();
+  const durationUnit = until ? null : String(req.body?.durationUnit || "");
+  const durationQuantity = until ? null : Number(req.body?.durationQuantity);
+  if (!customerAccountId || !/^[a-zA-Z0-9-]{12,80}$/.test(requestId)) {
+    return res.status(400).json({error: "Choose a customer and a valid extension request."});
+  }
+  try {
+    const result = await queueAdminMembershipExtension(async () => {
+      const stored = await readJson(MEMBERSHIP_EXTENSIONS_FILE, []);
+      const history = Array.isArray(stored) ? stored : [];
+      const prior = history.find(item => item.requestId === requestId);
+      if (prior) {
+        if (String(prior.customerAccountId) !== customerAccountId ||
+            String(prior.until || "") !== until ||
+            String(prior.durationUnit || "") !== String(durationUnit || "") ||
+            String(prior.durationQuantity ?? "") !== String(durationQuantity ?? "")) {
+          throw adminMembershipExtensionError("Extension request was already used with other details.");
+        }
+        return {extension: prior, replayed: true};
+      }
+
+      const target = await adminMembershipExtensionTarget(customerAccountId);
+      const sub = target.subscription;
+      const metadata = sub.metadata || {};
+      const replayedStripe = String(metadata.sng_last_admin_extension_request || "") === requestId;
+      let window, updated;
+      if (replayedStripe) {
+        const matching = String(metadata.sng_last_admin_extension_kind || "") === (until ? "date" : durationUnit) &&
+          String(metadata.sng_last_admin_extension_count || "") === (until ? "" : String(durationQuantity)) &&
+          String(metadata.sng_last_admin_extension_date || "") === until;
+        const expiresAt = String(metadata.sng_last_admin_extension_end || "");
+        const startsAt = String(metadata.sng_last_admin_extension_start || "");
+        const end = Date.parse(expiresAt);
+        if (!matching || !Number.isFinite(end) || !Number.isFinite(Date.parse(startsAt)) ||
+            Number(sub.trial_end) !== Math.floor(end / 1000)) {
+          throw adminMembershipExtensionError("Stripe already processed this request, but its dates differ. Review the Stripe subscription before retrying.");
+        }
+        window = {startsAt, expiresAt, stripeTrialEnd: Math.floor(end / 1000)};
+        updated = sub;
+      } else {
+        window = calculateMembershipExtension({...target.boundsInput,
+          ...(until ? {until} : {durationUnit, durationQuantity})});
+        updated = await stripe.subscriptions.update(sub.id, {
+          trial_end: window.stripeTrialEnd,
+          proration_behavior: "none",
+          metadata: {
+            sng_last_admin_extension_request: requestId,
+            sng_last_admin_extension_start: window.startsAt,
+            sng_last_admin_extension_end: window.expiresAt,
+            sng_last_admin_extension_kind: until ? "date" : durationUnit,
+            sng_last_admin_extension_count: until ? "" : String(durationQuantity),
+            sng_last_admin_extension_date: until
+          }
+        }, {idempotencyKey: "sng-membership-extension-" + requestId});
+        if (Number(updated.trial_end) !== window.stripeTrialEnd) {
+          throw adminMembershipExtensionError("Stripe did not confirm the new billing date. Check Stripe before retrying.", 502);
+        }
+      }
+
+      const savedAt = new Date().toISOString();
+      for (const record of target.paidRecords) {
+        if (String(record.customerAccountId) !== customerAccountId ||
+            String(record.stripeSubscriptionId || "") !== String(sub.id)) continue;
+        await applySubscriptionInfo(record, updated);
+        record.adminExtensionUntil = window.expiresAt;
+        record.subscriptionUpdatedAt = savedAt;
+        record.updatedAt = savedAt;
+      }
+      await writeJson(PAID_FILE, target.paidRecords);
+      const extension = {
+        id: crypto.randomUUID(), requestId, customerAccountId,
+        customerEmail: target.customer.email || "", stripeSubscriptionId: sub.id,
+        durationUnit, durationQuantity, until: until || null,
+        previousRenewalAt: window.startsAt, nextRenewalAt: window.expiresAt,
+        createdAt: savedAt, createdBy: "admin"
+      };
+      history.push(extension);
+      await writeJson(MEMBERSHIP_EXTENSIONS_FILE, history);
+      membershipRevenueCache = null;
+      broadcastLiveDataChange("admin-membership-extension");
+      await appendSecurityAudit({event: "admin_membership_extended", requestId,
+        method: req.method, path: req.path, status: 201, ip: req.ip,
+        userAgent: req.headers["user-agent"]});
+      return {extension, replayed: false};
+    });
+    return res.status(result.replayed ? 200 : 201).json({ok: true, ...result});
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({error: error.message});
+    if (/^Choose |^The new renewal date|^Stripe allows |^A valid renewal date/.test(error.message || "")) {
+      return res.status(400).json({error: error.message});
+    }
+    console.error("Admin subscription extension could not be confirmed:", error?.message || error);
+    return res.status(502).json({error: "Extension could not be confirmed. Check the Stripe renewal date before retrying the same request."});
+  }
+});
 
 app.get("/api/admin/gifted-memberships", requireAdmin, async (req, res) => {
   const records = await getGiftedMemberships();
@@ -33085,6 +33239,7 @@ app.get(
             {
               customerName,
               customerEmail,
+              customerAccountId: account?.id || null,
               profiles: []
             }
           );

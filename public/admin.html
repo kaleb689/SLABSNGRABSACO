@@ -2153,11 +2153,38 @@
     .activation-customer-identity { display: flex; flex-wrap: wrap; gap: 5px; align-items: baseline; min-width: 0; }
     .activation-customer-identity strong { color: #e9efff; font-size: 15px; }
     .activation-customer-identity small { color: #b3c7d9; overflow-wrap: anywhere; }
-    .activation-customer-row > button { flex-shrink: 0; }
+    .activation-customer-row { flex-wrap: wrap; }
+    .activation-customer-actions { display: flex; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; }
+    .activation-customer-actions button { min-height: 38px; white-space: nowrap; }
+    .subscription-extension-form {
+      flex: 1 1 100%; width: 100%; display: grid; gap: 10px;
+      padding: 14px 0 2px; border-top: 1px solid rgba(255,255,255,.12);
+      color: #dcefff;
+    }
+    .subscription-extension-form[hidden] { display: none; }
+    .subscription-extension-form p { margin: 0; font-size: 12px; }
+    .subscription-extension-form .subscription-extension-fields { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+    .subscription-extension-form label { display: grid; gap: 5px; font-size: 11px; font-weight: 800; }
+    .subscription-extension-form input, .subscription-extension-form select {
+      min-height: 38px; width: 100%; max-width: 230px; padding: 8px;
+      color: #ecfaff; background: #081a28; border: 1px solid #2e5e75; border-radius: 7px;
+      font: inherit;
+    }
+    .subscription-extension-form input[name="durationQuantity"] { max-width: 110px; }
+    .subscription-extension-form .subscription-extension-fields label { min-width: 105px; }
+    .subscription-extension-form .subscription-extension-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+    .subscription-extension-form [data-subscription-extension-result] { color: #7ee2a6; overflow-wrap: anywhere; }
+    .subscription-extension-form [data-subscription-extension-result].error { color: #ff9da1; }
+    .subscription-extension-form [data-subscription-current] { color: #b6d5e8; }
+    .subscription-extension-form .subscription-extension-help { color: #9db8ca; }
+    @media (max-width: 640px) {
+      .activation-customer-actions { width: 100%; }
+      .activation-customer-actions button { flex: 1 1 115px; }
+    }
     @media(max-width:640px) {
       .activation-customer-row { gap: 8px; padding: 12px; }
       .activation-customer-identity { flex-direction: column; }
-      .activation-customer-row > button { min-width: 115px; }
+      .activation-customer-actions button { min-width: 115px; }
     }
 
     .activation-group > summary {
@@ -18457,6 +18484,8 @@ async function loadProfileActivationTracker() {
       ["lastCheckedAt", "lastFetchedAt", "sourceCheckedAt", "generatedAt"].includes(key)
         ? undefined : value);
     if (fingerprint === adminLastActivationFingerprint) return;
+    // Do not destroy an in-progress extension form during live background updates.
+    if (document.activeElement?.closest?.(".subscription-extension-form")) return;
     adminLastActivationFingerprint = fingerprint;
 
     if (
@@ -18605,14 +18634,44 @@ async function loadProfileActivationTracker() {
               <strong>${escapeHtml(group.customerName||"Customer")}</strong>
               <small>${escapeHtml(group.customerEmail||"")}</small>
             </span>
-            <button type="button" class="${allActive?"admin-edit-button":"admin-save-button"}"
-              data-activation-customer-action="${action}" data-activation-customer-index="${index}"
-              ${eligible.length?"":'disabled title="No eligible profiles"'}>${allActive?"Deactivate":"Set Active"}</button>
+            <div class="activation-customer-actions">
+              <button type="button" class="${allActive?"admin-edit-button":"admin-save-button"}"
+                data-activation-customer-action="${action}" data-activation-customer-index="${index}"
+                ${eligible.length?"":'disabled title="No eligible profiles"'}>${allActive?"Deactivate":"Set Active"}</button>
+              <button type="button" class="admin-save-button" data-subscription-extend-index="${index}"
+                ${group.customerAccountId?"":'disabled title="No linked customer account"'}>Extend</button>
+            </div>
+            <form class="subscription-extension-form" data-subscription-extension-form="${index}" hidden>
+              <p data-subscription-current role="status">Checking current Stripe renewal…</p>
+              <div class="subscription-extension-fields">
+                <label>Extend by
+                  <input name="durationQuantity" type="number" min="1" max="10000" step="1" value="1" required>
+                </label>
+                <label>Period
+                  <select name="durationUnit">
+                    <option value="days">Days</option>
+                    <option value="weeks">Weeks</option>
+                    <option value="months" selected>Months</option>
+                    <option value="years">Years</option>
+                  </select>
+                </label>
+                <label>Or set the next renewal date
+                  <input name="untilDate" type="date" aria-label="Custom next subscription renewal date">
+                </label>
+              </div>
+              <p class="subscription-extension-help">A date overrides the duration. Added time begins after existing paid or gifted time. The customer's tier and linked accounts stay unchanged; Stripe has a two-year trial-based extension limit.</p>
+              <div class="subscription-extension-controls">
+                <button type="submit" class="admin-save-button">Confirm extension</button>
+                <button type="button" class="admin-cancel-button" data-subscription-extension-cancel>Cancel</button>
+              </div>
+              <p data-subscription-extension-result role="status" aria-live="polite"></p>
+            </form>
           </div>`;
         }).join("")
       : '<div class="empty-admin">No customer profiles to manage.</div>';
 
     bindProfileActivationButtons();
+    bindSubscriptionExtensionButtons();
 
     bindAdminNotificationLinks();
 
@@ -18629,6 +18688,99 @@ async function loadProfileActivationTracker() {
 }
 
 
+
+function bindSubscriptionExtensionButtons() {
+  profileActivationGroups?.querySelectorAll("[data-subscription-extend-index]").forEach(button => {
+    const index = Number(button.dataset.subscriptionExtendIndex);
+    const group = adminVisibleActivationGroups[index];
+    const form = profileActivationGroups.querySelector('[data-subscription-extension-form="' + index + '"]');
+    if (!group?.customerAccountId || !form) return;
+    const result = form.querySelector("[data-subscription-extension-result]");
+    const current = form.querySelector("[data-subscription-current]");
+    const display = value => new Date(value).toLocaleString(undefined,
+      {year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
+    button.addEventListener("click", async () => {
+      if (!form.hidden) { form.hidden = true; return; }
+      form.hidden = false;
+      current.textContent = "Checking the current Stripe renewal date…";
+      result.textContent = "";
+      result.classList.remove("error");
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/admin/membership-extensions/" + encodeURIComponent(group.customerAccountId),
+          {credentials: "same-origin", cache: "no-store"});
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Unable to check subscription.");
+        current.textContent = "Current next renewal: " + display(data.currentRenewalAt) +
+          " · Latest supported date: " + display(data.maxRenewalAt);
+      } catch (error) {
+        current.textContent = "Subscription extension unavailable: " + error.message;
+        result.textContent = error.message;
+        result.classList.add("error");
+      } finally {
+        button.disabled = false;
+      }
+    });
+    form.querySelector("[data-subscription-extension-cancel]")?.addEventListener("click", () => {
+      form.hidden = true;
+      result.textContent = "";
+    });
+    form.addEventListener("input", () => { delete form.dataset.extensionRequestId; });
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const quantity = Number(form.elements.durationQuantity?.value);
+      const unit = String(form.elements.durationUnit?.value || "");
+      const selectedDate = String(form.elements.untilDate?.value || "");
+      const untilDate = selectedDate ? new Date(selectedDate + "T12:00:00") : null;
+      if (untilDate && !Number.isFinite(untilDate.getTime())) {
+        result.textContent = "Choose a valid renewal date.";
+        result.classList.add("error");
+        return;
+      }
+      if (!untilDate && (!Number.isSafeInteger(quantity) || quantity < 1)) {
+        result.textContent = "Choose a positive duration.";
+        result.classList.add("error");
+        return;
+      }
+      const until = untilDate ? untilDate.toISOString() : "";
+      const choice = until ? ("set the next renewal to " + selectedDate) :
+        ("add " + quantity + " " + unit);
+      const name = group.customerName || group.customerEmail || "this customer";
+      if (!window.confirm("Extend " + name + "'s subscription: " + choice +
+        "?\n\nStripe will postpone renewal billing without changing the tier or making an immediate membership charge.")) return;
+      const submit = form.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      const original = submit.textContent;
+      submit.textContent = "Extending…";
+      result.textContent = "Confirming the new Stripe billing date…";
+      result.classList.remove("error");
+      try {
+        const requestId = form.dataset.extensionRequestId ||
+          (window.crypto?.randomUUID?.() || (Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)));
+        form.dataset.extensionRequestId = requestId;
+        const response = await fetch("/api/admin/membership-extensions/" + encodeURIComponent(group.customerAccountId), {
+          method: "POST", credentials: "same-origin",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({durationQuantity: quantity, durationUnit: unit, until, requestId})
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Stripe did not confirm the extension.");
+        delete form.dataset.extensionRequestId;
+        const date = display(data.extension.nextRenewalAt);
+        result.textContent = "Extended successfully. New Stripe renewal: " + date;
+        window.alert(name + "'s subscription was extended. Next renewal: " + date);
+        adminLastActivationFingerprint = null;
+        await loadProfileActivationTracker();
+      } catch (error) {
+        result.textContent = error.message + " You may retry using this form; the request ID is retained to prevent duplicate extensions.";
+        result.classList.add("error");
+      } finally {
+        submit.disabled = false;
+        submit.textContent = original;
+      }
+    });
+  });
+}
 
 function bindAdminNotificationLinks(){
  document.querySelectorAll("[data-notification-profile-id]").forEach(button=>{
