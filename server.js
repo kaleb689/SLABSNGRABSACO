@@ -14442,9 +14442,11 @@ try {
               profileType:
                 "free",
 
-              profileName:
-                membership.profileName ||
-                "FREE MEMBERSHIP",
+              profileName: assignment.autoPaidPoolAssignment
+                ? (assignment.assignmentRetailer==="target" ? "Target Membership Account" : "PKC Membership Account")
+                : (membership.profileName||"FREE MEMBERSHIP"),
+              includedWithPaidMembership: assignment.autoPaidPoolAssignment===true,
+              assignmentRetailer: assignment.assignmentRetailer||null,
 
               status:
                 assignment.activationStatus ===
