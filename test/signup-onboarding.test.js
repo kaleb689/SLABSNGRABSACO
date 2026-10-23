@@ -46,5 +46,10 @@ test("Walmart inventory is request-only",()=>{
  assert.ok(server.includes('/api/account/walmart-profile-request'));
  assert.ok(server.includes('const retailers=["target","pokemoncenter"]'));
  assert.ok(!server.includes('const retailers=["target","walmart","pokemoncenter"]'));
+ const start=server.indexOf("async function assignReferralRewardProfiles(");
+ const referral=server.slice(start,server.indexOf("async function ",start+10));
+ assert.ok(start>=0);
+ assert.ok(!referral.includes('getAvailableManagedAccountsForRetailer("walmart")'));
+ assert.ok(!referral.includes("walmart: matchingWalmart"));
  assert.ok(app.includes('/api/account/walmart-profile-request'));
 });
