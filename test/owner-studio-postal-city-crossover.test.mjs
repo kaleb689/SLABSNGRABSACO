@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createRequire} from 'node:module';
+import Module from 'node:module';
 import fs from 'node:fs';
-const require=createRequire(import.meta.url);
-const {lookupPostalZipCities}=require('../.github/aco-studio-build/profile-library/postal-city-crossover.js');
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+// The overlay is CommonJS inside the Electron app; the public repository root
+// has type: module, so load it with a CommonJS module wrapper for this test.
+const source=fileURLToPath(new URL('../.github/aco-studio-build/profile-library/postal-city-crossover.js',import.meta.url));
+const local=new Module(source);
+local.filename=source;
+local.paths=Module._nodeModulePaths(path.dirname(source));
+local._compile(fs.readFileSync(source,'utf8'),source);
+const {lookupPostalZipCities}=local.exports;
 test('Desktop ZIP lookup sends ZIP only, never address or credentials',async()=>{
  let request;
  const result=await lookupPostalZipCities({address1:'PRIVATE STREET',city:'Davie',state:'FL',zip:'33324',email:'private@example.test',cardNumber:'1234567890123456'},
