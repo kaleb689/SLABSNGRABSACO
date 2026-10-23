@@ -106,7 +106,8 @@ const targetRule=id=>TARGET_PRIMARY_RULES.find(x=>x.id===id),ruleById=id=>coreRu
 function ruleOptions(r){
  retailer(r);
  const standard=Core.RULES.filter(x=>!/^prefix_three/.test(x.id)&&!oldSuffixRule(x.id)).map(x=>({id:x.id,label:x.label,risk:'standard',family:'standard'}));
- return r==='target'?[...standard,SUFFIX_MATCH_RULE,...TARGET_PRIMARY_RULES.map(({id,label,risk,family})=>({id,label,risk,family}))]:[...standard,SUFFIX_MATCH_RULE];
+ const {id,label,risk,family}=SUFFIX_MATCH_RULE;const matching={id,label,risk,family};
+ return r==='target'?[...standard,matching,...TARGET_PRIMARY_RULES.map(({id,label,risk,family})=>({id,label,risk,family}))]:[...standard,matching];
 }
 const defaultRules=r=>{
  const safe=[...new Set(Core.defaultRuleIDs.filter(id=>!/(prefix|fraction|fictitious|fabricated|phone)/i.test(id))
