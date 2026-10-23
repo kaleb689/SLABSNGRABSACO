@@ -245,16 +245,17 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   return {website:website.jigResources||{},localAddresses:localAddresses.addresses||[],
    localCards:localCards.cards||[],ownedProfiles};
  }
+ const websiteRef=x=>String(x.id||crypto.createHash('sha256').update(JSON.stringify(x)).digest('hex')).slice(0,180);
  async function jigAssets(e,p){
   const a=await access(e,p),resources=await jigSources(a);
   const siteA=resources.website.addresses||[],siteC=resources.website.cards||[];
   const addressLabel=x=>[x.address1||x.address||x.addressLine1,x.address2||x.addressLine2,x.city,x.state,x.zip||x.zipCode].filter(Boolean).join(', ');
   const last4=x=>String(x.acoCardNumber||x.cardNumber||x.number||x.maskedNumber||x.last4||'').replace(/\D/g,'').slice(-4);
   return {customerId:a.id,addresses:[
-   ...siteA.map((x,i)=>({id:'website:'+i,label:x.label||'Website address '+(i+1),summary:addressLabel(x)})),
+   ...siteA.map((x,i)=>({id:'website:'+websiteRef(x),label:x.label||'Website address '+(i+1),summary:addressLabel(x)})),
    ...resources.localAddresses.map((x,i)=>({id:'local:'+x.id,label:x.label||'Studio address '+(i+1),summary:addressLabel(x)}))],
    cards:[
-    ...siteC.map((x,i)=>({id:'website:'+i,label:x.cardLabel||x.label||'Website card '+(i+1),last4:last4(x)})),
+    ...siteC.map((x,i)=>({id:'website:'+websiteRef(x),label:x.cardLabel||x.label||'Website card '+(i+1),last4:last4(x)})),
     ...resources.localCards.map((x,i)=>({id:'local:'+x.id,label:x.label||'Studio card '+(i+1),last4:last4(x)})),
     ...resources.ownedProfiles.filter(x=>/^\d{12,19}$/.test(C.payment(x.data).number)).map(x=>({
       id:'profile:'+x.id,label:(x.label||x.email)+' profile card',last4:C.payment(x.data).number.slice(-4)}))
@@ -267,8 +268,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const r=await jigSources(a);let item;
   if(origin==='website'){
    const set=kind==='address'?r.website.addresses:r.website.cards;
-   if(!/^\d+$/.test(ref)||!Array.isArray(set)||Number(ref)>=set.length)throw Error('Saved website resource changed. Reopen Jig.');
-   item=set[Number(ref)];
+   if(!Array.isArray(set))throw Error('Saved website resources unavailable.');
+   item=set.find(x=>websiteRef(x)===ref);
   }else if(origin==='local'){
    if(kind==='address')item=r.localAddresses.find(x=>String(x.id)===ref);
    else if(cardVault){const cards=await cardVault('aco').selectedForJig(cardKey('aco',a.id),[ref]);item=cards.find(x=>String(x.id)===ref);}
