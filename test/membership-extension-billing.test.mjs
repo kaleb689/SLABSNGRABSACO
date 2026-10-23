@@ -40,3 +40,15 @@ test("website, app, and Stripe extension are linked to one idempotent admin acti
  }
  new vm.Script(mobile);
 });
+
+test("Paid Stripe extensions are not independent gifted entitlements",()=>{
+ const server=fs.readFileSync(new URL("../server.js",import.meta.url),"utf8");
+ assert.match(server,/SUBSCRIPTION_EXTENSIONS_FILE/);
+ assert.match(server,/getGiftedMemberships\(\)[\s\S]{0,250}\.filter\(x => x\?\.kind !== "admin_extension"\)/);
+ assert.match(server,/async function getSubscriptionExtensions\(\)/);
+ assert.match(server,/const records=await getSubscriptionExtensions\(\)/);
+ assert.match(server,/await saveSubscriptionExtensions\(records\)/);
+ assert.match(server,/const latestPaid=await readJson\(PAID_FILE,\[\]\)/);
+ assert.match(server,/kind:"admin_extension"/);
+ assert.match(server,/getSubscriptionExtensions\(\)\]\)/);
+});
