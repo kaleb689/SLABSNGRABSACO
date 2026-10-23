@@ -16373,7 +16373,7 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
   await saveGiftedMemberships(records);
   return res.status(201).json({ok:true,extension:grant,billingVerified:true});
  }catch(error){
-  if(/renewal date must be later|Choose a date within|Choose a valid/.test(error?.message||""))
+  if(/renewal date must be later|Choose a date within|Choose a valid|Stripe supports at most/.test(error?.message||""))
    return res.status(400).json({error:error.message});
   console.error("Admin membership extension:",error?.type||error?.code||error?.name||"extension_error");
   return res.status(502).json({error:"The extension could not be fully verified or saved. Check Stripe and the customer's current renewal date before retrying with the same request."});
