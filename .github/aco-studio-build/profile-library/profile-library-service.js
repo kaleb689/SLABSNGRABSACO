@@ -419,7 +419,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }else if(kind==='randomUnit'){
    // Never manufacture an additional unit for an address with an existing one.
    if(unit||/(?:\b(?:apt|apartment|unit|suite|ste|condo|floor|fl|room|rm)\b|#\s*\w)/i.test(street)||variant>=500)return null;
-   nextUnit='Unit '+String(101+variant);
+   const styles=['Apt','Ste','Unit','#','Suite','Apartment','Condo','Room'];
+   const label=styles[crypto.randomInt(styles.length)];
+   const number=100+((variant*71+crypto.randomInt(900))%900);
+   nextUnit=label+' '+String(number);
   }else return null;
   if(next===street&&nextUnit===unit)return null;
   return D.manualEdit(data,{...v,'shipping.address1':next,'shipping.address2':nextUnit});
