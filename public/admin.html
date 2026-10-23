@@ -2141,6 +2141,25 @@
       background: rgba(255,255,255,.018);
     }
 
+    .activation-customer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 13px 18px;
+      min-height: 68px;
+      background: linear-gradient(100deg, rgba(82,57,151,.35), rgba(10,83,105,.25));
+    }
+    .activation-customer-identity { display: flex; flex-wrap: wrap; gap: 5px; align-items: baseline; min-width: 0; }
+    .activation-customer-identity strong { color: #e9efff; font-size: 15px; }
+    .activation-customer-identity small { color: #b3c7d9; overflow-wrap: anywhere; }
+    .activation-customer-row > button { flex-shrink: 0; }
+    @media(max-width:640px) {
+      .activation-customer-row { gap: 8px; padding: 12px; }
+      .activation-customer-identity { flex-direction: column; }
+      .activation-customer-row > button { min-width: 115px; }
+    }
+
     .activation-group > summary {
       cursor: pointer;
       list-style: none;
