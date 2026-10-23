@@ -30,12 +30,21 @@ test("Every onboarding window can be dismissed without requiring saved fields", 
   assert.ok(!app.includes('() => openAccountCheckoutOnboarding("address")'));
 });
 
-test("Unfinished shipping and payment details remain checklist items for new accounts", () => {
-  const start = server.indexOf("async function customerSetupChecklist(");
-  const end = server.indexOf("async function customerMissingInformation(", start);
-  assert.ok(start >= 0 && end > start);
-  const body = server.slice(start, end);
-  assert.ok(body.includes('add("Account: one shipping address", { type: "shipping" }, hasAddress)'));
-  assert.ok(body.includes('add("Account: one payment card", { type: "payment" }, hasCard)'));
-  assert.ok(!body.includes("if (tasks.length) {"), "checklist must not require an existing paid order");
+test("Purchased staff-managed memberships require no profile or IMAP checklist until user adds a personal profile",()=>{
+ const start=server.indexOf("async function customerSetupChecklist(");
+ const end=server.indexOf("async function customerMissingInformation(",start);
+ const body=server.slice(start,end);
+ assert.ok(body.includes("if (!owned.length) return []"));
+ assert.ok(body.includes('add("Own profiles: IMAP email"'));
+ assert.ok(body.includes('add("Own profiles: IMAP app password"'));
+ assert.ok(!body.includes('add("Account: one shipping address"'));
+ assert.ok(!body.includes('add("Account: one payment card"'));
+ assert.ok(app.includes('updateOwnProfileImapVisibility'));
+ assert.ok(html.includes('class="saved-detail-panel imap-detail-panel" hidden'));
+});
+test("Walmart inventory is request-only",()=>{
+ assert.ok(server.includes('/api/account/walmart-profile-request'));
+ assert.ok(server.includes('const retailers=["target","pokemoncenter"]'));
+ assert.ok(!server.includes('const retailers=["target","walmart","pokemoncenter"]'));
+ assert.ok(app.includes('/api/account/walmart-profile-request'));
 });
