@@ -28,13 +28,13 @@ async function commit(h,preview,extra={}){return h.lib.importCommit(event,{token
 test('Imported card codes persist in the encrypted Personal vault for both formats',async t=>{
  const h=await library(t);
  for(const owner of [h.p])for(const retailer of ['target','walmart']){
-  const data=complete(retailer,owner.scope+'-'+retailer+'@example.test');if(retailer==='target')data.cc_cvv='012';else data.card.cvv='0123';
+  const data=complete(retailer,owner.scope+'-'+retailer+'@example.test');if(retailer==='target')data.cc_cvv='012';else data.card.cvv='0123';data.profileSecurityCode=retailer==='target'?'8971':'735';
   const plan=await h.lib.importPreview(event,{...owner,bank:'live',retailer,fileName:'profiles.json',text:JSON.stringify([data])});await commit(h,plan);
   const row=(await h.lib.list(event,owner)).profiles.find(x=>x.retailer===retailer);assert.equal(LC.payment(row.data).cvv,retailer==='target'?'012':'0123');
   const loaded=await h.lib.detail(event,{...owner,profileId:row.id});assert.equal(LC.payment(loaded.data).cvv,retailer==='target'?'012':'0123');
   const jig=await h.lib.batchJigPreview(event,{...owner,retailer,profileIds:[row.id],ruleIds:[LC.FL_PHONE_RULE],combine:false,billingSameAsShipping:true});await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
   const after=(await h.lib.list(event,owner)).profiles.find(x=>x.id===row.id);assert.equal(LC.payment(after.data).cvv,retailer==='target'?'012':'0123');assert.equal(after.bank,'live');
-  await h.lib.exportFile(event,{...owner,retailer,profileIds:[row.id],customerName:'Owner'});assert.ok(h.writes.at(-1)[1].includes(retailer==='target'?'012':'0123'));
+  await h.lib.exportFile(event,{...owner,retailer,profileIds:[row.id],customerName:'Owner'});assert.ok(h.writes.at(-1)[1].includes(data.profileSecurityCode),'independent security code fills retailer verification slot');
  }
  const bytes=await fs.readFile(h.profiles.paths.personal);assert.ok(bytes.toString().startsWith('ENCRYPTED:'));
  assert.equal((await h.lib.list(event,h.b)).profiles.length,0);h.lockLibrary();await assert.rejects(h.lib.list(event,h.p),/Locked/);
