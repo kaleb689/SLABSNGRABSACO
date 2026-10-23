@@ -18576,7 +18576,7 @@ async function loadProfileActivationTracker() {
     // One customer action per row; no per-profile dropdown or counter.
     profileActivationGroups.innerHTML = customers.length
       ? customers.map((group,index)=>{
-          const eligible=group.profiles.filter(profile=>profile.status!=="expired");
+          const eligible=group.profiles.filter(profile=>["activated","awaiting_activation","deactivated"].includes(profile.status));
           const active=eligible.filter(profile=>profile.status==="activated");
           const allActive=eligible.length>0&&active.length===eligible.length;
           const action=allActive?"deactivate":"activate";
@@ -18627,7 +18627,8 @@ function bindAdminNotificationLinks(){
 }
 
 async function submitProfileActivation(profile,action){
- const managed=profile.type!=="paid",managedType=profile.type==="gifted"?"free":"rented";
+ const managed=profile.managedActivation===true||profile.type!=="paid";
+ const managedType=profile.managedType||(profile.type==="gifted"?"free":"rented");
  const endpoint=managed
   ? "/api/admin/managed-profile-activation/"+encodeURIComponent(managedType)+"/"+encodeURIComponent(profile.id)
   : "/api/admin/profile-activation/"+encodeURIComponent(profile.id);
@@ -18642,7 +18643,7 @@ function bindProfileActivationButtons() {
    const group=adminVisibleActivationGroups[Number(button.dataset.activationCustomerIndex)];
    const action=button.dataset.activationCustomerAction;
    if(!group||!["activate","deactivate"].includes(action))return;
-   const eligible=group.profiles.filter(p=>p.status!=="expired"&&
+   const eligible=group.profiles.filter(p=>["activated","awaiting_activation","deactivated"].includes(p.status)&&
     (action==="activate"?p.status!=="activated":p.status==="activated"));
    if(!eligible.length)return;
    if(!window.confirm((action==="activate"?"Set active":"Deactivate")+" "+eligible.length+
