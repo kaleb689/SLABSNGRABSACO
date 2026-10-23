@@ -14,7 +14,10 @@ export function requestedMembershipExtension({endAt,now=Date.now(),periodEnd=0,t
  const baseline=Math.max(now,dateMs(periodEnd),dateMs(trialEnd),dateMs(priorExtensionEnd));
  if(!Number.isFinite(baseline)||requested<=baseline)
   throw Error('The new renewal date must be later than the existing Stripe billing date and any prior extension.');
- if(requested>now+20*366*86400000)
-  throw Error('Choose a date within 20 years. Stripe billing has not been changed.');
+ // Stripe's trial_end date used to defer subscription renewal has a hard
+ // two-year limit. Never accept an extension the billing provider cannot honor.
+ const twoYearLimit=new Date(now);twoYearLimit.setUTCFullYear(twoYearLimit.getUTCFullYear()+2);
+ if(requested>twoYearLimit.getTime())
+  throw Error('Stripe supports at most a two-year trial-based extension. Choose a date within two years; billing has not been changed.');
  return {expiresAt:new Date(requested).toISOString(),startsAt:new Date(baseline).toISOString(),stripeTrialEnd:Math.ceil(requested/1000)};
 }
