@@ -202,7 +202,52 @@
   save.onclick=async()=>{if(!select.value)return;save.disabled=true;try{const fields={...formValues(row.data),email:select.value};await api.edit({...win.owner,profileId:row.id,revision:row.revision,fields,group:row.group,poolEmail:select.value});win.wrap.remove();await refresh();note('Email replaced using the selected available pool entry.');}catch(error){win.status().textContent=error.message;save.disabled=false;}};
  }
  async function repair(row){const win=dialog('Repair profile · '+row.email),form=d.createElement('form');win.body.append(form);form.innerHTML='<label class="check"><input type="checkbox" name="name"> Generate a new unused random name</label><label class="check"><input type="checkbox" name="email"> Replace email from this retailer’s unused bank</label><label class="check"><input type="checkbox" name="card"> Replace card from this vault’s unused cards</label><div data-card-choices></div><button type="submit" class="btn primary">Save replacements</button>';const assets=await window.desktopAPI.profileWorkshop.assets(win.owner);if(!win.valid())return;for(const card of assets.cards.filter(x=>x.unused)){const label=text('label',card.label+' · ending '+card.last4),c=d.createElement('input');c.type='checkbox';c.value=card.id;c.checked=true;label.prepend(c);form.querySelector('[data-card-choices]').append(label);}form.onsubmit=async e=>{e.preventDefault();const b=form.querySelector('[type=submit]');b.disabled=true;try{await api.repair({...win.owner,profileId:row.id,revision:row.revision,repairs:Object.fromEntries(['name','email','card'].map(k=>[k,form.elements[k].checked])),cardIds:[...form.querySelectorAll('[data-card-choices] input:checked')].map(x=>x.value)});if(!win.valid())return;win.wrap.remove();await refresh();}catch(e){win.status().textContent=e.message;b.disabled=false;}};}
- async function linkedJig(row){const win=dialog('Preview and publish linked profile jigs'),choices=d.createElement('section'),previews=d.createElement('section'),settings=await api.rules({...win.owner,retailer:row.retailer});if(!win.valid())return;win.body.append(text('pre',comparisonSummary(row.data)),choices);for(const rule of settings.options){const label=text('label',rule.label),check=d.createElement('input');label.className='check';check.type='checkbox';check.value=rule.id;check.checked=settings.selected.includes(rule.id);label.prepend(check);choices.append(label);}const combine=text('label','Combine selected jig styles'),combineCheck=d.createElement('input');combineCheck.type='checkbox';combine.className='check';combine.prepend(combineCheck);const billing=text('label','Billing same as the jigged shipping address'),billingCheck=d.createElement('input');billingCheck.type='checkbox';billing.className='check';billing.prepend(billingCheck);const preview=text('button','Preview selected jig options');preview.className='btn secondary';win.body.append(combine,billing,preview,previews);preview.onclick=async()=>{preview.disabled=true;try{const result=await api.previewLinkedJig({...win.owner,profileId:row.id,revision:row.revision,ruleIds:[...choices.querySelectorAll('input:checked')].map(x=>x.value),combine:combineCheck.checked});if(!win.valid())return;previews.replaceChildren();for(const candidate of result.candidates){const section=d.createElement('section'),publish=text('button','Publish this preview to website & apps');publish.className='btn primary';section.append(text('pre',JSON.stringify(candidate.address,null,2)),publish);previews.append(section);publish.onclick=async()=>{if(!confirm('Publish this exact address preview to the linked website profile?'))return;publish.disabled=true;try{await api.publishLinkedJig({...win.owner,profileId:row.id,expectedRevision:result.revision,address:candidate.address,billingSameAsShipping:billingCheck.checked,confirmed:true});win.wrap.remove();await refresh();note('Website confirmed the published address jig.');}catch(error){win.status().textContent=error.message;publish.disabled=false;}};}if(!result.candidates.length)previews.append(text('p','The selected options produced no different address. Choose another option.'));}catch(error){win.status().textContent=error.message;}finally{preview.disabled=false;}};}
+ async function linkedJig(row){
+ const win=dialog('Preview and publish linked profile jigs');
+ try{
+  const [settings,assets]=await Promise.all([api.rules({...win.owner,retailer:row.retailer}),api.jigAssets(win.owner)]);
+  if(!win.valid())return;
+  win.body.append(text('pre',comparisonSummary(row.data)));
+  const sources=d.createElement('section');sources.append(text('h3','Saved customer addresses and cards'));
+  const addressLabel=text('label','Address to jig'),addressSelect=d.createElement('select');
+  addressSelect.append(new Option('Current profile address',''));
+  for(const item of assets.addresses)addressSelect.append(new Option(item.label+' · '+item.summary,item.id));
+  addressLabel.append(addressSelect);
+  const cardLabel=text('label','Card for jigged profile'),cardSelect=d.createElement('select');
+  cardSelect.append(new Option('Keep current profile card',''));
+  for(const item of assets.cards)cardSelect.append(new Option(item.label+' · ending '+(item.last4||'unknown'),item.id));
+  cardLabel.append(cardSelect);
+  sources.append(addressLabel,cardLabel,text('small',assets.addresses.length+' saved addresses and '+assets.cards.length+' saved cards available. Both website and Studio resources are included; masked-only cards cannot be applied without complete saved details.'));
+  const choices=d.createElement('section'),previews=d.createElement('section');
+  for(const rule of settings.options){const label=text('label',rule.label),check=d.createElement('input');label.className='check';check.type='checkbox';check.value=rule.id;check.checked=settings.selected.includes(rule.id);label.prepend(check);choices.append(label);}
+  const combine=text('label','Combine selected jig styles'),combineCheck=d.createElement('input');combineCheck.type='checkbox';combine.className='check';combine.prepend(combineCheck);
+  const billing=text('label','Billing same as jigged shipping address'),billingCheck=d.createElement('input');billingCheck.type='checkbox';billing.className='check';billing.prepend(billingCheck);
+  const preview=text('button','Preview saved-resource jig options');preview.type='button';preview.className='btn secondary';
+  win.body.append(sources,choices,combine,billing,preview,previews);
+  let revision=0;
+  for(const field of [addressSelect,cardSelect,combineCheck,billingCheck,...choices.querySelectorAll('input')])field.addEventListener('change',()=>{revision++;previews.replaceChildren();});
+  preview.onclick=async()=>{
+   preview.disabled=true;const at=revision;
+   try{
+    const result=await api.previewLinkedJig({...win.owner,profileId:row.id,revision:row.revision,addressSourceId:addressSelect.value,cardSourceId:cardSelect.value,ruleIds:[...choices.querySelectorAll('input:checked')].map(x=>x.value),combine:combineCheck.checked});
+    if(!win.valid()||at!==revision)return;previews.replaceChildren();
+    for(const candidate of result.candidates){
+     const section=d.createElement('section'),publish=text('button','Publish this preview to website & apps');publish.type='button';publish.className='btn primary';
+     section.append(text('pre',JSON.stringify(candidate.address,null,2)),publish);previews.append(section);
+     publish.onclick=async()=>{
+      if(!confirm('Publish this exact jig for '+row.email+' using the selected customer-owned resources?'))return;
+      publish.disabled=true;
+      try{
+       await api.publishLinkedJig({...win.owner,profileId:row.id,expectedRevision:result.revision,address:candidate.address,billingSameAsShipping:billingCheck.checked,cardSourceId:cardSelect.value,confirmed:true});
+       if(!win.valid())return;win.wrap.remove();await refresh();note('Website confirmed the address/card jig.');
+      }catch(error){win.status().textContent=error.message;publish.disabled=false;}
+     };
+    }
+    if(!result.candidates.length)previews.append(text('p','No different address was generated. Choose another saved address or jig rule.'));
+   }catch(error){win.status().textContent=error.message;}finally{preview.disabled=false;}
+  };
+ }catch(error){win.status().textContent=error.message;}
+}
  async function bulkJigSelected(){
   const chosen=visible().filter(x=>selected.has(x.id)),retailer=q('retailer').value;
   if(!chosen.length){note('Select the profiles you want to jig first.');return;}
