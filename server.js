@@ -7,7 +7,7 @@ import { stripPaymentVerifiers, purgeLegacyPaymentVerifiers } from "./payment-ve
 import { managedWriteConflict, nextManagedRevision, serializeManagedWrites, mergeManagedCard } from "./managed-customer-write-policy.js";
 import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
-import { requestedMembershipExtension, requestedMembershipDuration } from "./membership-extension-billing.js";
+import { requestedMembershipExtension, requestedMembershipDuration, requestedMaximumMembershipExtension } from "./membership-extension-billing.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
 import { historicalPlusVerified, communityCheckoutTotals, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
@@ -16368,9 +16368,11 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
   const window=already
    ? {startsAt:metadata.sng_last_admin_extension_start||new Date().toISOString(),expiresAt:metadata.sng_last_admin_extension_until||endAt,
       stripeTrialEnd:Math.ceil(Date.parse(metadata.sng_last_admin_extension_until||endAt)/1000)}
-   : durationUnit
-    ? requestedMembershipDuration({durationUnit,durationQuantity,periodEnd,trialEnd:subscription.trial_end,priorExtensionEnd:priorEnd})
-    : requestedMembershipExtension({endAt,periodEnd,trialEnd:subscription.trial_end,priorExtensionEnd:priorEnd});
+   : durationUnit==="maximum"
+    ? requestedMaximumMembershipExtension({periodEnd,trialEnd:subscription.trial_end,priorExtensionEnd:priorEnd,billingCycleAnchor:subscription.billing_cycle_anchor})
+    : durationUnit
+    ? requestedMembershipDuration({durationUnit,durationQuantity,periodEnd,trialEnd:subscription.trial_end,priorExtensionEnd:priorEnd,billingCycleAnchor:subscription.billing_cycle_anchor})
+    : requestedMembershipExtension({endAt,periodEnd,trialEnd:subscription.trial_end,priorExtensionEnd:priorEnd,billingCycleAnchor:subscription.billing_cycle_anchor});
   if(!Number.isSafeInteger(window.stripeTrialEnd)||window.stripeTrialEnd<=0)
    return res.status(400).json({error:"The requested renewal date was invalid."});
   let verified=subscription;
@@ -16406,7 +16408,7 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
   const grant={id:crypto.randomUUID(),kind:"admin_extension",requestId,customerAccountId,
    customerEmail:account.email||"",tier,tierName:existing.plan?.name||"Current membership",
    profiles:Number(existing.plan?.profiles||0),startsAt:window.startsAt,expiresAt:window.expiresAt,
-   durationUnit:durationUnit||"custom",durationQuantity:durationUnit?Number(durationQuantity):null,stripeSubscriptionId:subscription.id,
+   durationUnit:durationUnit||"custom",durationQuantity:durationUnit&&durationUnit!=="maximum"?Number(durationQuantity):null,stripeSubscriptionId:subscription.id,
    billingDeferredUntil:window.expiresAt,createdAt:new Date().toISOString(),createdBy:"admin"};
   records.push(grant);
   await saveSubscriptionExtensions(records);
