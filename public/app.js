@@ -6354,6 +6354,7 @@ async function loadSavedDetails() {
       addresses: Array.isArray(data.addresses) ? data.addresses : [],
       paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : []
     };
+    renderProfileResourceGuidance();
 
     renderSavedDetailsManager();
     await loadSavedImap();
@@ -10993,6 +10994,7 @@ state.retailerProfilesLoaded =
           data.allowance
         ) || 0
       );
+    renderProfileResourceGuidance();
 
     state.retailerProfiles =
   Array.isArray(
@@ -15208,6 +15210,35 @@ async function openSetupTask(task) {
   control?.focus({ preventScroll: true });
 }
 
+function renderProfileResourceGuidance() {
+ const panel=document.getElementById("profile-resource-guidance");
+ if(!panel)return;
+ const profileVisible=!document.body.classList.contains("app-dashboard")||
+   document.body.dataset.appView==="profile";
+ const active=Boolean(document.getElementById("my-profile")?.classList.contains("active"));
+ panel.hidden=!state.customer||ADMIN_CUSTOMER_PREVIEW_MODE||!profileVisible||!active;
+ if(panel.hidden)return;
+ const targets=Math.max(0,Number(state.retailerAllowance)||0);
+ const addressCount=(state.savedDetails?.addresses||[]).filter(a=>
+  ["firstName","lastName","address","city","state","zip","country"]
+    .every(key=>String(a?.[key]||"").trim())).length;
+ const cardCount=(state.savedDetails?.paymentMethods||[]).filter(c=>
+  Boolean(String(c?.cardholder||"").trim()) &&
+  /^\d{12,19}$/.test(String(c?.acoCardNumber||"").replace(/\D/g,"")) &&
+  /^(0[1-9]|1[0-2])$/.test(String(c?.expMonth||"")) &&
+  /^20\d{2}$/.test(String(c?.expYear||""))).length;
+ const advice=document.getElementById("profile-resource-guidance-message");
+ const counts=document.getElementById("profile-resource-guidance-counts");
+ if(advice)advice.textContent=targets>0
+  ? "For your "+targets+" membership profile"+(targets===1?"":"s")+
+    ", we recommend saving about "+targets+" complete shipping address"+(targets===1?"":"es")+
+    " and "+targets+" complete payment card"+(targets===1?"":"s")+
+    " when available. This improves profile distribution. Only one of each is required."
+  : "For best results, save as many complete addresses and cards as you can—ideally one of each for every profile you purchase. Only one of each is required.";
+ if(counts)counts.textContent=targets>0
+  ? addressCount+" of "+targets+" recommended addresses · "+cardCount+" of "+targets+" recommended cards saved"
+  : addressCount+" complete addresses · "+cardCount+" complete cards saved";
+}
 function renderSetupChecklist() {
   const panel = document.getElementById("setup-checklist-panel");
   if (!panel) return;
@@ -15219,6 +15250,7 @@ function renderSetupChecklist() {
   const incomplete = tasks.some(item => !item.complete);
   const appProfileVisible = !document.body.classList.contains("app-dashboard") || document.body.dataset.appView === "profile";
   panel.hidden = !state.customer || !incomplete || !appProfileVisible || !document.getElementById("my-profile")?.classList.contains("active");
+  renderProfileResourceGuidance();
   if (panel.hidden) return;
   const complete = tasks.filter(item => item.complete).length;
   const percent = Math.round(complete / tasks.length * 100);
@@ -15456,9 +15488,7 @@ async function loadCustomerNotifications(
     state.customerNotifications =
       notifications;
 
-    state.customerChecklist = state.retailerProfiles?.length
-      ? (Array.isArray(data.checklist) ? data.checklist : [])
-      : [];
+    state.customerChecklist = Array.isArray(data.checklist) ? data.checklist : [];
     renderSetupChecklist();
 
     applyMissingInformationMarkers();
