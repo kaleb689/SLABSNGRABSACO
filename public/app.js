@@ -611,9 +611,9 @@ function pricingCardsHtml() {
 
           <p class="plan-description">
             ${tierNumber === 7
-              ? "Automatically have 50 profiles loaded with purchase for Walmart, Target and PKC."
+              ? "Automatically have 50 profiles assigned from available Target and PKC inventory. Walmart accounts are request-only."
               : tierNumber === 8
-                ? "Automatically have 100 profiles loaded with purchase for Walmart, Target and PKC."
+                ? "Automatically have 100 profiles assigned from available Target and PKC inventory. Walmart accounts are request-only."
                 : `${plan.profiles} ${plan.profiles === 1 ? "profile" : "profiles"} at each supported retailer.`}
           </p>
 
