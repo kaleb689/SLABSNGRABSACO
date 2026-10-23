@@ -7045,6 +7045,8 @@ async function provisionPaidMembershipPool(record) {
  for(const retailer of retailers){
   const linked=[...await getFreeAssignments(),...await getRentalAssignments()]
    .filter(a=>String(a.customerAccountId||"")===customerAccountId&&managedAssignmentIsLinked(a))
+   // Gifts and separately purchased rentals do not consume the paid tier.
+   .filter(a=>a.autoPaidPoolAssignment===true||String(a.paidSubmissionId||"")===String(record.id))
    .filter(a=>normalizeManagedPoolRetailer(a.assignmentRetailer||a.rentalRetailer||a.referralRetailer)===retailer);
   const missing=Math.max(0,quantity-linked.length);
   if(!missing)continue;
