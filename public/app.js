@@ -618,7 +618,7 @@ function pricingCardsHtml() {
           </p>
 
           <p class="plan-login-note">
-            Target, Walmart and PKC retailer logins are provided. Add shipping and cards; Costco and Sam's Club logins are optional.
+            Target and PKC accounts are included from available inventory. Walmart is request-only; personal profiles and IMAP are optional.
           </p>
 
           <ul class="features">
