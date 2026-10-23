@@ -7,10 +7,7 @@ const standard=[
  ["ordinal.word","Street numbers","Spell out the numbered street ordinal"],
  ["ordinal.cardinal","Street numbers","Spell out the numbered street cardinal"],
  ["ordinal.spaced","Street numbers","Separate the ordinal suffix from a numbered street"],
- ...[["LANE","LN"],["AVENUE","AVE"],["STREET","ST"],["DRIVE","DR"],["TERRACE","TER"],["BOULEVARD","BLVD"],["MANOR","MNR"],["CENTER","CTR"]].flatMap(([long,short])=>[
-   ["suffix."+short.toLowerCase(),"Street types",long+" to "+short],
-   ["suffix."+short.toLowerCase()+".full","Street types",short+" to "+long]
- ]),
+ ["suffix.matching","Street types","Switch the actual street suffix to its equivalent spelling (St/Street, Rd/Road, etc.)"],
  ...[["apt","Apt"],["unit","Unit"],["suite","Suite"],["ste","Ste"],["apartment","Apartment"],["hash","#"],["hashcompact","Number sign without spacing"],["apthash","Apartment label with number sign"],["condo","Condo"],["number","Number only"]].map(([id,label])=>["unit."+id,"Apartment / unit",label]),
  ["city.alternate","Mailing cities","Use an alternate USPS-matched mailing city for this address"],
  ["zip.five","ZIP formatting","Use five-digit ZIP instead of ZIP+4"],
@@ -20,6 +17,7 @@ const standard=[
 // Misspellings and double-letter jigs were explicitly removed from this set.
 const experimental=[
  ["house.fraction","Fractional house number","Add 1/2 after house number"],
+ ["unit.random","Apartment / unit","Add a random Apt, Ste, Unit, # or other numbered second line when no unit exists"],
  ["unit.building","Multiple unit designators","BLDG with existing unit"],
  ["street.compressed","Compressed street names","Join street and suffix words"],
  ["unit.floor","Floor and apartment","Use a floor and apartment designation where applicable"],
@@ -31,7 +29,7 @@ export const ADDRESS_JIG_OPTIONS=Object.freeze([...standard.map(([id,group,label
 const clean=x=>String(x??"").replace(/\s+/g," ").trim();
 const fields=a=>Object.fromEntries(["address","address2","city","state","zip","country"].map(k=>[k,clean(a?.[k])]));
 const directionPairs=[["NORTHWEST","NW"],["SOUTHWEST","SW"],["NORTHEAST","NE"],["SOUTHEAST","SE"],["NORTH","N"],["SOUTH","S"],["EAST","E"],["WEST","W"]];
-const suffixPairs=[["LANE","LN"],["AVENUE","AVE"],["STREET","ST"],["DRIVE","DR"],["TERRACE","TER"],["BOULEVARD","BLVD"],["MANOR","MNR"],["CENTER","CTR"]];
+const suffixPairs=[["LANE","LN"],["AVENUE","AVE"],["STREET","ST"],["ROAD","RD"],["DRIVE","DR"],["TERRACE","TER"],["BOULEVARD","BLVD"],["COURT","CT"],["CIRCLE","CIR"],["PARKWAY","PKWY"],["TRAIL","TRL"],["HIGHWAY","HWY"],["PLACE","PL"],["WAY","WY"],["ALLEY","ALY"],["SQUARE","SQ"],["MANOR","MNR"],["CENTER","CTR"]];
 function swapToken(text,from,to){const words=text.split(" ");const index=words.findIndex(w=>w.toUpperCase()===from);if(index<0)return text;words[index]=to;return words.join(" ");}
 function unitNumber(text){return clean(text).match(/^(?:(?:APT|APARTMENT|UNIT|SUITE|STE|CONDO|#)\s*#?\s*)?([A-Z0-9-]+)$/i)?.[1]||null;}
 function streetOrdinal(text,kind){
@@ -60,8 +58,19 @@ function apply(base,id){
    const m=street.match(/^(\d+[A-Z0-9/-]*\s+)([A-Z]+)(\s+.*)$/);
    if(m){const pair=directionPairs.find(([full,short])=>m[2]===(id==="direction.short"?full:short));if(pair)a.address=m[1]+pair[id==="direction.short"?1:0]+m[3];}
  }else if(id.startsWith("ordinal.")){a.address=streetOrdinal(street,id.slice(8));}
- else if(id.startsWith("suffix.")){const parts=id.split("."),pair=suffixPairs.find(([,short])=>short.toLowerCase()===parts[1]);if(pair){const from=parts[2]==="full"?pair[1]:pair[0],to=parts[2]==="full"?pair[0]:pair[1];const words=street.split(" ");const final=words.length-1;if(words[final]===from){words[final]=to;a.address=words.join(" ");}}}
- else if(id.startsWith("unit.")){const n=unitNumber(unit);if(!n)return null;const labels={apt:"APT",unit:"UNIT",suite:"SUITE",ste:"STE",apartment:"APARTMENT",hash:"#",hashcompact:"#",apthash:"APT #",condo:"CONDO",number:""};const kind=id.slice(5),label=labels[kind];if(label===undefined)return null;a.address2=(label?label+(kind==="hashcompact"?"":" "):"")+n;}
+ else if(id==="suffix.matching"){
+   const words=street.trim().split(/\s+/),last=words.length-1;
+   const position=/^(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST|NORTHWEST|NORTHEAST|SOUTHWEST|SOUTHEAST)$/.test(words[last])?last-1:last;
+   const token=(words[position]||"").replace(/\.$/,"");
+   const pair=suffixPairs.find(([full,short])=>token===full||token===short);
+   if(pair){words[position]=token===pair[0]?pair[1]:pair[0];a.address=words.join(" ");}
+ }
+ else if(id==="unit.random"){
+   if(unit || /(?:\s|,)(?:APT|APARTMENT|UNIT|SUITE|STE|CONDO|ROOM|RM|#)\s*#?\s*[A-Z0-9-]+\s*$/i.test(street))return null;
+   const labels=["APT","STE","UNIT","#","SUITE","APARTMENT","CONDO","RM"];
+   const label=labels[Math.floor(Math.random()*labels.length)];
+   a.address2=label+" "+String(100+Math.floor(Math.random()*900));
+ }else if(id.startsWith("unit.")){const n=unitNumber(unit);if(!n)return null;const labels={apt:"APT",unit:"UNIT",suite:"SUITE",ste:"STE",apartment:"APARTMENT",hash:"#",hashcompact:"#",apthash:"APT #",condo:"CONDO",number:""};const kind=id.slice(5),label=labels[kind];if(label===undefined)return null;a.address2=(label?label+(kind==="hashcompact"?"":" "):"")+n;}
  else if(id==="zip.five"&&/^\d{5}-\d{4}$/.test(a.zip)){a.zip=a.zip.slice(0,5);}
  else if(id==="zip.four"){return null; /* Never fabricate ZIP+4; retain verified source as-is. */}
 else if(id==="house.fraction"){a.address=street.replace(/^(\d+)(?=\s)/,"$1 1/2");}
@@ -76,7 +85,7 @@ else if(id==="house.fraction"){a.address=street.replace(/^(\d+)(?=\s)/,"$1 1/2")
 }
 export function eligibleJigSelections(original,ids=[]){
  const base=fields(original);if(!base.address)return [];
- const active=[...new Set(Array.isArray(ids)?ids:[])].filter(id=>ADDRESS_JIG_OPTIONS.some(x=>x.id===id));
+ const active=[...new Set((Array.isArray(ids)?ids:[]).map(id=>/^suffix\./.test(id)?"suffix.matching":id))].filter(id=>ADDRESS_JIG_OPTIONS.some(x=>x.id===id));
  const seen=new Set(),out=[];
  for(const id of active){const a=apply(base,id);if(!a)continue;const key=JSON.stringify(Object.values(a).map(v=>v.toUpperCase()));if(seen.has(key))continue;seen.add(key);out.push({id,address:a,experimental:ADDRESS_JIG_OPTIONS.find(x=>x.id===id).risk==="experimental"});}
  return out;
