@@ -12999,197 +12999,43 @@ const PROFILE_SETUP_FIELDS = [
 ];
 
 // Return statuses and field names only. Checkout and retailer secrets never leave the server.
+// Staff-provided Target / PKC membership slots never require customer setup.
+// Only a customer who explicitly saved their own retailer profiles receives
+// profile or IMAP checklist items. Existing own-profile data is not deleted.
 async function customerSetupChecklist(account) {
-  const missing = new Set(await customerMissingInformation(account.id));
-  const tasks = [];
-  const add = (label, target, complete = !missing.has(label)) => {
-    tasks.push({ label, target, complete: Boolean(complete) });
-  };
-
-  const allowance = Math.min(50, await getCustomerProfileAllowance(account.id));
-  for (let slot = 1; slot <= allowance; slot += 1) {
-    const label = `Paid Profile ${slot}`;
-    for (const field of PROFILE_SETUP_FIELDS) add(`${label}: ${field}`, { type: "paid", slot });
+  const owned=(await getRetailerProfiles()).filter(record=>
+    String(record.customerAccountId||"")===String(account.id) &&
+    Number.isInteger(Number(record.slot)) && Number(record.slot)>0);
+  if (!owned.length) return [];
+  const missing=new Set(await customerMissingInformation(account.id));
+  const tasks=[];
+  const add=(label,target)=>tasks.push({label,target,complete:!missing.has(label)});
+  for (const record of owned.sort((a,b)=>Number(a.slot)-Number(b.slot))) {
+    const slot=Number(record.slot),label="Paid Profile "+slot;
+    for (const field of PROFILE_SETUP_FIELDS)
+      add(label+": "+field,{type:"paid",slot});
   }
-
-  const [freeAssignments, rentalAssignments] = await Promise.all([
-    getFreeAssignments(), getRentalAssignments()
-  ]);
-  for (const [assignments, type, label] of [
-    [freeAssignments, "free", "Gifted"], [rentalAssignments, "rented", "Rented"]
-  ]) {
-    let number = 0;
-    for (const assignment of assignments) {
-      if (String(assignment.customerAccountId || "") !== String(account.id) ||
-          !managedAssignmentIsLinked(assignment)) continue;
-      number += 1;
-      for (const field of PROFILE_SETUP_FIELDS) {
-        add(`${label} Profile ${number}: ${field}`, { type, number });
-      }
-    }
-  }
-
-  // New accounts should see missing shipping/card tasks even before
-  // purchasing a membership. Closing onboarding never clears these reminders.
-  const details = await customerSavedDetailsPayload(account);
-  const hasAddress = details.addresses.some(address =>
-    ["firstName", "lastName", "address", "city", "state", "zip", "country"]
-      .every(key => String(address[key] || "").trim()));
-  const hasCard = details.paymentMethods.some(card =>
-    Boolean(String(card.cardholder || "").trim()) &&
-    /^\d{12,19}$/.test(String(card.acoCardNumber || "").replace(/\D/g, "")) &&
-    /^(0[1-9]|1[0-2])$/.test(String(card.expMonth || "")) &&
-    /^\d{4}$/.test(String(card.expYear || "")));
-  add("Account: one shipping address", { type: "shipping" }, hasAddress);
-  add("Account: one payment card", { type: "payment" }, hasCard);
-
-  // IMAP is optional and is never part of required setup notifications.
-
+  add("Own profiles: IMAP email",{type:"imap"});
+  add("Own profiles: IMAP app password",{type:"imap"});
   return tasks;
 }
-
-async function customerMissingInformation(
-  customerAccountId
-) {
-  const [
-    retailerProfiles,
-    freeAssignments,
-    rentalAssignments
-  ] = await Promise.all([
-    getRetailerProfiles(),
-    getFreeAssignments(),
-    getRentalAssignments()
-  ]);
-
-  const missing = [];
-
-  const paid =
-    retailerProfiles.filter(
-      record =>
-        String(
-          record.customerAccountId ||
-          ""
-        ) ===
-          String(
-            customerAccountId
-          )
-    );
-
-  const paidAllowance = Math.min(50, await getCustomerProfileAllowance(customerAccountId));
-  const paidBySlot = new Map(paid.map(record => [Number(record.slot), record]));
-  for (let slot = 1; slot <= paidAllowance; slot += 1) {
-    const record = paidBySlot.get(slot);
-    missing.push(...paidProfileMissingItems(record, slot));
-  }
-
-  const inspectManaged =
-    (
-      assignment,
-      type,
-      number
-    ) => {
-      if (
-        String(
-          assignment.customerAccountId ||
-          ""
-        ) !==
-          String(
-            customerAccountId
-          ) ||
-        !managedAssignmentIsLinked(
-          assignment
-        )
-      ) {
-        return;
-      }
-
-      let secrets = {};
-
-      try {
-        if (
-          assignment.customerSecrets
-        ) {
-          secrets =
-            decryptJson(
-              assignment.customerSecrets
-            ) || {};
-        }
-      } catch {
-        secrets = {};
-      }
-
-      const label =
-        type === "free"
-          ? `Gifted Profile ${number}`
-          : `Rented Profile ${number}`;
-
-      missing.push(
-        ...profileMissingFieldLabels(
-          assignment.customerProfile ||
-            {},
-          secrets,
-          label
-        )
-      );
-    };
-
-  let giftedNumber = 0;
-
-  for (
-    const assignment of
-    freeAssignments
-  ) {
-    if (
-      String(
-        assignment.customerAccountId ||
-        ""
-      ) ===
-        String(
-          customerAccountId
-        ) &&
-      managedAssignmentIsLinked(
-        assignment
-      )
-    ) {
-      giftedNumber += 1;
-      inspectManaged(
-        assignment,
-        "free",
-        giftedNumber
-      );
-    }
-  }
-
-  let rentedNumber = 0;
-
-  for (
-    const assignment of
-    rentalAssignments
-  ) {
-    if (
-      String(
-        assignment.customerAccountId ||
-        ""
-      ) ===
-        String(
-          customerAccountId
-        ) &&
-      managedAssignmentIsLinked(
-        assignment
-      )
-    ) {
-      rentedNumber += 1;
-      inspectManaged(
-        assignment,
-        "rented",
-        rentedNumber
-      );
-    }
-  }
-
+async function customerMissingInformation(customerAccountId) {
+  const [profiles,accounts]=await Promise.all([getRetailerProfiles(),getCustomerAccounts()]);
+  const owned=profiles.filter(record=>
+    String(record.customerAccountId||"")===String(customerAccountId) &&
+    Number.isInteger(Number(record.slot)) && Number(record.slot)>0);
+  if (!owned.length) return [];
+  const missing=[];
+  for (const record of owned)
+    missing.push(...paidProfileMissingItems(record,Number(record.slot)));
+  const owner=accounts.find(a=>String(a.id)===String(customerAccountId));
+  const imap=owner?savedImapEntries(owner):[];
+  const hasEmail=imap.some(item=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(item.email||"")));
+  const hasPassword=imap.some(item=>Boolean(String(item.password||"").trim()));
+  if(!hasEmail)missing.push("Own profiles: IMAP email");
+  if(!hasPassword)missing.push("Own profiles: IMAP app password");
   return missing;
 }
-
 
 async function syncCustomerMissingNotification(
   customerAccountId
