@@ -77,6 +77,10 @@ function createLibrary({authorize,guard,profiles,cardVault,chooseSave,confirmExp
    if(!row||row.revision!==p.revision)throw Error('Profile changed. Reopen it before editing.');
    if(row.needsReview)throw Error('Resolve the website conflict before editing this profile. Nothing was overwritten.');
    const data=D.manualEdit(row.data,p.fields),email=C.email(data.email);
+    if(p.profileSecurityCode!==undefined){
+     if(typeof p.profileSecurityCode!=='string'||p.profileSecurityCode.length>100||/[\x00-\x1f\x7f]/.test(p.profileSecurityCode))throw Error('Invalid separate profile code.');
+     data.profileSecurityCode=p.profileSecurityCode;
+    }
    if(email!==row.email&&ctx.rows.some(x=>x.id!==row.id&&x.retailer===row.retailer&&x.email===email))throw Error('Email already used in this retailer pool.');
    const requestedPoolEmail=p.poolEmail!==undefined?C.email(p.poolEmail):null;
    if(requestedPoolEmail!==null){
