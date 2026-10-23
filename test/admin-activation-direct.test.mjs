@@ -24,7 +24,7 @@ test("Customer activation groups stay scoped and use the correct managed endpoin
  const end=admin.indexOf("refreshProfileActivationTracker",start);
  const code=admin.slice(start,end);
  assert.ok(code.includes('profile.managedActivation===true'));
- assert.ok(code.includes('["activated","awaiting_activation","deactivated"]'));
+ assert.ok(code.includes('["activated","awaiting_activation","deactivated","inactive"]'));
  assert.ok(code.includes('group.profiles.filter'));
  assert.ok(code.includes('await submitProfileActivation(profile,action)'));
  assert.ok(code.includes('adminLastActivationFingerprint=null'));
