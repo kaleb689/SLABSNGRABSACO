@@ -3864,7 +3864,7 @@
             </h3>
 
             <p class="account-muted">
-              Your Target, Walmart and Pokémon Center accounts are provided by SLABSNGRABSACO. Add shipping and payment cards, and only add Costco or Sam's Club credentials if you have them.
+              Target and Pokémon Center accounts are supplied from available inventory with your paid membership. Walmart accounts are request-only. You can optionally create your own profiles in My Profile.
             </p>
 
           </div>
@@ -3914,6 +3914,15 @@
         </div>
 
 
+        <form id="walmart-profile-request-form" class="guide-alert info compact" style="margin-bottom:16px">
+          <strong>Walmart accounts — available by request only</strong>
+          <p>Target and Pokémon Center accounts are added from the available pool for your membership. Walmart is not linked automatically.</p>
+          <label>Walmart profiles to request
+            <input type="number" name="quantity" min="1" max="100" value="1" required style="max-width:110px" />
+          </label>
+          <button type="submit" class="secondary">Request Walmart profiles</button>
+          <p id="walmart-profile-request-message" class="form-message" role="status"></p>
+        </form>
         <div
           id="retailer-profiles"
           class="retailer-profiles"
