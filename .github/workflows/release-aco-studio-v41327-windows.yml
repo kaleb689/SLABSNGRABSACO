@@ -1,4 +1,4 @@
-name: Verify ACO Studio 4.13.40 Windows two-way sync installer
+name: Verify ACO Studio 4.13.42 Windows two-way sync installer
 on:
   push:
     branches: [main]
@@ -9,10 +9,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-import-duplicates-434-windows
+  group: aco-studio-442-windows
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.40'
+  ACO_VERSION: '4.13.42'
 jobs:
   windows:
     name: Windows x64 installer, source tests and installed application smoke
@@ -181,7 +181,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ACO-Studio-4.13.40-windows-x64
+          name: ACO-Studio-4.13.42-windows-x64
           path: installers
       - name: Verify and publish tested Windows installer
         env:
@@ -190,27 +190,27 @@ jobs:
           python3 - <<'PY'
           import pathlib,hashlib,base64,shutil
           root=pathlib.Path('installers')
-          for name in ['ACO-Studio-Setup-4.13.40-x64.exe','latest.yml','windows-signing-status.txt','regression-results.txt']:
+          for name in ['ACO-Studio-Setup-4.13.42-x64.exe','latest.yml','windows-signing-status.txt','regression-results.txt']:
            matches=list(root.rglob(name));assert len(matches)==1,(name,matches)
            if matches[0]!=root/name:shutil.copyfile(matches[0],root/name)
           assert '# fail 0' in (root/'regression-results.txt').read_text()
-          p=root/'ACO-Studio-Setup-4.13.40-x64.exe'
+          p=root/'ACO-Studio-Setup-4.13.42-x64.exe'
           assert p.stat().st_size>50_000_000
           with p.open('rb') as f:assert f.read(2)==b'MZ'
           with p.open('rb') as f:digest=base64.b64encode(hashlib.file_digest(f,'sha512').digest()).decode()
           assert digest in (root/'latest.yml').read_text()
           PY
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.40 adds reviewed bulk paste of retailer account logins to selected encrypted profile banks, preserving the provided login details through profile generation. The Target Live to PKC reconciliation and all earlier app functionality are retained. Existing owner Personal vault card-code functionality and the rest of the application are retained. Customer and website-linked payment handling is unchanged.
+          ACO Studio 4.13.42 adds explicit saved Main/Jigged shipping-address reuse by selected quantity, one matching street-suffix jig, and optional random numbered unit jig. The owner vault and previous features remain unchanged.
 
           Native source regressions, packaging and launch/update checks must pass before these assets publish. Production authenticated customer UI tests and owner-device acceptance are not established by CI.
           NOTES
-          TAG="aco-studio-v4.13.40-windows-unsigned"
+          TAG="aco-studio-v4.13.42-windows-unsigned"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*.exe installers/latest.yml installers/windows-signing-status.txt --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.40 Windows' --notes-file notes.md --prerelease
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.42 Windows' --notes-file notes.md --prerelease
           else
-            gh release create "$TAG" installers/*.exe installers/latest.yml installers/windows-signing-status.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.40 Windows' --notes-file notes.md --prerelease
+            gh release create "$TAG" installers/*.exe installers/latest.yml installers/windows-signing-status.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.42 Windows' --notes-file notes.md --prerelease
           fi
-          gh release upload aco-studio-windows-updates installers/ACO-Studio-Setup-4.13.40-x64.exe installers/latest.yml --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload aco-studio-windows-updates installers/ACO-Studio-Setup-4.13.42-x64.exe installers/latest.yml --repo "$GITHUB_REPOSITORY" --clobber
 
