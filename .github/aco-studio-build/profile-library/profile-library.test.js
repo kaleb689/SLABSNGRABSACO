@@ -271,3 +271,17 @@ test('Separate profile code is editable, preserved and included in owner JSON ex
  assert.equal(archive.profiles[0].data.profileSecurityCode,'PICKUP-CODE-44');
  await assert.rejects(h.lib.exportArchive(event,{...h.a,retailer:'target',profileIds:[row.id]}),/belong/);
 });
+
+test('Consolidated street suffix option is Electron IPC clone-safe for every retailer',()=>{
+ for(const retailer of ['target','walmart','pokemoncenter','costco','sams']){
+  const options=LC.ruleOptions(retailer);
+  assert.doesNotThrow(()=>structuredClone(options));
+  const matching=options.filter(x=>x.id==='suffix.matching');
+  assert.equal(matching.length,1);
+  assert.match(matching[0].label,/Street|street/);
+  assert.equal(typeof matching[0].apply,'undefined','IPC must not expose rule functions');
+  assert.ok(options.every(x=>typeof x.apply==='undefined'));
+  const clean=LC.defaultRules(retailer);
+  assert.equal(clean.filter(id=>id==='suffix.matching').length,1);
+ }
+});
