@@ -14,6 +14,9 @@ test("Admin activation has no active-profile count tile or customer dropdown",()
  assert.ok(render.includes('class="activation-group activation-customer-row"'));
  assert.ok(render.includes('data-activation-customer-action='));
  assert.ok(render.includes('data-activation-customer-index='));
+ assert.ok(render.includes('data-admin-extend-membership='));
+ assert.ok(render.includes('group.customerAccountId'));
+ assert.ok(server.includes('customerAccountId: String(customerAccountId || "")'));
  assert.ok(render.includes('"Deactivate":"Set Active"'));
  assert.ok(!render.includes("<details"));
  assert.ok(!render.includes('group.profiles.length'));
