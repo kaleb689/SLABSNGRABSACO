@@ -22,9 +22,9 @@ function harness(count=2){
  let assignments=[],alerts=0,writes=0;
  const sandbox={
   crypto,console,
-  subscriptionAllowsProfiles:()=>true,
+  subscriptionAllowsProfiles:r=>r?.subscriptionStatus==='active',
   getCustomerAccounts:async()=>[{id:"customer-1",email:"buyer@example.test"}],
-  profileAllowanceForRecord:()=>count,
+  profileAllowanceForRecord:r=>Number(r?.plan?.profiles)||count,
   getManagedAccounts:async()=>base,
   getFreeAssignments:async()=>assignments.map(x=>({...x})),
   getRentalAssignments:async()=>[],
@@ -45,8 +45,8 @@ function harness(count=2){
   broadcastLiveDataChange:()=>{}
  };
  vm.createContext(sandbox);
- vm.runInContext(server.slice(start,end)+"\nthis.runProvision=provisionPaidMembershipPool;",sandbox);
- return {run:()=>sandbox.runProvision({id:"order-1",customerAccountId:"customer-1",autoPoolProvisioningRequestedAt:"2026-10-22T00:00:00Z",plan:{profiles:count}}),
+ vm.runInContext(server.slice(start,end)+"\nthis.runProvision=provisionPaidMembershipPool;this.runReconcile=reconcilePaidPoolAssignmentLimits;",sandbox);
+ return {run:()=>sandbox.runProvision({id:"order-1",customerAccountId:"customer-1",subscriptionStatus:"active",autoPoolProvisioningRequestedAt:"2026-10-22T00:00:00Z",plan:{profiles:count}}),\n  reconcile:records=>sandbox.runReconcile(records),\n  addManual:row=>{assignments.push(row);},
   assignments:()=>assignments,writes:()=>writes,alerts:()=>alerts};
 }
 test("Paid tiers auto link eligible Target and PKC inventory, prefer shared emails, never Walmart",async()=>{
@@ -70,4 +70,28 @@ test("A pool shortfall does not assign Walmart or invent missing stock",async()=
  const h=harness(5);await h.run();
  assert.equal(h.assignments().length,6);
  assert.ok(h.assignments().every(x=>x.assignmentRetailer!=="walmart"));
+});
+
+test("Subscription downgrade returns only excess auto-pooled accounts; gifts and history remain",async()=>{
+ const h=harness(3);await h.run();
+ h.addManual({id:"gift-preserved",customerAccountId:"customer-1",active:true,assignmentRetailer:"target",autoPaidPoolAssignment:false});
+ const before=h.assignments();assert.equal(before.length,7);
+ await h.reconcile([{customerAccountId:"customer-1",subscriptionStatus:"active",plan:{profiles:1}}]);
+ const after=h.assignments();
+ assert.equal(after.length,7); // no records deleted
+ assert.equal(after.filter(x=>x.autoPaidPoolAssignment&&x.active).length,2);
+ assert.equal(after.filter(x=>x.autoPaidPoolAssignment&&!x.active).length,4);
+ assert.equal(after.find(x=>x.id==="gift-preserved").active,true);
+ assert.ok(after.filter(x=>x.autoPaidPoolAssignment&&!x.active).every(x=>x.endReason==="paid_tier_downgrade"&&x.customerProfile));
+});
+test("Canceled membership releases pooled accounts without erasing records or manual rentals/gifts",async()=>{
+ const h=harness(2);await h.run();
+ h.addManual({id:"manual-preserved",customerAccountId:"customer-1",active:true,assignmentRetailer:"target"});
+ await h.reconcile([{customerAccountId:"customer-1",subscriptionStatus:"canceled",plan:{profiles:2}}]);
+ const records=h.assignments();assert.equal(records.length,5);
+ assert.ok(records.filter(x=>x.autoPaidPoolAssignment).every(x=>x.active===false&&x.endReason==="paid_membership_inactive"));
+ assert.equal(records.find(x=>x.id==="manual-preserved").active,true);
+ const writes=h.writes();
+ await h.reconcile([{customerAccountId:"customer-1",subscriptionStatus:"canceled",plan:{profiles:2}}]);
+ assert.equal(h.writes(),writes); // idempotent cleanup
 });
