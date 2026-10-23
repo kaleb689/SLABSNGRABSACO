@@ -10697,12 +10697,9 @@ const specialCards = [
         {}
       );
 
-    if (
-      readiness?.ready !==
-        true
-    ) {
-      missingPaidProfileCount +=
-        1;
+    // Unused paid-tier slots are optional, not missing required setup.
+    if (savedProfile && readiness?.ready !== true) {
+      missingPaidProfileCount += 1;
     }
   }
 
@@ -10731,16 +10728,15 @@ container.innerHTML = `
       ? `
           <details
             class="profile-group-dropdown"
-            open
           >
             <summary>
               <div>
                 <span class="eyebrow">
-                  PAID ACO ACCESS
+                  OPTIONAL PERSONAL PROFILES
                 </span>
 
                 <strong>
-                  Paid Profiles
+                  Add / Edit Your Own Retailer Profiles
                 </strong>
 
                 <span
@@ -10757,7 +10753,7 @@ container.innerHTML = `
                             ? "PROFILE"
                             : "PROFILES"
                         } MISSING INFORMATION`
-                      : "ALL PAID PROFILES COMPLETE"
+                      : "OWN PROFILES OPTIONAL — NO SETUP REQUIRED"
                   }
                 </span>
               </div>
@@ -10765,10 +10761,10 @@ container.innerHTML = `
               <span
                 class="profile-group-open"
                 data-profile-group-label
-                data-show-text="SHOW ALL PAID PROFILES"
-                data-hide-text="HIDE ALL PAID PROFILES"
+                data-show-text="SHOW OPTIONAL OWN PROFILES"
+                data-hide-text="HIDE OPTIONAL OWN PROFILES"
               >
-                SHOW ALL PAID PROFILES
+                SHOW OPTIONAL OWN PROFILES
               </span>
             </summary>
 
