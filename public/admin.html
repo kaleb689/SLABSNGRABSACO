@@ -7144,12 +7144,12 @@ function renderOrder(x) {
     STATUS
   </small>
 
-  <span
+  <div class="order-status-actions"><span
     class="status-pill ${subscriptionState.active ? "active" : "inactive"}"
   >
     ${escapeHtml(subscriptionState.label)}
   </span>
-  <button type="button" class="admin-edit-button" data-admin-extend-membership="${escapeHtml(x.customerAccountId || x.id)}" title="Choose an exact Stripe-verified no-charge membership extension">EXTEND</button>
+  <button type="button" class="admin-edit-button" data-admin-extend-membership="${escapeHtml(x.customerAccountId || x.id)}" title="Extend membership and defer Stripe renewal">EXTEND</button></div>
 
   <div class="order-status-subline">
     ${escapeHtml(activeThrough)}
@@ -18606,13 +18606,13 @@ async function loadProfileActivationTracker() {
               <strong>${escapeHtml(group.customerName||"Customer")}</strong>
               <small>${escapeHtml(group.customerEmail||"")}</small>
             </span>
-            <button type="button" class="${allActive?"admin-edit-button":"admin-save-button"}"
+            <div class="activation-customer-actions"><button type="button" class="${allActive?"admin-edit-button":"admin-save-button"}"
               data-activation-customer-action="${action}" data-activation-customer-index="${index}"
               ${eligible.length?"":'disabled title="No eligible profiles"'}>${allActive?"Deactivate":"Set Active"}</button>
             <button type="button" class="admin-save-button"
               data-admin-extend-membership="${escapeHtml(group.customerAccountId||"")}"
               ${group.customerAccountId?"":'disabled title="No linked customer account"'}
-              title="Extend paid membership renewal and update Stripe">Extend</button>
+              title="Extend paid membership renewal and update Stripe">Extend</button></div>
           </div>`;
         }).join("")
       : '<div class="empty-admin">No customer profiles to manage.</div>';
@@ -24211,7 +24211,7 @@ document.addEventListener("click", event => {
  const dialog=document.createElement("dialog");dialog.id="adminExtensionDialog";
  dialog.style.cssText="max-width:min(490px,92vw);border:1px solid #3886a7;border-radius:16px;padding:22px;background:#0d2333;color:#eefaff;box-shadow:0 18px 65px #0009";
  const heading=document.createElement("h3");heading.textContent="Extend membership and defer Stripe billing";
- const explain=document.createElement("p");explain.textContent="Choose the exact new renewal date and time in your local timezone. The membership and Stripe renewal are extended together without an immediate charge or proration. No other membership settings are changed.";
+ const explain=document.createElement("p");explain.textContent="Choose how many days, weeks, months or years to add after the current Stripe renewal, or set an exact later date. The new renewal is verified with Stripe without an immediate charge.";
  const form=document.createElement("form");form.style.cssText="display:grid;gap:13px";
  const label=document.createElement("label");label.textContent="New next payment date / time";
  const when=document.createElement("input");when.type="datetime-local";when.required=true;
@@ -24224,18 +24224,19 @@ document.addEventListener("click", event => {
  const cancel=document.createElement("button");cancel.type="button";cancel.className="admin-edit-button";cancel.textContent="Close";
  cancel.onclick=()=>dialog.close();actions.append(save,cancel);
  form.append(label,actions,result);dialog.append(heading,explain,form);document.body.append(dialog);
+ const picker=window.SNGMembershipExtensionPicker?.attach(form,{date:when});
  dialog.addEventListener("close",()=>dialog.remove());
  when.addEventListener("change",()=>{delete form.dataset.extensionRequestId;result.textContent="";});
  form.addEventListener("submit",async e=>{
-  e.preventDefault();if(!when.value)return;
-  const date=new Date(when.value);
-  if(!Number.isFinite(date.getTime())){result.textContent="Enter a valid date and time.";return;}
+  e.preventDefault();
+  let selection;
+  try{selection=picker?picker.value():{endAt:new Date(when.value).toISOString()};}catch(error){result.textContent=error.message;return;}
   form.dataset.extensionRequestId ||= crypto.randomUUID();
   save.disabled=true;result.textContent="Verifying the extension and new renewal date with Stripe…";
   try{
    const reply=await membershipApi("/api/admin/membership-extensions",{
     method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({customerAccountId:accountId,endAt:date.toISOString(),requestId:form.dataset.extensionRequestId})
+    body:JSON.stringify({customerAccountId:accountId,...selection,requestId:form.dataset.extensionRequestId})
    });
    if(!reply.billingVerified&&!reply.replayed)throw Error("Stripe billing was not verified.");
    result.textContent="Confirmed: no payment due before "+new Date(reply.extension.expiresAt).toLocaleString()+". Stripe renewal and membership records were updated.";
@@ -24676,6 +24677,6 @@ document.addEventListener("click", event => {
 <script src="/admin-pool-search.js?v=20261012-2"></script>
 <script src="/admin-theme-toggle.js?v=20261009"></script>
 <script src="/nested-details-reset.js?v=20261013"></script>
-<script src="/admin-private-studio.js" defer></script>
+<link rel="stylesheet" href="/membership-extension-picker.css?v=20261023"><script src="/membership-extension-picker.js?v=20261023"></script><script src="/admin-private-studio.js" defer></script>
 </body>
 </html>
