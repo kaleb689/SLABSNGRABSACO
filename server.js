@@ -7,7 +7,7 @@ import { stripPaymentVerifiers, purgeLegacyPaymentVerifiers } from "./payment-ve
 import { managedWriteConflict, nextManagedRevision, serializeManagedWrites, mergeManagedCard } from "./managed-customer-write-policy.js";
 import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
-import { requestedMembershipExtension } from "./membership-extension-billing.js";
+import { requestedMembershipExtension, requestedMembershipDuration } from "./membership-extension-billing.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
 import { historicalPlusVerified, communityCheckoutTotals, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
@@ -16334,6 +16334,8 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
  try {
   const customerAccountId=String(req.body?.customerAccountId||"").trim();
   const endAt=String(req.body?.endAt||"").trim();
+  const durationUnit=String(req.body?.durationUnit||"").trim().toLowerCase();
+  const durationQuantity=req.body?.durationQuantity;
   const requestId=String(req.body?.requestId||"").trim();
   if(!customerAccountId||!/^[a-zA-Z0-9-]{12,80}$/.test(requestId))
    return res.status(400).json({error:"Choose an exact paid customer and a valid extension request."});
@@ -16350,7 +16352,7 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
    return res.status(409).json({error:"Review this Stripe subscription's cancellation or pause before extending."});
   const records=await getSubscriptionExtensions(),prior=records.find(x=>x.requestId===requestId);
   if(prior){
-   if(String(prior.customerAccountId)!==customerAccountId||prior.expiresAt!==endAt||prior.kind!=="admin_extension")
+   if(String(prior.customerAccountId)!==customerAccountId||(endAt && prior.expiresAt!==endAt)||prior.kind!=="admin_extension")
     return res.status(409).json({error:"This extension request was already used for another date or customer."});
    return res.json({ok:true,extension:prior,replayed:true});
   }
@@ -16361,12 +16363,14 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
    .map(x=>Date.parse(x.expiresAt)).filter(Number.isFinite).reduce((a,b)=>Math.max(a,b),0);
   const metadata=subscription.metadata||{};
   const already=metadata.sng_last_admin_extension_request===requestId;
-  if(already&&metadata.sng_last_admin_extension_until!==endAt)
+  if(already&&endAt && metadata.sng_last_admin_extension_until!==endAt)
    return res.status(409).json({error:"Stripe already recorded this request for a different extension date."});
   const window=already
-   ? {startsAt:metadata.sng_last_admin_extension_start||new Date().toISOString(),expiresAt:endAt,
-      stripeTrialEnd:Math.ceil(Date.parse(endAt)/1000)}
-   : requestedMembershipExtension({endAt,periodEnd,trialEnd:subscription.trial_end,priorExtensionEnd:priorEnd});
+   ? {startsAt:metadata.sng_last_admin_extension_start||new Date().toISOString(),expiresAt:metadata.sng_last_admin_extension_until||endAt,
+      stripeTrialEnd:Math.ceil(Date.parse(metadata.sng_last_admin_extension_until||endAt)/1000)}
+   : durationUnit
+    ? requestedMembershipDuration({durationUnit,durationQuantity,periodEnd,trialEnd:subscription.trial_end,priorExtensionEnd:priorEnd})
+    : requestedMembershipExtension({endAt,periodEnd,trialEnd:subscription.trial_end,priorExtensionEnd:priorEnd});
   if(!Number.isSafeInteger(window.stripeTrialEnd)||window.stripeTrialEnd<=0)
    return res.status(400).json({error:"The requested renewal date was invalid."});
   let verified=subscription;
@@ -16401,10 +16405,25 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
   const grant={id:crypto.randomUUID(),kind:"admin_extension",requestId,customerAccountId,
    customerEmail:account.email||"",tier,tierName:existing.plan?.name||"Current membership",
    profiles:Number(existing.plan?.profiles||0),startsAt:window.startsAt,expiresAt:window.expiresAt,
-   durationUnit:"custom",durationQuantity:null,stripeSubscriptionId:subscription.id,
+   durationUnit:durationUnit||"custom",durationQuantity:durationUnit?Number(durationQuantity):null,stripeSubscriptionId:subscription.id,
    billingDeferredUntil:window.expiresAt,createdAt:new Date().toISOString(),createdBy:"admin"};
   records.push(grant);
   await saveSubscriptionExtensions(records);
+  // Exactly one in-app notification per verified extension request.
+  const freshAccounts=await getCustomerAccounts();
+  const notifyAccount=freshAccounts.find(x=>String(x.id)===customerAccountId);
+  if(notifyAccount){
+   const notes=customerNotifications(notifyAccount);
+   if(!notes.some(x=>x.kind==="membership_extended"&&x.extensionRequestId===requestId)){
+    const time=new Date().toISOString();
+    notes.push({id:crypto.randomUUID(),kind:"membership_extended",extensionRequestId:requestId,
+     title:"Membership extended",
+     message:"Your membership has been extended through "+new Date(window.expiresAt).toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"})+". Your next Stripe renewal is deferred until this date. No extra payment was charged for the extension.",
+     createdAt:time,updatedAt:time});
+    notifyAccount.updatedAt=time;
+    await saveCustomerAccounts(freshAccounts);
+   }
+  }
   return res.status(201).json({ok:true,extension:grant,billingVerified:true});
  }catch(error){
   if(/renewal date must be later|Choose a date within|Choose a valid|Stripe supports at most/.test(error?.message||""))
