@@ -100,3 +100,20 @@ test('Updater never patches or re-signs the live application and never disables 
  assert.doesNotMatch(sh,/codesign --force|xattr|spctl --master-disable|rm -rf.*Application Support/);assert.doesNotMatch(js,/codesign.*--force|com.apple.quarantine/);
  assert.match(sh,/\/bin\/mv "\$TARGET" "\$BACKUP"/);assert.match(sh,/rolledback/);assert.match(sh,/healthy/);assert.match(js,/waitReady/);
 });
+
+test('Recently rolled back Mac app does not automatically install the same failed update again',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-rollback-retry-'));
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ await fs.writeFile(path.join(dir,'aco-native-update-status.json'),JSON.stringify({
+  phase:'rolledback',currentVersion:'4.13.7',targetVersion:'4.13.8',
+  token:crypto.randomUUID()}));
+ let liveFeedReads=0;
+ const app={getPath:()=>dir,getVersion:()=>'4.13.7',isPackaged:true};
+ const engine=U.createMacUpdater({app,arch:'arm64',loadFeed:async()=>{
+  liveFeedReads++;return manifest();
+ }});
+ assert.deepEqual(await engine.autoStartup(),{started:false,skipped:'recent-rollback'});
+ assert.equal(liveFeedReads,0);
+ assert.equal((await engine.check()).status,'available');
+ assert.equal(liveFeedReads,1); // owner can still manually inspect/retry later
+});
