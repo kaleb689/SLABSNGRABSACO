@@ -5578,6 +5578,19 @@ if (membershipStatusElement) {
     "membership-days-remaining",
     daysRemaining
   );
+  // Show the same renewal countdown that administration sees.
+  const memberTrack=document.getElementById("customer-membership-track");
+  if(memberTrack){
+    const start=new Date(membership.currentPeriodStart||Date.now()).getTime();
+    const end=new Date(periodEnd||"").getTime();
+    const now=Date.now();
+    const pct=Number.isFinite(end)&&end>start?Math.max(0,Math.min(100,100*(end-now)/(end-start))):0;
+    memberTrack.hidden=!Number.isFinite(end);
+    memberTrack.querySelector("span").style.width=pct+"%";
+    memberTrack.setAttribute("aria-valuenow",String(Math.round(pct)));
+    memberTrack.setAttribute("aria-valuetext",daysRemaining+" days remaining until "+dateText);
+  }
+
 
   setText(
     "detail-plan",
