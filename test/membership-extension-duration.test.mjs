@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
-import {requestedMembershipDuration} from "../membership-extension-billing.js";
+import {requestedMembershipDuration, requestedMaximumMembershipExtension, stripeMembershipExtensionLimit} from "../membership-extension-billing.js";
 
 const now=Date.parse("2026-10-23T12:00:00.000Z");
 const paid=Date.parse("2026-11-23T12:00:00.000Z")/1000;
@@ -18,6 +18,20 @@ test("multiple units and year extensions are supported within Stripe's range",()
  assert.equal(requestedMembershipDuration({durationUnit:"year",durationQuantity:1,periodEnd:paid,now}).expiresAt,"2027-11-23T12:00:00.000Z");
  assert.throws(()=>requestedMembershipDuration({durationUnit:"year",durationQuantity:5,periodEnd:paid,now}),/two-year/i);
  for(const durationQuantity of [0,-1,1.5,NaN])assert.throws(()=>requestedMembershipDuration({durationUnit:"day",durationQuantity,periodEnd:paid,now}),/positive whole number/i);
+});
+test("Maximum available uses Stripe's two-year billing anchor limit",()=>{
+ const billingCycleAnchor=Date.parse("2026-09-01T00:00:00.000Z")/1000;
+ assert.equal(new Date(stripeMembershipExtensionLimit({now,billingCycleAnchor})).toISOString(),"2028-09-01T00:00:00.000Z");
+ const plan=requestedMaximumMembershipExtension({now,periodEnd:paid,billingCycleAnchor});
+ assert.equal(plan.expiresAt,"2028-08-31T23:59:00.000Z");
+});
+test("maximum selection cannot shorten a subscription or go beyond its Stripe limit",()=>{
+ const oldAnchor=Date.parse("2024-01-01T00:00:00.000Z")/1000;
+ assert.throws(()=>requestedMaximumMembershipExtension({now,periodEnd:paid,billingCycleAnchor:oldAnchor}),/later|two-year/i);
+});
+test("year extension cannot exceed an earlier Stripe billing anchor limit",()=>{
+ const billingCycleAnchor=Date.parse("2025-01-01T00:00:00.000Z")/1000;
+ assert.throws(()=>requestedMembershipDuration({durationUnit:"year",durationQuantity:2,now,periodEnd:paid,billingCycleAnchor}),/two-year/i);
 });
 test("admin controls, customer tracker, notification and Stripe actions wired",()=>{
  const server=fs.readFileSync(new URL("../server.js",import.meta.url),"utf8");
@@ -35,6 +49,8 @@ test("admin controls, customer tracker, notification and Stripe actions wired",(
  assert.match(mobile,/\.\.\.selection,requestId/);
  assert.match(app,/customer-membership-track/);
  assert.match(index,/customer-membership-track/);
+ assert.match(picker,/data-maximum/);
+ assert.match(server,/requestedMaximumMembershipExtension/);
  new vm.Script(picker);
  new vm.Script(mobile);
  for(const match of admin.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))if(match[1].trim())new vm.Script(match[1]);
