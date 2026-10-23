@@ -6226,20 +6226,6 @@ PAID SUBSCRIPTIONS
           </div>
 
           <div
-            class="activation-count-box activation-count-activated"
-          >
-            <span>
-              ACTIVATED
-            </span>
-
-            <strong
-              id="activatedProfileCount"
-            >
-              —
-            </strong>
-          </div>
-
-          <div
             class="activation-count-box"
           >
             <span>
@@ -6334,10 +6320,7 @@ const awaitingActivationCount =
     "awaitingActivationCount"
   );
 
-const activatedProfileCount =
-  document.getElementById(
-    "activatedProfileCount"
-  );
+
 
 const expiredProfileCount =
   document.getElementById(
@@ -18490,9 +18473,7 @@ async function loadProfileActivationTracker() {
       .textContent =
         String(visibleProfiles.filter(profile => profile.status === "awaiting_activation").length);
 
-    activatedProfileCount
-      .textContent =
-        String(visibleProfiles.filter(profile => profile.status === "activated").length);
+
 
     expiredProfileCount
       .textContent =
