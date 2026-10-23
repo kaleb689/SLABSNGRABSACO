@@ -525,6 +525,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     category:reuseThis?'reused saved address':hardResults?.[regularIndex]?.kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),
     mainAddress:reuseThis?source.address:hardResults?.[regularIndex]?.mainAddress||before};
   });
+  // The chosen quantity is exact within this batch. An unchanged original
+  // address on another selected profile must not silently increase the count.
+  if(source){
+   const key=address=>['address1','address2','city','state','zip'].map(k=>normalizedAddressPart(address?.[k])).join('|');
+   const assigned=rows.filter(row=>key(row.after)===key(source.address)).length;
+   if(assigned!==reuseCount)throw Error('The chosen address would be used by '+assigned+
+    ' selected profiles, not the requested '+reuseCount+'. Change the remaining jig rules or selected profiles and preview again.');
+  }
   if(rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('Every selected profile already has the requested address and no changes would be saved.');
   const token=uuid();
   for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
