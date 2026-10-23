@@ -149,5 +149,6 @@ test("Customer live updates run silently and retain active tab, while typing blo
   assert.deepEqual(loaded[0], ["customer-load", true, true]);
   assert.ok(h.requests.some(item => item[0] === "tab" && item[1] === "membership"));
   assert.match(customer, /await loadCustomerNotifications\(\{ showPopup: !background \}\)/);
-  assert.match(customer, /!ANY_ADMIN_PREVIEW_MODE && !background && !accountOnboardingWasDismissed\(\)/);
+  assert.doesNotMatch(customer, /!ANY_ADMIN_PREVIEW_MODE && !background && !accountOnboardingWasDismissed\(\)/);
+  assert.match(customer, /Loading a purchased membership must never show shipping, card, or IMAP setup/);
 });
