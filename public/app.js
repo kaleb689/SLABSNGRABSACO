@@ -8987,15 +8987,11 @@ function managedMembershipCardHtml(
       ? "rented"
       : "free";
 
-  const title =
-    type === "rented"
-      ? "RENTED PROFILE"
-      : "GIFTED PROFILE";
-
-  const letter =
-    type === "rented"
-      ? "R"
-      : "F";
+  const included=membership.includedWithPaidMembership===true;
+  const title=included
+    ? (membership.assignmentRetailer==="target" ? "INCLUDED TARGET ACCOUNT" : "INCLUDED PKC ACCOUNT")
+    : (type==="rented" ? "RENTED PROFILE" : "GIFTED PROFILE");
+  const letter=included ? "A" : (type==="rented" ? "R" : "F");
 
   const profile =
     membership.customerProfile &&
@@ -10711,15 +10707,13 @@ const specialCards = [
   }
 
 
+  const includedManagedCards = state.freeMemberships
+    .filter(membership=>membership.includedWithPaidMembership===true)
+    .map(managedMembershipCardHtml).filter(Boolean);
   const freeManagedCards =
     state.freeMemberships
-      .map(
-        membership =>
-          managedMembershipCardHtml(
-            membership
-          )
-      )
-      .filter(Boolean);
+      .filter(membership=>membership.includedWithPaidMembership!==true)
+      .map(managedMembershipCardHtml).filter(Boolean);
 
   const rentedManagedCards =
     state.rentedMemberships
@@ -10793,6 +10787,11 @@ container.innerHTML = `
       : ""
   }
 
+  ${includedManagedCards.length ? `<details class="profile-group-dropdown" open>
+      <summary><strong>Included Target &amp; PKC Accounts</strong>
+      <span class="profile-group-open">VIEW INCLUDED ACCOUNTS</span></summary>
+      <div class="profile-group-dropdown-body">${includedManagedCards.join("")}</div>
+    </details>` : ""}
   ${
     specialCards.length
       ? `
