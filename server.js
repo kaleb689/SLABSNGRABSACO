@@ -33172,6 +33172,7 @@ app.get(
           groups.set(
             key,
             {
+              customerAccountId: String(customerAccountId || ""),
               customerName,
               customerEmail,
               profiles: []
