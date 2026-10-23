@@ -67,8 +67,41 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    for(const expired of list.slice(120))
      await fs.rm(path.join(snapshotsDir,expired.name),{force:true}).catch(()=>{});
  }
+ // Every Personal-vault save reconciles all non-PKC retailer identities into
+ // unused PKC emails; it never uses a customer record as an email source.
+ async function seedPersonalPkc(d,other){
+  const key='owner',rows=d.groups?.[key]||[],emails=d.emailBanks?.[key]||[];
+  const candidates=new Set([...rows.filter(x=>x.retailer!=='pokemoncenter').map(x=>normalizeEmail(x.email)),
+    ...emails.filter(x=>x.retailer!=='pokemoncenter').map(x=>normalizeEmail(x.email))].filter(Boolean));
+  const used=new Set([...rows,...Object.values(other?.groups||{}).flat()]
+    .filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
+  const reserved=new Set([...emails,...Object.values(other?.emailBanks||{}).flat()]
+    .filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
+  d.emailBanks||={};d.emailBanks[key]||=[];
+  let added=0;
+  for(const email of candidates){
+   if(used.has(email)||reserved.has(email))continue;
+   if(d.emailBanks[key].length>=20000)throw Error('Personal PKC email bank capacity reached; original data was not overwritten.');
+   d.emailBanks[key].push({id:uuid(),email,retailer:'pokemoncenter',createdAt:now(),profileId:null,source:'personal-retailer-auto-pkc'});
+   reserved.add(email);added++;
+  }
+  if(added)auditRecord(d,key,'auto-personal-pkc-email-reconciliation','',{added,candidates:candidates.size});
+  return {added,candidates:candidates.size,alreadyUsed:[...candidates].filter(x=>used.has(x)).length};
+ }
  async function write(scope,data){
    scopeValue(scope);
+   if(scope==='personal'){
+    // Reconcile automatically when new non-PKC Personal profile/email identities
+    // arrive. A deliberate bank-entry removal alone is not re-created by that
+    // same transaction; the next PKC inventory scan still repairs legacy gaps.
+    const candidates=body=>new Set([
+     ...(body.groups?.owner||[]).filter(x=>x.retailer!=='pokemoncenter').map(x=>normalizeEmail(x.email)),
+     ...(body.emailBanks?.owner||[]).filter(x=>x.retailer!=='pokemoncenter').map(x=>normalizeEmail(x.email))
+    ].filter(Boolean));
+    const previous=candidates(await read('personal')),current=candidates(data);
+    if([...current].some(email=>!previous.has(email)))
+     await seedPersonalPkc(data,await read('aco'));
+   }
    if(!data||data.version!==1||!data.groups||typeof data.groups!=='object')
      throw Error('Refusing to overwrite profile data with an invalid vault.');
    for(const rows of Object.values(data.groups))for(const row of rows)row.data=stripVerifiers(row.data,0,scope);
@@ -293,7 +326,9 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  // email: only genuinely missing PKC email-bank entries are created.
  function backfillTargetLivePkc(d,other,key){
   const rows=d.groups[key]||[],targets=rows.filter(x=>x.retailer==='target'&&x.bank==='live');
-  const sourceEmails=[...new Set(targets.map(x=>normalizeEmail(x.email)).filter(Boolean))];
+  const sourceEmails=[...new Set((key==='owner'?
+   [...rows.filter(x=>x.retailer!=='pokemoncenter'),...(d.emailBanks?.[key]||[]).filter(x=>x.retailer!=='pokemoncenter')]
+   :targets).map(x=>normalizeEmail(x.email)).filter(Boolean))];
   d.emailBanks||={};d.emailBanks[key]||=[];
   const allProfiles=[...Object.values(d.groups).flat(),...Object.values(other.groups).flat()];
   const pkcProfiles=new Set(allProfiles.filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
@@ -309,7 +344,8 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   return {targetLiveProfiles:targets.length,targetUniqueEmails:sourceEmails.length,
    targetDuplicateEmails:targets.length-sourceEmails.length,
    alreadyPkcProfiles:sourceEmails.filter(email=>pkcProfiles.has(email)).length,
-   pkcCoverage:covered,unmatchedTargetEmails:sourceEmails.length-covered,added};
+   pkcCoverage:covered,unmatchedTargetEmails:sourceEmails.length-covered,added,
+   personalAllRetailers:key==='owner',personalEligibleEmails:key==='owner'?sourceEmails.length:0};
  }
  async function reconcileTargetLivePkcEmails(scope,customerId,beforeWrite){
   const key=bank(scope,customerId);

@@ -1,6 +1,6 @@
 'use strict';
 const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core');
-function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,now=Date.now,uuid=crypto.randomUUID}={}){
+function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,getPostalJigOptions,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),jigPlans=new Map(),epochs=new Map();
  const supportedRule=id=>id===C.FL_PHONE_RULE||Boolean(C.ruleById(id));
  const nonStackingRules=ids=>{let targetPrimary=false;return ids.filter(id=>{if(C.ruleById(id)?.family!=='target-primary')return true;if(targetPrimary)return false;targetPrimary=true;return true;});};
@@ -501,6 +501,30 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
   const source=reuse?await resolveReuse(a,reuse.sourceId):null;
   const regularSelected=selected.slice(reuseCount);
+  // Online directory ZIP/state matches are suggestions, not USPS delivery-point
+  // verification. Only the city name may change; ZIP/state/street stay intact.
+  const postalScanned=new Map();
+  let postalAlternativeCount=0;
+  if(p.postalScan===true){
+   if(typeof getPostalJigOptions!=='function')throw Error('Online postal city crossover scanner is unavailable in this Studio build.');
+   const distinct=new Map();
+   for(const row of regularSelected){
+    const address=addressView(row.data);
+    const lookupKey=String(address.zip||'').slice(0,5)+'|'+String(address.state||'').toUpperCase()+'|'+String(address.city||'').toUpperCase();
+    if(!distinct.has(lookupKey))distinct.set(lookupKey,address);
+   }
+   const addresses=[...distinct.entries()];
+   for(let index=0;index<addresses.length;index+=6){
+    const chunk=addresses.slice(index,index+6);
+    const results=await Promise.all(chunk.map(async([key,address])=>{
+     const result=await getPostalJigOptions(address);
+     if(!result||result.streetDeliveryVerified===true)throw Error('Unexpected postal lookup response.');
+     return {key,result};
+    }));
+    a.check();
+    for(const {key,result} of results){postalScanned.set(key,result);postalAlternativeCount+=result.cities?.length||0;}
+   }
+  }
   const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&requestedCounts?perAddressHardRows(regularSelected,p,phoneSeed):null;
   for(const row of regularSelected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
   const rows=selected.map((row,index)=>{
@@ -518,10 +542,26 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     data=C.syncCardholderToProfile(D.manualEdit(row.data,values));
    }else if(hardResults)data=hardResults[regularIndex].data;
    else data=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);
-   const before=addressView(row.data),after=addressView(data);
+   const before=addressView(row.data);
+   const lookupKey=String(before.zip||'').slice(0,5)+'|'+String(before.state||'').toUpperCase()+'|'+String(before.city||'').toUpperCase();
+   const availablePostal=postalScanned.get(lookupKey)?.cities||[];
+   let appliedPostalCity=null;
+   if(!reuseThis&&p.postalApplyCities===true&&availablePostal.length&&
+     (groupSizes.get(key)===1||groupPosition>0)){
+    const current=D.toValues(data),nextCity=availablePostal[(regularIndex+groupPosition)%availablePostal.length];
+    // Retain any separately selected city edit and preserve the ZIP/state.
+    if(String(current['shipping.city']||'').trim().toUpperCase()===String(before.city||'').trim().toUpperCase()&&
+       String(nextCity).toUpperCase()!==String(before.city).toUpperCase()){
+     const edits={...current,'shipping.city':nextCity};
+     if(p.billingSameAsShipping===true)edits['billing.city']=nextCity;
+     data=C.syncCardholderToProfile(D.manualEdit(data,edits));appliedPostalCity=nextCity;
+    }
+   }
+   const after=addressView(data);
    if(!after.address1||!after.city||!after.state||!after.zip)throw Error('A selected profile is missing a complete shipping address.');
    return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),email:row.email,label:row.label,retailer:row.retailer,
     linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer,
+    postalCities:availablePostal,postalCityApplied:appliedPostalCity,
     category:reuseThis?'reused saved address':hardResults?.[regularIndex]?.kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),
     mainAddress:reuseThis?source.address:hardResults?.[regularIndex]?.mainAddress||before};
   });
@@ -540,7 +580,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
   return {token,count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
-   profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress}))};
+   postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
+   postalCityApplied:rows.filter(x=>x.postalCityApplied).length,postalStreetVerified:false,
+   profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
  }
  async function batchJigCommit(e,p){
   const plan=jigPlans.get(p.token);

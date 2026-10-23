@@ -260,6 +260,13 @@
    for(const option of settings.options){const label=text('label',option.label),box=d.createElement('input');label.className='check';box.type='checkbox';box.value=option.id;box.checked=settings.selected.includes(option.id);label.prepend(box);rules.append(label);}
    const combine=text('label','Combine selected jig styles (up to 3 per profile)'),combineBox=d.createElement('input');combine.className='check';combineBox.type='checkbox';combine.prepend(combineBox);
    const billing=text('label','Use the jigged shipping address for billing address too'),billingBox=d.createElement('input');billing.className='check';billingBox.type='checkbox';billing.prepend(billingBox);
+   const postalScan=text('label','Scan internet ZIP/city crossovers during preview');
+   const postalScanBox=d.createElement('input');postalScan.className='check';postalScanBox.type='checkbox';postalScanBox.checked=true;postalScan.prepend(postalScanBox);
+   const postalApply=text('label','Apply ZIP/state-matched alternate cities when available (not USPS delivery-point verification)');
+   const postalApplyBox=d.createElement('input');postalApply.className='check';postalApplyBox.type='checkbox';postalApplyBox.checked=true;postalApply.prepend(postalApplyBox);
+   const postalHelp=text('p','The lookup shares only a five-digit ZIP with the postal-city directory. It never shares names, street addresses, cards or account logins. Only matched city names can change; your ZIP and state stay the same.');
+   postalScanBox.onchange=()=>{postalApplyBox.disabled=!postalScanBox.checked;};
+
    const reuseLabel=text('label','Allow multiple profiles to use the same saved address');
    reuseLabel.className='check';const reuseToggle=d.createElement('input');reuseToggle.type='checkbox';reuseLabel.prepend(reuseToggle);
    const reusePanel=d.createElement('section');reusePanel.className='profileJigReusePicker';reusePanel.hidden=true;
@@ -272,9 +279,9 @@
    const preview=text('button','Preview all '+chosen.length+' selected profiles');preview.type='button';preview.className='btn secondary';
    const save=text('button','Apply jig to all '+chosen.length+' selected profiles');save.type='button';save.className='btn primary';save.disabled=true;
    const review=d.createElement('div');let token=null;
-   win.body.append(info,rules,combine,billing,reuseLabel,reusePanel,preview,save,review);
+   win.body.append(info,rules,combine,billing,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,save,review);
    const invalidatePreview=()=>{token=null;save.disabled=true;review.replaceChildren();};
-   for(const control of [rules,combineBox,billingBox,reuseSelect,reuseCount])control.addEventListener('change',invalidatePreview);
+   for(const control of [rules,combineBox,billingBox,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',invalidatePreview);
    reuseToggle.onchange=async()=>{
     invalidatePreview();reusePanel.hidden=!reuseToggle.checked;
     if(!reuseToggle.checked)return;
@@ -303,11 +310,13 @@
      if(reuseToggle.checked&&(!reuseLoaded||!reuseSelect.value||!Number.isSafeInteger(quantity)||quantity<2||quantity>chosen.length))
       throw Error('Choose a saved Main or Jigged address and a valid number of profiles to reuse it.');
      const reuse=reuseToggle.checked?{sourceId:reuseSelect.value,count:quantity}:null;
+     win.status().textContent=postalScanBox.checked?'Checking online ZIP/city matches for selected main addresses…':'Preparing offline jig preview…';
      const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),
       ruleIds:[...rules.querySelectorAll('input:checked')].map(x=>x.value),combine:combineBox.checked,
-      billingSameAsShipping:billingBox.checked,reuse});
+      billingSameAsShipping:billingBox.checked,postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
      if(!win.valid())return;token=result.token;
      review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+'.'));
+     if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      for(const row of result.profiles.slice(0,100)){const line=d.createElement('pre');line.textContent=(row.label||row.email)+'\n'+[row.before.address1,row.before.address2,row.before.city,row.before.state,row.before.zip,row.before.phone&&('Phone '+row.before.phone)].filter(Boolean).join(', ')+'\n→ '+[row.after.address1,row.after.address2,row.after.city,row.after.state,row.after.zip,row.after.phone&&('Phone '+row.after.phone)].filter(Boolean).join(', ');review.append(line);}
      if(result.profiles.length>100)review.append(text('p','+'+(result.profiles.length-100)+' more selected profiles included in this batch.'));
      save.disabled=false;win.status().textContent='Preview ready. One Apply action will process the whole selected set.';
