@@ -20368,6 +20368,25 @@ app.post(
           )
       );
 
+      // Only a confirmed manual Walmart assignment fulfills a pending request.
+      // Do not use this request record to assign Walmart automatically.
+      if (retailer === "walmart") {
+        try {
+          const requestAccounts=await getCustomerAccounts();
+          const customer=requestAccounts.find(item=>String(item.id)===String(customerAccountId));
+          const request=customer?.walmartProfileRequests?.find(item=>item.status==="pending");
+          if(request){
+            request.fulfilled=Math.min(request.quantity,Math.max(0,Number(request.fulfilled)||0)+quantity);
+            request.status=request.fulfilled>=request.quantity?"fulfilled":"pending";
+            request.updatedAt=new Date().toISOString();
+            await saveCustomerAccounts(requestAccounts);
+          }
+        }catch(error){
+          console.error("Walmart request reconciliation:",error);
+          // Accounts were already assigned; do not turn success into a retryable 500.
+        }
+      }
+
       return res.json({
         ok: true,
 
