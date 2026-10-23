@@ -50,7 +50,7 @@ app.whenReady().then(async()=>{
  const before={};for(const n of ['personal-profiles.bin','customer-profiles.bin','personal-cards.bin','settings.json']){const b=crypto.randomBytes(256);await fs.writeFile(path.join(sentinels,n),b);before[n]=b;}
  await fs.writeFile(path.join(data,'owner-update-source.json'),'legacy broken feed is intentionally ignored by the new Mac updater');
  const config=path.join(root,'ci-update-test-config.json');await fs.writeFile(config,JSON.stringify({module:path.join(finalApp,'Contents/Resources/app/mac-full-updates.js'),manifest,archive}),{mode:0o600});
- const child=spawn(path.join(target,'Contents/MacOS/ACO Studio'),['--aco-test-config='+config],{stdio:'inherit'});
+ const child=spawn(path.join(target,'Contents/MacOS/ACO Studio'),['--aco-test-config='+config],{stdio:'inherit',env:{...process.env,ACO_SELF_UPDATE_CI:'1'}});
  const statusFile=path.join(data,'aco-native-update-status.json');
  const result=await until(async()=>{try{const s=JSON.parse(await fs.readFile(statusFile,'utf8'));if(['failed','rolledback'].includes(s.phase))throw Error('Self-update failed: '+s.message);return s.phase==='installed'?s:false;}catch(e){if(e.code==='ENOENT'){if(child.exitCode!==null)throw Error('Update fixture exited before writing a result: '+child.exitCode);return false;}throw e;}},180000);
  if((await U.bundleMetadata(target)).version!==version)throw Error('Installed version incorrect.');
