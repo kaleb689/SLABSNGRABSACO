@@ -16394,8 +16394,9 @@ app.post("/api/admin/membership-extensions", requireAdmin, serializeManagedCusto
   for(const item of (Array.isArray(latestPaid)?latestPaid:[])){
    if(String(item.customerAccountId)!==customerAccountId||String(item.stripeSubscriptionId)!==subscription.id)continue;
    await applySubscriptionInfo(item,verified);
-   if(Date.parse(item.currentPeriodEnd||"")<Date.parse(window.expiresAt))
+   if(!Number.isFinite(Date.parse(item.currentPeriodEnd||""))||Date.parse(item.currentPeriodEnd||"")<Date.parse(window.expiresAt))
     item.currentPeriodEnd=window.expiresAt;
+   if(!item.cancelAtPeriodEnd)item.subscriptionEndDate=window.expiresAt;
    item.billingDeferredUntil=window.expiresAt;
    changed++;
   }
