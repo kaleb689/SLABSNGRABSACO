@@ -179,8 +179,8 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
      if(!olderRow||olderRow.retailer!==row.retailer||normalizeEmail(olderRow.email)!==normalizeEmail(row.email))continue;
      // If a record was recreated under the same email, do not carry a code
      // across a changed card number.
-     const priorCard=String(olderRow.data?.cc_number||olderRow.data?.card?.number||'').replace(/\\D/g,'');
-     const currentCard=String(row.data?.cc_number||row.data?.card?.number||'').replace(/\\D/g,'');
+     const priorCard=String(olderRow.data?.cc_number||olderRow.data?.card?.number||'').replace(/\D/g,'');
+     const currentCard=String(row.data?.cc_number||row.data?.card?.number||'').replace(/\D/g,'');
      if(priorCard&&currentCard&&priorCard!==currentCard)continue;
      const code=independentCode(olderRow.data,true);
      if(code)found.set(row.id,{code,revision:row.revision||0,email:row.email,retailer:row.retailer});
