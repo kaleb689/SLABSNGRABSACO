@@ -63,7 +63,10 @@ function drawFiles(){
       }
       summary.append(node("strong",f.filename),node("small",f.kind.toUpperCase()+" · "+f.count+" profile(s) · "+((f.bank||"working")==="live"?"Live Profiles":"Working Profiles")+" · Original format "+(f.changed?"edited":"retained")));
       const actions=node("div",undefined,"mini-actions");
-      actions.append(button("Export",async()=>{const r=await call("vault_export",f.id);if(r?.saved)message("Exported "+r.filename+" in its source format.");}),
+      const exportChoice=document.createElement("select");exportChoice.setAttribute("aria-label","File type for "+f.filename);
+      for(const [value,label] of [["original","Original file format"],["csv","CSV"],["json","JSON"],["tsv","TSV"],["txt","TXT"]])exportChoice.append(new Option(label,value));
+      actions.append(exportChoice);
+      actions.append(button("Export",async()=>{const r=await call("vault_export",{fileId:f.id,format:exportChoice.value});if(r?.saved)message("Exported "+r.filename+" as "+exportChoice.value+".");}),
         button("Inspect",async()=>{const data=await call("vault_rows",f.id);if(!data)return;
           const modal=$("inspect");modal.replaceChildren();modal.classList.remove("hidden");
           const pane=node("section",undefined,"inspect-panel");pane.append(node("h2",data.filename),
@@ -182,6 +185,44 @@ const historyButton=button("Import History",async()=>{
 });
 bulkActions.append(bulkMove,bulkDelete,historyButton);updateBulkToolbar();
 
+async function showCardEditor(card,stored,row){
+ const current=row.querySelector(".card-detail-form");if(current){current.remove();return;}
+ const form=node("form",undefined,"panel card-detail-form");
+ const title=node("h3","View / Edit card ending "+card.last4);
+ const fields=node("div",undefined,"fields");
+ let original={},sourceId=null,rowIndex=null;
+ if(stored){
+  original={label:stored.label||"",holder:stored.holder||"",number:stored.number||"",expiry:stored.expiry||"",securityCode:stored.securityCode||""};
+ }else{
+  const linked=(card.linkedAccounts||[]).find(account=>account.sourceId&&Number.isInteger(account.index));
+  if(!linked){message("This card has no editable source profile. Add it to the saved Card Bank first.");return;}
+  sourceId=linked.sourceId;rowIndex=linked.index;
+  const data=await call("vault_rows",sourceId);
+  const match=data?.rows?.find(item=>item.index===rowIndex);
+  if(!match){message("The matching imported profile is unavailable.");return;}
+  const all=Object.entries(match.fields||{});
+  original=Object.fromEntries(all.filter(([key])=>/card|cc_|cvv|cvc|exp|holder|security.?code|verification/i.test(key)));
+  if(!Object.keys(original).length)original=Object.fromEntries(all.filter(([,value])=>typeof value==="string"));
+ }
+ const inputs={};
+ for(const [key,value] of Object.entries(original)){
+  const label=node("label",/^(?:cc_cvv|cvv|cvc|securitycode|security_code)$/i.test(key)?
+   "Security Code (existing imported field: "+key+")":key);
+  const input=document.createElement("input");input.name=key;input.value=String(value??"");input.autocomplete="off";
+  input.maxLength=5000;label.append(input);fields.append(label);inputs[key]=input;
+ }
+ const save=button("Save edits",async()=>{
+  const updates=Object.fromEntries(Object.entries(inputs).filter(([key,input])=>input.value!==String(original[key]??"")).map(([key,input])=>[key,input.value]));
+  if(!Object.keys(updates).length){message("No fields were changed.");return;}
+  if(!confirm("Save only the changed fields in this one licensed customer vault? Unchanged Security Codes and profile values will remain untouched."))return;
+  const result=stored
+   ?await call("vault_updateCard",{id:stored.id,...Object.fromEntries(Object.entries(inputs).map(([key,input])=>[key,input.value])),confirmed:true})
+   :await call("vault_editRow",{fileId:sourceId,rowIndex,updates});
+  if(result?.saved){await refresh();message("Card changes saved. Unchanged fields were retained.");}
+ },"primary");
+ form.append(title,fields,save,button("Cancel",()=>form.remove()));
+ row.append(form);
+}
 function drawCards(){
  const target=$("card-list");target.replaceChildren();
  const search=$("card-search").value.trim().toLowerCase();
@@ -212,6 +253,7 @@ function drawCards(){
     const result=await call("vault_setHardCard",{cardRef:c.ref,hard:!c.hardCard,confirmed:true});
     if(result?.saved){selectedCardRefs.clear();await refresh();message("Updated all matching card entries in your private vault: "+result.matchedProfiles+" profiles across retailer pools and "+result.savedCardCopies+" saved card copies.");}
    }));
+   row.append(button("View / Edit",()=>void showCardEditor(c,stored,row)));
    if(stored){
     row.append(button("Delete",async()=>{if(!confirm("Remove this stored card from your private card bank? Imported profiles retain their original information."))return;
       if(await call("vault_remove",{kind:"card",id:stored.id})){selectedCardRefs.clear();await refresh();}},"danger"));
