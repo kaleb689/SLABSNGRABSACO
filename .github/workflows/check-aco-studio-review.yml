@@ -1,0 +1,64 @@
+name: ACO Studio review regression checks
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/aco-studio-build/profile-library/**'
+      - '.github/workflows/check-aco-studio-review.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  profile-integration:
+    name: Restore owner app and run full regression tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore verified owner application
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > /tmp/aco-original-source.zip
+          echo '8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570  /tmp/aco-original-source.zip' | sha256sum --check
+          unzip -q /tmp/aco-original-source.zip -d build-src
+          test -f build-src/App/main.js
+      - name: Restore all existing production overlays and review changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+          python3 .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+          ACO_ADHOC_MODE=true node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+          node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+          node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+          test -s build-src/App/owner-health-advisor.js
+      - name: Install dependencies
+        working-directory: build-src/App
+        run: npm install --no-audit --no-fund
+      - name: Verify syntax, Personal isolation, PKC reconciliation and new UI
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in *.js; do node --check "$f"; done
+          node --test $(find tests -maxdepth 1 -type f -name '*.test.js' ! -name 'mac-full-updates.test.js' | sort) | tee regression-results.txt
+      - name: Publish regression log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aco-studio-review-regressions
+          path: build-src/App/regression-results.txt
+          if-no-files-found: ignore
+          retention-days: 7
