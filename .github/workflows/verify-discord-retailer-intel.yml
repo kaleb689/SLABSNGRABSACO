@@ -1,0 +1,28 @@
+name: Verify Discord retailer intel and 14-day retention
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'discord-retailer-intel.js'
+      - 'discord-community.js'
+      - 'test/discord-retailer-intel.test.mjs'
+      - '.github/workflows/verify-discord-retailer-intel.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  retailer-intel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify module syntax
+        run: |
+          node --check discord-retailer-intel.js
+          node --check discord-community.js
+          node --check test/discord-retailer-intel.test.mjs
+      - name: Check product, queue, and retention logic
+        run: |
+          node --test test/discord-retailer-intel.test.mjs test/discord-skus.test.js
