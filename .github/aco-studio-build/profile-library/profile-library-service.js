@@ -51,7 +51,15 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  for(let index=0;index<data.length;index++){let row=structuredClone(data[index]);const flags=C.collisions([row],seen,retailer)[0];
   if(options.name&&(flags.includes('name')||options.all)){row=C.randomName(row,usedNames);}
   if(options.email&&(flags.includes('email')||options.all)){const email=ctx.emails.find(x=>x.retailer===retailer&&!x.profileId&&!usedEmails.has(x.email));if(!email)throw Error('Not enough unused emails in this vault and retailer.');row.email=email.email;email.profileId='pending-'+index;}
-  if(options.card&&(flags.includes('card')||options.all)){const card=cards.find(c=>!c.previouslyAssigned&&!usedCards.has(c.number));if(!card)throw Error('Not enough unused cards in this vault.');C.putCard(row,card);usedCards.add(card.number);}
+  if(options.card&&(flags.includes('card')||options.all)){
+   const staged=ctx.rows.concat(added.map((data,i)=>({id:'pending-card-'+i,retailer,data})));
+   const card=cards.find(c=>{
+    if(c.previouslyAssigned&&!CardPolicy.hardCard(c.number,ctx.settings))return false;
+    try{CardPolicy.checkAllocation(staged,retailer,[c.number],ctx.settings);return true;}catch{return false;}
+   });
+   if(!card)throw Error('Not enough retailer-eligible unused or Hard Cards in this exact vault.');
+   C.putCard(row,card);
+  }
   const after=C.collisions([row],seen,retailer)[0];if(after.includes('email'))throw Error('Duplicate email remains. Select Replace duplicate emails.');if(after.length&&!options.allowShared)throw Error('Duplicate name or card remains. Repair it or explicitly allow shared names/cards.');
   if(!C.values(row).email)throw Error('A profile email is missing.');usedEmails.add(C.email(row.email));usedNames.add(C.nameKey(row));seen.push({retailer,data:row});added.push(row);
  }return added;}
@@ -62,6 +70,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(row.needsReview)throw Error('Resolve the website conflict before repairing this profile.');
   if(linked&&p.repairs?.email)throw Error('Replace the linked retailer account from its unused account bank; do not change its login email locally.');
   const peers=ctx.rows.filter(x=>x.id!==row.id),target={...ctx,rows:peers};const [data]=resolve([row.data],row.retailer,target,{...p.repairs,all:true,allowShared:true},cards);
+  const nextCard=CardPolicy.fromProfile({data});
+  if(nextCard&&nextCard!==CardPolicy.fromProfile(row))CardPolicy.checkAllocation(ctx.rows,row.retailer,[nextCard],ctx.settings,{excludeProfileIds:[row.id]});
   let remote;if(linked){if(!saveCustomerProfile||!row.remoteManagedId)throw Error('Website profile is not verified.');remote=await saveCustomerProfile(a.id,{managedAccountId:row.remoteManagedId,type:row.remoteType,retailer:row.retailer,updatedAt:row.remoteUpdatedAt},{fields:C.values(data),...(p.repairs?.card?{card:C.payment(data)}:{})});if(!remote?.saved)throw Error('The website did not confirm the profile repair.');a.check();}
   row.data=data;row.email=C.email(data.email);row.revision++;row.manualOverride=!linked;
   if(linked){row.remoteUpdatedAt=remote.updatedAt;row.sourceHash=require('./jig-field-core').hash(data);row.websiteAuthoritative=true;}
