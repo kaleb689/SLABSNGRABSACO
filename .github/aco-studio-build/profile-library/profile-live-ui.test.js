@@ -84,3 +84,51 @@ test('Profiles export is not disabled just because the profile is in progress',(
  assert.match(source,/q\('export'\)\.disabled=busy;/);
  assert.doesNotMatch(source,/q\('export'\)\.disabled=busy\|\|stage!=='completed'/);
 });
+
+test('Select All on Page never includes any profile from a different pagination page',()=>{
+ const helperStart=source.indexOf(' const PAGE_SIZE=200;let pageIndex=0;');
+ const helperEnd=source.indexOf('\n const pager=',helperStart);
+ assert.ok(helperStart>0&&helperEnd>helperStart,'page-scoped selection helper exists');
+ const handlerStart=source.indexOf("q('all').onclick=()=>{selected.clear();");
+ const handlerEnd=source.indexOf(";q('clear').onclick",handlerStart);
+ assert.ok(handlerStart>0&&handlerEnd>handlerStart,'select all replaces previous selection');
+ const entries=Array.from({length:451},(_,i)=>({id:'record-'+i}));
+ const selectAll={onclick:null},context={visible:()=>entries,selected:new Set(['foreign-vault','record-0']),q:()=>selectAll,draws:0,draw(){this.draws++;}};
+ vm.createContext(context);
+ vm.runInContext(source.slice(helperStart,helperEnd)+'\n'+source.slice(handlerStart,handlerEnd+1)+'\nthis.pageRows=pageRows;',context);
+ vm.runInContext('pageIndex=1;',context);
+ selectAll.onclick();
+ assert.deepEqual([...context.selected],entries.slice(200,400).map(x=>x.id));
+ assert.equal(context.selected.has('foreign-vault'),false);
+ assert.equal(context.selected.has('record-0'),false);
+ vm.runInContext('pageIndex=2;',context);
+ selectAll.onclick();
+ assert.deepEqual([...context.selected],entries.slice(400,451).map(x=>x.id));
+ assert.equal(context.selected.size,51);
+});
+
+test('Search and duplicates cannot select a different retailer or status tab',()=>{
+ const start=source.indexOf(' function visible(){');
+ const end=source.indexOf('\n',start);
+ assert.ok(start>0&&end>start);
+ const items=[
+  {id:'target-ready',retailer:'target',bank:'working',stage:'completed',group:'target',email:'shared@example.test'},
+  {id:'target-live',retailer:'target',bank:'live',stage:'completed',group:'target',email:'shared@example.test'},
+  {id:'pkc-ready',retailer:'pokemoncenter',bank:'working',stage:'completed',group:'pokemoncenter',email:'shared@example.test'},
+  {id:'target-unused',retailer:'target',bank:'working',stage:'in-progress',group:'target',email:'shared@example.test'}
+ ];
+ const fields={search:{value:'shared'},retailer:{value:'target'}};
+ const context={rows:items,stage:'completed',group:'all',issueView:'all',q:key=>fields[key],profileIssues:()=>[],searchable:row=>row.email};
+ vm.createContext(context);
+ vm.runInContext(source.slice(start,end)+'\nthis.results=visible;',context);
+ assert.deepEqual(context.results().map(x=>x.id),['target-ready']);
+});
+
+test('Bulk jig, move, delete and export never operate on selected profiles outside current page',()=>{
+ assert.match(source,/const chosen=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/);
+ assert.match(source,/selectedRows=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)/);
+ assert.match(source,/const selectedVisible=pageItems\.filter\(x=>selected\.has\(x\.id\)\)/);
+ assert.equal((source.match(/profileIds:pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/g)||[]).length,2);
+ assert.match(source,/selected\.clear\(\);pageIndex=0;if\(q\('search'\)\.value\.trim\(\)\)/);
+ assert.match(source,/nextPage\.onclick=\(\)=>\{if\(\(pageIndex\+1\)\*PAGE_SIZE<visible\(\)\.length\)\{pageIndex\+\+;selected\.clear\(\);draw\(\);\}\};/);
+});
