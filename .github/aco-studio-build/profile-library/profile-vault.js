@@ -22,12 +22,13 @@ function emailFrom(row){
  return candidates.map(v=>name(v).toLowerCase()).find(s=>EMAIL.test(s))||'';
 }
 function normalizeEmail(value){const v=name(value).toLowerCase();return EMAIL.test(v)?v:'';}
-const redactKeys=new Set(['cvv','cvc','cid','cc_cvv','securitycode','security_code','verificationcode','cvv2','cardverificationvalue','custom_security_code','customsecuritycode','accountsecuritycode']);
-const personalCvvKeys=new Set(['cvv','cvc','cid','cc_cvv','securitycode','security_code','cvv2','cardverificationvalue']);
-const personalReferenceKeys=new Set(['custom_security_code','customsecuritycode','accountsecuritycode']);
+// Security Code is an independently named profile reference, not a payment verifier.
+// Only explicit payment-verification fields are stripped. Keep unrelated profile
+// security_code, custom_security_code and profileSecurityCode on both sides.
+const redactKeys=new Set(['cvv','cvc','cid','cc_cvv','cvc2','cvv2','verificationcode','cardverificationvalue','cardverificationcode']);
 function stripVerifiers(input,depth=0,scope='redacted'){if(depth>8)throw Error('Profile nesting limit exceeded.');if(Array.isArray(input))return input.map(x=>stripVerifiers(x,depth+1,scope));if(input&&typeof input==='object'){
   const out={};for(const [key,value] of Object.entries(input)){
-   if(redactKeys.has(key.toLowerCase())){const k=key.toLowerCase(),v=String(value??'');out[key]=scope==='personal'&&((personalCvvKeys.has(k))||personalReferenceKeys.has(k))?v.slice(0,64):'';continue;}
+   if(redactKeys.has(key.toLowerCase())){out[key]='';continue;}
    if(key==='__proto__'||key==='constructor'||key==='prototype')continue;
    out[key]=stripVerifiers(value,depth+1,scope);
   }return out;
