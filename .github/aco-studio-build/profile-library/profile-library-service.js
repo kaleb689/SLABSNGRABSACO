@@ -110,6 +110,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(number)CardPolicy.checkAllocation(ctx.rows,row.retailer,[number],ctx.settings,{excludeProfileIds:[row.id]});
    }
    if(p.cardCvv!==undefined){
+    if(a.scope!=='personal')throw Error('Legacy card-code input is limited to your unlocked Personal vault; customer Security Codes use the separate profile field.');
     // Backward-compatible editor input: historically named "cardCvv" even
     // when it represented the separate profile Security Code. Treat it as
     // a profile-only reference and NEVER clear legacy saved fields.
