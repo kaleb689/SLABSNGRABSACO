@@ -82,3 +82,41 @@ test('Customer storage does not change and the customer editor rejects Personal 
  const h=await library(t),data=complete('target','customer@example.test');data.cc_cvv='123';await commit(h,await preview(h,[data],h.a));const row=(await h.lib.list(event,h.a)).profiles[0];assert.equal(row.data.cc_cvv,'');
  await assert.rejects(h.lib.edit(event,{...h.a,profileId:row.id,revision:row.revision,fields:LC.values(row.data),cardCvv:'123'}),/Personal vault/);
 });
+
+
+test('Legacy CVV-labeled import slot preserves user-entered Security Code in separate profile field without truncating leading zeros',async t=>{
+ const h=await library(t);
+ for(const [retailer,code] of [['target','0044'],['walmart','0008']]){
+  const data=complete(retailer,'legacy-'+retailer+'@example.test');
+  if(retailer==='target')data.cc_cvv=code;else data.card.cvv=code;
+  await commit(h,await h.lib.importPreview(event,{...h.p,bank:'live',retailer,fileName:'profiles.json',text:JSON.stringify([data])}));
+  let row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
+  assert.equal(row.data.profileSecurityCode,code);
+  const payment=LC.payment(row.data);assert.equal(payment.cvv,'');
+  await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data)});
+  row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
+  assert.equal(row.data.profileSecurityCode,code,'unrelated profile edit never clears code');
+  await h.lib.exportArchive(event,{...h.p,retailer,profileIds:[row.id],customerName:'Personal'});
+  assert.equal(JSON.parse(h.writes.at(-1)[1]).profiles[0].profileSecurityCode,code);
+ }
+});
+test('Selecting an explicit export format does not mutate or remove profile Security Codes',async t=>{
+ const h=await library(t),data=complete('target','formats@example.test');
+ data.profileSecurityCode='PICKUP-0008';
+ await commit(h,await preview(h,[data]));
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ for(const extension of ['json','csv','tsv','txt']){
+  await h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:[row.id],customerName:'Personal',exportFormat:extension});
+  const last=h.writes.at(-1);
+  assert.ok(last[0].endsWith('.'+extension));
+  assert.ok(last[1].includes('PICKUP-0008'));
+ }
+ const after=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(after.data.profileSecurityCode,'PICKUP-0008');
+});
+test('UI exposes View/Edit for imported cards and editable Security Code for saved cards',()=>{
+ const code=require('node:fs').readFileSync(require.resolve('../profile-workshop-ui.js'),'utf8');
+ assert.match(code,/line.append\(view\)/);
+ assert.match(code,/textContent='View \/ Edit'/);
+ assert.match(code,/field\('customSecurityCode','Security Code/);
+});
