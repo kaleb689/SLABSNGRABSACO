@@ -1,6 +1,6 @@
 'use strict';
 const path=require('node:path'),fs=require('node:fs/promises'),crypto=require('node:crypto');
-const Core=require('./app'),Fields=require('./jig-field-core'),Draft=require('./profile-draft-core');
+const Core=require('./app'),Fields=require('./jig-field-core'),Draft=require('./profile-draft-core'),CardPolicy=require('./card-pool-policy');
 function ids(v,label){if(!Array.isArray(v)||!v.length||v.length>500||v.some(x=>typeof x!=='string'||!x||x.length>180)||new Set(v).size!==v.length)throw Error('Select '+label+' from this vault.');return v;}
 const cardKey=(scope,id)=>scope==='personal'?'personal:owner':id;
 const same=(a,b)=>Fields.hash(a)===Fields.hash(b);
@@ -146,9 +146,10 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
  const bank=async(s,id)=>s==='personal'?addressBanks.listPersonal():addressBanks.listAco(id);
  function expired(){for(const [t,p]of plans)if(now()-p.created>600000&&!p.busy)plans.delete(t);}
  async function assets(e,p){const {scope,id}=await access(e,p),generation=epoch(e);
-  const [a,c,rows]=await Promise.all([bank(scope,id),cardVault(scope).list(cardKey(scope,id)),profiles.fieldSnapshot(scope,id)]);
+  const [a,c,rows,settings]=await Promise.all([bank(scope,id),cardVault(scope).list(cardKey(scope,id)),profiles.fieldSnapshot(scope,id),profiles.librarySettings(scope,id)]);
   const full=c.cards.length?await cardVault(scope).selectedForJig(cardKey(scope,id),c.cards.map(x=>x.id)):[];
   const assigned=new Set((c.assignments||[]).map(x=>x.cardId));
+  const cardPool=CardPolicy.inventory({rows,savedCards:full,settings});
   const retailerSeq={};
   const cards=c.cards.map((x,index)=>{
    const raw=full.find(y=>y.id===x.id),users=rows.filter(r=>r.assetRefs?.cardId===x.id||numberOf(r.data)===raw?.number),used=users.length,first=users[0];
@@ -156,7 +157,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    if(first?.retailer){retailerSeq[first.retailer]=(retailerSeq[first.retailer]||0)+1;label=({target:'Target',walmart:'Walmart',pokemoncenter:'PKC',costco:'Costco',sams:"Sam's"}[first.retailer]||first.retailer)+' '+retailerSeq[first.retailer];displayHolder=profileNameFor(first);}
    return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:brandFromNumber(raw.number),customReference:raw.customSecurityCode||''}:{}),usedCount:used,unused:used===0&&!assigned.has(x.id),previouslyAssigned:assigned.has(x.id)};
   });
-  const result={scope,customerId:id,addresses:a.addresses.map(x=>({...x,uses:rows.filter(r=>r.assetRefs?.addressId===x.id).length})),cards,profiles:rows.map(x=>({id:x.id,label:x.label,email:x.email,retailer:x.retailer,bank:x.bank||'working',status:x.status,stage:x.stage||'in-progress',missing:require('./profile-completion-core').inspect(x).missing,revision:x.revision,createdInWorkshop:x.source==='owner-created-profile'}))};
+  const result={scope,customerId:id,cardPool,addresses:a.addresses.map(x=>({...x,uses:rows.filter(r=>r.assetRefs?.addressId===x.id).length})),cards,profiles:rows.map(x=>({id:x.id,label:x.label,email:x.email,retailer:x.retailer,bank:x.bank||'working',status:x.status,stage:x.stage||'in-progress',missing:require('./profile-completion-core').inspect(x).missing,revision:x.revision,createdInWorkshop:x.source==='owner-created-profile'}))};
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed while loading.');return result;
  }
  async function addCard(e,p){
@@ -167,6 +168,35 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   const card={...p.card,number,label:'Unlinked card '+next,cardholder:String(p?.card?.cardholder||'').trim()||'Unassigned',brand:brandFromNumber(number)};
   delete card.id;
   return vault.addWorkshopCard(key,card,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');});
+ }
+ async function setHardCard(e,p){
+  const {scope,id,check}=await access(e,p);
+  if(p?.confirmed!==true||typeof p?.hard!=='boolean')throw Error('Confirm the Hard Card setting for this vault.');
+  const saved=await cardVault(scope).list(cardKey(scope,id));
+  const full=saved.cards.length?await cardVault(scope).selectedForJig(cardKey(scope,id),saved.cards.map(x=>x.id)):[];
+  const rows=await profiles.fieldSnapshot(scope,id),number=CardPolicy.resolveReference(p.cardRef,rows,full);
+  return profiles.libraryTransaction(scope,id,ctx=>{
+   const next=CardPolicy.toggle(ctx.settings,number,p.hard);
+   if(!p.hard&&CardPolicy.violations(ctx.rows,next).some(x=>x.fingerprint===number))
+    throw Error('This card is linked to several retailers. Keep Hard Card on until those extra assignments are removed.');
+   ctx.settings=next;
+   return {saved:true,hardCard:p.hard,last4:number.slice(-4)};
+  },check);
+ }
+ // Imported profile cards become selectable saved-bank resources without
+ // copying unrelated per-profile Security Code fields.
+ async function addProfileCardToBank(e,p){
+  const {scope,id,check}=await access(e,p);
+  if(p?.confirmed!==true||typeof p?.profileId!=='string')throw Error('Confirm the imported profile card to add.');
+  const rows=await profiles.fieldSnapshot(scope,id),row=rows.find(x=>x.id===p.profileId);
+  if(!row)throw Error('Profile not found in this vault.');
+  const number=CardPolicy.fromProfile(row),info=require('./profile-library-core').payment(row.data);
+  if(!CardPolicy.normalized(number)||!info.month||!info.year)throw Error('This imported card needs a valid number and expiration.');
+  const key=cardKey(scope,id),vault=cardVault(scope),existing=await vault.list(key);
+  const full=existing.cards.length?await vault.selectedForJig(key,existing.cards.map(x=>x.id)):[];
+  if(full.some(x=>x.number===number))return {saved:false,alreadyExists:true};
+  const entry={number,month:info.month,year:info.year,cardholder:info.cardholder||'Unassigned',label:'Imported profile card',brand:brandFromNumber(number)};
+  return vault.addWorkshopCard(key,entry,check);
  }
  async function addAddress(e,p){const {scope,id}=await access(e,p),generation=epoch(e);return addressBanks.addWorkshopAddress(scope,id,p.address,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');});}
  async function manageResource(e,p){
@@ -310,8 +340,8 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
  async function exportSaved(e,p){const {scope,id}=await access(e,p),v=await profiles.preview(scope,id,p.profileId);if(!await confirmExport(e))return {cancelled:true};const entry=Draft.serializeProfile(v.profile),ext=path.extname(entry.name),choice=await chooseSave(e,{name:entry.name,extension:ext.slice(1)});
   if(choice.canceled||!choice.filePath)return {cancelled:true};if(path.extname(choice.filePath).toLowerCase()!==ext)throw Error('Keep the selected profile format.');const latest=await profiles.preview(scope,id,p.profileId);if(latest.profile.revision!==v.profile.revision)throw Error('Profile changed before export. Try again.');guard(e,scope);await writeFile(choice.filePath,entry.text,{encoding:'utf8',mode:0o600});return {saved:true};
  }
- return Object.freeze({assets,addCard,addAddress,manageResource,emails,importEmails,generate,create,edit,load,preview,apply,save,exportFile,exportSaved,cancel});
+ return Object.freeze({assets,addCard,addAddress,setHardCard,addProfileCardToBank,manageResource,emails,importEmails,generate,create,edit,load,preview,apply,save,exportFile,exportSaved,cancel});
 }
-function registerWorkshop(options){const service=createWorkshop(options);for(const method of ['assets','addCard','addAddress','manageResource','emails','importEmails','generate','create','edit','load','preview','apply','save','exportFile','exportSaved'])options.ipcMain.handle('profile:workshop:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:workshop:cancel',(e,t)=>{options.requireOwner(e);return service.cancel(e,t);});return service;}
+function registerWorkshop(options){const service=createWorkshop(options);for(const method of ['assets','addCard','addAddress','setHardCard','addProfileCardToBank','manageResource','emails','importEmails','generate','create','edit','load','preview','apply','save','exportFile','exportSaved'])options.ipcMain.handle('profile:workshop:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:workshop:cancel',(e,t)=>{options.requireOwner(e);return service.cancel(e,t);});return service;}
 module.exports={createWorkshop,registerWorkshop,numberOf};
 
