@@ -29,6 +29,11 @@ jobs:
             node --check "$file"
           done
       - name: Run owner all-retailer Hard Card regressions
-        run: node --test .github/aco-studio-build/profile-library/card-pool-policy.test.js
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Bundled desktop sources are CommonJS, unlike the top-level website.
+          printf '{"type":"commonjs"}\n' > .github/aco-studio-build/profile-library/package.json
+          node --test .github/aco-studio-build/profile-library/card-pool-policy.test.js
       - name: Run isolated customer-edition card-bank regressions
         run: node --test private-edition/test/card-pool-isolation.test.cjs
