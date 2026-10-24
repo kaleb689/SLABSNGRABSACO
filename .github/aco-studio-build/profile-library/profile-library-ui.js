@@ -11,6 +11,19 @@
  for(const el of [customer,personal,settings,nav.querySelector('[data-tab="site"]')])if(el){el.hidden=true;el.style.display='none';el.setAttribute('aria-hidden','true');}
  // Remove duplicate Quick Actions individually; retain every unrelated
  // shortcut (including Settings, Drop News and diagnostics).
+ // Remove redundant Quick Action links from the sidebar only. The
+ // import and customer-directory functions remain available elsewhere.
+ const sidebar=d.querySelector('.desktop-sidebar');
+ if(sidebar){
+  const hideDuplicateShortcuts=()=>{
+   for(const element of sidebar.querySelectorAll('button,a,[role="button"]')){
+    if(!/^(import profiles|customer directory)$/i.test((element.textContent||'').trim())||element.hidden)continue;
+    element.hidden=true;element.style.display='none';element.setAttribute('aria-hidden','true');
+   }
+  };
+  hideDuplicateShortcuts();
+  new MutationObserver(hideDuplicateShortcuts).observe(sidebar,{childList:true,subtree:true});
+ }
  const legacyTiles=d.getElementById('viceFeatureGrid');
  if(legacyTiles)for(const tile of legacyTiles.querySelectorAll('button,a,[role="button"]')){
   if(!/import profiles|customer directory|jig settings/i.test(tile.textContent||''))continue;
@@ -435,7 +448,7 @@
  }
  function openJig(row){if(row.sourceLinked){void linkedJig(row);return;}const owner=request();close();(owner.scope==='personal'?personal:customer)?.click();setTimeout(()=>void window.ACOProfileWorkshop.openSaved({...owner,profileId:row.id}),0);}
  q('card-bank-search').oninput=()=>drawResourceBanks();
-  q('customer').onchange=()=>{epoch++;websiteLoad++;websiteVault.open=false;websiteVault.querySelector('[data-web-records]').replaceChildren();customerId=q('customer').value||null;rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};selected.clear();pageIndex=0;group='all';issueView='all';q('view').value='all';drawResourceBanks();void refresh();};q('retailer').onchange=()=>{selected.clear();pageIndex=0;group='all';unusedAccounts=[];poolReport=null;draw();void refresh();};q('search').oninput=()=>{selected.clear();pageIndex=0;if(q('search').value.trim())group='all';draw();};q('view').onchange=()=>{issueView=q('view').value;selected.clear();pageIndex=0;group='all';draw();note(issueView==='duplicates'?'Showing only duplicate profiles.':issueView==='issues'?'Showing only profiles that need attention.':customerName()+' · '+visible().length+' profiles');};for(const b of main.querySelectorAll('[data-stage]'))b.onclick=()=>{stage=b.dataset.stage;pageIndex=0;group='all';selected.clear();for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab===b));draw();};q('all').onclick=()=>{selected.clear();for(const r of pageRows())selected.add(r.id);draw();};q('clear').onclick=()=>{selected.clear();draw();};
+  q('customer').onchange=()=>{epoch++;websiteLoad++;websiteVault.open=false;websiteVault.querySelector('[data-web-records]').replaceChildren();customerId=q('customer').value||null;rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};selected.clear();pageIndex=0;group='all';issueView='all';q('view').value='all';drawResourceBanks();void refresh();};q('retailer').onchange=()=>{selected.clear();pageIndex=0;group='all';q('search').value='';issueView='all';q('view').value='all';unusedAccounts=[];poolReport=null;draw();void refresh();};q('search').oninput=()=>{selected.clear();pageIndex=0;if(q('search').value.trim())group='all';draw();};q('view').onchange=()=>{issueView=q('view').value;selected.clear();pageIndex=0;group='all';draw();note(issueView==='duplicates'?'Showing only duplicate profiles.':issueView==='issues'?'Showing only profiles that need attention.':customerName()+' · '+visible().length+' profiles');};for(const b of main.querySelectorAll('[data-stage]'))b.onclick=()=>{stage=b.dataset.stage;pageIndex=0;group='all';selected.clear();q('search').value='';issueView='all';q('view').value='all';for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab===b));draw();};q('all').onclick=()=>{selected.clear();for(const r of pageRows())selected.add(r.id);draw();};q('clear').onclick=()=>{selected.clear();draw();};
  async function jigUnusedSelected(){
    const chosen=pageRows().filter(x=>selected.has(x.id));
    if(stage!=='unused'||!chosen.length){note('Select one or more unused accounts from this retailer page.');return;}
