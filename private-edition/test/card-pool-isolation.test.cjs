@@ -58,3 +58,38 @@ test("the separate private edition requires a fresh login and refuses a differen
  assert.match(sourceText,/await allowed\(\);return Vault\.snapshots\(\)/);
  assert.match(sourceText,/Cards\.allocate\(v,source/);
 });
+
+test("customer card inventory links exact retailer emails but default summaries never disclose full numbers",()=>{
+ const v=vault();
+ const ordinary=Cards.inventory(v);
+ assert.equal(Object.hasOwn(ordinary[0],"fullNumber"),false);
+ assert.deepEqual(ordinary[0].linkedAccounts,[{retailer:"target",email:"customer-target-0@example.test"}]);
+ const authorized=Cards.inventory(v,{showFullNumbers:true});
+ assert.equal(authorized[0].fullNumber,NUM);
+ assert.equal(JSON.stringify(authorized).includes("KEEP-REFERENCE"),false);
+});
+test("customer bulk Hard Card action is all-or-nothing and refuses duplicate physical cards",()=>{
+ const v=vault(),other="5555555555554444";
+ v.cards.push({id:"other",number:other,expiry:"09/31",label:"Other saved"});
+ const refs=["saved:saved-card","saved:other"];
+ const on=Cards.toggleBulk(v,refs,true);
+ assert.equal(on.updated,2);assert.equal(Cards.isHard(v,NUM),true);assert.equal(Cards.isHard(v,other),true);
+ v.sources.push(source("pkc","pokemoncenter",[NUM]));
+ assert.throws(()=>Cards.toggleBulk(v,refs,false),/linked more than once/);
+ assert.equal(Cards.isHard(v,NUM),true);
+ assert.equal(Cards.isHard(v,other),true);
+ assert.throws(()=>Cards.toggleBulk(v,["saved:other","saved:other"],true),/unique/);
+ assert.throws(()=>Cards.toggleBulk(v,["saved:other","saved:foreign"],true),/does not belong/);
+ assert.equal(Cards.toggleBulk(v,["saved:other"],false).updated,1);
+ assert.equal(Cards.isHard(v,other),false);
+ assert.equal(Cards.isHard(v,NUM),true);
+});
+test("customer Card Bank has page-scoped selection and authenticated atomic IPC",()=>{
+ const renderer=fs.readFileSync(path.join(__dirname,"..","renderer.js"),"utf8");
+ const preloader=fs.readFileSync(path.join(__dirname,"..","preload.cjs"),"utf8");
+ const main=fs.readFileSync(path.join(__dirname,"..","main.cjs"),"utf8");
+ assert.match(renderer,/selectedCardRefs=new Set\(matches\.slice\(cardPage\*10,cardPage\*10\+10\)/);
+ assert.match(renderer,/vault_setHardCards/);
+ assert.match(main,/ipcMain\.handle\("vault:setHardCards",\(_e,p\)=>edit/);
+ assert.match(preloader,/"vault:setHardCards"/);
+});
