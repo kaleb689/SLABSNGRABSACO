@@ -74,6 +74,47 @@ test('A customer Live bank stays isolated and live accounts are never consumed a
 });
 
 
+test('Personal, Mike, and Derick never share cards, address IDs, profile cards, or Hard Card settings',async t=>{
+ const h=await library(t);
+ const ownerCard=await h.service.addCard(event,{...h.p,card:{...card,number:'4000000000000002',label:'Owner card'}});
+ const mikeCard=await h.service.addCard(event,{...h.a,card:{...card,number:'5555555555554444',label:'Mike card'}});
+ const derickCard=await h.service.addCard(event,{...h.b,card:{...card,number:'6011111111111117',label:'Derick card'}});
+ const ownerAddress=await h.service.addAddress(event,{...h.p,address:{...address,address1:'101 Owner Address'}});
+ const mikeAddress=await h.service.addAddress(event,{...h.a,address:{...address,address1:'202 Mike Address'}});
+ const derickAddress=await h.service.addAddress(event,{...h.b,address:{...address,address1:'303 Derick Address'}});
+ const personal=await h.profiles.importRows({...h.p,retailer:'target',rows:[complete('target','owner-account@example.test')]});
+ const ownerProfileId=personal.added[0].id;
+ const mikeProfile=await h.profiles.importRows({...h.a,retailer:'target',rows:[complete('target','mike-account@example.test')]});
+ const derickProfile=await h.profiles.importRows({...h.b,retailer:'target',rows:[complete('target','derick-account@example.test')]});
+ const refs=[['Personal',h.p,ownerCard,ownerAddress,'owner-account@example.test'],['Mike',h.a,mikeCard,mikeAddress,'mike-account@example.test'],['Derick',h.b,derickCard,derickAddress,'derick-account@example.test']];
+ for(const [name,owner,ownedCard,ownedAddress,onlyEmail] of refs){
+  const a=await h.service.assets(event,owner);
+  assert.equal(a.cards.length,1,name+' must only have own saved card');
+  assert.equal(a.cards[0].id,ownedCard.id);
+  assert.equal(a.addresses.length,1);
+  assert.equal(a.addresses[0].id,ownedAddress.id);
+  assert.equal(a.profiles.length,1);
+  assert.equal(a.profiles[0].email,onlyEmail);
+  assert.equal(a.cardPool.length,2,'Saved and profile cards are both listed, but not from foreign vaults');
+  assert.ok(!JSON.stringify(a).includes('101 Owner Address')||name==='Personal');
+  assert.ok(!JSON.stringify(a).includes('202 Mike Address')||name==='Mike');
+  assert.ok(!JSON.stringify(a).includes('303 Derick Address')||name==='Derick');
+ }
+ await h.service.setHardCard(event,{...h.p,cardRef:'saved:'+ownerCard.id,hard:true,confirmed:true});
+ let ownerAssets=await h.service.assets(event,h.p);
+ assert.ok(ownerAssets.cardPool.find(x=>x.last4==='0002').hardCard);
+ assert.equal((await h.service.assets(event,h.a)).cardPool.some(x=>x.hardCard),false);
+ assert.equal((await h.service.assets(event,h.b)).cardPool.some(x=>x.hardCard),false);
+ await assert.rejects(h.service.setHardCard(event,{...h.a,cardRef:'saved:'+ownerCard.id,hard:true,confirmed:true}),/not in this vault/);
+ await assert.rejects(h.service.setHardCard(event,{...h.b,cardRef:'saved:'+mikeCard.id,hard:true,confirmed:true}),/not in this vault/);
+ await assert.rejects(h.service.addProfileCardToBank(event,{...h.a,profileId:ownerProfileId,confirmed:true}),/not found in this vault/);
+ await assert.rejects(h.service.addProfileCardToBank(event,{...h.b,profileId:mikeProfile.added[0].id,confirmed:true}),/not found in this vault/);
+ await assert.rejects(h.service.generate(event,{...h.a,retailer:'target',count:1,format:'shikari',addressIds:[ownerAddress.id],cardIds:[mikeCard.id]}),/not in this vault/);
+ await assert.rejects(h.service.generate(event,{...h.b,retailer:'target',count:1,format:'shikari',addressIds:[derickAddress.id],cardIds:[mikeCard.id]}),/not in this vault/);
+ assert.equal((await h.profiles.fieldSnapshot('personal',null)).length,1);
+ assert.equal((await h.profiles.fieldSnapshot('aco','customer-a')).length,1);
+ assert.equal((await h.profiles.fieldSnapshot('aco','customer-b')).length,1);
+});
 test('192 Target Live profiles reconcile to PKC coverage without creating false duplicate PKC profiles',async t=>{
  const h=await library(t);
  const email=i=>'target-'+String(i+1).padStart(3,'0')+'@example.test';
