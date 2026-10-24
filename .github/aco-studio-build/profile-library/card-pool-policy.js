@@ -98,6 +98,27 @@ function inventory({rows=[],savedCards=[],settings={}}={}){
  }
  return output.sort((a,b)=>a.last4.localeCompare(b.last4)||a.label.localeCompare(b.label));
 }
+/**
+ * Count every exact-number occurrence in one already-authorized encrypted
+ * vault. The caller supplies ONLY this vault's rows and saved card copies:
+ * never query global owner/customer inventories to classify a Hard Card.
+ * In-progress, Ready for Export, and Live profiles all participate.
+ * Return counts only: no PANs, login emails, or security codes leave the scan.
+ */
+function scanVault({rows=[],savedCards=[],cardNumber}={}){
+ const n=normalized(cardNumber);
+ if(!n)throw Error('Select a complete card from this vault.');
+ const byRetailer=Object.fromEntries(RETAILERS.map(retailer=>[retailer,{profiles:0,working:0,live:0}]));
+ let matchedProfiles=0;
+ for(const row of rows){
+  if(!RETAILERS.includes(row.retailer)||normalized(fromProfile(row))!==n)continue;
+  const counter=byRetailer[row.retailer];
+  matchedProfiles++;counter.profiles++;
+  if(row.bank==='live')counter.live++;else counter.working++;
+ }
+ const savedCardCopies=savedCards.filter(c=>normalized(c.number)===n).length;
+ return {matchedProfiles,savedCardCopies,matchingEntries:matchedProfiles+savedCardCopies,byRetailer};
+}
 function resolveReference(ref,rows,savedCards){
  if(typeof ref!=='string'||! /^(?:saved|profile):[a-z0-9-]{1,150}$/i.test(ref))throw Error('Choose a card listed in this vault.');
  const [type,id]=ref.split(':');
@@ -117,4 +138,4 @@ function toggle(settings,n,hard){
  next.cardPool.hard=[...set].slice(0,15000);
  return next;
 }
-module.exports={RETAILERS,number,fromProfile,normalized,fingerprint,hardCard,profileUses,violations,checkAllocation,inventory,resolveReference,toggle};
+module.exports={RETAILERS,number,fromProfile,normalized,fingerprint,hardCard,profileUses,violations,checkAllocation,inventory,scanVault,resolveReference,toggle};
