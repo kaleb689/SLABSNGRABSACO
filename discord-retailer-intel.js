@@ -34,7 +34,7 @@ export function normalizeRetailerIntel(input, today=new Date().toISOString().sli
  const event={type,retailer,date};
  if(type==="product"){
   const id=productId(input),name=safe(input.name,200);
-  if(!name || !id)throw Error("A product requires its name and a SKU, TCIN, PID, or item number.");
+  if(!name)throw Error("A product name is required.");
   event.name=name;event.identifier=id;
   event.identifiers=[["sku","SKU"],["tcin","TCIN"],["pid","PID"],["itemNumber","Item"]]
    .map(([prop,label])=>({name:label,value:safe(input[prop],75).toUpperCase()}))
@@ -42,7 +42,7 @@ export function normalizeRetailerIntel(input, today=new Date().toISOString().sli
   for(const [dst,source] of [["price","price"],["stock","stock"],["cartLimit","cartLimit"]]){
    if(input[source]!==undefined && input[source]!==null && String(input[source]).trim())event[dst]=safe(input[source],75);
   }
-  event.key="product:"+retailer+":"+id.name+":"+id.value;
+  event.key="product:"+retailer+":"+(id?id.name+":"+id.value:"name:"+name.toLowerCase().replace(/[^a-z0-9]+/g,"-"));
   // No unverified price inference and no copied source post.
  }else if(type==="drop"){
   event.dropTime=safe(input.dropTime,120);
@@ -65,7 +65,7 @@ export function retailerIntelPayload(event) {
  const base={allowed_mentions:{parse:[]}};
  if(event.type==="product"){
   return {...base, embeds:[{title:event.name, color:COLORS[event.retailer],
-   fields:[field(event.identifier.name,event.identifier.value),field("Price",event.price),field("Reported stock",event.stock),field("Cart limit",event.cartLimit)],
+   fields:[...(event.identifier?[field(event.identifier.name,event.identifier.value)]:[]),field("Price",event.price),field("Reported stock",event.stock),field("Cart limit",event.cartLimit)],
    footer:{text:"SLABSNGRABSACO • Retailer availability can change"}
   }]};
  }
@@ -90,7 +90,7 @@ function sameRelevant(oldEvent,next) {
 const mergeEvent=(oldEvent,event) => {
  if(event.type!=="product")return event;
  const previous=oldEvent?.identifiers||[oldEvent?.identifier].filter(Boolean);
- const next=event.identifiers||[event.identifier];
+ const next=event.identifiers||[event.identifier].filter(Boolean);
  const ids=new Map([...previous,...next].filter(Boolean).map(item=>[item.name+":"+item.value,item]));
  return {...oldEvent,...event,name:oldEvent?.name||event.name,identifier:oldEvent?.identifier||event.identifier,
   identifiers:[...ids.values()],price:event.price??oldEvent?.price,stock:event.stock??oldEvent?.stock,
@@ -130,14 +130,14 @@ export function createRetailerIntelPublisher({dataDir,channels,send,edit,remove,
    for(const channelId of destinations){
     let recordKey=channelId+":"+event.key;
     if(event.type==="product" && !state.messages[recordKey]){
-      const incomingIds=new Set((event.identifiers||[event.identifier]).map(item=>item.name+":"+item.value));
+      const incomingIds=new Set((event.identifiers||[event.identifier].filter(Boolean)).map(item=>item.name+":"+item.value));
       const sameName=(value)=>String(value||"").toLowerCase().replace(/[^a-z0-9]/g,"");
       for(const [candidateKey,record] of Object.entries(state.messages)){
         const priorEvent=record.event;
         if(record.channelId!==channelId || priorEvent?.type!=="product" || priorEvent.retailer!==event.retailer)continue;
-        const priorIds=priorEvent.identifiers||[priorEvent.identifier];
+        const priorIds=priorEvent.identifiers||[priorEvent.identifier].filter(Boolean);
         const shared=priorIds.some(item=>incomingIds.has(item.name+":"+item.value));
-        const conflict=priorIds.some(a=>(event.identifiers||[event.identifier]).some(b=>a.name===b.name && a.value!==b.value));
+        const conflict=priorIds.some(a=>(event.identifiers||[event.identifier].filter(Boolean)).some(b=>a.name===b.name && a.value!==b.value));
         if(shared || (!conflict && sameName(priorEvent.name)===sameName(event.name))){recordKey=candidateKey;break;}
       }
     }
