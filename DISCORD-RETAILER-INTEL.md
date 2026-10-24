@@ -40,7 +40,7 @@ All outputs are created as original SLABSNGRABSACO text/embeds with no copied ex
 
 - Product identity is retailer + SKU/TCIN/PID/item number with matching identifier aliases, or compatible product name when there is no conflicting identifier. Do not guess a missing identifier.
 - New messages are created once. Only a change in reported price, stock, or cart limit edits the original message. Missing incoming fields retain previously reported values.
-- Product titles are blue Discord embed titles and body values use native embed fields. No source embeds are forwarded.
+- Product names are distinguished by a blue-accented Discord embed. If an official HTTPS product URL is provided in `url`, the title also becomes a blue clickable link. Discord does not offer arbitrary text coloring for plain unlinked titles. No source embeds are forwarded.
 - No unverified online price is guessed. Add a verified price when available; an official-price lookup connector is a separate future integration.
 - Older messages are **not removed on new drops**. The own-server retailer drop channels use age-based 14-day cleanup for non-pinned standard posts. Announcements are not broadly purged; only original, ledger-tracked retailer-intel messages expire.
 - Ledger-tracked messages expire 14 days after their first creation even if edited later.
