@@ -236,7 +236,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(!byIdentity.has(key))byIdentity.set(key,[]);
    byIdentity.get(key).push(row);
   }
-  const matches=new Map(),ambiguous=new Set();
+  const matches=new Map(),ambiguous=new Set(),diagnostics={parsed:parsed.records.length,missing:missing.length,withCode:0,withEmail:0,identityMatches:0,cardMismatches:0};
   const codeOf=raw=>{
    const fields=[raw.profileSecurityCode,raw.security_code,raw.custom_security_code,raw.card?.custom_security_code,
     raw.cc_cvv,raw.cvv,raw.CVV,raw.cvc,raw.card?.cvv,raw.card?.cvc,raw.card?.cid];
@@ -251,9 +251,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(retailer!==p.retailer)continue;
    const email=C.email(C.values(raw).email||raw.email||raw.loginEmail||raw.accountEmail||raw.login_email||raw?.account?.email);
    const code=codeOf(raw),candidates=byIdentity.get(retailer+'|'+email)||[];
+   if(code)diagnostics.withCode++;if(email)diagnostics.withEmail++;if(candidates.length===1)diagnostics.identityMatches++;
    if(!code||!email||candidates.length!==1)continue;
    const row=candidates[0],oldCard=C.payment(raw).number,currentCard=C.payment(row.data).number;
-   if(oldCard&&currentCard&&oldCard!==currentCard)continue;
+   if(oldCard&&currentCard&&oldCard!==currentCard){diagnostics.cardMismatches++;continue;}
    if(ambiguous.has(row.id))continue;
    if(matches.has(row.id)&&matches.get(row.id).code!==code){ambiguous.add(row.id);matches.delete(row.id);continue;}
    matches.set(row.id,{code,revision:row.revision||0,retailer:row.retailer,email:row.email});
@@ -263,7 +264,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   codeRestorePlans.set(token,{scope:a.scope,id:a.id,sender:e.sender.id,epoch:ep(e),at:now(),matches,stillMissing:missing.length-matches.size});
   if(codeRestorePlans.size>20)codeRestorePlans.delete(codeRestorePlans.keys().next().value);
   a.check();
-  return {preview:true,token,recoverable:matches.size,stillMissing:missing.length-matches.size,ambiguous:ambiguous.size};
+  return {preview:true,token,recoverable:matches.size,stillMissing:missing.length-matches.size,ambiguous:ambiguous.size,diagnostics};
  }
  async function recoverCodes(e,p){
   const a=await access(e,p);
