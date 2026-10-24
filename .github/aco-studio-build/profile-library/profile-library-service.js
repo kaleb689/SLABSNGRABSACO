@@ -1,7 +1,7 @@
 'use strict';
 const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core'),CardPolicy=require('./card-pool-policy');
 function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,getPostalJigOptions,now=Date.now,uuid=crypto.randomUUID}={}){
- const plans=new Map(),jigPlans=new Map(),epochs=new Map();
+ const plans=new Map(),jigPlans=new Map(),codeRestorePlans=new Map(),epochs=new Map();
  const supportedRule=id=>id===C.FL_PHONE_RULE||Boolean(C.ruleById(id));
  const nonStackingRules=ids=>{let targetPrimary=false;return ids.filter(id=>{if(C.ruleById(id)?.family!=='target-primary')return true;if(targetPrimary)return false;targetPrimary=true;return true;});};
  const ep=e=>epochs.get(e.sender.id)||0;
@@ -144,6 +144,71 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    ctx.audit(linked?'website-and-library-edit':'library-edit',email,{retailer:row.retailer});
    return {updated:true,remoteSaved:linked,localOnly:!linked};
   },a.check);
+ }
+ async function recoverCodesFromFile(e,p){
+  const a=await access(e,p);
+  C.retailer(p.retailer);
+  if(p.confirmed===true){
+   const plan=codeRestorePlans.get(String(p.token||''));
+   if(!plan||plan.scope!==a.scope||plan.id!==a.id||plan.sender!==e.sender.id||
+    plan.epoch!==ep(e)||now()-plan.at>600000)throw Error('Code recovery file preview expired. Choose the file again.');
+   codeRestorePlans.delete(p.token);
+   return profiles.libraryTransaction(a.scope,a.id,ctx=>{
+    const chosen=plan.matches;
+    for(const [id,item] of chosen){
+     const row=ctx.rows.find(row=>row.id===id);
+     if(!row||row.retailer!==item.retailer||row.email!==item.email||(row.revision||0)!==item.revision||
+       C.profileCode(row.data))throw Error('A matching profile changed. Nothing was restored.');
+    }
+    for(const [id,item]of chosen){
+     const row=ctx.rows.find(row=>row.id===id);
+     row.data.profileSecurityCode=item.code;
+     row.revision=(row.revision||0)+1;
+     ctx.audit('security-code-import-recovery',row.email,{retailer:row.retailer});
+    }
+    return {restored:chosen.size,source:'original-import',stillMissing:plan.stillMissing};
+   },a.check);
+  }
+  if(typeof p.fileName!=='string'||p.fileName!==path.basename(p.fileName)||
+    !/\\.(csv|json|txt|tsv)$/i.test(p.fileName)||typeof p.text!=='string'||Buffer.byteLength(p.text)>26*1024*1024)
+   throw Error('Choose the original CSV, TSV, JSON or TXT file (under 26 MB).');
+  const parsed=Core.parseFile(p.fileName,p.text);
+  if(!parsed.records?.length||parsed.records.length>10000)throw Error('Original file must contain 1-10,000 profiles.');
+  const current=await profiles.fieldSnapshot(a.scope,a.id),missing=current.filter(row=>!C.profileCode(row.data));
+  const byIdentity=new Map();
+  for(const row of missing){
+   const key=row.retailer+'|'+C.email(row.email);
+   if(!byIdentity.has(key))byIdentity.set(key,[]);
+   byIdentity.get(key).push(row);
+  }
+  const matches=new Map(),ambiguous=new Set();
+  const codeOf=raw=>{
+   const fields=[raw.profileSecurityCode,raw.security_code,raw.custom_security_code,raw.card?.custom_security_code,
+    raw.cc_cvv,raw.cvv,raw.CVV,raw.cvc,raw.card?.cvv,raw.card?.cvc,raw.card?.cid];
+   const value=fields.find(x=>typeof x==='string'&&x.length>0&&x.length<=100&&!/[\\x00-\\x1f\\x7f]/.test(x));
+   return value||'';
+  };
+  for(const raw of parsed.records){
+   if(!raw||typeof raw!=='object')continue;
+   if(raw.scope&&raw.scope!==a.scope||raw.customerId&&raw.customerId!==a.id||raw.acoCustomerId&&raw.acoCustomerId!==a.id)
+    throw Error('Original import contains data assigned to another vault.');
+   const retailer=detectedRetailer(raw.retailer||raw.retailerId||raw.site||raw.store)||p.retailer;
+   if(retailer!==p.retailer)continue;
+   const email=C.email(raw.email||raw.loginEmail||raw.accountEmail||raw.login_email||raw?.account?.email);
+   const code=codeOf(raw),candidates=byIdentity.get(retailer+'|'+email)||[];
+   if(!code||!email||candidates.length!==1)continue;
+   const row=candidates[0],oldCard=C.payment(raw).number,currentCard=C.payment(row.data).number;
+   if(oldCard&&currentCard&&oldCard!==currentCard)continue;
+   if(ambiguous.has(row.id))continue;
+   if(matches.has(row.id)&&matches.get(row.id).code!==code){ambiguous.add(row.id);matches.delete(row.id);continue;}
+   matches.set(row.id,{code,revision:row.revision||0,retailer:row.retailer,email:row.email});
+  }
+  for(const id of ambiguous)matches.delete(id);
+  const token=uuid();
+  codeRestorePlans.set(token,{scope:a.scope,id:a.id,sender:e.sender.id,epoch:ep(e),at:now(),matches,stillMissing:missing.length-matches.size});
+  if(codeRestorePlans.size>20)codeRestorePlans.delete(codeRestorePlans.keys().next().value);
+  a.check();
+  return {preview:true,token,recoverable:matches.size,stillMissing:missing.length-matches.size,ambiguous:ambiguous.size};
  }
  async function recoverCodes(e,p){
   const a=await access(e,p);
@@ -695,9 +760,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  }
  async function rules(e,p){const a=await access(e,p),retailer=C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id),saved=settings[retailer];a.check();const legacyTarget=retailer==='target'&&Array.isArray(saved?.rules)&&saved?.presetVersion!==2;const selected=legacyTarget?[...new Set([...saved.rules,...C.TARGET_PRIMARY_RULES.map(x=>x.id)])]:(saved?.rules||C.defaultRules(retailer));const grouped=[...new Set(selected.map(id=>/^(street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)_(short|long|abbr|full)$/i.test(id)?'suffix.matching':id))];return {selected:grouped,legacyMigrated:legacyTarget||grouped.length!==selected.length||grouped.some((id,i)=>id!==selected[i]),presetVersion:2,options:[...C.ruleOptions(retailer),{id:C.FL_PHONE_RULE,label:'Random Florida phone number',risk:'standard',family:'phone'}]};}
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:2};return {saved:true,presetVersion:2};},a.check);}
- return {jigAssets,reuseChoices,list,detail,recoverCodes,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
+ return {jigAssets,reuseChoices,list,detail,recoverCodes,recoverCodesFromFile,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
 }
-function registerLibrary(options){const service=createLibrary(options);for(const method of ['jigAssets','reuseChoices','list','detail','recoverCodes','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
+function registerLibrary(options){const service=createLibrary(options);for(const method of ['jigAssets','reuseChoices','list','detail','recoverCodes','recoverCodesFromFile','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
  // Owner-only encrypted backup recovery for complete Personal and ACO vaults.
  // No customer website token or profile ID can access these snapshots.
  options.ipcMain.handle('profile:library:backupList',(e,p)=>{
