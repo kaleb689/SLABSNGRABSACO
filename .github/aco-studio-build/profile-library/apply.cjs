@@ -99,10 +99,22 @@ replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.fr
 // preserve resource IDs already referenced by saved profiles.
 replace('local-card-vault.js',"  async addWorkshopCard(rawKey,data,beforeWrite){const k=customerKey(rawKey),fields=validateCard(data);return schedule(async()=>{",`  async updateWorkshopCard(rawKey,cardId,data,beforeWrite){const k=customerKey(rawKey),id=text(cardId),fields=validateCard(data);return schedule(async()=>{
    const d=await read(),e=entry(d,k),card=e.cards.find(x=>x.id===id);if(!card)throw Error('Saved card is no longer in this vault.');
+   const independentCode=data&&Object.hasOwn(data,'customSecurityCode')?data.customSecurityCode:
+     data&&Object.hasOwn(data,'customCode')?data.customCode:card.customSecurityCode||'';
+   if(typeof independentCode!=='string'||independentCode.length>100||
+     Array.from(independentCode).some(char=>char.charCodeAt(0)<32||char.charCodeAt(0)===127))
+    throw Error('Invalid independent Security Code reference.');
+   fields.customSecurityCode=independentCode;
    if(e.cards.some(x=>x.id!==id&&x.number===fields.number))throw Error('This card is already saved in this vault.');
    Object.assign(card,fields,{id:card.id,createdAt:card.createdAt,updatedAt:now()});e.updatedAt=now();d.customers[k]=e;beforeWrite();await write(d);return summary(card);
   });},
-  async addWorkshopCard(rawKey,data,beforeWrite){const k=customerKey(rawKey),fields=validateCard(data);return schedule(async()=>{`);
+  async addWorkshopCard(rawKey,data,beforeWrite){
+   const k=customerKey(rawKey),fields=validateCard(data),independentCode=data?.customSecurityCode??data?.customCode??'';
+   if(typeof independentCode!=='string'||independentCode.length>100||
+     Array.from(independentCode).some(char=>char.charCodeAt(0)<32||char.charCodeAt(0)===127))
+    throw Error('Invalid independent Security Code reference.');
+   fields.customSecurityCode=independentCode;
+   return schedule(async()=>{`);
 replace('jig-address-banks.js',"  async addWorkshopAddress(scope,customerId,input,beforeWrite){",`  async updateWorkshopAddress(scope,customerId,addressId,input,beforeWrite){
    if(scope!=='personal'&&scope!=='aco'||scope==='personal'&&customerId)throw Error('Invalid address vault.');
    const id=scope==='aco'?memberKey(customerId):null,normalized=normalizeAddress(input),key=asString(addressId);
