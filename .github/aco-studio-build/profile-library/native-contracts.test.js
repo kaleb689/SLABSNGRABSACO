@@ -159,3 +159,13 @@ test('complete native app resources, icon and retained Full Website Admin fallba
 });
 
 test('all eight website tier IDs are supported and obsolete profile-count IDs are rejected',()=>{for(let tier=1;tier<=8;tier++){assert.equal(mutation('gift-create',{customerId:'a',tier,quantity:1,unit:'months'}).data.tier,tier);assert.equal(discountPayload({code:'SAVE',tier,percent:10,discountType:'percent'}).tier,tier);}assert.throws(()=>mutation('gift-create',{customerId:'a',tier:50,quantity:1}),/valid tier/);});
+
+
+test('all Security Code recovery actions are wired from owner UI through preload to authorized library IPC',()=>{
+ const preload=source('preload.js'),service=source('profile-library-service.js'),ui=source('profile-library-ui.js');
+ for(const method of ['recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards']){
+  assert.ok(preload.includes("'"+method+"'"),method+' must be permitted by desktop preload');
+  assert.ok(service.includes("'"+method+"'"),method+' must be registered as a scoped library IPC method');
+  assert.ok(ui.includes('api.'+method),method+' must be called by its visible recovery control');
+ }
+});
