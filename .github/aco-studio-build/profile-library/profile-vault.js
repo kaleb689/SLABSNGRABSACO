@@ -48,6 +48,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  if(!baseDir||!safeStorage)throw Error('OS-encrypted profile vault required.');
  const paths={personal:path.join(baseDir,'personal-retailer-profiles.encrypted'),aco:path.join(baseDir,'aco-customer-retailer-profiles.encrypted')};
  let pending=Promise.resolve();
+ const codeRecoveryPreviews=new Map();
  const requireCrypto=()=>{if(!safeStorage.isEncryptionAvailable())throw Error('OS keychain encryption is unavailable. Profile vault was not written.');};
  async function read(scope){requireCrypto();try{const body=JSON.parse(safeStorage.decryptString(await fs.readFile(paths[scope])));
   if(body?.version!==1||!body?.groups||typeof body.groups!=='object')throw Error('Unrecognized encrypted profile file.');for(const [key,rows] of Object.entries(body.groups))for(const row of rows)Completion.synchronize(row,body.audit?.[key]||[],now);return body;
@@ -138,6 +139,83 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    });
  }
 
+ // Explicit user-reviewed recovery: read existing encrypted snapshots without
+ // overwriting any current nonempty code or altering unrelated vault records.
+ function independentCode(data,allowLegacy=false){
+  if(!data||typeof data!=='object')return '';
+  const values=[data.profileSecurityCode,data.security_code,data.custom_security_code,data.card?.custom_security_code,
+   ...(allowLegacy?[data.cc_cvv,data.cvv,data.cvc,data.card?.cvv,data.card?.cvc,data.card?.cid,data.card?.cvv2]:[])];
+  return values.find(v=>typeof v==='string'&&v.length>0&&v.length<=100)||'';
+ }
+ async function codeRecovery(scope,customerId,{confirmed=false,token=null}={},beforeWrite=null){
+  const key=bank(scope,customerId);scopeValue(scope);
+  if(typeof beforeWrite!=='function')throw Error('Unlocked vault authorization is required for code recovery.');
+  return serial(async()=>{
+   const current=await read(scope),rows=current.groups?.[key]||[];
+   const eligible=new Map(rows.filter(row=>row?.id&&!independentCode(row.data)).map(row=>[row.id,row]));
+   const found=new Map(),snapshots=await backupList(scope);
+   let readable=0,skipped=0;
+   for(const entry of snapshots){
+    if(found.size===eligible.size)break;
+    let previous;
+    try{
+     previous=JSON.parse(safeStorage.decryptString(await fs.readFile(path.join(snapshotsDir,entry.name))));
+     if(previous?.version!==1||!previous.groups||!Array.isArray(previous.groups[key])){skipped++;continue;}
+    }catch{skipped++;continue;}
+    readable++;
+    const older=previous.groups[key];
+    const byId=new Map(older.filter(row=>row?.id).map(row=>[row.id,row]));
+    const byEmail=new Map();
+    for(const row of older){
+     if(!row?.retailer||!normalizeEmail(row.email))continue;
+     const identity=row.retailer+'|'+normalizeEmail(row.email);
+     if(byEmail.has(identity))byEmail.set(identity,null);
+     else byEmail.set(identity,row);
+    }
+    for(const row of eligible.values()){
+     if(found.has(row.id))continue;
+     const identity=row.retailer+'|'+normalizeEmail(row.email);
+     const olderRow=byId.get(row.id)||byEmail.get(identity);
+     if(!olderRow||olderRow.retailer!==row.retailer||normalizeEmail(olderRow.email)!==normalizeEmail(row.email))continue;
+     // If a record was recreated under the same email, do not carry a code
+     // across a changed card number.
+     const priorCard=String(olderRow.data?.cc_number||olderRow.data?.card?.number||'').replace(/\\D/g,'');
+     const currentCard=String(row.data?.cc_number||row.data?.card?.number||'').replace(/\\D/g,'');
+     if(priorCard&&currentCard&&priorCard!==currentCard)continue;
+     const code=independentCode(olderRow.data,true);
+     if(code)found.set(row.id,{code,revision:row.revision||0,email:row.email,retailer:row.retailer});
+    }
+   }
+   const counts={};
+   for(const [id,item]of found){counts[item.retailer]=(counts[item.retailer]||0)+1;}
+   if(!confirmed){
+    const recoveryToken=uuid();
+    codeRecoveryPreviews.set(recoveryToken,{scope,key,at:Date.now(),found});
+    if(codeRecoveryPreviews.size>20)codeRecoveryPreviews.delete(codeRecoveryPreviews.keys().next().value);
+    return {preview:true,token:recoveryToken,recoverable:found.size,stillMissing:eligible.size-found.size,scannedBackups:readable,unreadableBackups:skipped,byRetailer:counts};
+   }
+   const preview=codeRecoveryPreviews.get(String(token||''));codeRecoveryPreviews.delete(String(token||''));
+   if(!preview||preview.scope!==scope||preview.key!==key||Date.now()-preview.at>10*60_000)throw Error('Recovery preview expired. Review again.');
+   if(preview.found.size!==found.size||[...preview.found].some(([id,item])=>found.get(id)?.code!==item.code))
+    throw Error('Available recovery data changed. Review again.');
+   for(const [id,item]of found){
+    const row=rows.find(r=>r.id===id);
+    if(!row||row.retailer!==item.retailer||row.email!==item.email||(row.revision||0)!==item.revision||independentCode(row.data))
+     throw Error('A profile changed since recovery preview; nothing was restored.');
+   }
+   beforeWrite();
+   if(found.size){
+    for(const [id,item]of found){
+     const row=rows.find(r=>r.id===id);
+     row.data.profileSecurityCode=item.code;
+     row.revision=(row.revision||0)+1;
+     auditRecord(current,key,'security-code-snapshot-recovery',row.email,{retailer:row.retailer});
+    }
+    await write(scope,current); // backs up current encrypted vault before modifying
+   }
+   return {restored:found.size,stillMissing:eligible.size-found.size,scannedBackups:readable,byRetailer:counts};
+  });
+ }
  function serial(action){const task=pending.catch(()=>{}).then(action);pending=task.then(()=>{},()=>{});return task;}
  const bank=(scope,id)=>{if(scope==='personal'){if(id)throw Error('Personal profiles cannot belong to ACO customers.');return 'owner';}if(scope!=='aco')throw Error('Unknown Personal/ACO profile bank.');return memberId(id);};
  const brief=p=>{const completion=Completion.synchronize(p,[],now);return {stage:p.stage,missing:completion.missing,completedAt:p.completedAt||null,bank:p.bank||'working',id:p.id,email:p.email,retailer:p.retailer,label:p.label,status:p.status,source:p.source,createdAt:p.createdAt,revision:Number.isSafeInteger(p.revision)?p.revision:0};};
@@ -611,7 +689,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   }
   return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count||a.retailer.localeCompare(b.retailer)),scanned:[...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
  }
- return Object.freeze({paths,backupList,backupRestore,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+ return Object.freeze({paths,backupList,backupRestore,codeRecovery,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 
