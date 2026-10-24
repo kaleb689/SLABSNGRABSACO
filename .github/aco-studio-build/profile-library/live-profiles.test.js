@@ -109,7 +109,7 @@ test('Personal, Mike, and Derick never share cards, address IDs, profile cards, 
  await assert.rejects(h.service.setHardCard(event,{...h.b,cardRef:'saved:'+mikeCard.id,hard:true,confirmed:true}),/not in this vault/);
  await assert.rejects(h.service.addProfileCardToBank(event,{...h.a,profileId:ownerProfileId,confirmed:true}),/not found in this vault/);
  await assert.rejects(h.service.addProfileCardToBank(event,{...h.b,profileId:mikeProfile.added[0].id,confirmed:true}),/not found in this vault/);
- await assert.rejects(h.service.generate(event,{...h.a,retailer:'target',count:1,format:'shikari',addressIds:[ownerAddress.id],cardIds:[mikeCard.id]}),/not in this vault/);
+ await assert.rejects(h.service.generate(event,{...h.a,retailer:'target',count:1,format:'shikari',addressIds:[ownerAddress.id],cardIds:[mikeCard.id]}),/not in this (exact )?vault/);
  await assert.rejects(h.service.generate(event,{...h.b,retailer:'target',count:1,format:'shikari',addressIds:[derickAddress.id],cardIds:[mikeCard.id]}),/not in this vault/);
  assert.equal((await h.profiles.fieldSnapshot('personal',null)).length,1);
  assert.equal((await h.profiles.fieldSnapshot('aco','customer-a')).length,1);
