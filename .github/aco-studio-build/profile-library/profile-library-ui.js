@@ -17,7 +17,8 @@
  if(sidebar){
   const hideDuplicateShortcuts=()=>{
    for(const element of sidebar.querySelectorAll('button,a,[role="button"]')){
-    if(!/^(import profiles|customer directory)$/i.test((element.textContent||'').trim())||element.hidden)continue;
+    const label=(element.textContent||'').trim().replace(/\s+/g,' ').toLowerCase();
+    if(element.hidden||!/(?:^|\s)(?:import profiles|customer directory)$/.test(label))continue;
     element.hidden=true;element.style.display='none';element.setAttribute('aria-hidden','true');
    }
   };
