@@ -155,7 +155,11 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    const raw=full.find(y=>y.id===x.id),users=rows.filter(r=>r.assetRefs?.cardId===x.id||numberOf(r.data)===raw?.number),used=users.length,first=users[0];
    let label='Unlinked card '+(index+1),displayHolder='';
    if(first?.retailer){retailerSeq[first.retailer]=(retailerSeq[first.retailer]||0)+1;label=({target:'Target',walmart:'Walmart',pokemoncenter:'PKC',costco:'Costco',sams:"Sam's"}[first.retailer]||first.retailer)+' '+retailerSeq[first.retailer];displayHolder=profileNameFor(first);}
-   return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:brandFromNumber(raw.number),customReference:raw.customSecurityCode||''}:{}),usedCount:used,unused:used===0&&!assigned.has(x.id),previouslyAssigned:assigned.has(x.id)};
+   const assignedUses=CardPolicy.profileUses(rows).get(raw?.number)||[];
+   const isHard=CardPolicy.hardCard(raw?.number,settings);
+   const eligibleRetailers=isHard?CardPolicy.RETAILERS.filter(ret=>!assignedUses.some(usage=>usage.retailer===ret)):assignedUses.length?[]:[...CardPolicy.RETAILERS];
+   const eligible=(!p.retailer||!CardPolicy.RETAILERS.includes(p.retailer)?eligibleRetailers.length>0:eligibleRetailers.includes(p.retailer));
+   return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:brandFromNumber(raw.number),customReference:raw.customSecurityCode||''}:{}),usedCount:used,unused:eligible&&!assigned.has(x.id),hardCard:isHard,eligibleRetailers,previouslyAssigned:assigned.has(x.id)};
   });
   const result={scope,customerId:id,cardPool,addresses:a.addresses.map(x=>({...x,uses:rows.filter(r=>r.assetRefs?.addressId===x.id).length})),cards,profiles:rows.map(x=>({id:x.id,label:x.label,email:x.email,retailer:x.retailer,bank:x.bank||'working',status:x.status,stage:x.stage||'in-progress',missing:require('./profile-completion-core').inspect(x).missing,revision:x.revision,createdInWorkshop:x.source==='owner-created-profile'}))};
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed while loading.');return result;
