@@ -229,6 +229,17 @@ ipcMain.handle("vault:export",async (_e,p)=>{
   await fs.writeFile(target.filePath,output.content,{mode:0o600});
   return {saved:true,filename:path.basename(target.filePath)};
 });
+ipcMain.handle("vault:row",async (_e,p)=>{
+ await allowed();
+ const source=(await Vault.load()).sources.find(item=>item.id===p?.fileId);
+ if(!source)throw Error("This card's imported profile file is not available.");
+ const rowIndex=Number(p.rowIndex);
+ if(!Number.isSafeInteger(rowIndex)||rowIndex<0||rowIndex>=source.file.rows.length)
+  throw Error("This imported card's profile row is unavailable.");
+ const row=source.file.rows[rowIndex];
+ if(!row||typeof row!=="object")throw Error("Imported profile cannot be viewed.");
+ return {index:rowIndex,fields:Object.fromEntries(Object.entries(row).slice(0,200))};
+});
 ipcMain.handle("vault:rows",async (_e,id)=>{
   await allowed();const source=(await Vault.load()).sources.find(s=>s.id===id);
   if(!source)throw Error("File unavailable.");
