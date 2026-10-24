@@ -402,7 +402,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    if(available.length<count)throw Error('Not enough unused emails or free accounts in this vault and retailer.');
    const chosen=available.slice(0,count),newCount=chosen.filter(x=>!x.account).length;
    if(rows.length+newCount>10000)throw Error('Profile vault is full.');
-   const built=await build(chosen.map(x=>x.email),structuredClone(rows),chosen.map(x=>x.account?structuredClone(x.account):null));
+   const built=await build(chosen.map(x=>x.email),structuredClone(rows),chosen.map(x=>x.account?structuredClone(x.account):null),structuredClone(d.librarySettings?.[key]||{}));
    if(!Array.isArray(built)||built.length!==count)throw Error('Profile generation failed. Nothing was saved.');
    const added=built.map((item,i)=>{if(emailFrom(item.data)!==chosen[i].email)throw Error('Email assignment mismatch.');const prior=chosen[i].account;return {...prior,id:prior?.id||uuid(),email:chosen[i].email,label:name(item.data.profile_name||item.data.name),retailer:r,format:item.format,status:'draft',source:'owner-created-profile',createdAt:prior?.createdAt||now(),revision:(prior?.revision??-1)+1,assetRefs:{...item.assetRefs,...(chosen[i].entry?{emailId:chosen[i].entry.id}:{})},data:stripVerifiers(item.data,0,scope)};});
    for(let i=0;i<added.length;i++){const entry=chosen[i].entry;if(entry){entry.profileId=added[i].id;entry.usedAt=now();}for(const e of emailRows(d,key))if(e.retailer===r&&e.email===added[i].email){e.profileId=added[i].id;e.usedAt=now();}auditRecord(d,key,'create-from-pools',added[i].email,{retailer:r});}
@@ -438,7 +438,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    let pkcEmailsAdded=0;
    for(const row of prepared){
     for(const entry of d.emailBanks[key])if(entry.retailer===row.retailer&&entry.email===row.email){entry.profileId=row.id;entry.usedAt=now();}
-    if(!usedPkc.has(row.email)){d.emailBanks[key].push({id:uuid(),email:row.email,retailer:'pokemoncenter',createdAt:now(),profileId:null,source:'live-profile-import'});usedPkc.add(row.email);pkcEmailsAdded++;}
+    if(row.retailer!=='pokemoncenter'&&!usedPkc.has(row.email)){d.emailBanks[key].push({id:uuid(),email:row.email,retailer:'pokemoncenter',createdAt:now(),profileId:null,source:'live-profile-import'});usedPkc.add(row.email);pkcEmailsAdded++;}
     auditRecord(d,key,'live-profile-import',row.email,{retailer:row.retailer,bank:'live'});
    }
    if(d.emailBanks[key].length>20000)throw Error('Email vault limit reached.');
