@@ -382,7 +382,16 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function emailInventory(scope,customerId,retailer){const r=retailerId(retailer);const reconciled=r==='pokemoncenter'?await reconcileTargetLivePkcEmails(scope,customerId):null;await pending;const key=bank(scope,customerId),d=await read(scope);
   const rows=d.groups[key]||[],allProfiles=rows;
   const inventory=creationInventory(rows,allProfiles,emailRows(d,key),r);
-  return {scope,customerId:scope==='aco'?key:null,retailer:r,freeAccounts:inventory.accounts.filter(x=>x.account).length,availableForCreation:inventory.accounts.length,...(reconciled?{targetLiveReconciliation:reconciled}:{}),emails:inventory.accounts.map(x=>({id:x.account?.id||x.entry.id,email:x.email,status:'available',source:x.account?'account':'email'})).concat(emailRows(d,key).filter(x=>x.retailer===r&&!inventory.accounts.some(a=>a.email===x.email)).map(x=>({id:x.id,email:x.email,status:'used'})))};
+  const retailerProfiles=rows.filter(x=>x.retailer===r);
+   const reserved=(emailRows(d,key)||[]).filter(x=>x.retailer===r);
+   const live=retailerProfiles.filter(x=>x.bank==='live').length;
+   const linkedAccountIds=new Set(retailerProfiles.map(x=>x.id));
+   const staleReservations=reserved.filter(x=>x.profileId&&!linkedAccountIds.has(x.profileId)).length;
+   const retailerStats={profileCount:retailerProfiles.length,liveProfileCount:live,workingProfileCount:retailerProfiles.length-live,
+    readyForExportCount:retailerProfiles.filter(x=>x.bank!=='live'&&x.stage==='completed').length,
+    unusedAccountCount:inventory.accounts.length,unusedEmailCount:inventory.accounts.filter(x=>x.entry).length,
+    unusedExistingAccountCount:inventory.accounts.filter(x=>x.account).length,staleReservationCount:staleReservations};
+   return {scope,customerId:scope==='aco'?key:null,retailer:r,retailerStats,freeAccounts:inventory.accounts.filter(x=>x.account).length,availableForCreation:inventory.accounts.length,...(reconciled?{targetLiveReconciliation:{...reconciled,pkcUnusedTotal:inventory.accounts.length,pkcProfileCount:retailerProfiles.length,pkcLiveProfileCount:live,pkcStaleReservationCount:staleReservations}}:{}),emails:inventory.accounts.map(x=>({id:x.account?.id||x.entry.id,email:x.email,status:'available',source:x.account?'account':'email'})).concat(emailRows(d,key).filter(x=>x.retailer===r&&!inventory.accounts.some(a=>a.email===x.email)).map(x=>({id:x.id,email:x.email,status:'used'})))};
  }
  async function importEmails(scope,customerId,retailer,values,beforeWrite){const key=bank(scope,customerId),r=retailerId(retailer);
   if(!Array.isArray(values)||!values.length||values.length>5000||typeof beforeWrite!=='function')throw Error('Import 1-5000 emails.');
