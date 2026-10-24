@@ -120,3 +120,32 @@ test('UI exposes View/Edit for imported cards and editable Security Code for sav
  assert.match(code,/textContent='View \/ Edit'/);
  assert.match(code,/field\('customSecurityCode','Security Code/);
 });
+
+
+test('Every selected export format maps the independent Security Code into its retailer CVV slot without modifying saved data',async t=>{
+ const h=await library(t);
+ for(const retailer of ['target','walmart']){
+  const source=complete(retailer,'cvv-slot-'+retailer+'@example.test');
+  source.profileSecurityCode='0044';
+  await commit(h,await h.lib.importPreview(event,{...h.p,retailer,fileName:'profiles.json',text:JSON.stringify([source])}));
+  const row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
+  for(const format of ['json','csv','tsv','txt']){
+   const result=await h.lib.exportFile(event,{...h.p,retailer,profileIds:[row.id],customerName:'Personal',exportFormat:format});
+   assert.equal(result.saved,true);
+   const body=h.writes.at(-1)[1];
+   assert.ok(body.includes('0044'),retailer+' '+format+' must keep leading zeros');
+   if(format==='json'){
+    const record=JSON.parse(body).profiles[0].data;
+    assert.equal(retailer==='target'?record.cc_cvv:record.card.cvv,'0044');
+   }else{
+    assert.ok(body.includes(retailer==='target'?'cc_cvv':'card.cvv'),
+      retailer+' '+format+' must use CVV-named column, not a separate arbitrary Security Code column');
+   }
+  }
+  await h.lib.exportFile(event,{...h.p,retailer,profileIds:[row.id],customerName:'Personal',exportFormat:'retailer'});
+  assert.ok(h.writes.at(-1)[1].includes('0044'),retailer+' retailer template must place exported code');
+  const after=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
+  assert.equal(after.data.profileSecurityCode,'0044');
+  assert.equal(LC.payment(after.data).cvv,'','encrypted master does not gain an actual payment verifier');
+ }
+});
