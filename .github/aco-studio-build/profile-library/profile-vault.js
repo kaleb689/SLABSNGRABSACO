@@ -302,6 +302,18 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     Fields.verify([row.data],[c.data],[new Set(c.allowed)],[0]);
     return {row,data:require('./profile-library-core').syncCardholderToProfile(structuredClone(c.data)),refs:c.assetRefs};
    });
+   if(choices.card){
+    const CardPolicy=require('./card-pool-policy'),settings=d.librarySettings?.[key]||{};
+    const excluded=new Set(updates.map(u=>u.row.id));
+    const staged=rows.filter(row=>!excluded.has(row.id));
+    for(const update of updates){
+     const n=CardPolicy.fromProfile({data:update.data});
+     if(n){
+      CardPolicy.checkAllocation(staged,update.row.retailer,[n],settings);
+      staged.push({id:update.row.id,retailer:update.row.retailer,data:update.data});
+     }
+    }
+   }
    for(const u of updates){if(resources.jigged)u.row.jiggedAt=now();u.row.data=u.data;u.row.revision=(u.row.revision||0)+1;u.row.assetRefs||={};
     if(choices.address)u.row.assetRefs.addressId=u.refs.addressId;
     if(choices.card)u.row.assetRefs.cardId=u.refs.cardId;
