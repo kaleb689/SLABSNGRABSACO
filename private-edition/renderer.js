@@ -197,8 +197,7 @@ async function showCardEditor(card,stored,row){
   const linked=(card.linkedAccounts||[]).find(account=>account.sourceId&&Number.isInteger(account.index));
   if(!linked){message("This card has no editable source profile. Add it to the saved Card Bank first.");return;}
   sourceId=linked.sourceId;rowIndex=linked.index;
-  const data=await call("vault_rows",sourceId);
-  const match=data?.rows?.find(item=>item.index===rowIndex);
+  const match=await call("vault_row",{fileId:sourceId,rowIndex});
   if(!match){message("The matching imported profile is unavailable.");return;}
   const all=Object.entries(match.fields||{});
   original=Object.fromEntries(all.filter(([key])=>/card|cc_|cvv|cvc|exp|holder|security.?code|verification/i.test(key)));
