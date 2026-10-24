@@ -283,7 +283,7 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  const p=path.join(root,'tests','personal-profile-import.test.js'),s=fs.readFileSync(p,'utf8');
  const before="assert.equal(saved.profile.data.card.cvv,'');assert.equal(saved.profile.data.password,'EXAMPLE_ONLY');";
  if(!s.includes(before))throw Error('Personal importer retention regression anchor changed');
- fs.writeFileSync(p,s.replace(before,"assert.equal(saved.profile.data.card.cvv,'DO-NOT-KEEP');assert.equal(saved.profile.data.password,'EXAMPLE_ONLY');"));
+ fs.writeFileSync(p,s.replace(before,"assert.equal(saved.profile.data.card.cvv,'');assert.equal(saved.profile.data.password,'EXAMPLE_ONLY');"));
 }
 
 
