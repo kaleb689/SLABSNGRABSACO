@@ -58,6 +58,7 @@ jobs:
           node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
           node .github/aco-studio-build/profile-library/apply.cjs build-src/App
           test -s build-src/App/owner-health-advisor.js
+          cp .github/aco-studio-build/profile-library/owner-health-advisor.test.js build-src/App/tests/owner-health-advisor.test.js
       - name: Install dependencies
         working-directory: build-src/App
         run: npm install --no-audit --no-fund
