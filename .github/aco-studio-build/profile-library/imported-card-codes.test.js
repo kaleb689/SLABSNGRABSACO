@@ -179,7 +179,7 @@ test('Original imported profile can restore its missing Security Code without re
  assert.equal(decoded.cc_cvv,'0099','parser must preserve the old reference slot for recovery');
  assert.equal(LC.payment(decoded).number,LC.payment(row.data).number,'card identity must stay exact');
  const result=await h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',fileName:'original.json',text:JSON.stringify([original])});
- assert.equal(result.preview,true);assert.equal(result.recoverable,1);
+ assert.equal(result.preview,true);assert.equal(result.recoverable,1,JSON.stringify(result.diagnostics));
  assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'','preview never modifies profile');
  const applied=await h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',token:result.token,confirmed:true});
  assert.equal(applied.restored,1);
@@ -202,6 +202,9 @@ test('Saved Card Bank can explicitly fill a missing profile Security Code by ful
  await commit(h,await preview(h,[data]));
  const saved=await h.service.addCard(event,{...h.p,card:{...card,customSecurityCode:'0077'}});
  assert.ok(saved.id,'saved card bank entry required');
+ const file=await fs.readFile(path.join(h.dir,'jig-studio-personal-cards.encrypted'));
+ const storedText=file.toString();
+ assert.ok(storedText.includes('0077'),'encrypted fixture file must contain independent reference after safe storage shim');
  const preserved=(await h.personal.selectedForJig('personal:owner',[saved.id]))[0];
  assert.equal(preserved.customSecurityCode,'0077','existing saved Card Bank code must be present in encrypted storage');
  assert.equal(LC.payment((await h.lib.list(event,h.p)).profiles[0].data).number,preserved.number,'full card identity must match');
