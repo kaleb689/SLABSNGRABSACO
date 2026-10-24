@@ -150,6 +150,14 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   const full=c.cards.length?await cardVault(scope).selectedForJig(cardKey(scope,id),c.cards.map(x=>x.id)):[];
   const assigned=new Set((c.assignments||[]).map(x=>x.cardId));
   const cardPool=CardPolicy.inventory({rows,savedCards:full,settings});
+   // Full numbers are returned only to the owner-authorized, unlocked vault
+   // editor. Ordinary inventory calls carry only last four and assignments.
+   if(p.showFullCards===true)for(const item of cardPool){
+    const ref=String(item.id||'');
+    const matched=ref.startsWith('saved:')?full.find(c=>c.id===ref.slice(6)):rows.find(row=>row.id===ref.slice(8));
+    const number=ref.startsWith('saved:')?matched?.number:CardPolicy.fromProfile(matched);
+    item.fullNumber=CardPolicy.normalized(number)||'';
+   }
   // Legacy card assignments can outlive a deleted/moved profile. Keep those
   // cards unavailable until reconciled; do not silently return them to Unused.
   for(const item of cardPool){
@@ -181,6 +189,25 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   const card={...p.card,number,label:'Unlinked card '+next,cardholder:String(p?.card?.cardholder||'').trim()||'Unassigned',brand:brandFromNumber(number)};
   delete card.id;
   return vault.addWorkshopCard(key,card,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');});
+ }
+ async function setHardCards(e,p){
+  const {scope,id}=await access(e,p),generation=epoch(e);
+  const check=()=>{guard(e,scope);if(epoch(e)!==generation)throw Error('Vault locked before bulk Hard Card settings could save.');};
+  if(p?.confirmed!==true||typeof p?.hard!=='boolean'||!Array.isArray(p.cardRefs)||!p.cardRefs.length||p.cardRefs.length>200)
+   throw Error('Confirm 1-200 selected cards in this vault.');
+  if(new Set(p.cardRefs).size!==p.cardRefs.length)throw Error('Choose distinct Card Bank entries.');
+  const saved=await cardVault(scope).list(cardKey(scope,id));
+  const full=saved.cards.length?await cardVault(scope).selectedForJig(cardKey(scope,id),saved.cards.map(x=>x.id)):[];
+  const rows=await profiles.fieldSnapshot(scope,id),numbers=p.cardRefs.map(ref=>CardPolicy.resolveReference(ref,rows,full));
+  if(new Set(numbers).size!==numbers.length)throw Error('The selected entries contain the same underlying card. Choose each card once.');
+  return profiles.libraryTransaction(scope,id,ctx=>{
+   let settings=ctx.settings;
+   for(const number of numbers)settings=CardPolicy.toggle(settings,number,p.hard);
+   if(!p.hard&&CardPolicy.violations(ctx.rows,settings).some(v=>numbers.includes(v.fingerprint)))
+    throw Error('One of these cards is assigned to multiple profiles. Keep it as a Hard Card until its extra assignments are resolved. None of the selected changes were saved.');
+   ctx.settings=settings;
+   return {saved:true,updated:numbers.length,hardCard:p.hard};
+  },check);
  }
  async function setHardCard(e,p){
   const {scope,id}=await access(e,p),generation=epoch(e);
@@ -249,7 +276,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    const result=Fields.build({records,indices:records.map((_,i)=>i),scope,customerId:id,addresses,cards,choices:{address:true,card:true,name:p.randomNames===true},allowCardReuse:false,mirrorBilling:true});
    CardPolicy.checkAllocation(inventory,p.retailer,result.records.map(data=>CardPolicy.fromProfile({data})),settings,{excludeProfileIds:accounts.filter(Boolean).map(x=>x.id)});
    return result.records.map((data,i)=>({data:syncCardholderToProfileName(data),format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}}));
-  },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');})));
+  },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');},p.emailIds??null)));
  }
 
  async function edit(e,p){const {scope,id}=await access(e,p),generation=epoch(e);
@@ -373,8 +400,8 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
  async function exportSaved(e,p){const {scope,id}=await access(e,p),v=await profiles.preview(scope,id,p.profileId);if(!await confirmExport(e))return {cancelled:true};const entry=Draft.serializeProfile(v.profile),ext=path.extname(entry.name),choice=await chooseSave(e,{name:entry.name,extension:ext.slice(1)});
   if(choice.canceled||!choice.filePath)return {cancelled:true};if(path.extname(choice.filePath).toLowerCase()!==ext)throw Error('Keep the selected profile format.');const latest=await profiles.preview(scope,id,p.profileId);if(latest.profile.revision!==v.profile.revision)throw Error('Profile changed before export. Try again.');guard(e,scope);await writeFile(choice.filePath,entry.text,{encoding:'utf8',mode:0o600});return {saved:true};
  }
- return Object.freeze({assets,addCard,addAddress,setHardCard,addProfileCardToBank,manageResource,emails,importEmails,generate,create,edit,load,preview,apply,save,exportFile,exportSaved,cancel});
+ return Object.freeze({assets,addCard,addAddress,setHardCard,setHardCards,addProfileCardToBank,manageResource,emails,importEmails,generate,create,edit,load,preview,apply,save,exportFile,exportSaved,cancel});
 }
-function registerWorkshop(options){const service=createWorkshop(options);for(const method of ['assets','addCard','addAddress','setHardCard','addProfileCardToBank','manageResource','emails','importEmails','generate','create','edit','load','preview','apply','save','exportFile','exportSaved'])options.ipcMain.handle('profile:workshop:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:workshop:cancel',(e,t)=>{options.requireOwner(e);return service.cancel(e,t);});return service;}
+function registerWorkshop(options){const service=createWorkshop(options);for(const method of ['assets','addCard','addAddress','setHardCard','setHardCards','addProfileCardToBank','manageResource','emails','importEmails','generate','create','edit','load','preview','apply','save','exportFile','exportSaved'])options.ipcMain.handle('profile:workshop:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:workshop:cancel',(e,t)=>{options.requireOwner(e);return service.cancel(e,t);});return service;}
 module.exports={createWorkshop,registerWorkshop,numberOf};
 

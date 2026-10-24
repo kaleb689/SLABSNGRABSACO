@@ -5,6 +5,7 @@ const labels={suffix:"Street suffix swap",directional:"Directional abbreviations
 let overview={sources:[],cards:[],addresses:[],activity:[]},page="home";
 let remoteAllowed=null;
 const selectedProfileFiles=new Set();
+let cardPage=0,selectedCardRefs=new Set();
 function applyJigPermissions(permissions){
   if(!permissions||typeof permissions!=="object")return;
   remoteAllowed=permissions;
@@ -181,31 +182,64 @@ const historyButton=button("Import History",async()=>{
 });
 bulkActions.append(bulkMove,bulkDelete,historyButton);updateBulkToolbar();
 
-function drawCards(){const target=$("card-list");target.replaceChildren();
-  const records=overview.cardPool||[];
-  if(!records.length)target.append(node("p","No saved or imported-profile cards in this private vault."));
-  for(const c of records){
+function drawCards(){
+ const target=$("card-list");target.replaceChildren();
+ const search=$("card-search").value.trim().toLowerCase();
+ const records=(overview.cardPool||[]).filter(c=>
+   [c.fullNumber,c.last4,c.label,c.status,...(c.linkedAccounts||[]).flatMap(x=>[x.email,stores[x.retailer]||x.retailer])].filter(Boolean).join(" ").toLowerCase().includes(search));
+ const totalPages=Math.max(1,Math.ceil(records.length/10));
+ cardPage=Math.min(cardPage,totalPages-1);
+ const shown=records.slice(cardPage*10,cardPage*10+10);
+ selectedCardRefs=new Set([...selectedCardRefs].filter(ref=>shown.some(x=>x.ref===ref)));
+ $("cards-page").textContent=records.length?("Showing "+(cardPage*10+1)+"–"+(cardPage*10+shown.length)+" of "+records.length+" · Page "+(cardPage+1)+" of "+totalPages):"No cards";
+ $("cards-prev").disabled=cardPage<=0;$("cards-next").disabled=cardPage>=totalPages-1;
+ $("cards-hard-on").disabled=$("cards-hard-off").disabled=!selectedCardRefs.size;
+ if(!records.length){target.append(node("p","No cards match the search in this private vault."));return;}
+ for(const c of shown){
    const stored=c.fromSavedBank?overview.cards.find(x=>"saved:"+x.id===c.ref):null;
    const row=node("div",undefined,"file-row");
+   const select=node("input");select.type="checkbox";select.checked=selectedCardRefs.has(c.ref);
+   select.setAttribute("aria-label","Select card ending "+c.last4);
+   select.addEventListener("change",()=>{if(select.checked)selectedCardRefs.add(c.ref);else selectedCardRefs.delete(c.ref);drawCards();});
    const info=node("div");
-   info.append(node("strong",(c.hardCard?"HARD CARD · ":"")+(stored?.label||c.label||"Card")+" · ending "+c.last4),
-    node("small",[c.expiry,c.status,c.availableRetailers.length?"Available for: "+c.availableRetailers.map(x=>stores[x]||x).join(", "):"Not available for additional profiles"].filter(Boolean).join(" · ")));
+   const title=node("strong",c.fullNumber||("Card ending "+c.last4));title.style.wordBreak="break-all";
+   const linked=node("small",(c.linkedAccounts||[]).length?c.linkedAccounts.map(a=>a.email+" · "+(stores[a.retailer]||a.retailer)).join(" | "):"Unused · no linked retailer accounts");
+   const details=node("small",[c.expiry,c.hardCard?"Hard Card":"Regular card",c.status,c.availableRetailers.length?"Available for: "+c.availableRetailers.map(x=>stores[x]||x).join(", "):"Not available for additional profiles"].filter(Boolean).join(" · "));
+   info.append(title,linked,details);
    if(c.conflict)info.append(node("small","Existing duplicate assignments detected. Review before applying another card."));
-   row.append(info,button(c.hardCard?"Unset Hard Card":"Set Hard Card",async()=>{
-    if(!confirm((c.hardCard?"Disable":"Enable")+" Hard Card for the card ending "+c.last4+"? It will be usable at most once per retailer in this private vault."))return;
+   row.append(select,info,button(c.hardCard?"Unset Hard Card":"Set Hard Card",async()=>{
+    if(!confirm((c.hardCard?"Disable":"Enable")+" Hard Card for the card ending "+c.last4+"? It may be used at most once per retailer in this private vault."))return;
     const result=await call("vault_setHardCard",{cardRef:c.ref,hard:!c.hardCard,confirmed:true});
-    if(result?.saved){await refresh();message("Hard Card setting updated only in your private vault.");}
+    if(result?.saved){selectedCardRefs.clear();await refresh();message("Hard Card setting updated only in your private vault.");}
    }));
    if(stored){
-    row.append(button("Delete",async()=>{if(!confirm("Remove this stored card from your private card bank? Imported profiles retain their original card data."))return;
-      if(await call("vault_remove",{kind:"card",id:stored.id}))await refresh();},"danger"));
+    row.append(button("Delete",async()=>{if(!confirm("Remove this stored card from your private card bank? Imported profiles retain their original information."))return;
+      if(await call("vault_remove",{kind:"card",id:stored.id})){selectedCardRefs.clear();await refresh();}},"danger"));
    }else row.append(button("Add to saved card bank",async()=>{
-    if(!confirm("Copy card number and expiration from this profile into your saved Card Bank? The unrelated profile Security Code will not be copied."))return;
+    if(!confirm("Copy card number and expiration from this profile into your saved Card Bank? The independent profile Security Code will remain on the original profile."))return;
     const result=await call("vault_promoteCard",{cardRef:c.ref,confirmed:true});
-    if(result?.saved){await refresh();message("Imported card added to your saved pool.");}
+    if(result?.saved){selectedCardRefs.clear();await refresh();message("Imported card added to your saved pool.");}
    }));
    target.append(row);
-  }
+ }
+}
+$("card-search").addEventListener("input",()=>{cardPage=0;selectedCardRefs.clear();drawCards();});
+$("cards-select-page").addEventListener("click",()=>{
+ const search=$("card-search").value.trim().toLowerCase();
+ const matches=(overview.cardPool||[]).filter(c=>[c.fullNumber,c.last4,c.label,c.status,...(c.linkedAccounts||[]).flatMap(a=>[a.email,stores[a.retailer]||a.retailer])].filter(Boolean).join(" ").toLowerCase().includes(search));
+ selectedCardRefs=new Set(matches.slice(cardPage*10,cardPage*10+10).map(x=>x.ref));
+ drawCards();
+});
+$("cards-clear").addEventListener("click",()=>{selectedCardRefs.clear();drawCards();});
+$("cards-prev").addEventListener("click",()=>{if(cardPage>0){cardPage--;selectedCardRefs.clear();drawCards();}});
+$("cards-next").addEventListener("click",()=>{cardPage++;selectedCardRefs.clear();drawCards();});
+for(const [id,hard] of [["cards-hard-on",true],["cards-hard-off",false]]){
+ $(id).addEventListener("click",async()=>{
+  const refs=[...selectedCardRefs];if(!refs.length)return;
+  if(!confirm((hard?"Set":"Remove")+" Hard Card for "+refs.length+" cards selected on this page? This changes only your private encrypted vault."))return;
+  const result=await call("vault_setHardCards",{cardRefs:refs,hard,confirmed:true});
+  if(result?.saved){selectedCardRefs.clear();await refresh();message("Updated "+result.updated+" Hard Card settings in your private vault.");}
+ });
 }
 function drawAddresses(){const target=$("address-list");target.replaceChildren();
   for(const a of overview.addresses){const row=node("div",undefined,"file-row");row.append(node("strong",[a.label,a.address,a.unit,a.city,a.state,a.zip].filter(Boolean).join(" · ")),

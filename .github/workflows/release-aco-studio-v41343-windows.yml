@@ -1,10 +1,6 @@
 name: Release ACO Studio 4.13.43 Windows after native verification
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/release-aco-studio-v41343-windows.yml'
-      - '.github/aco-studio-build/profile-library/**'
+  # Historical v4.13.43 release; manual only. Never override the existing published update feed on new merges.
   workflow_dispatch:
 permissions:
   contents: write

@@ -14,3 +14,19 @@
 .profileResourceRow.isAvailable .profileResourceState{border-color:#20c9c7;color:#aef6f3}
 .profileResourceRow.isUsed{opacity:.72}
 @media(max-width:900px){.profileResourceBanks{grid-template-columns:1fr}}
+
+/* Retailer-first workflow and page-scoped Unused/Ready/Live navigation. */
+.profileLibrary [hidden]{display:none!important}
+.profileRetailerButtons{display:flex;flex:1 1 100%;flex-wrap:wrap;gap:9px;align-items:center;min-width:0}
+.profileRetailerButtons button{flex:0 1 auto;min-height:40px;white-space:normal}
+.profileRetailerButtons button[aria-pressed=true]{background:#075363;border-color:#3cdddd;color:#edffff;box-shadow:0 0 0 1px #3cdddd}
+.profileRetailerWorkspace{border:1px solid #35566a;border-radius:16px;background:#101e30;padding:10px 15px;margin:12px 0}
+.profileRetailerWorkspace>.profileLibraryTabs{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:7px 0}
+.profileRetailerWorkspace>[data-current-retailer]{font-size:12px;font-weight:600;color:#a5e5e1;margin:4px 0 0}
+.profileLibraryCard.profileUnusedAccount{min-height:126px;display:flex;flex-direction:column;justify-content:space-between}
+.profileLibraryCard.profileUnusedAccount .buttons{margin-top:12px}
+.profileResourceBank>input[type=search]{display:block;width:100%;margin:0 0 10px;box-sizing:border-box}
+.profileResourceRow strong{font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.profileResourceRow .btn{flex:0 0 auto}
+.profileLibraryPagination{max-width:100%;gap:9px}
+@media(max-width:800px){.profileRetailerButtons button{flex:1 1 130px}.profileRetailerWorkspace>.profileLibraryTabs button{flex:1 1 135px}.profileResourceRow{flex-wrap:wrap}}

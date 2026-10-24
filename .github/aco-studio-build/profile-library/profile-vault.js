@@ -382,7 +382,16 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function emailInventory(scope,customerId,retailer){const r=retailerId(retailer);const reconciled=r==='pokemoncenter'?await reconcileTargetLivePkcEmails(scope,customerId):null;await pending;const key=bank(scope,customerId),d=await read(scope);
   const rows=d.groups[key]||[],allProfiles=rows;
   const inventory=creationInventory(rows,allProfiles,emailRows(d,key),r);
-  return {scope,customerId:scope==='aco'?key:null,retailer:r,freeAccounts:inventory.accounts.filter(x=>x.account).length,availableForCreation:inventory.accounts.length,...(reconciled?{targetLiveReconciliation:reconciled}:{}),emails:inventory.accounts.map(x=>({id:x.account?.id||x.entry.id,email:x.email,status:'available',source:x.account?'account':'email'})).concat(emailRows(d,key).filter(x=>x.retailer===r&&!inventory.accounts.some(a=>a.email===x.email)).map(x=>({id:x.id,email:x.email,status:'used'})))};
+  const retailerProfiles=rows.filter(x=>x.retailer===r);
+   const reserved=(emailRows(d,key)||[]).filter(x=>x.retailer===r);
+   const live=retailerProfiles.filter(x=>x.bank==='live').length;
+   const linkedAccountIds=new Set(retailerProfiles.map(x=>x.id));
+   const staleReservations=reserved.filter(x=>x.profileId&&!linkedAccountIds.has(x.profileId)).length;
+   const retailerStats={profileCount:retailerProfiles.length,liveProfileCount:live,workingProfileCount:retailerProfiles.length-live,
+    readyForExportCount:retailerProfiles.filter(x=>x.bank!=='live'&&x.stage==='completed').length,
+    unusedAccountCount:inventory.accounts.length,unusedEmailCount:inventory.accounts.filter(x=>x.entry).length,
+    unusedExistingAccountCount:inventory.accounts.filter(x=>x.account).length,staleReservationCount:staleReservations};
+   return {scope,customerId:scope==='aco'?key:null,retailer:r,retailerStats,freeAccounts:inventory.accounts.filter(x=>x.account).length,availableForCreation:inventory.accounts.length,...(reconciled?{targetLiveReconciliation:{...reconciled,pkcUnusedTotal:inventory.accounts.length,pkcProfileCount:retailerProfiles.length,pkcLiveProfileCount:live,pkcStaleReservationCount:staleReservations}}:{}),emails:inventory.accounts.map(x=>({id:x.account?.id||x.entry.id,email:x.email,status:'available',source:x.account?'account':'email'})).concat(emailRows(d,key).filter(x=>x.retailer===r&&!inventory.accounts.some(a=>a.email===x.email)).map(x=>({id:x.id,email:x.email,status:'used'})))};
  }
  async function importEmails(scope,customerId,retailer,values,beforeWrite){const key=bank(scope,customerId),r=retailerId(retailer);
   if(!Array.isArray(values)||!values.length||values.length>5000||typeof beforeWrite!=='function')throw Error('Import 1-5000 emails.');
@@ -394,13 +403,24 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    return {scope,customerId:scope==='aco'?key:null,retailer:r,added:added.length,skipped,invalid};
   });
  }
- async function createEmailProfiles(scope,customerId,retailer,count,build,beforeWrite){const key=bank(scope,customerId),r=retailerId(retailer);
+ async function createEmailProfiles(scope,customerId,retailer,count,build,beforeWrite,selectedEmailIds=null){const key=bank(scope,customerId),r=retailerId(retailer);
   if(!Number.isInteger(count)||count<1||count>500||typeof build!=='function'||typeof beforeWrite!=='function')throw Error('Create 1-500 profiles.');
   return serial(async()=>{const d=await read(scope),rows=d.groups[key]||[];
    const allProfiles=rows;
    const available=creationInventory(rows,allProfiles,emailRows(d,key),r).accounts;
    if(available.length<count)throw Error('Not enough unused emails or free accounts in this vault and retailer.');
-   const chosen=available.slice(0,count),newCount=chosen.filter(x=>!x.account).length;
+   let chosen;
+   if(selectedEmailIds!==null){
+    if(!Array.isArray(selectedEmailIds)||selectedEmailIds.length!==count||new Set(selectedEmailIds).size!==count)
+     throw Error('Select exactly the requested count of distinct unused account IDs.');
+    const availableById=new Map(available.map(x=>[x.account?.id||x.entry?.id,x]));
+    chosen=selectedEmailIds.map(id=>{
+     if(typeof id!=='string'||!availableById.has(id))
+      throw Error('A selected account is no longer unused in this retailer and exact owner vault. Refresh before jigging.');
+     return availableById.get(id);
+    });
+   }else chosen=available.slice(0,count);
+   const newCount=chosen.filter(x=>!x.account).length;
    if(rows.length+newCount>10000)throw Error('Profile vault is full.');
    const built=await build(chosen.map(x=>x.email),structuredClone(rows),chosen.map(x=>x.account?structuredClone(x.account):null),structuredClone(d.librarySettings?.[key]||{}));
    if(!Array.isArray(built)||built.length!==count)throw Error('Profile generation failed. Nothing was saved.');

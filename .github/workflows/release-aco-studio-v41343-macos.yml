@@ -3,11 +3,7 @@ on:
   # Authorized publication when approved changes reach main. The publish
   # job is gated by full native Mac regression, signature, first-launch,
   # update, rollback and data-preservation checks.
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/release-aco-studio-v41343-macos.yml'
-      - '.github/aco-studio-build/profile-library/**'
+  # Historical v4.13.43 release; manual only. Never override the existing published update feed on new merges.
   workflow_dispatch:
 permissions:
   contents: write
