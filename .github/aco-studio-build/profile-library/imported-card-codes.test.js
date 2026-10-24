@@ -191,3 +191,20 @@ test('Original-import recovery refuses a file assigned to a different customer',
  await assert.rejects(h.lib.recoverCodesFromFile(event,{...h.a,retailer:'target',fileName:'original.json',text:JSON.stringify([original])}),/another vault/);
  assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
 });
+
+
+test('Saved Card Bank can explicitly fill a missing profile Security Code by full card number in one vault only',async t=>{
+ const h=await library(t);
+ const data=complete('target','saved-card-recovery@example.test');
+ await commit(h,await preview(h,[data]));
+ const saved=await h.service.addCard(event,{...h.p,card:{...card,customSecurityCode:'0077'}});
+ assert.ok(saved.id,'saved card bank entry required');
+ const previewResult=await h.lib.recoverCodesFromSavedCards(event,{...h.p,confirmed:false});
+ assert.equal(previewResult.recoverable,1);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode||'','');
+ const restored=await h.lib.recoverCodesFromSavedCards(event,{...h.p,confirmed:true,token:previewResult.token});
+ assert.equal(restored.restored,1);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'0077');
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
+ assert.equal((await h.lib.list(event,h.b)).profiles.length,0);
+});
