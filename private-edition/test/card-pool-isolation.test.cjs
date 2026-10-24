@@ -93,3 +93,38 @@ test("customer Card Bank has page-scoped selection and authenticated atomic IPC"
  assert.match(main,/ipcMain\.handle\("vault:setHardCards",\(_e,p\)=>edit/);
  assert.match(preloader,/"vault:setHardCards"/);
 });
+
+
+test("customer exact card is scanned across all retailer live and working banks, without matching last four alone",()=>{
+ const v=vault();
+ v.sources[0].bank="live";
+ for(const [name,retailer,bank] of [
+  ["walmart-all","walmart","working"],
+  ["pkc-all","pokemoncenter","working"],
+  ["costco-all","costco","live"],
+  ["sams-all","sams","working"]
+ ]){
+  const profile=source(name,retailer,[NUM]);profile.bank=bank;v.sources.push(profile);
+ }
+ const similar=source("different","target",["9999999999994242"]);v.sources.push(similar);
+ const result=Cards.toggle(v,"saved:saved-card",true);
+ assert.equal(result.matchedProfiles,5);
+ assert.equal(result.savedCardCopies,1);
+ assert.equal(result.matchingEntries,6);
+ assert.deepEqual(Object.values(result.byRetailer).map(r=>r.profiles),[1,1,1,1,1]);
+ assert.equal(result.byRetailer.target.live,1);
+ assert.equal(result.byRetailer.costco.live,1);
+ assert.equal(Cards.isHard(v,NUM),true);
+ assert.equal(Cards.isHard(v,"9999999999994242"),false);
+ assert.equal(JSON.stringify(result).includes(NUM),false);
+});
+
+test("independent licensed private vaults never inherit another customer's Hard Cards",()=>{
+ const customerA=vault(),customerB=vault();
+ const ownerSeparateVault=vault();
+ assert.equal(Cards.toggle(customerA,"saved:saved-card",true).matchedProfiles,1);
+ assert.equal(Cards.isHard(customerA,NUM),true);
+ assert.equal(Cards.isHard(customerB,NUM),false);
+ assert.equal(Cards.isHard(ownerSeparateVault,NUM),false);
+ assert.equal(Cards.scanVault(customerB,NUM).matchedProfiles,1);
+});
