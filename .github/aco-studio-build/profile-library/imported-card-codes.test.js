@@ -146,7 +146,7 @@ test('Every selected export format maps the independent Security Code into its r
   const native=h.writes.at(-1)[1];
   assert.ok(native.includes('0044'),retailer+' retailer template must place exported code');
   if(retailer==='target'){
-   const header=native.split(/\\r?\\n/,1)[0];
+   const header=native.split(/\r?\n/,1)[0];
    assert.match(header,/(?:^|,)(?:"?cc_cvv"?|"?cvv"?)(?:,|$)/i,
     'Shikari native CSV must include its CVV field');
   }else{
