@@ -12,8 +12,12 @@ env:
   ACO_VERSION: '4.13.42'
 jobs:
   profile-integration:
-    name: Restore owner app and run full regression tests
-    runs-on: ubuntu-24.04
+    name: Restore owner app and run full regression tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
@@ -27,10 +31,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > /tmp/aco-original-source.zip
-          echo '8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570  /tmp/aco-original-source.zip' | sha256sum --check
-          unzip -q /tmp/aco-original-source.zip -d build-src
-          test -f build-src/App/main.js
+          python3 - <<'PY'
+          import base64, hashlib, pathlib, zipfile, io
+          root=pathlib.Path('.github/aco-studio-build')
+          parts=sorted(root.glob('aco-studio-v4.13.5.part-*.b64'))
+          assert len(parts)==11, 'Source archive incomplete'
+          data=base64.b64decode(b''.join(p.read_bytes() for p in parts))
+          assert hashlib.sha256(data).hexdigest()=='8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570', 'Source archive SHA-256 mismatch'
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+           assert all(not pathlib.PurePosixPath(n).is_absolute() and '..' not in pathlib.PurePosixPath(n).parts for n in z.namelist())
+           z.extractall('build-src')
+          assert pathlib.Path('build-src/App/main.js').is_file()
+          PY
       - name: Restore all existing production overlays and review changes
         shell: bash
         run: |
@@ -55,12 +67,12 @@ jobs:
         run: |
           set -euo pipefail
           for f in *.js; do node --check "$f"; done
-          node --test $(find tests -maxdepth 1 -type f -name '*.test.js' ! -name 'mac-full-updates.test.js' | sort) | tee regression-results.txt
+          if [[ "$RUNNER_OS" == 'macOS' ]]; then npm run check | tee regression-results.txt; else node --test $(find tests -maxdepth 1 -type f -name '*.test.js' ! -name 'mac-full-updates.test.js' | sort) | tee regression-results.txt; fi
       - name: Publish regression log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aco-studio-review-regressions
+          name: aco-studio-review-regressions-${{ matrix.os }}
           path: build-src/App/regression-results.txt
           if-no-files-found: ignore
           retention-days: 7
