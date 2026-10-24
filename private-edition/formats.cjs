@@ -123,6 +123,25 @@ function exportSource(source) {
   }
   return source.original;
 }
+function exportAs(source,choice='original'){
+ const format=String(choice||'original').toLowerCase();
+ if(format==='original')return {filename:source.filename,content:exportSource(source)};
+ if(!['csv','tsv','json','txt'].includes(format))throw Error('Choose original, CSV, TSV, JSON or TXT.');
+ const filename=source.filename.replace(/\.[^.]*$/, '')+'.'+format;
+ const rows=source.rows.map(row=>structuredClone(row));
+ if(format==='json')return {filename,content:JSON.stringify(rows,null,2)+'\n'};
+ if(format==='txt'){
+  return {filename,content:rows.map((row,i)=>{
+   const lines=['Profile '+(i+1)];
+   for(const [key,value]of Object.entries(row||{}))lines.push(key+': '+(typeof value==='object'&&value!==null?JSON.stringify(value):String(value??'')));
+   return lines.join('\n');
+  }).join('\n\n')+'\n'};
+ }
+ const separator=format==='tsv'?'\t':',';
+ const headers=[...new Set(rows.flatMap(row=>Object.keys(row||{})))];
+ const values=[headers,...rows.map(row=>headers.map(key=>typeof row[key]==='object'&&row[key]!==null?JSON.stringify(row[key]):String(row[key]??'')))];
+ return {filename,content:values.map(columns=>columns.map(value=>quote(value,separator)).join(separator)).join('\r\n')+'\r\n'};
+}
 function profileSummary(source){
   return { filename:source.filename,kind:source.kind,count:source.rows.length,
     editable:["csv","tsv","json","txt"].includes(source.kind),
@@ -130,4 +149,4 @@ function profileSummary(source){
       name:String(row?.[findField(row,aliases.name)]??"Profile "+(i+1)),
       email:String(row?.[findField(row,aliases.email)]??""),retailer:""})) };
 }
-module.exports={readSource,exportSource,changeRow,editFields,profileSummary,findField,aliases,csvRows};
+module.exports={readSource,exportSource,exportAs,changeRow,editFields,profileSummary,findField,aliases,csvRows};
