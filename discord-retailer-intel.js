@@ -36,6 +36,9 @@ export function normalizeRetailerIntel(input, today=new Date().toISOString().sli
   const id=productId(input),name=safe(input.name,200);
   if(!name || !id)throw Error("A product requires its name and a SKU, TCIN, PID, or item number.");
   event.name=name;event.identifier=id;
+  event.identifiers=[["sku","SKU"],["tcin","TCIN"],["pid","PID"],["itemNumber","Item"]]
+   .map(([prop,label])=>({name:label,value:safe(input[prop],75).toUpperCase()}))
+   .filter(item=>/^[A-Z0-9._-]{2,75}$/.test(item.value));
   for(const [dst,source] of [["price","price"],["stock","stock"],["cartLimit","cartLimit"]]){
    if(input[source]!==undefined && input[source]!==null && String(input[source]).trim())event[dst]=safe(input[source],75);
   }
@@ -86,7 +89,12 @@ function sameRelevant(oldEvent,next) {
 }
 const mergeEvent=(oldEvent,event) => {
  if(event.type!=="product")return event;
- return {...oldEvent,...event,price:event.price??oldEvent?.price,stock:event.stock??oldEvent?.stock,cartLimit:event.cartLimit??oldEvent?.cartLimit};
+ const previous=oldEvent?.identifiers||[oldEvent?.identifier].filter(Boolean);
+ const next=event.identifiers||[event.identifier];
+ const ids=new Map([...previous,...next].filter(Boolean).map(item=>[item.name+":"+item.value,item]));
+ return {...oldEvent,...event,name:oldEvent?.name||event.name,identifier:oldEvent?.identifier||event.identifier,
+  identifiers:[...ids.values()],price:event.price??oldEvent?.price,stock:event.stock??oldEvent?.stock,
+  cartLimit:event.cartLimit??oldEvent?.cartLimit};
 };
 export function createRetailerIntelPublisher({dataDir,channels,send,edit,remove,clock=()=>Date.now()}) {
  if(!dataDir || typeof send!=="function" || typeof edit!=="function" || typeof remove!=="function")throw Error("Authorized Discord publisher requires storage and bot methods.");
@@ -120,10 +128,26 @@ export function createRetailerIntelPublisher({dataDir,channels,send,edit,remove,
    if(!destinations.length)throw Error("Retailer channel is not ready. No message posted.");
    const outcome=[];
    for(const channelId of destinations){
-    const recordKey=channelId+":"+event.key;
+    let recordKey=channelId+":"+event.key;
+    if(event.type==="product" && !state.messages[recordKey]){
+      const incomingIds=new Set((event.identifiers||[event.identifier]).map(item=>item.name+":"+item.value));
+      const sameName=(value)=>String(value||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+      for(const [candidateKey,record] of Object.entries(state.messages)){
+        const priorEvent=record.event;
+        if(record.channelId!==channelId || priorEvent?.type!=="product" || priorEvent.retailer!==event.retailer)continue;
+        const priorIds=priorEvent.identifiers||[priorEvent.identifier];
+        const shared=priorIds.some(item=>incomingIds.has(item.name+":"+item.value));
+        const conflict=priorIds.some(a=>(event.identifiers||[event.identifier]).some(b=>a.name===b.name && a.value!==b.value));
+        if(shared || (!conflict && sameName(priorEvent.name)===sameName(event.name))){recordKey=candidateKey;break;}
+      }
+    }
     const prior=state.messages[recordKey];
     const next=mergeEvent(prior?.event,event);
-    if(prior && sameRelevant(prior.event,next)){outcome.push({status:"unchanged",channelId});continue;}
+    if(prior && sameRelevant(prior.event,next)){
+      // Record new identifier aliases without sending a duplicate Discord post.
+      state.messages[recordKey].event=next;await save(state);
+      outcome.push({status:"unchanged",channelId});continue;
+    }
     const payload=retailerIntelPayload(next);
     let posted=null,status="created";
     if(prior?.messageId){
