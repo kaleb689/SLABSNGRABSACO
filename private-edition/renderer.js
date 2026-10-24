@@ -37,7 +37,7 @@ function nav(view){page=view;for(const section of document.querySelectorAll(".pa
 async function call(name,arg){try{return await api[name](arg);}catch(e){message(e?.message||"Operation failed.",true);return null;}}
 async function refresh(){const result=await call("vault_overview");if(!result)return;overview=result;
   $("total-accounts").textContent=String(result.sources.reduce((n,s)=>n+s.count,0));
-  $("total-cards").textContent=String(result.cards.length);
+  $("total-cards").textContent=String((result.cardPool||result.cards).length);
   $("total-addresses").textContent=String(result.addresses.length);
   for(const id of [...selectedProfileFiles])if(!result.sources.some(x=>x.id===id))selectedProfileFiles.delete(id);
   drawFiles();drawCards();drawAddresses();drawSources();
@@ -182,8 +182,30 @@ const historyButton=button("Import History",async()=>{
 bulkActions.append(bulkMove,bulkDelete,historyButton);updateBulkToolbar();
 
 function drawCards(){const target=$("card-list");target.replaceChildren();
-  for(const c of overview.cards){const row=node("div",undefined,"file-row");row.append(node("strong",(c.label||"Card")+" · "+(c.number||"")+" · "+(c.holder||"")+" · "+(c.expiry||"")+(c.securityCode?" · Code: "+c.securityCode:"")),button("Delete",async()=>{if(!confirm("Delete this local card?"))return;
-    if(await call("vault_remove",{kind:"card",id:c.id}))await refresh();},"danger"));target.append(row);}
+  const records=overview.cardPool||[];
+  if(!records.length)target.append(node("p","No saved or imported-profile cards in this private vault."));
+  for(const c of records){
+   const stored=c.fromSavedBank?overview.cards.find(x=>"saved:"+x.id===c.ref):null;
+   const row=node("div",undefined,"file-row");
+   const info=node("div");
+   info.append(node("strong",(c.hardCard?"HARD CARD · ":"")+(stored?.label||c.label||"Card")+" · ending "+c.last4),
+    node("small",[c.expiry,c.status,c.availableRetailers.length?"Available for: "+c.availableRetailers.map(x=>stores[x]||x).join(", "):"Not available for additional profiles"].filter(Boolean).join(" · ")));
+   if(c.conflict)info.append(node("small","Existing duplicate assignments detected. Review before applying another card."));
+   row.append(info,button(c.hardCard?"Unset Hard Card":"Set Hard Card",async()=>{
+    if(!confirm((c.hardCard?"Disable":"Enable")+" Hard Card for the card ending "+c.last4+"? It will be usable at most once per retailer in this private vault."))return;
+    const result=await call("vault_setHardCard",{cardRef:c.ref,hard:!c.hardCard,confirmed:true});
+    if(result?.saved){await refresh();message("Hard Card setting updated only in your private vault.");}
+   }));
+   if(stored){
+    row.append(button("Delete",async()=>{if(!confirm("Remove this stored card from your private card bank? Imported profiles retain their original card data."))return;
+      if(await call("vault_remove",{kind:"card",id:stored.id}))await refresh();},"danger"));
+   }else row.append(button("Add to saved card bank",async()=>{
+    if(!confirm("Copy card number and expiration from this profile into your saved Card Bank? The unrelated profile Security Code will not be copied."))return;
+    const result=await call("vault_promoteCard",{cardRef:c.ref,confirmed:true});
+    if(result?.saved){await refresh();message("Imported card added to your saved pool.");}
+   }));
+   target.append(row);
+  }
 }
 function drawAddresses(){const target=$("address-list");target.replaceChildren();
   for(const a of overview.addresses){const row=node("div",undefined,"file-row");row.append(node("strong",[a.label,a.address,a.unit,a.city,a.state,a.zip].filter(Boolean).join(" · ")),
