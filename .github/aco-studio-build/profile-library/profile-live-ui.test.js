@@ -6,7 +6,7 @@ const workshopSource=fs.readFileSync(require.resolve('../profile-workshop-ui.js'
 const workshopService=fs.readFileSync(require.resolve('../profile-workshop-service.js'),'utf8');
 // Execute the actual refresh function against a minimal DOM adapter. This
 // catches epoch invalidation and replacement of active form content.
-function harness(){const start=source.indexOf(' let pendingRefresh=false,refreshTicket=0;'),end=source.indexOf('\n function close()',start);let active=false,calls=0,draws=0,scrolls=0,bankDraws=0;const context={epoch:8,scope:'aco',customerId:'a',main:{hidden:false},rows:[],bankAssets:{addresses:[],cards:[]},selected:new Set(),d:{querySelector:()=>active?{}:null,activeElement:null},request:()=>({scope:'aco',customerId:'a'}),api:{list:async()=>{calls++;return {profiles:[{id:'p'}]};}},loadResourceBanks:async()=>{context.bankAssets={addresses:[{id:'a1'}],cards:[{id:'c1',unused:true}]};},drawResourceBanks:()=>bankDraws++,draw:()=>draws++,note:()=>{},customerName:()=>'',visible:()=>[],q:()=>({value:'target'}),retailName:{target:'Target'},window:{scrollX:3,scrollY:222,scrollTo:()=>scrolls++},JSON,Set};vm.createContext(context);vm.runInContext(source.slice(start,end)+'\nthis.run=refresh;',context);return {context,run:()=>context.run(),busy:v=>active=v,counts:()=>({calls,draws,scrolls,bankDraws})};}
+function harness(){const start=source.indexOf(' let pendingRefresh=false,refreshTicket=0;'),end=source.indexOf('\n function close()',start);let active=false,calls=0,draws=0,scrolls=0,bankDraws=0;const context={epoch:8,scope:'aco',customerId:'a',stage:'completed',unusedAccounts:[],main:{hidden:false},rows:[],bankAssets:{addresses:[],cards:[]},selected:new Set(),d:{querySelector:()=>active?{}:null,activeElement:null},request:()=>({scope:'aco',customerId:'a'}),api:{list:async()=>{calls++;return {profiles:[{id:'p'}]};}},loadResourceBanks:async()=>{context.bankAssets={addresses:[{id:'a1'}],cards:[{id:'c1',unused:true}]};},drawResourceBanks:()=>bankDraws++,draw:()=>draws++,note:()=>{},customerName:()=>'',visible:()=>[],q:()=>({value:'target'}),retailName:{target:'Target'},window:{scrollX:3,scrollY:222,scrollTo:()=>scrolls++},JSON,Set};vm.createContext(context);vm.runInContext(source.slice(start,end)+'\nthis.run=refresh;',context);return {context,run:()=>context.run(),busy:v=>active=v,counts:()=>({calls,draws,scrolls,bankDraws})};}
 test('live profile refresh defers while editor is open and never changes ownership epoch',async()=>{const h=harness();h.busy(true);await h.run();assert.equal(h.counts().calls,0);assert.equal(h.context.epoch,8);h.busy(false);await h.run();assert.equal(h.context.epoch,8);assert.equal(h.counts().draws,1);assert.equal(h.counts().scrolls,1);await h.run();assert.equal(h.counts().draws,1);});
 
 test('Profiles page includes scoped card and address banks for Personal and customer vaults',()=>{assert.match(source,/Card Bank/);assert.match(source,/Address Bank/);assert.match(source,/profileWorkshop\.assets/);assert.match(source,/cards\.filter\(x=>x\.unused===true\)/);assert.match(source,/Select a customer to view that customer’s card bank/);});
@@ -61,7 +61,7 @@ test('Profiles can jig every selected visible profile as one batch',()=>{
  assert.match(source,/bulkJigSelected/);
  assert.match(source,/batchJigPreview/);
  assert.match(source,/batchJigCommit/);
- assert.match(source,/Jig selected \('/);
+ assert.match(source,/Re-jig selected \('/);
  assert.match(source,/selectedVisible/);
  assert.match(workshopService,/brandFromNumber/);
 });
@@ -80,8 +80,8 @@ test('Jig page keeps one authoritative retailer preset and supports one, multipl
  assert.doesNotMatch(workshopSource,/Retailer buttons load that retailer's saved jig settings automatically/);
 });
 
-test('Profiles export is not disabled just because the profile is in progress',()=>{
- assert.match(source,/q\('export'\)\.disabled=busy;/);
+test('Profiles export is disabled in Unused and without selected profiles, but available for selected ready or Live profiles',()=>{
+ assert.match(source,/q\('export'\)\.disabled=busy\|\|stage==='unused'\|\|!selectedVisible\.length/);
  assert.doesNotMatch(source,/q\('export'\)\.disabled=busy\|\|stage!=='completed'/);
 });
 
@@ -110,7 +110,7 @@ test('Select All on Page never includes any profile from a different pagination 
 
 test('Search and duplicates cannot select a different retailer or status tab',()=>{
  const start=source.indexOf(' function visible(){');
- const end=source.indexOf('\n',start);
+ const end=source.indexOf('\n function text(',start);
  assert.ok(start>0&&end>start);
  const items=[
   {id:'target-ready',retailer:'target',bank:'working',stage:'completed',group:'target',email:'shared@example.test'},
@@ -119,7 +119,7 @@ test('Search and duplicates cannot select a different retailer or status tab',()
   {id:'target-unused',retailer:'target',bank:'working',stage:'in-progress',group:'target',email:'shared@example.test'}
  ];
  const fields={search:{value:'shared'},retailer:{value:'target'}};
- const context={rows:items,stage:'completed',group:'all',issueView:'all',q:key=>fields[key],profileIssues:()=>[],searchable:row=>row.email};
+ const context={rows:items,unusedAccounts:[],stage:'completed',group:'all',issueView:'all',q:key=>fields[key],profileIssues:()=>[],searchable:row=>row.email};
  vm.createContext(context);
  vm.runInContext(source.slice(start,end)+'\nthis.results=visible;',context);
  assert.deepEqual(context.results().map(x=>x.id),['target-ready']);
@@ -132,4 +132,24 @@ test('Bulk jig, move, delete and export never operate on selected profiles outsi
  assert.equal((source.match(/profileIds:pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/g)||[]).length,2);
  assert.match(source,/selected\.clear\(\);pageIndex=0;if\(q\('search'\)\.value\.trim\(\)\)/);
  assert.match(source,/nextPage\.onclick=\(\)=>\{if\(\(pageIndex\+1\)\*PAGE_SIZE<visible\(\)\.length\)\{pageIndex\+\+;selected\.clear\(\);draw\(\);\}\};/);
+});
+
+test('Retailer buttons keep staged inventories separate and Unused accounts are searched by email',()=>{
+ assert.match(source,/data-retailer-tabs role="group"/);
+ assert.match(source,/data-stage="unused" aria-pressed="true">Unused/);
+ assert.match(source,/data-stage="completed">Ready for Export/);
+ assert.match(source,/data-stage="live">Live Profiles/);
+ assert.match(source,/unusedAccounts=\(accounts\.emails\|\|\[\]\)\.filter\(x=>x\.status==='available'\)/);
+ assert.match(source,/q\('retailer'\)\.onchange=\(\)=>\{selected\.clear\(\);pageIndex=0;group='all';unusedAccounts=\[\]/);
+ assert.match(source,/emailIds:chosen\.map\(x=>x\.id\)/);
+ assert.match(source,/stage==='unused'\?jigUnusedSelected\(\):bulkJigSelected\(\)/);
+ const begin=source.indexOf(' function visible(){'),end=source.indexOf('\n function text(',begin);
+ const context={rows:[],unusedAccounts:[
+  {id:'a',retailer:'target',status:'available',email:'target@example.test'},
+  {id:'b',retailer:'pokemoncenter',status:'available',email:'pkc@example.test'},
+  {id:'c',retailer:'target',status:'used',email:'spent@example.test'}],
+  q:key=>({value:key==='retailer'?'target':'target'}),stage:'unused',group:'all',issueView:'all',profileIssues:()=>[],searchable:r=>r.email};
+ vm.createContext(context);
+ vm.runInContext(source.slice(begin,end)+'\nthis.view=visible;',context);
+ assert.deepEqual(context.view().map(x=>x.id),['a']);
 });
