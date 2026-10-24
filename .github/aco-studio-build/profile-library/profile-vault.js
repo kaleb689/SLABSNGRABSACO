@@ -85,7 +85,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    d.emailBanks[key].push({id:uuid(),email,retailer:'pokemoncenter',createdAt:now(),profileId:null,source:'personal-retailer-auto-pkc'});
    reserved.add(email);added++;
   }
-  if(added)auditRecord(d,key,'auto-personal-pkc-email-reconciliation','',{added,candidates:candidates.size});
+  if(added)bankAuditRecord(d,key,'auto-personal-pkc-email-reconciliation',{added,candidates:candidates.size});
   return {added,candidates:candidates.size,alreadyUsed:[...candidates].filter(x=>used.has(x)).length};
  }
  async function write(scope,data){
@@ -136,6 +136,14 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   data.audit||={};const list=data.audit[key]||[];
   list.push({id:uuid(),at:now(),action,email:profileEmail,...detail});
   data.audit[key]=list.slice(-3000);
+ }
+ // Inventory maintenance is a bank-level event, never a profile-level event.
+ // Do not put a blank email into Personal profile audit entries. Older tests
+ // (and consumers) expect every profile audit entry to belong to a real email.
+ function bankAuditRecord(data,key,action,detail={}){
+  data.bankAudit||={};const entries=data.bankAudit[key]||[];
+  entries.push({id:uuid(),at:now(),action,...detail});
+  data.bankAudit[key]=entries.slice(-1000);
  }
  async function audit(scope,customerId){await pending;const key=bank(scope,customerId),data=await read(scope);
   return {scope,customerId:scope==='aco'?key:null,entries:[...(data.audit?.[key]||[])].reverse().slice(0,100)};
@@ -353,7 +361,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    const d=await read(scope),other=await read(scope==='personal'?'aco':'personal');
    const report=backfillTargetLivePkc(d,other,key);
    if(report.added){
-    auditRecord(d,key,'reconcile-target-live-pkc','',{added:report.added,sourceProfiles:report.targetLiveProfiles});
+    bankAuditRecord(d,key,'reconcile-target-live-pkc',{added:report.added,sourceProfiles:report.targetLiveProfiles});
     if(beforeWrite)beforeWrite();
     await write(scope,d);
    }
