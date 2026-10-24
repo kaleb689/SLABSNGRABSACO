@@ -120,3 +120,100 @@ test('UI exposes View/Edit for imported cards and editable Security Code for sav
  assert.match(code,/textContent='View \/ Edit'/);
  assert.match(code,/field\('customSecurityCode','Security Code/);
 });
+
+
+test('Every selected export format maps the independent Security Code into its retailer CVV slot without modifying saved data',async t=>{
+ const h=await library(t);
+ for(const retailer of ['target','walmart']){
+  const source=complete(retailer,'cvv-slot-'+retailer+'@example.test');
+  source.profileSecurityCode='0044';
+  await commit(h,await h.lib.importPreview(event,{...h.p,retailer,fileName:'profiles.json',text:JSON.stringify([source])}));
+  const row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
+  for(const format of ['json','csv','tsv','txt']){
+   const result=await h.lib.exportFile(event,{...h.p,retailer,profileIds:[row.id],customerName:'Personal',exportFormat:format});
+   assert.equal(result.saved,true);
+   const body=h.writes.at(-1)[1];
+   assert.ok(body.includes('0044'),retailer+' '+format+' must keep leading zeros');
+   if(format==='json'){
+    const record=JSON.parse(body).profiles[0].data;
+    assert.equal(retailer==='target'?record.cc_cvv:record.card.cvv,'0044');
+   }else{
+    assert.ok(body.includes(retailer==='target'?'cc_cvv':'card.cvv'),
+      retailer+' '+format+' must use CVV-named column, not a separate arbitrary Security Code column');
+   }
+  }
+  await h.lib.exportFile(event,{...h.p,retailer,profileIds:[row.id],customerName:'Personal',exportFormat:'retailer'});
+  const native=h.writes.at(-1)[1];
+  assert.ok(native.includes('0044'),retailer+' retailer template must place exported code');
+  if(retailer==='target'){
+   const header=native.split(/\r?\n/,1)[0];
+   assert.match(header,/(?:^|,)(?:"?cc_cvv"?|"?cvv"?)(?:,|$)/i,
+    'Shikari native CSV must include its CVV field');
+  }else{
+   const parsed=JSON.parse(native);
+   function cvvEntries(node){
+    if(Array.isArray(node))return node.flatMap(cvvEntries);
+    if(!node||typeof node!=='object')return [];
+    return Object.entries(node).flatMap(([key,value])=>
+     /^(cvv|cc_cvv)$/i.test(key)?[value]:cvvEntries(value));
+   }
+   assert.ok(cvvEntries(parsed).includes('0044'),
+    'Valor native JSON must put exact reference in a CVV-named field, not another field');
+  }
+  const after=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
+  assert.equal(after.data.profileSecurityCode,'0044');
+  assert.equal(LC.payment(after.data).cvv,'','encrypted master does not gain an actual payment verifier');
+ }
+});
+
+
+test('Original imported profile can restore its missing Security Code without re-importing profile records',async t=>{
+ const h=await library(t),original=complete('target','recover-original@example.test');
+ original.cc_cvv='0099'; // Legacy file contained the unrelated reference here.
+ await commit(h,await preview(h,[original]));
+ let row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'0099');
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:''});
+ row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.data.profileSecurityCode,'');
+ const decoded=Core.parseFile('original.json',JSON.stringify([original])).records[0];
+ assert.equal(decoded.cc_cvv,'0099','parser must preserve the old reference slot for recovery');
+ assert.equal(LC.payment(decoded).number,LC.payment(row.data).number,'card identity must stay exact');
+ const result=await h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',fileName:'original.json',text:JSON.stringify([original])});
+ assert.equal(result.preview,true);assert.equal(result.recoverable,1,JSON.stringify(result.diagnostics));
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'','preview never modifies profile');
+ const applied=await h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',token:result.token,confirmed:true});
+ assert.equal(applied.restored,1);
+ const after=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(after.data.profileSecurityCode,'0099');
+ assert.equal(after.data.cc_number,original.cc_number);
+ assert.equal(after.email,'recover-original@example.test');
+});
+test('Original-import recovery refuses a file assigned to a different customer',async t=>{
+ const h=await library(t),original=complete('target','scoped-code@example.test');
+ original.cc_cvv='0044';original.customerId='customer-b';
+ await assert.rejects(h.lib.recoverCodesFromFile(event,{...h.a,retailer:'target',fileName:'original.json',text:JSON.stringify([original])}),/another vault/);
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
+});
+
+
+test('Saved Card Bank can explicitly fill a missing profile Security Code by full card number in one vault only',async t=>{
+ const h=await library(t);
+ const data=complete('target','saved-card-recovery@example.test');
+ await commit(h,await preview(h,[data]));
+ const saved=await h.service.addCard(event,{...h.p,card:{...card,customSecurityCode:'0077'}});
+ assert.ok(saved.id,'saved card bank entry required');
+ const file=await fs.readFile(path.join(h.dir,'jig-studio-personal-cards.encrypted'));
+ const storedText=file.toString();
+ assert.ok(storedText.includes('0077'),'encrypted fixture file must contain independent reference after safe storage shim');
+ const preserved=(await h.personal.securityReferences('personal:owner')).find(x=>x.id===saved.id);
+ assert.equal(preserved.customSecurityCode,'0077','existing saved Card Bank code must be present in encrypted storage');
+ assert.equal(LC.payment((await h.lib.list(event,h.p)).profiles[0].data).number,preserved.number,'full card identity must match');
+ const previewResult=await h.lib.recoverCodesFromSavedCards(event,{...h.p,confirmed:false});
+ assert.equal(previewResult.recoverable,1);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode||'','');
+ const restored=await h.lib.recoverCodesFromSavedCards(event,{...h.p,confirmed:true,token:previewResult.token});
+ assert.equal(restored.restored,1);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'0077');
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
+ assert.equal((await h.lib.list(event,h.b)).profiles.length,0);
+});

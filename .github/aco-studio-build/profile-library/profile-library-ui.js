@@ -40,6 +40,91 @@
  for(const [value,label]of [['retailer','Retailer format (Shikari / Valor)'],['json','JSON'],['csv','CSV'],['tsv','TSV'],['txt','TXT']])
   exportType.append(new Option(label,value));
  exportTypeLabel.append(exportType);q('export').before(exportTypeLabel);
+ const recoverButton=d.createElement('button');recoverButton.type='button';recoverButton.className='btn secondary';
+ recoverButton.textContent='Recover missing Security Codes from encrypted backups';
+ recoverButton.onclick=async()=>{
+  if(scope==='aco'&&!customerId){note('Select a customer vault first.');return;}
+  recoverButton.disabled=true;
+  try{
+   const owner=request(),preview=await api.recoverCodes({...owner,confirmed:false});
+   if(!preview.recoverable){
+    note('No missing codes were recoverable from '+preview.scannedBackups+' readable encrypted backups. '+preview.stillMissing+' profiles remain without a saved Security Code. Nothing was changed.');
+    return;
+   }
+   const details=Object.entries(preview.byRetailer).map(([r,n])=>(retailName[r]||r)+': '+n).join(', ');
+   const message='Found '+preview.recoverable+' missing Security Code(s) in this exact '+customerName()+
+    ' encrypted vault. '+details+'. '+preview.stillMissing+' profiles still have no recoverable code. '+
+    'This will ONLY fill empty profile Security Code fields. Existing code values, cards, emails, addresses and other vaults will NOT change. '+
+    'A new encrypted snapshot is saved before restoring. Restore these '+preview.recoverable+' entries?';
+   if(!confirm(message))return;
+   const result=await api.recoverCodes({...owner,confirmed:true,token:preview.token});
+   await refresh();
+   note('Recovered '+result.restored+' missing Security Codes from encrypted snapshots in '+customerName()+
+    ' only. '+result.stillMissing+' still could not be recovered; check original imports.');
+  }catch(error){note('Recovery not completed: '+String(error.message||error));}
+  finally{recoverButton.disabled=false;}
+ };
+ q('export').before(recoverButton);
+ const originalFileButton=d.createElement('button');originalFileButton.type='button';originalFileButton.className='btn secondary';
+ originalFileButton.textContent='Recover codes from original import file';
+ const originalFilePicker=d.createElement('input');originalFilePicker.type='file';
+ originalFilePicker.accept='.csv,.tsv,.json,.txt';originalFilePicker.hidden=true;
+ originalFileButton.onclick=()=>{
+  if(scope==='aco'&&!customerId){note('Select a customer vault first.');return;}
+  originalFilePicker.value='';originalFilePicker.click();
+ };
+ originalFilePicker.onchange=async()=>{
+  const file=originalFilePicker.files?.[0];if(!file)return;
+  originalFileButton.disabled=true;
+  try{
+   const owner=request(),retailer=q('retailer').value;
+   const preview=await api.recoverCodesFromFile({...owner,retailer,fileName:file.name,text:await file.text(),confirmed:false});
+   if(!preview.recoverable){
+    note('No matching missing Security Codes were found in this original file. '+preview.stillMissing+
+     ' profiles remain without codes; no data was changed.');
+    return;
+   }
+   if(!confirm('Recover '+preview.recoverable+' missing Security Codes in the selected '+(retailName[retailer]||retailer)+
+    ' vault from '+file.name+'? '+preview.stillMissing+' codes remain missing. Existing values and unrelated records are untouched. '+
+    'An encrypted backup is created before the change.')){
+    return;
+   }
+   const result=await api.recoverCodesFromFile({...owner,retailer,token:preview.token,confirmed:true});
+   await refresh();
+   note('Recovered '+result.restored+' missing Security Codes from the original import file in this vault only. '+
+    result.stillMissing+' still missing.');
+  }catch(error){note('Original-file recovery not completed: '+String(error.message||error));}
+  finally{originalFileButton.disabled=false;originalFilePicker.value='';}
+ };
+ q('export').before(originalFileButton,originalFilePicker);
+ const savedCardRecovery=d.createElement('button');savedCardRecovery.type='button';
+ savedCardRecovery.className='btn secondary';savedCardRecovery.textContent='Recover codes from saved Card Bank';
+ savedCardRecovery.onclick=async()=>{
+  if(scope==='aco'&&!customerId){note('Select a customer vault first.');return;}
+  savedCardRecovery.disabled=true;
+  try{
+   const owner=request(),preview=await api.recoverCodesFromSavedCards({...owner,confirmed:false});
+   if(!preview.recoverable){
+    note('No missing codes are recoverable from saved cards in this vault. '+preview.stillMissing+
+     ' profiles are still missing codes; '+preview.conflictingCardCodes+' conflicting card codes were excluded. No changes made.');
+    return;
+   }
+   const groups=Object.entries(preview.byRetailer).map(([r,n])=>(retailName[r]||r)+': '+n).join(', ');
+   if(!confirm('Recover '+preview.recoverable+' missing profile Security Codes from exact matching saved card numbers in '+
+    customerName()+' only? '+groups+'. '+preview.stillMissing+' profiles remain missing. '+
+    'Current nonempty codes, card records, other customers, addresses and account logins will not be changed. '+
+    'An encrypted backup is created before recovery.'))return;
+   const result=await api.recoverCodesFromSavedCards({...owner,confirmed:true,token:preview.token});
+   await refresh();
+   note('Recovered '+result.restored+' missing Security Codes from this vault’s saved Card Bank. '+
+    result.stillMissing+' still missing.');
+  }catch(error){note('Saved-card recovery did not complete: '+String(error.message||error));}
+  finally{savedCardRecovery.disabled=false;}
+ };
+ q('export').before(savedCardRecovery);
+
+
+
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
  main.querySelector('.profileLibraryTabs').after(advanced);

@@ -148,6 +148,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
  async function assets(e,p){const {scope,id}=await access(e,p),generation=epoch(e);
   const [a,c,rows,settings]=await Promise.all([bank(scope,id),cardVault(scope).list(cardKey(scope,id)),profiles.fieldSnapshot(scope,id),profiles.librarySettings(scope,id)]);
   const full=c.cards.length?await cardVault(scope).selectedForJig(cardKey(scope,id),c.cards.map(x=>x.id)):[];
+  const savedReferences=new Map((p.showFullCards===true?await cardVault(scope).securityReferences(cardKey(scope,id)):[]).map(x=>[x.id,x.customSecurityCode||'']));
   const assigned=new Set((c.assignments||[]).map(x=>x.cardId));
   const cardPool=CardPolicy.inventory({rows,savedCards:full,settings});
    // Full numbers are returned only to the owner-authorized, unlocked vault
@@ -176,7 +177,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    const eligibleRetailers=isHard?CardPolicy.RETAILERS.filter(ret=>!assignedUses.some(usage=>usage.retailer===ret)):assignedUses.length?[]:[...CardPolicy.RETAILERS];
    const unresolved=assigned.has(x.id)&&!assignedUses.length;
    const eligible=!unresolved&&(!p.retailer||!CardPolicy.RETAILERS.includes(p.retailer)?eligibleRetailers.length>0:eligibleRetailers.includes(p.retailer));
-   return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:brandFromNumber(raw.number),customReference:raw.customSecurityCode||''}:{}),usedCount:used,unused:eligible,hardCard:isHard,eligibleRetailers:unresolved?[]:eligibleRetailers,previouslyAssigned:assigned.has(x.id)};
+   return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:brandFromNumber(raw.number),customReference:savedReferences.get(x.id)||''}:{}),usedCount:used,unused:eligible,hardCard:isHard,eligibleRetailers:unresolved?[]:eligibleRetailers,previouslyAssigned:assigned.has(x.id)};
   });
   const result={scope,customerId:id,cardPool,addresses:a.addresses.map(x=>({...x,uses:rows.filter(r=>r.assetRefs?.addressId===x.id).length})),cards,profiles:rows.map(x=>({id:x.id,label:x.label,email:x.email,retailer:x.retailer,bank:x.bank||'working',status:x.status,stage:x.stage||'in-progress',missing:require('./profile-completion-core').inspect(x).missing,revision:x.revision,createdInWorkshop:x.source==='owner-created-profile'}))};
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed while loading.');return result;

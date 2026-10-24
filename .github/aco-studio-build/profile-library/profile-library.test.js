@@ -267,7 +267,7 @@ test('Separate profile code is editable, preserved and included in owner JSON ex
  const archive=JSON.parse(h.writes.at(-1)[1]);
  assert.equal(archive.profiles[0].profileSecurityCode,'PICKUP-CODE-44');
  assert.equal(archive.profiles[0].data.cc_number,card.number);
- assert.equal(archive.profiles[0].data.cc_cvv,undefined);
+ assert.equal(archive.profiles[0].data.cc_cvv,'PICKUP-CODE-44','export copy uses requested CVV slot while master vault retains independent code');
  assert.equal(archive.profiles[0].data.profileSecurityCode,'PICKUP-CODE-44');
  await assert.rejects(h.lib.exportArchive(event,{...h.a,retailer:'target',profileIds:[row.id]}),/belong/);
 });
