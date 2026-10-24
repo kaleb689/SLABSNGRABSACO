@@ -93,7 +93,7 @@ test('Select All on Page never includes any profile from a different pagination 
  const handlerEnd=source.indexOf(";q('clear').onclick",handlerStart);
  assert.ok(handlerStart>0&&handlerEnd>handlerStart,'select all replaces previous selection');
  const entries=Array.from({length:451},(_,i)=>({id:'record-'+i}));
- const selectAll={onclick:null},context={visible:()=>entries,selected:new Set(['foreign-vault','record-0']),q:()=>selectAll,draws:0,draw(){this.draws++;}};
+ let drawCount=0;const selectAll={onclick:null},context={visible:()=>entries,selected:new Set(['foreign-vault','record-0']),q:()=>selectAll,draw:()=>{drawCount++;}};
  vm.createContext(context);
  vm.runInContext(source.slice(helperStart,helperEnd)+'\n'+source.slice(handlerStart,handlerEnd+1)+'\nthis.pageRows=pageRows;',context);
  vm.runInContext('pageIndex=1;',context);
@@ -105,6 +105,7 @@ test('Select All on Page never includes any profile from a different pagination 
  selectAll.onclick();
  assert.deepEqual([...context.selected],entries.slice(400,451).map(x=>x.id));
  assert.equal(context.selected.size,51);
+ assert.equal(drawCount,2);
 });
 
 test('Search and duplicates cannot select a different retailer or status tab',()=>{
