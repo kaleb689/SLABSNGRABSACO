@@ -31,6 +31,7 @@ function stripVerifiers(input,depth=0,scope='redacted'){if(depth>8)throw Error('
    if(redactKeys.has(key.toLowerCase())){out[key]='';continue;}
    if(key==='__proto__'||key==='constructor'||key==='prototype')continue;
    out[key]=stripVerifiers(value,depth+1,scope);
+  }
    // Legacy imports sometimes used a field labeled CVV for an independent
    // profile-specific security reference. Preserve that supplied value in a
    // separate profile field before retiring legacy verifier column names.
