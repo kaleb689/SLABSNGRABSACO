@@ -1,5 +1,5 @@
 'use strict';
-const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core');
+const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core'),CardPolicy=require('./card-pool-policy');
 function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,getPostalJigOptions,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),jigPlans=new Map(),epochs=new Map();
  const supportedRule=id=>id===C.FL_PHONE_RULE||Boolean(C.ruleById(id));
@@ -92,6 +92,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     const c=p.card;
     if(!/^\d{12,19}$/.test(String(c.number||'').replace(/\D/g,''))||!/^(0[1-9]|1[0-2])$/.test(c.month||'')||!/^20\d\d$/.test(c.year||'')||!String(c.cardholder||'').trim()||String(c.cardholder).length>120||String(c.customSecurityCode||'').length>64)throw Error('Enter complete card number, holder and expiration.');
     C.putCard(data,c);
+   }
+   // Enforce the Hard Card cap even if the card was typed directly into
+   // a profile editor rather than selected from the saved-card bank.
+   if(CardPolicy.fromProfile({data})!==CardPolicy.fromProfile(row)){
+    const number=CardPolicy.fromProfile({data});
+    if(number)CardPolicy.checkAllocation(ctx.rows,row.retailer,[number],ctx.settings,{excludeProfileIds:[row.id]});
    }
    if(p.cardCvv!==undefined){
     if(a.scope!=='personal')throw Error('Card-code editing is available only in your unlocked Personal vault.');
