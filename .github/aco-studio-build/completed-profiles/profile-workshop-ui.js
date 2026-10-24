@@ -283,9 +283,9 @@
     toggle.onclick=async()=>{
      if(!confirm((r.hardCard?'Remove':'Set')+' Hard Card for card ending '+r.last4+' in '+ownerText(vaultScope)+'? Other vaults are unaffected.'))return;
      toggle.disabled=true;
-     try{await api.setHardCard({...vaultScope,cardRef:r.id,hard:!r.hardCard,confirmed:true});selectedCards.clear();await refreshVault();vnote('Hard Card setting updated in this vault only.');}
+     try{const result=await api.setHardCard({...vaultScope,cardRef:r.id,hard:!r.hardCard,confirmed:true});selectedCards.clear();await refreshVault();vnote('Updated the card in this vault: '+result.matchedProfiles+' matching profiles and '+result.savedCardCopies+' saved card copies across all retailer pools.');}
      catch(e){vnote(e.message,true);toggle.disabled=false;}
-    };line.append(toggle);
+    };line.append(toggle);line.onclick=e=>{if(e.target.closest('button,input'))return;if(storedForClick())openResourceForm('cards',storedForClick());};function storedForClick(){return (vaultData?.cards||[]).find(x=>'saved:'+x.id===r.id)||null;}line.oncontextmenu=e=>{e.preventDefault();if(storedForClick())openResourceForm('cards',storedForClick());};
     const stored=(vaultData?.cards||[]).find(x=>'saved:'+x.id===r.id);
     if(stored){
      const edit=d.createElement('button');edit.type='button';edit.className='btn slim secondary';edit.textContent='Edit';edit.onclick=()=>openResourceForm('cards',stored);
@@ -330,7 +330,7 @@
    $('workshopVaultRows').append(line);
   }if(!rows.length)$('workshopVaultRows').textContent='Nothing saved here yet. Use the Add button.';
  }
- async function openVault(p=fallback(),initial='cards'){try{await unlock(p);vaultScope={scope:p.scope,customerId:p.customerId||null};tab=initial;page=0;selectedCards.clear();vaultData=null;modal.style.zIndex='11600';modal.hidden=false;$('workshopVaultOwner').textContent=ownerText(p)+' | No transfers to another vault';$('workshopVaultSearch').value='';$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;vnote('Loading this vault...');await refreshVault();vnote('Full saved card numbers and expiration dates are shown in this vault. "Unused" means not assigned by this app or present in its saved profiles.');modal.querySelector('[data-close]').focus();}catch(e){note(e.message,true);}}
+ async function openVault(p=fallback(),initial='cards',search=''){try{await unlock(p);vaultScope={scope:p.scope,customerId:p.customerId||null};tab=initial;page=0;selectedCards.clear();vaultData=null;modal.style.zIndex='11600';modal.hidden=false;$('workshopVaultOwner').textContent=ownerText(p)+' | No transfers to another vault';$('workshopVaultSearch').value=String(search||'');$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;vnote('Loading this vault...');await refreshVault();vnote('Full saved card numbers and expiration dates are shown in this vault. "Unused" means not assigned by this app or present in its saved profiles.');modal.querySelector('[data-close]').focus();}catch(e){note(e.message,true);}}
  function closeVault(){d.querySelectorAll('.profileFullDetails').forEach(x=>x.remove());vaultTicket++;modal.hidden=true;vaultData=null;selectedCards.clear();$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;if(checked().card||checked().address)void loadAssets();}
  for(const b of modal.querySelectorAll('[data-tab]'))b.addEventListener('click',()=>{tab=b.dataset.tab;page=0;selectedCards.clear();$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;renderVault();});
  $('workshopVaultSearch').addEventListener('input',()=>{page=0;selectedCards.clear();renderVault();});
@@ -349,7 +349,7 @@
     const button=modal.querySelector('[data-'+buttonName+']');button.disabled=true;
     try{
      const result=await api.setHardCards({...vaultScope,cardRefs:refs,hard,confirmed:true});
-     selectedCards.clear();await refreshVault();vnote('Updated '+result.updated+' card(s) in one encrypted vault transaction.');
+     selectedCards.clear();await refreshVault();vnote('Updated '+result.updated+' distinct cards across '+result.matchedProfiles+' matching profiles and '+result.savedCardCopies+' saved card copies in this vault only.');
     }catch(error){vnote(error.message,true);button.disabled=false;}
    };
   }

@@ -206,7 +206,8 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    if(!p.hard&&CardPolicy.violations(ctx.rows,settings).some(v=>numbers.includes(v.fingerprint)))
     throw Error('One of these cards is assigned to multiple profiles. Keep it as a Hard Card until its extra assignments are resolved. None of the selected changes were saved.');
    ctx.settings=settings;
-   return {saved:true,updated:numbers.length,hardCard:p.hard};
+   const scans=numbers.map(cardNumber=>CardPolicy.scanVault({rows:ctx.rows,savedCards:full,cardNumber}));
+    return {saved:true,updated:numbers.length,hardCard:p.hard,matchedProfiles:scans.reduce((total,result)=>total+result.matchedProfiles,0),savedCardCopies:scans.reduce((total,result)=>total+result.savedCardCopies,0),byRetailer:Object.fromEntries(CardPolicy.RETAILERS.map(retailer=>[retailer,scans.reduce((total,result)=>total+result.byRetailer[retailer].profiles,0)]))};
   },check);
  }
  async function setHardCard(e,p){
@@ -221,7 +222,8 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    if(!p.hard&&CardPolicy.violations(ctx.rows,next).some(x=>x.fingerprint===number))
     throw Error('This card is linked to several retailers. Keep Hard Card on until those extra assignments are removed.');
    ctx.settings=next;
-   return {saved:true,hardCard:p.hard,last4:number.slice(-4)};
+   const scan=CardPolicy.scanVault({rows:ctx.rows,savedCards:full,cardNumber:number});
+    return {saved:true,hardCard:p.hard,last4:number.slice(-4),...scan};
   },check);
  }
  // Imported profile cards become selectable saved-bank resources without
