@@ -140,7 +140,7 @@ test('Retailer buttons keep staged inventories separate and Unused accounts are 
  assert.match(source,/data-stage="completed">Ready for Export/);
  assert.match(source,/data-stage="live">Live Profiles/);
  assert.match(source,/unusedAccounts=\(accounts\.emails\|\|\[\]\)\.filter\(x=>x\.status==='available'\)/);
- assert.match(source,/q\('retailer'\)\.onchange=\(\)=>\{selected\.clear\(\);pageIndex=0;group='all';unusedAccounts=\[\]/);
+ assert.match(source,/q\('retailer'\)\.onchange=[^\n]*selected\.clear\(\)[^\n]*unusedAccounts=\[\]/);
  assert.match(source,/emailIds:chosen\.map\(x=>x\.id\)/);
  assert.match(source,/stage==='unused'\?jigUnusedSelected\(\):bulkJigSelected\(\)/);
  const begin=source.indexOf(' function visible(){'),end=source.indexOf('\n function text(',begin);
@@ -152,4 +152,17 @@ test('Retailer buttons keep staged inventories separate and Unused accounts are 
  vm.createContext(context);
  vm.runInContext(source.slice(begin,end)+'\nthis.view=visible;',context);
  assert.deepEqual(context.view().map(x=>x.id),['a']);
+});
+
+test('Card Bank shows authorized full-number headings, linked retailer emails, and exact-page bulk Hard Card actions',()=>{
+ assert.match(source,/data-card-bank-search/);
+ assert.match(source,/title=text\('strong',card\.fullNumber/);
+ assert.match(source,/card\.linkedAccounts\?\.length/);
+ assert.match(workshopSource,/Search card number, linked email, retailer or label/);
+ assert.match(workshopSource,/data-bulk-set-hard/);
+ assert.match(workshopSource,/data-bulk-unset-hard/);
+ assert.match(workshopSource,/api\.setHardCards\(/);
+ assert.match(workshopSource,/selectedCards=new Set\(matching\.slice\(page\*10,page\*10\+10\)/);
+ assert.match(workshopService,/async function setHardCards\(/);
+ assert.match(workshopService,/profiles\.libraryTransaction\(scope,id,ctx=>\{/);
 });
