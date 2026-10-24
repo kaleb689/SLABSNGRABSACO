@@ -178,3 +178,14 @@ test("Pokemon Center source monitoring never generates unrelated product notices
  assert.throws(()=>normalizeRetailerIntel({type:"product",retailer:"pkc",source:"pokemon-center",name:"Unrelated item",sku:"12345678"}),/queue state only/);
  assert.doesNotThrow(()=>normalizeRetailerIntel({type:"queue",retailer:"pkc",source:"pokemon-center",stage:"upcoming",date:"2026-10-24"}));
 });
+
+
+test("product uses blue linked Discord title only for retailer's own HTTPS domain",()=>{
+ const base={type:"product",retailer:"target",name:"Example",tcin:"1010892065"};
+ const trusted=retailerIntelPayload(normalizeRetailerIntel({...base,url:"https://www.target.com/p/example/-/A-1010892065"}));
+ assert.equal(trusted.embeds[0].url,"https://www.target.com/p/example/-/A-1010892065");
+ const untrusted=retailerIntelPayload(normalizeRetailerIntel({...base,url:"https://www.not-target.com/malicious"}));
+ assert.equal(Object.hasOwn(untrusted.embeds[0],"url"),false);
+ const http=retailerIntelPayload(normalizeRetailerIntel({...base,url:"http://www.target.com/product"}));
+ assert.equal(Object.hasOwn(http.embeds[0],"url"),false);
+});
