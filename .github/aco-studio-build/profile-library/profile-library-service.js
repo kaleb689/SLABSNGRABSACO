@@ -170,7 +170,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    },a.check);
   }
   if(typeof p.fileName!=='string'||p.fileName!==path.basename(p.fileName)||
-    !/\\.(csv|json|txt|tsv)$/i.test(p.fileName)||typeof p.text!=='string'||Buffer.byteLength(p.text)>26*1024*1024)
+    !/\.(csv|json|txt|tsv)$/i.test(p.fileName)||typeof p.text!=='string'||Buffer.byteLength(p.text)>26*1024*1024)
    throw Error('Choose the original CSV, TSV, JSON or TXT file (under 26 MB).');
   const parsed=Core.parseFile(p.fileName,p.text);
   if(!parsed.records?.length||parsed.records.length>10000)throw Error('Original file must contain 1-10,000 profiles.');
