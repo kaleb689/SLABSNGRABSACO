@@ -269,6 +269,44 @@
    modal.querySelector('[data-bulk-unset-hard]').disabled=tab!=='cards'||!selectedCards.size;
    modal.querySelector('[data-card-selected-count]').textContent=selectedCards.size+' selected on this page';
    for(const r of shown){const line=d.createElement('article');line.className='workshopVaultRow';const text=d.createElement('span');text.textContent=tab==='cards'?[r.label,r.cardholder,r.number||('ending '+r.last4),r.expMonth+'/'+r.expYear,r.unused?'Unused':r.usedCount?'Used in '+r.usedCount+' profile(s)':'Previously assigned'].join(' | '):tab==='addresses'?[r.label,r.address1,r.address2,r.city,r.state,r.zip].filter(Boolean).join(' | '):[r.label,retail[r.retailer],r.email||'Email not yet entered',r.stage==='completed'?'Completed':r.status,...(r.stage!=='completed'&&r.missing?.length?['Needs: '+r.missing.join(', ')]:[])].join(' | ');line.append(text);
+   if(tab==='cards'){
+    text.replaceChildren();
+    const heading=d.createElement('strong');heading.textContent=r.fullNumber||('Card ending '+r.last4);heading.style.cssText='display:block;font-weight:700;word-break:break-all';
+    const linked=d.createElement('small');linked.style.display='block';
+    linked.textContent=r.linkedAccounts?.length?r.linkedAccounts.map(a=>a.email+' · '+(retail[a.retailer]||a.retailer)).join(' | '):'Unused · no linked retailer accounts';
+    const meta=d.createElement('small');meta.style.display='block';
+    meta.textContent=[r.expiry,r.hardCard?'Hard Card':'Regular card',r.status,r.availableRetailers?.length?'Available for '+r.availableRetailers.map(x=>retail[x]||x).join(', '):'Not eligible for additional profiles'].filter(Boolean).join(' · ');
+    text.append(heading,linked,meta);
+    const cb=d.createElement('input');cb.type='checkbox';cb.setAttribute('aria-label','Select card ending '+r.last4);
+    cb.checked=selectedCards.has(r.id);cb.onchange=()=>{if(cb.checked)selectedCards.add(r.id);else selectedCards.delete(r.id);renderVault();};line.prepend(cb);
+    const toggle=d.createElement('button');toggle.type='button';toggle.className='btn slim secondary';toggle.textContent=r.hardCard?'Remove Hard Card':'Set Hard Card';
+    toggle.onclick=async()=>{
+     if(!confirm((r.hardCard?'Remove':'Set')+' Hard Card for card ending '+r.last4+' in '+ownerText(vaultScope)+'? Other vaults are unaffected.'))return;
+     toggle.disabled=true;
+     try{await api.setHardCard({...vaultScope,cardRef:r.id,hard:!r.hardCard,confirmed:true});selectedCards.clear();await refreshVault();vnote('Hard Card setting updated in this vault only.');}
+     catch(e){vnote(e.message,true);toggle.disabled=false;}
+    };line.append(toggle);
+    const stored=(vaultData?.cards||[]).find(x=>'saved:'+x.id===r.id);
+    if(stored){
+     const edit=d.createElement('button');edit.type='button';edit.className='btn slim secondary';edit.textContent='Edit';edit.onclick=()=>openResourceForm('cards',stored);
+     const remove=d.createElement('button');remove.type='button';remove.className='btn slim plain';remove.textContent='Remove saved copy';
+     remove.onclick=async()=>{
+      if(!confirm('Remove this saved card? Existing profiles keep their independent data.'))return;
+      remove.disabled=true;
+      try{await api.manageResource({...vaultScope,kind:'card',operation:'remove',resourceId:stored.id});selectedCards.clear();await refreshVault();vnote('Saved card removed from this vault.');}
+      catch(e){vnote(e.message,true);remove.disabled=false;}
+     };line.append(edit,remove);
+    }else{
+     const save=d.createElement('button');save.type='button';save.className='btn slim secondary';save.textContent='Add to saved Card Bank';
+     save.onclick=async()=>{
+      if(!confirm('Add this imported-profile card to the current vault? The separate profile Security Code stays on its original profile.'))return;
+      save.disabled=true;
+      try{await api.addProfileCardToBank({...vaultScope,profileId:r.id.slice(8),confirmed:true});selectedCards.clear();await refreshVault();vnote('Card copied to this vault’s saved bank.');}
+      catch(e){vnote(e.message,true);save.disabled=false;}
+     };line.append(save);
+    }
+    $('workshopVaultRows').append(line);continue;
+   }
    if(tab==='profiles'||tab==='completed'){for(const [title,action]of [['Full profile','full'],['Open in Studio','open'],['Export profile','export'],...(r.createdInWorkshop?[['Edit fields','edit']]:[])]){const b=d.createElement('button');b.className='btn slim secondary';b.type='button';b.textContent=title;b.addEventListener('click',async()=>{try{if(action==='full'){const fixed={...vaultScope},result=await window.desktopAPI.profileBanks.view(fixed.scope,fixed.customerId,r.id);if(modal.hidden||fixed.scope!==vaultScope.scope||fixed.customerId!==vaultScope.customerId)return;const box=d.createElement('div');box.className='workshopModal profileFullDetails';box.style.zIndex='12500';const body=d.createElement('div');body.className='workshopBox';const heading=d.createElement('h2');heading.textContent=ownerText(fixed)+' | Full profile';const pre=d.createElement('pre');pre.style.whiteSpace='pre-wrap';pre.textContent=JSON.stringify(result.profile.data,null,2);const close=d.createElement('button');close.type='button';close.className='btn secondary';close.textContent='Close';close.onclick=()=>box.remove();body.append(heading,pre,close);box.append(body);d.body.append(box);}else if(action==='export')await api.exportSaved({...vaultScope,profileId:r.id});else if(action==='edit'){const data=await api.load({...vaultScope,profileId:r.id});openDraft(vaultScope,data);}else{const data=await api.load({...vaultScope,profileId:r.id});await importer().loadWorkshopProfile(data);closeVault();d.dispatchEvent(new CustomEvent('jigstudio:navigate-stage',{detail:{stage:'settings'}}));panel.scrollIntoView({block:'center'});note('Profile loaded from '+ownerText(data)+'. Select the fields to fill from this vault.');}}catch(e){vnote(e.message,true);}});line.append(b);}}
    if(tab==='cards'||tab==='addresses'){
     const kind=tab,b=d.createElement('button'),edit=d.createElement('button'),remove=d.createElement('button'),c=context();
