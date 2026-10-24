@@ -97,6 +97,32 @@
   finally{originalFileButton.disabled=false;originalFilePicker.value='';}
  };
  q('export').before(originalFileButton,originalFilePicker);
+ const savedCardRecovery=d.createElement('button');savedCardRecovery.type='button';
+ savedCardRecovery.className='btn secondary';savedCardRecovery.textContent='Recover codes from saved Card Bank';
+ savedCardRecovery.onclick=async()=>{
+  if(scope==='aco'&&!customerId){note('Select a customer vault first.');return;}
+  savedCardRecovery.disabled=true;
+  try{
+   const owner=request(),preview=await api.recoverCodesFromSavedCards({...owner,confirmed:false});
+   if(!preview.recoverable){
+    note('No missing codes are recoverable from saved cards in this vault. '+preview.stillMissing+
+     ' profiles are still missing codes; '+preview.conflictingCardCodes+' conflicting card codes were excluded. No changes made.');
+    return;
+   }
+   const groups=Object.entries(preview.byRetailer).map(([r,n])=>(retailName[r]||r)+': '+n).join(', ');
+   if(!confirm('Recover '+preview.recoverable+' missing profile Security Codes from exact matching saved card numbers in '+
+    customerName()+' only? '+groups+'. '+preview.stillMissing+' profiles remain missing. '+
+    'Current nonempty codes, card records, other customers, addresses and account logins will not be changed. '+
+    'An encrypted backup is created before recovery.'))return;
+   const result=await api.recoverCodesFromSavedCards({...owner,confirmed:true,token:preview.token});
+   await refresh();
+   note('Recovered '+result.restored+' missing Security Codes from this vault’s saved Card Bank. '+
+    result.stillMissing+' still missing.');
+  }catch(error){note('Saved-card recovery did not complete: '+String(error.message||error));}
+  finally{savedCardRecovery.disabled=false;}
+ };
+ q('export').before(savedCardRecovery);
+
 
 
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
