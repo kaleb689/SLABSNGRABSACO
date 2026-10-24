@@ -132,6 +132,12 @@ test('192 Target Live profiles reconcile to PKC coverage without creating false 
  assert.equal(inventory.targetLiveReconciliation.targetUniqueEmails,192);
  assert.equal(inventory.targetLiveReconciliation.alreadyPkcProfiles,100);
  assert.equal(inventory.targetLiveReconciliation.pkcCoverage,192);
+ assert.equal(inventory.retailerStats.profileCount,100,'PKC profile rows are separate from unused emails');
+ assert.equal(inventory.retailerStats.unusedAccountCount,92,'Unused PKC email pool must not display the stored PKC profile count');
+ assert.equal(inventory.retailerStats.unusedEmailCount,92);
+ assert.equal(inventory.targetLiveReconciliation.pkcUnusedTotal,92);
+ assert.equal(inventory.targetLiveReconciliation.pkcProfileCount,100);
+
  // Simulate legacy version having lost the Target->PKC email-bank seeding.
  await h.profiles.libraryTransaction('personal',null,context=>{
   for(let i=context.emails.length-1;i>=0;i--)if(context.emails[i].source==='live-profile-import')context.emails.splice(i,1);
