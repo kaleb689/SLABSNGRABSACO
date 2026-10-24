@@ -8,6 +8,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  ACO_VERSION: '4.13.42'
 jobs:
   profile-integration:
     name: Restore owner app and run full regression tests
