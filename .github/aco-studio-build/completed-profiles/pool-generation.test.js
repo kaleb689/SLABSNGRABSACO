@@ -45,3 +45,55 @@ test('Insufficient cards or invalid count consume no available accounts; concurr
  for(const count of [2,0,1.5,501])await assert.rejects(h.service.generate(event,{...p,count}));assert.equal((await h.service.emails(event,p)).availableForCreation,2);
  const r=await Promise.allSettled([h.service.generate(event,p),h.service.generate(event,p)]);assert.equal(r.filter(x=>x.status==='fulfilled').length,1);assert.equal((await h.service.emails(event,p)).availableForCreation,1);
 });
+
+test('Jig selected unused accounts consumes exact requested IDs, not the first available account',async t=>{
+ const h=await env(t),p=await poolStock(h,h.p,'target',2);
+ await h.service.importEmails(event,{...h.p,retailer:'target',emails:['first@example.test','selected@example.test']});
+ const before=await h.service.emails(event,p),selected=before.emails.find(x=>x.email==='selected@example.test');
+ assert.ok(selected?.id);
+ const result=await h.service.generate(event,{...p,count:1,cardIds:p.cardIds.slice(0,1),emailIds:[selected.id]});
+ assert.equal(result.created,1);
+ const rows=await h.profiles.fieldSnapshot('personal',null);
+ assert.deepEqual(rows.filter(x=>x.retailer==='target').map(x=>x.email),['selected@example.test']);
+ const after=await h.service.emails(event,p);
+ assert.deepEqual(after.emails.filter(x=>x.status==='available').map(x=>x.email),['first@example.test']);
+ await assert.rejects(h.service.generate(event,{...p,count:1,cardIds:[p.cardIds[1]],emailIds:[selected.id]}),/no longer unused/);
+ assert.equal((await h.profiles.fieldSnapshot('personal',null)).length,1);
+});
+
+test('Unused account selection cannot borrow an ID from another customer or another retailer',async t=>{
+ const h=await env(t),a=await poolStock(h,h.a,'target',1),b=await poolStock(h,h.b,'target',1);
+ await h.service.importEmails(event,{...h.a,retailer:'target',emails:['mike@example.test']});
+ await h.service.importEmails(event,{...h.b,retailer:'target',emails:['derick@example.test']});
+ const mike=(await h.service.emails(event,a)).emails.find(x=>x.status==='available');
+ await assert.rejects(h.service.generate(event,{...b,emailIds:[mike.id]}),/no longer unused/);
+ await assert.rejects(h.service.generate(event,{...a,retailer:'pokemoncenter',format:'valor',emailIds:[mike.id]}),/no longer unused|Not enough unused/);
+ assert.equal((await h.profiles.fieldSnapshot('aco','customer-a')).length,0);
+ assert.equal((await h.profiles.fieldSnapshot('aco','customer-b')).length,0);
+});
+
+test('Importing an active Target profile consumes only Target Unused and leaves PKC Unused independently eligible',async t=>{
+ const h=await env(t),owner=h.p;
+ await h.service.importEmails(event,{...owner,retailer:'target',emails:['shared@example.test']});
+ await h.service.importEmails(event,{...owner,retailer:'pokemoncenter',emails:['shared@example.test']});
+ await h.profiles.importRows({...owner,retailer:'target',status:'active',rows:[{email:'shared@example.test'}]});
+ const target=await h.service.emails(event,{...owner,retailer:'target'});
+ const pkc=await h.service.emails(event,{...owner,retailer:'pokemoncenter'});
+ assert.equal(target.availableForCreation,0);
+ assert.equal(pkc.availableForCreation,1);
+ assert.deepEqual(pkc.emails.filter(x=>x.status==='available').map(x=>x.email),['shared@example.test']);
+});
+
+test('Atomic Hard Card batch updates only selected cards in the authorized owner vault',async t=>{
+ const h=await env(t),p=h.p;
+ const first=await h.service.addCard(event,{...p,card});
+ const second=await h.service.addCard(event,{...p,card:{...card,number:'5555555555554444'}});
+ const refs=['saved:'+first.id,'saved:'+second.id];
+ const result=await h.service.setHardCards(event,{...p,cardRefs:refs,hard:true,confirmed:true});
+ assert.equal(result.updated,2);
+ assert.ok((await h.service.assets(event,p)).cardPool.every(x=>x.hardCard));
+ await assert.rejects(h.service.setHardCards(event,{...h.a,cardRefs:refs,hard:false,confirmed:true}),/not in this vault/);
+ assert.ok((await h.service.assets(event,p)).cardPool.every(x=>x.hardCard));
+ await h.service.setHardCards(event,{...p,cardRefs:refs,hard:false,confirmed:true});
+ assert.ok((await h.service.assets(event,p)).cardPool.every(x=>!x.hardCard));
+});
