@@ -40,7 +40,7 @@ function profileUses(rows){
  for(const row of rows||[]){
   const n=normalized(fromProfile(row));if(!n||!RETAILERS.includes(row.retailer))continue;
   let list=byNumber.get(n);if(!list){list=[];byNumber.set(n,list);}
-  list.push({profileId:row.id,retailer:row.retailer,label:row.label||row.email||'Profile'});
+  list.push({profileId:row.id,retailer:row.retailer,email:String(row.email||'').slice(0,200),label:row.label||row.email||'Profile'});
  }
  return byNumber;
 }
@@ -92,7 +92,7 @@ function inventory({rows=[],savedCards=[],settings={}}={}){
   const duplicateRetailers=isHard?RETAILERS.filter(r=>uses.filter(x=>x.retailer===r).length>1):(uses.length>1?['all']:[]);
   output.push({id:card.savedRefs.length?'saved:'+card.savedRefs[0]:'profile:'+card.profileRefs[0],last4:n.slice(-4),
     label:card.name||'Card ending '+n.slice(-4),expiry:card.expiry,brand:card.brand,
-    hardCard:isHard,linked:usedRetailers,linkedCount:uses.length,availableRetailers,
+    hardCard:isHard,linked:usedRetailers,linkedAccounts:uses.map(x=>({email:x.email,retailer:x.retailer})),linkedCount:uses.length,availableRetailers,
     status:uses.length?'Linked '+usedRetailers.map(r=>({pokemoncenter:'PKC',sams:"Sam's"}[r]||r)).join(', '):'Unused',
     hasConflict:duplicateRetailers.length>0,duplicateRetailers,fromSavedBank:card.savedRefs.length>0});
  }
