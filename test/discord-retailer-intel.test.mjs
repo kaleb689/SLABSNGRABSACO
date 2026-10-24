@@ -146,3 +146,17 @@ test("old drop purge-on-new code is gone, 14-day cleanup is scheduled, and priva
  assert.match(code,/!ownerId \|\| String\(message.author\?\.id\)!==String\(ownerId\)/);
  assert.match(code,/String\(message.channel_id\)!==String\(adminChannelId\)/);
 });
+
+
+test("SKU and TCIN for the same named product resolve to one card; conflicting TCIN stays separate",async t=>{
+ const ctx=await setup();t.after(ctx.close);
+ const title="30th Celebration Greninja ex Box";
+ await ctx.publisher.ingest({type:"product",retailer:"target",name:title,sku:"SKU-3001",stock:"10+"});
+ await ctx.publisher.ingest({type:"product",retailer:"target",name:title,tcin:"1010892065",stock:"10+"});
+ assert.equal(ctx.events.length,1,"same item with a second identifier is not duplicated");
+ await ctx.publisher.ingest({type:"product",retailer:"target",name:title,tcin:"1010892065",stock:"12+"});
+ assert.equal(ctx.events.length,2);
+ assert.equal(ctx.events[1].action,"PATCH");
+ await ctx.publisher.ingest({type:"product",retailer:"target",name:title,tcin:"9999999999",stock:"12+"});
+ assert.equal(ctx.events.length,3,"a conflicting verified TCIN is a separate listing");
+});
