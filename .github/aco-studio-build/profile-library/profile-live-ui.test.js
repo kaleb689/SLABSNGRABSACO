@@ -141,7 +141,7 @@ test('Retailer buttons keep staged inventories separate and Unused accounts are 
  assert.match(source,/data-stage="live">Live Profiles/);
  assert.match(source,/unusedAccounts=\(accounts\.emails\|\|\[\]\)\.filter\(x=>x\.status==='available'\)/);
  assert.match(source,/q\('retailer'\)\.onchange=[^\n]*selected\.clear\(\)[^\n]*unusedAccounts=\[\]/);
- assert.match(source,/emailIds:chosen\.map\(x=>x\.id\)/);
+ assert.match(source,/emailIds:emails\.map\(x=>x\.id\)/);
  assert.match(source,/stage==='unused'\?jigUnusedSelected\(\):bulkJigSelected\(\)/);
  const begin=source.indexOf(' function visible(){'),end=source.indexOf('\n function text(',begin);
  const context={rows:[],unusedAccounts:[
@@ -165,4 +165,13 @@ test('Card Bank shows authorized full-number headings, linked retailer emails, a
  assert.match(workshopSource,/selectedCards=new Set\(matching\.slice\(page\*10,page\*10\+10\)/);
  assert.match(workshopService,/async function setHardCards\(/);
  assert.match(workshopService,/profiles\.libraryTransaction\(scope,id,ctx=>\{/);
+});
+
+test('Saved unfinished profile drafts remain visible in Unused and never pass to the new-account generator',()=>{
+ assert.match(source,/kind:'saved-draft'/);
+ assert.match(source,/rows\.filter\(x=>x\.retailer===retailer&&x\.bank!=='live'&&x\.stage==='in-progress'\)/);
+ assert.match(source,/if\(drafts\.length\)\{return bulkJigSelected\(\);\}/);
+ assert.match(source,/drafts\.length&&emails\.length/);
+ assert.match(source,/kind==='unused-account'/);
+ assert.match(source,/stage==='unused'\?\(unusedAccounts\.some\(x=>x\.id===id\)\|\|rows\.some/);
 });
