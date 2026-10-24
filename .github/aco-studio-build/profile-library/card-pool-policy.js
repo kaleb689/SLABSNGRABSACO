@@ -65,7 +65,7 @@ function checkAllocation(rows,retailer,cards,settings,{excludeProfileIds=[]}={})
   if(hardCard(n,settings)){
    if(uses.some(x=>x.retailer===retailer))throw Error('Hard Card ending '+n.slice(-4)+' already has a '+retailer+' profile. One per retailer is the limit.');
   }else if(uses.length){
-   throw Error('Regular card ending '+n.slice(-4)+' is already linked to a retailer profile. Enable Hard Card to allow one profile in a different retailer.');
+   throw Error('Regular card ending '+n.slice(-4)+' is already in use and already linked to a retailer profile. Enable Hard Card to allow one profile in a different retailer.');
   }
   staged.set(n,[...(staged.get(n)||[]),{retailer}]);
  }
