@@ -128,7 +128,8 @@ export function createRetailerIntelPublisher({dataDir,channels,send,edit,remove,
   if(!main)return [];
   if(event.type==="queue" && event.stage==="upcoming" && event.source==="important-restocks"){
    const announcements=channelFor("announcements");
-   return [...new Set([announcements,main].filter(Boolean))];
+   if(!announcements)throw Error("Announcements is unavailable; queue notice was not published anywhere.");
+   return [...new Set([announcements,main])];
   }
   return [main];
  }
