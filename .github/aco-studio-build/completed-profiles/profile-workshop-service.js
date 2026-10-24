@@ -150,6 +150,14 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   const full=c.cards.length?await cardVault(scope).selectedForJig(cardKey(scope,id),c.cards.map(x=>x.id)):[];
   const assigned=new Set((c.assignments||[]).map(x=>x.cardId));
   const cardPool=CardPolicy.inventory({rows,savedCards:full,settings});
+  // Legacy card assignments can outlive a deleted/moved profile. Keep those
+  // cards unavailable until reconciled; do not silently return them to Unused.
+  for(const item of cardPool){
+   if(!item.fromSavedBank||!assigned.has(item.id.slice(6))||item.linkedCount)continue;
+   item.status='Previously assigned · review required';
+   item.availableRetailers=[];
+   item.hasConflict=true;
+  }
   const retailerSeq={};
   const cards=c.cards.map((x,index)=>{
    const raw=full.find(y=>y.id===x.id),users=rows.filter(r=>r.assetRefs?.cardId===x.id||numberOf(r.data)===raw?.number),used=users.length,first=users[0];
@@ -158,8 +166,9 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    const assignedUses=CardPolicy.profileUses(rows).get(raw?.number)||[];
    const isHard=CardPolicy.hardCard(raw?.number,settings);
    const eligibleRetailers=isHard?CardPolicy.RETAILERS.filter(ret=>!assignedUses.some(usage=>usage.retailer===ret)):assignedUses.length?[]:[...CardPolicy.RETAILERS];
-   const eligible=(!p.retailer||!CardPolicy.RETAILERS.includes(p.retailer)?eligibleRetailers.length>0:eligibleRetailers.includes(p.retailer));
-   return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:brandFromNumber(raw.number),customReference:raw.customSecurityCode||''}:{}),usedCount:used,unused:eligible&&!assigned.has(x.id),hardCard:isHard,eligibleRetailers,previouslyAssigned:assigned.has(x.id)};
+   const unresolved=assigned.has(x.id)&&!assignedUses.length;
+   const eligible=!unresolved&&(!p.retailer||!CardPolicy.RETAILERS.includes(p.retailer)?eligibleRetailers.length>0:eligibleRetailers.includes(p.retailer));
+   return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:brandFromNumber(raw.number),customReference:raw.customSecurityCode||''}:{}),usedCount:used,unused:eligible,hardCard:isHard,eligibleRetailers:unresolved?[]:eligibleRetailers,previouslyAssigned:assigned.has(x.id)};
   });
   const result={scope,customerId:id,cardPool,addresses:a.addresses.map(x=>({...x,uses:rows.filter(r=>r.assetRefs?.addressId===x.id).length})),cards,profiles:rows.map(x=>({id:x.id,label:x.label,email:x.email,retailer:x.retailer,bank:x.bank||'working',status:x.status,stage:x.stage||'in-progress',missing:require('./profile-completion-core').inspect(x).missing,revision:x.revision,createdInWorkshop:x.source==='owner-created-profile'}))};
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed while loading.');return result;
