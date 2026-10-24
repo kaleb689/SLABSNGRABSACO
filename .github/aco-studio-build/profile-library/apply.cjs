@@ -18,6 +18,26 @@ replace('profile-workshop-service.js','const service=createWorkshop(options);',"
  const stop=end<0?s.length:end;
  fs.writeFileSync(p,s.slice(0,start)+"// Cardholder/name behavior moved to profile-library.test.js, where jig save paths are covered directly.\n"+s.slice(stop));
 }
+// The legacy "turn off Unused to reuse a card" test conflicts with the
+// approved per-retailer Hard Card rule. Replace it with a regression that
+// rejects repeat assignments even when the old UI filter is switched off.
+{
+ const p=path.join(root,'tests','profile-workshop.test.js'),original=fs.readFileSync(p,'utf8');
+ const marker="test('Used card cannot be selected under Unused only; reuse requires turning off that filter'";
+ const start=original.indexOf(marker),end=start<0?-1:original.indexOf("\ntest(",start+marker.length);
+ if(start<0||end<0)throw Error('Legacy card reuse regression test anchor changed');
+ const current=original.slice(0,start);
+ const next=`test('Hard Card assignment policy prohibits repeat use in the same retailer',()=>{
+  const policy=require('../card-pool-policy');
+  const card='4242424242424242';
+  const source=[{id:'one',retailer:'target',data:{cc_number:card}}];
+  assert.throws(()=>policy.checkAllocation(source,'target',[card],{}),/already in use/);
+  const setting=policy.toggle({},card,true);
+  assert.throws(()=>policy.checkAllocation(source,'target',[card],setting),/one per retailer/);
+  assert.doesNotThrow(()=>policy.checkAllocation(source,'walmart',[card],setting));
+});\n`;
+ fs.writeFileSync(p,current+next+original.slice(end));
+}
 replace('main.js','window.JigStudioLocalImport?.workspaceState)', 'window.JigStudioLocalImport?.workspaceState && document.getElementById("profileLibraryPage") && window.desktopAPI?.profileLibrary && document.querySelectorAll(".profileNavChild").length===2)');
 replace('main.js',"ipcMain.handle('site:open'","ipcMain.handle('owner:health-scan',event=>{ownerSender(event);return require('./owner-health-advisor').scan();});\nipcMain.handle('owner:health-explain',event=>{ownerSender(event);return require('./owner-health-advisor').explain();});\nipcMain.handle('site:open'");
 replace('main.js',"ipcMain.handle('site:open'",`ipcMain.handle('site:health',event=>{ownerSender(event);return new Promise(resolve=>{let done=false;const finish=value=>{if(done)return;done=true;resolve(value);};const request=https.get('https://slabsngrabsaco.com/admin.html?acoDesktop=health',{timeout:5000,headers:{'Cache-Control':'no-cache'}},response=>{const status=Number(response.statusCode||0);response.resume();finish({online:status>=200&&status<500,status});});request.on('error',()=>finish({online:false,status:0}));request.on('timeout',()=>{request.destroy();finish({online:false,status:0});});});});\nipcMain.handle('owner:touch-id',async event=>{ownerSender(event);if(process.platform!=='darwin')return {available:false,verified:false,reason:'unsupported'};const {systemPreferences}=require('electron');if(!systemPreferences.canPromptTouchID())return {available:false,verified:false,reason:'unavailable'};const state=siteBridge.desktopUnlockState();if(!state?.enrolled)return {available:true,verified:false,session:false,needsEnrollment:true,reason:'Sign in once with the Admin password and authenticator to enable Touch ID on this Mac.'};try{await siteBridge.prepareDesktopUnlock();await systemPreferences.promptTouchID('Unlock ACO Studio');const session=await siteBridge.unlockDesktopAdmin();if(session?.ok===true){try{await siteBridge.read('roster',{});}catch{return {available:true,verified:true,session:false,reason:'Touch ID succeeded, but the Admin session could not be verified.'};}}return {available:true,verified:true,session:session?.ok===true,needsEnrollment:session?.needsEnrollment===true,reason:session?.reason||''};}catch(error){return {available:true,verified:false,session:false,reason:String(error?.message||error||'Touch ID was not completed.')};}});\nipcMain.handle('site:open'`);
