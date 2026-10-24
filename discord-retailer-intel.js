@@ -15,6 +15,16 @@ function retailerId(value) {
  const id=String(value||"").toLowerCase().replace(/[^a-z0-9]/g,"");
  return ({pkc:"pokemoncenter",pokemon:"pokemoncenter",pokemoncenter:"pokemoncenter",samsclub:"sams",sam:"sams",sams:"sams",costco:"costco",target:"target",walmart:"walmart"})[id] || null;
 }
+function officialRetailerUrl(value,retailer){
+ if(!value)return "";
+ try{
+  const url=new URL(String(value));
+  const domains={target:["target.com"],walmart:["walmart.com"],pokemoncenter:["pokemoncenter.com"],
+   costco:["costco.com"],sams:["samsclub.com"]}[retailer];
+  if(url.protocol!=="https:"||url.username||url.password||!domains.some(domain=>url.hostname===domain||url.hostname.endsWith("."+domain)))return "";
+  return url.href.slice(0,700);
+ }catch{return "";}
+}
 function productId(input) {
  for(const [name,label] of [["sku","SKU"],["tcin","TCIN"],["pid","PID"],["itemNumber","Item"]]) {
   const value=safe(input[name],75).toUpperCase();
@@ -36,7 +46,7 @@ export function normalizeRetailerIntel(input, today=new Date().toISOString().sli
  if(type==="product"){
   const id=productId(input),name=safe(input.name,200);
   if(!name)throw Error("A product name is required.");
-  event.name=name;event.identifier=id;
+  event.name=name;event.identifier=id;event.url=officialRetailerUrl(input.url||input.productUrl,retailer);
   event.identifiers=[["sku","SKU"],["tcin","TCIN"],["pid","PID"],["itemNumber","Item"]]
    .map(([prop,label])=>({name:label,value:safe(input[prop],75).toUpperCase()}))
    .filter(item=>/^[A-Z0-9._-]{2,75}$/.test(item.value));
@@ -65,7 +75,7 @@ export function retailerIntelPayload(event) {
  const retailer=LABELS[event.retailer];
  const base={allowed_mentions:{parse:[]}};
  if(event.type==="product"){
-  return {...base, embeds:[{title:event.name, color:COLORS[event.retailer],
+  return {...base, embeds:[{title:event.name, ...(event.url?{url:event.url}:{}), color:COLORS[event.retailer],
    fields:[...(event.identifier?[field(event.identifier.name,event.identifier.value)]:[]),field("Price",event.price),field("Reported stock",event.stock),field("Cart limit",event.cartLimit)],
    footer:{text:"SLABSNGRABSACO • Retailer availability can change"}
   }]};
@@ -94,7 +104,7 @@ const mergeEvent=(oldEvent,event) => {
  const next=event.identifiers||[event.identifier].filter(Boolean);
  const ids=new Map([...previous,...next].filter(Boolean).map(item=>[item.name+":"+item.value,item]));
  return {...oldEvent,...event,name:oldEvent?.name||event.name,identifier:oldEvent?.identifier||event.identifier,
-  identifiers:[...ids.values()],price:event.price??oldEvent?.price,stock:event.stock??oldEvent?.stock,
+  identifiers:[...ids.values()],url:event.url||oldEvent?.url||"",price:event.price??oldEvent?.price,stock:event.stock??oldEvent?.stock,
   cartLimit:event.cartLimit??oldEvent?.cartLimit};
 };
 export function createRetailerIntelPublisher({dataDir,channels,send,edit,remove,clock=()=>Date.now()}) {
