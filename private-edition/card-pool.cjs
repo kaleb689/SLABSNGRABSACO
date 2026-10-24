@@ -14,7 +14,7 @@ function sourceEntries(v) {
    const number=numberOf(row);
    if(!validNumber(number))return;
    result.push({ref:"profile:"+source.id+":"+index,number,retailer:source.retailer,
-    expiry:expiryOf(row),sourceId:source.id,index,sourceFile:source.file.filename});
+    expiry:expiryOf(row),email:String(row?.[Formats.findField(row,Formats.aliases.email)]||'').slice(0,200),sourceId:source.id,index,sourceFile:source.file.filename});
   });
  }
  return result;
@@ -46,7 +46,7 @@ function toggle(v,ref,hard){
  settings.hard=[...set].slice(0,15000);
  return {saved:true,hardCard:hard,last4:n.slice(-4)};
 }
-function inventory(v){
+function inventory(v,{showFullNumbers=false}={}){
  const byNumber=new Map();
  const add=(n,ref,meta={})=>{
   n=digits(n);if(!validNumber(n))return;
@@ -57,16 +57,33 @@ function inventory(v){
   item.label=item.label||meta.label||"";
   if(meta.use)item.uses.push(meta.use);
  };
- for(const entry of sourceEntries(v))add(entry.number,entry.ref,{expiry:entry.expiry,use:{retailer:entry.retailer,sourceId:entry.sourceId,index:entry.index}});
+ for(const entry of sourceEntries(v))add(entry.number,entry.ref,{expiry:entry.expiry,use:{retailer:entry.retailer,email:entry.email,sourceId:entry.sourceId,index:entry.index}});
  for(const card of v.cards||[])add(card.number,"saved:"+card.id,{saved:true,expiry:card.expiry,label:card.label});
  return [...byNumber.values()].map(card=>{
   const hard=isHard(v,card.number),linked=[...new Set(card.uses.map(x=>x.retailer))];
   const availableRetailers=hard?RETAILERS.filter(x=>!linked.includes(x)):card.uses.length?[]:[...RETAILERS];
-  return {ref:card.ref,last4:card.number.slice(-4),label:card.label||"Imported profile card",expiry:card.expiry,
+  return {ref:card.ref,last4:card.number.slice(-4),...(showFullNumbers?{fullNumber:card.number}:{}),linkedAccounts:card.uses.map(u=>({retailer:u.retailer,email:u.email})),label:card.label||"Imported profile card",expiry:card.expiry,
    hardCard:hard,fromSavedBank:card.fromSavedBank,linked,linkedCount:card.uses.length,availableRetailers,
    conflict:hard?linked.some(r=>card.uses.filter(x=>x.retailer===r).length>1):card.uses.length>1,
    status:card.uses.length?"Linked "+linked.join(", "):"Unused"};
  }).sort((a,b)=>a.last4.localeCompare(b.last4));
+}
+function toggleBulk(v,cardRefs,hard){
+ if(typeof hard!=="boolean"||!Array.isArray(cardRefs)||cardRefs.length<1||cardRefs.length>200||new Set(cardRefs).size!==cardRefs.length)
+  throw Error("Confirm 1-200 unique selected card entries.");
+ const numbers=cardRefs.map(ref=>cardFromRef(v,ref));
+ if(new Set(numbers).size!==numbers.length)throw Error("Choose each physical card only once.");
+ // Ensure no partial updates if one card fails. The caller persists the local
+ // vault only after this entire function returns successfully.
+ if(!hard){
+  const linked=sourceEntries(v);
+  for(const number of numbers)if(linked.filter(x=>x.number===number).length>1)
+   throw Error("A selected card is linked more than once. Resolve extra assignments before removing Hard Card; no changes were saved.");
+ }
+ const settings=ensureSettings(v),tokens=numbers.map(number=>fingerprint(v,number)),set=new Set(settings.hard);
+ for(const token of tokens)if(hard)set.add(token);else set.delete(token);
+ settings.hard=[...set].slice(0,15000);
+ return {saved:true,updated:numbers.length,hardCard:hard};
 }
 function promote(v,ref){
  const n=cardFromRef(v,ref);
@@ -97,4 +114,4 @@ function allocate(v,source,indices){
  }
  return allocations;
 }
-module.exports={RETAILERS,numberOf,sourceEntries,fingerprint,isHard,cardFromRef,toggle,inventory,promote,allocate};
+module.exports={RETAILERS,numberOf,sourceEntries,fingerprint,isHard,cardFromRef,toggle,toggleBulk,inventory,promote,allocate};
