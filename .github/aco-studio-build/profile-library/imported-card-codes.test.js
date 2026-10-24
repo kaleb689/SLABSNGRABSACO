@@ -143,7 +143,23 @@ test('Every selected export format maps the independent Security Code into its r
    }
   }
   await h.lib.exportFile(event,{...h.p,retailer,profileIds:[row.id],customerName:'Personal',exportFormat:'retailer'});
-  assert.ok(h.writes.at(-1)[1].includes('0044'),retailer+' retailer template must place exported code');
+  const native=h.writes.at(-1)[1];
+  assert.ok(native.includes('0044'),retailer+' retailer template must place exported code');
+  if(retailer==='target'){
+   const header=native.split(/\\r?\\n/,1)[0];
+   assert.match(header,/(?:^|,)(?:"?cc_cvv"?|"?cvv"?)(?:,|$)/i,
+    'Shikari native CSV must include its CVV field');
+  }else{
+   const parsed=JSON.parse(native);
+   function cvvEntries(node){
+    if(Array.isArray(node))return node.flatMap(cvvEntries);
+    if(!node||typeof node!=='object')return [];
+    return Object.entries(node).flatMap(([key,value])=>
+     /^(cvv|cc_cvv)$/i.test(key)?[value]:cvvEntries(value));
+   }
+   assert.ok(cvvEntries(parsed).includes('0044'),
+    'Valor native JSON must put exact reference in a CVV-named field, not another field');
+  }
   const after=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
   assert.equal(after.data.profileSecurityCode,'0044');
   assert.equal(LC.payment(after.data).cvv,'','encrypted master does not gain an actual payment verifier');
