@@ -57,3 +57,19 @@ test("name jig synchronizes cardholder first and last within source schema",()=>
  assert.equal(result.count,3);
  assert.equal(src.rows[0].cardholder,src.rows[0].first_name+" "+src.rows[0].last_name);
 });
+
+
+test("Choose file format preserves a legacy Security Code column and leading zeros",()=>{
+ const original="email,CVV,card_number\r\nuser@example.test,0044,4242424242424242\r\n";
+ const source=readSource("legacy.csv",original);
+ const {exportAs}=require("../formats.cjs");
+ assert.equal(exportAs(source,"original").content,original);
+ for(const type of ["csv","json","tsv","txt"]){
+  const output=exportAs(source,type);
+  assert.ok(output.filename.endsWith("."+type));
+  assert.match(output.content,/0044/);
+  assert.match(output.content,/4242424242424242/);
+ }
+ assert.equal(source.rows[0].CVV,"0044");
+ assert.equal(source.changed,false);
+});

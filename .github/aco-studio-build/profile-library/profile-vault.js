@@ -31,7 +31,17 @@ function stripVerifiers(input,depth=0,scope='redacted'){if(depth>8)throw Error('
    if(redactKeys.has(key.toLowerCase())){out[key]='';continue;}
    if(key==='__proto__'||key==='constructor'||key==='prototype')continue;
    out[key]=stripVerifiers(value,depth+1,scope);
-  }return out;
+  }
+   // Legacy imports sometimes used a field labeled CVV for an independent
+   // profile-specific security reference. Preserve that supplied value in a
+   // separate profile field before retiring legacy verifier column names.
+   // Never overwrite an existing nonempty independent Security Code.
+   if(depth===0&&!String(out.profileSecurityCode||out.security_code||out.custom_security_code||out.card?.custom_security_code||'').trim()){
+    const legacy=[input.cc_cvv,input.cvv,input.cvc,input.card?.cvv,input.card?.cvc,input.card?.cid,input.card?.cvv2]
+      .find(value=>typeof value==='string'&&value.length&&value.length<=100);
+    if(legacy!==undefined)out.profileSecurityCode=legacy;
+   }
+   return out;
  }return typeof input==='string'?input.slice(0,5000):input;
 }
 function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUUID,now=()=>new Date().toISOString()}={}){

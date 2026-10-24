@@ -1,0 +1,35 @@
+name: Verify ACO Studio Security Code and export choices
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'private-edition/**'
+      - '.github/aco-studio-build/profile-library/**'
+      - '.github/aco-studio-build/completed-profiles/**'
+      - '.github/workflows/verify-security-code-preservation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  customer-security-and-exports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate private customer syntax
+        run: |
+          node --check private-edition/main.cjs
+          node --check private-edition/preload.cjs
+          node --check private-edition/renderer.js
+          node --check private-edition/formats.cjs
+      - name: Test exact import/export and saved card isolation
+        run: node --test private-edition/test/*.test.cjs
+      - name: Check owner UI and preservation syntax
+        run: |
+          node --check .github/aco-studio-build/profile-library/profile-vault.js
+          node --check .github/aco-studio-build/profile-library/profile-library-service.js
+          node --check .github/aco-studio-build/profile-library/profile-library-core.js
+          node --check .github/aco-studio-build/profile-library/profile-library-ui.js
+          node --check .github/aco-studio-build/completed-profiles/profile-workshop-ui.js

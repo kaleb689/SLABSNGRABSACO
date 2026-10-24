@@ -149,6 +149,23 @@ ipcMain.handle("vault:addCard",(_e,p)=>edit(v=>{const card=validate("card",{labe
   if(!/^\d{12,19}$/.test(card.number))throw Error("Card number must contain 12-19 digits.");
   if(v.cards.some(c=>c.number===card.number))throw Error("Card already saved in this private bank.");
   v.cards.push(card);addActivity(v,"Added card ending "+card.number.slice(-4));return {saved:true};}));
+ipcMain.handle("vault:updateCard",(_e,p)=>edit(v=>{
+  const stored=(v.cards||[]).find(item=>item.id===p?.id);
+  if(!stored)throw Error("Card is not in this licensed vault.");
+  if(p?.confirmed!==true)throw Error("Confirm changes before saving.");
+  const next={
+   label:String(p.label??stored.label).trim(),holder:String(p.holder??stored.holder).trim(),
+   number:String(p.number??stored.number).replace(/[\\s-]/g,""),
+   expiry:String(p.expiry??stored.expiry).trim(),
+   securityCode:p.securityCode===undefined?stored.securityCode||"":String(p.securityCode)
+  };
+  if(!/^\\d{12,19}$/.test(next.number))throw Error("Enter a complete card number.");
+  if(next.securityCode.length>100||/[\\x00-\\x1f\\x7f]/.test(next.securityCode))throw Error("Invalid separate Security Code.");
+  if(v.cards.some(card=>card.id!==stored.id&&card.number===next.number))throw Error("This card is already saved in the current vault.");
+  Object.assign(stored,next);
+  addActivity(v,"Edited saved card ending "+next.number.slice(-4));
+  return {saved:true};
+}));
 ipcMain.handle("vault:setHardCard",(_e,p)=>edit(v=>{
   if(p?.confirmed!==true)throw Error('Explicit confirmation is required.');
   const response=Cards.toggle(v,p.cardRef,p.hard);
@@ -196,15 +213,32 @@ ipcMain.handle("vault:import",async (_e,selection)=>{
     addActivity(v,"Imported "+result.imported+" "+retailer+" file(s) in batch "+result.batchId.slice(0,8));
     return result;});
 });
-ipcMain.handle("vault:export",async (_e,id)=>{
-  await allowed();const v=await Vault.load(),source=v.sources.find(s=>s.id===id);
+ipcMain.handle("vault:export",async (_e,p)=>{
+  await allowed();
+  const id=typeof p==="string"?p:String(p?.fileId||"");
+  const format=typeof p==="string"?"original":String(p?.format||"original");
+  const v=await Vault.load(),source=v.sources.find(s=>s.id===id);
   if(!source)throw Error("Choose an imported source file.");
-  const target=await dialog.showSaveDialog(win,{defaultPath:source.file.filename,
-    buttonLabel:"Export original format"});
+  const output=Formats.exportAs(source.file,format);
+  const ext=path.extname(output.filename).slice(1).toLowerCase();
+  const target=await dialog.showSaveDialog(win,{defaultPath:output.filename,
+    buttonLabel:format==="original"?"Export original file":"Export "+format.toUpperCase(),
+    filters:[{name:format==="original"?"Original format":format.toUpperCase(),extensions:[ext]}]});
   if(target.canceled||!target.filePath)return {saved:false};
-  // User chooses the location. Never send exports to the website or a remote service.
-  await fs.writeFile(target.filePath,Formats.exportSource(source.file),{mode:0o600});
+  if(path.extname(target.filePath).toLowerCase()!=="."+ext)throw Error("Use the selected ."+ext+" file extension.");
+  await fs.writeFile(target.filePath,output.content,{mode:0o600});
   return {saved:true,filename:path.basename(target.filePath)};
+});
+ipcMain.handle("vault:row",async (_e,p)=>{
+ await allowed();
+ const source=(await Vault.load()).sources.find(item=>item.id===p?.fileId);
+ if(!source)throw Error("This card's imported profile file is not available.");
+ const rowIndex=Number(p.rowIndex);
+ if(!Number.isSafeInteger(rowIndex)||rowIndex<0||rowIndex>=source.file.rows.length)
+  throw Error("This imported card's profile row is unavailable.");
+ const row=source.file.rows[rowIndex];
+ if(!row||typeof row!=="object")throw Error("Imported profile cannot be viewed.");
+ return {index:rowIndex,fields:Object.fromEntries(Object.entries(row).slice(0,200))};
 });
 ipcMain.handle("vault:rows",async (_e,id)=>{
   await allowed();const source=(await Vault.load()).sources.find(s=>s.id===id);

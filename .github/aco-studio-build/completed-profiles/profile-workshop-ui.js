@@ -288,7 +288,7 @@
     };line.append(toggle);line.onclick=e=>{if(e.target.closest('button,input'))return;if(storedForClick())openResourceForm('cards',storedForClick());};function storedForClick(){return (vaultData?.cards||[]).find(x=>'saved:'+x.id===r.id)||null;}line.oncontextmenu=e=>{e.preventDefault();if(storedForClick())openResourceForm('cards',storedForClick());};
     const stored=(vaultData?.cards||[]).find(x=>'saved:'+x.id===r.id);
     if(stored){
-     const edit=d.createElement('button');edit.type='button';edit.className='btn slim secondary';edit.textContent='Edit';edit.onclick=()=>openResourceForm('cards',stored);
+     const edit=d.createElement('button');edit.type='button';edit.className='btn slim secondary';edit.textContent='View / Edit';edit.onclick=()=>openResourceForm('cards',stored);
      const remove=d.createElement('button');remove.type='button';remove.className='btn slim plain';remove.textContent='Remove saved copy';
      remove.onclick=async()=>{
       if(!confirm('Remove this saved card? Existing profiles keep their independent data.'))return;
@@ -297,6 +297,15 @@
       catch(e){vnote(e.message,true);remove.disabled=false;}
      };line.append(edit,remove);
     }else{
+     const view=d.createElement('button');view.type='button';view.className='btn slim secondary';view.textContent='View / Edit';
+     view.onclick=()=>{
+      const profileId=String(r.id||'').replace(/^profile:/,'');
+      if(!profileId)throw Error('Matching imported profile is unavailable.');
+      const owner={...vaultScope};
+      closeVault();
+      d.dispatchEvent(new CustomEvent('aco-studio:edit-profile',{detail:{...owner,profileId}}));
+     };
+     line.append(view);
      const save=d.createElement('button');save.type='button';save.className='btn slim secondary';save.textContent='Add to saved Card Bank';
      save.onclick=async()=>{
       if(!confirm('Add this imported-profile card to the current vault? The separate profile Security Code stays on its original profile.'))return;
@@ -357,11 +366,11 @@
  function openResourceForm(type,existing=null){
   const holder=$('workshopVaultForm');holder.hidden=false;const form=d.createElement('form');form.autocomplete='off';form.className='workshopForm';
   form.innerHTML=type==='cards'
-   ?field('number','Card number','password','inputmode="numeric" maxlength="26" required')+field('expMonth','Expiration month','text','inputmode="numeric" maxlength="2" placeholder="MM" required')+field('expYear','Expiration year','text','inputmode="numeric" maxlength="4" placeholder="YYYY" required')+field('customCode','Optional custom reference (not CVV)','password','maxlength="64"')
+   ?field('number','Card number','password','inputmode="numeric" maxlength="26" required')+field('expMonth','Expiration month','text','inputmode="numeric" maxlength="2" placeholder="MM" required')+field('expYear','Expiration year','text','inputmode="numeric" maxlength="4" placeholder="YYYY" required')+field('customSecurityCode','Security Code (separate saved reference)','text','maxlength="64"')
    :field('label','Address label','text','maxlength="100" required')+field('address1','Street address','text','maxlength="160" required')+field('address2','Apartment / unit','text','maxlength="120"')+field('city','City','text','maxlength="120" required')+field('state','State','text','maxlength="2" required')+field('zip','ZIP / verified ZIP+4','text','maxlength="10" required');
   form.insertAdjacentHTML('beforeend','<div class="buttons"><button class="btn primary" type="submit">'+(existing?'Save changes':'Save to this vault')+'</button><button class="btn plain" data-cancel type="button">Cancel</button></div>');
   holder.replaceChildren(form);
-  if(existing){for(const [k,v] of Object.entries(existing)){const el=form.elements.namedItem(k);if(el&&v!=null)el.value=v;}}
+  if(existing){for(const [k,v] of Object.entries({...existing,customSecurityCode:existing.customSecurityCode??existing.customReference??''})){const el=form.elements.namedItem(k);if(el&&v!=null)el.value=v;}}
   form.querySelector('[data-cancel]').addEventListener('click',()=>{holder.replaceChildren();holder.hidden=true;});const scope={...vaultScope};
   form.addEventListener('submit',async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]');submit.disabled=true;try{
    const value=Object.fromEntries(new FormData(form));
