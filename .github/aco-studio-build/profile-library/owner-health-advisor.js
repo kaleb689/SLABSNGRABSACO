@@ -50,14 +50,14 @@ async function scan({fresh=false}={}){
  if(pending)return pending;
  pending=(async()=>{
   const [siteResult,headResult,aiResult]=await Promise.all([
-   transport(WEBSITE,{maxBytes:2048}),
-   transport(GITHUB+'/repos/'+REPO+'/commits/main',{maxBytes:16000}),
+   transport(WEBSITE,{method:'HEAD',maxBytes:512}),
+   transport(GITHUB+'/repos/'+REPO+'/branches/main',{maxBytes:16000}),
    transport('http://127.0.0.1:11434/api/tags',{maxBytes:18000,timeout:2200})
   ]);
   const site={reachable:siteResult.status>=200&&siteResult.status<500,status:siteResult.status,error:siteResult.error};
   const head=Number(headResult.status)===200?parseResponse(headResult):null;
-  const sha=typeof head?.sha==='string'&&/^[a-f0-9]{40}$/.test(head.sha)?head.sha:null;
-  const ciResult=sha?await transport(GITHUB+'/repos/'+REPO+'/actions/runs?branch=main&per_page=50',{maxBytes:102400}):null;
+  const sha=typeof head?.commit?.sha==='string'&&/^[a-f0-9]{40}$/.test(head.commit.sha)?head.commit.sha:null;
+  const ciResult=sha?await transport(GITHUB+'/repos/'+REPO+'/actions/runs?branch=main&per_page=15',{maxBytes:131072}):null;
   const runs=ciResult?.status===200?parseResponse(ciResult)?.workflow_runs:null;
   const matching=Array.isArray(runs)?runs.filter(x=>x.head_sha===sha).map(compactRun):[];
   const ci={available:Boolean(sha&&Array.isArray(runs)),head:sha,total:matching.length,failed:matching.filter(x=>x.result==='failure'||x.result==='timed_out'),pending:matching.filter(x=>x.status==='pending'),successful:matching.filter(x=>x.result==='success').length,error:sha?ciResult?.error||('GitHub status '+(ciResult?.status||0)):'Cannot read the current GitHub revision'};
