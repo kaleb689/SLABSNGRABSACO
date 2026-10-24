@@ -226,10 +226,14 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   Draft.blank(p.retailer,p.format,{}); // Validate retailer and format before selecting assets.
   const aIDs=ids(p.addressIds,'addresses'),cIDs=ids(p.cardIds,'cards');
   return addressBanks.withWorkshopAddresses(scope,id,aIDs,addresses=>cardVault(scope).withSelectedForJig(cardKey(scope,id),cIDs,cards=>profiles.createEmailProfiles(scope,id,p.retailer,p.count,async(emails,inventory,accounts=[])=>{
-   if(cards.some(c=>c.previouslyAssigned||inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)))throw Error('A selected card is already used. Choose unused cards.');
-   if(p.allowCardReuse!==true&&cards.length<emails.length)throw Error('Select one unused card per profile or enable balanced card reuse.');
+   const settings=await profiles.librarySettings(scope,id);
+   if(cards.some(c=>c.previouslyAssigned&&!inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)))
+    throw Error('A saved card has an unresolved historical assignment. Review it before reusing.');
+   if(cards.length<emails.length)throw Error('Select one distinct card per profile. Hard Cards cannot be reused within the same retailer.');
+   CardPolicy.checkAllocation(inventory,p.retailer,cards.slice(0,emails.length),settings,{excludeProfileIds:accounts.filter(Boolean).map(x=>x.id)});
    const records=emails.map((email,i)=>Draft.blank(p.retailer,p.format,{...(accounts[i]?Draft.toValues(accounts[i].data):{}),email,label:(p.label||'Profile')+' '+(i+1)},uuid));
-   const result=Fields.build({records,indices:records.map((_,i)=>i),scope,customerId:id,addresses,cards,choices:{address:true,card:true,name:p.randomNames===true},allowCardReuse:p.allowCardReuse===true,mirrorBilling:true});
+   const result=Fields.build({records,indices:records.map((_,i)=>i),scope,customerId:id,addresses,cards,choices:{address:true,card:true,name:p.randomNames===true},allowCardReuse:false,mirrorBilling:true});
+   CardPolicy.checkAllocation(inventory,p.retailer,result.records.map(data=>CardPolicy.fromProfile({data})),settings,{excludeProfileIds:accounts.filter(Boolean).map(x=>x.id)});
    return result.records.map((data,i)=>({data:syncCardholderToProfileName(data),format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}}));
   },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');})));
  }
@@ -271,9 +275,10 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   const src=await source(e,p,scope,id);Fields.validateRows(src.parsed.records,src.indices);
   let result,resourcesHash;
   await selected(scope,id,p,choices,async r=>{
-   if(choices.card&&p.unusedOnly!==false){const inventory=await profiles.fieldSnapshot(scope,id);const legacy=new Set(r.cards.filter(c=>c.previouslyAssigned).map(c=>c.id));
-    // Legacy assignment state was captured under the same card-vault lock.
-    if(r.cards.some(c=>inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)||legacy.has(c.id)))throw Error('A selected card is already in use. Choose unused cards or disable the Unused only filter.');
+   if(choices.card&&p.unusedOnly!==false){
+    const inventory=await profiles.fieldSnapshot(scope,id);
+    if(r.cards.some(c=>c.previouslyAssigned&&!inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)))
+     throw Error('A selected card has an unresolved historical assignment. Review its inventory first.');
    }
    result=Fields.build({records:src.parsed.records,indices:src.indices,choices,mapping:src.mapping,scope,customerId:id,...r,allowCardReuse:p.allowCardReuse===true,mirrorBilling:p.mirrorBilling===true,addressOptions:p.addressOptions||{}});
    if(choices.address){
@@ -300,6 +305,16 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
     if(!applyCategoryCounts(result,src.indices,p.addressOptions||{},r.addresses,p.mirrorBilling===true)&&!total)applyTargetPrimary(result,src.parsed.records,src.indices,p.addressOptions||{},p.mirrorBilling===true);
    }
    if(choices.address||choices.card||choices.name)for(const index of src.indices)result.records[index]=syncCardholderToProfileName(result.records[index]);
+   if(choices.card){
+    const existing=await profiles.fieldSnapshot(scope,id),settings=await profiles.librarySettings(scope,id);
+    const exclude=new Set(src.matched.filter(Boolean).map(x=>x.id)),staged=existing.filter(x=>!exclude.has(x.id));
+    for(const index of src.indices){
+     const match=src.matched.find(x=>x?.index===index);
+     const retailer=match?.retailer||p.addressOptions?.retailerPreset||'target';
+     const n=CardPolicy.fromProfile({data:result.records[index]});
+     if(n){CardPolicy.checkAllocation(staged,retailer,[n],settings);staged.push({id:'jig-preview-'+index,retailer,data:result.records[index]});}
+    }
+   }
    resourcesHash=r.hash;
   });
   const text=Core.serialize(src.parsed,result.records),roundTrip=Core.parseFile(src.parsed.name,text);
@@ -320,7 +335,11 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   if(plans.get(plan.token)!==plan)throw Error('Preview was cancelled.');return plan;
  }
  async function verifyResources(e,plan,callback){return selected(plan.scope,plan.id,plan,plan.choices,async r=>{
-  if(plan.choices.card&&plan.unusedOnly&&!plan.saved&&r.cards.some(c=>c.previouslyAssigned))throw Error('A selected card was assigned after preview. Choose another card.');
+  if(plan.choices.card&&plan.unusedOnly&&!plan.saved){
+   const current=await profiles.fieldSnapshot(plan.scope,plan.id);
+   if(r.cards.some(c=>c.previouslyAssigned&&!current.some(row=>row.assetRefs?.cardId===c.id||numberOf(row.data)===c.number)))
+    throw Error('A card assignment changed since preview. Reload card inventory.');
+  }
   if(r.hash!==plan.resourcesHash)throw Error('Saved cards or addresses changed after preview. Preview again.');guard(e,plan.scope);if(plans.get(plan.token)!==plan)throw Error('Preview cancelled.');return callback(r);
  });}
  async function apply(e,p){const plan=await get(e,p);if(!p.confirmed)throw Error('Confirm the preview first.');return verifyResources(e,plan,()=>{plan.applied=true;return {token:plan.token,contextKey:plan.contextKey,records:plan.result.display,original:plan.src.parsed.records.map(Draft.mask),changedKeys:plan.result.changes.map(xs=>xs.map(v=>JSON.parse(v).join('.'))),notes:plan.result.notes,stats:plan.result.stats,valid:true,requiresSecureExport:true,canSave:plan.canSave};});}
