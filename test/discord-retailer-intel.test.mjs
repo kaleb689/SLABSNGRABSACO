@@ -189,3 +189,11 @@ test("product uses blue linked Discord title only for retailer's own HTTPS domai
  const http=retailerIntelPayload(normalizeRetailerIntel({...base,url:"http://www.target.com/product"}));
  assert.equal(Object.hasOwn(http.embeds[0],"url"),false);
 });
+
+
+test("Important-restocks queue alert fails closed without the announcements channel",async t=>{
+ const ctx=await setup();t.after(ctx.close);
+ delete ctx.channels.announcements;
+ await assert.rejects(ctx.publisher.ingest({type:"queue",retailer:"pkc",stage:"upcoming",date:"2026-10-24",source:"important-restocks"}),/Announcements is unavailable/);
+ assert.equal(ctx.events.length,0);
+});
