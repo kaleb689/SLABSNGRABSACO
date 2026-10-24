@@ -149,3 +149,29 @@ test('Every selected export format maps the independent Security Code into its r
   assert.equal(LC.payment(after.data).cvv,'','encrypted master does not gain an actual payment verifier');
  }
 });
+
+
+test('Original imported profile can restore its missing Security Code without re-importing profile records',async t=>{
+ const h=await library(t),original=complete('target','recover-original@example.test');
+ original.cc_cvv='0099'; // Legacy file contained the unrelated reference here.
+ await commit(h,await preview(h,[original]));
+ let row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'0099');
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:''});
+ row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.data.profileSecurityCode,'');
+ const result=await h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',fileName:'original.json',text:JSON.stringify([original])});
+ assert.equal(result.preview,true);assert.equal(result.recoverable,1);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'','preview never modifies profile');
+ const applied=await h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',token:result.token,confirmed:true});
+ assert.equal(applied.restored,1);
+ const after=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(after.data.profileSecurityCode,'0099');
+ assert.equal(after.data.cc_number,original.cc_number);
+ assert.equal(after.email,'recover-original@example.test');
+});
+test('Original-import recovery refuses a file assigned to a different customer',async t=>{
+ const h=await library(t),original=complete('target','scoped-code@example.test');
+ original.cc_cvv='0044';original.customerId='customer-b';
+ await assert.rejects(h.lib.recoverCodesFromFile(event,{...h.a,retailer:'target',fileName:'original.json',text:JSON.stringify([original])}),/another vault/);
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
+});
