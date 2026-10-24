@@ -65,6 +65,39 @@
   finally{recoverButton.disabled=false;}
  };
  q('export').before(recoverButton);
+ const originalFileButton=d.createElement('button');originalFileButton.type='button';originalFileButton.className='btn secondary';
+ originalFileButton.textContent='Recover codes from original import file';
+ const originalFilePicker=d.createElement('input');originalFilePicker.type='file';
+ originalFilePicker.accept='.csv,.tsv,.json,.txt';originalFilePicker.hidden=true;
+ originalFileButton.onclick=()=>{
+  if(scope==='aco'&&!customerId){note('Select a customer vault first.');return;}
+  originalFilePicker.value='';originalFilePicker.click();
+ };
+ originalFilePicker.onchange=async()=>{
+  const file=originalFilePicker.files?.[0];if(!file)return;
+  originalFileButton.disabled=true;
+  try{
+   const owner=request(),retailer=q('retailer').value;
+   const preview=await api.recoverCodesFromFile({...owner,retailer,fileName:file.name,text:await file.text(),confirmed:false});
+   if(!preview.recoverable){
+    note('No matching missing Security Codes were found in this original file. '+preview.stillMissing+
+     ' profiles remain without codes; no data was changed.');
+    return;
+   }
+   if(!confirm('Recover '+preview.recoverable+' missing Security Codes in the selected '+(retailName[retailer]||retailer)+
+    ' vault from '+file.name+'? '+preview.stillMissing+' codes remain missing. Existing values and unrelated records are untouched. '+
+    'An encrypted backup is created before the change.')){
+    return;
+   }
+   const result=await api.recoverCodesFromFile({...owner,retailer,token:preview.token,confirmed:true});
+   await refresh();
+   note('Recovered '+result.restored+' missing Security Codes from the original import file in this vault only. '+
+    result.stillMissing+' still missing.');
+  }catch(error){note('Original-file recovery not completed: '+String(error.message||error));}
+  finally{originalFileButton.disabled=false;originalFilePicker.value='';}
+ };
+ q('export').before(originalFileButton,originalFilePicker);
+
 
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
