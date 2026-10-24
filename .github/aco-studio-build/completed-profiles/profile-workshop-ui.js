@@ -333,7 +333,26 @@
  async function openVault(p=fallback(),initial='cards'){try{await unlock(p);vaultScope={scope:p.scope,customerId:p.customerId||null};tab=initial;page=0;selectedCards.clear();vaultData=null;modal.style.zIndex='11600';modal.hidden=false;$('workshopVaultOwner').textContent=ownerText(p)+' | No transfers to another vault';$('workshopVaultSearch').value='';$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;vnote('Loading this vault...');await refreshVault();vnote('Full saved card numbers and expiration dates are shown in this vault. "Unused" means not assigned by this app or present in its saved profiles.');modal.querySelector('[data-close]').focus();}catch(e){note(e.message,true);}}
  function closeVault(){d.querySelectorAll('.profileFullDetails').forEach(x=>x.remove());vaultTicket++;modal.hidden=true;vaultData=null;selectedCards.clear();$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;if(checked().card||checked().address)void loadAssets();}
  for(const b of modal.querySelectorAll('[data-tab]'))b.addEventListener('click',()=>{tab=b.dataset.tab;page=0;selectedCards.clear();$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;renderVault();});
- $('workshopVaultSearch').addEventListener('input',()=>{page=0;renderVault();});modal.querySelector('[data-prev]').addEventListener('click',()=>{page--;renderVault();});modal.querySelector('[data-next]').addEventListener('click',()=>{page++;renderVault();});
+ $('workshopVaultSearch').addEventListener('input',()=>{page=0;selectedCards.clear();renderVault();});
+  modal.querySelector('[data-prev]').addEventListener('click',()=>{page--;selectedCards.clear();renderVault();});
+  modal.querySelector('[data-next]').addEventListener('click',()=>{page++;selectedCards.clear();renderVault();});
+  modal.querySelector('[data-card-select-page]').onclick=()=>{
+   const q=$('workshopVaultSearch').value.toLowerCase();
+   const matching=(vaultData?.cardPool||[]).filter(x=>[x.label,x.fullNumber,x.last4,...(x.linkedAccounts||[]).flatMap(a=>[a.email,retail[a.retailer]||a.retailer])].filter(Boolean).join(' ').toLowerCase().includes(q));
+   selectedCards=new Set(matching.slice(page*10,page*10+10).map(x=>x.id));renderVault();
+  };
+  modal.querySelector('[data-card-clear]').onclick=()=>{selectedCards.clear();renderVault();};
+  for(const [buttonName,hard] of [['bulk-set-hard',true],['bulk-unset-hard',false]]){
+   modal.querySelector('[data-'+buttonName+']').onclick=async()=>{
+    const refs=[...selectedCards];if(!refs.length)return;
+    if(!confirm((hard?'Set':'Remove')+' Hard Card for '+refs.length+' cards from this one page in '+ownerText(vaultScope)+'? This changes no other vault.'))return;
+    const button=modal.querySelector('[data-'+buttonName+']');button.disabled=true;
+    try{
+     const result=await api.setHardCards({...vaultScope,cardRefs:refs,hard,confirmed:true});
+     selectedCards.clear();await refreshVault();vnote('Updated '+result.updated+' card(s) in one encrypted vault transaction.');
+    }catch(error){vnote(error.message,true);button.disabled=false;}
+   };
+  }
  modal.querySelector('[data-close]').addEventListener('click',closeVault);modal.addEventListener('click',e=>{if(e.target===modal)closeVault();});
  function openResourceForm(type,existing=null){
   const holder=$('workshopVaultForm');holder.hidden=false;const form=d.createElement('form');form.autocomplete='off';form.className='workshopForm';
