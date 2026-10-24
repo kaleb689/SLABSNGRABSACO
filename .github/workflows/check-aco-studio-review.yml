@@ -74,6 +74,10 @@ jobs:
         working-directory: build-src/App
         shell: bash
         env:
+          # Electron Builder skips signatures on pull-request builds by
+          # default. Force the explicit ad-hoc identity set by release-v4139,
+          # then require a valid signature instead of treating it as optional.
+          CSC_FOR_PULL_REQUEST: 'true'
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           set -euo pipefail
@@ -85,11 +89,36 @@ jobs:
           test -n "$APP" && test -d "$APP"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -Fx 'com.slabsngrabsaco.jigstudio.owner'
           lipo -archs "$APP/Contents/MacOS/ACO Studio" | grep -w arm64
-          if ! codesign --verify --deep --strict "$APP"; then
-            echo '::warning::Apple Developer ID signing/notarization is not configured. This is a review-only preview, NOT a production release.'
-          fi
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          # Ad-hoc signing is intentionally allowed for an isolated preview;
+          # Developer ID signing and notarization are separate release gates.
+          codesign -dv --verbose=4 "$APP" 2>&1 | grep -E 'Signature=adhoc|Authority=Apple Distribution|Authority=Developer ID Application' 
           hdiutil verify "$DMG"
           shasum -a 256 "$DMG" "$ZIP"
+      - name: Test real Mac full-app update, restart, rollback and data preservation
+        if: matrix.os == 'macos-15'
+        shell: bash
+        env:
+          CSC_FOR_PULL_REQUEST: 'true'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          node .github/aco-studio-build/native-updater/ci-self-update.cjs build-src/App
+          test -s build-src/App/dist/update-test-arm64.json
+          python3 - <<'PY'
+          import json
+          report=json.load(open('build-src/App/dist/update-test-arm64.json'))
+          assert report['version']=='4.13.43' and report['architecture']=='arm64'
+          assert all(report[k] is True for k in ('update','restart','rollback','dataPreserved'))
+          print('PASS: signed preview update and rollback preserved synthetic Personal/customer data')
+          PY
+      - name: Stage verified non-production preview metadata
+        if: matrix.os == 'macos-15'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'adhoc' > build-src/App/dist/signing-arm64.txt
+          cp build-src/App/regression-results.txt build-src/App/dist/regression-arm64.txt
       - name: Upload Apple Silicon preview (unnotarized, not released)
         if: matrix.os == 'macos-15'
         uses: actions/upload-artifact@v4
@@ -98,6 +127,9 @@ jobs:
           path: |
             build-src/App/dist/*.dmg
             build-src/App/dist/*.zip
+            build-src/App/dist/signing-arm64.txt
+            build-src/App/dist/regression-arm64.txt
+            build-src/App/dist/update-test-arm64.json
           if-no-files-found: error
           retention-days: 7
       - name: Publish regression log
