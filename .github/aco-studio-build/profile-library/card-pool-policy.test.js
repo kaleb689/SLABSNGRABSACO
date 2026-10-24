@@ -70,3 +70,45 @@ test('Existing multiple uses are flagged for review instead of silently deleted'
  assert.deepEqual(items[0].duplicateRetailers,['target']);
  assert.throws(()=>CardPolicy.checkAllocation(rows,'target',[N],settings),/one per retailer/);
 });
+
+
+test('Hard Card scans all five retailer pools, Ready and Live, by exact full number',()=>{
+ const same=N.replace(/(\d{4})(\d{4})(\d{4})(\d{4})/,'$1 $2-$3 $4');
+ const sameLastFour='9999999999994242';
+ const rows=[
+  {...profile('target-live','target',N),bank:'live'},
+  {...profile('walmart-working','walmart',same),bank:'working',stage:'in-progress'},
+  {...profile('pkc-ready','pokemoncenter',N),bank:'working',stage:'completed'},
+  {...profile('costco-live','costco',N),bank:'live'},
+  {...profile('sams-working','sams',N),bank:'working'},
+  {...profile('other-number','target',sameLastFour),bank:'working'}
+ ];
+ const copies=[{id:'saved-one',number:N},{id:'saved-two',number:same},{id:'other-saved',number:sameLastFour}];
+ const scan=CardPolicy.scanVault({rows,savedCards:copies,cardNumber:N});
+ assert.equal(scan.matchedProfiles,5);
+ assert.equal(scan.savedCardCopies,2);
+ assert.equal(scan.matchingEntries,7);
+ assert.deepEqual(Object.values(scan.byRetailer).map(x=>x.profiles),[1,1,1,1,1]);
+ assert.equal(scan.byRetailer.target.live,1);
+ assert.equal(scan.byRetailer.pokemoncenter.working,1);
+ const settings=CardPolicy.toggle({},N,true);
+ assert.equal(CardPolicy.inventory({rows,savedCards:copies,settings}).find(x=>x.last4==='4242'&&x.hardCard).linkedCount,5);
+ assert.equal(CardPolicy.hardCard(sameLastFour,settings),false);
+ assert.equal(JSON.stringify(scan).includes(N),false);
+});
+
+test('Hard Card scanning never combines owner, customer A, or customer B vaults',()=>{
+ const owner=[profile('owner-target','target',N)];
+ const a=[profile('a-walmart','walmart',N)];
+ const b=[profile('b-pkc','pokemoncenter',N)];
+ const scan=s=>CardPolicy.scanVault({rows:s,savedCards:[],cardNumber:N});
+ assert.equal(scan(owner).matchedProfiles,1);
+ assert.equal(scan(a).matchedProfiles,1);
+ assert.equal(scan(b).matchedProfiles,1);
+ const ownerSettings=CardPolicy.toggle({},N,true);
+ const customerASettings={};
+ const customerBSettings={};
+ assert.equal(CardPolicy.hardCard(N,ownerSettings),true);
+ assert.equal(CardPolicy.hardCard(N,customerASettings),false);
+ assert.equal(CardPolicy.hardCard(N,customerBSettings),false);
+});

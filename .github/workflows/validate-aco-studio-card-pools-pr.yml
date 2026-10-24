@@ -1,0 +1,41 @@
+name: Validate ACO Studio profile and Hard Card changes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/aco-studio-build/profile-library/**'
+      - '.github/aco-studio-build/completed-profiles/**'
+      - 'private-edition/**'
+      - '.github/workflows/validate-aco-studio-card-pools-pr.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse modified owner and customer JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in .github/aco-studio-build/profile-library/*.js .github/aco-studio-build/completed-profiles/*.js private-edition/*.cjs private-edition/*.js; do
+            node --check "$file"
+          done
+      - name: Run owner all-retailer Hard Card regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Bundled desktop sources are CommonJS, unlike the top-level website.
+          printf '{"type":"commonjs"}\n' > .github/aco-studio-build/profile-library/package.json
+          mkdir -p .github/aco-studio-build/profile-library/tests
+          cp .github/aco-studio-build/profile-library/card-pool-policy.test.js .github/aco-studio-build/profile-library/tests/card-pool-policy.test.js
+          node --test .github/aco-studio-build/profile-library/tests/card-pool-policy.test.js
+      - name: Run isolated customer-edition card-bank regressions
+        run: node --test private-edition/test/card-pool-isolation.test.cjs

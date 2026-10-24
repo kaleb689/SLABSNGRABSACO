@@ -38,13 +38,28 @@ function cardFromRef(v,ref){
  if(profile){const source=(v.sources||[]).find(x=>x.id===profile[1]),row=source?.file?.rows?.[Number(profile[2])];if(row&&validNumber(numberOf(row)))return numberOf(row);}
  throw Error("This card does not belong to the active private vault.");
 }
+function scanVault(v,cardNumber){
+ const number=digits(cardNumber);
+ if(!validNumber(number))throw Error("Select a complete card from this private vault.");
+ const byRetailer=Object.fromEntries(RETAILERS.map(retailer=>[retailer,{profiles:0,working:0,live:0}]));
+ let matchedProfiles=0;
+ for(const entry of sourceEntries(v)){
+  if(entry.number!==number)continue;
+  matchedProfiles++;
+  const counts=byRetailer[entry.retailer];counts.profiles++;
+  if((v.sources||[]).some(source=>source.id===entry.sourceId&&source.bank==="live"))counts.live++;
+  else counts.working++;
+ }
+ const savedCardCopies=(v.cards||[]).filter(c=>digits(c.number)===number).length;
+ return {matchedProfiles,savedCardCopies,matchingEntries:matchedProfiles+savedCardCopies,byRetailer};
+}
 function toggle(v,ref,hard){
  if(typeof hard!=="boolean")throw Error("Select Hard Card on or off.");
  const n=cardFromRef(v,ref),settings=ensureSettings(v),token=fingerprint(v,n),set=new Set(settings.hard);
  if(!hard&&sourceEntries(v).filter(row=>row.number===n).length>1)throw Error("Card has multiple retailer assignments. Resolve them before turning off Hard Card.");
  if(hard)set.add(token);else set.delete(token);
  settings.hard=[...set].slice(0,15000);
- return {saved:true,hardCard:hard,last4:n.slice(-4)};
+ return {saved:true,hardCard:hard,last4:n.slice(-4),...scanVault(v,n)};
 }
 function inventory(v,{showFullNumbers=false}={}){
  const byNumber=new Map();
@@ -83,7 +98,8 @@ function toggleBulk(v,cardRefs,hard){
  const settings=ensureSettings(v),tokens=numbers.map(number=>fingerprint(v,number)),set=new Set(settings.hard);
  for(const token of tokens)if(hard)set.add(token);else set.delete(token);
  settings.hard=[...set].slice(0,15000);
- return {saved:true,updated:numbers.length,hardCard:hard};
+ const scans=numbers.map(number=>scanVault(v,number));
+ return {saved:true,updated:numbers.length,hardCard:hard,matchedProfiles:scans.reduce((count,scan)=>count+scan.matchedProfiles,0),savedCardCopies:scans.reduce((count,scan)=>count+scan.savedCardCopies,0)};
 }
 function promote(v,ref){
  const n=cardFromRef(v,ref);
@@ -114,4 +130,4 @@ function allocate(v,source,indices){
  }
  return allocations;
 }
-module.exports={RETAILERS,numberOf,sourceEntries,fingerprint,isHard,cardFromRef,toggle,toggleBulk,inventory,promote,allocate};
+module.exports={RETAILERS,numberOf,sourceEntries,fingerprint,isHard,cardFromRef,scanVault,toggle,toggleBulk,inventory,promote,allocate};

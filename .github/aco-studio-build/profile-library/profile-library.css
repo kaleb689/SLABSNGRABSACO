@@ -30,3 +30,31 @@
 .profileResourceRow .btn{flex:0 0 auto}
 .profileLibraryPagination{max-width:100%;gap:9px}
 @media(max-width:800px){.profileRetailerButtons button{flex:1 1 130px}.profileRetailerWorkspace>.profileLibraryTabs button{flex:1 1 135px}.profileResourceRow{flex-wrap:wrap}}
+
+
+/* Responsive card bank and retailer-first navigation. No fixed-width card columns. */
+.profileLibrary,.profileLibraryLayout,.profileLibraryCards,.profileResourceBanks,.profileResourceBank,.profileResourceList,.profileResourceRow{min-width:0;box-sizing:border-box}
+.profileLibrary .profileLibraryLayout{grid-template-columns:minmax(175px,220px) minmax(0,1fr)}
+.profileRetailerSidebar{display:flex;min-width:0;flex-direction:column;gap:14px}
+.profileRetailerSidebar .profileRetailerButtons{flex:none;display:flex;flex-direction:column;align-items:stretch;gap:6px}
+.profileRetailerSidebar .profileRetailerButtons button{width:100%;text-align:left;justify-content:flex-start;min-width:0;white-space:normal}
+.profileRetailerSidebar .profileLibraryGroups{display:flex;flex-direction:column;gap:6px;min-width:0}
+.profileLibraryLayout>.profileLibraryGroups{display:none}
+.profileLibraryCards{grid-template-columns:repeat(auto-fill,minmax(min(100%,255px),1fr));align-items:start}
+.profileLibraryCard{min-width:0;overflow-wrap:anywhere}
+.profileLibraryCard.profileUnusedAccount{min-height:128px}
+.profileLibraryCard.isSelected,.profileResourceRow.isSelected{border-color:#29dbe8;box-shadow:0 0 0 2px rgba(41,219,232,.33);background:#123342}
+.profileSelectableCard{cursor:pointer}
+.profileSelectableCard:focus-visible{outline:2px solid #3ce4f1;outline-offset:2px}
+.profileResourceRow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start}
+.profileResourceRow>div{min-width:0;grid-row:1 / span 3}
+.profileResourceRow .profileResourceState{grid-column:2;max-width:100%;white-space:normal;text-align:center}
+.profileResourceRow .btn{grid-column:2;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.profileResourceRow strong,.profileResourceRow small{overflow-wrap:anywhere;word-break:break-word}
+.profileResourceBank>header{flex-wrap:wrap}
+.profileResourceBanks{grid-template-columns:repeat(2,minmax(0,1fr))}
+.profileContextMenu{position:fixed;z-index:14000;display:flex;flex-direction:column;min-width:185px;max-width:min(250px,90vw);padding:5px;background:#12283e;border:1px solid #3c718c;box-shadow:0 12px 38px #000a;border-radius:10px}
+.profileContextMenu button{background:none;border:none;border-radius:7px;color:#edf8ff;padding:10px 12px;text-align:left;cursor:pointer}
+.profileContextMenu button:hover,.profileContextMenu button:focus-visible{background:#185267}
+@media(max-width:1150px){.profileResourceBanks{grid-template-columns:1fr}.profileResourceList{max-height:300px}}
+@media(max-width:760px){.profileLibrary{padding:12px}.profileLibrary .profileLibraryLayout{grid-template-columns:1fr}.profileRetailerSidebar .profileRetailerButtons{flex-direction:row;flex-wrap:wrap}.profileRetailerSidebar .profileRetailerButtons button{width:auto;flex:1 1 130px}.profileRetailerSidebar .profileLibraryGroups{flex-direction:row;flex-wrap:wrap}.profileResourceRow{grid-template-columns:minmax(0,1fr)}.profileResourceRow>div{grid-row:auto}.profileResourceRow .profileResourceState,.profileResourceRow .btn{grid-column:1;justify-self:start}.profileLibraryCards{grid-template-columns:repeat(auto-fill,minmax(min(100%,225px),1fr))}}

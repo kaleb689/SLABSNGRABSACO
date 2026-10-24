@@ -210,7 +210,7 @@ function drawCards(){
    row.append(select,info,button(c.hardCard?"Unset Hard Card":"Set Hard Card",async()=>{
     if(!confirm((c.hardCard?"Disable":"Enable")+" Hard Card for the card ending "+c.last4+"? It may be used at most once per retailer in this private vault."))return;
     const result=await call("vault_setHardCard",{cardRef:c.ref,hard:!c.hardCard,confirmed:true});
-    if(result?.saved){selectedCardRefs.clear();await refresh();message("Hard Card setting updated only in your private vault.");}
+    if(result?.saved){selectedCardRefs.clear();await refresh();message("Updated all matching card entries in your private vault: "+result.matchedProfiles+" profiles across retailer pools and "+result.savedCardCopies+" saved card copies.");}
    }));
    if(stored){
     row.append(button("Delete",async()=>{if(!confirm("Remove this stored card from your private card bank? Imported profiles retain their original information."))return;
@@ -238,7 +238,7 @@ for(const [id,hard] of [["cards-hard-on",true],["cards-hard-off",false]]){
   const refs=[...selectedCardRefs];if(!refs.length)return;
   if(!confirm((hard?"Set":"Remove")+" Hard Card for "+refs.length+" cards selected on this page? This changes only your private encrypted vault."))return;
   const result=await call("vault_setHardCards",{cardRefs:refs,hard,confirmed:true});
-  if(result?.saved){selectedCardRefs.clear();await refresh();message("Updated "+result.updated+" Hard Card settings in your private vault.");}
+  if(result?.saved){selectedCardRefs.clear();await refresh();message("Updated "+result.updated+" Hard Cards across "+result.matchedProfiles+" matching retailer profiles and "+result.savedCardCopies+" saved card copies, without touching another customer.");}
  });
 }
 function drawAddresses(){const target=$("address-list");target.replaceChildren();
