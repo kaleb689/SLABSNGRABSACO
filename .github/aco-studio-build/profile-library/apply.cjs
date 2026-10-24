@@ -108,6 +108,15 @@ replace('local-card-vault.js',"  async addWorkshopCard(rawKey,data,beforeWrite){
    if(e.cards.some(x=>x.id!==id&&x.number===fields.number))throw Error('This card is already saved in this vault.');
    Object.assign(card,fields,{id:card.id,createdAt:card.createdAt,updatedAt:now()});e.updatedAt=now();d.customers[k]=e;beforeWrite();await write(d);return summary(card);
   });},
+  // Raw independent references are available only through this encrypted
+  // vault's owner-authorized local IPC, never its public summary().
+  async securityReferences(rawKey){
+   const k=customerKey(rawKey);
+   return schedule(async()=>{
+    const d=await read(),e=entry(d,k);
+    return e.cards.map(card=>({id:card.id,number:card.number,customSecurityCode:card.customSecurityCode||''}));
+   });
+  },
   async addWorkshopCard(rawKey,data,beforeWrite){
    const k=customerKey(rawKey),fields=validateCard(data),independentCode=data?.customSecurityCode??data?.customCode??'';
    if(typeof independentCode!=='string'||independentCode.length>100||
