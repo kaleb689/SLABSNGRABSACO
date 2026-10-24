@@ -151,7 +151,7 @@ test('Retailer buttons keep staged inventories separate and Unused accounts are 
   q:key=>({value:key==='retailer'?'target':'target'}),stage:'unused',group:'all',issueView:'all',profileIssues:()=>[],searchable:r=>r.email};
  vm.createContext(context);
  vm.runInContext(source.slice(begin,end)+'\nthis.view=visible;',context);
- assert.deepEqual(context.view().map(x=>x.id),['a']);
+ assert.deepEqual([...context.view()].map(x=>x.id),['a']);
 });
 
 test('Card Bank shows authorized full-number headings, linked retailer emails, and exact-page bulk Hard Card actions',()=>{
