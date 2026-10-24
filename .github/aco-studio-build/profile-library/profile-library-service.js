@@ -249,7 +249,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     throw Error('Original import contains data assigned to another vault.');
    const retailer=detectedRetailer(raw.retailer||raw.retailerId||raw.site||raw.store)||p.retailer;
    if(retailer!==p.retailer)continue;
-   const email=C.email(raw.email||raw.loginEmail||raw.accountEmail||raw.login_email||raw?.account?.email);
+   const email=C.email(C.values(raw).email||raw.email||raw.loginEmail||raw.accountEmail||raw.login_email||raw?.account?.email);
    const code=codeOf(raw),candidates=byIdentity.get(retailer+'|'+email)||[];
    if(!code||!email||candidates.length!==1)continue;
    const row=candidates[0],oldCard=C.payment(raw).number,currentCard=C.payment(row.data).number;
