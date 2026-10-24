@@ -175,6 +175,9 @@ test('Original imported profile can restore its missing Security Code without re
  assert.equal(row.data.profileSecurityCode,'0099');
  await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:''});
  row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.data.profileSecurityCode,'');
+ const decoded=Core.parseFile('original.json',JSON.stringify([original])).records[0];
+ assert.equal(decoded.cc_cvv,'0099','parser must preserve the old reference slot for recovery');
+ assert.equal(LC.payment(decoded).number,LC.payment(row.data).number,'card identity must stay exact');
  const result=await h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',fileName:'original.json',text:JSON.stringify([original])});
  assert.equal(result.preview,true);assert.equal(result.recoverable,1);
  assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'','preview never modifies profile');
@@ -199,6 +202,9 @@ test('Saved Card Bank can explicitly fill a missing profile Security Code by ful
  await commit(h,await preview(h,[data]));
  const saved=await h.service.addCard(event,{...h.p,card:{...card,customSecurityCode:'0077'}});
  assert.ok(saved.id,'saved card bank entry required');
+ const preserved=(await h.personal.selectedForJig('personal:owner',[saved.id]))[0];
+ assert.equal(preserved.customSecurityCode,'0077','existing saved Card Bank code must be present in encrypted storage');
+ assert.equal(LC.payment((await h.lib.list(event,h.p)).profiles[0].data).number,preserved.number,'full card identity must match');
  const previewResult=await h.lib.recoverCodesFromSavedCards(event,{...h.p,confirmed:false});
  assert.equal(previewResult.recoverable,1);
  assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode||'','');
