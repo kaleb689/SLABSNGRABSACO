@@ -205,7 +205,7 @@ test('Saved Card Bank can explicitly fill a missing profile Security Code by ful
  const file=await fs.readFile(path.join(h.dir,'jig-studio-personal-cards.encrypted'));
  const storedText=file.toString();
  assert.ok(storedText.includes('0077'),'encrypted fixture file must contain independent reference after safe storage shim');
- const preserved=(await h.personal.selectedForJig('personal:owner',[saved.id]))[0];
+ const preserved=(await h.personal.securityReferences('personal:owner')).find(x=>x.id===saved.id);
  assert.equal(preserved.customSecurityCode,'0077','existing saved Card Bank code must be present in encrypted storage');
  assert.equal(LC.payment((await h.lib.list(event,h.p)).profiles[0].data).number,preserved.number,'full card identity must match');
  const previewResult=await h.lib.recoverCodesFromSavedCards(event,{...h.p,confirmed:false});
