@@ -170,7 +170,8 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   return vault.addWorkshopCard(key,card,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');});
  }
  async function setHardCard(e,p){
-  const {scope,id,check}=await access(e,p);
+  const {scope,id}=await access(e,p),generation=epoch(e);
+  const check=()=>{guard(e,scope);if(epoch(e)!==generation)throw Error('Vault locked or changed before saving the Hard Card update.');};
   if(p?.confirmed!==true||typeof p?.hard!=='boolean')throw Error('Confirm the Hard Card setting for this vault.');
   const saved=await cardVault(scope).list(cardKey(scope,id));
   const full=saved.cards.length?await cardVault(scope).selectedForJig(cardKey(scope,id),saved.cards.map(x=>x.id)):[];
@@ -186,7 +187,8 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
  // Imported profile cards become selectable saved-bank resources without
  // copying unrelated per-profile Security Code fields.
  async function addProfileCardToBank(e,p){
-  const {scope,id,check}=await access(e,p);
+  const {scope,id}=await access(e,p),generation=epoch(e);
+  const check=()=>{guard(e,scope);if(epoch(e)!==generation)throw Error('Vault locked or changed before saving the Hard Card update.');};
   if(p?.confirmed!==true||typeof p?.profileId!=='string')throw Error('Confirm the imported profile card to add.');
   const rows=await profiles.fieldSnapshot(scope,id),row=rows.find(x=>x.id===p.profileId);
   if(!row)throw Error('Profile not found in this vault.');
