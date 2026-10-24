@@ -283,7 +283,7 @@
     toggle.onclick=async()=>{
      if(!confirm((r.hardCard?'Remove':'Set')+' Hard Card for card ending '+r.last4+' in '+ownerText(vaultScope)+'? Other vaults are unaffected.'))return;
      toggle.disabled=true;
-     try{await api.setHardCard({...vaultScope,cardRef:r.id,hard:!r.hardCard,confirmed:true});selectedCards.clear();await refreshVault();vnote('Hard Card setting updated in this vault only.');}
+     try{const result=await api.setHardCard({...vaultScope,cardRef:r.id,hard:!r.hardCard,confirmed:true});selectedCards.clear();await refreshVault();vnote('Updated the card in this vault: '+result.matchedProfiles+' matching profiles and '+result.savedCardCopies+' saved card copies across all retailer pools.');}
      catch(e){vnote(e.message,true);toggle.disabled=false;}
     };line.append(toggle);line.onclick=e=>{if(e.target.closest('button,input'))return;if(storedForClick())openResourceForm('cards',storedForClick());};function storedForClick(){return (vaultData?.cards||[]).find(x=>'saved:'+x.id===r.id)||null;}line.oncontextmenu=e=>{e.preventDefault();if(storedForClick())openResourceForm('cards',storedForClick());};
     const stored=(vaultData?.cards||[]).find(x=>'saved:'+x.id===r.id);
@@ -349,7 +349,7 @@
     const button=modal.querySelector('[data-'+buttonName+']');button.disabled=true;
     try{
      const result=await api.setHardCards({...vaultScope,cardRefs:refs,hard,confirmed:true});
-     selectedCards.clear();await refreshVault();vnote('Updated '+result.updated+' card(s) in one encrypted vault transaction.');
+     selectedCards.clear();await refreshVault();vnote('Updated '+result.updated+' distinct cards across '+result.matchedProfiles+' matching profiles and '+result.savedCardCopies+' saved card copies in this vault only.');
     }catch(error){vnote(error.message,true);button.disabled=false;}
    };
   }
