@@ -110,12 +110,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(number)CardPolicy.checkAllocation(ctx.rows,row.retailer,[number],ctx.settings,{excludeProfileIds:[row.id]});
    }
    if(p.cardCvv!==undefined){
-    if(a.scope!=='personal')throw Error('Card-code editing is available only in your unlocked Personal vault.');
-    if(row.sourceLinked||row.websiteAuthoritative||row.source==='website-linked-profile')throw Error('Use the local imported profile to edit its card code.');
-    if(typeof p.cardCvv!=='string'||!/^\d{3,4}$|^$/.test(p.cardCvv))throw Error('Enter a 3- or 4-digit CVV, or leave it blank.');
-    for(const holder of [data,data.card])if(holder)for(const key of ['cvv','cvc','cid','cc_cvv','cvv2','securityCode','security_code'])if(Object.hasOwn(holder,key))holder[key]='';
-    for(const holder of [data,data.card])if(holder&&/^\d{3,4}$/.test(String(holder.custom_security_code||'')))holder.custom_security_code='';
-    if(D.formatOf(data)==='shikari')data.cc_cvv=p.cardCvv;else{data.card||={};data.card.cvv=p.cardCvv;}
+    // Backward-compatible editor input: historically named "cardCvv" even
+    // when it represented the separate profile Security Code. Treat it as
+    // a profile-only reference and NEVER clear legacy saved fields.
+    if(typeof p.cardCvv!=='string'||p.cardCvv.length>100||/[\\x00-\\x1f\\x7f]/.test(p.cardCvv))
+      throw Error('Invalid profile Security Code.');
+    if(p.profileSecurityCode===undefined) data.profileSecurityCode=p.cardCvv;
    }
    const linked=a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false;
    let remote=null;
