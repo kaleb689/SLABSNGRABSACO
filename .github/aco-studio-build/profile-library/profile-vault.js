@@ -433,7 +433,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    if(rows.length+prepared.filter(x=>!rows.some(r=>r.id===x.id)).length>10000)throw Error('Profile vault is full.');
    const ids=new Set(prepared.map(x=>x.id));d.groups[key]=[...rows.filter(x=>!ids.has(x.id)),...prepared];
    d.emailBanks||={};d.emailBanks[key]||=[];
-   const usedPkc=new Set(rows.filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)));
+   const usedPkc=new Set([...rows,...prepared].filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)));
    for(const x of d.emailBanks[key]||[])if(x.retailer==='pokemoncenter')usedPkc.add(x.email);
    let pkcEmailsAdded=0;
    for(const row of prepared){
