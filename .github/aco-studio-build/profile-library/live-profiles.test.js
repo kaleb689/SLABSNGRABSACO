@@ -44,11 +44,11 @@ test('Retailer metadata overrides filenames; unlabeled Valor uses the selected r
  const b=await live(h,[complete('costco','b@example.test')],h.p,'costco');assert.equal(b.profiles[0].retailer,'costco');await commit(h,b);
  assert.equal((await h.lib.list(event,h.p)).profiles.length,2);
 });
-test('Live imports seed each email once and exclude PKC use or reservations across customer/private pools',async t=>{
+test('Owner PKC email inventory never reads or borrows customer A/B reservations',async t=>{
  const h=await library(t);await h.profiles.importRows({...h.a,retailer:'pokemoncenter',rows:[complete('pokemoncenter','used@example.test')]});
  await h.service.importEmails(event,{...h.b,retailer:'pokemoncenter',emails:['reserved@example.test']});
  const plan=await live(h,[{...complete('target','new@example.test'),retailer:'target'},{...complete('walmart','new@example.test'),retailer:'walmart'},complete('target','used@example.test'),complete('target','reserved@example.test')]);
- const result=await commit(h,plan);assert.equal(result.pkcEmailsAdded,1);const inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});assert.deepEqual(inventory.emails.map(x=>x.email),['new@example.test']);
+ const result=await commit(h,plan);assert.equal(result.pkcEmailsAdded,3);const inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});assert.deepEqual(inventory.emails.map(x=>x.email).sort(),['new@example.test','reserved@example.test','used@example.test']);
  const another=await live(h,[complete('costco','new@example.test')],h.p,'costco');assert.equal((await commit(h,another)).pkcEmailsAdded,0);
 });
 test('Reimport requires reviewed replacement and stable preview; edits and jigs retain Live bank membership',async t=>{
