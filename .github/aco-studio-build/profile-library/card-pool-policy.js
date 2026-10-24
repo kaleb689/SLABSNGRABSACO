@@ -63,7 +63,7 @@ function checkAllocation(rows,retailer,cards,settings,{excludeProfileIds=[]}={})
   if(!n)throw Error('Selected saved card is missing a valid number.');
   const uses=[...(existing.get(n)||[]),...(staged.get(n)||[])];
   if(hardCard(n,settings)){
-   if(uses.some(x=>x.retailer===retailer))throw Error('Hard Card ending '+n.slice(-4)+' already has a '+retailer+' profile. One per retailer is the limit.');
+   if(uses.some(x=>x.retailer===retailer))throw Error('Hard Card ending '+n.slice(-4)+' already has a '+retailer+' profile. one per retailer is the limit.');
   }else if(uses.length){
    throw Error('Regular card ending '+n.slice(-4)+' is already in use and already linked to a retailer profile. Enable Hard Card to allow one profile in a different retailer.');
   }
@@ -103,7 +103,7 @@ function resolveReference(ref,rows,savedCards){
  const [type,id]=ref.split(':');
  const selected=type==='saved'?(savedCards||[]).find(c=>c.id===id):(rows||[]).find(row=>row.id===id);
  const n=type==='saved'?selected?.number:fromProfile(selected);
- if(!selected||!normalized(n))throw Error('Selected card is no longer in this vault. Refresh the inventory.');
+ if(!selected||!normalized(n))throw Error('Selected card is not in this vault. Refresh the inventory.');
  return normalized(n);
 }
 function toggle(settings,n,hard){
