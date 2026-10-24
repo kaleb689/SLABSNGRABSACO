@@ -52,6 +52,47 @@ function exportArchiveRows(rows,r,owner='Personal'){
  const name=clean(owner).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' full profiles.json';
  return {name,body:JSON.stringify({version:1,retailer:r,profiles:records},null,2)};
 }
+// Explicit export choices never rewrite the underlying profile's original
+// retailer structure. Text/tabular exports flatten a temporary copy only.
+function exportSelectedRows(rows,r,owner='Personal',choice='retailer'){
+ const type=String(choice||'retailer').toLowerCase();
+ if(type==='retailer')return exportRows(rows,r,owner);
+ if(!['json','csv','tsv','txt'].includes(type))throw Error('Choose retailer format, JSON, CSV, TSV, or TXT.');
+ const archive=exportArchiveRows(rows,r,owner);
+ if(type==='json')return archive;
+ const records=JSON.parse(archive.body).profiles;
+ const flat=records.map(record=>{
+  const data={retailer:record.retailer,profileId:record.profileId,label:record.label,email:record.email};
+  const visit=(value,prefix)=>{
+   if(Array.isArray(value)){data[prefix]=JSON.stringify(value);return;}
+   if(value&&typeof value==='object'){
+    for(const [key,entry] of Object.entries(value))visit(entry,prefix?prefix+'.'+key:key);
+    return;
+   }
+   data[prefix]=value===null||value===undefined?'':String(value);
+  };
+  visit(record.data,'');
+  data['Security Code']=record.profileSecurityCode||'';
+  return data;
+ });
+ const safeOwner=clean(owner).replace(/[^a-z0-9 _-]/gi,'').slice(0,65)||'Profiles';
+ if(type==='txt'){
+  const body=records.map((record,i)=>{
+   const fields=flat[i];
+   return Object.entries(fields).map(([key,value])=>key+': '+String(value)).join('\\n');
+  }).join('\\n\\n');
+  return {name:safeOwner+' profiles.txt',body};
+ }
+ const delimiter=type==='tsv'?'\\t':',';
+ const headers=[...new Set(flat.flatMap(row=>Object.keys(row)))];
+ const quote=value=>{
+  const str=String(value??'');
+  return /["\\r\\n]/.test(str)||str.includes(delimiter)?'"'+str.replace(/"/g,'""')+'"':str;
+ };
+ const body=[headers,...flat.map(row=>headers.map(key=>row[key]??''))]
+  .map(row=>row.map(quote).join(delimiter)).join('\\r\\n')+'\\r\\n';
+ return {name:safeOwner+' profiles.'+type,body};
+}
 const FL_PHONE_RULE='phone_florida_random';
 const FL_AREA_CODES=['239','305','321','324','352','386','407','448','561','645','656','689','727','728','754','772','786','813','850','863','904','941','954'];
 function floridaPhone(seed,index=0){
@@ -132,5 +173,5 @@ function jig(data,r,index,rules=defaultRules(r)){
  }
  return out;
 }
-module.exports={exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
+module.exports={exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
 
