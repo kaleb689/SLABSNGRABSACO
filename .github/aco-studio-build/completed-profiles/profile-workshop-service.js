@@ -249,7 +249,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    const result=Fields.build({records,indices:records.map((_,i)=>i),scope,customerId:id,addresses,cards,choices:{address:true,card:true,name:p.randomNames===true},allowCardReuse:false,mirrorBilling:true});
    CardPolicy.checkAllocation(inventory,p.retailer,result.records.map(data=>CardPolicy.fromProfile({data})),settings,{excludeProfileIds:accounts.filter(Boolean).map(x=>x.id)});
    return result.records.map((data,i)=>({data:syncCardholderToProfileName(data),format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}}));
-  },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');})));
+  },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');},p.emailIds??null)));
  }
 
  async function edit(e,p){const {scope,id}=await access(e,p),generation=epoch(e);
