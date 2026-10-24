@@ -114,7 +114,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     // Backward-compatible editor input: historically named "cardCvv" even
     // when it represented the separate profile Security Code. Treat it as
     // a profile-only reference and NEVER clear legacy saved fields.
-    if(typeof p.cardCvv!=='string'||p.cardCvv.length>100||/[\\x00-\\x1f\\x7f]/.test(p.cardCvv))
+    if(typeof p.cardCvv!=='string'||p.cardCvv.length>100||/[\x00-\x1f\x7f]/.test(p.cardCvv))
       throw Error('Invalid profile Security Code.');
     if(p.profileSecurityCode===undefined) data.profileSecurityCode=p.cardCvv;
    }
@@ -182,7 +182,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const codes=new Map(),conflicts=new Set();
   for(const card of full){
    const number=CardPolicy.normalized(card.number),code=String(card.customSecurityCode||card.customCode||'');
-   if(!number||!code||code.length>100||/[\\x00-\\x1f\\x7f]/.test(code))continue;
+   if(!number||!code||code.length>100||/[\x00-\x1f\x7f]/.test(code))continue;
    if(codes.has(number)&&codes.get(number)!==code)conflicts.add(number);
    else codes.set(number,code);
   }
@@ -240,7 +240,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const codeOf=raw=>{
    const fields=[raw.profileSecurityCode,raw.security_code,raw.custom_security_code,raw.card?.custom_security_code,
     raw.cc_cvv,raw.cvv,raw.CVV,raw.cvc,raw.card?.cvv,raw.card?.cvc,raw.card?.cid];
-   const value=fields.find(x=>typeof x==='string'&&x.length>0&&x.length<=100&&!/[\\x00-\\x1f\\x7f]/.test(x));
+   const value=fields.find(x=>typeof x==='string'&&x.length>0&&x.length<=100&&!/[\x00-\x1f\x7f]/.test(x));
    return value||'';
   };
   for(const raw of parsed.records){
