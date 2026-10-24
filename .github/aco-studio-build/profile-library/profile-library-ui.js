@@ -154,17 +154,36 @@
    addressBox.append(text('p','Select a customer to view that customer’s address bank.'));
    return;
   }
-  const cards=Array.isArray(bankAssets.cards)?bankAssets.cards:[],addresses=Array.isArray(bankAssets.addresses)?bankAssets.addresses:[];
+  const cards=Array.isArray(bankAssets.cards)?bankAssets.cards:[],pool=Array.isArray(bankAssets.cardPool)?bankAssets.cardPool:[],addresses=Array.isArray(bankAssets.addresses)?bankAssets.addresses:[];
   const unusedCards=cards.filter(x=>x.unused===true);
-  cardCount.textContent='· '+unusedCards.length+' available / '+cards.length+' saved';
+  const eligible=pool.filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value));
+  cardCount.textContent='· '+eligible.length+' available for '+retailName[q('retailer').value]+' / '+pool.length+' distinct cards';
   addressCount.textContent='· '+addresses.length+' saved';
-  if(!cards.length)cardBox.append(text('p','No cards saved in this '+(scope==='personal'?'Personal':'customer')+' bank.'));
-  for(const card of cards){
-   const row=d.createElement('article');row.className='profileResourceRow'+(card.unused?' isAvailable':' isUsed');
-   const body=d.createElement('div'),title=text('strong',card.label||'Saved card'),meta=text('small',[card.brand,card.last4?'•••• '+card.last4:'',card.expMonth&&card.expYear?card.expMonth+'/'+card.expYear:''].filter(Boolean).join(' · '));
-   body.append(title,meta);
-   const state=text('span',card.unused?'Available':card.previouslyAssigned?'Previously assigned':'In use');state.className='profileResourceState';
-   row.append(body,state);cardBox.append(row);
+  if(!pool.length)cardBox.append(text('p','No cards found in this '+(scope==='personal'?'Personal':'customer')+' vault or its saved profiles.'));
+  for(const card of pool){
+   const row=d.createElement('article');row.className='profileResourceRow'+(card.availableRetailers?.includes(q('retailer').value)?' isAvailable':' isUsed');
+   const body=d.createElement('div'),title=text('strong',(card.hardCard?'Hard Card · ':'')+(card.label||'Saved card')),meta=text('small',[card.brand,card.last4?'•••• '+card.last4:'',card.expiry,card.fromSavedBank?'Saved bank and profiles':'Found in imported profiles'].filter(Boolean).join(' · '));
+   const current=card.availableRetailers?.includes(q('retailer').value);
+   body.append(title,meta,text('small',card.status+(card.hardCard?' · Available: '+card.availableRetailers.map(r=>retailName[r]).join(', '):'')+(card.hasConflict?' · Existing duplicate assignments need review':'')));
+   const state=text('span',current?'Available for '+retailName[q('retailer').value]:'Unavailable for '+retailName[q('retailer').value]);state.className='profileResourceState';
+   const toggle=text('button',card.hardCard?'Unset Hard Card':'Set Hard Card');toggle.type='button';toggle.className='btn slim secondary';
+   toggle.onclick=async()=>{
+    if(!confirm((card.hardCard?'Unset':'Set')+' Hard Card for card ending '+card.last4+' in '+(scope==='personal'?'your Personal vault':'this exact customer vault')+'? Hard Cards can be linked only once per retailer; Regular Cards are linked only once in total.'))return;
+    toggle.disabled=true;
+    try{const owner=request();await window.desktopAPI.profileWorkshop.setHardCard({...owner,cardRef:card.id,hard:!card.hardCard,confirmed:true});await refresh();note('Hard Card rule updated in this vault only.');}
+    catch(error){note(String(error.message||error));toggle.disabled=false;}
+   };
+   row.append(body,state,toggle);
+   if(!card.fromSavedBank){
+    const save=text('button','Add to saved card bank');save.type='button';save.className='btn slim secondary';
+    save.onclick=async()=>{
+     if(!confirm('Copy this card already contained in this vault into its saved Card Bank? No Security Code field will be copied.'))return;
+     save.disabled=true;try{const owner=request();await window.desktopAPI.profileWorkshop.addProfileCardToBank({...owner,profileId:card.id.slice(8),confirmed:true});await refresh();note('Card added to this vault’s saved bank only.');}
+     catch(error){note(String(error.message||error));save.disabled=false;}
+    };
+    row.append(save);
+   }
+   cardBox.append(row);
   }
   if(!addresses.length)addressBox.append(text('p','No addresses saved in this '+(scope==='personal'?'Personal':'customer')+' bank.'));
   for(const address of addresses){
@@ -181,8 +200,8 @@
   try{
    const [assets,accounts]=await Promise.all([workshop.assets(owner),workshop.emails({...owner,retailer:q('retailer').value})]);
    if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;
-   bankAssets={addresses:Array.isArray(assets?.addresses)?assets.addresses:[],cards:Array.isArray(assets?.cards)?assets.cards:[]};
-   drawResourceBanks();q('pool-counts').textContent=assets.addresses.length+' saved addresses · '+assets.cards.filter(x=>x.unused).length+' unused cards · '+(accounts.freeAccounts||0)+' free '+retailName[q('retailer').value]+' accounts · '+accounts.emails.filter(x=>x.status==='available'&&x.source!=='account').length+' unused emails · '+(assets.addresses.length?Math.min(500,assets.cards.filter(x=>x.unused).length,accounts.availableForCreation??accounts.emails.filter(x=>x.status==='available').length):0)+' profiles available with one card each'+
+   bankAssets={addresses:Array.isArray(assets?.addresses)?assets.addresses:[],cards:Array.isArray(assets?.cards)?assets.cards:[],cardPool:Array.isArray(assets?.cardPool)?assets.cardPool:[]};
+   drawResourceBanks();q('pool-counts').textContent=assets.addresses.length+' saved addresses · '+assets.cardPool.filter(x=>x.fromSavedBank&&x.availableRetailers.includes(q('retailer').value)).length+' eligible cards for '+retailName[q('retailer').value] · '+(accounts.freeAccounts||0)+' free '+retailName[q('retailer').value]+' accounts · '+accounts.emails.filter(x=>x.status==='available'&&x.source!=='account').length+' unused emails · '+(assets.addresses.length?Math.min(500,assets.cardPool.filter(x=>x.fromSavedBank&&x.availableRetailers.includes(q('retailer').value)).length,accounts.availableForCreation??accounts.emails.filter(x=>x.status==='available').length):0)+' profiles available with one card each'+
     (q('retailer').value==='pokemoncenter'&&accounts.targetLiveReconciliation?.targetLiveProfiles?
      ' | Target Live: '+accounts.targetLiveReconciliation.targetLiveProfiles+' profiles ('+accounts.targetLiveReconciliation.targetUniqueEmails+' unique emails) | '+
      accounts.targetLiveReconciliation.alreadyPkcProfiles+' Target emails already used as PKC profiles | '+
