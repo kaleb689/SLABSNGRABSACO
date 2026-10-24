@@ -160,3 +160,15 @@ test("SKU and TCIN for the same named product resolve to one card; conflicting T
  await ctx.publisher.ingest({type:"product",retailer:"target",name:title,tcin:"9999999999",stock:"12+"});
  assert.equal(ctx.events.length,3,"a conflicting verified TCIN is a separate listing");
 });
+
+
+test("product with no retailer identifier still posts by product name and can later attach a TCIN",async t=>{
+ const ctx=await setup();t.after(ctx.close);
+ await ctx.publisher.ingest({type:"product",retailer:"sams",name:"30th Celebration Bundle",stock:"10+"});
+ assert.equal(ctx.events.length,1);
+ assert.equal(ctx.events[0].payload.embeds[0].fields.length,3);
+ await ctx.publisher.ingest({type:"product",retailer:"sams",name:"30th Celebration Bundle",tcin:"1010892065",stock:"10+"});
+ assert.equal(ctx.events.length,1,"identified update must not create a duplicate product");
+ await ctx.publisher.ingest({type:"product",retailer:"sams",name:"30th Celebration Bundle",tcin:"1010892065",stock:"12+"});
+ assert.equal(ctx.events.at(-1).action,"PATCH");
+});
