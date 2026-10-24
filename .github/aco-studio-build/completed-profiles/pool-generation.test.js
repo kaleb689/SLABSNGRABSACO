@@ -97,3 +97,29 @@ test('Atomic Hard Card batch updates only selected cards in the authorized owner
  await h.service.setHardCards(event,{...p,cardRefs:refs,hard:false,confirmed:true});
  assert.ok((await h.service.assets(event,p)).cardPool.every(x=>!x.hardCard));
 });
+
+test('Card Bank discloses full numbers only in the authenticated vault view and shows linked email + retailer',async t=>{
+ const h=await env(t),p=h.p,n='4242424242424242';
+ await h.service.addCard(event,{...p,card});
+ await h.profiles.importRows({...p,retailer:'target',status:'active',rows:[{email:'owner-target@example.test',cc_number:n,cc_exp_month:'08',cc_exp_year:'2031'}]});
+ const standard=await h.service.assets(event,p),full=await h.service.assets(event,{...p,showFullCards:true});
+ const ref=full.cardPool.find(x=>x.last4==='4242');
+ assert.ok(ref);
+ assert.equal(ref.fullNumber,n);
+ assert.deepEqual(ref.linkedAccounts.map(x=>[x.email,x.retailer]),[['owner-target@example.test','target']]);
+ assert.equal(Object.hasOwn(standard.cardPool.find(x=>x.last4==='4242'),'fullNumber'),false);
+ assert.equal(JSON.stringify(await h.service.assets(event,h.a)).includes(n),false);
+ assert.equal(JSON.stringify(await h.service.assets(event,h.b)).includes('owner-target@example.test'),false);
+});
+
+test('Hard Card bulk removal is all-or-nothing if any selected card has multiple retailer uses',async t=>{
+ const h=await env(t),p=h.p,n=card.number,other='5555555555554444';
+ const one=await h.service.addCard(event,{...p,card}),two=await h.service.addCard(event,{...p,card:{...card,number:other}});
+ await h.service.setHardCards(event,{...p,cardRefs:['saved:'+one.id,'saved:'+two.id],hard:true,confirmed:true});
+ await h.profiles.importRows({...p,retailer:'target',status:'active',rows:[{email:'first@example.test',cc_number:n}]});
+ await h.profiles.importRows({...p,retailer:'walmart',status:'active',rows:[{email:'second@example.test',card:{number:n}}]});
+ await assert.rejects(h.service.setHardCards(event,{...p,cardRefs:['saved:'+one.id,'saved:'+two.id],hard:false,confirmed:true}),/multiple profiles/);
+ const inventory=(await h.service.assets(event,p)).cardPool;
+ assert.equal(inventory.find(x=>x.last4==='4242').hardCard,true);
+ assert.equal(inventory.find(x=>x.last4==='4444').hardCard,true);
+});
