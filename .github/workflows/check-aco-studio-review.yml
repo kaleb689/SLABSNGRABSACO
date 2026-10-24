@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 env:
-  ACO_VERSION: '4.13.42'
+  ACO_VERSION: '4.13.43'
 jobs:
   profile-integration:
     name: Restore owner app and run full regression tests (${{ matrix.os }})
@@ -69,6 +69,35 @@ jobs:
           set -euo pipefail
           for f in *.js; do node --check "$f"; done
           if [[ "$RUNNER_OS" == 'macOS' ]]; then npm run check | tee regression-results.txt; else node --test $(find tests -maxdepth 1 -type f -name '*.test.js' ! -name 'mac-full-updates.test.js' | sort) | tee regression-results.txt; fi
+      - name: Build Apple Silicon DMG/ZIP preview without deployment
+        if: matrix.os == 'macos-15'
+        working-directory: build-src/App
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          npx electron-builder --mac dmg zip --arm64 --publish never
+          DMG="dist/ACO-Studio-${ACO_VERSION}-arm64.dmg"
+          ZIP="dist/ACO-Studio-${ACO_VERSION}-arm64.zip"
+          test -s "$DMG" && test -s "$ZIP"
+          APP="$(find dist -maxdepth 2 -type d -name 'ACO Studio.app' -print -quit)"
+          test -n "$APP" && test -d "$APP"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -Fx 'com.slabsngrabsaco.jigstudio.owner'
+          lipo -archs "$APP/Contents/MacOS/ACO Studio" | grep -w arm64
+          codesign --verify --deep --strict "$APP"
+          hdiutil verify "$DMG"
+          shasum -a 256 "$DMG" "$ZIP"
+      - name: Upload Apple Silicon preview (unnotarized, not released)
+        if: matrix.os == 'macos-15'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aco-studio-4.13.43-arm64-review-only
+          path: |
+            build-src/App/dist/*.dmg
+            build-src/App/dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish regression log
         if: always()
         uses: actions/upload-artifact@v4
