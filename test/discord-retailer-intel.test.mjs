@@ -172,3 +172,9 @@ test("product with no retailer identifier still posts by product name and can la
  await ctx.publisher.ingest({type:"product",retailer:"sams",name:"30th Celebration Bundle",tcin:"1010892065",stock:"12+"});
  assert.equal(ctx.events.at(-1).action,"PATCH");
 });
+
+
+test("Pokemon Center source monitoring never generates unrelated product notices",()=>{
+ assert.throws(()=>normalizeRetailerIntel({type:"product",retailer:"pkc",source:"pokemon-center",name:"Unrelated item",sku:"12345678"}),/queue state only/);
+ assert.doesNotThrow(()=>normalizeRetailerIntel({type:"queue",retailer:"pkc",source:"pokemon-center",stage:"upcoming",date:"2026-10-24"}));
+});
