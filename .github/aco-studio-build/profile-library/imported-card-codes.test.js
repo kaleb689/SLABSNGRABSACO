@@ -25,29 +25,57 @@ function complete(retailer,email){const data=D.blank(retailer,LC.format(retailer
 async function preview(h,data,owner=h.p,retailer='target'){return h.lib.importPreview(event,{...owner,retailer,fileName:'profiles.json',text:JSON.stringify(data)});}
 async function commit(h,preview,extra={}){return h.lib.importCommit(event,{token:preview.token,confirmed:true,alreadyJigged:true,repairs:{allowShared:true},...extra});}
 
-test('Imported card codes persist in the encrypted Personal vault for both formats',async t=>{
+test('Independent profile Security Codes persist through import, edit, jig and export in both retailer formats',async t=>{
  const h=await library(t);
- for(const owner of [h.p])for(const retailer of ['target','walmart']){
-  const data=complete(retailer,owner.scope+'-'+retailer+'@example.test');if(retailer==='target')data.cc_cvv='012';else data.card.cvv='0123';data.profileSecurityCode=retailer==='target'?'8971':'735';
-  const plan=await h.lib.importPreview(event,{...owner,bank:'live',retailer,fileName:'profiles.json',text:JSON.stringify([data])});await commit(h,plan);
-  const row=(await h.lib.list(event,owner)).profiles.find(x=>x.retailer===retailer);assert.equal(LC.payment(row.data).cvv,retailer==='target'?'012':'0123');
-  const loaded=await h.lib.detail(event,{...owner,profileId:row.id});assert.equal(LC.payment(loaded.data).cvv,retailer==='target'?'012':'0123');
-  const jig=await h.lib.batchJigPreview(event,{...owner,retailer,profileIds:[row.id],ruleIds:[LC.FL_PHONE_RULE],combine:false,billingSameAsShipping:true});await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
-  const after=(await h.lib.list(event,owner)).profiles.find(x=>x.id===row.id);assert.equal(LC.payment(after.data).cvv,retailer==='target'?'012':'0123');assert.equal(after.bank,'live');
-  await h.lib.exportFile(event,{...owner,retailer,profileIds:[row.id],customerName:'Owner'});assert.ok(h.writes.at(-1)[1].includes(data.profileSecurityCode),'independent security code fills retailer verification slot');
+ for(const retailer of ['target','walmart']){
+  const data=complete(retailer,'owner-'+retailer+'@example.test');
+  if(retailer==='target')data.cc_cvv='012';else data.card.cvv='0123';
+  const reference='PICKUP-REFERENCE-'+retailer.toUpperCase();
+  data.profileSecurityCode=reference;
+  await commit(h,await h.lib.importPreview(event,{...h.p,bank:'live',retailer,fileName:'profiles.json',text:JSON.stringify([data])}));
+  let row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
+  assert.equal(row.data.profileSecurityCode,reference);
+  assert.equal(LC.payment(row.data).cvv,'','Card verifiers are not an independent profile reference');
+  const loaded=await h.lib.detail(event,{...h.p,profileId:row.id});
+  assert.equal(loaded.data.profileSecurityCode,reference);
+  const jig=await h.lib.batchJigPreview(event,{...h.p,retailer,profileIds:[row.id],ruleIds:[LC.FL_PHONE_RULE],combine:false,billingSameAsShipping:true});
+  await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
+  row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
+  assert.equal(row.data.profileSecurityCode,reference);
+  assert.equal(row.bank,'live');
+  await h.lib.exportArchive(event,{...h.p,retailer,profileIds:[row.id],customerName:'Owner'});
+  assert.equal(JSON.parse(h.writes.at(-1)[1]).profiles[0].profileSecurityCode,reference);
  }
- const bytes=await fs.readFile(h.profiles.paths.personal);assert.ok(bytes.toString().startsWith('ENCRYPTED:'));
- assert.equal((await h.lib.list(event,h.b)).profiles.length,0);h.lockLibrary();await assert.rejects(h.lib.list(event,h.p),/Locked/);
+ assert.ok((await fs.readFile(h.profiles.paths.personal)).toString().startsWith('ENCRYPTED:'));
+ assert.equal((await h.lib.list(event,h.b)).profiles.length,0);
+ h.lockLibrary();await assert.rejects(h.lib.list(event,h.p),/Locked/);
 });
-test('Local CVV can be edited or cleared without changing another profile or storing it in audit output',async t=>{
- const h=await library(t),data=complete('target','own@example.test');data.cc_cvv='123';await commit(h,await preview(h,[data]));let row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.data.cc_cvv,'123');
- const response=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),cardCvv:'9876'});assert.equal(response.updated,true);assert.ok(!JSON.stringify(response).includes('9876'));
- row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.data.cc_cvv,'9876');assert.ok(!JSON.stringify(await h.profiles.audit('personal',null)).includes('9876'));
- await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),cardCvv:''});assert.equal((await h.lib.list(event,h.p)).profiles[0].data.cc_cvv,'');
+test('Independent profile code may be edited without affecting other profiles or audit logs',async t=>{
+ const h=await library(t),data=complete('target','code@example.test');
+ data.profileSecurityCode='PICKUP-OLD';
+ await commit(h,await preview(h,[data]));
+ let row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'PICKUP-OLD');
+ const updated=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'PICKUP-NEW'});
+ assert.equal(updated.updated,true);
+ assert.ok(!JSON.stringify(updated).includes('PICKUP-NEW'));
+ row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'PICKUP-NEW');
+ assert.ok(!JSON.stringify(await h.profiles.audit('personal',null)).includes('PICKUP-NEW'));
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:''});
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'');
 });
-test('Normalized imports retain CVV/CVC aliases without sending values to another owner',async t=>{
- const h=await library(t),data=complete('walmart','cvc@example.test');data.card.cvc='345';await commit(h,await preview(h,[data],h.p,'walmart'));
- const row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.data.card.cvv,'345');assert.equal((await h.lib.list(event,h.a)).profiles.length,0);assert.equal((await h.lib.list(event,h.b)).profiles.length,0);
+test('Imported independent Security Code aliases remain with the correct owner and never become a card verifier',async t=>{
+ const h=await library(t),data=complete('walmart','code-alias@example.test');
+ data.card.cvc='345';data.profileSecurityCode='PROFILE-REFERENCE';
+ data.card.custom_security_code='INDEPENDENT-SAVED-NOTE';
+ await commit(h,await preview(h,[data],h.p,'walmart'));
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'PROFILE-REFERENCE');
+ assert.equal(row.data.card.custom_security_code,'INDEPENDENT-SAVED-NOTE');
+ assert.equal(LC.payment(row.data).cvv,'');
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
+ assert.equal((await h.lib.list(event,h.b)).profiles.length,0);
 });
 
 test('Customer storage does not change and the customer editor rejects Personal card-code operations',async t=>{

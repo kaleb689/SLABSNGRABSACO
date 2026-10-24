@@ -17,7 +17,9 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: node --test test/*.test.js test/*.test.mjs
+      # Cap parallel server-integration tests so IMAP fixture readiness is not
+      # starved by dozens of simultaneous Node test workers.
+      - run: node --test --test-concurrency=1 test/*.test.js test/*.test.mjs
       - run: node --check checkout-reporting.js
       - run: node --check server.js
       - run: node --test test/managed-customer-write-policy.test.mjs test/studio-customer-sync.test.mjs test/studio-linked-billing.test.mjs test/studio-live-http.test.mjs

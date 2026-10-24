@@ -11,23 +11,24 @@ function values(data){const v=Draft.toValues(data),s=data.shipping||{},b=data.bi
 }
 function payment(data){const sh=Draft.formatOf(data)==='shikari',c=data.card||{},v=values(data),exp=clean(c.expiration).split('/');
  let year=clean(sh?data.cc_exp_year:exp[1]||c.expYear);if(/^\d{2}$/.test(year))year='20'+year;
- return {cvv:clean(sh?(data.cc_cvv||data.cvv||data.cvc||data.security_code||data.securityCode||(/^\d{3,4}$/.test(String(data.custom_security_code||''))?data.custom_security_code:'')):(c.cvv||c.cvc||c.cid||c.securityCode||c.security_code||c.cvv2||(/^\d{3,4}$/.test(String(c.custom_security_code||''))?c.custom_security_code:''))),number:digits(sh?data.cc_number:c.number||c.cardNumber),cardholder:clean(sh?data.cc_name||data.cc_holder:c.holder||c.cardholder)||(v['billing.first']+' '+v['billing.last']).trim(),month:clean(sh?data.cc_exp_month:exp[0]||c.expMonth).padStart(2,'0'),year,type:clean(sh?data.cc_type:c.type||c.brand),customSecurityCode:clean(data.custom_security_code||c.custom_security_code||'')};
+ return {cvv:clean(sh?(data.cc_cvv||data.cvv||data.cvc):(c.cvv||c.cvc||c.cid||c.cvv2)),number:digits(sh?data.cc_number:c.number||c.cardNumber),cardholder:clean(sh?data.cc_name||data.cc_holder:c.holder||c.cardholder)||(v['billing.first']+' '+v['billing.last']).trim(),month:clean(sh?data.cc_exp_month:exp[0]||c.expMonth).padStart(2,'0'),year,type:clean(sh?data.cc_type:c.type||c.brand),customSecurityCode:clean(data.custom_security_code||c.custom_security_code||'')};
 }
-function normalized(data,r){const v=values(data),out=Draft.blank(r,format(r),v);const c=payment(data);if(format(r)==='shikari')Object.assign(out,{cc_number:c.number,cc_name:c.cardholder,cc_exp_month:c.month,cc_exp_year:c.year,cc_type:c.type,cc_cvv:c.cvv,custom_security_code:c.customSecurityCode});else Object.assign(out.card,{number:c.number,holder:c.cardholder,cvv:c.cvv,expiration:c.month&&c.year?c.month+'/'+c.year.slice(-2):'',type:c.type,custom_security_code:c.customSecurityCode});if(typeof data.profileSecurityCode==='string')out.profileSecurityCode=data.profileSecurityCode.slice(0,100);return syncCardholderToProfile(out);}
+function normalized(data,r){const v=values(data),out=Draft.blank(r,format(r),v);const c=payment(data);if(format(r)==='shikari')Object.assign(out,{cc_number:c.number,cc_name:c.cardholder,cc_exp_month:c.month,cc_exp_year:c.year,cc_type:c.type,cc_cvv:c.cvv,custom_security_code:c.customSecurityCode});else Object.assign(out.card,{number:c.number,holder:c.cardholder,cvv:c.cvv,expiration:c.month&&c.year?c.month+'/'+c.year.slice(-2):'',type:c.type,custom_security_code:c.customSecurityCode});if(typeof data.profileSecurityCode==='string')out.profileSecurityCode=data.profileSecurityCode.slice(0,100);
+ else if(typeof data.security_code==='string')out.profileSecurityCode=data.security_code.slice(0,100);return syncCardholderToProfile(out);}
 const nameKey=data=>{const v=values(data);return (v['shipping.first']+' '+v['shipping.last']).normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim();};
 function collisions(records,existing,r){const index={email:new Set(),name:new Set(),card:new Set()};for(const row of existing.filter(x=>x.retailer===r)){const v=values(row.data);if(v.email)index.email.add(email(v.email));if(nameKey(row.data))index.name.add(nameKey(row.data));if(payment(row.data).number)index.card.add(payment(row.data).number);}
  return records.map(data=>{const keys={email:email(values(data).email),name:nameKey(data),card:payment(data).number},flags=Object.keys(keys).filter(k=>keys[k]&&index[k].has(keys[k]));for(const k of Object.keys(keys))if(keys[k])index[k].add(keys[k]);return flags;});}
 function inferredBrand(value){const n=digits(value);if(/^4\d{6,}$/.test(n))return 'Visa';const a=Number(n.slice(0,2)),b=Number(n.slice(0,4));if((a>=51&&a<=55)||(b>=2221&&b<=2720))return 'Mastercard';if(/^3[47]/.test(n))return 'American Express';if(/^6(?:011|5|4[4-9])/.test(n))return 'Discover';if(/^(?:2131|1800|35)/.test(n))return 'JCB';if(/^3(?:0[0-5]|[68])/.test(n))return 'Diners Club';return 'Card';}
-function putCard(data,c){const format=Draft.formatOf(data),v=values(data),profileHolder=(v.first+' '+v.last).replace(/\s+/g,' ').trim(),incoming=clean(c.cardholder),existing=clean(format==='shikari'?(data.cc_name||data.cc_holder):(data.card?.holder||data.card?.cardholder)),holder=profileHolder||(/^unassigned$/i.test(incoming)&&existing?existing:incoming),type=inferredBrand(c.number);if(format==='shikari')Object.assign(data,{cc_number:c.number,cc_exp_month:c.month,cc_exp_year:c.year,cc_name:holder,cc_type:type,custom_security_code:c.customSecurityCode||''});else Object.assign(data.card,{number:c.number,expiration:c.month+'/'+c.year.slice(-2),holder,cardholder:holder,type,custom_security_code:c.customSecurityCode||''});}
+function putCard(data,c){const format=Draft.formatOf(data),v=values(data),profileHolder=(v.first+' '+v.last).replace(/\s+/g,' ').trim(),incoming=clean(c.cardholder),existing=clean(format==='shikari'?(data.cc_name||data.cc_holder):(data.card?.holder||data.card?.cardholder)),holder=profileHolder||(/^unassigned$/i.test(incoming)&&existing?existing:incoming),type=inferredBrand(c.number);if(format==='shikari')Object.assign(data,{cc_number:c.number,cc_exp_month:c.month,cc_exp_year:c.year,cc_name:holder,cc_type:type});else Object.assign(data.card,{number:c.number,expiration:c.month+'/'+c.year.slice(-2),holder,cardholder:holder,type});}
 function randomName(data,used){for(let n=0;n<1000;n++){const person=Fields.personFor(data,Core.autoMap([data]),new Set());const next=Draft.manualEdit(data,{...values(data),first:person.first,last:person.last,'shipping.first':person.first,'shipping.last':person.last,'billing.first':person.first,'billing.last':person.last});if(!used.has(nameKey(next))){used.add(nameKey(next));return next;}}throw Error('Unable to generate another unused name.');}
-function exportRows(rows,r,customerName='Personal'){if(!rows.length)throw Error('Choose completed profiles to export.');const model=require('./site-model'),profiles=rows.map(x=>{const v=values(x.data),c=payment(x.data),address=role=>({firstName:v[role+'.first'],lastName:v[role+'.last'],phone:v[role+'.phone'],address:v[role+'.address1'],address2:v[role+'.address2'],city:v[role+'.city'],state:v[role+'.state'],zip:v[role+'.zip'],country:v[role+'.country']||'US'});return {email:v.email,phone:v.phone,shipping:address('shipping'),billing:address('billing'),card:c,profileSecurityCode:clean(x.data.profileSecurityCode||'')};});
+function exportRows(rows,r,customerName='Personal'){if(!rows.length)throw Error('Choose completed profiles to export.');const model=require('./site-model'),profiles=rows.map(x=>{const v=values(x.data),c=payment(x.data),address=role=>({firstName:v[role+'.first'],lastName:v[role+'.last'],phone:v[role+'.phone'],address:v[role+'.address1'],address2:v[role+'.address2'],city:v[role+'.city'],state:v[role+'.state'],zip:v[role+'.zip'],country:v[role+'.country']||'US'});return {email:v.email,phone:v.phone,shipping:address('shipping'),billing:address('billing'),card:c,profileSecurityCode:clean(x.data.profileSecurityCode||x.data.security_code||x.data.custom_security_code||'')};});
  const out=model.exportTemplates(r==='costco'||r==='sams'?'walmart':r,customerName,profiles,null,{localOwnerCards:profiles.map(x=>({...x.card,expiration:x.card.month+'/'+x.card.year.slice(-2),cvv:x.profileSecurityCode||''}))});
  out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(format(r)==='shikari'?'.csv':'.json');return out;
 }
 // Independent profile access codes are kept apart from all card verification fields.
 // Export is explicitly initiated from the authenticated desktop owner/customer profile vault.
 // The original retailer export templates remain untouched.
-const VERIFIER_KEYS=new Set(['cvv','cvv2','cvc','cvc2','cid','csc','cc_cvv','securitycode','security_code','cardverificationvalue']);
+const VERIFIER_KEYS=new Set(['cvv','cvv2','cvc','cvc2','cid','csc','cc_cvv','cardverificationvalue']);
 function archiveSafe(value){
  if(Array.isArray(value))return value.map(archiveSafe);
  if(!value||typeof value!=='object')return value;
@@ -35,9 +36,7 @@ function archiveSafe(value){
  for(const [key,entry] of Object.entries(value)){
   if(['__proto__','constructor','prototype'].includes(key))continue;
   if(VERIFIER_KEYS.has(key.toLowerCase()))continue;
-  // The legacy custom_security_code was previously used as a CVV alias.
-  // Do not leak a card verification value via an ambiguous old field.
-  if(['custom_security_code','customsecuritycode','accountsecuritycode'].includes(key.toLowerCase()))continue;
+  // Keep independent profile Security Code fields unchanged.
   out[key]=archiveSafe(entry);
  }
  return out;
@@ -47,7 +46,7 @@ function exportArchiveRows(rows,r,owner='Personal'){
  if(!rows.length)throw Error('Select profiles to export.');
  const records=rows.map(row=>({
   retailer:row.retailer,profileId:row.id,label:row.label,email:row.email,
-  profileSecurityCode:clean(row.data?.profileSecurityCode||''),
+  profileSecurityCode:clean(row.data?.profileSecurityCode||row.data?.security_code||row.data?.custom_security_code||''),
   data:archiveSafe(row.data)
  }));
  const name=clean(owner).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' full profiles.json';

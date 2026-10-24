@@ -1,7 +1,13 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path');const root=path.resolve(process.argv[2]);
-const files=['postal-city-crossover.js','full-admin-access.js','native-admin-contracts.js','native-admin-ui.js','native-touchid.js','duplicate-notification-state.js','profile-vault.js','profile-library-core.js','profile-library-service.js','profile-library-ui.js','profile-library.css','customer-profile-source.js','profile-completion-core.js'];for(const file of files)fs.copyFileSync(path.join(__dirname,file),path.join(root,file));
-for(const file of ['imported-card-codes.test.js','live-profiles.test.js','profile-library.test.js','profile-duplicate-scan.test.js','profile-bidirectional-sync.test.js','duplicate-notification-state.test.js','profile-live-ui.test.js','owner-backups.test.js','native-contracts.test.js','site-bridge-saved-data.test.js'])fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
+const files=['card-pool-policy.js','owner-health-advisor.js','postal-city-crossover.js','full-admin-access.js','native-admin-contracts.js','native-admin-ui.js','native-touchid.js','duplicate-notification-state.js','profile-vault.js','profile-library-core.js','profile-library-service.js','profile-library-ui.js','profile-library.css','customer-profile-source.js','profile-completion-core.js'];for(const file of files)fs.copyFileSync(path.join(__dirname,file),path.join(root,file));
+for(const file of ['card-pool-policy.test.js','imported-card-codes.test.js','live-profiles.test.js','profile-library.test.js','profile-duplicate-scan.test.js','profile-bidirectional-sync.test.js','duplicate-notification-state.test.js','profile-live-ui.test.js','owner-backups.test.js','native-contracts.test.js','site-bridge-saved-data.test.js'])fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
+// Ensure the hard-card policy is included in real packaged Mac/Windows apps.
+{
+ const p=path.join(root,'package.json'),manifest=JSON.parse(fs.readFileSync(p,'utf8'));
+ if(Array.isArray(manifest.build?.files)&&!manifest.build.files.includes('card-pool-policy.js'))manifest.build.files.push('card-pool-policy.js');
+ fs.writeFileSync(p,JSON.stringify(manifest,null,2)+'\n');
+}
 function replace(file,anchor,value){const p=path.join(root,file),s=fs.readFileSync(p,'utf8');if(s.split(anchor).length!==2)throw Error(file+': library integration anchor changed');fs.writeFileSync(p,s.replace(anchor,value));}
 replace('profile-workshop-service.js','const service=createWorkshop(options);',"const service=createWorkshop(options);require('./profile-library-service').registerLibrary(options);");
 {
@@ -12,7 +18,28 @@ replace('profile-workshop-service.js','const service=createWorkshop(options);',"
  const stop=end<0?s.length:end;
  fs.writeFileSync(p,s.slice(0,start)+"// Cardholder/name behavior moved to profile-library.test.js, where jig save paths are covered directly.\n"+s.slice(stop));
 }
+// The legacy "turn off Unused to reuse a card" test conflicts with the
+// approved per-retailer Hard Card rule. Replace it with a regression that
+// rejects repeat assignments even when the old UI filter is switched off.
+{
+ const p=path.join(root,'tests','profile-workshop.test.js'),original=fs.readFileSync(p,'utf8');
+ const marker="test('Used card cannot be selected under Unused only; reuse requires turning off that filter'";
+ const start=original.indexOf(marker),end=start<0?-1:original.indexOf("\ntest(",start+marker.length);
+ if(start<0||end<0)throw Error('Legacy card reuse regression test anchor changed');
+ const current=original.slice(0,start);
+ const next=`test('Hard Card assignment policy prohibits repeat use in the same retailer',()=>{
+  const policy=require('../card-pool-policy');
+  const card='4242424242424242';
+  const source=[{id:'one',retailer:'target',data:{cc_number:card}}];
+  assert.throws(()=>policy.checkAllocation(source,'target',[card],{}),/already in use/);
+  const setting=policy.toggle({},card,true);
+  assert.throws(()=>policy.checkAllocation(source,'target',[card],setting),/one per retailer/);
+  assert.doesNotThrow(()=>policy.checkAllocation(source,'walmart',[card],setting));
+});\n`;
+ fs.writeFileSync(p,current+next+original.slice(end));
+}
 replace('main.js','window.JigStudioLocalImport?.workspaceState)', 'window.JigStudioLocalImport?.workspaceState && document.getElementById("profileLibraryPage") && window.desktopAPI?.profileLibrary && document.querySelectorAll(".profileNavChild").length===2)');
+replace('main.js',"ipcMain.handle('site:open'","ipcMain.handle('owner:health-scan',event=>{ownerSender(event);return require('./owner-health-advisor').scan();});\nipcMain.handle('owner:health-explain',event=>{ownerSender(event);return require('./owner-health-advisor').explain();});\nipcMain.handle('site:open'");
 replace('main.js',"ipcMain.handle('site:open'",`ipcMain.handle('site:health',event=>{ownerSender(event);return new Promise(resolve=>{let done=false;const finish=value=>{if(done)return;done=true;resolve(value);};const request=https.get('https://slabsngrabsaco.com/admin.html?acoDesktop=health',{timeout:5000,headers:{'Cache-Control':'no-cache'}},response=>{const status=Number(response.statusCode||0);response.resume();finish({online:status>=200&&status<500,status});});request.on('error',()=>finish({online:false,status:0}));request.on('timeout',()=>{request.destroy();finish({online:false,status:0});});});});\nipcMain.handle('owner:touch-id',async event=>{ownerSender(event);if(process.platform!=='darwin')return {available:false,verified:false,reason:'unsupported'};const {systemPreferences}=require('electron');if(!systemPreferences.canPromptTouchID())return {available:false,verified:false,reason:'unavailable'};const state=siteBridge.desktopUnlockState();if(!state?.enrolled)return {available:true,verified:false,session:false,needsEnrollment:true,reason:'Sign in once with the Admin password and authenticator to enable Touch ID on this Mac.'};try{await siteBridge.prepareDesktopUnlock();await systemPreferences.promptTouchID('Unlock ACO Studio');const session=await siteBridge.unlockDesktopAdmin();if(session?.ok===true){try{await siteBridge.read('roster',{});}catch{return {available:true,verified:true,session:false,reason:'Touch ID succeeded, but the Admin session could not be verified.'};}}return {available:true,verified:true,session:session?.ok===true,needsEnrollment:session?.needsEnrollment===true,reason:session?.reason||''};}catch(error){return {available:true,verified:false,session:false,reason:String(error?.message||error||'Touch ID was not completed.')};}});\nipcMain.handle('site:open'`);
 replace('main.js',` async function signInAndVerifyAdmin(){
   if(process.argv.includes('--aco-studio-ci-smoke'))return;
@@ -64,8 +91,9 @@ replace('main.js',` async function signInAndVerifyAdmin(){
  }`);
 replace('main.js',"void signInAndVerifyAdmin().then(async()=>{\n   const current=ownerWindow;","void signInAndVerifyAdmin({allowTouchId:false}).then(async()=>{\n   const current=ownerWindow;");
 replace('main.js','requireOwner:workshopOwner,authorize:',"getPostalJigOptions: address=>require('./postal-city-crossover').lookupPostalZipCities(address),getCustomerProfileSource:id=>siteBridge.profileSource(id),saveCustomerProfile:(id,remote,fields)=>siteBridge.saveCustomerProfile(id,remote,fields),getCustomerSavedData:id=>siteBridge.savedCustomerData(id),updateCustomerSavedData:(id,kind,recordId,payload)=>siteBridge.saveCustomerSavedData(id,kind,recordId,payload),changeCustomerAssignment:(id,remote,operation,payload)=>siteBridge.changeCustomerAssignment(id,remote,operation,payload),requireOwner:workshopOwner,authorize:");
+replace('preload.js','site:Object.freeze({',"ownerHealth:Object.freeze({scan:()=>ipcRenderer.invoke('owner:health-scan'),explain:()=>ipcRenderer.invoke('owner:health-explain')}),\n site:Object.freeze({");
 replace('preload.js','site:Object.freeze({',"ownerSecurity:Object.freeze({touchId:()=>ipcRenderer.invoke('owner:touch-id')}),\n site:Object.freeze({health:()=>ipcRenderer.invoke('site:health'),");
-replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.freeze(Object.fromEntries(['jigAssets','reuseChoices','list','detail','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules','backupList','backupRestore'].map(method=>[method,payload=>ipcRenderer.invoke('profile:library:'+method,payload)]).concat([['cancel',()=>ipcRenderer.invoke('profile:library:cancel')]]))),\n profileWorkshop:Object.freeze({manageResource:payload=>ipcRenderer.invoke('profile:workshop:manageResource',payload),");
+replace('preload.js','profileWorkshop:Object.freeze({',"profileLibrary:Object.freeze(Object.fromEntries(['jigAssets','reuseChoices','list','detail','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','rules','saveRules','backupList','backupRestore'].map(method=>[method,payload=>ipcRenderer.invoke('profile:library:'+method,payload)]).concat([['cancel',()=>ipcRenderer.invoke('profile:library:cancel')]]))),\n profileWorkshop:Object.freeze({setHardCard:payload=>ipcRenderer.invoke('profile:workshop:setHardCard',payload),addProfileCardToBank:payload=>ipcRenderer.invoke('profile:workshop:addProfileCardToBank',payload),manageResource:payload=>ipcRenderer.invoke('profile:workshop:manageResource',payload),");
 
 // Extend the existing OS-encrypted card/address vaults with in-place edits that
 // preserve resource IDs already referenced by saved profiles.
@@ -275,7 +303,7 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  const p=path.join(root,'tests','personal-profile-import.test.js'),s=fs.readFileSync(p,'utf8');
  const before="assert.equal(saved.profile.data.card.cvv,'');assert.equal(saved.profile.data.password,'EXAMPLE_ONLY');";
  if(!s.includes(before))throw Error('Personal importer retention regression anchor changed');
- fs.writeFileSync(p,s.replace(before,"assert.equal(saved.profile.data.card.cvv,'DO-NOT-KEEP');assert.equal(saved.profile.data.password,'EXAMPLE_ONLY');"));
+ fs.writeFileSync(p,s.replace(before,"assert.equal(saved.profile.data.card.cvv,'');assert.equal(saved.profile.data.password,'EXAMPLE_ONLY');"));
 }
 
 

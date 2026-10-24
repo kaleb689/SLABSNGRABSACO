@@ -7,6 +7,7 @@ const crypto=require("node:crypto");
 const Vault=require("./vault.cjs");
 const Formats=require("./formats.cjs");
 const Jigs=require("./jigs.cjs");
+const Cards=require("./card-pool.cjs");
 const LICENSE_URL="https://slabsngrabsaco.com/api/studio-private/license/verify";
 const JIG_POLICY_URL="https://slabsngrabsaco.com/api/studio-private/jig-permissions";
 const JIG_EVENTS_URL=JIG_POLICY_URL+"/events";
@@ -14,7 +15,7 @@ const jigKeys=Object.keys(Jigs.defaults());
 let jigPolicy=null,permissionVersion=0,watchingJigs=false;
 app.setName("ACO STUDIO");
 app.setPath("userData",path.join(app.getPath("appData"),"aco-studio-private-edition"));
-let win=null,document=null,authorizedUntil=0,verifyPending=null,queue=Promise.resolve();
+let win=null,document=null,authorizedUntil=0,verifyPending=null,queue=Promise.resolve(),activeLicense=null;
 function transact(fn){const task=queue.then(fn,fn);queue=task.catch(()=>{});return task;}
 const addActivity=(state,action)=>{state.activity.unshift({id:crypto.randomUUID(),action,at:new Date().toISOString()});state.activity=state.activity.slice(0,80);};
 function validate(kind,value){if(!value||typeof value!=="object"||Array.isArray(value))throw Error("Missing record.");const cleaned={};for(const [key,part] of Object.entries(value)){
@@ -35,12 +36,15 @@ async function confirmLicense(key){
   }finally{clearTimeout(timeout);}
 }
 async function licenseStatus(force=false){
+  // A saved license is not an unlocked customer identity. A license-key
+  // sign-in is required on each launch before any local records are exposed.
+  if(!activeLicense)return false;
   if(!force&&Date.now()<authorizedUntil)return true;
   if(verifyPending)return verifyPending;
   verifyPending=(async()=>{
     try{const state=await Vault.load();
-      if(!state.licenseKey)return false;
-      if(!await confirmLicense(state.licenseKey)){authorizedUntil=0;return false;}
+      if(!state.licenseKey||state.licenseKey!==activeLicense)return false;
+      if(!await confirmLicense(activeLicense)){authorizedUntil=0;activeLicense=null;return false;}
       authorizedUntil=Date.now()+10*60_000;return true;
     }catch{authorizedUntil=0;return false;}
   })();
@@ -111,6 +115,7 @@ function startJigPolicySync(){
 async function edit(fn){return transact(async()=>{await allowed();const v=await Vault.load();const result=await fn(v);await Vault.save(v);return result;});}
 function displayState(v){
   return {sources:v.sources.map(s=>({id:s.id,retailer:s.retailer,bank:s.bank==='live'?'live':'working',...Formats.profileSummary(s.file)})),
+    cardPool:Cards.inventory(v),
     cards:v.cards.map(c=>({id:c.id,label:c.label,holder:c.holder,number:c.number,securityCode:c.securityCode||"",last4:String(c.number||"").slice(-4),expiry:c.expiry})),
     addresses:v.addresses,activity:v.activity.slice(0,30),rules:v.rules,importHistory:ImportBatches.history(v)};
 }
@@ -129,8 +134,13 @@ ipcMain.handle("license:activate",async (_e,value)=>{
   const key=String(value||"").trim().toUpperCase();
   if(!/^ACOP-(?:[A-F0-9]{16}-){3}[A-F0-9]{16}$/.test(key))throw Error("Enter a valid license key.");
   if(!await confirmLicense(key))throw Error("This subscription license is not active.");
-  await transact(async()=>{const state=await Vault.load();state.licenseKey=key;await Vault.save(state);});
-  authorizedUntil=Date.now()+10*60_000;startJigPolicySync();return {active:true};
+  await transact(async()=>{
+   const state=await Vault.load();
+   if(state.licenseKey&&state.licenseKey!==key)
+    throw Error('This encrypted workspace is already bound to another customer license. Sign in using the existing license or a separate OS user account; other customers’ cards and profiles cannot be opened.');
+   state.licenseKey=key;await Vault.save(state);
+  });
+  activeLicense=key;authorizedUntil=Date.now()+10*60_000;startJigPolicySync();return {active:true};
 });
 ipcMain.handle("vault:overview",async()=>{await allowed();return displayState(await Vault.load());});
 ipcMain.handle("jigs:permissions",async()=>{await allowed();return jigPolicy||await loadJigPolicy();});
@@ -139,6 +149,18 @@ ipcMain.handle("vault:addCard",(_e,p)=>edit(v=>{const card=validate("card",{labe
   if(!/^\d{12,19}$/.test(card.number))throw Error("Card number must contain 12-19 digits.");
   if(v.cards.some(c=>c.number===card.number))throw Error("Card already saved in this private bank.");
   v.cards.push(card);addActivity(v,"Added card ending "+card.number.slice(-4));return {saved:true};}));
+ipcMain.handle("vault:setHardCard",(_e,p)=>edit(v=>{
+  if(p?.confirmed!==true)throw Error('Explicit confirmation is required.');
+  const response=Cards.toggle(v,p.cardRef,p.hard);
+  addActivity(v,'Hard Card status updated for card ending '+response.last4);
+  return response;
+}));
+ipcMain.handle("vault:promoteCard",(_e,p)=>edit(v=>{
+  if(p?.confirmed!==true)throw Error('Explicit confirmation is required.');
+  const result=Cards.promote(v,p.cardRef);
+  if(result.saved)addActivity(v,'Imported profile card added to private Card Bank, ending '+result.last4);
+  return result;
+}));
 ipcMain.handle("vault:addAddress",(_e,p)=>edit(v=>{const a=validate("address",{
   label:String(p?.label||""),address:String(p?.address||""),unit:String(p?.unit||""),
   city:String(p?.city||""),state:String(p?.state||""),zip:String(p?.zip||"")});
@@ -227,6 +249,10 @@ ipcMain.handle("vault:jig",(_e,p)=>edit(async v=>{
   const useCards=p?.options?.useCardBank===true;
   if(useAddresses&&!v.addresses.length)throw Error("Add addresses to your private address bank first.");
   if(useCards&&!v.cards.length)throw Error("Add cards to your private card bank first.");
+  // Derive actual assignments from every source file in this single private
+  // vault, not from tab state or a renderer-provided usage counter.
+  const allocations=useCards?Cards.allocate(v,source,[...new Set(selected)]):[];
+  const allocationByIndex=new Map(allocations.map(a=>[a.index,a.card]));
   let edited=0,assignedAddresses=0,assignedCards=0;
   for(const [position,index] of [...new Set(selected)].entries()){
     let changed=Jigs.jigProfile(source.file,index,options).count;
@@ -238,8 +264,10 @@ ipcMain.handle("vault:jig",(_e,p)=>edit(async v=>{
       if(applied){assignedAddresses++;changed+=applied;}
     }
     if(useCards){
-      const card=v.cards[position%v.cards.length];
-      const applied=Formats.changeRow(source.file,index,{cardNumber:card.number||"",cardExpiry:card.expiry||"",cardholder:card.holder||"",cardSecurityCode:card.securityCode||""});
+      const card=allocationByIndex.get(index);
+      if(!card)throw Error('No eligible card was reserved for this specific profile.');
+      // The unrelated per-profile Security Code remains untouched.
+      const applied=Formats.changeRow(source.file,index,{cardNumber:card.number||"",cardExpiry:card.expiry||"",cardholder:card.holder||""});
       if(applied){assignedCards++;changed+=applied;}
     }
     if(changed)edited++;
@@ -255,8 +283,9 @@ ipcMain.handle("vault:remove",(_e,p)=>edit(v=>{
   addActivity(v,"Removed local "+p.kind+" record");
   return {removed:true};
 }));
-ipcMain.handle("vault:backupList",()=>Vault.snapshots());
+ipcMain.handle("vault:backupList",async()=>{await allowed();return Vault.snapshots();});
 ipcMain.handle("vault:backupRestore",async(_e,name)=>{
+  await allowed();
   if(typeof name!=="string")throw Error("Choose a backup.");
   const confirmation=await dialog.showMessageBox(win,{
     type:"warning",title:"Restore encrypted profile backup",
@@ -281,6 +310,7 @@ ipcMain.handle("vault:backupExport",async(_e,passphrase)=>{
   return {saved:true};
 });
 ipcMain.handle("vault:backupImport",async(_e,passphrase)=>{
+  await allowed();
   const file=await dialog.showOpenDialog(win,{
     title:"Restore encrypted backup",
     properties:["openFile"],
@@ -297,8 +327,12 @@ ipcMain.handle("vault:backupImport",async(_e,passphrase)=>{
   });
   if(answer.response!==1)return {restored:false};
   const data=await fs.readFile(file.filePaths[0],"utf8");
-  authorizedUntil=0;jigPolicy=null;
-  return transact(()=>Vault.restorePortable(data,passphrase));
+  const backup=require('./portable-backup.cjs');
+  const parsed=await backup.decryptBackup(data,passphrase);
+  if(parsed.licenseKey&&parsed.licenseKey!==activeLicense)throw Error('This backup belongs to another customer license and cannot be restored here.');
+  const restored=await transact(()=>Vault.restorePortable(data,passphrase));
+  authorizedUntil=0;activeLicense=null;jigPolicy=null;watchingJigs=false;
+  return restored;
 });
 app.whenReady().then(async()=>{await openWindow();if(await licenseStatus().catch(()=>false))startJigPolicySync();}).catch(()=>app.quit());
 app.on("window-all-closed",()=>app.quit());

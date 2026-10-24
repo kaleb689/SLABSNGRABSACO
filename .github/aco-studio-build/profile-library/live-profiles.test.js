@@ -44,11 +44,11 @@ test('Retailer metadata overrides filenames; unlabeled Valor uses the selected r
  const b=await live(h,[complete('costco','b@example.test')],h.p,'costco');assert.equal(b.profiles[0].retailer,'costco');await commit(h,b);
  assert.equal((await h.lib.list(event,h.p)).profiles.length,2);
 });
-test('Live imports seed each email once and exclude PKC use or reservations across customer/private pools',async t=>{
+test('Owner PKC email inventory never reads or borrows customer A/B reservations',async t=>{
  const h=await library(t);await h.profiles.importRows({...h.a,retailer:'pokemoncenter',rows:[complete('pokemoncenter','used@example.test')]});
  await h.service.importEmails(event,{...h.b,retailer:'pokemoncenter',emails:['reserved@example.test']});
  const plan=await live(h,[{...complete('target','new@example.test'),retailer:'target'},{...complete('walmart','new@example.test'),retailer:'walmart'},complete('target','used@example.test'),complete('target','reserved@example.test')]);
- const result=await commit(h,plan);assert.equal(result.pkcEmailsAdded,1);const inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});assert.deepEqual(inventory.emails.map(x=>x.email),['new@example.test']);
+ const result=await commit(h,plan);assert.equal(result.pkcEmailsAdded,3);const inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});assert.deepEqual(inventory.emails.map(x=>x.email).sort(),['new@example.test','reserved@example.test','used@example.test']);
  const another=await live(h,[complete('costco','new@example.test')],h.p,'costco');assert.equal((await commit(h,another)).pkcEmailsAdded,0);
 });
 test('Reimport requires reviewed replacement and stable preview; edits and jigs retain Live bank membership',async t=>{
@@ -74,6 +74,47 @@ test('A customer Live bank stays isolated and live accounts are never consumed a
 });
 
 
+test('Personal, Mike, and Derick never share cards, address IDs, profile cards, or Hard Card settings',async t=>{
+ const h=await library(t);
+ const ownerCard=await h.service.addCard(event,{...h.p,card:{...card,number:'4000000000000002',label:'Owner card'}});
+ const mikeCard=await h.service.addCard(event,{...h.a,card:{...card,number:'5555555555554444',label:'Mike card'}});
+ const derickCard=await h.service.addCard(event,{...h.b,card:{...card,number:'6011111111111117',label:'Derick card'}});
+ const ownerAddress=await h.service.addAddress(event,{...h.p,address:{...address,address1:'101 Owner Address'}});
+ const mikeAddress=await h.service.addAddress(event,{...h.a,address:{...address,address1:'202 Mike Address'}});
+ const derickAddress=await h.service.addAddress(event,{...h.b,address:{...address,address1:'303 Derick Address'}});
+ const personal=await h.profiles.importRows({...h.p,retailer:'target',rows:[complete('target','owner-account@example.test')]});
+ const ownerProfileId=personal.added[0].id;
+ const mikeProfile=await h.profiles.importRows({...h.a,retailer:'target',rows:[complete('target','mike-account@example.test')]});
+ const derickProfile=await h.profiles.importRows({...h.b,retailer:'target',rows:[complete('target','derick-account@example.test')]});
+ const refs=[['Personal',h.p,ownerCard,ownerAddress,'owner-account@example.test'],['Mike',h.a,mikeCard,mikeAddress,'mike-account@example.test'],['Derick',h.b,derickCard,derickAddress,'derick-account@example.test']];
+ for(const [name,owner,ownedCard,ownedAddress,onlyEmail] of refs){
+  const a=await h.service.assets(event,owner);
+  assert.equal(a.cards.length,1,name+' must only have own saved card');
+  assert.equal(a.cards[0].id,ownedCard.id);
+  assert.equal(a.addresses.length,1);
+  assert.equal(a.addresses[0].id,ownedAddress.id);
+  assert.equal(a.profiles.length,1);
+  assert.equal(a.profiles[0].email,onlyEmail);
+  assert.equal(a.cardPool.length,2,'Saved and profile cards are both listed, but not from foreign vaults');
+  assert.ok(!JSON.stringify(a).includes('101 Owner Address')||name==='Personal');
+  assert.ok(!JSON.stringify(a).includes('202 Mike Address')||name==='Mike');
+  assert.ok(!JSON.stringify(a).includes('303 Derick Address')||name==='Derick');
+ }
+ await h.service.setHardCard(event,{...h.p,cardRef:'saved:'+ownerCard.id,hard:true,confirmed:true});
+ let ownerAssets=await h.service.assets(event,h.p);
+ assert.ok(ownerAssets.cardPool.find(x=>x.last4==='0002').hardCard);
+ assert.equal((await h.service.assets(event,h.a)).cardPool.some(x=>x.hardCard),false);
+ assert.equal((await h.service.assets(event,h.b)).cardPool.some(x=>x.hardCard),false);
+ await assert.rejects(h.service.setHardCard(event,{...h.a,cardRef:'saved:'+ownerCard.id,hard:true,confirmed:true}),/not in this vault/);
+ await assert.rejects(h.service.setHardCard(event,{...h.b,cardRef:'saved:'+mikeCard.id,hard:true,confirmed:true}),/not in this vault/);
+ await assert.rejects(h.service.addProfileCardToBank(event,{...h.a,profileId:ownerProfileId,confirmed:true}),/not found in this vault/);
+ await assert.rejects(h.service.addProfileCardToBank(event,{...h.b,profileId:mikeProfile.added[0].id,confirmed:true}),/not found in this vault/);
+ await assert.rejects(h.service.generate(event,{...h.a,retailer:'target',count:1,format:'shikari',addressIds:[ownerAddress.id],cardIds:[mikeCard.id]}),/not in this (exact )?vault/);
+ await assert.rejects(h.service.generate(event,{...h.b,retailer:'target',count:1,format:'shikari',addressIds:[derickAddress.id],cardIds:[mikeCard.id]}),/not in this (exact )?vault/);
+ assert.equal((await h.profiles.fieldSnapshot('personal',null)).length,1);
+ assert.equal((await h.profiles.fieldSnapshot('aco','customer-a')).length,1);
+ assert.equal((await h.profiles.fieldSnapshot('aco','customer-b')).length,1);
+});
 test('192 Target Live profiles reconcile to PKC coverage without creating false duplicate PKC profiles',async t=>{
  const h=await library(t);
  const email=i=>'target-'+String(i+1).padStart(3,'0')+'@example.test';

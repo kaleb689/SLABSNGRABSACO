@@ -1,13 +1,6 @@
 name: Verify ACO Studio 4.13.42 Mac two-way sync and native installers
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/aco-studio-build/drop-news/**'
-      - '.github/aco-studio-build/profile-library/**'
-      - '.github/aco-studio-build/native-updater/**'
-      - '.github/aco-studio-build/completed-profiles/**'
-      - '.github/workflows/release-aco-studio-v41327-macos.yml'
+  # Historical version: manual only; do not overwrite 4.13.43 update feeds.
   workflow_dispatch:
 permissions:
   contents: write

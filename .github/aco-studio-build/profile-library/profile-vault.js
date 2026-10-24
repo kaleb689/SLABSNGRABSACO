@@ -22,12 +22,13 @@ function emailFrom(row){
  return candidates.map(v=>name(v).toLowerCase()).find(s=>EMAIL.test(s))||'';
 }
 function normalizeEmail(value){const v=name(value).toLowerCase();return EMAIL.test(v)?v:'';}
-const redactKeys=new Set(['cvv','cvc','cid','cc_cvv','securitycode','security_code','verificationcode','cvv2','cardverificationvalue','custom_security_code','customsecuritycode','accountsecuritycode']);
-const personalCvvKeys=new Set(['cvv','cvc','cid','cc_cvv','securitycode','security_code','cvv2','cardverificationvalue']);
-const personalReferenceKeys=new Set(['custom_security_code','customsecuritycode','accountsecuritycode']);
+// Security Code is an independently named profile reference, not a payment verifier.
+// Only explicit payment-verification fields are stripped. Keep unrelated profile
+// security_code, custom_security_code and profileSecurityCode on both sides.
+const redactKeys=new Set(['cvv','cvc','cid','cc_cvv','cvc2','cvv2','verificationcode','cardverificationvalue','cardverificationcode']);
 function stripVerifiers(input,depth=0,scope='redacted'){if(depth>8)throw Error('Profile nesting limit exceeded.');if(Array.isArray(input))return input.map(x=>stripVerifiers(x,depth+1,scope));if(input&&typeof input==='object'){
   const out={};for(const [key,value] of Object.entries(input)){
-   if(redactKeys.has(key.toLowerCase())){const k=key.toLowerCase(),v=String(value??'');out[key]=scope==='personal'&&((personalCvvKeys.has(k))||personalReferenceKeys.has(k))?v.slice(0,64):'';continue;}
+   if(redactKeys.has(key.toLowerCase())){out[key]='';continue;}
    if(key==='__proto__'||key==='constructor'||key==='prototype')continue;
    out[key]=stripVerifiers(value,depth+1,scope);
   }return out;
@@ -73,10 +74,8 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   const key='owner',rows=d.groups?.[key]||[],emails=d.emailBanks?.[key]||[];
   const candidates=new Set([...rows.filter(x=>x.retailer!=='pokemoncenter').map(x=>normalizeEmail(x.email)),
     ...emails.filter(x=>x.retailer!=='pokemoncenter').map(x=>normalizeEmail(x.email))].filter(Boolean));
-  const used=new Set([...rows,...Object.values(other?.groups||{}).flat()]
-    .filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
-  const reserved=new Set([...emails,...Object.values(other?.emailBanks||{}).flat()]
-    .filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
+  const used=new Set(rows.filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
+  const reserved=new Set(emails.filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
   d.emailBanks||={};d.emailBanks[key]||=[];
   let added=0;
   for(const email of candidates){
@@ -85,7 +84,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    d.emailBanks[key].push({id:uuid(),email,retailer:'pokemoncenter',createdAt:now(),profileId:null,source:'personal-retailer-auto-pkc'});
    reserved.add(email);added++;
   }
-  if(added)auditRecord(d,key,'auto-personal-pkc-email-reconciliation','',{added,candidates:candidates.size});
+  if(added)bankAuditRecord(d,key,'auto-personal-pkc-email-reconciliation',{added,candidates:candidates.size});
   return {added,candidates:candidates.size,alreadyUsed:[...candidates].filter(x=>used.has(x)).length};
  }
  async function write(scope,data){
@@ -100,7 +99,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     ].filter(Boolean));
     const previous=candidates(await read('personal')),current=candidates(data);
     if([...current].some(email=>!previous.has(email)))
-     await seedPersonalPkc(data,await read('aco'));
+     await seedPersonalPkc(data);
    }
    if(!data||data.version!==1||!data.groups||typeof data.groups!=='object')
      throw Error('Refusing to overwrite profile data with an invalid vault.');
@@ -136,6 +135,14 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   data.audit||={};const list=data.audit[key]||[];
   list.push({id:uuid(),at:now(),action,email:profileEmail,...detail});
   data.audit[key]=list.slice(-3000);
+ }
+ // Inventory maintenance is a bank-level event, never a profile-level event.
+ // Do not put a blank email into Personal profile audit entries. Older tests
+ // (and consumers) expect every profile audit entry to belong to a real email.
+ function bankAuditRecord(data,key,action,detail={}){
+  data.bankAudit||={};const entries=data.bankAudit[key]||[];
+  entries.push({id:uuid(),at:now(),action,...detail});
+  data.bankAudit[key]=entries.slice(-1000);
  }
  async function audit(scope,customerId){await pending;const key=bank(scope,customerId),data=await read(scope);
   return {scope,customerId:scope==='aco'?key:null,entries:[...(data.audit?.[key]||[])].reverse().slice(0,100)};
@@ -293,6 +300,18 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     Fields.verify([row.data],[c.data],[new Set(c.allowed)],[0]);
     return {row,data:require('./profile-library-core').syncCardholderToProfile(structuredClone(c.data)),refs:c.assetRefs};
    });
+   if(choices.card){
+    const CardPolicy=require('./card-pool-policy'),settings=d.librarySettings?.[key]||{};
+    const excluded=new Set(updates.map(u=>u.row.id));
+    const staged=rows.filter(row=>!excluded.has(row.id));
+    for(const update of updates){
+     const n=CardPolicy.fromProfile({data:update.data});
+     if(n){
+      CardPolicy.checkAllocation(staged,update.row.retailer,[n],settings);
+      staged.push({id:update.row.id,retailer:update.row.retailer,data:update.data});
+     }
+    }
+   }
    for(const u of updates){if(resources.jigged)u.row.jiggedAt=now();u.row.data=u.data;u.row.revision=(u.row.revision||0)+1;u.row.assetRefs||={};
     if(choices.address)u.row.assetRefs.addressId=u.refs.addressId;
     if(choices.card)u.row.assetRefs.cardId=u.refs.cardId;
@@ -307,8 +326,10 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  // Email banks live in the same encrypted transaction as profiles. Consuming an
  // email and saving its profile is one atomic write, including concurrent jobs.
  const emailRows=(d,key)=>d.emailBanks?.[key]||[];
- async function usedEmails(retailer){const stores=await Promise.all([read('personal'),read('aco')]);
-  return new Set(stores.flatMap(d=>[...Object.values(d.groups).flat(),...Object.values(d.emailBanks||{}).flat()]).filter(x=>x.retailer===retailer).map(x=>normalizeEmail(x.email)).filter(Boolean));
+ async function usedEmails(scope,customerId,retailer){
+  const key=bank(scope,customerId),d=await read(scope);
+  return new Set([...(d.groups[key]||[]),...(d.emailBanks?.[key]||[])]
+    .filter(x=>x.retailer===retailer).map(x=>normalizeEmail(x.email)).filter(Boolean));
  }
  // An available retailer row is an account, not a second email to import.
  function freeAccounts(rows,retailer){return rows.filter(x=>x.retailer===retailer&&x.status==='available'&&x.bank!=='live'&&!x.sourceLinked&&!x.websiteAuthoritative);}
@@ -330,10 +351,8 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    [...rows.filter(x=>x.retailer!=='pokemoncenter'),...(d.emailBanks?.[key]||[]).filter(x=>x.retailer!=='pokemoncenter')]
    :targets).map(x=>normalizeEmail(x.email)).filter(Boolean))];
   d.emailBanks||={};d.emailBanks[key]||=[];
-  const allProfiles=[...Object.values(d.groups).flat(),...Object.values(other.groups).flat()];
-  const pkcProfiles=new Set(allProfiles.filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
-  const bankEmails=new Set([...Object.values(d.emailBanks).flat(),...Object.values(other.emailBanks||{}).flat()]
-   .filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
+  const pkcProfiles=new Set((d.groups[key]||[]).filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
+  const bankEmails=new Set((d.emailBanks[key]||[]).filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)).filter(Boolean));
   let added=0;
   for(const email of sourceEmails){
    if(pkcProfiles.has(email)||bankEmails.has(email))continue;
@@ -350,10 +369,10 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function reconcileTargetLivePkcEmails(scope,customerId,beforeWrite){
   const key=bank(scope,customerId);
   return serial(async()=>{
-   const d=await read(scope),other=await read(scope==='personal'?'aco':'personal');
-   const report=backfillTargetLivePkc(d,other,key);
+   const d=await read(scope);
+   const report=backfillTargetLivePkc(d,null,key);
    if(report.added){
-    auditRecord(d,key,'reconcile-target-live-pkc','',{added:report.added,sourceProfiles:report.targetLiveProfiles});
+    bankAuditRecord(d,key,'reconcile-target-live-pkc',{added:report.added,sourceProfiles:report.targetLiveProfiles});
     if(beforeWrite)beforeWrite();
     await write(scope,d);
    }
@@ -361,14 +380,14 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   });
  }
  async function emailInventory(scope,customerId,retailer){const r=retailerId(retailer);const reconciled=r==='pokemoncenter'?await reconcileTargetLivePkcEmails(scope,customerId):null;await pending;const key=bank(scope,customerId),d=await read(scope);
-  const other=await read(scope==='personal'?'aco':'personal'),rows=d.groups[key]||[],allProfiles=[...Object.values(d.groups).flat(),...Object.values(other.groups).flat()];
+  const rows=d.groups[key]||[],allProfiles=rows;
   const inventory=creationInventory(rows,allProfiles,emailRows(d,key),r);
   return {scope,customerId:scope==='aco'?key:null,retailer:r,freeAccounts:inventory.accounts.filter(x=>x.account).length,availableForCreation:inventory.accounts.length,...(reconciled?{targetLiveReconciliation:reconciled}:{}),emails:inventory.accounts.map(x=>({id:x.account?.id||x.entry.id,email:x.email,status:'available',source:x.account?'account':'email'})).concat(emailRows(d,key).filter(x=>x.retailer===r&&!inventory.accounts.some(a=>a.email===x.email)).map(x=>({id:x.id,email:x.email,status:'used'})))};
  }
  async function importEmails(scope,customerId,retailer,values,beforeWrite){const key=bank(scope,customerId),r=retailerId(retailer);
   if(!Array.isArray(values)||!values.length||values.length>5000||typeof beforeWrite!=='function')throw Error('Import 1-5000 emails.');
   const normalized=values.map(v=>typeof v==='string'&&v.length<=200?normalizeEmail(v):'');
-  return serial(async()=>{const d=await read(scope),used=await usedEmails(r),rows=emailRows(d,key),added=[];let invalid=0,skipped=0;
+  return serial(async()=>{const d=await read(scope),used=await usedEmails(scope,customerId,r),rows=emailRows(d,key),added=[];let invalid=0,skipped=0;
    for(const email of normalized){if(!email){invalid++;continue;}if(used.has(email)){skipped++;continue;}used.add(email);const row={id:uuid(),email,retailer:r,createdAt:now(),profileId:null};rows.push(row);added.push({id:row.id,email});}
    if(rows.length>20000)throw Error('Email vault limit reached.');d.emailBanks||={};d.emailBanks[key]=rows;
    auditRecord(d,key,'import-email-bank','',{retailer:r,added:added.length,skipped,invalid});beforeWrite();await write(scope,d);
@@ -377,13 +396,13 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  }
  async function createEmailProfiles(scope,customerId,retailer,count,build,beforeWrite){const key=bank(scope,customerId),r=retailerId(retailer);
   if(!Number.isInteger(count)||count<1||count>500||typeof build!=='function'||typeof beforeWrite!=='function')throw Error('Create 1-500 profiles.');
-  return serial(async()=>{const d=await read(scope),rows=d.groups[key]||[],other=await read(scope==='personal'?'aco':'personal');
-   const allProfiles=[...Object.values(d.groups).flat(),...Object.values(other.groups).flat()];
+  return serial(async()=>{const d=await read(scope),rows=d.groups[key]||[];
+   const allProfiles=rows;
    const available=creationInventory(rows,allProfiles,emailRows(d,key),r).accounts;
    if(available.length<count)throw Error('Not enough unused emails or free accounts in this vault and retailer.');
    const chosen=available.slice(0,count),newCount=chosen.filter(x=>!x.account).length;
    if(rows.length+newCount>10000)throw Error('Profile vault is full.');
-   const built=await build(chosen.map(x=>x.email),structuredClone(rows),chosen.map(x=>x.account?structuredClone(x.account):null));
+   const built=await build(chosen.map(x=>x.email),structuredClone(rows),chosen.map(x=>x.account?structuredClone(x.account):null),structuredClone(d.librarySettings?.[key]||{}));
    if(!Array.isArray(built)||built.length!==count)throw Error('Profile generation failed. Nothing was saved.');
    const added=built.map((item,i)=>{if(emailFrom(item.data)!==chosen[i].email)throw Error('Email assignment mismatch.');const prior=chosen[i].account;return {...prior,id:prior?.id||uuid(),email:chosen[i].email,label:name(item.data.profile_name||item.data.name),retailer:r,format:item.format,status:'draft',source:'owner-created-profile',createdAt:prior?.createdAt||now(),revision:(prior?.revision??-1)+1,assetRefs:{...item.assetRefs,...(chosen[i].entry?{emailId:chosen[i].entry.id}:{})},data:stripVerifiers(item.data,0,scope)};});
    for(let i=0;i<added.length;i++){const entry=chosen[i].entry;if(entry){entry.profileId=added[i].id;entry.usedAt=now();}for(const e of emailRows(d,key))if(e.retailer===r&&e.email===added[i].email){e.profileId=added[i].id;e.usedAt=now();}auditRecord(d,key,'create-from-pools',added[i].email,{retailer:r});}
@@ -397,7 +416,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   const key=bank(scope,customerId);
   if(!Array.isArray(entries)||!entries.length||entries.length>10000||typeof beforeWrite!=='function')throw Error('Choose 1-10000 live profiles.');
   return serial(async()=>{
-   const d=await read(scope),other=await read(scope==='personal'?'aco':'personal'),rows=d.groups[key]||[],seen=new Map(),prepared=[];
+   const d=await read(scope),rows=d.groups[key]||[],seen=new Map(),prepared=[];
    for(const item of entries){
     const retailer=retailerId(item.retailer),data=stripVerifiers(item.data,0,scope),email=normalizeEmail(emailFrom(data)),token=retailer+'|'+email;
     if(!email)throw Error('Every live profile needs a valid account email.');
@@ -414,13 +433,12 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    if(rows.length+prepared.filter(x=>!rows.some(r=>r.id===x.id)).length>10000)throw Error('Profile vault is full.');
    const ids=new Set(prepared.map(x=>x.id));d.groups[key]=[...rows.filter(x=>!ids.has(x.id)),...prepared];
    d.emailBanks||={};d.emailBanks[key]||=[];
-   const allProfiles=[...Object.values(d.groups).flat(),...Object.values(other.groups).flat()];
-   const usedPkc=new Set(allProfiles.filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)));
-   for(const x of [...Object.values(d.emailBanks).flat(),...Object.values(other.emailBanks||{}).flat()])if(x.retailer==='pokemoncenter')usedPkc.add(x.email);
+   const usedPkc=new Set([...rows,...prepared].filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)));
+   for(const x of d.emailBanks[key]||[])if(x.retailer==='pokemoncenter')usedPkc.add(x.email);
    let pkcEmailsAdded=0;
    for(const row of prepared){
     for(const entry of d.emailBanks[key])if(entry.retailer===row.retailer&&entry.email===row.email){entry.profileId=row.id;entry.usedAt=now();}
-    if(!usedPkc.has(row.email)){d.emailBanks[key].push({id:uuid(),email:row.email,retailer:'pokemoncenter',createdAt:now(),profileId:null,source:'live-profile-import'});usedPkc.add(row.email);pkcEmailsAdded++;}
+    if(row.retailer!=='pokemoncenter'&&!usedPkc.has(row.email)){d.emailBanks[key].push({id:uuid(),email:row.email,retailer:'pokemoncenter',createdAt:now(),profileId:null,source:'live-profile-import'});usedPkc.add(row.email);pkcEmailsAdded++;}
     auditRecord(d,key,'live-profile-import',row.email,{retailer:row.retailer,bank:'live'});
    }
    if(d.emailBanks[key].length>20000)throw Error('Email vault limit reached.');

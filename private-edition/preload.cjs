@@ -2,7 +2,7 @@
 const {contextBridge,ipcRenderer}=require("electron");
 const allowed=[
 "license:status","license:activate","vault:overview","jigs:permissions","vault:addCard","vault:addAddress",
-"vault:addAccount","vault:import","vault:bulkMove","vault:bulkDelete","vault:removeImportBatch","vault:export","vault:rows","vault:jig","vault:remove","vault:setBank","vault:editRow","vault:backupList","vault:backupRestore","vault:backupExport","vault:backupImport"
+"vault:setHardCard","vault:promoteCard","vault:addAccount","vault:import","vault:bulkMove","vault:bulkDelete","vault:removeImportBatch","vault:export","vault:rows","vault:jig","vault:remove","vault:setBank","vault:editRow","vault:backupList","vault:backupRestore","vault:backupExport","vault:backupImport"
 ];
 const api={};
 for(const channel of allowed)api[channel.replace(/[:-]/g,"_")]=payload=>ipcRenderer.invoke(channel,payload);

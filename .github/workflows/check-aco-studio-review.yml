@@ -1,0 +1,142 @@
+name: ACO Studio review regression checks
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/aco-studio-build/profile-library/**'
+      - '.github/workflows/check-aco-studio-review.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  ACO_VERSION: '4.13.43'
+jobs:
+  profile-integration:
+    name: Restore owner app and run full regression tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore verified owner application
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, hashlib, pathlib, zipfile, io
+          root=pathlib.Path('.github/aco-studio-build')
+          parts=sorted(root.glob('aco-studio-v4.13.5.part-*.b64'))
+          assert len(parts)==11, 'Source archive incomplete'
+          data=base64.b64decode(b''.join(p.read_bytes() for p in parts))
+          assert hashlib.sha256(data).hexdigest()=='8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570', 'Source archive SHA-256 mismatch'
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+           assert all(not pathlib.PurePosixPath(n).is_absolute() and '..' not in pathlib.PurePosixPath(n).parts for n in z.namelist())
+           z.extractall('build-src')
+          assert pathlib.Path('build-src/App/main.js').is_file()
+          PY
+      - name: Restore all existing production overlays and review changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+          python3 .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+          ACO_ADHOC_MODE=true node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+          node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+          node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+          test -s build-src/App/owner-health-advisor.js
+          cp .github/aco-studio-build/profile-library/owner-health-advisor.test.js build-src/App/tests/owner-health-advisor.test.js
+      - name: Install dependencies
+        working-directory: build-src/App
+        run: npm install --no-audit --no-fund
+      - name: Verify syntax, Personal isolation, PKC reconciliation and new UI
+        working-directory: build-src/App
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in *.js; do node --check "$f"; done
+          if [[ "$RUNNER_OS" == 'macOS' ]]; then npm run check | tee regression-results.txt; else node --test $(find tests -maxdepth 1 -type f -name '*.test.js' ! -name 'mac-full-updates.test.js' | sort) | tee regression-results.txt; fi
+      - name: Build Apple Silicon DMG/ZIP preview without deployment
+        if: matrix.os == 'macos-15'
+        working-directory: build-src/App
+        shell: bash
+        env:
+          # Electron Builder skips signatures on pull-request builds by
+          # default. Force the explicit ad-hoc identity set by release-v4139,
+          # then require a valid signature instead of treating it as optional.
+          CSC_FOR_PULL_REQUEST: 'true'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          npx electron-builder --mac dmg zip --arm64 --publish never
+          DMG="dist/ACO-Studio-${ACO_VERSION}-arm64.dmg"
+          ZIP="dist/ACO-Studio-${ACO_VERSION}-arm64.zip"
+          test -s "$DMG" && test -s "$ZIP"
+          APP="$(find dist -maxdepth 2 -type d -name 'ACO Studio.app' -print -quit)"
+          test -n "$APP" && test -d "$APP"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -Fx 'com.slabsngrabsaco.jigstudio.owner'
+          lipo -archs "$APP/Contents/MacOS/ACO Studio" | grep -w arm64
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          # Ad-hoc signing is intentionally allowed for an isolated preview;
+          # Developer ID signing and notarization are separate release gates.
+          codesign -dv --verbose=4 "$APP" 2>&1 | grep -E 'Signature=adhoc|Authority=Apple Distribution|Authority=Developer ID Application' 
+          hdiutil verify "$DMG"
+          shasum -a 256 "$DMG" "$ZIP"
+      - name: Test real Mac full-app update, restart, rollback and data preservation
+        if: matrix.os == 'macos-15'
+        shell: bash
+        env:
+          CSC_FOR_PULL_REQUEST: 'true'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          node .github/aco-studio-build/native-updater/ci-self-update.cjs build-src/App
+          test -s build-src/App/dist/update-test-arm64.json
+          python3 - <<'PY'
+          import json
+          report=json.load(open('build-src/App/dist/update-test-arm64.json'))
+          assert report['version']=='4.13.43' and report['architecture']=='arm64'
+          assert all(report[k] is True for k in ('update','restart','rollback','dataPreserved'))
+          print('PASS: signed preview update and rollback preserved synthetic Personal/customer data')
+          PY
+      - name: Stage verified non-production preview metadata
+        if: matrix.os == 'macos-15'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'adhoc' > build-src/App/dist/signing-arm64.txt
+          cp build-src/App/regression-results.txt build-src/App/dist/regression-arm64.txt
+      - name: Upload Apple Silicon preview (unnotarized, not released)
+        if: matrix.os == 'macos-15'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aco-studio-4.13.43-arm64-review-only
+          path: |
+            build-src/App/dist/*.dmg
+            build-src/App/dist/*.zip
+            build-src/App/dist/signing-arm64.txt
+            build-src/App/dist/regression-arm64.txt
+            build-src/App/dist/update-test-arm64.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Publish regression log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aco-studio-review-regressions-${{ matrix.os }}
+          path: build-src/App/regression-results.txt
+          if-no-files-found: ignore
+          retention-days: 7

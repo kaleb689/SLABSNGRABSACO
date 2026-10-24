@@ -1,5 +1,5 @@
 'use strict';
-const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core');
+const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core'),CardPolicy=require('./card-pool-policy');
 function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,getPostalJigOptions,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),jigPlans=new Map(),epochs=new Map();
  const supportedRule=id=>id===C.FL_PHONE_RULE||Boolean(C.ruleById(id));
@@ -51,7 +51,15 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  for(let index=0;index<data.length;index++){let row=structuredClone(data[index]);const flags=C.collisions([row],seen,retailer)[0];
   if(options.name&&(flags.includes('name')||options.all)){row=C.randomName(row,usedNames);}
   if(options.email&&(flags.includes('email')||options.all)){const email=ctx.emails.find(x=>x.retailer===retailer&&!x.profileId&&!usedEmails.has(x.email));if(!email)throw Error('Not enough unused emails in this vault and retailer.');row.email=email.email;email.profileId='pending-'+index;}
-  if(options.card&&(flags.includes('card')||options.all)){const card=cards.find(c=>!c.previouslyAssigned&&!usedCards.has(c.number));if(!card)throw Error('Not enough unused cards in this vault.');C.putCard(row,card);usedCards.add(card.number);}
+  if(options.card&&(flags.includes('card')||options.all)){
+   const staged=ctx.rows.concat(added.map((data,i)=>({id:'pending-card-'+i,retailer,data})));
+   const card=cards.find(c=>{
+    if(c.previouslyAssigned&&!CardPolicy.hardCard(c.number,ctx.settings))return false;
+    try{CardPolicy.checkAllocation(staged,retailer,[c.number],ctx.settings);return true;}catch{return false;}
+   });
+   if(!card)throw Error('Not enough retailer-eligible unused or Hard Cards in this exact vault.');
+   C.putCard(row,card);
+  }
   const after=C.collisions([row],seen,retailer)[0];if(after.includes('email'))throw Error('Duplicate email remains. Select Replace duplicate emails.');if(after.length&&!options.allowShared)throw Error('Duplicate name or card remains. Repair it or explicitly allow shared names/cards.');
   if(!C.values(row).email)throw Error('A profile email is missing.');usedEmails.add(C.email(row.email));usedNames.add(C.nameKey(row));seen.push({retailer,data:row});added.push(row);
  }return added;}
@@ -62,6 +70,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(row.needsReview)throw Error('Resolve the website conflict before repairing this profile.');
   if(linked&&p.repairs?.email)throw Error('Replace the linked retailer account from its unused account bank; do not change its login email locally.');
   const peers=ctx.rows.filter(x=>x.id!==row.id),target={...ctx,rows:peers};const [data]=resolve([row.data],row.retailer,target,{...p.repairs,all:true,allowShared:true},cards);
+  const nextCard=CardPolicy.fromProfile({data});
+  if(nextCard&&nextCard!==CardPolicy.fromProfile(row))CardPolicy.checkAllocation(ctx.rows,row.retailer,[nextCard],ctx.settings,{excludeProfileIds:[row.id]});
   let remote;if(linked){if(!saveCustomerProfile||!row.remoteManagedId)throw Error('Website profile is not verified.');remote=await saveCustomerProfile(a.id,{managedAccountId:row.remoteManagedId,type:row.remoteType,retailer:row.retailer,updatedAt:row.remoteUpdatedAt},{fields:C.values(data),...(p.repairs?.card?{card:C.payment(data)}:{})});if(!remote?.saved)throw Error('The website did not confirm the profile repair.');a.check();}
   row.data=data;row.email=C.email(data.email);row.revision++;row.manualOverride=!linked;
   if(linked){row.remoteUpdatedAt=remote.updatedAt;row.sourceHash=require('./jig-field-core').hash(data);row.websiteAuthoritative=true;}
@@ -92,6 +102,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     const c=p.card;
     if(!/^\d{12,19}$/.test(String(c.number||'').replace(/\D/g,''))||!/^(0[1-9]|1[0-2])$/.test(c.month||'')||!/^20\d\d$/.test(c.year||'')||!String(c.cardholder||'').trim()||String(c.cardholder).length>120||String(c.customSecurityCode||'').length>64)throw Error('Enter complete card number, holder and expiration.');
     C.putCard(data,c);
+   }
+   // Enforce the Hard Card cap even if the card was typed directly into
+   // a profile editor rather than selected from the saved-card bank.
+   if(CardPolicy.fromProfile({data})!==CardPolicy.fromProfile(row)){
+    const number=CardPolicy.fromProfile({data});
+    if(number)CardPolicy.checkAllocation(ctx.rows,row.retailer,[number],ctx.settings,{excludeProfileIds:[row.id]});
    }
    if(p.cardCvv!==undefined){
     if(a.scope!=='personal')throw Error('Card-code editing is available only in your unlocked Personal vault.');
