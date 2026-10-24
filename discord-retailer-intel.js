@@ -28,6 +28,7 @@ export function normalizeRetailerIntel(input, today=new Date().toISOString().sli
  const retailer=retailerId(input.retailer);
  if(!retailer)throw Error("Choose Target, Walmart, Pokémon Center, Costco, or Sam's Club.");
  if(!["product","drop","in_store","queue"].includes(type))throw Error("Unknown retailer update type.");
+ if(safe(input.source,40).toLowerCase()==="pokemon-center" && type!=="queue")throw Error("Pokémon Center monitoring-channel information is used for queue state only.");
  const date=isoDay(input.date || today);
  if(!date)throw Error("Use a real YYYY-MM-DD date.");
  if(type==="queue" && retailer!=="pokemoncenter")throw Error("Queue notifications apply only to Pokémon Center.");
