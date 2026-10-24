@@ -154,9 +154,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     throw Error('Saved Card Bank recovery preview expired. Review again.');
    codeRestorePlans.delete(p.token);
    // Re-check the source Card Bank before modifying any profile.
-   const listing=await cardVault(a.scope).list(cardKey(a.scope,a.id));
-   const full=listing.cards.length?
-     await cardVault(a.scope).selectedForJig(cardKey(a.scope,a.id),listing.cards.map(card=>card.id)):[];
+   const full=await cardVault(a.scope).securityReferences(cardKey(a.scope,a.id));
    const currentCodes=new Map(full.map(card=>[CardPolicy.normalized(card.number),String(card.customSecurityCode||card.customCode||'')]));
    for(const [id,item]of plan.matches)
     if(currentCodes.get(item.number)!==item.code)throw Error('Saved Card Bank changed. Review again.');
@@ -176,9 +174,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     return {restored:plan.matches.size,stillMissing:plan.stillMissing,source:'saved-card-bank'};
    },a.check);
   }
-  const listing=await cardVault(a.scope).list(cardKey(a.scope,a.id));
-  const full=listing.cards.length?
-    await cardVault(a.scope).selectedForJig(cardKey(a.scope,a.id),listing.cards.map(card=>card.id)):[];
+  const full=await cardVault(a.scope).securityReferences(cardKey(a.scope,a.id));
   const codes=new Map(),conflicts=new Set();
   for(const card of full){
    const number=CardPolicy.normalized(card.number),code=String(card.customSecurityCode||card.customCode||'');
