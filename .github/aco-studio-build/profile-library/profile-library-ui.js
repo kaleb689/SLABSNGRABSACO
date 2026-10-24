@@ -74,7 +74,7 @@
  }
  // Selection belongs to one rendered page of the current retailer and stage.
  // Keep the preexisting 200-card display size, but make later pages accessible.
- const PAGE_SIZE=200;let pageIndex=0,selectionAnchor=null,customGroups={};
+ const PAGE_SIZE=200;let pageIndex=0;let selectionAnchor=null,customGroups={};
  const pageRows=()=>visible().slice(pageIndex*PAGE_SIZE,(pageIndex+1)*PAGE_SIZE);
  const pager=d.createElement('nav');pager.className='buttons profileLibraryPagination';pager.setAttribute('aria-label','Profile result pages');pager.style.cssText='display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;margin:12px 0 20px';
  const previousPage=text('button','Previous page'),nextPage=text('button','Next page'),pageLabel=d.createElement('span');
