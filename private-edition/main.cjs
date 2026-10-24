@@ -115,7 +115,7 @@ function startJigPolicySync(){
 async function edit(fn){return transact(async()=>{await allowed();const v=await Vault.load();const result=await fn(v);await Vault.save(v);return result;});}
 function displayState(v){
   return {sources:v.sources.map(s=>({id:s.id,retailer:s.retailer,bank:s.bank==='live'?'live':'working',...Formats.profileSummary(s.file)})),
-    cardPool:Cards.inventory(v),
+    cardPool:Cards.inventory(v,{showFullNumbers:true}),
     cards:v.cards.map(c=>({id:c.id,label:c.label,holder:c.holder,number:c.number,securityCode:c.securityCode||"",last4:String(c.number||"").slice(-4),expiry:c.expiry})),
     addresses:v.addresses,activity:v.activity.slice(0,30),rules:v.rules,importHistory:ImportBatches.history(v)};
 }
@@ -154,6 +154,12 @@ ipcMain.handle("vault:setHardCard",(_e,p)=>edit(v=>{
   const response=Cards.toggle(v,p.cardRef,p.hard);
   addActivity(v,'Hard Card status updated for card ending '+response.last4);
   return response;
+}));
+ipcMain.handle("vault:setHardCards",(_e,p)=>edit(v=>{
+  if(p?.confirmed!==true)throw Error("Explicit confirmation is required.");
+  const result=Cards.toggleBulk(v,p.cardRefs,p.hard);
+  addActivity(v,"Bulk Hard Card status changed for "+result.updated+" cards.");
+  return result;
 }));
 ipcMain.handle("vault:promoteCard",(_e,p)=>edit(v=>{
   if(p?.confirmed!==true)throw Error('Explicit confirmation is required.');
