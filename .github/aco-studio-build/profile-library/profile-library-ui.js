@@ -250,11 +250,18 @@
    bankAssets={addresses:Array.isArray(assets?.addresses)?assets.addresses:[],cards:Array.isArray(assets?.cards)?assets.cards:[],cardPool:Array.isArray(assets?.cardPool)?assets.cardPool:[]};
    unusedAccounts=(accounts.emails||[]).filter(x=>x.status==='available').map(x=>({id:x.id,email:x.email,source:x.source,status:x.status,retailer:q('retailer').value}));
    poolReport=accounts;
-   drawResourceBanks();q('pool-counts').textContent=assets.addresses.length+' saved addresses · '+assets.cardPool.filter(x=>x.fromSavedBank&&x.availableRetailers.includes(q('retailer').value)).length+' eligible cards for '+retailName[q('retailer').value]+' · '+(accounts.freeAccounts||0)+' free '+retailName[q('retailer').value]+' accounts · '+accounts.emails.filter(x=>x.status==='available'&&x.source!=='account').length+' unused emails · '+(assets.addresses.length?Math.min(500,assets.cardPool.filter(x=>x.fromSavedBank&&x.availableRetailers.includes(q('retailer').value)).length,accounts.availableForCreation??accounts.emails.filter(x=>x.status==='available').length):0)+' profiles available with one card each'+
-    (q('retailer').value==='pokemoncenter'&&accounts.targetLiveReconciliation?.targetLiveProfiles?
-     ' | Target Live: '+accounts.targetLiveReconciliation.targetLiveProfiles+' profiles ('+accounts.targetLiveReconciliation.targetUniqueEmails+' unique emails) | '+
-     accounts.targetLiveReconciliation.alreadyPkcProfiles+' Target emails already used as PKC profiles | '+
-     accounts.targetLiveReconciliation.pkcCoverage+'/'+accounts.targetLiveReconciliation.targetUniqueEmails+' eligible Personal emails accounted for in PKC profiles / email pools | '+accounts.targetLiveReconciliation.personalEligibleEmails+' eligible non-PKC Personal emails | '+accounts.availableForCreation+' PKC unused accounts/emails available':'');
+   drawResourceBanks();
+   const stats=accounts.retailerStats||{},cover=accounts.targetLiveReconciliation;
+   const lines=[
+    retailName[q('retailer').value]+': '+(stats.unusedAccountCount??unusedAccounts.length)+' Unused accounts ('+(stats.unusedEmailCount??0)+' unused emails, '+(stats.unusedExistingAccountCount??0)+' available accounts)',
+    (stats.readyForExportCount??0)+' Ready for Export · '+(stats.liveProfileCount??0)+' Live · '+(stats.profileCount??0)+' stored profiles',
+    assets.addresses.length+' saved addresses · '+assets.cardPool.filter(x=>x.fromSavedBank&&x.availableRetailers.includes(q('retailer').value)).length+' eligible saved cards'
+   ];
+   if(q('retailer').value==='pokemoncenter'&&cover){
+    lines.push('PKC reconciliation: '+cover.targetUniqueEmails+' unique eligible source emails from Personal non-PKC retailers · '+cover.alreadyPkcProfiles+' source emails already have PKC profiles · '+cover.pkcCoverage+' accounted for · '+cover.added+' newly recovered entries');
+    if(stats.staleReservationCount)lines.push(stats.staleReservationCount+' old PKC reservations need review and remain unavailable until verified');
+   }
+   q('pool-counts').textContent=lines.join(' | ');
   }catch(error){
    if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;
    bankAssets={addresses:[],cards:[]};unusedAccounts=[];poolReport=null;drawResourceBanks();
