@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
-const {inventoryFolder,category}=require('../historical-file-inventory');
+const {inventoryFolder,category,collectOriginalFiles}=require('../historical-file-inventory');
 test('historical folder scan inventories likely sources without reading, returning or altering sensitive contents',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-folder-review-'));
  t.after(()=>fs.rm(dir,{recursive:true,force:true}));
@@ -44,4 +44,31 @@ test('folder classification excludes unrelated files and rejects untrusted path 
  assert.equal(category('Target export.csv'),'possibleOriginalFiles');
  assert.equal(category('profile.encrypted.bak'),'encryptedVaultCopies');
  await assert.rejects(inventoryFolder('../something'),/directory/);
+});
+
+test('one authorized folder scan discovers ordinary JSON/CSV originals and skips credential lists',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-one-folder-'));
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ await fs.mkdir(path.join(dir,'saved'));
+ await fs.writeFile(path.join(dir,'aco.json'),JSON.stringify([{retailer:'target',email:'sample@example.test',profileSecurityCode:'SAFE-REF'}]));
+ await fs.writeFile(path.join(dir,'saved','Shikari_profile_export.csv'),'email,profileSecurityCode\nsample@example.test,SAFE-REF\n');
+ await fs.writeFile(path.join(dir,'aco_studio_emails.txt'),'private@example.test:secretpass');
+ await fs.writeFile(path.join(dir,'notes.txt'),'PRIVATE-FREE-TEXT');
+ const result=await collectOriginalFiles(dir,{validate:(name,text)=>text.includes('profileSecurityCode')});
+ assert.equal(result.stats.scanned,2);
+ assert.equal(result.stats.skippedSensitiveNames,1);
+ assert.equal(result.stats.skippedOther,1);
+ assert.ok(result.files.every(x=>!x.fileName.includes('/')&&!x.fileName.includes('emails')));
+ assert.ok(!JSON.stringify(result.stats).includes('SAFE-REF'));
+});
+test('automatic original-file collection stays inside selected folder and never follows symlinks',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-one-folder-safe-'));
+ const outside=await fs.mkdtemp(path.join(os.tmpdir(),'aco-one-folder-outside-'));
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ t.after(()=>fs.rm(outside,{recursive:true,force:true}));
+ await fs.writeFile(path.join(outside,'target.json'),'[{"profileSecurityCode":"OUTSIDE"}]');
+ await fs.symlink(outside,path.join(dir,'external'));
+ const report=await collectOriginalFiles(dir);
+ assert.equal(report.stats.scanned,0);
+ assert.equal(report.stats.candidates,0);
 });
