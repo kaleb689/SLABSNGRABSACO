@@ -147,46 +147,6 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    ...(allowLegacy?[data.cc_cvv,data.cvv,data.cvc,data.card?.cvv,data.card?.cvc,data.card?.cid,data.card?.cvv2]:[])];
   return values.find(v=>typeof v==='string'&&v.length>0&&v.length<=100)||'';
  }
- // Read-only historical inventory for owner-authorized recovery. Never expose
- // independent Security Code values to the renderer, logs, or other vaults.
- async function securityCodeCandidates(scope,customerId){
-  const key=bank(scope,customerId);scopeValue(scope);
-  return serial(async()=>{
-   const current=await read(scope),snapshots=await backupList(scope);
-   const references=new Map();
-   let scannedBackups=0,unreadableBackups=0,recordsScanned=0;
-   const scan=(rows,source)=>{
-    for(const row of rows){
-     if(!row||typeof row!=='object')continue;
-     recordsScanned++;
-     const data=row.data||{};
-     const raw=data.cc_number||data.card?.number||data.card_number||data.cardNumber||'';
-     const number=String(raw).replace(/\\D/g,'');
-     if(!/^\\d{12,19}$/.test(number))continue;
-     const code=independentCode(data,source==='backup');
-     if(!code||code.length>100||/[\\x00-\\x1f\\x7f]/.test(code))continue;
-     if(!references.has(number))references.set(number,new Map());
-     const candidates=references.get(number);
-     if(!candidates.has(code))candidates.set(code,{number,code,source});
-     if(references.size>50000)throw Error('Recovery source inventory exceeds safety limit.');
-    }
-   };
-   scan(current.groups?.[key]||[],'current-profile');
-   for(const entry of snapshots){
-    let previous;
-    try{
-     previous=JSON.parse(safeStorage.decryptString(await fs.readFile(path.join(snapshotsDir,entry.name))));
-     if(previous?.version!==1||!previous.groups||!Array.isArray(previous.groups[key])){
-      unreadableBackups++;continue;
-     }
-    }catch{unreadableBackups++;continue;}
-    scannedBackups++;
-    scan(previous.groups[key],'encrypted-backup');
-   }
-   return {references:[...references.values()].flatMap(codes=>[...codes.values()]),
-    scannedBackups,unreadableBackups,recordsScanned};
-  });
- }
  async function codeRecovery(scope,customerId,{confirmed=false,token=null}={},beforeWrite=null){
   const key=bank(scope,customerId);scopeValue(scope);
   if(typeof beforeWrite!=='function')throw Error('Unlocked vault authorization is required for code recovery.');
@@ -729,7 +689,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   }
   return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count||a.retailer.localeCompare(b.retailer)),scanned:[...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
  }
- return Object.freeze({paths,backupList,backupRestore,codeRecovery,securityCodeCandidates,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+ return Object.freeze({paths,backupList,backupRestore,codeRecovery,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 
