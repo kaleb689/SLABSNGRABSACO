@@ -5,6 +5,7 @@ import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload 
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
+import {createRetailerIntelPublisher, INTEL_RETENTION_MS} from "./discord-retailer-intel.js";
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
@@ -713,6 +714,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       return response.status === 204 ? null : response.json();
     }
   }
+  let announcementsChannelId;
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   async function cleanupLegacyLapseAlerts() {
     let removed = 0, scanned = 0, matched = 0;
@@ -1120,6 +1122,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const names = ["upcomingdrops", "droppingtonight", "announcements"];
       const found = names.map(name => channels.find(item => [0, 5].includes(item.type) && dropChannelKind(item.name) === name));
       dropChannelIds = new Set(found.slice(0, 2).filter(Boolean).map(channel => channel.id));
+      announcementsChannelId=found[2]?.id || null;
       tonightChannelId = found[1]?.id;
       console.log("Discord drop channels:", JSON.stringify({
         upcoming: found[0]?.name || null, tonight: found[1]?.name || null,
@@ -1513,6 +1516,85 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   async function sendMessage(channelId, content, extras = {}) {
     const { users = [], ...other } = extras;
     return api(`/channels/${channelId}/messages`, "POST", { content, allowed_mentions: { parse: [], users }, ...other });
+  }
+  // An owner supplies structured, authorized facts via their own private admin
+  // channel. This does not monitor Poke Signals or log in as a Discord user.
+  const retailerIntel=createRetailerIntelPublisher({
+    dataDir,
+    channels:()=>{
+      const current={announcements:announcementsChannelId};
+      const names={target:/^target\\b/i,walmart:/^walmart\\b/i,pokemoncenter:/^(?:pkc|pok.mon center)\\b/i,costco:/^costco\\b/i,sams:/^sam.s\\b/i};
+      for(const [channelId,label] of Object.entries(retailerDropLabels))
+        for(const [retailer,pattern] of Object.entries(names))
+          if(pattern.test(label))current[retailer]=channelId;
+      return current;
+    },
+    send:(channelId,payload)=>api("/channels/"+channelId+"/messages","POST",payload),
+    edit:(channelId,messageId,payload)=>api("/channels/"+channelId+"/messages/"+messageId,"PATCH",payload),
+    remove:(channelId,messageId)=>api("/channels/"+channelId+"/messages/"+messageId,"DELETE")
+  });
+  async function ownerIntelIntake(message){
+    if(message?.guild_id!==guildId || String(message.channel_id)!==String(adminChannelId) ||
+       !ownerId || String(message.author?.id)!==String(ownerId) || message.author?.bot)return false;
+    const content=String(message.content||"").trim();
+    if(!/^!intel(?:\\s|$)/i.test(content))return false;
+    const payload=content.replace(/^!intel\\s*/i,"").trim();
+    if(!payload || payload.length>1800){
+      await sendMessage(adminChannelId,"Intel intake: provide a JSON object after !intel (maximum 1,800 characters).");
+      return true;
+    }
+    try{
+      const parsed=JSON.parse(payload);
+      const events=Array.isArray(parsed)?parsed:[parsed];
+      if(!events.length||events.length>12)throw Error("Submit between 1 and 12 structured updates.");
+      const statuses=[];
+      for(const event of events){
+        const result=await retailerIntel.ingest(event);
+        statuses.push(result.outcome.map(x=>x.status).join("/"));
+      }
+      await sendMessage(adminChannelId,"Retailer intel: "+statuses.map((item,i)=>"item "+(i+1)+" "+item).join("; ")+". Source access was not used.");
+    }catch(error){
+      await sendMessage(adminChannelId,"Retailer intel not published: "+String(error.message||error).slice(0,250));
+    }
+    return true;
+  }
+  // Original staff posts are retained. New messages never delete older posts.
+  // Only messages older than 14 days in the designated drop channels expire.
+  async function cleanupExpiredDropPosts(){
+    if(!guildId || !dropChannelIds.size)return 0;
+    const cutoff=Date.now()-INTEL_RETENTION_MS;
+    const retiredSources=new Set();
+    let removed=0;
+    for(const channelId of dropChannelIds){
+      let before="";
+      for(let page=0;page<20;page++){
+        const recent=await api("/channels/"+channelId+"/messages?limit=100"+(before?"&before="+before:""));
+        if(!Array.isArray(recent)||!recent.length)break;
+        for(const message of recent){
+          const created=Date.parse(message.timestamp||"");
+          if(!message.id||message.pinned||![0,19].includes(message.type??0)||
+             !Number.isFinite(created)||created>=cutoff)continue;
+          try{await api("/channels/"+channelId+"/messages/"+message.id,"DELETE");}
+          catch(error){if(!/HTTP 404/.test(error.message)){console.error("Drop retention:",error.message);continue;}}
+          removed++;
+          retiredSources.add(String(message.id));
+        }
+        before=String(recent.at(-1)?.id||"");
+        if(recent.length<100)break;
+      }
+    }
+    if(retiredSources.size){
+      await withSkuQueue(async()=>{
+        const menus=await readSkuFile(skuMenusFile),drafts=await readSkuFile(skuDraftsFile);
+        for(const id of retiredSources)delete menus[id];
+        for(const key of Object.keys(drafts))
+          if([...retiredSources].some(id=>key.endsWith(":"+id)))delete drafts[key];
+        await writeSkuFile(skuMenusFile,menus);
+        await writeSkuFile(skuDraftsFile,drafts);
+      });
+      await retireOwnerSkuReminderPanels(retiredSources);
+    }
+    return removed;
   }
   const panelFile = path.join(dataDir, "discord-channel-panels.json");
   let panelQueue = Promise.resolve();
@@ -2696,41 +2778,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function onDropPost(d) {
     if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id ||
       d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0)) return;
-    // A reply must leave the entire existing drop and its controls intact.
-    if (isNewDropPost(d)) {
-      try {
-        const retiredSources = new Set();
-        let before = d.id;
-        for (let page = 0; page < 20; page++) {
-          const history = await api(`/channels/${d.channel_id}/messages?before=${before}&limit=100`);
-          if (!history.length) break;
-          for (const previous of history) {
-            if (!previous.pinned && [0, 19].includes(previous.type)) {
-              try { await api(`/channels/${d.channel_id}/messages/${previous.id}`, "DELETE"); }
-              catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
-              if ((!previous.author?.bot && !previous.webhook_id) ||
-                  isFormattedDropPost(previous, appId)) retiredSources.add(previous.id);
-            }
-          }
-          before = history.at(-1).id;
-          if (history.length < 100) break;
-        }
-        if (retiredSources.size) await withSkuQueue(async () => {
-          const menus = await readSkuFile(skuMenusFile);
-          for (const id of retiredSources) delete menus[id];
-          await writeSkuFile(skuMenusFile, menus);
-          const drafts = await readSkuFile(skuDraftsFile);
-          for (const key of Object.keys(drafts)) {
-            if ([...retiredSources].some(id => key.endsWith(":" + id))) delete drafts[key];
-          }
-          await writeSkuFile(skuDraftsFile, drafts);
-        });
-        await retireOwnerSkuReminderPanels(retiredSources);
-      } catch (error) {
-        discordCommunityStatus.error = `Drop message cleanup: ${error.message}`;
-        console.error("Discord drop message cleanup:", error.message);
-      }
-    }
+    // Keep existing messages and SKU selections when a fresh drop is posted.
+    // A separate timed retention job handles only posts older than 14 days.
     // Only the owner can invoke automatic monitor-paste conversion. Regular
     // staff drop posts and free-form messages keep their existing behavior.
     const monitored = isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")
@@ -3606,6 +3655,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             ) {
               onSuccessMessage(packet.d);
             }
+            if(await ownerIntelIntake(packet.d))return;
             await onDropPost(packet.d);
             if (!await onPublicMessage(packet.d)) await onQuestionMessage(packet.d);
           })().catch(error => console.error("Discord public message handling:", error.message));
@@ -3820,12 +3870,18 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
+      await retailerIntel.expire().catch(error => console.error("Retailer intel expiry:", error.message));
+      await cleanupExpiredDropPosts().catch(error => console.error("14-day drop cleanup:", error.message));
       await syncAll(); await connect(); void verifyAiConnection();
     }
     catch (error) { discordCommunityStatus.error = error.message; console.error("Discord community setup:", error.message); setTimeout(setup, 60000).unref?.(); }
   }
   setTimeout(setup, 5000).unref?.();
   setInterval(syncAll, 60000).unref?.();
+  setInterval(() => {
+    void retailerIntel.expire().catch(error=>console.error("Retailer intel expiry:",error.message));
+    void cleanupExpiredDropPosts().catch(error=>console.error("14-day drop cleanup:",error.message));
+  },6*60*60*1000).unref?.();
   setInterval(() => {
     if (!discordCommunityStatus.oneOnOneReady) return;
     void withSessions(async () => reconcileSessions(await readSessions())).catch(error => {
