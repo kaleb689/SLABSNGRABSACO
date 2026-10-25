@@ -38,7 +38,7 @@ test('Independent profile Security Codes persist through import, edit, jig and e
   assert.equal(LC.payment(row.data).cvv,'','Card verifiers are not an independent profile reference');
   const loaded=await h.lib.detail(event,{...h.p,profileId:row.id});
   assert.equal(loaded.data.profileSecurityCode,reference);
-  const jig=await h.lib.batchJigPreview(event,{...h.p,retailer,profileIds:[row.id],ruleIds:[LC.FL_PHONE_RULE],combine:false,billingSameAsShipping:true});
+  const jig=await h.lib.batchJigPreview(event,{...h.p,retailer,profileIds:[row.id],ruleIds:[LC.FL_PHONE_RULE],hardCounts:{fraction:1},combine:false,billingSameAsShipping:true});
   await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
   row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
   assert.equal(row.data.profileSecurityCode,reference);
