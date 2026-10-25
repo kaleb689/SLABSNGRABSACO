@@ -20,7 +20,7 @@ async function env(t){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-work
 }
 
 const {createLibrary}=require('../profile-library-service'),LC=require('../profile-library-core');
-async function library(t){const h=await env(t);let allowed=true;const lib=createLibrary({profiles:h.profiles,cardVault:s=>s==='personal'?h.personal:h.customers,authorize:async(e,s,id)=>{if(e.sender.id!==1)throw Error('Not owner');if(s==='aco'&&!['customer-a','customer-b'].includes(id))throw Error('Unauthorized customer');return s==='personal'?null:id;},guard:(e,s)=>{if(e.sender.id!==1||!allowed)throw Error('Locked');},chooseSave:async(_e,o)=>({filePath:path.join(h.dir,o.name)}),confirmExport:async()=>true,writeFile:async(...args)=>h.writes.push(args),getCustomerProfileSource:async id=>({customer:{id,name:id},linked:[{customerId:id,assignmentId:'linked-1',retailer:'pokemoncenter',active:true,data:complete('pokemoncenter','linked@example.test')}]})});return {...h,lib,lockLibrary:()=>allowed=false};}
+async function library(t,overrides={}){const h=await env(t);let allowed=true;const lib=createLibrary({profiles:h.profiles,cardVault:s=>s==='personal'?h.personal:h.customers,authorize:async(e,s,id)=>{if(e.sender.id!==1)throw Error('Not owner');if(s==='aco'&&!['customer-a','customer-b'].includes(id))throw Error('Unauthorized customer');return s==='personal'?null:id;},guard:(e,s)=>{if(e.sender.id!==1||!allowed)throw Error('Locked');},chooseSave:async(_e,o)=>({filePath:path.join(h.dir,o.name)}),confirmExport:async()=>true,writeFile:async(...args)=>h.writes.push(args),getCustomerProfileSource:async id=>({customer:{id,name:id},linked:[{customerId:id,assignmentId:'linked-1',retailer:'pokemoncenter',active:true,data:complete('pokemoncenter','linked@example.test')}]}),...overrides});return {...h,lib,lockLibrary:()=>allowed=false};}
 function complete(retailer,email){const data=D.blank(retailer,LC.format(retailer),{email,first:'Alex',last:'Example',phone:'9545550100','shipping.address1':'100 Example Avenue','shipping.city':'Sample','shipping.state':'FL','shipping.zip':'33324','billing.address1':'100 Example Avenue','billing.city':'Sample','billing.state':'FL','billing.zip':'33324'});LC.putCard(data,fullCard);return data;}
 async function preview(h,data,owner=h.p,retailer='target'){return h.lib.importPreview(event,{...owner,retailer,fileName:'profiles.json',text:JSON.stringify(data)});}
 async function commit(h,preview,extra={}){return h.lib.importCommit(event,{token:preview.token,confirmed:true,alreadyJigged:true,repairs:{allowShared:true},...extra});}
@@ -326,7 +326,8 @@ test('Profile screen renders one recovery action, keeping original import choice
  for(const obsolete of ['Recover missing Security Codes from encrypted backups','Recover codes from original import file',
   'Recover codes from saved Card Bank','Scan with original import file','Scan available recovery sources'])
   assert.ok(!ui.includes(obsolete),'duplicate recovery control should not appear: '+obsolete);
- assert.ok(ui.includes('reviewPicker.multiple=true'),'one recovery action can include multiple original files');
+ assert.ok(ui.includes('api.recoveryReviewSelectedFiles'),'one recovery action invokes the native original file picker');
+ assert.ok(!ui.includes('reviewPicker.click()'),'hidden browser file input must not be used for desktop original files');
 });
 
 test('Deeper recovery scan inventories previous encrypted vault copies while never changing live data',async t=>{
@@ -362,4 +363,36 @@ test('Historic source diagnostics do not enter a different customer bank or infe
  assert.equal(report.historicSources.matched,0);
  assert.equal((await h.lib.list(event,h.a)).profiles[0].data.profileSecurityCode||'','');
  await assert.rejects(h.lib.recoveryReview(foreign,h.a),/owner|unauthorized/i);
+});
+
+
+test('Native original-file picker reads selected originals only within main process and leaves vault intact',async t=>{
+ let choose=()=>[];
+ const h=await library(t,{chooseOriginalFiles:async()=>choose()});
+ const current=complete('target','native-picker@example.test');
+ await commit(h,await preview(h,[current]));
+ const original=complete('target','native-picker@example.test');
+ original.profileSecurityCode='NATIVE-REFERENCE-ONLY';
+ const filename=path.join(h.dir,'target-original.json');
+ await fs.writeFile(filename,JSON.stringify([{...original,retailer:'target'}]));
+ choose=()=>[filename];
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const report=await h.lib.recoveryReviewSelectedFiles(event,{...h.p});
+ assert.equal(report.readOnly,true);
+ assert.equal(report.originalSelectionCancelled,false);
+ assert.equal(report.originalFiles.scanned,1);
+ assert.equal(report.originalFiles.potentialMatches,1);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
+ assert.ok(!JSON.stringify(report).includes('NATIVE-REFERENCE-ONLY'));
+ assert.ok(!JSON.stringify(report).includes(filename));
+ choose=()=>null;
+ const cancelled=await h.lib.recoveryReviewSelectedFiles(event,{...h.p});
+ assert.equal(cancelled.originalSelectionCancelled,true);
+ assert.equal(cancelled.originalFiles,null);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
+});
+test('Native picker rejects renderer supplied paths and cross-owner access',async t=>{
+ const h=await library(t,{chooseOriginalFiles:async()=>[]});
+ await assert.rejects(h.lib.recoveryReviewSelectedFiles(event,{...h.p,path:'/tmp/arbitrary.json'}),/trusted Mac file picker/);
+ await assert.rejects(h.lib.recoveryReviewSelectedFiles(foreign,h.p),/owner/i);
 });
