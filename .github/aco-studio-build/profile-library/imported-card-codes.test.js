@@ -265,3 +265,16 @@ test('Recovery Source Review enforces owner scopes, does not accept confirmation
  assert.equal((await h.lib.list(event,h.a)).profiles[0].data.profileSecurityCode,'');
  assert.equal((await h.lib.list(event,h.b)).profiles[0].data.profileSecurityCode,'REF-CUSTOMER-B');
 });
+
+test('Read-only recovery review excludes CVV/CVC-labeled values from original files',async t=>{
+ const h=await library(t),profile=complete('target','legacy-only@example.test');
+ await commit(h,await preview(h,[profile]));
+ const legacy=complete('target','legacy-only@example.test');
+ legacy.cc_cvv='123';delete legacy.profileSecurityCode;
+ const result=await h.lib.recoveryReview(event,{...h.p,retailer:'target',
+  fileName:'old.json',text:JSON.stringify([legacy])});
+ assert.equal(result.originalFile.scannedRecords,1);
+ assert.equal(result.originalFile.potentialMatches,0);
+ assert.equal(result.originalFile.withSourceReference,0);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode||'','');
+});
