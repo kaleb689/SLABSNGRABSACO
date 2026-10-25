@@ -328,3 +328,38 @@ test('Profile screen renders one recovery action, keeping original import choice
   assert.ok(!ui.includes(obsolete),'duplicate recovery control should not appear: '+obsolete);
  assert.ok(ui.includes('reviewPicker.multiple=true'),'one recovery action can include multiple original files');
 });
+
+test('Deeper recovery scan inventories previous encrypted vault copies while never changing live data',async t=>{
+ const h=await library(t),row=complete('target','history-check@example.test');
+ await commit(h,await preview(h,[row]));
+ const current=await h.profiles.fieldSnapshot('personal',null),older=structuredClone(current);
+ older[0].data.profileSecurityCode='INDEPENDENT-LOCAL-HISTORY-ONLY';
+ const archive={version:1,groups:{owner:older},audit:{}};
+ const oldFilename=path.join(h.dir,'personal-retailer-profiles.encrypted.bak');
+ await fs.writeFile(oldFilename,crypto.encryptString(JSON.stringify(archive)));
+ const vaultBefore=await fs.readFile(h.profiles.paths.personal);
+ const diskBefore=await fs.readFile(oldFilename);
+ const report=await h.lib.recoveryReview(event,h.p);
+ assert.equal(report.readOnly,true);
+ assert.equal(report.historicSources.readable,1);
+ assert.equal(report.historicSources.matched,1);
+ assert.equal(report.historicSources.cardHistoryFiles,0,'active Card Bank is not a historical copy');
+ assert.ok(report.importInventory.batches>=1);
+ assert.equal(report.importInventory.contentsStoredInHistory,false);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),vaultBefore,'scan must not rewrite live vault');
+ assert.deepEqual(await fs.readFile(oldFilename),diskBefore,'scan must not rewrite old vault');
+ assert.ok(!JSON.stringify(report).includes('INDEPENDENT-LOCAL-HISTORY-ONLY'),'no reference values leave main process');
+});
+
+test('Historic source diagnostics do not enter a different customer bank or infer missing verifiers',async t=>{
+ const h=await library(t),owner=complete('target','scope-check@example.test');
+ await commit(h,await preview(h,[owner],h.a));
+ const rows=await h.profiles.fieldSnapshot('aco','customer-a');
+ const historic={version:1,groups:{'customer-b':rows.map(row=>({...row,data:{...row.data,profileSecurityCode:'CUSTOMER-B-ONLY'}}))},audit:{}};
+ await fs.writeFile(path.join(h.dir,'aco-customer-retailer-profiles.encrypted.old'),crypto.encryptString(JSON.stringify(historic)));
+ const report=await h.lib.recoveryReview(event,h.a);
+ assert.equal(report.historicSources.readable,0,'no readable matching-owner records');
+ assert.equal(report.historicSources.matched,0);
+ assert.equal((await h.lib.list(event,h.a)).profiles[0].data.profileSecurityCode||'','');
+ await assert.rejects(h.lib.recoveryReview(foreign,h.a),/owner|unauthorized/i);
+});
