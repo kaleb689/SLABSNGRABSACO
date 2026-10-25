@@ -147,7 +147,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    ...(allowLegacy?[data.cc_cvv,data.cvv,data.cvc,data.card?.cvv,data.card?.cvc,data.card?.cid,data.card?.cvv2]:[])];
   return values.find(v=>typeof v==='string'&&v.length>0&&v.length<=100)||'';
  }
- async function codeRecovery(scope,customerId,{confirmed=false,token=null}={},beforeWrite=null){
+ async function codeRecovery(scope,customerId,{confirmed=false,token=null,independentOnly=false}={},beforeWrite=null){
   const key=bank(scope,customerId);scopeValue(scope);
   if(typeof beforeWrite!=='function')throw Error('Unlocked vault authorization is required for code recovery.');
   return serial(async()=>{
@@ -182,7 +182,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
      const priorCard=String(olderRow.data?.cc_number||olderRow.data?.card?.number||'').replace(/\D/g,'');
      const currentCard=String(row.data?.cc_number||row.data?.card?.number||'').replace(/\D/g,'');
      if(priorCard&&currentCard&&priorCard!==currentCard)continue;
-     const code=independentCode(olderRow.data,true);
+     const code=independentCode(olderRow.data,!independentOnly);
      if(code)found.set(row.id,{code,revision:row.revision||0,email:row.email,retailer:row.retailer});
     }
    }
