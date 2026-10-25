@@ -217,3 +217,51 @@ test('Saved Card Bank can explicitly fill a missing profile Security Code by ful
  assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
  assert.equal((await h.lib.list(event,h.b)).profiles.length,0);
 });
+
+test('Recovery Source Review reports independent source counts without changing saved values',async t=>{
+ const h=await library(t),data=complete('target','review-sources@example.test');
+ data.profileSecurityCode='REF-SNAPSHOT';
+ await commit(h,await preview(h,[data]));
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.rows[0].data.profileSecurityCode='';
+  return {saved:true};
+ },()=>{});
+ await h.service.addCard(event,{...h.p,card:{...card,customSecurityCode:'REF-SAVED-BANK'}});
+ const original=complete('target','review-sources@example.test');
+ original.profileSecurityCode='REF-ORIGINAL-FILE';
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const result=await h.lib.recoveryReview(event,{...h.p,retailer:'target',
+  fileName:'original.json',text:JSON.stringify([original])});
+ const after=await fs.readFile(h.profiles.paths.personal);
+ assert.equal(result.readOnly,true);
+ assert.equal(result.scope,'personal');
+ assert.equal(result.missingProfiles,1);
+ assert.equal(result.backups.potentialMatches,1);
+ assert.ok(result.backups.scanned>=1);
+ assert.equal(result.savedCardBank.potentialMatches,1);
+ assert.equal(result.originalFile.potentialMatches,1);
+ assert.equal(result.originalFile.scannedRecords,1);
+ assert.deepEqual(after,before,'review must not write to the encrypted profile vault');
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'');
+ const visible=JSON.stringify(result);
+ for(const code of ['REF-SNAPSHOT','REF-SAVED-BANK','REF-ORIGINAL-FILE'])
+  assert.ok(!visible.includes(code),'never expose source codes in the read-only report');
+});
+
+test('Recovery Source Review enforces owner scopes, does not accept confirmation, and rejects mixed-owner files',async t=>{
+ const h=await library(t),a=complete('target','same-review@example.test'),
+  b=complete('target','same-review@example.test');
+ a.profileSecurityCode='';b.profileSecurityCode='REF-CUSTOMER-B';
+ await commit(h,await preview(h,[a],h.a));
+ await commit(h,await preview(h,[b],h.b));
+ const report=await h.lib.recoveryReview(event,{...h.a});
+ assert.equal(report.missingProfiles,1);
+ assert.equal(report.backups.potentialMatches,0);
+ assert.equal(report.savedCardBank.potentialMatches,0);
+ await assert.rejects(h.lib.recoveryReview(foreign,{...h.a}),/owner|unauthorized|window/i);
+ await assert.rejects(h.lib.recoveryReview(event,{...h.a,confirmed:true}),/read-only/);
+ await assert.rejects(h.lib.recoveryReview(event,{...h.a,retailer:'target',fileName:'original.json',
+  text:JSON.stringify([{...b,scope:'aco',customerId:'customer-b'}])}),/another vault/);
+ assert.equal((await h.lib.list(event,h.a)).profiles[0].data.profileSecurityCode,'');
+ assert.equal((await h.lib.list(event,h.b)).profiles[0].data.profileSecurityCode,'REF-CUSTOMER-B');
+});
