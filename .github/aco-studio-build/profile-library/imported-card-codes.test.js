@@ -278,3 +278,53 @@ test('Read-only recovery review excludes CVV/CVC-labeled values from original fi
  assert.equal(result.originalFile.withSourceReference,0);
  assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode||'','');
 });
+
+test('One recovery scan reviews multiple original files across retailers without modifying profiles',async t=>{
+ const h=await library(t);
+ const target=complete('target','multi-target@example.test');
+ const walmart=complete('walmart','multi-walmart@example.test');
+ await commit(h,await preview(h,[target],h.p,'target'));
+ await commit(h,await preview(h,[walmart],h.p,'walmart'));
+ const targetSource={...complete('target','multi-target@example.test'),retailer:'target',profileSecurityCode:'TARGET-INDEPENDENT-REFERENCE'};
+ const walmartSource={...complete('walmart','multi-walmart@example.test'),retailer:'walmart',profileSecurityCode:'WALMART-INDEPENDENT-REFERENCE'};
+ const original=await fs.readFile(h.profiles.paths.personal);
+ const result=await h.lib.recoveryReview(event,{...h.p,files:[
+  {fileName:'target-older.json',text:JSON.stringify([targetSource])},
+  {fileName:'walmart-older.json',text:JSON.stringify([walmartSource])}
+ ]});
+ assert.equal(result.readOnly,true);
+ assert.equal(result.missingProfiles,2);
+ assert.equal(result.originalFiles.scanned,2);
+ assert.equal(result.originalFiles.potentialMatches,2,'reviews all retailers, not just active retailer tab');
+ assert.equal(result.originalFiles.scannedRecords,2);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),original,'scan must never write current encrypted profiles');
+ assert.ok(!JSON.stringify(result).includes('TARGET-INDEPENDENT-REFERENCE'));
+ assert.ok(!JSON.stringify(result).includes('WALMART-INDEPENDENT-REFERENCE'));
+});
+
+test('One recovery scan rejects cross-owner originals and excludes verifier aliases',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','multi-owner@example.test')]));
+ const original={...complete('target','multi-owner@example.test'),retailer:'target',cc_cvv:'123'};
+ const noVerifier=await h.lib.recoveryReview(event,{...h.p,files:[
+  {fileName:'target-old.json',text:JSON.stringify([original])}
+ ]});
+ assert.equal(noVerifier.originalFiles.potentialMatches,0);
+ await assert.rejects(h.lib.recoveryReview(event,{...h.p,files:[
+  {fileName:'foreign.json',text:JSON.stringify([{...original,scope:'aco',customerId:'customer-b'}])}
+ ]}),/another vault/i);
+ await assert.rejects(h.lib.recoveryReview(foreign,{...h.p,files:[
+  {fileName:'target-old.json',text:JSON.stringify([original])}
+ ]}),/owner/i);
+ await assert.rejects(h.lib.recoveryReview(event,{...h.p,files:[]}),/1-20/);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode||'','');
+});
+
+test('Profile screen renders one recovery action, keeping original import choice within the scan workflow',async()=>{
+ const ui=await fs.readFile(path.join(__dirname,'..','profile-library-ui.js'),'utf8');
+ assert.equal((ui.match(/textContent='Scan All Recovery Sources'/g)||[]).length,1);
+ for(const obsolete of ['Recover missing Security Codes from encrypted backups','Recover codes from original import file',
+  'Recover codes from saved Card Bank','Scan with original import file','Scan available recovery sources'])
+  assert.ok(!ui.includes(obsolete),'duplicate recovery control should not appear: '+obsolete);
+ assert.ok(ui.includes('reviewPicker.multiple=true'),'one recovery action can include multiple original files');
+});
