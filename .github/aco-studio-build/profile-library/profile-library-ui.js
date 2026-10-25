@@ -52,8 +52,7 @@
  const reviewControls=d.createElement('div');reviewControls.className='buttons';
  const reviewScan=d.createElement('button');reviewScan.type='button';reviewScan.className='btn secondary';
  reviewScan.textContent='Scan All Recovery Sources';
- const reviewPicker=d.createElement('input');reviewPicker.type='file';reviewPicker.accept='.csv,.json,.txt,.tsv';reviewPicker.multiple=true;reviewPicker.hidden=true;
- reviewControls.append(reviewScan,reviewPicker);
+ reviewControls.append(reviewScan);
  const reviewOutput=d.createElement('div');reviewOutput.setAttribute('role','status');
  reviewOutput.textContent='No scan has been run yet. Your saved information is unchanged.';
  const reviewWarning=d.createElement('small');
@@ -94,51 +93,38 @@
   const files=report.originalFiles;
   if(files){
    reviewOutput.append(reviewLine('Original files:',files.scanned+' files / '+files.scannedRecords+' records; '+files.potentialMatches+' distinct possible matches; '+files.ambiguous+' conflicts or ambiguous matches; '+files.cardMismatches+' card mismatches'));
-  }else reviewOutput.append(reviewLine('Original files:','Not selected. Files outside ACO Studio cannot be scanned without your permission.'));
+  }else reviewOutput.append(reviewLine('Original files:',report.originalSelectionCancelled?'Native file picker cancelled; no original files scanned':'Not selected. Files outside ACO Studio cannot be scanned without your permission.'));
   reviewOutput.append(reviewLine('Result:',report.notice));
   if(report.missingProfiles&&!report.backups.potentialMatches&&!report.savedCardBank.potentialMatches&&!h?.matched&&!files?.potentialMatches)
    reviewOutput.append(reviewLine('Next step:','No matching independent references were found in the examined sources. Check your original exports or a device backup made before the fields went missing.'));
  }
- async function scanRecoverySources(selectedFiles=[],includeFolder=false){
+ async function scanRecoverySources(includeFiles=false,includeFolder=false){
   if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
   reviewScan.disabled=true;
-  reviewOutput.textContent='Scanning all accessible sources in this unlocked vault. No information is being changed.';
+  reviewOutput.textContent='Reviewing existing sources. No saved record is being changed.';
   try{
    if(scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.())
     throw Error('Unlock your Personal vault with PIN or Touch ID before scanning.');
    const payload={...request(),confirmed:false};
-   if(selectedFiles.length){
-    if(selectedFiles.length>20)throw Error('Select up to 20 original import files for one scan.');
-    let total=0;payload.files=[];
-    for(const file of selectedFiles){
-     if(!/\.(csv|json|txt|tsv)$/i.test(file.name))throw Error('Select original CSV, JSON, TXT or TSV files.');
-     total+=file.size;
-     if(total>26*1024*1024)throw Error('Selected original files exceed 26 MB.');
-     payload.files.push({fileName:file.name,text:await file.text()});
-    }
-   }
-   const report=await api.recoveryReview(payload);
-   if(!report?.readOnly)throw Error('The recovery service did not confirm read-only mode.');
+   // The operating-system picker opens from the privileged main process.
+   // Never pass original file paths or raw contents through the page.
+   const report=includeFiles?await api.recoveryReviewSelectedFiles(payload):await api.recoveryReview(payload);
+   if(!report?.readOnly)throw Error('The service did not confirm read-only mode.');
    if(includeFolder){
     try{report.selectedFolder=await api.historicalFolderReview({...request()});}
-    catch(err){report.selectedFolderError=String(err?.message||err);}
+    catch(error){report.selectedFolderError=String(error?.message||error);}
    }
    showRecoveryReview(report);
   }catch(error){
-   reviewOutput.textContent='Recovery review failed: '+String(error?.message||error)+'. No saved record was modified.';
-  }finally{reviewScan.disabled=false;reviewPicker.value='';}
+   reviewOutput.textContent='Recovery source review failed: '+String(error?.message||error)+'. No saved record was modified.';
+  }finally{reviewScan.disabled=false;}
  }
- let includeFolderOnFileSelection=false;
  reviewScan.onclick=()=>{
   if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
-  const includeFolder=confirm('Also inspect a historical folder such as Downloads, Documents, an external backup or a Time Machine snapshot? OK opens the trusted Mac folder picker; Cancel skips it. Folder metadata only.');
-  if(confirm('Also include original CSV, JSON, TXT or TSV import files? OK selects files; Cancel scans the existing sources'+(includeFolder?' plus your selected folder':'')+'. No data is changed.')){
-   includeFolderOnFileSelection=includeFolder;
-   reviewPicker.value='';reviewPicker.click();
-  }else void scanRecoverySources([],includeFolder);
+  const includeFolder=confirm('Also inspect a historical folder such as Downloads, Documents or a Time Machine snapshot? OK allows folder selection, Cancel skips it.');
+  const includeFiles=confirm('Also review original CSV, JSON, TXT or TSV profile files? OK opens the native Mac file picker. Cancel skips original files. No records are changed.');
+  void scanRecoverySources(includeFiles,includeFolder);
  };
- reviewPicker.onchange=()=>void scanRecoverySources([...reviewPicker.files||[]],includeFolderOnFileSelection);
- reviewPicker.addEventListener('cancel',()=>void scanRecoverySources([],includeFolderOnFileSelection));
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
  main.querySelector('.profileLibraryTabs').after(advanced);
