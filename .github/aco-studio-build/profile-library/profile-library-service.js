@@ -419,10 +419,34 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    throw Error('Historical folder selection is not available in this app.');
   const selected=await chooseHistoricalFolder(e);
   a.check();
-  if(!selected)return {cancelled:true,readOnly:true};
-  const result=await require('./historical-file-inventory').inventoryFolder(selected,{check:a.check,now});
+  if(!selected){
+   if(p?.scanOriginals===true){
+    const report=await recoveryReview(e,{scope:a.scope,customerId:a.id});
+    return {...report,selectedFolder:{cancelled:true},folderOriginalScan:{candidates:0,scanned:0,cancelled:true}};
+   }
+   return {cancelled:true,readOnly:true};
+  }
+  const history=require('./historical-file-inventory');
+  const result=await history.inventoryFolder(selected,{check:a.check,now});
   a.check();
-  return result;
+  if(p?.scanOriginals!==true)return result;
+  // A selected folder is an explicit grant to examine originals for *independent*
+  // non-payment profile references. The scan never returns sensitive file data.
+  const {files,stats}=await history.collectOriginalFiles(selected,{check:a.check,now,
+   validate:(fileName,contents)=>{
+    const parsed=Core.parseFile(fileName,contents);
+    if(!Array.isArray(parsed.records)||!parsed.records.length||parsed.records.length>10000)return false;
+    for(const raw of parsed.records){
+     if(!raw||typeof raw!=='object')continue;
+     if(raw.scope&&raw.scope!==a.scope||raw.customerId&&raw.customerId!==a.id||
+       raw.acoCustomerId&&raw.acoCustomerId!==a.id)return false;
+    }
+    return true;
+   }});
+  a.check();
+  const report=await recoveryReview(e,{scope:a.scope,customerId:a.id,...(files.length?{files}:{})});
+  a.check();
+  return {...report,selectedFolder:result,folderOriginalScan:stats};
  }
  async function exportFile(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles.');const all=await profiles.fieldSnapshot(a.scope,a.id),rows=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===p.retailer));if(rows.some(x=>!x))throw Error('Every exported profile must still belong to this vault and retailer.');const content=C.exportSelectedRows(rows,p.retailer,p.customerName||'Personal',p.exportFormat||'retailer');if(!await confirmExport(e))return {cancelled:true};const ext=path.extname(content.name),choice=await chooseSave(e,{name:content.name,extension:ext.slice(1)});if(choice.canceled||!choice.filePath)return {cancelled:true};if(path.extname(choice.filePath)!==ext)throw Error('Keep the retailer export format.');const latest=await profiles.fieldSnapshot(a.scope,a.id);if(rows.some(x=>require('./jig-field-core').hash(x)!==require('./jig-field-core').hash(latest.find(y=>y.id===x.id))))throw Error('Profiles changed while exporting. Try again.');a.check();await writeFile(choice.filePath,content.body,{encoding:'utf8',mode:0o600});return {saved:true,count:rows.length,name:path.basename(choice.filePath)};}
  async function exportArchive(e,p){
