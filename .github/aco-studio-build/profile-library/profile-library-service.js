@@ -235,7 +235,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const matches=new Map(),ambiguous=new Set(),diagnostics={parsed:parsed.records.length,missing:missing.length,withCode:0,withEmail:0,identityMatches:0,cardMismatches:0};
   const codeOf=raw=>{
    const fields=[raw.profileSecurityCode,raw.security_code,raw.custom_security_code,raw.card?.custom_security_code,
-    raw.cc_cvv,raw.cvv,raw.CVV,raw.cvc,raw.card?.cvv,raw.card?.cvc,raw.card?.cid];
+    ...(p.independentOnly===true?[]:[raw.cc_cvv,raw.cvv,raw.CVV,raw.cvc,raw.card?.cvv,raw.card?.cvc,raw.card?.cid])];
    const value=fields.find(x=>typeof x==='string'&&x.length>0&&x.length<=100&&!/[\x00-\x1f\x7f]/.test(x));
    return value||'';
   };
@@ -264,7 +264,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  }
  async function recoverCodes(e,p){
   const a=await access(e,p);
-  return profiles.codeRecovery(a.scope,a.id,{confirmed:p?.confirmed===true,token:p?.token||null},a.check);
+  return profiles.codeRecovery(a.scope,a.id,{confirmed:p?.confirmed===true,token:p?.token||null,independentOnly:p?.independentOnly===true},a.check);
  }
  // One owner-authorized, read-only review across existing recovery sources.
  // This endpoint never restores anything or returns a Security Code value.
@@ -276,7 +276,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const missing=rows.filter(row=>!C.profileCode(row.data)).length;
   a.check();
   const [snapshots,savedBank]=await Promise.all([
-   recoverCodes(e,{scope:a.scope,customerId:a.id,confirmed:false}),
+   recoverCodes(e,{scope:a.scope,customerId:a.id,confirmed:false,independentOnly:true}),
    recoverCodesFromSavedCards(e,{scope:a.scope,customerId:a.id,confirmed:false})
   ]);
   let originalFile=null;
@@ -284,7 +284,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(typeof p.fileName!=='string'||typeof p.text!=='string')throw Error('Choose a complete original file to review.');
    C.retailer(p.retailer);
    const preview=await recoverCodesFromFile(e,{scope:a.scope,customerId:a.id,retailer:p.retailer,
-    fileName:p.fileName,text:p.text,confirmed:false});
+    fileName:p.fileName,text:p.text,confirmed:false,independentOnly:true});
    originalFile={
     name:path.basename(p.fileName),retailer:p.retailer,
     scannedRecords:preview.diagnostics?.parsed||0,
