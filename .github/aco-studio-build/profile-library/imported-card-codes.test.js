@@ -421,3 +421,47 @@ test('Single folder action scans original files and all known sources without ch
  assert.equal(cancelled.readOnly,true);
  assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
 });
+
+
+test('Legacy CVV-labeled column is inventoried by metadata and identity only, without copying its value',async t=>{
+ const h=await library(t),email='legacy-evidence@example.test';
+ await commit(h,await preview(h,[complete('target',email)]));
+ const original=complete('target',email);
+ original.cc_cvv='SYNTHETIC-VERIFY-NO-RESTORE-101';
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const report=await h.lib.recoveryReview(event,{...h.p,files:[
+  {fileName:'target-original.json',text:JSON.stringify([{...original,retailer:'target'}])}
+ ]});
+ assert.equal(report.readOnly,true);
+ assert.equal(report.originalFiles.scannedRecords,1);
+ assert.equal(report.originalFiles.withSourceReference,0);
+ assert.equal(report.originalFiles.withoutIndependentReference,1);
+ assert.equal(report.originalFiles.legacyFieldPopulatedRows,1);
+ assert.equal(report.originalFiles.legacyOnlyPopulatedRows,1);
+ assert.equal(report.originalFiles.legacyIdentityMatches,1);
+ assert.equal(report.originalFiles.legacyIdentityCardMismatches,0);
+ assert.equal(report.originalFiles.potentialMatches,0,'verification columns never become recoverable codes');
+ assert.equal(report.originalFiles.legacyFieldsMetadataOnly,true);
+ assert.ok(!JSON.stringify(report).includes(original.cc_cvv),'no source code values in report');
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before,'read-only review cannot change saved information');
+});
+
+test('Legacy metadata audit rejects changed-card identity and does not cross owner vault scope',async t=>{
+ const h=await library(t),email='legacy-mismatch@example.test';
+ await commit(h,await preview(h,[complete('target',email)]));
+ const original=complete('target',email);
+ original.cc_cvv='SYNTHETIC-NOT-A-REAL-VERIFIER';
+ original.cc_number='5555555555554444';
+ const report=await h.lib.recoveryReview(event,{...h.p,files:[
+  {fileName:'target-older.json',text:JSON.stringify([{...original,retailer:'target'}])}
+ ]});
+ assert.equal(report.originalFiles.legacyFieldPopulatedRows,1);
+ assert.equal(report.originalFiles.legacyIdentityMatches,0);
+ assert.equal(report.originalFiles.legacyIdentityCardMismatches,1);
+ assert.equal(report.originalFiles.potentialMatches,0);
+ assert.ok(!JSON.stringify(report).includes(original.cc_cvv));
+ const wrongOwner={...original,scope:'aco',customerId:'customer-b'};
+ await assert.rejects(h.lib.recoveryReview(event,{...h.p,files:[
+  {fileName:'target-older.json',text:JSON.stringify([wrongOwner])}
+ ]}),/another vault/i);
+});
