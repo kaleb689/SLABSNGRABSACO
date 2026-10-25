@@ -250,10 +250,10 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
      const filename=item.name.toLowerCase();
      if((scope==='personal'&&filename.includes('aco-customer'))||
         (scope==='aco'&&filename.includes('personal-retailer')))continue;
-     if(/card/.test(filename)&&/(?:\.encrypted|\.bak|\.backup|\.old|\.prev|\.copy)(?:$|\.)/.test(filename)){
+     if(/card/.test(filename)&&((depth>0&&/\.encrypted$/.test(filename))||/\.(?:bak|backup|old|prev|copy)(?:$|\.)/.test(filename))){
       stats.cardHistoryFiles++;continue;
      }
-     const labelled=filename.includes(scope)&&/(?:profile|retailer)/.test(filename);
+     const labelled=filename.includes(scope)&&(/(?:profile|retailer)/.test(filename)||/^(personal|aco)-[0-9tz-]{16,32}-[a-f0-9]{16}\.encrypted$/.test(filename));
      if(!labelled||!/(?:\.encrypted|\.bak|\.backup|\.old|\.prev|\.copy)(?:$|\.)/.test(filename))continue;
      const full=path.join(dir,item.name);
      if(full===paths[scope]||seen.has(full))continue;
