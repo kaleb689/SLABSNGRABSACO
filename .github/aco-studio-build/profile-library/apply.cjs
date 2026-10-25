@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path');const root=path.resolve(process.argv[2]);
 const files=['historical-file-inventory.js','card-pool-policy.js','owner-health-advisor.js','postal-city-crossover.js','full-admin-access.js','native-admin-contracts.js','native-admin-ui.js','native-touchid.js','duplicate-notification-state.js','profile-vault.js','profile-library-core.js','profile-library-service.js','profile-library-ui.js','profile-library.css','customer-profile-source.js','profile-completion-core.js'];for(const file of files)fs.copyFileSync(path.join(__dirname,file),path.join(root,file));
-for(const file of ['card-pool-policy.test.js','imported-card-codes.test.js','live-profiles.test.js','profile-library.test.js','profile-duplicate-scan.test.js','profile-bidirectional-sync.test.js','duplicate-notification-state.test.js','profile-live-ui.test.js','owner-backups.test.js','native-contracts.test.js','site-bridge-saved-data.test.js'])fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
+for(const file of ['historical-file-inventory.test.js','card-pool-policy.test.js','imported-card-codes.test.js','live-profiles.test.js','profile-library.test.js','profile-duplicate-scan.test.js','profile-bidirectional-sync.test.js','duplicate-notification-state.test.js','profile-live-ui.test.js','owner-backups.test.js','native-contracts.test.js','site-bridge-saved-data.test.js'])fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
 // Ensure the hard-card policy is included in real packaged Mac/Windows apps.
 {
  const p=path.join(root,'package.json'),manifest=JSON.parse(fs.readFileSync(p,'utf8'));
