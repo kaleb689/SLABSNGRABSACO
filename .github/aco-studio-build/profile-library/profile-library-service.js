@@ -354,6 +354,13 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    originalFiles={scanned:p.files.length,scannedRecords,potentialMatches:matches.size,
     ambiguous:ambiguous.size+uncertainRetailer,cardMismatches,withSourceReference};
   }
+  const historicSources=typeof profiles.historicSourceReview==='function'
+   ?await profiles.historicSourceReview(a.scope,a.id,a.check)
+   :{found:0,readable:0,unreadable:0,oversized:0,skipped:0,matched:0,conflicting:0,cardHistoryFiles:0,unavailable:true};
+  const recordedImports=await profiles.importHistory(a.scope,a.id);
+  const importInventory={batches:recordedImports.length,
+   recordedFilenames:new Set(recordedImports.flatMap(batch=>batch.fileNames||[]).filter(name=>typeof name==='string')).size,
+   contentsStoredInHistory:false};
   a.check();
   return {
    readOnly:true,scope:a.scope,totalProfiles:rows.length,missingProfiles:missing,
@@ -361,7 +368,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     potentialMatches:snapshots.recoverable||0,byRetailer:snapshots.byRetailer||{}},
    savedCardBank:{potentialMatches:savedBank.recoverable||0,
     conflictingCards:savedBank.conflictingCardCodes||0,byRetailer:savedBank.byRetailer||{}},
-   originalFile,originalFiles,
+   originalFile,originalFiles,historicSources,importInventory,
    overlappingSourcesPossible:true,
    notice:'Source matches can refer to the same profile. Do not add the counts. No saved record has been changed.'
   };

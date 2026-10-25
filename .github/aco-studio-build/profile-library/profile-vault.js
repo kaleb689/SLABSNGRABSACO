@@ -216,6 +216,87 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    return {restored:found.size,stillMissing:eligible.size-found.size,scannedBackups:readable,byRetailer:counts};
   });
  }
+ // Read-only inventory of historical encrypted profile vault COPIES left in the
+ // existing app data directory. Standard snapshots are reviewed separately.
+ // Never send plaintext references, card numbers, or customer records to UI.
+ async function historicSourceReview(scope,customerId,beforeCheck=()=>{}){
+  const key=bank(scope,customerId);scopeValue(scope);requireCrypto();
+  return serial(async()=>{
+   beforeCheck();
+   const current=await read(scope),missing=(current.groups[key]||[]).filter(row=>row?.id&&!independentCode(row.data));
+   const byId=new Map(missing.map(row=>[row.id,row])),byIdentity=new Map();
+   for(const row of missing){
+    const identity=row.retailer+'|'+normalizeEmail(row.email);
+    if(byIdentity.has(identity))byIdentity.set(identity,null);
+    else byIdentity.set(identity,row);
+   }
+   const dirs=new Set(['backup','backups','history','historical','old','legacy','archive','archives','recovery']);
+   const candidates=[],seen=new Set(),stats={found:0,readable:0,unreadable:0,oversized:0,skipped:0,matched:0,conflicting:0,oldest:null,newest:null,cardHistoryFiles:0};
+   // The scan cannot see Time Machine or arbitrary folders without user-granted
+   // filesystem access. Do not follow symbolic links or traverse other vaults.
+   async function visit(dir,depth){
+    if(seen.size>2500)return;
+    let entries;
+    try{entries=await fs.readdir(dir,{withFileTypes:true});}
+    catch(e){if(e.code!=='ENOENT')stats.skipped++;return;}
+    for(const item of entries){
+     if(seen.size>=2500)break;
+     if(item.isSymbolicLink())continue;
+     if(item.isDirectory()){
+      if(depth<2&&dirs.has(item.name.toLowerCase()))await visit(path.join(dir,item.name),depth+1);
+      continue;
+     }
+     if(!item.isFile())continue;
+     const filename=item.name.toLowerCase();
+     if((scope==='personal'&&filename.includes('aco-customer'))||
+        (scope==='aco'&&filename.includes('personal-retailer')))continue;
+     if(/card/.test(filename)&&((depth>0&&/\.encrypted$/.test(filename))||/\.(?:bak|backup|old|prev|copy)(?:$|\.)/.test(filename))){
+      stats.cardHistoryFiles++;continue;
+     }
+     const labelled=filename.includes(scope)&&(/(?:profile|retailer)/.test(filename)||/^(personal|aco)-[0-9tz-]{16,32}-[a-f0-9]{16}\.encrypted$/.test(filename));
+     if(!labelled||!/(?:\.encrypted|\.bak|\.backup|\.old|\.prev|\.copy)(?:$|\.)/.test(filename))continue;
+     const full=path.join(dir,item.name);
+     if(full===paths[scope]||seen.has(full))continue;
+     seen.add(full);candidates.push(full);
+    }
+   }
+   await visit(baseDir,0);
+   stats.found=candidates.length;
+   const matched=new Map(),conflicted=new Set();
+   for(const filename of candidates){
+    let encrypted,previous,st;
+    try{
+     st=await fs.stat(filename);
+     if(!st.isFile()||st.size>50*1024*1024){stats.oversized++;continue;}
+     encrypted=await fs.readFile(filename);
+     previous=JSON.parse(safeStorage.decryptString(encrypted));
+     if(previous?.version!==1||!Array.isArray(previous.groups?.[key])){stats.unreadable++;continue;}
+    }catch{stats.unreadable++;continue;}
+    stats.readable++;
+    const iso=st.mtime.toISOString();
+    if(!stats.oldest||iso<stats.oldest)stats.oldest=iso;
+    if(!stats.newest||iso>stats.newest)stats.newest=iso;
+    for(const older of previous.groups[key]){
+     if(!older?.data||!older?.retailer)continue;
+     let row=byId.get(older.id);
+     const identity=older.retailer+'|'+normalizeEmail(older.email);
+     if(!row)row=byIdentity.get(identity);
+     if(!row||row.retailer!==older.retailer||normalizeEmail(row.email)!==normalizeEmail(older.email))continue;
+     const currentCard=String(row.data?.cc_number||row.data?.card?.number||'').replace(/\D/g,'');
+     const olderCard=String(older.data?.cc_number||older.data?.card?.number||'').replace(/\D/g,'');
+     if(currentCard&&olderCard&&currentCard!==olderCard)continue;
+     const reference=independentCode(older.data,false);
+     if(!reference||reference.length>100||/[\x00-\x1f\x7f]/.test(reference))continue;
+     if(conflicted.has(row.id))continue;
+     if(matched.has(row.id)&&matched.get(row.id)!==reference){matched.delete(row.id);conflicted.add(row.id);}
+     else matched.set(row.id,reference);
+    }
+   }
+   stats.matched=matched.size;stats.conflicting=conflicted.size;
+   beforeCheck();
+   return stats;
+  });
+ }
  function serial(action){const task=pending.catch(()=>{}).then(action);pending=task.then(()=>{},()=>{});return task;}
  const bank=(scope,id)=>{if(scope==='personal'){if(id)throw Error('Personal profiles cannot belong to ACO customers.');return 'owner';}if(scope!=='aco')throw Error('Unknown Personal/ACO profile bank.');return memberId(id);};
  const brief=p=>{const completion=Completion.synchronize(p,[],now);return {stage:p.stage,missing:completion.missing,completedAt:p.completedAt||null,bank:p.bank||'working',id:p.id,email:p.email,retailer:p.retailer,label:p.label,status:p.status,source:p.source,createdAt:p.createdAt,revision:Number.isSafeInteger(p.revision)?p.revision:0};};
@@ -689,7 +770,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   }
   return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count||a.retailer.localeCompare(b.retailer)),scanned:[...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
  }
- return Object.freeze({paths,backupList,backupRestore,codeRecovery,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+ return Object.freeze({paths,backupList,backupRestore,codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 
