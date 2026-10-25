@@ -48,7 +48,7 @@
  recoveryReviewPanel.setAttribute('aria-label','Recovery source review');
  const recoveryHeading=d.createElement('h3');recoveryHeading.textContent='Recovery Source Review';
  const recoveryIntro=d.createElement('p');
- recoveryIntro.textContent='One read-only scan checks the current vault, standard encrypted snapshots, recognizable older vault copies in the app data folders, current Card Bank and import-history coverage. You can include original import files from your Mac. Nothing is restored or overwritten.';
+ recoveryIntro.textContent='One read-only scan checks existing ACO Studio sources. You may also choose an older backup folder (including a Time Machine snapshot) for a file inventory, and include original import files. The folder inventory checks filenames and dates only; nothing is restored or overwritten.';
  const reviewControls=d.createElement('div');reviewControls.className='buttons';
  const reviewScan=d.createElement('button');reviewScan.type='button';reviewScan.className='btn secondary';
  reviewScan.textContent='Scan All Recovery Sources';
@@ -57,7 +57,7 @@
  const reviewOutput=d.createElement('div');reviewOutput.setAttribute('role','status');
  reviewOutput.textContent='No scan has been run yet. Your saved information is unchanged.';
  const reviewWarning=d.createElement('small');
- reviewWarning.textContent='Scanning the Mac app data does not search Time Machine, external drives, Downloads or arbitrary folders. Historical Card Bank copies are inventoried but not used to reconstruct payment verifiers. Original import contents are scanned only when you select them. Payment-card CVV/CVC values cannot be recovered or stored.';
+ reviewWarning.textContent='The folder picker requires your permission. Selected folders are inventoried by name/type/date only, without reading contents or restoring files. Time Machine access depends on macOS permissions. No payment-card CVV/CVC values are recovered or stored.';
  recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,reviewWarning);
  q('export').before(recoveryReviewPanel);
  const reviewLine=(label,value)=>{
@@ -80,6 +80,17 @@
     reviewLine('Historical vault dates:',h.oldest&&h.newest?h.oldest.slice(0,10)+' through '+h.newest.slice(0,10):'No readable older copies found')
    );}
   if(report.importInventory)reviewOutput.append(reviewLine('Import history:',report.importInventory.batches+' recorded batches / '+report.importInventory.recordedFilenames+' distinct filenames; original file contents are not retained in history'));
+  if(report.selectedFolder){
+   const sf=report.selectedFolder;
+   if(sf.cancelled)reviewOutput.append(reviewLine('Selected historical folder:','Picker cancelled; existing sources still scanned'));
+   else reviewOutput.append(
+    reviewLine('Selected historical folder:',sf.folders+' folders; '+sf.files+' files examined; '+sf.deniedDirectories+' inaccessible directories'+(sf.limited?'; scan limit reached':'')),
+    reviewLine('Historical file candidates:',sf.categories.encryptedVaultCopies+' encrypted vaults, '+sf.categories.historicBackupCopies+' backup copies, '+sf.categories.possibleOriginalFiles+' possible exports/imports, '+sf.categories.archives+' archives'),
+    reviewLine('Candidate modified dates:',sf.oldest&&sf.newest?sf.oldest+' through '+sf.newest:'No named candidates found'),
+    reviewLine('Historical folder content inspection:','Not performed; metadata only')
+   );
+  }else if(report.selectedFolderError)reviewOutput.append(reviewLine('Selected folder scan failed:',report.selectedFolderError));
+  else reviewOutput.append(reviewLine('Historical folder:','Not selected. Folder contents are not scanned without owner permission.'));
   const files=report.originalFiles;
   if(files){
    reviewOutput.append(reviewLine('Original files:',files.scanned+' files / '+files.scannedRecords+' records; '+files.potentialMatches+' distinct possible matches; '+files.ambiguous+' conflicts or ambiguous matches; '+files.cardMismatches+' card mismatches'));
@@ -88,7 +99,7 @@
   if(report.missingProfiles&&!report.backups.potentialMatches&&!report.savedCardBank.potentialMatches&&!h?.matched&&!files?.potentialMatches)
    reviewOutput.append(reviewLine('Next step:','No matching independent references were found in the examined sources. Check your original exports or a device backup made before the fields went missing.'));
  }
- async function scanRecoverySources(selectedFiles=[]){
+ async function scanRecoverySources(selectedFiles=[],includeFolder=false){
   if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
   reviewScan.disabled=true;
   reviewOutput.textContent='Scanning all accessible sources in this unlocked vault. No information is being changed.';
@@ -108,19 +119,26 @@
    }
    const report=await api.recoveryReview(payload);
    if(!report?.readOnly)throw Error('The recovery service did not confirm read-only mode.');
+   if(includeFolder){
+    try{report.selectedFolder=await api.historicalFolderReview({...request()});}
+    catch(err){report.selectedFolderError=String(err?.message||err);}
+   }
    showRecoveryReview(report);
   }catch(error){
    reviewOutput.textContent='Recovery review failed: '+String(error?.message||error)+'. No saved record was modified.';
   }finally{reviewScan.disabled=false;reviewPicker.value='';}
  }
+ let includeFolderOnFileSelection=false;
  reviewScan.onclick=()=>{
   if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
-  if(confirm('Include original import files in this recovery scan? Choose OK to select up to 20 files. Choose Cancel to scan all existing ACO Studio vaults and snapshots only. Neither option changes saved data.')){
+  const includeFolder=confirm('Also inspect a historical folder such as Downloads, Documents, an external backup or a Time Machine snapshot? OK opens the trusted Mac folder picker; Cancel skips it. Folder metadata only.');
+  if(confirm('Also include original CSV, JSON, TXT or TSV import files? OK selects files; Cancel scans the existing sources'+(includeFolder?' plus your selected folder':'')+'. No data is changed.')){
+   includeFolderOnFileSelection=includeFolder;
    reviewPicker.value='';reviewPicker.click();
-  }else void scanRecoverySources();
+  }else void scanRecoverySources([],includeFolder);
  };
- reviewPicker.onchange=()=>void scanRecoverySources([...reviewPicker.files||[]]);
- reviewPicker.addEventListener('cancel',()=>void scanRecoverySources());
+ reviewPicker.onchange=()=>void scanRecoverySources([...reviewPicker.files||[]],includeFolderOnFileSelection);
+ reviewPicker.addEventListener('cancel',()=>void scanRecoverySources([],includeFolderOnFileSelection));
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
  main.querySelector('.profileLibraryTabs').after(advanced);

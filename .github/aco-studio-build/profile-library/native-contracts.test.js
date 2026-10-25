@@ -163,11 +163,14 @@ test('all eight website tier IDs are supported and obsolete profile-count IDs ar
 
 test('one read-only recovery action is wired through preload and scoped IPC; legacy methods remain authorized internally',()=>{
  const preload=source('preload.js'),service=source('profile-library-service.js'),ui=source('profile-library-ui.js');
- for(const method of ['recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview']){
+ for(const method of ['recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','historicalFolderReview']){
   assert.ok(preload.includes("'"+method+"'"),method+' must remain permitted in desktop preload');
   assert.ok(service.includes("'"+method+"'"),method+' must remain registered as a scoped library IPC method');
  }
  assert.ok(ui.includes('api.recoveryReview'),'one scan must use the unified review IPC method');
+ assert.ok(ui.includes('api.historicalFolderReview'),'the same scan must support an owner-selected folder');
+ assert.ok(source('profile-library-service.js').includes("properties:['openDirectory'"),'historical review must use a native folder picker');
+ assert.ok(source('historical-file-inventory.js').includes('contentsInspected:false'),'historical folder scan must not read contents');
  assert.equal((ui.match(/textContent='Scan All Recovery Sources'/g)||[]).length,1);
  for(const obsolete of ['api.recoverCodes(', 'api.recoverCodesFromFile(', 'api.recoverCodesFromSavedCards('])
   assert.ok(!ui.includes(obsolete),'legacy individual recovery methods must not have separate visible buttons');
