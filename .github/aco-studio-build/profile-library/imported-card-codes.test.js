@@ -326,8 +326,9 @@ test('Profile screen renders one recovery action, keeping original import choice
  for(const obsolete of ['Recover missing Security Codes from encrypted backups','Recover codes from original import file',
   'Recover codes from saved Card Bank','Scan with original import file','Scan available recovery sources'])
   assert.ok(!ui.includes(obsolete),'duplicate recovery control should not appear: '+obsolete);
- assert.ok(ui.includes('api.recoveryReviewSelectedFiles'),'one recovery action invokes the native original file picker');
- assert.ok(!ui.includes('reviewPicker.click()'),'hidden browser file input must not be used for desktop original files');
+ assert.ok(ui.includes('api.historicalFolderReview'),'one action invokes the trusted native folder picker');
+ assert.ok(ui.includes('scanOriginals:true'),'the folder grant includes eligible originals in the same scan');
+ assert.ok(!ui.includes('reviewPicker.click()'),'hidden browser file input must not be used');
 });
 
 test('Deeper recovery scan inventories previous encrypted vault copies while never changing live data',async t=>{
@@ -395,4 +396,28 @@ test('Native picker rejects renderer supplied paths and cross-owner access',asyn
  const h=await library(t,{chooseOriginalFiles:async()=>[]});
  await assert.rejects(h.lib.recoveryReviewSelectedFiles(event,{...h.p,path:'/tmp/arbitrary.json'}),/trusted Mac file picker/);
  await assert.rejects(h.lib.recoveryReviewSelectedFiles(foreign,h.p),/owner/i);
+});
+
+test('Single folder action scans original files and all known sources without changing current vault',async t=>{
+ let folder=null;
+ const h=await library(t,{chooseHistoricalFolder:async()=>folder});
+ const data=complete('target','folder-source@example.test');
+ await commit(h,await preview(h,[data]));
+ folder=path.join(h.dir,'originals');await fs.mkdir(folder);
+ const older=complete('target','folder-source@example.test');
+ older.profileSecurityCode='SEPARATE-NONPAYMENT-REF';
+ await fs.writeFile(path.join(folder,'aco.json'),JSON.stringify([{...older,retailer:'target'}]));
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const result=await h.lib.historicalFolderReview(event,{...h.p,scanOriginals:true});
+ assert.equal(result.readOnly,true);
+ assert.equal(result.selectedFolder.contentsInspected,false,'folder inventory is metadata-only');
+ assert.equal(result.folderOriginalScan.scanned,1,'original content was also checked in the same workflow');
+ assert.equal(result.originalFiles.potentialMatches,1);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
+ assert.ok(!JSON.stringify(result).includes('SEPARATE-NONPAYMENT-REF'));
+ folder=null;
+ const cancelled=await h.lib.historicalFolderReview(event,{...h.p,scanOriginals:true});
+ assert.equal(cancelled.selectedFolder.cancelled,true);
+ assert.equal(cancelled.readOnly,true);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
 });
