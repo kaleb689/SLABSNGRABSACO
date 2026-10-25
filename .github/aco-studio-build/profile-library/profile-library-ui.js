@@ -125,6 +125,67 @@
 
 
 
+
+ // Read-only overview. Existing confirmation-gated restore buttons above are
+ // deliberately preserved. No secret values or full card numbers are rendered.
+ const recoveryReviewPanel=d.createElement('section');
+ recoveryReviewPanel.className='profileLibraryAdvanced';
+ recoveryReviewPanel.setAttribute('aria-label','Recovery source review');
+ const recoveryHeading=d.createElement('h3');recoveryHeading.textContent='Recovery Source Review';
+ const recoveryIntro=d.createElement('p');
+ recoveryIntro.textContent='Check the current vault, its encrypted profile backups and saved Card Bank together. Optionally select an original import file. No data will be restored or overwritten by this review.';
+ const reviewControls=d.createElement('div');reviewControls.className='buttons';
+ const reviewScan=d.createElement('button');reviewScan.type='button';reviewScan.className='btn secondary';
+ reviewScan.textContent='Scan available recovery sources';
+ const reviewFile=d.createElement('button');reviewFile.type='button';reviewFile.className='btn secondary';
+ reviewFile.textContent='Scan with original import file';
+ const reviewPicker=d.createElement('input');reviewPicker.type='file';reviewPicker.accept='.csv,.json,.txt,.tsv';reviewPicker.hidden=true;
+ reviewControls.append(reviewScan,reviewFile,reviewPicker);
+ const reviewOutput=d.createElement('div');reviewOutput.setAttribute('role','status');
+ reviewOutput.textContent='No recovery scan has been run. Current saved values are unchanged.';
+ const reviewWarning=d.createElement('small');
+ reviewWarning.textContent='This is only an inventory of possible matches, not proof of recovery. Counts from different sources may overlap. Payment-card CVV/CVC values must not be recovered or retained.';
+ recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,reviewWarning);
+ q('export').before(recoveryReviewPanel);
+ const reviewLine=(label,value)=>{
+  const p=d.createElement('p');const strong=d.createElement('strong');
+  strong.textContent=label+' ';p.append(strong,d.createTextNode(String(value)));return p;
+ };
+ function showRecoveryReview(report){
+  reviewOutput.replaceChildren();
+  reviewOutput.append(
+   reviewLine('Vault:',report.scope==='personal'?'Personal':'Selected customer'),
+   reviewLine('Profiles missing a reference:',report.missingProfiles+' of '+report.totalProfiles),
+   reviewLine('Encrypted snapshots:',report.backups.scanned+' readable examined; '+report.backups.unreadable+' unreadable; '+report.backups.potentialMatches+' potential profile matches'),
+   reviewLine('Saved Card Bank:',report.savedCardBank.potentialMatches+' potential profile matches; '+report.savedCardBank.conflictingCards+' conflicting card entries')
+  );
+  if(report.originalFile){
+   const file=report.originalFile;
+   reviewOutput.append(reviewLine('Original file '+file.name+':',
+    file.scannedRecords+' records; '+file.potentialMatches+' potential matches; '+file.ambiguous+
+    ' ambiguous; '+file.cardMismatches+' mismatched card identities'));
+  }else reviewOutput.append(reviewLine('Original import file:','Not selected or scanned'));
+  reviewOutput.append(reviewLine('Review result:',report.notice));
+ }
+ async function scanRecoverySources(file=null){
+  if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
+  reviewScan.disabled=true;reviewFile.disabled=true;
+  reviewOutput.textContent='Scanning this unlocked vault. No stored information is being changed.';
+  try{
+   if(scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.())
+    throw Error('Unlock your Personal vault with PIN or Touch ID before scanning.');
+   const payload={...request(),confirmed:false};
+   if(file){payload.retailer=q('retailer').value;payload.fileName=file.name;payload.text=await file.text();}
+   const report=await api.recoveryReview(payload);
+   if(!report?.readOnly)throw Error('Recovery service did not confirm a read-only review.');
+   showRecoveryReview(report);
+  }catch(error){
+   reviewOutput.textContent='Review failed: '+String(error?.message||error)+'. No data was restored.';
+  }finally{reviewScan.disabled=false;reviewFile.disabled=false;reviewPicker.value='';}
+ }
+ reviewScan.onclick=()=>void scanRecoverySources();
+ reviewFile.onclick=()=>{reviewPicker.value='';reviewPicker.click();};
+ reviewPicker.onchange=()=>{const file=reviewPicker.files?.[0];if(file)void scanRecoverySources(file);};
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
  main.querySelector('.profileLibraryTabs').after(advanced);
