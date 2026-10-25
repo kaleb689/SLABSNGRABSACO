@@ -937,14 +937,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  return {jigAssets,reuseChoices,list,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,historicalFolderReview,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
 }
 function registerLibrary(options){
- const chooseHistoricalFolder=options.chooseHistoricalFolder||async e=>{
+ const chooseHistoricalFolder=options.chooseHistoricalFolder||(async e=>{
   const {dialog,BrowserWindow}=require('electron');
   const parent=BrowserWindow.fromWebContents(e.sender);
   const picker={title:'Choose historical backup folder (read-only inventory)',buttonLabel:'Scan folder',
    properties:['openDirectory','dontAddToRecent']};
   const result=parent?await dialog.showOpenDialog(parent,picker):await dialog.showOpenDialog(picker);
   return result.canceled?null:result.filePaths?.[0]||null;
- };
+ });
  const service=createLibrary({...options,chooseHistoricalFolder});for(const method of ['jigAssets','reuseChoices','list','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','historicalFolderReview','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
  // Owner-only encrypted backup recovery for complete Personal and ACO vaults.
  // No customer website token or profile ID can access these snapshots.
