@@ -48,7 +48,7 @@
  recoveryReviewPanel.setAttribute('aria-label','Recovery source review');
  const recoveryHeading=d.createElement('h3');recoveryHeading.textContent='Recovery Source Review';
  const recoveryIntro=d.createElement('p');
- recoveryIntro.textContent='One scan checks the current profile vault, encrypted profile snapshots and saved Card Bank. You can include multiple original import files in that same scan. This review never changes stored data.';
+ recoveryIntro.textContent='One read-only scan checks the current vault, standard encrypted snapshots, recognizable older vault copies in the app data folders, current Card Bank and import-history coverage. You can include original import files from your Mac. Nothing is restored or overwritten.';
  const reviewControls=d.createElement('div');reviewControls.className='buttons';
  const reviewScan=d.createElement('button');reviewScan.type='button';reviewScan.className='btn secondary';
  reviewScan.textContent='Scan All Recovery Sources';
@@ -57,7 +57,7 @@
  const reviewOutput=d.createElement('div');reviewOutput.setAttribute('role','status');
  reviewOutput.textContent='No scan has been run yet. Your saved information is unchanged.';
  const reviewWarning=d.createElement('small');
- reviewWarning.textContent='Historical Card Bank versions are not automatically available from the current vault. Old import files can only be read when you choose them. A scan cannot reconstruct information absent from every available source, and does not recover payment-card CVV/CVC values.';
+ reviewWarning.textContent='Scanning the Mac app data does not search Time Machine, external drives, Downloads or arbitrary folders. Historical Card Bank copies are inventoried but not used to reconstruct payment verifiers. Original import contents are scanned only when you select them. Payment-card CVV/CVC values cannot be recovered or stored.';
  recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,reviewWarning);
  q('export').before(recoveryReviewPanel);
  const reviewLine=(label,value)=>{
@@ -73,12 +73,19 @@
    reviewLine('Encrypted profile snapshots:',report.backups.scanned+' readable; '+report.backups.unreadable+' unreadable; '+report.backups.potentialMatches+' possible matches'),
    reviewLine('Current saved Card Bank:',report.savedCardBank.potentialMatches+' possible matches; '+report.savedCardBank.conflictingCards+' conflicting card entries')
   );
+  const h=report.historicSources;
+  if(h){reviewOutput.append(
+    reviewLine('Historical profile vault copies:',h.found+' located; '+h.readable+' readable; '+h.unreadable+' incompatible or unreadable; '+h.oversized+' oversized; '+h.matched+' possible independent-reference matches; '+h.conflicting+' conflicts'),
+    reviewLine('Historical Card Bank file candidates:',h.cardHistoryFiles+' found (metadata only; verification values not inspected)'),
+    reviewLine('Historical vault dates:',h.oldest&&h.newest?h.oldest.slice(0,10)+' through '+h.newest.slice(0,10):'No readable older copies found')
+   );}
+  if(report.importInventory)reviewOutput.append(reviewLine('Import history:',report.importInventory.batches+' recorded batches / '+report.importInventory.recordedFilenames+' distinct filenames; original file contents are not retained in history'));
   const files=report.originalFiles;
   if(files){
    reviewOutput.append(reviewLine('Original files:',files.scanned+' files / '+files.scannedRecords+' records; '+files.potentialMatches+' distinct possible matches; '+files.ambiguous+' conflicts or ambiguous matches; '+files.cardMismatches+' card mismatches'));
   }else reviewOutput.append(reviewLine('Original files:','Not selected. Files outside ACO Studio cannot be scanned without your permission.'));
   reviewOutput.append(reviewLine('Result:',report.notice));
-  if(report.missingProfiles&&!report.backups.potentialMatches&&!report.savedCardBank.potentialMatches&&!files?.potentialMatches)
+  if(report.missingProfiles&&!report.backups.potentialMatches&&!report.savedCardBank.potentialMatches&&!h?.matched&&!files?.potentialMatches)
    reviewOutput.append(reviewLine('Next step:','No matching independent references were found in the examined sources. Check your original exports or a device backup made before the fields went missing.'));
  }
  async function scanRecoverySources(selectedFiles=[]){
