@@ -167,7 +167,7 @@ test('one read-only recovery action is wired through preload and scoped IPC; leg
   assert.ok(preload.includes("'"+method+"'"),method+' must remain permitted in desktop preload');
   assert.ok(service.includes("'"+method+"'"),method+' must remain registered as a scoped library IPC method');
  }
- assert.ok(ui.includes('api.recoveryReview'),'one scan must use the unified review IPC method');
+ assert.ok(source('profile-library-service.js').includes('await recoveryReview(e,'),'native folder action must invoke the unified scoped review internally');
  assert.ok(ui.includes('api.historicalFolderReview'),'the same scan must support an owner-selected folder');
  assert.ok(ui.includes('api.historicalFolderReview'),'single scan invokes the working native folder picker');
  assert.ok(ui.includes('scanOriginals:true'),'single scan includes original files without another dialog');
