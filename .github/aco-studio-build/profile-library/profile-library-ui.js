@@ -40,152 +40,80 @@
  for(const [value,label]of [['retailer','Retailer format (Shikari / Valor)'],['json','JSON'],['csv','CSV'],['tsv','TSV'],['txt','TXT']])
   exportType.append(new Option(label,value));
  exportTypeLabel.append(exportType);q('export').before(exportTypeLabel);
- const recoverButton=d.createElement('button');recoverButton.type='button';recoverButton.className='btn secondary';
- recoverButton.textContent='Recover missing Security Codes from encrypted backups';
- recoverButton.onclick=async()=>{
-  if(scope==='aco'&&!customerId){note('Select a customer vault first.');return;}
-  recoverButton.disabled=true;
-  try{
-   const owner=request(),preview=await api.recoverCodes({...owner,confirmed:false});
-   if(!preview.recoverable){
-    note('No missing codes were recoverable from '+preview.scannedBackups+' readable encrypted backups. '+preview.stillMissing+' profiles remain without a saved Security Code. Nothing was changed.');
-    return;
-   }
-   const details=Object.entries(preview.byRetailer).map(([r,n])=>(retailName[r]||r)+': '+n).join(', ');
-   const message='Found '+preview.recoverable+' missing Security Code(s) in this exact '+customerName()+
-    ' encrypted vault. '+details+'. '+preview.stillMissing+' profiles still have no recoverable code. '+
-    'This will ONLY fill empty profile Security Code fields. Existing code values, cards, emails, addresses and other vaults will NOT change. '+
-    'A new encrypted snapshot is saved before restoring. Restore these '+preview.recoverable+' entries?';
-   if(!confirm(message))return;
-   const result=await api.recoverCodes({...owner,confirmed:true,token:preview.token});
-   await refresh();
-   note('Recovered '+result.restored+' missing Security Codes from encrypted snapshots in '+customerName()+
-    ' only. '+result.stillMissing+' still could not be recovered; check original imports.');
-  }catch(error){note('Recovery not completed: '+String(error.message||error));}
-  finally{recoverButton.disabled=false;}
- };
- q('export').before(recoverButton);
- const originalFileButton=d.createElement('button');originalFileButton.type='button';originalFileButton.className='btn secondary';
- originalFileButton.textContent='Recover codes from original import file';
- const originalFilePicker=d.createElement('input');originalFilePicker.type='file';
- originalFilePicker.accept='.csv,.tsv,.json,.txt';originalFilePicker.hidden=true;
- originalFileButton.onclick=()=>{
-  if(scope==='aco'&&!customerId){note('Select a customer vault first.');return;}
-  originalFilePicker.value='';originalFilePicker.click();
- };
- originalFilePicker.onchange=async()=>{
-  const file=originalFilePicker.files?.[0];if(!file)return;
-  originalFileButton.disabled=true;
-  try{
-   const owner=request(),retailer=q('retailer').value;
-   const preview=await api.recoverCodesFromFile({...owner,retailer,fileName:file.name,text:await file.text(),confirmed:false});
-   if(!preview.recoverable){
-    note('No matching missing Security Codes were found in this original file. '+preview.stillMissing+
-     ' profiles remain without codes; no data was changed.');
-    return;
-   }
-   if(!confirm('Recover '+preview.recoverable+' missing Security Codes in the selected '+(retailName[retailer]||retailer)+
-    ' vault from '+file.name+'? '+preview.stillMissing+' codes remain missing. Existing values and unrelated records are untouched. '+
-    'An encrypted backup is created before the change.')){
-    return;
-   }
-   const result=await api.recoverCodesFromFile({...owner,retailer,token:preview.token,confirmed:true});
-   await refresh();
-   note('Recovered '+result.restored+' missing Security Codes from the original import file in this vault only. '+
-    result.stillMissing+' still missing.');
-  }catch(error){note('Original-file recovery not completed: '+String(error.message||error));}
-  finally{originalFileButton.disabled=false;originalFilePicker.value='';}
- };
- q('export').before(originalFileButton,originalFilePicker);
- const savedCardRecovery=d.createElement('button');savedCardRecovery.type='button';
- savedCardRecovery.className='btn secondary';savedCardRecovery.textContent='Recover codes from saved Card Bank';
- savedCardRecovery.onclick=async()=>{
-  if(scope==='aco'&&!customerId){note('Select a customer vault first.');return;}
-  savedCardRecovery.disabled=true;
-  try{
-   const owner=request(),preview=await api.recoverCodesFromSavedCards({...owner,confirmed:false});
-   if(!preview.recoverable){
-    note('No missing codes are recoverable from saved cards in this vault. '+preview.stillMissing+
-     ' profiles are still missing codes; '+preview.conflictingCardCodes+' conflicting card codes were excluded. No changes made.');
-    return;
-   }
-   const groups=Object.entries(preview.byRetailer).map(([r,n])=>(retailName[r]||r)+': '+n).join(', ');
-   if(!confirm('Recover '+preview.recoverable+' missing profile Security Codes from exact matching saved card numbers in '+
-    customerName()+' only? '+groups+'. '+preview.stillMissing+' profiles remain missing. '+
-    'Current nonempty codes, card records, other customers, addresses and account logins will not be changed. '+
-    'An encrypted backup is created before recovery.'))return;
-   const result=await api.recoverCodesFromSavedCards({...owner,confirmed:true,token:preview.token});
-   await refresh();
-   note('Recovered '+result.restored+' missing Security Codes from this vault’s saved Card Bank. '+
-    result.stillMissing+' still missing.');
-  }catch(error){note('Saved-card recovery did not complete: '+String(error.message||error));}
-  finally{savedCardRecovery.disabled=false;}
- };
- q('export').before(savedCardRecovery);
-
-
-
-
- // Read-only overview. Existing confirmation-gated restore buttons above are
- // deliberately preserved. No secret values or full card numbers are rendered.
+ // One owner-authorized, read-only recovery entry point across every
+ // source this Mac can open. Original files require an explicit file selection;
+ // Electron cannot silently access old files elsewhere on the device.
  const recoveryReviewPanel=d.createElement('section');
  recoveryReviewPanel.className='profileLibraryAdvanced';
  recoveryReviewPanel.setAttribute('aria-label','Recovery source review');
  const recoveryHeading=d.createElement('h3');recoveryHeading.textContent='Recovery Source Review';
  const recoveryIntro=d.createElement('p');
- recoveryIntro.textContent='Check the current vault, its encrypted profile backups and saved Card Bank together. Optionally select an original import file. No data will be restored or overwritten by this review.';
+ recoveryIntro.textContent='One scan checks the current profile vault, encrypted profile snapshots and saved Card Bank. You can include multiple original import files in that same scan. This review never changes stored data.';
  const reviewControls=d.createElement('div');reviewControls.className='buttons';
  const reviewScan=d.createElement('button');reviewScan.type='button';reviewScan.className='btn secondary';
- reviewScan.textContent='Scan available recovery sources';
- const reviewFile=d.createElement('button');reviewFile.type='button';reviewFile.className='btn secondary';
- reviewFile.textContent='Scan with original import file';
- const reviewPicker=d.createElement('input');reviewPicker.type='file';reviewPicker.accept='.csv,.json,.txt,.tsv';reviewPicker.hidden=true;
- reviewControls.append(reviewScan,reviewFile,reviewPicker);
+ reviewScan.textContent='Scan All Recovery Sources';
+ const reviewPicker=d.createElement('input');reviewPicker.type='file';reviewPicker.accept='.csv,.json,.txt,.tsv';reviewPicker.multiple=true;reviewPicker.hidden=true;
+ reviewControls.append(reviewScan,reviewPicker);
  const reviewOutput=d.createElement('div');reviewOutput.setAttribute('role','status');
- reviewOutput.textContent='No recovery scan has been run. Current saved values are unchanged.';
+ reviewOutput.textContent='No scan has been run yet. Your saved information is unchanged.';
  const reviewWarning=d.createElement('small');
- reviewWarning.textContent='This is only an inventory of possible matches, not proof of recovery. Counts from different sources may overlap. Payment-card CVV/CVC values must not be recovered or retained.';
+ reviewWarning.textContent='Historical Card Bank versions are not automatically available from the current vault. Old import files can only be read when you choose them. A scan cannot reconstruct information absent from every available source, and does not recover payment-card CVV/CVC values.';
  recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,reviewWarning);
  q('export').before(recoveryReviewPanel);
  const reviewLine=(label,value)=>{
-  const p=d.createElement('p');const strong=d.createElement('strong');
+  const p=d.createElement('p'),strong=d.createElement('strong');
   strong.textContent=label+' ';p.append(strong,d.createTextNode(String(value)));return p;
  };
  function showRecoveryReview(report){
   reviewOutput.replaceChildren();
   reviewOutput.append(
    reviewLine('Vault:',report.scope==='personal'?'Personal':'Selected customer'),
-   reviewLine('Profiles missing a reference:',report.missingProfiles+' of '+report.totalProfiles),
-   reviewLine('Encrypted snapshots:',report.backups.scanned+' readable examined; '+report.backups.unreadable+' unreadable; '+report.backups.potentialMatches+' potential profile matches'),
-   reviewLine('Saved Card Bank:',report.savedCardBank.potentialMatches+' potential profile matches; '+report.savedCardBank.conflictingCards+' conflicting card entries')
+   reviewLine('Profiles checked:',report.totalProfiles),
+   reviewLine('Profiles missing a reference:',report.missingProfiles),
+   reviewLine('Encrypted profile snapshots:',report.backups.scanned+' readable; '+report.backups.unreadable+' unreadable; '+report.backups.potentialMatches+' possible matches'),
+   reviewLine('Current saved Card Bank:',report.savedCardBank.potentialMatches+' possible matches; '+report.savedCardBank.conflictingCards+' conflicting card entries')
   );
-  if(report.originalFile){
-   const file=report.originalFile;
-   reviewOutput.append(reviewLine('Original file '+file.name+':',
-    file.scannedRecords+' records; '+file.potentialMatches+' potential matches; '+file.ambiguous+
-    ' ambiguous; '+file.cardMismatches+' mismatched card identities'));
-  }else reviewOutput.append(reviewLine('Original import file:','Not selected or scanned'));
-  reviewOutput.append(reviewLine('Review result:',report.notice));
+  const files=report.originalFiles;
+  if(files){
+   reviewOutput.append(reviewLine('Original files:',files.scanned+' files / '+files.scannedRecords+' records; '+files.potentialMatches+' distinct possible matches; '+files.ambiguous+' conflicts or ambiguous matches; '+files.cardMismatches+' card mismatches'));
+  }else reviewOutput.append(reviewLine('Original files:','Not selected. Files outside ACO Studio cannot be scanned without your permission.'));
+  reviewOutput.append(reviewLine('Result:',report.notice));
+  if(report.missingProfiles&&!report.backups.potentialMatches&&!report.savedCardBank.potentialMatches&&!files?.potentialMatches)
+   reviewOutput.append(reviewLine('Next step:','No matching independent references were found in the examined sources. Check your original exports or a device backup made before the fields went missing.'));
  }
- async function scanRecoverySources(file=null){
+ async function scanRecoverySources(selectedFiles=[]){
   if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
-  reviewScan.disabled=true;reviewFile.disabled=true;
-  reviewOutput.textContent='Scanning this unlocked vault. No stored information is being changed.';
+  reviewScan.disabled=true;
+  reviewOutput.textContent='Scanning all accessible sources in this unlocked vault. No information is being changed.';
   try{
    if(scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.())
     throw Error('Unlock your Personal vault with PIN or Touch ID before scanning.');
    const payload={...request(),confirmed:false};
-   if(file){payload.retailer=q('retailer').value;payload.fileName=file.name;payload.text=await file.text();}
+   if(selectedFiles.length){
+    if(selectedFiles.length>20)throw Error('Select up to 20 original import files for one scan.');
+    let total=0;payload.files=[];
+    for(const file of selectedFiles){
+     if(!/\.(csv|json|txt|tsv)$/i.test(file.name))throw Error('Select original CSV, JSON, TXT or TSV files.');
+     total+=file.size;
+     if(total>26*1024*1024)throw Error('Selected original files exceed 26 MB.');
+     payload.files.push({fileName:file.name,text:await file.text()});
+    }
+   }
    const report=await api.recoveryReview(payload);
-   if(!report?.readOnly)throw Error('Recovery service did not confirm a read-only review.');
+   if(!report?.readOnly)throw Error('The recovery service did not confirm read-only mode.');
    showRecoveryReview(report);
   }catch(error){
-   reviewOutput.textContent='Review failed: '+String(error?.message||error)+'. No data was restored.';
-  }finally{reviewScan.disabled=false;reviewFile.disabled=false;reviewPicker.value='';}
+   reviewOutput.textContent='Recovery review failed: '+String(error?.message||error)+'. No saved record was modified.';
+  }finally{reviewScan.disabled=false;reviewPicker.value='';}
  }
- reviewScan.onclick=()=>void scanRecoverySources();
- reviewFile.onclick=()=>{reviewPicker.value='';reviewPicker.click();};
- reviewPicker.onchange=()=>{const file=reviewPicker.files?.[0];if(file)void scanRecoverySources(file);};
+ reviewScan.onclick=()=>{
+  if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
+  if(confirm('Include original import files in this recovery scan? Choose OK to select up to 20 files. Choose Cancel to scan all existing ACO Studio vaults and snapshots only. Neither option changes saved data.')){
+   reviewPicker.value='';reviewPicker.click();
+  }else void scanRecoverySources();
+ };
+ reviewPicker.onchange=()=>void scanRecoverySources([...reviewPicker.files||[]]);
+ reviewPicker.addEventListener('cancel',()=>void scanRecoverySources());
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
  main.querySelector('.profileLibraryTabs').after(advanced);

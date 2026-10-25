@@ -294,6 +294,66 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     withSourceReference:preview.diagnostics?.withCode||0
    };
   }
+  // Optional user-selected original files are analyzed together, across all
+  // retailers, instead of scanning one file for the currently selected tab.
+  // Do not persist files, expose source reference values, or accept CVV aliases.
+  let originalFiles=null;
+  if(p?.files!==undefined){
+   if(!Array.isArray(p.files)||p.files.length<1||p.files.length>20)
+    throw Error('Select 1-20 original import files.');
+   const eligible=rows.filter(row=>!C.profileCode(row.data));
+   const byIdentity=new Map(),byEmail=new Map();
+   for(const row of eligible){
+    const email=C.email(row.email),key=row.retailer+'|'+email;
+    if(!byIdentity.has(key))byIdentity.set(key,[]);
+    byIdentity.get(key).push(row);
+    if(!byEmail.has(email))byEmail.set(email,[]);
+    byEmail.get(email).push(row);
+   }
+   let totalBytes=0,scannedRecords=0,cardMismatches=0,withSourceReference=0,uncertainRetailer=0;
+   const matches=new Map(),ambiguous=new Set();
+   for(const file of p.files){
+    if(!file||typeof file.fileName!=='string'||file.fileName!==path.basename(file.fileName)||
+      !/\.(csv|json|txt|tsv)$/i.test(file.fileName)||typeof file.text!=='string')
+     throw Error('Original imports must be CSV, JSON, TSV or TXT files.');
+    totalBytes+=Buffer.byteLength(file.text);
+    if(totalBytes>26*1024*1024)throw Error('Original files exceed the 26 MB recovery review limit.');
+    const parsed=Core.parseFile(file.fileName,file.text);
+    if(!Array.isArray(parsed.records)||!parsed.records.length||parsed.records.length>10000)
+     throw Error('Every selected file must contain 1-10,000 profile records.');
+    scannedRecords+=parsed.records.length;
+    if(scannedRecords>30000)throw Error('Select at most 30,000 records per recovery review.');
+    const filenameRetailer=detectedRetailer(file.fileName);
+    for(const raw of parsed.records){
+     if(!raw||typeof raw!=='object'||Array.isArray(raw))continue;
+     if(raw.scope&&raw.scope!==a.scope||
+       raw.customerId&&raw.customerId!==a.id||
+       raw.acoCustomerId&&raw.acoCustomerId!==a.id)
+      throw Error('An original file contains records for another vault. Nothing was changed.');
+     const source=raw.data&&typeof raw.data==='object'&&!Array.isArray(raw.data)?raw.data:raw;
+     const fields=[raw.profileSecurityCode,raw.security_code,raw.custom_security_code,raw.card?.custom_security_code,
+      source.profileSecurityCode,source.security_code,source.custom_security_code,source.card?.custom_security_code];
+     const code=fields.find(v=>typeof v==='string'&&v.length>0&&v.length<=100&&!/[\x00-\x1f\x7f]/.test(v))||'';
+     if(!code)continue;
+     withSourceReference++;
+     const email=C.email(C.values(source).email||raw.email||source.email||raw.loginEmail||source.loginEmail||
+      raw.accountEmail||source.accountEmail||raw.login_email||source.login_email||raw.account?.email);
+     if(!email)continue;
+     const retail=detectedRetailer(raw.retailer||raw.retailerId||raw.site||raw.store||
+      source.retailer||source.retailerId||source.site||source.store)||filenameRetailer;
+     const candidates=retail?(byIdentity.get(retail+'|'+email)||[]):(byEmail.get(email)||[]);
+     if(candidates.length!==1){if(candidates.length>1)uncertainRetailer++;continue;}
+     const row=candidates[0],originalCard=C.payment(source).number,currentCard=C.payment(row.data).number;
+     if(originalCard&&currentCard&&originalCard!==currentCard){cardMismatches++;continue;}
+     if(ambiguous.has(row.id))continue;
+     const previous=matches.get(row.id);
+     if(previous&&previous!==code){ambiguous.add(row.id);matches.delete(row.id);}
+     else matches.set(row.id,code);
+    }
+   }
+   originalFiles={scanned:p.files.length,scannedRecords,potentialMatches:matches.size,
+    ambiguous:ambiguous.size+uncertainRetailer,cardMismatches,withSourceReference};
+  }
   a.check();
   return {
    readOnly:true,scope:a.scope,totalProfiles:rows.length,missingProfiles:missing,
@@ -301,7 +361,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     potentialMatches:snapshots.recoverable||0,byRetailer:snapshots.byRetailer||{}},
    savedCardBank:{potentialMatches:savedBank.recoverable||0,
     conflictingCards:savedBank.conflictingCardCodes||0,byRetailer:savedBank.byRetailer||{}},
-   originalFile,
+   originalFile,originalFiles,
    overlappingSourcesPossible:true,
    notice:'Source matches can refer to the same profile. Do not add the counts. No saved record has been changed.'
   };
