@@ -1,0 +1,47 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
+const {inventoryFolder,category}=require('../historical-file-inventory');
+test('historical folder scan inventories likely sources without reading, returning or altering sensitive contents',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-folder-review-'));
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const nested=path.join(dir,'historic');await fs.mkdir(nested);
+ const secret='TEST-DO-NOT-RELEASE-123';
+ const old=path.join(nested,'owner-profile.encrypted');
+ await fs.writeFile(old,secret);
+ await fs.writeFile(path.join(dir,'target-profiles.csv'),'example,email,secret\nfake@example.test,do-not-display,'+secret);
+ await fs.writeFile(path.join(dir,'vault-cards.bak'),'sensitive-history');
+ await fs.writeFile(path.join(dir,'studio-backup.zip'),'not-a-real-archive');
+ await fs.writeFile(path.join(dir,'notes.txt'),'unrelated');
+ const now=new Date('2025-01-02T00:00:00.000Z');
+ await fs.utimes(old,now,now);
+ const before=await fs.readFile(old);
+ const report=await inventoryFolder(dir);
+ assert.equal(report.readOnly,true);
+ assert.equal(report.categories.encryptedVaultCopies,1);
+ assert.equal(report.categories.historicBackupCopies,1);
+ assert.equal(report.categories.possibleOriginalFiles,1);
+ assert.equal(report.categories.archives,1);
+ assert.equal(report.contentsInspected,false);
+ assert.equal(report.pathsExposed,false);
+ assert.deepEqual(await fs.readFile(old),before);
+ assert.equal(report.oldest,'2025-01-02');
+ const serialized=JSON.stringify(report);
+ assert.ok(!serialized.includes(secret)&&!serialized.includes(dir)&&!serialized.includes('fake@example.test'));
+});
+test('folder scanner skips symbolic links, cannot follow outside owner-selected folder',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-folder-symlinks-'));
+ const outside=await fs.mkdtemp(path.join(os.tmpdir(),'aco-folder-outside-'));
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ t.after(()=>fs.rm(outside,{recursive:true,force:true}));
+ await fs.writeFile(path.join(outside,'private-profile.encrypted'),'NO-ACCESS');
+ await fs.symlink(outside,path.join(dir,'shortcut'));
+ const result=await inventoryFolder(dir);
+ assert.equal(result.skippedLinks,1);
+ assert.equal(result.categories.encryptedVaultCopies,0);
+});
+test('folder classification excludes unrelated files and rejects untrusted path forms',async()=>{
+ assert.equal(category('secrets.txt'),null);
+ assert.equal(category('Target export.csv'),'possibleOriginalFiles');
+ assert.equal(category('profile.encrypted.bak'),'encryptedVaultCopies');
+ await assert.rejects(inventoryFolder('../something'),/directory/);
+});
