@@ -9,7 +9,7 @@
   const gate=$e('emailGate');if(!gate)return;
   const button=document.createElement('button');
   button.type='button';button.id='startNewEmailBank';button.className='btn secondary';
-  button.textContent='Start New Email Bank (keep old bank archived)';
+  button.textContent='Use Email Gen with a New Bank (archive old bank)';
   const feedback=document.createElement('p');
   feedback.id='startNewEmailBankStatus';feedback.className='tiny';
   feedback.setAttribute('role','status');
@@ -50,10 +50,10 @@
    catch{feedback.textContent='Local storage unavailable; existing Email Bank was not changed.';button.disabled=true;review.hidden=true;return;}
    button.disabled=!!pending||!current;
    if(pending){
-    feedback.textContent='Previous encrypted Email Bank is archived. Finish your new bank with a NEW passphrase (12+ characters). The previous encrypted archive was NOT deleted.';
+    feedback.textContent='Fresh Email Gen setup is ready. Use the Cloudflare Account ID, Zone ID and a VALID scoped API token above, choose a NEW passphrase (12+ characters), then click Verify owner & unlock Email Gen. The old encrypted bank remains archived; you do not need its passphrase for the NEW bank.';
     review.hidden=true;
    }else if(!current){
-    feedback.textContent='No active encrypted Email Bank found. Create your first bank using the normal unlock form.';
+    feedback.textContent='No active encrypted Email Bank found. Use your Cloudflare Account ID, Zone ID, scoped API token, and a NEW passphrase (12+ characters) in the form above, then click Verify owner & unlock Email Gen. You do not need to reconnect saved credentials.';
     review.hidden=true;
    }
   };
@@ -100,10 +100,10 @@
     if(localStorage.getItem(KEY)!==null)
      throw Error('Old active bank could not be deactivated. Its encrypted archive remains preserved.');
     typed.value='';check.checked=false;review.hidden=true;
-    feedback.textContent='Original encrypted Email Bank archived and VERIFIED. Enter a NEW passphrase (12+ characters) above to start your EMPTY new Email Bank. Old aliases remain in the separate archive and require their ORIGINAL passphrase for recovery.';
+    feedback.textContent='Original encrypted Email Bank archived and VERIFIED. New Email Gen setup READY: enter your Cloudflare Account ID, Zone ID, valid API token and a NEW bank passphrase (12+ characters) in the form above, then click Verify owner & unlock Email Gen. This creates a new EMPTY bank without reconnecting. Your older encrypted aliases remain archived and need the original passphrase for recovery.';
     button.disabled=true;
     // Never clear a user-supplied Cloudflare API token or change remote rules.
-    const passphrase=$e('gatePassphrase');if(passphrase)passphrase.value='';
+    const passphrase=$e('gatePassphrase');if(passphrase){passphrase.value='';passphrase.focus?.();}
    }catch(error){
     feedback.textContent='New bank setup was NOT completed: '+String(error?.message||error)+'. Existing ciphertext has not been intentionally overwritten or deleted. Any verified archive remains preserved.';
     update();

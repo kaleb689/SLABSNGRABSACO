@@ -1,11 +1,11 @@
 'use strict';
 const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core'),CardPolicy=require('./card-pool-policy');
 function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,getPostalJigOptions,chooseHistoricalFolder,chooseOriginalFiles,now=Date.now,uuid=crypto.randomUUID}={}){
- const plans=new Map(),reconciliationPlans=new Map(),jigPlans=new Map(),codeRestorePlans=new Map(),epochs=new Map();
+ const plans=new Map(),reconciliationPlans=new Map(),duplicateRepairPlans=new Map(),jigPlans=new Map(),codeRestorePlans=new Map(),epochs=new Map();
  const supportedRule=id=>id===C.FL_PHONE_RULE||Boolean(C.ruleById(id));
  const nonStackingRules=ids=>{let targetPrimary=false;return ids.filter(id=>{if(C.ruleById(id)?.family!=='target-primary')return true;if(targetPrimary)return false;targetPrimary=true;return true;});};
  const ep=e=>epochs.get(e.sender.id)||0;
- function cancel(e){epochs.set(e.sender.id,ep(e)+1);for(const [id,p] of plans)if(p.sender===e.sender.id)plans.delete(id);for(const [id,p] of reconciliationPlans)if(p.sender===e.sender.id)reconciliationPlans.delete(id);for(const [id,p] of jigPlans)if(p.sender===e.sender.id)jigPlans.delete(id);}
+ function cancel(e){epochs.set(e.sender.id,ep(e)+1);for(const [id,p] of plans)if(p.sender===e.sender.id)plans.delete(id);for(const [id,p] of reconciliationPlans)if(p.sender===e.sender.id)reconciliationPlans.delete(id);for(const [id,p] of duplicateRepairPlans)if(p.sender===e.sender.id)duplicateRepairPlans.delete(id);for(const [id,p] of jigPlans)if(p.sender===e.sender.id)jigPlans.delete(id);}
  async function access(e,p){require('./jig-field-core').scopeKey(p?.scope,p?.customerId);const epoch=ep(e);const id=await authorize(e,p.scope,p.customerId);if(p.scope==='aco'&&id!==p.customerId)throw Error('Customer vault mismatch.');guard(e,p.scope);if(ep(e)!==epoch)throw Error('Vault closed during authorization.');return {scope:p.scope,id,check:()=>{guard(e,p.scope);if(ep(e)!==epoch)throw Error('Vault closed during this operation.');}};}
  const cardKey=(s,id)=>s==='personal'?'personal:owner':id;
  const profileOwnerLabel=value=>String(value||'Customer').trim().split(/\s+/)[0]||'Customer';
@@ -64,6 +64,101 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     return {...view(row),profileGeneratedAt:row.profileGeneratedAt||creationEvents.get(row.retailer+'|'+String(row.email||'').toLowerCase())||null,duplicates,duplicateDetails};
    })
   };
+ }
+
+ // Rotate only a selected LOCAL profile into an existing available resource.
+ // The original row remains recoverable in the encrypted duplicate archive.
+ async function duplicateRepairPreview(e,p){
+  const a=await access(e,p),retailer=C.retailer(p?.retailer),kind=p?.kind;
+  if(!['card','email'].includes(kind))throw Error('Choose a card or email duplicate to fix.');
+  const rows=await profiles.fieldSnapshot(a.scope,a.id),row=rows.find(x=>x.id===p?.profileId&&x.retailer===retailer);
+  if(!row||row.sourceLinked||row.websiteAuthoritative||row.source==='website-linked-profile'||row.needsReview)
+   throw Error('This is not an editable local profile; website-linked profiles must be updated at their source.');
+  const peers=rows.filter(x=>x.id!==row.id&&x.retailer===retailer);
+  if(!peers.some(x=>kind==='card'?C.payment(x.data).number===C.payment(row.data).number:C.email(x.email)===C.email(row.email)))
+   throw Error('The duplicate no longer exists. Refresh the review.');
+  let candidate=null;
+  if(kind==='email'){
+   const eligible=await profiles.libraryTransaction(a.scope,a.id,ctx=>{
+    const used=new Set(ctx.rows.filter(x=>x.retailer===retailer).map(x=>C.email(x.email)));
+    const unassigned=ctx.emails.filter(x=>x.retailer===retailer&&!x.profileId);
+    const counts=new Map();for(const item of unassigned){const k=C.email(item.email);counts.set(k,(counts.get(k)||0)+1);}
+    return unassigned.filter(x=>counts.get(C.email(x.email))===1&&!used.has(C.email(x.email)))
+     .map(x=>({id:x.id,email:C.email(x.email)})).sort((x,y)=>x.email.localeCompare(y.email));
+   },a.check);
+   candidate=eligible[0];
+   if(!candidate)throw Error('No unused unique email exists in this retailer pool. Add one before repairing.');
+  }else{
+   const vault=cardVault(a.scope),saved=await vault.list(cardKey(a.scope,a.id));
+   const cards=(saved.cards||[]).length?await vault.selectedForJig(cardKey(a.scope,a.id),saved.cards.map(x=>x.id)):[];
+   const settings=await profiles.librarySettings(a.scope,a.id);
+   candidate=cards.filter(x=>{
+    try{
+     CardPolicy.checkAllocation(rows,retailer,[x.number],settings,{excludeProfileIds:[row.id]});
+     return /^\d{12,19}$/.test(String(x.number||''))&&/^(0[1-9]|1[0-2])$/.test(x.month||x.expMonth||'')&&/^20\d\d$/.test(x.year||x.expYear||'');
+    }catch{return false;}
+   }).sort((x,y)=>String(x.number).localeCompare(String(y.number)))[0];
+   if(!candidate)throw Error('No unused saved card is eligible under the Card Bank/Hard Card rules. Add an available card before repairing.');
+  }
+  a.check();const token=uuid();
+  duplicateRepairPlans.set(token,{at:now(),sender:e.sender.id,epoch:ep(e),scope:a.scope,owner:a.id,
+   retailer,kind,profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row),
+   candidateId:candidate.id,candidateNumber:kind==='card'?candidate.number:null,candidateEmail:kind==='email'?candidate.email:null});
+  return {token,kind,email:row.email,newEmail:kind==='email'?candidate.email:null,
+   newCardLast4:kind==='card'?candidate.number.slice(-4):null};
+ }
+ async function duplicateRepairCommit(e,p){
+  const plan=duplicateRepairPlans.get(p?.token);
+  if(!plan||plan.sender!==e.sender.id||plan.epoch!==ep(e)||now()-plan.at>600000)
+   throw Error('Duplicate repair preview expired. Reopen it.');
+  if(p?.confirmed!==true)throw Error('Confirm the exact profile repair first.');
+  const a=await access(e,{scope:plan.scope,customerId:plan.owner});
+  let savedCard=null;
+  if(plan.kind==='card'){
+   const cards=await cardVault(a.scope).selectedForJig(cardKey(a.scope,a.id),[plan.candidateId]);
+   savedCard=cards[0];
+   if(!savedCard||CardPolicy.normalized(savedCard.number)!==plan.candidateNumber)
+    throw Error('Card Bank selection changed; nothing was modified.');
+  }
+  const result=await profiles.libraryTransaction(a.scope,a.id,ctx=>{
+   const row=ctx.rows.find(x=>x.id===plan.profileId&&x.retailer===plan.retailer);
+   if(!row||row.revision!==plan.revision||require('./jig-field-core').hash(row)!==plan.hash)
+    throw Error('Selected profile changed since preview. No changes made.');
+   if(row.sourceLinked||row.websiteAuthoritative||row.source==='website-linked-profile'||row.needsReview)
+    throw Error('This profile is website-linked or locked; do not change it locally.');
+   const peers=ctx.rows.filter(x=>x.id!==row.id&&x.retailer===plan.retailer);
+   if(!peers.some(x=>plan.kind==='card'?C.payment(x.data).number===C.payment(row.data).number:C.email(x.email)===C.email(row.email)))
+    throw Error('Conflict changed; refresh before repairing.');
+   if(plan.kind==='email'){
+    const matches=ctx.emails.filter(x=>x.id===plan.candidateId&&x.retailer===plan.retailer&&!x.profileId&&C.email(x.email)===plan.candidateEmail);
+    const others=ctx.emails.filter(x=>x.retailer===plan.retailer&&C.email(x.email)===plan.candidateEmail);
+    if(matches.length!==1||others.length!==1||ctx.rows.some(x=>x.retailer===plan.retailer&&C.email(x.email)===plan.candidateEmail))
+     throw Error('Unused email is no longer available; no changes made.');
+   }else{
+    CardPolicy.checkAllocation(ctx.rows,plan.retailer,[savedCard.number],ctx.settings,{excludeProfileIds:[row.id]});
+   }
+   ctx.archiveDuplicateRepair(row,plan.kind);
+   if(plan.kind==='email'){
+    const originalEmail=C.email(row.email);
+    const remainingOwner=peers.find(x=>C.email(x.email)===originalEmail);
+    row.data=D.manualEdit(row.data,{...C.values(row.data),email:plan.candidateEmail});row.email=plan.candidateEmail;
+    // Original email still belongs to the other duplicate profile. Transfer
+    // the prior email-bank reservation rather than making it falsely Unused.
+    for(const x of ctx.emails)if(x.retailer===plan.retailer&&x.profileId===row.id){
+     if(remainingOwner&&C.email(x.email)===originalEmail){x.profileId=remainingOwner.id;x.usedAt=now();}
+     else{x.profileId=null;x.usedAt=null;}
+    }
+    const item=ctx.emails.find(x=>x.id===plan.candidateId);item.profileId=row.id;item.usedAt=now();
+   }else{
+    C.putCard(row.data,{number:savedCard.number,month:savedCard.month||savedCard.expMonth,
+     year:savedCard.year||savedCard.expYear,cardholder:savedCard.cardholder||savedCard.holder||'Unassigned'});
+   }
+   row.revision=(row.revision||0)+1;
+   ctx.audit('guided-duplicate-repair',row.email,{retailer:plan.retailer,kind:plan.kind,profileId:row.id});
+   return {saved:true,kind:plan.kind,profileId:row.id,email:row.email,archivedOriginal:true};
+  },a.check);
+  duplicateRepairPlans.delete(p.token);
+  return result;
  }
  async function detail(e,p){const a=await access(e,p),r=await profiles.preview(a.scope,a.id,p.profileId);a.check();return view(r.profile);}
  function detectedRetailer(value){
@@ -1127,7 +1222,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  }
  async function rules(e,p){const a=await access(e,p),retailer=C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id),saved=settings[retailer];a.check();const legacyTarget=retailer==='target'&&Array.isArray(saved?.rules)&&saved?.presetVersion!==2;const selected=legacyTarget?[...new Set([...saved.rules,...C.TARGET_PRIMARY_RULES.map(x=>x.id)])]:(saved?.rules||C.defaultRules(retailer));const grouped=[...new Set(selected.map(id=>/^(street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)_(short|long|abbr|full)$/i.test(id)?'suffix.matching':id))];return {selected:grouped,legacyMigrated:legacyTarget||grouped.length!==selected.length||grouped.some((id,i)=>id!==selected[i]),presetVersion:2,options:[...C.ruleOptions(retailer),{id:C.FL_PHONE_RULE,label:'Random Florida phone number',risk:'standard',family:'phone'}]};}
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:2};return {saved:true,presetVersion:2};},a.check);}
- return {jigAssets,reuseChoices,list,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,reconcileLivePreview,reconcileLiveCommit,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
+ return {jigAssets,reuseChoices,list,duplicateRepairPreview,duplicateRepairCommit,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,reconcileLivePreview,reconcileLiveCommit,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
 }
 function registerLibrary(options){
  const chooseHistoricalFolder=options.chooseHistoricalFolder||(async e=>{
@@ -1147,7 +1242,7 @@ function registerLibrary(options){
   const result=parent?await dialog.showOpenDialog(parent,picker):await dialog.showOpenDialog(picker);
   return result.canceled?null:result.filePaths||[];
  });
- const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['jigAssets','reuseChoices','list','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','reconcileLivePreview','reconcileLiveCommit','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
+ const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['jigAssets','reuseChoices','list','duplicateRepairPreview','duplicateRepairCommit','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','reconcileLivePreview','reconcileLiveCommit','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
  // Owner-only encrypted backup recovery for complete Personal and ACO vaults.
  // No customer website token or profile ID can access these snapshots.
  options.ipcMain.handle('profile:library:backupList',(e,p)=>{

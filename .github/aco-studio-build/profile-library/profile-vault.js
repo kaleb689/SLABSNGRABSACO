@@ -883,6 +883,13 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     rows:d.groups[key],emails:d.emailBanks[key],importBatches:d.importBatches[key],
     audit:(action,email,detail)=>auditRecord(d,key,action,email,detail),
     settings:d.librarySettings?.[key]||{},
+    archiveDuplicateRepair:(old,kind,changedTo)=>{
+     if(!old?.id||!['card','email','both'].includes(kind))throw Error('Invalid duplicate recovery record.');
+     d.duplicateRepairArchives||={};d.duplicateRepairArchives[key]||=[];
+     if(d.duplicateRepairArchives[key].length>=20000)throw Error('Encrypted duplicate recovery archive is full; no changes were made.');
+     d.duplicateRepairArchives[key].push({profile:structuredClone(old),kind,changedTo:kind==='card'?'new saved card':kind==='email'?'unused email':'unused email and saved card',
+      archivedAt:now()});
+    },
     allowIndependentReferenceEdit:profileId=>{
      if(!d.groups[key].some(row=>row.id===profileId))
       throw Error('Reference change authorization requires an existing profile in this vault.');

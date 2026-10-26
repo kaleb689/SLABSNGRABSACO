@@ -268,32 +268,50 @@
   if(!hits.length){win.body.append(text('p','No email, card or unused-pool conflicts found for this retailer in the selected vault.'));return;}
   for(const entry of hits){
    const box=d.createElement('section');box.className='profileLibraryCard';
-   if(entry.kind==='profile'){
-    const row=entry.row;
-    box.append(text('strong',row.email),text('p','Saved '+(row.bank==='live'?'Live':row.stage==='completed'?'Ready for Export':'Unused / In Progress')+' profile'));
-    for(const detail of row.duplicateDetails||[]){
-     const line=d.createElement('div');line.className='profileLibraryDuplicateDetail';
-     // The full matching value is available only after the owner/admin opens
-     // the authenticated vault's Duplicate Review. This is read-only.
-     line.append(text('strong',detail.kind==='card'?'Exact matching card number':detail.kind==='email'?'Exact matching email':'Unused email-bank conflict'));
-     const exact=text('code',detail.value);exact.style.cssText='display:block;overflow-wrap:anywhere;user-select:text;margin:6px 0';
-     line.append(exact);
-     for(const peer of detail.peers||[]){
-      const place=peer.bank==='live'?'Live':peer.bank==='completed'?'Ready for Export':peer.bank==='unused-email-bank'?'Unused Email Bank':'Unused / In Progress';
-      line.append(text('p','Also found in '+place+': '+(peer.email||'Unknown email')+(peer.id?' · ID '+peer.id:'')));
-     }
-     box.append(line);
+   if(entry.kind==='group'){
+    box.append(text('strong',(entry.reason==='card'?'Exact shared card number':'Exact shared email')+' · '+entry.value),
+     text('p',entry.profiles.length+' matching profiles in '+retailName[retailer]+'. Choose the profile to rotate to an UNUSED '+(entry.reason==='card'?'saved Card Bank card':'email-bank account')+'.'));
+    const peers=d.createElement('div');peers.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px';
+    for(const row of entry.profiles){
+     const panel=d.createElement('section');panel.className='profileLibraryCard';
+     panel.append(text('strong',row.email),text('p',row.bank==='live'?'Live':row.stage==='completed'?'Ready for Export':'Unused / In Progress'));
+     const jump=text('button','Show this profile');jump.type='button';jump.className='btn secondary slim';
+     jump.onclick=()=>{
+      stage=row.bank==='live'?'live':row.stage==='completed'?'completed':'unused';
+      issueView=stage==='unused'?'all':'duplicates';q('view').value=issueView;
+      group='all';q('search').value=row.email;selected.clear();pageIndex=0;
+      win.wrap.remove();draw();note('Showing '+row.email+'. No changes made.');
+     };
+     const fix=text('button','Fix Duplicate');fix.type='button';fix.className='btn primary slim';
+     fix.onclick=async()=>{
+      fix.disabled=true;
+      try{
+       const preview=await api.duplicateRepairPreview({...request(),retailer,profileId:row.id,kind:entry.reason});
+       const confirmation=dialog('Fix '+retailName[retailer]+' duplicate');
+       confirmation.body.append(text('p','Selected profile: '+row.email),
+        text('p','Replace the shared '+entry.reason+' with an unused '+(entry.reason==='card'?'saved card ending '+preview.newCardLast4:'email '+preview.newEmail)+'.'));
+       confirmation.body.append(text('p','The original complete profile and independent security references are preserved in encrypted recovery history. No new card is generated. All other profiles remain unchanged.'));
+       const buttons=d.createElement('div');buttons.className='buttons';
+       const cancel=text('button','Cancel');cancel.type='button';cancel.className='btn secondary';
+       cancel.onclick=()=>{confirmation.wrap.remove();fix.disabled=false;};
+       const apply=text('button','Confirm Fix Duplicate');apply.type='button';apply.className='btn primary';
+       apply.onclick=async()=>{
+        apply.disabled=true;
+        try{
+         const result=await api.duplicateRepairCommit({token:preview.token,confirmed:true});
+         confirmation.wrap.remove();win.wrap.remove();
+         q('search').value='';await refresh();duplicatesButton.click();
+         note('Fixed '+result.kind+' duplicate on '+row.email+' using an existing unused pool resource. Original encrypted record archived.');
+        }catch(error){confirmation.status().textContent=error.message;apply.disabled=false;}
+       };
+       buttons.append(cancel,apply);confirmation.body.append(buttons);
+      }catch(error){win.status().textContent=error.message;fix.disabled=false;}
+     };
+     panel.append(jump,fix);peers.append(panel);
     }
-    if(!(row.duplicateDetails||[]).length)box.append(text('p','Duplicate metadata unavailable. Refresh the current vault to review the exact matching value.'));
-    const jump=text('button','Show this profile');jump.type='button';jump.className='btn secondary slim';
-    jump.onclick=()=>{
-     stage=row.bank==='live'?'live':row.stage==='completed'?'completed':'unused';
-     issueView=stage==='unused'?'all':'duplicates';q('view').value=issueView;
-     group='all';q('search').value=row.email;selected.clear();pageIndex=0;
-     win.wrap.remove();draw();note('Showing the matching '+retailName[retailer]+' profile. No changes were made.');
-    };box.append(jump);
+    box.append(peers);
    }else{
-    box.append(text('strong',entry.email),text('p',entry.reason==='matches-profile'?'Exact same email is assigned to a saved profile in this retailer.':'Exact same email occurs more than once among unassigned entries for this retailer.'));
+    box.append(text('strong',entry.email),text('p',entry.reason==='matches-profile'?'Unused email-bank entry overlaps a saved profile in this retailer.':'Repeated unassigned email in this retailer’s Unused pool.'));
     box.append(text('small','Review in the matching retailer Email Bank; the entry remains untouched.'));
    }
    win.body.append(box);
@@ -399,11 +417,25 @@
  function customerList(){const list=window.JigWebsiteCustomers?.list?.()||[],old=customerId;q('customer').replaceChildren(new Option('Select customer',''));for(const c of list)q('customer').append(new Option(c.name||c.email,c.id));if(list.some(c=>c.id===old))q('customer').value=old;}
  const customerName=()=>scope==='personal'?'Personal':(window.JigWebsiteCustomers?.list?.().find(x=>x.id===customerId)?.name||customerId||'Customer');
  function duplicateReviewEntries(retailer){
-  const matching=rows.filter(row=>row.retailer===retailer&&Array.isArray(row.duplicates)&&row.duplicates.length)
-   .map(row=>({kind:'profile',row}));
-  const pooled=unusedConflicts.filter(item=>item.retailer===retailer)
+  // Group by full matching value instead of showing the same pair twice.
+  const groups=new Map();
+  for(const row of rows.filter(x=>x.retailer===retailer)){
+   for(const detail of row.duplicateDetails||[]){
+    if(!['card','email'].includes(detail.kind))continue;
+    const key=detail.kind+'|'+detail.value;
+    if(!groups.has(key))groups.set(key,{kind:'group',reason:detail.kind,value:detail.value,profiles:new Map()});
+    groups.get(key).profiles.set(row.id,row);
+    for(const peer of detail.peers||[]){
+     const related=rows.find(x=>x.id===peer.id&&x.retailer===retailer);
+     if(related)groups.get(key).profiles.set(related.id,related);
+    }
+   }
+  }
+  const organized=[...groups.values()].map(group=>({...group,profiles:[...group.profiles.values()]
+   .sort((a,b)=>(a.bank==='live'?0:1)-(b.bank==='live'?0:1)||a.email.localeCompare(b.email))}));
+  const unused=unusedConflicts.filter(item=>item.retailer===retailer)
    .map(item=>({kind:'unused-email',email:item.email,reason:item.reason}));
-  return [...matching,...pooled];
+  return [...organized,...unused];
  }
  function profileIssues(row){
   const issues=[];

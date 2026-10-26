@@ -241,9 +241,10 @@ test('Duplicate badge and review are scoped to chosen retailer and include unuse
  assert.ok(start>0&&end>start);
  const context={
   rows:[
-   {id:'t1',retailer:'target',email:'same@example.test',duplicates:['card']},
-   {id:'t2',retailer:'target',email:'other@example.test',duplicates:['email']},
-   {id:'p1',retailer:'pokemoncenter',email:'same@example.test',duplicates:['card']}
+   {id:'t1',retailer:'target',email:'same@example.test',duplicates:['card'],duplicateDetails:[{kind:'card',value:'5555555555554444',peers:[{id:'t2'}]}]},
+   {id:'t2',retailer:'target',email:'other@example.test',duplicates:['card'],duplicateDetails:[{kind:'card',value:'5555555555554444',peers:[{id:'t1'}]}]},
+   {id:'p1',retailer:'pokemoncenter',email:'same@example.test',duplicates:['card'],duplicateDetails:[{kind:'card',value:'4242424242424242',peers:[{id:'p2'}]}]},
+   {id:'p2',retailer:'pokemoncenter',email:'different@example.test',duplicates:['card'],duplicateDetails:[{kind:'card',value:'4242424242424242',peers:[{id:'p1'}]}]}
   ],
   unusedConflicts:[
    {id:'u-target',retailer:'target',email:'same@example.test',reason:'matches-profile'},
@@ -252,8 +253,9 @@ test('Duplicate badge and review are scoped to chosen retailer and include unuse
  };
  vm.createContext(context);
  vm.runInContext(source.slice(start,end)+'\nthis.duplicatesFor=duplicateReviewEntries;',context);
- assert.deepEqual(Array.from(context.duplicatesFor('target'),x=>x.kind),['profile','profile','unused-email']);
- assert.deepEqual(Array.from(context.duplicatesFor('pokemoncenter'),x=>x.kind),['profile','unused-email']);
+ assert.deepEqual(Array.from(context.duplicatesFor('target'),x=>x.kind),['group','unused-email']);
+ assert.equal(context.duplicatesFor('target')[0].profiles.length,2);
+ assert.deepEqual(Array.from(context.duplicatesFor('pokemoncenter'),x=>x.kind),['group','unused-email']);
  assert.match(source,/duplicatesButton\.textContent='Duplicates \('\+duplicateReviewEntries\(q\('retailer'\)\.value\)\.length/);
  assert.match(source,/duplicatesButton\.hidden=false/);
  assert.match(source,/No data is deleted or changed by this review|no data is deleted or changed by this review/i);
@@ -287,14 +289,28 @@ test('Live import review makes newest matching retailer email authoritative with
 
 test('Duplicate review displays exact matching value, retailer-scoped peer email, bank and profile ID',()=>{
  assert.match(source,/row\.duplicateDetails\|\|\[\]/);
- assert.match(source,/Exact matching card number/);
- assert.match(source,/Exact matching email/);
- assert.match(source,/Unused email-bank conflict/);
- assert.match(source,/text\('code',detail\.value\)/);
- assert.match(source,/detail\.peers\|\|\[\]/);
- assert.match(source,/peer\.email\|\|'Unknown email'/);
- assert.match(source,/peer\.id\?' · ID '/);
+ assert.match(source,/Exact shared card number/);
+ assert.match(source,/Exact shared email/);
+ assert.match(source,/Unused email-bank entry overlaps/);
+ assert.match(source,/entry\.value/);
+ assert.match(source,/entry\.profiles/);
+ assert.match(source,/row\.email/);
+ assert.match(source,/groups\.get\(key\)\.profiles\.set/);
  assert.match(source,/function duplicateReviewEntries\(retailer\)/);
- assert.match(source,/row\.retailer===retailer/);
- assert.match(source,/No changes were made/);
+ assert.match(source,/x\.retailer===retailer/);
+ assert.match(source,/No changes made|No changes were made|No data is deleted or changed by this review/);
+});
+
+
+test('Grouped retailer duplicate review keeps same-card peers adjacent and offers explicit pool-backed repair',()=>{
+ assert.match(source,/const groups=new Map\(\)/);
+ assert.match(source,/groups\.get\(key\)\.profiles\.set/);
+ assert.match(source,/grid-template-columns:repeat\(auto-fit/);
+ assert.match(source,/Fix Duplicate/);
+ assert.match(source,/duplicateRepairPreview/);
+ assert.match(source,/duplicateRepairCommit/);
+ assert.match(source,/Confirm Fix Duplicate/);
+ assert.match(source,/duplicatesButton\.click\(\)/);
+ assert.match(source,/Original encrypted record archived/);
+ assert.doesNotMatch(source,/api\.deleteSelected\(/);
 });
