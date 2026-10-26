@@ -174,10 +174,11 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   return serial(async()=>{
    const current=await read(scope),rows=current.groups?.[key]||[];
    const eligible=new Map(rows.filter(row=>row?.id&&!independentCode(row.data)).map(row=>[row.id,row]));
-   const found=new Map(),snapshots=await backupList(scope);
+   const found=new Map(),conflicted=new Set(),snapshots=await backupList(scope);
    let readable=0,skipped=0;
    for(const entry of snapshots){
-    if(found.size===eligible.size)break;
+    // Examine every snapshot: divergent historical references are a conflict,
+    // never a reason to take whichever backup was found first.
     let previous;
     try{
      previous=JSON.parse(safeStorage.decryptString(await fs.readFile(path.join(snapshotsDir,entry.name))));
@@ -194,7 +195,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
      else byEmail.set(identity,row);
     }
     for(const row of eligible.values()){
-     if(found.has(row.id))continue;
+     if(conflicted.has(row.id))continue;
      const identity=row.retailer+'|'+normalizeEmail(row.email);
      const olderRow=byId.get(row.id)||byEmail.get(identity);
      if(!olderRow||olderRow.retailer!==row.retailer||normalizeEmail(olderRow.email)!==normalizeEmail(row.email))continue;
@@ -204,24 +205,29 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
      // Both complete card numbers must be present and identical digit for digit.
      if(!require('./profile-library-core').exactFullCardMatch(olderRow.data,row.data))continue;
      const code=independentCode(olderRow.data,!independentOnly);
-     if(code)found.set(row.id,{code,revision:row.revision||0,email:row.email,retailer:row.retailer});
+     if(code){
+      const prior=found.get(row.id);
+      if(prior&&prior.code!==code){found.delete(row.id);conflicted.add(row.id);}
+      else if(!prior)found.set(row.id,{code,revision:row.revision||0,email:row.email,
+       retailer:row.retailer,cardNumber:require('./profile-library-core').payment(row.data).number});
+     }
     }
    }
    const counts={};
    for(const [id,item]of found){counts[item.retailer]=(counts[item.retailer]||0)+1;}
    if(!confirmed){
     const recoveryToken=uuid();
-    codeRecoveryPreviews.set(recoveryToken,{scope,key,at:Date.now(),found});
+    codeRecoveryPreviews.set(recoveryToken,{scope,key,at:Date.now(),found,conflicted:[...conflicted],independentOnly});
     if(codeRecoveryPreviews.size>20)codeRecoveryPreviews.delete(codeRecoveryPreviews.keys().next().value);
-    return {preview:true,token:recoveryToken,recoverable:found.size,stillMissing:eligible.size-found.size,scannedBackups:readable,unreadableBackups:skipped,byRetailer:counts};
+    return {preview:true,token:recoveryToken,recoverable:found.size,stillMissing:eligible.size-found.size,conflicts:conflicted.size,scannedBackups:readable,unreadableBackups:skipped,byRetailer:counts};
    }
    const preview=codeRecoveryPreviews.get(String(token||''));codeRecoveryPreviews.delete(String(token||''));
    if(!preview||preview.scope!==scope||preview.key!==key||Date.now()-preview.at>10*60_000)throw Error('Recovery preview expired. Review again.');
-   if(preview.found.size!==found.size||[...preview.found].some(([id,item])=>found.get(id)?.code!==item.code))
+   if(preview.independentOnly!==independentOnly||preview.conflicted.length!==conflicted.size||preview.conflicted.some(id=>!conflicted.has(id))||preview.found.size!==found.size||[...preview.found].some(([id,item])=>found.get(id)?.code!==item.code))
     throw Error('Available recovery data changed. Review again.');
    for(const [id,item]of found){
     const row=rows.find(r=>r.id===id);
-    if(!row||row.retailer!==item.retailer||row.email!==item.email||(row.revision||0)!==item.revision||independentCode(row.data))
+    if(!row||row.retailer!==item.retailer||row.email!==item.email||(row.revision||0)!==item.revision||independentCode(row.data)||!/^\d{12,19}$/.test(item.cardNumber)||require('./profile-library-core').payment(row.data).number!==item.cardNumber)
      throw Error('A profile changed since recovery preview; nothing was restored.');
    }
    beforeWrite();
@@ -234,7 +240,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     }
     await write(scope,current); // backs up current encrypted vault before modifying
    }
-   return {restored:found.size,stillMissing:eligible.size-found.size,scannedBackups:readable,byRetailer:counts};
+   return {restored:found.size,stillMissing:eligible.size-found.size,conflicts:conflicted.size,scannedBackups:readable,byRetailer:counts};
   });
  }
  // Read-only inventory of historical encrypted profile vault COPIES left in the
