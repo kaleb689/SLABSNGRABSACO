@@ -587,3 +587,109 @@ test('Original-file recovery preview requires the exact full card number before 
  assert.equal(match.recoverable,1);
  assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before,'previews cannot modify saved references');
 });
+
+
+test('Confirmed folder reference restoration uses exact card identity and leaves originals intact',async t=>{
+ let folder;
+ const h=await library(t,{chooseHistoricalFolder:async()=>folder});
+ const target=complete('target','restore-target@example.test');
+ const walmart=complete('walmart','restore-walmart@example.test');
+ await commit(h,await preview(h,[target]));
+ await commit(h,await preview(h,[walmart],h.p,'walmart'));
+ folder=path.join(h.dir,'restore-originals');await fs.mkdir(folder);
+ const beforeTarget=complete('target','restore-target@example.test');
+ beforeTarget.profileSecurityCode='INDEPENDENT-TARGET-REF';
+ const beforeWalmart=complete('walmart','restore-walmart@example.test');
+ beforeWalmart.security_code='INDEPENDENT-WALMART-REF';
+ const targetFile=path.join(folder,'target-older.json'),walmartFile=path.join(folder,'walmart-older.json');
+ await fs.writeFile(targetFile,JSON.stringify([{...beforeTarget,retailer:'target'}]));
+ await fs.writeFile(walmartFile,JSON.stringify([{...beforeWalmart,retailer:'walmart'}]));
+ const targetOriginal=await fs.readFile(targetFile),walmartOriginal=await fs.readFile(walmartFile);
+ const vaultOriginal=await fs.readFile(h.profiles.paths.personal);
+ const prepared=await h.lib.prepareIndependentReferenceRestore(event,h.p);
+ assert.equal(prepared.readOnly,true);
+ assert.equal(prepared.preview,true);
+ assert.equal(prepared.recoverable,2);
+ assert.equal(prepared.stillMissing,0);
+ assert.equal(prepared.sourceRecords,2);
+ assert.ok(!JSON.stringify(prepared).includes('INDEPENDENT-TARGET-REF'));
+ assert.ok(!JSON.stringify(prepared).includes('INDEPENDENT-WALMART-REF'));
+ assert.ok(!JSON.stringify(prepared).includes('4242424242424242'));
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),vaultOriginal,'preview never writes');
+ assert.deepEqual(await fs.readFile(targetFile),targetOriginal);
+ assert.deepEqual(await fs.readFile(walmartFile),walmartOriginal);
+ const saved=await h.lib.confirmIndependentReferenceRestore(event,{...h.p,confirmed:true,token:prepared.token});
+ assert.equal(saved.restored,2);
+ const profiles=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(profiles.find(r=>r.email==='restore-target@example.test').data.profileSecurityCode,'INDEPENDENT-TARGET-REF');
+ assert.equal(profiles.find(r=>r.email==='restore-walmart@example.test').data.profileSecurityCode,'INDEPENDENT-WALMART-REF');
+ assert.deepEqual(await fs.readFile(targetFile),targetOriginal);
+ assert.deepEqual(await fs.readFile(walmartFile),walmartOriginal);
+ assert.ok((await h.profiles.backupList('personal')).length>0,'an encrypted snapshot exists after save');
+ await assert.rejects(h.lib.confirmIndependentReferenceRestore(event,{...h.p,confirmed:true,token:prepared.token}),/expired/i,'token is single use');
+});
+
+test('Only independent fields are restored: old CVV labels, mismatched card identities and conflicting references never qualify',async t=>{
+ let folder;
+ const h=await library(t,{chooseHistoricalFolder:async()=>folder});
+ const target=complete('target','safe-target@example.test');
+ await commit(h,await preview(h,[target]));
+ folder=path.join(h.dir,'safe-restore');await fs.mkdir(folder);
+ const src=complete('target','safe-target@example.test');
+ const files=[
+  {name:'target-cvv.json',item:{...src,retailer:'target',cc_cvv:'123',profileSecurityCode:undefined}},
+  {name:'target-wrong.json',item:{...src,retailer:'target',cc_number:'4242424242424243',profileSecurityCode:'INDEPENDENT-MISMATCH'}},
+ ];
+ for(const {name,item}of files)await fs.writeFile(path.join(folder,name),JSON.stringify([item]));
+ const unchanged=await fs.readFile(h.profiles.paths.personal);
+ let prepared=await h.lib.prepareIndependentReferenceRestore(event,h.p);
+ assert.equal(prepared.recoverable,0);
+ assert.equal(prepared.cardMismatch,1);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),unchanged);
+ await fs.writeFile(path.join(folder,'target-conflict-a.json'),JSON.stringify([{...src,retailer:'target',profileSecurityCode:'INDEPENDENT-ONE'}]));
+ await fs.writeFile(path.join(folder,'target-conflict-b.json'),JSON.stringify([{...src,retailer:'target',profileSecurityCode:'INDEPENDENT-TWO'}]));
+ prepared=await h.lib.prepareIndependentReferenceRestore(event,h.p);
+ assert.equal(prepared.recoverable,0);
+ assert.equal(prepared.conflictingSources,1);
+ assert.ok(!JSON.stringify(prepared).includes('INDEPENDENT-ONE'));
+ assert.ok(!JSON.stringify(prepared).includes('123'));
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),unchanged);
+});
+
+test('Restore confirmation rejects changed saved card atomically and unauthorized or cross-customer sources',async t=>{
+ let folder;
+ const h=await library(t,{chooseHistoricalFolder:async()=>folder});
+ await commit(h,await preview(h,[complete('target','change-guard@example.test')]));
+ folder=path.join(h.dir,'guarded-restore');await fs.mkdir(folder);
+ const original=complete('target','change-guard@example.test');
+ original.profileSecurityCode='INDEPENDENT-SOURCE-REF';
+ await fs.writeFile(path.join(folder,'target-old.json'),JSON.stringify([{...original,retailer:'target'}]));
+ const p=await h.lib.prepareIndependentReferenceRestore(event,h.p);
+ assert.equal(p.recoverable,1);
+ await assert.rejects(h.lib.prepareIndependentReferenceRestore(foreign,h.p),/owner|unauthorized|window/i);
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.rows[0].data.cc_number='5555555555554444';ctx.rows[0].revision++;
+  return {updated:true};
+ },()=>{});
+ const afterUpdate=await fs.readFile(h.profiles.paths.personal);
+ await assert.rejects(h.lib.confirmIndependentReferenceRestore(event,{...h.p,confirmed:true,token:p.token}),/changed/i);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),afterUpdate,'stale preview cannot partially restore');
+ const newPreview=await h.lib.prepareIndependentReferenceRestore(event,h.p);
+ assert.equal(newPreview.recoverable,0,'different complete card blocks restoration');
+ await fs.writeFile(path.join(folder,'target-foreign.json'),
+  JSON.stringify([{...original,retailer:'target',scope:'aco',customerId:'customer-b'}]));
+ const other=await h.lib.prepareIndependentReferenceRestore(event,h.p);
+ assert.equal(other.recoverable,0);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode||'','');
+});
+
+test('The desktop UI offers explicit independent-reference preview and confirmation without duplicating the metadata scan',async()=>{
+ const ui=await fs.readFile(path.join(__dirname,'..','profile-library-ui.js'),'utf8');
+ const applied=await fs.readFile(path.join(__dirname,'..','preload.js'),'utf8');
+ assert.ok(ui.includes('api.prepareIndependentReferenceRestore'));
+ assert.ok(ui.includes('api.confirmIndependentReferenceRestore'));
+ assert.ok(ui.includes('CVV/CVC-labeled'));
+ assert.equal((ui.match(/textContent='Scan All Recovery Sources'/g)||[]).length,1);
+ for(const method of ['prepareIndependentReferenceRestore','confirmIndependentReferenceRestore'])
+  assert.ok(applied.includes("'"+method+"'"),'native preload must expose '+method);
+});
