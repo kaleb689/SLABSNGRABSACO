@@ -38,6 +38,11 @@
  // This is a DOM-only move; all existing stages and click handlers remain intact.
  const stageWorkspace=main.querySelector('.profileRetailerWorkspace');
  main.querySelector('.profileResourceBanks').after(stageWorkspace);
+ // One-time reconciliation for Live profiles imported before duplicate
+ // cleanup was available; never re-imports, modifies Live, or guesses by name.
+ const reconcileExistingLive=text('button','Review existing Live duplicates');
+ reconcileExistingLive.type='button';reconcileExistingLive.className='btn secondary';
+ q('import-live').after(reconcileExistingLive);
  const exportTypeLabel=d.createElement('label');exportTypeLabel.textContent='Export as';
  const exportType=d.createElement('select');exportType.setAttribute('aria-label','Choose exported profile file type');
  exportType.dataset.exportFormat='true';
@@ -768,6 +773,63 @@
  q('export').onclick=async()=>{try{const result=await api.exportFile({...request(),retailer:q('retailer').value,profileIds:pageRows().filter(x=>selected.has(x.id)).map(x=>x.id),customerName:customerName(),exportFormat:exportType.value});if(result.saved)note('Exported '+result.count+' profiles: '+result.name);}catch(e){note(e.message);}};
  q('import').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}if(stage==='live'){q('live-file').value='';q('live-file').click();return;}q('file').value='';q('file').click();};
  q('import-live').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}q('live-file').value='';q('live-file').click();};
+ reconcileExistingLive.onclick=async()=>{
+  if(scope==='aco'&&!customerId){note('Select the customer vault first.');return;}
+  const owner=request(),at=epoch,retailer=q('retailer').value;
+  reconcileExistingLive.disabled=true;
+  try{
+   const preview=await api.reconcileLivePreview({...owner,retailer});
+   if(at!==epoch||main.hidden)return;
+   const win=dialog('Reconcile existing '+retailName[retailer]+' Live profiles');
+   const info=text('p',preview.liveCount+' Live · '+preview.workingCount+' non-Live · '+preview.emailMatches+
+    ' exact-email matches · '+preview.cardOnlyMatches+' unique full-card matches · '+
+    preview.blockedCount+' ambiguous/linked matches excluded · '+preview.unmatchedCount+' unmatched.');
+   win.body.append(info,text('p','This reviews profiles ALREADY stored; do not import the same file again. Only selected non-Live records can be retired. Every retired record is archived in the same encrypted vault BEFORE removal, different original cards are preserved in its existing Card Bank, and all Live profiles stay unchanged. Matching a name or address is never enough.'));
+   if(preview.blockedCount)win.body.append(text('p',preview.blockedCount+' linked or ambiguous matches must be reviewed separately and will not be changed.'));
+   const candidates=preview.candidates||[];
+   if(!candidates.length){win.body.append(text('p','There are no unambiguous same-retailer Live matches to retire. No records changed.'));return;}
+   const controls=d.createElement('div');controls.className='buttons';
+   const all=text('button','Select all confirmed matches');all.type='button';all.className='btn secondary';
+   const none=text('button','Clear selection');none.type='button';none.className='btn secondary';
+   controls.append(all,none);win.body.append(controls);
+   const form=d.createElement('form'),entries=d.createElement('div');
+   entries.style.cssText='max-height:50vh;overflow:auto;display:grid;gap:8px';
+   const checkboxes=[];
+   for(const match of candidates){
+    const label=d.createElement('label');label.className='check';
+    const input=d.createElement('input');input.type='checkbox';input.value=match.id;input.checked=true;
+    const description=match.reason==='email'
+     ?'Exact retailer email match'+(match.cardsDiffer?' · different card will be preserved':' · same card')
+     :'FULL CARD ONLY — different login email; explicitly confirm this is an older superseded profile';
+    label.append(input,text('span',match.email+' → Live '+match.liveEmail+' · '+description));
+    entries.append(label);checkboxes.push(input);
+   }
+   all.onclick=()=>{for(const input of checkboxes)input.checked=true;};
+   none.onclick=()=>{for(const input of checkboxes)input.checked=false;};
+   form.append(entries);
+   const confirmLabel=d.createElement('label');confirmLabel.className='check';
+   const confirmed=d.createElement('input');confirmed.type='checkbox';confirmed.required=true;
+   confirmLabel.append(confirmed,text('span','I reviewed the matching identities and authorize retiring ONLY my selected non-Live profiles after encrypted archival and Card Bank preservation.'));
+   const submit=text('button','Archive and retire selected non-Live matches');
+   submit.type='submit';submit.className='btn primary';
+   form.append(confirmLabel,submit);win.body.append(form);
+   form.onsubmit=async event=>{
+    event.preventDefault();const selectedIds=checkboxes.filter(input=>input.checked).map(input=>input.value);
+    if(!selectedIds.length){win.status().textContent='Select matching profiles before reconciling.';return;}
+    submit.disabled=true;
+    try{
+     const result=await api.reconcileLiveCommit({token:preview.token,confirmed:confirmed.checked,selectedIds});
+     if(!win.valid())return;
+     win.wrap.remove();selected.clear();await refresh();
+     note('Reconciled '+result.retired+' old '+retailName[retailer]+' profiles ('+
+      result.matchedByEmail+' exact email, '+result.matchedByCard+' reviewed full card). '+
+      result.cardsPreserved+' original cards saved; '+result.cardsAlreadySaved+
+      ' already saved. Encrypted profile recovery preserved; existing Live unaffected.');
+    }catch(error){win.status().textContent=error.message;submit.disabled=false;}
+   };
+  }catch(error){note('Live reconciliation unavailable: '+String(error.message||error));}
+  finally{reconcileExistingLive.disabled=false;}
+ };
  q('live-file').onchange=async()=>{
   const files=[...q('live-file').files];if(!files.length)return;const owner=request(),at=epoch;
   try{

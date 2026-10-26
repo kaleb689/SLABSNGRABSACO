@@ -719,6 +719,62 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    beforeWrite();await write(scope,d);return {imported:prepared.length,pkcEmailsAdded,bank:'live',batchId,supersededNonLive:displaced.length,retiredFromUnusedAndReady:displaced.length,cardsPreserved:cardPreservation.cardsPreserved||0,cardsAlreadySaved:cardPreservation.cardsAlreadySaved||0};
   });
  }
+ // Owner-confirmed retrospective reconciliation. Works with the Live profiles
+ // ALREADY saved on disk; does not re-import or create another Live profile.
+ // This serial transaction writes the archived full old rows and removal in
+ // one encrypted snapshot, after the separate encrypted Card Bank is safe.
+ async function reconcileExistingLiveProfiles(scope,customerId,retailer,selectedIds,signature,beforeWrite,preserveRetiredCards){
+  const key=bank(scope,customerId),r=retailerId(retailer);
+  if(typeof signature!=='string'||!/^[a-f0-9]{64}$/.test(signature)||
+     !Array.isArray(selectedIds)||!selectedIds.length||selectedIds.length>10000||
+     new Set(selectedIds).size!==selectedIds.length||
+     typeof beforeWrite!=='function'||typeof preserveRetiredCards!=='function')
+   throw Error('Review and confirm matching Live profiles before retiring any stored profiles.');
+  return serial(async()=>{
+   const d=await read(scope),rows=d.groups[key]||[],plan=require('./profile-library-core').existingLiveReconciliation(rows,r);
+   if(plan.signature!==signature)throw Error('The profile vault changed after review. No profiles were retired; run reconciliation again.');
+   const eligible=new Map(plan.candidates.map(x=>[x.id,x]));
+   if(selectedIds.some(id=>!eligible.has(id)))throw Error('A selected non-Live profile is not an unambiguous match. No profiles changed.');
+   const byId=new Map(rows.map(x=>[x.id,x])),selected=selectedIds.map(id=>eligible.get(id));
+   const displaced=selected.map(x=>byId.get(x.id)),live=selected.map(x=>byId.get(x.liveId));
+   if(displaced.some(x=>!x||x.bank==='live'||x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile')||
+      live.some(x=>!x||x.bank!=='live'||x.retailer!==r))
+    throw Error('One of the matched Live profiles changed ownership. No profiles were retired.');
+   const archive=d.supersededLiveImportProfiles?.[key]||[];
+   if(archive.length+displaced.length>20000)
+    throw Error('Encrypted recovery history is full. No profiles were retired.');
+   beforeWrite();
+   // Make same-retailer card-only reconciliation explicit to the saved-card
+   // helper, without changing the actual Live profile account email in storage.
+   const matchingLive=selected.map((x,i)=>({...structuredClone(live[i]),email:displaced[i].email}));
+   const cardStats=await preserveRetiredCards(structuredClone(displaced),matchingLive);
+   beforeWrite();
+   d.supersededLiveImportProfiles||={};
+   d.supersededLiveImportProfiles[key]||=[];
+   const replacedAt=now(),batchId='existing-live-reconcile-'+uuid();
+   for(let i=0;i<displaced.length;i++){
+    const old=displaced[i],match=selected[i];
+    d.supersededLiveImportProfiles[key].push({
+     profile:structuredClone(old),replacedAt,replacedByLiveProfileId:match.liveId,
+     batchId,reason:match.reason
+    });
+    auditRecord(d,key,'existing-live-reconciled',old.email,{
+     retailer:r,priorProfileId:old.id,replacedByLiveProfileId:match.liveId,
+     reason:match.reason
+    });
+   }
+   const removed=new Set(displaced.map(x=>x.id));
+   d.groups[key]=rows.filter(x=>!removed.has(x.id));
+   // Do not edit reserved email entries, linked Live profiles, other retailers,
+   // stored cards/addresses, settings or historical import batches.
+   beforeWrite();await write(scope,d);
+   return {retailer:r,retired:displaced.length,matchedByEmail:selected.filter(x=>x.reason==='email').length,
+    matchedByCard:selected.filter(x=>x.reason==='full-card').length,
+    remainingReview:plan.blockedCount+plan.candidates.length-displaced.length,
+    cardsPreserved:cardStats.cardsPreserved||0,cardsAlreadySaved:cardStats.cardsAlreadySaved||0,
+    encryptedRecoveryPreserved:true};
+  });
+ }
  // History tracks only NEW local profile IDs created by each import; a batch
  // cannot delete any pre-existing profile that was explicitly updated by a live import.
  function importBatchFingerprint(rows,batch){
@@ -873,7 +929,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   }
   return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count||a.retailer.localeCompare(b.retailer)),scanned:[...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
  }
- return Object.freeze({paths,backupList,backupRestore,codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,unusedEmailConflicts,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+ return Object.freeze({paths,backupList,backupRestore,codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileExistingLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,unusedEmailConflicts,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 

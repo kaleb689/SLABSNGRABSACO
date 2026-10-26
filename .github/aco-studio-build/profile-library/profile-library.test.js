@@ -362,3 +362,106 @@ test('Repeated unassigned emails are reviewable even with no created profile',as
  assert.ok(result.unusedConflicts.every(x=>x.reason==='duplicate-unused-email'));
  assert.equal(result.profiles.length,0);
 });
+
+
+// Retroactive reconciliation uses already-stored Live profiles. It must never
+// re-import, modify the actual Live profile, or delete an ambiguous match.
+async function withOldAndLive(h,{retailer='target',oldEmail='old@example.test',liveEmail='old@example.test',
+ oldNumber='5555555555554444',liveNumber='4242424242424242'}={}){
+ const old=complete(retailer,oldEmail);
+ LC.putCard(old,{number:oldNumber,month:'08',year:'2031',cardholder:'Saved Holder'});
+ old.custom_security_code='INDEPENDENT-REFERENCE';
+ await commit(h,await preview(h,[old],h.p,retailer));
+ let oldId,liveId;
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  const row=ctx.rows.find(x=>x.retailer===retailer&&x.email===oldEmail);
+  oldId=row.id;
+  const live=structuredClone(row);
+  live.id='reconciled-live-'+Date.now()+'-'+Math.floor(Math.random()*1000000);
+  live.bank='live';live.email=liveEmail;live.label=liveEmail;live.revision=0;
+  live.data=complete(retailer,liveEmail);
+  LC.putCard(live.data,{number:liveNumber,month:'09',year:'2034',cardholder:'Live Holder'});
+  liveId=live.id;ctx.rows.push(live);
+ },()=>{});
+ return {oldId,liveId};
+}
+test('Retrospective same-email reconcile archives old Target record and preserves different original card',async t=>{
+ const h=await library(t);
+ const {oldId,liveId}=await withOldAndLive(h);
+ const p=await h.lib.reconcileLivePreview(event,{...h.p,retailer:'target'});
+ assert.equal(p.emailMatches,1);assert.equal(p.cardOnlyMatches,0);
+ assert.equal(p.candidates[0].id,oldId);assert.equal(p.candidates[0].cardsDiffer,true);
+ assert.ok(!JSON.stringify(p).includes('5555555555554444'));
+ const result=await h.lib.reconcileLiveCommit(event,{token:p.token,confirmed:true,selectedIds:[oldId]});
+ assert.equal(result.retired,1);assert.equal(result.cardsPreserved,1);
+ const saved=(await h.personal.list('personal:owner')).cards;
+ assert.equal(saved.length,1);
+ const refs=await h.personal.securityReferences('personal:owner');
+ assert.equal(refs.length,1);assert.equal(refs[0].customSecurityCode,'INDEPENDENT-REFERENCE');
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(rows.length,1);assert.equal(rows[0].id,liveId);assert.equal(rows[0].bank,'live');
+ const encoded=await fs.readFile(h.profiles.paths.personal,'utf8');
+ assert.ok(encoded.includes(oldId)&&encoded.includes('supersededLiveImportProfiles'));
+ await assert.rejects(h.lib.reconcileLiveCommit(event,{token:p.token,confirmed:true,selectedIds:[oldId]}),/expired/);
+ const again=await h.lib.reconcileLivePreview(event,{...h.p,retailer:'target'});
+ assert.equal(again.candidates.length,0,'idempotent after old profile retired');
+});
+test('Reviewed full-card collision with different emails removes only selected old Target, leaves PKC intact',async t=>{
+ const h=await library(t);
+ const {oldId,liveId}=await withOldAndLive(h,{oldEmail:'retired-target@example.test',liveEmail:'real-target@example.test',oldNumber:'4242424242424242',liveNumber:'4242424242424242'});
+ await commit(h,await preview(h,[complete('pokemoncenter','retired-target@example.test')],h.p,'pokemoncenter'));
+ const p=await h.lib.reconcileLivePreview(event,{...h.p,retailer:'target'});
+ assert.equal(p.emailMatches,0);assert.equal(p.cardOnlyMatches,1);assert.equal(p.candidates[0].reason,'full-card');
+ const result=await h.lib.reconcileLiveCommit(event,{token:p.token,confirmed:true,selectedIds:[oldId]});
+ assert.equal(result.matchedByCard,1);assert.equal(result.cardsPreserved,0);
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ assert.deepEqual(rows.filter(x=>x.retailer==='target').map(x=>x.id),[liveId]);
+ assert.equal(rows.filter(x=>x.retailer==='pokemoncenter').length,1);
+});
+test('Same name, last four digits, or cross-retailer shared account never authorizes retirement',async t=>{
+ const h=await library(t);
+ const {oldId}=await withOldAndLive(h,{oldEmail:'one@example.test',liveEmail:'two@example.test',oldNumber:'4000000000004242',liveNumber:'4242424242424242'});
+ const p=await h.lib.reconcileLivePreview(event,{...h.p,retailer:'target'});
+ assert.equal(p.candidates.length,0);assert.equal(p.unmatchedCount,1);
+ await assert.rejects(h.lib.reconcileLiveCommit(event,{token:p.token,confirmed:true,selectedIds:[oldId]}),/not an unambiguous match/);
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,2);
+});
+test('Ambiguous two-Live card matches and website-linked records are blocked from retirement',async t=>{
+ const h=await library(t);
+ const {oldId}=await withOldAndLive(h,{oldEmail:'older@example.test',liveEmail:'newer@example.test',oldNumber:'4242424242424242',liveNumber:'4242424242424242'});
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  const another=structuredClone(ctx.rows.find(x=>x.bank==='live'));another.id='second-live';another.email='next@example.test';
+  another.data.email='next@example.test';ctx.rows.push(another);
+ },()=>{});
+ const p=await h.lib.reconcileLivePreview(event,{...h.p,retailer:'target'});
+ assert.equal(p.blockedCount,1);assert.equal(p.candidates.length,0);
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,3);
+ await assert.rejects(h.lib.reconcileLiveCommit(event,{token:p.token,confirmed:true,selectedIds:[oldId]}),/not an unambiguous match/);
+});
+test('Changed vault and rejected preservation prevent any retrospective retirement',async t=>{
+ const h=await library(t);const {oldId}=await withOldAndLive(h);
+ const p=await h.lib.reconcileLivePreview(event,{...h.p,retailer:'target'});
+ await h.profiles.libraryTransaction('personal',null,ctx=>{ctx.rows.find(x=>x.id===oldId).revision++;},()=>{});
+ await assert.rejects(h.lib.reconcileLiveCommit(event,{token:p.token,confirmed:true,selectedIds:[oldId]}),/changed after review/);
+ const latest=await h.lib.reconcileLivePreview(event,{...h.p,retailer:'target'});
+ await assert.rejects(h.profiles.reconcileExistingLiveProfiles('personal',null,'target',[oldId],
+  LC.existingLiveReconciliation(await h.profiles.fieldSnapshot('personal',null),'target').signature,
+  ()=>{},async()=>{throw Error('Card Bank unavailable');}),/Card Bank unavailable/);
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,2);
+ const committed=await h.lib.reconcileLiveCommit(event,{token:latest.token,confirmed:true,selectedIds:[oldId]});
+ assert.equal(committed.retired,1);
+});
+test('Reconciliation stays within the authorized customer vault and rejects foreign preview',async t=>{
+ const h=await library(t);
+ await h.profiles.importRows({scope:'aco',customerId:'customer-a',retailer:'target',rows:[complete('target','owned@example.test')]});
+ await h.profiles.libraryTransaction('aco','customer-a',ctx=>{
+  const live=structuredClone(ctx.rows[0]);live.id='owned-live';live.bank='live';ctx.rows.push(live);
+ },()=>{});
+ const p=await h.lib.reconcileLivePreview(event,{...h.a,retailer:'target'});
+ assert.equal(p.candidates.length,1);
+ await assert.rejects(h.lib.reconcileLiveCommit(foreign,{token:p.token,confirmed:true,selectedIds:[p.candidates[0].id]}),/expired/);
+ assert.equal((await h.lib.list(event,h.b)).profiles.length,0);
+ const result=await h.lib.reconcileLiveCommit(event,{token:p.token,confirmed:true,selectedIds:[p.candidates[0].id]});
+ assert.equal(result.retired,1);assert.equal((await h.lib.list(event,h.a)).profiles.length,1);
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,0);
+});
