@@ -217,7 +217,37 @@
  // Selection belongs to one rendered page of the current retailer and stage.
  // Keep the preexisting 200-card display size, but make later pages accessible.
  const PAGE_SIZE=200;let pageIndex=0;let selectionAnchor=null,customGroups={};
+ let sortMode='newest';
+ const sortToolbar=d.createElement('div');sortToolbar.className='profileLibrarySortToolbar';
+ const sortLabel=d.createElement('label');sortLabel.textContent='Profile order';
+ const sortSelect=d.createElement('select');sortSelect.setAttribute('aria-label','Sort profiles');
+ for(const [value,label]of [['newest','Newest generated first'],['oldest','Oldest generated first'],['email','Email A–Z']])sortSelect.append(new Option(label,value));
+ sortLabel.append(sortSelect);
+ const latestLabel=d.createElement('label');latestLabel.textContent='Newest profiles to select';
+ const latestCount=d.createElement('input');latestCount.type='number';latestCount.min='1';latestCount.max='200';latestCount.step='1';latestCount.value='26';latestCount.setAttribute('aria-label','Number of newest profiles to select');
+ latestLabel.append(latestCount);
+ const selectNewest=text('button','Select newest 26');selectNewest.type='button';selectNewest.className='btn secondary';
+ sortToolbar.append(sortLabel,latestLabel,selectNewest);q('current-retailer').after(sortToolbar);
+ const timeValue=value=>{const t=Date.parse(value||'');return Number.isFinite(t)?t:0;};
+ const creationTime=row=>timeValue(row.profileGeneratedAt)||timeValue(row.completedAt)||timeValue(row.createdAt);
+ const sortedProfiles=profiles=>{
+  if(stage==='unused')return profiles;
+  return [...profiles].sort((a,b)=>sortMode==='email'?String(a.email||'').localeCompare(String(b.email||'')):
+   sortMode==='oldest'?creationTime(a)-creationTime(b)||String(a.id||'').localeCompare(String(b.id||'')):
+    creationTime(b)-creationTime(a)||String(a.id||'').localeCompare(String(b.id||'')));
+ };
  const pageRows=()=>visible().slice(pageIndex*PAGE_SIZE,(pageIndex+1)*PAGE_SIZE);
+ sortSelect.onchange=()=>{sortMode=sortSelect.value;pageIndex=0;selected.clear();draw();};
+ latestCount.oninput=()=>{selectNewest.textContent='Select newest '+(Number(latestCount.value)||0);};
+ selectNewest.onclick=()=>{
+  if(stage==='unused'){note('Choose Ready for Export or Live Profiles before selecting the newest batch.');return;}
+  const count=Number(latestCount.value);
+  if(!Number.isSafeInteger(count)||count<1||count>PAGE_SIZE){note('Choose a quantity between 1 and '+PAGE_SIZE+'.');return;}
+  sortMode='newest';sortSelect.value='newest';group='all';q('search').value='';issueView='all';q('view').value='all';pageIndex=0;selected.clear();
+  for(const row of visible().slice(0,count))selected.add(row.id);
+  draw();
+  note('Selected '+selected.size+' newest '+retailName[q('retailer').value]+' '+(stage==='live'?'Live':'Ready for Export')+' profile(s). Review the selection, then export from the toolbar or right-click a selected profile.');
+ };
  const pager=d.createElement('nav');pager.className='buttons profileLibraryPagination';pager.setAttribute('aria-label','Profile result pages');pager.style.cssText='display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;margin:12px 0 20px';
  const previousPage=text('button','Previous page'),nextPage=text('button','Next page'),pageLabel=d.createElement('span');
  for(const button of [previousPage,nextPage]){button.type='button';button.className='btn secondary slim';}
@@ -331,7 +361,7 @@
    const drafts=rows.filter(x=>x.retailer===retailer&&x.bank!=='live'&&x.stage==='in-progress').map(x=>({...x,kind:'saved-draft'}));
    return [...available,...drafts].filter(x=>x.email.toLowerCase().includes(term));
   }
-  return rows.filter(x=>x.retailer===retailer&&(stage==='live'?x.bank==='live':x.bank!=='live'&&x.stage===stage)&&(group==='all'||(x.group||x.retailer)===group)&&(issueView==='issues'?profileIssues(x).length:issueView==='duplicates'?Array.isArray(x.duplicates)&&x.duplicates.length:true)&&searchable(x).includes(term));
+  return sortedProfiles(rows.filter(x=>x.retailer===retailer&&(stage==='live'?x.bank==='live':x.bank!=='live'&&x.stage===stage)&&(group==='all'||(x.group||x.retailer)===group)&&(issueView==='issues'?profileIssues(x).length:issueView==='duplicates'?Array.isArray(x.duplicates)&&x.duplicates.length:true)&&searchable(x).includes(term)));
  }
  function text(tag,value){const el=d.createElement(tag);el.textContent=value;return el;}
  function cardFields(data){if(Object.hasOwn(data,'cc_number'))return {number:data.cc_number,holder:data.cc_name||[data.first_name,data.last_name].filter(Boolean).join(' '),expiration:data.cc_exp_month+'/'+data.cc_exp_year,code:data.custom_security_code||'',cvv:data.cc_cvv||data.cvv||data.cvc||data.security_code||data.securityCode||(/^\d{3,4}$/.test(String(data.custom_security_code||''))?data.custom_security_code:''),shipping:[data.shipping_street,data.shipping_street_2,data.shipping_city,data.shipping_zip_code].filter(Boolean).join(', ')};const c=data.card||{},s=data.shipping||{};return {number:c.number,holder:c.holder,expiration:c.expiration,code:c.custom_security_code||'',cvv:c.cvv||c.cvc||c.cid||c.securityCode||c.security_code||c.cvv2||(/^\d{3,4}$/.test(String(c.custom_security_code||''))?c.custom_security_code:''),shipping:[s.addressLine1,s.addressLine2,s.city,s.zipCode].filter(Boolean).join(', ')};}
@@ -424,6 +454,7 @@
   const draftCount=rows.filter(x=>x.retailer===q('retailer').value&&x.bank!=='live'&&x.stage==='in-progress').length;
   q('current-retailer').textContent=retailName[q('retailer').value]+' / '+(stageNames[stage]||stage)+(stage==='unused'?' · '+unusedAccounts.length+' unused accounts · '+draftCount+' saved unfinished drafts':'');
   q('search').placeholder=stage==='unused'?'Search unused retailer account emails':'Search profile email, card or address';
+  sortToolbar.hidden=stage==='unused';
   q('groups').hidden=false;q('view').closest('label').hidden=stage==='unused';duplicatesButton.hidden=stage==='unused';
   for(const button of main.querySelectorAll('[data-stage]')){const count=button.dataset.stage==='unused'?unusedAccounts.length+draftCount:rows.filter(x=>x.retailer===q('retailer').value&&(button.dataset.stage==='live'?x.bank==='live':x.bank!=='live'&&x.stage===button.dataset.stage)).length;button.textContent=(stageNames[button.dataset.stage]||button.dataset.stage)+' ('+count+')';}
   const matching=visible();const totalPages=Math.max(1,Math.ceil(matching.length/PAGE_SIZE));if(pageIndex>=totalPages){pageIndex=totalPages-1;selected.clear();}const pageItems=pageRows();const choose=(row,e)=>{const i=pageItems.findIndex(x=>x.id===row.id);if(i<0)return;if(e.shiftKey&&selectionAnchor!==null){const lo=Math.min(i,selectionAnchor),hi=Math.max(i,selectionAnchor);if(!e.metaKey&&!e.ctrlKey)selected.clear();for(const x of pageItems.slice(lo,hi+1))selected.add(x.id);}else{if(e.metaKey||e.ctrlKey){if(selected.has(row.id))selected.delete(row.id);else selected.add(row.id);}else{if(selected.size===1&&selected.has(row.id))selected.clear();else{selected.clear();selected.add(row.id);}}selectionAnchor=i;}draw();};pager.hidden=matching.length<=PAGE_SIZE;pager.style.display=pager.hidden?'none':'flex';previousPage.disabled=pageIndex===0;nextPage.disabled=pageIndex>=totalPages-1;pageLabel.textContent=matching.length?'Showing '+(pageIndex*PAGE_SIZE+1)+'–'+(pageIndex*PAGE_SIZE+pageItems.length)+' of '+matching.length+' · Page '+(pageIndex+1)+' of '+totalPages:'No profiles';q('cards').replaceChildren();q('groups').replaceChildren();const eligible=rows.filter(x=>x.retailer===q('retailer').value&&(stage==='live'?x.bank==='live':x.bank!=='live'&&x.stage===stage)),groups=['all',...new Set([...(customGroups[q('retailer').value]||[]),...eligible.map(x=>x.group||x.retailer)])];for(const value of groups){const b=d.createElement('button');b.type='button';b.textContent=(value==='all'?'All profiles':value)+' ('+(value==='all'?eligible.length:eligible.filter(x=>(x.group||x.retailer)===value).length)+')';b.setAttribute('aria-pressed',String(group===value));b.onclick=()=>{group=value;pageIndex=0;selected.clear();draw();};q('groups').append(b);}const add=text('button','+ Add group');add.onclick=async()=>{const name=prompt('New group name for '+retailName[q('retailer').value]);if(!name)return;try{await api.manageGroups({...request(),retailer:q('retailer').value,operation:'create',group:name,confirmed:true});await refresh();}catch(e){note(e.message);}};q('groups').append(add);if(stage!=='unused'&&selected.size){const move=text('button','Move selected to group');move.onclick=async()=>{const name=prompt('Move selected profiles to which existing group?');if(!name)return;const chosen=pageRows().filter(x=>selected.has(x.id));try{await api.manageGroups({...request(),retailer:q('retailer').value,operation:'move',group:name,profileIds:chosen.map(x=>x.id),revisions:chosen.map(x=>x.revision||0),confirmed:true});selected.clear();await refresh();}catch(e){note(e.message);}};q('groups').append(move);}for(const b of main.querySelectorAll('[data-stage]'))b.setAttribute('aria-pressed',String(b.dataset.stage===stage));
