@@ -100,6 +100,17 @@
   const files=report.originalFiles;
   if(files){
    reviewOutput.append(reviewLine('Original files:',files.scanned+' files / '+files.scannedRecords+' records; '+files.potentialMatches+' distinct possible matches; '+files.ambiguous+' conflicts or ambiguous matches; '+files.cardMismatches+' card mismatches'));
+   // Show why a result can be zero without showing any verification values.
+   // A populated legacy CVV-named field is ambiguous and is NOT recoverable
+   // from this review, even if its record identity matches a missing profile.
+   if(files.legacyFieldsMetadataOnly){
+    reviewOutput.append(
+     reviewLine('Independent reference coverage:',files.withSourceReference+' original records have separately named references; '+files.withoutIndependentReference+' do not'),
+     reviewLine('Old CVV-labeled field inventory:',files.legacyFieldPopulatedRows+' original records have a populated legacy column; '+files.legacyOnlyPopulatedRows+' of those have no independent reference'),
+     reviewLine('Legacy field identity overlap:',files.legacyIdentityMatches+' distinct profiles missing a reference have matching email/retailer/card identity in an original record; '+files.legacyIdentityCardMismatches+' card identity mismatches'),
+     reviewLine('Legacy-field safety:', 'Presence and identity only. No code was displayed, copied, retained, or restored. A legacy column may contain a payment-card verification value.')
+    );
+   }
   }else reviewOutput.append(reviewLine('Original files:',report.originalSelectionCancelled?'Native file picker cancelled; no original files scanned':'Not selected. Files outside ACO Studio cannot be scanned without your permission.'));
   reviewOutput.append(reviewLine('Result:',report.notice));
   if(report.missingProfiles&&!report.backups.potentialMatches&&!report.savedCardBank.potentialMatches&&!h?.matched&&!files?.potentialMatches)

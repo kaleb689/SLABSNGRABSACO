@@ -311,7 +311,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     byEmail.get(email).push(row);
    }
    let totalBytes=0,scannedRecords=0,cardMismatches=0,withSourceReference=0,uncertainRetailer=0;
-   const matches=new Map(),ambiguous=new Set();
+   let legacyFieldPopulatedRows=0,legacyOnlyPopulatedRows=0,legacyIdentityCardMismatches=0;
+   const legacyIdentityMatches=new Set(),matches=new Map(),ambiguous=new Set();
+   // Only inspect whether a legacy CVV-named column is populated. Never return,
+   // copy, store, hash, or recover its contents. The field name alone cannot
+   // establish that it holds a non-payment reference rather than a card verifier.
+   const hasLegacyValue=(raw,source)=>[raw,source,raw?.card,source?.card].some(parent=>
+    parent&&typeof parent==='object'&&!Array.isArray(parent)&&Object.entries(parent).some(([key,value])=>
+     /^(?:cvv|cc_cvv|cvc|cid|cvv2|cvc2)$/i.test(key)&&typeof value==='string'&&value.length>0));
    for(const file of p.files){
     if(!file||typeof file.fileName!=='string'||file.fileName!==path.basename(file.fileName)||
       !/\.(csv|json|txt|tsv)$/i.test(file.fileName)||typeof file.text!=='string')
@@ -334,17 +341,26 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      const fields=[raw.profileSecurityCode,raw.security_code,raw.custom_security_code,raw.card?.custom_security_code,
       source.profileSecurityCode,source.security_code,source.custom_security_code,source.card?.custom_security_code];
      const code=fields.find(v=>typeof v==='string'&&v.length>0&&v.length<=100&&!/[\x00-\x1f\x7f]/.test(v))||'';
-     if(!code)continue;
-     withSourceReference++;
+     const legacyPopulated=hasLegacyValue(raw,source);
+     if(legacyPopulated){legacyFieldPopulatedRows++;if(!code)legacyOnlyPopulatedRows++;}
+     if(code)withSourceReference++;
+     // Compute identity for metadata-only legacy-field diagnostics even when
+     // an independently named reference is absent.
      const email=C.email(C.values(source).email||raw.email||source.email||raw.loginEmail||source.loginEmail||
       raw.accountEmail||source.accountEmail||raw.login_email||source.login_email||raw.account?.email);
      if(!email)continue;
      const retail=detectedRetailer(raw.retailer||raw.retailerId||raw.site||raw.store||
       source.retailer||source.retailerId||source.site||source.store)||filenameRetailer;
      const candidates=retail?(byIdentity.get(retail+'|'+email)||[]):(byEmail.get(email)||[]);
-     if(candidates.length!==1){if(candidates.length>1)uncertainRetailer++;continue;}
+     if(candidates.length!==1){if(code&&candidates.length>1)uncertainRetailer++;continue;}
      const row=candidates[0],originalCard=C.payment(source).number,currentCard=C.payment(row.data).number;
-     if(originalCard&&currentCard&&originalCard!==currentCard){cardMismatches++;continue;}
+     if(originalCard&&currentCard&&originalCard!==currentCard){
+      if(legacyPopulated)legacyIdentityCardMismatches++;
+      if(code)cardMismatches++;
+      continue;
+     }
+     if(legacyPopulated)legacyIdentityMatches.add(row.id);
+     if(!code)continue;
      if(ambiguous.has(row.id))continue;
      const previous=matches.get(row.id);
      if(previous&&previous!==code){ambiguous.add(row.id);matches.delete(row.id);}
@@ -352,7 +368,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     }
    }
    originalFiles={scanned:p.files.length,scannedRecords,potentialMatches:matches.size,
-    ambiguous:ambiguous.size+uncertainRetailer,cardMismatches,withSourceReference};
+    ambiguous:ambiguous.size+uncertainRetailer,cardMismatches,withSourceReference,
+    withoutIndependentReference:scannedRecords-withSourceReference,
+    legacyFieldPopulatedRows,legacyOnlyPopulatedRows,
+    legacyIdentityMatches:legacyIdentityMatches.size,legacyIdentityCardMismatches,
+    legacyFieldsMetadataOnly:true};
   }
   const historicSources=typeof profiles.historicSourceReview==='function'
    ?await profiles.historicSourceReview(a.scope,a.id,a.check)
