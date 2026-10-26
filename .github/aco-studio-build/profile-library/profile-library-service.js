@@ -207,14 +207,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(p.confirmed===true){
    const plan=codeRestorePlans.get(String(p.token||''));
    if(!plan||plan.scope!==a.scope||plan.id!==a.id||plan.sender!==e.sender.id||
-    plan.epoch!==ep(e)||now()-plan.at>600000)throw Error('Code recovery file preview expired. Choose the file again.');
+    plan.epoch!==ep(e)||now()-plan.at>600000||plan.independentOnly!==(p.independentOnly===true))throw Error('Code recovery preview expired or mode changed. Choose the file again.');
    codeRestorePlans.delete(p.token);
    return profiles.libraryTransaction(a.scope,a.id,ctx=>{
     const chosen=plan.matches;
     for(const [id,item] of chosen){
      const row=ctx.rows.find(row=>row.id===id);
      if(!row||row.retailer!==item.retailer||row.email!==item.email||(row.revision||0)!==item.revision||
-       C.profileCode(row.data))throw Error('A matching profile changed. Nothing was restored.');
+       C.profileCode(row.data)||!/^[0-9]{12,19}$/.test(item.cardNumber)||C.payment(row.data).number!==item.cardNumber)throw Error('A profile or complete card identity changed. Nothing was restored.');
     }
     for(const [id,item]of chosen){
      const row=ctx.rows.find(row=>row.id===id);
@@ -261,11 +261,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    }
    if(ambiguous.has(row.id))continue;
    if(matches.has(row.id)&&matches.get(row.id).code!==code){ambiguous.add(row.id);matches.delete(row.id);continue;}
-   matches.set(row.id,{code,revision:row.revision||0,retailer:row.retailer,email:row.email});
+   matches.set(row.id,{code,revision:row.revision||0,retailer:row.retailer,email:row.email,cardNumber:C.payment(row.data).number});
   }
   for(const id of ambiguous)matches.delete(id);
   const token=uuid();
-  codeRestorePlans.set(token,{scope:a.scope,id:a.id,sender:e.sender.id,epoch:ep(e),at:now(),matches,stillMissing:missing.length-matches.size});
+  codeRestorePlans.set(token,{scope:a.scope,id:a.id,sender:e.sender.id,epoch:ep(e),at:now(),independentOnly:p.independentOnly===true,matches,stillMissing:missing.length-matches.size});
   if(codeRestorePlans.size>20)codeRestorePlans.delete(codeRestorePlans.keys().next().value);
   a.check();
   return {preview:true,token,recoverable:matches.size,stillMissing:missing.length-matches.size,ambiguous:ambiguous.size,diagnostics};
@@ -395,7 +395,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   return {
    readOnly:true,scope:a.scope,totalProfiles:rows.length,missingProfiles:missing,
    backups:{scanned:snapshots.scannedBackups||0,unreadable:snapshots.unreadableBackups||0,
-    potentialMatches:snapshots.recoverable||0,byRetailer:snapshots.byRetailer||{}},
+    potentialMatches:snapshots.recoverable||0,conflicts:snapshots.conflicts||0,byRetailer:snapshots.byRetailer||{}},
    savedCardBank:{potentialMatches:savedBank.recoverable||0,
     conflictingCards:savedBank.conflictingCardCodes||0,byRetailer:savedBank.byRetailer||{}},
    originalFile,originalFiles,historicSources,importInventory,

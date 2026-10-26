@@ -586,4 +586,44 @@ test('Original-file recovery preview requires the exact full card number before 
  const match=await request('4242424242424242');
  assert.equal(match.recoverable,1);
  assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before,'previews cannot modify saved references');
+ await assert.rejects(h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',
+  token:match.token,confirmed:true}),/mode changed/,'recovery mode cannot change after preview');
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.rows[0].data.cc_number='5'.repeat(16);
+  return {saved:true};
+ },()=>{});
+ await assert.rejects(h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',
+  token:match.token,confirmed:true,independentOnly:true}),/complete card identity changed/,
+ 'the full card identity must still match when confirmation is attempted');
+});
+
+
+test('Historical encrypted copy review requires full card equality, not merely last four or an absent number',async t=>{
+ const h=await library(t);
+ const data=complete('target','historic-identity@example.test');
+ await commit(h,await preview(h,[data]));
+ const rows=(await h.profiles.fieldSnapshot('personal',null));
+ const current=rows[0];
+ const other=structuredClone(current);
+ other.data.profileSecurityCode='INDEPENDENT-NONPAYMENT-REF';
+ const fileName='personal-retailer-profiles.old.encrypted';
+ const past={version:1,groups:{owner:[other]}};
+ const folder=path.join(h.dir,'backups');
+ await fs.mkdir(folder,{recursive:true});
+ const saved=path.join(folder,fileName);
+ const snapshot=async()=>h.profiles.historicSourceReview('personal',null);
+ const save=async()=>fs.writeFile(saved,Buffer.from('ENCRYPTED:'+JSON.stringify(past)));
+ t.after(async()=>fs.rm(saved,{force:true}));
+ await save();
+ const exact=await snapshot();
+ assert.equal(exact.matched,1);
+ other.data.cc_number='5555555555554242';
+ await save();
+ assert.equal((await snapshot()).matched,0,'last four matching is not sufficient');
+ other.data.cc_number='';
+ await save();
+ assert.equal((await snapshot()).matched,0,'missing complete card number is not sufficient');
+ other.data.cc_number='4242424242424243';
+ await save();
+ assert.equal((await snapshot()).matched,0,'a changed digit rejects historical match');
 });

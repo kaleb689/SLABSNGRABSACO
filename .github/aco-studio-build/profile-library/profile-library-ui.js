@@ -53,23 +53,33 @@
  const reviewScan=d.createElement('button');reviewScan.type='button';reviewScan.className='btn secondary';
  reviewScan.textContent='Scan All Recovery Sources';
  reviewControls.append(reviewScan);
+ const restoreFromBackup=d.createElement('button');
+ restoreFromBackup.type='button';restoreFromBackup.className='btn secondary';
+ restoreFromBackup.textContent='Preview Restore from Encrypted Backups';
+ restoreFromBackup.hidden=true;reviewControls.append(restoreFromBackup);
+ const restoreStatus=d.createElement('p');restoreStatus.setAttribute('role','status');
+ restoreStatus.textContent='Restoration is available only after a read-only preview and explicit confirmation.';
  const reviewOutput=d.createElement('div');reviewOutput.setAttribute('role','status');
  reviewOutput.textContent='No scan has been run yet. Your saved information is unchanged.';
  const reviewWarning=d.createElement('small');
  reviewWarning.textContent='Selected original files are read locally in the authenticated desktop process for independent profile-reference matches only. Your files and vaults are not edited, and payment-card CVV/CVC values are not recovered or stored. You may cancel the folder picker to scan built-in sources only.';
- recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,reviewWarning);
+ recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,restoreStatus,reviewWarning);
  q('export').before(recoveryReviewPanel);
  const reviewLine=(label,value)=>{
   const p=d.createElement('p'),strong=d.createElement('strong');
   strong.textContent=label+' ';p.append(strong,d.createTextNode(String(value)));return p;
  };
  function showRecoveryReview(report){
+  restoreFromBackup.hidden=!(Number(report.backups?.potentialMatches||0)>0);
+  restoreStatus.textContent=restoreFromBackup.hidden
+   ?'No independently named references from encrypted snapshots are available for restoration.'
+   :'Encrypted snapshots contain independently named reference candidates. Preview them before any restore.';
   reviewOutput.replaceChildren();
   reviewOutput.append(
    reviewLine('Vault:',report.scope==='personal'?'Personal':'Selected customer'),
    reviewLine('Profiles checked:',report.totalProfiles),
    reviewLine('Profiles missing a reference:',report.missingProfiles),
-   reviewLine('Encrypted profile snapshots:',report.backups.scanned+' readable; '+report.backups.unreadable+' unreadable; '+report.backups.potentialMatches+' possible matches'),
+   reviewLine('Encrypted profile snapshots:',report.backups.scanned+' readable; '+report.backups.unreadable+' unreadable; '+report.backups.potentialMatches+' possible matches; '+(report.backups.conflicts||0)+' conflicting references excluded'),
    reviewLine('Current saved Card Bank:',report.savedCardBank.potentialMatches+' possible matches; '+report.savedCardBank.conflictingCards+' conflicting card entries')
   );
   const h=report.historicSources;
@@ -118,6 +128,7 @@
  }
  async function scanRecoverySources(){
   if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
+  restoreFromBackup.hidden=true;
   reviewScan.disabled=true;
   reviewOutput.textContent='Choose a folder in the Mac window. ACO Studio will check eligible original files in that folder together with its existing sources. No saved data will be changed.';
   try{
@@ -131,6 +142,35 @@
   }finally{reviewScan.disabled=false;}
  }
  reviewScan.onclick=()=>void scanRecoverySources();
+ restoreFromBackup.onclick=async()=>{
+  if(scope==='aco'&&!customerId){restoreStatus.textContent='Select a customer vault first.';return;}
+  const owner=request(),openedEpoch=epoch;
+  restoreFromBackup.disabled=true;reviewScan.disabled=true;
+  try{
+   if(scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.())
+    throw Error('Unlock your Personal vault before previewing restoration.');
+   const preview=await api.recoverCodes({...owner,confirmed:false,independentOnly:true});
+   if(openedEpoch!==epoch||main.hidden)return;
+   if(!preview?.preview||!preview?.recoverable||!preview.token){
+    restoreFromBackup.hidden=true;
+    restoreStatus.textContent='No independent backup references remain available. Nothing was changed.';
+    return;
+   }
+   const count=preview.recoverable;
+   restoreStatus.textContent=count+' independent references may be restored from encrypted snapshots; '+preview.stillMissing+' will remain missing; '+(preview.conflicts||0)+' conflicts were excluded. No values were displayed or changed.';
+   const agreed=window.confirm('Restore '+count+' missing independently named profile references from encrypted backups? Existing references and other profile fields will be preserved. Proceed only if these are known NON-PAYMENT references: older imports may have moved ambiguously named values into a separate field, and their origin cannot be independently verified.');
+   if(!agreed){restoreStatus.textContent='Restore cancelled. No saved profiles were changed.';return;}
+   if(openedEpoch!==epoch||main.hidden)throw Error('The profile view changed. Scan again before restoring.');
+   const result=await api.recoverCodes({...owner,confirmed:true,token:preview.token,independentOnly:true});
+   if(openedEpoch!==epoch||main.hidden)return;
+   const updated=await api.recoveryReview(owner);
+   showRecoveryReview(updated);
+   restoreStatus.textContent='Restored '+result.restored+' independently named references; '+result.stillMissing+' remain missing. Existing profile references and other data were preserved.';
+   await refresh();
+  }catch(error){
+   if(openedEpoch===epoch&&!main.hidden)restoreStatus.textContent='Restore not completed: '+String(error?.message||error)+'. Review the current vault before retrying.';
+  }finally{restoreFromBackup.disabled=false;reviewScan.disabled=false;}
+ };
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
  main.querySelector('.profileLibraryTabs').after(advanced);
@@ -409,7 +449,7 @@
  let pendingRefresh=false,refreshTicket=0;
  function editorBusy(){return !!d.querySelector('.profileLibraryModal')||!!d.activeElement?.closest?.('#profileLibraryPage input, #profileLibraryPage select, #profileLibraryPage textarea');}
  async function refresh(){if(editorBusy()){pendingRefresh=true;return;}const ticket=++refreshTicket,owner=request(),ownerEpoch=epoch,priorCards=JSON.stringify(bankAssets.cardPool||[]);if(scope==='aco'&&!customerId){rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();return;}try{if(scope==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;const [result]=await Promise.all([api.list(owner),loadResourceBanks(owner,ticket,ownerEpoch)]);if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;if(editorBusy()){pendingRefresh=true;return;}const same=JSON.stringify(rows)===JSON.stringify(result.profiles);if(!same){const scroll={x:window.scrollX,y:window.scrollY};rows=result.profiles;customGroups=result.customGroups||{};selected=new Set([...selected].filter(id=>stage==='unused'?(unusedAccounts.some(x=>x.id===id)||rows.some(x=>x.id===id&&x.bank!=='live'&&x.stage==='in-progress')):rows.some(x=>x.id===id)));draw();window.scrollTo(scroll.x,scroll.y);}else if(stage==='unused'||priorCards!==JSON.stringify(bankAssets.cardPool||[]))draw();else drawResourceBanks();note(customerName()+' · '+visible().length+' profiles · '+retailName[q('retailer').value]+' · '+(bankAssets.cardPool||[]).filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value)).length+' eligible cards · '+bankAssets.addresses.length+' saved addresses');}catch(e){if(ticket===refreshTicket&&ownerEpoch===epoch){rows=[];bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();note(e.message);}}}
- function close(){epoch++;rows=[];unusedAccounts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
+ function close(){epoch++;restoreFromBackup.hidden=true;restoreStatus.textContent='Scan this vault before previewing any restoration.';reviewOutput.textContent='No recovery scan has been run for this vault.';rows=[];unusedAccounts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
  async function open(next){if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;close();stage='unused';pageIndex=0;scope=next;issueView='all';q('view').value='all';customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;customerList();q('customer-label').hidden=scope==='personal';q('owner-title').textContent=scope==='personal'?'PERSONAL VAULT':'CUSTOMER VAULTS';q('sync').hidden=scope==='personal';q('pkc-reconcile').hidden=scope!=='personal';websiteVault.hidden=scope==='personal';websiteVault.open=false;websiteLoad++;for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;main.hidden=false;for(const b of nav.querySelectorAll('button'))b.classList.remove('on');(scope==='personal'?personalProfiles:customerProfiles).classList.add('on');d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent=scope==='personal'?'Personal Profiles':'Customer Profiles';await window.desktopAPI.site?.hide?.();await refresh();void passiveHealthCheck();}
  q('manage-cards').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'cards');};
  q('manage-addresses').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'addresses');};
