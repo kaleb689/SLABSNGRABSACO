@@ -63,15 +63,23 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(JSON.stringify(data).length>16000)throw Error('A profile exceeds the supported record size.');
    const key=retailer+'|'+email,occurrence=occurrences.get(key)||0;occurrences.set(key,occurrence+1);
    const matches=existing.filter(x=>x.retailer===retailer&&x.email===email);
-   entries.push({retailer,data,format:C.format(retailer),occurrence,expectedHash:matches.length===1?require('./jig-field-core').hash(matches[0]):null,storedMatches:matches.length});counts[retailer]=(counts[retailer]||0)+1;
+   entries.push({retailer,data,format:C.format(retailer),occurrence,expectedMatches:matches.map(x=>({id:x.id,hash:require('./jig-field-core').hash(x)})),storedMatches:matches.length});counts[retailer]=(counts[retailer]||0)+1;
   }
   const token=uuid();a.check();for(const [id,plan]of plans)if(now()-plan.at>600000)plans.delete(id);if(plans.size>30)throw Error('Close an older import preview first.');
   plans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,bank:'live',entries,fileNames:p.fileNames||[p.fileName],at:now(),epoch:ep(e)});
-  const duplicates=entries.filter(x=>x.storedMatches>0||occurrences.get(x.retailer+'|'+x.data.email)>1);
-  const liveImportedIdentities=new Set(entries.map(x=>x.retailer+'|'+x.data.email));
-  const supersededPreview=existing.filter(x=>x.bank!=='live'&&liveImportedIdentities.has(x.retailer+'|'+x.email));
-  const blockedLinkedCount=supersededPreview.filter(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile').length;
-   return {token,bank:'live',count:entries.length,counts,supersedeNonLive:supersededPreview.length,blockedLinkedCount,matches:entries.filter(x=>x.expectedHash&&x.occurrence===0).length,duplicateCount:duplicates.length,duplicateGroups:[...new Set(duplicates.map(x=>x.retailer+'|'+x.data.email))].length,profiles:entries.map(x=>({email:x.data.email,retailer:x.retailer,duplicates:x.storedMatches>0||occurrences.get(x.retailer+'|'+x.data.email)>1?['email']:[]}))};
+  const identities=new Set(entries.map(x=>x.retailer+'|'+x.data.email));
+  const superseded=existing.filter(x=>identities.has(x.retailer+'|'+C.email(x.email)));
+  const incomingRepeated=entries.length-identities.size;
+  const blockedLinkedCount=superseded.filter(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile').length;
+  return {token,bank:'live',count:entries.length,effectiveCount:identities.size,counts,
+   supersedeLive:superseded.filter(x=>x.bank==='live').length,
+   supersedeNonLive:superseded.filter(x=>x.bank!=='live').length,
+   collapsedInImport:incomingRepeated,blockedLinkedCount,
+   // Count each distinct retailer/email only once, even if repeated in file.
+   matches:identities.size,duplicateCount:superseded.length+incomingRepeated,
+   duplicateGroups:superseded.length,
+   profiles:entries.map(x=>({email:x.data.email,retailer:x.retailer,
+    duplicates:x.storedMatches>0||entries.filter(y=>y.retailer===x.retailer&&y.data.email===x.data.email).length>1?['email']:[]}))};
  }
  async function reconcileLivePreview(e,p){
   const a=await access(e,p),retailer=C.retailer(p?.retailer);
