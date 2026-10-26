@@ -53,17 +53,27 @@
  const reviewScan=d.createElement('button');reviewScan.type='button';reviewScan.className='btn secondary';
  reviewScan.textContent='Scan All Recovery Sources';
  reviewControls.append(reviewScan);
+ const restoreFromBackup=d.createElement('button');
+ restoreFromBackup.type='button';restoreFromBackup.className='btn secondary';
+ restoreFromBackup.textContent='Preview Restore from Encrypted Backups';
+ restoreFromBackup.hidden=true;reviewControls.append(restoreFromBackup);
+ const restoreStatus=d.createElement('p');restoreStatus.setAttribute('role','status');
+ restoreStatus.textContent='Restoration is available only after a read-only preview and explicit confirmation.';
  const reviewOutput=d.createElement('div');reviewOutput.setAttribute('role','status');
  reviewOutput.textContent='No scan has been run yet. Your saved information is unchanged.';
  const reviewWarning=d.createElement('small');
  reviewWarning.textContent='Selected original files are read locally in the authenticated desktop process for independent profile-reference matches only. Your files and vaults are not edited, and payment-card CVV/CVC values are not recovered or stored. You may cancel the folder picker to scan built-in sources only.';
- recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,reviewWarning);
+ recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,restoreStatus,reviewWarning);
  q('export').before(recoveryReviewPanel);
  const reviewLine=(label,value)=>{
   const p=d.createElement('p'),strong=d.createElement('strong');
   strong.textContent=label+' ';p.append(strong,d.createTextNode(String(value)));return p;
  };
  function showRecoveryReview(report){
+  restoreFromBackup.hidden=!(Number(report.backups?.potentialMatches||0)>0);
+  restoreStatus.textContent=restoreFromBackup.hidden
+   ?'No independently named references from encrypted snapshots are available for restoration.'
+   :'Encrypted snapshots contain independently named reference candidates. Preview them before any restore.';
   reviewOutput.replaceChildren();
   reviewOutput.append(
    reviewLine('Vault:',report.scope==='personal'?'Personal':'Selected customer'),
@@ -118,6 +128,7 @@
  }
  async function scanRecoverySources(){
   if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
+  restoreFromBackup.hidden=true;
   reviewScan.disabled=true;
   reviewOutput.textContent='Choose a folder in the Mac window. ACO Studio will check eligible original files in that folder together with its existing sources. No saved data will be changed.';
   try{
@@ -131,6 +142,35 @@
   }finally{reviewScan.disabled=false;}
  }
  reviewScan.onclick=()=>void scanRecoverySources();
+ restoreFromBackup.onclick=async()=>{
+  if(scope==='aco'&&!customerId){restoreStatus.textContent='Select a customer vault first.';return;}
+  const owner=request(),openedEpoch=epoch;
+  restoreFromBackup.disabled=true;reviewScan.disabled=true;
+  try{
+   if(scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.())
+    throw Error('Unlock your Personal vault before previewing restoration.');
+   const preview=await api.recoverCodes({...owner,confirmed:false,independentOnly:true});
+   if(openedEpoch!==epoch||main.hidden)return;
+   if(!preview?.preview||!preview?.recoverable||!preview.token){
+    restoreFromBackup.hidden=true;
+    restoreStatus.textContent='No independent backup references remain available. Nothing was changed.';
+    return;
+   }
+   const count=preview.recoverable;
+   restoreStatus.textContent=count+' independent references may be restored from encrypted snapshots; '+preview.stillMissing+' will remain missing. No values were displayed or changed.';
+   const agreed=window.confirm('Restore '+count+' missing independently named profile references from encrypted backups? Existing references and all unrelated profile fields will be preserved. No CVV/CVC-labeled source fields will be used.');
+   if(!agreed){restoreStatus.textContent='Restore cancelled. No saved profiles were changed.';return;}
+   if(openedEpoch!==epoch||main.hidden)throw Error('The profile view changed. Scan again before restoring.');
+   const result=await api.recoverCodes({...owner,confirmed:true,token:preview.token,independentOnly:true});
+   if(openedEpoch!==epoch||main.hidden)return;
+   const updated=await api.recoveryReview(owner);
+   showRecoveryReview(updated);
+   restoreStatus.textContent='Restored '+result.restored+' independently named references; '+result.stillMissing+' remain missing. Existing profile references and other data were preserved.';
+   await refresh();
+  }catch(error){
+   if(openedEpoch===epoch&&!main.hidden)restoreStatus.textContent='Restore not completed: '+String(error?.message||error)+'. Review the current vault before retrying.';
+  }finally{restoreFromBackup.disabled=false;reviewScan.disabled=false;}
+ };
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
  main.querySelector('.profileLibraryTabs').after(advanced);
