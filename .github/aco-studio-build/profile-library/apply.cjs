@@ -39,6 +39,34 @@ replace('profile-workshop-service.js','const service=createWorkshop(options);',"
 });\n`;
  fs.writeFileSync(p,current+next+original.slice(end));
 }
+// Cloudflare Zone Read alone did not guarantee that Email Routing API
+// operations were authorized. Do read-only checks before unlocking this bank;
+// never attempt a write or alter a routing rule during authorization.
+replace('services.js',"    return {authorized:true,domain:c.domain};",`    const checks=[
+      {name:'Email Routing settings',path:'/zones/'+c.zoneId+'/email/routing',permission:'Zone Settings Read'},
+      {name:'Email Routing destination addresses',path:'/accounts/'+c.accountId+'/email/routing/addresses?per_page=5&page=1',permission:'Account Email Routing Addresses Read'},
+      {name:'Email Routing rules',path:'/zones/'+c.zoneId+'/email/routing/rules?per_page=5&page=1',permission:'Zone Email Routing Rules Read'}
+    ];
+    for(const check of checks){
+      try {await call(check.path,c.token);}
+      catch(error){
+        const detail=String(error?.message||error);
+        const denied=/\\b(401|403|unauthorized|forbidden|authentication error)\\b/i.test(detail);
+        throw Error(denied
+          ?'Cloudflare denied '+check.name+'. The API token needs '+check.permission+
+            ' for '+c.domain+'. Check its account/zone scope, expiration and IP restrictions. No aliases or Cloudflare rules were changed.'
+          :'Cloudflare '+check.name+' check failed: '+detail+'. No aliases or Cloudflare rules were changed.');
+      }
+    }
+    return {authorized:true,domain:c.domain};`);
+replace('services.js',"      }catch(err){items.push({alias:a,status:'draft',error:err.message});}",`      }catch(err){
+        const message=String(err?.message||err);
+        const denied=/\\b(401|403|authentication error|unauthorized|forbidden)\\b/i.test(message);
+        items.push({alias:a,status:'draft',error:denied
+          ?'Cloudflare refused to create this rule. Your token must have Zone > Email Routing Rules > Edit permission for '+c.domain+'. Check token account/zone scope, expiration, and IP restrictions. '+message
+          :message});
+      }`);
+
 replace('main.js','window.JigStudioLocalImport?.workspaceState)', 'window.JigStudioLocalImport?.workspaceState && document.getElementById("profileLibraryPage") && window.desktopAPI?.profileLibrary && document.querySelectorAll(".profileNavChild").length===2)');
 replace('main.js',"ipcMain.handle('site:open'","ipcMain.handle('owner:health-scan',event=>{ownerSender(event);return require('./owner-health-advisor').scan();});\nipcMain.handle('owner:health-explain',event=>{ownerSender(event);return require('./owner-health-advisor').explain();});\nipcMain.handle('site:open'");
 replace('main.js',"ipcMain.handle('site:open'",`ipcMain.handle('site:health',event=>{ownerSender(event);return new Promise(resolve=>{let done=false;const finish=value=>{if(done)return;done=true;resolve(value);};const request=https.get('https://slabsngrabsaco.com/admin.html?acoDesktop=health',{timeout:5000,headers:{'Cache-Control':'no-cache'}},response=>{const status=Number(response.statusCode||0);response.resume();finish({online:status>=200&&status<500,status});});request.on('error',()=>finish({online:false,status:0}));request.on('timeout',()=>{request.destroy();finish({online:false,status:0});});});});\nipcMain.handle('owner:touch-id',async event=>{ownerSender(event);if(process.platform!=='darwin')return {available:false,verified:false,reason:'unsupported'};const {systemPreferences}=require('electron');if(!systemPreferences.canPromptTouchID())return {available:false,verified:false,reason:'unavailable'};const state=siteBridge.desktopUnlockState();if(!state?.enrolled)return {available:true,verified:false,session:false,needsEnrollment:true,reason:'Sign in once with the Admin password and authenticator to enable Touch ID on this Mac.'};try{await siteBridge.prepareDesktopUnlock();await systemPreferences.promptTouchID('Unlock ACO Studio');const session=await siteBridge.unlockDesktopAdmin();if(session?.ok===true){try{await siteBridge.read('roster',{});}catch{return {available:true,verified:true,session:false,reason:'Touch ID succeeded, but the Admin session could not be verified.'};}}return {available:true,verified:true,session:session?.ok===true,needsEnrollment:session?.needsEnrollment===true,reason:session?.reason||''};}catch(error){return {available:true,verified:false,session:false,reason:String(error?.message||error||'Touch ID was not completed.')};}});\nipcMain.handle('site:open'`);
