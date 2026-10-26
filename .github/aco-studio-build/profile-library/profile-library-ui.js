@@ -131,6 +131,65 @@
   }finally{reviewScan.disabled=false;}
  }
  reviewScan.onclick=()=>void scanRecoverySources();
+
+ // A separate owner-confirmed recovery flow: a direct attempt to restore
+ // independently named non-payment references from a chosen historical folder.
+ // The source originals remain on this Mac and are never sent to the renderer.
+ const restorePrepare=d.createElement('button');
+ restorePrepare.type='button';restorePrepare.className='btn secondary';
+ restorePrepare.textContent='Preview verified reference restoration';
+ const restoreConfirm=d.createElement('button');
+ restoreConfirm.type='button';restoreConfirm.className='btn primary';
+ restoreConfirm.textContent='Confirm verified restoration';
+ restoreConfirm.disabled=true;
+ const restoreState=d.createElement('p');
+ restoreState.setAttribute('role','status');
+ restoreState.textContent='No restoration preview prepared.';
+ const restoreExplanation=d.createElement('small');
+ restoreExplanation.textContent='This action only recovers independently named non-payment references. It requires an exact complete card-number match and your approval, skips conflicts, and never copies CVV/CVC-labeled fields. If your historical files have no independent reference fields, the result will be zero.';
+ reviewControls.append(restorePrepare,restoreConfirm);
+ recoveryReviewPanel.insertBefore(restoreState,reviewOutput);
+ recoveryReviewPanel.insertBefore(restoreExplanation,reviewOutput);
+ let restoreToken=null,restoreScope=null,restoreCustomer=null;
+ restorePrepare.onclick=async()=>{
+  restoreToken=null;restoreScope=null;restoreCustomer=null;restoreConfirm.disabled=true;
+  if(scope==='aco'&&!customerId){restoreState.textContent='Select a customer vault first.';return;}
+  restorePrepare.disabled=true;
+  restoreState.textContent='Select the folder containing original files in the Mac picker. No profiles will be changed by this preview.';
+  try{
+   if(scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.())
+    throw Error('Unlock the Personal vault before preparing recovery.');
+   const owner=request();
+   const result=await api.prepareIndependentReferenceRestore(owner);
+   if(result?.cancelled){restoreState.textContent='Folder selection canceled. No profiles were changed.';return;}
+   if(!result?.readOnly||!result?.preview)throw Error('The recovery service did not confirm a read-only preview.');
+   restoreToken=result.token;restoreScope=owner.scope;restoreCustomer=owner.customerId;
+   restoreState.textContent='PREVIEW ONLY: '+result.filesExamined+' files, '+result.independentSourceRecords+
+    ' records with independently named references, '+result.recoverable+
+    ' full-card-verified profiles eligible, '+result.conflictingSources+' conflicting references, '+
+    result.cardMismatch+' card mismatches, '+result.stillMissing+' still missing. No stored references changed.'+
+    (result.limited?' The file scan reached its limit; review your source folder.':'');
+   restoreConfirm.disabled=!restoreToken||result.recoverable<1||result.limited;
+  }catch(error){restoreState.textContent='Restoration preview failed: '+String(error?.message||error)+'. Nothing changed.';}
+  finally{restorePrepare.disabled=false;}
+ };
+ restoreConfirm.onclick=async()=>{
+  if(!restoreToken||restoreScope!==scope||restoreCustomer!==(scope==='aco'?customerId:null))return;
+  const approved=confirm('Restore ONLY independently named non-payment references to profiles whose COMPLETE card number, retailer and account identity match? An encrypted backup is created before any changes. Existing references and original files are not overwritten. CVV/CVC-labeled source fields are excluded.');
+  if(!approved)return;
+  const token=restoreToken;restoreToken=null;restoreConfirm.disabled=true;restorePrepare.disabled=true;
+  try{
+   if(scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.())
+    throw Error('Unlock the Personal vault to confirm restoration.');
+   const result=await api.confirmIndependentReferenceRestore({...request(),confirmed:true,token});
+   restoreState.textContent='VERIFIED RESULT: '+result.restored+' independent non-payment references restored; '+
+    result.stillMissing+' still missing. Existing references were preserved.';
+   await refresh();
+  }catch(error){
+   restoreState.textContent='Restoration was not completed: '+String(error?.message||error)+'. No partial restoration was accepted.';
+  }finally{restorePrepare.disabled=false;}
+ };
+
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
  main.querySelector('.profileLibraryTabs').after(advanced);
