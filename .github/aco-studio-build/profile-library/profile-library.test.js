@@ -527,7 +527,7 @@ test('Fix Duplicate replaces one of two same-retailer Live cards using an existi
  await commit(h,await preview(h,[original],h.p,'target'));
  await commit(h,await preview(h,[complete('target','fix-card-b@example.test')],h.p,'target'));
  await h.personal.addWorkshopCard('personal:owner',{
-  number:'5555555555554444',month:'09',year:'2035',cardholder:'Test Holder',label:'Unused test card'
+  number:'5555555555554444',month:'09',year:'2035',expMonth:'09',expYear:'2035',cardholder:'Test Holder',label:'Unused test card'
  },()=>{});
  const initial=(await h.lib.list(event,h.p)).profiles,chosen=initial[0];
  const plan=await h.lib.duplicateRepairPreview(event,{...h.p,retailer:'target',kind:'card',profileId:chosen.id});
