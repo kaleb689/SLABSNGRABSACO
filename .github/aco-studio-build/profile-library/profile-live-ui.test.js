@@ -283,3 +283,18 @@ test('Live import review makes newest matching retailer email authoritative with
  assert.doesNotMatch(source,/updateExisting:replace\.checked/);
  assert.match(source,/collapsedInImport/);
 });
+
+
+test('Duplicate review displays exact matching value, retailer-scoped peer email, bank and profile ID',()=>{
+ assert.match(source,/row\.duplicateDetails\|\|\[\]/);
+ assert.match(source,/Exact matching card number/);
+ assert.match(source,/Exact matching email/);
+ assert.match(source,/Unused email-bank conflict/);
+ assert.match(source,/text\('code',detail\.value\)/);
+ assert.match(source,/detail\.peers\|\|\[\]/);
+ assert.match(source,/peer\.email\|\|'Unknown email'/);
+ assert.match(source,/peer\.id\?' · ID '/);
+ assert.match(source,/function duplicateReviewEntries\(retailer\)/);
+ assert.match(source,/row\.retailer===retailer/);
+ assert.match(source,/No changes were made/);
+});
