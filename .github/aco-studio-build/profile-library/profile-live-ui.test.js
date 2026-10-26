@@ -272,3 +272,14 @@ test('Previously imported Live Target profiles have explicit preview/confirm act
  assert.match(source,/unique full-card matches/);
  assert.match(source,/non-Live records can be retired/);
 });
+
+
+test('Live import review makes newest matching retailer email authoritative without opt-out',()=>{
+ assert.match(source,/newest imported row automatically REPLACES/);
+ assert.match(source,/preview\.supersedeLive/);
+ assert.match(source,/preview\.supersedeNonLive/);
+ assert.match(source,/result\.supersededLive/);
+ assert.match(source,/result\.cardsPreserved/);
+ assert.doesNotMatch(source,/updateExisting:replace\.checked/);
+ assert.match(source,/collapsedInImport/);
+});

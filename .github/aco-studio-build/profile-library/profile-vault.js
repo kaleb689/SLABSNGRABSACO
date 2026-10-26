@@ -647,76 +647,104 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  }
 
  // Live profiles stay in their owner vault, with durable bank membership independent of readiness.
+ // Every new import is authoritative for its retailer + owner + exact email.
+ // Older Live *and* non-Live rows are archived before retirement. Importing
+ // the same file again never multiplies active Live profiles.
  async function importLiveProfiles(scope,customerId,entries,{updateExisting=false,batchId=null,fileNames=[]}={},beforeWrite,preserveRetiredCards=null){
   const key=bank(scope,customerId);
-  if(!Array.isArray(entries)||!entries.length||entries.length>10000||typeof beforeWrite!=='function')throw Error('Choose 1-10000 live profiles.');
+  if(!Array.isArray(entries)||!entries.length||entries.length>10000||typeof beforeWrite!=='function')
+   throw Error('Choose 1-10000 live profiles.');
   return serial(async()=>{
-   const d=await read(scope),rows=d.groups[key]||[],seen=new Map(),prepared=[];
+   const d=await read(scope),rows=d.groups[key]||[],byIdentity=new Map(),importedAt=now();
+   // Last occurrence in the selected import files wins within the same
+   // retailer/email; it must not create two new Live rows in the same batch.
    for(const item of entries){
-    const retailer=retailerId(item.retailer),data=stripVerifiers(item.data,0,scope),email=normalizeEmail(emailFrom(data)),token=retailer+'|'+email;
+    const retailer=retailerId(item.retailer),data=stripVerifiers(item.data,0,scope),
+     email=normalizeEmail(emailFrom(data)),token=retailer+'|'+email;
     if(!email)throw Error('Every live profile needs a valid account email.');
-    const occurrence=seen.get(token)||0;seen.set(token,occurrence+1);
-    const matches=rows.filter(x=>x.retailer===retailer&&x.email===email);
-    // Existing duplicates are retained for review; importing must not erase or block them.
-    const prior=updateExisting&&occurrence===0&&matches.length===1?matches[0]:null;
-    if(prior&&(prior.sourceLinked||prior.websiteAuthoritative||prior.source==='website-linked-profile'))throw Error('Edit this website-linked account through its customer profile; a live import cannot replace it.');
-    // Without explicit replacement, create an independently editable Live record.
-    if(prior&&require('./jig-field-core').hash(prior)!==item.expectedHash)throw Error('Stored profile changed after preview. Preview the import again.');
-    if(!prior&&item.expectedHash&&updateExisting&&occurrence===0&&matches.length===1)throw Error('Stored profile changed after preview. Preview the import again.');
-    prepared.push({...prior,id:prior?.id||uuid(),retailer,email,label:name(data.profile_name||data.name||email),group:retailer,source:'owner-created-profile',status:'active',bank:'live',liveSince:prior?.liveSince||now(),createdAt:prior?.createdAt||now(),revision:(prior?.revision??-1)+1,importBatchId:prior?.importBatchId||(!prior?batchId:null),data,format:item.format,assetRefs:prior?.assetRefs||{}});
+    if(JSON.stringify(data).length>16000)throw Error('Imported profile exceeds the encrypted record size limit.');
+    byIdentity.set(token,{item,retailer,data,email});
    }
-   // A Live import is authoritative for the same owner + retailer + email.
-   // Remove matching non-Live local profiles from Ready for Export / Unused
-   // immediately, but archive full prior records *inside this encrypted vault*.
-   // Existing Live records and different retailers/customers remain untouched.
-   const liveIdentities=new Set(prepared.map(x=>x.retailer+'|'+normalizeEmail(x.email)));
-   const displaced=rows.filter(x=>x.bank!=='live'&&liveIdentities.has(x.retailer+'|'+normalizeEmail(x.email)));
-   if(displaced.some(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile'))
-    throw Error('An imported Live account matches a website-linked profile. Unlink it explicitly before importing; no profiles were changed.');
-   let cardPreservation={cardsPreserved:0,cardsAlreadySaved:0};
+   const hash=require('./jig-field-core').hash,prepared=[];
+   for(const [token,{item,retailer,data,email}] of byIdentity){
+    const matches=rows.filter(x=>x.retailer===retailer&&normalizeEmail(x.email)===email);
+    const expected=Array.isArray(item.expectedMatches)?item.expectedMatches:null;
+    if(!expected||expected.length!==matches.length)throw Error('Matching Live profiles changed after preview. Review the import again; no records changed.');
+    const priorById=new Map(matches.map(row=>[row.id,hash(row)]));
+    if(expected.some(row=>!row||typeof row.id!=='string'||priorById.get(row.id)!==row.hash)||
+       new Set(expected.map(x=>x.id)).size!==expected.length)
+     throw Error('A stored profile changed after import preview. Review again; no records changed.');
+    if(matches.some(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile'))
+     throw Error('An imported Live email matches a website-linked profile. Unlink explicitly before replacement; no records changed.');
+    // Always use newly imported values and a NEW profile ID. Never keep stale
+    // old card, asset IDs, security references, or dates on the active row.
+    prepared.push({id:uuid(),retailer,email,label:name(data.profile_name||data.name||email),
+     group:retailer,source:'owner-created-profile',status:'active',bank:'live',
+     liveSince:importedAt,createdAt:importedAt,revision:0,importBatchId:batchId||null,
+     data,format:item.format,assetRefs:{}});
+   }
+   const identities=new Set(byIdentity.keys());
+   const displaced=rows.filter(x=>identities.has(x.retailer+'|'+normalizeEmail(x.email)));
    const displacedIds=new Set(displaced.map(x=>x.id));
-   const ids=new Set(prepared.map(x=>x.id));
-   if(rows.filter(x=>!ids.has(x.id)&&!displacedIds.has(x.id)).length+prepared.length>10000)throw Error('Profile vault is full.');
+   if(rows.length-displaced.length+prepared.length>10000)
+    throw Error('Profile vault is full. No records changed.');
+   if(preserveRetiredCards&&typeof preserveRetiredCards!=='function')
+    throw Error('Invalid encrypted Card Bank preservation handler.');
+   let cardPreservation={cardsPreserved:0,cardsAlreadySaved:0};
    if(displaced.length){
+    if(typeof preserveRetiredCards!=='function')throw Error('Saved Card Bank preservation unavailable. No Live profiles replaced.');
+    const archive=d.supersededLiveImportProfiles?.[key]||[];
+    if(archive.length+displaced.length>20000)
+     throw Error('Encrypted recovery archive is full. No Live profiles replaced.');
+    beforeWrite();
+    // Saving distinct original cards is mandatory before any profile change.
+    // The helper compares COMPLETE card numbers, deduplicates Card Bank rows,
+    // and retains independently named reference values.
+    cardPreservation=await preserveRetiredCards(structuredClone(displaced),structuredClone(prepared));
+    beforeWrite();
     d.supersededLiveImportProfiles||={};d.supersededLiveImportProfiles[key]||=[];
-    if(d.supersededLiveImportProfiles[key].length+displaced.length>20000)
-     throw Error('The encrypted Live-import recovery archive is full. No profiles were changed.');
-    // The saved Card Bank is physically separate. Preserve DIFFERENT old cards
-    // before retiring their source profiles. A failure aborts Live import;
-    // successful saved-card copies remain safe even if later profile writes fail.
-    if(preserveRetiredCards&&typeof preserveRetiredCards!=='function')throw Error('Invalid card recovery callback.');
-    if(preserveRetiredCards)cardPreservation=await preserveRetiredCards(structuredClone(displaced),structuredClone(prepared));
-    const replacedAt=now(),activeIdsByEmail=new Map();
-    for(const live of prepared)activeIdsByEmail.set(live.retailer+'|'+normalizeEmail(live.email),live.id);
+    const replacementIds=new Map(prepared.map(x=>[x.retailer+'|'+normalizeEmail(x.email),x.id]));
     for(const old of displaced){
-     d.supersededLiveImportProfiles[key].push({profile:structuredClone(old),replacedAt,
-      replacedByLiveProfileId:activeIdsByEmail.get(old.retailer+'|'+normalizeEmail(old.email))||null,
-      batchId:batchId||null});
-     auditRecord(d,key,'live-import-superseded-nonlive',old.email,{retailer:old.retailer,priorProfileId:old.id,bank:old.bank||'working'});
+     const reason=old.bank==='live'?'superseded-live':'superseded-nonlive';
+     d.supersededLiveImportProfiles[key].push({profile:structuredClone(old),
+      replacedAt:importedAt,replacedByLiveProfileId:replacementIds.get(old.retailer+'|'+normalizeEmail(old.email)),
+      batchId:batchId||null,reason});
+     auditRecord(d,key,'live-import-'+reason,old.email,{retailer:old.retailer,priorProfileId:old.id,bank:old.bank||'working'});
     }
    }
-   // Displaced records no longer appear in Ready for Export or Unused, while
-   // the earlier encrypted full-vault snapshot still exists for restoration.
-   d.groups[key]=[...rows.filter(x=>!ids.has(x.id)&&!displacedIds.has(x.id)),...prepared];
+   d.groups[key]=[...rows.filter(x=>!displacedIds.has(x.id)),...prepared];
    d.emailBanks||={};d.emailBanks[key]||=[];
-   const usedPkc=new Set([...rows,...prepared].filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)));
-   for(const x of d.emailBanks[key]||[])if(x.retailer==='pokemoncenter')usedPkc.add(x.email);
+   const usedPkc=new Set(d.groups[key].filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)));
+   for(const x of d.emailBanks[key])if(x.retailer==='pokemoncenter')usedPkc.add(x.email);
    let pkcEmailsAdded=0;
    for(const row of prepared){
-    for(const entry of d.emailBanks[key])if(entry.retailer===row.retailer&&entry.email===row.email){entry.profileId=row.id;entry.usedAt=now();}
-    if(row.retailer!=='pokemoncenter'&&!usedPkc.has(row.email)){d.emailBanks[key].push({id:uuid(),email:row.email,retailer:'pokemoncenter',createdAt:now(),profileId:null,source:'live-profile-import'});usedPkc.add(row.email);pkcEmailsAdded++;}
+    for(const entry of d.emailBanks[key])if(entry.retailer===row.retailer&&entry.email===row.email){
+     entry.profileId=row.id;entry.usedAt=importedAt;
+    }
+    if(row.retailer!=='pokemoncenter'&&!usedPkc.has(row.email)){
+     d.emailBanks[key].push({id:uuid(),email:row.email,retailer:'pokemoncenter',createdAt:importedAt,
+      profileId:null,source:'live-profile-import'});
+     usedPkc.add(row.email);pkcEmailsAdded++;
+    }
     auditRecord(d,key,'live-profile-import',row.email,{retailer:row.retailer,bank:'live'});
    }
    if(d.emailBanks[key].length>20000)throw Error('Email vault limit reached.');
    if(batchId){
     if(typeof batchId!=='string'||batchId.length>100)throw Error('Invalid import batch ID.');
     d.importBatches||={};d.importBatches[key]||=[];
-    const created=prepared.filter(x=>!rows.some(y=>y.id===x.id));
-    d.importBatches[key].push({id:batchId,at:now(),bank:'live',retailers:[...new Set(prepared.map(x=>x.retailer))],
-     fileNames:fileNames.slice(0,100).map(s=>String(s).slice(0,200)),createdIds:created.map(x=>x.id),
-     imported:prepared.length,updatedExisting:prepared.length-created.length,removedAt:null});
+    d.importBatches[key].push({id:batchId,at:importedAt,bank:'live',
+     retailers:[...new Set(prepared.map(x=>x.retailer))],
+     fileNames:fileNames.slice(0,100).map(s=>String(s).slice(0,200)),
+     createdIds:prepared.map(x=>x.id),imported:prepared.length,
+     updatedExisting:displaced.length,removedAt:null});
    }
-   beforeWrite();await write(scope,d);return {imported:prepared.length,pkcEmailsAdded,bank:'live',batchId,supersededNonLive:displaced.length,retiredFromUnusedAndReady:displaced.length,cardsPreserved:cardPreservation.cardsPreserved||0,cardsAlreadySaved:cardPreservation.cardsAlreadySaved||0};
+   beforeWrite();await write(scope,d);
+   const supersededLive=displaced.filter(x=>x.bank==='live').length;
+   const supersededNonLive=displaced.length-supersededLive;
+   return {imported:prepared.length,inputRows:entries.length,collapsedInImport:entries.length-prepared.length,
+    pkcEmailsAdded,bank:'live',batchId,supersededLive,supersededNonLive,
+    retiredFromUnusedAndReady:supersededNonLive,cardsPreserved:cardPreservation.cardsPreserved||0,
+    cardsAlreadySaved:cardPreservation.cardsAlreadySaved||0,encryptedRecoveryPreserved:true};
   });
  }
  // Owner-confirmed retrospective reconciliation. Works with the Live profiles
