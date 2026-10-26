@@ -35,7 +35,7 @@ test('Cloudflare live AND exact mailbox receipt are mandatory before Personal un
  assert.match(app,/scope:'personal',customerId:null,retailer,emails:batch\.map\(r=>r\.alias\)/);
  assert.match(app,/JigPersonalGuard\?\.ensureUnlocked/);
  assert.match(app,/await api\(\)\.publish\(toPublish\.map/);
- assert.match(app,/testForwarding\(\)/);
+ assert.match(app,/api\(\)\?\.testForwarding/);
  assert.match(app,/forwardingTestedAt=new Date\(\)\.toISOString\(\)/);
 });
 test('Mail test credentials are temporary and never written to the encrypted Email Bank',()=>{
