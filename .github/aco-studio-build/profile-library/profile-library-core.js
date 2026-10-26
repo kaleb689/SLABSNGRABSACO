@@ -194,5 +194,48 @@ function jig(data,r,index,rules=defaultRules(r)){
  }
  return out;
 }
-module.exports={exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
+
+// Read-only, owner-scoped plan for reconciling PREVIOUSLY imported Live profiles.
+// A card-only match is a conflict requiring explicit owner review. No payment
+// verifier or unrelated security reference is used as an identity key.
+function existingLiveReconciliation(rows,retailer){
+ if(!['target','walmart','pokemoncenter','costco','sams'].includes(retailer))throw Error('Choose one retailer for Live reconciliation.');
+ if(!Array.isArray(rows))throw Error('The profile vault snapshot is unavailable.');
+ const live=rows.filter(row=>row.retailer===retailer&&row.bank==='live');
+ const working=rows.filter(row=>row.retailer===retailer&&row.bank!=='live');
+ const completePan=row=>{const number=payment(row.data||{}).number;return /^\d{12,19}$/.test(number)?number:'';};
+ const byEmail=new Map(),byCard=new Map();
+ for(const row of live){
+  const emailValue=email(row.email||values(row.data||{}).email),cardNumber=completePan(row);
+  if(emailValue){const matches=byEmail.get(emailValue)||[];matches.push(row);byEmail.set(emailValue,matches);}
+  if(cardNumber){const matches=byCard.get(cardNumber)||[];matches.push(row);byCard.set(cardNumber,matches);}
+ }
+ const candidates=[],blocked=[],unmatched=[];
+ for(const row of working){
+  const emailValue=email(row.email||values(row.data||{}).email),number=completePan(row);
+  const emailMatches=emailValue?byEmail.get(emailValue)||[]:[],cardMatches=number?byCard.get(number)||[]:[];
+  const possible=new Map([...emailMatches,...cardMatches].map(item=>[item.id,item]));
+  if(!possible.size){unmatched.push(row.id);continue;}
+  if(row.sourceLinked||row.websiteAuthoritative||row.source==='website-linked-profile'){
+   blocked.push({id:row.id,reason:'website-linked'});continue;
+  }
+  if(possible.size!==1||emailMatches.length>1||cardMatches.length>1){
+   blocked.push({id:row.id,reason:'ambiguous-live-match'});continue;
+  }
+  const target=[...possible.values()][0];
+  const reason=emailMatches.length===1?'email':'full-card';
+  candidates.push({id:row.id,revision:row.revision||0,email:row.email,liveId:target.id,
+   liveEmail:target.email,reason,oldCardLast4:number.slice(-4),
+   cardsDiffer:number!==completePan(target)});
+ }
+ // Hash source identity and full serialized data only in the main process.
+ // This digest never contains raw email, PAN, or reference values.
+ const crypto=require('node:crypto');
+ const signature=crypto.createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+ return {retailer,liveCount:live.length,workingCount:working.length,candidates,
+  emailMatches:candidates.filter(x=>x.reason==='email').length,
+  cardOnlyMatches:candidates.filter(x=>x.reason==='full-card').length,
+  blockedCount:blocked.length,blocked,unmatchedCount:unmatched.length,signature};
+}
+module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
 
