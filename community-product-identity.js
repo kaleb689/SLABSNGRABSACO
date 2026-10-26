@@ -6,6 +6,8 @@ const tinVariants = new Map(verifiedTinVariants().map(item => [
   item.sku.toLowerCase(), String(item.name).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
 ]));
 const knownTinVariantNames = new Set(tinVariants.values());
+const deltaReignEtbKey = "mega evolution delta reign elite trainer box";
+const deltaReignEtbName = "Pokémon TCG: Mega Evolution—Delta Reign Elite Trainer Box";
 
 // Exact retailer title aliases observed for the same product. Pack counts
 // remain significant everywhere else, including multipacks and bundles of two.
@@ -26,8 +28,8 @@ export function communityProductName(title) {
   return name;
 }
 
-/** Retailer-independent identity. Preserve editions, pack sizes, exclusives
- * and character variants; collapse only harmless title differences. */
+/** Retailer-independent tracker grouping. The owner explicitly groups standard
+ * and Pokemon Center Delta Reign ETBs together; other variants stay separate. */
 export function communityProductKey(title, sku = "") {
   const embeddedSku = String(title || "").match(skuPrefix)?.[1] || "";
   let value = communityProductName(title).normalize("NFKD")
@@ -46,6 +48,8 @@ export function communityProductKey(title, sku = "") {
     .toLowerCase().replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ").trim();
   value = retailerTitleAliases.get(value) || value;
+  if (/^(?:pokemon center(?: exclusive)? )?(?:mega evolution )?delta reign(?: pokemon center(?: exclusive)?)? elite trainer box$/.test(value))
+    value = deltaReignEtbKey;
 
   const knownVariant = tinVariants.get(String(sku || embeddedSku).trim().toLowerCase());
   const marker = "30th celebration mini tin", at = value.indexOf(marker);
@@ -81,7 +85,7 @@ export function consolidateCommunityProducts(records, {
       if (!productKey) continue;
       const prior = products.get(productKey);
       products.set(productKey, {
-        name: prior?.name || name,
+        name: productKey === deltaReignEtbKey ? deltaReignEtbName : prior?.name || name,
         productKey,
         quantity: (prior?.quantity || 0) + quantity,
         imageUrl: prior?.imageUrl || imageFor(name, order, item),
