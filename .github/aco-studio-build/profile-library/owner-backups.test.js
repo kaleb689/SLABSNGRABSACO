@@ -79,6 +79,20 @@ test('Missing Security Codes can be selectively restored from encrypted snapshot
  assert.equal((await vault.codeRecovery('personal',null,{},()=>{})).recoverable,0);
  const backups=await vault.backupList('personal');
  assert.ok(backups.length>=2,'a pre-recovery encrypted snapshot must exist');
+ // An explicitly changed reference in another backup creates ambiguity.
+ await vault.libraryTransaction('personal',null,ctx=>{
+  ctx.allowIndependentReferenceEdit(ctx.rows[0].id);
+  ctx.rows[0].data.profileSecurityCode='ALTERNATE-REFERENCE';
+ },()=>{});
+ await vault.libraryTransaction('personal',null,ctx=>{
+  ctx.allowIndependentReferenceEdit(ctx.rows[0].id);
+  ctx.rows[0].data.profileSecurityCode='';
+ },()=>{});
+ const beforeConflict=await fs.readFile(vault.paths.personal);
+ const conflicted=await vault.codeRecovery('personal',null,{independentOnly:true},()=>{});
+ assert.equal(conflicted.recoverable,0,'divergent historical references are not selected');
+ assert.equal(conflicted.conflicts,1);
+ assert.deepEqual(await fs.readFile(vault.paths.personal),beforeConflict,'conflict review must be read-only');
 });
 test('Security Code recovery never crosses customer ownership or overwrites nonempty fields',async t=>{
  const baseDir=await fs.mkdtemp(path.join(os.tmpdir(),'owner-code-recovery-isolation-'));
