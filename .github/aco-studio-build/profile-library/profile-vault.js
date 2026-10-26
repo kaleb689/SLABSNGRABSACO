@@ -655,6 +655,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    const displaced=rows.filter(x=>x.bank!=='live'&&liveIdentities.has(x.retailer+'|'+normalizeEmail(x.email)));
    if(displaced.some(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile'))
     throw Error('An imported Live account matches a website-linked profile. Unlink it explicitly before importing; no profiles were changed.');
+   let cardPreservation={cardsPreserved:0,cardsAlreadySaved:0};
    const displacedIds=new Set(displaced.map(x=>x.id));
    const ids=new Set(prepared.map(x=>x.id));
    if(rows.filter(x=>!ids.has(x.id)&&!displacedIds.has(x.id)).length+prepared.length>10000)throw Error('Profile vault is full.');
@@ -666,7 +667,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     // before retiring their source profiles. A failure aborts Live import;
     // successful saved-card copies remain safe even if later profile writes fail.
     if(preserveRetiredCards&&typeof preserveRetiredCards!=='function')throw Error('Invalid card recovery callback.');
-    if(preserveRetiredCards)await preserveRetiredCards(structuredClone(displaced),structuredClone(prepared));
+    if(preserveRetiredCards)cardPreservation=await preserveRetiredCards(structuredClone(displaced),structuredClone(prepared));
     const replacedAt=now(),activeIdsByEmail=new Map();
     for(const live of prepared)activeIdsByEmail.set(live.retailer+'|'+normalizeEmail(live.email),live.id);
     for(const old of displaced){
@@ -697,7 +698,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
      fileNames:fileNames.slice(0,100).map(s=>String(s).slice(0,200)),createdIds:created.map(x=>x.id),
      imported:prepared.length,updatedExisting:prepared.length-created.length,removedAt:null});
    }
-   beforeWrite();await write(scope,d);return {imported:prepared.length,pkcEmailsAdded,bank:'live',batchId,supersededNonLive:displaced.length,retiredFromUnusedAndReady:displaced.length};
+   beforeWrite();await write(scope,d);return {imported:prepared.length,pkcEmailsAdded,bank:'live',batchId,supersededNonLive:displaced.length,retiredFromUnusedAndReady:displaced.length,cardsPreserved:cardPreservation.cardsPreserved||0,cardsAlreadySaved:cardPreservation.cardsAlreadySaved||0};
   });
  }
  // History tracks only NEW local profile IDs created by each import; a batch
