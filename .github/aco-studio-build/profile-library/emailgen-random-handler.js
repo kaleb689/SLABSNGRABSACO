@@ -16,6 +16,7 @@
   $e('randomAliasWaiting').textContent=available.length+' generated email(s) waiting for a retailer unused pool.';
   const sync=$e('randomAliasSync');sync.hidden=!unlocked||unsynced.length===0;
   sync.textContent='Publish / sync '+unsynced.length+' assigned email(s)';
+  refreshDraftDestinations();
  }
  async function importLiveRandom(){
   const live=unsyncedRandom().filter(r=>r.status==='live'&&r.forwardingTestedAt&&r.forwardingTestTarget===r.target);
@@ -92,6 +93,115 @@
   randomNotice(passed+' forwarded addresses confirmed by a real inbox receipt; '+failed+' failed/unconfirmed.',failed===0&&noRule===0);
   refreshRandomChooser();
  }
+ // Changing the top forwarding field only affects NEW aliases. This
+ // owner-only flow changes already-saved, unpublished RANDOM DRAFTS explicitly.
+ // Active/pending/remote/imported/manual entries must never be changed here.
+ const eligibleRandomDraft=r=>r.randomGenerated===true&&r.status==='draft'&&!r.remoteId&&!r.poolImportedAt;
+ function draftDestinationPlan(source,destination){
+  requireOwner();
+  source=String(source||'').trim().toLowerCase();destination=String(destination||'').trim().toLowerCase();
+  if(!validEmail(source)||!validEmail(destination)||destination.endsWith('@'+OWNER_DOMAIN))
+   throw Error('Choose an existing draft destination and enter a verified external forwarding inbox.');
+  if(source===destination)throw Error('The new inbox is already the saved destination. Nothing changed.');
+  const matches=records.filter(r=>eligibleRandomDraft(r)&&r.target===source);
+  if(!matches.length)throw Error('No unpublished random drafts use that inbox. Existing live/assigned aliases were not changed.');
+  if(new Set(matches.map(x=>x.alias)).size!==matches.length)
+   throw Error('Duplicate alias records require review before changing any destination.');
+  return {source,destination,entries:matches.map(r=>({alias:r.alias,target:r.target,status:r.status,poolTarget:r.poolTarget||null,
+   remoteId:r.remoteId||null,poolImportedAt:r.poolImportedAt||null}))};
+ }
+ async function changeDraftDestinations(plan){
+  requireOwner();
+  if(!plan?.entries?.length||!plan?.source||!plan?.destination)
+   throw Error('Review the destination change first.');
+  const fresh=draftDestinationPlan(plan.source,plan.destination);
+  if(fresh.entries.length!==plan.entries.length||
+     fresh.entries.some((x,i)=>JSON.stringify(x)!==JSON.stringify(plan.entries[i])))
+   throw Error('The Email Bank changed since preview. Review the change again; no aliases were modified.');
+  // The existing ciphertext is a REQUIRED verified backup; never back up
+  // plaintext aliases, passwords, or Cloudflare tokens.
+  const previous=localStorage.getItem(KEY);
+  if(!previous)throw Error('No saved encrypted Email Bank was found. Nothing changed.');
+  const entropy=crypto.getRandomValues(new Uint8Array(8));
+  const backupKey=KEY+'.destination-backup.'+Date.now()+'.'+Array.from(entropy,x=>x.toString(16).padStart(2,'0')).join('');
+  if(localStorage.getItem(backupKey)!==null)throw Error('Encrypted backup collision. Nothing changed.');
+  localStorage.setItem(backupKey,previous);
+  if(localStorage.getItem(backupKey)!==previous)
+   throw Error('Encrypted backup verification failed. No drafts were changed.');
+  const selected=new Set(plan.entries.map(x=>x.alias));
+  const before=records.filter(r=>selected.has(r.alias)).map(r=>({
+   row:r,target:r.target,forwardingTestedAt:r.forwardingTestedAt,
+   forwardingTestTarget:r.forwardingTestTarget
+  }));
+  try{
+   for(const x of before){
+    x.row.target=plan.destination;
+    x.row.forwardingTestedAt=null;x.row.forwardingTestTarget=null;
+   }
+   if(!await store())throw Error('The encrypted Email Bank could not be saved.');
+  }catch(error){
+   for(const x of before){
+    x.row.target=x.target;x.row.forwardingTestedAt=x.forwardingTestedAt;
+    x.row.forwardingTestTarget=x.forwardingTestTarget;
+   }
+   // Preserve the verified backup in every case, including storage failure.
+   // Restore the original ciphertext if store() had partially written it.
+   try{if(localStorage.getItem(KEY)!==previous)localStorage.setItem(KEY,previous);}catch{}
+   throw Error('Destination change was not completed: '+String(error?.message||error)+'. The original encrypted backup was retained.');
+  }
+  return {changed:before.length,from:plan.source,to:plan.destination,encryptedBackupPreserved:true};
+ }
+ function refreshDraftDestinations(){
+  const dropdown=$e('randomDestinationOld');if(!dropdown)return;
+  const current=dropdown.value,counts=new Map();
+  for(const row of unlocked?records:[])if(eligibleRandomDraft(row)){
+   counts.set(row.target,(counts.get(row.target)||0)+1);
+  }
+  dropdown.replaceChildren(new Option('Choose destination...',''));
+  for(const [mailbox,count] of [...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])))
+   dropdown.add(new Option(mailbox+' ('+count+' drafts)',mailbox));
+  if(counts.has(current))dropdown.value=current;
+ }
+ function setupDraftDestinationControls(){
+  const preview=$e('randomDestinationPreview'),commit=$e('randomDestinationConfirm'),cancel=$e('randomDestinationCancel');
+  if(!preview||!commit||!cancel)throw Error('Existing draft destination controls are missing.');
+  let plan=null;
+  const panel=$e('randomDestinationConfirmArea'),notice=$e('randomDestinationStatus');
+  const reset=()=>{plan=null;panel.hidden=true;$e('randomDestinationAcknowledged').checked=false;};
+  const chooseTo=()=>String($e('randomDestinationNew').value||'').trim().toLowerCase();
+  const chooseFrom=()=>String($e('randomDestinationOld').value||'').trim().toLowerCase();
+  const changed=()=>{reset();notice.textContent='Destination selection changed. Preview again before saving.';};
+  $e('randomDestinationOld').addEventListener('change',changed);
+  $e('randomDestinationNew').addEventListener('input',changed);
+  preview.addEventListener('click',()=>{
+   if(randomGenBusy)return;
+   try{
+    const to=chooseTo()||String($e('emailTarget').value||'').trim().toLowerCase();
+    if(!$e('randomDestinationNew').value.trim())$e('randomDestinationNew').value=to;
+    plan=draftDestinationPlan(chooseFrom(),to);
+    $e('randomDestinationSummary').textContent='Change '+plan.entries.length+' existing RANDOM DRAFT aliases from '+plan.source+' to '+plan.destination+'?';
+    $e('randomDestinationAcknowledged').checked=false;panel.hidden=false;
+    notice.textContent='Preview only: no saved aliases, Cloudflare rules or retailer pools have changed.';
+   }catch(error){reset();notice.textContent=String(error?.message||error);}
+  });
+  cancel.addEventListener('click',()=>{reset();notice.textContent='Canceled. No aliases were changed.';});
+  commit.addEventListener('click',async()=>{
+   if(randomGenBusy)return;
+   if(!plan||panel.hidden||!$e('randomDestinationAcknowledged').checked){
+    notice.textContent='Preview the draft destinations and check the confirmation box first.';return;
+   }
+   randomGenBusy=true;commit.disabled=true;
+   try{
+    if(chooseFrom()!==plan.source||chooseTo()!==plan.destination)
+     throw Error('The destination changed since preview. Review again.');
+    const result=await changeDraftDestinations(plan);
+    reset();render();refreshDraftDestinations();
+    notice.textContent='Updated '+result.changed+' existing random DRAFT aliases to '+result.to+'; verified original encrypted backup preserved. No new addresses generated and no Cloudflare rules published. You can now Publish / sync the assigned drafts.';
+   }catch(error){reset();notice.textContent=String(error?.message||error);}
+   finally{commit.disabled=false;randomGenBusy=false;}
+  });
+  refreshDraftDestinations();
+ }
  function setupRandomEmailGen(){
   const create=$e('randomAliasCreate'),assign=$e('randomAliasAssign'),sync=$e('randomAliasSync');
   if(!create||!assign||!sync)throw Error('Random Email Gen controls are unavailable.');
@@ -157,4 +267,5 @@
    finally{$e('randomTestPassword').value='';testAll.disabled=false;randomGenBusy=false;refreshRandomChooser();}
   });
   refreshRandomChooser();
+  setupDraftDestinationControls();
  }
