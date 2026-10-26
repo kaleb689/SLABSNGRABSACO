@@ -409,3 +409,19 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  for(const file of ['emailgen-random.test.js','emailgen-forwarding-test.test.js'])
   fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
 }
+
+
+// CI source inspection, removed before release. This only prints static bundled source.
+{
+ const cases=[
+  ['app.js',['async function authorizeOwner(', 'async function logout(', 'function logout(', 'function addEvents(', 'function init(', 'addEvents();', 'authorizeOwner();']],
+  ['main.js',["ipcMain.handle('cf:authorize'",'ownerSession','ownerSender','safeStorage','userData']],
+  ['preload.js',['cloudflare:Object.freeze({','cloudflare:','testForwarding:','contextBridge.exposeInMainWorld']]
+ ];
+ for(const [file,terms] of cases){
+  const source=fs.readFileSync(path.join(root,file),'utf8');
+  for(const term of terms){const at=source.indexOf(term);if(at<0)continue;
+   console.log('PERSIST_SOURCE '+file+' '+term+' '+JSON.stringify(source.slice(Math.max(0,at-450),Math.min(source.length,at+3500))));
+  }
+ }
+}
