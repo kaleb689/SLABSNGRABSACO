@@ -567,3 +567,23 @@ test('Legacy slot presence only counts exact complete-card identity matches, nev
  assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
  assert.ok(!JSON.stringify(good).includes(original.cc_cvv));
 });
+
+
+test('Original-file recovery preview requires the exact full card number before a reference may be restored',async t=>{
+ const h=await library(t),email='exact-original@example.test';
+ await commit(h,await preview(h,[complete('target',email)]));
+ const original=complete('target',email);
+ original.profileSecurityCode='NONPAYMENT-REF-SYNTHETIC';
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const request=(number)=>h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',
+  fileName:'target-original.json',text:JSON.stringify([{...original,cc_number:number}]),independentOnly:true});
+ const absent=await request('');
+ assert.equal(absent.recoverable,0);
+ const changed=await request('4242424242424243');
+ assert.equal(changed.recoverable,0);
+ const lastFour=await request('5555555555554242');
+ assert.equal(lastFour.recoverable,0);
+ const match=await request('4242424242424242');
+ assert.equal(match.recoverable,1);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before,'previews cannot modify saved references');
+});
