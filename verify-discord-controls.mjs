@@ -5,6 +5,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload} from './discord-community.js';
 import {skuReminderOwnerPanel} from './sku-reminders.js';
+import {createDropMessageRetention} from './discord-drop-retention.js';
 const source = await fs.readFile('discord-community.js', 'utf8');
 const block = source.slice(source.indexOf('  const skuMenusFile ='), source.indexOf('  async function onQuestionMessage'));
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'discord-controls-'));
@@ -34,7 +35,7 @@ const deps={fs,path,crypto,dataDir,tonightChannelId,retailerDropLabels:{},dropCh
   parseDropSkus,changeSkuItems,skuSelectionView,skuOwnerDetails,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
-  skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,discordCommunityStatus:{}};
+  skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,createDropMessageRetention,discordCommunityStatus:{}};
 const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection,mutateSkuDraft,confirmSkuDraft};`);
 const controls=make(deps);
 try {
@@ -117,7 +118,8 @@ try {
   menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
   assert.equal(menus[nightPost.id].length,1);
   assert.equal(menus[nightPost.id][0],activePanel,'Reuse public panel instead of duplicating it');
-  assert.equal(messages.has(oldPage),false,'Obsolete duplicate panels must be deleted');
+  assert.equal(messages.has(oldPage),true,'Obsolete panels remain until their ten-day expiry');
+  assert.deepEqual(messages.get(oldPage).components,[],'Obsolete panel buttons are disabled without erasing the message');
   nightPost.content='No products';await controls.ensureSkuControls(nightPost);
   menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
   assert.equal(menus[nightPost.id],undefined);
