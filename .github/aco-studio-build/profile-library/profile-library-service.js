@@ -129,6 +129,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(!remote?.saved)throw Error('The website did not confirm the change; local details were preserved.');
     a.check();
    }
+   // Only this authenticated, version-checked profile-code editor may
+   // explicitly change an existing independent non-payment reference.
+   // A card/address edit, bulk jig, or re-import does not authorize it.
+   if(p.profileSecurityCode!==undefined||p.cardCvv!==undefined)
+    ctx.allowIndependentReferenceEdit(row.id);
    row.data=data;row.email=email;row.label=C.values(data).label;
    row.group=String(p.group||row.group||row.retailer).slice(0,100);
    row.revision++;row.manualOverride=!linked;row.needsReview=false;
