@@ -439,18 +439,16 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
 }
 
 
-// Temporary source-only diagnostic of original encrypted Email Bank unlock.
-// Do not log localStorage, credentials, bank data, or runtime files. Removed
-// before preparing or releasing any fix.
+
+
+// Read-only source inspection of original bank formats and supported restore.
+// No owner records or runtime credentials are accessed.
 {
- const source=fs.readFileSync(path.join(root,'app.js'),'utf8');
- for(const term of ['async function unlockBank(','async function store(','async function derive(','const STORE=','const STORAGE=','const BANK=','async function openBank(','function normalize(','async function authorizeOwner(']){
-   const pos=source.indexOf(term);
-   if(pos<0){console.log('BANK_DIAG_MISSING',term);continue;}
-   const end=term.includes('unlockBank(')?6000:term.includes('derive(')?2200:term.includes('store(')?3400:term.includes('normalize(')?2500:term.includes('authorizeOwner(')?2100:1000;
-   console.log('BANK_DIAG',term,JSON.stringify(source.slice(pos,pos+end)));
+ const src=fs.readFileSync(path.join(root,'app.js'),'utf8');
+ const terms=['const KEY=','const LEGACY=','const FORMAT=','const ITERATIONS=','async function importBank(','function b64(','function unb64(','function store(){','let unlocked=','let writeQueue='];
+ for(const term of terms){
+  const i=src.indexOf(term);
+  if(i>=0)console.log('BANK_SOURCE_MAP',term,JSON.stringify(src.slice(Math.max(i-160,0),i+Math.min(3100,term.includes('importBank')?5000:2700))));
+  else console.log('BANK_SOURCE_MAP_MISSING',term);
  }
- const starts=[...source.matchAll(/Incorrect bank passphrase or damaged encrypted backup|crypto\.subtle\.decrypt|localStorage\.setItem|localStorage\.getItem/g)]
-  .map(m=>({at:m.index,kind:m[0],snippet:source.slice(Math.max(0,m.index-380),m.index+520)})).slice(0,26);
- console.log('BANK_DIAG_OCCURRENCES',JSON.stringify(starts));
 }
