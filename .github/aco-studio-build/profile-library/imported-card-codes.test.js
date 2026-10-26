@@ -523,3 +523,67 @@ test('Explicit owner profile-code edits remain possible, and unrelated edits ret
  row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'','explicitly authorized independent-reference clear is permitted');
 });
+
+
+test('Strict recovery matches every card digit, rejects missing or altered PAN and leaves existing vault unchanged',async t=>{
+ const h=await library(t),email='strict-recovery@example.test';
+ await commit(h,await preview(h,[complete('target',email)]));
+ const original=complete('target',email);
+ original.profileSecurityCode='INDEPENDENT-REFERENCE-ONLY';
+ const source=(value)=>({...original,cc_number:value,retailer:'target'});
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const check=async(raw)=>h.lib.recoveryReview(event,{...h.p,files:[{fileName:'target-profiles.json',text:JSON.stringify([raw])}]});
+ const good=await check(source('4242 4242-4242 4242'));
+ assert.equal(good.originalFiles.potentialMatches,1,'formatted full PAN with exact same digits matches');
+ const missing=await check(source(''));
+ assert.equal(missing.originalFiles.potentialMatches,0,'missing card number is never a match');
+ assert.equal(missing.originalFiles.cardMismatches,1);
+ const oneChanged=await check(source('4242424242424243'));
+ assert.equal(oneChanged.originalFiles.potentialMatches,0,'even one different digit rejects the source');
+ assert.equal(oneChanged.originalFiles.cardMismatches,1);
+ const sameLastFour=await check(source('5555555555554242'));
+ assert.equal(sameLastFour.originalFiles.potentialMatches,0,'matching last four is insufficient');
+ assert.equal(sameLastFour.originalFiles.cardMismatches,1);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before,'review must remain read-only');
+ assert.ok(!JSON.stringify(good).includes(original.profileSecurityCode),'no reference contents in report');
+});
+
+test('Legacy slot presence only counts exact complete-card identity matches, never restores ambiguous values',async t=>{
+ const h=await library(t),email='strict-legacy@example.test';
+ await commit(h,await preview(h,[complete('target',email)]));
+ const original=complete('target',email);
+ original.cc_cvv='SYNTHETIC-LEGACY-COLUMN-ONLY';
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const check=async(raw)=>h.lib.recoveryReview(event,{...h.p,files:[{fileName:'target-history.json',text:JSON.stringify([{...raw,retailer:'target'}])}]});
+ const good=await check(original);
+ assert.equal(good.originalFiles.legacyIdentityMatches,1);
+ assert.equal(good.originalFiles.potentialMatches,0,'legacy column is not automatically restored');
+ const noCard=await check({...original,cc_number:''});
+ assert.equal(noCard.originalFiles.legacyIdentityMatches,0);
+ assert.equal(noCard.originalFiles.legacyIdentityCardMismatches,1);
+ const wrong=await check({...original,cc_number:'5555555555554444'});
+ assert.equal(wrong.originalFiles.legacyIdentityMatches,0);
+ assert.equal(wrong.originalFiles.legacyIdentityCardMismatches,1);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
+ assert.ok(!JSON.stringify(good).includes(original.cc_cvv));
+});
+
+
+test('Original-file recovery preview requires the exact full card number before a reference may be restored',async t=>{
+ const h=await library(t),email='exact-original@example.test';
+ await commit(h,await preview(h,[complete('target',email)]));
+ const original=complete('target',email);
+ original.profileSecurityCode='NONPAYMENT-REF-SYNTHETIC';
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const request=(number)=>h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',
+  fileName:'target-original.json',text:JSON.stringify([{...original,cc_number:number}]),independentOnly:true});
+ const absent=await request('');
+ assert.equal(absent.recoverable,0);
+ const changed=await request('4242424242424243');
+ assert.equal(changed.recoverable,0);
+ const lastFour=await request('5555555555554242');
+ assert.equal(lastFour.recoverable,0);
+ const match=await request('4242424242424242');
+ assert.equal(match.recoverable,1);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before,'previews cannot modify saved references');
+});
