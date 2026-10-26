@@ -223,6 +223,8 @@ test('Recovery Source Review reports independent source counts without changing 
  data.profileSecurityCode='REF-SNAPSHOT';
  await commit(h,await preview(h,[data]));
  await h.profiles.libraryTransaction('personal',null,ctx=>{
+  // Deliberately simulate an earlier data-loss incident in this test only.
+  ctx.allowIndependentReferenceEdit(ctx.rows[0].id);
   ctx.rows[0].data.profileSecurityCode='';
   return {saved:true};
  },()=>{});
@@ -464,4 +466,60 @@ test('Legacy metadata audit rejects changed-card identity and does not cross own
  await assert.rejects(h.lib.recoveryReview(event,{...h.p,files:[
   {fileName:'target-older.json',text:JSON.stringify([wrongOwner])}
  ]}),/another vault/i);
+});
+
+
+test('Routine vault saves reject silent loss of existing independent reference without changing encrypted data',async t=>{
+ const h=await library(t);
+ const source=complete('target','preserve-write@example.test');
+ source.profileSecurityCode='INDEPENDENT-REF-PRESERVED';
+ await commit(h,await preview(h,[source]));
+ const before=await fs.readFile(h.profiles.paths.personal);
+ await assert.rejects(h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.rows[0].label='Unrelated metadata edit';
+  ctx.rows[0].data.profileSecurityCode='';
+  return {updated:true};
+ },()=>{}),/independent profile reference.*without an explicit code edit/i);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before,'no overwritten vault and no new backup');
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'INDEPENDENT-REF-PRESERVED');
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.rows[0].label='Allowed unrelated metadata edit';
+ },()=>{});
+ const after=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(after.data.profileSecurityCode,'INDEPENDENT-REF-PRESERVED');
+});
+
+test('Live profile replacement cannot silently erase independent reference even with updateExisting',async t=>{
+ const h=await library(t);
+ const original=complete('target','preserve-reimport@example.test');
+ original.profileSecurityCode='INDEPENDENT-REIMPORT-REF';
+ await commit(h,await h.lib.importPreview(event,{...h.p,bank:'live',retailer:'target',fileName:'original.json',text:JSON.stringify([original])}));
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const row=(await h.profiles.fieldSnapshot('personal',null))[0];
+ const withoutCode=complete('target','preserve-reimport@example.test');
+ await assert.rejects(h.profiles.importLiveProfiles('personal',null,[{
+  retailer:'target',data:withoutCode,format:'shikari',expectedHash:F.hash(row)
+ }],{updateExisting:true},()=>{}),/independent profile reference.*without an explicit code edit/i);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'INDEPENDENT-REIMPORT-REF');
+});
+
+test('Explicit owner profile-code edits remain possible, and unrelated edits retain reference',async t=>{
+ const h=await library(t);
+ const data=complete('walmart','preserve-explicit@example.test');
+ data.profileSecurityCode='INDEPENDENT-REF-OLD';
+ await commit(h,await preview(h,[data]));
+ let row=(await h.lib.list(event,h.p)).profiles[0];
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,
+  fields:LC.values(row.data),profileSecurityCode:'INDEPENDENT-REF-NEW'});
+ row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'INDEPENDENT-REF-NEW');
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data)});
+ row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'INDEPENDENT-REF-NEW');
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,
+  fields:LC.values(row.data),profileSecurityCode:''});
+ row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.data.profileSecurityCode,'','explicitly authorized independent-reference clear is permitted');
 });
