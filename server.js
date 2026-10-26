@@ -11,7 +11,7 @@ import { requestedMembershipExtension, requestedMembershipDuration, requestedMax
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
 import { historicalPlusVerified, communityCheckoutTotals, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
-import { communityProductKey, consolidateCommunityProducts } from "./community-product-identity.js";
+import { communityProductKey, communityProductName, consolidateCommunityProducts } from "./community-product-identity.js";
 import { searchManagedPoolProfiles } from "./managed-pool-search.js";
 import { buildSafeRetailerProfileExport } from "./profile-export-formats.js";
 import { attachAdminPush } from "./admin-push.js";
@@ -39829,7 +39829,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
           orderTotalKnown: safe.orderTotalKnown,
           itemSubtotal: checkoutItemSubtotal(record),
           items: safe.items.map(item => ({
-            name: clean(item.name, 120),
+            name: communityProductName(publicSuccessProductName(item.name)),
             productKey: communityProductKey(item.name, item.sku),
             quantity: Math.max(0, Math.floor(Number(item.quantity) || 0)),
             imageUrl: item.imageUrl
@@ -39856,7 +39856,7 @@ app.get("/api/admin/success-overview", requireAdmin, async (_req, res) => {
         linked: Boolean(record.customerAccountId &&
           customersById.has(String(record.customerAccountId))),
         items: safe.items.map(item => ({
-          name: clean(item.name, 120),
+          name: communityProductName(publicSuccessProductName(item.name)),
           productKey: communityProductKey(item.name, item.sku),
           quantity: Math.max(0, Math.floor(Number(item.quantity) || 0)),
           imageUrl: item.imageUrl

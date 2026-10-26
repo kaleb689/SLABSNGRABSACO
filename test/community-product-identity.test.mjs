@@ -1,7 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { communityProductKey, consolidateCommunityProducts } from "../community-product-identity.js";
+import { communityProductKey, communityProductName, consolidateCommunityProducts } from "../community-product-identity.js";
+
+test("SKU-prefixed Lapras screenshot titles combine with the plain title and display without the code", () => {
+  const withCode="(10-10465-169) Pokémon TCG: 30th Celebration Mini Tin – Lapras (Day)";
+  const plain="Pokemon TCG: 30th Celebration Mini Tin – Lapras (Day)";
+  assert.equal(communityProductKey(withCode),communityProductKey(plain));
+  const records=[{items:[{name:withCode,quantity:5}]},{items:[{name:plain,quantity:2}]}];
+  const before=structuredClone(records);
+  const products=consolidateCommunityProducts(records);
+  assert.equal(products.length,1);assert.equal(products[0].quantity,7);
+  assert.doesNotMatch(products[0].name,/10-10465-169/);
+  assert.deepEqual(records,before,"display grouping leaves saved orders unchanged");
+});
+
+test("code-prefix cleanup preserves real editions, pack counts and character designs", () => {
+  for(const title of ["(151) Pokemon TCG Collection","(3-Pack) Pokemon TCG Blister","(2026-Edition) Pokemon TCG Box"])
+    assert.equal(communityProductName(title),title);
+  assert.equal(communityProductName("(SKU: ABC-123) Pokemon TCG Box"),"Pokemon TCG Box");
+  assert.equal(communityProductName("(123456789) Pokemon TCG Box"),"Pokemon TCG Box");
+  assert.notEqual(communityProductKey("(10-10465-169) Pokemon TCG: 30th Celebration Mini Tin – Lapras (Day)"),
+    communityProductKey("Pokemon TCG: 30th Celebration Mini Tin – Pikachu (Night)"));
+  assert.equal(communityProductKey("(10-10465-169) Pokemon TCG: 30th Celebration Mini Tin"),
+    communityProductKey("Pokemon TCG: 30th Celebration Mini Tin – Lapras (Day)"));
+});
 
 test("equivalent titles from different retailers normalize to one identity", () => {
   const names=["Target - Pokémon TCG: Delta Reign Elite Trainer Box",

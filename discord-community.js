@@ -5,6 +5,7 @@ import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload 
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
+import { createDropMessageRetention } from "./discord-drop-retention.js";
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
@@ -2424,7 +2425,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const previous = panels[message.id];
       if (!products.length) {
         if (previous?.messageId) {
-          await api("/channels/" + skuRequestsChannelId + "/messages/" + previous.messageId, "DELETE")
+          await api("/channels/" + skuRequestsChannelId + "/messages/" + previous.messageId, "PATCH", { components: [] })
             .catch(error => { if (!/HTTP 404/.test(error.message)) throw error; });
           delete panels[message.id];
           await writeSkuFile(skuReminderPanelsFile, panels);
@@ -2458,7 +2459,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       for (const sourceId of retiredSources) {
         const previous = panels[sourceId];
         if (!previous) continue;
-        await api("/channels/" + skuRequestsChannelId + "/messages/" + previous.messageId, "DELETE")
+        await api("/channels/" + skuRequestsChannelId + "/messages/" + previous.messageId, "PATCH", { components: [] })
           .catch(error => { if (!/HTTP 404/.test(error.message)) throw error; });
         delete panels[sourceId];
         changed = true;
@@ -2499,7 +2500,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         await writeSkuFile(skuMenusFile, menus);
       }
       for (const id of shouldShow ? sent.filter(id => id !== menu.id) : sent) {
-        try { await api(`/channels/${message.channel_id}/messages/${id}`, "DELETE"); }
+        try { await api(`/channels/${message.channel_id}/messages/${id}`, "PATCH", { components: [] }); }
         catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
       }
       if (!shouldShow) {
@@ -2679,6 +2680,24 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       return { eligible: recipients.length, sent, recent, failed, answered };
     });
   }
+  const cleanupExpiredDropMessages = createDropMessageRetention({
+    api, getChannelIds: () => dropChannelIds,
+    onError: (error, channelId) => console.error("Discord ten-day drop cleanup:", channelId, error.message),
+    onDeleted: async (_channelId, retiredSources) => {
+      await withSkuQueue(async () => {
+        const menus = await readSkuFile(skuMenusFile);
+        for (const id of retiredSources) delete menus[id];
+        await writeSkuFile(skuMenusFile, menus);
+        const drafts = await readSkuFile(skuDraftsFile);
+        for (const key of Object.keys(drafts)) {
+          if ([...retiredSources].some(id => key.endsWith(":" + id))) delete drafts[key];
+        }
+        await writeSkuFile(skuDraftsFile, drafts);
+      });
+      // Owner-channel reminders remain visible; only their expired controls retire.
+      await retireOwnerSkuReminderPanels(retiredSources);
+    }
+  });
   const pendingDropEdits = new Map();
   function scheduleEditedDropAlert(channelId, messageId) {
     if (!retailerDropLabels[channelId] || !messageId) return;
@@ -2696,41 +2715,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function onDropPost(d) {
     if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id ||
       d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0)) return;
-    // A reply must leave the entire existing drop and its controls intact.
-    if (isNewDropPost(d)) {
-      try {
-        const retiredSources = new Set();
-        let before = d.id;
-        for (let page = 0; page < 20; page++) {
-          const history = await api(`/channels/${d.channel_id}/messages?before=${before}&limit=100`);
-          if (!history.length) break;
-          for (const previous of history) {
-            if (!previous.pinned && [0, 19].includes(previous.type)) {
-              try { await api(`/channels/${d.channel_id}/messages/${previous.id}`, "DELETE"); }
-              catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
-              if ((!previous.author?.bot && !previous.webhook_id) ||
-                  isFormattedDropPost(previous, appId)) retiredSources.add(previous.id);
-            }
-          }
-          before = history.at(-1).id;
-          if (history.length < 100) break;
-        }
-        if (retiredSources.size) await withSkuQueue(async () => {
-          const menus = await readSkuFile(skuMenusFile);
-          for (const id of retiredSources) delete menus[id];
-          await writeSkuFile(skuMenusFile, menus);
-          const drafts = await readSkuFile(skuDraftsFile);
-          for (const key of Object.keys(drafts)) {
-            if ([...retiredSources].some(id => key.endsWith(":" + id))) delete drafts[key];
-          }
-          await writeSkuFile(skuDraftsFile, drafts);
-        });
-        await retireOwnerSkuReminderPanels(retiredSources);
-      } catch (error) {
-        discordCommunityStatus.error = `Drop message cleanup: ${error.message}`;
-        console.error("Discord drop message cleanup:", error.message);
-      }
-    }
+    // Posting a new drop never deletes earlier messages. The periodic
+    // age-based sweep alone expires unpinned drop messages after ten days.
     // Only the owner can invoke automatic monitor-paste conversion. Regular
     // staff drop posts and free-form messages keep their existing behavior.
     const monitored = isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")
@@ -2751,10 +2737,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           await notifyRetailerSkuChange(formatted);
         }
         if (rendered.length === payloads.length) {
-          // Delete the raw pasted monitor report only after the formatted
-          // products and their selection panels are successfully published.
-          await api(`/channels/${d.channel_id}/messages/${d.id}`, "DELETE")
-            .catch(error => console.warn("Formatted drop published; pasted source remains:", error.message));
+          // Keep the original post too; every drop message keeps its own
+          // ten-day retention window, regardless of newer formatted posts.
           return;
         }
       } catch (error) {
@@ -3819,6 +3803,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));
+      await cleanupExpiredDropMessages();
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
       await syncAll(); await connect(); void verifyAiConnection();
     }
@@ -3826,6 +3811,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   setTimeout(setup, 5000).unref?.();
   setInterval(syncAll, 60000).unref?.();
+  setInterval(() => void cleanupExpiredDropMessages().catch(error =>
+    console.error("Discord ten-day drop cleanup:", error.message)), 5 * 60000).unref?.();
   setInterval(() => {
     if (!discordCommunityStatus.oneOnOneReady) return;
     void withSessions(async () => reconcileSessions(await readSessions())).catch(error => {
