@@ -98,7 +98,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   if(added)bankAuditRecord(d,key,'auto-personal-pkc-email-reconciliation',{added,candidates:candidates.size});
   return {added,candidates:candidates.size,alreadyUsed:[...candidates].filter(x=>used.has(x)).length};
  }
- async function write(scope,data){
+ async function write(scope,data,{allowedReferenceEdits=new Set(),allowVerifiedSnapshotRestore=false}={}){
    scopeValue(scope);
    if(scope==='personal'){
     // Reconcile automatically when new non-PKC Personal profile/email identities
@@ -115,6 +115,27 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    if(!data||data.version!==1||!data.groups||typeof data.groups!=='object')
      throw Error('Refusing to overwrite profile data with an invalid vault.');
    for(const rows of Object.values(data.groups))for(const row of rows)row.data=stripVerifiers(row.data,0,scope);
+   // Fail closed if any existing profile would silently lose or change its
+   // independent, non-payment profile reference during a routine save.
+   // The guard compares the same immutable profile ID within the same owner
+   // bank. It never reads CVV/CVC fields and never logs code values.
+   // An authenticated manual code edit or explicitly confirmed full snapshot
+   // restore can authorize a reference change; ordinary imports/jigs cannot.
+   const previous=await read(scope);
+   if(!allowVerifiedSnapshotRestore){
+    for(const [ownerKey,previousRows] of Object.entries(previous.groups||{})){
+     const updated=new Map((data.groups[ownerKey]||[]).filter(row=>row?.id).map(row=>[row.id,row]));
+     for(const oldRow of previousRows){
+      const next=updated.get(oldRow.id);
+      if(!next)continue; // Explicit deletions are handled by their own commands.
+      const oldReference=independentCode(oldRow.data);
+      if(!oldReference)continue;
+      if(independentCode(next.data)!==oldReference&&
+         !allowedReferenceEdits.has(ownerKey+'|'+oldRow.id))
+       throw Error('An existing independent profile reference would be replaced or cleared without an explicit code edit. No information was saved.');
+     }
+    }
+   }
    for(const [key,rows] of Object.entries(data.groups))for(const row of rows)Completion.synchronize(row,data.audit?.[key]||[],now);
    requireCrypto();await fs.mkdir(baseDir,{recursive:true,mode:0o700});
    const tmp=paths[scope]+'.'+uuid()+'.tmp';
@@ -134,7 +155,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
        body=JSON.parse(safeStorage.decryptString(await fs.readFile(path.join(snapshotsDir,name))));
        if(body?.version!==1||!body?.groups||typeof body.groups!=='object')throw Error('Invalid saved snapshot.');
      }catch{throw Error('Encrypted owner profile backup cannot be decrypted on this device. Current vault preserved.');}
-     await write(scope,body);
+     await write(scope,body,{allowVerifiedSnapshotRestore:true});
      return {restored:true,scope,groups:Object.keys(body.groups).length};
    });
  }
@@ -710,7 +731,33 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  }
 
  async function librarySettings(scope,customerId){await pending;const key=bank(scope,customerId),d=await read(scope);return structuredClone(d.librarySettings?.[key]||{});}
- async function libraryTransaction(scope,customerId,action,beforeWrite){const key=bank(scope,customerId);if(typeof action!=='function'||typeof beforeWrite!=='function')throw Error('Invalid profile transaction.');return serial(async()=>{const d=await read(scope);d.groups[key]||=[];d.emailBanks||={};d.emailBanks[key]||=[];d.importBatches||={};d.importBatches[key]||=[];const original=JSON.stringify(d);const context={rows:d.groups[key],emails:d.emailBanks[key],importBatches:d.importBatches[key],audit:(action,email,detail)=>auditRecord(d,key,action,email,detail),settings:d.librarySettings?.[key]||{}};const result=await action(context);if(context.rows.length>10000)throw Error('Profile vault limit reached.');d.groups[key]=context.rows;d.librarySettings||={};d.librarySettings[key]=context.settings;beforeWrite();if(JSON.stringify(d)!==original)await write(scope,d);return result;});}
+ async function libraryTransaction(scope,customerId,action,beforeWrite){
+  const key=bank(scope,customerId);
+  if(typeof action!=='function'||typeof beforeWrite!=='function')throw Error('Invalid profile transaction.');
+  return serial(async()=>{
+   const d=await read(scope);
+   d.groups[key]||=[];d.emailBanks||={};d.emailBanks[key]||=[];
+   d.importBatches||={};d.importBatches[key]||=[];
+   const original=JSON.stringify(d),allowedReferenceEdits=new Set();
+   const context={
+    rows:d.groups[key],emails:d.emailBanks[key],importBatches:d.importBatches[key],
+    audit:(action,email,detail)=>auditRecord(d,key,action,email,detail),
+    settings:d.librarySettings?.[key]||{},
+    allowIndependentReferenceEdit:profileId=>{
+     if(!d.groups[key].some(row=>row.id===profileId))
+      throw Error('Reference change authorization requires an existing profile in this vault.');
+     allowedReferenceEdits.add(key+'|'+profileId);
+    }
+   };
+   const result=await action(context);
+   if(context.rows.length>10000)throw Error('Profile vault limit reached.');
+   d.groups[key]=context.rows;
+   d.librarySettings||={};d.librarySettings[key]=context.settings;
+   beforeWrite();
+   if(JSON.stringify(d)!==original)await write(scope,d,{allowedReferenceEdits});
+   return result;
+  });
+ }
  async function scanRows(imports=[],webRecords=[],allowPersonalDetail=false){await pending;
   if(!Array.isArray(imports)||imports.length>500)throw Error('Too many imported rows to scan.');
   const [personal,aco]=await Promise.all([read('personal'),read('aco')]);
