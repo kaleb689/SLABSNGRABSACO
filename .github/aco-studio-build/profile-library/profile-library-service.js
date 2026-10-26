@@ -466,7 +466,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     const source=raw.data&&typeof raw.data==='object'&&!Array.isArray(raw.data)?raw.data:raw;
     const retailer=detectedRetailer(raw.retailer||raw.retailerId||raw.site||raw.store||
       source.retailer||source.retailerId||source.site||source.store)||detectedRetailer(file.fileName);
-    const email=C.email(C.values(source).email||source.email||raw.email);
+    const email=C.email(C.values(source).email||raw.email||source.email||
+      raw.loginEmail||source.loginEmail||raw.accountEmail||source.accountEmail||
+      raw.login_email||source.login_email||raw.account?.email);
     const candidates=retailer&&email?(byIdentity.get(retailer+'|'+email)||[]):[];
     if(candidates.length!==1){unmatched++;continue;}
     const row=candidates[0];
