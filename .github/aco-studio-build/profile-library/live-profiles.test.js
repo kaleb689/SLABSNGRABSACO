@@ -238,3 +238,76 @@ test('all Personal retailer profiles and future email bank additions populate un
  assert.equal(inventory.emails.filter(x=>x.status==='available').length,before);
  assert.equal(inventory.targetLiveReconciliation.personalAllRetailers,true);
 });
+
+
+test('Importing PKC Live immediately retires matching Ready for Export and Unused profiles but preserves encrypted recovery history',async t=>{
+ const h=await library(t),readyEmail='new-pkc-ready@example.test',unusedEmail='new-pkc-unused@example.test';
+ await commit(h,await preview(h,[complete('pokemoncenter',readyEmail)],h.p,'pokemoncenter'));
+ const unusedImport=await h.profiles.importRows({...h.p,retailer:'pokemoncenter',status:'available',
+  rows:[complete('pokemoncenter',unusedEmail)]});
+ assert.equal(unusedImport.added.length,1);
+ await h.service.importEmails(event,{...h.p,retailer:'pokemoncenter',emails:[readyEmail,unusedEmail]});
+ const before=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(before.filter(x=>x.retailer==='pokemoncenter'&&x.bank!=='live').length,2);
+ const input=[{...complete('pokemoncenter',readyEmail),password:'actual-live-ready'},
+  {...complete('pokemoncenter',unusedEmail),password:'actual-live-unused'}];
+ const result=await commit(h,await live(h,input,h.p,'pokemoncenter'));
+ assert.equal(result.imported,2);
+ assert.equal(result.supersededNonLive,2);
+ const after=(await h.lib.list(event,h.p)).profiles;
+ for(const email of [readyEmail,unusedEmail]){
+  const rows=after.filter(x=>x.retailer==='pokemoncenter'&&x.email===email);
+  assert.equal(rows.length,1,'Live import replaces all matching non-live accounts within PKC');
+  assert.equal(rows[0].bank,'live');
+  assert.match(rows[0].data.password,/actual-live/);
+ }
+ const inv=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});
+ for(const email of [readyEmail,unusedEmail])assert.ok(!inv.emails.some(x=>x.email===email&&x.status==='available'),email+' must be consumed');
+ const raw=await fs.readFile(h.profiles.paths.personal);
+ assert.equal(raw.toString('utf8').startsWith('ENCRYPTED:'),true);
+ const vault=JSON.parse(raw.toString('utf8').slice('ENCRYPTED:'.length));
+ const archived=vault.supersededLiveImportProfiles.owner;
+ assert.equal(archived.length,2);
+ assert.deepEqual(archived.map(x=>x.profile.email).sort(),[readyEmail,unusedEmail].sort());
+ assert.ok(archived.every(x=>x.replacedByLiveProfileId&&x.batchId));
+ const snapshots=await h.profiles.backupList('personal');assert.ok(snapshots.length>0);
+});
+test('PKC Live import removes every duplicate Ready profile, not an unrelated retailer or customer record',async t=>{
+ const h=await library(t),email='shared-retailer-identity@example.test';
+ await h.profiles.importRows({...h.p,retailer:'pokemoncenter',rows:[complete('pokemoncenter',email)]});
+ await h.profiles.importRows({...h.p,retailer:'target',rows:[complete('target',email)]});
+ await h.profiles.importRows({...h.a,retailer:'pokemoncenter',rows:[complete('pokemoncenter',email)]});
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  const original=ctx.rows.find(r=>r.retailer==='pokemoncenter'&&r.email===email);
+  ctx.rows.push({...structuredClone(original),id:'older-pkc-ready-duplicate',createdAt:'2026-10-01T00:00:00.000Z'});
+ },()=>{});
+ const result=await commit(h,await live(h,[complete('pokemoncenter',email)],h.p,'pokemoncenter'));
+ assert.equal(result.supersededNonLive,2);
+ const owner=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(owner.filter(x=>x.retailer==='pokemoncenter'&&x.email===email).length,1);
+ assert.equal(owner.filter(x=>x.retailer==='target'&&x.email===email).length,1);
+ assert.equal((await h.lib.list(event,h.a)).profiles.filter(x=>x.retailer==='pokemoncenter'&&x.email===email).length,1);
+});
+test('A website-linked Ready profile blocks automatic Live duplicate removal and leaves all owner data unchanged',async t=>{
+ const h=await library(t),email='linked-protected@example.test';
+ await h.profiles.importRows({...h.p,retailer:'pokemoncenter',rows:[complete('pokemoncenter',email)]});
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  const existing=ctx.rows.find(x=>x.retailer==='pokemoncenter'&&x.email===email);
+  existing.source='website-linked-profile';existing.sourceLinked=true;existing.websiteAuthoritative=true;
+ },()=>{});
+ const before=(await h.lib.list(event,h.p)).profiles;
+ const p=await live(h,[complete('pokemoncenter',email)],h.p,'pokemoncenter');
+ await assert.rejects(commit(h,p),/Unlink it explicitly/);
+ const after=(await h.lib.list(event,h.p)).profiles;
+ assert.deepEqual(after,before);
+});
+test('Reusing a Ready profile ID for an explicitly reviewed Live update leaves exactly one Live row',async t=>{
+ const h=await library(t),email='upgrade-ready@example.test';
+ await h.profiles.importRows({...h.p,retailer:'pokemoncenter',rows:[complete('pokemoncenter',email)]});
+ const old=(await h.lib.list(event,h.p)).profiles.find(x=>x.email===email);
+ const p=await live(h,[complete('pokemoncenter',email)],h.p,'pokemoncenter');
+ const result=await commit(h,p,{updateExisting:true});
+ assert.equal(result.supersededNonLive,1);
+ const matches=(await h.lib.list(event,h.p)).profiles.filter(x=>x.email===email);
+ assert.equal(matches.length,1);assert.equal(matches[0].id,old.id);assert.equal(matches[0].bank,'live');
+});

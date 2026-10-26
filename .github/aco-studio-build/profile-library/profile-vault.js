@@ -647,8 +647,33 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     if(!prior&&item.expectedHash&&updateExisting&&occurrence===0&&matches.length===1)throw Error('Stored profile changed after preview. Preview the import again.');
     prepared.push({...prior,id:prior?.id||uuid(),retailer,email,label:name(data.profile_name||data.name||email),group:retailer,source:'owner-created-profile',status:'active',bank:'live',liveSince:prior?.liveSince||now(),createdAt:prior?.createdAt||now(),revision:(prior?.revision??-1)+1,importBatchId:prior?.importBatchId||(!prior?batchId:null),data,format:item.format,assetRefs:prior?.assetRefs||{}});
    }
-   if(rows.length+prepared.filter(x=>!rows.some(r=>r.id===x.id)).length>10000)throw Error('Profile vault is full.');
-   const ids=new Set(prepared.map(x=>x.id));d.groups[key]=[...rows.filter(x=>!ids.has(x.id)),...prepared];
+   // A Live import is authoritative for the same owner + retailer + email.
+   // Remove matching non-Live local profiles from Ready for Export / Unused
+   // immediately, but archive full prior records *inside this encrypted vault*.
+   // Existing Live records and different retailers/customers remain untouched.
+   const liveIdentities=new Set(prepared.map(x=>x.retailer+'|'+normalizeEmail(x.email)));
+   const displaced=rows.filter(x=>x.bank!=='live'&&liveIdentities.has(x.retailer+'|'+normalizeEmail(x.email)));
+   if(displaced.some(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile'))
+    throw Error('An imported Live account matches a website-linked profile. Unlink it explicitly before importing; no profiles were changed.');
+   const displacedIds=new Set(displaced.map(x=>x.id));
+   const ids=new Set(prepared.map(x=>x.id));
+   if(rows.filter(x=>!ids.has(x.id)&&!displacedIds.has(x.id)).length+prepared.length>10000)throw Error('Profile vault is full.');
+   if(displaced.length){
+    d.supersededLiveImportProfiles||={};d.supersededLiveImportProfiles[key]||=[];
+    if(d.supersededLiveImportProfiles[key].length+displaced.length>20000)
+     throw Error('The encrypted Live-import recovery archive is full. No profiles were changed.');
+    const replacedAt=now(),activeIdsByEmail=new Map();
+    for(const live of prepared)activeIdsByEmail.set(live.retailer+'|'+normalizeEmail(live.email),live.id);
+    for(const old of displaced){
+     d.supersededLiveImportProfiles[key].push({profile:structuredClone(old),replacedAt,
+      replacedByLiveProfileId:activeIdsByEmail.get(old.retailer+'|'+normalizeEmail(old.email))||null,
+      batchId:batchId||null});
+     auditRecord(d,key,'live-import-superseded-nonlive',old.email,{retailer:old.retailer,priorProfileId:old.id,bank:old.bank||'working'});
+    }
+   }
+   // Displaced records no longer appear in Ready for Export or Unused, while
+   // the earlier encrypted full-vault snapshot still exists for restoration.
+   d.groups[key]=[...rows.filter(x=>!ids.has(x.id)&&!displacedIds.has(x.id)),...prepared];
    d.emailBanks||={};d.emailBanks[key]||=[];
    const usedPkc=new Set([...rows,...prepared].filter(x=>x.retailer==='pokemoncenter').map(x=>normalizeEmail(x.email)));
    for(const x of d.emailBanks[key]||[])if(x.retailer==='pokemoncenter')usedPkc.add(x.email);
@@ -667,7 +692,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
      fileNames:fileNames.slice(0,100).map(s=>String(s).slice(0,200)),createdIds:created.map(x=>x.id),
      imported:prepared.length,updatedExisting:prepared.length-created.length,removedAt:null});
    }
-   beforeWrite();await write(scope,d);return {imported:prepared.length,pkcEmailsAdded,bank:'live',batchId};
+   beforeWrite();await write(scope,d);return {imported:prepared.length,pkcEmailsAdded,bank:'live',batchId,supersededNonLive:displaced.length,retiredFromUnusedAndReady:displaced.length};
   });
  }
  // History tracks only NEW local profile IDs created by each import; a batch
