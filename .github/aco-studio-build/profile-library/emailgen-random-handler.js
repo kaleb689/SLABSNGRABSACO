@@ -18,7 +18,7 @@
   sync.textContent='Publish / sync '+unsynced.length+' assigned email(s)';
  }
  async function importLiveRandom(){
-  const live=unsyncedRandom().filter(r=>r.status==='live');
+  const live=unsyncedRandom().filter(r=>r.status==='live'&&r.forwardingTestedAt&&r.forwardingTestTarget===r.target);
   if(!live.length)return {added:0,already:0};
   if(!window.JigPersonalGuard?.ensureUnlocked||!await window.JigPersonalGuard.ensureUnlocked())
    throw Error('Unlock the Personal vault before adding emails to a retailer pool.');
@@ -53,6 +53,43 @@
   }
   const report=await importLiveRandom(),left=unsyncedRandom();
   randomNotice(report.added+' verified live email(s) added to unused pools; '+report.already+' already present; '+left.length+' still awaiting activation, verification or review.',left.length===0);
+  refreshRandomChooser();
+ }
+ async function testAllRandomEmails(){
+  requireOwner();
+  const mailbox=$e('emailTarget').value.trim().toLowerCase();
+  const smtpHost=$e('randomTestSmtp').value.trim().toLowerCase();
+  const imapHost=$e('randomTestImap').value.trim().toLowerCase();
+  const password=$e('randomTestPassword').value;
+  if(!validEmail(mailbox)||mailbox.endsWith('@'+OWNER_DOMAIN))
+   throw Error('Enter the verified external forwarding inbox in the field above.');
+  if(!password)throw Error('Enter the app password for your verified inbox to test delivery.');
+  const selected=records.filter(r=>r.randomGenerated===true&&r.target===mailbox);
+  if(!selected.length)throw Error('No generated aliases forward to this inbox.');
+  const live=selected.filter(r=>r.status==='live');
+  if(!live.length)throw Error('Publish and activate forwarding first, then test delivery.');
+  const verify=api()?.testForwarding;
+  if(typeof verify!=='function')throw Error('This build is missing the end-to-end SMTP/IMAP test service.');
+  let passed=0,failed=0,attempted=0;
+  for(let index=0;index<live.length;index+=100){
+   const batch=live.slice(index,index+100);
+   $e('randomTestStatus').textContent='Sending test messages and checking inbox delivery: '+attempted+'/'+live.length+' tested.';
+   const result=await verify({mailbox,smtpHost,imapHost,password,aliases:batch.map(r=>r.alias)});
+   for(const item of result.results||[]){
+    const row=batch.find(r=>r.alias===item.alias);
+    if(!row)continue;
+    if(item.status==='delivered'){
+     row.forwardingTestedAt=new Date().toISOString();row.forwardingTestTarget=mailbox;passed++;
+    }else{
+     row.forwardingTestedAt=null;row.forwardingTestTarget=null;failed++;
+    }
+   }
+   attempted+=batch.length;
+   if(!await store())throw Error('Mailbox tests completed but results could not be saved in the encrypted Email Bank.');
+  }
+  const noRule=selected.length-live.length,added=await importLiveRandom();
+  $e('randomTestStatus').textContent='Delivery tests: '+passed+' PASSED (received in IMAP), '+failed+' not confirmed, '+noRule+' awaiting active Cloudflare routing. '+added.added+' verified emails imported to unused retailer pools. No failed test was marked usable.';
+  randomNotice(passed+' forwarded addresses confirmed by a real inbox receipt; '+failed+' failed/unconfirmed.',failed===0&&noRule===0);
   refreshRandomChooser();
  }
  function setupRandomEmailGen(){
@@ -110,6 +147,14 @@
    try{await publishRandomAndSync();}
    catch(error){randomNotice(String(error.message||error));}
    finally{randomGenBusy=false;sync.disabled=false;refreshRandomChooser();}
+  });
+  const testAll=$e('randomAliasTestAll');
+  if(!testAll)throw Error('Test All Emails button is missing.');
+  testAll.addEventListener('click',async()=>{
+   if(randomGenBusy)return;randomGenBusy=true;testAll.disabled=true;
+   try{await testAllRandomEmails();}
+   catch(error){$e('randomTestStatus').textContent='Delivery test did not pass: '+String(error?.message||error)+'. No unverified email was imported.';}
+   finally{$e('randomTestPassword').value='';testAll.disabled=false;randomGenBusy=false;refreshRandomChooser();}
   });
   refreshRandomChooser();
  }
