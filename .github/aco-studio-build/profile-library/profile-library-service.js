@@ -456,7 +456,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    byIdentity.get(key).push(row);
   }
   const matches=new Map(),conflicts=new Set();
-  let cardMismatches=0,unmatched=0;
+  let cardMismatches=0,unmatched=0,excludedVerifierFormat=0;
   for(const file of files){
    const parsed=Core.parseFile(file.fileName,file.text);
    for(const raw of parsed.records||[]){
@@ -474,10 +474,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     // Values in legacy-named columns may only be considered after explicit
     // user attestation that the original source holds non-payment references.
     const sourceFields=[source,source.card,raw,raw.card].filter(v=>v&&typeof v==='object');
-    const codes=sourceFields.flatMap(record=>Object.entries(record)
+    const allValues=sourceFields.flatMap(record=>Object.entries(record)
      .filter(([name])=>/^(?:cc_cvv|cvv|cvc|cid|cvv2|cvc2)$/i.test(name))
      .map(([,value])=>value))
      .filter(value=>typeof value==='string'&&value.length>0&&value.length<=100&&!/[\x00-\x1f\x7f]/.test(value));
+    // A 3- or 4-digit numeric value could be a card verifier. Never treat
+    // that ambiguous format as a non-payment reference, even on attestation.
+    const codes=allValues.filter(v=>!/^[0-9]{3,4}$/.test(v.trim()));
+    excludedVerifierFormat+=allValues.length-codes.length;
     const distinct=[...new Set(codes)];
     if(!distinct.length)continue;
     if(conflicts.has(row.id))continue;
@@ -496,7 +500,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(codeRestorePlans.size>20)codeRestorePlans.delete(codeRestorePlans.keys().next().value);
   }
   return {preview:true,token,recoverable:matches.size,conflicts:conflicts.size,
-   cardMismatches,unmatched,stillMissing:current.filter(r=>!C.profileCode(r.data)).length-matches.size};
+   cardMismatches,unmatched,excludedVerifierFormat,stillMissing:current.filter(r=>!C.profileCode(r.data)).length-matches.size};
  }
  async function restoreHistoricalReferences(e,p){
   const a=await access(e,p);
