@@ -95,7 +95,9 @@ test('Select All on Page never includes any profile from a different pagination 
  const entries=Array.from({length:451},(_,i)=>({id:'record-'+i}));
  let drawCount=0;const selectAll={onclick:null},context={visible:()=>entries,selected:new Set(['foreign-vault','record-0']),q:()=>selectAll,draw:()=>{drawCount++;}};
  vm.createContext(context);
- vm.runInContext(source.slice(helperStart,helperEnd)+'\n'+source.slice(handlerStart,handlerEnd+1)+'\nthis.pageRows=pageRows;',context);
+ const pageStart=source.indexOf(' const pageRows=()=>visible()',helperEnd);const pageEnd=source.indexOf('\n',pageStart);
+ assert.ok(pageStart>helperEnd&&pageEnd>pageStart,'page-scoped helper is present after sort controls');
+ vm.runInContext(source.slice(helperStart,helperEnd)+'\n'+source.slice(pageStart,pageEnd)+'\n'+source.slice(handlerStart,handlerEnd+1)+'\nthis.pageRows=pageRows;',context);
  vm.runInContext('pageIndex=1;',context);
  selectAll.onclick();
  assert.deepEqual([...context.selected],entries.slice(200,400).map(x=>x.id));
