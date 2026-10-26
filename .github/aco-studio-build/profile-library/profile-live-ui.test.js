@@ -87,7 +87,7 @@ test('Profiles export is disabled in Unused and without selected profiles, but a
 
 test('Select All on Page never includes any profile from a different pagination page',()=>{
  const helperStart=source.indexOf(' const PAGE_SIZE=200;let pageIndex=0;');
- const helperEnd=source.indexOf('\n const pager=',helperStart);
+ const helperEnd=source.indexOf('\n let sortMode=',helperStart);
  assert.ok(helperStart>0&&helperEnd>helperStart,'page-scoped selection helper exists');
  const handlerStart=source.indexOf("q('all').onclick=()=>{selected.clear();");
  const handlerEnd=source.indexOf(";q('clear').onclick",handlerStart);
@@ -119,7 +119,7 @@ test('Search and duplicates cannot select a different retailer or status tab',()
   {id:'target-unused',retailer:'target',bank:'working',stage:'in-progress',group:'target',email:'shared@example.test'}
  ];
  const fields={search:{value:'shared'},retailer:{value:'target'}};
- const context={rows:items,unusedAccounts:[],stage:'completed',group:'all',issueView:'all',q:key=>fields[key],profileIssues:()=>[],searchable:row=>row.email};
+ const context={rows:items,unusedAccounts:[],stage:'completed',group:'all',issueView:'all',q:key=>fields[key],profileIssues:()=>[],searchable:row=>row.email,sortedProfiles:profiles=>profiles};
  vm.createContext(context);
  vm.runInContext(source.slice(start,end)+'\nthis.results=visible;',context);
  assert.deepEqual(context.results().map(x=>x.id),['target-ready']);
