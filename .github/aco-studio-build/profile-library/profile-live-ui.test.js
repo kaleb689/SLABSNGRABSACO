@@ -204,7 +204,7 @@ test('Ready for Export sorts generated Pokémon Center profiles newest-first wit
  const context={stage:'completed',sortMode:'newest',Date,Number,String};
  vm.createContext(context);
  vm.runInContext(source.slice(start,end)+"\nthis.sort=sortedProfiles;",context);
- const earlier={id:'a',email:'a@example.test',createdAt:'2026-10-10T10:00:00.000Z'};
+ const earlier={id:'a',email:'a@example.test',createdAt:'2026-10-10T10:00:00.000Z',completedAt:'2026-10-26T23:00:00.000Z'};
  const newB={id:'b',email:'b@example.test',createdAt:'2026-10-01T10:00:00.000Z',profileGeneratedAt:'2026-10-26T15:12:30.000Z'};
  const newC={id:'c',email:'c@example.test',createdAt:'2026-10-02T10:00:00.000Z',profileGeneratedAt:'2026-10-26T15:12:31.000Z'};
  const originals=[earlier,newB,newC];
