@@ -91,3 +91,12 @@
  color:#efffff;
  box-shadow:inset 0 0 0 1px rgba(77,226,231,.5);
 }
+
+/* Profile generation order and exact most-recent batch selection sit beside
+   the retailer stage controls, above the profile list. No profile data moves. */
+.profileLibrary .profileLibrarySortToolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:8px 0 12px}
+.profileLibrary .profileLibrarySortToolbar label{display:grid;gap:5px;font-size:12px;color:#cfe8f7}
+.profileLibrary .profileLibrarySortToolbar input[type=number]{width:110px;min-height:38px}
+.profileLibrary .profileLibrarySortToolbar select{min-width:210px;min-height:38px}
+.profileLibrary .profileLibrarySortToolbar button{min-height:38px}
+.profileLibrary .profileLibraryCards .profileSelectableCard.isSelected{outline:2px solid #35dfe4;outline-offset:2px}

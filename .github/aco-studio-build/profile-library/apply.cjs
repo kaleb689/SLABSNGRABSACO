@@ -437,3 +437,23 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  fs.writeFileSync(pkgFile,JSON.stringify(pkg,null,2)+'\n');
  fs.copyFileSync(path.join(__dirname,'emailgen-owner-remember.test.js'),path.join(root,'tests','emailgen-owner-remember.test.js'));
 }
+
+
+// Non-destructive new Email Bank setup. Never erase other app data or profiles.
+// After archiving the original ciphertext, stop automatic old-passphrase restore
+// until the owner has finished creation and saved a NEW bank passphrase.
+{
+ const source=fs.readFileSync(path.join(__dirname,'emailgen-safe-new-bank.js'),'utf8');
+ replace('app.js',' async function authorizeOwner(){',source+'\n async function authorizeOwner(){');
+ replace('app.js',
+  " if(unlocked||rememberedLoginBusy||typeof api()?.restoreRemembered!=='function')return;",
+  " if(unlocked||rememberedLoginBusy||typeof api()?.restoreRemembered!=='function'||localStorage.getItem(NEW_SETUP_PENDING))return;");
+ replace('app.js',
+  " addEvents();setupRememberedOwnerControls();render();void restoreRememberedOwner();",
+  " addEvents();setupRememberedOwnerControls();setupNewEmailBankReset();render();void restoreRememberedOwner();");
+ replace('app.js',
+  "  render();\n  try{const saved=await api().saveRemembered(passphrase);",
+  "  render();\n  // A successful unlock wrote the NEW encrypted bank. Automatic login may now\n  // resume on later launches; the separately archived older bank is untouched.\n  if(localStorage.getItem(NEW_SETUP_PENDING))localStorage.removeItem(NEW_SETUP_PENDING);\n  try{const saved=await api().saveRemembered(passphrase);");
+ fs.copyFileSync(path.join(__dirname,'emailgen-safe-new-bank.js'),path.join(root,'emailgen-safe-new-bank.js'));
+ fs.copyFileSync(path.join(__dirname,'emailgen-new-bank-reset.test.js'),path.join(root,'tests','emailgen-new-bank-reset.test.js'));
+}

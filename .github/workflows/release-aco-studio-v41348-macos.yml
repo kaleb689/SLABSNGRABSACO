@@ -1,4 +1,4 @@
-name: Publish ACO Studio 4.13.61 Mac only after full native verification
+name: Publish ACO Studio 4.13.62 Mac only after full native verification
 on:
   # Authorized publication when approved changes reach main. The publish
   # job is gated by full native Mac regression, signature, first-launch,
@@ -15,10 +15,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-461-macos
+  group: aco-studio-462-macos
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.61'
+  ACO_VERSION: '4.13.62'
 jobs:
   mac:
     if: github.ref == 'refs/heads/main'
@@ -231,7 +231,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-4.13.61-*
+          pattern: ACO-Studio-4.13.62-*
           path: installers
           merge-multiple: true
       - name: Verify Apple Silicon before publishing
@@ -239,7 +239,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,json,hashlib
-          root=pathlib.Path('installers');v='4.13.61';platforms={};sums=[]
+          root=pathlib.Path('installers');v='4.13.62';platforms={};sums=[]
           arch='arm64'
           mode=(root/f'signing-{arch}.txt').read_text().strip()
           assert mode in ('adhoc','developer-id')
@@ -252,7 +252,7 @@ jobs:
             with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
             sums.append(digest+'  '+p.name)
             if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
-          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Owner Email Gen remembers Cloudflare Account ID, Zone ID, scoped API token, and encrypted Email Bank passphrase securely on this Mac using Electron macOS Keychain-backed safeStorage. It automatically reauthorizes and unlocks on future launches and after updates without repeated credential entry. Existing encrypted emails are preserved; explicit Forget This Mac is available.','platforms':platforms},indent=2))
+          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Profiles: newest-generated first within retailer and stage, selectable newest N (default 26), right-click Export Selected, with generation batch timestamps retained. Email Bank: owner-only Start New Email Bank archives original encrypted ciphertext before new passphrase setup; Cloudflare rules, existing profiles, cards and addresses unchanged.','platforms':platforms},indent=2))
           (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n');(root/'release-tag.txt').write_text(tag)
           PY
       - name: Release the tested installers and advance verified feed
@@ -261,13 +261,13 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.61 fixes repeat Email Gen setup. After one successful Cloudflare and Email Bank unlock, the owner account ID, zone ID, scoped API token, and private bank passphrase are encrypted using macOS Keychain-backed Electron storage in the existing local owner application data directory. Future app restarts and upgrades automatically authorize Cloudflare and reopen the existing encrypted bank without re-entry. The owner can retry a saved login after a network outage or explicitly Forget This Mac. Nothing is stored as plaintext, emailed to a service, or shared with other users. Existing profile, card, address, Email Bank data and encryption passphrase remain unchanged. A revoked Cloudflare token or lost/macOS-migrated Keychain may require reauthorization.
+          ACO Studio 4.13.62 makes newly generated profile accounts appear first in the current retailer and Ready for Export tab, with newest/oldest/email sorting, Select Newest N (default 26) and right-click Export Selected N. Generation dates and batch identities are retained; older profiles may be ordered by original create-from-pools audit records. No profile data is moved or deleted. Email Gen has an explicit Start New Email Bank button, which archives and byte-verifies the previous ciphertext in app-local storage BEFORE starting a new empty bank with a new passphrase. This preserves the old encrypted bank for recovery, does not delete Cloudflare rules or other banks, and suspends old Keychain auto-unlock until the new setup completes. Existing profiles, card banks and address banks remain unchanged.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.61 Mac' --notes-file notes.md --prerelease
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.62 Mac' --notes-file notes.md --prerelease
           else
-            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.61 Mac' --notes-file notes.md --prerelease
+            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.62 Mac' --notes-file notes.md --prerelease
           fi
           # Check that published artifacts exist before advertising the
           # update to existing owners.
