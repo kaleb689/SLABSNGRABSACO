@@ -53,11 +53,26 @@
  const reviewScan=d.createElement('button');reviewScan.type='button';reviewScan.className='btn secondary';
  reviewScan.textContent='Scan All Recovery Sources';
  reviewControls.append(reviewScan);
+ // One-time owner-approved restoration of independent NON-payment references
+ // by exact complete card number. This action is distinct from read-only audit.
+ const legacyConsent=d.createElement('label');
+ legacyConsent.style.cssText='display:block;margin:8px 0';
+ const legacyConsentBox=d.createElement('input');legacyConsentBox.type='checkbox';
+ legacyConsent.append(legacyConsentBox,d.createTextNode(' I confirm the historical values I want to recover are independent non-payment references, NOT payment-card CVV/CVC values. Purely numeric 3- or 4-digit legacy entries will be excluded.'));
+ const legacyPrepare=d.createElement('button');legacyPrepare.type='button';legacyPrepare.className='btn secondary';
+ legacyPrepare.textContent='Prepare verified reference recovery';legacyPrepare.disabled=true;
+ const legacyApply=d.createElement('button');legacyApply.type='button';legacyApply.className='btn primary';
+ legacyApply.textContent='Confirm and restore matching references';legacyApply.disabled=true;
+ legacyConsentBox.onchange=()=>{legacyPrepare.disabled=!legacyConsentBox.checked;legacyApply.disabled=true;legacyToken=null;};
+ reviewControls.append(legacyPrepare,legacyApply);
+ let legacyToken=null;
+ const legacyStatus=d.createElement('div');legacyStatus.setAttribute('role','status');
+ legacyStatus.textContent='Recovery is not started. Nothing is changed until you review a matching-source preview and explicitly confirm.';
  const reviewOutput=d.createElement('div');reviewOutput.setAttribute('role','status');
  reviewOutput.textContent='No scan has been run yet. Your saved information is unchanged.';
  const reviewWarning=d.createElement('small');
  reviewWarning.textContent='Selected original files are read locally in the authenticated desktop process for independent profile-reference matches only. Your files and vaults are not edited, and payment-card CVV/CVC values are not recovered or stored. You may cancel the folder picker to scan built-in sources only.';
- recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,reviewWarning);
+ recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,legacyConsent,legacyStatus,reviewOutput,reviewWarning);
  q('export').before(recoveryReviewPanel);
  const reviewLine=(label,value)=>{
   const p=d.createElement('p'),strong=d.createElement('strong');
@@ -131,6 +146,40 @@
   }finally{reviewScan.disabled=false;}
  }
  reviewScan.onclick=()=>void scanRecoverySources();
+ legacyPrepare.onclick=async()=>{
+  if(!legacyConsentBox.checked)return;
+  if(scope!=='personal'){legacyStatus.textContent='Open your Personal Profiles bank to recover independent references. Customer records are not eligible.';return;}
+  legacyPrepare.disabled=true;legacyApply.disabled=true;legacyToken=null;
+  legacyStatus.textContent='Choose your original-files folder using the native Mac picker. Nothing will be changed during this preview.';
+  try{
+   if(!await window.JigPersonalGuard?.ensureUnlocked?.())
+    throw Error('Unlock Personal with PIN or Touch ID before reviewing recovery sources.');
+   const r=await api.previewOwnerNonPaymentRecovery({...request(),attestNonPayment:true});
+   if(r?.cancelled){legacyStatus.textContent='Folder selection canceled. Nothing was changed.';return;}
+   if(!r?.readOnly||!r?.preview)throw Error('The recovery system did not confirm read-only preview mode.');
+   legacyToken=r.token;
+   legacyStatus.textContent='Preview only: '+r.sourceFiles+' original files examined; '+r.sourceRecords+' source records; '+r.recoverable+
+    ' missing references with exact full-card matches; '+r.conflictingCards+' card conflicts; '+r.shortNumericExcluded+
+    ' ambiguous numeric 3- or 4-digit entries excluded; '+r.stillMissing+' would remain missing.'+
+    ' No stored profiles were changed.';
+   legacyApply.disabled=!legacyToken||r.recoverable<1;
+  }catch(error){legacyStatus.textContent='Recovery preview failed: '+String(error?.message||error)+'. No profiles were changed.';}
+  finally{legacyPrepare.disabled=!legacyConsentBox.checked;}
+ };
+ legacyApply.onclick=async()=>{
+  if(!legacyToken||!legacyConsentBox.checked||scope!=='personal')return;
+  if(!confirm('Restore only eligible independent NON-payment references matched to identical COMPLETE card numbers? This updates your encrypted Personal profile vault after making an encrypted backup. No ambiguous 3- or 4-digit numeric values will be copied.'))return;
+  const token=legacyToken;legacyApply.disabled=true;legacyPrepare.disabled=true;
+  legacyStatus.textContent='Checking saved profile identities and applying only confirmed exact-card matches.';
+  try{
+   const r=await api.confirmOwnerNonPaymentRecovery({...request(),attestNonPayment:true,confirmed:true,token});
+   legacyToken=null;
+   legacyStatus.textContent='Confirmed: '+r.restored+' independent non-payment references restored; '+r.stillMissing+
+    ' profiles remain without a reference. Existing nonempty references were not overwritten.';
+   await refresh();
+  }catch(error){legacyStatus.textContent='No restoration completed: '+String(error?.message||error)+'. Review sources again before retrying.';legacyToken=null;}
+  finally{legacyPrepare.disabled=!legacyConsentBox.checked;}
+ };
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
  main.querySelector('.profileLibraryTabs').after(advanced);
