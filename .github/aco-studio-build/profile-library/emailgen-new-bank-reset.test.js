@@ -130,7 +130,7 @@ test('Successful new bank setup never touches retailer profiles, cards, domain, 
 });
 test('Pending setup still disables automatic old Keychain passphrase restoration',()=>{
  const s=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
- assert.match(s,/localStorage\.getItem\(NEW_SETUP_PENDING\)\)return/);
+ assert.match(s,/if\(localStorage\.getItem\(NEW_SETUP_PENDING\)\)\{/);
  assert.match(s,/setupNewEmailBankReset\(\);render\(\);void restoreRememberedOwner\(\)/);
  assert.match(s,/if\(localStorage\.getItem\(NEW_SETUP_PENDING\)\)localStorage\.removeItem\(NEW_SETUP_PENDING\)/);
  assert.match(s,/api\(\)\.saveRemembered\(passphrase\)/);
