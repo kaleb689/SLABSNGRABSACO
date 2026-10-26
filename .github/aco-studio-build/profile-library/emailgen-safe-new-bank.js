@@ -1,44 +1,113 @@
- // Owner-initiated new Email Bank setup, non-destructive and local-only.
- // Existing encrypted bank ciphertext is archived under a distinct key BEFORE
- // removing its active pointer. Nothing decrypts or alters the old ciphertext.
+ // Owner-initiated, NON-DESTRUCTIVE fresh Email Bank setup.
+ // The active encrypted ciphertext must be byte-for-byte archived and verified
+ // BEFORE its pointer is removed. This does not decrypt, reset a passphrase,
+ // delete remote forwarding rules, or alter any other application data.
+ // The desktop shell does not support window.prompt(): use an inline, explicit
+ // typed confirmation and second checkbox instead of browser-native dialogs.
  const NEW_SETUP_PENDING='sng.sarl.emailgen.bank.new-setup-pending.v1';
  function setupNewEmailBankReset(){
   const gate=$e('emailGate');if(!gate)return;
-  const button=document.createElement('button');button.type='button';button.id='startNewEmailBank';button.className='btn secondary';
+  const button=document.createElement('button');
+  button.type='button';button.id='startNewEmailBank';button.className='btn secondary';
   button.textContent='Start New Email Bank (keep old bank archived)';
-  const feedback=document.createElement('p');feedback.id='startNewEmailBankStatus';feedback.className='tiny';feedback.setAttribute('role','status');
-  gate.append(button,feedback);
+  const feedback=document.createElement('p');
+  feedback.id='startNewEmailBankStatus';feedback.className='tiny';
+  feedback.setAttribute('role','status');
+
+  const review=document.createElement('section');
+  review.id='newEmailBankConfirmPanel';review.className='panel section';
+  review.hidden=true;
+  const title=document.createElement('h3');
+  title.textContent='Review before creating a separate empty bank';
+  const warning=document.createElement('p');
+  warning.textContent='This does NOT recover, unlock or repair your existing Email Bank. Its original encrypted contents remain in a verified local archive and still require the ORIGINAL passphrase to decrypt. The new bank starts EMPTY; your existing Cloudflare routing, profile banks, cards and addresses stay unchanged.';
+  const label=document.createElement('label');
+  label.textContent='To confirm, type START NEW BANK: ';
+  const typed=document.createElement('input');
+  typed.id='confirmStartNewBankPhrase';typed.type='text';
+  typed.autocomplete='off';typed.spellcheck=false;
+  typed.placeholder='START NEW BANK';
+  label.append(typed);
+  const checkLabel=document.createElement('label');checkLabel.className='check';
+  const check=document.createElement('input');check.id='confirmStartNewBankArchive';check.type='checkbox';
+  const checkText=document.createElement('span');
+  checkText.textContent='I understand the old bank cannot be opened without its original passphrase and I want an EMPTY new bank.';
+  checkLabel.append(check,checkText);
+  const controls=document.createElement('div');controls.className='buttons';
+  const cancel=document.createElement('button');
+  cancel.id='cancelStartNewEmailBank';cancel.type='button';cancel.className='btn secondary';
+  cancel.textContent='Cancel — keep existing bank';
+  const commit=document.createElement('button');
+  commit.id='confirmStartNewEmailBank';commit.type='button';commit.className='btn primary';
+  commit.textContent='Archive existing bank and start empty';
+  controls.append(cancel,commit);
+  review.append(title,warning,label,checkLabel,controls);
+  gate.append(button,feedback,review);
+
   const update=()=>{
    let current=null,pending=null;
-   try{current=localStorage.getItem(KEY);pending=localStorage.getItem(NEW_SETUP_PENDING);}catch(error){feedback.textContent='Local storage unavailable; no bank was changed.';button.disabled=true;return;}
+   try{current=localStorage.getItem(KEY);pending=localStorage.getItem(NEW_SETUP_PENDING);}
+   catch{feedback.textContent='Local storage unavailable; existing Email Bank was not changed.';button.disabled=true;review.hidden=true;return;}
    button.disabled=!!pending||!current;
-   if(pending)feedback.textContent='The previous encrypted Email Bank is archived. Enter a NEW passphrase above to create your fresh bank. Your existing Cloudflare account and token can be reused.';
-   else if(!current)feedback.textContent='No existing encrypted Email Bank found. Enter a new passphrase above to create your first bank.';
+   if(pending){
+    feedback.textContent='Previous encrypted Email Bank is archived. Finish your new bank with a NEW passphrase (12+ characters). The previous encrypted archive was NOT deleted.';
+    review.hidden=true;
+   }else if(!current){
+    feedback.textContent='No active encrypted Email Bank found. Create your first bank using the normal unlock form.';
+    review.hidden=true;
+   }
   };
   button.onclick=()=>{
-   if(unlocked){feedback.textContent='Please lock Email Gen before starting a separate new bank.';return;}
+   if(unlocked){feedback.textContent='Lock Email Gen before starting a separate empty bank.';return;}
+   update();
+   if(button.disabled)return;
+   typed.value='';check.checked=false;review.hidden=false;
+   feedback.textContent='Your existing bank has NOT changed. Review the warning and confirm both fields only if you want a NEW, EMPTY bank.';
+  };
+  cancel.onclick=()=>{typed.value='';check.checked=false;review.hidden=true;
+   feedback.textContent='Cancelled. Existing encrypted Email Bank was not changed.';};
+  commit.onclick=()=>{
+   if(unlocked){feedback.textContent='Lock Email Gen before starting a separate empty bank.';return;}
+   if(review.hidden||typed.value.trim()!=='START NEW BANK'||check.checked!==true){
+    feedback.textContent='No changes made. Type START NEW BANK and check the confirmation box to create a separate EMPTY bank.';
+    return;
+   }
+   commit.disabled=true;
    try{
     const current=localStorage.getItem(KEY);
-    if(!current)throw Error('No active encrypted bank found. Create your new bank through the normal unlock form.');
-    if(localStorage.getItem(NEW_SETUP_PENDING))throw Error('A new setup is already pending. Enter your chosen new passphrase above.');
-    if(!window.confirm('Start an EMPTY Email Bank? Existing aliases will not appear in the new bank. Your old encrypted bank will be archived locally, and your external Cloudflare routing rules will NOT be changed. Continue?'))return;
-    if(window.prompt('To confirm you are creating a NEW, empty Email Bank, type START NEW BANK:')!=='START NEW BANK')return;
+    if(!current)throw Error('No active encrypted bank found. Use the normal setup form instead.');
+    if(localStorage.getItem(NEW_SETUP_PENDING))throw Error('New setup already pending. Enter your NEW passphrase on the unlock form.');
     const bytes=crypto.getRandomValues(new Uint8Array(8));
     const unique=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
     const archive=KEY+'.archive.'+Date.now()+'.'+unique;
-    // A failed or quota-limited archive MUST NOT remove the original.
+    if(localStorage.getItem(archive)!==null)throw Error('Archive collision; nothing was changed.');
     localStorage.setItem(archive,current);
-    if(localStorage.getItem(archive)!==current)throw Error('Encrypted archive could not be verified. The original Email Bank was not changed.');
+    if(localStorage.getItem(archive)!==current)
+     throw Error('Encrypted archive verification failed. Original bank remains active.');
     localStorage.setItem(NEW_SETUP_PENDING,archive);
-    if(localStorage.getItem(NEW_SETUP_PENDING)!==archive)throw Error('New setup marker was not saved. Original Email Bank was not changed.');
-    localStorage.removeItem(KEY);
-    if(localStorage.getItem(KEY)!==null){
-     localStorage.removeItem(NEW_SETUP_PENDING);
-     throw Error('Could not deactivate the old bank; the original remains unchanged.');
+    if(localStorage.getItem(NEW_SETUP_PENDING)!==archive)
+     throw Error('Pending setup marker could not be verified. Original bank remains active.');
+    // Never delete or overwrite archived ciphertext. Retire ONLY the active
+    // pointer after an exact, verified encrypted copy exists.
+    try{
+     if(localStorage.getItem(KEY)!==current)throw Error('Original Email Bank changed; review again.');
+     localStorage.removeItem(KEY);
+    }catch(error){
+     if(localStorage.getItem(KEY)===current)
+      try{localStorage.removeItem(NEW_SETUP_PENDING);}catch{}
+     throw error;
     }
-    feedback.textContent='Encrypted previous bank safely archived. Enter a NEW Email Bank passphrase (12+ characters) above, keeping your existing Cloudflare Account ID, Zone ID and token. The archive is preserved.';
+    if(localStorage.getItem(KEY)!==null)
+     throw Error('Old active bank could not be deactivated. Its encrypted archive remains preserved.');
+    typed.value='';check.checked=false;review.hidden=true;
+    feedback.textContent='Original encrypted Email Bank archived and VERIFIED. Enter a NEW passphrase (12+ characters) above to start your EMPTY new Email Bank. Old aliases remain in the separate archive and require their ORIGINAL passphrase for recovery.';
     button.disabled=true;
-  }catch(error){feedback.textContent='New bank setup was not completed: '+String(error?.message||error)+'. Your archived bank, if created, remains preserved.';}
+    // Never clear a user-supplied Cloudflare API token or change remote rules.
+    const passphrase=$e('gatePassphrase');if(passphrase)passphrase.value='';
+   }catch(error){
+    feedback.textContent='New bank setup was NOT completed: '+String(error?.message||error)+'. Existing ciphertext has not been intentionally overwritten or deleted. Any verified archive remains preserved.';
+    update();
+   }finally{commit.disabled=false;}
   };
   update();
  }
