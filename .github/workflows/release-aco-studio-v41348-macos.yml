@@ -1,4 +1,4 @@
-name: Publish ACO Studio 4.13.64 Mac only after full native verification
+name: Publish ACO Studio 4.13.65 Mac only after full native verification
 on:
   # Authorized publication when approved changes reach main. The publish
   # job is gated by full native Mac regression, signature, first-launch,
@@ -15,10 +15,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-464-macos
+  group: aco-studio-465-macos
   cancel-in-progress: false
 env:
-  ACO_VERSION: '4.13.64'
+  ACO_VERSION: '4.13.65'
 jobs:
   mac:
     if: github.ref == 'refs/heads/main'
@@ -154,6 +154,9 @@ jobs:
           grep -Fq 'exactFullCardMatch' "$APP/Contents/Resources/app/profile-library-service.js"
           grep -Fq 'duplicateReviewEntries' "$APP/Contents/Resources/app/profile-library-ui.js"
           grep -Fq 'unusedEmailConflicts' "$APP/Contents/Resources/app/profile-vault.js"
+          grep -Fq 'reconcileExistingLiveProfiles' "$APP/Contents/Resources/app/profile-vault.js"
+          grep -Fq 'reconcileLivePreview' "$APP/Contents/Resources/app/profile-library-service.js"
+          grep -Fq 'Review existing Live duplicates' "$APP/Contents/Resources/app/profile-library-ui.js"
           if [[ '${{ matrix.arch }}' == 'arm64' ]]; then
             lipo -archs "$APP/Contents/MacOS/ACO Studio" | grep -qw arm64
           else
@@ -233,7 +236,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-4.13.64-*
+          pattern: ACO-Studio-4.13.65-*
           path: installers
           merge-multiple: true
       - name: Verify Apple Silicon before publishing
@@ -241,7 +244,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,json,hashlib
-          root=pathlib.Path('installers');v='4.13.64';platforms={};sums=[]
+          root=pathlib.Path('installers');v='4.13.65';platforms={};sums=[]
           arch='arm64'
           mode=(root/f'signing-{arch}.txt').read_text().strip()
           assert mode in ('adhoc','developer-id')
@@ -254,7 +257,7 @@ jobs:
             with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
             sums.append(digest+'  '+p.name)
             if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
-          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Profiles: newest-generated first within retailer and stage, selectable newest N (default 26), right-click Export Selected, with generation batch timestamps retained. Email Bank: owner-only Start New Email Bank archives original encrypted ciphertext before new passphrase setup; Cloudflare rules, existing profiles, cards and addresses unchanged. Live imports automatically archive and remove matching Ready/Unused retailer profiles from active lists within the same encrypted owner vault. When the old profile uses a different card, save its number, expiration, holder and independent reference to the same encrypted owner Card Bank before retirement; avoid duplicate saved cards and abort the import if preservation fails. Duplicate review is retailer-specific for full card numbers and emails, includes unused email-bank collisions, and never flags shared names or cross-retailer reuse.','platforms':platforms},indent=2))
+          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Profiles: newest-generated first within retailer and stage, selectable newest N (default 26), right-click Export Selected, with generation batch timestamps retained. Email Bank: owner-only Start New Email Bank archives original encrypted ciphertext before new passphrase setup; Cloudflare rules, existing profiles, cards and addresses unchanged. Live imports automatically archive and remove matching Ready/Unused retailer profiles from active lists within the same encrypted owner vault. When the old profile uses a different card, save its number, expiration, holder and independent reference to the same encrypted owner Card Bank before retirement; avoid duplicate saved cards and abort the import if preservation fails. Duplicate review is retailer-specific for full card numbers and emails, includes unused email-bank collisions, and never flags shared names or cross-retailer reuse. Existing Live reconciliation now previews historical Ready/Unused conflicts in the same retailer, lets the owner explicitly select exact-email and full-card matches, archives full old records in encrypted recovery, and preserves distinct cards in the same Card Bank before retirement. Existing Live profiles remain untouched; no re-import is needed.','platforms':platforms},indent=2))
           (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n');(root/'release-tag.txt').write_text(tag)
           PY
       - name: Release the tested installers and advance verified feed
@@ -263,13 +266,13 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.64 makes newly generated profile accounts appear first in the current retailer and Ready for Export tab, with newest/oldest/email sorting, Select Newest N (default 26) and right-click Export Selected N. Generation dates and batch identities are retained; older profiles may be ordered by original create-from-pools audit records. No profile data is moved or deleted. Email Gen has an explicit Start New Email Bank button, which archives and byte-verifies the previous ciphertext in app-local storage BEFORE starting a new empty bank with a new passphrase. This preserves the old encrypted bank for recovery, does not delete Cloudflare rules or other banks, and suspends old Keychain auto-unlock until the new setup completes. Existing profiles, card banks and address banks remain unchanged. Live import now removes matching non-Live profiles from Ready for Export and Unused within the same retailer and owner vault, preserving their full records in encrypted recovery history. Other retailers, customers and existing Live profiles are not modified. Before a duplicate Ready/Unused profile is retired, its distinct old card is preserved in the owner/customer's saved Card Bank with original full number, expiration, holder and independent custom reference; an already-saved card is reused. Any failure to preserve stops the import without deleting the original profile. This requires no new setup and never mixes personal and customer data. Duplicate review counts only same-retailer email or exact full-card-number collisions in the selected vault, plus unassigned email-bank conflicts. Cross-retailer Target and Pokemon Center sharing, identical names, and shared addresses are allowed. The review is read-only; no pools or profiles are automatically removed.
+          ACO Studio 4.13.65 makes newly generated profile accounts appear first in the current retailer and Ready for Export tab, with newest/oldest/email sorting, Select Newest N (default 26) and right-click Export Selected N. Generation dates and batch identities are retained; older profiles may be ordered by original create-from-pools audit records. No profile data is moved or deleted. Email Gen has an explicit Start New Email Bank button, which archives and byte-verifies the previous ciphertext in app-local storage BEFORE starting a new empty bank with a new passphrase. This preserves the old encrypted bank for recovery, does not delete Cloudflare rules or other banks, and suspends old Keychain auto-unlock until the new setup completes. Existing profiles, card banks and address banks remain unchanged. Live import now removes matching non-Live profiles from Ready for Export and Unused within the same retailer and owner vault, preserving their full records in encrypted recovery history. Other retailers, customers and existing Live profiles are not modified. Before a duplicate Ready/Unused profile is retired, its distinct old card is preserved in the owner/customer's saved Card Bank with original full number, expiration, holder and independent custom reference; an already-saved card is reused. Any failure to preserve stops the import without deleting the original profile. This requires no new setup and never mixes personal and customer data. Duplicate review counts only same-retailer email or exact full-card-number collisions in the selected vault, plus unassigned email-bank conflicts. Cross-retailer Target and Pokemon Center sharing, identical names, and shared addresses are allowed. The review is read-only; no pools or profiles are automatically removed. Added owner-confirmed Reconcile Existing Live flow for already-imported profiles; separate exact-email and full-card matches, block ambiguous/linked records, and preserve original encrypted history and cards before selected non-Live retirement. Do not re-import your Live profiles.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.64 Mac' --notes-file notes.md --prerelease
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.65 Mac' --notes-file notes.md --prerelease
           else
-            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.64 Mac' --notes-file notes.md --prerelease
+            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.65 Mac' --notes-file notes.md --prerelease
           fi
           # Check that published artifacts exist before advertising the
           # update to existing owners.
