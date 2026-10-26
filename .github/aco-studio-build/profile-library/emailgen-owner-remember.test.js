@@ -121,7 +121,11 @@ test('Reconnect distinguishes missing Keychain availability and never writes sec
  assert.deepEqual(fs.readFileSync(path.join(baseDir,'aco-cloudflare-owner-login.encrypted')),original);
 });
 test('Reconnect UI displays explicit reason for each failure and never clears the encrypted bank',()=>{
- const source=fs.readFileSync(path.join(__dirname,'..','emailgen-owner-remember-ui.js'),'utf8');
+ const app=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
+ const start=app.indexOf(' function reconnectStatusMessage(reason){');
+ const end=app.indexOf(' const NEW_SETUP_PENDING=',start);
+ assert.ok(start>=0&&end>start,'reconnect diagnostics must ship in the packaged app');
+ const source=app.slice(start,end);
  for(const code of ['NO_SAVED_LOGIN','KEYCHAIN_UNAVAILABLE','KEYCHAIN_DECRYPT_FAILED','CLOUDFLARE_TOKEN_REJECTED','CLOUDFLARE_UNREACHABLE','CLOUDFLARE_AUTH_FAILED','BANK_PASSPHRASE_MISMATCH','NEW_BANK_SETUP_PENDING'])
   assert.ok(source.includes(code),code+' must be handled');
  assert.match(source,/note\.textContent=reconnectStatusMessage/);
