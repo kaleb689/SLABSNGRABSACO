@@ -7,15 +7,27 @@ const tinVariants = new Map(verifiedTinVariants().map(item => [
 ]));
 const knownTinVariantNames = new Set(tinVariants.values());
 
+// Webhook titles sometimes repeat a retailer identifier before the product.
+// Strip only code-shaped prefixes, never editions such as (151) or (3-Pack).
+const skuPrefix = /^\s*\((?:(?:sku|pid|tcin|dpci)\s*[:#]?\s*)?([a-z0-9]+(?:-[a-z0-9]+)+|\d{8,})\)\s*/i;
+export function communityProductName(title) {
+  let name = String(title || "").trim(), match;
+  while ((match = name.match(skuPrefix)) && /\d/.test(match[1]) &&
+    !/\b(?:pack|count|pk|ct|edition|anniversary)\b/i.test(match[1])) name = name.slice(match[0].length).trim();
+  return name;
+}
+
 /** Retailer-independent identity. Preserve editions, pack sizes, exclusives
  * and character variants; collapse only harmless title differences. */
 export function communityProductKey(title, sku = "") {
-  let value = String(title || "").normalize("NFKD")
+  const embeddedSku = String(title || "").match(skuPrefix)?.[1] || "";
+  let value = communityProductName(title).normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "").replace(/&amp;/gi, " and ")
     .replace(/[®©™]/g, " ").trim();
 
   value = value.replace(/^(?:(?:target|walmart|pkc|pokemon center(?: us)?)\s*(?:[:|]\s*|[-–—]\s+))+/i, "");
   value = value.replace(/\s*(?:\||\s[-–—]\s)\s*(?:target|walmart|pkc|pokemon center(?: us)?)\s*$/i, "");
+  value = communityProductName(value);
   value = value.replace(/^(?:pokemon(?!\s+center\b)(?:\s+(?:tcg|trading\s+card\s+game))?|tcg|trading\s+card\s+game)\b\s*(?:[:\-–—]\s*)?/i, "");
   value = value.replace(/\betb\b/gi, "elite trainer box")
     .replace(/\bupc\b/gi, "ultra premium collection")
@@ -25,7 +37,7 @@ export function communityProductKey(title, sku = "") {
     .toLowerCase().replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ").trim();
 
-  const knownVariant = tinVariants.get(String(sku || "").trim().toLowerCase());
+  const knownVariant = tinVariants.get(String(sku || embeddedSku).trim().toLowerCase());
   const marker = "30th celebration mini tin", at = value.indexOf(marker);
   if (knownVariant && at !== -1) {
     const remainder = value.slice(at + marker.length).trim();
@@ -51,10 +63,11 @@ export function consolidateCommunityProducts(records, {
     const at = new Date(order?.checkoutAt || order?.updatedAt || order?.createdAt || 0).getTime();
     const timestamp = Number.isFinite(at) ? at : 0;
     for (const item of Array.isArray(order?.items) ? order.items : []) {
-      const name = normalizeName(item?.name);
+      const name = communityProductName(normalizeName(item?.name));
       const quantity = Math.floor(Number(item?.quantity));
       if (!name || !Number.isSafeInteger(quantity) || quantity < 1 || !allowItem(name, item, order)) continue;
-      const productKey = communityProductKey(name, item?.sku);
+      const productKey = communityProductKey(normalizeName(item?.name),
+        item?.sku || String(item?.name || "").match(skuPrefix)?.[1]);
       if (!productKey) continue;
       const prior = products.get(productKey);
       products.set(productKey, {
