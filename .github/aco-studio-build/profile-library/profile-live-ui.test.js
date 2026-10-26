@@ -258,3 +258,17 @@ test('Duplicate badge and review are scoped to chosen retailer and include unuse
  assert.match(source,/duplicatesButton\.hidden=false/);
  assert.match(source,/No data is deleted or changed by this review|no data is deleted or changed by this review/i);
 });
+
+
+test('Previously imported Live Target profiles have explicit preview/confirm action; no re-import or silent delete',()=>{
+ assert.match(source,/Review existing Live duplicates/);
+ assert.match(source,/reconcileExistingLive\.onclick=async/);
+ assert.match(source,/api\.reconcileLivePreview/);
+ assert.match(source,/api\.reconcileLiveCommit/);
+ assert.match(source,/preview\.candidates/);
+ assert.match(source,/selectedIds/);
+ assert.match(source,/input\.checked=true/);
+ assert.match(source,/I reviewed the matching identities/);
+ assert.match(source,/unique full-card matches/);
+ assert.match(source,/non-Live records can be retired/);
+});
