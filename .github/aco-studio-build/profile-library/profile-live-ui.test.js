@@ -232,7 +232,7 @@ test('Generated batch metadata is durable and older generation events are read-o
  assert.match(service,/row\.profileGeneratedAt\|\|null/);
  assert.match(service,/event\.action!=='create-from-pools'/);
  assert.match(service,/profileGeneratedAt:(?:row|r)\.profileGeneratedAt\|\|creationEvents\.get/);
- assert.match(service,/const \[settings,audit\]=await Promise\.all/);
+ assert.match(service,/const \[settings,audit(?:,unusedConflicts)?\]=await Promise\.all/);
 });
 
 
