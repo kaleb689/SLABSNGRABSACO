@@ -43,9 +43,11 @@
   const pending=unsyncedRandom();
   if(!pending.length){randomNotice('All assigned random emails are already in their unused pools.',true);return;}
   const toPublish=pending.filter(r=>r.status==='draft'||r.status==='pending').slice(0,100);
+  const publishIssues=[];
   if(toPublish.length){
    const published=await api().publish(toPublish.map(({alias,target})=>({alias,target})));
    for(const result of published.items||[]){
+    if(result.error)publishIssues.push(result.alias+': '+result.error);
     const row=records.find(r=>r.randomGenerated===true&&r.alias===result.alias);
     if(!row||!['draft','pending','live','paused','conflict'].includes(result.status))continue;
     row.status=result.status;row.remoteId=result.remoteId||null;
@@ -53,7 +55,8 @@
    if(!await store())throw Error('Cloudflare published but the encrypted bank failed to save. Nothing was imported to a retailer pool.');
   }
   const report=await importLiveRandom(),left=unsyncedRandom();
-  randomNotice(report.added+' verified live email(s) added to unused pools; '+report.already+' already present; '+left.length+' still awaiting activation, verification or review.',left.length===0);
+  randomNotice(report.added+' verified live email(s) added to unused pools; '+report.already+' already present; '+left.length+' still awaiting activation, verification or review.'+
+   (publishIssues.length?' Cloudflare publication issues ('+publishIssues.length+'): '+publishIssues.slice(0,3).join(' | '):''),left.length===0);
   refreshRandomChooser();
  }
  async function testAllRandomEmails(){
@@ -62,9 +65,12 @@
   const smtpHost=$e('randomTestSmtp').value.trim().toLowerCase();
   const imapHost=$e('randomTestImap').value.trim().toLowerCase();
   const password=$e('randomTestPassword').value;
+  const sender=$e('randomTestSender').value.trim().toLowerCase();
+  const senderPassword=$e('randomTestSenderPassword').value;
   if(!validEmail(mailbox)||mailbox.endsWith('@'+OWNER_DOMAIN))
    throw Error('Enter the verified external forwarding inbox in the field above.');
   if(!password)throw Error('Enter the app password for your verified inbox to test delivery.');
+  if(!validEmail(sender)||!senderPassword)throw Error('Enter a separate sending account and its app password. Keep the forwarding inbox unchanged.');
   const selected=records.filter(r=>r.randomGenerated===true&&r.target===mailbox);
   if(!selected.length)throw Error('No generated aliases forward to this inbox.');
   const live=selected.filter(r=>r.status==='live');
@@ -75,7 +81,7 @@
   for(let index=0;index<live.length;index+=100){
    const batch=live.slice(index,index+100);
    $e('randomTestStatus').textContent='Sending test messages and checking inbox delivery: '+attempted+'/'+live.length+' tested.';
-   const result=await verify({mailbox,smtpHost,imapHost,password,aliases:batch.map(r=>r.alias)});
+   const result=await verify({mailbox,sender,senderPassword,smtpHost,imapHost,password,aliases:batch.map(r=>r.alias)});
    for(const item of result.results||[]){
     const row=batch.find(r=>r.alias===item.alias);
     if(!row)continue;
@@ -264,7 +270,7 @@
    if(randomGenBusy)return;randomGenBusy=true;testAll.disabled=true;
    try{await testAllRandomEmails();}
    catch(error){$e('randomTestStatus').textContent='Delivery test did not pass: '+String(error?.message||error)+'. No unverified email was imported.';}
-   finally{$e('randomTestPassword').value='';testAll.disabled=false;randomGenBusy=false;refreshRandomChooser();}
+   finally{$e('randomTestPassword').value='';$e('randomTestSenderPassword').value='';testAll.disabled=false;randomGenBusy=false;refreshRandomChooser();}
   });
   refreshRandomChooser();
   setupDraftDestinationControls();
