@@ -234,3 +234,27 @@ test('Generated batch metadata is durable and older generation events are read-o
  assert.match(service,/profileGeneratedAt:r\.profileGeneratedAt\|\|creationEvents\.get/);
  assert.match(service,/const \[settings,audit\]=await Promise\.all/);
 });
+
+
+test('Duplicate badge and review are scoped to chosen retailer and include unused-pool conflicts',()=>{
+ const start=source.indexOf(' function duplicateReviewEntries(retailer){'),end=source.indexOf('\n function profileIssues(row)',start);
+ assert.ok(start>0&&end>start);
+ const context={
+  rows:[
+   {id:'t1',retailer:'target',email:'same@example.test',duplicates:['card']},
+   {id:'t2',retailer:'target',email:'other@example.test',duplicates:['email']},
+   {id:'p1',retailer:'pokemoncenter',email:'same@example.test',duplicates:['card']}
+  ],
+  unusedConflicts:[
+   {id:'u-target',retailer:'target',email:'same@example.test',reason:'matches-profile'},
+   {id:'u-pkc',retailer:'pokemoncenter',email:'other@example.test',reason:'duplicate-unused-email'}
+  ]
+ };
+ vm.createContext(context);
+ vm.runInContext(source.slice(start,end)+'\nthis.duplicatesFor=duplicateReviewEntries;',context);
+ assert.deepEqual(Array.from(context.duplicatesFor('target'),x=>x.kind),['profile','profile','unused-email']);
+ assert.deepEqual(Array.from(context.duplicatesFor('pokemoncenter'),x=>x.kind),['profile','unused-email']);
+ assert.match(source,/duplicatesButton\.textContent='Duplicates \('\+duplicateReviewEntries\(q\('retailer'\)\.value\)\.length/);
+ assert.match(source,/duplicatesButton\.hidden=false/);
+ assert.match(source,/No data is deleted or changed by this review|no data is deleted or changed by this review/i);
+});
