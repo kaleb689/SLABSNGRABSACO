@@ -362,7 +362,9 @@ test('Unusable old card details stop retirement rather than losing a profile car
  old.card.expiration='';
  await h.profiles.importRows({...h.p,retailer:'pokemoncenter',rows:[old]});
  const before=(await h.lib.list(event,h.p)).profiles;
- const plan=await live(h,[complete('pokemoncenter',email)],h.p,'pokemoncenter');
+ const replacement=complete('pokemoncenter',email);
+ LC.putCard(replacement,{number:'5555555555554444',month:'09',year:'2034',cardholder:'Live Holder'});
+ const plan=await live(h,[replacement],h.p,'pokemoncenter');
  await assert.rejects(commit(h,plan),/incomplete saved card details/);
  const after=(await h.lib.list(event,h.p)).profiles;
  assert.deepEqual(after,before);
@@ -377,4 +379,16 @@ test('Customer Card Bank return is scoped to customer, never Personal or a secon
  assert.equal((await h.customers.list('customer-a')).cards.length,1);
  assert.equal((await h.customers.list('customer-b')).cards.length,0);
  assert.equal((await h.personal.list('personal:owner')).cards.length,0);
+});
+
+test('Matching complete card number with changed expiry never creates a second card record',async t=>{
+ const h=await library(t),email='updated-expiry@example.test',old=complete('pokemoncenter',email);
+ old.card.expiration='';
+ await h.profiles.importRows({...h.p,retailer:'pokemoncenter',rows:[old]});
+ const incoming=complete('pokemoncenter',email);
+ const plan=await live(h,[incoming],h.p,'pokemoncenter');
+ const result=await commit(h,plan);
+ assert.equal(result.cardsPreserved,0);
+ assert.equal((await h.personal.list('personal:owner')).cards.length,0);
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,1);
 });
