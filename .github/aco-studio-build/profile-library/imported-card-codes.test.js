@@ -627,3 +627,56 @@ test('Historical encrypted copy review requires full card equality, not merely l
  await save();
  assert.equal((await snapshot()).matched,0,'a changed digit rejects historical match');
 });
+
+
+test('Owner-attested legacy non-payment references restore only exact full-card matches',async t=>{
+ let folder=null;
+ const h=await library(t,{chooseHistoricalFolder:async()=>folder});
+ const alpha=complete('target','alpha-ref@example.test');
+ const beta=complete('walmart','beta-ref@example.test');
+ await commit(h,await preview(h,[alpha]));
+ await commit(h,await preview(h,[beta],h.p,'walmart'));
+ folder=path.join(h.dir,'historic-import');await fs.mkdir(folder);
+ const historic={...alpha,retailer:'target',cc_cvv:'NONPAYMENT-ALPHA-REF'};
+ const unsuitable={...beta,retailer:'walmart',card:{...beta.card,cvv:'123'}};
+ await fs.writeFile(path.join(folder,'target-legacy.json'),JSON.stringify([historic]));
+ await fs.writeFile(path.join(folder,'walmart-legacy.json'),JSON.stringify([unsuitable]));
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const seen=await h.lib.historicalFolderReview(event,{...h.p,scanOriginals:true,ownerAttestsNonPayment:true});
+ assert.equal(seen.readOnly,true);
+ assert.equal(seen.historicalRecovery.recoverable,1);
+ assert.ok(seen.historicalRecovery.excludedVerifierFormat>=1);
+ assert.ok(!JSON.stringify(seen).includes(historic.cc_cvv),'preview must never reveal reference contents');
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before,'scan is read-only');
+ await assert.rejects(h.lib.historicalFolderReview(event,{...h.p,confirmed:true,token:seen.historicalRecovery.token}),/confirmation/i);
+ const result=await h.lib.historicalFolderReview(event,{...h.p,confirmed:true,ownerAttestsNonPayment:true,token:seen.historicalRecovery.token});
+ assert.equal(result.restored,1);
+ const after=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(after.find(x=>x.email==='alpha-ref@example.test').data.profileSecurityCode,'NONPAYMENT-ALPHA-REF');
+ assert.equal(after.find(x=>x.email==='beta-ref@example.test').data.profileSecurityCode||'','');
+ await assert.rejects(h.lib.historicalFolderReview(event,{...h.p,confirmed:true,ownerAttestsNonPayment:true,token:seen.historicalRecovery.token}),/expired/);
+});
+test('Historical non-payment source rejection prevents cross-card, ambiguous and cross-owner recovery',async t=>{
+ let folder=null;
+ const h=await library(t,{chooseHistoricalFolder:async()=>folder});
+ const master=complete('target','guarded-legacy@example.test');
+ await commit(h,await preview(h,[master]));
+ folder=path.join(h.dir,'historic-guard');await fs.mkdir(folder);
+ const original={...master,retailer:'target',cc_cvv:'NONPAYMENT-GUARDED-REF'};
+ await fs.writeFile(path.join(folder,'target-original.json'),JSON.stringify([
+  {...original,cc_number:'5555555555554242'},
+  {...original,cc_number:''}
+ ]));
+ const initial=await h.lib.historicalFolderReview(event,{...h.p,scanOriginals:true,ownerAttestsNonPayment:true});
+ assert.equal(initial.historicalRecovery.recoverable,0);
+ assert.equal(initial.historicalRecovery.cardMismatches,2);
+ await fs.writeFile(path.join(folder,'target-original.json'),JSON.stringify([
+  {...original,cc_cvv:'NONPAYMENT-REF-ONE'},
+  {...original,cc_cvv:'NONPAYMENT-REF-TWO'}
+ ]));
+ const conflict=await h.lib.historicalFolderReview(event,{...h.p,scanOriginals:true,ownerAttestsNonPayment:true});
+ assert.equal(conflict.historicalRecovery.recoverable,0);
+ assert.equal(conflict.historicalRecovery.conflicts,1);
+ await assert.rejects(h.lib.historicalFolderReview(foreign,{...h.p,scanOriginals:true,ownerAttestsNonPayment:true}),/owner/i);
+ await assert.rejects(h.lib.historicalFolderReview(event,{...h.a,scanOriginals:true,ownerAttestsNonPayment:true}),/Personal vault/i);
+});
