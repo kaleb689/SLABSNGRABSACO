@@ -15,9 +15,11 @@ function cardsToPreserve(displaced,incoming){
   if(!current)throw Error('Live card recovery ownership changed. Import was cancelled.');
   const old=C.payment(profile.data),number=pan(old.number);
   if(!number)continue;
+  // Same full PAN needs no second saved Card Bank entry, even if the expiry
+  // changed. The entire old profile remains protected in recovery history.
+  if(sameCard(old,current))continue;
   if(!validPan(number)||!/^(0[1-9]|1[0-2])$/.test(old.month)||!/^20\d\d$/.test(old.year))
    throw Error('A matching Ready/Unused profile has incomplete saved card details. Repair its card before Live import so its original card is not lost.');
-  if(sameCard(old,current))continue;
   if(!byNumber.has(number)){
    byNumber.set(number,{number,month:old.month,year:old.year,expMonth:old.month,expYear:old.year,cardholder:old.cardholder||'Unassigned',label:'Preserved from Live import',brand:old.type||'',
     // This is an independent, non-payment security reference only.
