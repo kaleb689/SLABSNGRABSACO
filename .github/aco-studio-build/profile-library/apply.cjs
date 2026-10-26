@@ -376,3 +376,36 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  const next=source.replace(expected,(_match,first,last)=>first+"'encrypted-owner-profile-snapshots', "+last);
  fs.writeFileSync(file,next);
 }
+
+
+
+
+
+ 
+// Extend the original local encrypted Email Bank; retain all existing owner data.
+{
+ const handler=fs.readFileSync(path.join(__dirname,'emailgen-random-handler.js'),'utf8');
+ const panel=fs.readFileSync(path.join(__dirname,'emailgen-random-panel.html'),'utf8');
+ replace('app.js',' function addEvents(){',handler+'\n function addEvents(){\n  setupRandomEmailGen();');
+ replace('app.js'," function render(){\n  const items=unlocked?records:[];",
+  " function render(){\n  refreshRandomChooser();\n  const items=unlocked?records:[];");
+ replace('app.js',"credentials:Object.fromEntries(['target','walmart'].map(brand=>[brand,Verification.normalizedCredential(r.credentials?.[brand])]))",
+  "    randomGenerated:r.randomGenerated===true,\n    poolTarget:['target','walmart','pokemoncenter','costco','sams'].includes(r.poolTarget)?r.poolTarget:null,\n    poolImportedAt:typeof r.poolImportedAt==='string'&&Number.isFinite(Date.parse(r.poolImportedAt))?r.poolImportedAt:null,\n    forwardingTestedAt:typeof r.forwardingTestedAt==='string'&&Number.isFinite(Date.parse(r.forwardingTestedAt))?r.forwardingTestedAt:null,\n    forwardingTestTarget:typeof r.forwardingTestTarget==='string'?r.forwardingTestTarget:null,\n    credentials:Object.fromEntries(['target','walmart'].map(brand=>[brand,Verification.normalizedCredential(r.credentials?.[brand])]))");
+ replace('app.js',"name.textContent=rec.alias;","name.textContent=rec.alias;\n   if(rec.randomGenerated){const tested=document.createElement('small');tested.className='tiny';tested.textContent=rec.forwardingTestedAt&&rec.forwardingTestTarget===rec.target?'Delivery test PASSED · '+new Date(rec.forwardingTestedAt).toLocaleString():'Delivery not confirmed';name.append(tested);}");
+ replace('index.html','<section class="panel section"><h2>2. Bulk generate</h2>',
+  panel+'<section class="panel section"><h2>3. Manual bulk generate</h2>');
+ replace('index.html','<h2>3. Cloudflare setup</h2>','<h2>4. Cloudflare setup</h2>');
+ fs.copyFileSync(path.join(__dirname,'emailgen-forwarding-test.js'),path.join(root,'emailgen-forwarding-test.js'));
+ replace('preload.js',' cloudflare:Object.freeze({',
+  " cloudflare:Object.freeze({\n  testForwarding:request=>ipcRenderer.invoke('email:forwarding-test',request),");
+ replace('main.js'," ipcMain.handle('cf:authorize',async(event,config)=>{",
+  " require('./emailgen-forwarding-test').register({ipcMain,requireOwner:ownerSender,requireCloudflareSession:ownerSession});\n ipcMain.handle('cf:authorize',async(event,config)=>{");
+ const pkgFile=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(pkgFile,'utf8'));
+ pkg.dependencies||={};pkg.dependencies.nodemailer='^10.2.0';pkg.dependencies.imapflow='^2.2.5';
+ // Preserve existing electron-builder packaging patterns; do not replace the app bundle with a single new file.
+ if(Array.isArray(pkg.build?.files)&&pkg.build.files.length&&pkg.build.files.some(v=>typeof v==='string'&&!v.startsWith('!'))&&!pkg.build.files.some(v=>typeof v==='string'&&/\*\*\/\*|\.js$/.test(v)))
+  throw Error('Review the existing Electron packaging include list before adding forwarding tests.');
+ fs.writeFileSync(pkgFile,JSON.stringify(pkg,null,2)+'\n');
+ for(const file of ['emailgen-random.test.js','emailgen-forwarding-test.test.js'])
+  fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
+}
