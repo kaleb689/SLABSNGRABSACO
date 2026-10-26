@@ -3,7 +3,8 @@
 // by this helper. It runs only for owner-authorized local vaults.
 const C=require('./profile-library-core');
 const pan=value=>String(value||'').replace(/\D/g,'');
-const sameCard=(a,b)=>pan(a.number)===pan(b.number)&&a.month===b.month&&a.year===b.year;
+// A card is identified by its COMPLETE number; a changed expiry is not a new card.
+const sameCard=(a,b)=>!!pan(a.number)&&pan(a.number)===pan(b.number);
 const validPan=n=>/^\d{12,19}$/.test(n);
 function cardsToPreserve(displaced,incoming){
  if(!Array.isArray(displaced)||!Array.isArray(incoming))throw Error('Invalid Live import card reconciliation.');
