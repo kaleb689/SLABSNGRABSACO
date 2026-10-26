@@ -15,15 +15,22 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   a.check();
   // Same-retailer collisions in the same authenticated Personal/customer vault.
   // Shared names, addresses, and cross-retailer email/card reuse are valid.
-  const counts=new Map();
+  // Index by owner-vault + retailer + exact normalized email/full card number.
+  // A shared card/email across different retailers is never a conflict.
+  const duplicatesByKey=new Map();
   for(const row of rows){
-   const email=C.email(C.values(row.data).email||row.email),number=C.payment(row.data).number;
-   for(const [kind,value] of [['email',email],['card',/^\d{12,19}$/.test(number)?number:'']]){
+   const email=C.email(C.values(row.data).email||row.email),card=C.payment(row.data).number;
+   for(const [kind,value] of [['email',email],['card',/^\d{12,19}$/.test(card)?card:'']]){
     if(!value)continue;
     const key=row.retailer+'|'+kind+'|'+value;
-    counts.set(key,(counts.get(key)||0)+1);
+    if(!duplicatesByKey.has(key))duplicatesByKey.set(key,[]);
+    duplicatesByKey.get(key).push(row);
    }
   }
+  const peerLabel=row=>({
+   id:row.id,email:C.email(C.values(row.data).email||row.email),
+   bank:row.bank==='live'?'live':Completion.inspect(row).ready?'completed':'unused'
+  });
   const [settings,audit,unusedConflicts]=await Promise.all([
    profiles.librarySettings(a.scope,a.id),profiles.audit(a.scope,a.id),
    profiles.unusedEmailConflicts(a.scope,a.id)
@@ -38,11 +45,23 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }
   return {scope:a.scope,customerId:a.id,customGroups:settings.profileGroups||{},unusedConflicts,
    profiles:rows.map(row=>{
-    const email=C.email(C.values(row.data).email||row.email),number=C.payment(row.data).number,duplicates=[];
-    if(email&&counts.get(row.retailer+'|email|'+email)>1)duplicates.push('email');
-    if(/^\d{12,19}$/.test(number)&&counts.get(row.retailer+'|card|'+number)>1)duplicates.push('card');
-    if(email&&conflictedUnused.has(row.retailer+'|'+email))duplicates.push('unused email');
-    return {...view(row),profileGeneratedAt:row.profileGeneratedAt||creationEvents.get(row.retailer+'|'+String(row.email||'').toLowerCase())||null,duplicates};
+    const email=C.email(C.values(row.data).email||row.email),number=C.payment(row.data).number,duplicates=[],duplicateDetails=[];
+    for(const [kind,value] of [['email',email],['card',/^\d{12,19}$/.test(number)?number:'']]){
+     if(!value)continue;
+     const peers=(duplicatesByKey.get(row.retailer+'|'+kind+'|'+value)||[]).filter(x=>x.id!==row.id);
+     if(!peers.length)continue;
+     duplicates.push(kind);
+     // Read-only values are sent only through the existing authenticated vault
+     // profile-list IPC. Never log, persist, send to another vault or export.
+     duplicateDetails.push({kind,value,peers:peers.map(peerLabel)});
+    }
+    if(email&&conflictedUnused.has(row.retailer+'|'+email)){
+     duplicates.push('unused email');
+     duplicateDetails.push({kind:'unused email',value:email,
+      peers:unusedConflicts.filter(x=>x.retailer===row.retailer&&x.email===email&&x.reason==='matches-profile')
+       .map(x=>({id:x.id,email:x.email,bank:'unused-email-bank'}))});
+    }
+    return {...view(row),profileGeneratedAt:row.profileGeneratedAt||creationEvents.get(row.retailer+'|'+String(row.email||'').toLowerCase())||null,duplicates,duplicateDetails};
    })
   };
  }
