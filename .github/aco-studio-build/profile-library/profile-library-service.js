@@ -43,7 +43,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const token=uuid();a.check();for(const [id,plan]of plans)if(now()-plan.at>600000)plans.delete(id);if(plans.size>30)throw Error('Close an older import preview first.');
   plans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,bank:'live',entries,fileNames:p.fileNames||[p.fileName],at:now(),epoch:ep(e)});
   const duplicates=entries.filter(x=>x.storedMatches>0||occurrences.get(x.retailer+'|'+x.data.email)>1);
-   return {token,bank:'live',count:entries.length,counts,matches:entries.filter(x=>x.expectedHash&&x.occurrence===0).length,duplicateCount:duplicates.length,duplicateGroups:[...new Set(duplicates.map(x=>x.retailer+'|'+x.data.email))].length,profiles:entries.map(x=>({email:x.data.email,retailer:x.retailer,duplicates:x.storedMatches>0||occurrences.get(x.retailer+'|'+x.data.email)>1?['email']:[]}))};
+  const liveImportedIdentities=new Set(entries.map(x=>x.retailer+'|'+x.data.email));
+  const supersededPreview=existing.filter(x=>x.bank!=='live'&&liveImportedIdentities.has(x.retailer+'|'+x.email));
+  const blockedLinkedCount=supersededPreview.filter(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile').length;
+   return {token,bank:'live',count:entries.length,counts,supersedeNonLive:supersededPreview.length,blockedLinkedCount,matches:entries.filter(x=>x.expectedHash&&x.occurrence===0).length,duplicateCount:duplicates.length,duplicateGroups:[...new Set(duplicates.map(x=>x.retailer+'|'+x.data.email))].length,profiles:entries.map(x=>({email:x.data.email,retailer:x.retailer,duplicates:x.storedMatches>0||occurrences.get(x.retailer+'|'+x.data.email)>1?['email']:[]}))};
  }
  async function importPreview(e,p){const a=await access(e,p);C.retailer(p.retailer);
  if(p.bank==='live'&&Array.isArray(p.files)){
