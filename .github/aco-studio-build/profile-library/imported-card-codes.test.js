@@ -685,7 +685,7 @@ test('Restore confirmation rejects changed saved card atomically and unauthorize
 
 test('The desktop UI offers explicit independent-reference preview and confirmation without duplicating the metadata scan',async()=>{
  const ui=await fs.readFile(path.join(__dirname,'..','profile-library-ui.js'),'utf8');
- const applied=await fs.readFile(path.join(__dirname,'..','apply.cjs'),'utf8');
+ const applied=await fs.readFile(path.join(__dirname,'..','preload.js'),'utf8');
  assert.ok(ui.includes('api.prepareIndependentReferenceRestore'));
  assert.ok(ui.includes('api.confirmIndependentReferenceRestore'));
  assert.ok(ui.includes('CVV/CVC-labeled'));
