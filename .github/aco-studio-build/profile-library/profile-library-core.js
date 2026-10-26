@@ -15,6 +15,12 @@ function payment(data){const sh=Draft.formatOf(data)==='shikari',c=data.card||{}
 }
 function normalized(data,r){const v=values(data),out=Draft.blank(r,format(r),v);const c=payment(data);if(format(r)==='shikari')Object.assign(out,{cc_number:c.number,cc_name:c.cardholder,cc_exp_month:c.month,cc_exp_year:c.year,cc_type:c.type,cc_cvv:c.cvv,custom_security_code:c.customSecurityCode});else Object.assign(out.card,{number:c.number,holder:c.cardholder,cvv:c.cvv,expiration:c.month&&c.year?c.month+'/'+c.year.slice(-2):'',type:c.type,custom_security_code:c.customSecurityCode});if(typeof data.profileSecurityCode==='string')out.profileSecurityCode=data.profileSecurityCode.slice(0,100);
  else if(typeof data.security_code==='string')out.profileSecurityCode=data.security_code.slice(0,100);return syncCardholderToProfile(out);}
+// Require both complete card numbers, compared digit for digit. Never infer
+// ownership from email, name, retailer or the last four digits alone.
+function exactFullCardMatch(previous,current){
+ const oldNumber=payment(previous).number,newNumber=payment(current).number;
+ return /^\d{12,19}$/.test(oldNumber)&&/^\d{12,19}$/.test(newNumber)&&oldNumber===newNumber;
+}
 const nameKey=data=>{const v=values(data);return (v['shipping.first']+' '+v['shipping.last']).normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim();};
 function collisions(records,existing,r){const index={email:new Set(),name:new Set(),card:new Set()};for(const row of existing.filter(x=>x.retailer===r)){const v=values(row.data);if(v.email)index.email.add(email(v.email));if(nameKey(row.data))index.name.add(nameKey(row.data));if(payment(row.data).number)index.card.add(payment(row.data).number);}
  return records.map(data=>{const keys={email:email(values(data).email),name:nameKey(data),card:payment(data).number},flags=Object.keys(keys).filter(k=>keys[k]&&index[k].has(keys[k]));for(const k of Object.keys(keys))if(keys[k])index[k].add(keys[k]);return flags;});}
@@ -188,5 +194,5 @@ function jig(data,r,index,rules=defaultRules(r)){
  }
  return out;
 }
-module.exports={profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
+module.exports={exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
 
