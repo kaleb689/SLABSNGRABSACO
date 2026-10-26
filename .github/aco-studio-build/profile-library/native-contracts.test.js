@@ -177,6 +177,11 @@ test('one read-only recovery action is wired through preload and scoped IPC; leg
  assert.ok(source('profile-library-service.js').includes("properties:['openDirectory'"),'historical review must use a native folder picker');
  assert.ok(source('historical-file-inventory.js').includes('contentsInspected:false'),'historical folder scan must not read contents');
  assert.equal((ui.match(/textContent='Scan All Recovery Sources'/g)||[]).length,1);
- for(const obsolete of ['api.recoverCodes(', 'api.recoverCodesFromFile(', 'api.recoverCodesFromSavedCards('])
-  assert.ok(!ui.includes(obsolete),'legacy individual recovery methods must not have separate visible buttons');
+ // Snapshot restoration is opt-in, separate from the one read-only scan.
+ assert.ok(ui.includes("textContent='Preview Restore from Encrypted Backups'"));
+ assert.ok(ui.includes('api.recoverCodes({...owner,confirmed:false,independentOnly:true})'));
+ assert.ok(ui.includes('window.confirm('),'owner must explicitly approve a restore');
+ assert.ok(ui.includes('api.recoverCodes({...owner,confirmed:true,token:preview.token,independentOnly:true})'));
+ for(const obsolete of ['api.recoverCodesFromFile(', 'api.recoverCodesFromSavedCards('])
+  assert.ok(!ui.includes(obsolete),'ambiguous file and bank recovery must not have separate visible controls');
 });
