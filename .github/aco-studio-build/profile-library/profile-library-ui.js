@@ -53,6 +53,13 @@
  const reviewScan=d.createElement('button');reviewScan.type='button';reviewScan.className='btn secondary';
  reviewScan.textContent='Scan All Recovery Sources';
  reviewControls.append(reviewScan);
+ const legacyConsent=d.createElement('label');legacyConsent.className='profileRecoveryConsent';
+ const legacyCheck=d.createElement('input');legacyCheck.type='checkbox';legacyCheck.checked=false;
+ legacyConsent.append(legacyCheck,d.createTextNode(' I confirm the old import fields I select contain non-payment profile references, not payment-card CVV/CVC codes.'));
+ const recoverHistorical=d.createElement('button');recoverHistorical.type='button';recoverHistorical.className='btn primary';
+ recoverHistorical.textContent='Restore Historical Non-Payment References';recoverHistorical.disabled=true;
+ legacyCheck.onchange=()=>{recoverHistorical.disabled=!legacyCheck.checked;};
+ reviewControls.append(recoverHistorical);
  const restoreFromBackup=d.createElement('button');
  restoreFromBackup.type='button';restoreFromBackup.className='btn secondary';
  restoreFromBackup.textContent='Preview Restore from Encrypted Backups';
@@ -63,7 +70,7 @@
  reviewOutput.textContent='No scan has been run yet. Your saved information is unchanged.';
  const reviewWarning=d.createElement('small');
  reviewWarning.textContent='Selected original files are read locally in the authenticated desktop process for independent profile-reference matches only. Your files and vaults are not edited, and payment-card CVV/CVC values are not recovered or stored. You may cancel the folder picker to scan built-in sources only.';
- recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,restoreStatus,reviewWarning);
+ recoveryReviewPanel.append(recoveryHeading,recoveryIntro,legacyConsent,reviewControls,reviewOutput,restoreStatus,reviewWarning);
  q('export').before(recoveryReviewPanel);
  const reviewLine=(label,value)=>{
   const p=d.createElement('p'),strong=d.createElement('strong');
@@ -142,6 +149,33 @@
   }finally{reviewScan.disabled=false;}
  }
  reviewScan.onclick=()=>void scanRecoverySources();
+ recoverHistorical.onclick=async()=>{
+  if(scope!=='personal'){restoreStatus.textContent='Historical Personal references can only be restored from the Personal vault.';return;}
+  if(!legacyCheck.checked)return;
+  const owner=request(),openedEpoch=epoch;
+  recoverHistorical.disabled=true;reviewScan.disabled=true;restoreFromBackup.disabled=true;
+  try{
+   if(!await window.JigPersonalGuard?.ensureUnlocked?.())throw Error('Unlock Personal vault before recovery.');
+   const reviewed=await api.historicalFolderReview({...owner,scanOriginals:true,ownerAttestsNonPayment:true});
+   if(openedEpoch!==epoch||main.hidden)return;
+   if(!reviewed?.readOnly)throw Error('The source scan was not confirmed read-only.');
+   showRecoveryReview(reviewed);
+   const candidate=reviewed.historicalRecovery;
+   if(!candidate?.recoverable||!candidate.token){
+    restoreStatus.textContent='No eligible independently identifiable non-payment references found. '+(candidate?.excludedVerifierFormat||0)+' payment-verifier-shaped legacy values excluded. No records changed.';
+    return;
+   }
+   restoreStatus.textContent=candidate.recoverable+' matching non-payment references found; '+candidate.conflicts+' conflicts and '+candidate.cardMismatches+' incorrect card matches excluded. No records changed yet.';
+   if(!window.confirm('Restore '+candidate.recoverable+' missing non-payment profile references from the selected original files? Each requires the same retailer, email, and full card number. Existing values and other profile data will stay unchanged. Payment-verifier-shaped values are excluded.'))return;
+   if(openedEpoch!==epoch||main.hidden)throw Error('The selected profile vault changed. No restore performed.');
+   const result=await api.historicalFolderReview({...owner,confirmed:true,ownerAttestsNonPayment:true,token:candidate.token});
+   if(openedEpoch!==epoch||main.hidden)return;
+   restoreStatus.textContent='Restored '+result.restored+' non-payment references to exactly matching profiles. Existing values and unrelated profile data were preserved.';
+   await refresh();
+  }catch(error){
+   if(openedEpoch===epoch&&!main.hidden)restoreStatus.textContent='Historical recovery stopped: '+String(error?.message||error)+'. No unmatched records were restored.';
+  }finally{recoverHistorical.disabled=!legacyCheck.checked;reviewScan.disabled=false;restoreFromBackup.disabled=false;}
+ };
  restoreFromBackup.onclick=async()=>{
   if(scope==='aco'&&!customerId){restoreStatus.textContent='Select a customer vault first.';return;}
   const owner=request(),openedEpoch=epoch;
@@ -449,7 +483,7 @@
  let pendingRefresh=false,refreshTicket=0;
  function editorBusy(){return !!d.querySelector('.profileLibraryModal')||!!d.activeElement?.closest?.('#profileLibraryPage input, #profileLibraryPage select, #profileLibraryPage textarea');}
  async function refresh(){if(editorBusy()){pendingRefresh=true;return;}const ticket=++refreshTicket,owner=request(),ownerEpoch=epoch,priorCards=JSON.stringify(bankAssets.cardPool||[]);if(scope==='aco'&&!customerId){rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();return;}try{if(scope==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;const [result]=await Promise.all([api.list(owner),loadResourceBanks(owner,ticket,ownerEpoch)]);if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;if(editorBusy()){pendingRefresh=true;return;}const same=JSON.stringify(rows)===JSON.stringify(result.profiles);if(!same){const scroll={x:window.scrollX,y:window.scrollY};rows=result.profiles;customGroups=result.customGroups||{};selected=new Set([...selected].filter(id=>stage==='unused'?(unusedAccounts.some(x=>x.id===id)||rows.some(x=>x.id===id&&x.bank!=='live'&&x.stage==='in-progress')):rows.some(x=>x.id===id)));draw();window.scrollTo(scroll.x,scroll.y);}else if(stage==='unused'||priorCards!==JSON.stringify(bankAssets.cardPool||[]))draw();else drawResourceBanks();note(customerName()+' · '+visible().length+' profiles · '+retailName[q('retailer').value]+' · '+(bankAssets.cardPool||[]).filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value)).length+' eligible cards · '+bankAssets.addresses.length+' saved addresses');}catch(e){if(ticket===refreshTicket&&ownerEpoch===epoch){rows=[];bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();note(e.message);}}}
- function close(){epoch++;restoreFromBackup.hidden=true;restoreStatus.textContent='Scan this vault before previewing any restoration.';reviewOutput.textContent='No recovery scan has been run for this vault.';rows=[];unusedAccounts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
+ function close(){epoch++;legacyCheck.checked=false;recoverHistorical.disabled=true;restoreFromBackup.hidden=true;restoreStatus.textContent='Scan this vault before previewing any restoration.';reviewOutput.textContent='No recovery scan has been run for this vault.';rows=[];unusedAccounts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
  async function open(next){if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;close();stage='unused';pageIndex=0;scope=next;issueView='all';q('view').value='all';customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;customerList();q('customer-label').hidden=scope==='personal';q('owner-title').textContent=scope==='personal'?'PERSONAL VAULT':'CUSTOMER VAULTS';q('sync').hidden=scope==='personal';q('pkc-reconcile').hidden=scope!=='personal';websiteVault.hidden=scope==='personal';websiteVault.open=false;websiteLoad++;for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;main.hidden=false;for(const b of nav.querySelectorAll('button'))b.classList.remove('on');(scope==='personal'?personalProfiles:customerProfiles).classList.add('on');d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent=scope==='personal'?'Personal Profiles':'Customer Profiles';await window.desktopAPI.site?.hide?.();await refresh();void passiveHealthCheck();}
  q('manage-cards').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'cards');};
  q('manage-addresses').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'addresses');};
