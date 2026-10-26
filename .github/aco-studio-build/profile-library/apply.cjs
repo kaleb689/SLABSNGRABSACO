@@ -379,16 +379,20 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
 
 
 
-// Temporary review-only map of bundled Email Gen source. Remove before merging.
+
+// Temporary CI source map for the user's forwarding workflow; remove before release.
 {
- const terms=['Generate forwarding emails','No emails generated yet','Verify owner & unlock','Bulk generate','Publish eligible drafts','emailgen:','email-gen:','cloudflare:'];
- const filenames=fs.readdirSync(root).filter(name=>/\.(?:js|html)$/.test(name));
+ const terms=['aliasForm','bulkCreate','bankRows','cfPublish','emailTarget','addAlias','function createAlias','function saveAliases','cf:publish','function renderBank','emailPrivate','emailGen'];
+ const filenames=fs.readdirSync(root).filter(name=>/\.(?:js|cjs|html)$/.test(name));
  for(const file of filenames){
-  const source=fs.readFileSync(path.join(root,file),'utf8');
+  const src=fs.readFileSync(path.join(root,file),'utf8');
   const hits=terms.flatMap(term=>{
-   const ix=source.toLowerCase().indexOf(term.toLowerCase());
-   return ix<0?[]:[{term,index:ix,snippet:source.slice(Math.max(0,ix-1200),Math.min(source.length,ix+950)).slice(0,2200)}];
+   const at=src.indexOf(term);
+   if(at<0)return [];
+   const start=Math.max(0,at-1100),end=Math.min(src.length,at+1700);
+   const snippet=src.slice(start,end).replace(/\b(?:token|secret|passphrase)\s*[:=]\s*[^,;)}]+/gi,'[redacted]');
+   return [{term,at,snippet}];
   });
-  if(hits.length)console.log('EMAILGEN_STATIC_SOURCE',file,JSON.stringify(hits));
+  if(hits.length)console.log('EMAILGEN_CODE_MAP',file,JSON.stringify(hits.slice(0,9)));
  }
 }
