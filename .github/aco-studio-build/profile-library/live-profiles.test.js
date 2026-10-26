@@ -67,11 +67,11 @@ test('Reimport automatically replaces older Live by exact email; stale preview f
  await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:{...LC.values(row.data),first:'Changed',last:'Person'}});
  await assert.rejects(commit(h,stale),/changed after preview|changed after import preview/i);
  rows=(await h.lib.list(event,h.p)).profiles;assert.equal(rows.length,1);
- row=rows[0];assert.equal(row.data.shipping_first_name,'Changed');
+ row=rows[0];assert.equal(LC.values(row.data).first,'Changed');
  const jig=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[row.id],ruleIds:[LC.FL_PHONE_RULE],combine:false,billingSameAsShipping:true});
  await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
  row=(await h.lib.list(event,h.p)).profiles[0];
- assert.equal(row.bank,'live');assert.equal(row.data.shipping_first_name,'Changed');
+ assert.equal(row.bank,'live');assert.equal(LC.values(row.data).first,'Changed');
  assert.equal((await h.service.emails(event,{...h.p,retailer:'target'})).availableForCreation,0);
 });
 test('Same retailer duplicate rows in one import collapse to latest; cancellation and vault lock preserve stored data',async t=>{
@@ -322,7 +322,7 @@ test('A website-linked Ready profile blocks automatic Live duplicate removal and
  },()=>{});
  const before=(await h.lib.list(event,h.p)).profiles;
  const p=await live(h,[complete('pokemoncenter',email)],h.p,'pokemoncenter');
- await assert.rejects(commit(h,p),/Unlink it explicitly/);
+ await assert.rejects(commit(h,p),/Unlink.*explicitly/i);
  const after=(await h.lib.list(event,h.p)).profiles;
  assert.deepEqual(after,before);
 });
@@ -489,7 +489,7 @@ test('A second concurrent Live import preview cannot overwrite a newer saved Liv
  const old=await live(h,[{...complete('target',email),password:'old'}]);
  const fresh=await live(h,[{...complete('target',email),password:'new'}]);
  await commit(h,fresh);
- await assert.rejects(commit(h,old),/changed after preview/i);
+ await assert.rejects(commit(h,old),/changed after .*preview/i);
  const profiles=(await h.lib.list(event,h.p)).profiles;
  assert.equal(profiles.length,1);assert.equal(profiles[0].data.password,'new');
 });
