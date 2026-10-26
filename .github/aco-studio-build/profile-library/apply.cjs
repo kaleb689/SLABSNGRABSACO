@@ -437,3 +437,20 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  fs.writeFileSync(pkgFile,JSON.stringify(pkg,null,2)+'\n');
  fs.copyFileSync(path.join(__dirname,'emailgen-owner-remember.test.js'),path.join(root,'tests','emailgen-owner-remember.test.js'));
 }
+
+
+// Temporary source-only diagnostic of original encrypted Email Bank unlock.
+// Do not log localStorage, credentials, bank data, or runtime files. Removed
+// before preparing or releasing any fix.
+{
+ const source=fs.readFileSync(path.join(root,'app.js'),'utf8');
+ for(const term of ['async function unlockBank(','async function store(','async function derive(','const STORE=','const STORAGE=','const BANK=','async function openBank(','function normalize(','async function authorizeOwner(']){
+   const pos=source.indexOf(term);
+   if(pos<0){console.log('BANK_DIAG_MISSING',term);continue;}
+   const end=term.includes('unlockBank(')?6000:term.includes('derive(')?2200:term.includes('store(')?3400:term.includes('normalize(')?2500:term.includes('authorizeOwner(')?2100:1000;
+   console.log('BANK_DIAG',term,JSON.stringify(source.slice(pos,pos+end)));
+ }
+ const starts=[...source.matchAll(/Incorrect bank passphrase or damaged encrypted backup|crypto\.subtle\.decrypt|localStorage\.setItem|localStorage\.getItem/g)]
+  .map(m=>({at:m.index,kind:m[0],snippet:source.slice(Math.max(0,m.index-380),m.index+520)})).slice(0,26);
+ console.log('BANK_DIAG_OCCURRENCES',JSON.stringify(starts));
+}
