@@ -53,8 +53,14 @@ test('Missing Security Codes can be selectively restored from encrypted snapshot
  await edit('aco','customer-b',rows=>rows.push(customerB));
  // ACO and Personal backups are separate encrypted files. Both personal
  // and customer A are deliberately cleared to simulate an earlier bad update.
- await edit('personal',null,rows=>{rows[0].data.profileSecurityCode='';rows[0].label='New label';});
- await edit('aco','customer-a',rows=>{rows[0].data.profileSecurityCode='';});
+ await vault.libraryTransaction('personal',null,ctx=>{
+  ctx.allowIndependentReferenceEdit(ctx.rows[0].id); // Deliberate simulated historical loss
+  ctx.rows[0].data.profileSecurityCode='';ctx.rows[0].label='New label';
+ },()=>{});
+ await vault.libraryTransaction('aco','customer-a',ctx=>{
+  ctx.allowIndependentReferenceEdit(ctx.rows[0].id); // Deliberate simulated historical loss
+  ctx.rows[0].data.profileSecurityCode='';
+ },()=>{});
  const first=await vault.codeRecovery('personal',null,{},()=>{});
  assert.equal(first.recoverable,1);
  assert.equal(first.byRetailer.target,1);
