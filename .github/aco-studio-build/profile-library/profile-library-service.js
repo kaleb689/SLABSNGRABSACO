@@ -1,11 +1,11 @@
 'use strict';
 const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core'),CardPolicy=require('./card-pool-policy');
 function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,getPostalJigOptions,chooseHistoricalFolder,chooseOriginalFiles,now=Date.now,uuid=crypto.randomUUID}={}){
- const plans=new Map(),jigPlans=new Map(),codeRestorePlans=new Map(),epochs=new Map();
+ const plans=new Map(),jigPlans=new Map(),codeRestorePlans=new Map(),independentRestorePlans=new Map(),epochs=new Map();
  const supportedRule=id=>id===C.FL_PHONE_RULE||Boolean(C.ruleById(id));
  const nonStackingRules=ids=>{let targetPrimary=false;return ids.filter(id=>{if(C.ruleById(id)?.family!=='target-primary')return true;if(targetPrimary)return false;targetPrimary=true;return true;});};
  const ep=e=>epochs.get(e.sender.id)||0;
- function cancel(e){epochs.set(e.sender.id,ep(e)+1);for(const [id,p] of plans)if(p.sender===e.sender.id)plans.delete(id);for(const [id,p] of jigPlans)if(p.sender===e.sender.id)jigPlans.delete(id);}
+ function cancel(e){epochs.set(e.sender.id,ep(e)+1);for(const [id,p] of plans)if(p.sender===e.sender.id)plans.delete(id);for(const [id,p] of jigPlans)if(p.sender===e.sender.id)jigPlans.delete(id);for(const [id,p] of independentRestorePlans)if(p.sender===e.sender.id)independentRestorePlans.delete(id);}
  async function access(e,p){require('./jig-field-core').scopeKey(p?.scope,p?.customerId);const epoch=ep(e);const id=await authorize(e,p.scope,p.customerId);if(p.scope==='aco'&&id!==p.customerId)throw Error('Customer vault mismatch.');guard(e,p.scope);if(ep(e)!==epoch)throw Error('Vault closed during authorization.');return {scope:p.scope,id,check:()=>{guard(e,p.scope);if(ep(e)!==epoch)throw Error('Vault closed during this operation.');}};}
  const cardKey=(s,id)=>s==='personal'?'personal:owner':id;
  const profileOwnerLabel=value=>String(value||'Customer').trim().split(/\s+/)[0]||'Customer';
@@ -478,6 +478,127 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   a.check();
   return {...report,selectedFolder:result,folderOriginalScan:stats};
  }
+
+ // Read independent NON-payment references from owner-selected original
+ // profiles, with no renderer access to source contents or actual codes.
+ // Legacy CVV/CVC/CID labels are never read as candidate references.
+ // This is a separate, explicit action from the metadata-only audit.
+ async function prepareIndependentReferenceRestore(e,p){
+  if(p?.confirmed||p?.token||p?.path||p?.filePath||p?.files||p?.text||p?.directory)
+   throw Error('Use the authenticated Mac folder picker for this recovery preview.');
+  const a=await access(e,p);
+  if(typeof chooseHistoricalFolder!=='function')
+   throw Error('Native folder selection is unavailable.');
+  const directory=await chooseHistoricalFolder(e);
+  a.check();
+  if(!directory)return {cancelled:true,preview:true,readOnly:true};
+  const sourceInventory=require('./historical-file-inventory');
+  const {files,stats}=await sourceInventory.collectOriginalFiles(directory,{
+   check:a.check,now,validate:(filename,contents)=>{
+    const parsed=Core.parseFile(filename,contents);
+    if(!Array.isArray(parsed.records)||!parsed.records.length||parsed.records.length>10000)return false;
+    for(const raw of parsed.records){
+     if(!raw||typeof raw!=='object')continue;
+     if(raw.scope&&raw.scope!==a.scope||raw.customerId&&raw.customerId!==a.id||
+       raw.acoCustomerId&&raw.acoCustomerId!==a.id)return false;
+    }
+    return true;
+   }
+  });
+  a.check();
+  const all=await profiles.fieldSnapshot(a.scope,a.id);
+  const missing=all.filter(row=>row.id&&!C.profileCode(row.data));
+  const byIdentity=new Map();
+  for(const row of missing){
+   const email=C.email(row.email);
+   if(!email)continue;
+   const key=row.retailer+'|'+email;
+   const group=byIdentity.get(key)||[];
+   group.push(row);
+   byIdentity.set(key,group);
+  }
+  const choices=new Map(),conflicts=new Set(),byRetailer={};
+  let records=0,independentSourceRecords=0,missingIdentity=0,cardMismatch=0,duplicateIdentity=0,conflictingSources=0;
+  const valid=v=>typeof v==='string'&&v.length>0&&v.length<=100&&!/[\x00-\x1f\x7f]/.test(v);
+  for(const file of files){
+   const parsed=Core.parseFile(file.fileName,file.text);
+   const namedRetailer=detectedRetailer(file.fileName);
+   for(const raw of parsed.records){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))continue;
+    if(raw.scope&&raw.scope!==a.scope||raw.customerId&&raw.customerId!==a.id||
+       raw.acoCustomerId&&raw.acoCustomerId!==a.id)
+     throw Error('An original profile belongs to another vault. No data was changed.');
+    records++;
+    const source=raw.data&&typeof raw.data==='object'&&!Array.isArray(raw.data)?raw.data:raw;
+    const independentlyNamed=[
+     raw.profileSecurityCode,raw.security_code,raw.custom_security_code,raw.card?.custom_security_code,
+     source.profileSecurityCode,source.security_code,source.custom_security_code,source.card?.custom_security_code
+    ].filter(valid);
+    if(!independentlyNamed.length)continue;
+    independentSourceRecords++;
+    const email=C.email(C.values(source).email||raw.email||source.email||raw.loginEmail||
+     source.loginEmail||raw.accountEmail||source.accountEmail||raw.account?.email);
+    const retailer=detectedRetailer(raw.retailer||raw.retailerId||raw.site||raw.store||
+     source.retailer||source.retailerId||source.site||source.store)||namedRetailer;
+    if(!retailer||!email){missingIdentity++;continue;}
+    const candidates=byIdentity.get(retailer+'|'+email)||[];
+    if(candidates.length!==1){duplicateIdentity++;continue;}
+    const row=candidates[0];
+    if(!C.exactFullCardMatch(source,row.data)){cardMismatch++;continue;}
+    const values=[...new Set(independentlyNamed.map(v=>v.trim()))];
+    if(values.length!==1){conflictingSources++;conflicts.add(row.id);choices.delete(row.id);continue;}
+    if(conflicts.has(row.id))continue;
+    const existing=choices.get(row.id);
+    if(existing&&existing.code!==values[0]){
+     conflictingSources++;conflicts.add(row.id);choices.delete(row.id);continue;
+    }
+    choices.set(row.id,{code:values[0],card:C.payment(row.data).number,
+     email:row.email,retailer:row.retailer,revision:row.revision||0});
+   }
+  }
+  for(const id of conflicts)choices.delete(id);
+  for(const item of choices.values())byRetailer[item.retailer]=(byRetailer[item.retailer]||0)+1;
+  const token=uuid();
+  independentRestorePlans.set(token,{scope:a.scope,customerId:a.id,sender:e.sender.id,epoch:ep(e),
+   at:now(),matches:choices,missing:missing.length});
+  if(independentRestorePlans.size>15)independentRestorePlans.delete(independentRestorePlans.keys().next().value);
+  a.check();
+  return {preview:true,readOnly:true,token,filesExamined:files.length,sourceRecords:records,
+   independentSourceRecords,recoverable:choices.size,stillMissing:missing.length-choices.size,
+   conflictingSources,cardMismatch,duplicateIdentity,missingIdentity,byRetailer,
+   limited:Boolean(stats.limited),filesSkipped:stats.incompatible+stats.unreadable+stats.skippedLarge,
+   originalFilesUnchanged:true,notes:'Only independently named non-payment references are eligible. Legacy CVV/CVC fields are excluded. Nothing was restored.'};
+ }
+ async function confirmIndependentReferenceRestore(e,p){
+  if(p?.confirmed!==true||typeof p.token!=='string')
+   throw Error('Preview and explicitly confirm before restoring independent references.');
+  const a=await access(e,p);
+  const plan=independentRestorePlans.get(p.token);
+  if(!plan||plan.scope!==a.scope||plan.customerId!==a.id||plan.sender!==e.sender.id||
+     plan.epoch!==ep(e)||now()-plan.at>600000)
+   throw Error('Recovery preview expired. Review the sources again.');
+  // Single use, including if an invalidated profile causes the save to abort.
+  independentRestorePlans.delete(p.token);
+  const result=await profiles.libraryTransaction(a.scope,a.id,ctx=>{
+   for(const [id,item]of plan.matches){
+    const row=ctx.rows.find(x=>x.id===id);
+    if(!row||row.retailer!==item.retailer||row.email!==item.email||
+       (row.revision||0)!==item.revision||C.profileCode(row.data)||
+       !/^\d{12,19}$/.test(item.card)||C.payment(row.data).number!==item.card)
+     throw Error('The saved profile or complete card number changed since preview. No references were restored.');
+   }
+   for(const [id,item]of plan.matches){
+    const row=ctx.rows.find(x=>x.id===id);
+    row.data.profileSecurityCode=item.code;
+    row.revision=(row.revision||0)+1;
+    ctx.audit('confirmed-independent-reference-restore',row.email,{retailer:row.retailer});
+   }
+   return {restored:plan.matches.size,stillMissing:plan.missing-plan.matches.size,verifiedFullCardMatches:true};
+  },a.check);
+  a.check();
+  return result;
+ }
+
  async function exportFile(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles.');const all=await profiles.fieldSnapshot(a.scope,a.id),rows=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===p.retailer));if(rows.some(x=>!x))throw Error('Every exported profile must still belong to this vault and retailer.');const content=C.exportSelectedRows(rows,p.retailer,p.customerName||'Personal',p.exportFormat||'retailer');if(!await confirmExport(e))return {cancelled:true};const ext=path.extname(content.name),choice=await chooseSave(e,{name:content.name,extension:ext.slice(1)});if(choice.canceled||!choice.filePath)return {cancelled:true};if(path.extname(choice.filePath)!==ext)throw Error('Keep the retailer export format.');const latest=await profiles.fieldSnapshot(a.scope,a.id);if(rows.some(x=>require('./jig-field-core').hash(x)!==require('./jig-field-core').hash(latest.find(y=>y.id===x.id))))throw Error('Profiles changed while exporting. Try again.');a.check();await writeFile(choice.filePath,content.body,{encoding:'utf8',mode:0o600});return {saved:true,count:rows.length,name:path.basename(choice.filePath)};}
  async function exportArchive(e,p){
   const a=await access(e,p);
@@ -1024,7 +1145,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  }
  async function rules(e,p){const a=await access(e,p),retailer=C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id),saved=settings[retailer];a.check();const legacyTarget=retailer==='target'&&Array.isArray(saved?.rules)&&saved?.presetVersion!==2;const selected=legacyTarget?[...new Set([...saved.rules,...C.TARGET_PRIMARY_RULES.map(x=>x.id)])]:(saved?.rules||C.defaultRules(retailer));const grouped=[...new Set(selected.map(id=>/^(street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)_(short|long|abbr|full)$/i.test(id)?'suffix.matching':id))];return {selected:grouped,legacyMigrated:legacyTarget||grouped.length!==selected.length||grouped.some((id,i)=>id!==selected[i]),presetVersion:2,options:[...C.ruleOptions(retailer),{id:C.FL_PHONE_RULE,label:'Random Florida phone number',risk:'standard',family:'phone'}]};}
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:2};return {saved:true,presetVersion:2};},a.check);}
- return {jigAssets,reuseChoices,list,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
+ return {jigAssets,reuseChoices,list,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,prepareIndependentReferenceRestore,confirmIndependentReferenceRestore,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
 }
 function registerLibrary(options){
  const chooseHistoricalFolder=options.chooseHistoricalFolder||(async e=>{
@@ -1044,7 +1165,7 @@ function registerLibrary(options){
   const result=parent?await dialog.showOpenDialog(parent,picker):await dialog.showOpenDialog(picker);
   return result.canceled?null:result.filePaths||[];
  });
- const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['jigAssets','reuseChoices','list','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
+ const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['jigAssets','reuseChoices','list','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','prepareIndependentReferenceRestore','confirmIndependentReferenceRestore','importPreview,'importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
  // Owner-only encrypted backup recovery for complete Personal and ACO vaults.
  // No customer website token or profile ID can access these snapshots.
  options.ipcMain.handle('profile:library:backupList',(e,p)=>{
