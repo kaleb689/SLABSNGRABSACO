@@ -586,6 +586,15 @@ test('Original-file recovery preview requires the exact full card number before 
  const match=await request('4242424242424242');
  assert.equal(match.recoverable,1);
  assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before,'previews cannot modify saved references');
+ await assert.rejects(h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',
+  token:match.token,confirmed:true}),/mode changed/,'recovery mode cannot change after preview');
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.rows[0].data.cc_number='5'.repeat(16);
+  return {saved:true};
+ },()=>{});
+ await assert.rejects(h.lib.recoverCodesFromFile(event,{...h.p,retailer:'target',
+  token:match.token,confirmed:true,independentOnly:true}),/complete card identity changed/,
+ 'the full card identity must still match when confirmation is attempted');
 });
 
 
