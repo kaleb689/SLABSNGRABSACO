@@ -311,3 +311,70 @@ test('Reusing a Ready profile ID for an explicitly reviewed Live update leaves e
  const matches=(await h.lib.list(event,h.p)).profiles.filter(x=>x.email===email);
  assert.equal(matches.length,1);assert.equal(matches[0].id,old.id);assert.equal(matches[0].bank,'live');
 });
+
+
+test('A different card from a retired PKC Ready profile returns to the encrypted Card Bank before Live import',async t=>{
+ const h=await library(t),email='different-ready-card@example.test';
+ const old=complete('pokemoncenter',email);
+ LC.putCard(old,{number:'5555555555554444',month:'09',year:'2034',cardholder:'Old Owner'});
+ old.custom_security_code='OLD-CARD-REFERENCE';
+ await commit(h,await preview(h,[old],h.p,'pokemoncenter'));
+ const input=complete('pokemoncenter',email);
+ assert.notEqual(LC.payment(old).number,LC.payment(input).number);
+ const result=await commit(h,await live(h,[input],h.p,'pokemoncenter'));
+ assert.equal(result.supersededNonLive,1);
+ assert.equal(result.cardsPreserved,1);
+ assert.equal(result.cardsAlreadySaved,0);
+ const list=await h.personal.list('personal:owner');
+ assert.equal(list.cards.length,1,'old card must be in saved Card Bank');
+ const saved=await h.personal.selectedForJig('personal:owner',list.cards.map(x=>x.id));
+ assert.equal(saved[0].number,'5555555555554444');
+ assert.equal(saved[0].month,'09');
+ assert.equal(saved[0].year,'2034');
+ const codes=await h.personal.securityReferences('personal:owner');
+ assert.equal(codes[0].customSecurityCode,'OLD-CARD-REFERENCE');
+ const ownerProfiles=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(ownerProfiles.filter(x=>x.retailer==='pokemoncenter'&&x.email===email).length,1);
+ assert.equal(ownerProfiles.find(x=>x.email===email).bank,'live');
+ const assets=await h.service.assets(event,h.p);
+ const restored=assets.cards.find(x=>x.id===list.cards[0].id);
+ assert.equal(restored.unused,true,'card should be available for reuse after its Ready/Unused owner is retired');
+});
+test('A previously saved card is not duplicated when a different Live profile card displaces it',async t=>{
+ const h=await library(t),email='saved-ready-card@example.test',old=complete('pokemoncenter',email);
+ LC.putCard(old,{number:'5555555555554444',month:'08',year:'2031',cardholder:'Existing Holder'});
+ await h.service.addCard(event,{...h.p,card:{number:'5555555555554444',expMonth:'08',expYear:'2031',cardholder:'Existing Holder'}});
+ await h.profiles.importRows({...h.p,retailer:'pokemoncenter',rows:[old]});
+ const result=await commit(h,await live(h,[complete('pokemoncenter',email)],h.p,'pokemoncenter'));
+ assert.equal(result.cardsAlreadySaved,1);
+ assert.equal(result.cardsPreserved,0);
+ assert.equal((await h.personal.list('personal:owner')).cards.length,1);
+});
+test('A matching old card does not create a redundant saved Card Bank record',async t=>{
+ const h=await library(t),email='same-card@example.test';
+ await h.profiles.importRows({...h.p,retailer:'pokemoncenter',rows:[complete('pokemoncenter',email)]});
+ const result=await commit(h,await live(h,[complete('pokemoncenter',email)],h.p,'pokemoncenter'));
+ assert.equal(result.cardsPreserved,0);
+ assert.equal((await h.personal.list('personal:owner')).cards.length,0);
+});
+test('Unusable old card details stop retirement rather than losing a profile card',async t=>{
+ const h=await library(t),email='missing-expiry@example.test',old=complete('pokemoncenter',email);
+ old.card.expiration='';
+ await h.profiles.importRows({...h.p,retailer:'pokemoncenter',rows:[old]});
+ const before=(await h.lib.list(event,h.p)).profiles;
+ const plan=await live(h,[complete('pokemoncenter',email)],h.p,'pokemoncenter');
+ await assert.rejects(commit(h,plan),/incomplete saved card details/);
+ const after=(await h.lib.list(event,h.p)).profiles;
+ assert.deepEqual(after,before);
+ assert.equal((await h.personal.list('personal:owner')).cards.length,0);
+});
+test('Customer Card Bank return is scoped to customer, never Personal or a second customer',async t=>{
+ const h=await library(t),email='customer-retired-card@example.test',old=complete('pokemoncenter',email);
+ LC.putCard(old,{number:'5555555555554444',month:'07',year:'2033',cardholder:'Customer Holder'});
+ await h.profiles.importRows({...h.a,retailer:'pokemoncenter',rows:[old]});
+ const result=await commit(h,await live(h,[complete('pokemoncenter',email)],h.a,'pokemoncenter'));
+ assert.equal(result.cardsPreserved,1);
+ assert.equal((await h.customers.list('customer-a')).cards.length,1);
+ assert.equal((await h.customers.list('customer-b')).cards.length,0);
+ assert.equal((await h.personal.list('personal:owner')).cards.length,0);
+});
