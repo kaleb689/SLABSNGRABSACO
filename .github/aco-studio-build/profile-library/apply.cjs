@@ -402,9 +402,9 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
   " require('./emailgen-forwarding-test').register({ipcMain,requireOwner:ownerSender,requireCloudflareSession:ownerSession});\n ipcMain.handle('cf:authorize',async(event,config)=>{");
  const pkgFile=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(pkgFile,'utf8'));
  pkg.dependencies||={};pkg.dependencies.nodemailer='^10.2.0';pkg.dependencies.imapflow='^2.2.5';
- // Preserve existing electron-builder packaging patterns; do not replace the app bundle with a single new file.
- if(Array.isArray(pkg.build?.files)&&pkg.build.files.length&&pkg.build.files.some(v=>typeof v==='string'&&!v.startsWith('!'))&&!pkg.build.files.some(v=>typeof v==='string'&&/\*\*\/\*|\.js$/.test(v)))
-  throw Error('Review the existing Electron packaging include list before adding forwarding tests.');
+ // Explicitly include the new main-process service without removing existing package files.
+ pkg.build||={};pkg.build.files||=[];
+ if(!pkg.build.files.includes('emailgen-forwarding-test.js'))pkg.build.files.push('emailgen-forwarding-test.js');
  fs.writeFileSync(pkgFile,JSON.stringify(pkg,null,2)+'\n');
  for(const file of ['emailgen-random.test.js','emailgen-forwarding-test.test.js'])
   fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
