@@ -78,7 +78,7 @@ test('Transient Cloudflare outage keeps Keychain login for retry without resubmi
 });
 test('Saved-login UI auto-reconnects and manual unlock remembers only after successful verification',()=>{
  const app=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
- assert.match(app,/addEvents\(\);setupRememberedOwnerControls\(\);render\(\);void restoreRememberedOwner\(\)/);
+ assert.match(app,/addEvents\(\);setupRememberedOwnerControls\(\);setupNewEmailBankReset\(\);render\(\);void restoreRememberedOwner\(\)/);
  assert.match(app,/api\(\)\.saveRemembered\(passphrase\)/);
  assert.match(app,/api\(\)\.restoreRemembered\(\)/);
  assert.match(app,/Forget this Mac/);
