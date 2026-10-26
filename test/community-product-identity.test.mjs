@@ -16,16 +16,34 @@ test("live Delta Reign and Pitch Black retailer title differences combine into c
   assert.equal(products.find(p=>p.productKey.includes('pitch black')).quantity,20);
 });
 
-test("title aliases keep Pokemon Center ETBs, product types and multipacks distinct", () => {
-  const standard="Pokemon TCG: Mega Evolution-Delta Reign Elite Trainer Box";
+test("title aliases keep other Pokemon Center ETBs, product types and multipacks distinct", () => {
+  const standard="Pokemon TCG: Other Set Elite Trainer Box";
   assert.notEqual(communityProductKey(standard),
-    communityProductKey("Pokemon TCG: Mega Evolution-Delta Reign Pokemon Center Elite Trainer Box"));
+    communityProductKey("Pokemon TCG: Other Set Pokemon Center Elite Trainer Box"));
   assert.notEqual(communityProductKey("Pokemon TCG: Mega Evolution-Delta Reign Booster Bundle"),
     communityProductKey("Pokemon TCG: Mega Evolution-Delta Reign Booster Bundle 2-Pack"));
   assert.notEqual(communityProductKey("Pokemon TCG: Mega Evolution-Delta Reign Booster Bundle"),
     communityProductKey("Pokemon TCG: Mega Evolution-Delta Reign Booster Display Box (36 Packs)"));
   assert.notEqual(communityProductKey("Pokemon TCG: Other Booster Bundle"),
     communityProductKey("Pokemon TCG: Other Booster Bundle (6 Packs)"));
+});
+
+test("owner-requested Delta Reign ETB family combines standard and Pokemon Center quantities without changing orders", () => {
+  const standard="Pokémon Trading Card Game: Mega Evolution— Delta Reign Elite Trainer Box";
+  const center="Pokemon TCG: Mega Evolution-Delta Reign Pokemon Center Elite Trainer Box";
+  const expected=communityProductKey(standard);
+  for (const name of [center,"Delta Reign ETB","Pokémon TCG: Delta Reign Pokemon Center Exclusive ETB",
+    "Pokemon Center Exclusive Delta Reign Elite Trainer Box"])
+    assert.equal(communityProductKey(name),expected);
+  const orders=[{retailer:"Target",items:[{name:standard,quantity:2,sku:"target-sku"}]},
+    {retailer:"PKC",items:[{name:center,quantity:4,sku:"10-10438-112"}]}];
+  const before=structuredClone(orders);
+  const products=consolidateCommunityProducts(orders);
+  assert.equal(products.length,1);assert.equal(products[0].quantity,6);
+  assert.equal(products[0].name,"Pokémon TCG: Mega Evolution—Delta Reign Elite Trainer Box");
+  assert.deepEqual(orders,before);
+  assert.notEqual(expected,communityProductKey(standard+" 2-Pack"));
+  assert.notEqual(expected,communityProductKey("Delta Reign Booster Bundle"));
 });
 
 test("SKU-prefixed Lapras screenshot titles combine with the plain title and display without the code", () => {
@@ -66,8 +84,8 @@ test("different types, editions, exclusive products, pack counts and tin designs
   const names=["Pokemon TCG: Delta Reign Elite Trainer Box",
     "Pokemon TCG: Delta Reign Booster Bundle",
     "Pokemon TCG: Delta Reign Booster Box",
-    "Pokemon TCG: Delta Reign Pokemon Center Exclusive Elite Trainer Box",
-    "Pokemon Center Exclusive Delta Reign Elite Trainer Box",
+    "Pokemon TCG: Other Set Pokemon Center Exclusive Elite Trainer Box",
+    "Pokemon Center Exclusive Other Set Elite Trainer Box",
     "Pokemon TCG: Delta Reign 6 Pack",
     "Pokemon TCG: Delta Reign 3 Pack"];
   assert.equal(new Set(names.map(communityProductKey)).size,names.length);
