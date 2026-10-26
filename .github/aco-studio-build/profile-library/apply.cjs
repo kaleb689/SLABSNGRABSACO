@@ -378,17 +378,17 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
 }
 
 
-// Temporary CI-only source mapping for owner-requested Email Gen integration.
-// This does not print configuration, account identifiers, or user data.
+
+// Temporary review-only map of bundled Email Gen source. Remove before merging.
 {
- const candidates=fs.readdirSync(root).filter(name=>/email|cloudflare|forward|routing|alias/i.test(name)&&name.endsWith('.js'));
- console.log('EMAILGEN_SOURCE_FILES',JSON.stringify(candidates));
- for(const file of candidates){
+ const terms=['Generate forwarding emails','No emails generated yet','Verify owner & unlock','Bulk generate','Publish eligible drafts','emailgen:','email-gen:','cloudflare:'];
+ const filenames=fs.readdirSync(root).filter(name=>/\.(?:js|html)$/.test(name));
+ for(const file of filenames){
   const source=fs.readFileSync(path.join(root,file),'utf8');
-  const lines=source.split('\\n');
-  const terms=/draft|generate|publish|forward|domain|destination|unused|cloudflare|alias/i;
-  const hit=lines.map((line,index)=>({line,index:index+1})).filter(x=>terms.test(x.line)&&!/secret|token|password|credential|authorization/i.test(x.line));
-  console.log('EMAILGEN_FILE',file,'TOTAL',lines.length,'HITS',hit.length);
-  console.log(hit.slice(0,65).map(x=>x.index+':'+x.line.slice(0,260)).join('\\n'));
+  const hits=terms.flatMap(term=>{
+   const ix=source.toLowerCase().indexOf(term.toLowerCase());
+   return ix<0?[]:[{term,index:ix,snippet:source.slice(Math.max(0,ix-1200),Math.min(source.length,ix+950)).slice(0,2200)}];
+  });
+  if(hits.length)console.log('EMAILGEN_STATIC_SOURCE',file,JSON.stringify(hits));
  }
 }
