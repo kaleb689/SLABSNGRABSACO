@@ -657,7 +657,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     throw Error('An imported Live account matches a website-linked profile. Unlink it explicitly before importing; no profiles were changed.');
    const displacedIds=new Set(displaced.map(x=>x.id));
    const ids=new Set(prepared.map(x=>x.id));
-   if(rows.length+prepared.filter(x=>!ids.has(x.id)).length-displacedIds.size>10000)throw Error('Profile vault is full.');
+   if(rows.filter(x=>!ids.has(x.id)&&!displacedIds.has(x.id)).length+prepared.length>10000)throw Error('Profile vault is full.');
    if(displaced.length){
     d.supersededLiveImportProfiles||={};d.supersededLiveImportProfiles[key]||=[];
     if(d.supersededLiveImportProfiles[key].length+displaced.length>20000)
