@@ -14,6 +14,16 @@
   <div class="buttons" style="margin-top:10px"><button type="button" class="btn primary" id="randomAliasAssign">Activate forwarding &amp; send live addresses to pool</button></div>
  </div>
  <div class="buttons" style="margin-top:10px"><button type="button" class="btn secondary" id="randomAliasSync" hidden>Publish / sync assigned emails</button></div>
+ <div class="fieldStack" id="randomAliasTestArea">
+  <h3>Test All Emails — verify delivery to your inbox</h3>
+  <p class="sectionHelp">After Cloudflare forwarding is live, send a unique test to each generated address and confirm it arrived in your IMAP INBOX. Routing rules alone are not counted as passed.</p>
+  <label>SMTP server (encrypted TLS, port 465)<input id="randomTestSmtp" value="smtp.gmail.com" autocomplete="off" spellcheck="false"></label>
+  <label>IMAP server (encrypted TLS, port 993)<input id="randomTestImap" value="imap.gmail.com" autocomplete="off" spellcheck="false"></label>
+  <label>Mail app password for the forwarding inbox (test session only; never saved)<input id="randomTestPassword" type="password" autocomplete="off" spellcheck="false" placeholder="Your verified inbox app password"></label>
+  <div class="buttons"><button type="button" class="btn secondary" id="randomAliasTestAll">Test All Emails</button></div>
+  <p id="randomTestStatus" class="tiny" aria-live="polite"></p>
+  <small>The app reports PASSED only when a unique test message is found in your verified IMAP INBOX. SMTP accepted, pending verification, undelivered, or untested are not a pass. The test password is cleared after each run.</small>
+ </div>
  <p id="randomAliasStatus" class="tiny" aria-live="polite"></p>
  <small>Unverified or pending forwarding aliases stay in your encrypted Email Bank. Only Cloudflare-confirmed live addresses go into your Personal retailer's Unused email pool. If verification is pending, complete it and use Publish / sync. Manually created aliases remain unchanged.</small>
 </section>
