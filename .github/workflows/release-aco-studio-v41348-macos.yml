@@ -1,4 +1,4 @@
-name: Publish ACO Studio 4.13.57 Mac only after full native verification
+name: Publish ACO Studio 4.13.58 Mac only after full native verification
 on:
   # Authorized publication when approved changes reach main. The publish
   # job is gated by full native Mac regression, signature, first-launch,
@@ -15,10 +15,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-457-macos
+  group: aco-studio-458-macos
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.57'
+  ACO_VERSION: '4.13.58'
 jobs:
   mac:
     if: github.ref == 'refs/heads/main'
@@ -231,7 +231,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-4.13.57-*
+          pattern: ACO-Studio-4.13.58-*
           path: installers
           merge-multiple: true
       - name: Verify Apple Silicon before publishing
@@ -239,7 +239,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,json,hashlib
-          root=pathlib.Path('installers');v='4.13.57';platforms={};sums=[]
+          root=pathlib.Path('installers');v='4.13.58';platforms={};sums=[]
           arch='arm64'
           mode=(root/f'signing-{arch}.txt').read_text().strip()
           assert mode in ('adhoc','developer-id')
@@ -252,7 +252,7 @@ jobs:
             with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
             sums.append(digest+'  '+p.name)
             if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
-          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Strict historical record matching: require identical complete card numbers digit for digit before matching independent profile references. Reject absent, changed or last-four-only card matches. No existing missing references have been restored.','platforms':platforms},indent=2))
+          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Owner-confirmed independent reference recovery: preview encrypted backups, reject conflicting or changed full-card matches, and restore only after explicit confirmation. Original-file scans stay read-only and ambiguous CVV/CVC data is not automatically recovered. No previous missing references have been verified as restored.','platforms':platforms},indent=2))
           (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n');(root/'release-tag.txt').write_text(tag)
           PY
       - name: Release the tested installers and advance verified feed
@@ -261,13 +261,13 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.57 requires historical and current profile cards to contain the same complete card number, digit for digit, before a missing independent non-payment profile reference is considered matched. It rejects absent card numbers, one-digit differences and same-last-four false positives across recovery previews and backups. It does not retrieve CVV/CVC data, automatically restore missing references, or change saved profile records during installation.
+          ACO Studio 4.13.58 adds an optional owner-confirmed restoration preview for independently named non-payment references in encrypted snapshots. It requires identical complete card numbers, excludes conflicting historical references, rechecks identity before saving, and preserves all unrelated profile data. The scan remains read-only; restoration happens only after explicit confirmation. The installer does not restore any missing reference automatically or claim earlier missing data was found.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.57 Mac' --notes-file notes.md --prerelease
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.58 Mac' --notes-file notes.md --prerelease
           else
-            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.57 Mac' --notes-file notes.md --prerelease
+            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.58 Mac' --notes-file notes.md --prerelease
           fi
           # Check that published artifacts exist before advertising the
           # update to existing owners.
