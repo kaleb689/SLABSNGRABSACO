@@ -61,19 +61,19 @@ test('Missing Security Codes can be selectively restored from encrypted snapshot
   ctx.allowIndependentReferenceEdit(ctx.rows[0].id); // Deliberate simulated historical loss
   ctx.rows[0].data.profileSecurityCode='';
  },()=>{});
- const first=await vault.codeRecovery('personal',null,{},()=>{});
+ const first=await vault.codeRecovery('personal',null,{independentOnly:true},()=>{});
  assert.equal(first.recoverable,1);
  assert.equal(first.byRetailer.target,1);
  assert.ok(!JSON.stringify(first).includes('0044'),'preview never exposes secret values');
  assert.equal((await vault.fieldSnapshot('personal',null))[0].data.profileSecurityCode,'','preview must not write');
- const applied=await vault.codeRecovery('personal',null,{confirmed:true,token:first.token},()=>{});
+ const applied=await vault.codeRecovery('personal',null,{confirmed:true,token:first.token,independentOnly:true},()=>{});
  assert.equal(applied.restored,1);
  const restored=(await vault.fieldSnapshot('personal',null))[0];
  assert.equal(restored.data.profileSecurityCode,'0044');
  assert.equal(restored.label,'New label','recovery must not overwrite current profile changes');
- const second=await vault.codeRecovery('aco','customer-a',{},()=>{});
+ const second=await vault.codeRecovery('aco','customer-a',{independentOnly:true},()=>{});
  assert.equal(second.recoverable,1);
- assert.equal((await vault.codeRecovery('aco','customer-a',{confirmed:true,token:second.token},()=>{})).restored,1);
+ assert.equal((await vault.codeRecovery('aco','customer-a',{confirmed:true,token:second.token,independentOnly:true},()=>{})).restored,1);
  assert.equal((await vault.fieldSnapshot('aco','customer-a'))[0].data.profileSecurityCode,'0099');
  assert.equal((await vault.fieldSnapshot('aco','customer-b'))[0].data.profileSecurityCode,'7777');
  assert.equal((await vault.codeRecovery('personal',null,{},()=>{})).recoverable,0);
