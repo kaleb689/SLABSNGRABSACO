@@ -298,3 +298,17 @@ test('Duplicate review displays exact matching value, retailer-scoped peer email
  assert.match(source,/row\.retailer===retailer/);
  assert.match(source,/No changes were made/);
 });
+
+
+test('Grouped retailer duplicate review keeps same-card peers adjacent and offers explicit pool-backed repair',()=>{
+ assert.match(source,/const groups=new Map\(\)/);
+ assert.match(source,/groups\.get\(key\)\.profiles\.set/);
+ assert.match(source,/grid-template-columns:repeat\(auto-fit/);
+ assert.match(source,/Fix Duplicate/);
+ assert.match(source,/duplicateRepairPreview/);
+ assert.match(source,/duplicateRepairCommit/);
+ assert.match(source,/Confirm Fix Duplicate/);
+ assert.match(source,/duplicatesButton\.click\(\)/);
+ assert.match(source,/Original encrypted record archived/);
+ assert.doesNotMatch(source,/api\.deleteSelected\(/);
+});
