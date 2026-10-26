@@ -7,6 +7,15 @@ const tinVariants = new Map(verifiedTinVariants().map(item => [
 ]));
 const knownTinVariantNames = new Set(tinVariants.values());
 
+// Exact retailer title aliases observed for the same product. Pack counts
+// remain significant everywhere else, including multipacks and bundles of two.
+const retailerTitleAliases = new Map([
+  ["mega evolution delta reign booster bundle 6 packs", "mega evolution delta reign booster bundle"],
+  ["mega evolution pitch black booster bundle 6 packs", "mega evolution pitch black booster bundle"],
+  ["mega evolution 5 pitch black booster bundle", "mega evolution pitch black booster bundle"],
+  ["mega evolution 5 pitch black elite trainer box", "mega evolution pitch black elite trainer box"]
+]);
+
 // Webhook titles sometimes repeat a retailer identifier before the product.
 // Strip only code-shaped prefixes, never editions such as (151) or (3-Pack).
 const skuPrefix = /^\s*\((?:(?:sku|pid|tcin|dpci)\s*[:#]?\s*)?([a-z0-9]+(?:-[a-z0-9]+)+|\d{8,})\)\s*/i;
@@ -28,7 +37,7 @@ export function communityProductKey(title, sku = "") {
   value = value.replace(/^(?:(?:target|walmart|pkc|pokemon center(?: us)?)\s*(?:[:|]\s*|[-–—]\s+))+/i, "");
   value = value.replace(/\s*(?:\||\s[-–—]\s)\s*(?:target|walmart|pkc|pokemon center(?: us)?)\s*$/i, "");
   value = communityProductName(value);
-  value = value.replace(/^(?:pokemon(?!\s+center\b)(?:\s+(?:tcg|trading\s+card\s+game))?|tcg|trading\s+card\s+game)\b\s*(?:[:\-–—]\s*)?/i, "");
+  value = value.replace(/^(?:pokemon(?!\s+center\b)(?:\s+(?:tcg|trading\s+card\s+games?))?|tcg|trading\s+card\s+games?)\b\s*(?:[:\-–—]\s*)?/i, "");
   value = value.replace(/\betb\b/gi, "elite trainer box")
     .replace(/\bupc\b/gi, "ultra premium collection")
     .replace(/\b(\d+)\s*pk\b/gi, "$1 pack")
@@ -36,6 +45,7 @@ export function communityProductKey(title, sku = "") {
     .replace(/&/g, " and ").replace(/['’]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ").trim();
+  value = retailerTitleAliases.get(value) || value;
 
   const knownVariant = tinVariants.get(String(sku || embeddedSku).trim().toLowerCase());
   const marker = "30th celebration mini tin", at = value.indexOf(marker);

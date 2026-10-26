@@ -3,6 +3,31 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { communityProductKey, communityProductName, consolidateCommunityProducts } from "../community-product-identity.js";
 
+test("live Delta Reign and Pitch Black retailer title differences combine into correct quantities", () => {
+  const rows=[
+    {name:"Pokémon Trading Card Game: Mega Evolution—Delta Reign Booster Bundle",quantity:4},
+    {name:"Pokemon TCG: Mega Evolution-Delta Reign Booster Bundle (6 Packs)",quantity:11},
+    {name:"Pokémon Trading Card Game: Mega Evolution Pitch Black Booster Bundle",quantity:18},
+    {name:"Pokemon Trading Card Games Mega Evolution 5 Pitch Black Booster Bundle",quantity:2}
+  ];
+  const products=consolidateCommunityProducts(rows.map(item=>({items:[item]})));
+  assert.equal(products.length,2);
+  assert.equal(products.find(p=>p.productKey.includes('delta reign')).quantity,15);
+  assert.equal(products.find(p=>p.productKey.includes('pitch black')).quantity,20);
+});
+
+test("title aliases keep Pokemon Center ETBs, product types and multipacks distinct", () => {
+  const standard="Pokemon TCG: Mega Evolution-Delta Reign Elite Trainer Box";
+  assert.notEqual(communityProductKey(standard),
+    communityProductKey("Pokemon TCG: Mega Evolution-Delta Reign Pokemon Center Elite Trainer Box"));
+  assert.notEqual(communityProductKey("Pokemon TCG: Mega Evolution-Delta Reign Booster Bundle"),
+    communityProductKey("Pokemon TCG: Mega Evolution-Delta Reign Booster Bundle 2-Pack"));
+  assert.notEqual(communityProductKey("Pokemon TCG: Mega Evolution-Delta Reign Booster Bundle"),
+    communityProductKey("Pokemon TCG: Mega Evolution-Delta Reign Booster Display Box (36 Packs)"));
+  assert.notEqual(communityProductKey("Pokemon TCG: Other Booster Bundle"),
+    communityProductKey("Pokemon TCG: Other Booster Bundle (6 Packs)"));
+});
+
 test("SKU-prefixed Lapras screenshot titles combine with the plain title and display without the code", () => {
   const withCode="(10-10465-169) Pokémon TCG: 30th Celebration Mini Tin – Lapras (Day)";
   const plain="Pokemon TCG: 30th Celebration Mini Tin – Lapras (Day)";
