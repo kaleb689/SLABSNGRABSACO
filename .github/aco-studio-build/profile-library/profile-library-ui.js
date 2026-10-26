@@ -125,10 +125,11 @@
      reviewLine('Independent reference coverage:',files.withSourceReference+' original records have separately named references; '+files.withoutIndependentReference+' do not'),
      reviewLine('Old CVV-labeled field inventory:',files.legacyFieldPopulatedRows+' original records have a populated legacy column; '+files.legacyOnlyPopulatedRows+' of those have no independent reference'),
      reviewLine('Legacy field identity overlap:',files.legacyIdentityMatches+' distinct profiles missing a reference have matching email/retailer/card identity in an original record; '+files.legacyIdentityCardMismatches+' card identity mismatches'),
-     reviewLine('Legacy-field safety:', 'Presence and identity only. No code was displayed, copied, retained, or restored. A legacy column may contain a payment-card verification value.')
+     reviewLine('Legacy-field safety:', 'This audit reports presence and identity only. Owner-confirmed restoration is a separate action; 3-4-digit numeric verifier-shaped values are excluded.')
     );
    }
   }else reviewOutput.append(reviewLine('Original files:',report.originalSelectionCancelled?'Native file picker cancelled; no original files scanned':'Not selected. Files outside ACO Studio cannot be scanned without your permission.'));
+  if(report.historicalRecovery){const recovery=report.historicalRecovery;reviewOutput.append(reviewLine('Historical non-payment recovery:',recovery.recoverable+' eligible exact-card matches; '+recovery.conflicts+' conflicting profiles; '+recovery.cardMismatches+' card mismatches; '+(recovery.excludedVerifierFormat||0)+' verifier-shaped values excluded. No restore occurs without confirmation.'));}
   reviewOutput.append(reviewLine('Result:',report.notice));
   if(report.missingProfiles&&!report.backups.potentialMatches&&!report.savedCardBank.potentialMatches&&!h?.matched&&!files?.potentialMatches)
    reviewOutput.append(reviewLine('Next step:','No matching independent references were found in the examined sources. Check your original exports or a device backup made before the fields went missing.'));
