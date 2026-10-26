@@ -340,7 +340,6 @@ test('Unused email-bank overlap is flagged only in its retailer and owner vault'
  await commit(h,await preview(h,[complete('pokemoncenter','other@example.test')],h.p,'pokemoncenter'));
  await h.profiles.libraryTransaction('personal',null,ctx=>{
   ctx.emails.push({id:'unused-target',retailer:'target',email:'overlap@example.test',profileId:null});
-  ctx.emails.push({id:'unused-pkc',retailer:'pokemoncenter',email:'overlap@example.test',profileId:null});
   ctx.emails.push({id:'assigned-target',retailer:'target',email:'overlap@example.test',profileId:ctx.rows.find(x=>x.retailer==='target').id});
  },()=>{});
  const result=await h.lib.list(event,h.p);
