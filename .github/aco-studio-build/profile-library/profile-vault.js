@@ -629,7 +629,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  }
 
  // Live profiles stay in their owner vault, with durable bank membership independent of readiness.
- async function importLiveProfiles(scope,customerId,entries,{updateExisting=false,batchId=null,fileNames=[]}={},beforeWrite){
+ async function importLiveProfiles(scope,customerId,entries,{updateExisting=false,batchId=null,fileNames=[]}={},beforeWrite,preserveRetiredCards=null){
   const key=bank(scope,customerId);
   if(!Array.isArray(entries)||!entries.length||entries.length>10000||typeof beforeWrite!=='function')throw Error('Choose 1-10000 live profiles.');
   return serial(async()=>{
@@ -662,6 +662,11 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     d.supersededLiveImportProfiles||={};d.supersededLiveImportProfiles[key]||=[];
     if(d.supersededLiveImportProfiles[key].length+displaced.length>20000)
      throw Error('The encrypted Live-import recovery archive is full. No profiles were changed.');
+    // The saved Card Bank is physically separate. Preserve DIFFERENT old cards
+    // before retiring their source profiles. A failure aborts Live import;
+    // successful saved-card copies remain safe even if later profile writes fail.
+    if(preserveRetiredCards&&typeof preserveRetiredCards!=='function')throw Error('Invalid card recovery callback.');
+    if(preserveRetiredCards)await preserveRetiredCards(structuredClone(displaced),structuredClone(prepared));
     const replacedAt=now(),activeIdsByEmail=new Map();
     for(const live of prepared)activeIdsByEmail.set(live.retailer+'|'+normalizeEmail(live.email),live.id);
     for(const old of displaced){
