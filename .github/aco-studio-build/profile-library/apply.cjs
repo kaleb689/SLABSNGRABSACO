@@ -380,19 +380,12 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
 
 
 
-// Temporary CI source map for the user's forwarding workflow; remove before release.
+
+// Temporary static source inspection; remove after implementing Email Gen.
 {
- const terms=['aliasForm','bulkCreate','bankRows','cfPublish','emailTarget','addAlias','function createAlias','function saveAliases','cf:publish','function renderBank','emailPrivate','emailGen'];
- const filenames=fs.readdirSync(root).filter(name=>/\.(?:js|cjs|html)$/.test(name));
- for(const file of filenames){
-  const src=fs.readFileSync(path.join(root,file),'utf8');
-  const hits=terms.flatMap(term=>{
-   const at=src.indexOf(term);
-   if(at<0)return [];
-   const start=Math.max(0,at-1100),end=Math.min(src.length,at+1700);
-   const snippet=src.slice(start,end).replace(/\b(?:token|secret|passphrase)\s*[:=]\s*[^,;)}]+/gi,'[redacted]');
-   return [{term,at,snippet}];
-  });
-  if(hits.length)console.log('EMAILGEN_CODE_MAP',file,JSON.stringify(hits.slice(0,9)));
+ const src=fs.readFileSync(path.join(root,'app.js'),'utf8');
+ for(const term of ['function makeAlias(', 'function normalize(', 'async function store(', 'async function add(', 'function add(', 'async function authorizeOwner(', 'const EmailBank=', 'window.ACOEmailBank', 'function render(){','function suggestName(']){
+  const at=src.indexOf(term);
+  if(at>=0)console.log('EMAILGEN_METHOD',term,'AT',at,'BODY',src.slice(Math.max(0,at-650),at+2500).replace(/\b(?:API|SECRET|TOKEN)_KEY\s*=\s*[^,;]+/gi,'[redacted]'));
  }
 }
