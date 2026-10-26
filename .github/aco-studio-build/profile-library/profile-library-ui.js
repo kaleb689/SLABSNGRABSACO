@@ -79,7 +79,7 @@
    reviewLine('Vault:',report.scope==='personal'?'Personal':'Selected customer'),
    reviewLine('Profiles checked:',report.totalProfiles),
    reviewLine('Profiles missing a reference:',report.missingProfiles),
-   reviewLine('Encrypted profile snapshots:',report.backups.scanned+' readable; '+report.backups.unreadable+' unreadable; '+report.backups.potentialMatches+' possible matches'),
+   reviewLine('Encrypted profile snapshots:',report.backups.scanned+' readable; '+report.backups.unreadable+' unreadable; '+report.backups.potentialMatches+' possible matches; '+(report.backups.conflicts||0)+' conflicting references excluded'),
    reviewLine('Current saved Card Bank:',report.savedCardBank.potentialMatches+' possible matches; '+report.savedCardBank.conflictingCards+' conflicting card entries')
   );
   const h=report.historicSources;
@@ -157,8 +157,8 @@
     return;
    }
    const count=preview.recoverable;
-   restoreStatus.textContent=count+' independent references may be restored from encrypted snapshots; '+preview.stillMissing+' will remain missing. No values were displayed or changed.';
-   const agreed=window.confirm('Restore '+count+' missing independently named profile references from encrypted backups? Existing references and all unrelated profile fields will be preserved. No CVV/CVC-labeled source fields will be used.');
+   restoreStatus.textContent=count+' independent references may be restored from encrypted snapshots; '+preview.stillMissing+' will remain missing; '+(preview.conflicts||0)+' conflicts were excluded. No values were displayed or changed.';
+   const agreed=window.confirm('Restore '+count+' missing independently named profile references from encrypted backups? Existing references and other profile fields will be preserved. Proceed only if these are known NON-PAYMENT references: older imports may have moved ambiguously named values into a separate field, and their origin cannot be independently verified.');
    if(!agreed){restoreStatus.textContent='Restore cancelled. No saved profiles were changed.';return;}
    if(openedEpoch!==epoch||main.hidden)throw Error('The profile view changed. Scan again before restoring.');
    const result=await api.recoverCodes({...owner,confirmed:true,token:preview.token,independentOnly:true});
