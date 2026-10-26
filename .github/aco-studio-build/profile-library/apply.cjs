@@ -409,3 +409,31 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  for(const file of ['emailgen-random.test.js','emailgen-forwarding-test.test.js'])
   fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
 }
+
+
+
+// Persist owner Email Gen access with macOS Keychain-backed Electron safeStorage.
+// Never store raw Cloudflare secrets in renderer localStorage, source, or release.
+{
+ const ui=fs.readFileSync(path.join(__dirname,'emailgen-owner-remember-ui.js'),'utf8');
+ replace('app.js',' async function authorizeOwner(){',ui+'\n async function authorizeOwner(){');
+ replace('app.js',
+  "  render();\n }\n // Owner-only random Email Gen, injected inside the encrypted Email Bank closure.",
+  "  render();\n  try{const saved=await api().saveRemembered(passphrase);if(saved?.saved)alertMessage('cfStatus','Owner verified. Cloudflare details and your Email Bank passphrase are now encrypted with this Mac Keychain. Future launches will unlock automatically.',true);}\n  catch(error){alertMessage('cfStatus','Cloudflare is unlocked, but this Mac could not save the login securely. '+String(error?.message||error));}\n }\n // Owner-only random Email Gen, injected inside the encrypted Email Bank closure.");
+ replace('app.js',' addEvents();render();',
+  ' addEvents();setupRememberedOwnerControls();render();void restoreRememberedOwner();');
+ replace('main.js'," if(!s || Date.now()-s.lastUsed>3600000){sessions.delete(event.sender.id);throw Error('Owner session expired. Authorize with Cloudflare again.');}",
+  " if(!s)throw Error('Owner Cloudflare session is unavailable. Reconnect the encrypted saved login.');");
+ replace('main.js'," ipcMain.handle('cf:authorize',async(event,config)=>{",
+  " require('./emailgen-owner-login-ipc').registerOwnerLogin({ipcMain,baseDir:app.getPath('userData'),safeStorage,cloudflare,sessions,ownerSender,domain:OWNER_DOMAIN});\n ipcMain.handle('cf:authorize',async(event,config)=>{");
+ replace('preload.js'," cloudflare:Object.freeze({",
+  " cloudflare:Object.freeze({\n  saveRemembered:passphrase=>ipcRenderer.invoke('cf:remember:save',passphrase),\n  restoreRemembered:()=>ipcRenderer.invoke('cf:remember:restore'),\n  rememberedStatus:()=>ipcRenderer.invoke('cf:remember:status'),\n  forgetRemembered:()=>ipcRenderer.invoke('cf:remember:forget'),");
+ const pkgFile=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(pkgFile,'utf8'));
+ for(const file of ['emailgen-owner-login-store.js','emailgen-owner-login-ipc.js'])
+  fs.copyFileSync(path.join(__dirname,file),path.join(root,file));
+ pkg.build||={};pkg.build.files||=[];
+ for(const file of ['emailgen-owner-login-store.js','emailgen-owner-login-ipc.js'])
+  if(!pkg.build.files.includes(file))pkg.build.files.push(file);
+ fs.writeFileSync(pkgFile,JSON.stringify(pkg,null,2)+'\n');
+ fs.copyFileSync(path.join(__dirname,'emailgen-owner-remember.test.js'),path.join(root,'tests','emailgen-owner-remember.test.js'));
+}
