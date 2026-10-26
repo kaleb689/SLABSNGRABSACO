@@ -14,6 +14,24 @@
   <div class="buttons" style="margin-top:10px"><button type="button" class="btn primary" id="randomAliasAssign">Activate forwarding &amp; send live addresses to pool</button></div>
  </div>
  <div class="buttons" style="margin-top:10px"><button type="button" class="btn secondary" id="randomAliasSync" hidden>Publish / sync assigned emails</button></div>
+ <section class="fieldStack" id="randomAliasDestinationArea">
+  <h3>Change forwarding inbox on existing drafts</h3>
+  <p class="sectionHelp">Keep every generated @sng.sarl address. Change only random-generated DRAFT aliases with no published Cloudflare rule or retailer import. Live, pending, manually created, and imported accounts are not changed. Preview and explicitly confirm before saving an encrypted backup and changing the destination.</p>
+  <label>Existing draft destination
+   <select id="randomDestinationOld" aria-label="Current destination of existing random drafts"><option value="">Choose destination...</option></select>
+  </label>
+  <label>New verified forwarding inbox
+   <input type="email" id="randomDestinationNew" autocomplete="off" spellcheck="false" placeholder="slabsaco@gmail.com">
+  </label>
+  <div class="buttons"><button type="button" class="btn secondary" id="randomDestinationPreview">Preview draft destination change</button></div>
+  <section id="randomDestinationConfirmArea" class="panel section" hidden>
+   <h4 id="randomDestinationSummary"></h4>
+   <p>All original aliases, retailer assignments, and stored data remain. An encrypted snapshot is preserved first. No Cloudflare rules are published by this action.</p>
+   <label class="check"><input type="checkbox" id="randomDestinationAcknowledged">I reviewed the exact destination and want to update these existing drafts.</label>
+   <div class="buttons"><button type="button" class="btn primary" id="randomDestinationConfirm">Confirm change of draft destinations</button><button type="button" class="btn secondary" id="randomDestinationCancel">Cancel</button></div>
+  </section>
+  <p id="randomDestinationStatus" class="tiny" role="status" aria-live="polite"></p>
+ </section>
  <div class="fieldStack" id="randomAliasTestArea">
   <h3>Test All Emails — verify delivery to your inbox</h3>
   <p class="sectionHelp">After Cloudflare forwarding is live, send a unique test to each generated address and confirm it arrived in your IMAP INBOX. Routing rules alone are not counted as passed.</p>
