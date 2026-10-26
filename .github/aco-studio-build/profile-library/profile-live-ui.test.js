@@ -194,3 +194,41 @@ test('Selected retailer stays brightly highlighted and readable after switching 
  assert.match(css,/color:#061923!important/);
  assert.match(css,/\.profileResourceBanks \+ \.profileRetailerWorkspace/);
 });
+
+
+test('Ready for Export sorts generated Pokémon Center profiles newest-first without reordering saved vault records',()=>{
+ const start=source.indexOf(" const timeValue=value=>"),end=source.indexOf("\n const pageRows=",start);
+ assert.ok(start>0&&end>start,'sort logic must exist');
+ const context={stage:'completed',sortMode:'newest',Date,Number,String};
+ vm.createContext(context);
+ vm.runInContext(source.slice(start,end)+"\nthis.sort=sortedProfiles;",context);
+ const earlier={id:'a',email:'a@example.test',createdAt:'2026-10-10T10:00:00.000Z'};
+ const newB={id:'b',email:'b@example.test',createdAt:'2026-10-01T10:00:00.000Z',profileGeneratedAt:'2026-10-26T15:12:30.000Z'};
+ const newC={id:'c',email:'c@example.test',createdAt:'2026-10-02T10:00:00.000Z',profileGeneratedAt:'2026-10-26T15:12:31.000Z'};
+ const originals=[earlier,newB,newC];
+ assert.deepEqual(Array.from(context.sort(originals),x=>x.id),['c','b','a']);
+ assert.deepEqual(Array.from(originals,x=>x.id),['a','b','c'],'sorting may not mutate stored row order');
+ context.sortMode='oldest';assert.deepEqual(Array.from(context.sort(originals),x=>x.id),['a','b','c']);
+ context.sortMode='email';assert.deepEqual(Array.from(context.sort([newC,earlier,newB]),x=>x.id),['a','b','c']);
+});
+test('The owner can select the newest 26 completed Pokémon Center profiles, then export via right-click',()=>{
+ assert.match(source,/latestCount\.value='26'/);
+ assert.match(source,/selectNewest\.onclick=\(\)=>/);
+ assert.match(source,/for\(const row of visible\(\)\.slice\(0,count\)\)selected\.add\(row\.id\)/);
+ assert.match(source,/sortMode='newest';sortSelect\.value='newest'/);
+ assert.match(source,/const chosen=row&&selected\.has\(row\.id\)\?page\.filter\(x=>selected\.has\(x\.id\)\):row\?\[row\]:page\.filter\(x=>selected\.has\(x\.id\)\)/);
+ assert.match(source,/Export '\+\(selected\.has\(row\.id\)\?'Selected \('/);
+ assert.match(source,/exportFormat:exportType\.value/);
+ assert.match(source,/profileIds:chosen\.map\(x=>x\.id\)/);
+ assert.match(source,/if\(stage==='unused'\).*return;/);
+});
+test('Generated batch metadata is durable and older generation events are read-only inferred',()=>{
+ const vault=fs.readFileSync(require.resolve('../profile-vault.js'),'utf8');
+ const service=fs.readFileSync(require.resolve('../profile-library-service.js'),'utf8');
+ assert.match(vault,/const creationBatchId=uuid\(\),profileGeneratedAt=now\(\)/);
+ assert.match(vault,/profileGeneratedAt,creationBatchId,revision:/);
+ assert.match(service,/row\.profileGeneratedAt\|\|null/);
+ assert.match(service,/event\.action!=='create-from-pools'/);
+ assert.match(service,/profileGeneratedAt:r\.profileGeneratedAt\|\|creationEvents\.get/);
+ assert.match(service,/const \[settings,audit\]=await Promise\.all/);
+});
