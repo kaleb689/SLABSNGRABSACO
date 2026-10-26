@@ -58,3 +58,36 @@
 .profileContextMenu button:hover,.profileContextMenu button:focus-visible{background:#185267}
 @media(max-width:1150px){.profileResourceBanks{grid-template-columns:1fr}.profileResourceList{max-height:300px}}
 @media(max-width:760px){.profileLibrary{padding:12px}.profileLibrary .profileLibraryLayout{grid-template-columns:1fr}.profileRetailerSidebar .profileRetailerButtons{flex-direction:row;flex-wrap:wrap}.profileRetailerSidebar .profileRetailerButtons button{width:auto;flex:1 1 130px}.profileRetailerSidebar .profileLibraryGroups{flex-direction:row;flex-wrap:wrap}.profileResourceRow{grid-template-columns:minmax(0,1fr)}.profileResourceRow>div{grid-row:auto}.profileResourceRow .profileResourceState,.profileResourceRow .btn{grid-column:1;justify-self:start}.profileLibraryCards{grid-template-columns:repeat(auto-fill,minmax(min(100%,225px),1fr))}}
+
+/* Retailer identity must remain obvious after every click and redraw. */
+.profileLibrary .profileRetailerSidebar .profileRetailerButtons button[aria-pressed="true"],
+.profileLibrary .profileRetailerSidebar .profileRetailerButtons button.profileRetailerActive{
+ background:#37e0e4!important;
+ border:2px solid #a4fbff!important;
+ color:#061923!important;
+ font-weight:800!important;
+ box-shadow:0 0 0 2px rgba(20,213,219,.35),0 0 17px rgba(31,215,228,.25)!important;
+}
+.profileLibrary .profileRetailerSidebar .profileRetailerButtons button[aria-pressed="false"]{
+ background:#162337;
+ border:1px solid #46617c;
+ color:#dce9fa;
+ box-shadow:none;
+}
+.profileLibrary .profileRetailerSidebar .profileRetailerButtons button:focus-visible{
+ outline:3px solid #ffffff;
+ outline-offset:3px;
+}
+/* Stage controls are deliberately between both saved resource banks and profiles. */
+.profileLibrary .profileResourceBanks + .profileRetailerWorkspace{
+ margin:6px 0 14px;
+}
+.profileLibrary .profileResourceBanks + .profileRetailerWorkspace .profileLibraryTabs{
+ margin:7px 0;
+}
+.profileLibrary .profileResourceBanks + .profileRetailerWorkspace .profileLibraryTabs [data-stage][aria-pressed="true"]{
+ background:#09596a;
+ border-color:#4de2e7;
+ color:#efffff;
+ box-shadow:inset 0 0 0 1px rgba(77,226,231,.5);
+}
