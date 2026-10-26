@@ -229,7 +229,7 @@
  const selectNewest=text('button','Select newest 26');selectNewest.type='button';selectNewest.className='btn secondary';
  sortToolbar.append(sortLabel,latestLabel,selectNewest);q('current-retailer').after(sortToolbar);
  const timeValue=value=>{const t=Date.parse(value||'');return Number.isFinite(t)?t:0;};
- const creationTime=row=>timeValue(row.profileGeneratedAt)||timeValue(row.completedAt)||timeValue(row.createdAt);
+ const creationTime=row=>timeValue(row.profileGeneratedAt)||timeValue(row.createdAt)||timeValue(row.completedAt);
  const sortedProfiles=profiles=>{
   if(stage==='unused')return profiles;
   return [...profiles].sort((a,b)=>sortMode==='email'?String(a.email||'').localeCompare(String(b.email||'')):
