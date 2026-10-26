@@ -18,7 +18,7 @@ function cardsToPreserve(displaced,incoming){
    throw Error('A matching Ready/Unused profile has incomplete saved card details. Repair its card before Live import so its original card is not lost.');
   if(sameCard(old,current))continue;
   if(!byNumber.has(number)){
-   byNumber.set(number,{number,month:old.month,year:old.year,cardholder:old.cardholder||'Unassigned',label:'Preserved from Live import',brand:old.type||'',
+   byNumber.set(number,{number,month:old.month,year:old.year,expMonth:old.month,expYear:old.year,cardholder:old.cardholder||'Unassigned',label:'Preserved from Live import',brand:old.type||'',
     // This is an independent, non-payment security reference only.
     customSecurityCode:old.customSecurityCode||''});
   }
