@@ -20,14 +20,22 @@ function registerOwnerLogin({ipcMain,baseDir,safeStorage,cloudflare,sessions,own
  });
  ipcMain.handle('cf:remember:restore',async event=>{
   ownerSender(event);
-  const saved=store.read();
-  if(!saved)return {stored:false,restored:false};
-  // Do not erase saved credentials on a network outage or transient failure.
+  let saved;
+  try{saved=store.read();}
+  catch(error){
+   // Never return secrets or raw Keychain/Cloudflare exception text to the UI.
+   const keychainUnavailable=/Keychain-backed encryption is unavailable|Insecure credential storage/.test(String(error?.message||''));
+   return {stored:store.status().saved,restored:false,
+    reason:keychainUnavailable?'keychain-unavailable':'keychain-decrypt-failed'};
+  }
+  if(!saved)return {stored:false,restored:false,reason:'not-saved'};
+  // Keep credentials, original encrypted bank, and current owner account intact
+  // if the provider rejects the token or the network is temporarily offline.
   try{
    await authorize({domain,accountId:saved.accountId,zoneId:saved.zoneId,token:saved.token},event);
    return {stored:true,restored:true,passphrase:saved.passphrase,accountId:saved.accountId,zoneId:saved.zoneId};
   }catch{
-   return {stored:true,restored:false,networkOrAuthError:true};
+   return {stored:true,restored:false,networkOrAuthError:true,reason:'cloudflare-authorization-failed'};
   }
  });
  ipcMain.handle('cf:remember:status',event=>{ownerSender(event);return store.status();});
