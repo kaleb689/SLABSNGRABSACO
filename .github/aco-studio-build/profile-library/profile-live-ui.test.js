@@ -175,3 +175,22 @@ test('Saved unfinished profile drafts remain visible in Unused and never pass to
  assert.match(source,/kind==='unused-account'/);
  assert.match(source,/stage==='unused'\?\(unusedAccounts\.some\(x=>x\.id===id\)\|\|rows\.some/);
 });
+
+test('Retailer stage controls sit directly under both resource banks, above the profiles',()=>{
+ assert.match(source,/const stageWorkspace=main\.querySelector\('\.profileRetailerWorkspace'\)/);
+ assert.match(source,/main\.querySelector\('\.profileResourceBanks'\)\.after\(stageWorkspace\)/);
+ assert.match(source,/data-stage="unused" aria-pressed="true">Unused/);
+ assert.match(source,/data-stage="completed">Ready for Export/);
+ assert.match(source,/data-stage="live">Live Profiles/);
+ // The control is moved, not recreated: current stage handlers still reference it.
+ assert.match(source,/for\(const b of main\.querySelectorAll\('\[data-stage\]'\)\)b\.onclick=/);
+});
+test('Selected retailer stays brightly highlighted and readable after switching retailers',()=>{
+ const css=fs.readFileSync(require.resolve('../profile-library.css'),'utf8');
+ assert.match(source,/b\.setAttribute\('aria-pressed',String\(id===q\('retailer'\)\.value\)\)/);
+ assert.match(source,/b\.classList\.toggle\('profileRetailerActive',isActive\)/);
+ assert.match(css,/\.profileRetailerSidebar \.profileRetailerButtons button\[aria-pressed="true"\]/);
+ assert.match(css,/background:#37e0e4!important/);
+ assert.match(css,/color:#061923!important/);
+ assert.match(css,/\.profileResourceBanks \+ \.profileRetailerWorkspace/);
+});
