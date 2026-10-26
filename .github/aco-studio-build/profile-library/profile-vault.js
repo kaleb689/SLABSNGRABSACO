@@ -305,7 +305,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
      if(!row||row.retailer!==older.retailer||normalizeEmail(row.email)!==normalizeEmail(older.email))continue;
      const currentCard=String(row.data?.cc_number||row.data?.card?.number||'').replace(/\D/g,'');
      const olderCard=String(older.data?.cc_number||older.data?.card?.number||'').replace(/\D/g,'');
-     if(currentCard&&olderCard&&currentCard!==olderCard)continue;
+     if(!/^\d{12,19}$/.test(currentCard)||!/^\d{12,19}$/.test(olderCard)||currentCard!==olderCard)continue;
      const reference=independentCode(older.data,false);
      if(!reference||reference.length>100||/[\x00-\x1f\x7f]/.test(reference))continue;
      if(conflicted.has(row.id))continue;
