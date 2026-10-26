@@ -254,8 +254,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const code=codeOf(raw),candidates=byIdentity.get(retailer+'|'+email)||[];
    if(code)diagnostics.withCode++;if(email)diagnostics.withEmail++;if(candidates.length===1)diagnostics.identityMatches++;
    if(!code||!email||candidates.length!==1)continue;
-   const row=candidates[0],oldCard=C.payment(raw).number,currentCard=C.payment(row.data).number;
-   if(oldCard&&currentCard&&oldCard!==currentCard){diagnostics.cardMismatches++;continue;}
+   const row=candidates[0];
+   if(!C.exactFullCardMatch(raw,row.data)){
+    // Missing or different complete card number is NOT a valid match.
+    diagnostics.cardMismatches++;continue;
+   }
    if(ambiguous.has(row.id))continue;
    if(matches.has(row.id)&&matches.get(row.id).code!==code){ambiguous.add(row.id);matches.delete(row.id);continue;}
    matches.set(row.id,{code,revision:row.revision||0,retailer:row.retailer,email:row.email});
@@ -358,8 +361,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
       source.retailer||source.retailerId||source.site||source.store)||filenameRetailer;
      const candidates=retail?(byIdentity.get(retail+'|'+email)||[]):(byEmail.get(email)||[]);
      if(candidates.length!==1){if(code&&candidates.length>1)uncertainRetailer++;continue;}
-     const row=candidates[0],originalCard=C.payment(source).number,currentCard=C.payment(row.data).number;
-     if(originalCard&&currentCard&&originalCard!==currentCard){
+     const row=candidates[0];
+     if(!C.exactFullCardMatch(source,row.data)){
+      // Record an identity conflict rather than assigning an unmatched source.
+      // Card digits and legacy field contents never leave the main process.
       if(legacyPopulated)legacyIdentityCardMismatches++;
       if(code)cardMismatches++;
       continue;
