@@ -465,3 +465,57 @@ test('Reconciliation stays within the authorized customer vault and rejects fore
  assert.equal(result.retired,1);assert.equal((await h.lib.list(event,h.a)).profiles.length,1);
  assert.equal((await h.lib.list(event,h.p)).profiles.length,0);
 });
+
+
+test('Duplicate review returns exact full card and the other same-retailer profile identities',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','first-card@example.test')],h.p,'target'));
+ await commit(h,await preview(h,[complete('target','second-card@example.test')],h.p,'target'));
+ await commit(h,await preview(h,[complete('pokemoncenter','pkc-card@example.test')],h.p,'pokemoncenter'));
+ const list=await h.lib.list(event,h.p),target=list.profiles.filter(x=>x.retailer==='target');
+ assert.equal(target.length,2);
+ for(const row of target){
+  assert.deepEqual(row.duplicates,['card']);
+  const detail=row.duplicateDetails.find(x=>x.kind==='card');
+  assert.equal(detail.value,'4242424242424242');
+  assert.equal(detail.peers.length,1);
+  assert.equal(detail.peers[0].email,row.email==='first-card@example.test'?'second-card@example.test':'first-card@example.test');
+  assert.equal(detail.peers[0].bank,'completed');
+  assert.ok(detail.peers[0].id);
+ }
+ assert.deepEqual(list.profiles.find(x=>x.retailer==='pokemoncenter').duplicateDetails,[]);
+});
+
+test('Duplicate review explicitly identifies exact same-retailer email and differing full cards',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','same-display@example.test')],h.p,'target'));
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  const other=structuredClone(ctx.rows[0]);other.id='duplicate-detail-email';
+  LC.putCard(other.data,{number:'5555555555554444',month:'08',year:'2033',cardholder:'Alex Example'});
+  ctx.rows.push(other);
+ },()=>{});
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(rows.length,2);
+ for(const row of rows){
+  assert.deepEqual(row.duplicates,['email']);
+  assert.equal(row.duplicateDetails.length,1);
+  assert.equal(row.duplicateDetails[0].value,'same-display@example.test');
+  assert.equal(row.duplicateDetails[0].peers.length,1);
+  assert.notEqual(row.id,row.duplicateDetails[0].peers[0].id);
+ }
+});
+
+test('Duplicate review identifies unused-bank conflict by exact email, without exposing any other retailer or vault',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','pool-detail@example.test')],h.p,'target'));
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.emails.push({id:'unused-target-detail',retailer:'target',email:'pool-detail@example.test',profileId:null});
+  ctx.emails.push({id:'unused-pkc-detail',retailer:'pokemoncenter',email:'pool-detail@example.test',profileId:null});
+ },()=>{});
+ const result=await h.lib.list(event,h.p),row=result.profiles.find(x=>x.retailer==='target');
+ assert.deepEqual(row.duplicates,['unused email']);
+ assert.equal(row.duplicateDetails[0].kind,'unused email');
+ assert.equal(row.duplicateDetails[0].value,'pool-detail@example.test');
+ assert.deepEqual(row.duplicateDetails[0].peers.map(x=>x.id),['unused-target-detail']);
+ assert.deepEqual((await h.lib.list(event,h.a)).profiles,[]);
+});

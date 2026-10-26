@@ -446,9 +446,8 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
 {
  const source=fs.readFileSync(path.join(__dirname,'emailgen-safe-new-bank.js'),'utf8');
  replace('app.js',' async function authorizeOwner(){',source+'\n async function authorizeOwner(){');
- replace('app.js',
-  " if(unlocked||rememberedLoginBusy||typeof api()?.restoreRemembered!=='function')return;",
-  " if(unlocked||rememberedLoginBusy||typeof api()?.restoreRemembered!=='function'||localStorage.getItem(NEW_SETUP_PENDING))return;");
+ // Pending-new-bank diagnostics and the reconnect guard now live in the
+ // owner UI directly; do not re-patch a brittle exact-text snippet.
  replace('app.js',
   " addEvents();setupRememberedOwnerControls();render();void restoreRememberedOwner();",
   " addEvents();setupRememberedOwnerControls();setupNewEmailBankReset();render();void restoreRememberedOwner();");

@@ -63,7 +63,7 @@ test('Owner IPC restores through Cloudflare authorization and never sends token 
  assert.equal(sessions.get(14).config.token,example.token);
  assert.equal(handlers.get('cf:remember:forget')(event).saved,false);
  assert.equal(sessions.size,0);
- assert.deepEqual(await handlers.get('cf:remember:restore')(event),{stored:false,restored:false});
+ assert.deepEqual(await handlers.get('cf:remember:restore')(event),{stored:false,restored:false,reason:'NO_SAVED_LOGIN'});
 });
 test('Transient Cloudflare outage keeps Keychain login for retry without resubmitting',async t=>{
  const baseDir=temp(t),safeStorage=stubKeychain(),handlers=new Map(),sessions=new Map();
@@ -72,7 +72,7 @@ test('Transient Cloudflare outage keeps Keychain login for retry without resubmi
   cloudflare:{authorize:async()=>{throw Error('network unavailable with secret '+example.token);}},
   sessions,ownerSender:()=>{},platform:'darwin'});
  const result=await handlers.get('cf:remember:restore')({sender:{id:1}});
- assert.deepEqual(result,{stored:true,restored:false,networkOrAuthError:true});
+ assert.deepEqual(result,{stored:true,restored:false,reason:'CLOUDFLARE_UNREACHABLE',networkOrAuthError:true});
  assert.ok(!JSON.stringify(result).includes(example.token));
  assert.equal(makeOwnerLoginStore({baseDir,safeStorage,platform:'darwin'}).status().saved,true);
 });
@@ -83,4 +83,52 @@ test('Saved-login UI auto-reconnects and manual unlock remembers only after succ
  assert.match(app,/api\(\)\.restoreRemembered\(\)/);
  assert.match(app,/Forget this Mac/);
  assert.match(app,/await unlockBank\(result\.passphrase\)/);
+});
+
+test('Reconnect distinguishes invalid saved token without changing Keychain encrypted bytes',async t=>{
+ const baseDir=temp(t),safeStorage=stubKeychain(),handlers=new Map(),sessions=new Map();
+ const store=makeOwnerLoginStore({baseDir,safeStorage,platform:'darwin'});
+ store.save(example);const original=fs.readFileSync(store.path);
+ registerOwnerLogin({ipcMain:{handle:(id,fn)=>handlers.set(id,fn)},baseDir,safeStorage,
+  cloudflare:{authorize:async()=>{throw Error('401 invalid token '+example.token);}},
+  sessions,ownerSender:()=>{},platform:'darwin'});
+ const result=await handlers.get('cf:remember:restore')({sender:{id:1}});
+ assert.equal(result.reason,'CLOUDFLARE_TOKEN_REJECTED');
+ assert.equal(result.restored,false);
+ assert.ok(!JSON.stringify(result).includes(example.token),'token may not escape in error');
+ assert.deepEqual(fs.readFileSync(store.path),original);
+ assert.equal(sessions.size,0);
+});
+test('Reconnect distinguishes Mac Keychain decryption failure and preserves saved file',async t=>{
+ const baseDir=temp(t),originalSafe=stubKeychain(),handlers=new Map();
+ const store=makeOwnerLoginStore({baseDir,safeStorage:originalSafe,platform:'darwin'});
+ store.save(example);const original=fs.readFileSync(store.path);
+ registerOwnerLogin({ipcMain:{handle:(id,fn)=>handlers.set(id,fn)},baseDir,
+  safeStorage:stubKeychain(),cloudflare:{authorize:async()=>{throw Error('must not authorize');}},
+  sessions:new Map(),ownerSender:()=>{},platform:'darwin'});
+ const result=await handlers.get('cf:remember:restore')({sender:{id:1}});
+ assert.deepEqual(result,{stored:true,restored:false,reason:'KEYCHAIN_DECRYPT_FAILED'});
+ assert.deepEqual(fs.readFileSync(store.path),original);
+});
+test('Reconnect distinguishes missing Keychain availability and never writes secrets',async t=>{
+ const baseDir=temp(t),safeStorage=stubKeychain(),handlers=new Map();
+ makeOwnerLoginStore({baseDir,safeStorage,platform:'darwin'}).save(example);
+ const original=fs.readFileSync(path.join(baseDir,'aco-cloudflare-owner-login.encrypted'));
+ registerOwnerLogin({ipcMain:{handle:(id,fn)=>handlers.set(id,fn)},baseDir,
+  safeStorage:{isEncryptionAvailable:()=>false},cloudflare:{authorize:async()=>{throw Error('must not call');}},
+  sessions:new Map(),ownerSender:()=>{},platform:'darwin'});
+ assert.equal((await handlers.get('cf:remember:restore')({sender:{id:1}})).reason,'KEYCHAIN_UNAVAILABLE');
+ assert.deepEqual(fs.readFileSync(path.join(baseDir,'aco-cloudflare-owner-login.encrypted')),original);
+});
+test('Reconnect UI displays explicit reason for each failure and never clears the encrypted bank',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
+ const start=app.indexOf(' function reconnectStatusMessage(reason){');
+ const end=app.indexOf(' const NEW_SETUP_PENDING=',start);
+ assert.ok(start>=0&&end>start,'reconnect diagnostics must ship in the packaged app');
+ const source=app.slice(start,end);
+ for(const code of ['NO_SAVED_LOGIN','KEYCHAIN_UNAVAILABLE','KEYCHAIN_DECRYPT_FAILED','CLOUDFLARE_TOKEN_REJECTED','CLOUDFLARE_UNREACHABLE','CLOUDFLARE_AUTH_FAILED','BANK_PASSPHRASE_MISMATCH','NEW_BANK_SETUP_PENDING'])
+  assert.ok(source.includes(code),code+' must be handled');
+ assert.match(source,/note\.textContent=reconnectStatusMessage/);
+ assert.doesNotMatch(source,/localStorage\.removeItem|localStorage\.clear\(/);
+ assert.doesNotMatch(source,/console\.log|console\.error/);
 });

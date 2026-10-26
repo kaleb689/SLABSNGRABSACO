@@ -20,14 +20,25 @@ function registerOwnerLogin({ipcMain,baseDir,safeStorage,cloudflare,sessions,own
  });
  ipcMain.handle('cf:remember:restore',async event=>{
   ownerSender(event);
-  const saved=store.read();
-  if(!saved)return {stored:false,restored:false};
-  // Do not erase saved credentials on a network outage or transient failure.
+  // Explicit diagnostic states: no saved login, unavailable Keychain,
+  // failed decryption, Cloudflare authorization, and (renderer-side) bank
+  // passphrase mismatch. Never return token or log credentials.
+  if(!store.status().saved)return {stored:false,restored:false,reason:'NO_SAVED_LOGIN'};
+  if(!store.status().keychainAvailable)return {stored:true,restored:false,reason:'KEYCHAIN_UNAVAILABLE'};
+  let saved;
+  try{saved=store.read();}
+  catch{return {stored:true,restored:false,reason:'KEYCHAIN_DECRYPT_FAILED'};}
+  // Do not erase saved credentials on network outages or stale tokens.
   try{
    await authorize({domain,accountId:saved.accountId,zoneId:saved.zoneId,token:saved.token},event);
    return {stored:true,restored:true,passphrase:saved.passphrase,accountId:saved.accountId,zoneId:saved.zoneId};
-  }catch{
-   return {stored:true,restored:false,networkOrAuthError:true};
+  }catch(error){
+   const message=String(error?.message||'');
+   const reason=/\b(401|403|unauthorized|forbidden|invalid.?token|permission|access.?denied)\b/i.test(message)
+    ?'CLOUDFLARE_TOKEN_REJECTED':
+    /\b(network|offline|timeout|timed out|dns|enotfound|econn|socket|fetch failed|unreachable)\b/i.test(message)
+    ?'CLOUDFLARE_UNREACHABLE':'CLOUDFLARE_AUTH_FAILED';
+   return {stored:true,restored:false,reason,networkOrAuthError:true};
   }
  });
  ipcMain.handle('cf:remember:status',event=>{ownerSender(event);return store.status();});

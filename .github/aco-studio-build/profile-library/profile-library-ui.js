@@ -270,7 +270,21 @@
    const box=d.createElement('section');box.className='profileLibraryCard';
    if(entry.kind==='profile'){
     const row=entry.row;
-    box.append(text('strong',row.email),text('p','Saved '+(row.bank==='live'?'Live':row.stage==='completed'?'Ready for Export':'Unused / In Progress')+' profile · '+row.duplicates.join(', ')));
+    box.append(text('strong',row.email),text('p','Saved '+(row.bank==='live'?'Live':row.stage==='completed'?'Ready for Export':'Unused / In Progress')+' profile'));
+    for(const detail of row.duplicateDetails||[]){
+     const line=d.createElement('div');line.className='profileLibraryDuplicateDetail';
+     // The full matching value is available only after the owner/admin opens
+     // the authenticated vault's Duplicate Review. This is read-only.
+     line.append(text('strong',detail.kind==='card'?'Exact matching card number':detail.kind==='email'?'Exact matching email':'Unused email-bank conflict'));
+     const exact=text('code',detail.value);exact.style.cssText='display:block;overflow-wrap:anywhere;user-select:text;margin:6px 0';
+     line.append(exact);
+     for(const peer of detail.peers||[]){
+      const place=peer.bank==='live'?'Live':peer.bank==='completed'?'Ready for Export':peer.bank==='unused-email-bank'?'Unused Email Bank':'Unused / In Progress';
+      line.append(text('p','Also found in '+place+': '+(peer.email||'Unknown email')+(peer.id?' · ID '+peer.id:'')));
+     }
+     box.append(line);
+    }
+    if(!(row.duplicateDetails||[]).length)box.append(text('p','Duplicate metadata unavailable. Refresh the current vault to review the exact matching value.'));
     const jump=text('button','Show this profile');jump.type='button';jump.className='btn secondary slim';
     jump.onclick=()=>{
      stage=row.bank==='live'?'live':row.stage==='completed'?'completed':'unused';
@@ -279,7 +293,7 @@
      win.wrap.remove();draw();note('Showing the matching '+retailName[retailer]+' profile. No changes were made.');
     };box.append(jump);
    }else{
-    box.append(text('strong',entry.email),text('p',entry.reason==='matches-profile'?'Unused email-bank entry overlaps a saved profile in this retailer.':'Repeated unassigned email in this retailer’s Unused pool.'));
+    box.append(text('strong',entry.email),text('p',entry.reason==='matches-profile'?'Exact same email is assigned to a saved profile in this retailer.':'Exact same email occurs more than once among unassigned entries for this retailer.'));
     box.append(text('small','Review in the matching retailer Email Bank; the entry remains untouched.'));
    }
    win.body.append(box);
