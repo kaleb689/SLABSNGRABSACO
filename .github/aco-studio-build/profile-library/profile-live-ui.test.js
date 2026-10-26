@@ -6,7 +6,7 @@ const workshopSource=fs.readFileSync(require.resolve('../profile-workshop-ui.js'
 const workshopService=fs.readFileSync(require.resolve('../profile-workshop-service.js'),'utf8');
 // Execute the actual refresh function against a minimal DOM adapter. This
 // catches epoch invalidation and replacement of active form content.
-function harness(){const start=source.indexOf(' let pendingRefresh=false,refreshTicket=0;'),end=source.indexOf('\n function close()',start);let active=false,calls=0,draws=0,scrolls=0,bankDraws=0;const context={epoch:8,scope:'aco',customerId:'a',stage:'completed',unusedAccounts:[],main:{hidden:false},rows:[],bankAssets:{addresses:[],cards:[]},selected:new Set(),d:{querySelector:()=>active?{}:null,activeElement:null},request:()=>({scope:'aco',customerId:'a'}),api:{list:async()=>{calls++;return {profiles:[{id:'p'}]};}},loadResourceBanks:async()=>{context.bankAssets={addresses:[{id:'a1'}],cards:[{id:'c1',unused:true}]};},drawResourceBanks:()=>bankDraws++,draw:()=>draws++,note:()=>{},customerName:()=>'',visible:()=>[],q:()=>({value:'target'}),retailName:{target:'Target'},window:{scrollX:3,scrollY:222,scrollTo:()=>scrolls++},JSON,Set};vm.createContext(context);vm.runInContext(source.slice(start,end)+'\nthis.run=refresh;',context);return {context,run:()=>context.run(),busy:v=>active=v,counts:()=>({calls,draws,scrolls,bankDraws})};}
+function harness(){const start=source.indexOf(' let pendingRefresh=false,refreshTicket=0;'),end=source.indexOf('\n function close()',start);let active=false,calls=0,draws=0,scrolls=0,bankDraws=0;const context={epoch:8,scope:'aco',customerId:'a',stage:'completed',unusedAccounts:[],unusedConflicts:[],main:{hidden:false},rows:[],bankAssets:{addresses:[],cards:[]},selected:new Set(),d:{querySelector:()=>active?{}:null,activeElement:null},request:()=>({scope:'aco',customerId:'a'}),api:{list:async()=>{calls++;return {profiles:[{id:'p'}]};}},loadResourceBanks:async()=>{context.bankAssets={addresses:[{id:'a1'}],cards:[{id:'c1',unused:true}]};},drawResourceBanks:()=>bankDraws++,draw:()=>draws++,note:()=>{},customerName:()=>'',visible:()=>[],q:()=>({value:'target'}),retailName:{target:'Target'},window:{scrollX:3,scrollY:222,scrollTo:()=>scrolls++},JSON,Set};vm.createContext(context);vm.runInContext(source.slice(start,end)+'\nthis.run=refresh;',context);return {context,run:()=>context.run(),busy:v=>active=v,counts:()=>({calls,draws,scrolls,bankDraws})};}
 test('live profile refresh defers while editor is open and never changes ownership epoch',async()=>{const h=harness();h.busy(true);await h.run();assert.equal(h.counts().calls,0);assert.equal(h.context.epoch,8);h.busy(false);await h.run();assert.equal(h.context.epoch,8);assert.equal(h.counts().draws,1);assert.equal(h.counts().scrolls,1);await h.run();assert.equal(h.counts().draws,1);});
 
 test('Profiles page includes scoped card and address banks for Personal and customer vaults',()=>{assert.match(source,/Card Bank/);assert.match(source,/Address Bank/);assert.match(source,/profileWorkshop\.assets/);assert.match(source,/cards\.filter\(x=>x\.unused===true\)/);assert.match(source,/Select a customer to view that customer’s card bank/);});
@@ -231,6 +231,30 @@ test('Generated batch metadata is durable and older generation events are read-o
  assert.match(vault,/profileGeneratedAt,creationBatchId,revision:/);
  assert.match(service,/row\.profileGeneratedAt\|\|null/);
  assert.match(service,/event\.action!=='create-from-pools'/);
- assert.match(service,/profileGeneratedAt:r\.profileGeneratedAt\|\|creationEvents\.get/);
- assert.match(service,/const \[settings,audit\]=await Promise\.all/);
+ assert.match(service,/profileGeneratedAt:(?:row|r)\.profileGeneratedAt\|\|creationEvents\.get/);
+ assert.match(service,/const \[settings,audit(?:,unusedConflicts)?\]=await Promise\.all/);
+});
+
+
+test('Duplicate badge and review are scoped to chosen retailer and include unused-pool conflicts',()=>{
+ const start=source.indexOf(' function duplicateReviewEntries(retailer){'),end=source.indexOf('\n function profileIssues(row)',start);
+ assert.ok(start>0&&end>start);
+ const context={
+  rows:[
+   {id:'t1',retailer:'target',email:'same@example.test',duplicates:['card']},
+   {id:'t2',retailer:'target',email:'other@example.test',duplicates:['email']},
+   {id:'p1',retailer:'pokemoncenter',email:'same@example.test',duplicates:['card']}
+  ],
+  unusedConflicts:[
+   {id:'u-target',retailer:'target',email:'same@example.test',reason:'matches-profile'},
+   {id:'u-pkc',retailer:'pokemoncenter',email:'other@example.test',reason:'duplicate-unused-email'}
+  ]
+ };
+ vm.createContext(context);
+ vm.runInContext(source.slice(start,end)+'\nthis.duplicatesFor=duplicateReviewEntries;',context);
+ assert.deepEqual(Array.from(context.duplicatesFor('target'),x=>x.kind),['profile','profile','unused-email']);
+ assert.deepEqual(Array.from(context.duplicatesFor('pokemoncenter'),x=>x.kind),['profile','unused-email']);
+ assert.match(source,/duplicatesButton\.textContent='Duplicates \('\+duplicateReviewEntries\(q\('retailer'\)\.value\)\.length/);
+ assert.match(source,/duplicatesButton\.hidden=false/);
+ assert.match(source,/No data is deleted or changed by this review|no data is deleted or changed by this review/i);
 });

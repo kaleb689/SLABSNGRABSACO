@@ -575,6 +575,24 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    return {scope,customerId:scope==='aco'?key:null,...report};
   });
  }
+ // Read-only duplicate review: unassigned email-bank entries can be hidden
+ // by creationInventory when a saved profile already uses that email. Do not
+ // mistake a correctly assigned email-bank entry (profileId set) for unused.
+ // Never inspect another owner/customer vault or change stored information.
+ async function unusedEmailConflicts(scope,customerId){
+  await pending;
+  const key=bank(scope,customerId),d=await read(scope),rows=d.groups[key]||[];
+  const owned=new Set(rows.filter(row=>RETAILERS.includes(row.retailer))
+   .map(row=>row.retailer+'|'+normalizeEmail(row.email)).filter(token=>!token.endsWith('|')));
+  const unused=(d.emailBanks?.[key]||[]).filter(entry=>entry&&!entry.profileId&&RETAILERS.includes(entry.retailer))
+   .map(entry=>({id:entry.id,retailer:entry.retailer,email:normalizeEmail(entry.email)})).filter(entry=>entry.email);
+  const counts=new Map();
+  for(const entry of unused){const token=entry.retailer+'|'+entry.email;counts.set(token,(counts.get(token)||0)+1);}
+  return unused.filter(entry=>{
+   const token=entry.retailer+'|'+entry.email;
+   return owned.has(token)||counts.get(token)>1;
+  }).map(entry=>({...entry,reason:owned.has(entry.retailer+'|'+entry.email)?'matches-profile':'duplicate-unused-email'}));
+ }
  async function emailInventory(scope,customerId,retailer){const r=retailerId(retailer);const reconciled=r==='pokemoncenter'?await reconcileTargetLivePkcEmails(scope,customerId):null;await pending;const key=bank(scope,customerId),d=await read(scope);
   const rows=d.groups[key]||[],allProfiles=rows;
   const inventory=creationInventory(rows,allProfiles,emailRows(d,key),r);
@@ -855,7 +873,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   }
   return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count||a.retailer.localeCompare(b.retailer)),scanned:[...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
  }
- return Object.freeze({paths,backupList,backupRestore,codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+ return Object.freeze({paths,backupList,backupRestore,codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,unusedEmailConflicts,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 

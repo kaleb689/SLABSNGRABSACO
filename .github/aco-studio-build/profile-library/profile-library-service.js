@@ -10,17 +10,42 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  const cardKey=(s,id)=>s==='personal'?'personal:owner':id;
  const profileOwnerLabel=value=>String(value||'Customer').trim().split(/\s+/)[0]||'Customer';
  function view(row){const result=Completion.inspect(row);return {id:row.id,revision:row.revision||0,retailer:row.retailer,bank:row.bank||'working',liveSince:row.liveSince||null,group:row.group||row.retailer,stage:result.ready?'completed':'in-progress',status:row.status||'active',missing:result.missing,label:row.label,email:row.email,data:structuredClone(row.data),source:row.source,createdAt:row.createdAt||null,completedAt:row.completedAt||null,profileGeneratedAt:row.profileGeneratedAt||null,creationBatchId:row.creationBatchId||null,sourceLinked:row.source==='website-linked-profile'&&row.sourceLinked===true,localOnly:row.source!=='website-linked-profile'||row.sourceLinked===false,pendingWebsiteData:row.pendingSourceData?structuredClone(row.pendingSourceData):null,remoteManagedId:row.remoteManagedId||null,remoteType:row.remoteType||null,remoteUpdatedAt:row.remoteUpdatedAt||null,needsReview:!!row.needsReview};}
- async function list(e,p){const a=await access(e,p),rows=await profiles.fieldSnapshot(a.scope,a.id);a.check();const counts=new Map();for(const r of rows){for(const [kind,key]of Object.entries({email:C.email(C.values(r.data).email),name:C.nameKey(r.data),card:C.payment(r.data).number})){if(key){const k=r.retailer+'|'+kind+'|'+key;counts.set(k,(counts.get(k)||0)+1);}}}const [settings,audit]=await Promise.all([profiles.librarySettings(a.scope,a.id),profiles.audit(a.scope,a.id)]);a.check();
-  // Existing profiles may predate durable batch identifiers. Reuse their
-  // actual create-from-pools audit event, not a jig edit or bank date, to put
-  // historical newly-generated profiles first without modifying saved vaults.
+ async function list(e,p){
+  const a=await access(e,p),rows=await profiles.fieldSnapshot(a.scope,a.id);
+  a.check();
+  // Same-retailer collisions in the same authenticated Personal/customer vault.
+  // Shared names, addresses, and cross-retailer email/card reuse are valid.
+  const counts=new Map();
+  for(const row of rows){
+   const email=C.email(C.values(row.data).email||row.email),number=C.payment(row.data).number;
+   for(const [kind,value] of [['email',email],['card',/^\d{12,19}$/.test(number)?number:'']]){
+    if(!value)continue;
+    const key=row.retailer+'|'+kind+'|'+value;
+    counts.set(key,(counts.get(key)||0)+1);
+   }
+  }
+  const [settings,audit,unusedConflicts]=await Promise.all([
+   profiles.librarySettings(a.scope,a.id),profiles.audit(a.scope,a.id),
+   profiles.unusedEmailConflicts(a.scope,a.id)
+  ]);
+  a.check();
+  const conflictedUnused=new Set(unusedConflicts.filter(x=>x.reason==='matches-profile').map(x=>x.retailer+'|'+x.email));
   const creationEvents=new Map();
   for(const event of audit.entries||[]){
    if(event.action!=='create-from-pools'||!event.retailer||!event.email||!event.at)continue;
    const key=event.retailer+'|'+event.email.toLowerCase();
    if(!creationEvents.has(key))creationEvents.set(key,event.at);
   }
-  return {scope:a.scope,customerId:a.id,customGroups:settings.profileGroups||{},profiles:rows.map(r=>({...view(r),profileGeneratedAt:r.profileGeneratedAt||creationEvents.get(r.retailer+'|'+String(r.email||'').toLowerCase())||null,duplicates:Object.entries({email:C.email(C.values(r.data).email),name:C.nameKey(r.data),card:C.payment(r.data).number}).filter(([k,v])=>v&&counts.get(r.retailer+'|'+k+'|'+v)>1).map(([k])=>k)}))};}
+  return {scope:a.scope,customerId:a.id,customGroups:settings.profileGroups||{},unusedConflicts,
+   profiles:rows.map(row=>{
+    const email=C.email(C.values(row.data).email||row.email),number=C.payment(row.data).number,duplicates=[];
+    if(email&&counts.get(row.retailer+'|email|'+email)>1)duplicates.push('email');
+    if(/^\d{12,19}$/.test(number)&&counts.get(row.retailer+'|card|'+number)>1)duplicates.push('card');
+    if(email&&conflictedUnused.has(row.retailer+'|'+email))duplicates.push('unused email');
+    return {...view(row),profileGeneratedAt:row.profileGeneratedAt||creationEvents.get(row.retailer+'|'+String(row.email||'').toLowerCase())||null,duplicates};
+   })
+  };
+ }
  async function detail(e,p){const a=await access(e,p),r=await profiles.preview(a.scope,a.id,p.profileId);a.check();return view(r.profile);}
  function detectedRetailer(value){
   const v=String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,'');

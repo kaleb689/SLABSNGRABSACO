@@ -285,3 +285,80 @@ test('Consolidated street suffix option is Electron IPC clone-safe for every ret
   assert.equal(clean.filter(id=>id==='suffix.matching').length,1);
  }
 });
+
+
+test('Duplicate review ignores shared names, addresses and cross-retailer Target/PKC reuse',async t=>{
+ const h=await library(t);
+ const target=complete('target','shared@example.test');
+ const pkc=complete('pokemoncenter','shared@example.test');
+ await commit(h,await preview(h,[target],h.p,'target'));
+ await commit(h,await preview(h,[pkc],h.p,'pokemoncenter'));
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(rows.length,2);
+ assert.ok(rows.every(r=>r.duplicates.length===0),'same full card/email/name across retailers is allowed');
+});
+
+test('Duplicate review compares full PAN, not last four, and does not flag identical names',async t=>{
+ const h=await library(t);
+ const one=complete('target','one@example.test'),two=complete('target','two@example.test');
+ LC.putCard(two,{number:'4000000000004242',month:'08',year:'2031',cardholder:'Alex Example'});
+ await commit(h,await preview(h,[one],h.p,'target'));
+ await commit(h,await preview(h,[two],h.p,'target'));
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(rows.length,2);
+ assert.ok(rows.every(r=>r.duplicates.length===0),'same name/address and same last four are not duplicates');
+});
+
+test('Duplicate review flags exact same card within Target but not one used by PKC',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','one@example.test')],h.p,'target'));
+ await commit(h,await preview(h,[complete('target','two@example.test')],h.p,'target'));
+ await commit(h,await preview(h,[complete('pokemoncenter','three@example.test')],h.p,'pokemoncenter'));
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ assert.deepEqual(rows.filter(r=>r.retailer==='target').map(r=>r.duplicates),[['card'],['card']]);
+ assert.deepEqual(rows.find(r=>r.retailer==='pokemoncenter').duplicates,[]);
+});
+
+test('Same-retailer duplicate emails are detected even when their cards differ',async t=>{
+ const h=await library(t),one=complete('target','same@example.test');
+ await commit(h,await preview(h,[one],h.p,'target'));
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  const original=ctx.rows[0],other=structuredClone(original);
+  other.id='second-same-email',other.revision=0;
+  LC.putCard(other.data,{number:'5555555555554444',month:'10',year:'2034',cardholder:'Alex Example'});
+  ctx.rows.push(other);
+ },()=>{});
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(rows.length,2);
+ assert.ok(rows.every(r=>r.duplicates.includes('email')));
+ assert.ok(rows.every(r=>!r.duplicates.includes('card')));
+});
+
+test('Unused email-bank overlap is flagged only in its retailer and owner vault',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','overlap@example.test')],h.p,'target'));
+ await commit(h,await preview(h,[complete('pokemoncenter','other@example.test')],h.p,'pokemoncenter'));
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.emails.push({id:'unused-target',retailer:'target',email:'overlap@example.test',profileId:null});
+  ctx.emails.push({id:'assigned-target',retailer:'target',email:'overlap@example.test',profileId:ctx.rows.find(x=>x.retailer==='target').id});
+ },()=>{});
+ const result=await h.lib.list(event,h.p);
+ assert.equal(result.unusedConflicts.length,1);
+ assert.equal(result.unusedConflicts[0].id,'unused-target');
+ assert.deepEqual(result.profiles.find(x=>x.retailer==='target').duplicates,['unused email']);
+ assert.deepEqual(result.profiles.find(x=>x.retailer==='pokemoncenter').duplicates,[]);
+ assert.deepEqual((await h.lib.list(event,h.a)).unusedConflicts,[]);
+});
+
+test('Repeated unassigned emails are reviewable even with no created profile',async t=>{
+ const h=await library(t);
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.emails.push({id:'unlinked-a',retailer:'walmart',email:'same-unused@example.test',profileId:null});
+  ctx.emails.push({id:'unlinked-b',retailer:'walmart',email:'same-unused@example.test',profileId:null});
+  ctx.emails.push({id:'pkc-unlinked',retailer:'pokemoncenter',email:'same-unused@example.test',profileId:null});
+ },()=>{});
+ const result=await h.lib.list(event,h.p);
+ assert.deepEqual(result.unusedConflicts.map(x=>x.id),['unlinked-a','unlinked-b']);
+ assert.ok(result.unusedConflicts.every(x=>x.reason==='duplicate-unused-email'));
+ assert.equal(result.profiles.length,0);
+});
