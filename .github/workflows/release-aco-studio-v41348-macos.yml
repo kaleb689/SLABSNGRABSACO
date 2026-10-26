@@ -1,4 +1,4 @@
-name: Publish ACO Studio 4.13.55 Mac only after full native verification
+name: Publish ACO Studio 4.13.56 Mac only after full native verification
 on:
   # Authorized publication when approved changes reach main. The publish
   # job is gated by full native Mac regression, signature, first-launch,
@@ -15,10 +15,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-455-macos
+  group: aco-studio-456-macos
   cancel-in-progress: true
 env:
-  ACO_VERSION: '4.13.55'
+  ACO_VERSION: '4.13.56'
 jobs:
   mac:
     if: github.ref == 'refs/heads/main'
@@ -149,6 +149,7 @@ jobs:
           grep -Fq 'Scan All Recovery Sources' "$APP/Contents/Resources/app/profile-library-ui.js"
           grep -Fq 'Old CVV-labeled field inventory' "$APP/Contents/Resources/app/profile-library-ui.js"
           grep -Fq 'scanOriginals:true' "$APP/Contents/Resources/app/profile-library-ui.js"
+          grep -Fq 'An existing independent profile reference would be replaced or cleared' "$APP/Contents/Resources/app/profile-vault.js"
           if [[ '${{ matrix.arch }}' == 'arm64' ]]; then
             lipo -archs "$APP/Contents/MacOS/ACO Studio" | grep -qw arm64
           else
@@ -228,7 +229,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-4.13.55-*
+          pattern: ACO-Studio-4.13.56-*
           path: installers
           merge-multiple: true
       - name: Verify Apple Silicon before publishing
@@ -236,7 +237,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,json,hashlib
-          root=pathlib.Path('installers');v='4.13.55';platforms={};sums=[]
+          root=pathlib.Path('installers');v='4.13.56';platforms={};sums=[]
           arch='arm64'
           mode=(root/f'signing-{arch}.txt').read_text().strip()
           assert mode in ('adhoc','developer-id')
@@ -249,7 +250,7 @@ jobs:
             with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
             sums.append(digest+'  '+p.name)
             if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
-          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Read-only legacy field presence audit: reports whether original profile files contain populated old CVV-named fields and independent references, without reading out, copying or recovering payment-card verification values.','platforms':platforms},indent=2))
+          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Data-preservation safeguard: block ordinary imports, edits, and jigs if they would silently change an existing independent non-payment profile reference. Explicit authenticated reference edits remain available. No missing values are restored.','platforms':platforms},indent=2))
           (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n');(root/'release-tag.txt').write_text(tag)
           PY
       - name: Release the tested installers and advance verified feed
@@ -258,13 +259,13 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.55 adds a read-only original-file diagnostic for legacy CVV-labeled field presence and profile identity overlap. It reports only counts of populated legacy columns, independent non-payment references and identity/card conflicts. It does not display, retain or restore payment-card CVV/CVC values, overwrite any saved vault data or claim that missing references have been recovered.
+          ACO Studio 4.13.56 adds a fail-closed data-preservation guard for existing independent non-payment profile references. Routine imports, jigs and unrelated edits cannot silently replace or clear a saved independent reference. Authenticated explicit reference editing and owner-confirmed full vault snapshot restore remain supported. The update does not reconstruct missing references, restore payment-card CVV/CVC values, or change existing vault contents during installation.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.55 Mac' --notes-file notes.md --prerelease
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.56 Mac' --notes-file notes.md --prerelease
           else
-            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.55 Mac' --notes-file notes.md --prerelease
+            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.56 Mac' --notes-file notes.md --prerelease
           fi
           # Check that published artifacts exist before advertising the
           # update to existing owners.
