@@ -395,7 +395,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   return {
    readOnly:true,scope:a.scope,totalProfiles:rows.length,missingProfiles:missing,
    backups:{scanned:snapshots.scannedBackups||0,unreadable:snapshots.unreadableBackups||0,
-    potentialMatches:snapshots.recoverable||0,byRetailer:snapshots.byRetailer||{}},
+    potentialMatches:snapshots.recoverable||0,conflicts:snapshots.conflicts||0,byRetailer:snapshots.byRetailer||{}},
    savedCardBank:{potentialMatches:savedBank.recoverable||0,
     conflictingCards:savedBank.conflictingCardCodes||0,byRetailer:savedBank.byRetailer||{}},
    originalFile,originalFiles,historicSources,importInventory,
