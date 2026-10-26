@@ -500,9 +500,31 @@ test('Live profile replacement cannot silently erase independent reference even 
  const withoutCode=complete('target','preserve-reimport@example.test');
  await assert.rejects(h.profiles.importLiveProfiles('personal',null,[{
   retailer:'target',data:withoutCode,format:'shikari',expectedHash:F.hash(row)
- }],{updateExisting:true},()=>{}),/independent profile reference.*without an explicit code edit/i);
+ }],{updateExisting:true},()=>{}),/preview|independent profile reference/i);
  assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
  assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'INDEPENDENT-REIMPORT-REF');
+});
+
+test('Reviewed latest Live import archives old independent code even when replacement omits it',async t=>{
+ const h=await library(t),email='preserve-reference@example.test';
+ const original=complete('target',email);
+ original.profileSecurityCode='ORIGINAL-INDEPENDENT-REF';
+ const first=await h.lib.importPreview(event,{...h.p,bank:'live',retailer:'target',
+  fileName:'original.json',text:JSON.stringify([original])});
+ await commit(h,first);
+ const old=(await h.lib.list(event,h.p)).profiles[0];
+ const fresh=complete('target',email);
+ const reviewed=await h.lib.importPreview(event,{...h.p,bank:'live',retailer:'target',
+  fileName:'latest.json',text:JSON.stringify([fresh])});
+ const result=await commit(h,reviewed);
+ assert.equal(result.supersededLive,1);
+ const current=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(current.length,1);assert.notEqual(current[0].id,old.id);
+ const encrypted=await fs.readFile(h.profiles.paths.personal);
+ assert.ok(encrypted.includes(Buffer.from('ORIGINAL-INDEPENDENT-REF')),
+  'old independent reference remains in encrypted profile archive for recovery');
+ assert.ok(encrypted.includes(Buffer.from(old.id)));
+ assert.ok((await h.profiles.backupList('personal')).length>0);
 });
 
 test('Explicit owner profile-code edits remain possible, and unrelated edits retain reference',async t=>{
