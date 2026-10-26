@@ -441,7 +441,92 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   a.check();
   return {...report,originalSelectionCancelled:false};
  }
+
+ // Owner-controlled local recovery for historical non-payment profile references.
+ // Never transfer source contents, card numbers, or candidate values to the UI.
+ // An owner must explicitly attest the contents are not payment verifiers.
+ async function previewHistoricalReferences(e,a,files){
+  if(a.scope!=='personal')throw Error('Historical recovery is restricted to the Personal vault.');
+  if(!Array.isArray(files)||files.length<1)return {recoverable:0,token:null,conflicts:0};
+  const current=await profiles.fieldSnapshot(a.scope,a.id);
+  const byIdentity=new Map();
+  for(const row of current.filter(r=>!C.profileCode(r.data))){
+   const key=row.retailer+'|'+C.email(row.email);
+   if(!byIdentity.has(key))byIdentity.set(key,[]);
+   byIdentity.get(key).push(row);
+  }
+  const matches=new Map(),conflicts=new Set();
+  let cardMismatches=0,unmatched=0;
+  for(const file of files){
+   const parsed=Core.parseFile(file.fileName,file.text);
+   for(const raw of parsed.records||[]){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))continue;
+    if(raw.scope&&raw.scope!==a.scope||raw.customerId&&raw.customerId!==a.id||
+      raw.acoCustomerId&&raw.acoCustomerId!==a.id)throw Error('Source owner mismatch. No data saved.');
+    const source=raw.data&&typeof raw.data==='object'&&!Array.isArray(raw.data)?raw.data:raw;
+    const retailer=detectedRetailer(raw.retailer||raw.retailerId||raw.site||raw.store||
+      source.retailer||source.retailerId||source.site||source.store)||detectedRetailer(file.fileName);
+    const email=C.email(C.values(source).email||source.email||raw.email);
+    const candidates=retailer&&email?(byIdentity.get(retailer+'|'+email)||[]):[];
+    if(candidates.length!==1){unmatched++;continue;}
+    const row=candidates[0];
+    if(!C.exactFullCardMatch(source,row.data)){cardMismatches++;continue;}
+    // Values in legacy-named columns may only be considered after explicit
+    // user attestation that the original source holds non-payment references.
+    const sourceFields=[source,source.card,raw,raw.card].filter(v=>v&&typeof v==='object');
+    const codes=sourceFields.flatMap(record=>Object.entries(record)
+     .filter(([name])=>/^(?:cc_cvv|cvv|cvc|cid|cvv2|cvc2)$/i.test(name))
+     .map(([,value])=>value))
+     .filter(value=>typeof value==='string'&&value.length>0&&value.length<=100&&!/[\x00-\x1f\x7f]/.test(value));
+    const distinct=[...new Set(codes)];
+    if(!distinct.length)continue;
+    if(conflicts.has(row.id))continue;
+    if(distinct.length!==1||(matches.has(row.id)&&matches.get(row.id).reference!==distinct[0])){
+     matches.delete(row.id);conflicts.add(row.id);continue;
+    }
+    matches.set(row.id,{reference:distinct[0],email:row.email,retailer:row.retailer,
+      cardNumber:C.payment(row.data).number,revision:row.revision||0});
+   }
+  }
+  a.check();
+  const token=matches.size?uuid():null;
+  if(token){
+   codeRestorePlans.set(token,{kind:'owner-attested-historical',scope:a.scope,id:a.id,
+    sender:e.sender.id,epoch:ep(e),at:now(),matches});
+   if(codeRestorePlans.size>20)codeRestorePlans.delete(codeRestorePlans.keys().next().value);
+  }
+  return {preview:true,token,recoverable:matches.size,conflicts:conflicts.size,
+   cardMismatches,unmatched,stillMissing:current.filter(r=>!C.profileCode(r.data)).length-matches.size};
+ }
+ async function restoreHistoricalReferences(e,p){
+  const a=await access(e,p);
+  if(a.scope!=='personal'||p.ownerAttestsNonPayment!==true||p.confirmed!==true)
+   throw Error('Explicit owner confirmation is required.');
+  const token=String(p.token||'');
+  const plan=codeRestorePlans.get(token);
+  if(!plan||plan.kind!=='owner-attested-historical'||plan.scope!==a.scope||
+     plan.id!==a.id||plan.sender!==e.sender.id||plan.epoch!==ep(e)||
+     now()-plan.at>600000)throw Error('Historical recovery preview expired. Scan again.');
+  codeRestorePlans.delete(token);
+  return profiles.libraryTransaction(a.scope,a.id,ctx=>{
+   for(const [id,item]of plan.matches){
+    const row=ctx.rows.find(r=>r.id===id);
+    if(!row||row.email!==item.email||row.retailer!==item.retailer||
+       (row.revision||0)!==item.revision||C.profileCode(row.data)||
+       !/^\d{12,19}$/.test(item.cardNumber)||C.payment(row.data).number!==item.cardNumber)
+      throw Error('A matching profile changed. No data was restored.');
+   }
+   for(const [id,item]of plan.matches){
+    const row=ctx.rows.find(r=>r.id===id);
+    row.data.profileSecurityCode=item.reference;
+    row.revision=(row.revision||0)+1;
+    ctx.audit('owner-confirmed-historical-reference-recovery',row.email,{retailer:row.retailer});
+   }
+   return {restored:plan.matches.size};
+  },a.check);
+ }
  async function historicalFolderReview(e,p){
+  if(p?.confirmed===true)return restoreHistoricalReferences(e,p);
   const a=await access(e,p);
   if(p?.confirmed||p?.path||p?.directory||p?.filePath)
    throw Error('Choose a historical folder using the trusted Mac picker.');
@@ -475,8 +560,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    }});
   a.check();
   const report=await recoveryReview(e,{scope:a.scope,customerId:a.id,...(files.length?{files}:{})});
+  const historicalRecovery=p?.ownerAttestsNonPayment===true
+   ?await previewHistoricalReferences(e,a,files):null;
   a.check();
-  return {...report,selectedFolder:result,folderOriginalScan:stats};
+  return {...report,selectedFolder:result,folderOriginalScan:stats,historicalRecovery};
  }
  async function exportFile(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles.');const all=await profiles.fieldSnapshot(a.scope,a.id),rows=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===p.retailer));if(rows.some(x=>!x))throw Error('Every exported profile must still belong to this vault and retailer.');const content=C.exportSelectedRows(rows,p.retailer,p.customerName||'Personal',p.exportFormat||'retailer');if(!await confirmExport(e))return {cancelled:true};const ext=path.extname(content.name),choice=await chooseSave(e,{name:content.name,extension:ext.slice(1)});if(choice.canceled||!choice.filePath)return {cancelled:true};if(path.extname(choice.filePath)!==ext)throw Error('Keep the retailer export format.');const latest=await profiles.fieldSnapshot(a.scope,a.id);if(rows.some(x=>require('./jig-field-core').hash(x)!==require('./jig-field-core').hash(latest.find(y=>y.id===x.id))))throw Error('Profiles changed while exporting. Try again.');a.check();await writeFile(choice.filePath,content.body,{encoding:'utf8',mode:0o600});return {saved:true,count:rows.length,name:path.basename(choice.filePath)};}
  async function exportArchive(e,p){
