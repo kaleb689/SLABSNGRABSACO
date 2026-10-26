@@ -221,7 +221,7 @@
  const sortToolbar=d.createElement('div');sortToolbar.className='profileLibrarySortToolbar';
  const sortLabel=d.createElement('label');sortLabel.textContent='Profile order';
  const sortSelect=d.createElement('select');sortSelect.setAttribute('aria-label','Sort profiles');
- for(const [value,label]of [['newest','Newest generated first'],['oldest','Oldest generated first'],['email','Email A–Z']])sortSelect.append(new Option(label,value));
+ for(const [value,label]of [['newest','Newest accounts at top'],['oldest','Newest accounts at bottom'],['email','Email A–Z']])sortSelect.append(new Option(label,value));
  sortLabel.append(sortSelect);
  const latestLabel=d.createElement('label');latestLabel.textContent='Newest profiles to select';
  const latestCount=d.createElement('input');latestCount.type='number';latestCount.min='1';latestCount.max='200';latestCount.step='1';latestCount.value='26';latestCount.setAttribute('aria-label','Number of newest profiles to select');
