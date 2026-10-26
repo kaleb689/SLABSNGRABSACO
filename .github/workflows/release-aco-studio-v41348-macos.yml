@@ -16,7 +16,7 @@ permissions:
   contents: write
 concurrency:
   group: aco-studio-462-macos
-  cancel-in-progress: true
+  cancel-in-progress: false
 env:
   ACO_VERSION: '4.13.62'
 jobs:
@@ -252,7 +252,7 @@ jobs:
             with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
             sums.append(digest+'  '+p.name)
             if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
-          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Profiles: newest-generated first within retailer and stage, selectable newest N (default 26), right-click Export Selected, with generation batch timestamps retained. Email Bank: owner-only Start New Email Bank archives original encrypted ciphertext before new passphrase setup; Cloudflare rules, existing profiles, cards and addresses unchanged.','platforms':platforms},indent=2))
+          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'Profiles: newest-generated first within retailer and stage, selectable newest N (default 26), right-click Export Selected, with generation batch timestamps retained. Email Bank: owner-only Start New Email Bank archives original encrypted ciphertext before new passphrase setup; Cloudflare rules, existing profiles, cards and addresses unchanged. Live imports automatically archive and remove matching Ready/Unused retailer profiles from active lists within the same encrypted owner vault.','platforms':platforms},indent=2))
           (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n');(root/'release-tag.txt').write_text(tag)
           PY
       - name: Release the tested installers and advance verified feed
@@ -261,7 +261,7 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.62 makes newly generated profile accounts appear first in the current retailer and Ready for Export tab, with newest/oldest/email sorting, Select Newest N (default 26) and right-click Export Selected N. Generation dates and batch identities are retained; older profiles may be ordered by original create-from-pools audit records. No profile data is moved or deleted. Email Gen has an explicit Start New Email Bank button, which archives and byte-verifies the previous ciphertext in app-local storage BEFORE starting a new empty bank with a new passphrase. This preserves the old encrypted bank for recovery, does not delete Cloudflare rules or other banks, and suspends old Keychain auto-unlock until the new setup completes. Existing profiles, card banks and address banks remain unchanged.
+          ACO Studio 4.13.62 makes newly generated profile accounts appear first in the current retailer and Ready for Export tab, with newest/oldest/email sorting, Select Newest N (default 26) and right-click Export Selected N. Generation dates and batch identities are retained; older profiles may be ordered by original create-from-pools audit records. No profile data is moved or deleted. Email Gen has an explicit Start New Email Bank button, which archives and byte-verifies the previous ciphertext in app-local storage BEFORE starting a new empty bank with a new passphrase. This preserves the old encrypted bank for recovery, does not delete Cloudflare rules or other banks, and suspends old Keychain auto-unlock until the new setup completes. Existing profiles, card banks and address banks remain unchanged. Live import now removes matching non-Live profiles from Ready for Export and Unused within the same retailer and owner vault, preserving their full records in encrypted recovery history. Other retailers, customers and existing Live profiles are not modified.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --clobber
