@@ -139,8 +139,15 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    }
    ctx.archiveDuplicateRepair(row,plan.kind);
    if(plan.kind==='email'){
+    const originalEmail=C.email(row.email);
+    const remainingOwner=peers.find(x=>C.email(x.email)===originalEmail);
     row.data=D.manualEdit(row.data,{...C.values(row.data),email:plan.candidateEmail});row.email=plan.candidateEmail;
-    for(const x of ctx.emails)if(x.retailer===plan.retailer&&x.profileId===row.id){x.profileId=null;x.usedAt=null;}
+    // Original email still belongs to the other duplicate profile. Transfer
+    // the prior email-bank reservation rather than making it falsely Unused.
+    for(const x of ctx.emails)if(x.retailer===plan.retailer&&x.profileId===row.id){
+     if(remainingOwner&&C.email(x.email)===originalEmail){x.profileId=remainingOwner.id;x.usedAt=now();}
+     else{x.profileId=null;x.usedAt=null;}
+    }
     const item=ctx.emails.find(x=>x.id===plan.candidateId);item.profileId=row.id;item.usedAt=now();
    }else{
     C.putCard(row.data,{number:savedCard.number,month:savedCard.month||savedCard.expMonth,
