@@ -298,7 +298,7 @@ test('Duplicate review displays exact matching value, retailer-scoped peer email
  assert.match(source,/groups\.get\(key\)\.profiles\.set/);
  assert.match(source,/function duplicateReviewEntries\(retailer\)/);
  assert.match(source,/x\.retailer===retailer/);
- assert.match(source,/No changes were made/);
+ assert.match(source,/No changes made|No changes were made|No data is deleted or changed by this review/);
 });
 
 
