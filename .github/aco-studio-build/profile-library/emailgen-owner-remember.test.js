@@ -52,7 +52,7 @@ test('Owner IPC restores through Cloudflare authorization and never sends token 
  const ipcMain={handle:(name,fn)=>handlers.set(name,fn)};
  const event={sender:{id:14}},cloudflare={authorize:async config=>({authorized:true,domain:config.domain})};
  registerOwnerLogin({ipcMain,baseDir,safeStorage,cloudflare,sessions,ownerSender:e=>{if(e.sender.id!==14)throw Error('Unauthorized window');},platform:'darwin'});
- await assert.rejects(handlers.get('cf:remember:save')(event,example.passphrase),/Verify/);
+ assert.throws(()=>handlers.get('cf:remember:save')(event,example.passphrase),/Verify/);
  sessions.set(14,{config:{domain:'sng.sarl',accountId:example.accountId,zoneId:example.zoneId,token:example.token},lastUsed:Date.now()});
  assert.equal(handlers.get('cf:remember:save')(event,example.passphrase).saved,true);
  sessions.clear();
