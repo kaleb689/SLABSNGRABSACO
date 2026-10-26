@@ -454,5 +454,6 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  replace('app.js',
   "  render();\n  try{const saved=await api().saveRemembered(passphrase);",
   "  render();\n  // A successful unlock wrote the NEW encrypted bank. Automatic login may now\n  // resume on later launches; the separately archived older bank is untouched.\n  if(localStorage.getItem(NEW_SETUP_PENDING))localStorage.removeItem(NEW_SETUP_PENDING);\n  try{const saved=await api().saveRemembered(passphrase);");
+ fs.copyFileSync(path.join(__dirname,'emailgen-safe-new-bank.js'),path.join(root,'emailgen-safe-new-bank.js'));
  fs.copyFileSync(path.join(__dirname,'emailgen-new-bank-reset.test.js'),path.join(root,'tests','emailgen-new-bank-reset.test.js'));
 }
