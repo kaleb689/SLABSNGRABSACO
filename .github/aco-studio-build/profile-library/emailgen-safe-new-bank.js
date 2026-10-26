@@ -100,7 +100,7 @@
     if(localStorage.getItem(KEY)!==null)
      throw Error('Old active bank could not be deactivated. Its encrypted archive remains preserved.');
     typed.value='';check.checked=false;review.hidden=true;
-    feedback.textContent='New Email Gen setup READY: enter your Cloudflare Account ID, Zone ID, valid API token and a NEW bank passphrase (12+ characters) in the form above, then click Verify owner & unlock Email Gen. This creates a new EMPTY bank without reconnecting. Your older encrypted aliases remain archived and need the original passphrase for recovery.';
+    feedback.textContent='Original encrypted Email Bank archived and VERIFIED. New Email Gen setup READY: enter your Cloudflare Account ID, Zone ID, valid API token and a NEW bank passphrase (12+ characters) in the form above, then click Verify owner & unlock Email Gen. This creates a new EMPTY bank without reconnecting. Your older encrypted aliases remain archived and need the original passphrase for recovery.';
     button.disabled=true;
     // Never clear a user-supplied Cloudflare API token or change remote rules.
     const passphrase=$e('gatePassphrase');if(passphrase){passphrase.value='';passphrase.focus?.();}
