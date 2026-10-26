@@ -1,7 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const source=fs.readFileSync(path.join(__dirname,'emailgen-safe-new-bank.js'),'utf8');
-const app=fs.readFileSync(path.join(__dirname,'..','..','profile-library','profile-library-ui.js'),'utf8');
+const source=fs.readFileSync(path.join(__dirname,'..','emailgen-safe-new-bank.js'),'utf8');
 function run({denyArchive=false,confirm=true,typed='START NEW BANK',old='{"format":"encrypted-v3","data":"ciphertext-not-plaintext"}'}={}){
  const KEY='sng.sarl.emailgen.bank.v3.encrypted',DB=new Map([[KEY,old],['unrelated','keep']]);
  const storage={getItem:k=>DB.has(k)?DB.get(k):null,setItem:(k,v)=>{if(denyArchive&&k.includes('.archive.'))throw Error('quota exceeded');DB.set(k,v);},removeItem:k=>DB.delete(k)};
