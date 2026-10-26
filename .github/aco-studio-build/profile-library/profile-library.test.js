@@ -553,6 +553,7 @@ test('Fix Duplicate consumes one available email from same retailer and keeps Li
   const first=ctx.rows.find(x=>x.retailer==='target'),clone=structuredClone(first);
   clone.id='old-email-duplicate';clone.bank='live';ctx.rows.push(clone);
   ctx.emails.push({id:'target-unused-email-repair',retailer:'target',email:'new-unused@example.test',profileId:null});
+  ctx.emails.push({id:'old-owned-reservation',retailer:'target',email:'old-email@example.test',profileId:'old-email-duplicate'});
   ctx.emails.push({id:'pkc-unused-only',retailer:'pokemoncenter',email:'pkc-only@example.test',profileId:null});
  },()=>{});
  const before=(await h.lib.list(event,h.p)).profiles;
@@ -565,6 +566,7 @@ test('Fix Duplicate consumes one available email from same retailer and keeps Li
  assert.equal(after.find(x=>x.id===chosen.id).email,'new-unused@example.test');
  assert.equal(after.find(x=>x.id===chosen.id).bank,'live');
  assert.equal(after.find(x=>x.retailer==='pokemoncenter').email,'old-email@example.test');
+ assert.equal((await h.profiles.unusedEmailConflicts('personal',null)).filter(x=>x.retailer==='target').length,0,'old bank reservation belongs to remaining profile, not Unused');
 });
 test('Fix Duplicate aborts on locked source, missing pool or stale revision; no unrelated profile changes',async t=>{
  const h=await library(t);
