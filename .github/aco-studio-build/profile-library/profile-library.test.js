@@ -519,3 +519,70 @@ test('Duplicate review identifies unused-bank conflict by exact email, without e
  assert.deepEqual(row.duplicateDetails[0].peers.map(x=>x.id),['unused-target-detail']);
  assert.deepEqual((await h.lib.list(event,h.a)).profiles,[]);
 });
+
+
+test('Fix Duplicate replaces one of two same-retailer Live cards using an existing unused saved Card Bank record',async t=>{
+ const h=await library(t),original=complete('target','fix-card-a@example.test');
+ original.profileSecurityCode='SAVED-REFERENCE-KEEP';
+ await commit(h,await preview(h,[original],h.p,'target'));
+ await commit(h,await preview(h,[complete('target','fix-card-b@example.test')],h.p,'target'));
+ await h.personal.addWorkshopCard('personal:owner',{
+  number:'5555555555554444',month:'09',year:'2035',cardholder:'Test Holder',label:'Unused test card'
+ },()=>{});
+ const initial=(await h.lib.list(event,h.p)).profiles,chosen=initial[0];
+ const plan=await h.lib.duplicateRepairPreview(event,{...h.p,retailer:'target',kind:'card',profileId:chosen.id});
+ assert.equal(plan.newCardLast4,'4444');
+ assert.equal((await h.lib.list(event,h.p)).profiles.filter(x=>x.duplicates.includes('card')).length,2,'preview never changes rows');
+ const saved=await h.lib.duplicateRepairCommit(event,{token:plan.token,confirmed:true});
+ assert.equal(saved.saved,true);
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(rows.filter(x=>x.duplicates.includes('card')).length,0);
+ assert.equal(rows.find(x=>x.id===chosen.id).data.profileSecurityCode,'SAVED-REFERENCE-KEEP');
+ assert.equal(LC.payment(rows.find(x=>x.id===chosen.id).data).number,'5555555555554444');
+ assert.equal(LC.payment(rows.find(x=>x.id!==chosen.id).data).number,'4242424242424242');
+ const encrypted=await fs.readFile(h.profiles.paths.personal,'utf8');
+ assert.ok(encrypted.includes('duplicateRepairArchives')&&encrypted.includes(chosen.id));
+ assert.ok((await h.profiles.backupList('personal')).length>0);
+ await assert.rejects(h.lib.duplicateRepairCommit(event,{token:plan.token,confirmed:true}),/expired/);
+});
+test('Fix Duplicate consumes one available email from same retailer and keeps Live and unrelated PKC unchanged',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','old-email@example.test')],h.p,'target'));
+ await commit(h,await preview(h,[complete('pokemoncenter','old-email@example.test')],h.p,'pokemoncenter'));
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  const first=ctx.rows.find(x=>x.retailer==='target'),clone=structuredClone(first);
+  clone.id='old-email-duplicate';clone.bank='live';ctx.rows.push(clone);
+  ctx.emails.push({id:'target-unused-email-repair',retailer:'target',email:'new-unused@example.test',profileId:null});
+  ctx.emails.push({id:'pkc-unused-only',retailer:'pokemoncenter',email:'pkc-only@example.test',profileId:null});
+ },()=>{});
+ const before=(await h.lib.list(event,h.p)).profiles;
+ const chosen=before.find(x=>x.id==='old-email-duplicate');
+ const plan=await h.lib.duplicateRepairPreview(event,{...h.p,retailer:'target',kind:'email',profileId:chosen.id});
+ assert.equal(plan.newEmail,'new-unused@example.test');
+ await h.lib.duplicateRepairCommit(event,{token:plan.token,confirmed:true});
+ const after=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(after.filter(x=>x.retailer==='target'&&x.duplicates.includes('email')).length,0);
+ assert.equal(after.find(x=>x.id===chosen.id).email,'new-unused@example.test');
+ assert.equal(after.find(x=>x.id===chosen.id).bank,'live');
+ assert.equal(after.find(x=>x.retailer==='pokemoncenter').email,'old-email@example.test');
+});
+test('Fix Duplicate aborts on locked source, missing pool or stale revision; no unrelated profile changes',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','unavailable-a@example.test')],h.p,'target'));
+ await commit(h,await preview(h,[complete('target','unavailable-b@example.test')],h.p,'target'));
+ const original=(await h.lib.list(event,h.p)).profiles;
+ await assert.rejects(h.lib.duplicateRepairPreview(event,{...h.p,retailer:'target',kind:'card',profileId:original[0].id}),/No unused saved card/);
+ assert.deepEqual((await h.lib.list(event,h.p)).profiles,original);
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.emails.push({id:'unused-repair',email:'available@example.test',retailer:'target',profileId:null});
+  const profile=ctx.rows[0];const clone=structuredClone(profile);
+  clone.id='duplicate-email-repair';ctx.rows.push(clone);
+ },()=>{});
+ const profile=(await h.lib.list(event,h.p)).profiles.find(x=>x.id==='duplicate-email-repair');
+ const previewed=await h.lib.duplicateRepairPreview(event,{...h.p,retailer:'target',kind:'email',profileId:profile.id});
+ await h.profiles.libraryTransaction('personal',null,ctx=>{ctx.rows.find(x=>x.id===profile.id).revision++;},()=>{});
+ await assert.rejects(h.lib.duplicateRepairCommit(event,{token:previewed.token,confirmed:true}),/changed since preview/);
+ const fresh=await h.lib.duplicateRepairPreview(event,{...h.p,retailer:'target',kind:'email',profileId:profile.id});
+ h.lib.cancel(event);
+ await assert.rejects(h.lib.duplicateRepairCommit(event,{token:fresh.token,confirmed:true}),/expired/);
+});
