@@ -51,18 +51,43 @@ test('Owner PKC email inventory never reads or borrows customer A/B reservations
  const result=await commit(h,plan);assert.equal(result.pkcEmailsAdded,3);const inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});assert.deepEqual(inventory.emails.map(x=>x.email).sort(),['new@example.test','reserved@example.test','used@example.test']);
  const another=await live(h,[complete('costco','new@example.test')],h.p,'costco');assert.equal((await commit(h,another)).pkcEmailsAdded,0);
 });
-test('Reimport requires reviewed replacement and stable preview; edits and jigs retain Live bank membership',async t=>{
- const h=await library(t),data=complete('target','live@example.test');await commit(h,await live(h,[data]));let row=(await h.lib.list(event,h.p)).profiles[0],id=row.id;
- const plan=await live(h,[{...data,password:'replacement'}]);assert.equal(plan.matches,1);const kept=await commit(h,plan);assert.equal(kept.imported,1);assert.equal((await h.lib.list(event,h.p)).profiles.length,2);const replacing=await live(h,[{...data,password:'replacement'}]);assert.equal(replacing.duplicateCount,1);
- row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===id);assert.equal(row.id,id);assert.notEqual(row.data.password,'replacement');
- const stale=await live(h,[data]);await h.lib.edit(event,{...h.p,profileId:id,revision:row.revision,fields:{...LC.values(row.data),first:'Changed',last:'Person'}});const retained=await commit(h,stale,{updateExisting:true});assert.equal(retained.imported,1);
- const jig=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[id],ruleIds:[LC.FL_PHONE_RULE],combine:false,billingSameAsShipping:true});await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
- row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.bank,'live');assert.equal(row.id,id);assert.equal(row.data.shipping_first_name,'Changed');assert.equal((await h.service.emails(event,{...h.p,retailer:'target'})).availableForCreation,0);
+test('Reimport automatically replaces older Live by exact email; stale preview fails and latest stays jig-editable',async t=>{
+ const h=await library(t),data=complete('target','live@example.test');
+ await commit(h,await live(h,[data]));
+ const first=(await h.lib.list(event,h.p)).profiles[0],oldId=first.id;
+ const latest=await live(h,[{...data,password:'replacement'}]);
+ assert.equal(latest.supersedeLive,1);assert.equal(latest.supersedeNonLive,0);
+ assert.equal(latest.effectiveCount,1);
+ const saved=await commit(h,latest);
+ assert.equal(saved.imported,1);assert.equal(saved.supersededLive,1);
+ let rows=(await h.lib.list(event,h.p)).profiles;assert.equal(rows.length,1);
+ let row=rows[0];assert.notEqual(row.id,oldId);assert.equal(row.data.password,'replacement');
+ assert.equal(row.bank,'live');
+ const stale=await live(h,[data]);
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:{...LC.values(row.data),first:'Changed',last:'Person'}});
+ await assert.rejects(commit(h,stale),/changed after preview|changed after import preview/i);
+ rows=(await h.lib.list(event,h.p)).profiles;assert.equal(rows.length,1);
+ row=rows[0];assert.equal(row.data.shipping_first_name,'Changed');
+ const jig=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[row.id],ruleIds:[LC.FL_PHONE_RULE],combine:false,billingSameAsShipping:true});
+ await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
+ row=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(row.bank,'live');assert.equal(row.data.shipping_first_name,'Changed');
+ assert.equal((await h.service.emails(event,{...h.p,retailer:'target'})).availableForCreation,0);
 });
-test('Duplicate same-retailer imports remain separate; cancelled, locked and foreign-owner imports cause no extra changes',async t=>{
- const h=await library(t),data=complete('target','live@example.test');const duplicatePlan=await live(h,[data,data]);assert.equal(duplicatePlan.duplicateCount,2);const imported=await commit(h,duplicatePlan);assert.equal(imported.imported,2);assert.equal((await h.lib.list(event,h.p)).profiles.filter(x=>x.duplicates.includes('email')).length,2);
+test('Same retailer duplicate rows in one import collapse to latest; cancellation and vault lock preserve stored data',async t=>{
+ const h=await library(t),data=complete('target','live@example.test');
+ const first={...data,password:'first'},last={...data,password:'last'};
+ const duplicatePlan=await live(h,[first,last]);
+ assert.equal(duplicatePlan.effectiveCount,1);assert.equal(duplicatePlan.collapsedInImport,1);
+ const imported=await commit(h,duplicatePlan);
+ assert.equal(imported.imported,1);assert.equal(imported.collapsedInImport,1);
+ let rows=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(rows.length,1);assert.equal(rows[0].data.password,'last');
  await assert.rejects(live(h,[{...data,customerId:'customer-b'}],h.a),/ownership/);
- const p=await live(h,[data]);h.lib.cancel(event);await assert.rejects(commit(h,p),/expired/);assert.equal((await h.lib.list(event,h.p)).profiles.length,2);assert.equal((await h.service.emails(event,{...h.p,retailer:'pokemoncenter'})).emails.filter(x=>x.email==='live@example.test').length,1);
+ const p=await live(h,[data]);h.lib.cancel(event);
+ await assert.rejects(commit(h,p),/expired/);
+ rows=(await h.lib.list(event,h.p)).profiles;assert.equal(rows.length,1);
+ assert.equal((await h.service.emails(event,{...h.p,retailer:'pokemoncenter'})).emails.filter(x=>x.email==='live@example.test').length,1);
  const locked=await live(h,[data]);h.lockLibrary();await assert.rejects(commit(h,locked),/Locked/);
 });
 test('A customer Live bank stays isolated and live accounts are never consumed as free accounts',async t=>{
@@ -309,7 +334,8 @@ test('Reusing a Ready profile ID for an explicitly reviewed Live update leaves e
  const result=await commit(h,p,{updateExisting:true});
  assert.equal(result.supersededNonLive,1);
  const matches=(await h.lib.list(event,h.p)).profiles.filter(x=>x.email===email);
- assert.equal(matches.length,1);assert.equal(matches[0].id,old.id);assert.equal(matches[0].bank,'live');
+ assert.equal(matches.length,1);assert.notEqual(matches[0].id,old.id);assert.equal(matches[0].bank,'live');
+ assert.equal(result.supersededLive,0);
 });
 
 
