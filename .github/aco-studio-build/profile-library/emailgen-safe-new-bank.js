@@ -2,7 +2,7 @@
  // The active encrypted ciphertext must be byte-for-byte archived and verified
  // BEFORE its pointer is removed. This does not decrypt, reset a passphrase,
  // delete remote forwarding rules, or alter any other application data.
- // The desktop shell does not support window.prompt(): use an inline, explicit
+ // The desktop shell does not support native prompt dialogs: use an inline, explicit
  // typed confirmation and second checkbox instead of browser-native dialogs.
  const NEW_SETUP_PENDING='sng.sarl.emailgen.bank.new-setup-pending.v1';
  function setupNewEmailBankReset(){
