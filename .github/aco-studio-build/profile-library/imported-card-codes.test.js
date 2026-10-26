@@ -223,6 +223,8 @@ test('Recovery Source Review reports independent source counts without changing 
  data.profileSecurityCode='REF-SNAPSHOT';
  await commit(h,await preview(h,[data]));
  await h.profiles.libraryTransaction('personal',null,ctx=>{
+  // Deliberately simulate an earlier data-loss incident in this test only.
+  ctx.allowIndependentReferenceEdit(ctx.rows[0].id);
   ctx.rows[0].data.profileSecurityCode='';
   return {saved:true};
  },()=>{});
@@ -494,7 +496,7 @@ test('Live profile replacement cannot silently erase independent reference even 
  original.profileSecurityCode='INDEPENDENT-REIMPORT-REF';
  await commit(h,await h.lib.importPreview(event,{...h.p,bank:'live',retailer:'target',fileName:'original.json',text:JSON.stringify([original])}));
  const before=await fs.readFile(h.profiles.paths.personal);
- const row=(await h.lib.list(event,h.p)).profiles[0];
+ const row=(await h.profiles.fieldSnapshot('personal',null))[0];
  const withoutCode=complete('target','preserve-reimport@example.test');
  await assert.rejects(h.profiles.importLiveProfiles('personal',null,[{
   retailer:'target',data:withoutCode,format:'shikari',expectedHash:F.hash(row)
