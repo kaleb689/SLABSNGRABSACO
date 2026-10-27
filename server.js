@@ -50335,6 +50335,19 @@ await initializeArrayFile(
           aiKey: String(process.env.OPENAI_API_KEY || "").trim(),
           geminiKey: String(process.env.GEMINI_API_KEY || "").trim(),
           onSuccessMessage: () => queueDiscordSuccessScan(50),
+          onRetailerRoleSync: async ({ discordUserId, retailers }) => {
+            // Discord interaction user IDs originate with the authenticated
+            // Discord Gateway; never accept an arbitrary account ID in buttons.
+            const accounts=await getCustomerAccounts();
+            const matches=(Array.isArray(accounts)?accounts:[]).filter(account=>
+              String(account.discordUserId||"")===String(discordUserId||"") &&
+              /^\d{15,25}$/.test(String(discordUserId||"")));
+            if(matches.length!==1)return {linked:false,pushConfigured:false};
+            const preferences=await appOrderNotifications.syncRetailerRoles(
+              String(matches[0].id),retailers
+            );
+            return {linked:true,pushConfigured:preferences.pushConfigured};
+          },
           onRetailerSkuUpdate: async ({ notification, eventKey }) => {
             // Only linked members whose paid plan presently permits profiles
             // receive drop notices. Unlinked, expired and disabled accounts do
