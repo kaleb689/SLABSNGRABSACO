@@ -752,6 +752,47 @@
   return [...new Set([...host.querySelectorAll('input[data-jig-rule-ids]:checked')]
    .flatMap(input=>JSON.parse(input.dataset.jigRuleIds)))];
  }
+ function jigPreviewEntry(row,settings){
+  const fields=['address1','address2','city','state','zip','phone'];
+  const streetChanged=['address1','address2'].some(k=>row.before[k]!==row.after[k]);
+  const postalChanged=['city','state','zip'].some(k=>row.before[k]!==row.after[k]);
+  const phoneChanged=row.before.phone!==row.after.phone;
+  const status=streetChanged?'JIGGED':postalChanged?'CITY / POSTAL ONLY':phoneChanged?'PHONE ONLY':'UNCHANGED';
+  const block=d.createElement('section');
+  block.style.cssText='padding:10px 12px;border:1px solid #344a5c;border-radius:9px;margin:8px 0;background:#0d1828;white-space:normal';
+  const heading=d.createElement('div');heading.style.cssText='display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+  const title=d.createElement('strong');title.textContent=row.label||row.email;
+  const badge=d.createElement('strong');badge.textContent=status;
+  badge.style.color=streetChanged?'#45e5a8':postalChanged?'#ffc46e':'#94a3b8';
+  heading.append(title,badge);block.append(heading);
+  const original=d.createElement('div');original.style.cssText='margin-top:5px;color:#a9b5c8';
+  original.append(text('span','ORIGINAL · '+fields.filter(k=>row.before[k]).map(k=>row.before[k]).join(', ')));
+  block.append(original);
+  const target=d.createElement('div');target.style.cssText='margin-top:5px;line-height:1.65';
+  const marker=d.createElement('strong');marker.textContent=streetChanged?'JIGGED · ':'NEW PREVIEW · ';
+  marker.style.color=streetChanged?'#45e5a8':'#9ac2f5';target.append(marker);
+  let first=true;
+  for(const field of fields){
+   if(!row.after[field])continue;
+   if(!first)target.append(d.createTextNode(', '));first=false;
+   const span=d.createElement('span');span.textContent=row.after[field];
+   if(row.after[field]!==row.before[field]){
+    span.style.cssText='color:#45e5a8;font-weight:700;border-bottom:1px solid #45e5a8';
+    if(field==='city')span.style.color='#ffc46e';
+   }else span.style.color='#b6c8d9';
+   target.append(span);
+  }
+  block.append(target);
+  const rules=(row.appliedRuleIds||[]).map(id=>id==='second-line.add'?'Added second-line unit':id.startsWith('hard.')?'Hard '+id.slice(5):(settings.options||[]).find(rule=>rule.id===id)?.label||id);
+  if(rules.length){
+   const label=d.createElement('small');label.textContent='Applied: '+rules.join(' · ');
+   label.style.cssText='display:block;margin-top:5px;color:#8dddd4';block.append(label);
+  }else if(status==='UNCHANGED'){
+   const label=d.createElement('small');label.textContent='No selected jig changed this address.';
+   label.style.color='#a9b5c8';block.append(label);
+  }
+  return block;
+ }
  async function bulkJigSelected(){
   const chosen=pageRows().filter(x=>selected.has(x.id)),retailer=q('retailer').value;
   if(!chosen.length){note('Select the profiles you want to jig first.');return;}
@@ -826,7 +867,7 @@
      if(!win.valid())return;token=result.token;
      review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+'.'));
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
-     for(const row of result.profiles.slice(0,100)){const line=d.createElement('pre');line.textContent=(row.label||row.email)+'\n'+[row.before.address1,row.before.address2,row.before.city,row.before.state,row.before.zip,row.before.phone&&('Phone '+row.before.phone)].filter(Boolean).join(', ')+'\n→ '+[row.after.address1,row.after.address2,row.after.city,row.after.state,row.after.zip,row.after.phone&&('Phone '+row.after.phone)].filter(Boolean).join(', ');review.append(line);}
+     for(const row of result.profiles.slice(0,100))review.append(jigPreviewEntry(row,settings));
      if(result.profiles.length>100)review.append(text('p','+'+(result.profiles.length-100)+' more selected profiles included in this batch.'));
      duplicateCount=(result.duplicateAddresses||[]).length;
      if(duplicateCount){
