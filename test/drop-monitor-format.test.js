@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseMonitorDropProducts, formattedDropPayloads, formattedDropName, isFormattedDropPost, FORMATTED_DROP_MARKER } from "../drop-monitor-format.js";
-import { parseDropSkus } from "../discord-community.js";
+import { parseDropSkus, dropBotPermissionOverwrite } from "../discord-community.js";
 
 const pasted = `Walmart Draws
 Pokémon TCG: 30th Celebration Booster Bundle 2-Pack Bundle
@@ -152,4 +152,13 @@ test("clean cards keep actual product fields, Walmart draw window, and omit raw 
   attachments:[{url:"https://cdn.discordapp.com/attachments/123/item.png"}]});
  assert.equal(withImage.length,1);
  assert.match(formattedDropPayloads(withImage,"PKC Drops")[0].embeds[0].thumbnail.url,/item.png/);
+});
+
+test("retailer formatting permissions allow embeds and Manage Messages without changing staff roles",()=>{
+ const botId="1551070928039845900";
+ const permissions=dropBotPermissionOverwrite({id:botId,type:1,allow:"68624",deny:"16384"},botId);
+ const allow=BigInt(permissions.allow),deny=BigInt(permissions.deny);
+ assert.equal(allow & (8192n|16384n),8192n|16384n);
+ assert.equal(deny & (8192n|16384n),0n);
+ assert.equal(allow & 16n,16n,"Other existing bot permissions remain");
 });
