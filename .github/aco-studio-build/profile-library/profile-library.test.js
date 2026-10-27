@@ -87,7 +87,7 @@ test('Multiple hard Target primary jigs stack only when Combine is explicitly en
  const normal=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
   ruleIds:['target.house.fraction.half','target.house.hyphen.a'],combine:false,billingSameAsShipping:false});
  assert.equal(normal.profiles[0].after.address1,'100 Example Avenue');
- assert.match(normal.profiles[1].after.address1,/^100 1\/2 Example Avenue$/i);
+ assert.match(normal.profiles[1].after.address1,/^100(?:-A| 1\/2) Example Avenue$/i);
  assert.doesNotMatch(normal.profiles[1].after.address1,/-A/i);
  const mixed=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
   ruleIds:['target.house.fraction.half','target.house.hyphen.a'],combine:true,billingSameAsShipping:false});
@@ -185,7 +185,7 @@ test('Exact Main/Jigged reuse count changes the chosen profiles only and can be 
   assert.equal(record.after.address2,'Apt 2');
   assert.equal(record.category,'reused saved address');
  }
- assert.match(result.profiles[2].after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
+ assert.equal(result.profiles[2].after.address2,'','The explicitly preserved original in the remaining group stays unchanged');
  const before=(await h.lib.list(event,h.p)).profiles;
  assert.ok(before.every(x=>!String(LC.values(x.data)['shipping.address2']||'').includes('Apt 2')));
  assert.equal(result.duplicateAddresses.length,2,'Intentional exact address reuse must show the two conflicts');
