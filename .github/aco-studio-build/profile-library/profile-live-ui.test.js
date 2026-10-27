@@ -366,3 +366,20 @@ test('selection dock is sticky, groups related actions, and keeps existing handl
  assert.match(source,/matchingCards\.slice\(0,visibleCardLimit\)/);
  assert.match(source,/if\(resourceChanged\)drawResourceBanks\(\)/);
 });
+
+test('Jig UI groups related ordinal, compass, unit and Target hard variants',()=>{
+ const start=source.indexOf(' function jigFamily(option){'),end=source.indexOf(' function groupedJigChoices(host,settings){',start);
+ assert.ok(start>0&&end>start,'Jig grouping helper exists');
+ const context={};vm.createContext(context);vm.runInContext(source.slice(start,end)+';this.group=jigFamily;',context);
+ const group=context.group;
+ assert.equal(group({id:'ordinal.2nd_to_second',label:'2nd → second'})[0],'ordinals');
+ assert.equal(group({id:'ordinal.second_to_2nd',label:'Second → 2nd'})[0],'ordinals');
+ assert.equal(group({id:'direction_nw_long',label:'NW → Northwest'})[0],'directions');
+ assert.equal(group({id:'apartment_to_unit',label:'Apt → Unit'})[0],'units');
+ assert.equal(group({id:'suite_to_ste',label:'Suite → Ste'})[0],'units');
+ assert.equal(group({id:'target.house.fraction.half',label:'1/2'})[0],'fraction-house');
+ assert.equal(group({id:'target.house.fraction.quarter',label:'1/4'})[0],'fraction-house');
+ assert.equal(group({id:'target.house.hyphen.a',label:'-A'})[0],'hyphen-house');
+ assert.match(source,/Allow duplicate jig addresses only for the conflicts listed below/);
+ assert.match(source,/allowDuplicateAddresses:duplicateCount>0&&allowDuplicates.checked/);
+});

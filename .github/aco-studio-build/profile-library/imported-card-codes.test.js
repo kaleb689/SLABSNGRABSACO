@@ -39,7 +39,7 @@ test('Independent profile Security Codes persist through import, edit, jig and e
   const loaded=await h.lib.detail(event,{...h.p,profileId:row.id});
   assert.equal(loaded.data.profileSecurityCode,reference);
   const jig=await h.lib.batchJigPreview(event,{...h.p,retailer,profileIds:[row.id],ruleIds:[LC.FL_PHONE_RULE],hardCounts:{fraction:1},combine:false,billingSameAsShipping:true});
-  await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true});
+  await h.lib.batchJigCommit(event,{token:jig.token,confirmed:true,allowDuplicateAddresses:jig.duplicateAddresses.length>0});
   row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
   assert.equal(row.data.profileSecurityCode,reference);
   assert.equal(row.bank,'live');

@@ -112,7 +112,7 @@ test('Jig commit changes cardholder to the profile first and last name for Targe
   let row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
   assert.equal(LC.payment(row.data).cardholder,'Alex Example');
   const plan=await h.lib.batchJigPreview(event,{...h.p,retailer,profileIds:[row.id],ruleIds:['avenue_short'],combine:false,billingSameAsShipping:false});
-  await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+  await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true,allowDuplicateAddresses:plan.duplicateAddresses.length>0});
   row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
   assert.equal(LC.payment(row.data).cardholder,'Alex Example');
   if(retailer==='target')assert.equal(row.data.cc_name,'Alex Example');
@@ -189,7 +189,8 @@ test('Exact Main/Jigged reuse count changes the chosen profiles only and can be 
  assert.equal(result.profiles[2].after.address2,'');
  const before=(await h.lib.list(event,h.p)).profiles;
  assert.ok(before.every(x=>!String(LC.values(x.data)['shipping.address2']||'').includes('Apt 2')));
- await h.lib.batchJigCommit(event,{token:result.token,confirmed:true});
+ assert.equal(result.duplicateAddresses.length,2,'Intentional exact address reuse must show the two conflicts');
+ await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:true});
  const after=(await h.lib.list(event,h.p)).profiles;
  assert.equal(after.filter(x=>String(LC.values(x.data)['shipping.address2']).toUpperCase()==='APT 2').length,2);
  const noReuse={...args,reuse:{sourceId:choice.id,count:1}};
@@ -668,4 +669,37 @@ test('Pasted credentials preserve password in encrypted retailer bank and keep c
  assert.equal(foreign,0);
  await assert.rejects(h.lib.importPastedAccounts(event,{...h.a,retailer:'pokemoncenter',accounts:[{email:'bad@example.test',password:''}],confirmed:true}),/Invalid account/);
  await assert.rejects(h.lib.importPastedAccounts({sender:{id:2}},{...h.a,retailer:'pokemoncenter',accounts,confirmed:true}),/Not owner/);
+});
+
+test('Jig address collisions across retailer accounts require an explicit Allow override',async t=>{
+ const h=await library(t);
+ const original=complete('target','to-jig@example.test');
+ const already=complete('pokemoncenter','already-used@example.test');
+ const changed=D.manualEdit(already,{...LC.values(already),'shipping.address1':'100 Example Ave','billing.address1':'100 Example Ave'});
+ await commit(h,await preview(h,[original],h.p,'target'));
+ await commit(h,await preview(h,[changed],h.p,'pokemoncenter'));
+ const row=(await h.lib.list(event,h.p)).profiles.find(x=>x.email==='to-jig@example.test');
+ const arg={...h.p,retailer:'target',profileIds:[row.id],ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false};
+ const plan=await h.lib.batchJigPreview(event,arg);
+ assert.equal(plan.duplicateAddresses.length,1);
+ assert.match(plan.duplicateAddresses[0].address,/100 Example Ave/);
+ assert.deepEqual(plan.duplicateAddresses[0].matches.map(x=>x.email),['already-used@example.test']);
+ await assert.rejects(h.lib.batchJigCommit(event,{token:plan.token,confirmed:true}),/Allow duplicate jig addresses/);
+ const before=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
+ assert.match(LC.values(before.data)['shipping.address1'],/Avenue/);
+ const applied=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true,allowDuplicateAddresses:true});
+ assert.equal(applied.duplicateOverrides,1);
+ const after=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
+ assert.equal(LC.values(after.data)['shipping.address1'],'100 Example Ave');
+});
+test('Other customers cannot cause a jig duplicate warning in this customer vault',async t=>{
+ const h=await library(t);
+ const first=complete('target','isolated@example.test');
+ const second=complete('target','outside@example.test');
+ const previous=D.manualEdit(second,{...LC.values(second),'shipping.address1':'100 Example Ave'});
+ await commit(h,await preview(h,[first],h.a,'target'));
+ await commit(h,await preview(h,[previous],h.b,'target'));
+ const row=(await h.lib.list(event,h.a)).profiles.find(x=>x.email==='isolated@example.test');
+ const plan=await h.lib.batchJigPreview(event,{...h.a,retailer:'target',profileIds:[row.id],ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false});
+ assert.equal(plan.duplicateAddresses.length,0);
 });
