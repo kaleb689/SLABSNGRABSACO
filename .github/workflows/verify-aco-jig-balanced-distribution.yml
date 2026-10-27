@@ -43,25 +43,6 @@ jobs:
           node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
           node .github/aco-studio-build/profile-library/apply.cjs build-src/App
           node .github/aco-studio-build/drop-news/apply.cjs build-src/App
-      - name: Inspect bundled synthetic export tests
-        working-directory: build-src/App
-        run: |
-          node - <<'NODE'
-          const fs=require('fs');
-          console.log('PERSONAL NAVIGATION HEAD\\n'+fs.readFileSync('tests/personal-navigation.test.js','utf8').slice(0,8500));
-          console.log('PROFILE WORKSHOP HEAD\\n'+fs.readFileSync('tests/profile-workshop.test.js','utf8').slice(0,5500));
-          for(const [filename,name] of [
-            ['tests/personal-navigation.test.js','Preview -> review handoff -> export produces the reviewed file without saving or changing original profiles'],
-            ['tests/profile-workshop.test.js','Imported file mode preserves CSV columns, IDs, extra data and unselected rows'],
-            ['tests/profile-workshop.test.js','Native export writes full saved card data only after explicit confirmation']
-          ]){
-            const source=fs.readFileSync(filename,'utf8');
-            const start=source.indexOf("test('"+name+"'");
-            if(start<0)throw Error('Synthetic fixture not found: '+name);
-            const stop=source.indexOf("\\ntest(",start+10);
-            console.log('FIXTURE '+filename+' '+name+'\\n'+source.slice(start,stop>start?stop:start+8000));
-          }
-          NODE
       - name: Run assembled ACO Studio regression suite
         working-directory: build-src/App
         run: |
