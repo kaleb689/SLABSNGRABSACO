@@ -676,7 +676,101 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   a.check();
   return {...report,selectedFolder:result,folderOriginalScan:stats};
  }
- async function exportFile(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles.');const all=await profiles.fieldSnapshot(a.scope,a.id),rows=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===p.retailer));if(rows.some(x=>!x))throw Error('Every exported profile must still belong to this vault and retailer.');const content=C.exportSelectedRows(rows,p.retailer,p.customerName||'Personal',p.exportFormat||'retailer');if(!await confirmExport(e))return {cancelled:true};const ext=path.extname(content.name),choice=await chooseSave(e,{name:content.name,extension:ext.slice(1)});if(choice.canceled||!choice.filePath)return {cancelled:true};if(path.extname(choice.filePath)!==ext)throw Error('Keep the retailer export format.');const latest=await profiles.fieldSnapshot(a.scope,a.id);if(rows.some(x=>require('./jig-field-core').hash(x)!==require('./jig-field-core').hash(latest.find(y=>y.id===x.id))))throw Error('Profiles changed while exporting. Try again.');a.check();await writeFile(choice.filePath,content.body,{encoding:'utf8',mode:0o600});return {saved:true,count:rows.length,name:path.basename(choice.filePath)};}
+ // Only the exact retailer + authenticated vault is considered. Shared addresses
+ // are never duplicates. Shared full cards are optional because hard-card reuse
+ // may be deliberate. This preview is read-only.
+ function uniqueExportSelection(all,retailer,stage,mode){
+  if(!['new','completed','live'].includes(stage))throw Error('Choose New, Ready for Export or Live profiles.');
+  if(!['email','email-card'].includes(mode))throw Error('Choose how to identify duplicate accounts.');
+  const scoped=all.filter(row=>row.retailer===retailer);
+  const isNew=row=>row.needsFirstExport===true;
+  const chosen=row=>stage==='live'?row.bank==='live':
+   row.bank!=='live'&&Completion.inspect(row).ready&&(stage==='new'?isNew(row):!isNew(row));
+  const candidates=scoped.filter(chosen);
+  const email=row=>C.email(row.email||C.values(row.data).email);
+  const number=row=>C.payment(row.data).number;
+  const seenEmails=new Set(),seenCards=new Set();
+  // Accounts already in the other retailer sub-tabs must not be exported twice.
+  for(const row of scoped.filter(row=>!chosen(row))){
+   const e=email(row),n=number(row);
+   if(e)seenEmails.add(e);
+   if(mode==='email-card'&&/^\\d{12,19}$/.test(n))seenCards.add(n);
+  }
+  const kept=[];let sameEmail=0,sameCard=0;
+  for(const row of candidates){
+   const e=email(row),n=number(row),cardValid=/^\\d{12,19}$/.test(n);
+   if(e&&seenEmails.has(e)){sameEmail++;continue;}
+   if(mode==='email-card'&&cardValid&&seenCards.has(n)){sameCard++;continue;}
+   kept.push(row);
+   if(e)seenEmails.add(e);
+   if(mode==='email-card'&&cardValid)seenCards.add(n);
+  }
+  const fingerprint=crypto.createHash('sha256').update(JSON.stringify(scoped.map(row=>
+   [row.id,require('./jig-field-core').hash(row),row.needsFirstExport,row.exportedAt]))).digest('hex');
+  return {rows:kept,scanned:candidates.length,skippedDuplicates:candidates.length-kept.length,
+   skippedEmail:sameEmail,skippedCard:sameCard,fingerprint};
+ }
+ async function exportFile(e,p){
+  const a=await access(e,p),retailer=C.retailer(p?.retailer),unique=p?.exportAllUnique===true;
+  const before=await profiles.fieldSnapshot(a.scope,a.id);
+  let rows,selection;
+  if(unique){
+   if(Array.isArray(p.profileIds)&&p.profileIds.length)throw Error('Export all does not accept a page selection.');
+   selection=uniqueExportSelection(before,retailer,p.exportStage,p.duplicateMode||'email-card');
+   if(p.previewOnly===true){
+    a.check();return {preview:true,count:selection.rows.length,scanned:selection.scanned,
+     skippedDuplicates:selection.skippedDuplicates,skippedEmail:selection.skippedEmail,
+     skippedCard:selection.skippedCard,fingerprint:selection.fingerprint};
+   }
+   if(p.confirmedUniqueExport!==true||p.expectedFingerprint!==selection.fingerprint)
+    throw Error('Duplicate export preview expired. Review the counts again.');
+   rows=selection.rows;
+  }else{
+   if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||
+     new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles.');
+   rows=p.profileIds.map(id=>before.find(x=>x.id===id&&x.retailer===retailer));
+   if(rows.some(x=>!x))throw Error('Every exported profile must still belong to this vault and retailer.');
+  }
+  if(!rows.length)throw Error('No eligible profiles remain to export.');
+  const content=C.exportSelectedRows(rows,retailer,p.customerName||'Personal',p.exportFormat||'retailer');
+  if(unique)content.name=content.name.replace(/(\\.[^.]+)$/,' - no duplicates$1');
+  if(!await confirmExport(e))return {cancelled:true};
+  const ext=path.extname(content.name),choice=await chooseSave(e,{name:content.name,extension:ext.slice(1)});
+  if(choice.canceled||!choice.filePath)return {cancelled:true};
+  if(path.extname(choice.filePath)!==ext)throw Error('Keep the selected export file extension.');
+  const latest=await profiles.fieldSnapshot(a.scope,a.id);
+  if(unique&&uniqueExportSelection(latest,retailer,p.exportStage,p.duplicateMode||'email-card').fingerprint!==selection.fingerprint)
+   throw Error('Profiles changed during duplicate-safe export. Preview again.');
+  if(rows.some(x=>require('./jig-field-core').hash(x)!==
+    require('./jig-field-core').hash(latest.find(y=>y.id===x.id))))
+   throw Error('Profiles changed while exporting. Try again.');
+  a.check();
+  await writeFile(choice.filePath,content.body,{encoding:'utf8',mode:0o600});
+  // Only after the actual export has saved may New profiles enter Ready for Export.
+  const exportedNew=rows.filter(x=>x.needsFirstExport===true);
+  let markedExported=0,markError=null;
+  if(exportedNew.length)try{
+   const ids=new Set(exportedNew.map(x=>x.id)),snapshot=new Map(exportedNew.map(x=>
+    [x.id,require('./jig-field-core').hash(x)]));
+   const receipt=await profiles.libraryTransaction(a.scope,a.id,ctx=>{
+    let updated=0;
+    for(const row of ctx.rows.filter(x=>ids.has(x.id))){
+     if(require('./jig-field-core').hash(row)!==snapshot.get(row.id))
+      throw Error('A new profile changed after export; status was not updated.');
+     row.needsFirstExport=false;row.exportedAt=new Date(now()).toISOString();
+     row.revision=(row.revision||0)+1;updated++;
+     ctx.audit('profile-first-exported',row.email,{retailer});
+    }
+    if(updated!==ids.size)throw Error('One or more new profiles were removed before their export status updated.');
+    return {updated};
+   },a.check);
+   markedExported=receipt.updated;
+  }catch(error){markError=String(error.message||error);}
+  return {saved:true,count:rows.length,name:path.basename(choice.filePath),
+   firstExported:markedExported,...(markError?{markError}:{}),
+   ...(unique?{scanned:selection.scanned,skippedDuplicates:selection.skippedDuplicates,
+    skippedEmail:selection.skippedEmail,skippedCard:selection.skippedCard}:{})};
+ }
  async function exportArchive(e,p){
   const a=await access(e,p);
   C.retailer(p.retailer);
