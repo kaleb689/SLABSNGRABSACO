@@ -1388,7 +1388,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       try {
         const onboarding = await api(`/guilds/${guildId}/onboarding`);
         const duplicateIntroIds = new Set(introChannels.filter(item => item.id !== introChannelId).map(item => item.id));
-        const defaultChannelIds = [...new Set([introChannelId, rulesChannelId,
+        const defaultChannelIds = [...new Set([introChannelId, rulesChannelId, ...(serverRolesChannelId?[serverRolesChannelId]:[]),
           ...onboarding.default_channel_ids.filter(id => !duplicateIntroIds.has(id))])];
         if (onboarding.enabled && (defaultChannelIds.length !== onboarding.default_channel_ids.length ||
           defaultChannelIds.some(id => !onboarding.default_channel_ids.includes(id)))) {
@@ -2772,7 +2772,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       typeof onRetailerSkuUpdate!=="function")return;
     const retailers=mentionedRetailers(d.content||"");
     if(!retailers.length)return;
-    const message=String(d.content||"").replace(/<@!?\\d+>|@everyone|@here/g,"")
+    const message=String(d.content||"").replace(/<@!?\d+>|@everyone|@here/g,"")
       .replace(/[*_`~]/g,"").trim().slice(0,240);
     const notification={kind:"drop_announcement",retailers,
       title:"Upcoming "+retailers.map(key=>retailerAlert(key)?.name).filter(Boolean).join(", ")+" drop",
@@ -2782,7 +2782,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const result=await onRetailerSkuUpdate({notification,eventKey,messageId:d.id});
     const dmIds=[...new Set(result?.dmUserIds||[])];
     for(const userId of dmIds){
-      if(!/^\\d{15,25}$/.test(String(userId)))continue;
+      if(!/^\d{15,25}$/.test(String(userId)))continue;
       try{
         const claim=await deliveryGuard.claim({
           channel:"discord:sku-updates",recipient:String(userId),eventKey
@@ -2790,8 +2790,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         if(!claim.send)continue;
         const channel=await api("/users/@me/channels","POST",{recipient_id:String(userId)});
         await api("/channels/"+channel.id+"/messages","POST",{
-          allowed_mentions:{parse:[]},content:"📣 **"+notification.title+"**\\n"+
-            notification.message+"\\n"+notification.sourceUrl
+          allowed_mentions:{parse:[]},content:"📣 **"+notification.title+"**\n"+
+            notification.message+"\n"+notification.sourceUrl
         });
       }catch(error){console.error("Upcoming retailer announcement DM:",error.message);}
     }
