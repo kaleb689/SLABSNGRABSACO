@@ -1498,7 +1498,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     return withRetailerSubscribers(async()=>{
       const current=await readJsonSafe(retailerSubscribersFile,{});
       return Object.entries(current).filter(([id,list])=>
-        /^\\d{15,25}$/.test(id)&&Array.isArray(list)&&list.some(key=>wanted.has(key))
+        /^\d{15,25}$/.test(id)&&Array.isArray(list)&&list.some(key=>wanted.has(key))
       ).map(([id])=>id);
     });
   }
