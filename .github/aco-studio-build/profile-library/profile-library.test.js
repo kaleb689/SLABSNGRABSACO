@@ -820,3 +820,15 @@ test('A single selected Target profile actually receives a checked hard jig',asy
  assert.equal(result.profiles[0].after.address1,'100-A Example Avenue');
  assert.deepEqual(result.profiles[0].appliedRuleIds,['target.house.hyphen.a']);
 });
+
+test('Jig Studio optional-unit-only works with zero counted hard categories',async t=>{
+ const h=await library(t);
+ for(let i=0;i<3;i++)await commit(h,await preview(h,[complete('target','unit-optional-only-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:[],hardCounts:{fraction:0,hyphen:0,doubleLetter:0,randomUnit:0},
+  optionalUnitCount:2,combine:false,billingSameAsShipping:false});
+ assert.equal(result.optionalUnitAdded,2);
+ assert.equal(result.profiles.filter(x=>x.after.address2).length,2);
+ assert.equal(result.profiles.filter(x=>x.appliedRuleIds.includes('second-line.add')).length,2);
+});
