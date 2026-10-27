@@ -262,7 +262,7 @@ test('Separate profile code is editable, preserved and included in owner JSON ex
  await commit(h,await preview(h,[source]));
  let row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'WAREHOUSE-ACCESS-73');
- const updated=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'PICKUP-CODE-44'});
+ const updated=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'PICKUP-CODE-44',confirmSecurityCodeChange:true});
  assert.equal(updated.updated,true);
  row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'PICKUP-CODE-44');
