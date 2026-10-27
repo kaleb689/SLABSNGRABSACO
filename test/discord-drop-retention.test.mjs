@@ -61,7 +61,7 @@ test("posting another drop or formatted monitor report does not delete earlier m
     isNewDropPost:()=>true,parseMonitorDropProducts:()=>[{name:"Box",sku:"12345"}],
     formattedDropPayloads:()=>[{content:"formatted",embeds:[]}],
     api:async(path,method)=>{calls.push(method);return {id:"formatted"};},
-    ensureSkuControls:async()=>{},notifyRetailerSkuChange:async()=>{},console};
+    ensureSkuControls:async()=>{},notifyRetailerSkuChange:async()=>{},notifyUpcomingRetailerAnnouncement:async()=>{},console};
   vm.createContext(context);vm.runInContext(snippet,context);
   await context.onDropPost({guild_id:"guild",channel_id:"drop",id:"new",author:{id:"staff"}});
   assert.deepEqual(calls,[]);
