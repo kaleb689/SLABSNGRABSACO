@@ -274,6 +274,40 @@ export function isSelectableSkuSource(message,appId) {
 }
 // Return all recent valid product posts in each channel rather than only the
 // newest one. A busy Target channel must not hide Walmart or Pokémon Center.
+// Retailer drop channels must let the application post embeds and remove only
+// its successfully reformatted owner's raw paste. Do not change staff permissions.
+export function dropBotPermissionOverwrite(current={},botId) {
+  const required=1024n|2048n|8192n|16384n|65536n;
+  const allow=BigInt(current.allow||"0")|required;
+  const deny=BigInt(current.deny||"0")&~required;
+  return {id:botId,type:1,allow:allow.toString(),deny:deny.toString()};
+}
+// Recover a raw owner monitor paste only when a verified bot's existing
+// formatted cards already contain exactly the same SKUs shortly afterward.
+// This never deletes unrelated drop posts or makes a second set of bot cards.
+export function isCoveredRawMonitorPost(raw, messages, ownerId, appId) {
+  if(!raw || raw.pinned || String(raw.author?.id)!==String(ownerId) ||
+      raw.author?.bot || raw.webhook_id) return false;
+  const original=parseMonitorDropProducts(raw);
+  if(!original.length)return false;
+  const at=message=> {
+    let value=Date.parse(message?.timestamp||"");
+    if(!Number.isFinite(value)&&/^\d{17,22}$/.test(String(message?.id||""))) {
+      try {value=Number((BigInt(message.id)>>22n)+1420070400000n);}catch{}
+    }
+    return value;
+  };
+  const rawTime=at(raw);
+  if(!Number.isFinite(rawTime))return false;
+  const formatted=(messages||[]).filter(post=>
+    isFormattedDropPost(post,appId) && post.channel_id===raw.channel_id &&
+    Number.isFinite(at(post)) && at(post)>=rawTime && at(post)-rawTime<=5*60*1000);
+  if(!formatted.length)return false;
+  const originalSkus=new Set(original.map(item=>item.sku));
+  const postedSkus=new Set(formatted.flatMap(post=>parseDropSkus(post).map(item=>item.sku)));
+  return originalSkus.size===postedSkus.size &&
+    [...originalSkus].every(sku=>postedSkus.has(sku));
+}
 export function recentSelectableDropPosts(messages, appId, limit=12) {
  return (Array.isArray(messages)?messages:[])
   .filter(message=>!message.message_reference?.message_id&&
@@ -1202,7 +1236,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
          const channelName = "❗️│" + spec.slug;
          const topic = "SLABSNGRABSACO " + spec.label +
            ": staff post product names and SKUs; paid members select quantities privately with Confirm Selections.";
-         const overwrites = readOnlyOverwrites();
+         const overwrites = readOnlyOverwrites().map(item =>
+           item.id === appId ? dropBotPermissionOverwrite(item, appId) : item);
          let channel = channels.find(item =>
            [0, 5].includes(item.type) && normalizeName(item.name) === spec.key);
          if (!channel) {
@@ -1229,6 +1264,18 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
            }
          }
          if (!channel) continue;
+         // Repair pre-existing retailer channels without replacing anyone else's
+         // role overwrites; Manage Messages is required for raw-paste cleanup.
+         const botPermission=(channel.permission_overwrites||[]).find(item=>item.id===appId);
+         const desiredPermission=dropBotPermissionOverwrite(botPermission,appId);
+         if(!botPermission || (BigInt(botPermission.allow||"0") & (8192n|16384n)) !== (8192n|16384n) ||
+             (BigInt(botPermission.deny||"0") & (8192n|16384n)) !== 0n) {
+           try {
+             await api("/channels/"+channel.id+"/permissions/"+appId,"PUT",{type:1,allow:desiredPermission.allow,deny:desiredPermission.deny});
+           } catch(error) {
+             console.error("Discord retailer bot formatting permission repair failed:",spec.slug,error.message);
+           }
+         }
          dropChannelIds.add(channel.id);
          retailerDropLabels[channel.id] = spec.label;
          retailerChannels.push({ name: channel.name, id: channel.id });
@@ -2587,7 +2634,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     if (!dropChannelIds.has(message.channel_id) ||
         (message.author?.bot && !isFormattedDropPost(message, appId)) || message.webhook_id) return;
     const products = parseDropSkus(message);
-    const upcomingWithoutSkus = message.channel_id !== tonightChannelId &&
+    const upcomingWithoutSkus = message.channel_id === upcomingChannelId &&
       isNewDropPost(message) && (message.type ?? 0) === 0;
     const shouldShow = products.length > 0 || upcomingWithoutSkus;
     await withSkuQueue(async () => {
@@ -2627,32 +2674,74 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     await ensureOwnerSkuReminderPanel(message, products);
     return products.length;
   }
+  async function retireReformattedRawSource(channelId,rawId) {
+    // An obsolete raw source must not leave interactive buttons pointing at a
+    // deleted message. Do not touch customer SKU selections or other posts.
+    await withSkuQueue(async()=>{
+      const menus=await readSkuFile(skuMenusFile);
+      for(const panelId of menus[rawId]||[]) {
+        try {await api("/channels/"+channelId+"/messages/"+panelId,"PATCH",{components:[]});}
+        catch(error){if(!/HTTP 404/.test(error.message))console.error("Old raw SKU panel retirement:",error.message);}
+      }
+      if(menus[rawId]){delete menus[rawId];await writeSkuFile(skuMenusFile,menus);}
+    });
+    await retireOwnerSkuReminderPanels(new Set([rawId]));
+  }
   async function backfillDropMenus() {
     for (const channelId of dropChannelIds) {
       try {
       const active = [];
-      let before = "", foundMain = false, keptUpcomingMain = false;
-      for (let page = 0; page < 20 && !foundMain; page++) {
+      let before = "", keptUpcomingMain = false;
+      const seenSources = new Set();
+      for (let page = 0; page < 10; page++) {
         const history = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
         for (const message of history) {
           if (!message.message_reference?.message_id && message.type === 0 &&
               (!message.author?.bot || isFormattedDropPost(message, appId)) &&
               !message.webhook_id && parseDropSkus(message).length) {
-            active.push(message);
-            foundMain = true;
-            break;
+            if (!seenSources.has(message.id)) {
+              active.push(message);
+              seenSources.add(message.id);
+            }
+            continue;
           }
           if ((!message.author?.bot || isFormattedDropPost(message, appId)) &&
               !message.webhook_id && (message.type === 0 || message.type === 19)) {
-            if (parseDropSkus(message).length) active.push(message);
+            if (parseDropSkus(message).length && !seenSources.has(message.id)) {
+              active.push(message);
+              seenSources.add(message.id);
+            }
             else if (channelId !== tonightChannelId && isNewDropPost(message) && !keptUpcomingMain) {
               active.push(message);
               keptUpcomingMain = true;
             }
           }
         }
-        if (history.length < 100) break;
+        if (history.length < 100 || active.length >= 40) break;
         before = history.at(-1).id;
+      }
+      // Repair ONLY old owner raw pastes that have already been mirrored to
+      // exact matching formatted bot cards. Never remove raw sources carrying
+      // saved user selections or an unfinished SKU draft.
+      const savedSelections=await readSkuFile(skuSelectionsFile);
+      const savedDrafts=await readSkuFile(skuDraftsFile);
+      for(const raw of [...active]) {
+        if(!isCoveredRawMonitorPost(raw,active,ownerId,appId))continue;
+        const prefix=channelId+":"+raw.id+":";
+        const selected=Object.values(savedSelections).some(record=>
+          (record?.items||[]).some(item=>String(item.key||"").startsWith(prefix)) ||
+          (record?.skippedUpcomingDrops||[]).some(item=>item.channelId===channelId&&item.sourceId===raw.id));
+        const pending=Object.keys(savedDrafts).some(key=>key.endsWith(":"+raw.id));
+        if(selected||pending)continue;
+        try {
+          await api("/channels/"+channelId+"/messages/"+raw.id,"DELETE");
+          await retireReformattedRawSource(channelId,raw.id);
+          const index=active.findIndex(item=>item.id===raw.id);
+          if(index>=0)active.splice(index,1);
+          console.log("Discord cleaned previously formatted raw monitor paste:",channelId,raw.id);
+        } catch(error) {
+          console.error("Discord historical monitor cleanup unavailable:",channelId,error.message);
+        }
       }
       for (const message of active.reverse()) await ensureSkuControls(message);
       console.log("Discord drop controls refreshed:", JSON.stringify({
@@ -2890,6 +2979,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           // their selectable SKU controls are created successfully.
           try {
             await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
+            await retireReformattedRawSource(d.channel_id,d.id);
+            console.log("Discord converted owner monitor paste:",d.channel_id,d.id,monitored.length);
           } catch (error) {
             console.error("Formatted drop published; could not remove raw paste:", error.message);
           }
@@ -3855,7 +3946,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function webActiveDropSources() {
     if (!skuRequestsChannelId || !dropChannelIds.size) throw new Error("Discord drop controls are not ready yet.");
     const perChannel=await Promise.all([...dropChannelIds].map(async channelId=>{
-      const messages=await api("/channels/"+channelId+"/messages?limit=100");
+      let messages;
+      try {
+        messages=await api("/channels/"+channelId+"/messages?limit=100");
+      } catch(error) {
+        // An inaccessible drop channel must not block other retailers in the app.
+        console.error("Discord app retailer drop read failed:", channelId, error.message);
+        return [];
+      }
       const sources=recentSelectableDropPosts(messages,appId);
       const label=retailerDropLabels[channelId]||
         (channelId===tonightChannelId?"Dropping Tonight":"Upcoming Drops");
