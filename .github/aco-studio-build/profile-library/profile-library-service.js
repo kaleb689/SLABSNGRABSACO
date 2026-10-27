@@ -694,11 +694,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   for(const row of scoped.filter(row=>!chosen(row))){
    const e=email(row),n=number(row);
    if(e)seenEmails.add(e);
-   if(mode==='email-card'&&/^\\d{12,19}$/.test(n))seenCards.add(n);
+   if(mode==='email-card'&&/^\d{12,19}$/.test(n))seenCards.add(n);
   }
   const kept=[];let sameEmail=0,sameCard=0;
   for(const row of candidates){
-   const e=email(row),n=number(row),cardValid=/^\\d{12,19}$/.test(n);
+   const e=email(row),n=number(row),cardValid=/^\d{12,19}$/.test(n);
    if(e&&seenEmails.has(e)){sameEmail++;continue;}
    if(mode==='email-card'&&cardValid&&seenCards.has(n)){sameCard++;continue;}
    kept.push(row);
