@@ -285,6 +285,13 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(!row||row.revision!==p.revision)throw Error('Profile changed. Reopen it before editing.');
    if(row.needsReview)throw Error('Resolve the website conflict before editing this profile. Nothing was overwritten.');
    const data=D.manualEdit(row.data,p.fields),email=C.email(data.email);
+   // Ordinary profile, card and address changes NEVER authorize reference edits.
+   const storedCode=C.profileCode(row.data);
+   const requestedCode=p.profileSecurityCode!==undefined?p.profileSecurityCode:p.cardCvv;
+   const changesCode=requestedCode!==undefined&&requestedCode!==storedCode;
+   if(changesCode&&p.confirmSecurityCodeChange!==true)
+    throw Error('Security Code edit requires an explicit separate confirmation. No data was changed.');
+
     if(p.profileSecurityCode!==undefined){
      if(typeof p.profileSecurityCode!=='string'||p.profileSecurityCode.length>100||/[\x00-\x1f\x7f]/.test(p.profileSecurityCode))throw Error('Invalid separate profile code.');
      data.profileSecurityCode=p.profileSecurityCode;
@@ -330,8 +337,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    // Only this authenticated, version-checked profile-code editor may
    // explicitly change an existing independent non-payment reference.
    // A card/address edit, bulk jig, or re-import does not authorize it.
-   if(p.profileSecurityCode!==undefined||p.cardCvv!==undefined)
-    ctx.allowIndependentReferenceEdit(row.id);
+   if(changesCode)ctx.allowIndependentReferenceEdit(row.id);
    row.data=data;row.email=email;row.label=C.values(data).label;
    row.group=String(p.group||row.group||row.retailer).slice(0,100);
    row.revision++;row.manualOverride=!linked;row.needsReview=false;
