@@ -227,29 +227,36 @@ export async function sendDiscordRtpReturnSummary({
 // A SKU is taken only from an explicit SKU label. The closest product line
 // above it is the title shown to the owner; never infer SKUs from other text.
 export function parseDropSkus(message) {
-  const sections = [String(message?.content || ""), ...(message?.embeds || []).map(embed =>
-    [embed.title, embed.description, ...(embed.fields || []).flatMap(field => [field.name, field.value])].filter(Boolean).join("\n")
-  )];
-  const products = [], seen = new Set();
-  for (const section of sections) {
-    let title = "Product name not provided";
-    for (const raw of section.split(/\r?\n/)) {
-      const line = raw.replace(/[*_`~]/g, "").trim();
-      if (!line) continue;
-      const sku = /\b(?:SKU|PID|TCIN)\s*(?:#|:|-|\s)\s*([A-Z0-9][A-Z0-9._-]{2,79})\b/i.exec(line);
-      if (sku) {
-        const prefix = line.slice(0, sku.index).replace(/[-:|\s]+$/, "").trim();
-        const name = (prefix || title).slice(0, 100);
-        if (!seen.has(sku[1].toUpperCase())) {
-          products.push({ name, sku: sku[1].toUpperCase() });
-          seen.add(sku[1].toUpperCase());
-        }
-      } else if (!/^(?:qty|quantity|price|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?|https?:\/\/|<@)/i.test(line)) {
-        title = line.slice(0, 100);
+  const sections=[String(message?.content||""),...(message?.embeds||[]).map(embed=>
+    [embed.title,embed.description,...(embed.fields||[]).flatMap(field=>[field.name,field.value])]
+      .filter(Boolean).join("\n"))];
+  const products=[],seen=new Set();
+  for(const section of sections){
+    let title="Product name not provided",pendingId=false;
+    const addSku=(sku,name)=>{
+      const id=String(sku||"").toUpperCase();
+      if(!/^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(id)||seen.has(id))return;
+      products.push({name:String(name||title).slice(0,100),sku:id});
+      seen.add(id);
+    };
+    for(const raw of section.split(/\r?\n/)){
+      const line=raw.replace(/[*_`~]/g,"").trim();
+      if(!line)continue;
+      if(pendingId){
+        pendingId=false;
+        if(/^[A-Z0-9][A-Z0-9._-]{2,79}$/i.test(line)){addSku(line,title);continue;}
+      }
+      if(/^(?:SKU|PID|TCIN)\s*:?[ \t]*$/i.test(line)){pendingId=true;continue;}
+      const sku=/\b(?:SKU|PID|TCIN)\s*(?:#|:|-|\s)\s*([A-Z0-9][A-Z0-9._-]{2,79})\b/i.exec(line);
+      if(sku){
+        const prefix=line.slice(0,sku.index).replace(/[-:|\s]+$/,"").trim();
+        addSku(sku[1],prefix||title);
+      }else if(!/^(?:qty|quantity|price|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?|https?:\/\/|<@)/i.test(line)){
+        title=line.replace(/^(?:product(?: name)?|item(?: name)?)\s*:\s*/i,"").slice(0,100);
       }
     }
   }
-  return products.slice(0, 200);
+  return products.slice(0,200);
 }
 export function dropChannelKind(name) {
   const key = String(name || "").normalize("NFKC").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
