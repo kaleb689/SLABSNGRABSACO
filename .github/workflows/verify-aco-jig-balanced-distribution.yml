@@ -43,7 +43,7 @@ jobs:
           node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
           node .github/aco-studio-build/profile-library/apply.cjs build-src/App
           node .github/aco-studio-build/drop-news/apply.cjs build-src/App
-      - name: Inspect legacy export test fixtures for updated data-safe expectations
+      - name: Inspect legacy export test fixtures for strict code requirements
         working-directory: build-src/App
         run: |
           node - <<'NODE'
