@@ -845,12 +845,12 @@ test('Batch jig distribution uses even allocation or an exact preferred style co
  const h=await library(t);
  for(let i=0;i<8;i++)await commit(h,await preview(h,[complete('target','balanced'+i+'@example.test')]));
  const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
- const ids=['target.house.integer.1','target.house.integer.2','target.house.fraction.half','target.house.fraction.third','target.house.hyphen.a','target.house.hyphen.b'];
+ const ids=['target.house.integer.1','target.house.integer.2','target.house.fraction.half','target.house.fraction.third','target.house.fraction.quarter','target.house.hyphen.a','target.house.hyphen.b'];
  const common={...h.p,retailer:'target',profileIds:rows.map(x=>x.id),ruleIds:ids,combine:false,billingSameAsShipping:false};
  const even=await h.lib.batchJigPreview(event,common);
  assert.deepEqual(Object.values(even.distribution).sort((a,b)=>a-b),[2,2,3]);
- const weighted=await h.lib.batchJigPreview(event,{...common,distribution:{enabled:true,counts:{'fraction-house':5}}});
- assert.equal(weighted.distribution['fraction-house'],5);
+ const weighted=await h.lib.batchJigPreview(event,{...common,distribution:{enabled:true,counts:{'fraction-house':3}}});
+ assert.equal(weighted.distribution['fraction-house'],3);
  assert.equal(Object.values(weighted.distribution).reduce((a,b)=>a+b,0),7);
  await assert.rejects(h.lib.batchJigPreview(event,{...common,distribution:{enabled:true,counts:{'fraction-house':8}}}),/exceeds/);
  assert.equal((await h.lib.list(event,h.p)).profiles.length,8,'Preview must never save profiles');
