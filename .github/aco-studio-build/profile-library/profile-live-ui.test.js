@@ -130,7 +130,7 @@ test('Search and duplicates cannot select a different retailer or status tab',()
 test('Bulk jig, move, delete and export never operate on selected profiles outside current page',()=>{
  assert.match(source,/const chosen=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/);
  assert.match(source,/selectedRows=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)/);
- assert.match(source,/const selectedVisible=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/);
+ assert.match(source,/const selectedVisible=\(typeof cachedPageRows![^\n]*\)\.filter\(x=>selected\.has\(x\.id\)\)/);
  assert.equal((source.match(/profileIds:pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/g)||[]).length,2);
  assert.match(source,/selected\.clear\(\);pageIndex=0;if\(q\('search'\)\.value\.trim\(\)\)/);
  assert.match(source,/nextPage\.onclick=\(\)=>\{if\(\(pageIndex\+1\)\*PAGE_SIZE<visible\(\)\.length\)\{pageIndex\+\+;selected\.clear\(\);draw\(\);\}\};/);
