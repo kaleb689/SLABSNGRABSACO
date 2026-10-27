@@ -832,3 +832,26 @@ test('Jig Studio optional-unit-only works with zero counted hard categories',asy
  assert.equal(result.profiles.filter(x=>x.after.address2).length,2);
  assert.equal(result.profiles.filter(x=>x.appliedRuleIds.includes('second-line.add')).length,2);
 });
+
+test('Selected Target integer house additions are recognized as consolidated rule family',()=>{
+ const rules=LC.ruleOptions('target').filter(x=>x.id.startsWith('target.house.integer.'));
+ assert.equal(rules.length,9);
+ assert.equal(new Set(rules.map(x=>LC.jigStyle(x.id))).size,1);
+ const out=LC.jig(complete('target','integer@example.test'),'target',1,[rules[0].id]);
+ assert.match(D.toValues(out)['shipping.address1'],/^100 1 Example Avenue$/);
+});
+
+test('Batch jig distribution uses even allocation or an exact preferred style count without editing vault data',async t=>{
+ const h=await library(t);
+ for(let i=0;i<8;i++)await commit(h,await preview(h,[complete('target','balanced'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const ids=['target.house.integer.1','target.house.integer.2','target.house.fraction.half','target.house.fraction.third','target.house.hyphen.a','target.house.hyphen.b'];
+ const common={...h.p,retailer:'target',profileIds:rows.map(x=>x.id),ruleIds:ids,combine:false,billingSameAsShipping:false};
+ const even=await h.lib.batchJigPreview(event,common);
+ assert.deepEqual(Object.values(even.distribution).sort((a,b)=>a-b),[2,2,3]);
+ const weighted=await h.lib.batchJigPreview(event,{...common,distribution:{enabled:true,counts:{'fraction-house':5}}});
+ assert.equal(weighted.distribution['fraction-house'],5);
+ assert.equal(Object.values(weighted.distribution).reduce((a,b)=>a+b,0),7);
+ await assert.rejects(h.lib.batchJigPreview(event,{...common,distribution:{enabled:true,counts:{'fraction-house':8}}}),/exceeds/);
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,8,'Preview must never save profiles');
+});
