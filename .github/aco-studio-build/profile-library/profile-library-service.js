@@ -942,8 +942,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const baseAddress=await jigResource(a,'address',p.addressSourceId);if(p.cardSourceId)await jigResource(a,'card',p.cardSourceId);
   const batches=p.combine?[nonStackingRules(p.ruleIds)]:p.ruleIds.map(id=>[id]),candidates=[];
   for(const batch of batches){let data=structuredClone(row.data);if(baseAddress){const fields=D.toValues(data);for(const [k,v] of Object.entries(baseAddress))fields['shipping.'+k]=v;data=D.manualEdit(data,fields);}const addressRules=batch.filter(id=>id!==C.FL_PHONE_RULE);for(const rule of addressRules)data=C.jig(data,row.retailer,1,[rule]);if(batch.includes(C.FL_PHONE_RULE))data=C.applyFloridaPhone(data,uuid(),0);
-   const unitCandidate=addMissingUnitLine(row.data,data,candidates.length+1);
-   data=unitCandidate.data;const v=C.values(data),address=Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,v['shipping.'+k]]));if(existingUnitViolation(addressView(row.data),address))continue;if(address.address1&&JSON.stringify(address)!==JSON.stringify(Object.fromEntries(Object.keys(address).map(k=>[k,C.values(row.data)['shipping.'+k]])))||batch.includes(C.FL_PHONE_RULE))candidates.push({ruleIds:batch,address,phone:v.phone});}
+   if(p.addOptionalUnit===true)data=addMissingUnitLine(row.data,data,candidates.length+1).data;
+   const v=C.values(data),address=Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,v['shipping.'+k]]));if(existingUnitViolation(addressView(row.data),address))continue;if(address.address1&&JSON.stringify(address)!==JSON.stringify(Object.fromEntries(Object.keys(address).map(k=>[k,C.values(row.data)['shipping.'+k]])))||batch.includes(C.FL_PHONE_RULE))candidates.push({ruleIds:batch,address,phone:v.phone});}
   return {revision:row.revision,candidates};
  }
  async function publishLinkedJig(e,p){
@@ -999,7 +999,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  const SECOND_LINE_IDS=['A','B','C','D','1','2','3','4','5','6','7','8','9'];
  function addMissingUnitLine(original,generated,position){
   const originalAddress=addressView(original),after=addressView(generated);
-  if(originalAddress.address2.trim()||inlineUnit(originalAddress.address1))
+  if(originalAddress.address2.trim()||inlineUnit(originalAddress.address1)||after.address2.trim())
    return {data:generated,added:false};
   if(inlineUnit(after.address1))throw Error('Generated unit must be on address line 2, not added to the street.');
   const idx=Math.max(0,Number(position)||0);
@@ -1111,10 +1111,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    data=C.applyFloridaPhone(data,phoneSeed,globalIndex);
    if(addressView(data).phone!==beforeAddress.phone)appliedRuleIds.push(C.FL_PHONE_RULE);
   }
-  if(groupPosition>0){
-   const unit=addMissingUnitLine(row.data,data,globalIndex+groupPosition);
-   if(unit.added){data=unit.data;appliedRuleIds.push('second-line.add');}
-  }
+  // Unit addition is opt-in at the batch level, never automatic.
   ensureExistingUnitPreserved(beforeAddress,addressView(data));
   const before=D.toValues(original),after=D.toValues(data),edits={...after};
   if(billingSameAsShipping){
@@ -1223,6 +1220,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const a=await access(e,p),retailer=C.retailer(p.retailer);
   if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles to jig together.');
   const requestedCounts=hardCounts(p.hardCounts),hasHard=requestedCounts&&HARD_KINDS.some(k=>requestedCounts[k]>0);
+  // Optional count applies only within this explicitly reviewed batch.
+  const optionalUnitCount=p.optionalUnitCount??0;
+  if(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<0||optionalUnitCount>500)
+   throw Error('Choose an optional unit count between 0 and 500.');
   const reuse=p.reuse??null;
   if(reuse!==null&&(!reuse||typeof reuse!=='object'||Array.isArray(reuse)||Object.keys(reuse).some(k=>!['sourceId','count'].includes(k))))
    throw Error('Choose an existing address and a profile count.');
@@ -1277,17 +1278,6 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     data=C.syncCardholderToProfile(D.manualEdit(row.data,values));
    }else if(hardResults){
     data=hardResults[regularIndex].data;
-    if(hardResults[regularIndex].kind!=='original'){
-     const unit=addMissingUnitLine(row.data,data,regularIndex+jigPosition);
-     if(unit.added){
-      data=unit.data;
-      if(p.billingSameAsShipping===true){
-       const fields=D.toValues(data);fields['billing.address2']=fields['shipping.address2'];
-       data=D.manualEdit(data,fields);
-      }
-      appliedRuleIds.push('second-line.add');
-     }
-    }
     if(hardResults[regularIndex].kind!=='original'&&hardResults[regularIndex].kind!=='soft')
      appliedRuleIds.push('hard.'+hardResults[regularIndex].kind);
    }else {const generated=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);data=generated.data;appliedRuleIds=generated.appliedRuleIds;}
@@ -1315,6 +1305,38 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     category:reuseThis?'reused saved address':hardResults?.[regularIndex]?.kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),
     mainAddress:reuseThis?source.address:hardResults?.[regularIndex]?.mainAddress||before};
   });
+  // Add optional second-line identifiers to exactly the owner-requested
+  // number of eligible, unitless profiles. Prefer profiles with another jig
+  // so that the intentionally preserved Main address remains available.
+  if(optionalUnitCount){
+   const alreadyJigged=row=>['address1','address2','city','state','zip']
+    .some(field=>row.before[field]!==row.after[field]);
+   const eligible=rows.filter(row=>
+    row.category!=='reused saved address'&&!String(row.before.address2||'').trim()&&
+    !inlineUnit(row.before.address1)&&!String(row.after.address2||'').trim()&&
+    !inlineUnit(row.after.address1));
+   if(eligible.length<optionalUnitCount)
+    throw Error('Only '+eligible.length+' selected profiles have an available, unitless address. Reduce the optional unit quantity.');
+   const ranked=eligible.map((row,i)=>({row,i})).sort((a,b)=>
+    Number(alreadyJigged(b.row))-Number(alreadyJigged(a.row))||a.i-b.i);
+   let added=0;
+   for(const {row} of ranked.slice(0,optionalUnitCount)){
+    // Choose alternate label + A-D / 1-9 identifier for this batch.
+    const result=addMissingUnitLine(row.originalData,row.data,added+rows.indexOf(row)+1);
+    if(!result.added)throw Error('An existing unit prevented the optional second-line jig.');
+    let data=result.data;
+    if(p.billingSameAsShipping===true){
+     const values=D.toValues(data);
+     values['billing.address2']=values['shipping.address2'];
+     data=D.manualEdit(data,values);
+    }
+    row.data=C.syncCardholderToProfile(data);
+    row.after=addressView(row.data);
+    ensureExistingUnitPreserved(row.before,row.after);
+    row.appliedRuleIds.push('second-line.add');
+    added++;
+   }
+  }
   // The chosen quantity is exact within this batch. An unchanged original
   // address on another selected profile must not silently increase the count.
   if(source){
@@ -1329,7 +1351,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
   jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,duplicateAddresses,at:now(),epoch:ep(e),
    reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
-  return {token,duplicateAddresses,count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,
+  return {token,duplicateAddresses,optionalUnitAdded:rows.filter(row=>row.appliedRuleIds.includes('second-line.add')).length,
+   count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
    postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
    postalCityApplied:rows.filter(x=>x.postalCityApplied).length,postalStreetVerified:false,
