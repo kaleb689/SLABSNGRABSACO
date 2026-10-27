@@ -654,10 +654,12 @@ test('Export reads matching saved Card Bank independent reference into temporary
  const h=await library(t);
  for(const retailer of ['target','walmart']){
   const original=complete(retailer,'matched-'+retailer+'@example.test');
+  const number=retailer==='target'?card.number:'5555555555554444';
+  LC.putCard(original,{...fullCard,number});
   await commit(h,await preview(h,[original],h.p,retailer));
   const row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
   assert.equal(LC.profileCode(row.data),'');
-  await h.service.addCard(event,{...h.p,card:{...card,customSecurityCode:'00BANK-'+retailer}});
+  await h.service.addCard(event,{...h.p,card:{...card,number,customSecurityCode:'00BANK-'+retailer}});
   for(const format of ['retailer','json','csv','tsv','txt']){
    const result=await h.lib.exportFile(event,{...h.p,retailer,profileIds:[row.id],exportFormat:format});
    assert.equal(result.saved,true);
