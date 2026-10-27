@@ -9,7 +9,7 @@
  <div class="workshopChoices"><label><input id="workshopAddress" type="checkbox"><span><strong>Address</strong><small>From this vault's saved addresses</small></span></label><label><input id="workshopCard" type="checkbox"><span><strong>Card information</strong><small>From this vault's saved cards</small></span></label><label><input id="workshopName" type="checkbox"><span><strong>Name</strong><small>Generate one profile identity; shipping, billing, and cardholder names match automatically</small></span></label></div>
  <div class="workshopPickers"><details id="workshopAddresses" hidden open><summary>Choose saved addresses</summary><div class="workshopAssetChoices" id="workshopAddressRows"></div><small>Optional extra allocation: select multiple saved addresses and specify how many extra profiles each should receive. Remaining profiles are distributed evenly.</small><label class="workshopCheck"><input id="workshopMirror" type="checkbox"> Use the jigged shipping address for billing too</label><label class="workshopCheck"><input id="workshopStyles" type="checkbox"> Apply the retailer jig rules selected below</label></details>
  <details id="workshopCards" hidden open><summary>Choose saved cards</summary><label class="workshopCheck"><input id="workshopUnused" type="checkbox" checked> Show cards eligible for this retailer (unused or Hard Card)</label><div class="workshopAssetChoices" id="workshopCardRows"></div><label class="workshopCheck" hidden><input id="workshopReuse" type="checkbox"> Card reuse within the same retailer is prohibited</label></details></div>
- <details id="workshopHardJigs" open><summary>Hard Jig categories · usage per original address</summary><div class="workshopChoices" id="workshopHardCounts">
+ <details id="workshopHardJigs"><summary>Advanced hard jig category counts</summary><label class="workshopCheck"><input data-enable-hard-counts type="checkbox"> Use specific hard-jig counts rather than even distribution</label><div class="workshopChoices" id="workshopHardCounts">
   <label><span>Fractional <small>Randomized among 1/2, 1/3, 1/4</small></span><input type="number" data-hard-count="fraction" min="0" max="500" step="1" value="3" aria-label="Fractional jigs per main address"></label>
   <label><span>Hyphen <small>Randomized among -A through -H</small></span><input type="number" data-hard-count="hyphen" min="0" max="500" step="1" value="8" aria-label="Hyphen jigs per main address"></label>
   <label><span>Double letter <small>Duplicates one letter of the street name</small></span><input type="number" data-hard-count="doubleLetter" min="0" max="500" step="1" value="6" aria-label="Double-letter jigs per main address"></label>
@@ -100,8 +100,8 @@
    const host=bq('distribution-rows');host.replaceChildren();
    const options=bulkSettings?.options||[],grouped=new Map();
    for(const rule of options.filter(x=>bulkRuleIds().includes(x.id))){
-    const style=rule.id.startsWith('target.house.integer.')?'integer-house':rule.id.startsWith('target.house.fraction.')?'fraction-house':rule.id.startsWith('target.house.hyphen.')?'hyphen-house':rule.id;
-    if(style==='phone.fl')continue;
+    const style=rule.id.startsWith('target.house.integer.')?'integer-house':rule.id.startsWith('target.house.fraction.')?'fraction-house':rule.id.startsWith('target.house.hyphen.')?'hyphen-house':/suffix|street type|road|avenue|lane|boulevard/i.test(rule.id+' '+rule.label)?'suffix':/ordinal/i.test(rule.id+' '+rule.label)?'ordinals':/compass|direction|north|south|east|west/i.test(rule.id+' '+rule.label)?'directions':rule.id;
+    if(/phone/i.test(rule.id+' '+rule.label))continue;
     if(!grouped.has(style))grouped.set(style,rule.label);
    }
    for(const [style,name] of grouped){
@@ -142,7 +142,7 @@
  }
  function bulkRuleIds(){
   const selected=[...(bulkSettings?.selected||[])],state=mainRuleState();
-  return selected.filter(id=>!/^target\.house\.(fraction|hyphen)\./.test(id));
+  return selected;
  }
  async function loadBulk(retailerId=bulkRetailer){
   if(!library)return;bulkRetailer=retailerId;bulkToken=null;bq('review').hidden=true;bulkLoading=true;bulkControls();
@@ -165,7 +165,7 @@
    const reuse=bq('reuse-toggle').checked?{sourceId:bq('reuse-choice').value,count:reuseCount}:null;
    bulkStatus(bq('postal-scan').checked?'Checking online ZIP-to-city matches for selected addresses…':'Preparing offline jig preview…');
    const distribution={enabled:bq('distribution-toggle').checked,counts:Object.fromEntries([...bq('distribution-rows').querySelectorAll('[data-style]')].map(x=>[x.dataset.style,Number(x.value)]))};
-    const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:distribution.enabled?null:selectedHardCounts(),distribution,optionalUnitCount,combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse,postalScan:bq('postal-scan').checked,postalApplyCities:bq('postal-scan').checked&&bq('postal-apply').checked});
+    const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:distribution.enabled||!panel.querySelector('[data-enable-hard-counts]').checked?null:selectedHardCounts(),distribution,optionalUnitCount,combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse,postalScan:bq('postal-scan').checked,postalApplyCities:bq('postal-scan').checked&&bq('postal-apply').checked});
    bulkToken=result.token;bulkDuplicateCount=(result.duplicateAddresses||[]).length;
    if(optionalUnitCount!==result.optionalUnitAdded)throw Error('The selected unit count did not match the preview; do not apply this batch.');
    const addedNote=d.createElement('p');addedNote.textContent=result.optionalUnitAdded+' optional second-line unit(s) added in preview. Existing units are unchanged.';
