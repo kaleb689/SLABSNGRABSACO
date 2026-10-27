@@ -1269,8 +1269,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(latestDuplicates.length&&p.allowDuplicateAddresses!==true){
    throw Error('This jig duplicates '+latestDuplicates.length+' saved account address(es). Review the preview and check Allow duplicate jig addresses to continue.');
   }
-  if(latestDuplicates.length&&!plan.duplicateAddresses.length){
-   throw Error('New address duplicates appeared after preview. Preview again before allowing duplicates.');
+  if(JSON.stringify(latestDuplicates)!==JSON.stringify(plan.duplicateAddresses)){
+   throw Error('Address reuse conflicts changed after preview. Preview again before allowing duplicates.');
   }
   // Reject a stale Main/Jigged source before making any recipient write.
   if(plan.reusedSource){
