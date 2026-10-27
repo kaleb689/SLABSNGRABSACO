@@ -681,7 +681,7 @@ test('Jig address collisions across retailer accounts require an explicit Allow 
  await commit(h,await preview(h,[original],h.p,'target'));
  await commit(h,await preview(h,[changed],h.p,'pokemoncenter'));
  const row=(await h.lib.list(event,h.p)).profiles.find(x=>x.email==='to-jig@example.test');
- const arg={...h.p,retailer:'target',profileIds:[row.id],ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false};
+ const arg={...h.p,retailer:'target',profileIds:[row.id],ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false,optionalUnitCount:1};
  const plan=await h.lib.batchJigPreview(event,arg);
  assert.equal(plan.duplicateAddresses.length,1);
  assert.match(plan.duplicateAddresses[0].address,/100 Example Ave/);
@@ -702,7 +702,7 @@ test('Other customers cannot cause a jig duplicate warning in this customer vaul
  await commit(h,await preview(h,[first],h.a,'target'));
  await commit(h,await preview(h,[previous],h.b,'target'));
  const row=(await h.lib.list(event,h.a)).profiles.find(x=>x.email==='isolated@example.test');
- const plan=await h.lib.batchJigPreview(event,{...h.a,retailer:'target',profileIds:[row.id],ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false});
+ const plan=await h.lib.batchJigPreview(event,{...h.a,retailer:'target',profileIds:[row.id],ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false,optionalUnitCount:1});
  assert.equal(plan.duplicateAddresses.length,0);
 });
 
