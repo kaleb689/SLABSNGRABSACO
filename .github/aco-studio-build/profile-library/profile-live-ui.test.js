@@ -228,7 +228,7 @@ test('Generated batch metadata is durable and older generation events are read-o
  const vault=fs.readFileSync(require.resolve('../profile-vault.js'),'utf8');
  const service=fs.readFileSync(require.resolve('../profile-library-service.js'),'utf8');
  assert.match(vault,/const creationBatchId=uuid\(\),profileGeneratedAt=now\(\)/);
- assert.match(vault,/profileGeneratedAt,creationBatchId,revision:/);
+ assert.match(vault,/profileGeneratedAt,creationBatchId,needsFirstExport:true,revision:/);
  assert.match(service,/row\.profileGeneratedAt\|\|null/);
  assert.match(service,/event\.action!=='create-from-pools'/);
  assert.match(service,/profileGeneratedAt:(?:row|r)\.profileGeneratedAt\|\|creationEvents\.get/);
