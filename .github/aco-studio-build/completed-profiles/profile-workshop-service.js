@@ -427,8 +427,12 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   if(!await confirmExport(e))return {cancelled:true};const ext=path.extname(plan.src.parsed.name),name=path.basename(plan.src.parsed.name,ext)+'-updated'+ext;
   const choice=await chooseSave(e,{name,extension:ext.slice(1)});if(choice.canceled||!choice.filePath)return {cancelled:true};
   if(path.extname(choice.filePath).toLowerCase()!==ext.toLowerCase())throw Error('Keep the original file format.');
-  await get(e,p);return verifyResources(e,plan,async()=>{
-   const prepared=await preparedExportCodes(plan.scope,plan.id,plan.result.records,plan.src.matched);
+  await get(e,p);
+  // Resolve the authorized Card Bank reference BEFORE verifyResources obtains
+  // its selected-card lock. Calling securityReferences under that lock deadlocks.
+  // verifyResources still checks that the selected resources match the preview.
+  const prepared=await preparedExportCodes(plan.scope,plan.id,plan.result.records,plan.src.matched);
+  return verifyResources(e,plan,async()=>{
    const body=Core.serialize(plan.src.parsed,prepared),parsed=Core.parseFile(plan.src.parsed.name,body);
    if(parsed.records.length!==prepared.length||parsed.records.some((row,i)=>{
     const slot=Draft.formatOf(row)==='shikari'?row.cc_cvv:row.card?.cvv;
