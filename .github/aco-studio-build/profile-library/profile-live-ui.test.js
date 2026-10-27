@@ -93,7 +93,7 @@ test('Select All on Page never includes any profile from a different pagination 
  const handlerEnd=source.indexOf(";q('clear').onclick",handlerStart);
  assert.ok(handlerStart>0&&handlerEnd>handlerStart,'select all replaces previous selection');
  const entries=Array.from({length:451},(_,i)=>({id:'record-'+i}));
- let drawCount=0;const selectAll={onclick:null},context={visible:()=>entries,selected:new Set(['foreign-vault','record-0']),q:()=>selectAll,draw:()=>{drawCount++;}};
+ let drawCount=0;const selectAll={onclick:null},context={visible:()=>entries,selected:new Set(['foreign-vault','record-0']),q:()=>selectAll,updateSelection:()=>{drawCount++;}};
  vm.createContext(context);
  const pageStart=source.indexOf(' const pageRows=()=>visible()',helperEnd);const pageEnd=source.indexOf('\n',pageStart);
  assert.ok(pageStart>helperEnd&&pageEnd>pageStart,'page-scoped helper is present after sort controls');
@@ -130,7 +130,7 @@ test('Search and duplicates cannot select a different retailer or status tab',()
 test('Bulk jig, move, delete and export never operate on selected profiles outside current page',()=>{
  assert.match(source,/const chosen=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/);
  assert.match(source,/selectedRows=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)/);
- assert.match(source,/const selectedVisible=pageItems\.filter\(x=>selected\.has\(x\.id\)\)/);
+ assert.match(source,/const selectedVisible=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/);
  assert.equal((source.match(/profileIds:pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/g)||[]).length,2);
  assert.match(source,/selected\.clear\(\);pageIndex=0;if\(q\('search'\)\.value\.trim\(\)\)/);
  assert.match(source,/nextPage\.onclick=\(\)=>\{if\(\(pageIndex\+1\)\*PAGE_SIZE<visible\(\)\.length\)\{pageIndex\+\+;selected\.clear\(\);draw\(\);\}\};/);
@@ -313,4 +313,40 @@ test('Grouped retailer duplicate review keeps same-card peers adjacent and offer
  assert.match(source,/duplicatesButton\.click\(\)/);
  assert.match(source,/Original encrypted record archived/);
  assert.doesNotMatch(source,/api\.deleteSelected\(/);
+});
+
+
+const poolSource=fs.readFileSync(require.resolve('../email-vault-ui.js'),'utf8');
+function poolQuantityHarness(){
+ const nodes={};for(const key of ['count','capacity','selection-review','selected-count','generate'])nodes[key]={value:key==='count'?'3':'',readOnly:true};
+ nodes.addresses={querySelectorAll:()=>[{value:'a'}]};nodes.cards={querySelectorAll:()=>Array.from({length:10},(_,i)=>({value:'c'+i}))};
+ const context={busy:false,availableAccounts:10,selectedAccountIds:new Set(['e1','e2','e3']),availableEmailRows:[1,2,3].map(i=>({id:'e'+i,email:'email'+i+'@example.test'})),$:key=>nodes[key]};
+ vm.createContext(context);const start=poolSource.indexOf(' function capacity()'),end=poolSource.indexOf(' async function unlock',start);vm.runInContext(poolSource.slice(start,end)+';this.run=capacity;',context);return {nodes,context,run:()=>context.run()};
+}
+test('selected pool quantity stays editable through clearing and typing a smaller batch',()=>{
+ const h=poolQuantityHarness();h.run();assert.equal(h.nodes.count.readOnly,false);assert.match(h.nodes['selected-count'].textContent,/3 account.*selected/);
+ h.nodes.count.value='';h.run();assert.equal(h.nodes.count.value,'');assert.equal(h.nodes.generate.disabled,true);
+ h.nodes.count.value='2';h.run();assert.equal(h.nodes.count.value,'2');assert.equal(h.nodes.generate.disabled,false);
+ h.nodes.count.value='4';h.run();assert.equal(h.nodes.generate.disabled,true);assert.equal(h.context.selectedAccountIds.size,3);
+ h.context.selectedAccountIds.clear();h.run();assert.equal(h.nodes.generate.disabled,false);
+});
+test('quantity uses only requested IDs from the explicit selection in displayed order',()=>{
+ const start=poolSource.indexOf('const exactIds='),end=poolSource.indexOf(';',start);
+ const context={selectedAccountIds:new Set(['e3','e1','e2']),availableEmailRows:[{id:'other'},{id:'e1'},{id:'e2'},{id:'e3'}],count:2};vm.createContext(context);
+ vm.runInContext(poolSource.slice(start,end)+';this.ids=exactIds;',context);assert.deepEqual(Array.from(context.ids),['e1','e2']);
+});
+test('selection highlights and count update without recreating any of 200 rendered cards',()=>{
+ const nodes={},cards=Array.from({length:200},(_,i)=>({dataset:{profileId:'p'+i},classList:{toggle(_name,on){this.on=on;}},setAttribute(){},querySelector:()=>null}));
+ for(const key of ['export','export-archive','jig-selected','bulk-move','bulk-delete','selected-count'])nodes[key]={};
+ nodes.cards={querySelectorAll:()=>cards};const move={};nodes.groups={querySelector:()=>move};
+ const context={q:key=>nodes[key],pageRows:()=>cards.map(x=>({id:x.dataset.profileId})),selected:new Set(),stage:'completed',busy:false};vm.createContext(context);
+ const start=source.indexOf(' function updateSelection()'),end=source.indexOf("\n d.addEventListener('keydown'",start);vm.runInContext(source.slice(start,end)+';this.run=updateSelection;',context);
+ for(let i=0;i<200;i++){context.selected.add('p'+i);context.run();}
+ assert.equal(cards.every(x=>x.classList.on),true);assert.match(nodes['selected-count'].textContent,/200 profile/);assert.equal(move.hidden,false);
+ context.selected.clear();context.run();assert.equal(cards.some(x=>x.classList.on),false);assert.equal(move.hidden,true);assert.equal(nodes['jig-selected'].disabled,true);
+});
+test('opening Jig from an already selected unused account preserves the batch',()=>{
+ const start=source.indexOf('jig.onclick=()=>'),end=source.indexOf('};',source.indexOf('void jigUnusedSelected()',start))+2;
+ const context={jig:{},row:{id:'p2'},selected:new Set(['p1','p2']),updateSelection:()=>{},jigUnusedSelected:()=>{}};vm.createContext(context);vm.runInContext(source.slice(start,end),context);context.jig.onclick();assert.deepEqual(Array.from(context.selected),['p1','p2']);
+ context.row.id='p3';context.jig.onclick();assert.deepEqual(Array.from(context.selected),['p3']);
 });
