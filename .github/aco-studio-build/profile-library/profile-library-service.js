@@ -1096,7 +1096,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    for(const id of order){
     if(!combine&&appliedRuleIds.length)break;
     if(combine&&appliedRuleIds.length>=3)break;
-    if(isHardRule(id)&&appliedHard)continue;
+    if(isHardRule(id)&&appliedHard&&!combine)continue;
     const candidate=applyOne(data,row,id),address=addressView(candidate);
     if(existingUnitViolation(beforeAddress,address)||(!inlineUnit(beforeAddress.address1)&&inlineUnit(address.address1)))continue;
     if(['address1','address2','city','state','zip'].every(key=>
