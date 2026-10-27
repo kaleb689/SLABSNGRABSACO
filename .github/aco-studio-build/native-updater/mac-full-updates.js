@@ -222,6 +222,28 @@ function createMacUpdater({app,execPath=process.execPath,arch=process.arch,loadF
  }
  return {info,check,autoStartup,install,lastResult,onProgress:cb=>{subscribers.add(cb);return()=>subscribers.delete(cb);},progress:()=>({...progress,busy})};
 }
+// Create one Finder desktop link to the verified app in Applications.
+// Never copy application bundles to Desktop: copies lead to stale icons,
+// mismatched updater targets and independent running Dock entries.
+// Never overwrite a user-controlled Desktop item.
+async function createDesktopShortcut({app,execPath=process.execPath,platform=process.platform,verifyBundle=bundleMetadata}={}){
+ if(platform!=='darwin'||!app?.isPackaged)throw Error('Desktop shortcut is available for the installed Mac application.');
+ const installed=bundleFromExecutable(execPath);
+ if(!approvedTarget(installed))throw Error('Move ACO Studio to Applications before creating a desktop shortcut.');
+ const stat=await fs.lstat(installed);
+ if(!stat.isDirectory()||stat.isSymbolicLink())throw Error('Use the installed application, not an old copy or alias.');
+ const identity=await verifyBundle(installed);
+ if(identity.id!==APP_ID)throw Error('The installed app identity did not match ACO Studio.');
+ const shortcut=path.join(app.getPath('desktop'),'ACO Studio.app');
+ try{
+  const current=await fs.lstat(shortcut);
+  if(current.isSymbolicLink()&&path.resolve(path.dirname(shortcut),await fs.readlink(shortcut))===installed)
+   return {created:false,alreadyExists:true,message:'Your Desktop shortcut already points to this installed ACO Studio.'};
+  throw Error('Your Desktop already has an ACO Studio item. Nothing was replaced; rename or move it first.');
+ }catch(error){if(error.code!=='ENOENT')throw error;}
+ await fs.symlink(installed,shortcut,'dir');
+ return {created:true,message:'ACO Studio Desktop shortcut created. It opens the single installed application in Applications.'};
+}
 async function pendingLaunch(app){
  const arg=process.argv.find(x=>x.startsWith('--aco-update-token=')),token=arg?.split('=')[1];
  if(!UUID.test(token||''))return null;
@@ -242,6 +264,17 @@ function register({app,ipcMain,dialog,BrowserWindow,requireOwner}){
  handler('updates:progress',()=>engine.progress());handler('updates:check',()=>engine.check());
  handler('updates:connection',async()=>{try{await readFeed();return {online:true,serverReachable:true};}catch(e){return {online:false,serverReachable:false,message:e.message};}});
  async function approve(event){const r=await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender),{type:'question',title:'Update ACO Studio',message:'Install the verified update and restart?',detail:'Save or export any unsaved work first. Only the application is replaced. Saved Personal profiles, customer banks and settings stay in place.',buttons:['Cancel','Install & Restart'],defaultId:0,cancelId:0});return r.response===1;}
+ handler('updates:desktopShortcut',async event=>{
+  if(process.platform!=='darwin')throw Error('Mac only.');
+  const consent=await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender),{
+   type:'question',title:'Create ACO Studio Desktop Shortcut',
+   message:'Add a shortcut to the installed ACO Studio on your Desktop?',
+   detail:'This links to ACO Studio in Applications. It will not install a second copy, change Dock preferences, or modify any saved profiles.',
+   buttons:['Cancel','Create Shortcut'],defaultId:1,cancelId:0
+  });
+  if(consent.response!==1)return {created:false,cancelled:true,message:'Desktop shortcut not changed.'};
+  return createDesktopShortcut({app});
+ });
  handler('updates:installOnline',async event=>{if(!await approve(event))return {started:false,cancelled:true,message:'Update cancelled. Nothing changed.'};return engine.install();});
  handler('updates:installZip',async event=>{
   const choice=await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender),{title:'Choose the current official full-app update ZIP',properties:['openFile'],filters:[{name:'ACO Studio Mac ZIP',extensions:['zip']}]});
@@ -251,4 +284,4 @@ function register({app,ipcMain,dialog,BrowserWindow,requireOwner}){
  engine.onProgress(state=>{for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed()&&w.webContents.getURL().startsWith('file:'))w.webContents.send('updates:progress',state);});
  return engine;
 }
-module.exports={register,createMacUpdater,readFeed,transfer,validateManifest,trustedURL,compare,approvedTarget,bundleFromExecutable,bundleMetadata,architectures,sha256File,noteLaunch,markHealthy,FEED,APP_ID};
+module.exports={register,createMacUpdater,createDesktopShortcut,readFeed,transfer,validateManifest,trustedURL,compare,approvedTarget,bundleFromExecutable,bundleMetadata,architectures,sha256File,noteLaunch,markHealthy,FEED,APP_ID};
