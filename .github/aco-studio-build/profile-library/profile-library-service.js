@@ -1084,7 +1084,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    // choices are not starved by a large collection of soft rules.
    const offset=Math.max(0,globalIndex+groupPosition-1);
    const rotated=(list,shift)=>list.length?list.slice(shift%list.length).concat(list.slice(0,shift%list.length)):[];
-   const softOrder=rotated(soft,offset),hardOrder=rotated(hard,offset);
+   const softOrder=rotated(soft,offset),hardOrder=rotated(hard,combine?0:offset);
    const order=[];
    const startWithHard=hardOrder.length>0&&(softOrder.length===0||offset%2===1);
    for(let i=0;i<Math.max(softOrder.length,hardOrder.length);i++){
