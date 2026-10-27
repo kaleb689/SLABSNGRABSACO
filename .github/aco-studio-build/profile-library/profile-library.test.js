@@ -75,7 +75,7 @@ test('Bulk Target jig leaves one original per main address and then distributes 
   ruleIds:['avenue_short','target.house.fraction.half','target.house.fraction.third','target.house.hyphen.a'],combine:false,billingSameAsShipping:false});
  const streets=plan.profiles.map(x=>x.after.address1);
  assert.equal(streets[0],'100 Example Avenue');
- assert.ok(plan.profiles.slice(1).every(x=>x.after.address2),'Eligible unitless profiles receive an automatic second line');
+ assert.ok(plan.profiles.every(x=>!x.after.address2),'Unitless addresses must not receive a unit without checking the new optional box');
  assert.ok(plan.profiles.slice(1).some(x=>x.appliedRuleIds.some(id=>id.startsWith('target.house.'))),'Selected hard jigs are used');
  assert.equal(new Set(plan.profiles.map(x=>x.after.address1+'|'+x.after.address2)).size,4);
 });
@@ -207,7 +207,7 @@ test('Exact reuse quantity is protected by automatic unique second lines on othe
  assert.ok(option);
  const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',
   profileIds:selected.map(x=>x.id),ruleIds:[LC.FL_PHONE_RULE],combine:false,
-  billingSameAsShipping:false,reuse:{sourceId:option.id,count:2}});
+  billingSameAsShipping:false,reuse:{sourceId:option.id,count:2},optionalUnitCount:1});
  assert.equal(result.reused,2);
  assert.notEqual(result.profiles[2].after.address2,'');
  assert.equal(result.profiles.filter(x=>x.after.address2==='').length,2);
@@ -706,23 +706,28 @@ test('Other customers cannot cause a jig duplicate warning in this customer vaul
  assert.equal(plan.duplicateAddresses.length,0);
 });
 
-test('Unitless Target jigs always gain approved A-D or 1-9 second lines alongside selected address transformations',async t=>{
+test('Optional second lines are OFF by default and added to exactly the owner-selected number',async t=>{
  const h=await library(t);
  for(let i=0;i<8;i++)await commit(h,await preview(h,[complete('target','auto-unit-'+i+'@example.test')]));
  const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
- const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
-  ruleIds:['avenue_short','target.house.fraction.half','target.house.hyphen.a'],combine:false,billingSameAsShipping:true});
- assert.equal(result.profiles[0].after.address2,'','One existing unchanged Main profile is retained');
- const eligible=result.profiles.slice(1);
- assert.equal(eligible.length,7);
- for(const item of eligible){
+ const args={...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:['avenue_short','target.house.fraction.half','target.house.hyphen.a'],combine:false,billingSameAsShipping:true};
+ const off=await h.lib.batchJigPreview(event,args);
+ assert.equal(off.optionalUnitAdded,0);
+ assert.equal(off.profiles.filter(x=>x.after.address2).length,0);
+ const result=await h.lib.batchJigPreview(event,{...args,optionalUnitCount:3});
+ assert.equal(result.optionalUnitAdded,3,'Only three profiles get the optional unit');
+ const receiving=result.profiles.filter(x=>x.after.address2);
+ assert.equal(receiving.length,3);
+ for(const item of receiving){
   assert.match(item.after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
   assert.ok(item.appliedRuleIds.includes('second-line.add'));
   assert.equal(item.before.address2,'');
-  assert.match(item.after.address1,/Example (?:Ave|Avenue)$/);
  }
- assert.ok(eligible.some(x=>x.after.address1!==x.before.address1),'Main jig and second line may be combined');
- assert.equal(new Set(eligible.map(x=>x.after.address2)).size,eligible.length);
+ assert.ok(receiving.some(x=>x.after.address1!==x.before.address1),'Unit jig may accompany an address jig');
+ assert.equal(new Set(receiving.map(x=>x.after.address2)).size,3);
+ await assert.rejects(h.lib.batchJigPreview(event,{...args,optionalUnitCount:9}),/Only 8 selected profiles/);
+
 });
 test('Existing Apt, Ste, bare number and inline unit never change even if unit rules are selected',async t=>{
  const h=await library(t);
@@ -734,7 +739,9 @@ test('Existing Apt, Ste, bare number and inline unit never change even if unit r
  }
  const all=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
  const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:all.map(x=>x.id),
-  ruleIds:['avenue_short','target.house.hyphen.a'],combine:true,billingSameAsShipping:false});
+  ruleIds:['avenue_short','target.house.hyphen.a'],combine:true,billingSameAsShipping:false,optionalUnitCount:0});
+ await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:all.map(x=>x.id),
+  ruleIds:['avenue_short','target.house.hyphen.a'],combine:true,billingSameAsShipping:false,optionalUnitCount:1}),/Only 0 selected profiles/);
  for(const row of result.profiles){
   const existing=all.find(x=>x.id===row.profileId);
   assert.equal(row.after.address2,LC.values(existing.data)['shipping.address2']);
@@ -756,4 +763,18 @@ test('Explicit exact address reuse cannot overwrite an existing unit even with d
  const chosen=(await h.lib.list(event,h.p)).profiles.map(x=>x.id);
  const bank=(await h.lib.reuseChoices(event,h.p)).choices.find(x=>x.type==='main'&&x.summary.includes('Apt 9'));
  await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:chosen,ruleIds:['avenue_short'],reuse:{sourceId:bank.id,count:2},combine:false,billingSameAsShipping:false}),/must remain exactly unchanged/);
+});
+
+test('Target hard fraction and hyphen groups appear in a realistic multi-address batch with soft rules',async t=>{
+ const h=await library(t);
+ for(let i=0;i<24;i++)await commit(h,await preview(h,[complete('target','target-rotation-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const settings=await h.lib.rules(event,{...h.p,retailer:'target'});
+ const selected=settings.selected.filter(id=>id!=='phone_florida_random');
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:selected,combine:false,billingSameAsShipping:false,optionalUnitCount:0});
+ const rules=result.profiles.flatMap(x=>x.appliedRuleIds);
+ assert.ok(rules.some(x=>x.startsWith('target.house.fraction.')),'Fraction group must actually run');
+ assert.ok(rules.some(x=>x.startsWith('target.house.hyphen.')),'Hyphen group must actually run');
+ assert.equal(rules.filter(x=>x==='second-line.add').length,0,'Unit box unchecked means no new units');
 });
