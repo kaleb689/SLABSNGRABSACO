@@ -496,6 +496,17 @@
     linked.style.display='block';
     title.style.wordBreak='break-all';
     body.append(title,linked,meta,text('small',card.status+(card.hardCard?' · Available: '+card.availableRetailers.map(r=>retailName[r]).join(', '):'')+(card.hasConflict?' · Existing duplicate assignments need review':'')));
+    // Show only an independent saved profile reference, never a payment verifier.
+    // These rows belong to the selected, authenticated Personal/customer vault.
+    // Require exact complete card identity and suppress conflicting references.
+    const relatedReferences=new Set(rows.filter(profile=>
+      String(cardFields(profile.data||{}).number||'').replace(/\D/g,'')===String(card.fullNumber||'').replace(/\D/g,'') &&
+      /^\d{12,19}$/.test(String(card.fullNumber||'').replace(/\D/g,'')))
+      .map(profile=>String(profile.data?.profileSecurityCode||profile.data?.security_code||profile.data?.custom_security_code||profile.data?.card?.custom_security_code||'').trim())
+      .filter(Boolean));
+    if(relatedReferences.size===1)body.append(text('small','Security Code: '+[...relatedReferences][0]));
+    else if(relatedReferences.size>1)body.append(text('small','Security Code: conflicting saved references — review matching profiles'));
+
    const state=text('span',current?'Available for '+retailName[q('retailer').value]:'Unavailable for '+retailName[q('retailer').value]);state.className='profileResourceState';
    const toggle=text('button',card.hardCard?'Unset Hard Card':'Set Hard Card');toggle.type='button';toggle.className='btn slim secondary';
    toggle.onclick=async()=>{
