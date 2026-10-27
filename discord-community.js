@@ -264,6 +264,15 @@ export function isSelectableSkuSource(message,appId) {
  return Boolean(message&&!message.webhook_id&&
    (!message.author?.bot || isFormattedDropPost(message,appId))&&parseDropSkus(message).length);
 }
+// Return all recent valid product posts in each channel rather than only the
+// newest one. A busy Target channel must not hide Walmart or Pokémon Center.
+export function recentSelectableDropPosts(messages, appId, limit=12) {
+ return (Array.isArray(messages)?messages:[])
+  .filter(message=>!message.message_reference?.message_id&&
+    (message.type===0||message.type===undefined)&&
+    isSelectableSkuSource(message,appId))
+  .slice(0,limit);
+}
 export function isNewDropPost(message) {
   return !message?.message_reference?.message_id && message?.type !== 19;
 }
@@ -3827,29 +3836,23 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   // selected SKU file, owner alert and single-quantity invariant.
   async function webActiveDropSources() {
     if (!skuRequestsChannelId || !dropChannelIds.size) throw new Error("Discord drop controls are not ready yet.");
-    const posts = await Promise.all([...dropChannelIds].map(async channelId => {
-      const messages = await api("/channels/" + channelId + "/messages?limit=100");
-      const candidates = (Array.isArray(messages) ? messages : []).filter(message =>
-        (!message.author?.bot || isFormattedDropPost(message, appId)) &&
-        !message.webhook_id && !message.message_reference?.message_id &&
-        (message.type === 0 || message.type === undefined));
-      const source = candidates.find(message => parseDropSkus(message).length) ||
-        (channelId === tonightChannelId || !retailerDropLabels[channelId] ? candidates[0] : null);
-      if (!source) return null;
-      const label = retailerDropLabels[channelId] ||
-        (channelId === tonightChannelId ? "Dropping Tonight" : "Upcoming Drops");
-      const retailer = /target/i.test(label) ? "target" :
-        /walmart/i.test(label) ? "walmart" :
-        /pkc|pokemon|pokémon/i.test(label) ? "pokemon" :
-        /costco/i.test(label) ? "costco" :
-        /sam.?s/i.test(label) ? "sams" :
-        channelId === tonightChannelId ? "tonight" : "upcoming";
-      return {
-        channelId: String(channelId), sourceId: String(source.id),
-        retailer, label, products: parseDropSkus(source)
-      };
+    const perChannel=await Promise.all([...dropChannelIds].map(async channelId=>{
+      const messages=await api("/channels/"+channelId+"/messages?limit=100");
+      const sources=recentSelectableDropPosts(messages,appId);
+      const label=retailerDropLabels[channelId]||
+        (channelId===tonightChannelId?"Dropping Tonight":"Upcoming Drops");
+      const retailer=/target/i.test(label)?"target":
+        /walmart/i.test(label)?"walmart":
+        /pkc|pokemon|pokémon/i.test(label)?"pokemon":
+        /costco/i.test(label)?"costco":
+        /sam.?s/i.test(label)?"sams":
+        channelId===tonightChannelId?"tonight":"upcoming";
+      return sources.map(source=>({
+        channelId:String(channelId),sourceId:String(source.id),
+        retailer,label,products:parseDropSkus(source)
+      }));
     }));
-    return posts.filter(Boolean);
+    return perChannel.flat();
   }
   async function webDropList(userId) {
     if (!await hasPaidSkuAccess(userId)) throw new Error(skuAccessMessage);
@@ -3873,7 +3876,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const quantity = Number(request?.quantity);
     if (![1, 2].includes(quantity)) throw new Error("Choose Qty 1 or Qty 2 for ALL selected SKUs.");
     const entries = request?.sources;
-    if (!Array.isArray(entries) || entries.length > 30) throw new Error("Invalid drop selections.");
+    if (!Array.isArray(entries) || entries.length > 100) throw new Error("Invalid drop selections.");
     const live = await webActiveDropSources();
     const byKey = new Map(live.map(source => [source.channelId + ":" + source.sourceId, source]));
     const submitted = new Map();
@@ -3893,7 +3896,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     }
     // Require a complete snapshot so hidden or stale forms cannot silently
     // overwrite part of the user's saved preferences.
-    if (submitted.size !== live.length) throw new Error("The active drops changed. Refresh and submit again.");
+    // A new unrelated drop may appear while the customer is choosing. Save only\n    // the submitted sources; never clear selections in unsubmitted new posts.\n    if (!submitted.size && entries.length) throw new Error("Invalid drop selections.");
     return withSkuQueue(async () => {
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };
