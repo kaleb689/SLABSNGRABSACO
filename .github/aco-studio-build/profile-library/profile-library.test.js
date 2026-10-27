@@ -588,3 +588,35 @@ test('Fix Duplicate aborts on locked source, missing pool or stale revision; no 
  h.lib.cancel(event);
  await assert.rejects(h.lib.duplicateRepairCommit(event,{token:fresh.token,confirmed:true}),/expired/);
 });
+
+test('New generated profiles stay in new bank until export is saved; exported rows leave new bank only after write',async t=>{
+ const h=await library(t);await h.service.importEmails(event,{...h.p,retailer:'pokemoncenter',emails:['unexported-pkc@example.test']});
+ // Verify the actual profile creation path preserves first-export state.
+ const generated=await h.profiles.createEmailProfiles('personal',null,'pokemoncenter',1,
+  async emails=>emails.map(email=>({data:complete('pokemoncenter',email),format:'valor',assetRefs:{}})),()=>{});
+ assert.equal(generated.created,1);
+ let row=(await h.lib.list(event,h.p)).profiles.find(x=>x.email==='unexported-pkc@example.test');
+ assert.equal(row.needsFirstExport,true);
+ const preview=await h.lib.exportFile(event,{...h.p,retailer:'pokemoncenter',exportStage:'new',exportAllUnique:true,duplicateMode:'email-card',previewOnly:true});
+ assert.equal(preview.count,1);assert.equal(preview.skippedDuplicates,0);
+ assert.equal((await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id).needsFirstExport,true);
+ const result=await h.lib.exportFile(event,{...h.p,retailer:'pokemoncenter',exportStage:'new',exportAllUnique:true,duplicateMode:'email-card',expectedFingerprint:preview.fingerprint,confirmedUniqueExport:true});
+ assert.equal(result.saved,true);assert.equal(result.count,1);assert.equal(result.firstExported,1);
+ row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
+ assert.equal(row.needsFirstExport,false);
+ assert.ok(row.exportedAt);
+});
+test('Duplicate-safe export skips same-retailer repeated email and card, but preserves saved rows and other retailers',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','one@example.test')],h.p,'target'));
+ await commit(h,await preview(h,[complete('target','two@example.test')],h.p,'target'));
+ await commit(h,await preview(h,[complete('pokemoncenter','one@example.test')],h.p,'pokemoncenter'));
+ const before=(await h.lib.list(event,h.p)).profiles;
+ const check=await h.lib.exportFile(event,{...h.p,retailer:'target',exportStage:'completed',exportAllUnique:true,duplicateMode:'email-card',previewOnly:true});
+ assert.equal(check.scanned,2);assert.equal(check.count,1);assert.equal(check.skippedCard,1);
+ const run=await h.lib.exportFile(event,{...h.p,retailer:'target',exportStage:'completed',exportAllUnique:true,duplicateMode:'email-card',expectedFingerprint:check.fingerprint,confirmedUniqueExport:true});
+ assert.equal(run.count,1);
+ const after=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(after.length,before.length);
+ assert.equal(after.filter(x=>x.retailer==='pokemoncenter').length,1);
+});
