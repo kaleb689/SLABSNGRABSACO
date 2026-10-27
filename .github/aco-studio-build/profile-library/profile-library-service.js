@@ -733,7 +733,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }
   if(!rows.length)throw Error('No eligible profiles remain to export.');
   const content=C.exportSelectedRows(rows,retailer,p.customerName||'Personal',p.exportFormat||'retailer');
-  if(unique)content.name=content.name.replace(/(\\.[^.]+)$/,' - no duplicates$1');
+  if(unique)content.name=content.name.replace(/(\.[^.]+)$/,' - no duplicates$1');
   if(!await confirmExport(e))return {cancelled:true};
   const ext=path.extname(content.name),choice=await chooseSave(e,{name:content.name,extension:ext.slice(1)});
   if(choice.canceled||!choice.filePath)return {cancelled:true};
