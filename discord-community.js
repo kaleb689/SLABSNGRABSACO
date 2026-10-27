@@ -274,6 +274,14 @@ export function isSelectableSkuSource(message,appId) {
 }
 // Return all recent valid product posts in each channel rather than only the
 // newest one. A busy Target channel must not hide Walmart or Pokémon Center.
+// Retailer drop channels must let the application post embeds and remove only
+// its successfully reformatted owner's raw paste. Do not change staff permissions.
+export function dropBotPermissionOverwrite(current={},botId) {
+  const required=1024n|2048n|8192n|16384n|65536n;
+  const allow=BigInt(current.allow||"0")|required;
+  const deny=BigInt(current.deny||"0")&~required;
+  return {id:botId,type:1,allow:allow.toString(),deny:deny.toString()};
+}
 export function recentSelectableDropPosts(messages, appId, limit=12) {
  return (Array.isArray(messages)?messages:[])
   .filter(message=>!message.message_reference?.message_id&&
@@ -1198,7 +1206,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
          const channelName = "❗️│" + spec.slug;
          const topic = "SLABSNGRABSACO " + spec.label +
            ": staff post product names and SKUs; paid members select quantities privately with Confirm Selections.";
-         const overwrites = readOnlyOverwrites();
+         const overwrites = readOnlyOverwrites().map(item =>
+           item.id === appId ? dropBotPermissionOverwrite(item, appId) : item);
          let channel = channels.find(item =>
            [0, 5].includes(item.type) && normalizeName(item.name) === spec.key);
          if (!channel) {
@@ -1225,6 +1234,18 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
            }
          }
          if (!channel) continue;
+         // Repair pre-existing retailer channels without replacing anyone else's
+         // role overwrites; Manage Messages is required for raw-paste cleanup.
+         const botPermission=(channel.permission_overwrites||[]).find(item=>item.id===appId);
+         const desiredPermission=dropBotPermissionOverwrite(botPermission,appId);
+         if(!botPermission || (BigInt(botPermission.allow||"0") & (8192n|16384n)) !== (8192n|16384n) ||
+             (BigInt(botPermission.deny||"0") & (8192n|16384n)) !== 0n) {
+           try {
+             await api("/channels/"+channel.id+"/permissions/"+appId,"PUT",desiredPermission);
+           } catch(error) {
+             console.error("Discord retailer bot formatting permission repair failed:",spec.slug,error.message);
+           }
+         }
          dropChannelIds.add(channel.id);
          retailerDropLabels[channel.id] = spec.label;
          retailerChannels.push({ name: channel.name, id: channel.id });
