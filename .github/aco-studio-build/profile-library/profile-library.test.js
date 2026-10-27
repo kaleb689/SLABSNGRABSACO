@@ -793,3 +793,30 @@ test('Unit addition alone works when explicitly enabled without any other jig ch
  const saved=(await h.lib.list(event,h.p)).profiles;
  assert.equal(saved.filter(x=>LC.values(x.data)['shipping.address2']).length,2);
 });
+
+test('Selected Target fractional and hyphen styles are actually applied across repeated main addresses',async t=>{
+ const h=await library(t);
+ for(let i=0;i<19;i++)await commit(h,await preview(h,[complete('target','hard-family-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',
+  profileIds:rows.map(x=>x.id),ruleIds:['suffix.matching','target.house.fraction.half',
+  'target.house.fraction.third','target.house.fraction.quarter','target.house.hyphen.a',
+  'target.house.hyphen.b','target.house.hyphen.c'],combine:false,billingSameAsShipping:false,
+  optionalUnitCount:0});
+ const unchanged=result.profiles.filter(row=>row.after.address1===row.before.address1);
+ assert.equal(unchanged.length,2,'One original is retained per 18, rather than per main address group');
+ const applied=result.profiles.slice(1).filter(row=>row.appliedRuleIds.some(id=>id.startsWith('target.house.')));
+ assert.ok(applied.length>=12,'Target hard styles have precedence over soft suffix changes');
+ assert.ok(applied.some(row=>/target\\.house\\.fraction\\./.test(row.appliedRuleIds.join(','))));
+ assert.ok(applied.some(row=>/target\\.house\\.hyphen\\./.test(row.appliedRuleIds.join(','))));
+ assert.ok(applied.every(row=>row.after.address2===''),'No unit may be added without the checkbox');
+});
+test('A single selected Target profile actually receives a checked hard jig',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('target','one-hard@example.test')]));
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[row.id],
+  ruleIds:['target.house.hyphen.a'],combine:false,billingSameAsShipping:false});
+ assert.equal(result.profiles[0].after.address1,'100-A Example Avenue');
+ assert.deepEqual(result.profiles[0].appliedRuleIds,['target.house.hyphen.a']);
+});
