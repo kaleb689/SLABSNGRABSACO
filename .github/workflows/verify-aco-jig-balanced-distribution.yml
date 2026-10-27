@@ -43,6 +43,22 @@ jobs:
           node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
           node .github/aco-studio-build/profile-library/apply.cjs build-src/App
           node .github/aco-studio-build/drop-news/apply.cjs build-src/App
+      - name: Inspect legacy export test fixtures for updated data-safe expectations
+        working-directory: build-src/App
+        run: |
+          node - <<'NODE'
+          const fs=require('node:fs');
+          for(const [file,name] of [
+           ['tests/personal-navigation.test.js','Preview -> review handoff -> export produces the reviewed file without saving or changing original profiles'],
+           ['tests/profile-workshop.test.js','Imported file mode preserves CSV columns, IDs, extra data and unselected rows']
+          ]){
+           const text=fs.readFileSync(file,'utf8');
+           const start=text.indexOf("test('"+name+"'");
+           const end=text.indexOf("\\ntest(",start+10);
+           if(start<0)throw Error('Missing fixture '+name);
+           console.log('FIXTURE '+file+'\\n'+text.slice(start,end>start?end:start+7000));
+          }
+          NODE
       - name: Run assembled ACO Studio regression suite
         working-directory: build-src/App
         run: |
