@@ -30,8 +30,10 @@ function renderUnlinkedEmails(){
   const itemLabels=(Array.isArray(o.products)?o.products:[]).slice(0,6).map(p=>
    '<span>'+e(p.name)+' x'+Math.max(0,Number(p.quantity)||0)+'</span>').join("");
   const ix=unmatchedEmailOrders.indexOf(o);
+  // Admin must choose the exact customer. Display names are not unique IDs:
+  // do not preselect by a matching name even when the label appears once.
   const options=linkableCustomers.map(c=>
-   '<option value="'+e(c.id)+'"'+(owners.length===1&&owners[0]===c.label?' selected':'')+'>'+e(c.label)+'</option>').join("");
+   '<option value="'+e(c.id)+'">'+e(c.label)+'</option>').join("");
   const assign=o.retailerLogin
    ?'<details class="owner-review"><summary>Verify and recover this checkout</summary>'+
     '<p class="notice">Confirm the exact retailer login and who owned it on the checkout date. Activation is not required. This links only this original Discord order, updates linked checkouts and customer app, and sends the customer notification.</p>'+
