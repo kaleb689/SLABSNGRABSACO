@@ -75,10 +75,9 @@ test('Bulk Target jig leaves one original per main address and then distributes 
   ruleIds:['avenue_short','target.house.fraction.half','target.house.fraction.third','target.house.hyphen.a'],combine:false,billingSameAsShipping:false});
  const streets=plan.profiles.map(x=>x.after.address1);
  assert.equal(streets[0],'100 Example Avenue');
- assert.equal(streets[1],'100 Example Ave');
- assert.match(streets[2],/^100 1\/2 Example Ave$/i);
- assert.match(streets[3],/^100 1\/3 Example Ave$/i);
- assert.equal(new Set(streets).size,4);
+ assert.ok(plan.profiles.slice(1).every(x=>x.after.address2),'Eligible unitless profiles receive an automatic second line');
+ assert.ok(plan.profiles.slice(1).some(x=>x.appliedRuleIds.some(id=>id.startsWith('target.house.'))),'Selected hard jigs are used');
+ assert.equal(new Set(plan.profiles.map(x=>x.after.address1+'|'+x.after.address2)).size,4);
 });
 
 test('Multiple hard Target primary jigs stack only when Combine is explicitly enabled',async t=>{
@@ -702,4 +701,56 @@ test('Other customers cannot cause a jig duplicate warning in this customer vaul
  const row=(await h.lib.list(event,h.a)).profiles.find(x=>x.email==='isolated@example.test');
  const plan=await h.lib.batchJigPreview(event,{...h.a,retailer:'target',profileIds:[row.id],ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false});
  assert.equal(plan.duplicateAddresses.length,0);
+});
+
+test('Unitless Target jigs always gain approved A-D or 1-9 second lines alongside selected address transformations',async t=>{
+ const h=await library(t);
+ for(let i=0;i<8;i++)await commit(h,await preview(h,[complete('target','auto-unit-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:['avenue_short','target.house.fraction.half','target.house.hyphen.a'],combine:false,billingSameAsShipping:true});
+ assert.equal(result.profiles[0].after.address2,'','One existing unchanged Main profile is retained');
+ const eligible=result.profiles.slice(1);
+ assert.equal(eligible.length,7);
+ for(const item of eligible){
+  assert.match(item.after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
+  assert.ok(item.appliedRuleIds.includes('second-line.add'));
+  assert.equal(item.before.address2,'');
+  assert.match(item.after.address1,/Example (?:Ave|Avenue)$/);
+ }
+ assert.ok(eligible.some(x=>x.after.address1!==x.before.address1),'Main jig and second line may be combined');
+ assert.equal(new Set(eligible.map(x=>x.after.address2)).size,eligible.length);
+});
+test('Existing Apt, Ste, bare number and inline unit never change even if unit rules are selected',async t=>{
+ const h=await library(t);
+ const types=['Apt 102','Ste B','Unit 7','3'];
+ for(let i=0;i<types.length;i++){
+  const data=complete('target','keep-unit-'+i+'@example.test');
+  data.shipping_street_2=types[i];
+  await commit(h,await preview(h,[data]));
+ }
+ const all=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:all.map(x=>x.id),
+  ruleIds:['avenue_short','target.house.hyphen.a'],combine:true,billingSameAsShipping:false});
+ for(const row of result.profiles){
+  const existing=all.find(x=>x.id===row.profileId);
+  assert.equal(row.after.address2,LC.values(existing.data)['shipping.address2']);
+  assert.doesNotMatch(row.appliedRuleIds.join(','),/second-line.add/);
+ }
+ await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:result.duplicateAddresses.length>0});
+ const updated=(await h.lib.list(event,h.p)).profiles;
+ for(const original of all){
+  const saved=updated.find(x=>x.id===original.id);
+  assert.equal(LC.values(saved.data)['shipping.address2'],LC.values(original.data)['shipping.address2']);
+ }
+});
+test('Explicit exact address reuse cannot overwrite an existing unit even with duplicate override',async t=>{
+ const h=await library(t);
+ await h.service.addAddress(event,{...h.p,address:{...address,address2:'Apt 9',label:'Different unit'}});
+ const first=complete('target','main-unit-1@example.test');first.shipping_street_2='Ste 4';
+ const second=complete('target','main-unit-2@example.test');second.shipping_street_2='Ste 4';
+ await commit(h,await preview(h,[first]));await commit(h,await preview(h,[second]));
+ const chosen=(await h.lib.list(event,h.p)).profiles.map(x=>x.id);
+ const bank=(await h.lib.reuseChoices(event,h.p)).choices.find(x=>x.type==='main'&&x.summary.includes('Apt 9'));
+ await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:chosen,ruleIds:['avenue_short'],reuse:{sourceId:bank.id,count:2},combine:false,billingSameAsShipping:false}),/must remain exactly unchanged/);
 });
