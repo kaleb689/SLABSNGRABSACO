@@ -282,6 +282,32 @@ export function dropBotPermissionOverwrite(current={},botId) {
   const deny=BigInt(current.deny||"0")&~required;
   return {id:botId,type:1,allow:allow.toString(),deny:deny.toString()};
 }
+// Recover a raw owner monitor paste only when a verified bot's existing
+// formatted cards already contain exactly the same SKUs shortly afterward.
+// This never deletes unrelated drop posts or makes a second set of bot cards.
+export function isCoveredRawMonitorPost(raw, messages, ownerId, appId) {
+  if(!raw || raw.pinned || String(raw.author?.id)!==String(ownerId) ||
+      raw.author?.bot || raw.webhook_id) return false;
+  const original=parseMonitorDropProducts(raw);
+  if(!original.length)return false;
+  const at=message=> {
+    let value=Date.parse(message?.timestamp||"");
+    if(!Number.isFinite(value)&&/^\\d{17,22}$/.test(String(message?.id||""))) {
+      try {value=Number((BigInt(message.id)>>22n)+1420070400000n);}catch{}
+    }
+    return value;
+  };
+  const rawTime=at(raw);
+  if(!Number.isFinite(rawTime))return false;
+  const formatted=(messages||[]).filter(post=>
+    isFormattedDropPost(post,appId) && post.channel_id===raw.channel_id &&
+    Number.isFinite(at(post)) && at(post)>=rawTime && at(post)-rawTime<=5*60*1000);
+  if(!formatted.length)return false;
+  const originalSkus=new Set(original.map(item=>item.sku));
+  const postedSkus=new Set(formatted.flatMap(post=>parseDropSkus(post).map(item=>item.sku)));
+  return originalSkus.size===postedSkus.size &&
+    [...originalSkus].every(sku=>postedSkus.has(sku));
+}
 export function recentSelectableDropPosts(messages, appId, limit=12) {
  return (Array.isArray(messages)?messages:[])
   .filter(message=>!message.message_reference?.message_id&&
@@ -2644,6 +2670,19 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     await ensureOwnerSkuReminderPanel(message, products);
     return products.length;
   }
+  async function retireReformattedRawSource(channelId,rawId) {
+    // An obsolete raw source must not leave interactive buttons pointing at a
+    // deleted message. Do not touch customer SKU selections or other posts.
+    await withSkuQueue(async()=>{
+      const menus=await readSkuFile(skuMenusFile);
+      for(const panelId of menus[rawId]||[]) {
+        try {await api("/channels/"+channelId+"/messages/"+panelId,"PATCH",{components:[]});}
+        catch(error){if(!/HTTP 404/.test(error.message))console.error("Old raw SKU panel retirement:",error.message);}
+      }
+      if(menus[rawId]){delete menus[rawId];await writeSkuFile(skuMenusFile,menus);}
+    });
+    await retireOwnerSkuReminderPanels(new Set([rawId]));
+  }
   async function backfillDropMenus() {
     for (const channelId of dropChannelIds) {
       try {
@@ -2676,6 +2715,29 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         }
         if (history.length < 100 || active.length >= 40) break;
         before = history.at(-1).id;
+      }
+      // Repair ONLY old owner raw pastes that have already been mirrored to
+      // exact matching formatted bot cards. Never remove raw sources carrying
+      // saved user selections or an unfinished SKU draft.
+      const savedSelections=await readSkuFile(skuSelectionsFile);
+      const savedDrafts=await readSkuFile(skuDraftsFile);
+      for(const raw of [...active]) {
+        if(!isCoveredRawMonitorPost(raw,active,ownerId,appId))continue;
+        const prefix=channelId+":"+raw.id+":";
+        const selected=Object.values(savedSelections).some(record=>
+          (record?.items||[]).some(item=>String(item.key||"").startsWith(prefix)) ||
+          (record?.skippedUpcomingDrops||[]).some(item=>item.channelId===channelId&&item.sourceId===raw.id));
+        const pending=Object.keys(savedDrafts).some(key=>key.endsWith(":"+raw.id));
+        if(selected||pending)continue;
+        try {
+          await api("/channels/"+channelId+"/messages/"+raw.id,"DELETE");
+          await retireReformattedRawSource(channelId,raw.id);
+          const index=active.findIndex(item=>item.id===raw.id);
+          if(index>=0)active.splice(index,1);
+          console.log("Discord cleaned previously formatted raw monitor paste:",channelId,raw.id);
+        } catch(error) {
+          console.error("Discord historical monitor cleanup unavailable:",channelId,error.message);
+        }
       }
       for (const message of active.reverse()) await ensureSkuControls(message);
       console.log("Discord drop controls refreshed:", JSON.stringify({
@@ -2913,6 +2975,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           // their selectable SKU controls are created successfully.
           try {
             await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
+            await retireReformattedRawSource(d.channel_id,d.id);
+            console.log("Discord converted owner monitor paste:",d.channel_id,d.id,monitored.length);
           } catch (error) {
             console.error("Formatted drop published; could not remove raw paste:", error.message);
           }
