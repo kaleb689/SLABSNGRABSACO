@@ -226,10 +226,10 @@ function createMacUpdater({app,execPath=process.execPath,arch=process.arch,loadF
 // Never copy application bundles to Desktop: copies lead to stale icons,
 // mismatched updater targets and independent running Dock entries.
 // Never overwrite a user-controlled Desktop item.
-async function createDesktopShortcut({app,execPath=process.execPath,platform=process.platform,verifyBundle=bundleMetadata}={}){
+async function createDesktopShortcut({app,execPath=process.execPath,platform=process.platform,verifyBundle=bundleMetadata,home=os.homedir()}={}){
  if(platform!=='darwin'||!app?.isPackaged)throw Error('Desktop shortcut is available for the installed Mac application.');
  const installed=bundleFromExecutable(execPath);
- if(!approvedTarget(installed))throw Error('Move ACO Studio to Applications before creating a desktop shortcut.');
+ if(!approvedTarget(installed,home))throw Error('Move ACO Studio to Applications before creating a desktop shortcut.');
  const stat=await fs.lstat(installed);
  if(!stat.isDirectory()||stat.isSymbolicLink())throw Error('Use the installed application, not an old copy or alias.');
  const identity=await verifyBundle(installed);
