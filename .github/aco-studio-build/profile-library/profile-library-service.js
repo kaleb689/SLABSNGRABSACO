@@ -1084,19 +1084,34 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    // choices are not starved by a large collection of soft rules.
    const offset=Math.max(0,globalIndex+groupPosition-1);
    const rotated=(list,shift)=>list.length?list.slice(shift%list.length).concat(list.slice(0,shift%list.length)):[];
-   const softOrder=rotated(soft,offset),hardOrder=rotated(hard,combine?0:offset);
+   const softOrder=rotated(soft,offset);
+   const hardFamily=id=>id.startsWith('target.house.fraction.')?'fraction':
+    id.startsWith('target.house.hyphen.')?'hyphen':'other';
+   const families=[...new Set(hard.map(hardFamily))];
+   // A checked Target hard family is a request to USE it, not a fallback after
+   // soft address rules. Rotate across families and variants for each profile.
+   // In combine mode, apply at most one rule per family (fraction BEFORE
+   // hyphen, so 100 1/2 Example may become 100-A 1/2 Example).
    const order=[];
-   const startWithHard=hardOrder.length>0&&(softOrder.length===0||offset%2===1);
-   for(let i=0;i<Math.max(softOrder.length,hardOrder.length);i++){
-    if(startWithHard&&i<hardOrder.length)order.push(hardOrder[i]);
-    if(i<softOrder.length)order.push(softOrder[i]);
-    if(!startWithHard&&i<hardOrder.length)order.push(hardOrder[i]);
+   if(hard.length){
+    if(combine){
+     for(const family of ['fraction','hyphen','other']){
+      const variants=hard.filter(id=>hardFamily(id)===family);
+      order.push(...rotated(variants,Math.floor(offset/Math.max(1,families.length))));
+     }
+    }else{
+     for(let step=0;step<families.length;step++){
+      const family=families[(offset+step)%families.length],variants=hard.filter(id=>hardFamily(id)===family);
+      order.push(...rotated(variants,Math.floor(offset/Math.max(1,families.length))));
+     }
+    }
    }
-   let appliedHard=false;
+   order.push(...softOrder);
+   const appliedFamilies=new Set();
    for(const id of order){
     if(!combine&&appliedRuleIds.length)break;
     if(combine&&appliedRuleIds.length>=3)break;
-    if(isHardRule(id)&&appliedHard&&!combine)continue;
+    if(isHardRule(id)&&appliedFamilies.has(hardFamily(id)))continue;
     const candidate=applyOne(data,row,id),address=addressView(candidate);
     // Legacy unit rules cannot add a new line: only the explicit optional count can.
     if(existingUnitViolation(beforeAddress,address)||(!inlineUnit(beforeAddress.address1)&&inlineUnit(address.address1))||
@@ -1104,7 +1119,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(['address1','address2','city','state','zip'].every(key=>
       normalizedAddressPart(address[key])===normalizedAddressPart(addressView(data)[key])))continue;
     data=candidate;appliedRuleIds.push(id);
-    if(isHardRule(id))appliedHard=true;
+    if(isHardRule(id))appliedFamilies.add(hardFamily(id));
    }
    // Legacy grouped rules can occasionally produce no address change. Mark
    // that profile UNCHANGED rather than reporting its postal city as a jig.
@@ -1269,7 +1284,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const reuseThis=!!source&&index<reuseCount,regularIndex=index-reuseCount;
    const key=mainAddressKey(row),groupPosition=positions.get(key)||0;
    if(!reuseThis)positions.set(key,groupPosition+1);
-   const jigPosition=groupSizes.get(key)===1?1:groupPosition;
+   // Retain one unchanged Main for each block of 18 selected profiles, not
+   // one for EVERY repeated-address group. Single selections always jig.
+   const jigPosition=regularSelected.length>1&&regularIndex%18===0?0:Math.max(1,groupPosition);
    let data,appliedRuleIds=[];
    if(reuseThis){
     const values={...D.toValues(row.data)};
