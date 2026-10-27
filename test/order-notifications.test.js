@@ -275,8 +275,10 @@ test('changing an old green order to an orange review hold removes its stale con
 test('retailer SKU announcements use app push first and Discord fallback without duplicates', async t => {
   const f = await fixture(t);
   await f.service.subscribe('a', subscription);
+  await f.service.syncRetailerRoles('a',['target']);
+  await f.service.syncRetailerRoles('b',['target']);
   const event = {
-    kind: 'drop_skus_updated', title: 'Target drop SKUs updated',
+    kind: 'drop_skus_updated', retailer:'target', title: 'Target drop SKUs updated',
     message: '2 SKUs available. Choose your products.', tab: 'drops'
   };
   const first = await f.service.notifyDropUpdate(['a', 'b', 'a'], event, 'drop:target:post:version-a');
@@ -310,9 +312,11 @@ test('retailer SKU announcements use app push first and Discord fallback without
 test('drop notification preferences silence both push and DM fallback', async t => {
   const f = await fixture(t);
   await f.service.subscribe('a', subscription);
+  await f.service.syncRetailerRoles('a',['pokemoncenter']);
+  await f.service.syncRetailerRoles('b',['pokemoncenter']);
   await f.service.setPreferences('a', { drops: false });
   await f.service.setPreferences('b', { drops: false });
-  const notice = { kind: 'drop_skus_updated', title: 'PKC SKUs updated', message: 'Choose SKUs', tab: 'drops' };
+  const notice = { kind: 'drop_skus_updated', retailer:'pokemoncenter', title: 'PKC SKUs updated', message: 'Choose SKUs', tab: 'drops' };
   const result = await f.service.notifyDropUpdate(['a', 'b'], notice, 'drop:pkc:post:v1');
   assert.deepEqual(result, { pushAccountIds: [], dmAccountIds: [] });
   await f.service.tick();
