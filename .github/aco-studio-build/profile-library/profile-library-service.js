@@ -1278,7 +1278,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     for(const {key,result} of results){postalScanned.set(key,result);postalAlternativeCount+=result.cities?.length||0;}
    }
   }
-  const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&requestedCounts?perAddressHardRows(regularSelected,p,phoneSeed):null;
+  const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&hasHard?perAddressHardRows(regularSelected,p,phoneSeed):null;
   for(const row of regularSelected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
   const plannedAddressKeys=new Set();
   const rows=selected.map((row,index)=>{
