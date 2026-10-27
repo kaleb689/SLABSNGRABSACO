@@ -292,7 +292,7 @@ export function isCoveredRawMonitorPost(raw, messages, ownerId, appId) {
   if(!original.length)return false;
   const at=message=> {
     let value=Date.parse(message?.timestamp||"");
-    if(!Number.isFinite(value)&&/^\\d{17,22}$/.test(String(message?.id||""))) {
+    if(!Number.isFinite(value)&&/^\d{17,22}$/.test(String(message?.id||""))) {
       try {value=Number((BigInt(message.id)>>22n)+1420070400000n);}catch{}
     }
     return value;
@@ -1267,7 +1267,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
          if(!botPermission || (BigInt(botPermission.allow||"0") & (8192n|16384n)) !== (8192n|16384n) ||
              (BigInt(botPermission.deny||"0") & (8192n|16384n)) !== 0n) {
            try {
-             await api("/channels/"+channel.id+"/permissions/"+appId,"PUT",desiredPermission);
+             await api("/channels/"+channel.id+"/permissions/"+appId,"PUT",{type:1,allow:desiredPermission.allow,deny:desiredPermission.deny});
            } catch(error) {
              console.error("Discord retailer bot formatting permission repair failed:",spec.slug,error.message);
            }
