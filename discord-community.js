@@ -1469,12 +1469,47 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     discordCommunityStatus.error = [ticketLobbyError, adminError, oneOnOneError, importantError, communityError, diamondError, emojiError].filter(Boolean).join("; ") || null;
     console.log(`Discord membership roles, #ask-ai and support tickets ready in guild ${guildId}`);
   }
+  // Durable, minimal Discord-user-ID index for opted-in role alerts. This
+  // includes members who have not yet linked a website account.
+  const retailerSubscribersFile=path.join(dataDir,"discord-retailer-subscribers.json");
+  let retailerSubscriberQueue=Promise.resolve();
+  function withRetailerSubscribers(task){
+    const next=retailerSubscriberQueue.then(task);
+    retailerSubscriberQueue=next.catch(()=>{});
+    return next;
+  }
+  async function recordRetailerSubscriber(userId,memberRoles) {
+    if(retailerRoleIds.size!==RETAILER_ALERTS.length)return;
+    const chosen=RETAILER_ALERTS.filter(spec=>memberRoles.includes(retailerRoleIds.get(spec.key)))
+      .map(spec=>spec.key);
+    return withRetailerSubscribers(async()=>{
+      const current=await readJsonSafe(retailerSubscribersFile,{});
+      const old=current[userId]||[];
+      if(JSON.stringify(old)===JSON.stringify(chosen))return;
+      if(chosen.length)current[userId]=chosen;else delete current[userId];
+      await fs.mkdir(dataDir,{recursive:true});
+      const temp=retailerSubscribersFile+"."+crypto.randomUUID()+".tmp";
+      await fs.writeFile(temp,JSON.stringify(current),{mode:0o600});
+      await fs.rename(temp,retailerSubscribersFile);
+    });
+  }
+  async function retailerSubscriberIds(retailers){
+    const wanted=new Set(Array.isArray(retailers)?retailers:[retailers]);
+    return withRetailerSubscribers(async()=>{
+      const current=await readJsonSafe(retailerSubscribersFile,{});
+      return Object.entries(current).filter(([id,list])=>
+        /^\\d{15,25}$/.test(id)&&Array.isArray(list)&&list.some(key=>wanted.has(key))
+      ).map(([id])=>id);
+    });
+  }
   async function syncRetailerRolePreferences(userId, rolesForMember) {
     if(typeof onRetailerRoleSync!=="function"||retailerRoleIds.size!==RETAILER_ALERTS.length)
       return {linked:false};
     const selected=RETAILER_ALERTS.filter(spec=>rolesForMember.includes(retailerRoleIds.get(spec.key)))
       .map(spec=>spec.key);
-    return onRetailerRoleSync({discordUserId:String(userId),retailers:selected});
+    const synced=await onRetailerRoleSync({discordUserId:String(userId),retailers:selected});
+    await recordRetailerSubscriber(userId,rolesForMember);
+    return synced;
   }
   async function syncMember(userId, allowance, ogMember = false) {
     if (!guildId || roles.length !== LEVELS.length) return;
@@ -2632,7 +2667,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         if (Date.parse(row?.notifiedAt || "") < expiry) delete state[id];
       }
       await writeSkuFile(skuAlertFile, state);
-      const dmIds = [...new Set(Array.isArray(result?.dmUserIds) ? result.dmUserIds : [])];
+      const dmIds = [...new Set([...(Array.isArray(result?.dmUserIds)?result.dmUserIds:[]),
+      ...await retailerSubscriberIds(notification.retailer)])];
       for (const userId of dmIds) {
         if (!/^\d{15,25}$/.test(String(userId))) continue;
         try {
@@ -2780,7 +2816,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       tab:"drops",sourceUrl:`https://discord.com/channels/${guildId}/${d.channel_id}/${d.id}`};
     const eventKey="drop:"+d.channel_id+":"+d.id+":announcement";
     const result=await onRetailerSkuUpdate({notification,eventKey,messageId:d.id});
-    const dmIds=[...new Set(result?.dmUserIds||[])];
+    const dmIds=[...new Set([...(result?.dmUserIds||[]),...await retailerSubscriberIds(retailers)])];
     for(const userId of dmIds){
       if(!/^\d{15,25}$/.test(String(userId)))continue;
       try{
