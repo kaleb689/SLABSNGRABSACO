@@ -46,3 +46,26 @@ test('Selected saved address extra allocation distributes remainder evenly',asyn
  assert.equal(assigned.filter(x=>x===first.id).length,4);
  assert.equal(assigned.filter(x=>x===second.id).length,2);
 });
+
+test('Saved-profile workshop export never silently writes a blank Security Code',async t=>{
+ const {h,owner,id}=await ready(t);
+ h.export();
+ const vaultBefore=await fs.readFile(h.profiles.paths.personal);
+ await assert.rejects(h.service.exportSaved(event,{...owner,profileId:id}),/Export BLOCKED.*missing/);
+ assert.equal(h.writes.length,0);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),vaultBefore,'Export may not mutate encrypted profile data');
+});
+
+test('Saved-profile workshop export keeps the exact existing independent code without changing the vault',async t=>{
+ const {h,owner,id}=await ready(t);
+ await h.profiles.libraryTransaction('personal',null,ctx=>{
+  ctx.allowIndependentReferenceEdit(id);
+  ctx.rows.find(row=>row.id===id).data.profileSecurityCode='REF-WORKSHOP-0007';
+ },()=>{});
+ h.export();
+ const before=await fs.readFile(h.profiles.paths.personal);
+ const result=await h.service.exportSaved(event,{...owner,profileId:id});
+ assert.equal(result.saved,true);
+ assert.ok(h.writes.at(-1)[1].includes('REF-WORKSHOP-0007'));
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
+});

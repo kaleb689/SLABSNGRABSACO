@@ -56,13 +56,13 @@ test('Independent profile code may be edited without affecting other profiles or
  await commit(h,await preview(h,[data]));
  let row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'PICKUP-OLD');
- const updated=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'PICKUP-NEW'});
+ const updated=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'PICKUP-NEW',confirmSecurityCodeChange:true});
  assert.equal(updated.updated,true);
  assert.ok(!JSON.stringify(updated).includes('PICKUP-NEW'));
  row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'PICKUP-NEW');
  assert.ok(!JSON.stringify(await h.profiles.audit('personal',null)).includes('PICKUP-NEW'));
- await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:''});
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'',confirmSecurityCodeChange:true});
  assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'');
 });
 test('Imported independent Security Code aliases remain with the correct owner and never become a card verifier',async t=>{
@@ -173,7 +173,7 @@ test('Original imported profile can restore its missing Security Code without re
  await commit(h,await preview(h,[original]));
  let row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'0099');
- await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:''});
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'',confirmSecurityCodeChange:true});
  row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.data.profileSecurityCode,'');
  const decoded=Core.parseFile('original.json',JSON.stringify([original])).records[0];
  assert.equal(decoded.cc_cvv,'0099','parser must preserve the old reference slot for recovery');
@@ -534,14 +534,14 @@ test('Explicit owner profile-code edits remain possible, and unrelated edits ret
  await commit(h,await preview(h,[data]));
  let row=(await h.lib.list(event,h.p)).profiles[0];
  await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,
-  fields:LC.values(row.data),profileSecurityCode:'INDEPENDENT-REF-NEW'});
+  fields:LC.values(row.data),profileSecurityCode:'INDEPENDENT-REF-NEW',confirmSecurityCodeChange:true});
  row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'INDEPENDENT-REF-NEW');
  await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data)});
  row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'INDEPENDENT-REF-NEW');
  await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,
-  fields:LC.values(row.data),profileSecurityCode:''});
+  fields:LC.values(row.data),profileSecurityCode:'',confirmSecurityCodeChange:true});
  row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'','explicitly authorized independent-reference clear is permitted');
 });
@@ -648,4 +648,72 @@ test('Historical encrypted copy review requires full card equality, not merely l
  other.data.cc_number='4242424242424243';
  await save();
  assert.equal((await snapshot()).matched,0,'a changed digit rejects historical match');
+});
+
+test('Export reads matching saved Card Bank independent reference into temporary file only, preserving original master profile',async t=>{
+ const h=await library(t);
+ for(const retailer of ['target','walmart']){
+  const original=complete(retailer,'matched-'+retailer+'@example.test');
+  const number=retailer==='target'?card.number:'5555555555554444';
+  LC.putCard(original,{...fullCard,number});
+  await commit(h,await preview(h,[original],h.p,retailer));
+  const row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
+  assert.equal(LC.profileCode(row.data),'');
+  await h.service.addCard(event,{...h.p,card:{...card,number,customSecurityCode:'00BANK-'+retailer}});
+  for(const format of ['retailer','json','csv','tsv','txt']){
+   const result=await h.lib.exportFile(event,{...h.p,retailer,profileIds:[row.id],exportFormat:format});
+   assert.equal(result.saved,true);
+   assert.ok(h.writes.at(-1)[1].includes('00BANK-'+retailer),'export copy must include matched bank code for '+retailer+' '+format);
+  }
+  const before=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
+  assert.equal(LC.profileCode(before.data),'','a successful export must never write an independent code into the master profile');
+  const archive=await h.lib.exportArchive(event,{...h.p,retailer,profileIds:[row.id]});
+  assert.equal(archive.saved,true);
+  const record=JSON.parse(h.writes.at(-1)[1]).profiles[0];
+  assert.equal(record.profileSecurityCode,'00BANK-'+retailer);
+ }
+});
+
+test('Export blocks missing references without producing incomplete files or changing encrypted data',async t=>{
+ const h=await library(t),original=complete('target','missing-code@example.test');
+ await commit(h,await preview(h,[original]));
+ const row=(await h.lib.list(event,h.p)).profiles[0],vaultBefore=await fs.readFile(h.profiles.paths.personal);
+ await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:[row.id]}),/Export BLOCKED.*missing/);
+ await assert.rejects(h.lib.exportArchive(event,{...h.p,retailer:'target',profileIds:[row.id]}),/Export BLOCKED.*missing/);
+ assert.equal(h.writes.length,0);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),vaultBefore);
+});
+
+test('Export refuses different Security Codes for the identical full card number',async t=>{
+ const h=await library(t),original=complete('target','conflicting-code@example.test');
+ original.profileSecurityCode='PROFILE-REF';
+ await commit(h,await preview(h,[original]));
+ await h.service.addCard(event,{...h.p,card:{...card,customSecurityCode:'BANK-REF'}});
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:[row.id]}),/Export BLOCKED.*conflicting/);
+ assert.equal(h.writes.length,0);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'PROFILE-REF');
+});
+
+test('Full card number, not matching last four digits, determines Security Code used for export',async t=>{
+ const h=await library(t),original=complete('target','exact-card@example.test');
+ await commit(h,await preview(h,[original]));
+ await h.service.addCard(event,{...h.p,card:{...card,number:'5555555555554242',customSecurityCode:'WRONG-REFERENCE'}});
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:[row.id]}),/Export BLOCKED.*missing/);
+ assert.equal(h.writes.length,0);
+});
+
+test('Ordinary profile changes cannot silently remove or replace an existing Security Code',async t=>{
+ const h=await library(t),data=complete('target','never-clear@example.test');
+ data.profileSecurityCode='NONPAYMENT-REF-0042';
+ await commit(h,await preview(h,[data]));
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ const before=await fs.readFile(h.profiles.paths.personal);
+ await assert.rejects(h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:''}),/explicit separate confirmation/);
+ await assert.rejects(h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'REPLACEMENT'}),/explicit separate confirmation/);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
+ const saved=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data)});
+ assert.equal(saved.updated,true);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'NONPAYMENT-REF-0042');
 });

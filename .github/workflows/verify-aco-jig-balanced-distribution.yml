@@ -50,3 +50,5 @@ jobs:
           node --test tests/profile-library.test.js
           node --test tests/profile-live-ui.test.js
           node --test tests/profile-duplicate-scan.test.js
+          node --test tests/imported-card-codes.test.js
+          node --test tests/profile-completion.test.js

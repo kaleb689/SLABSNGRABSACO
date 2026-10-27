@@ -394,13 +394,55 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    plan.saved=true;plan.applied=true;return {...result,saved:true};
   });}finally{plan.busy=false;}
  }
+ // Read-only, full-card-number matching for temporary workshop exports.
+ async function preparedExportCodes(scope,id,records,matched=[]){
+  const [bankRows,local]=await Promise.all([cardVault(scope).securityReferences(cardKey(scope,id)),profiles.fieldSnapshot(scope,id)]);
+  const byNumber=new Map(),ambiguous=new Set();
+  for(const card of bankRows){
+   const number=String(card.number||'').replace(/\D/g,''),code=String(card.customSecurityCode||card.customCode||'');
+   if(!/^\d{12,19}$/.test(number)||!code)continue;
+   if(byNumber.has(number)&&byNumber.get(number)!==code)ambiguous.add(number);else byNumber.set(number,code);
+  }
+  const codeOf=data=>[data?.profileSecurityCode,data?.security_code,data?.custom_security_code,data?.card?.custom_security_code].find(v=>typeof v==='string'&&v.length>0)||'';
+  let missing=0,conflicting=0;
+  const output=records.map((data,index)=>{
+   const number=String(numberOf(data)).replace(/\D/g,'');
+   const original=local.find(row=>row.id===matched.find(x=>x?.index===index)?.id);
+   const originalCode=original&&numberOf(original.data)===number?codeOf(original.data):'';
+   const code=codeOf(data)||originalCode,bankCode=byNumber.get(number)||'';
+   if(ambiguous.has(number)||(code&&bankCode&&code!==bankCode)){conflicting++;return null;}
+   const resolved=code||bankCode;
+   if(!resolved){missing++;return null;}
+   if(resolved.length>100||/[\x00-\x1f\x7f]/.test(resolved)){conflicting++;return null;}
+   const out=structuredClone(data);
+   out.profileSecurityCode=resolved;
+   if(Draft.formatOf(out)==='shikari')out.cc_cvv=resolved;
+   else out.card={...(out.card||{}),cvv:resolved};
+   return out;
+  });
+  if(missing||conflicting)throw Error('Export BLOCKED: '+missing+' missing and '+conflicting+' conflicting independent Security Code(s). No file saved or existing codes changed.');
+  return output;
+ }
  async function exportFile(e,p){const plan=await get(e,p);if(!plan.applied)throw Error('Apply the preview before exporting.');
   if(!await confirmExport(e))return {cancelled:true};const ext=path.extname(plan.src.parsed.name),name=path.basename(plan.src.parsed.name,ext)+'-updated'+ext;
   const choice=await chooseSave(e,{name,extension:ext.slice(1)});if(choice.canceled||!choice.filePath)return {cancelled:true};
   if(path.extname(choice.filePath).toLowerCase()!==ext.toLowerCase())throw Error('Keep the original file format.');
-  await get(e,p);return verifyResources(e,plan,async()=>{await writeFile(choice.filePath,plan.text,{encoding:'utf8',mode:0o600});return {saved:true,name:path.basename(choice.filePath),count:plan.src.indices.length};});
+  await get(e,p);return verifyResources(e,plan,async()=>{
+   const prepared=await preparedExportCodes(plan.scope,plan.id,plan.result.records,plan.src.matched);
+   const body=Core.serialize(plan.src.parsed,prepared),parsed=Core.parseFile(plan.src.parsed.name,body);
+   if(parsed.records.length!==prepared.length||parsed.records.some((row,i)=>{
+    const slot=Draft.formatOf(row)==='shikari'?row.cc_cvv:row.card?.cvv;
+    return String(slot||'')!==prepared[i].profileSecurityCode;
+   }))throw Error('Export serializer omitted the Security Code field. Nothing saved; use Profiles retailer export instead.');
+   await writeFile(choice.filePath,body,{encoding:'utf8',mode:0o600});
+   return {saved:true,name:path.basename(choice.filePath),count:plan.src.indices.length};
+  });
  }
- async function exportSaved(e,p){const {scope,id}=await access(e,p),v=await profiles.preview(scope,id,p.profileId);if(!await confirmExport(e))return {cancelled:true};const entry=Draft.serializeProfile(v.profile),ext=path.extname(entry.name),choice=await chooseSave(e,{name:entry.name,extension:ext.slice(1)});
+ async function exportSaved(e,p){const {scope,id}=await access(e,p),v=await profiles.preview(scope,id,p.profileId);
+  const prepared=(await preparedExportCodes(scope,id,[v.profile.data],[{index:0,id:v.profile.id}]))[0];
+  const entry=Draft.serializeProfile({...v.profile,data:prepared}),parsed=Core.parseFile(entry.name,entry.text);
+  if(parsed.records.length!==1||String((Draft.formatOf(parsed.records[0])==='shikari'?parsed.records[0].cc_cvv:parsed.records[0].card?.cvv)||'')!==prepared.profileSecurityCode)throw Error('Saved-profile serializer omitted Security Code. Nothing written.');
+  if(!await confirmExport(e))return {cancelled:true};const ext=path.extname(entry.name),choice=await chooseSave(e,{name:entry.name,extension:ext.slice(1)});
   if(choice.canceled||!choice.filePath)return {cancelled:true};if(path.extname(choice.filePath).toLowerCase()!==ext)throw Error('Keep the selected profile format.');const latest=await profiles.preview(scope,id,p.profileId);if(latest.profile.revision!==v.profile.revision)throw Error('Profile changed before export. Try again.');guard(e,scope);await writeFile(choice.filePath,entry.text,{encoding:'utf8',mode:0o600});return {saved:true};
  }
  return Object.freeze({assets,addCard,addAddress,setHardCard,setHardCards,addProfileCardToBank,manageResource,emails,importEmails,generate,create,edit,load,preview,apply,save,exportFile,exportSaved,cancel});
