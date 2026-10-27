@@ -516,6 +516,6 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  amend("const a=D.blank('target','shikari',{email:'one@example.test'}),b=D.blank('target','shikari',{email:'two@example.test'});a.extra='unchanged';",
        "const a=D.blank('target','shikari',{email:'one@example.test'}),b=D.blank('target','shikari',{email:'two@example.test'});a.profileSecurityCode='SYNTHETIC-REF-ONE';b.profileSecurityCode='SYNTHETIC-REF-TWO';a.extra='unchanged';");
  const mark="test('Native export writes full saved card data only after explicit confirmation',async t=>{const h=await env(t),{profile,savedCard}=await setup(h);";
- amend(mark,mark.slice(0,-3)+"(h,'WORKSHOP-EXPORT-REF');");
+ amend(mark,mark.replace("setup(h);","setup(h,'WORKSHOP-EXPORT-REF');"));
  fs.writeFileSync(p,source);
 }
