@@ -848,6 +848,9 @@
      note('Jigged '+result.updated+' selected profile(s) in one batch'+(result.duplicateOverrides?' · '+result.duplicateOverrides+' explicitly allowed reused addresses':'')+(result.remoteSaved?' · '+result.remoteSaved+' synced to website/app':'')+'.');
     }catch(error){win.status().textContent=error.message;save.disabled=false;preview.disabled=false;}
    };
+   // Clicking Jig starts the selected-profile preview immediately. There is
+   // no separate Resume jig step; the Apply button still requires review.
+   queueMicrotask(()=>{if(win.valid())preview.click();});
   }catch(error){note(error.message);}
  }
  function openJig(row){if(row.sourceLinked){void linkedJig(row);return;}const owner=request();close();(owner.scope==='personal'?personal:customer)?.click();setTimeout(()=>void window.ACOProfileWorkshop.openSaved({...owner,profileId:row.id}),0);}
