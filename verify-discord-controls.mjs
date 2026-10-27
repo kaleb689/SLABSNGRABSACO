@@ -153,8 +153,8 @@ try {
   assert.ok(pkcSaved.every(item=>item.quantity===2));
   // Every recent SKU source in a retailer must get a usable panel, not only
   // the first post encountered during the startup backfill.
-  const olderTarget=post('1551070928039845970',pkcId,'Older PKC bundle\\nSKU: OLDER9876');
-  const newerTarget=post('1551070928039845971',pkcId,'Newer PKC bundle\\nSKU: NEWER9876');
+  const olderTarget=post('1551070928039845970',pkcId,'Older PKC bundle\nSKU: OLDER9876');
+  const newerTarget=post('1551070928039845971',pkcId,'Newer PKC bundle\nSKU: NEWER9876');
   const ordinaryRetailerChatter=post('1551070928039845972',pkcId,'Thanks for the update');
   for(const msg of [olderTarget,newerTarget,ordinaryRetailerChatter])messages.set(msg.id,msg);
   histories.set(pkcId,[ordinaryRetailerChatter,newerTarget,olderTarget,pkcPost]);
