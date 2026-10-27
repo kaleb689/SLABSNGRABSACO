@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload} from './discord-community.js';
+import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource} from './discord-community.js';
 import {skuReminderOwnerPanel} from './sku-reminders.js';
 import {createDropMessageRetention} from './discord-drop-retention.js';
 const source = await fs.readFile('discord-community.js', 'utf8');
@@ -31,8 +31,8 @@ async function api(route, method='GET', payload) {
   if (method==='PATCH') { Object.assign(existing,payload);changes.push(existing); }
   return existing;
 }
-const deps={fs,path,crypto,dataDir,tonightChannelId,retailerDropLabels:{},dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',ownerId:owner,
-  parseDropSkus,changeSkuItems,skuSelectionView,skuOwnerDetails,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
+const deps={fs,path,crypto,dataDir,tonightChannelId,retailerDropLabels:{},dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',ownerId:owner,appId:'1551070928039845900',
+  parseDropSkus,isSelectableSkuSource,changeSkuItems,skuSelectionView,skuOwnerDetails,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,createDropMessageRetention,discordCommunityStatus:{}};

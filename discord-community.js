@@ -227,35 +227,58 @@ export async function sendDiscordRtpReturnSummary({
 // A SKU is taken only from an explicit SKU label. The closest product line
 // above it is the title shown to the owner; never infer SKUs from other text.
 export function parseDropSkus(message) {
-  const sections = [String(message?.content || ""), ...(message?.embeds || []).map(embed =>
-    [embed.title, embed.description, ...(embed.fields || []).flatMap(field => [field.name, field.value])].filter(Boolean).join("\n")
-  )];
-  const products = [], seen = new Set();
-  for (const section of sections) {
-    let title = "Product name not provided";
-    for (const raw of section.split(/\r?\n/)) {
-      const line = raw.replace(/[*_`~]/g, "").trim();
-      if (!line) continue;
-      const sku = /\bSKU\s*(?:#|:|-|\s)\s*([A-Z0-9][A-Z0-9._-]{2,79})\b/i.exec(line);
-      if (sku) {
-        const prefix = line.slice(0, sku.index).replace(/[-:|\s]+$/, "").trim();
-        const name = (prefix || title).slice(0, 100);
-        if (!seen.has(sku[1].toUpperCase())) {
-          products.push({ name, sku: sku[1].toUpperCase() });
-          seen.add(sku[1].toUpperCase());
-        }
-      } else if (!/^(?:qty|quantity|price|size|date|time|https?:\/\/|<@)/i.test(line)) {
-        title = line.slice(0, 100);
+  const sections=[String(message?.content||""),...(message?.embeds||[]).map(embed=>
+    [embed.title,embed.description,...(embed.fields||[]).flatMap(field=>[field.name,field.value])]
+      .filter(Boolean).join("\n"))];
+  const products=[],seen=new Set();
+  for(const section of sections){
+    let title="Product name not provided",pendingId=false;
+    const addSku=(sku,name)=>{
+      const id=String(sku||"").toUpperCase();
+      if(!/^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(id)||seen.has(id))return;
+      products.push({name:String(name||title).slice(0,100),sku:id});
+      seen.add(id);
+    };
+    for(const raw of section.split(/\r?\n/)){
+      const line=raw.replace(/[*_`~]/g,"").trim();
+      if(!line)continue;
+      if(pendingId){
+        pendingId=false;
+        if(/^[A-Z0-9][A-Z0-9._-]{2,79}$/i.test(line)){addSku(line,title);continue;}
+      }
+      if(/^(?:SKU|PID|TCIN)\s*:?[ \t]*$/i.test(line)){pendingId=true;continue;}
+      const sku=/\b(?:SKU|PID|TCIN)\s*(?:#|:|-|\s)\s*([A-Z0-9][A-Z0-9._-]{2,79})\b/i.exec(line);
+      if(sku){
+        const prefix=line.slice(0,sku.index).replace(/[-:|\s]+$/,"").trim();
+        addSku(sku[1],prefix||title);
+      }else if(!/^(?:qty|quantity|price|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?|https?:\/\/|<@)/i.test(line)){
+        title=line.replace(/^(?:product(?: name)?|item(?: name)?)\s*:\s*/i,"").slice(0,100);
       }
     }
   }
-  return products.slice(0, 200);
+  return products.slice(0,200);
 }
 export function dropChannelKind(name) {
   const key = String(name || "").normalize("NFKC").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
   if (["upcomingdrop", "upcomingdrops"].includes(key)) return "upcomingdrops";
   if (["droppingtonight", "dropstonight"].includes(key)) return "droppingtonight";
   return key;
+}
+// A bot-rendered monitor card is a trusted product source only when the
+// author and embed marker are both ours. Ordinary bot/webhook posts cannot
+// become account-selection or owner-notification sources.
+export function isSelectableSkuSource(message,appId) {
+ return Boolean(message&&!message.webhook_id&&
+   (!message.author?.bot || isFormattedDropPost(message,appId))&&parseDropSkus(message).length);
+}
+// Return all recent valid product posts in each channel rather than only the
+// newest one. A busy Target channel must not hide Walmart or Pokémon Center.
+export function recentSelectableDropPosts(messages, appId, limit=12) {
+ return (Array.isArray(messages)?messages:[])
+  .filter(message=>!message.message_reference?.message_id&&
+    (message.type===0||message.type===undefined)&&
+    isSelectableSkuSource(message,appId))
+  .slice(0,limit);
 }
 export function isNewDropPost(message) {
   return !message?.message_reference?.message_id && message?.type !== 19;
@@ -2462,7 +2485,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function confirmSkuDraft(userId, username, sourceId, channelId) {
     if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
     const source = await api("/channels/" + channelId + "/messages/" + sourceId);
-    if (source.author?.bot || source.webhook_id) throw new Error("The original drop post is unavailable.");
+    if (!isSelectableSkuSource(source, appId)) throw new Error("The drop no longer has selectable SKUs.");
     const validSkus = new Set(parseDropSkus(source).map(item => item.sku));
     return withSkuQueue(async () => {
       const drafts = await readSkuFile(skuDraftsFile);
@@ -2840,7 +2863,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // Only the owner can invoke automatic monitor-paste conversion. Regular
     // staff drop posts and free-form messages keep their existing behavior.
     const monitored = isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")
-      ? parseMonitorDropProducts(d.content) : [];
+      ? parseMonitorDropProducts(d) : [];
     if (monitored.length) {
       try {
         const label = retailerDropLabels[d.channel_id] ||
@@ -2857,8 +2880,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           await notifyRetailerSkuChange(formatted);
         }
         if (rendered.length === payloads.length) {
-          // Keep the original post too; every drop message keeps its own
-          // ten-day retention window, regardless of newer formatted posts.
+          // Replace only the just-submitted raw monitor paste, never other
+          // historical drop posts. Wait until the structured messages and
+          // their selectable SKU controls are created successfully.
+          try {
+            await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
+          } catch (error) {
+            console.error("Formatted drop published; could not remove raw paste:", error.message);
+          }
           return;
         }
       } catch (error) {
@@ -3095,7 +3124,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         const [, action, sourceId, arg, extra] = d.data.custom_id.split(":");
         if (!/^\d{17,22}$/.test(sourceId)) return await reply("Invalid drop post.");
         const source = await api("/channels/" + d.channel_id + "/messages/" + sourceId);
-        if (source.author?.bot || source.webhook_id) return await reply("That drop is unavailable.");
+        if (!isSelectableSkuSource(source, appId)) return await reply("That drop is unavailable.");
         const products = parseDropSkus(source);
         if (action === "confirm") {
           await api(callback, "POST", { type: 5, data: { flags: 64 } });
@@ -3820,29 +3849,23 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   // selected SKU file, owner alert and single-quantity invariant.
   async function webActiveDropSources() {
     if (!skuRequestsChannelId || !dropChannelIds.size) throw new Error("Discord drop controls are not ready yet.");
-    const posts = await Promise.all([...dropChannelIds].map(async channelId => {
-      const messages = await api("/channels/" + channelId + "/messages?limit=100");
-      const candidates = (Array.isArray(messages) ? messages : []).filter(message =>
-        (!message.author?.bot || isFormattedDropPost(message, appId)) &&
-        !message.webhook_id && !message.message_reference?.message_id &&
-        (message.type === 0 || message.type === undefined));
-      const source = candidates.find(message => parseDropSkus(message).length) ||
-        (channelId === tonightChannelId || !retailerDropLabels[channelId] ? candidates[0] : null);
-      if (!source) return null;
-      const label = retailerDropLabels[channelId] ||
-        (channelId === tonightChannelId ? "Dropping Tonight" : "Upcoming Drops");
-      const retailer = /target/i.test(label) ? "target" :
-        /walmart/i.test(label) ? "walmart" :
-        /pkc|pokemon|pokémon/i.test(label) ? "pokemon" :
-        /costco/i.test(label) ? "costco" :
-        /sam.?s/i.test(label) ? "sams" :
-        channelId === tonightChannelId ? "tonight" : "upcoming";
-      return {
-        channelId: String(channelId), sourceId: String(source.id),
-        retailer, label, products: parseDropSkus(source)
-      };
+    const perChannel=await Promise.all([...dropChannelIds].map(async channelId=>{
+      const messages=await api("/channels/"+channelId+"/messages?limit=100");
+      const sources=recentSelectableDropPosts(messages,appId);
+      const label=retailerDropLabels[channelId]||
+        (channelId===tonightChannelId?"Dropping Tonight":"Upcoming Drops");
+      const retailer=/target/i.test(label)?"target":
+        /walmart/i.test(label)?"walmart":
+        /pkc|pokemon|pokémon/i.test(label)?"pokemon":
+        /costco/i.test(label)?"costco":
+        /sam.?s/i.test(label)?"sams":
+        channelId===tonightChannelId?"tonight":"upcoming";
+      return sources.map(source=>({
+        channelId:String(channelId),sourceId:String(source.id),
+        retailer,label,products:parseDropSkus(source)
+      }));
     }));
-    return posts.filter(Boolean);
+    return perChannel.flat();
   }
   async function webDropList(userId) {
     if (!await hasPaidSkuAccess(userId)) throw new Error(skuAccessMessage);
@@ -3866,7 +3889,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const quantity = Number(request?.quantity);
     if (![1, 2].includes(quantity)) throw new Error("Choose Qty 1 or Qty 2 for ALL selected SKUs.");
     const entries = request?.sources;
-    if (!Array.isArray(entries) || entries.length > 30) throw new Error("Invalid drop selections.");
+    if (!Array.isArray(entries) || entries.length > 100) throw new Error("Invalid drop selections.");
     const live = await webActiveDropSources();
     const byKey = new Map(live.map(source => [source.channelId + ":" + source.sourceId, source]));
     const submitted = new Map();
@@ -3886,7 +3909,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     }
     // Require a complete snapshot so hidden or stale forms cannot silently
     // overwrite part of the user's saved preferences.
-    if (submitted.size !== live.length) throw new Error("The active drops changed. Refresh and submit again.");
+    // A new unrelated drop may appear while the customer is choosing. Save only\n    // the submitted sources; never clear selections in unsubmitted new posts.\n    if (!submitted.size && entries.length) throw new Error("Invalid drop selections.");
     return withSkuQueue(async () => {
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };

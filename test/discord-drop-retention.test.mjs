@@ -52,7 +52,7 @@ test("one channel error does not erase unconfirmed data or block other channels"
   await cleanup();assert.deepEqual(errors,["bad"]);assert.deepEqual(retired,[["good",["already-removed"]]]);
 });
 
-test("posting another drop or formatted monitor report does not delete earlier messages or the source",async()=>{
+test("successful monitor paste cleanup removes only the raw source after posting the selectable product card",async()=>{
   const source=readFileSync(new URL("../discord-community.js",import.meta.url),"utf8");
   const start=source.indexOf("  async function onDropPost(d) {");
   const snippet=source.slice(start,source.indexOf("\n  async function ",start+10));
@@ -66,5 +66,5 @@ test("posting another drop or formatted monitor report does not delete earlier m
   await context.onDropPost({guild_id:"guild",channel_id:"drop",id:"new",author:{id:"staff"}});
   assert.deepEqual(calls,[]);
   await context.onDropPost({guild_id:"guild",channel_id:"drop",id:"paste",author:{id:"owner"}});
-  assert.deepEqual(calls,["POST"]);
+  assert.deepEqual(calls,["POST","DELETE"]);
 });

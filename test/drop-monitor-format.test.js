@@ -131,3 +131,25 @@ test("bot render may be treated as trusted only when author id and marker match"
   assert.equal(isFormattedDropPost({...message,author:{id:"123456789",bot:false}},"123456789"),false);
   assert.equal(isFormattedDropPost({...message,embeds:[{title:"Forged"}]},"123456789"),false);
 });
+
+test("clean cards keep actual product fields, Walmart draw window, and omit raw monitor chatter",()=>{
+ const items=parseMonitorDropProducts(pasted);
+ assert.equal(items[0].cartLimit,1);
+ assert.equal(items[0].seller,"Walmart.com");
+ assert.equal(items[0].type,"New Product");
+ assert.equal(items[0].time,"Oct 21, 2:00pm - 3:00pm PDT");
+ const w=formattedDropPayloads(items,"Walmart Drops")[0];
+ assert.match(w.embeds[0].description,/Cart limit: 1/);
+ assert.match(w.embeds[0].description,/Draw time: Oct 21/);
+ assert.match(w.embeds[0].description,/Seller: Walmart.com/);
+ assert.doesNotMatch(w.embeds[0].description,/Report Bugs|Monitors v|Ebay Sales/);
+ for(const label of ["Target Drops","PKC Drops","Costco Drops","Sam's Drops"]){
+  const payload=formattedDropPayloads(items,label)[0];
+  assert.ok(payload.embeds.every(x=>!x.description.includes("Draw time:")));
+  assert.match(payload.embeds[0].description,/Cart limit: 1/);
+ }
+ const withImage=parseMonitorDropProducts({content:"Magic Booster\nPrice $21.55\nSKU MAGIC-123\nCart Limit: 2",
+  attachments:[{url:"https://cdn.discordapp.com/attachments/123/item.png"}]});
+ assert.equal(withImage.length,1);
+ assert.match(formattedDropPayloads(withImage,"PKC Drops")[0].embeds[0].thumbnail.url,/item.png/);
+});
