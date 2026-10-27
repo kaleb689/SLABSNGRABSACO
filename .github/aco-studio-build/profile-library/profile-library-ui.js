@@ -991,19 +991,19 @@
   retailerSelect.value=q('retailer').value;retailerLabel.append(retailerSelect);
   const pasteLabel=text('label','Paste one account per line');
   const area=d.createElement('textarea');area.rows=12;area.autocomplete='off';area.spellcheck=false;
-  area.placeholder='email@example.com:password\\nemail2@example.com:::password\\nemail3@example.com; password';
+  area.placeholder='email@example.com:password\nemail2@example.com:::password\nemail3@example.com; password';
   pasteLabel.append(area);
   const review=text('p','Choose the retailer before saving. Separate email and password with :, :::, or ;. Only accounts not already present in the selected retailer and vault will be added to Unused. Existing passwords are never overwritten.');
   const counts=text('p','No accounts parsed.');
   const submit=text('button','Review and import accounts');submit.type='submit';submit.className='btn primary';
   form.append(retailerLabel,pasteLabel,review,counts,submit);win.body.append(form);
   const parse=()=>{
-   const lines=area.value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean);
+   const lines=area.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
    if(lines.length>5000)throw Error('Paste at most 5000 accounts per batch.');
    const accounts=[],seen=new Set();
    for(let i=0;i<lines.length;i++){
-    const match=/^([^\\s@:;]+@[^\\s@:;]+\\.[^\\s@:;]+)\\s*(:::|;|:)\\s*(.+)$/.exec(lines[i]);
-    if(!match||!match[3].trim()||/[\\x00-\\x1f\\x7f]/.test(match[3]))
+    const match=/^([^\s@:;]+@[^\s@:;]+\.[^\s@:;]+)\s*(:::|;|:)\s*(.+)$/.exec(lines[i]);
+    if(!match||!match[3].trim()||/[\x00-\x1f\x7f]/.test(match[3]))
      throw Error('Invalid account at line '+(i+1)+'. Use email:password, email:::password, or email; password.');
     const email=match[1].toLowerCase();
     if(seen.has(email))throw Error('Duplicate email on line '+(i+1)+': '+email);
