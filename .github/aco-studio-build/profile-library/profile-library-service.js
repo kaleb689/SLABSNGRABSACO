@@ -1082,7 +1082,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    // Try actual distinct eligible rules. A no-op or an attempted change to a
    // saved unit is NOT an applied jig. Interleave hard/soft to ensure hard
    // choices are not starved by a large collection of soft rules.
-   const offset=Math.max(0,globalIndex+groupPosition-1);
+   const offset=Math.max(0,globalIndex);
    const rotated=(list,shift)=>list.length?list.slice(shift%list.length).concat(list.slice(0,shift%list.length)):[];
    const softOrder=rotated(soft,offset);
    const hardFamily=id=>id.startsWith('target.house.fraction.')?'fraction':
