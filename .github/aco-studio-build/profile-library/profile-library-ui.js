@@ -505,6 +505,34 @@
     catch(error){note(String(error.message||error));toggle.disabled=false;}
    };
    row.append(body,state,toggle);
+   if(scope==='aco'&&/^\d{12,19}$/.test(String(card.fullNumber||'').replace(/\D/g,''))){
+    const viewCard=text('button','View card details & code');viewCard.type='button';viewCard.className='btn slim secondary';
+    viewCard.onclick=async()=>{
+     const id=customerId,number=card.fullNumber,win=dialog('Customer Card Details');
+     const status=text('p','Loading this card from the selected encrypted customer vault…');win.body.append(status);
+     try{
+      const detail=await api.customerCardDetails({scope:'aco',customerId:id,cardNumber:number});
+      if(!win.valid()||scope!=='aco'||id!==customerId)return;
+      status.remove();
+      win.body.append(text('p','Card number: '+detail.cardNumber));
+      if(card.expiry)win.body.append(text('p','Saved expiration: '+card.expiry));
+      win.body.append(text('h3','Saved Card Bank reference'));
+      const bankCodes=(detail.savedReferences||[]).map(x=>x.independentSecurityCode).filter(Boolean);
+      win.body.append(text('p',bankCodes.length?bankCodes.join(' · '):'No independent reference in saved Card Bank.'));
+      win.body.append(text('h3','Linked customer profiles'));
+      if(!detail.linkedProfiles?.length)win.body.append(text('p','No linked profiles use this card.'));
+      for(const item of detail.linkedProfiles||[]){
+       const section=d.createElement('section');section.className='profileLibraryCard';
+       section.append(text('strong',(retailName[item.retailer]||item.retailer)+' · '+item.email));
+       section.append(text('p',[item.cardholder,item.expiration].filter(Boolean).join(' · ')));
+       section.append(text('p','Security Code (independent reference): '+(item.independentSecurityCode||'Not saved')));
+       win.body.append(section);
+      }
+      win.body.append(text('small','This view contains only separately saved profile-reference Security Codes, not payment-card CVV/CVC values. Website-only payment methods remain masked.'));
+     }catch(error){if(win.valid())status.textContent='Unable to view this customer card: '+String(error.message||error);}
+    };
+    row.append(viewCard);
+   }
    if(!card.fromSavedBank){
     const save=text('button','Add to saved card bank');save.type='button';save.className='btn slim secondary';
     save.onclick=async()=>{
