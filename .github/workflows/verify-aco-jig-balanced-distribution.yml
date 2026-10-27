@@ -23,9 +23,28 @@ jobs:
           node --check .github/aco-studio-build/profile-library/profile-library-service.js
           node --check .github/aco-studio-build/profile-library/profile-library-ui.js
           node --check .github/aco-studio-build/completed-profiles/profile-workshop-ui.js
-      - name: Run profile library and jig regression tests
+      - name: Assemble original Electron app with all existing overlays
         run: |
-          printf '{"type":"commonjs"}\n' > .github/aco-studio-build/package.json
-          node --test .github/aco-studio-build/profile-library/profile-library.test.js
-          node --test .github/aco-studio-build/profile-library/profile-live-ui.test.js
-          node --test .github/aco-studio-build/profile-library/profile-duplicate-scan.test.js
+          set -euo pipefail
+          cat .github/aco-studio-build/aco-studio-v4.13.5.part-*.b64 | base64 --decode > original.zip
+          echo '8836f7172b81365fb2f794d984e349f3dbb02f5aaf78dce8b69b7a38ddee2570  original.zip' | sha256sum -c -
+          mkdir -p build-src
+          unzip -q original.zip -d build-src
+          node .github/aco-studio-build/personal-import/apply.cjs build-src/App
+          python3 .github/aco-studio-build/profile-workshop/unpack.py workshop-overlay
+          node workshop-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/native-updater/apply.cjs build-src/App
+          ACO_ADHOC_MODE=true node .github/aco-studio-build/release-v4139.cjs build-src/App
+          python3 .github/aco-studio-build/personal-navigation/unpack.py navigation-overlay
+          node navigation-overlay/apply.cjs build-src/App
+          node .github/aco-studio-build/email-vaults/apply.cjs build-src/App
+          node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
+          node .github/aco-studio-build/profile-library/apply.cjs build-src/App
+          node .github/aco-studio-build/drop-news/apply.cjs build-src/App
+      - name: Run assembled ACO Studio regression suite
+        working-directory: build-src/App
+        run: |
+          set -euo pipefail
+          node --test tests/profile-library.test.js
+          node --test tests/profile-live-ui.test.js
+          node --test tests/profile-duplicate-scan.test.js
