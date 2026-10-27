@@ -385,11 +385,11 @@ test('Jig UI groups related ordinal, compass, unit and Target hard variants',()=
 });
 
 test('Both Jig entrypoints offer explicit optional unit and do not silently auto-add units',()=>{
- assert.match(source,/Add random Apt \\/ Unit \\/ Ste \\/ # \\/ number/);
- assert.match(source,/optionalUnitToggle\\.checked=false/);
+ assert.match(source,/Add random Apt \/ Unit \/ Ste \/ # \/ number/);
+ assert.match(source,/optionalUnitToggle\.checked=false/);
  assert.match(source,/optionalUnitCount,postalScan/);
  assert.match(workshopSource,/data-optional-unit type="checkbox"/);
  assert.match(workshopSource,/data-optional-unit-count type="number"/);
- assert.match(workshopSource,/optionalUnitCount,combine:state\\.combine/);
+ assert.match(workshopSource,/optionalUnitCount,combine:state\.combine/);
  assert.match(workshopSource,/randomUnit:0/);
 });
