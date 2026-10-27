@@ -13,13 +13,13 @@
   <label><span>Fractional <small>Randomized among 1/2, 1/3, 1/4</small></span><input type="number" data-hard-count="fraction" min="0" max="500" step="1" value="3" aria-label="Fractional jigs per main address"></label>
   <label><span>Hyphen <small>Randomized among -A through -H</small></span><input type="number" data-hard-count="hyphen" min="0" max="500" step="1" value="8" aria-label="Hyphen jigs per main address"></label>
   <label><span>Double letter <small>Duplicates one letter of the street name</small></span><input type="number" data-hard-count="doubleLetter" min="0" max="500" step="1" value="6" aria-label="Double-letter jigs per main address"></label>
-  <label><span>Random unit <small>Only when no unit exists · unverified unit</small></span><input type="number" data-hard-count="randomUnit" min="0" max="500" step="1" value="0" aria-label="Random-unit jigs per main address"></label>
+  
  </div><small>One unchanged address per repeated-address group. Counts apply to categories, not individual fraction or letter variants. A fabricated unit is not a verified delivery address.</small></details>
  <div class="buttons"><button class="btn primary" id="workshopPreview" type="button" disabled>Preview selected changes</button><button class="btn secondary" id="workshopApply" type="button" disabled>Apply to file preview</button><button class="btn secondary" id="workshopSave" type="button" disabled>Save to this vault</button><button class="btn secondary" id="workshopExport" type="button" disabled>Export reviewed file</button><button class="btn plain slim" id="workshopLegacy" type="button">Return to previous formatting controls</button></div>
  <p id="workshopStatus" role="status" aria-live="polite">Unchecked fields stay unchanged. No profiles or vault entries are moved between owners.</p><details id="workshopReview" hidden><summary>Review changes</summary><div id="workshopReviewRows"></div></details>`;
  $('studioJigBanks').querySelector('.jigBanksScopes').after(panel);
  let plan=null,assets=null,busy=false,loading=false,assetEpoch=0,seenKey='',seenSourceKey='',previewTask=null,picks={addresses:new Set(),cards:new Set()},extraAllocation={};
-  function selectedHardCounts(){const counts={};for(const box of panel.querySelectorAll('[data-hard-count]')){const n=Number(box.value);if(!Number.isInteger(n)||n<0||n>500)throw Error('Use whole-number Jig counts from 0 to 500.');counts[box.dataset.hardCount]=n;}return counts;}
+  function selectedHardCounts(){const counts={randomUnit:0};for(const box of panel.querySelectorAll('[data-hard-count]')){const n=Number(box.value);if(!Number.isInteger(n)||n<0||n>500)throw Error('Use whole-number Jig counts from 0 to 500.');counts[box.dataset.hardCount]=n;}return counts;}
  const checked=()=>({address:$('workshopAddress').checked,card:$('workshopCard').checked,name:$('workshopName').checked});
  function ownerText(p){if(p?.scope==='personal')return 'Personal only';const c=window.JigWebsiteCustomers?.list?.().find(x=>x.id===p?.customerId);return 'Customer: '+(c?.name||p?.customerId||'not selected');}
  function fallback(){const c=context();if(c)return {scope:c.scope,customerId:c.customerId};const scope=importer()?.workspaceScope?.()||'personal',bank=window.ACOProfileBank?.context?.();return scope==='personal'?{scope:'personal',customerId:null}:{scope:'aco',customerId:bank?.scope==='aco'?bank.customerId:null};}
@@ -58,6 +58,9 @@
  <label class="workshopCheck"><input data-postal-scan type="checkbox" checked> Scan online ZIP/city crossovers during Jig Profiles preview</label>
  <label class="workshopCheck"><input data-postal-apply type="checkbox" checked> Apply ZIP/state-matched alternate city names when available</label>
  <small>City names come from an online ZIP listing, not a verified USPS street delivery address. Only ZIP is sent online; street, email, cards and personal details stay local.</small>
+ <label class="workshopCheck"><input data-optional-unit type="checkbox"> Add a random Apt / Unit / Ste / # / bare A-D or 1-9 on address line 2 (only if no unit exists)</label>
+ <label data-optional-unit-count-wrap hidden>How many selected unitless profiles? <input data-optional-unit-count type="number" min="1" max="500" step="1" value="1"></label>
+ <small>Optional — OFF by default. Never change, remove or rename an existing Apt/Ste/Unit or unit number. Applies alongside selected fractional, hyphen and other jig styles. Generated units are not confirmed delivery points.</small>
  <label class="workshopCheck"><input data-reuse-toggle type="checkbox"> Reuse a saved Main or Jigged shipping address across selected profiles</label>
  <section data-reuse-panel hidden><p>Choose the exact Main or previously Jigged address to use. Its complete shipping fields are copied without generating another jig.</p>
  <label>Choose Main or Jigged address<select data-reuse-choice></select></label>
@@ -94,11 +97,13 @@
   finally{bq('reuse-choice').disabled=false;}
  }
  for(const name of ['postal-scan','postal-apply'])bq(name).addEventListener('change',()=>{invalidateReuse();bq('postal-apply').disabled=!bq('postal-scan').checked;});
+ bq('optional-unit').addEventListener('change',()=>{bq('optional-unit-count-wrap').hidden=!bq('optional-unit').checked;invalidateReuse();bulkControls();});
+ bq('optional-unit-count').addEventListener('input',()=>{invalidateReuse();bulkControls();});
  bq('allow-duplicate').addEventListener('change',bulkControls);
  bq('reuse-toggle').addEventListener('change',()=>{invalidateReuse();bq('reuse-panel').hidden=!bq('reuse-toggle').checked;if(bq('reuse-toggle').checked)void loadReuseChoices();});
  for(const name of ['reuse-choice','reuse-count'])bq(name).addEventListener('change',invalidateReuse);
  function bulkStatus(message,error=false){const el=bq('status');el.textContent=message;el.classList.toggle('profileBankError',error);}
- function bulkControls(){const count=bulkSelected.size;bq('preview').disabled=bulkLoading||!count||(!bq('reuse-toggle').checked&&!bulkSettings?.selected?.length&&!Object.values(selectedHardCounts()).some(Boolean));bq('apply').disabled=bulkLoading||!bulkToken||(bulkDuplicateCount>0&&!bq('allow-duplicate').checked);bq('preview').textContent=count?'Preview '+count+' selected profile'+(count===1?'':'s'):'Preview selected profiles';bq('apply').textContent=count?'Apply jig to '+count+' selected profile'+(count===1?'':'s'):'Apply jig to selected profiles';}
+ function bulkControls(){const count=bulkSelected.size;bq('preview').disabled=bulkLoading||!count||(!bq('reuse-toggle').checked&&!bq('optional-unit').checked&&!bulkSettings?.selected?.length&&!Object.values(selectedHardCounts()).some(Boolean));bq('apply').disabled=bulkLoading||!bulkToken||(bulkDuplicateCount>0&&!bq('allow-duplicate').checked);bq('preview').textContent=count?'Preview '+count+' selected profile'+(count===1?'':'s'):'Preview selected profiles';bq('apply').textContent=count?'Apply jig to '+count+' selected profile'+(count===1?'':'s'):'Apply jig to selected profiles';}
  function renderBulkProfiles(){
   const box=bq('profiles');box.replaceChildren();
   for(const row of bulkRows.filter(x=>x.retailer===bulkRetailer)){
@@ -137,14 +142,19 @@
  bq('clear').addEventListener('click',()=>{bulkSelected.clear();bulkToken=null;bq('review').hidden=true;renderBulkProfiles();});
  bq('preview').addEventListener('click',async()=>{const owner=bulkOwner();bulkLoading=true;invalidateReuse();try{
    const ruleIds=bulkRuleIds(),profileIds=[...bulkSelected],state=mainRuleState(),reuseCount=Number(bq('reuse-count').value);
+   const optionalUnitCount=bq('optional-unit').checked?Number(bq('optional-unit-count').value):0;
+   if(bq('optional-unit').checked&&(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<1||optionalUnitCount>profileIds.length))
+    throw Error('Set an optional unit quantity from 1 to '+profileIds.length+' (unitless profiles only).');
    if(bq('reuse-toggle').checked&&(!bq('reuse-choice').value||!Number.isSafeInteger(reuseCount)||reuseCount<2||reuseCount>profileIds.length))
     throw Error('Select an exact Main/Jigged address and a number from 2 to '+profileIds.length+'.');
    const reuse=bq('reuse-toggle').checked?{sourceId:bq('reuse-choice').value,count:reuseCount}:null;
    bulkStatus(bq('postal-scan').checked?'Checking online ZIP-to-city matches for selected addresses…':'Preparing offline jig preview…');
-   const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:selectedHardCounts(),combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse,postalScan:bq('postal-scan').checked,postalApplyCities:bq('postal-scan').checked&&bq('postal-apply').checked});
+   const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:selectedHardCounts(),optionalUnitCount,combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse,postalScan:bq('postal-scan').checked,postalApplyCities:bq('postal-scan').checked&&bq('postal-apply').checked});
    bulkToken=result.token;bulkDuplicateCount=(result.duplicateAddresses||[]).length;
+   if(optionalUnitCount!==result.optionalUnitAdded)throw Error('The selected unit count did not match the preview; do not apply this batch.');
+   const addedNote=d.createElement('p');addedNote.textContent=result.optionalUnitAdded+' optional second-line unit(s) added in preview. Existing units are unchanged.';
    bq('allow-duplicate').checked=false;bq('duplicate-warning').hidden=!bulkDuplicateCount;
-   const out=bq('review-rows');out.replaceChildren();
+   const out=bq('review-rows');out.replaceChildren();out.append(addedNote);
    if(bulkDuplicateCount){
     const heading=d.createElement('p');heading.textContent=bulkDuplicateCount+' jig address(es) already belong to other saved accounts. Saving is disabled until you explicitly allow these duplicates.';out.append(heading);
     for(const clash of result.duplicateAddresses.slice(0,100)){
