@@ -236,7 +236,7 @@ export function parseDropSkus(message) {
     for (const raw of section.split(/\r?\n/)) {
       const line = raw.replace(/[*_`~]/g, "").trim();
       if (!line) continue;
-      const sku = /\bSKU\s*(?:#|:|-|\s)\s*([A-Z0-9][A-Z0-9._-]{2,79})\b/i.exec(line);
+      const sku = /\b(?:SKU|PID|TCIN)\s*(?:#|:|-|\s)\s*([A-Z0-9][A-Z0-9._-]{2,79})\b/i.exec(line);
       if (sku) {
         const prefix = line.slice(0, sku.index).replace(/[-:|\s]+$/, "").trim();
         const name = (prefix || title).slice(0, 100);
@@ -244,7 +244,7 @@ export function parseDropSkus(message) {
           products.push({ name, sku: sku[1].toUpperCase() });
           seen.add(sku[1].toUpperCase());
         }
-      } else if (!/^(?:qty|quantity|price|size|date|time|https?:\/\/|<@)/i.test(line)) {
+      } else if (!/^(?:qty|quantity|price|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?|https?:\/\/|<@)/i.test(line)) {
         title = line.slice(0, 100);
       }
     }
@@ -256,6 +256,13 @@ export function dropChannelKind(name) {
   if (["upcomingdrop", "upcomingdrops"].includes(key)) return "upcomingdrops";
   if (["droppingtonight", "dropstonight"].includes(key)) return "droppingtonight";
   return key;
+}
+// A bot-rendered monitor card is a trusted product source only when the
+// author and embed marker are both ours. Ordinary bot/webhook posts cannot
+// become account-selection or owner-notification sources.
+export function isSelectableSkuSource(message,appId) {
+ return Boolean(message&&!message.webhook_id&&
+   (!message.author?.bot || isFormattedDropPost(message,appId))&&parseDropSkus(message).length);
 }
 export function isNewDropPost(message) {
   return !message?.message_reference?.message_id && message?.type !== 19;
@@ -2462,7 +2469,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function confirmSkuDraft(userId, username, sourceId, channelId) {
     if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
     const source = await api("/channels/" + channelId + "/messages/" + sourceId);
-    if (source.author?.bot || source.webhook_id) throw new Error("The original drop post is unavailable.");
+    if (!isSelectableSkuSource(source, appId)) throw new Error("The drop no longer has selectable SKUs.");
     const validSkus = new Set(parseDropSkus(source).map(item => item.sku));
     return withSkuQueue(async () => {
       const drafts = await readSkuFile(skuDraftsFile);
@@ -3095,7 +3102,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         const [, action, sourceId, arg, extra] = d.data.custom_id.split(":");
         if (!/^\d{17,22}$/.test(sourceId)) return await reply("Invalid drop post.");
         const source = await api("/channels/" + d.channel_id + "/messages/" + sourceId);
-        if (source.author?.bot || source.webhook_id) return await reply("That drop is unavailable.");
+        if (!isSelectableSkuSource(source, appId)) return await reply("That drop is unavailable.");
         const products = parseDropSkus(source);
         if (action === "confirm") {
           await api(callback, "POST", { type: 5, data: { flags: 64 } });
