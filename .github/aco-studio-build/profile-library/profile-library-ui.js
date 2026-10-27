@@ -782,9 +782,14 @@
    let reuseLoaded=false;
    const preview=text('button','Preview all '+chosen.length+' selected profiles');preview.type='button';preview.className='btn secondary';
    const save=text('button','Apply jig to all '+chosen.length+' selected profiles');save.type='button';save.className='btn primary';save.disabled=true;
-   const review=d.createElement('div');let token=null;
-   win.body.append(info,rules,combine,billing,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,save,review);
-   const invalidatePreview=()=>{token=null;save.disabled=true;review.replaceChildren();};
+   const duplicateLabel=text('label','Allow duplicate jig addresses only for the conflicts listed below');
+   duplicateLabel.className='check';duplicateLabel.hidden=true;
+   const allowDuplicates=d.createElement('input');allowDuplicates.type='checkbox';allowDuplicates.checked=false;
+   duplicateLabel.prepend(allowDuplicates);
+   const review=d.createElement('div');let token=null,duplicateCount=0;
+   allowDuplicates.onchange=()=>{save.disabled=!token||(duplicateCount>0&&!allowDuplicates.checked);};
+   win.body.append(info,rules,combine,billing,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
+   const invalidatePreview=()=>{token=null;duplicateCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
    for(const control of [rules,combineBox,billingBox,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',invalidatePreview);
    reuseToggle.onchange=async()=>{
     invalidatePreview();reusePanel.hidden=!reuseToggle.checked;
@@ -808,7 +813,7 @@
     }finally{reuseSelect.disabled=false;}
    };
    preview.onclick=async()=>{
-    preview.disabled=true;save.disabled=true;review.replaceChildren();token=null;
+    preview.disabled=true;invalidatePreview();
     try{
      const quantity=Number(reuseCount.value);
      if(reuseToggle.checked&&(!reuseLoaded||!reuseSelect.value||!Number.isSafeInteger(quantity)||quantity<2||quantity>chosen.length))
@@ -823,16 +828,24 @@
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      for(const row of result.profiles.slice(0,100)){const line=d.createElement('pre');line.textContent=(row.label||row.email)+'\n'+[row.before.address1,row.before.address2,row.before.city,row.before.state,row.before.zip,row.before.phone&&('Phone '+row.before.phone)].filter(Boolean).join(', ')+'\n→ '+[row.after.address1,row.after.address2,row.after.city,row.after.state,row.after.zip,row.after.phone&&('Phone '+row.after.phone)].filter(Boolean).join(', ');review.append(line);}
      if(result.profiles.length>100)review.append(text('p','+'+(result.profiles.length-100)+' more selected profiles included in this batch.'));
-     save.disabled=false;win.status().textContent='Preview ready. One Apply action will process the whole selected set.';
+     duplicateCount=(result.duplicateAddresses||[]).length;
+     if(duplicateCount){
+      duplicateLabel.hidden=false;
+      const warning=text('p',duplicateCount+' jigged address(es) already belong to other saved accounts in this vault. No duplicates will be saved unless you explicitly allow them.');
+      review.prepend(warning);
+      for(const clash of result.duplicateAddresses.slice(0,100))review.append(text('p',clash.email+' → '+clash.address+' · already used by '+clash.matches.map(x=>x.email+' ('+retailName[x.retailer]+')').join(', ')));
+     }
+     save.disabled=duplicateCount>0&&!allowDuplicates.checked;
+     win.status().textContent=duplicateCount?'Duplicate addresses detected. Review them and explicitly allow reuse if required.':'Preview ready. One Apply action will process the whole selected set.';
     }catch(error){win.status().textContent=error.message;}finally{preview.disabled=false;}
    };
    save.onclick=async()=>{
     if(!token||!confirm('Apply the reviewed jig to all '+chosen.length+' selected profiles now?'))return;
     save.disabled=true;preview.disabled=true;
     try{
-     const result=await api.batchJigCommit({token,confirmed:true});
+     const result=await api.batchJigCommit({token,confirmed:true,allowDuplicateAddresses:duplicateCount>0&&allowDuplicates.checked});
      if(!win.valid())return;win.wrap.remove();selected.clear();await refresh();
-     note('Jigged '+result.updated+' selected profile(s) in one batch'+(result.remoteSaved?' · '+result.remoteSaved+' synced to website/app':'')+'.');
+     note('Jigged '+result.updated+' selected profile(s) in one batch'+(result.duplicateOverrides?' · '+result.duplicateOverrides+' explicitly allowed reused addresses':'')+(result.remoteSaved?' · '+result.remoteSaved+' synced to website/app':'')+'.');
     }catch(error){win.status().textContent=error.message;save.disabled=false;preview.disabled=false;}
    };
   }catch(error){note(error.message);}
