@@ -100,3 +100,36 @@
 .profileLibrary .profileLibrarySortToolbar select{min-width:210px;min-height:38px}
 .profileLibrary .profileLibrarySortToolbar button{min-height:38px}
 .profileLibrary .profileLibraryCards .profileSelectableCard.isSelected{outline:2px solid #35dfe4;outline-offset:2px}
+
+/* Group related profile operations in one compact scroll-following dock. */
+.profileLibrary .profileSelectionDock{
+ position:sticky;top:8px;z-index:90;
+ display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;
+ margin:12px 0 16px;padding:10px 12px;border:1px solid #3a7182;border-radius:13px;
+ background:rgba(9,25,39,.97);box-shadow:0 12px 24px rgba(0,0,0,.32);
+ backdrop-filter:blur(10px);
+}
+.profileLibrary .profileSelectionDockPrimary,
+.profileLibrary .profileSelectionDockSecondary{
+ display:flex;align-items:center;flex-wrap:wrap;gap:7px;min-width:0;
+}
+.profileLibrary .profileSelectionDockPrimary{flex:0 1 auto}
+.profileLibrary .profileSelectionDockSecondary{flex:1 1 640px;justify-content:flex-end}
+.profileLibrary .profileSelectionDock [data-selected-count]{
+ position:static!important;z-index:auto!important;min-width:160px;margin:0!important;
+ padding:8px 10px!important;background:#102a3a!important;border:1px solid #2d8996!important;
+ border-radius:8px!important;white-space:nowrap;font-weight:700;
+}
+.profileLibrary .profileSelectionDock button,
+.profileLibrary .profileSelectionDock select{min-height:36px;font-size:12px}
+.profileLibrary .profileSelectionDock [data-bulk-delete]{color:#ffc3bb;border-color:#9d4d4e}
+.profileLibrary .profileSelectionDock [data-bulk-delete]:not(:disabled):hover{background:#612932}
+.profileLibrary .profileSelectionDockSecondary label{display:flex;align-items:center;gap:6px;font-size:12px}
+.profileLibrary .profileSelectionDockSecondary label select{max-width:180px}
+.profileLibrary .profileBankShowMore{width:100%;position:sticky;bottom:0;z-index:2}
+.profileLibrary .profileSelectableCard{contain:layout style}
+@media(max-width:920px){
+ .profileLibrary .profileSelectionDock{top:0;padding:8px}
+ .profileLibrary .profileSelectionDockSecondary{justify-content:flex-start}
+ .profileLibrary .profileSelectionDockPrimary{width:100%;justify-content:space-between}
+}
