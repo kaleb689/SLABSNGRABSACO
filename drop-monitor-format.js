@@ -26,37 +26,37 @@ function explicitField(lines,start,end,label) {
   const inline=(found[1]||"").trim();
   if(inline)return inline;
   const next=(lines[j+1]||"").trim();
-  if(next&&!/^(?:Price|Type|PID|SKU|TCIN|Time|Cart Limit|Seller|Image|Links?|Monitors?)\\b/i.test(next))return next;
+  if(next&&!/^(?:Price|Type|PID|SKU|TCIN|Time|Cart Limit|Seller|Image|Links?|Monitors?)\b/i.test(next))return next;
  }
  return "";
 }
 function imageUrl(value){
  try{const url=new URL(String(value||""));return url.protocol==="https:"&&
-  /\\.(?:png|jpe?g|webp)(?:$|[?#])/i.test(url.pathname+url.search)?url.href:null;}
+  /\.(?:png|jpe?g|webp)(?:$|[?#])/i.test(url.pathname+url.search)?url.href:null;}
  catch{return null;}
 }
 export function parseMonitorDropProducts(input) {
- const lines=sourceText(input).split(/\\r?\\n/).map(clean).filter(Boolean);
+ const lines=sourceText(input).split(/\r?\n/).map(clean).filter(Boolean);
  const products=[],seen=new Set();
  for(let i=1;i<lines.length;i++){
-  const label=/^Price\\b\\s*:?[ \\t]*(.*)$/i.exec(lines[i]);
+  const label=/^Price\b\s*:?[ \t]*(.*)$/i.exec(lines[i]);
   if(!label)continue;
   const name=lines[i-1];
   if(!name||isNoise(name)||name.length>350)continue;
   const inline=label[1]?.trim()||"";
   const value=inline||lines[i+1]||"";
-  const amount=/^\\$?\\s*([0-9]{1,7}(?:,[0-9]{3})*(?:\\.[0-9]{1,2})?)\\s*(?:USD)?$/i.exec(value);
+  const amount=/^\$?\s*([0-9]{1,7}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)\s*(?:USD)?$/i.exec(value);
   if(!amount)continue;
   const price=Number(amount[1].replace(/,/g,""));
   if(!Number.isFinite(price)||price<=0||price>1000000)continue;
   const end=(()=>{for(let j=i+1;j<Math.min(lines.length,i+35);j++)
-   if(/^Price\\b/i.test(lines[j]))return j;return Math.min(lines.length,i+35);})();
+   if(/^Price\b/i.test(lines[j]))return j;return Math.min(lines.length,i+35);})();
   const sku=explicitField(lines,i+1,end,"PID|SKU|TCIN").toUpperCase();
   if(!/^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(sku)||seen.has(sku))continue;
   seen.add(sku);
   const row={name,price:price.toFixed(2),sku};
   const cartLimit=explicitField(lines,i+1,end,"Cart\\s*Limit|Max\\s*Qty|Purchase\\s*Limit");
-  if(/^\\d{1,3}$/.test(cartLimit))row.cartLimit=Number(cartLimit);
+  if(/^\d{1,3}$/.test(cartLimit))row.cartLimit=Number(cartLimit);
   const seller=explicitField(lines,i+1,end,"Seller");
   if(seller&&seller.length<120)row.seller=seller;
   const type=explicitField(lines,i+1,end,"Type");
