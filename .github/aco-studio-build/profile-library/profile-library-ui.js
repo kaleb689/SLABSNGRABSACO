@@ -694,14 +694,16 @@
   groupedJigChoices(choices,settings);
   const combine=text('label','Combine selected jig styles'),combineCheck=d.createElement('input');combineCheck.type='checkbox';combine.className='check';combine.prepend(combineCheck);
   const billing=text('label','Billing same as jigged shipping address'),billingCheck=d.createElement('input');billingCheck.type='checkbox';billing.className='check';billing.prepend(billingCheck);
+  const unitToggleLabel=text('label','Optional: add a random Apt / Unit / Ste / # / number to address line 2 when no unit exists');
+  unitToggleLabel.className='check';const unitToggle=d.createElement('input');unitToggle.type='checkbox';unitToggle.checked=false;unitToggleLabel.prepend(unitToggle);
   const preview=text('button','Preview saved-resource jig options');preview.type='button';preview.className='btn secondary';
-  win.body.append(sources,choices,combine,billing,preview,previews);
+  win.body.append(sources,choices,combine,billing,unitToggleLabel,preview,previews);
   let revision=0;
-  for(const field of [addressSelect,cardSelect,combineCheck,billingCheck,...choices.querySelectorAll('input')])field.addEventListener('change',()=>{revision++;previews.replaceChildren();});
+  for(const field of [addressSelect,cardSelect,combineCheck,billingCheck,unitToggle,...choices.querySelectorAll('input')])field.addEventListener('change',()=>{revision++;previews.replaceChildren();});
   preview.onclick=async()=>{
    preview.disabled=true;const at=revision;
    try{
-    const result=await api.previewLinkedJig({...win.owner,profileId:row.id,revision:row.revision,addressSourceId:addressSelect.value,cardSourceId:cardSelect.value,ruleIds:selectedJigChoices(choices),combine:combineCheck.checked});
+    const result=await api.previewLinkedJig({...win.owner,profileId:row.id,revision:row.revision,addressSourceId:addressSelect.value,cardSourceId:cardSelect.value,ruleIds:selectedJigChoices(choices),combine:combineCheck.checked,addOptionalUnit:unitToggle.checked});
     if(!win.valid()||at!==revision)return;previews.replaceChildren();
     for(const candidate of result.candidates){
      const section=d.createElement('section'),publish=text('button','Publish this preview to website & apps');publish.type='button';publish.className='btn primary';
@@ -805,6 +807,14 @@
    groupedJigChoices(rules,settings);
    const combine=text('label','Combine selected jig styles (up to 3 per profile)'),combineBox=d.createElement('input');combine.className='check';combineBox.type='checkbox';combine.prepend(combineBox);
    const billing=text('label','Use the jigged shipping address for billing address too'),billingBox=d.createElement('input');billing.className='check';billingBox.type='checkbox';billing.prepend(billingBox);
+   const optionalUnitLabel=text('label','Add random Apt / Unit / Ste / # / number to address line 2 (only if no unit exists)');
+   optionalUnitLabel.className='check';
+   const optionalUnitToggle=d.createElement('input');optionalUnitToggle.type='checkbox';optionalUnitToggle.checked=false;optionalUnitLabel.prepend(optionalUnitToggle);
+   const unitQuantityLabel=text('label','How many eligible selected profiles should receive a new unit?');
+   const unitQuantity=d.createElement('input');unitQuantity.type='number';unitQuantity.min='1';unitQuantity.max=String(chosen.length);
+   unitQuantity.step='1';unitQuantity.value='1';unitQuantityLabel.append(unitQuantity);unitQuantityLabel.hidden=true;
+   const optionalUnitHelp=text('small','Optional and off by default. Uses Apt, Unit, Ste, #, or a bare A–D / 1–9 identifier. Existing apartment, suite and unit values will never change. Generated units are unverified.');
+   optionalUnitToggle.onchange=()=>{unitQuantityLabel.hidden=!optionalUnitToggle.checked;};
    const postalScan=text('label','Scan internet ZIP/city crossovers during preview');
    const postalScanBox=d.createElement('input');postalScan.className='check';postalScanBox.type='checkbox';postalScanBox.checked=true;postalScan.prepend(postalScanBox);
    const postalApply=text('label','Apply ZIP/state-matched alternate cities when available (not USPS delivery-point verification)');
@@ -829,9 +839,9 @@
    duplicateLabel.prepend(allowDuplicates);
    const review=d.createElement('div');let token=null,duplicateCount=0;
    allowDuplicates.onchange=()=>{save.disabled=!token||(duplicateCount>0&&!allowDuplicates.checked);};
-   win.body.append(info,rules,combine,billing,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
+   win.body.append(info,rules,combine,billing,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
    const invalidatePreview=()=>{token=null;duplicateCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
-   for(const control of [rules,combineBox,billingBox,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',invalidatePreview);
+   for(const control of [rules,combineBox,billingBox,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',invalidatePreview);
    reuseToggle.onchange=async()=>{
     invalidatePreview();reusePanel.hidden=!reuseToggle.checked;
     if(!reuseToggle.checked)return;
@@ -860,12 +870,15 @@
      if(reuseToggle.checked&&(!reuseLoaded||!reuseSelect.value||!Number.isSafeInteger(quantity)||quantity<2||quantity>chosen.length))
       throw Error('Choose a saved Main or Jigged address and a valid number of profiles to reuse it.');
      const reuse=reuseToggle.checked?{sourceId:reuseSelect.value,count:quantity}:null;
+     const optionalUnitCount=optionalUnitToggle.checked?Number(unitQuantity.value):0;
+     if(optionalUnitToggle.checked&&(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<1||optionalUnitCount>chosen.length))
+      throw Error('Choose how many selected profiles should receive an optional new unit (1–'+chosen.length+').');
      win.status().textContent=postalScanBox.checked?'Checking online ZIP/city matches for selected main addresses…':'Preparing offline jig preview…';
      const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),
       ruleIds:selectedJigChoices(rules),combine:combineBox.checked,
-      billingSameAsShipping:billingBox.checked,postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
+      billingSameAsShipping:billingBox.checked,optionalUnitCount,postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
      if(!win.valid())return;token=result.token;
-     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+'.'));
+     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional second-line unit(s) added.'));
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      for(const row of result.profiles.slice(0,100))review.append(jigPreviewEntry(row,settings));
      if(result.profiles.length>100)review.append(text('p','+'+(result.profiles.length-100)+' more selected profiles included in this batch.'));
