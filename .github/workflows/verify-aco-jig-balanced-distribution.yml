@@ -48,6 +48,8 @@ jobs:
         run: |
           node - <<'NODE'
           const fs=require('fs');
+          console.log('PERSONAL NAVIGATION HEAD\\n'+fs.readFileSync('tests/personal-navigation.test.js','utf8').slice(0,8500));
+          console.log('PROFILE WORKSHOP HEAD\\n'+fs.readFileSync('tests/profile-workshop.test.js','utf8').slice(0,5500));
           for(const [filename,name] of [
             ['tests/personal-navigation.test.js','Preview -> review handoff -> export produces the reviewed file without saving or changing original profiles'],
             ['tests/profile-workshop.test.js','Imported file mode preserves CSV columns, IDs, extra data and unselected rows'],
