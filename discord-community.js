@@ -1469,6 +1469,13 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     discordCommunityStatus.error = [ticketLobbyError, adminError, oneOnOneError, importantError, communityError, diamondError, emojiError].filter(Boolean).join("; ") || null;
     console.log(`Discord membership roles, #ask-ai and support tickets ready in guild ${guildId}`);
   }
+  async function syncRetailerRolePreferences(userId, rolesForMember) {
+    if(typeof onRetailerRoleSync!=="function"||retailerRoleIds.size!==RETAILER_ALERTS.length)
+      return {linked:false};
+    const selected=RETAILER_ALERTS.filter(spec=>rolesForMember.includes(retailerRoleIds.get(spec.key)))
+      .map(spec=>spec.key);
+    return onRetailerRoleSync({discordUserId:String(userId),retailers:selected});
+  }
   async function syncMember(userId, allowance, ogMember = false) {
     if (!guildId || roles.length !== LEVELS.length) return;
     const wanted = [...roles].reverse().find(level => allowance >= level.profiles);
@@ -1485,6 +1492,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       if (hasOg && !ogMember) await api(`/guilds/${guildId}/members/${userId}/roles/${ogRoleId}`, "DELETE");
       if (!hasOg && ogMember) await api(`/guilds/${guildId}/members/${userId}/roles/${ogRoleId}`, "PUT");
     }
+    await syncRetailerRolePreferences(userId,member.roles).catch(error=>
+      console.error("Discord retailer role preference sync:",error.message));
   }
   async function removeOldRoles() {
     if (!guildId || roles.length !== LEVELS.length) return;
@@ -2756,6 +2765,37 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     timer.unref?.();
     pendingDropEdits.set(key, timer);
   }
+  // A general Upcoming Drops post can notify selected retailers before SKUs exist.
+  // Require an explicit retailer name so unrelated chat does not become a mass alert.
+  async function notifyUpcomingRetailerAnnouncement(d) {
+    if(d.channel_id!==upcomingChannelId||!isNewDropPost(d)||parseDropSkus(d).length||
+      typeof onRetailerSkuUpdate!=="function")return;
+    const retailers=mentionedRetailers(d.content||"");
+    if(!retailers.length)return;
+    const message=String(d.content||"").replace(/<@!?\\d+>|@everyone|@here/g,"")
+      .replace(/[*_`~]/g,"").trim().slice(0,240);
+    const notification={kind:"drop_announcement",retailers,
+      title:"Upcoming "+retailers.map(key=>retailerAlert(key)?.name).filter(Boolean).join(", ")+" drop",
+      message:message||"A new upcoming retailer drop has been posted.",
+      tab:"drops",sourceUrl:`https://discord.com/channels/${guildId}/${d.channel_id}/${d.id}`};
+    const eventKey="drop:"+d.channel_id+":"+d.id+":announcement";
+    const result=await onRetailerSkuUpdate({notification,eventKey,messageId:d.id});
+    const dmIds=[...new Set(result?.dmUserIds||[])];
+    for(const userId of dmIds){
+      if(!/^\\d{15,25}$/.test(String(userId)))continue;
+      try{
+        const claim=await deliveryGuard.claim({
+          channel:"discord:sku-updates",recipient:String(userId),eventKey
+        });
+        if(!claim.send)continue;
+        const channel=await api("/users/@me/channels","POST",{recipient_id:String(userId)});
+        await api("/channels/"+channel.id+"/messages","POST",{
+          allowed_mentions:{parse:[]},content:"📣 **"+notification.title+"**\\n"+
+            notification.message+"\\n"+notification.sourceUrl
+        });
+      }catch(error){console.error("Upcoming retailer announcement DM:",error.message);}
+    }
+  }
   async function onDropPost(d) {
     if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id ||
       d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0)) return;
@@ -2791,6 +2831,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     }
     await ensureSkuControls(d);
     await notifyRetailerSkuChange(d);
+    await notifyUpcomingRetailerAnnouncement(d);
   }
   function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = []) {
     const summary = skuOwnerDetails(items);
@@ -2928,6 +2969,40 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
 
+      if(d.type===3&&/^retailer:role:(target|walmart|pokemoncenter|costco|sams)$/.test(d.data?.custom_id||"")){
+        if(d.channel_id!==serverRolesChannelId)return await reply("Use the buttons in #server-roles.");
+        const key=d.data.custom_id.split(":")[2],spec=retailerAlert(key),roleId=retailerRoleIds.get(key);
+        if(!spec||!roleId)return await reply("Retailer roles are not ready. Please try again.");
+        await api(callback,"POST",{type:5,data:{flags:64}});
+        let changed=false,enabled=false;
+        try{
+          const member=await api(`/guilds/${guildId}/members/${userId}`);
+          enabled=!member.roles.includes(roleId);
+          await api(`/guilds/${guildId}/members/${userId}/roles/${roleId}`,
+            enabled?"PUT":"DELETE");
+          changed=true;
+          const updatedRoles=enabled?[...member.roles,roleId]:member.roles.filter(id=>id!==roleId);
+          const synced=await syncRetailerRolePreferences(userId,updatedRoles);
+          const status=enabled?"subscribed to":"unsubscribed from";
+          const accountMessage=synced?.linked?
+            synced.pushConfigured?" Your linked app is set for this retailer; phone pushes are enabled on a registered device.":
+              " Your linked app preference is saved. Enable phone notifications in your installed app to receive pushes.":
+            " To sync this role to the app, link your Discord account under My Profile first.";
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`,"PATCH",{
+            content:"You are now **"+status+" "+spec.name+"** alerts."+accountMessage,
+            allowed_mentions:{parse:[]}
+          });
+        }catch(error){
+          if(changed){
+            await api(`/guilds/${guildId}/members/${userId}/roles/${roleId}`,
+              enabled?"DELETE":"PUT").catch(()=>{});
+          }
+          console.error("Retailer role toggle:",error.message);
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`,"PATCH",{
+            content:"Could not save the "+spec.name+" alert preference. Please try the button again."
+          });
+        }
+      }
       if (d.type === 3 && /^sku:remind:\d{17,22}:\d{17,22}$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== skuRequestsChannelId || !isGuildOwnerSkuTester(userId, ownerId))
           return await reply("Only the verified Discord server owner may send SKU reminders.");
