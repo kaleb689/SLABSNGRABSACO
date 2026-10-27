@@ -1233,10 +1233,30 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }
   return outcome;
  }
+ function distributeJigs(ruleIds,count,preferences){
+  const styles=[...new Set(ruleIds.filter(id=>id!==C.FL_PHONE_RULE).map(C.jigStyle))];
+  if(!styles.length)return {sequence:[],counts:{}};
+  const counts=Object.fromEntries(styles.map(style=>[style,0]));
+  if(preferences?.enabled===true){
+   const fixed=preferences.counts||{};
+   if(!fixed||typeof fixed!=='object'||Array.isArray(fixed)||Object.keys(fixed).some(k=>!styles.includes(k)))throw Error('Invalid jig distribution styles.');
+   for(const style of styles){const n=fixed[style]??0;if(!Number.isSafeInteger(n)||n<0||n>500)throw Error('Invalid jig distribution quantity.');counts[style]=n;}
+   if(Object.values(counts).reduce((a,b)=>a+b,0)>count)throw Error('Jig distribution exceeds '+count+' available profiles.');
+  }
+  while(Object.values(counts).reduce((a,b)=>a+b,0)<count){
+   const next=styles.reduce((best,style)=>counts[style]<counts[best]?style:best,styles[0]);counts[next]++;
+  }
+  const remaining={...counts},sequence=[];
+  while(sequence.length<count){
+   const next=styles.filter(style=>remaining[style]>0).sort((a,b)=>(sequence.filter(x=>x===a).length/counts[a])-(sequence.filter(x=>x===b).length/counts[b])||styles.indexOf(a)-styles.indexOf(b))[0];
+   sequence.push(next);remaining[next]--;
+  }
+  return {sequence,counts};
+ }
  async function batchJigPreview(e,p){
   const a=await access(e,p),retailer=C.retailer(p.retailer);
   if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles to jig together.');
-  const requestedCounts=hardCounts(p.hardCounts),hasHard=requestedCounts&&HARD_KINDS.some(k=>requestedCounts[k]>0);
+  const requestedCounts=hardCounts(p.hardCounts),hasHard=p.distribution?.enabled===true?false:requestedCounts&&HARD_KINDS.some(k=>requestedCounts[k]>0);
   // Optional count applies only within this explicitly reviewed batch.
   const optionalUnitCount=p.optionalUnitCount??0;
   if(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<0||optionalUnitCount>500)
@@ -1280,7 +1300,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }
   const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&hasHard?perAddressHardRows(regularSelected,p,phoneSeed):null;
   for(const row of regularSelected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
-  const plannedAddressKeys=new Set();
+  const plannedAddressKeys=new Set(),distribution=distributeJigs(p.ruleIds,regularSelected.length-(regularSelected.length>1?Math.ceil(regularSelected.length/18):0),p.distribution);
+  let distributionIndex=0;
   const rows=selected.map((row,index)=>{
    const reuseThis=!!source&&index<reuseCount,regularIndex=index-reuseCount;
    const key=mainAddressKey(row),groupPosition=positions.get(key)||0;
@@ -1301,7 +1322,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(hardResults[regularIndex].kind!=='original'&&hardResults[regularIndex].kind!=='soft')
      appliedRuleIds.push('hard.'+hardResults[regularIndex].kind);
    }else {
-    let generated=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);
+    const preferred=jigPosition>0?distribution.sequence[distributionIndex++]:null;
+    const chosenRules=preferred?p.ruleIds.filter(id=>C.jigStyle(id)===preferred):p.ruleIds;
+    let generated=bulkJigData(row,chosenRules,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);
     if(jigPosition>0&&plannedAddressKeys.has(mainAddressKey({data:generated.data}))){
      // Avoid assigning an already used jig when a different selected
      // fractional/hyphen or soft variation can produce a distinct address.
@@ -1312,8 +1335,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
       if(!plannedAddressKeys.has(key)){generated=candidate;found=true;return true;}
       return false;
      };
-     for(let attempt=1;attempt<=Math.min(80,p.ruleIds.length*5+10);attempt++){
-      if(tryVariant(bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,
+     for(let attempt=1;attempt<=Math.min(80,chosenRules.length*5+10);attempt++){
+      if(tryVariant(bulkJigData(row,chosenRules,jigPosition,p.combine===true,
        p.billingSameAsShipping===true,phoneSeed,regularIndex+attempt)))break;
      }
      if(!found)for(const ruleId of p.ruleIds){
@@ -1322,6 +1345,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
        p.billingSameAsShipping===true,phoneSeed,regularIndex)))break;
      }
     }
+    if(preferred&&p.distribution?.enabled===true&&!generated.appliedRuleIds.some(id=>C.jigStyle(id)===preferred))throw Error('Unable to apply requested '+preferred+' jig to '+row.email+'. Choose eligible addresses.');
     data=generated.data;appliedRuleIds=generated.appliedRuleIds;
    }
    if(!reuseThis)plannedAddressKeys.add(mainAddressKey({data}));
@@ -1400,7 +1424,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
    postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
    postalCityApplied:rows.filter(x=>x.postalCityApplied).length,postalStreetVerified:false,
-   profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,appliedRuleIds:x.appliedRuleIds,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
+   distribution:distribution.counts,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,appliedRuleIds:x.appliedRuleIds,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
  }
  async function batchJigCommit(e,p){
   const plan=jigPlans.get(p.token);
