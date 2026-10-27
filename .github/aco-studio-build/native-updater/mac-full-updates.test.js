@@ -117,3 +117,44 @@ test('Recently rolled back Mac app does not automatically install the same faile
  assert.equal((await engine.check()).status,'available');
  assert.equal(liveFeedReads,1); // owner can still manually inspect/retry later
 });
+
+test('Desktop shortcut links exactly one verified installed app and never copies a second bundle',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-shortcut-'));
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const installed=path.join(dir,'Applications','ACO Studio.app');
+ const desktop=path.join(dir,'Desktop');
+ await fs.mkdir(installed,{recursive:true});await fs.mkdir(desktop);
+ const app={isPackaged:true,getPath:key=>key==='desktop'?desktop:dir};
+ let verified=0;
+ const opts={app,platform:'darwin',home:dir,
+  execPath:path.join(installed,'Contents','MacOS','ACO Studio'),
+  verifyBundle:async value=>{assert.equal(value,installed);verified++;return {id:U.APP_ID};}};
+ let created=await U.createDesktopShortcut(opts);
+ assert.equal(created.created,true);
+ const link=path.join(desktop,'ACO Studio.app');
+ assert.equal((await fs.lstat(link)).isSymbolicLink(),true);
+ assert.equal(await fs.readlink(link),installed);
+ created=await U.createDesktopShortcut(opts);
+ assert.equal(created.alreadyExists,true);
+ assert.equal(verified,2);
+ assert.deepEqual(await fs.readdir(desktop),['ACO Studio.app']);
+});
+test('Desktop shortcut never overwrites a user item or links to an uninstalled app',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-shortcut-conflict-'));
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const installed=path.join(dir,'Applications','ACO Studio.app'),desktop=path.join(dir,'Desktop');
+ await fs.mkdir(installed,{recursive:true});await fs.mkdir(desktop);
+ const app={isPackaged:true,getPath:()=>desktop};
+ const valid={app,home:dir,platform:'darwin',
+  execPath:path.join(installed,'Contents','MacOS','ACO Studio'),
+  verifyBundle:async()=>({id:U.APP_ID})};
+ await fs.writeFile(path.join(desktop,'ACO Studio.app'),'preserve my existing desktop item');
+ await assert.rejects(U.createDesktopShortcut(valid),/Nothing was replaced/);
+ assert.equal(await fs.readFile(path.join(desktop,'ACO Studio.app'),'utf8'),'preserve my existing desktop item');
+ await assert.rejects(U.createDesktopShortcut({...valid,execPath:path.join(dir,'Downloads','ACO Studio.app','Contents','MacOS','ACO Studio')}),/Applications/);
+});
+test('Updater only opens existing app without macOS force-new-instance flag',async()=>{
+ const sh=await fs.readFile(path.join(__dirname,'../mac-full-update.sh'),'utf8');
+ assert.doesNotMatch(sh,/\\/usr\\/bin\\/open -n /);
+ assert.match(sh,/\\/usr\\/bin\\/open "\\$TARGET" --args/);
+});
