@@ -158,7 +158,24 @@
     for(const row of result.profiles.slice(0,150)){
      const base=row.mainAddress||row.before,key=[base.address1,base.address2,base.city,base.state,base.zip].join('|');
      let group=groupViews.get(key);if(!group){group=d.createElement('details');group.open=false;const summary=d.createElement('summary');summary.textContent=[base.address1,base.address2,base.city,base.state,base.zip].filter(Boolean).join(', ');group.append(summary);out.append(group);groupViews.set(key,group);}
-     const line=d.createElement('p');line.textContent=(row.label||row.email)+' | '+(row.category||'Jig')+' | '+[row.before.address1,row.before.address2].filter(Boolean).join(', ')+' → '+[row.after.address1,row.after.address2].filter(Boolean).join(', ');group.append(line);
+     const line=d.createElement('p');line.style.cssText='padding:9px;border-left:3px solid #45e5a8;background:#101d2b';
+     const modified=['address1','address2'].some(k=>row.before[k]!==row.after[k]);
+     const heading=d.createElement('strong');heading.textContent=(row.label||row.email)+' · '+(modified?'JIGGED':row.postalCityApplied?'POSTAL CITY ONLY':'UNCHANGED');
+     heading.style.color=modified?'#45e5a8':'#ffc46e';line.append(heading);
+     const original=d.createElement('div');original.textContent='Original: '+[row.before.address1,row.before.address2,row.before.city,row.before.state,row.before.zip].filter(Boolean).join(', ');
+     original.style.color='#a8b7cc';line.append(original);
+     const changed=d.createElement('div');changed.append(d.createTextNode('JIGGED: '));
+     for(const key of ['address1','address2','city','state','zip']){
+      if(!row.after[key])continue;
+      if(changed.childNodes.length>1)changed.append(d.createTextNode(', '));
+      const word=d.createElement('span');word.textContent=row.after[key];
+      word.style.color=row.after[key]!==row.before[key]?'#45e5a8':'#bac6d6';
+      if(row.after[key]!==row.before[key])word.style.fontWeight='700';
+      changed.append(word);
+     }
+     line.append(changed);
+     if(row.appliedRuleIds?.length){const applied=d.createElement('small');applied.textContent='Applied: '+row.appliedRuleIds.map(id=>id==='second-line.add'?'Added second-line unit':id).join(', ');applied.style.color='#8dddd4';line.append(applied);}
+     group.append(line);
     }
     for(const group of groupViews.values()){const qty=group.querySelectorAll('p').length;group.querySelector('summary').textContent+=' · '+qty+' profile'+(qty===1?'':'s');}
    if(result.profiles.length>150){const more=d.createElement('p');more.textContent='+'+(result.profiles.length-150)+' more selected profiles included.';out.append(more);}bq('review').hidden=false;bq('review').open=true;bulkStatus('Preview ready: '+result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles will reuse the chosen Main/Jigged shipping address':'')+'.');

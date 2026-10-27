@@ -941,7 +941,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(!Array.isArray(p.ruleIds)||!p.ruleIds.length||p.ruleIds.length>100||p.ruleIds.some(id=>/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported retailer jig options.');
   const baseAddress=await jigResource(a,'address',p.addressSourceId);if(p.cardSourceId)await jigResource(a,'card',p.cardSourceId);
   const batches=p.combine?[nonStackingRules(p.ruleIds)]:p.ruleIds.map(id=>[id]),candidates=[];
-  for(const batch of batches){let data=structuredClone(row.data);if(baseAddress){const fields=D.toValues(data);for(const [k,v] of Object.entries(baseAddress))fields['shipping.'+k]=v;data=D.manualEdit(data,fields);}const addressRules=batch.filter(id=>id!==C.FL_PHONE_RULE);for(const rule of addressRules)data=C.jig(data,row.retailer,1,[rule]);if(batch.includes(C.FL_PHONE_RULE))data=C.applyFloridaPhone(data,uuid(),0);const v=C.values(data),address=Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,v['shipping.'+k]]));if(address.address1&&JSON.stringify(address)!==JSON.stringify(Object.fromEntries(Object.keys(address).map(k=>[k,C.values(row.data)['shipping.'+k]])))||batch.includes(C.FL_PHONE_RULE))candidates.push({ruleIds:batch,address,phone:v.phone});}
+  for(const batch of batches){let data=structuredClone(row.data);if(baseAddress){const fields=D.toValues(data);for(const [k,v] of Object.entries(baseAddress))fields['shipping.'+k]=v;data=D.manualEdit(data,fields);}const addressRules=batch.filter(id=>id!==C.FL_PHONE_RULE);for(const rule of addressRules)data=C.jig(data,row.retailer,1,[rule]);if(batch.includes(C.FL_PHONE_RULE))data=C.applyFloridaPhone(data,uuid(),0);
+   const unitCandidate=addMissingUnitLine(row.data,data,candidates.length+1);
+   data=unitCandidate.data;const v=C.values(data),address=Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,v['shipping.'+k]]));if(existingUnitViolation(addressView(row.data),address))continue;if(address.address1&&JSON.stringify(address)!==JSON.stringify(Object.fromEntries(Object.keys(address).map(k=>[k,C.values(row.data)['shipping.'+k]])))||batch.includes(C.FL_PHONE_RULE))candidates.push({ruleIds:batch,address,phone:v.phone});}
   return {revision:row.revision,candidates};
  }
  async function publishLinkedJig(e,p){
@@ -957,6 +959,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(row.revision!==p.expectedRevision)throw Error('The linked profile changed after your preview. Reopen and preview it again.');
   if(row.source!=='website-linked-profile'||row.sourceLinked!==true)
    throw Error('This profile is local-only. Use the local jig button or link it to the website first.');
+  ensureExistingUnitPreserved(addressView(row.data),address);
   const fields=D.toValues(row.data);
   for(const k of ['address1','address2','city','state','zip']){fields['shipping.'+k]=String(address[k]??'').trim();if(p.billingSameAsShipping)fields['billing.'+k]=String(address[k]??'').trim();}
   let jigged=C.syncCardholderToProfile(D.manualEdit(row.data,fields));
@@ -968,6 +971,44 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  function addressView(data){
   const v=C.values(data);
   return {...Object.fromEntries(['address1','address2','city','state','zip'].map(k=>[k,String(v['shipping.'+k]||'')])),phone:String(v['shipping.phone']||v.phone||'')};
+ }
+ // Immutable existing second-line / inline-unit identity. A previously saved
+ // Apt/Ste/Unit (including its label and number) may never be rewritten, even
+ // through a reuse override or a legacy transformation rule.
+ function inlineUnit(address1){
+  const value=String(address1||'');
+  const match=/(?:^|[\s,])((?:(?:apt|apartment|ste|suite|unit|room|rm|floor|fl|condo)\.?\s*#?\s*[a-z0-9][a-z0-9/-]*|#\s*[a-z0-9][a-z0-9/-]*))\s*$/i.exec(value);
+  return match?match[1]:null;
+ }
+ function existingUnitViolation(before,after){
+  const second=String(before?.address2||'');
+  if(second.trim()&&second!==String(after?.address2||''))return 'Existing address line 2 "'+second+'" must remain exactly unchanged.';
+  const embedded=inlineUnit(before?.address1);
+  if(embedded&&(embedded!==inlineUnit(after?.address1)||String(before?.address2||'')!==String(after?.address2||'')))
+   return 'Existing inline unit "'+embedded+'" must remain exactly unchanged.';
+  return '';
+ }
+ function ensureExistingUnitPreserved(before,after){
+  const violation=existingUnitViolation(before,after);
+  if(violation)throw Error(violation+' Unit jigs only apply when the original address has no unit.');
+ }
+ // Jigged second lines are additive and never change an existing apartment,
+ // suite, unit, bare number or inline designation. Use a small fixed palette
+ // rather than inventing building-level delivery facts in the Main bank.
+ const SECOND_LINE_LABELS=['Apt','Unit','#','Ste',''];
+ const SECOND_LINE_IDS=['A','B','C','D','1','2','3','4','5','6','7','8','9'];
+ function addMissingUnitLine(original,generated,position){
+  const originalAddress=addressView(original),after=addressView(generated);
+  if(originalAddress.address2.trim()||inlineUnit(originalAddress.address1))
+   return {data:generated,added:false};
+  if(inlineUnit(after.address1))throw Error('Generated unit must be on address line 2, not added to the street.');
+  const idx=Math.max(0,Number(position)||0);
+  const label=SECOND_LINE_LABELS[idx%SECOND_LINE_LABELS.length];
+  const identifier=SECOND_LINE_IDS[Math.floor(idx/SECOND_LINE_LABELS.length)%SECOND_LINE_IDS.length];
+  const unit=label==='#'?'# '+identifier:label?label+' '+identifier:identifier;
+  const values=D.toValues(generated);
+  values['shipping.address2']=unit;
+  return {data:D.manualEdit(generated,values),added:true};
  }
  function normalizedAddressPart(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,' ');}
  function mainAddressKey(row){
@@ -1032,33 +1073,57 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  function isHardRule(id){return C.ruleById(id)?.family==='target-primary';}
  function applyOne(data,row,id){return C.jig(data,row.retailer,1,[id]);}
  function bulkJigData(row,ruleIds,groupPosition,combine,billingSameAsShipping,phoneSeed,globalIndex=0){
-  let data=structuredClone(row.data),addressRules=ruleIds.filter(id=>id!==C.FL_PHONE_RULE),phoneJig=ruleIds.includes(C.FL_PHONE_RULE);
-  // Position zero in every main-address group is intentionally untouched.
+  const original=structuredClone(row.data);
+  let data=structuredClone(row.data),appliedRuleIds=[];
+  const addressRules=ruleIds.filter(id=>id!==C.FL_PHONE_RULE),phoneJig=ruleIds.includes(C.FL_PHONE_RULE);
+  const beforeAddress=addressView(row.data);
   if(groupPosition>0&&addressRules.length){
    const soft=addressRules.filter(id=>!isHardRule(id)),hard=addressRules.filter(isHardRule);
-   if(combine){
-    // Explicit Combine is the only mode allowed to stack multiple hard Target
-    // primary-number changes. Soft formatting can accompany them.
-    const ordered=[...soft,...hard];
-    for(const id of ordered.slice(0,Math.max(1,Math.min(ordered.length,4))))data=applyOne(data,row,id);
-   }else{
-    // First use each applicable soft style by itself. After that, rotate the
-    // harder variants and pair each with a soft style when one exists. This
-    // keeps a batch varied without stacking two hard jigs.
-    const slot=groupPosition-1;
-    if(slot<soft.length)data=C.jig(data,row.retailer,slot+1,soft);
-    else if(hard.length){
-     const hardId=hard[(slot-soft.length)%hard.length];
-     data=applyOne(data,row,hardId);
-     if(soft.length)data=applyOne(data,row,soft[(slot-soft.length)%soft.length]);
-    }else data=C.jig(data,row.retailer,groupPosition,addressRules);
+   // Try actual distinct eligible rules. A no-op or an attempted change to a
+   // saved unit is NOT an applied jig. Interleave hard/soft to ensure hard
+   // choices are not starved by a large collection of soft rules.
+   const offset=Math.max(0,globalIndex+groupPosition-1);
+   const rotated=(list,shift)=>list.length?list.slice(shift%list.length).concat(list.slice(0,shift%list.length)):[];
+   const softOrder=rotated(soft,offset),hardOrder=rotated(hard,combine?0:offset);
+   const order=[];
+   const startWithHard=hardOrder.length>0&&(softOrder.length===0||offset%2===1);
+   for(let i=0;i<Math.max(softOrder.length,hardOrder.length);i++){
+    if(startWithHard&&i<hardOrder.length)order.push(hardOrder[i]);
+    if(i<softOrder.length)order.push(softOrder[i]);
+    if(!startWithHard&&i<hardOrder.length)order.push(hardOrder[i]);
    }
+   let appliedHard=false;
+   for(const id of order){
+    if(!combine&&appliedRuleIds.length)break;
+    if(combine&&appliedRuleIds.length>=3)break;
+    if(isHardRule(id)&&appliedHard&&!combine)continue;
+    const candidate=applyOne(data,row,id),address=addressView(candidate);
+    if(existingUnitViolation(beforeAddress,address)||(!inlineUnit(beforeAddress.address1)&&inlineUnit(address.address1)))continue;
+    if(['address1','address2','city','state','zip'].every(key=>
+      normalizedAddressPart(address[key])===normalizedAddressPart(addressView(data)[key])))continue;
+    data=candidate;appliedRuleIds.push(id);
+    if(isHardRule(id))appliedHard=true;
+   }
+   // Legacy grouped rules can occasionally produce no address change. Mark
+   // that profile UNCHANGED rather than reporting its postal city as a jig.
   }
-  if(phoneJig)data=C.applyFloridaPhone(data,phoneSeed,globalIndex);
-  const before=D.toValues(row.data),after=D.toValues(data),edits={...after};
-  if(billingSameAsShipping){for(const key of ['address1','address2','city','state','zip'])edits['billing.'+key]=after['shipping.'+key];}
-  else for(const key of ['first','last','phone','address1','address2','city','state','zip','country'])if(!(phoneJig&&key==='phone'))edits['billing.'+key]=before['billing.'+key];
-  return C.syncCardholderToProfile(D.manualEdit(data,edits));
+  if(phoneJig){
+   data=C.applyFloridaPhone(data,phoneSeed,globalIndex);
+   if(addressView(data).phone!==beforeAddress.phone)appliedRuleIds.push(C.FL_PHONE_RULE);
+  }
+  if(groupPosition>0){
+   const unit=addMissingUnitLine(row.data,data,globalIndex+groupPosition);
+   if(unit.added){data=unit.data;appliedRuleIds.push('second-line.add');}
+  }
+  ensureExistingUnitPreserved(beforeAddress,addressView(data));
+  const before=D.toValues(original),after=D.toValues(data),edits={...after};
+  if(billingSameAsShipping){
+   for(const key of ['address1','address2','city','state','zip'])edits['billing.'+key]=after['shipping.'+key];
+  }else{
+   for(const key of ['first','last','phone','address1','address2','city','state','zip','country'])
+    if(!(phoneJig&&key==='phone'))edits['billing.'+key]=before['billing.'+key];
+  }
+  return {data:C.syncCardholderToProfile(D.manualEdit(data,edits)),appliedRuleIds};
  }
 
  const HARD_KINDS=['fraction','hyphen','doubleLetter','randomUnit'];
@@ -1087,10 +1152,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }else if(kind==='randomUnit'){
    // Never manufacture an additional unit for an address with an existing one.
    if(unit||/(?:\b(?:apt|apartment|unit|suite|ste|condo|floor|fl|room|rm)\b|#\s*\w)/i.test(street)||variant>=500)return null;
-   const styles=['Apt','Ste','Unit','#','Suite','Apartment','Condo','Room'];
-   const label=styles[crypto.randomInt(styles.length)];
-   const number=100+((variant*71+crypto.randomInt(900))%900);
-   nextUnit=label+' '+String(number);
+   if(variant>=SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length)return null;
+   const label=SECOND_LINE_LABELS[variant%SECOND_LINE_LABELS.length];
+   const identifier=SECOND_LINE_IDS[Math.floor(variant/SECOND_LINE_LABELS.length)];
+   nextUnit=label==='#'?'# '+identifier:label?label+' '+identifier:identifier;
   }else return null;
   if(next===street&&nextUnit===unit)return null;
   return D.manualEdit(data,{...v,'shipping.address1':next,'shipping.address2':nextUnit});
@@ -1131,6 +1196,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
       for(let attempt=0;attempt<500;attempt++){
        const next=newBulkJigData(row,category,attempt,soft,p.combine===true,p.billingSameAsShipping===true,phoneSeed,index);
        if(!next)break;
+       if(existingUnitViolation(addressView(row.data),addressView(next)))continue;
        const candidate=mainAddressKey({data:next});
        if(candidate!==key&&!seen.has(candidate)){data=next;kind=category;selectedVariant=attempt;remaining[category]--;used[category]++;found=true;break;}
       }
@@ -1139,6 +1205,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      if(!found&&soft.length){
       for(let attempt=0;attempt<soft.length;attempt++){
        const next=newBulkJigData(row,null,0,[soft[(i+attempt)%soft.length]],false,p.billingSameAsShipping===true,phoneSeed,index);
+       if(existingUnitViolation(addressView(row.data),addressView(next)))continue;
        const candidate=mainAddressKey({data:next});
        if(candidate!==key&&!seen.has(candidate)){data=next;kind='soft';found=true;break;}
       }
@@ -1200,7 +1267,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const key=mainAddressKey(row),groupPosition=positions.get(key)||0;
    if(!reuseThis)positions.set(key,groupPosition+1);
    const jigPosition=groupSizes.get(key)===1?1:groupPosition;
-   let data;
+   let data,appliedRuleIds=[];
    if(reuseThis){
     const values={...D.toValues(row.data)};
     for(const field of ['address1','address2','city','state','zip']){
@@ -1208,8 +1275,22 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      if(p.billingSameAsShipping===true)values['billing.'+field]=source.address[field];
     }
     data=C.syncCardholderToProfile(D.manualEdit(row.data,values));
-   }else if(hardResults)data=hardResults[regularIndex].data;
-   else data=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);
+   }else if(hardResults){
+    data=hardResults[regularIndex].data;
+    if(hardResults[regularIndex].kind!=='original'){
+     const unit=addMissingUnitLine(row.data,data,regularIndex+jigPosition);
+     if(unit.added){
+      data=unit.data;
+      if(p.billingSameAsShipping===true){
+       const fields=D.toValues(data);fields['billing.address2']=fields['shipping.address2'];
+       data=D.manualEdit(data,fields);
+      }
+      appliedRuleIds.push('second-line.add');
+     }
+    }
+    if(hardResults[regularIndex].kind!=='original'&&hardResults[regularIndex].kind!=='soft')
+     appliedRuleIds.push('hard.'+hardResults[regularIndex].kind);
+   }else {const generated=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);data=generated.data;appliedRuleIds=generated.appliedRuleIds;}
    const before=addressView(row.data);
    const lookupKey=String(before.zip||'').slice(0,5)+'|'+String(before.state||'').toUpperCase()+'|'+String(before.city||'').toUpperCase();
    const availablePostal=postalScanned.get(lookupKey)?.cities||[];
@@ -1226,10 +1307,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     }
    }
    const after=addressView(data);
+   ensureExistingUnitPreserved(before,after);
    if(!after.address1||!after.city||!after.state||!after.zip)throw Error('A selected profile is missing a complete shipping address.');
    return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),originalData:row.data,email:row.email,label:row.label,retailer:row.retailer,
     linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer,
-    postalCities:availablePostal,postalCityApplied:appliedPostalCity,
+    postalCities:availablePostal,postalCityApplied:appliedPostalCity,appliedRuleIds,
     category:reuseThis?'reused saved address':hardResults?.[regularIndex]?.kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),
     mainAddress:reuseThis?source.address:hardResults?.[regularIndex]?.mainAddress||before};
   });
@@ -1251,7 +1333,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
    postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
    postalCityApplied:rows.filter(x=>x.postalCityApplied).length,postalStreetVerified:false,
-   profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
+   profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,appliedRuleIds:x.appliedRuleIds,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
  }
  async function batchJigCommit(e,p){
   const plan=jigPlans.get(p.token);
@@ -1259,6 +1341,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(p.confirmed!==true)throw Error('Confirm the reviewed bulk jig before saving.');
   const a=await access(e,{scope:plan.scope,customerId:plan.id}),latest=await profiles.fieldSnapshot(plan.scope,plan.id);
   for(const change of plan.rows){
+   ensureExistingUnitPreserved(addressView(change.originalData),addressView(change.data));
    const row=latest.find(x=>x.id===change.profileId&&x.retailer===plan.retailer);
    if(!row||(row.revision||0)!==change.revision||require('./jig-field-core').hash(row.data)!==change.hash)throw Error('A selected profile changed after preview. Nothing was saved; preview the batch again.');
   }
