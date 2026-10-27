@@ -155,6 +155,6 @@ test('Desktop shortcut never overwrites a user item or links to an uninstalled a
 });
 test('Updater only opens existing app without macOS force-new-instance flag',async()=>{
  const sh=await fs.readFile(path.join(__dirname,'../mac-full-update.sh'),'utf8');
- assert.doesNotMatch(sh,/\\/usr\\/bin\\/open -n /);
- assert.match(sh,/\\/usr\\/bin\\/open "\\$TARGET" --args/);
+ assert.doesNotMatch(sh,/\/usr\/bin\/open -n /);
+ assert.match(sh,/\/usr\/bin\/open "\$TARGET" --args/);
 });
