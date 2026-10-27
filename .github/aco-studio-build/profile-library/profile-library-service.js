@@ -1082,21 +1082,36 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    // Try actual distinct eligible rules. A no-op or an attempted change to a
    // saved unit is NOT an applied jig. Interleave hard/soft to ensure hard
    // choices are not starved by a large collection of soft rules.
-   const offset=Math.max(0,globalIndex+groupPosition-1);
+   const offset=Math.max(0,globalIndex);
    const rotated=(list,shift)=>list.length?list.slice(shift%list.length).concat(list.slice(0,shift%list.length)):[];
-   const softOrder=rotated(soft,offset),hardOrder=rotated(hard,combine?0:offset);
+   const softOrder=rotated(soft,offset);
+   const hardFamily=id=>id.startsWith('target.house.fraction.')?'fraction':
+    id.startsWith('target.house.hyphen.')?'hyphen':'other';
+   const families=[...new Set(hard.map(hardFamily))];
+   // A checked Target hard family is a request to USE it, not a fallback after
+   // soft address rules. Rotate across families and variants for each profile.
+   // In combine mode, apply at most one rule per family (fraction BEFORE
+   // hyphen, so 100 1/2 Example may become 100-A 1/2 Example).
    const order=[];
-   const startWithHard=hardOrder.length>0&&(softOrder.length===0||offset%2===1);
-   for(let i=0;i<Math.max(softOrder.length,hardOrder.length);i++){
-    if(startWithHard&&i<hardOrder.length)order.push(hardOrder[i]);
-    if(i<softOrder.length)order.push(softOrder[i]);
-    if(!startWithHard&&i<hardOrder.length)order.push(hardOrder[i]);
+   if(hard.length){
+    if(combine){
+     for(const family of ['fraction','hyphen','other']){
+      const variants=hard.filter(id=>hardFamily(id)===family);
+      order.push(...rotated(variants,Math.floor(offset/Math.max(1,families.length))));
+     }
+    }else{
+     for(let step=0;step<families.length;step++){
+      const family=families[(offset+step)%families.length],variants=hard.filter(id=>hardFamily(id)===family);
+      order.push(...rotated(variants,Math.floor(offset/Math.max(1,families.length))));
+     }
+    }
    }
-   let appliedHard=false;
+   order.push(...softOrder);
+   const appliedFamilies=new Set();
    for(const id of order){
     if(!combine&&appliedRuleIds.length)break;
     if(combine&&appliedRuleIds.length>=3)break;
-    if(isHardRule(id)&&appliedHard&&!combine)continue;
+    if(isHardRule(id)&&appliedFamilies.has(hardFamily(id)))continue;
     const candidate=applyOne(data,row,id),address=addressView(candidate);
     // Legacy unit rules cannot add a new line: only the explicit optional count can.
     if(existingUnitViolation(beforeAddress,address)||(!inlineUnit(beforeAddress.address1)&&inlineUnit(address.address1))||
@@ -1104,7 +1119,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(['address1','address2','city','state','zip'].every(key=>
       normalizedAddressPart(address[key])===normalizedAddressPart(addressView(data)[key])))continue;
     data=candidate;appliedRuleIds.push(id);
-    if(isHardRule(id))appliedHard=true;
+    if(isHardRule(id))appliedFamilies.add(hardFamily(id));
    }
    // Legacy grouped rules can occasionally produce no address change. Mark
    // that profile UNCHANGED rather than reporting its postal city as a jig.
@@ -1263,13 +1278,16 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     for(const {key,result} of results){postalScanned.set(key,result);postalAlternativeCount+=result.cities?.length||0;}
    }
   }
-  const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&requestedCounts?perAddressHardRows(regularSelected,p,phoneSeed):null;
+  const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&hasHard?perAddressHardRows(regularSelected,p,phoneSeed):null;
   for(const row of regularSelected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
+  const plannedAddressKeys=new Set();
   const rows=selected.map((row,index)=>{
    const reuseThis=!!source&&index<reuseCount,regularIndex=index-reuseCount;
    const key=mainAddressKey(row),groupPosition=positions.get(key)||0;
    if(!reuseThis)positions.set(key,groupPosition+1);
-   const jigPosition=groupSizes.get(key)===1?1:groupPosition;
+   // Retain one unchanged Main for each block of 18 selected profiles, not
+   // one for EVERY repeated-address group. Single selections always jig.
+   const jigPosition=regularSelected.length>1&&regularIndex%18===0?0:Math.max(1,groupPosition);
    let data,appliedRuleIds=[];
    if(reuseThis){
     const values={...D.toValues(row.data)};
@@ -1282,7 +1300,31 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     data=hardResults[regularIndex].data;
     if(hardResults[regularIndex].kind!=='original'&&hardResults[regularIndex].kind!=='soft')
      appliedRuleIds.push('hard.'+hardResults[regularIndex].kind);
-   }else {const generated=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);data=generated.data;appliedRuleIds=generated.appliedRuleIds;}
+   }else {
+    let generated=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);
+    if(jigPosition>0&&plannedAddressKeys.has(mainAddressKey({data:generated.data}))){
+     // Avoid assigning an already used jig when a different selected
+     // fractional/hyphen or soft variation can produce a distinct address.
+     // Keep strict duplicates visible for explicit override if exhausted.
+     let found=false;
+     const tryVariant=candidate=>{
+      const key=mainAddressKey({data:candidate.data});
+      if(!plannedAddressKeys.has(key)){generated=candidate;found=true;return true;}
+      return false;
+     };
+     for(let attempt=1;attempt<=Math.min(80,p.ruleIds.length*5+10);attempt++){
+      if(tryVariant(bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,
+       p.billingSameAsShipping===true,phoneSeed,regularIndex+attempt)))break;
+     }
+     if(!found)for(const ruleId of p.ruleIds){
+      if(ruleId===C.FL_PHONE_RULE)continue;
+      if(tryVariant(bulkJigData(row,[ruleId],jigPosition,false,
+       p.billingSameAsShipping===true,phoneSeed,regularIndex)))break;
+     }
+    }
+    data=generated.data;appliedRuleIds=generated.appliedRuleIds;
+   }
+   if(!reuseThis)plannedAddressKeys.add(mainAddressKey({data}));
    const before=addressView(row.data);
    const lookupKey=String(before.zip||'').slice(0,5)+'|'+String(before.state||'').toUpperCase()+'|'+String(before.city||'').toUpperCase();
    const availablePostal=postalScanned.get(lookupKey)?.cities||[];
