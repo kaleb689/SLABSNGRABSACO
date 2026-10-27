@@ -396,7 +396,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
  }
  // Read-only, full-card-number matching for temporary workshop exports.
  async function preparedExportCodes(scope,id,records,matched=[]){
-  const [bankRows,local]=await Promise.all([cardVault(scope).securityReferences(cardKey(scope,id)),profiles.fieldSnapshot(scope,id)]);
+  const [bankRows,local]=await Promise.all([typeof cardVault(scope)?.securityReferences==='function'?cardVault(scope).securityReferences(cardKey(scope,id)):Promise.resolve([]),profiles.fieldSnapshot(scope,id)]);
   const byNumber=new Map(),ambiguous=new Set();
   for(const card of bankRows){
    const number=String(card.number||'').replace(/\D/g,''),code=String(card.customSecurityCode||card.customCode||'');
