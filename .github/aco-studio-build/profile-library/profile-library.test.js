@@ -646,3 +646,21 @@ test('Customer card detail reveal is owner-only, exact-card scoped, and contains
  assert.deepEqual(bankOnly.savedReferences,[{independentSecurityCode:'SAVED-BANK-INDEPENDENT-REF'}]);
  await assert.rejects(h.lib.customerCardDetails(event,{...h.b,cardNumber:savedNumber}),/not in the selected customer vault/);
 });
+
+test('Pasted credentials preserve password in encrypted retailer bank and keep customer vaults isolated',async t=>{
+ const h=await library(t);
+ const accounts=[{email:'paste-one@example.test',password:'secret:with-colon'},{email:'paste-two@example.test',password:'otherSecret!'}];
+ const first=await h.lib.importPastedAccounts(event,{...h.a,retailer:'pokemoncenter',accounts,confirmed:true});
+ assert.equal(first.added,2);
+ const second=await h.lib.importPastedAccounts(event,{...h.a,retailer:'pokemoncenter',accounts,confirmed:true});
+ assert.equal(second.added,0);assert.equal(second.skipped,2);
+ const other=await h.lib.importPastedAccounts(event,{...h.a,retailer:'target',accounts:[accounts[0]],confirmed:true});
+ assert.equal(other.added,1,'same email across distinct retailers is valid');
+ const own=await h.profiles.libraryTransaction('aco','customer-a',ctx=>
+  ctx.emails.filter(x=>x.retailer==='pokemoncenter').map(x=>({email:x.email,password:x.password})),()=>{});
+ assert.deepEqual(own,accounts);
+ const foreign=await h.profiles.libraryTransaction('aco','customer-b',ctx=>ctx.emails.length,()=>{});
+ assert.equal(foreign,0);
+ await assert.rejects(h.lib.importPastedAccounts(event,{...h.a,retailer:'pokemoncenter',accounts:[{email:'bad@example.test',password:''}],confirmed:true}),/Invalid account/);
+ await assert.rejects(h.lib.importPastedAccounts({sender:{id:2}},{...h.a,retailer:'pokemoncenter',accounts,confirmed:true}),/Not owner/);
+});
