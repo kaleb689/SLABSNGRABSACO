@@ -727,7 +727,8 @@
  // applicable variations per profile rather than requiring dozens of clicks.
  function jigFamily(option){
   const id=String(option.id||''),name=String(option.label||''),value=id+' '+name;
-  if(/^target\.house\.fraction\./.test(id))return ['fraction-house','Fractional house numbers (1/2, 1/3, 1/4)'];
+  if(/^target\.house\.integer\./.test(id))return ['integer-house','Integer house-number additions (+1 to +9)'];
+   if(/^target\.house\.fraction\./.test(id))return ['fraction-house','Fractional house numbers (1/2, 1/3, 1/4)'];
   if(/^target\.house\.hyphen\./.test(id))return ['hyphen-house','Hyphenated house numbers (-A through -H)'];
   if(/ordinal|\b(?:2nd|3rd|4th|second|third|fourth)\b|\b[234]\s*(?:→|->)\s*(?:2nd|second|3rd|third|4th|fourth)\b/i.test(value))return ['ordinals','Street ordinals (2, 2nd, second, etc.)'];
   if(/(?:compass|direction|north|south|east|west|\bnw\b|\bne\b|\bsw\b|\bse\b)/i.test(value))return ['directions','Compass directions (NW, Northwest, etc.)'];
@@ -806,7 +807,21 @@
    const rules=d.createElement('div');rules.className='profileJigRules';
    groupedJigChoices(rules,settings);
    const combine=text('label','Combine selected jig styles (up to 3 per profile)'),combineBox=d.createElement('input');combine.className='check';combineBox.type='checkbox';combine.prepend(combineBox);
-   const billing=text('label','Use the jigged shipping address for billing address too'),billingBox=d.createElement('input');billing.className='check';billingBox.type='checkbox';billing.prepend(billingBox);
+   const distributionLabel=text('label','Choose more of one or more jig styles'),distributionToggle=d.createElement('input');
+    distributionLabel.className='check';distributionToggle.type='checkbox';distributionToggle.checked=false;distributionLabel.prepend(distributionToggle);
+    const distributionPanel=d.createElement('section');distributionPanel.hidden=true;
+    const distributionHelp=text('small','OFF = evenly distribute across selected styles. ON = set how many profiles receive each preferred style; the remaining profiles are automatically spread across all selected styles.');
+    distributionPanel.append(distributionHelp);
+    function distributionInputs(){
+     distributionPanel.querySelectorAll('[data-distribution-row]').forEach(node=>node.remove());
+     for(const box of rules.querySelectorAll('input[data-jig-rule-ids]:checked')){
+      const label=text('label',box.parentElement.textContent.trim()),input=d.createElement('input');
+      label.dataset.distributionRow='true';input.type='number';input.min='0';input.max=String(chosen.length);input.step='1';input.value='0';input.dataset.style=box.value;label.append(input);distributionPanel.append(label);
+     }
+    }
+    distributionToggle.onchange=()=>{distributionPanel.hidden=!distributionToggle.checked;distributionInputs();};
+    rules.addEventListener('change',()=>{if(distributionToggle.checked)distributionInputs();});
+    const billing=text('label','Use the jigged shipping address for billing address too'),billingBox=d.createElement('input');billing.className='check';billingBox.type='checkbox';billing.prepend(billingBox);
    const optionalUnitLabel=text('label','Add random Apt / Unit / Ste / # / number to address line 2 (only if no unit exists)');
    optionalUnitLabel.className='check';
    const optionalUnitToggle=d.createElement('input');optionalUnitToggle.type='checkbox';optionalUnitToggle.checked=false;optionalUnitLabel.prepend(optionalUnitToggle);
@@ -839,9 +854,9 @@
    duplicateLabel.prepend(allowDuplicates);
    const review=d.createElement('div');let token=null,duplicateCount=0;
    allowDuplicates.onchange=()=>{save.disabled=!token||(duplicateCount>0&&!allowDuplicates.checked);};
-   win.body.append(info,rules,combine,billing,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
+   win.body.append(info,rules,distributionLabel,distributionPanel,combine,billing,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
    const invalidatePreview=()=>{token=null;duplicateCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
-   for(const control of [rules,combineBox,billingBox,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',invalidatePreview);
+   for(const control of [rules,distributionToggle,distributionPanel,combineBox,billingBox,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',invalidatePreview);
    reuseToggle.onchange=async()=>{
     invalidatePreview();reusePanel.hidden=!reuseToggle.checked;
     if(!reuseToggle.checked)return;
@@ -874,10 +889,13 @@
      if(optionalUnitToggle.checked&&(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<1||optionalUnitCount>chosen.length))
       throw Error('Choose how many selected profiles should receive an optional new unit (1–'+chosen.length+').');
      win.status().textContent=postalScanBox.checked?'Checking online ZIP/city matches for selected main addresses…':'Preparing offline jig preview…';
-     const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),
+     const counts=Object.fromEntries([...distributionPanel.querySelectorAll('input[data-style]')].map(input=>[input.dataset.style,Number(input.value)]));
+      const distribution={enabled:distributionToggle.checked,counts};
+      const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),distribution,
       ruleIds:selectedJigChoices(rules),combine:combineBox.checked,
       billingSameAsShipping:billingBox.checked,optionalUnitCount,postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
      if(!win.valid())return;token=result.token;
+      if(result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
      review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional second-line unit(s) added.'));
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      for(const row of result.profiles.slice(0,100))review.append(jigPreviewEntry(row,settings));

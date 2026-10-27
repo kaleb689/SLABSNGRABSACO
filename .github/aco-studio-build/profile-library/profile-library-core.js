@@ -144,6 +144,7 @@ function syncCardholderToProfile(data){
  return out;
 }
 const TARGET_PRIMARY_RULES=Object.freeze([
+ ...Array.from({length:9},(_,index)=>{const number=String(index+1);return {id:'target.house.integer.'+number,label:'Target house number + integer '+number,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\d+\s/.test(street))return null;const changed=street.replace(/^(\d+)(?=\s)/,'$1 '+number);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}};}),
  ...[['target.house.fraction.half','1/2'],['target.house.fraction.third','1/3'],['target.house.fraction.quarter','1/4']].map(([id,value])=>({id,label:'Target house number + '+value,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\d+\s/.test(street))return null;const changed=street.replace(/^(\d+)(?=\s)/,'$1 '+value);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}})),
  ...'ABCDEFGH'.split('').map(letter=>({id:'target.house.hyphen.'+letter.toLowerCase(),label:'Target house number -'+letter,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\d+\s/.test(street))return null;const changed=street.replace(/^(\d+)(?=\s)/,'$1-'+letter);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}}))
 ]);
@@ -162,6 +163,19 @@ const SUFFIX_MATCH_RULE={id:'suffix.matching',label:'Matching street type (St/St
   const next={...address};if(Object.hasOwn(next,'address1'))next.address1=words.join(' ');else next.address=words.join(' ');
   return next;
  }};
+// Stable family IDs are shared with the batch UI and allocation engine.
+function jigStyle(id){
+ if(/^target\.house\.integer\./.test(id))return 'integer-house';
+ if(/^target\.house\.fraction\./.test(id))return 'fraction-house';
+ if(/^target\.house\.hyphen\./.test(id))return 'hyphen-house';
+ if(id===FL_PHONE_RULE)return 'phone';
+ const label=String(ruleById(id)?.label||id),value=id+' '+label;
+ if(/ordinal|\b(?:2nd|3rd|4th|second|third|fourth)\b/i.test(value))return 'ordinals';
+ if(/compass|direction|north|south|east|west|\bnw\b|\bne\b|\bsw\b|\bse\b/i.test(value))return 'directions';
+ if(/apt|apartment|suite|\bste\b|\bunit\b|\broom\b|\bfloor\b|\bcondo\b/i.test(value))return 'units';
+ if(/suffix|street type|road|avenue|lane|boulevard|drive|terrace/i.test(value))return 'suffix';
+ return id;
+}
 const coreRule=id=>id===SUFFIX_MATCH_RULE.id?SUFFIX_MATCH_RULE:Core.RULES.find(x=>x.id===id);
 const targetRule=id=>TARGET_PRIMARY_RULES.find(x=>x.id===id),ruleById=id=>coreRule(id)||targetRule(id);
 function ruleOptions(r){
@@ -237,5 +251,5 @@ function existingLiveReconciliation(rows,retailer){
   cardOnlyMatches:candidates.filter(x=>x.reason==='full-card').length,
   blockedCount:blocked.length,blocked,unmatchedCount:unmatched.length,signature};
 }
-module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
+module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,jigStyle,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
 
