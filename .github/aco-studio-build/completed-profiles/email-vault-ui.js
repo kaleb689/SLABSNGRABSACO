@@ -58,12 +58,12 @@
   const head=lines.length?parse(lines[0]):[],col=head.findIndex(x=>/^(email|account.?email|login.?email)$/i.test(x));
   return lines.slice(col<0?0:1).map(l=>parse(l)[Math.max(col,0)]);
  }
- $('file').addEventListener('change',async()=>{const file=$('file').files[0];if(!file)return;const ticket=epoch;try{if(file.size>2000000)throw Error('Import a file smaller than 2 MB.');const text=await file.text();if(ticket!==epoch||modal.hidden)return;if(/\.txt$/i.test(file.name)&&text.split(/\r?\n/).some(line=>/^[^\s:@]+@[^\s:@]+\.[^\s:@]+:/.test(line))){
-     $('login-pairs').value=text;$('emails').value='';note('TXT login pairs ready. Choose Review and save pasted logins.');
+ $('file').addEventListener('change',async()=>{const file=$('file').files[0];if(!file)return;const ticket=epoch;try{if(file.size>2000000)throw Error('Import a file smaller than 2 MB.');const text=await file.text();if(ticket!==epoch||modal.hidden)return;if(/\.(?:txt|csv|tsv)$/i.test(file.name)&&text.split(/\r?\n/).some(line=>/^[^\s@,;:|]+@[^\s@,;:|]+\.[^\s@,;:|]+\s*(?::|;|,|\t|\|)/.test(line))){
+     $('login-pairs').value=text;$('emails').value='';$('login-details').open=true;note('Account login pairs ready. Choose the retailer and review before saving.');
     }else{$('emails').value=values(text,file.name).join('\n');note('File ready. Review the destination and click Import.');}}catch(e){note(e.message);}});
  for(const key of ['owner','retailer'])$(key).addEventListener('change',()=>{selectedAccountIds.clear();availableEmailRows=[];$('login-pairs').value='';$('emails').value='';$('file').value='';$('format').value=$('retailer').value==='target'?'shikari':'valor';void refresh();});
  $('import').addEventListener('click',async()=>{if(busy)return;if(!$('owner').value){note('Select a customer vault.');return;}const raw=$('emails').value,lines=raw.replace(/^\uFEFF/,'').split(/\r?\n/).filter(x=>x.trim());
-  const accountLine=/^[^\\s@,;:|]+@[^\\s@,;:|]+\\.[^\\s@,;:|]+\\s*(?::|;|,|\\t|\\|)/;
+  const accountLine=/^[^\s@,;:|]+@[^\s@,;:|]+\.[^\s@,;:|]+\s*(?::|;|,|\t|\|)/;
   if(lines.some(line=>accountLine.test(line.trim()))){
    $('login-pairs').value=raw;$('emails').value='';$('login-details').open=true;$('login-import').click();return;
   }
@@ -86,7 +86,7 @@
    if(ticket!==epoch||modal.hidden)return;
    const duplicates=plan.profiles.filter(x=>(x.duplicates||[]).includes('email')).length;
    if(duplicates)throw Error(duplicates+' email(s) already exist in this retailer bank. Review duplicates first.');
-   const review=rows.slice(0,12).map(x=>x.email+' · password provided').join('\\n');
+   const review=rows.slice(0,12).map(x=>x.email+' · password provided').join('\n');
    if(!confirm('Review '+rows.length+' pasted account(s)\\nDestination: '+$('owner').selectedOptions[0].textContent+' / '+retail[p.retailer]+'\\n\\n'+review+(rows.length>12?'\\n...and '+(rows.length-12)+' more':'')+'\\n\\nConfirm import?'))return;
    const result=await lib.importCommit({token:plan.token,confirmed:true,asAvailable:true,alreadyJigged:false,repairs:{allowShared:true}});
    $('login-pairs').value='';await refresh();
