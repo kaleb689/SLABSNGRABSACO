@@ -350,3 +350,19 @@ test('opening Jig from an already selected unused account preserves the batch',(
  const context={jig:{},row:{id:'p2'},selected:new Set(['p1','p2']),updateSelection:()=>{},jigUnusedSelected:()=>{}};vm.createContext(context);vm.runInContext(source.slice(start,end),context);context.jig.onclick();assert.deepEqual(Array.from(context.selected),['p1','p2']);
  context.row.id='p3';context.jig.onclick();assert.deepEqual(Array.from(context.selected),['p3']);
 });
+
+test('selection dock is sticky, groups related actions, and keeps existing handlers',()=>{
+ assert.match(source,/profileSelectionDock/);
+ assert.match(source,/floatingActions\.append\(actionDetails,actionManage\)/);
+ assert.match(source,/actionManage\.append\(q\('jig-selected'\),q\('bulk-move'\),q\('bulk-delete'\),q\('export'\)/);
+ assert.match(source,/main\.querySelector\('\.profileLibraryLayout'\)\.before\(floatingActions\)/);
+ assert.match(source,/Delete selected profiles…/);
+ assert.match(source,/Delete this saved draft…/);
+ assert.match(source,/Delete this profile…/);
+ assert.match(source,/q\('bulk-delete'\)\.click\(\)/);
+ assert.match(source,/const hardCardNumbers=new Set\(/);
+ assert.match(source,/const cardFragment=d\.createDocumentFragment\(\)/);
+ assert.match(source,/cachedPageRows=pageItems/);
+ assert.match(source,/matchingCards\.slice\(0,visibleCardLimit\)/);
+ assert.match(source,/if\(resourceChanged\)drawResourceBanks\(\)/);
+});
