@@ -58,10 +58,10 @@
  <label class="workshopCheck"><input data-postal-scan type="checkbox" checked> Scan online ZIP/city crossovers during Jig Profiles preview</label>
  <label class="workshopCheck"><input data-postal-apply type="checkbox" checked> Apply ZIP/state-matched alternate city names when available</label>
  <small>City names come from an online ZIP listing, not a verified USPS street delivery address. Only ZIP is sent online; street, email, cards and personal details stay local.</small>
- <label class="workshopCheck"><input data-optional-unit type="checkbox"> Add a random Apt / Unit / Ste / # / bare A-D or 1-9 on address line 2 (only if no unit exists)</label>
+ <label class="workshopCheck"><input data-optional-unit type="checkbox"> Add Random Apt / Unit / Ste / # / Number (optional, OFF by default)</label>
  <label data-optional-unit-count-wrap hidden>How many selected unitless profiles? <input data-optional-unit-count type="number" min="1" max="500" step="1" value="1"></label>
  <small>Optional — OFF by default. Never change, remove or rename an existing Apt/Ste/Unit or unit number. Applies alongside selected fractional, hyphen and other jig styles. Generated units are not confirmed delivery points.</small>
- <label class="workshopCheck"><input data-reuse-toggle type="checkbox"> Reuse a saved Main or Jigged shipping address across selected profiles</label>
+ <label class="workshopCheck"><input data-distribution-toggle type="checkbox"> Choose more of one or more jig styles</label><div data-distribution-panel hidden><small>OFF: selected styles are distributed evenly. ON: enter preferred counts and the remainder is distributed automatically.</small><div data-distribution-rows></div></div><label class="workshopCheck"><input data-reuse-toggle type="checkbox"> Reuse a saved Main or Jigged shipping address across selected profiles</label>
  <section data-reuse-panel hidden><p>Choose the exact Main or previously Jigged address to use. Its complete shipping fields are copied without generating another jig.</p>
  <label>Choose Main or Jigged address<select data-reuse-choice></select></label>
  <label>Number of profiles using this address<input data-reuse-count type="number" min="2" max="500" step="1" value="2"></label></section></div>
@@ -96,7 +96,22 @@
   }catch(e){reuseLoadedKey='';bq('reuse-toggle').checked=false;bq('reuse-panel').hidden=true;bulkStatus(e.message,true);}
   finally{bq('reuse-choice').disabled=false;}
  }
- for(const name of ['postal-scan','postal-apply'])bq(name).addEventListener('change',()=>{invalidateReuse();bq('postal-apply').disabled=!bq('postal-scan').checked;});
+ function fillDistributionRows(){
+   const host=bq('distribution-rows');host.replaceChildren();
+   const options=bulkSettings?.options||[],grouped=new Map();
+   for(const rule of options.filter(x=>bulkRuleIds().includes(x.id))){
+    const style=rule.id.startsWith('target.house.integer.')?'integer-house':rule.id.startsWith('target.house.fraction.')?'fraction-house':rule.id.startsWith('target.house.hyphen.')?'hyphen-house':rule.id;
+    if(style==='phone.fl')continue;
+    if(!grouped.has(style))grouped.set(style,rule.label);
+   }
+   for(const [style,name] of grouped){
+    const label=d.createElement('label'),input=d.createElement('input');
+    label.textContent=name+' preferred profile count';input.type='number';input.min='0';input.max='500';input.step='1';input.value='0';input.dataset.style=style;
+    input.addEventListener('input',invalidateReuse);label.append(input);host.append(label);
+   }
+  }
+  bq('distribution-toggle').addEventListener('change',()=>{bq('distribution-panel').hidden=!bq('distribution-toggle').checked;fillDistributionRows();invalidateReuse();});
+  for(const name of ['postal-scan','postal-apply'])bq(name).addEventListener('change',()=>{invalidateReuse();bq('postal-apply').disabled=!bq('postal-scan').checked;});
  bq('optional-unit').addEventListener('change',()=>{bq('optional-unit-count-wrap').hidden=!bq('optional-unit').checked;invalidateReuse();bulkControls();});
  bq('optional-unit-count').addEventListener('input',()=>{invalidateReuse();bulkControls();});
  bq('allow-duplicate').addEventListener('change',bulkControls);
@@ -149,12 +164,13 @@
     throw Error('Select an exact Main/Jigged address and a number from 2 to '+profileIds.length+'.');
    const reuse=bq('reuse-toggle').checked?{sourceId:bq('reuse-choice').value,count:reuseCount}:null;
    bulkStatus(bq('postal-scan').checked?'Checking online ZIP-to-city matches for selected addresses…':'Preparing offline jig preview…');
-   const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:selectedHardCounts(),optionalUnitCount,combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse,postalScan:bq('postal-scan').checked,postalApplyCities:bq('postal-scan').checked&&bq('postal-apply').checked});
+   const distribution={enabled:bq('distribution-toggle').checked,counts:Object.fromEntries([...bq('distribution-rows').querySelectorAll('[data-style]')].map(x=>[x.dataset.style,Number(x.value)]))};
+    const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:distribution.enabled?null:selectedHardCounts(),distribution,optionalUnitCount,combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse,postalScan:bq('postal-scan').checked,postalApplyCities:bq('postal-scan').checked&&bq('postal-apply').checked});
    bulkToken=result.token;bulkDuplicateCount=(result.duplicateAddresses||[]).length;
    if(optionalUnitCount!==result.optionalUnitAdded)throw Error('The selected unit count did not match the preview; do not apply this batch.');
    const addedNote=d.createElement('p');addedNote.textContent=result.optionalUnitAdded+' optional second-line unit(s) added in preview. Existing units are unchanged.';
    bq('allow-duplicate').checked=false;bq('duplicate-warning').hidden=!bulkDuplicateCount;
-   const out=bq('review-rows');out.replaceChildren();out.append(addedNote);
+   const out=bq('review-rows');out.replaceChildren();out.append(addedNote);if(result.distribution) {const info=d.createElement('p');info.textContent='Jig distribution: '+Object.entries(result.distribution).map(([style,n])=>style+': '+n).join(' · ');out.append(info);}
    if(bulkDuplicateCount){
     const heading=d.createElement('p');heading.textContent=bulkDuplicateCount+' jig address(es) already belong to other saved accounts. Saving is disabled until you explicitly allow these duplicates.';out.append(heading);
     for(const clash of result.duplicateAddresses.slice(0,100)){
