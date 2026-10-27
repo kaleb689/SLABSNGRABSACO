@@ -223,7 +223,7 @@
  // Selection belongs to one rendered page of the current retailer and stage.
  // Keep the preexisting 200-card display size, but make later pages accessible.
  const PAGE_SIZE=200;let pageIndex=0;let selectionAnchor=null,customGroups={};
- let sortMode='newest';
+ let sortMode='newest';let visibleCardLimit=80;let lastResourceSignature='';let lastResourceRetailer='';
  const sortToolbar=d.createElement('div');sortToolbar.className='profileLibrarySortToolbar';
  const sortLabel=d.createElement('label');sortLabel.textContent='Profile order';
  const sortSelect=d.createElement('select');sortSelect.setAttribute('aria-label','Sort profiles');
@@ -487,7 +487,7 @@
   cardCount.textContent='· '+eligible.length+' available for '+retailName[q('retailer').value]+' / '+pool.length+' distinct cards';
   addressCount.textContent='· '+addresses.length+' saved';
   if(!pool.length)cardBox.append(text('p','No cards found in this '+(scope==='personal'?'Personal':'customer')+' vault or its saved profiles.'));
-  for(const card of matchingCards){
+  for(const card of matchingCards.slice(0,visibleCardLimit)){
    const row=d.createElement('article');row.className='profileResourceRow profileSelectableCard'+(card.availableRetailers?.includes(q('retailer').value)?' isAvailable':' isUsed');
    row.tabIndex=0;row.onclick=e=>{if(!e.target.closest('button,input'))window.ACOProfileWorkshop?.openVault?.(request(),'cards',card.fullNumber||card.last4);};row.oncontextmenu=e=>showContext(e,[[ 'View / edit card',()=>window.ACOProfileWorkshop?.openVault?.(request(),'cards',card.fullNumber||card.last4)],['Set / unset Hard Card',()=>row.querySelector('button')?.click()]]);row.onkeydown=e=>{if(e.key==='Enter')row.click();};
     const body=d.createElement('div'),title=text('strong',card.fullNumber||'Card ending '+card.last4),meta=text('small',[card.expiry,card.hardCard?'Hard Card':'Regular card',card.brand,card.fromSavedBank?'Saved bank and profiles':'Found in imported profiles'].filter(Boolean).join(' · '));
@@ -516,6 +516,12 @@
    }
    cardBox.append(row);
   }
+  if(matchingCards.length>visibleCardLimit){
+   const more=text('button','Show 80 more cards ('+(matchingCards.length-visibleCardLimit)+' remaining)');
+   more.type='button';more.className='btn secondary profileBankShowMore';
+   more.onclick=()=>{visibleCardLimit+=80;drawResourceBanks();};
+   cardBox.append(more);
+  }
   if(!addresses.length)addressBox.append(text('p','No addresses saved in this '+(scope==='personal'?'Personal':'customer')+' bank.'));
   for(const address of addresses){
    const row=d.createElement('article');row.className='profileResourceRow isAvailable profileSelectableCard';row.onclick=e=>{if(!e.target.closest('button'))window.ACOProfileWorkshop?.openVault?.(request(),'addresses');};
@@ -533,9 +539,12 @@
    if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;
    if(editorBusy()){pendingRefresh=true;return;}
    bankAssets={addresses:Array.isArray(assets?.addresses)?assets.addresses:[],cards:Array.isArray(assets?.cards)?assets.cards:[],cardPool:Array.isArray(assets?.cardPool)?assets.cardPool:[]};
+   const resourceSignature=JSON.stringify(bankAssets);
+   const resourceChanged=resourceSignature!==lastResourceSignature||lastResourceRetailer!==q('retailer').value;
+   lastResourceSignature=resourceSignature;lastResourceRetailer=q('retailer').value;
    unusedAccounts=(accounts.emails||[]).filter(x=>x.status==='available').map(x=>({id:x.id,email:x.email,source:x.source,status:x.status,retailer:q('retailer').value}));
    poolReport=accounts;
-   drawResourceBanks();
+   if(resourceChanged)drawResourceBanks();
    const stats=accounts.retailerStats||{},cover=accounts.targetLiveReconciliation;
    const lines=[
     retailName[q('retailer').value]+': '+(stats.unusedAccountCount??unusedAccounts.length)+' Unused accounts ('+(stats.unusedEmailCount??0)+' unused emails, '+(stats.unusedExistingAccountCount??0)+' available accounts)',
@@ -599,7 +608,7 @@
    ]);});
  let pendingRefresh=false,refreshTicket=0;
  function editorBusy(){return !!d.querySelector('.profileLibraryModal,.workshopModal:not([hidden])')||!!d.activeElement?.closest?.('#profileLibraryPage input, #profileLibraryPage select, #profileLibraryPage textarea');}
- async function refresh(){if(editorBusy()){pendingRefresh=true;return;}const ticket=++refreshTicket,owner=request(),ownerEpoch=epoch,priorCards=JSON.stringify(bankAssets.cardPool||[]),priorUnused=JSON.stringify(unusedAccounts);if(scope==='aco'&&!customerId){rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();return;}try{if(scope==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;const [result]=await Promise.all([api.list(owner),loadResourceBanks(owner,ticket,ownerEpoch)]);if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;if(editorBusy()){pendingRefresh=true;return;}const same=JSON.stringify(rows)===JSON.stringify(result.profiles);const poolsSame=JSON.stringify(unusedConflicts)===JSON.stringify(result.unusedConflicts||[]);unusedConflicts=Array.isArray(result.unusedConflicts)?result.unusedConflicts:[];if(!same){const scroll={x:window.scrollX,y:window.scrollY};rows=result.profiles;customGroups=result.customGroups||{};selected=new Set([...selected].filter(id=>stage==='unused'?(unusedAccounts.some(x=>x.id===id)||rows.some(x=>x.id===id&&x.bank!=='live'&&x.stage==='in-progress')):rows.some(x=>x.id===id)));draw();window.scrollTo(scroll.x,scroll.y);}else if(!poolsSame||priorUnused!==JSON.stringify(unusedAccounts)||priorCards!==JSON.stringify(bankAssets.cardPool||[]))draw();else drawResourceBanks();note(customerName()+' · '+visible().length+' profiles · '+retailName[q('retailer').value]+' · '+(bankAssets.cardPool||[]).filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value)).length+' eligible cards · '+bankAssets.addresses.length+' saved addresses');}catch(e){if(ticket===refreshTicket&&ownerEpoch===epoch){rows=[];bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();note(e.message);}}}
+ async function refresh(){if(editorBusy()){pendingRefresh=true;return;}const ticket=++refreshTicket,owner=request(),ownerEpoch=epoch,priorCards=JSON.stringify(bankAssets.cardPool||[]),priorUnused=JSON.stringify(unusedAccounts);if(scope==='aco'&&!customerId){rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();return;}try{if(scope==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;const [result]=await Promise.all([api.list(owner),loadResourceBanks(owner,ticket,ownerEpoch)]);if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;if(editorBusy()){pendingRefresh=true;return;}const same=JSON.stringify(rows)===JSON.stringify(result.profiles);const poolsSame=JSON.stringify(unusedConflicts)===JSON.stringify(result.unusedConflicts||[]);unusedConflicts=Array.isArray(result.unusedConflicts)?result.unusedConflicts:[];if(!same){const scroll={x:window.scrollX,y:window.scrollY};rows=result.profiles;customGroups=result.customGroups||{};selected=new Set([...selected].filter(id=>stage==='unused'?(unusedAccounts.some(x=>x.id===id)||rows.some(x=>x.id===id&&x.bank!=='live'&&x.stage==='in-progress')):rows.some(x=>x.id===id)));draw();window.scrollTo(scroll.x,scroll.y);}else if(!poolsSame||priorUnused!==JSON.stringify(unusedAccounts)||priorCards!==JSON.stringify(bankAssets.cardPool||[]))draw();else updateSelection();note(customerName()+' · '+visible().length+' profiles · '+retailName[q('retailer').value]+' · '+(bankAssets.cardPool||[]).filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value)).length+' eligible cards · '+bankAssets.addresses.length+' saved addresses');}catch(e){if(ticket===refreshTicket&&ownerEpoch===epoch){rows=[];bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();note(e.message);}}}
  function close(){epoch++;restoreFromBackup.hidden=true;restoreStatus.textContent='Scan this vault before previewing any restoration.';reviewOutput.textContent='No recovery scan has been run for this vault.';rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
  async function open(next){if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;close();stage='unused';pageIndex=0;scope=next;issueView='all';q('view').value='all';customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;customerList();q('customer-label').hidden=scope==='personal';q('owner-title').textContent=scope==='personal'?'PERSONAL VAULT':'CUSTOMER VAULTS';q('sync').hidden=scope==='personal';q('pkc-reconcile').hidden=scope!=='personal';websiteVault.hidden=scope==='personal';websiteVault.open=false;websiteLoad++;for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;main.hidden=false;for(const b of nav.querySelectorAll('button'))b.classList.remove('on');(scope==='personal'?personalProfiles:customerProfiles).classList.add('on');d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent=scope==='personal'?'Personal Profiles':'Customer Profiles';await window.desktopAPI.site?.hide?.();await refresh();void passiveHealthCheck();}
  q('manage-cards').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'cards');};
@@ -758,7 +767,7 @@
   }catch(error){note(error.message);}
  }
  function openJig(row){if(row.sourceLinked){void linkedJig(row);return;}const owner=request();close();(owner.scope==='personal'?personal:customer)?.click();setTimeout(()=>void window.ACOProfileWorkshop.openSaved({...owner,profileId:row.id}),0);}
- q('card-bank-search').oninput=()=>drawResourceBanks();
+ q('card-bank-search').oninput=()=>{visibleCardLimit=80;drawResourceBanks();};
   q('customer').onchange=()=>{epoch++;websiteLoad++;websiteVault.open=false;websiteVault.querySelector('[data-web-records]').replaceChildren();customerId=q('customer').value||null;rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;bankAssets={addresses:[],cards:[]};selected.clear();pageIndex=0;group='all';issueView='all';q('view').value='all';drawResourceBanks();void refresh();};q('retailer').onchange=()=>{selected.clear();pageIndex=0;group='all';q('search').value='';issueView='all';q('view').value='all';unusedAccounts=[];unusedConflicts=[];poolReport=null;draw();void refresh();};q('search').oninput=()=>{selected.clear();pageIndex=0;if(q('search').value.trim())group='all';draw();};q('view').onchange=()=>{issueView=q('view').value;selected.clear();pageIndex=0;group='all';draw();note(issueView==='duplicates'?'Showing only duplicate profiles.':issueView==='issues'?'Showing only profiles that need attention.':customerName()+' · '+visible().length+' profiles');};for(const b of main.querySelectorAll('[data-stage]'))b.onclick=()=>{stage=b.dataset.stage;pageIndex=0;group='all';selected.clear();q('search').value='';issueView='all';q('view').value='all';for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab===b));draw();};q('all').onclick=()=>{selected.clear();for(const r of pageRows())selected.add(r.id);updateSelection();};q('clear').onclick=()=>{selected.clear();updateSelection();};
  async function jigUnusedSelected(){
    const chosen=pageRows().filter(x=>selected.has(x.id));
