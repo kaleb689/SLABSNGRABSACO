@@ -852,6 +852,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     appId = me.id;
     discordCommunityStatus.bot = { id: me.id, username: me.username };
     console.log("Discord website bot identity:", JSON.stringify(discordCommunityStatus.bot));
+    if (process.env.DISCORD_EMOJI_PACK_UPLOAD_ONCE === "1") {
+      void installDiscordAnimatedEmojis({guildId, api, dataDir})
+        .catch(error => console.error("Discord animated emoji pack:", error?.message || error));
+    }
     try {
       const successes = JSON.parse(await fs.readFile(path.join(dataDir, "success-checkouts.json"), "utf8"));
       const groups = new Map();
@@ -3985,10 +3989,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await cleanupExpiredDropMessages();
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
       await syncAll(); await connect(); void verifyAiConnection();
-      if (process.env.DISCORD_EMOJI_PACK_UPLOAD_ONCE === "1") {
-        void installDiscordAnimatedEmojis({guildId, api, dataDir})
-          .catch(error => console.error("Discord animated emoji pack:", error?.message || error));
-      }
+
     }
     catch (error) { discordCommunityStatus.error = error.message; console.error("Discord community setup:", error.message); setTimeout(setup, 60000).unref?.(); }
   }
