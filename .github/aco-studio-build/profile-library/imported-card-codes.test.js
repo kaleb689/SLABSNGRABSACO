@@ -649,3 +649,55 @@ test('Historical encrypted copy review requires full card equality, not merely l
  await save();
  assert.equal((await snapshot()).matched,0,'a changed digit rejects historical match');
 });
+
+test('Export reads matching saved Card Bank independent reference into temporary file only, preserving original master profile',async t=>{
+ const h=await library(t);
+ for(const retailer of ['target','walmart']){
+  const original=complete(retailer,'matched-'+retailer+'@example.test');
+  await commit(h,await preview(h,[original],h.p,retailer));
+  const row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
+  assert.equal(LC.profileCode(row.data),'');
+  await h.service.addCard(event,{...h.p,card:{...card,customSecurityCode:'00BANK-'+retailer}});
+  for(const format of ['retailer','json','csv','tsv','txt']){
+   const result=await h.lib.exportFile(event,{...h.p,retailer,profileIds:[row.id],exportFormat:format});
+   assert.equal(result.saved,true);
+   assert.ok(h.writes.at(-1)[1].includes('00BANK-'+retailer),'export copy must include matched bank code for '+retailer+' '+format);
+  }
+  const before=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
+  assert.equal(LC.profileCode(before.data),'','a successful export must never write an independent code into the master profile');
+  const archive=await h.lib.exportArchive(event,{...h.p,retailer,profileIds:[row.id]});
+  assert.equal(archive.saved,true);
+  const record=JSON.parse(h.writes.at(-1)[1]).profiles[0];
+  assert.equal(record.profileSecurityCode,'00BANK-'+retailer);
+ }
+});
+
+test('Export blocks missing references without producing incomplete files or changing encrypted data',async t=>{
+ const h=await library(t),original=complete('target','missing-code@example.test');
+ await commit(h,await preview(h,[original]));
+ const row=(await h.lib.list(event,h.p)).profiles[0],vaultBefore=await fs.readFile(h.profiles.paths.personal);
+ await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:[row.id]}),/Export BLOCKED.*missing/);
+ await assert.rejects(h.lib.exportArchive(event,{...h.p,retailer:'target',profileIds:[row.id]}),/Export BLOCKED.*missing/);
+ assert.equal(h.writes.length,0);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),vaultBefore);
+});
+
+test('Export refuses different Security Codes for the identical full card number',async t=>{
+ const h=await library(t),original=complete('target','conflicting-code@example.test');
+ original.profileSecurityCode='PROFILE-REF';
+ await commit(h,await preview(h,[original]));
+ await h.service.addCard(event,{...h.p,card:{...card,customSecurityCode:'BANK-REF'}});
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:[row.id]}),/Export BLOCKED.*conflicting/);
+ assert.equal(h.writes.length,0);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'PROFILE-REF');
+});
+
+test('Full card number, not matching last four digits, determines Security Code used for export',async t=>{
+ const h=await library(t),original=complete('target','exact-card@example.test');
+ await commit(h,await preview(h,[original]));
+ await h.service.addCard(event,{...h.p,card:{...card,number:'5555555555554242',customSecurityCode:'WRONG-REFERENCE'}});
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:[row.id]}),/Export BLOCKED.*missing/);
+ assert.equal(h.writes.length,0);
+});
