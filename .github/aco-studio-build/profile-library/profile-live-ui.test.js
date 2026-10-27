@@ -130,7 +130,7 @@ test('Search and duplicates cannot select a different retailer or status tab',()
 test('Bulk jig, move, delete and export never operate on selected profiles outside current page',()=>{
  assert.match(source,/const chosen=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/);
  assert.match(source,/selectedRows=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)/);
- assert.match(source,/const selectedVisible=pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/);
+ assert.match(source,/const selectedVisible=\(typeof cachedPageRows![^\n]*\)\.filter\(x=>selected\.has\(x\.id\)\)/);
  assert.equal((source.match(/profileIds:pageRows\(\)\.filter\(x=>selected\.has\(x\.id\)\)/g)||[]).length,2);
  assert.match(source,/selected\.clear\(\);pageIndex=0;if\(q\('search'\)\.value\.trim\(\)\)/);
  assert.match(source,/nextPage\.onclick=\(\)=>\{if\(\(pageIndex\+1\)\*PAGE_SIZE<visible\(\)\.length\)\{pageIndex\+\+;selected\.clear\(\);draw\(\);\}\};/);
@@ -349,4 +349,20 @@ test('opening Jig from an already selected unused account preserves the batch',(
  const start=source.indexOf('jig.onclick=()=>'),end=source.indexOf('};',source.indexOf('void jigUnusedSelected()',start))+2;
  const context={jig:{},row:{id:'p2'},selected:new Set(['p1','p2']),updateSelection:()=>{},jigUnusedSelected:()=>{}};vm.createContext(context);vm.runInContext(source.slice(start,end),context);context.jig.onclick();assert.deepEqual(Array.from(context.selected),['p1','p2']);
  context.row.id='p3';context.jig.onclick();assert.deepEqual(Array.from(context.selected),['p3']);
+});
+
+test('selection dock is sticky, groups related actions, and keeps existing handlers',()=>{
+ assert.match(source,/profileSelectionDock/);
+ assert.match(source,/floatingActions\.append\(actionDetails,actionManage\)/);
+ assert.match(source,/actionManage\.append\(q\('jig-selected'\),q\('bulk-move'\),q\('bulk-delete'\),q\('export'\)/);
+ assert.match(source,/main\.querySelector\('\.profileLibraryLayout'\)\.before\(floatingActions\)/);
+ assert.match(source,/Delete selected profiles…/);
+ assert.match(source,/Delete this saved draft…/);
+ assert.match(source,/Delete this profile…/);
+ assert.match(source,/q\('bulk-delete'\)\.click\(\)/);
+ assert.match(source,/const hardCardNumbers=new Set\(/);
+ assert.match(source,/const cardFragment=d\.createDocumentFragment\(\)/);
+ assert.match(source,/cachedPageRows=pageItems/);
+ assert.match(source,/matchingCards\.slice\(0,visibleCardLimit\)/);
+ assert.match(source,/if\(resourceChanged\)drawResourceBanks\(\)/);
 });
