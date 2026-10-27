@@ -659,6 +659,11 @@ test('Pasted credentials preserve password in encrypted retailer bank and keep c
  const own=await h.profiles.libraryTransaction('aco','customer-a',ctx=>
   ctx.emails.filter(x=>x.retailer==='pokemoncenter').map(x=>({email:x.email,password:x.password})),()=>{});
  assert.deepEqual(own,accounts);
+ const made=await h.profiles.createEmailProfiles('aco','customer-a','pokemoncenter',1,
+  async emails=>emails.map(email=>({data:complete('pokemoncenter',email),format:'valor',assetRefs:{}})),()=>{});
+ assert.equal(made.created,1);
+ const generated=(await h.lib.list(event,h.a)).profiles.find(row=>row.email===accounts[0].email);
+ assert.equal(generated.data.password,accounts[0].password,'Password follows pasted account into its generated retailer profile');
  const foreign=await h.profiles.libraryTransaction('aco','customer-b',ctx=>ctx.emails.length,()=>{});
  assert.equal(foreign,0);
  await assert.rejects(h.lib.importPastedAccounts(event,{...h.a,retailer:'pokemoncenter',accounts:[{email:'bad@example.test',password:''}],confirmed:true}),/Invalid account/);
