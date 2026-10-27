@@ -2583,7 +2583,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     if (!dropChannelIds.has(message.channel_id) ||
         (message.author?.bot && !isFormattedDropPost(message, appId)) || message.webhook_id) return;
     const products = parseDropSkus(message);
-    const upcomingWithoutSkus = message.channel_id !== tonightChannelId &&
+    const upcomingWithoutSkus = message.channel_id === upcomingChannelId &&
       isNewDropPost(message) && (message.type ?? 0) === 0;
     const shouldShow = products.length > 0 || upcomingWithoutSkus;
     await withSkuQueue(async () => {
@@ -2627,27 +2627,33 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     for (const channelId of dropChannelIds) {
       try {
       const active = [];
-      let before = "", foundMain = false, keptUpcomingMain = false;
-      for (let page = 0; page < 20 && !foundMain; page++) {
+      let before = "", keptUpcomingMain = false;
+      const seenSources = new Set();
+      for (let page = 0; page < 10; page++) {
         const history = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
         for (const message of history) {
           if (!message.message_reference?.message_id && message.type === 0 &&
               (!message.author?.bot || isFormattedDropPost(message, appId)) &&
               !message.webhook_id && parseDropSkus(message).length) {
-            active.push(message);
-            foundMain = true;
-            break;
+            if (!seenSources.has(message.id)) {
+              active.push(message);
+              seenSources.add(message.id);
+            }
+            continue;
           }
           if ((!message.author?.bot || isFormattedDropPost(message, appId)) &&
               !message.webhook_id && (message.type === 0 || message.type === 19)) {
-            if (parseDropSkus(message).length) active.push(message);
+            if (parseDropSkus(message).length && !seenSources.has(message.id)) {
+              active.push(message);
+              seenSources.add(message.id);
+            }
             else if (channelId !== tonightChannelId && isNewDropPost(message) && !keptUpcomingMain) {
               active.push(message);
               keptUpcomingMain = true;
             }
           }
         }
-        if (history.length < 100) break;
+        if (history.length < 100 || active.length >= 40) break;
         before = history.at(-1).id;
       }
       for (const message of active.reverse()) await ensureSkuControls(message);
@@ -3851,7 +3857,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function webActiveDropSources() {
     if (!skuRequestsChannelId || !dropChannelIds.size) throw new Error("Discord drop controls are not ready yet.");
     const perChannel=await Promise.all([...dropChannelIds].map(async channelId=>{
-      const messages=await api("/channels/"+channelId+"/messages?limit=100");
+      let messages;
+      try {
+        messages=await api("/channels/"+channelId+"/messages?limit=100");
+      } catch(error) {
+        // An inaccessible drop channel must not block other retailers in the app.
+        console.error("Discord app retailer drop read failed:", channelId, error.message);
+        return [];
+      }
       const sources=recentSelectableDropPosts(messages,appId);
       const label=retailerDropLabels[channelId]||
         (channelId===tonightChannelId?"Dropping Tonight":"Upcoming Drops");
