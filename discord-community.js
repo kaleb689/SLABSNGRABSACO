@@ -6,6 +6,7 @@ import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder,
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 import { createDropMessageRetention } from "./discord-drop-retention.js";
+import { installDiscordAnimatedEmojis } from "./discord-emoji-pack.js";
 import { RETAILER_ALERTS, retailerAlert, retailerFromDropLabel, mentionedRetailers, retailerAlertButtons } from "./retailer-alert-roles.js";
 
 const API = "https://discord.com/api/v10";
@@ -3984,6 +3985,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await cleanupExpiredDropMessages();
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
       await syncAll(); await connect(); void verifyAiConnection();
+      if (process.env.DISCORD_EMOJI_PACK_UPLOAD_ONCE === "1") {
+        void installDiscordAnimatedEmojis({guildId, api, dataDir})
+          .catch(error => console.error("Discord animated emoji pack:", error?.message || error));
+      }
     }
     catch (error) { discordCommunityStatus.error = error.message; console.error("Discord community setup:", error.message); setTimeout(setup, 60000).unref?.(); }
   }
