@@ -25,6 +25,7 @@ jobs:
           node --check .github/aco-studio-build/completed-profiles/profile-workshop-ui.js
       - name: Run profile library and jig regression tests
         run: |
+          printf '{"type":"commonjs"}\n' > .github/aco-studio-build/package.json
           node --test .github/aco-studio-build/profile-library/profile-library.test.js
           node --test .github/aco-studio-build/profile-library/profile-live-ui.test.js
           node --test .github/aco-studio-build/profile-library/profile-duplicate-scan.test.js
