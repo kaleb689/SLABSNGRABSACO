@@ -56,13 +56,13 @@ test('Independent profile code may be edited without affecting other profiles or
  await commit(h,await preview(h,[data]));
  let row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'PICKUP-OLD');
- const updated=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'PICKUP-NEW'});
+ const updated=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'PICKUP-NEW',confirmSecurityCodeChange:true});
  assert.equal(updated.updated,true);
  assert.ok(!JSON.stringify(updated).includes('PICKUP-NEW'));
  row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'PICKUP-NEW');
  assert.ok(!JSON.stringify(await h.profiles.audit('personal',null)).includes('PICKUP-NEW'));
- await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:''});
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'',confirmSecurityCodeChange:true});
  assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'');
 });
 test('Imported independent Security Code aliases remain with the correct owner and never become a card verifier',async t=>{
@@ -173,7 +173,7 @@ test('Original imported profile can restore its missing Security Code without re
  await commit(h,await preview(h,[original]));
  let row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'0099');
- await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:''});
+ await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'',confirmSecurityCodeChange:true});
  row=(await h.lib.list(event,h.p)).profiles[0];assert.equal(row.data.profileSecurityCode,'');
  const decoded=Core.parseFile('original.json',JSON.stringify([original])).records[0];
  assert.equal(decoded.cc_cvv,'0099','parser must preserve the old reference slot for recovery');
@@ -534,14 +534,14 @@ test('Explicit owner profile-code edits remain possible, and unrelated edits ret
  await commit(h,await preview(h,[data]));
  let row=(await h.lib.list(event,h.p)).profiles[0];
  await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,
-  fields:LC.values(row.data),profileSecurityCode:'INDEPENDENT-REF-NEW'});
+  fields:LC.values(row.data),profileSecurityCode:'INDEPENDENT-REF-NEW',confirmSecurityCodeChange:true});
  row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'INDEPENDENT-REF-NEW');
  await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data)});
  row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'INDEPENDENT-REF-NEW');
  await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,
-  fields:LC.values(row.data),profileSecurityCode:''});
+  fields:LC.values(row.data),profileSecurityCode:'',confirmSecurityCodeChange:true});
  row=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(row.data.profileSecurityCode,'','explicitly authorized independent-reference clear is permitted');
 });
