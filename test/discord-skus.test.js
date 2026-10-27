@@ -344,3 +344,34 @@ test("Discord rate-limit delay supports body, headers and backoff fallback", asy
   assert.equal(discordRateLimitDelayMs({ retryAfter: null, headerRetryAfter: "0.2" }), 300);
   assert.equal(discordRateLimitDelayMs({ retryAfter: null, headerRetryAfter: null, attempt: 2 }), 4100);
 });
+
+test("Walmart PID, Target TCIN and PKC embedded SKU fields work across all retailers",async()=>{
+ const {recentSelectableDropPosts,isSelectableSkuSource}=await import("../discord-community.js");
+ const {formattedDropPayloads}=await import("../drop-monitor-format.js");
+ const botId="1234567890123456789";
+ const walmartPayload=formattedDropPayloads([{name:"Pokemon Booster",price:"59.99",
+  sku:"21077661804",cartLimit:1,time:"Oct 31 2pm",seller:"Walmart.com"}],"Walmart Drops")[0];
+ const walmart={id:"10",type:0,author:{id:botId,bot:true},embeds:walmartPayload.embeds};
+ const pkc={id:"11",type:0,author:{id:"staff",bot:false},
+  embeds:[{title:"Pokemon Center ETB",fields:[{name:"SKU",value:"PKC-531"}]}]};
+ const target={id:"12",type:0,author:{id:"staff",bot:false},
+  content:"Target Exclusive Collection\nTCIN\n123456789"};
+ assert.deepEqual(parseDropSkus(walmart),[{name:"Pokemon Booster",sku:"21077661804"}]);
+ assert.deepEqual(parseDropSkus(pkc),[{name:"Pokemon Center ETB",sku:"PKC-531"}]);
+ assert.deepEqual(parseDropSkus(target),[{name:"Target Exclusive Collection",sku:"123456789"}]);
+ assert.equal(isSelectableSkuSource(walmart,botId),true);
+ assert.equal(isSelectableSkuSource({...walmart,webhook_id:"forged"},botId),false);
+ assert.equal(isSelectableSkuSource({...walmart,author:{id:"other",bot:true}},botId),false);
+ assert.deepEqual(recentSelectableDropPosts([walmart,pkc,target],botId).map(x=>x.id),["10","11","12"]);
+ assert.deepEqual(recentSelectableDropPosts([walmart,pkc,target],botId,2).map(x=>x.id),["10","11"]);
+});
+test("customer app loads multiple posts per retailer and saves without removing unrelated choices",async()=>{
+ const {readFileSync}=await import("node:fs");
+ const src=readFileSync(new URL("../discord-community.js",import.meta.url),"utf8");
+ assert.match(src,/recentSelectableDropPosts\(messages,appId\)/);
+ assert.match(src,/return perChannel\.flat\(\)/);
+ assert.doesNotMatch(src,/candidates\.find\(message => parseDropSkus/);
+ assert.doesNotMatch(src,/submitted\.size !== live\.length/);
+ assert.match(src,/const stillSaved = old\.filter/);
+ assert.match(src,/isSelectableSkuSource\(source, appId\)/);
+});
