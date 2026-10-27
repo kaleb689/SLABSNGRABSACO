@@ -1,4 +1,4 @@
-name: Publish ACO Studio 4.13.76 Mac only after full native verification
+name: Publish ACO Studio 4.13.77 Mac only after full native verification
 on:
   # Authorized publication when approved changes reach main. The publish
   # job is gated by full native Mac regression, signature, first-launch,
@@ -16,10 +16,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-472-macos
+  group: aco-studio-477-macos
   cancel-in-progress: false
 env:
-  ACO_VERSION: '4.13.76'
+  ACO_VERSION: '4.13.77'
 jobs:
   mac:
     if: github.ref == 'refs/heads/main'
@@ -254,7 +254,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-4.13.76-*
+          pattern: ACO-Studio-4.13.77-*
           path: installers
           merge-multiple: true
       - name: Verify Apple Silicon before publishing
@@ -262,7 +262,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,json,hashlib
-          root=pathlib.Path('installers');v='4.13.76';platforms={};sums=[]
+          root=pathlib.Path('installers');v='4.13.77';platforms={};sums=[]
           arch='arm64'
           mode=(root/f'signing-{arch}.txt').read_text().strip()
           assert mode in ('adhoc','developer-id')
@@ -275,7 +275,7 @@ jobs:
             with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
             sums.append(digest+'  '+p.name)
             if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
-          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'ACO Studio now reuses its existing Mac app instance to prevent duplicate Dock launch icons, offers a verified Desktop shortcut to the Applications copy, and no longer force-launches extra instances on updates. Profile action buttons now follow the profile list in a sticky grouped toolbar with right-click Delete Profile and Delete Selected confirmations. Card bank renders in smaller batches, profile card rendering uses one document fragment, and cached page selection prevents avoidable repeat work. Existing records and backups remain preserved. Customer Profiles now offer an owner-only View card details & code action for saved full-number Studio cards, showing existing independent profile references from the exact customer vault without exposing payment CVV/CVC or unmasking website-only cards. New retailer profiles stay in their own unexported tab until saved to an export file. Export All can preview and skip matching emails or optionally full-card duplicates without changing the saved vault. Per-retailer counts show Live, New, Ready and Draft; previously approved quantity and selection fixes remain. Profile creation quantities can be typed when accounts are selected. A smaller quantity uses only the first requested accounts from that selection, with exact emails shown for confirmation. Selection highlights update in place without rebuilding the card grid, unchanged background data no longer rebuilds the Unused page, and open creation windows defer background redraws. Selected profile counts remain visible and opening a batch from an already-selected account preserves the batch. Existing profiles, cards, addresses, email banks and routing rules are preserved.','platforms':platforms},indent=2))
+          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'ACO Studio now reuses its existing Mac app instance to prevent duplicate Dock launch icons, offers a verified Desktop shortcut to the Applications copy, and no longer force-launches extra instances on updates. Profile action buttons now follow the profile list in a sticky grouped toolbar with right-click Delete Profile and Delete Selected confirmations. Card bank renders in smaller batches, profile card rendering uses one document fragment, and cached page selection prevents avoidable repeat work. Existing records and backups remain preserved. Customer Profiles now offer an owner-only View card details & code action for saved full-number Studio cards, showing existing independent profile references from the exact customer vault without exposing payment CVV/CVC or unmasking website-only cards. New retailer profiles stay in their own unexported tab until saved to an export file. Export All can preview and skip matching emails or optionally full-card duplicates without changing the saved vault. Per-retailer counts show Live, New, Ready and Draft; previously approved quantity and selection fixes remain. Profile creation quantities can be typed when accounts are selected. A smaller quantity uses only the first requested accounts from that selection, with exact emails shown for confirmation. Selection highlights update in place without rebuilding the card grid, unchanged background data no longer rebuilds the Unused page, and open creation windows defer background redraws. Selected profile counts remain visible and opening a batch from an already-selected account preserves the batch. Existing profiles, cards, addresses, email banks and routing rules are preserved. The Profiles toolbar now opens Paste retailer accounts directly, accepts email:password, email:::password, email; password, comma, pipe and tab-separated pairs for a selected retailer and vault, previews account emails without exposing passwords, preserves password punctuation, and imports only after confirmation.','platforms':platforms},indent=2))
           (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n');(root/'release-tag.txt').write_text(tag)
           PY
       - name: Release the tested installers and advance verified feed
@@ -284,13 +284,13 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
-          ACO Studio 4.13.76 fixes editable profile quantities and visible selection counts. ACO Studio now reuses its existing Mac app instance to prevent duplicate Dock launch icons, offers a verified Desktop shortcut to the Applications copy, and no longer force-launches extra instances on updates. Profile action buttons now follow the profile list in a sticky grouped toolbar with right-click Delete Profile and Delete Selected confirmations. Card bank renders in smaller batches, profile card rendering uses one document fragment, and cached page selection prevents avoidable repeat work. Existing records and backups remain preserved. New retailer profiles stay in their own unexported tab until saved to an export file. Export All can preview and skip matching emails or optionally full-card duplicates without changing the saved vault. Per-retailer counts show Live, New, Ready and Draft; previously approved quantity and selection fixes remain. Profile creation quantities can be typed when accounts are selected. A smaller quantity uses only the first requested accounts from that selection, with exact emails shown for confirmation. Selection highlights update in place without rebuilding the card grid, unchanged background data no longer rebuilds the Unused page, and open creation windows defer background redraws. Selected profile counts remain visible and opening a batch from an already-selected account preserves the batch. Existing profiles, cards, addresses, email banks and routing rules are preserved. Native Apple Silicon regression, installed-app, updater, rollback and data-preservation checks gate publication.
+          ACO Studio 4.13.77 fixes editable profile quantities and visible selection counts. ACO Studio now reuses its existing Mac app instance to prevent duplicate Dock launch icons, offers a verified Desktop shortcut to the Applications copy, and no longer force-launches extra instances on updates. Profile action buttons now follow the profile list in a sticky grouped toolbar with right-click Delete Profile and Delete Selected confirmations. Card bank renders in smaller batches, profile card rendering uses one document fragment, and cached page selection prevents avoidable repeat work. Existing records and backups remain preserved. New retailer profiles stay in their own unexported tab until saved to an export file. Export All can preview and skip matching emails or optionally full-card duplicates without changing the saved vault. Per-retailer counts show Live, New, Ready and Draft; previously approved quantity and selection fixes remain. Profile creation quantities can be typed when accounts are selected. A smaller quantity uses only the first requested accounts from that selection, with exact emails shown for confirmation. Selection highlights update in place without rebuilding the card grid, unchanged background data no longer rebuilds the Unused page, and open creation windows defer background redraws. Selected profile counts remain visible and opening a batch from an already-selected account preserves the batch. Existing profiles, cards, addresses, email banks and routing rules are preserved. The Profiles toolbar now opens Paste retailer accounts directly, accepts email:password, email:::password, email; password, comma, pipe and tab-separated pairs for a selected retailer and vault, previews account emails without exposing passwords, preserves password punctuation, and imports only after confirmation. Native Apple Silicon regression, installed-app, updater, rollback and data-preservation checks gate publication.
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.76 Mac' --notes-file notes.md --prerelease
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.77 Mac' --notes-file notes.md --prerelease
           else
-            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.76 Mac' --notes-file notes.md --prerelease
+            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.77 Mac' --notes-file notes.md --prerelease
           fi
           # Check that published artifacts exist before advertising the
           # update to existing owners.
