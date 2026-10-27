@@ -974,6 +974,32 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const v=C.values(row.data);
   return ['shipping.address1','shipping.address2','shipping.city','shipping.state','shipping.zip'].map(k=>normalizedAddressPart(v[k])).join('|');
  }
+ // Detect exact full-address reuse across all saved accounts in this one vault,
+ // including other retailer tabs. Do not read any other customer's vault.
+ // Existing unchanged addresses aren't new jigs and are not flagged.
+ function jigAddressConflicts(planned,inventory){
+  const selected=new Map(planned.map(row=>[row.profileId,row]));
+  const occupied=[];
+  for(const row of inventory){
+   const plan=selected.get(row.id);
+   if(plan)continue;
+   occupied.push({id:row.id,email:row.email,retailer:row.retailer,key:mainAddressKey(row)});
+  }
+  for(const plan of planned){
+   occupied.push({id:plan.profileId,email:plan.email,retailer:plan.retailer,
+    key:mainAddressKey({data:plan.data})});
+  }
+  const conflicts=[];
+  for(const plan of planned){
+   if(mainAddressKey({data:plan.data})===mainAddressKey({data:plan.originalData}))continue;
+   const key=mainAddressKey({data:plan.data});
+   const matches=occupied.filter(entry=>entry.id!==plan.profileId&&entry.key===key);
+   if(matches.length)conflicts.push({profileId:plan.profileId,email:plan.email,retailer:plan.retailer,
+    address:[plan.after.address1,plan.after.address2,plan.after.city,plan.after.state,plan.after.zip].filter(Boolean).join(', '),
+    matches:matches.slice(0,8).map(entry=>({email:entry.email,retailer:entry.retailer}))});
+  }
+  return conflicts;
+ }
  // Authorized exact address picker. Pulls Main bank entries and previously
  // saved profile shipping (including jigged) from this one encrypted owner vault.
  async function reusableShippingChoices(a,snapshot=null){
@@ -1201,7 +1227,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    }
    const after=addressView(data);
    if(!after.address1||!after.city||!after.state||!after.zip)throw Error('A selected profile is missing a complete shipping address.');
-   return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),email:row.email,label:row.label,retailer:row.retailer,
+   return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),originalData:row.data,email:row.email,label:row.label,retailer:row.retailer,
     linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer,
     postalCities:availablePostal,postalCityApplied:appliedPostalCity,
     category:reuseThis?'reused saved address':hardResults?.[regularIndex]?.kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),
@@ -1216,11 +1242,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     ' selected profiles, not the requested '+reuseCount+'. Change the remaining jig rules or selected profiles and preview again.');
   }
   if(rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('Every selected profile already has the requested address and no changes would be saved.');
+  const duplicateAddresses=jigAddressConflicts(rows,all);
   const token=uuid();
   for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
-  jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,at:now(),epoch:ep(e),
+  jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,duplicateAddresses,at:now(),epoch:ep(e),
    reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
-  return {token,count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,
+  return {token,duplicateAddresses,count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
    postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
    postalCityApplied:rows.filter(x=>x.postalCityApplied).length,postalStreetVerified:false,
@@ -1235,6 +1262,16 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const row=latest.find(x=>x.id===change.profileId&&x.retailer===plan.retailer);
    if(!row||(row.revision||0)!==change.revision||require('./jig-field-core').hash(row.data)!==change.hash)throw Error('A selected profile changed after preview. Nothing was saved; preview the batch again.');
   }
+  // A user must explicitly allow any duplicate jig after seeing the complete
+  // conflicting address and accounts. Recheck here to catch new conflicts
+  // arising after preview. No partial profile edits have been made yet.
+  const latestDuplicates=jigAddressConflicts(plan.rows,latest);
+  if(latestDuplicates.length&&p.allowDuplicateAddresses!==true){
+   throw Error('This jig duplicates '+latestDuplicates.length+' saved account address(es). Review the preview and check Allow duplicate jig addresses to continue.');
+  }
+  if(latestDuplicates.length&&!plan.duplicateAddresses.length){
+   throw Error('New address duplicates appeared after preview. Preview again before allowing duplicates.');
+  }
   // Reject a stale Main/Jigged source before making any recipient write.
   if(plan.reusedSource){
    const current=await resolveReuse(a,plan.reusedSource.id);
@@ -1247,7 +1284,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    updated++;if(result?.remoteSaved)remoteSaved++;
   }
   jigPlans.delete(p.token);a.check();
-  return {saved:true,updated,remoteSaved,localSaved:updated-remoteSaved};
+  return {saved:true,updated,remoteSaved,localSaved:updated-remoteSaved,duplicateOverrides:latestDuplicates.length};
  }
  // Reveal only the selected customer's existing Studio card and independent
  // profile-reference codes after owner authentication. Never return CVV/CVC,
