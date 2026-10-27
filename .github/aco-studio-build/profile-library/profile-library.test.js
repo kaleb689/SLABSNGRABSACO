@@ -777,6 +777,7 @@ test('Target hard fraction and hyphen groups appear in a realistic multi-address
  assert.ok(rules.some(x=>x.startsWith('target.house.fraction.')),'Fraction group must actually run');
  assert.ok(rules.some(x=>x.startsWith('target.house.hyphen.')),'Hyphen group must actually run');
  assert.equal(rules.filter(x=>x==='second-line.add').length,0,'Unit box unchecked means no new units');
+ assert.equal(result.profiles.filter(x=>x.after.address2).length,0,'Legacy unit-formatting rules may not add second lines without explicit checkbox');
 });
 
 test('Unit addition alone works when explicitly enabled without any other jig checkbox',async t=>{
