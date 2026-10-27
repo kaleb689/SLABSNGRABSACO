@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseMonitorDropProducts, formattedDropPayloads, formattedDropName, isFormattedDropPost, FORMATTED_DROP_MARKER } from "../drop-monitor-format.js";
-import { parseDropSkus, dropBotPermissionOverwrite } from "../discord-community.js";
+import { parseDropSkus, dropBotPermissionOverwrite, isCoveredRawMonitorPost } from "../discord-community.js";
 
 const pasted = `Walmart Draws
 Pokémon TCG: 30th Celebration Booster Bundle 2-Pack Bundle
@@ -161,4 +161,19 @@ test("retailer formatting permissions allow embeds and Manage Messages without c
  assert.equal(allow & (8192n|16384n),8192n|16384n);
  assert.equal(deny & (8192n|16384n),0n);
  assert.equal(allow & 16n,16n,"Other existing bot permissions remain");
+});
+
+test("reconcile only owner raw monitor text already represented by exact trusted bot cards",()=>{
+ const channel="1557842533441208371",owner="1551070928039845923",bot="1551070928039845900";
+ const raw={id:"1551070928039846000",channel_id:channel,author:{id:owner,bot:false},
+  timestamp:"2026-10-27T13:12:01Z",content:pasted,type:0};
+ const payload=formattedDropPayloads(parseMonitorDropProducts(pasted),"Walmart Drops")[0];
+ const formatted={id:"1551070928039846001",channel_id:channel,author:{id:bot,bot:true},
+  timestamp:"2026-10-27T13:12:12Z",type:0,content:payload.content,embeds:payload.embeds};
+ assert.equal(isCoveredRawMonitorPost(raw,[raw,formatted],owner,bot),true);
+ assert.equal(isCoveredRawMonitorPost({...raw,pinned:true},[formatted],owner,bot),false);
+ assert.equal(isCoveredRawMonitorPost({...raw,author:{id:"someone-else"}},[formatted],owner,bot),false);
+ assert.equal(isCoveredRawMonitorPost(raw,[{...formatted,timestamp:"2026-10-27T13:45:12Z"}],owner,bot),false);
+ assert.equal(isCoveredRawMonitorPost(raw,[{...formatted,author:{id:"different",bot:true}}],owner,bot),false);
+ assert.equal(isCoveredRawMonitorPost(raw,[{...formatted,embeds:[{description:"SKU: WRONG123"}]}],owner,bot),false);
 });
