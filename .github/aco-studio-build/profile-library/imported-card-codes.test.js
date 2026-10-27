@@ -703,3 +703,17 @@ test('Full card number, not matching last four digits, determines Security Code 
  await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:[row.id]}),/Export BLOCKED.*missing/);
  assert.equal(h.writes.length,0);
 });
+
+test('Ordinary profile changes cannot silently remove or replace an existing Security Code',async t=>{
+ const h=await library(t),data=complete('target','never-clear@example.test');
+ data.profileSecurityCode='NONPAYMENT-REF-0042';
+ await commit(h,await preview(h,[data]));
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ const before=await fs.readFile(h.profiles.paths.personal);
+ await assert.rejects(h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:''}),/explicit separate confirmation/);
+ await assert.rejects(h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data),profileSecurityCode:'REPLACEMENT'}),/explicit separate confirmation/);
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),before);
+ const saved=await h.lib.edit(event,{...h.p,profileId:row.id,revision:row.revision,fields:LC.values(row.data)});
+ assert.equal(saved.updated,true);
+ assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'NONPAYMENT-REF-0042');
+});
