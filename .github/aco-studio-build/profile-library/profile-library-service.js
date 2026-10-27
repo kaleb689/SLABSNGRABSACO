@@ -1098,7 +1098,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(combine&&appliedRuleIds.length>=3)break;
     if(isHardRule(id)&&appliedHard&&!combine)continue;
     const candidate=applyOne(data,row,id),address=addressView(candidate);
-    if(existingUnitViolation(beforeAddress,address)||(!inlineUnit(beforeAddress.address1)&&inlineUnit(address.address1)))continue;
+    // Legacy unit rules cannot add a new line: only the explicit optional count can.
+    if(existingUnitViolation(beforeAddress,address)||(!inlineUnit(beforeAddress.address1)&&inlineUnit(address.address1))||
+       (!beforeAddress.address2.trim()&&!inlineUnit(beforeAddress.address1)&&address.address2.trim()))continue;
     if(['address1','address2','city','state','zip'].every(key=>
       normalizedAddressPart(address[key])===normalizedAddressPart(addressView(data)[key])))continue;
     data=candidate;appliedRuleIds.push(id);
