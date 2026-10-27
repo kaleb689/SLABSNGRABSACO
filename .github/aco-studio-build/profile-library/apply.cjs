@@ -485,3 +485,37 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  fs.copyFileSync(path.join(__dirname,'emailgen-safe-new-bank.js'),path.join(root,'emailgen-safe-new-bank.js'));
  fs.copyFileSync(path.join(__dirname,'emailgen-new-bank-reset.test.js'),path.join(root,'tests','emailgen-new-bank-reset.test.js'));
 }
+
+// Align older bundled *synthetic test fixtures* with the enforced independent
+// reference requirement. This only changes test source in the temporary build;
+// no app data, customer profiles, saved cards or runtime export checks are touched.
+{
+ const p=path.join(root,'tests','personal-navigation.test.js');
+ let source=fs.readFileSync(p,'utf8');
+ function amend(from,to){
+  if(source.split(from).length!==2)throw Error('Personal navigation legacy test anchor changed');
+  source=source.replace(from,to);
+ }
+ amend("},()=> 'sample-row');const text=JSON.stringify(",
+       "},()=> 'sample-row');row.profileSecurityCode='TEST-INDEPENDENT-REFERENCE';const text=JSON.stringify(");
+ amend("assert.deepEqual(exported.card,h.row.card);assert.equal(h.row.firstName,'Before');",
+       "assert.deepEqual({...exported.card,cvv:h.row.card.cvv},h.row.card);assert.equal(exported.card.cvv,'TEST-INDEPENDENT-REFERENCE');assert.equal(h.row.firstName,'Before');");
+ fs.writeFileSync(p,source);
+}
+{
+ const p=path.join(root,'tests','profile-workshop.test.js');
+ let source=fs.readFileSync(p,'utf8');
+ function amend(from,to){
+  if(source.split(from).length!==2)throw Error('Workshop legacy export test anchor changed');
+  source=source.replace(from,to);
+ }
+ amend("async function setup(h){const profile=await created(",
+       "async function setup(h,reference=''){const profile=await created(");
+ amend("const savedCard=await h.service.addCard(event,{...h.p,card});",
+       "const savedCard=await h.service.addCard(event,{...h.p,card:{...card,...(reference?{customSecurityCode:reference}:{})}});");
+ amend("const a=D.blank('target','shikari',{email:'one@example.test'}),b=D.blank('target','shikari',{email:'two@example.test'});a.extra='unchanged';",
+       "const a=D.blank('target','shikari',{email:'one@example.test'}),b=D.blank('target','shikari',{email:'two@example.test'});a.profileSecurityCode='SYNTHETIC-REF-ONE';b.profileSecurityCode='SYNTHETIC-REF-TWO';a.extra='unchanged';");
+ const mark="test('Native export writes full saved card data only after explicit confirmation',async t=>{const h=await env(t),{profile,savedCard}=await setup(h);";
+ amend(mark,mark.replace("setup(h);","setup(h,'WORKSHOP-EXPORT-REF');"));
+ fs.writeFileSync(p,source);
+}

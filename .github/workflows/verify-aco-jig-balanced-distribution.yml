@@ -52,3 +52,5 @@ jobs:
           node --test tests/profile-duplicate-scan.test.js
           node --test tests/imported-card-codes.test.js
           node --test tests/profile-completion.test.js
+          node --test tests/personal-navigation.test.js
+          node --test tests/profile-workshop.test.js
