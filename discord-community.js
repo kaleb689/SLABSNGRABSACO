@@ -2856,7 +2856,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // Only the owner can invoke automatic monitor-paste conversion. Regular
     // staff drop posts and free-form messages keep their existing behavior.
     const monitored = isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")
-      ? parseMonitorDropProducts(d.content) : [];
+      ? parseMonitorDropProducts(d) : [];
     if (monitored.length) {
       try {
         const label = retailerDropLabels[d.channel_id] ||
@@ -2873,8 +2873,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           await notifyRetailerSkuChange(formatted);
         }
         if (rendered.length === payloads.length) {
-          // Keep the original post too; every drop message keeps its own
-          // ten-day retention window, regardless of newer formatted posts.
+          // Replace only the just-submitted raw monitor paste, never other
+          // historical drop posts. Wait until the structured messages and
+          // their selectable SKU controls are created successfully.
+          try {
+            await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
+          } catch (error) {
+            console.error("Formatted drop published; could not remove raw paste:", error.message);
+          }
           return;
         }
       } catch (error) {
