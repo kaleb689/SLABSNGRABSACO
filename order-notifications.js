@@ -406,11 +406,11 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         // A meaningful edit replaces a still-queued previous SKU version.
         state.outbox = state.outbox.filter(item =>
           String(item.accountId) !== accountId ||
-          item.notification?.kind !== "drop_skus_updated" ||
+          !["drop_skus_updated","drop_announcement"].includes(item.notification?.kind) ||
           item.notification?.sourceUrl !== notification.sourceUrl);
         const inbox = state.inbox[accountId] ||= [];
         state.inbox[accountId] = inbox.filter(item =>
-          item.kind !== "drop_skus_updated" || item.sourceUrl !== notification.sourceUrl);
+          !["drop_skus_updated","drop_announcement"].includes(item.kind) || item.sourceUrl !== notification.sourceUrl);
         const currentInbox = state.inbox[accountId];
         currentInbox.push(event);
         if (currentInbox.length > 200) currentInbox.splice(0, currentInbox.length - 200);
