@@ -17,7 +17,12 @@ function retailer(value) {
 // clock is later activated or restarted. Ended assignments remain bounded.
 export function checkoutAssignmentContains(assignment, checkoutAt) {
   const at = Date.parse(checkoutAt || "");
-  const start = Date.parse(assignment?.createdAt || assignment?.startsAt || "");
+  // Activation is NOT an ownership prerequisite. In older assignments the
+  // original link timestamp was saved as activationRequestedAt but createdAt
+  // was absent. Accept that dated, customer-bound assignment from its actual
+  // request time; never backdate ownership to the eventual activation date.
+  const start = Date.parse(assignment?.createdAt || assignment?.activationRequestedAt ||
+    assignment?.startsAt || "");
   if (!Number.isFinite(at) || !Number.isFinite(start) || at < start) return false;
   const endValue = assignment.endedAt || assignment.returnedToPoolAt || assignment.expiresAt;
   if (!endValue) return true;

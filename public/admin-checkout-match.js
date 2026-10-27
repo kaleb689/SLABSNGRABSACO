@@ -9,14 +9,19 @@ let linkableCustomers = [];
 function renderUnlinkedEmails(){
  const needle=String($("unlinked-email-search").value||"").toLowerCase().trim();
  const shown=unmatchedEmailOrders.filter(o=>
-  [o.retailerLogin,o.profileLabel,o.retailer,o.orderNumber,...(o.products||[]).map(p=>p.name)]
+  [o.retailerLogin,o.profileLabel,o.retailer,o.orderNumber,
+   ...(o.exactLinkedAccounts||[]).map(p=>p.customer),
+   ...(o.products||[]).map(p=>p.name)]
    .join(" ").toLowerCase().includes(needle));
  $("unlinked-email-results").innerHTML=shown.slice(0,100).map(o=>{
   const current=String(o.effectiveStatus||o.status||"").toLowerCase();
   const candidates=Array.isArray(o.exactLinkedAccounts)?o.exactLinkedAccounts:[];
   const owners=[...new Set(candidates.filter(x=>x.eligible).map(x=>x.customer).filter(Boolean))];
+  const pendingEligible=candidates.filter(item=>item.eligible&&!item.activatedAt);
   const explanation=owners.length===1
-   ?"One eligible linked account: "+owners[0]+". Review assignment details if still unmatched."
+   ?"One eligible linked account: "+owners[0]+
+      (pendingEligible.length?" (profiles awaiting activation — checkout still counts).":"")+
+      " Review assignment details if still unmatched."
    :owners.length>1?"Conflicting eligible owners. Verify the assignment before linking."
    :candidates.length?"Retailer login found, but its ownership dates do not cover this checkout."
    :"This retailer email was not found on any correctly linked retailer account.";
@@ -25,11 +30,13 @@ function renderUnlinkedEmails(){
   const itemLabels=(Array.isArray(o.products)?o.products:[]).slice(0,6).map(p=>
    '<span>'+e(p.name)+' x'+Math.max(0,Number(p.quantity)||0)+'</span>').join("");
   const ix=unmatchedEmailOrders.indexOf(o);
+  // Admin must choose the exact customer. Display names are not unique IDs:
+  // do not preselect by a matching name even when the label appears once.
   const options=linkableCustomers.map(c=>
    '<option value="'+e(c.id)+'">'+e(c.label)+'</option>').join("");
   const assign=o.retailerLogin
    ?'<details class="owner-review"><summary>Verify and recover this checkout</summary>'+
-    '<p class="notice">Confirm the exact retailer login and who owned it on the checkout date. This links only this original order and sends the customer notification.</p>'+
+    '<p class="notice">Confirm the exact retailer login and who owned it on the checkout date. Activation is not required. This links only this original Discord order, updates linked checkouts and customer app, and sends the customer notification.</p>'+
     '<label for="owner-for-'+ix+'">Verified customer</label>'+
     '<select id="owner-for-'+ix+'"><option value="">Choose a customer...</option>'+options+'</select>'+
     '<button type="button" data-link-one="'+ix+'">VERIFY OWNERSHIP AND LINK THIS ORDER</button></details>'

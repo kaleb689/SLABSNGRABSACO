@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { managedAccountEmailEvidence } from "../discord-checkout-owner-evidence.js";
+import { managedAccountEmailEvidence, checkoutAssignmentContains } from "../discord-checkout-owner-evidence.js";
 import { uniqueCheckoutOwner } from "../webhook-success.js";
 
 test("exact Admin saved Account Email is eligible only for its single managed retailer", () => {
@@ -66,4 +66,19 @@ test("single-login legacy imports follow the exact historical assigned retailer 
   assert.equal(managedAccountEmailEvidence({accountEmail:'other@example.com'},credentials,assignment),null);
   assert.equal(managedAccountEmailEvidence({}, {...credentials,walmart:{username:'different@example.com'}},assignment),null);
   assert.equal(managedAccountEmailEvidence({retailer:'target'},credentials,assignment),null);
+});
+
+test("awaiting activation has checkout ownership from its saved link date, not its activation date",()=>{
+ const checkout="2026-10-27T18:10:00.000Z";
+ const pending={customerAccountId:"sami-example",managedAccountId:"pkc-example",assignmentRetailer:"pokemoncenter",
+  activationStatus:"awaiting_activation",createdAt:"2026-10-27T17:00:00.000Z",startsAt:null,expiresAt:null};
+ assert.equal(checkoutAssignmentContains(pending,checkout),true);
+ assert.equal(checkoutAssignmentContains({...pending,startsAt:"2026-10-27T20:00:00.000Z"},checkout),true,
+  "Later activation cannot take away a checkout earned while linked");
+ assert.equal(checkoutAssignmentContains({...pending,createdAt:null,activationRequestedAt:"2026-10-27T17:00:00.000Z"},checkout),true,
+  "Legacy pending assignment may only have a timestamp for its activation request");
+ assert.equal(checkoutAssignmentContains({...pending,createdAt:"2026-10-27T19:00:00.000Z"},checkout),false,
+  "Checkout before the assignment was created is not that customer's order");
+ assert.equal(checkoutAssignmentContains({...pending,createdAt:null,activationRequestedAt:"2026-10-27T19:00:00.000Z"},checkout),false);
+ assert.equal(checkoutAssignmentContains({...pending,endedAt:"2026-10-27T17:45:00.000Z"},checkout),false);
 });

@@ -36,3 +36,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Check signup confirmation, tamper-evident consent history and onboarding
         run: node --test test/consent-ledger.test.js test/signup-onboarding.test.js test/age-consent-render.test.mjs
+      - name: Check checkout ownership before activation and admin recovery
+        run: |
+          node --check discord-checkout-owner-evidence.js
+          node --check public/admin-checkout-match.js
+          node --test test/discord-checkout-owner-evidence.test.mjs test/checkout-owner-admin-recovery.test.mjs test/discord-checkout-identity.test.mjs
