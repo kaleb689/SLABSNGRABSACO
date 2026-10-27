@@ -978,6 +978,53 @@
    form.onsubmit=async event=>{event.preventDefault();save.disabled=true;try{const result=await api.importCommit({token:preview.token,confirmed:true});if(!win.valid())return;win.wrap.remove();stage='live';group='all';selected.clear();for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab.dataset.stage==='live'));await refresh();issueView='all';q('view').value='all';draw();note('Imported '+result.imported+' latest Live profiles · Replaced '+(result.supersededLive||0)+' older Live and '+(result.supersededNonLive||0)+' Ready/Unused records · '+(result.collapsedInImport||0)+' repeated import rows collapsed · '+(result.cardsPreserved||0)+' original cards preserved · '+(result.cardsAlreadySaved||0)+' already saved · encrypted recovery history retained · '+result.pkcEmailsAdded+' PKC emails added.');}catch(error){win.status().textContent=error.message;save.disabled=false;}};
   }catch(error){note(error.message);}
  };
+ const pasteAccountsButton=text('button','Paste accounts');
+ pasteAccountsButton.type='button';pasteAccountsButton.className='btn secondary';
+ q('import').after(pasteAccountsButton);
+ pasteAccountsButton.onclick=()=>{
+  if(scope==='aco'&&!customerId){note('Select a customer vault before importing accounts.');return;}
+  const win=dialog('Paste retailer accounts');
+  const form=d.createElement('form');
+  const retailerLabel=text('label','Account retailer');
+  const retailerSelect=d.createElement('select');
+  for(const [id,name] of Object.entries(retailName))retailerSelect.append(new Option(name,id));
+  retailerSelect.value=q('retailer').value;retailerLabel.append(retailerSelect);
+  const pasteLabel=text('label','Paste one account per line');
+  const area=d.createElement('textarea');area.rows=12;area.autocomplete='off';area.spellcheck=false;
+  area.placeholder='email@example.com:password\nemail2@example.com:::password\nemail3@example.com; password';
+  pasteLabel.append(area);
+  const review=text('p','Choose the retailer before saving. Separate email and password with :, :::, or ;. Only accounts not already present in the selected retailer and vault will be added to Unused. Existing passwords are never overwritten.');
+  const counts=text('p','No accounts parsed.');
+  const submit=text('button','Review and import accounts');submit.type='submit';submit.className='btn primary';
+  form.append(retailerLabel,pasteLabel,review,counts,submit);win.body.append(form);
+  const parse=()=>{
+   const lines=area.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+   if(lines.length>5000)throw Error('Paste at most 5000 accounts per batch.');
+   const accounts=[],seen=new Set();
+   for(let i=0;i<lines.length;i++){
+    const match=/^([^\s@:;]+@[^\s@:;]+\.[^\s@:;]+)\s*(:::|;|:)\s*(.+)$/.exec(lines[i]);
+    if(!match||!match[3].trim()||/[\x00-\x1f\x7f]/.test(match[3]))
+     throw Error('Invalid account at line '+(i+1)+'. Use email:password, email:::password, or email; password.');
+    const email=match[1].toLowerCase();
+    if(seen.has(email))throw Error('Duplicate email on line '+(i+1)+': '+email);
+    seen.add(email);accounts.push({email,password:match[3]});
+   }
+   return accounts;
+  };
+  area.oninput=()=>{try{counts.textContent=parse().length+' valid accounts to import.';}catch(error){counts.textContent=error.message;}};
+  form.onsubmit=async event=>{
+   event.preventDefault();let accounts;try{accounts=parse();if(!accounts.length)throw Error('Paste at least one account.');}catch(error){win.status().textContent=error.message;return;}
+   if(!confirm('Import '+accounts.length+' accounts into '+customerName()+' / '+retailName[retailerSelect.value]+'? Existing accounts remain unchanged.'))return;
+   submit.disabled=true;
+   try{
+    const result=await api.importPastedAccounts({...win.owner,retailer:retailerSelect.value,accounts,confirmed:true});
+    accounts.length=0;area.value='';
+    if(!win.valid())return;
+    win.wrap.remove();q('retailer').value=retailerSelect.value;stage='unused';selected.clear();await refresh();draw();
+    note('Imported '+result.added+' unused '+retailName[retailerSelect.value]+' accounts; '+result.skipped+' existing accounts skipped. Passwords saved in this encrypted vault.');
+   }catch(error){win.status().textContent=error.message;submit.disabled=false;}
+  };
+ };
  q('create-pools').onclick=()=>void window.ACOPoolCreator?.open({...request(),retailer:q('retailer').value,...(stage==='unused'&&pageRows().some(x=>selected.has(x.id)&&x.kind==='unused-account')?{emailIds:pageRows().filter(x=>selected.has(x.id)&&x.kind==='unused-account').map(x=>x.id)}:{})});
  d.addEventListener('jigstudio:pools-generated',()=>{if(!main.hidden)void refresh();});
  q('file').onchange=async()=>{const file=q('file').files[0];if(!file)return;const owner=request(),at=epoch,retailer=q('retailer').value;try{if(file.size>26*1024*1024)throw Error('Choose a file smaller than 26 MB.');const preview=await api.importPreview({...owner,retailer,fileName:file.name,text:await file.text()});if(at!==epoch||main.hidden)return;const win=dialog('Review profile import'),form=d.createElement('form');win.body.append(text('p',preview.count+' profiles · '+preview.profiles.filter(x=>x.duplicates.length).length+' rows with duplicate email, name or card.'),form);for(const row of preview.profiles.filter(x=>x.duplicates.length).slice(0,80))form.append(text('p',row.email+' · Duplicate '+row.duplicates.join(', ')));form.insertAdjacentHTML('beforeend','<label class="check"><input name="name" type="checkbox" checked> Generate new names for duplicates</label><label class="check"><input name="email" type="checkbox" checked> Replace duplicate emails from this retailer’s bank</label><label class="check"><input name="card" type="checkbox" checked> Replace duplicate cards from this vault</label><label class="check"><input name="allowShared" type="checkbox"> Keep shared names/cards when their repair option is off</label><label class="check"><input name="alreadyJigged" type="checkbox" checked> Imported profiles have already been jigged / formatted</label>');field(form,'group','Group',retailName[retailer]);const choices=d.createElement('div');form.append(choices);const assets=await window.desktopAPI.profileWorkshop.assets(owner);if(!win.valid())return;for(const card of assets.cards.filter(x=>x.unused)){const label=text('label',card.label+' · ending '+card.last4),c=d.createElement('input');c.type='checkbox';c.checked=true;c.value=card.id;label.prepend(c);choices.append(label);}const b=text('button','Import reviewed profiles');b.type='submit';b.className='btn primary';form.append(b);form.onsubmit=async e=>{e.preventDefault();b.disabled=true;try{const result=await api.importCommit({token:preview.token,confirmed:true,customerName:customerName(),group:form.elements.group.value,alreadyJigged:form.elements.alreadyJigged.checked,repairs:Object.fromEntries(['name','email','card','allowShared'].map(k=>[k,form.elements[k].checked])),cardIds:[...choices.querySelectorAll('input:checked')].map(x=>x.value)});if(!win.valid())return;win.wrap.remove();await refresh();note('Imported '+result.imported+' profiles into '+customerName()+' / '+retailName[retailer]);}catch(e){win.status().textContent=e.message;b.disabled=false;}};}catch(e){note(e.message);}};
