@@ -6,7 +6,7 @@
  <p id="jigUpdateStatus" role="status" aria-live="polite">Checking installed version...</p>
  <progress id="acoUpdateProgress" max="100" value="0" hidden style="width:100%"></progress>
  <p id="jigLastUpdateResult"></p><div class="buttons"><button type="button" id="jigUpdateCheck" class="btn slim secondary">Check for updates</button><button type="button" id="jigUpdateOnline" class="btn slim primary" disabled hidden>Download &amp; Install</button></div>
- <details style="margin-top:14px"><summary style="font-size:12px;cursor:pointer">Offline package</summary><button type="button" id="jigUpdateInstall" class="btn slim secondary" style="margin-top:9px">Choose official update ZIP</button><small>Requires the current official update feed to verify the package.</small></details>
+ <div class="buttons"><button type="button" id="acoDesktopShortcut" class="btn slim secondary">Create Desktop Shortcut</button></div>\n <details style="margin-top:14px"><summary style="font-size:12px;cursor:pointer">Offline package</summary><button type="button" id="jigUpdateInstall" class="btn slim secondary" style="margin-top:9px">Choose official update ZIP</button><small>Requires the current official update feed to verify the package.</small></details>
  <small>Updates replace the complete app, then restart it. Saved Personal profiles, customer pools and settings stay in their existing locations. Save or export unsaved work first.</small>`;
  const status=$('jigUpdateStatus'),online=$('jigUpdateOnline'),check=$('jigUpdateCheck'),offline=$('jigUpdateInstall'),bar=$('acoUpdateProgress');
  let checking=false,installing=false,available=false,poll=null;
@@ -28,6 +28,12 @@
  }
  button.addEventListener('click',()=>{panel.hidden=!panel.hidden;button.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)void refresh();});
  $('jigUpdateClose').addEventListener('click',()=>{panel.hidden=true;button.setAttribute('aria-expanded','false');button.focus();});
+ $('acoDesktopShortcut').addEventListener('click',async()=>{
+  const btn=$('acoDesktopShortcut');btn.disabled=true;
+  try{const result=await api.desktopShortcut();if(!result.cancelled)status.textContent=result.message;}
+  catch(error){status.textContent='Desktop shortcut not changed: '+error.message;}
+  finally{btn.disabled=false;}
+ });
  check.addEventListener('click',()=>void refresh());online.addEventListener('click',()=>void install());offline.addEventListener('click',()=>void install(true));
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden)$('jigUpdateClose').click();});
  // Read-only startup check; installing always requires the user's button and native confirmation.

@@ -2,9 +2,9 @@
 const fs=require('node:fs'),path=require('node:path');
 const root=path.resolve(process.argv[2]||'build-src/App');
 function edit(file,changes){let text=fs.readFileSync(path.join(root,file),'utf8');for(const [a,b]of changes){if(text.split(a).length!==2)throw Error(file+': expected one integration anchor: '+a.slice(0,90));text=text.replace(a,b);}fs.writeFileSync(path.join(root,file),text);}
-const files=['mac-full-updates.js','mac-update-archive.js','mac-full-update.sh','mac-updates-ui.js','win-full-updates.js'];
+const files=['mac-full-updates.js','mac-update-archive.js','mac-full-update.sh','mac-updates-ui.js','mac-launch-guard.js','win-full-updates.js'];
 for(const f of files)fs.copyFileSync(path.join(__dirname,f),path.join(root,f));
-fs.mkdirSync(path.join(root,'tests'),{recursive:true});for(const f of ['mac-full-updates.test.js','win-full-updates.test.js'])fs.copyFileSync(path.join(__dirname,f),path.join(root,'tests',f));
+fs.mkdirSync(path.join(root,'tests'),{recursive:true});for(const f of ['mac-full-updates.test.js','mac-launch-guard.test.js','win-full-updates.test.js'])fs.copyFileSync(path.join(__dirname,f),path.join(root,'tests',f));
 edit('desktop-updates.js',[["function register({app,ipcMain,dialog,BrowserWindow}) {",`function register(options) {
   if(process.platform==='darwin')return require('./mac-full-updates').register(options);
   if(process.platform==='win32')return require('./win-full-updates').register(options);
@@ -13,7 +13,8 @@ edit('main.js',[
  ["require('./desktop-updates').register({app,ipcMain,dialog,BrowserWindow});","const nativeUpdater=require('./desktop-updates').register({app,ipcMain,dialog,BrowserWindow,requireOwner:ownerSender});"],
  ["app.setName('SLABSNGRABSACO ACO Studio - Owner');",`// Keep the original runtime name and data directory despite the shorter Finder label.
 app.setName('SLABSNGRABSACO ACO Studio - Owner');
-app.setPath('userData',path.join(app.getPath('appData'),'SLABSNGRABSACO ACO Studio - Owner'));`],
+app.setPath('userData',path.join(app.getPath('appData'),'SLABSNGRABSACO ACO Studio - Owner'));
+require('./mac-launch-guard').guardOwnerInstance({app,BrowserWindow});`],
  ["app.whenReady().then(()=>{",`app.whenReady().then(()=>{
  if(process.platform==='darwin')void require('./mac-full-updates').noteLaunch(app).catch(()=>{});`],
  ["win.webContents.once('did-fail-load',showApp);",`win.webContents.once('did-fail-load',showApp);
@@ -92,7 +93,7 @@ edit('main.js',[
   return result;
  });`]
 ]);
-edit('preload.js',[["updates:Object.freeze({info:","updates:Object.freeze({nativeMac:process.platform==='darwin',progress:()=>ipcRenderer.invoke('updates:progress'),info:"]]);
+edit('preload.js',[["updates:Object.freeze({info:","updates:Object.freeze({nativeMac:process.platform==='darwin',desktopShortcut:()=>ipcRenderer.invoke('updates:desktopShortcut'),progress:()=>ipcRenderer.invoke('updates:progress'),info:"]]);
 edit('site-ui.js',[["renderNotices();renderJigGroups();setConnection(false);","renderNotices();renderJigGroups();setConnection(false);void sync(false);"]]);
 edit('updates-ui.js',[["(() => {","(() => {\n if(window.desktopAPI?.updates?.nativeMac)return;"]]);
 edit('index.html',[["<script src=\"./updates-ui.js\"></script>","<script src=\"./updates-ui.js\"></script><script src=\"./mac-updates-ui.js\"></script>"]]);

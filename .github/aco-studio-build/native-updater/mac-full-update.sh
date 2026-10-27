@@ -40,7 +40,7 @@ cleanup(){
   if /bin/mv "$BACKUP" "$TARGET"; then
    status rolledback 'The new app did not finish startup. Your previous app was restored; saved data was not changed.'
    log 'Rollback completed.'
-   /usr/bin/open -n "$TARGET" || true
+   /usr/bin/open "$TARGET" || true
   else
    status failed 'Automatic restore failed. The previous app remains in the update backup beside Applications.'
   fi
@@ -72,9 +72,9 @@ status installing 'Installing the complete verified app. Saved Personal and cust
 /usr/bin/codesign --verify --deep --strict "$TARGET" >> "$LOG" 2>&1
 log "Launching $NEXT"
 if [[ "${ACO_SELF_UPDATE_CI:-}" == "1" ]]; then
-  /usr/bin/open -n "$TARGET" --args "--aco-update-token=$TOKEN" "--aco-ci-self-update" >> "$LOG" 2>&1
+  /usr/bin/open "$TARGET" --args "--aco-update-token=$TOKEN" "--aco-ci-self-update" >> "$LOG" 2>&1
 else
-  /usr/bin/open -n "$TARGET" --args "--aco-update-token=$TOKEN" >> "$LOG" 2>&1
+  /usr/bin/open "$TARGET" --args "--aco-update-token=$TOKEN" >> "$LOG" 2>&1
 fi
 for ((i=0;i<HEALTH_WAIT;i++)); do
  if [[ -f "$WORK/healthy" && "$(cat "$WORK/healthy")" == "$NEXT" ]]; then
