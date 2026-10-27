@@ -6,6 +6,7 @@ import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder,
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 import { createDropMessageRetention } from "./discord-drop-retention.js";
+import { RETAILER_ALERTS, retailerAlert, retailerFromDropLabel, mentionedRetailers, retailerAlertButtons } from "./retailer-alert-roles.js";
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
@@ -667,8 +668,8 @@ export async function submitCustomerDropSkus(discordUserId, username, selection)
   return webSkuBridge.save(String(discordUserId || ""), String(username || ""), selection);
 }
 
-export const discordCommunityStatus = { configured: false, rolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate }) {
+export const discordCommunityStatus = { configured: false, rolesReady: false, serverRolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -714,6 +715,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       return response.status === 204 ? null : response.json();
     }
   }
+  let serverRolesChannelId, upcomingChannelId; const retailerRoleIds = new Map();
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   async function cleanupLegacyLapseAlerts() {
     let removed = 0, scanned = 0, matched = 0;
@@ -1121,6 +1123,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const names = ["upcomingdrops", "droppingtonight", "announcements"];
       const found = names.map(name => channels.find(item => [0, 5].includes(item.type) && dropChannelKind(item.name) === name));
       dropChannelIds = new Set(found.slice(0, 2).filter(Boolean).map(channel => channel.id));
+      upcomingChannelId = found[0]?.id;
       tonightChannelId = found[1]?.id;
       console.log("Discord drop channels:", JSON.stringify({
         upcoming: found[0]?.name || null, tonight: found[1]?.name || null,
@@ -1331,6 +1334,43 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           thumbnail: { url: "https://slabsngrabsaco.com/slabsngrabs-aco-logo.png" }
         }]
       });
+      // Self-service retailer notification roles directly below Rules.
+      // Never change or remove membership-tier roles; these are separate.
+      try {
+        const allRoles=await api(`/guilds/${guildId}/roles`);
+        for (const spec of RETAILER_ALERTS) {
+          let item=allRoles.find(role=>role.name===spec.role&&!role.managed);
+          if(!item) item=await api(`/guilds/${guildId}/roles`,"POST",{
+            name:spec.role,color:0x41b6e6,permissions:"0",mentionable:false,hoist:false
+          });
+          retailerRoleIds.set(spec.key,item.id);
+        }
+        const desiredName="⭐│server-roles";
+        const position=Number(rules.position||1)+1;
+        const topic="Choose your retailer drop notifications here. Click a button again to unsubscribe. Link your Discord account to receive matching app alerts.";
+        let roleChannel=channels.find(item=>item.type===0&&normalizeName(item.name)==="serverroles");
+        if(!roleChannel) roleChannel=await api(`/guilds/${guildId}/channels`,"POST",{
+          name:desiredName,type:0,parent_id:introCategory.id,position,
+          topic,permission_overwrites:readOnlyOverwrites()
+        });
+        else if(roleChannel.parent_id!==introCategory.id||roleChannel.name!==desiredName||
+          roleChannel.topic!==topic||!sameOverwrites(roleChannel.permission_overwrites,readOnlyOverwrites())){
+          roleChannel=await api(`/channels/${roleChannel.id}`,"PATCH",{
+            name:desiredName,parent_id:introCategory.id,position,topic,
+            permission_overwrites:readOnlyOverwrites()
+          });
+        }
+        serverRolesChannelId=roleChannel.id;
+        await ensurePanel(serverRolesChannelId,"server-roles",
+          "**Choose your retailer notifications.** Click any retailer to subscribe; click again to unsubscribe.\n\n"+
+          "You'll receive that retailer's drop and SKU announcements. If your Discord is linked to your SLABSNGRABSACO account, your app alert preferences are updated as well. To receive phone alerts, enable notifications in the installed customer app and allow notifications on your device.\n\n"+
+          "Your choices are private. Each button confirms your current status.",
+          {components:retailerAlertButtons()});
+        discordCommunityStatus.serverRolesReady=true;
+      }catch(error){
+        discordCommunityStatus.serverRolesReady=false;
+        console.error("Discord server roles setup:",error.message);
+      }
       await refreshIntro();
       // Only remove the extras once the kept channel has its live guide.
       for (const duplicate of introChannels.filter(item => item.id !== introChannelId)) {
@@ -1533,7 +1573,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         try {
           const old = await api(`/channels/${channelId}/messages/${previous.messageId}`);
           if (old.content !== content ||
-            (old.embeds?.[0]?.description || "") !== (extras.embeds?.[0]?.description || "")) {
+            (old.embeds?.[0]?.description || "") !== (extras.embeds?.[0]?.description || "") ||
+            (key==="server-roles" &&
+              JSON.stringify((old.components||[]).flatMap(row=>row.components||[]).map(button=>button.custom_id))!==
+              JSON.stringify((extras.components||[]).flatMap(row=>row.components||[]).map(button=>button.custom_id)))) {
             await api(`/channels/${channelId}/messages/${previous.messageId}`, "PATCH", payload);
           }
           return previous.messageId;
@@ -1574,6 +1617,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       "1on1": "Request private text and voice help; requests wait in a queue.",
       success: "View community success updates.",
       upcomingdrops: "See upcoming drops and release information.",
+      serverroles: "Choose Target, Walmart, Pokémon Center, Costco, and Sam’s Club drop notifications for Discord and the customer app.",
       droppingtonight: "See what is dropping tonight.",
       announcements: "Read important server announcements.",
       giveaways: "Enter active giveaways with their buttons and see winners.",
