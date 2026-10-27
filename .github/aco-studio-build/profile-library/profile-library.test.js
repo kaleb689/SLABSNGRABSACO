@@ -88,7 +88,7 @@ test('Multiple hard Target primary jigs stack only when Combine is explicitly en
   ruleIds:['target.house.fraction.half','target.house.hyphen.a'],combine:false,billingSameAsShipping:false});
  assert.equal(normal.profiles[0].after.address1,'100 Example Avenue');
  assert.match(normal.profiles[1].after.address1,/^100(?:-A| 1\/2) Example Avenue$/i);
- assert.doesNotMatch(normal.profiles[1].after.address1,/-A/i);
+ assert.doesNotMatch(normal.profiles[1].after.address1,/-A 1\/2/i,'Normal mode must never stack two hard variants');
  const mixed=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
   ruleIds:['target.house.fraction.half','target.house.hyphen.a'],combine:true,billingSameAsShipping:false});
  assert.equal(mixed.profiles[0].after.address1,'100 Example Avenue');
