@@ -1086,9 +1086,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const rotated=(list,shift)=>list.length?list.slice(shift%list.length).concat(list.slice(0,shift%list.length)):[];
    const softOrder=rotated(soft,offset),hardOrder=rotated(hard,offset);
    const order=[];
+   const startWithHard=hardOrder.length>0&&(softOrder.length===0||offset%2===1);
    for(let i=0;i<Math.max(softOrder.length,hardOrder.length);i++){
-    if(i<hardOrder.length)order.push(hardOrder[i]);
+    if(startWithHard&&i<hardOrder.length)order.push(hardOrder[i]);
     if(i<softOrder.length)order.push(softOrder[i]);
+    if(!startWithHard&&i<hardOrder.length)order.push(hardOrder[i]);
    }
    let appliedHard=false;
    for(const id of order){
@@ -1096,7 +1098,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(combine&&appliedRuleIds.length>=3)break;
     if(isHardRule(id)&&appliedHard)continue;
     const candidate=applyOne(data,row,id),address=addressView(candidate);
-    if(existingUnitViolation(beforeAddress,address))continue;
+    if(existingUnitViolation(beforeAddress,address)||(!inlineUnit(beforeAddress.address1)&&inlineUnit(address.address1)))continue;
     if(['address1','address2','city','state','zip'].every(key=>
       normalizedAddressPart(address[key])===normalizedAddressPart(addressView(data)[key])))continue;
     data=candidate;appliedRuleIds.push(id);
