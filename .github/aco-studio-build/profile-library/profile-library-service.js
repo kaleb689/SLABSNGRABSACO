@@ -1349,7 +1349,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   for(const row of p.accounts){
     const email=String(row?.email||'').trim().toLowerCase();
     const password=String(row?.password||'');
-    if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||!password||password.length>1024||/[\\r\\n\\x00-\\x1f\\x7f]/.test(password))
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!password||password.length>1024||/[\r\n\x00-\x1f\x7f]/.test(password))
       throw Error('Invalid account line; nothing was imported. Review email and password.');
     if(seen.has(email))throw Error('Repeated email in pasted batch: '+email);
     seen.add(email);normalized.push({email,password});
