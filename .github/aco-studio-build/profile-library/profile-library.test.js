@@ -611,8 +611,8 @@ test('New generated profiles stay in new bank until export is saved; exported ro
 });
 test('Duplicate-safe export skips same-retailer repeated email and card, but preserves saved rows and other retailers',async t=>{
  const h=await library(t);
- await commit(h,await preview(h,[complete('target','one@example.test')],h.p,'target'));
- await commit(h,await preview(h,[complete('target','two@example.test')],h.p,'target'));
+ await commit(h,await preview(h,[Object.assign(complete('target','one@example.test'),{profileSecurityCode:'EXPORT-ONE'})],h.p,'target'));
+ await commit(h,await preview(h,[Object.assign(complete('target','two@example.test'),{profileSecurityCode:'EXPORT-TWO'})],h.p,'target'));
  await commit(h,await preview(h,[complete('pokemoncenter','one@example.test')],h.p,'pokemoncenter'));
  const before=(await h.lib.list(event,h.p)).profiles;
  const check=await h.lib.exportFile(event,{...h.p,retailer:'target',exportStage:'completed',exportAllUnique:true,duplicateMode:'email-card',previewOnly:true});
