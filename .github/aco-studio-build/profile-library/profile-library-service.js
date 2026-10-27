@@ -1280,6 +1280,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }
   const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&requestedCounts?perAddressHardRows(regularSelected,p,phoneSeed):null;
   for(const row of regularSelected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
+  const plannedAddressKeys=new Set();
   const rows=selected.map((row,index)=>{
    const reuseThis=!!source&&index<reuseCount,regularIndex=index-reuseCount;
    const key=mainAddressKey(row),groupPosition=positions.get(key)||0;
@@ -1299,7 +1300,31 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     data=hardResults[regularIndex].data;
     if(hardResults[regularIndex].kind!=='original'&&hardResults[regularIndex].kind!=='soft')
      appliedRuleIds.push('hard.'+hardResults[regularIndex].kind);
-   }else {const generated=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);data=generated.data;appliedRuleIds=generated.appliedRuleIds;}
+   }else {
+    let generated=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);
+    if(jigPosition>0&&plannedAddressKeys.has(mainAddressKey({data:generated.data}))){
+     // Avoid assigning an already used jig when a different selected
+     // fractional/hyphen or soft variation can produce a distinct address.
+     // Keep strict duplicates visible for explicit override if exhausted.
+     let found=false;
+     const tryVariant=candidate=>{
+      const key=mainAddressKey({data:candidate.data});
+      if(!plannedAddressKeys.has(key)){generated=candidate;found=true;return true;}
+      return false;
+     };
+     for(let attempt=1;attempt<=Math.min(80,p.ruleIds.length*5+10);attempt++){
+      if(tryVariant(bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,
+       p.billingSameAsShipping===true,phoneSeed,regularIndex+attempt)))break;
+     }
+     if(!found)for(const ruleId of p.ruleIds){
+      if(ruleId===C.FL_PHONE_RULE)continue;
+      if(tryVariant(bulkJigData(row,[ruleId],jigPosition,false,
+       p.billingSameAsShipping===true,phoneSeed,regularIndex)))break;
+     }
+    }
+    data=generated.data;appliedRuleIds=generated.appliedRuleIds;
+   }
+   if(!reuseThis)plannedAddressKeys.add(mainAddressKey({data}));
    const before=addressView(row.data);
    const lookupKey=String(before.zip||'').slice(0,5)+'|'+String(before.state||'').toUpperCase()+'|'+String(before.city||'').toUpperCase();
    const availablePostal=postalScanned.get(lookupKey)?.cities||[];
