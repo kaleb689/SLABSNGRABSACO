@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import webpush from "web-push";
+import {RETAILER_ALERT_KEYS, receivesRetailerAlert} from "./retailer-alert-roles.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 
 const shippingLabels = { shipped: "Shipped", in_transit: "In transit", out_for_delivery: "Out for delivery", delivered: "Delivered" };
@@ -78,7 +79,7 @@ export const notificationDefaults = { orders: true, shipping: true, messages: tr
 export function notificationCategory(event) {
   if (["order_confirmed", "order_cancelled", "order_review_hold"].includes(event.kind)) return "orders";
   if (event.kind === "shipping_update") return "shipping";
-  if (event.kind === "drop_skus_updated") return "drops";
+  if (["drop_skus_updated","drop_announcement"].includes(event.kind)) return "drops";
   if (/admin_message|missing|action_needed|setup_complete/.test(event.kind || "")) return "messages";
   return "account";
 }
@@ -118,6 +119,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       await save();
     }
     state.preferences ||= {};
+    state.retailerSubscriptions ||= {};
     if (!state.eventHistory) {
       // Upgrade without replaying historical shipments or confirmations.
       state.eventHistory = {};
@@ -374,7 +376,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       return {recorded:true,pushQueued:prefs.account&&(state.subscriptions[ownerId]||[]).length>0};
     }),
     notifyDropUpdate: (accountIds, notification, eventKey) => locked(async () => {
-      if (!String(eventKey || "").startsWith("drop:") || notification?.kind !== "drop_skus_updated") {
+      if (!String(eventKey || "").startsWith("drop:") || !["drop_skus_updated","drop_announcement"].includes(notification?.kind)) {
         throw new Error("Invalid drop announcement");
       }
       state.dropAnnouncements ||= {};
@@ -388,8 +390,13 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
           delete state.dropAnnouncements[key];
         }
       }
+      const targetRetailers=Array.isArray(notification.retailers)?
+        notification.retailers:[notification.retailer];
       for (const accountId of new Set((Array.isArray(accountIds) ? accountIds : [])
         .map(value => String(value || "").trim()).filter(Boolean))) {
+        // Explicit role opt-in: not a general push broadcast. Never send
+        // another retailer's drop merely because global Drops is enabled.
+        if(!receivesRetailerAlert(state.retailerSubscriptions[accountId]||{},targetRetailers))continue;
         const key = eventKey + ":" + accountId;
         if (state.dropAnnouncements[key]) continue;
         const event = {
@@ -440,14 +447,35 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       await save();
       return { sent };
     }),
+    // Synchronize Discord self-assigned retailer roles with the linked app.
+    // This cannot grant Safari/iOS permission; that is always a device action.
+    syncRetailerRoles: (accountId, retailers) => locked(async () => {
+      const id=String(accountId||"").trim();
+      if(!id||!Array.isArray(retailers)||retailers.length>RETAILER_ALERT_KEYS.length||
+         retailers.some(key=>!RETAILER_ALERT_KEYS.includes(key)))throw Error("Invalid retailer role sync.");
+      const selected=new Set(retailers),next=Object.fromEntries(
+        RETAILER_ALERT_KEYS.map(key=>[key,selected.has(key)]));
+      state.retailerSubscriptions ||= {};
+      const before=state.retailerSubscriptions[id]||{};
+      const changed=RETAILER_ALERT_KEYS.some(key=>Boolean(before[key])!==next[key]);
+      if(changed){
+        state.retailerSubscriptions[id]=next;
+        if(selected.size)state.preferences[id]={...notificationDefaults,...state.preferences[id],drops:true};
+        await save();
+      }
+      return {changed,retailers:next,pushConfigured:(state.subscriptions[id]||[]).length>0};
+    }),
     publicKey: () => keys.publicKey,
-    preferences: accountId => locked(() => ({ ...notificationDefaults, ...state.preferences[accountId] })),
+    preferences: accountId => locked(() => ({ ...notificationDefaults, ...state.preferences[accountId],
+      retailerAlerts:Object.fromEntries(RETAILER_ALERT_KEYS.map(key=>
+        [key,state.retailerSubscriptions?.[accountId]?.[key]===true])) })),
     setPreferences: (accountId, input) => locked(async () => {
       const preferences = { ...notificationDefaults, ...state.preferences[accountId] };
       for (const key of Object.keys(notificationDefaults)) if (typeof input?.[key] === "boolean") preferences[key] = input[key];
       state.preferences[accountId] = preferences;
       await save();
-      return preferences;
+      return {...preferences,retailerAlerts:Object.fromEntries(RETAILER_ALERT_KEYS.map(key=>
+        [key,state.retailerSubscriptions?.[accountId]?.[key]===true]))};
     }),
     list: accountId => locked(() => [...(state.inbox[accountId] || [])]),
     clear: accountId => locked(async () => { state.inbox[accountId] = []; await save(); }),
