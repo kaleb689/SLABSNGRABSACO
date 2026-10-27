@@ -167,7 +167,8 @@
         <label><input type="checkbox" name="orders"> Order confirmations</label>
         <label><input type="checkbox" name="shipping"> Shipping and delivery updates</label>
         <label><input type="checkbox" name="messages"> Messages and information needed</label>
-        <label><input type="checkbox" name="drops"> New and updated drop SKUs</label>
+        <label><input type="checkbox" name="drops"> Retailer drops and SKU updates</label>
+        <p class="fine" data-retailer-alert-status>Retailer selections are managed in Discord → Server Roles.</p>
         <label><input type="checkbox" name="account"> Account and membership updates</label>
         <button type="submit" class="primary">Save notification preferences</button></fieldset></form>
       <div class="account-onboarding-actions"><button type="button" class="text-button" data-disable-push>Disable on this device</button><button type="button" class="secondary" data-close-settings>Done</button></div>`;
@@ -201,6 +202,13 @@
     try {
       const data = await pushRequest("/api/account/push-preferences");
       for (const key of ["orders", "shipping", "messages", "account", "drops"]) form.elements[key].checked = data.preferences[key];
+      const labels={target:"Target",walmart:"Walmart",pokemoncenter:"Pokémon Center",
+        costco:"Costco",sams:"Sam's Club"};
+      const joined=Object.entries(labels).filter(([key])=>data.preferences?.retailerAlerts?.[key]===true)
+        .map(([,label])=>label);
+      current.querySelector("[data-retailer-alert-status]").textContent=joined.length?
+        "Your retailer alerts: "+joined.join(", ")+". Change them with the buttons in Discord → Server Roles.":
+        "No retailer alerts selected. Open Discord → Server Roles and choose the stores you want notifications for.";
       fieldset.disabled = false;
       status.textContent = !supportsPush() ? "Open the Home Screen app to enable phone notifications." : window.Notification.permission === "denied" ? phoneSettingsText() : "Tap Enable phone notifications to allow alerts on this device.";
     } catch (error) { status.textContent = error.message; }
