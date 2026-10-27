@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/release-aco-studio-v41348-macos.yml'
+      - '.github/aco-studio-build/native-updater/**'
       - '.github/aco-studio-build/profile-library/**'
       - '.github/aco-studio-build/completed-profiles/**'
       - 'private-edition/**'
