@@ -112,7 +112,7 @@ test('Jig commit changes cardholder to the profile first and last name for Targe
   let row=(await h.lib.list(event,h.p)).profiles.find(x=>x.retailer===retailer);
   assert.equal(LC.payment(row.data).cardholder,'Alex Example');
   const plan=await h.lib.batchJigPreview(event,{...h.p,retailer,profileIds:[row.id],ruleIds:['avenue_short'],combine:false,billingSameAsShipping:false});
-  await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+  await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true,allowDuplicateAddresses:plan.duplicateAddresses.length>0});
   row=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
   assert.equal(LC.payment(row.data).cardholder,'Alex Example');
   if(retailer==='target')assert.equal(row.data.cc_name,'Alex Example');
@@ -189,7 +189,8 @@ test('Exact Main/Jigged reuse count changes the chosen profiles only and can be 
  assert.equal(result.profiles[2].after.address2,'');
  const before=(await h.lib.list(event,h.p)).profiles;
  assert.ok(before.every(x=>!String(LC.values(x.data)['shipping.address2']||'').includes('Apt 2')));
- await h.lib.batchJigCommit(event,{token:result.token,confirmed:true});
+ assert.equal(result.duplicateAddresses.length,2,'Intentional exact address reuse must show the two conflicts');
+ await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:true});
  const after=(await h.lib.list(event,h.p)).profiles;
  assert.equal(after.filter(x=>String(LC.values(x.data)['shipping.address2']).toUpperCase()==='APT 2').length,2);
  const noReuse={...args,reuse:{sourceId:choice.id,count:1}};
