@@ -620,3 +620,29 @@ test('Duplicate-safe export skips same-retailer repeated email and card, but pre
  assert.equal(after.length,before.length);
  assert.equal(after.filter(x=>x.retailer==='pokemoncenter').length,1);
 });
+
+test('Customer card detail reveal is owner-only, exact-card scoped, and contains no payment verifier',async t=>{
+ const h=await library(t);
+ const alpha=complete('target','alpha@example.test');
+ alpha.profileSecurityCode='ALPHA-INDEPENDENT-REF';alpha.cc_cvv='987';
+ await commit(h,await preview(h,[alpha],h.a,'target'));
+ const beta=complete('target','beta@example.test');
+ beta.cc_number='5555555555554444';beta.profileSecurityCode='BETA-INDEPENDENT-REF';
+ await commit(h,await preview(h,[beta],h.b,'target'));
+ const own=await h.lib.customerCardDetails(event,{...h.a,cardNumber:card.number});
+ assert.equal(own.customerId,'customer-a');
+ assert.equal(own.cardNumber,card.number);
+ assert.equal(own.linkedProfiles.length,1);
+ assert.equal(own.linkedProfiles[0].independentSecurityCode,'ALPHA-INDEPENDENT-REF');
+ assert.equal(JSON.stringify(own).includes('987'),false,'CVV fields are not returned');
+ await assert.rejects(h.lib.customerCardDetails(event,{...h.b,cardNumber:card.number}),/not in the selected customer vault/);
+ await assert.rejects(h.lib.customerCardDetails(event,{...h.p,cardNumber:card.number}),/customer vault/);
+ await assert.rejects(h.lib.customerCardDetails(foreign,{...h.a,cardNumber:card.number}),/Not owner/);
+ await assert.rejects(h.lib.customerCardDetails(event,{...h.a,cardNumber:'4242'}),/full saved Studio card number/);
+ const savedNumber='6011111111111117';
+ await h.service.addCard(event,{...h.a,card:{...card,number:savedNumber,customSecurityCode:'SAVED-BANK-INDEPENDENT-REF'}});
+ const bankOnly=await h.lib.customerCardDetails(event,{...h.a,cardNumber:savedNumber});
+ assert.deepEqual(bankOnly.linkedProfiles,[]);
+ assert.deepEqual(bankOnly.savedReferences,[{independentSecurityCode:'SAVED-BANK-INDEPENDENT-REF'}]);
+ await assert.rejects(h.lib.customerCardDetails(event,{...h.b,cardNumber:savedNumber}),/not in the selected customer vault/);
+});
