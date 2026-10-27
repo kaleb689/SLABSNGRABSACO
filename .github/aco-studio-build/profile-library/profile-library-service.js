@@ -1322,8 +1322,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(hardResults[regularIndex].kind!=='original'&&hardResults[regularIndex].kind!=='soft')
      appliedRuleIds.push('hard.'+hardResults[regularIndex].kind);
    }else {
-    const preferred=jigPosition>0?distribution.sequence[distributionIndex++]:null;
-    const chosenRules=preferred?p.ruleIds.filter(id=>C.jigStyle(id)===preferred):p.ruleIds;
+    const preferred=jigPosition>0&&p.combine!==true?distribution.sequence[distributionIndex++]:null;
+    const chosenRules=preferred?[...p.ruleIds.filter(id=>C.jigStyle(id)===preferred),...p.ruleIds.filter(id=>id===C.FL_PHONE_RULE)]:p.ruleIds;
     let generated=bulkJigData(row,chosenRules,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);
     if(jigPosition>0&&plannedAddressKeys.has(mainAddressKey({data:generated.data}))){
      // Avoid assigning an already used jig when a different selected
