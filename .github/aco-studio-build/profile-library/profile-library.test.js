@@ -778,3 +778,17 @@ test('Target hard fraction and hyphen groups appear in a realistic multi-address
  assert.ok(rules.some(x=>x.startsWith('target.house.hyphen.')),'Hyphen group must actually run');
  assert.equal(rules.filter(x=>x==='second-line.add').length,0,'Unit box unchecked means no new units');
 });
+
+test('Unit addition alone works when explicitly enabled without any other jig checkbox',async t=>{
+ const h=await library(t);
+ for(let i=0;i<3;i++)await commit(h,await preview(h,[complete('target','units-only-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:[],combine:false,billingSameAsShipping:false,optionalUnitCount:2});
+ assert.equal(result.optionalUnitAdded,2);
+ assert.equal(result.profiles.filter(x=>x.appliedRuleIds.includes('second-line.add')).length,2);
+ assert.equal(result.profiles.filter(x=>!x.after.address2).length,1);
+ await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:result.duplicateAddresses.length>0});
+ const saved=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(saved.filter(x=>LC.values(x.data)['shipping.address2']).length,2);
+});
