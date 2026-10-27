@@ -710,6 +710,37 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   return {rows:kept,scanned:candidates.length,skippedDuplicates:candidates.length-kept.length,
    skippedEmail:sameEmail,skippedCard:sameCard,fingerprint};
  }
+ // Export-only code resolution; this function never writes to encrypted vaults.
+ async function prepareSecurityCodeExport(a,rows){
+  const saved=cardVault?await cardVault(a.scope).securityReferences(cardKey(a.scope,a.id)):[];
+  a.check();
+  const byCard=new Map(),ambiguous=new Set();
+  for(const card of saved){
+   const number=CardPolicy.normalized(card.number),code=String(card.customSecurityCode||card.customCode||'');
+   if(!number||!code)continue;
+   if(code.length>100||/[\x00-\x1f\x7f]/.test(code))throw Error('Invalid saved card reference. Export blocked; vault unchanged.');
+   if(byCard.has(number)&&byCard.get(number)!==code)ambiguous.add(number);
+   else byCard.set(number,code);
+  }
+  let missing=0,conflicting=0;
+  const output=[];
+  for(const row of rows){
+   const number=CardPolicy.normalized(C.payment(row.data).number);
+   const profileCode=C.profileCode(row.data);
+   const bankCode=number?byCard.get(number)||'':'';
+   if((number&&ambiguous.has(number))||(profileCode&&bankCode&&profileCode!==bankCode)){conflicting++;continue;}
+   const code=profileCode||bankCode;
+   if(!code){missing++;continue;}
+   if(code.length>100||/[\x00-\x1f\x7f]/.test(code))throw Error('Invalid profile Security Code. Export blocked; vault unchanged.');
+   // Only a temporary shallow data copy receives a resolved code.
+   output.push({...row,data:{...row.data,profileSecurityCode:code}});
+  }
+  if(missing||conflicting)throw Error('Export BLOCKED: '+missing+' missing and '+conflicting+' conflicting Security Code(s). No file was saved and no stored codes changed. Check full card-number matches in Card Bank and Recovery Source Review.');
+  return output;
+ }
+ function securityCodeExportSignature(rows){
+  return crypto.createHash('sha256').update(JSON.stringify(rows.map(row=>[row.id,CardPolicy.normalized(C.payment(row.data).number),C.profileCode(row.data)]))).digest('hex');
+ }
  async function exportFile(e,p){
   const a=await access(e,p),retailer=C.retailer(p?.retailer),unique=p?.exportAllUnique===true;
   const before=await profiles.fieldSnapshot(a.scope,a.id);
@@ -732,7 +763,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(rows.some(x=>!x))throw Error('Every exported profile must still belong to this vault and retailer.');
   }
   if(!rows.length)throw Error('No eligible profiles remain to export.');
-  const content=C.exportSelectedRows(rows,retailer,p.customerName||'Personal',p.exportFormat||'retailer');
+  const exportRows=await prepareSecurityCodeExport(a,rows);
+  const signature=securityCodeExportSignature(exportRows);
+  const content=C.exportSelectedRows(exportRows,retailer,p.customerName||'Personal',p.exportFormat||'retailer');
   if(unique)content.name=content.name.replace(/(\.[^.]+)$/,' - no duplicates$1');
   if(!await confirmExport(e))return {cancelled:true};
   const ext=path.extname(content.name),choice=await chooseSave(e,{name:content.name,extension:ext.slice(1)});
@@ -744,6 +777,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(rows.some(x=>require('./jig-field-core').hash(x)!==
     require('./jig-field-core').hash(latest.find(y=>y.id===x.id))))
    throw Error('Profiles changed while exporting. Try again.');
+  const verified=await prepareSecurityCodeExport(a,rows);
+  if(signature!==securityCodeExportSignature(verified))throw Error('Security Code source changed during export. No file was written.');
   a.check();
   await writeFile(choice.filePath,content.body,{encoding:'utf8',mode:0o600});
   // Only after the actual export has saved may New profiles enter Ready for Export.
@@ -779,7 +814,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const before=await profiles.fieldSnapshot(a.scope,a.id);
   const rows=p.profileIds.map(id=>before.find(row=>row.id===id&&row.retailer===p.retailer));
   if(rows.some(row=>!row))throw Error('Profiles must belong to this vault and retailer.');
-  const content=C.exportArchiveRows(rows,p.retailer,p.customerName||'Personal');
+  const exportRows=await prepareSecurityCodeExport(a,rows);
+  const signature=securityCodeExportSignature(exportRows);
+  const content=C.exportArchiveRows(exportRows,p.retailer,p.customerName||'Personal');
   if(!await confirmExport(e))return {cancelled:true};
   const choice=await chooseSave(e,{name:content.name,extension:'json'});
   if(choice.canceled||!choice.filePath)return {cancelled:true};
@@ -788,6 +825,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(rows.some(row=>require('./jig-field-core').hash(row)!==
    require('./jig-field-core').hash(latest.find(item=>item.id===row.id))))
     throw Error('Profiles changed during export. Try again.');
+  const verified=await prepareSecurityCodeExport(a,rows);
+  if(signature!==securityCodeExportSignature(verified))throw Error('Security Code source changed during export. No file was written.');
   a.check();
   await writeFile(choice.filePath,content.body,{encoding:'utf8',mode:0o600});
   return {saved:true,count:rows.length,name:path.basename(choice.filePath)};
