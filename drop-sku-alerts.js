@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import {retailerFromDropLabel} from "./retailer-alert-roles.js";
 
 // These alerts are for a staff-authored, original retailer post, never replies,
 // bot-generated SKU controls, webhook checkouts or non-retailer announcements.
@@ -33,6 +34,7 @@ export function skuAlertPayload({ retailer, products, guildId, channelId, messag
   const count = Array.isArray(products) ? products.length : 0;
   return {
     kind: "drop_skus_updated",
+    retailer: retailerFromDropLabel(retailer),
     title: label + " drop SKUs updated",
     message: count + " SKU" + (count === 1 ? " is" : "s are") +
       " available for " + label + ". Open Drops to choose your products and one quantity (1 or 2) for all selected SKUs.",
