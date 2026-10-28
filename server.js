@@ -1,4 +1,5 @@
 import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
+import {registerStudioLinkedLoginSync} from "./server-studio-linked-login-sync.js";
 import {ownerWalmartUnused} from "./owner-walmart-unused.js";
 import { registerPrivateStudioLicensing } from "./private-studio-license.js";
 import { createBillingReceiptHandler } from "./billing-receipts.js";
@@ -29157,6 +29158,10 @@ registerStudioAssignmentActions({app,requireAdmin,serialize:serializeManagedCust
   findAssignment:(type,rows,id)=>type==='free'?linkedFreeAssignment(rows,id):linkedRentalAssignment(rows,id),
   activeMembershipForCustomer:async id=>activeMembershipRecordForCustomer(id,await readJson(PAID_FILE,[])),
   clearAssignment:clearManagedAssignmentCustomerData,normalizeDuration:normalizeSpecialProfileDuration,broadcastLiveDataChange});
+registerStudioLinkedLoginSync({app,requireAdmin,serialize:serializeManagedCustomerDetails,
+ getManagedAccounts,saveManagedAccounts,
+ getAssignments:type=>type==='free'?getFreeAssignments():getRentalAssignments(),
+ normalizeRetailerCredentials,encryptJson,decryptJson,managedAssignmentIsLinked,broadcastLiveDataChange});
 
 app.get(
   "/api/admin/submissions/:id/saved-details",
