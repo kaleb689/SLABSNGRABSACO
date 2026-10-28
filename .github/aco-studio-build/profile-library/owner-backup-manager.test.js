@@ -77,3 +77,17 @@ test('restore can only be performed for known checkpoint IDs with a fresh owner-
  await assert.rejects(h.manager.restore({token:'made-up',confirmed:true}),/expired/);
  assert.ok((await h.manager.previewRestore(entry.id)).token);
 });
+
+test('every Card Bank critical write is eligible for its own encrypted rollback checkpoint',async t=>{
+ const h=await scenario(t);
+ const first=await h.manager.checkpoint('critical-change');
+ await h.store(h.names[2],'card-after-first-edit');
+ const second=await h.manager.checkpoint('critical-change');
+ assert.equal(first.created,true);
+ assert.equal(second.created,true,'critical card changes must never be skipped by the short profile-change throttle');
+ assert.notEqual(first.id,second.id);
+ await h.store(h.names[2],'card-after-second-edit');
+ const plan=await h.manager.previewRestore(second.id);
+ await h.manager.restore({token:plan.token,confirmed:true});
+ assert.equal(await h.read(h.names[2]),'card-after-first-edit');
+});
