@@ -136,14 +136,20 @@ function createPersonalImporter({requireAccess, chooseFiles, readFiles=readSelec
       if (!checked.summary.websiteComplete && payload.acknowledgePartialScan !== true)
         throw Error('Acknowledge that the website duplicate check is incomplete.');
       const rows = stage.rows.filter((_,i)=>!checked.skipped.has(i)).map(x=>x.data);
-      if (!rows.length) throw Error('No new profiles remain. Existing banks were not changed.');
-      const entries = stage.files.map(f=>selectedFile(f,stage.rows,checked.skipped)).filter(Boolean);
+      if (!rows.length){pending.delete(id);return {saved:true,added:0,skipped:checked.skipped.size,retailer:stage.retailer,entries:[]};}
       pending.delete(id);
       const result = await vault.importRows({scope:'personal', customerId:null, retailer:stage.retailer, rows,
         source:'personal-only-file-import', status:'active', personalImportGuard:true,
         beforeWrite:()=>{requireAccess(event);if(generation !== generations.get(id))throw Error('Personal import was cancelled before saving.');}});
-      try { requireAccess(event); } catch (_) { return {saved:true, added:result.added.length, skipped:checked.skipped.size, locked:true}; }
-      return {saved:true, added:result.added.length, skipped:checked.skipped.size, retailer:stage.retailer, entries};
+      // Recheck is serialized: customer-assigned emails discovered late are
+      // excluded from both the encrypted Personal vault and exported results.
+      const accepted=new Set(result.added.map(row=>row.email));
+      const finalSkipped=new Set(checked.skipped);
+      for(let index=0;index<stage.rows.length;index++)if(!accepted.has(stage.rows[index].email))finalSkipped.add(index);
+      const entries=stage.files.map(f=>selectedFile(f,stage.rows,finalSkipped)).filter(Boolean);
+      const skipped=finalSkipped.size;
+      try { requireAccess(event); } catch (_) { return {saved:true, added:result.added.length, skipped, locked:true}; }
+      return {saved:true, added:result.added.length, skipped, retailer:stage.retailer, entries};
     } finally { active.delete(id); }
   }
   return Object.freeze({choose, confirm, cancel:(event)=>{invalidate(event.sender.id);return {cancelled:true};}});
