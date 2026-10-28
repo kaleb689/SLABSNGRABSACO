@@ -42,6 +42,11 @@ function exportRows(rows,r,customerName='Personal'){if(!rows.length)throw Error(
   if(records.length!==rows.length)throw Error('Export blocked: generated Target CSV row count is incomplete.');
   const blank=records.filter(record=>typeof record.cc_cvv!=='string'||record.cc_cvv.length===0).length;
   if(blank)throw Error('Export blocked: '+blank+' Target profiles have an empty required reference field in the generated CSV. Original saved data was not changed.');
+  // CSV export must preserve the exact saved reference text, including any
+  // leading zero. Do not guess a missing digit or rewrite saved profiles.
+  const mismatch=records.findIndex((record,index)=>
+   String(record.cc_cvv??'')!==String(profileCode(rows[index].data)));
+  if(mismatch!==-1)throw Error('Export blocked: Target Security Code changed while encoding row '+(mismatch+1)+'. No file was written and saved profile references were not changed.');
  }return out;
 }
 // Independent profile access codes are kept apart from all card verification fields.
