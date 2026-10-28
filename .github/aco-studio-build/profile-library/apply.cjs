@@ -420,7 +420,20 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  const source=fs.readFileSync(file,'utf8');
  const expected=/(\[\s*['"]aco-customer-retailer-profiles\.encrypted['"]\s*,\s*)(['"]personal-retailer-profiles\.encrypted['"]\s*\])/;
  if(!expected.test(source))throw Error('Owner vault security test layout changed; update the encrypted backup assertion manually.');
- const next=source.replace(expected,(_match,first,last)=>first+"'encrypted-owner-profile-snapshots', "+last);
+ let next=source.replace(expected,(_match,first,last)=>first+"'encrypted-owner-profile-snapshots', "+last);
+ // Preserve legacy duplicate/privacy coverage without creating NEW cross-vault
+ // ownership using the importer. The importer must now skip this email.
+ const oldImport="  await v.importRows({scope:'aco',customerId:'customer1',retailer:'target',rows:[sample('repeat@sample.test')]});";
+ const historical="  const rejected=await v.importRows({scope:'aco',customerId:'customer1',retailer:'target',rows:[sample('repeat@sample.test')]});\\n  assert.equal(rejected.skippedForeign,1);\\n  const saved=(await v.fieldSnapshot('personal',null))[0];\\n  await v.libraryTransaction('aco','customer1',ctx=>{ctx.rows.push({...structuredClone(saved),id:'historical-personal-customer-clash'});},()=>{});";
+ const blockStart=next.indexOf("test('duplicates: show cross-bank collisions but never reveal locked Personal record'");
+ const blockEnd=next.indexOf('\ntest(',blockStart+10);
+ if(blockStart<0||blockEnd<0)throw Error('Legacy Personal privacy test boundary changed; review before release.');
+ const block=next.slice(blockStart,blockEnd);
+ const importStart=block.indexOf("await v.importRows({scope:'aco',customerId:'customer1'");
+ const importEnd=importStart>=0?block.indexOf(';',importStart):-1;
+ if(importStart<0||importEnd<0)throw Error('Legacy Personal privacy import statement changed; review before release.');
+ const updated=block.slice(0,importStart)+historical.replaceAll('\\n','\n')+block.slice(importEnd+1);
+ next=next.slice(0,blockStart)+updated+next.slice(blockEnd);
  fs.writeFileSync(file,next);
 }
 

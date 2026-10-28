@@ -84,6 +84,17 @@ function createPersonalImporter({requireAccess, chooseFiles, readFiles=readSelec
         reason:saved.some(x => x.scope === 'aco' || x.scope === 'website') ? 'Already in this retailer customer or linked website pool' :
           saved.length ? 'Already in this Personal retailer pool' : 'Repeated within the selected files'});
     }
+    // Personal and customer inventories are mutually exclusive by login email,
+    // even when a customer used another retailer. Ordinary cross-retailer reuse
+    // inside Personal is still supported.
+    const foreign=typeof vault.foreignEmails==='function'?
+      await vault.foreignEmails('personal',null):new Set();
+    for(let index=0;index<stage.rows.length;index++){
+      const email=stage.rows[index].email;
+      if(!foreign.has(email)||skipped.has(index))continue;
+      skipped.add(index);
+      conflicts.push({email,count:1,reason:'Already used in a customer vault; skipped without importing'});
+    }
     const websiteComplete = site.complete === true;
     const fingerprint = JSON.stringify({skipped:[...skipped].sort((a,b)=>a-b), websiteComplete});
     return {skipped, fingerprint, summary:{token:stage.token, destination:'Personal only', retailer:stage.retailer,
@@ -136,14 +147,20 @@ function createPersonalImporter({requireAccess, chooseFiles, readFiles=readSelec
       if (!checked.summary.websiteComplete && payload.acknowledgePartialScan !== true)
         throw Error('Acknowledge that the website duplicate check is incomplete.');
       const rows = stage.rows.filter((_,i)=>!checked.skipped.has(i)).map(x=>x.data);
-      if (!rows.length) throw Error('No new profiles remain. Existing banks were not changed.');
-      const entries = stage.files.map(f=>selectedFile(f,stage.rows,checked.skipped)).filter(Boolean);
+      if (!rows.length){pending.delete(id);return {saved:true,added:0,skipped:checked.skipped.size,retailer:stage.retailer,entries:[]};}
       pending.delete(id);
       const result = await vault.importRows({scope:'personal', customerId:null, retailer:stage.retailer, rows,
         source:'personal-only-file-import', status:'active', personalImportGuard:true,
         beforeWrite:()=>{requireAccess(event);if(generation !== generations.get(id))throw Error('Personal import was cancelled before saving.');}});
-      try { requireAccess(event); } catch (_) { return {saved:true, added:result.added.length, skipped:checked.skipped.size, locked:true}; }
-      return {saved:true, added:result.added.length, skipped:checked.skipped.size, retailer:stage.retailer, entries};
+      // Recheck is serialized: customer-assigned emails discovered late are
+      // excluded from both the encrypted Personal vault and exported results.
+      const accepted=new Set(result.added.map(row=>row.email));
+      const finalSkipped=new Set(checked.skipped);
+      for(let index=0;index<stage.rows.length;index++)if(!accepted.has(stage.rows[index].email))finalSkipped.add(index);
+      const entries=stage.files.map(f=>selectedFile(f,stage.rows,finalSkipped)).filter(Boolean);
+      const skipped=finalSkipped.size;
+      try { requireAccess(event); } catch (_) { return {saved:true, added:result.added.length, skipped, locked:true}; }
+      return {saved:true, added:result.added.length, skipped, retailer:stage.retailer, entries};
     } finally { active.delete(id); }
   }
   return Object.freeze({choose, confirm, cancel:(event)=>{invalidate(event.sender.id);return {cancelled:true};}});

@@ -21,8 +21,15 @@ test('An explicitly linked local account and its website mirror count once',asyn
  const r=await h.vault.scanRows([],records);
  assert.equal(r.scanned,1);assert.equal(r.duplicates.length,0);
 });
-test('Real same-retailer reuse in separate customers remains flagged',async t=>{
- const h=await harness(t);await h.add('david','walmart','used@example.test');await h.add('annette','walmart','used@example.test');
+test('Legacy same-retailer ownership collisions remain flagged without admitting new foreign imports',async t=>{
+ const h=await harness(t);await h.add('david','walmart','used@example.test');
+ const skipped=await h.add('annette','walmart','used@example.test');
+ assert.equal(skipped.skippedForeign,1);
+ const prior=(await h.vault.fieldSnapshot('aco','david'))[0];
+ await h.vault.libraryTransaction('aco','annette',ctx=>{
+  // Simulate an OLD encrypted duplicate from before the import restriction.
+  ctx.rows.push({...structuredClone(prior),id:'historical-duplicate-annette'});
+ },()=>{});
  const r=await h.vault.scanRows();
  assert.equal(r.duplicates.length,1);assert.equal(r.duplicates[0].retailer,'walmart');assert.equal(r.duplicates[0].count,2);
 });
@@ -40,8 +47,14 @@ test('Same retailer import is blocked, different retailer import is allowed',asy
  result=await h.vault.scanRows([{scope:'aco',customerId:'david',retailer:'pokemoncenter',email:'import@example.test'}]);
  assert.equal(result.duplicates.length,1);
 });
-test('Personal profile data stays hidden while the vault is locked',async t=>{
- const h=await harness(t);await h.add(null,'target','secret@example.test','personal');await h.add('david','target','secret@example.test');
+test('Personal legacy duplicate data stays hidden while the vault is locked',async t=>{
+ const h=await harness(t);await h.add(null,'target','secret@example.test','personal');
+ const skipped=await h.add('david','target','secret@example.test');
+ assert.equal(skipped.skippedForeign,1);
+ const prior=(await h.vault.fieldSnapshot('personal',null))[0];
+ await h.vault.libraryTransaction('aco','david',ctx=>{
+  ctx.rows.push({...structuredClone(prior),id:'historical-personal-customer-collision'});
+ },()=>{});
  const r=await h.vault.scanRows([],[],false);
  assert.equal(r.duplicates.length,1);assert.notEqual(r.duplicates[0].email,'secret@example.test');
  assert.equal(r.duplicates[0].items.find(i=>i.scope==='personal').id,null);

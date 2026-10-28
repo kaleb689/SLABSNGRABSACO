@@ -252,7 +252,7 @@ test('Recovery Source Review reports independent source counts without changing 
 
 test('Recovery Source Review enforces owner scopes, does not accept confirmation, and rejects mixed-owner files',async t=>{
  const h=await library(t),a=complete('target','same-review@example.test'),
-  b=complete('target','same-review@example.test');
+  b=complete('target','different-customer-review@example.test');
  a.profileSecurityCode='';b.profileSecurityCode='REF-CUSTOMER-B';
  await commit(h,await preview(h,[a],h.a));
  await commit(h,await preview(h,[b],h.b));
