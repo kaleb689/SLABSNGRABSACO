@@ -172,7 +172,7 @@ replace('jig-address-banks.js',"  async addWorkshopAddress(scope,customerId,inpu
 // Keep full encrypted recovery checkpoints before card and address vault writes.
 replace('local-card-vault.js'," async function write(data){\n  encrypted();",` async function write(data){
   encrypted();
-  await require('./owner-backup-manager').forVault({baseDir,safeStorage,fs}).checkpoint('pre-change');`);
+  await require('./owner-backup-manager').forVault({baseDir,safeStorage,fs}).checkpoint('critical-change');`);
 replace('jig-address-banks.js'," async function write(file,data){\n  requireCrypto();",` async function write(file,data){
   requireCrypto();
   await require('./owner-backup-manager').forVault({baseDir,safeStorage,fs}).checkpoint('pre-change');`);
