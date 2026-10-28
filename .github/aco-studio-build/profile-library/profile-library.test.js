@@ -1016,3 +1016,66 @@ test('Profile library service exports customer signup label 1 and personal accou
  assert.equal(Core.parseFile('customer.csv',customerCsv).records[0].cc_cvv,'004');
  assert.equal((await h.lib.list(event,h.a)).profiles[0].email,'customerlogin@example.test');
 });
+
+
+test('Walmart Jig uses every eligible saved Main house, adds unique optional second lines and leaves the Address Bank unchanged',async t=>{
+ const h=await library(t);
+ const mainAddresses=[
+  {...address,label:'Walmart Main A',address1:'2110 Forest Lane',address2:''},
+  {...address,label:'Walmart Main B',address1:'9911 Sunrise Road',address2:''}
+ ];
+ for(const base of mainAddresses)await h.service.addAddress(event,{...h.p,address:base});
+ const original=[];
+ for(let i=0;i<4;i++){
+  const row=D.manualEdit(complete('walmart','bank-rotation-'+i+'@example.test'),{
+   ...LC.values(complete('walmart','bank-rotation-'+i+'@example.test')),
+   'shipping.address2':'Apt 41','billing.address2':'Apt 41'
+  });
+  await commit(h,await preview(h,[row],h.p,'walmart'));
+ }
+ const before=await h.lib.list(event,h.p);
+ const bankBefore=JSON.stringify((await h.addresses.listPersonal()).addresses);
+ const args={...h.p,retailer:'walmart',profileIds:before.profiles.map(x=>x.id),
+  ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:true,
+  optionalUnitCount:4,autoUnitFromAddressBank:true,sourceMainFromBank:true};
+ const plan=await h.lib.batchJigPreview(event,args);
+ assert.equal(plan.optionalUnitAdded,4);
+ assert.equal(plan.optionalUnitBankReassigned,4);
+ assert.equal(plan.profiles.length,4);
+ assert.equal(new Set(plan.profiles.map(x=>x.mainAddress.address1)).size,2,'Both saved houses participate');
+ for(const p of plan.profiles){
+  assert.equal(p.before.address2,'Apt 41');
+  assert.equal(p.category,'random saved Address Bank source');
+  assert.match(p.after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
+  assert.ok(mainAddresses.some(a=>a.address1===p.mainAddress.address1));
+  assert.ok(p.unitBankSourceId?.startsWith('bank:'));
+  assert.ok(p.appliedRuleIds.includes('second-line.add'));
+ }
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore);
+ const saved=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.equal(saved.updated,4);
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore);
+ const after=await h.lib.list(event,h.p);
+ assert.equal(after.profiles.length,4);
+ assert.equal(after.profiles.filter(x=>mainAddresses.some(a=>LC.values(x.data)['shipping.address1'].startsWith(a.address1.replace(/ (Lane|Road)$/,'')))).length,4);
+ assert.equal(new Set(after.profiles.map(x=>LC.values(x.data)['shipping.address2'])).size,4);
+});
+
+test('Walmart full bank sourcing fails safely if there are no saved unitless homes',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('walmart','bank-empty@example.test')],h.p,'walmart'));
+ const before=JSON.stringify((await h.lib.list(event,h.p)).profiles);
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'walmart',
+  profileIds:[row.id],ruleIds:['suffix.matching'],sourceMainFromBank:true,
+  optionalUnitCount:1,autoUnitFromAddressBank:true}),/No unitless saved Main addresses/);
+ assert.equal(JSON.stringify((await h.lib.list(event,h.p)).profiles),before);
+});
+
+test('Walmart UI opts into saved Address Bank and random second lines by default, retaining an opt-out',()=>{
+ const ui=require('node:fs').readFileSync(require('node:path').join(__dirname,'../profile-library-ui.js'),'utf8');
+ assert.match(ui,/bankSourceToggle\.checked=retailer==='walmart'/);
+ assert.match(ui,/optionalUnitToggle\.checked=retailer==='walmart'/);
+ assert.match(ui,/sourceMainFromBank:retailer==='walmart'&&bankSourceToggle\.checked/);
+ assert.match(ui,/autoUnitFromAddressBank:optionalUnitToggle\.checked/);
+});
