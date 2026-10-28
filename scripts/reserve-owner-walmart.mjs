@@ -13,7 +13,7 @@ replaceOnce('  if (!normalizedRetailer) {\n    return [];\n  }\n\n  const [\n   
  '  if (!normalizedRetailer) {\n    return [];\n  }\n  // OWNER_WALMART_UNUSED_POLICY_V1: no Walmart inventory is customer-allocatable.\n  if (normalizedRetailer === "walmart") return [];\n\n  const [\n    managedAccounts,');
 replaceOnce('  return availability;\n}\n\n\nasync function getAvailableManagedAccountsForRetailer',
  '  availability.walmart.available=0; // Owner Personal Unused only.\n  return availability;\n}\n\n\nasync function getAvailableManagedAccountsForRetailer');
-const route=String.raw\`
+const route=String.raw`
 /* Owner-only Walmart inventory. Credentials remain encrypted in existing
    staff-managed records until explicitly imported into owner Personal vault.
    Never alter any active assignment, restore hold or card/profile records. */
@@ -41,7 +41,7 @@ app.post("/api/admin/owner-walmart-unused/export",requireAdmin,async(req,res)=>{
  }
 });
 
-\`;
+`;
 replaceOnce('/* ADMIN POOL PROFILE SEARCH: never transmit passwords, cards or security codes. */',
  route+'/* ADMIN POOL PROFILE SEARCH: never transmit passwords, cards or security codes. */');
 replaceOnce('          status, assignedTo: owner,',
