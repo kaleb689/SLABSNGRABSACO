@@ -943,6 +943,12 @@
    target.append(span);
   }
   block.append(target);
+  if(row.unitBankSourceId){
+   const info=d.createElement('small');
+   info.textContent='Automatic unitless saved Main address from Address Bank; this profile’s shipping and billing addresses are reassigned only after Apply. The previously assigned address and saved bank source are not modified.';
+   info.style.cssText='display:block;margin-top:5px;color:#ffd28c';
+   block.append(info);
+  }
   const rules=(row.appliedRuleIds||[]).map(id=>id==='second-line.add'?'Added second-line unit':id.startsWith('hard.')?'Hard '+id.slice(5):(settings.options||[]).find(rule=>rule.id===id)?.label||id);
   if(rules.length){
    const label=d.createElement('small');label.textContent='Applied: '+rules.join(' · ');
@@ -978,15 +984,19 @@
     }
     distributionToggle.onchange=()=>{distributionPanel.hidden=!distributionToggle.checked;distributionInputs();};
     rules.addEventListener('change',()=>{if(distributionToggle.checked)distributionInputs();});
-    const billing=text('label','Use the jigged shipping address for billing address too'),billingBox=d.createElement('input');billing.className='check';billingBox.type='checkbox';billing.prepend(billingBox);
+    const billing=text('label','Automatically match the jigged shipping and billing addresses'),billingBox=d.createElement('input');billing.className='check';billingBox.type='checkbox';billingBox.checked=true;billing.prepend(billingBox);
    const optionalUnitLabel=text('label','Add random Apt / Unit / Ste / # / number to address line 2 (only if no unit exists)');
    optionalUnitLabel.className='check';
    const optionalUnitToggle=d.createElement('input');optionalUnitToggle.type='checkbox';optionalUnitToggle.checked=false;optionalUnitLabel.prepend(optionalUnitToggle);
    const unitQuantityLabel=text('label','How many eligible selected profiles should receive a new unit?');
    const unitQuantity=d.createElement('input');unitQuantity.type='number';unitQuantity.min='1';unitQuantity.max=String(chosen.length);
-   unitQuantity.step='1';unitQuantity.value='1';unitQuantityLabel.append(unitQuantity);unitQuantityLabel.hidden=true;
-   const optionalUnitHelp=text('small','Optional and off by default. Uses Apt, Unit, Ste, #, or a bare A–D / 1–9 identifier. Existing apartment, suite and unit values will never change. Generated units are unverified.');
-   optionalUnitToggle.onchange=()=>{unitQuantityLabel.hidden=!optionalUnitToggle.checked;};
+   unitQuantity.step='1';unitQuantity.value=String(chosen.length);unitQuantityLabel.append(unitQuantity);unitQuantityLabel.hidden=true;
+   const optionalUnitHelp=text('small','OFF until you select it. Studio first uses unitless selected profiles, then automatically sources unitless Main addresses from this vault’s Address Bank for any remaining selected profiles. A source reassignment is shown before Apply; saved Address Bank entries and original unit numbers remain untouched. New Apt/Unit/Ste/#/bare A–D or 1–9 identifiers are chosen automatically and shipping/billing are matched. Generated units are not delivery-point verified.');
+   optionalUnitToggle.onchange=()=>{
+    unitQuantityLabel.hidden=!optionalUnitToggle.checked;
+    if(optionalUnitToggle.checked){billingBox.checked=true;billingBox.disabled=true;}
+    else billingBox.disabled=false;
+   };
    const postalScan=text('label','Scan internet ZIP/city crossovers during preview');
    const postalScanBox=d.createElement('input');postalScan.className='check';postalScanBox.type='checkbox';postalScanBox.checked=true;postalScan.prepend(postalScanBox);
    const postalApply=text('label','Apply ZIP/state-matched alternate cities when available (not USPS delivery-point verification)');
@@ -1055,10 +1065,12 @@
       const distribution={enabled:distributionToggle.checked,counts};
       const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),distribution,
       ruleIds:selectedJigChoices(rules),combine:combineBox.checked,
-      billingSameAsShipping:billingBox.checked,optionalUnitCount,postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
+      billingSameAsShipping:billingBox.checked||optionalUnitToggle.checked,optionalUnitCount,
+      autoUnitFromAddressBank:optionalUnitToggle.checked,
+      postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
      if(!win.valid()||activeRevision!==previewRevision)return;token=result.token;
       if(result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
-     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional second-line unit(s) added ('+result.optionalUnitEligible+' eligible selected addresses without units).'));
+     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional second-line unit(s) added ('+result.optionalUnitEligible+' eligible unitless source addresses; '+(result.optionalUnitBankReassigned||0)+' selected profile(s) sourced automatically from Address Bank).'));
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      for(const row of result.profiles.slice(0,100))review.append(jigPreviewEntry(row,settings));
      if(result.profiles.length>100)review.append(text('p','+'+(result.profiles.length-100)+' more selected profiles included in this batch.'));
