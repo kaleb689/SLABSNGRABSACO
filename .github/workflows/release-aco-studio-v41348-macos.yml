@@ -185,7 +185,7 @@ jobs:
           grep -Fq 'Preview saved Card Bank recovery' "$APP/Contents/Resources/app/profile-library-ui.js"
           test -f "$APP/Contents/Resources/app/owner-backup-manager.js"
           grep -Fq 'Automatic encrypted backups & restore points' "$APP/Contents/Resources/app/profile-library-ui.js"
-          grep -Fq "checkpoint('pre-change')" "$APP/Contents/Resources/app/local-card-vault.js"
+          grep -Fq "checkpoint('critical-change')" "$APP/Contents/Resources/app/local-card-vault.js"
           grep -Fq "checkpoint('pre-change')" "$APP/Contents/Resources/app/jig-address-banks.js"
           grep -Fq 'Export BLOCKED:' "$APP/Contents/Resources/app/profile-library-service.js"
           if [[ '${{ matrix.arch }}' == 'arm64' ]]; then
