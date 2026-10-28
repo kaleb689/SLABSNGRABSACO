@@ -1816,14 +1816,16 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    normalized.push({email,password,managedAccountId:String(row.accountId||'')});
   }
   if(!normalized.length)return {retailer:'walmart',scope:'personal',added:0,skipped:0,source:0,counts:snapshot.counts||{}};
-  return profiles.libraryTransaction('personal',null,ctx=>{
+  return profiles.libraryTransaction('personal',null,async ctx=>{
+   const foreign=await ctx.foreignEmails();
    const existing=new Set([
     ...ctx.rows.filter(x=>x.retailer==='walmart').map(x=>x.email),
     ...ctx.emails.filter(x=>x.retailer==='walmart').map(x=>x.email)
    ]);
    if(ctx.emails.length+normalized.length>20000)throw Error('Personal encrypted email bank capacity reached. No records were changed.');
-   let added=0,skipped=0;
+   let added=0,skipped=0,skippedForeign=0;
    for(const item of normalized){
+    if(foreign.has(item.email)){skippedForeign++;continue;}
     if(existing.has(item.email)){skipped++;continue;}
     existing.add(item.email);
     ctx.emails.push({id:uuid(),email:item.email,password:item.password,retailer:'walmart',
@@ -1831,8 +1833,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      sourceManagedAccountId:item.managedAccountId});
     added++;
    }
-   ctx.audit('owner-walmart-unused-import','',{retailer:'walmart',added,skipped,source:normalized.length});
-   return {scope:'personal',retailer:'walmart',added,skipped,source:normalized.length,counts:snapshot.counts||{}};
+   ctx.audit('owner-walmart-unused-import','',{retailer:'walmart',added,skipped,skippedForeign,source:normalized.length});
+   return {scope:'personal',retailer:'walmart',added,skipped,skippedForeign,source:normalized.length,counts:snapshot.counts||{}};
   },a.check);
  }
 
@@ -1846,23 +1848,25 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     const password=String(row?.password||'');
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!password||password.length>1024||/[\r\n\x00-\x1f\x7f]/.test(password))
       throw Error('Invalid account line; nothing was imported. Review email and password.');
-    if(seen.has(email))throw Error('Repeated email in pasted batch: '+email);
+    if(seen.has(email))continue;
     seen.add(email);normalized.push({email,password});
   }
-  const result=await profiles.libraryTransaction(a.scope,a.id,ctx=>{
+  const result=await profiles.libraryTransaction(a.scope,a.id,async ctx=>{
+    const foreign=await ctx.foreignEmails();
     const existing=new Set([...ctx.rows.filter(x=>x.retailer===retailer).map(x=>x.email),
       ...ctx.emails.filter(x=>x.retailer===retailer).map(x=>x.email)]);
-    let added=0,skipped=0;
+    let added=0,skipped=0,skippedForeign=0;
     if(ctx.emails.length+normalized.length>20000)throw Error('Encrypted email bank capacity reached.');
     for(const account of normalized){
+      if(foreign.has(account.email)){skippedForeign++;continue;}
       if(existing.has(account.email)){skipped++;continue;}
       existing.add(account.email);
       ctx.emails.push({id:crypto.randomUUID(),email:account.email,password:account.password,
         retailer,createdAt:new Date().toISOString(),profileId:null,source:'pasted-credentials'});
       added++;
     }
-    ctx.audit('paste-account-import','',{retailer,added,skipped});
-    return {retailer,added,skipped};
+    ctx.audit('paste-account-import','',{retailer,added,skipped,skippedForeign});
+    return {retailer,added,skipped,skippedForeign};
   },a.check);
   return result;
  }
