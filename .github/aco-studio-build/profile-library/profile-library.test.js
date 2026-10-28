@@ -977,7 +977,7 @@ test('Customer signup name is numbered from 1 in Shikari and Valor retailer expo
    ?Core.parseFile(output.name,output.body).records.map(x=>x.profile_name)
    :Object.values(JSON.parse(output.body)).map(x=>x.name);
   assert.deepEqual(names,['Sami Afanelh 1','Sami Afanelh 2','Sami Afanelh 3']);
- });
+ }
 });
 test('Alternate JSON, CSV and TXT names are transformed only in export copies',()=>{
  const rows=['target','target'].map((retailer,i)=>({
