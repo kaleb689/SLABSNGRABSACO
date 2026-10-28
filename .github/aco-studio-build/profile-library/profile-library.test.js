@@ -1120,7 +1120,7 @@ test('Customer multi-file Live import uses exact selected customer vault and pre
  assert.equal((await h.lib.list(event,h.p)).profiles.length,0);
 });
 test('Customer file import UI does not postpone bank refresh for focused customer selectors',()=>{
- const ui=require('node:fs').readFileSync(require('node:path').join(__dirname,'profile-library-ui.js'),'utf8');
+ const ui=require('node:fs').readFileSync(require('node:path').join(__dirname,'../profile-library-ui.js'),'utf8');
  const portion=ui.slice(ui.indexOf('function editorBusy()'),ui.indexOf('async function refresh()'));
  assert.match(portion,/profileLibraryModal/);
  assert.doesNotMatch(portion,/activeElement|profileLibraryPage input|profileLibraryPage select/);
