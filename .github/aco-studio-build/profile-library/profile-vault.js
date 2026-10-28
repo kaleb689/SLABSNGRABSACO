@@ -380,7 +380,10 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    return {id:uuid(),label:name(data.profile_name||data.profileName||data.name||data.id||email),email,retailer:r,status,source:name(source).slice(0,50),createdAt:now(),revision:0,data};
   });
   return serial(async()=>{
-   const d=await read(scope),existing=d.groups[key]||[];if(existing.length+mapped.length>10000)throw Error('Customer profile bank limit reached.');
+   const d=await read(scope),existing=d.groups[key]||[],foreign=await foreignEmailSet(scope,customerId);
+   const eligible=mapped.filter(row=>!foreign.has(row.email));
+   const skippedForeign=mapped.length-eligible.length;
+   if(existing.length+eligible.length>10000)throw Error('Customer profile bank limit reached.');
    // The dedicated Personal importer rechecks BOTH local banks inside the
    // same serialized transaction used by every profile write. No race can
    // introduce an already-owned customer email into Personal after preview.
@@ -390,12 +393,12 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     // rejects an email that already exists in the SAME retailer pool.
     const used=new Set([...existing,...Object.values(other.groups).flat()]
       .filter(x=>x.retailer===retailer).map(x=>x.email));
-    for(const row of mapped){if(used.has(row.email))throw Error('This email already exists in the selected retailer pool. Choose files again to recheck duplicates; nothing was imported.');used.add(row.email);}
+    for(const row of eligible){if(used.has(row.email))throw Error('This email already exists in the selected retailer pool. Choose files again to recheck duplicates; nothing was imported.');used.add(row.email);}
    }
    // A repeated exact email/retailer entry in one bank is not reimported automatically.
    const keys=new Set(existing.map(x=>x.retailer+'|'+x.email));const added=[];const skipped=[];
-   for(const item of mapped){const token=item.retailer+'|'+item.email;if(keys.has(token)){skipped.push(item.email);continue;}keys.add(token);existing.push(item);added.push(brief(item));}
-   d.groups[key]=existing;for(const item of added)auditRecord(d,key,'import',item.email,{retailer:item.retailer});if(personalImportGuard)beforeWrite();await write(scope,d);return {scope,customerId:scope==='aco'?key:null,added,skipped};
+   for(const item of eligible){const token=item.retailer+'|'+item.email;if(keys.has(token)){skipped.push(item.email);continue;}keys.add(token);existing.push(item);added.push(brief(item));}
+   d.groups[key]=existing;for(const item of added)auditRecord(d,key,'import',item.email,{retailer:item.retailer});if(personalImportGuard)beforeWrite();await write(scope,d);return {scope,customerId:scope==='aco'?key:null,added,skipped,skippedForeign};
   });
  }
  async function remove(scope,customerId,profileId){const key=bank(scope,customerId);return serial(async()=>{
@@ -634,11 +637,11 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  async function importEmails(scope,customerId,retailer,values,beforeWrite){const key=bank(scope,customerId),r=retailerId(retailer);
   if(!Array.isArray(values)||!values.length||values.length>5000||typeof beforeWrite!=='function')throw Error('Import 1-5000 emails.');
   const normalized=values.map(v=>typeof v==='string'&&v.length<=200?normalizeEmail(v):'');
-  return serial(async()=>{const d=await read(scope),used=await usedEmails(scope,customerId,r),rows=emailRows(d,key),added=[];let invalid=0,skipped=0;
-   for(const email of normalized){if(!email){invalid++;continue;}if(used.has(email)){skipped++;continue;}used.add(email);const row={id:uuid(),email,retailer:r,createdAt:now(),profileId:null};rows.push(row);added.push({id:row.id,email});}
+  return serial(async()=>{const d=await read(scope),used=await usedEmails(scope,customerId,r),rows=emailRows(d,key),added=[],foreign=await foreignEmailSet(scope,customerId);let invalid=0,skipped=0,skippedForeign=0;
+   for(const email of normalized){if(!email){invalid++;continue;}if(foreign.has(email)){skippedForeign++;continue;}if(used.has(email)){skipped++;continue;}used.add(email);const row={id:uuid(),email,retailer:r,createdAt:now(),profileId:null};rows.push(row);added.push({id:row.id,email});}
    if(rows.length>20000)throw Error('Email vault limit reached.');d.emailBanks||={};d.emailBanks[key]=rows;
-   auditRecord(d,key,'import-email-bank','',{retailer:r,added:added.length,skipped,invalid});beforeWrite();await write(scope,d);
-   return {scope,customerId:scope==='aco'?key:null,retailer:r,added:added.length,skipped,invalid};
+   auditRecord(d,key,'import-email-bank','',{retailer:r,added:added.length,skipped,skippedForeign,invalid});beforeWrite();await write(scope,d);
+   return {scope,customerId:scope==='aco'?key:null,retailer:r,added:added.length,skipped,skippedForeign,invalid};
   });
  }
  async function createEmailProfiles(scope,customerId,retailer,count,build,beforeWrite,selectedEmailIds=null){const key=bank(scope,customerId),r=retailerId(retailer);
@@ -999,7 +1002,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   backupCheckpoint:()=>workspaceBackup.checkpoint('manual'),
   backupPreview:id=>workspaceBackup.previewRestore(id),
   backupConfirm:params=>workspaceBackup.restore(params),
-  codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileExistingLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,unusedEmailConflicts,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+  codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,foreignEmails,importLiveProfiles,reconcileExistingLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,unusedEmailConflicts,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 
