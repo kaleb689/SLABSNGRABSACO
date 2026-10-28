@@ -381,8 +381,8 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   });
   return serial(async()=>{
    const d=await read(scope),existing=d.groups[key]||[],foreign=await foreignEmailSet(scope,customerId);
-   const eligible=mapped.filter(row=>!foreign.has(row.email));
-   const skippedForeign=mapped.length-eligible.length;
+   let eligible=mapped.filter(row=>!foreign.has(row.email));
+   const skippedForeign=mapped.length-eligible.length;let skippedAlready=0;
    if(existing.length+eligible.length>10000)throw Error('Customer profile bank limit reached.');
    // The dedicated Personal importer rechecks BOTH local banks inside the
    // same serialized transaction used by every profile write. No race can
@@ -393,12 +393,14 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     // rejects an email that already exists in the SAME retailer pool.
     const used=new Set([...existing,...Object.values(other.groups).flat()]
       .filter(x=>x.retailer===retailer).map(x=>x.email));
-    for(const row of eligible){if(used.has(row.email))throw Error('This email already exists in the selected retailer pool. Choose files again to recheck duplicates; nothing was imported.');used.add(row.email);}
+    const approved=[];
+    for(const row of eligible){if(used.has(row.email)){skippedAlready++;continue;}used.add(row.email);approved.push(row);}
+    eligible=approved;
    }
    // A repeated exact email/retailer entry in one bank is not reimported automatically.
    const keys=new Set(existing.map(x=>x.retailer+'|'+x.email));const added=[];const skipped=[];
    for(const item of eligible){const token=item.retailer+'|'+item.email;if(keys.has(token)){skipped.push(item.email);continue;}keys.add(token);existing.push(item);added.push(brief(item));}
-   d.groups[key]=existing;for(const item of added)auditRecord(d,key,'import',item.email,{retailer:item.retailer});if(personalImportGuard)beforeWrite();await write(scope,d);return {scope,customerId:scope==='aco'?key:null,added,skipped,skippedForeign};
+   d.groups[key]=existing;for(const item of added)auditRecord(d,key,'import',item.email,{retailer:item.retailer});if(personalImportGuard)beforeWrite();await write(scope,d);return {scope,customerId:scope==='aco'?key:null,added,skipped,skippedForeign,skippedAlready};
   });
  }
  async function remove(scope,customerId,profileId){const key=bank(scope,customerId);return serial(async()=>{
