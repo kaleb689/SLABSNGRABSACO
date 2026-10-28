@@ -48,7 +48,7 @@ test('Owner PKC email inventory never reads or borrows customer A/B reservations
  const h=await library(t);await h.profiles.importRows({...h.a,retailer:'pokemoncenter',rows:[complete('pokemoncenter','used@example.test')]});
  await h.service.importEmails(event,{...h.b,retailer:'pokemoncenter',emails:['reserved@example.test']});
  const plan=await live(h,[{...complete('target','new@example.test'),retailer:'target'},{...complete('walmart','new@example.test'),retailer:'walmart'},complete('target','used@example.test'),complete('target','reserved@example.test')]);
- const result=await commit(h,plan);assert.equal(result.pkcEmailsAdded,3);const inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});assert.deepEqual(inventory.emails.map(x=>x.email).sort(),['new@example.test','reserved@example.test','used@example.test']);
+ const result=await commit(h,plan);assert.equal(plan.skippedForeign,2);assert.equal(result.skippedForeign,2);assert.equal(result.pkcEmailsAdded,1);const inventory=await h.service.emails(event,{...h.p,retailer:'pokemoncenter'});assert.deepEqual(inventory.emails.map(x=>x.email).sort(),['new@example.test']);
  const another=await live(h,[complete('costco','new@example.test')],h.p,'costco');assert.equal((await commit(h,another)).pkcEmailsAdded,0);
 });
 test('Reimport automatically replaces older Live by exact email; stale preview fails and latest stays jig-editable',async t=>{
@@ -223,9 +223,10 @@ test('pasted email login pairs retain exact password values and enter the select
  assert.equal(after.find(x=>x.email===input[0].email).data.password,input[0].password);
  assert.equal((await h.profiles.fieldSnapshot('aco','customer-a')).length,0);
 });
-test('pasted login import remains scoped to its selected retailer and customer vault',async t=>{
- const h=await library(t),input=[{email:'shared@example.test',password:'synthetic:!Test#3'}];
- for(const [owner,retailer]of [[h.p,'target'],[h.a,'walmart']]){
+test('profile credential file imports stay scoped to selected retailer and customer with independent emails',async t=>{
+ const h=await library(t),ownerInput=[{email:'personal@example.test',password:'synthetic:!Owner#3'}],
+  customerInput=[{email:'customer@example.test',password:'synthetic:!Customer#4'}];
+ for(const [owner,retailer,input]of [[h.p,'target',ownerInput],[h.a,'walmart',customerInput]]){
   const preview=await h.lib.importPreview(event,{...owner,retailer,fileName:'account-logins.json',text:JSON.stringify(input)});
   await h.lib.importCommit(event,{token:preview.token,confirmed:true,asAvailable:true,repairs:{allowShared:true}});
  }
@@ -233,8 +234,8 @@ test('pasted login import remains scoped to its selected retailer and customer v
  const customer=await h.profiles.fieldSnapshot('aco','customer-a');
  assert.equal(personal.length,1);assert.equal(customer.length,1);
  assert.equal(personal[0].retailer,'target');assert.equal(customer[0].retailer,'walmart');
- assert.equal(personal[0].data.password,input[0].password);
- assert.equal(customer[0].data.password,input[0].password);
+ assert.equal(personal[0].data.password,ownerInput[0].password);
+ assert.equal(customer[0].data.password,customerInput[0].password);
  assert.equal((await h.service.emails(event,{...h.b,retailer:'walmart'})).freeAccounts,0);
 });
 
@@ -301,7 +302,7 @@ test('PKC Live import removes every duplicate Ready profile, not an unrelated re
  const h=await library(t),email='shared-retailer-identity@example.test';
  await h.profiles.importRows({...h.p,retailer:'pokemoncenter',rows:[complete('pokemoncenter',email)]});
  await h.profiles.importRows({...h.p,retailer:'target',rows:[complete('target',email)]});
- await h.profiles.importRows({...h.a,retailer:'pokemoncenter',rows:[complete('pokemoncenter',email)]});
+ await h.profiles.importRows({...h.a,retailer:'pokemoncenter',rows:[complete('pokemoncenter','customer-untouched@example.test')]});
  await h.profiles.libraryTransaction('personal',null,ctx=>{
   const original=ctx.rows.find(r=>r.retailer==='pokemoncenter'&&r.email===email);
   ctx.rows.push({...structuredClone(original),id:'older-pkc-ready-duplicate',createdAt:'2026-10-01T00:00:00.000Z'});
@@ -311,7 +312,7 @@ test('PKC Live import removes every duplicate Ready profile, not an unrelated re
  const owner=(await h.lib.list(event,h.p)).profiles;
  assert.equal(owner.filter(x=>x.retailer==='pokemoncenter'&&x.email===email).length,1);
  assert.equal(owner.filter(x=>x.retailer==='target'&&x.email===email).length,1);
- assert.equal((await h.lib.list(event,h.a)).profiles.filter(x=>x.retailer==='pokemoncenter'&&x.email===email).length,1);
+ assert.equal((await h.lib.list(event,h.a)).profiles.filter(x=>x.retailer==='pokemoncenter'&&x.email==='customer-untouched@example.test').length,1);
 });
 test('A website-linked Ready profile blocks automatic Live duplicate removal and leaves all owner data unchanged',async t=>{
  const h=await library(t),email='linked-protected@example.test';
