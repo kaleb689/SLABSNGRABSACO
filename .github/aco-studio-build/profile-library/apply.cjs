@@ -425,8 +425,12 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  // ownership using the importer. The importer must now skip this email.
  const oldImport="  await v.importRows({scope:'aco',customerId:'customer1',retailer:'target',rows:[sample('repeat@sample.test')]});";
  const historical="  const rejected=await v.importRows({scope:'aco',customerId:'customer1',retailer:'target',rows:[sample('repeat@sample.test')]});\\n  assert.equal(rejected.skippedForeign,1);\\n  const saved=(await v.fieldSnapshot('personal',null))[0];\\n  await v.libraryTransaction('aco','customer1',ctx=>{ctx.rows.push({...structuredClone(saved),id:'historical-personal-customer-clash'});},()=>{});";
- if(next.split(oldImport).length!==2)throw Error('Legacy Personal privacy fixture changed; review before release.');
- next=next.replace(oldImport,historical.replaceAll('\\n','\n'));
+ const blockStart=next.indexOf("test('duplicates: show cross-bank collisions but never reveal locked Personal record'");
+ const blockEnd=next.indexOf('\ntest(',blockStart+10);
+ if(blockStart<0||blockEnd<0)throw Error('Legacy Personal privacy test boundary changed; review before release.');
+ const block=next.slice(blockStart,blockEnd);
+ if(!block.includes(oldImport))throw Error('Legacy Personal privacy import line changed; review before release.');
+ next=next.slice(0,blockStart)+block.replace(oldImport,historical.replaceAll('\\n','\n'))+next.slice(blockEnd);
  fs.writeFileSync(file,next);
 }
 
