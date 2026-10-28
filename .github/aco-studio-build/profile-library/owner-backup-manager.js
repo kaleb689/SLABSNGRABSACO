@@ -59,7 +59,7 @@ function createBackupManager({baseDir,safeStorage,fs=fsp,clock=()=>new Date()}={
   }catch(e){await fs.rm(dest,{recursive:true,force:true}).catch(()=>{});throw e;}
  }
  async function checkpoint(reason='manual',options={}){
-  if(!['manual','daily','pre-change','pre-restore'].includes(reason))throw Error('Unsupported checkpoint type.');
+  if(!['manual','daily','pre-change','critical-change','pre-restore'].includes(reason))throw Error('Unsupported checkpoint type.');
   return serial(async()=>{
    const minAge=reason==='daily'?24*3600e3:reason==='pre-change'?2*60e3:0;
    const cached=lastAutomatic.get(reason);
