@@ -1,6 +1,6 @@
 'use strict';
 const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core'),CardPolicy=require('./card-pool-policy');
-function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,getOwnerWalmartUnused,getPostalJigOptions,chooseHistoricalFolder,chooseOriginalFiles,now=Date.now,uuid=crypto.randomUUID}={}){
+function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,updateLinkedLogin,getOwnerWalmartUnused,getPostalJigOptions,chooseHistoricalFolder,chooseOriginalFiles,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),reconciliationPlans=new Map(),duplicateRepairPlans=new Map(),jigPlans=new Map(),codeRestorePlans=new Map(),epochs=new Map();
  const supportedRule=id=>id===C.FL_PHONE_RULE||Boolean(C.ruleById(id));
  const nonStackingRules=ids=>{let targetPrimary=false;return ids.filter(id=>{if(C.ruleById(id)?.family!=='target-primary')return true;if(targetPrimary)return false;targetPrimary=true;return true;});};
@@ -189,7 +189,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const superseded=existing.filter(x=>identities.has(x.retailer+'|'+C.email(x.email)));
   const incomingRepeated=entries.length-identities.size;
   const blockedLinkedCount=superseded.filter(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile').length;
-  return {token,bank:'live',count:entries.length,skippedForeign,retailerConflicts,overrideRetailer:p.overrideRetailer===true,effectiveCount:identities.size,counts,
+  const linkedAssignments=a.scope==='aco'?existing.filter(x=>x.retailer&&x.source==='website-linked-profile'&&x.sourceLinked===true&&x.remoteManagedId&&['free','rented'].includes(x.remoteType))
+   .map(x=>({profileId:x.id,revision:x.revision||0,retailer:x.retailer,email:x.email,managedId:x.remoteManagedId,
+    type:x.remoteType,updatedAt:x.remoteUpdatedAt||''})): [];
+  return {token,bank:'live',count:entries.length,skippedForeign,retailerConflicts,overrideRetailer:p.overrideRetailer===true,effectiveCount:identities.size,counts,linkedAssignments,
    supersedeLive:superseded.filter(x=>x.bank==='live').length,
    supersedeNonLive:superseded.filter(x=>x.bank!=='live').length,
    collapsedInImport:incomingRepeated,blockedLinkedCount,
@@ -263,8 +266,29 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      p.expectedCustomerId!==undefined&&p.expectedCustomerId!==plan.id)
    throw Error('Customer vault selection changed. Review the import for the selected vault.');
   const a=await access(e,{scope:plan.scope,customerId:plan.id});if(p.confirmed!==true)throw Error('Review the import first.');if(plan.bank==='live'){
-  if(!plan.entries.length){plans.delete(p.token);return {imported:0,skippedForeign:plan.skippedForeign||0,bank:'live'};}
-  const result=await profiles.importLiveProfiles(a.scope,a.id,plan.entries,{updateExisting:p.updateExisting===true,batchId:uuid(),fileNames:plan.fileNames||[]},()=>{a.check();if(plans.get(p.token)!==plan)throw Error('Import was already saved.');},
+  const mapped=Array.isArray(p.linkMappings)?p.linkMappings:[];
+  if(mapped.length>plan.entries.length||mapped.length>100||mapped.length&&(!updateLinkedLogin||a.scope!=='aco'))
+   throw Error('Website-linked login sync is unavailable for the selected vault.');
+  const selected=new Set(),remoteIds=new Set(),mappedOps=[];
+  if(mapped.length){
+   const current=await profiles.fieldSnapshot(a.scope,a.id);a.check();
+   for(const m of mapped){
+    const index=m?.entryIndex,linked=current.find(x=>x.id===m?.profileId);
+    if(!Number.isSafeInteger(index)||index<0||index>=plan.entries.length||selected.has(index)||
+       !linked||linked.revision!==m.revision||linked.source!=='website-linked-profile'||linked.sourceLinked!==true||
+       !linked.remoteManagedId||!['free','rented'].includes(linked.remoteType)||linked.needsReview||
+       linked.retailer!==plan.entries[index].retailer||remoteIds.has(linked.remoteManagedId))
+     throw Error('An exact website assignment could not be matched. Review again; no records changed.');
+    const entry=plan.entries[index],email=C.email(C.values(entry.data).email);
+    selected.add(index);remoteIds.add(linked.remoteManagedId);
+    mappedOps.push({entryIndex:index,profile:linked,email});
+   }
+  }
+  const eligible=plan.entries.filter((_,i)=>!selected.has(i));
+  const check=()=>{a.check();if(plans.get(p.token)!==plan)throw Error('Import was cancelled or already saved.');};
+  let result={imported:0,skippedForeign:0,skippedLinked:0,supersededLive:0,supersededNonLive:0,
+   collapsedInImport:0,cardsPreserved:0,cardsAlreadySaved:0,pkcEmailsAdded:0};
+  if(eligible.length)result=await profiles.importLiveProfiles(a.scope,a.id,eligible,{updateExisting:p.updateExisting===true,batchId:uuid(),fileNames:plan.fileNames||[]},check,
  async(displaced,incoming)=>{
   a.check();
   if(plans.get(p.token)!==plan)throw Error('Live import was cancelled before card preservation.');
@@ -273,7 +297,24 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    displaced,incoming,vault:cardVault(a.scope),key:cardKey(a.scope,a.id),
    check:()=>{a.check();if(plans.get(p.token)!==plan)throw Error('Live import cancelled while preserving prior cards.');}
   });
- });plans.delete(p.token);return {...result,skippedForeign:(plan.skippedForeign||0)+(result.skippedForeign||0)};}return withCards(a,p.cardIds||[],cards=>profiles.libraryTransaction(a.scope,a.id,async ctx=>{if(plans.get(p.token)!==plan)throw Error('Import was already saved.');const foreign=await ctx.foreignEmails(),eligible=plan.data.filter(row=>!foreign.has(C.email(C.values(row).email))),skippedForeign=(plan.skippedForeign||0)+plan.data.length-eligible.length;
+ });
+  let linkedUpdated=0;
+  for(const item of mappedOps){
+   check();
+   const linked=item.profile;
+   const remote=await updateLinkedLogin(a.id,{
+    managedAccountId:linked.remoteManagedId,type:linked.remoteType,
+    retailer:linked.retailer,updatedAt:linked.remoteUpdatedAt
+   },{confirmed:true,expectedEmail:linked.email,newEmail:item.email,
+    ...(p.syncPasswords===true?{newPassword:String(C.values(plan.entries[item.entryIndex].data).password||'')}: {})
+   });
+   if(remote?.remoteSaved!==true)throw Error('Linked website login did not verify. Refresh both website and ACO Studio.');
+   linkedUpdated++;
+  }
+  if(linkedUpdated)await syncCustomer(e,{scope:'aco',customerId:a.id});
+  plans.delete(p.token);
+  return {...result,linkedUpdated,skippedForeign:(plan.skippedForeign||0)+(result.skippedForeign||0)};
+  }return withCards(a,p.cardIds||[],cards=>profiles.libraryTransaction(a.scope,a.id,async ctx=>{if(plans.get(p.token)!==plan)throw Error('Import was already saved.');const foreign=await ctx.foreignEmails(),eligible=plan.data.filter(row=>!foreign.has(C.email(C.values(row).email))),skippedForeign=(plan.skippedForeign||0)+plan.data.length-eligible.length;
   if(!eligible.length){plans.delete(p.token);return {imported:0,skippedForeign};}
   const data=resolve(eligible,plan.retailer,ctx,p.repairs||{},cards,foreign),importBatchId=uuid(),customerLabel=profileOwnerLabel(p.customerName||p.group),existingCustomerCount=ctx.rows.filter(x=>x.source==='owner-created-profile').length,added=data.map((row,index)=>{const id=uuid(),email=C.email(row.email),label=a.scope==='personal'?email:customerLabel+' '+(existingCustomerCount+index+1),named=C.syncCardholderToProfile(D.manualEdit(row,{...D.toValues(row),label})),entry={id,retailer:plan.retailer,email,label,group:a.scope==='personal'?plan.retailer:customerLabel,source:'owner-created-profile',importBatchId,status:p.asAvailable===true?'available':'active',jiggedAt:p.alreadyJigged?new Date(now()).toISOString():null,createdAt:new Date(now()).toISOString(),revision:0,data:named,format:C.format(plan.retailer),assetRefs:{}};for(const bank of ctx.emails)if(bank.retailer===plan.retailer&&bank.email===email&&(!bank.profileId||String(bank.profileId).startsWith('pending-')))bank.profileId=id;ctx.rows.push(entry);ctx.audit('library-import',email,{retailer:plan.retailer});return entry;});ctx.importBatches.push({id:importBatchId,at:new Date(now()).toISOString(),bank:'working',retailers:[plan.retailer],fileNames:[plan.fileName||'import'],createdIds:added.map(x=>x.id),imported:added.length,updatedExisting:0,removedAt:null});plans.delete(p.token);return {imported:added.length,skippedForeign,batchId:importBatchId};},a.check));}
  async function repair(e,p){const a=await access(e,p);return withCards(a,p.cardIds||[],cards=>profiles.libraryTransaction(a.scope,a.id,async ctx=>{
