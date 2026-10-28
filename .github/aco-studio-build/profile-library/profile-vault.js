@@ -329,6 +329,27 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  }
  function serial(action){const task=pending.catch(()=>{}).then(action);pending=task.then(()=>{},()=>{});return task;}
  const bank=(scope,id)=>{if(scope==='personal'){if(id)throw Error('Personal profiles cannot belong to ACO customers.');return 'owner';}if(scope!=='aco')throw Error('Unknown Personal/ACO profile bank.');return memberId(id);};
+ // Read-only ownership filter. Sharing an email across retailers IN ONE vault
+ // remains valid; sharing it between Personal and customer vaults does not.
+ // Never return another customer's identity, credentials, or profile details.
+ async function foreignEmailSet(scope,customerId){
+  const current=bank(scope,customerId),foreign=new Set();
+  const sources=scope==='personal'?[['aco',null]]:[['personal',null],['aco',current]];
+  for(const [source,exclude] of sources){
+   const d=await read(source);
+   for(const [key,rows] of Object.entries(d.groups||{})){
+    if(source==='aco'&&exclude&&key===exclude)continue;
+    for(const row of rows||[]){const email=normalizeEmail(row.email||emailFrom(row.data));if(email)foreign.add(email);}
+   }
+   for(const [key,rows] of Object.entries(d.emailBanks||{})){
+    if(source==='aco'&&exclude&&key===exclude)continue;
+    for(const row of rows||[]){const email=normalizeEmail(row.email);if(email)foreign.add(email);}
+   }
+  }
+  return foreign;
+ }
+ async function foreignEmails(scope,customerId){await pending;return foreignEmailSet(scope,customerId);}
+
  const brief=p=>{const completion=Completion.synchronize(p,[],now);return {stage:p.stage,missing:completion.missing,completedAt:p.completedAt||null,bank:p.bank||'working',id:p.id,email:p.email,retailer:p.retailer,label:p.label,status:p.status,source:p.source,createdAt:p.createdAt,revision:Number.isSafeInteger(p.revision)?p.revision:0};};
  function auditRecord(data,key,action,profileEmail,detail={}){
   data.audit||={};const list=data.audit[key]||[];
@@ -659,6 +680,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    throw Error('Choose 1-10000 live profiles.');
   return serial(async()=>{
    const d=await read(scope),rows=d.groups[key]||[],byIdentity=new Map(),importedAt=now();
+   const foreign=await foreignEmailSet(scope,customerId);let skippedForeign=0;
    // Last occurrence in the selected import files wins within the same
    // retailer/email; it must not create two new Live rows in the same batch.
    for(const item of entries){
@@ -666,8 +688,10 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
      email=normalizeEmail(emailFrom(data)),token=retailer+'|'+email;
     if(!email)throw Error('Every live profile needs a valid account email.');
     if(JSON.stringify(data).length>16000)throw Error('Imported profile exceeds the encrypted record size limit.');
+    if(foreign.has(email)){skippedForeign++;continue;}
     byIdentity.set(token,{item,retailer,data,email});
    }
+   if(!byIdentity.size)return {imported:0,inputRows:entries.length,skippedForeign,bank:'live',supersededLive:0,supersededNonLive:0,cardsPreserved:0,cardsAlreadySaved:0,encryptedRecoveryPreserved:true};
    const hash=require('./jig-field-core').hash,prepared=[];
    for(const [token,{item,retailer,data,email}] of byIdentity){
     const matches=rows.filter(x=>x.retailer===retailer&&normalizeEmail(x.email)===email);
@@ -744,7 +768,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    beforeWrite();await write(scope,d);
    const supersededLive=displaced.filter(x=>x.bank==='live').length;
    const supersededNonLive=displaced.length-supersededLive;
-   return {imported:prepared.length,inputRows:entries.length,collapsedInImport:entries.length-prepared.length,
+   return {imported:prepared.length,inputRows:entries.length,skippedForeign,collapsedInImport:entries.length-prepared.length-skippedForeign,
     pkcEmailsAdded,bank:'live',batchId,supersededLive,supersededNonLive,
     retiredFromUnusedAndReady:supersededNonLive,cardsPreserved:cardPreservation.cardsPreserved||0,
     cardsAlreadySaved:cardPreservation.cardsAlreadySaved||0,encryptedRecoveryPreserved:true};
@@ -886,6 +910,9 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     rows:d.groups[key],emails:d.emailBanks[key],importBatches:d.importBatches[key],
     audit:(action,email,detail)=>auditRecord(d,key,action,email,detail),
     settings:d.librarySettings?.[key]||{},
+    // Evaluated within the same serialized import transaction, so late
+    // customer assignments are skipped before any encrypted write.
+    foreignEmails:()=>foreignEmailSet(scope,customerId),
     archiveDuplicateRepair:(old,kind,changedTo)=>{
      if(!old?.id||!['card','email','both'].includes(kind))throw Error('Invalid duplicate recovery record.');
      d.duplicateRepairArchives||={};d.duplicateRepairArchives[key]||=[];
