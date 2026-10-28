@@ -940,3 +940,15 @@ test('Batch jig distribution uses even allocation or an exact preferred style co
  await assert.rejects(h.lib.batchJigPreview(event,{...common,distribution:{enabled:true,counts:{'fraction-house':8}}}),/exceeds/);
  assert.equal((await h.lib.list(event,h.p)).profiles.length,8,'Preview must never save profiles');
 });
+
+
+test('temporary export naming probe for retailer template field shape',()=>{
+ const rows=[
+  {id:'probe-1',retailer:'target',label:'Personal 1',email:'probe1@example.test',data:Object.assign(complete('target','probe1@example.test'),{profileSecurityCode:'999'})},
+  {id:'probe-2',retailer:'target',label:'Personal 2',email:'probe2@example.test',data:Object.assign(complete('target','probe2@example.test'),{profileSecurityCode:'888'})}
+ ];
+ const target=LC.exportSelectedRows(rows,'target','Personal','retailer');
+ const walmart=LC.exportSelectedRows(rows.map(x=>({...x,retailer:'walmart',data:complete('walmart',x.email)})),'walmart','Personal','retailer');
+ console.log('EXPORT_PROFILE_NAME_PROBE_TARGET',target.body.split('\\n').slice(0,3).map(x=>x.slice(0,270)));
+ console.log('EXPORT_PROFILE_NAME_PROBE_VALOR',walmart.body.slice(0,800));
+});
