@@ -337,7 +337,6 @@ replace('site-bridge.js','return {open,signIn,hide,reload,bounds,read,adminRead,
   }
  }
  return {open,signIn,prepareDesktopUnlock,desktopUnlockState,hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile,savedCustomerData,saveCustomerSavedData,changeCustomerAssignment,enrollDesktopDevice,unlockDesktopAdmin};`);
-replace('site-bridge.js'," return {open,signIn,prepareDesktopUnlock,desktopUnlockState,hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile,savedCustomerData,saveCustomerSavedData,changeCustomerAssignment,enrollDesktopDevice,unlockDesktopAdmin};"," async function ownerWalmartUnused(){\n  const result=await api('/api/admin/owner-walmart-unused/export','POST',{confirmed:true});\n  if(result?.ok!==true||result?.scope!=='personal'||result?.retailer!=='walmart'||result?.ownerOnly!==true)throw Error('Owner Walmart inventory unavailable; no local records were changed.');\n  return result;\n }\n return {open,signIn,prepareDesktopUnlock,desktopUnlockState,hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile,savedCustomerData,saveCustomerSavedData,changeCustomerAssignment,enrollDesktopDevice,unlockDesktopAdmin,ownerWalmartUnused};");
 replace('tests/personal-profiles-security.test.js',"customerId:'customer1',retailer:'walmart',rows:","customerId:'customer1',retailer:'target',rows:");
 replace('tests/personal-profiles-security.test.js',"customerId:'customer2',retailer:'pokemoncenter',data:","customerId:'customer2',retailer:'target',data:");
 replace('tests/personal-profiles-security.test.js',"customerId:'u2',retailer:'walmart',email:'shared@sample.test'","customerId:'u2',retailer:'target',email:'shared@sample.test'");
@@ -402,6 +401,16 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  fs.writeFileSync(pkgPath,JSON.stringify(pkg,null,2)+'\n');
 }
 
+
+// Add authenticated Walmart transfer only AFTER private Studio permission
+// bridging has finished; preserve its final export and identity boundary.
+{
+ const p=path.join(root,'site-bridge.js'),source=fs.readFileSync(p,'utf8');
+ const anchor=' return {open,signIn,prepareDesktopUnlock,desktopUnlockState,hide,reload,bounds,read,adminRead,adminAction,assign,returnToPool,jig,logout,isReady,getLinkedAccountEmails,profileSource,saveCustomerProfile,savedCustomerData,saveCustomerSavedData,changeCustomerAssignment,enrollDesktopDevice,unlockDesktopAdmin,privateStudioJigPermissions};';
+ if(source.split(anchor).length!==2)throw Error('site-bridge.js: expected final private Studio permission bridge');
+ const addition=" async function ownerWalmartUnused(){\n  const result=await api('/api/admin/owner-walmart-unused/export','POST',{confirmed:true});\n  if(result?.ok!==true||result?.scope!=='personal'||result?.retailer!=='walmart'||result?.ownerOnly!==true)throw Error('Owner Walmart inventory unavailable; no local records were changed.');\n  return result;\n }\n";
+ fs.writeFileSync(p,source.replace(anchor,addition+anchor.replace('privateStudioJigPermissions}', 'privateStudioJigPermissions,ownerWalmartUnused}')));
+}
 
 // Keep restored security regression aligned with encrypted owner snapshot directory.
 // Preserve both separately encrypted primary vaults and explicitly permit the
