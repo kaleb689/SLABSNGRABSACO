@@ -832,6 +832,90 @@ test('Jig Studio optional-unit-only works with zero counted hard categories',asy
  assert.equal(result.profiles.filter(x=>x.appliedRuleIds.includes('second-line.add')).length,2);
 });
 
+test('Auto second-line sources saved unitless Main addresses when all selected profiles have apartments',async t=>{
+ const h=await library(t);
+ const baseOne={...address,label:'Unitless Main One',address1:'2110 Forest Lane',address2:'',city:'Sample',state:'FL',zip:'33324'};
+ const baseTwo={...address,label:'Unitless Main Two',address1:'9911 Sunrise Road',address2:'',city:'Sample',state:'FL',zip:'33324'};
+ await h.service.addAddress(event,{...h.p,address:baseOne});
+ await h.service.addAddress(event,{...h.p,address:baseTwo});
+ for(let i=0;i<5;i++){
+  const original=complete('target','apartment-batch-'+i+'@example.test');
+  original.shipping_street_2='Apt 1309';
+  original.billing_street_2='Apt 1309';
+  original.profileSecurityCode='REFERENCE-'+i;
+  await commit(h,await preview(h,[original]));
+ }
+ const before=(await h.lib.list(event,h.p)).profiles;
+ const banksBefore=JSON.stringify((await h.addresses.listPersonal()).addresses);
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:before.map(x=>x.id),
+  ruleIds:['target.house.hyphen.a','target.house.fraction.half'],combine:false,billingSameAsShipping:false,
+  optionalUnitCount:2,autoUnitFromAddressBank:true});
+ assert.equal(result.optionalUnitAdded,2);
+ assert.equal(result.optionalUnitBankReassigned,2);
+ assert.equal(result.optionalUnitEligible,2);
+ const changed=result.profiles.filter(x=>x.unitBankSourceId);
+ assert.equal(changed.length,2);
+ for(const item of changed){
+  assert.equal(item.before.address2,'Apt 1309');
+  assert.ok(/Forest Lane|Sunrise Road/.test(item.after.address1));
+  assert.match(item.after.address2,/^(?:(?:Apt|Unit|Ste|#)\\s+)?(?:[A-D]|[1-9])$/);
+  assert.ok(item.appliedRuleIds.includes('second-line.add'));
+  assert.equal(item.category,'automatic Address Bank source');
+ }
+ assert.equal(result.duplicateAddresses.length,0);
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),banksBefore,'Preview must not edit saved addresses');
+ assert.deepEqual((await h.lib.list(event,h.p)).profiles.map(x=>x.data),before.map(x=>x.data),'Preview does not write profiles');
+ await h.lib.batchJigCommit(event,{token:result.token,confirmed:true});
+ const after=(await h.lib.list(event,h.p)).profiles;
+ for(const item of changed){
+  const updated=after.find(x=>x.id===item.profileId),values=LC.values(updated.data);
+  for(const field of ['address1','address2','city','state','zip'])
+   assert.equal(values['billing.'+field],values['shipping.'+field],'Billing auto-sync '+field);
+  const original=before.find(x=>x.id===item.profileId);
+  assert.equal(LC.payment(updated.data).number,LC.payment(original.data).number,'Card unchanged');
+  assert.equal(LC.profileCode(updated.data),LC.profileCode(original.data),'Security reference unchanged');
+ }
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),banksBefore,'Bank bases and existing unit numbers remain unchanged');
+});
+test('Auto unitless source prefers selected unitless profiles before replacing any existing-unit source',async t=>{
+ const h=await library(t);
+ await h.service.addAddress(event,{...h.p,address:{...address,address1:'8557 Lake View Street',address2:''}});
+ for(let i=0;i<4;i++){
+  const raw=complete('target','mixed-unit-'+i+'@example.test');
+  if(i>0)raw.shipping_street_2='Ste 7';
+  await commit(h,await preview(h,[raw]));
+ }
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:['target.house.hyphen.a'],optionalUnitCount:2,autoUnitFromAddressBank:true,combine:false,billingSameAsShipping:false});
+ assert.equal(plan.optionalUnitAdded,2);
+ assert.equal(plan.optionalUnitBankReassigned,1);
+ const native=plan.profiles.find(x=>x.email==='mixed-unit-0@example.test');
+ assert.ok(native.appliedRuleIds.includes('second-line.add'));
+ assert.equal(native.unitBankSourceId,null);
+ const rebased=plan.profiles.filter(x=>x.unitBankSourceId);
+ assert.equal(rebased.length,1);
+ assert.equal(rebased[0].before.address2,'Ste 7');
+ assert.equal((await h.lib.list(event,h.p)).profiles.filter(x=>LC.values(x.data)['shipping.address2']==='Ste 7').length,3);
+});
+test('Auto unitless sourcing stays inside the active owner/customer vault and fails without an eligible bank Main',async t=>{
+ const h=await library(t);
+ await h.service.addAddress(event,{...h.a,address:{...address,address1:'3888 Customer Lane',address2:''}});
+ const original=complete('target','private-unit@example.test');original.shipping_street_2='Apt 41';
+ await commit(h,await preview(h,[original],h.p,'target'));
+ const owner=(await h.lib.list(event,h.p)).profiles[0];
+ await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[owner.id],
+  ruleIds:[],optionalUnitCount:1,autoUnitFromAddressBank:true}),/unitless saved Main address/);
+ const same=await h.lib.list(event,h.p);
+ assert.equal(LC.values(same.profiles[0].data)['shipping.address2'],'Apt 41');
+});
+test('Owner batch Jig defaults match billing and enables automatic Address Bank fallback only with explicit optional unit selection',()=>{
+ const ui=require('node:fs').readFileSync(require('node:path').join(__dirname,'profile-library-ui.js'),'utf8');
+ assert.match(ui,/billingBox\\.checked=true/);
+ assert.match(ui,/autoUnitFromAddressBank:optionalUnitToggle\\.checked/);
+ assert.match(ui,/billingBox\\.disabled=true/);
+});
+
 test('Selected Target integer house additions are recognized as consolidated rule family',()=>{
  const rules=LC.ruleOptions('target').filter(x=>x.id.startsWith('target.house.integer.'));
  assert.equal(rules.length,9);
