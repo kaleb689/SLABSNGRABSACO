@@ -1367,6 +1367,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(p.autoUnitFromAddressBank!==undefined&&typeof p.autoUnitFromAddressBank!=='boolean')
    throw Error('Invalid automatic Address Bank source option.');
   const autoUnitFromAddressBank=p.autoUnitFromAddressBank===true&&optionalUnitCount>0;
+  if(p.sourceMainFromBank!==undefined&&typeof p.sourceMainFromBank!=='boolean')throw Error('Invalid full Address Bank source setting.');
+  const sourceMainFromBank=p.sourceMainFromBank===true;
+  if(sourceMainFromBank&&retailer!=='walmart')throw Error('Full Address Bank sourcing currently applies to Walmart Jig only.');
   if(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<0||optionalUnitCount>500)
    throw Error('Choose an optional unit count between 0 and 500.');
   const reuse=p.reuse??null;
@@ -1380,9 +1383,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const all=await profiles.fieldSnapshot(a.scope,a.id),selected=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===retailer));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
-  const unitlessBankChoices=autoUnitFromAddressBank?(await reusableShippingChoices(a,all)).filter(item=>
-   item.id.startsWith('bank:')&&item.type==='main'&&!item.address.address2.trim()&&
-   !inlineUnit(item.address.address1)):[];
+  const savedBankChoices=(autoUnitFromAddressBank||sourceMainFromBank)?(await reusableShippingChoices(a,all)).filter(item=>item.id.startsWith('bank:')):[];
+  const unitlessBankChoices=savedBankChoices.filter(item=>item.type==='main'&&!item.address.address2.trim()&&!inlineUnit(item.address.address1));
+  // Random new Apt/Unit lines use only unitless Main houses from the entire
+  // saved bank. With units OFF, every saved Main or Jigged bank entry is eligible.
+  const walmartPool=sourceMainFromBank?(optionalUnitCount?unitlessBankChoices:savedBankChoices):[];
+  if(sourceMainFromBank&&!walmartPool.length)throw Error(optionalUnitCount?
+   'No unitless saved Main addresses are available in the selected vault. Add a unitless house or turn off random second lines.':
+   'The saved Address Bank is empty in this vault. Add addresses before sourcing Walmart.');
   const source=reuse?await resolveReuse(a,reuse.sourceId):null;
   const regularSelected=selected.slice(reuseCount);
   // Online directory ZIP/state matches are suggestions, not USPS delivery-point
@@ -1503,7 +1511,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const nativeUnitless=rows.filter(row=>isUnitless(row)&&
    !String(row.before.address2||'').trim()&&!inlineUnit(row.before.address1));
   let bankReassigned=0;
-  if(autoUnitFromAddressBank&&nativeUnitless.length<optionalUnitCount){
+  if(autoUnitFromAddressBank&&!sourceMainFromBank&&nativeUnitless.length<optionalUnitCount){
    const needed=optionalUnitCount-nativeUnitless.length;
    const candidates=rows.filter(row=>row.category!=='reused saved address'&&
     !nativeUnitless.includes(row));
@@ -1535,6 +1543,33 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     row.unitBankSourceId=bank.id;
     row.unitBankSourceAddress={...bank.address};
     row.mainAddress={...bank.address};
+    bankReassigned++;
+   }
+  }
+  // Source Walmart profiles from ALL eligible saved Address Bank entries.
+  // The bank itself stays unchanged. No original profile or card is written
+  // before the owner reviews and explicitly applies this preview.
+  if(sourceMainFromBank){
+   const pool=[...walmartPool];
+   for(let i=pool.length-1;i>0;i--){const j=crypto.randomInt(i+1);[pool[i],pool[j]]=[pool[j],pool[i]];}
+   const candidates=rows.filter(row=>row.category!=='reused saved address');
+   if(!candidates.length)throw Error('No Walmart profiles remain for saved bank sourcing.');
+   const offset=crypto.randomInt(pool.length);
+   for(let i=0;i<candidates.length;i++){
+    const row=candidates[i],bank=pool[(offset+i)%pool.length],values=D.toValues(row.originalData);
+    for(const field of ['address1','address2','city','state','zip']){
+     values['shipping.'+field]=bank.address[field];values['billing.'+field]=bank.address[field];
+    }
+    const sourced=C.syncCardholderToProfile(D.manualEdit(row.originalData,values));
+    const rules=p.ruleIds.filter(id=>id!==C.FL_PHONE_RULE);
+    const jigged=bulkJigData({data:sourced,retailer:row.retailer},rules,
+     (i%18===0&&candidates.length>1)?0:1,p.combine===true,true,phoneSeed,i+1);
+    row.data=C.syncCardholderToProfile(jigged.data);
+    row.after=addressView(row.data);
+    ensureExistingUnitPreserved(bank.address,row.after);
+    row.appliedRuleIds=jigged.appliedRuleIds;
+    row.category='random saved Address Bank source';
+    row.unitBankSourceId=bank.id;row.unitBankSourceAddress={...bank.address};row.mainAddress={...bank.address};
     bankReassigned++;
    }
   }
@@ -1600,7 +1635,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const token=uuid();
   for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
   jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,duplicateAddresses,at:now(),epoch:ep(e),
-   autoUnitFromAddressBank,
+   autoUnitFromAddressBank,sourceMainFromBank,
    reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
   return {token,duplicateAddresses,optionalUnitEligible:optionalUnitEligible.length,optionalUnitBankReassigned:bankReassigned,
    optionalUnitAdded:rows.filter(row=>row.appliedRuleIds.includes('second-line.add')).length,
@@ -1615,14 +1650,15 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(!plan||plan.sender!==e.sender.id||now()-plan.at>600000||plan.epoch!==ep(e))throw Error('Bulk jig preview expired. Preview the selected profiles again.');
   if(p.confirmed!==true)throw Error('Confirm the reviewed bulk jig before saving.');
   const a=await access(e,{scope:plan.scope,customerId:plan.id}),latest=await profiles.fieldSnapshot(plan.scope,plan.id);
-  const bankChoices=plan.autoUnitFromAddressBank?await reusableShippingChoices(a,latest):[];
+  const bankChoices=plan.autoUnitFromAddressBank||plan.sourceMainFromBank?await reusableShippingChoices(a,latest):[];
   for(const change of plan.rows){
    if(change.unitBankSourceId){
-    if(!plan.autoUnitFromAddressBank||!change.appliedRuleIds.includes('second-line.add'))
-     throw Error('Automatic unit source is not authorized for this profile.');
-    const saved=bankChoices.find(item=>item.id===change.unitBankSourceId&&
-     item.id.startsWith('bank:')&&item.type==='main'&&!item.address.address2.trim()&&
-     !inlineUnit(item.address.address1));
+    const fullBankSource=plan.sourceMainFromBank&&change.category==='random saved Address Bank source';
+    if(!fullBankSource&&(!plan.autoUnitFromAddressBank||!change.appliedRuleIds.includes('second-line.add')))
+     throw Error('Automatic Address Bank source is not authorized for this profile.');
+    const saved=bankChoices.find(item=>item.id===change.unitBankSourceId&&item.id.startsWith('bank:')&&
+     (fullBankSource||item.type==='main')&&
+     (!change.appliedRuleIds.includes('second-line.add')||(!item.address.address2.trim()&&!inlineUnit(item.address.address1))));
     if(!saved||Object.values(saved.address).map(normalizedAddressPart).join('|')!==
       Object.values(change.unitBankSourceAddress).map(normalizedAddressPart).join('|'))
      throw Error('A saved Address Bank base changed after preview. Reopen Jig before applying.');
