@@ -401,9 +401,12 @@ test('PKC Hard Card audit distinguishes saved eligible cards from profile-only c
  assert.match(source,/Audit Hard Cards/);
  assert.match(source,/saved eligible for /);
  assert.match(source,/!card\.fromSavedBank\?'Profile-only card/);
- assert.match(source,/x\.hardCard&&!x\.fromSavedBank/);
- assert.match(source,/targetRegular=saved\.filter\(x=>!x\.hardCard&&x\.linked\?\.includes\('target'\)/);
- assert.match(source,/if\(!win\.valid\(\)\|\|!confirm\(/);
+ assert.match(source,/profileOnly=pool\.filter\(x=>!x\.fromSavedBank/);
+ assert.match(source,/targetRegular=saved\.filter\(x=>!x\.hardCard/);
+ assert.match(source,/Restore selected Hard Card flags/);
+ assert.match(source,/Copy selected profile cards to saved bank/);
+ assert.match(source,/profileWorkshop\.setHardCards/);
+ assert.match(source,/if\(!confirm\('Apply '/);
  assert.match(source,/profileWorkshop\.addProfileCardToBank/);
  assert.doesNotMatch(source,/cardPool\.hard\s*=\s*\[\]/);
 });
