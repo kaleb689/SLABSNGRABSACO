@@ -717,3 +717,39 @@ test('Ordinary profile changes cannot silently remove or replace an existing Sec
  assert.equal(saved.updated,true);
  assert.equal((await h.lib.list(event,h.p)).profiles[0].data.profileSecurityCode,'NONPAYMENT-REF-0042');
 });
+
+test('45-row Target Shikari export retains each different independent Security Code in the exact cc_cvv column',async t=>{
+ const h=await library(t),sources=[];
+ for(let i=0;i<45;i++){
+  const data=complete('target','batch-'+i+'@example.test');
+  LC.putCard(data,{...fullCard,number:'411111111111'+String(1000+i)});
+  data.profileSecurityCode='SYNTHETIC-REF-'+String(i).padStart(4,'0');
+  sources.push(data);
+ }
+ await commit(h,await preview(h,sources));
+ const selected=(await h.lib.list(event,h.p)).profiles.map(row=>row.id);
+ assert.equal(selected.length,45);
+ const result=await h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:selected,customerName:'Batch 45',exportFormat:'retailer'});
+ assert.equal(result.saved,true);
+ const body=h.writes.at(-1)[1],parsed=Core.parseFile('Batch 45 profiles.csv',body);
+ assert.equal(parsed.records.length,45);
+ const expected=new Map(sources.map(source=>[source.cc_number,source.profileSecurityCode]));
+ for(const row of parsed.records){
+  assert.equal(row.cc_cvv,expected.get(row.cc_number),'Security Code must follow exact full card number, never the array index');
+  assert.ok(row.cc_cvv,'Never silently emit a blank Security Code');
+ }
+});
+
+test('45-row Target export refuses 40 missing Security Codes without writing any file',async t=>{
+ const h=await library(t),sources=[];
+ for(let i=0;i<45;i++){
+  const data=complete('target','partial-'+i+'@example.test');
+  LC.putCard(data,{...fullCard,number:'411111111111'+String(2000+i)});
+  if(i<5)data.profileSecurityCode='SYNTHETIC-PRESENT-'+i;
+  sources.push(data);
+ }
+ await commit(h,await preview(h,sources));
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:rows.map(row=>row.id)}),/Export BLOCKED: 40 missing/);
+ assert.equal(h.writes.length,0);
+});
