@@ -22,6 +22,7 @@ jobs:
       - name: Syntax check every changed component
         run: |
           node --check .github/aco-studio-build/profile-library/profile-library-core.js
+          node --check .github/aco-studio-build/profile-library/owner-backup-manager.js
           node --check .github/aco-studio-build/profile-library/profile-library-service.js
           node --check .github/aco-studio-build/profile-library/profile-library-ui.js
           node --check .github/aco-studio-build/completed-profiles/profile-workshop-ui.js
@@ -48,6 +49,8 @@ jobs:
         run: |
           set -euo pipefail
           node --test tests/profile-library.test.js
+          node --test tests/owner-backup-manager.test.js
+          node --test tests/owner-backups.test.js
           node --test tests/profile-live-ui.test.js
           node --test tests/profile-duplicate-scan.test.js
           node --test tests/imported-card-codes.test.js

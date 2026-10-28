@@ -1649,7 +1649,30 @@ function registerLibrary(options){
   const result=parent?await dialog.showOpenDialog(parent,picker):await dialog.showOpenDialog(picker);
   return result.canceled?null:result.filePaths||[];
  });
+ // Independent daily local checkpoint even when the Profiles tab is closed.
+ // No network calls, no plaintext export, and no automatic restore.
+ if(typeof options.profiles.backupStatus==='function'){
+  const automaticBackup=()=>options.profiles.backupStatus().catch(()=>{});
+  void automaticBackup();
+  const backupTick=setInterval(automaticBackup,60*60*1000);
+  backupTick.unref?.();
+ }
  const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['importPastedAccounts','customerCardDetails','jigAssets','reuseChoices','list','duplicateRepairPreview','duplicateRepairCommit','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','reconcileLivePreview','reconcileLiveCommit','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
+ // Complete encrypted local workspace checkpoints. Never expose decrypted data.
+ for(const [method,invoke] of Object.entries({
+  backupStatus:()=>options.profiles.backupStatus(),
+  backupCheckpoint:(_e,p)=>{
+   if(p?.confirmed!==true)throw Error('Confirm the manual encrypted checkpoint.');
+   return options.profiles.backupCheckpoint();
+  },
+  backupPreview:(_e,p)=>options.profiles.backupPreview(p?.id),
+  backupConfirm:(_e,p)=>{
+   if(p?.confirmed!==true||p?.entireWorkspace!==true)throw Error('Explicit complete workspace rollback approval is required.');
+   return options.profiles.backupConfirm({token:p.token,confirmed:true});
+  }
+ })){
+  options.ipcMain.handle('profile:library:'+method,(e,p)=>{options.requireOwner(e);return invoke(e,p);});
+ }
  // Owner-only encrypted backup recovery for complete Personal and ACO vaults.
  // No customer website token or profile ID can access these snapshots.
  options.ipcMain.handle('profile:library:backupList',(e,p)=>{
