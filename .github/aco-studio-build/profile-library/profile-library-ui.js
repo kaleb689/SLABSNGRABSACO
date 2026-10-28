@@ -79,6 +79,69 @@
  reviewWarning.textContent='Selected original files are read locally in the authenticated desktop process for independent profile-reference matches only. Your files and vaults are not edited, and payment-card CVV/CVC values are not recovered or stored. You may cancel the folder picker to scan built-in sources only.';
  recoveryReviewPanel.append(recoveryHeading,recoveryIntro,reviewControls,reviewOutput,restoreStatus,reviewWarning);
  q('export').before(recoveryReviewPanel);
+
+ const backupPanel=d.createElement('section');backupPanel.className='profileLibraryAdvanced';
+ backupPanel.setAttribute('aria-label','Automatic encrypted backups');backupPanel.hidden=true;
+ const backupTitle=d.createElement('h3');backupTitle.textContent='Automatic encrypted backups & restore points';
+ const backupExplanation=text('p','Encrypted backups are saved locally on this Mac: daily while Studio is open, before profile changes, and when you choose Create backup. Personal and customer profiles, Card Bank, Address Bank and local email vault files are copied together when present. Backups never upload to the website.');
+ const backupState=text('p','Backup status has not been checked.');backupState.setAttribute('role','status');
+ const backupButtons=d.createElement('div');backupButtons.className='buttons';
+ const backupNow=text('button','Create backup now');backupNow.type='button';backupNow.className='btn secondary';
+ const backupRefresh=text('button','View backups');backupRefresh.type='button';backupRefresh.className='btn secondary';
+ const backupSelect=d.createElement('select');backupSelect.setAttribute('aria-label','Choose an encrypted restore point');
+ const backupPreview=text('button','Review & revert to selected backup');backupPreview.type='button';backupPreview.className='btn secondary';
+ backupPreview.disabled=true;
+ backupButtons.append(backupNow,backupRefresh,backupSelect,backupPreview);
+ const backupWarning=text('small','Reverting the entire local workspace may remove changes made since that backup. Nothing is restored without your confirmation. A new safety checkpoint of the current state is created before every restore. Restart Studio afterward. Other computers and the website are not rolled back.');
+ backupPanel.append(backupTitle,backupExplanation,backupState,backupButtons,backupWarning);
+ recoveryReviewPanel.after(backupPanel);
+ async function updateBackupPanel(){
+  if(main.hidden||scope!=='personal')return;
+  try{
+   const status=await api.backupStatus({});
+   backupSelect.replaceChildren();
+   const placeholder=new Option('Choose a restore point…','');backupSelect.append(placeholder);
+   for(const item of status.checkpoints||[])backupSelect.append(new Option(
+    new Date(item.createdAt).toLocaleString()+' · '+item.reason+' · '+item.files+' vault file(s)',item.id));
+   backupSelect.value='';backupPreview.disabled=true;
+   backupState.textContent=status.backupCount
+    ?'Automatic backups ON · '+status.backupCount+' encrypted restore points · Last backup: '+new Date(status.lastBackup).toLocaleString()+' · '+status.fileCount+' encrypted vault files'
+    :'No checkpoint has been created yet. Create a backup now before editing.';
+  }catch(e){backupState.textContent='Encrypted backup unavailable: '+String(e.message||e);}
+ }
+ backupSelect.onchange=()=>{backupPreview.disabled=!backupSelect.value;};
+ backupRefresh.onclick=()=>void updateBackupPanel();
+ backupNow.onclick=async()=>{
+  backupNow.disabled=true;
+  try{
+   if(!await window.JigPersonalGuard.ensureUnlocked())return;
+   const result=await api.backupCheckpoint({confirmed:true});
+   backupState.textContent=result.created?'Encrypted backup created successfully.':'Backup not created: '+String(result.reason||'No source vault was found.');
+   await updateBackupPanel();
+  }catch(e){backupState.textContent='Backup was not created: '+String(e.message||e);}
+  finally{backupNow.disabled=false;}
+ };
+ backupPreview.onclick=async()=>{
+  const id=backupSelect.value;if(!id)return;
+  backupPreview.disabled=true;
+  try{
+   if(!await window.JigPersonalGuard.ensureUnlocked())return;
+   const plan=await api.backupPreview({id});
+   const message='BACKUP RESTORE REVIEW\nCreated: '+new Date(plan.createdAt).toLocaleString()+
+    '\nEncrypted vault files to restore: '+plan.affectedFiles+
+    '\nNewer vault files kept: '+plan.newerFilesKept+
+    '\nA full safety backup of your CURRENT data will be created before any replacement.'+
+    '\n\nThis affects all local owner/customer vaults in ACO Studio, not just the current retailer. Continue?';
+   if(!window.confirm(message))return;
+   if(window.prompt('Type RESTORE to authorize reverting the entire LOCAL ACO Studio workspace:')!=='RESTORE')return;
+   const result=await api.backupConfirm({token:plan.token,confirmed:true,entireWorkspace:true});
+   backupState.textContent='Restored '+result.files+' encrypted vault file(s). Safety backup saved. Restart required.';
+   window.alert('Backup restored. A safety copy of the previous state was preserved. ACO Studio will refresh now; close and reopen the app if any other window remains open.');
+   window.location.reload();
+  }catch(e){backupState.textContent='Restore not completed: '+String(e.message||e);}
+  finally{backupPreview.disabled=false;}
+ };
+
  const reviewLine=(label,value)=>{
   const p=d.createElement('p'),strong=d.createElement('strong');
   strong.textContent=label+' ';p.append(strong,d.createTextNode(String(value)));return p;
@@ -683,8 +746,8 @@
  let pendingRefresh=false,refreshTicket=0;
  function editorBusy(){return !!d.querySelector('.profileLibraryModal,.workshopModal:not([hidden])')||!!d.activeElement?.closest?.('#profileLibraryPage input, #profileLibraryPage select, #profileLibraryPage textarea');}
  async function refresh(){if(editorBusy()){pendingRefresh=true;return;}const ticket=++refreshTicket,owner=request(),ownerEpoch=epoch,priorCards=JSON.stringify(bankAssets.cardPool||[]),priorUnused=JSON.stringify(unusedAccounts);if(scope==='aco'&&!customerId){rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();return;}try{if(scope==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;const [result]=await Promise.all([api.list(owner),loadResourceBanks(owner,ticket,ownerEpoch)]);if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;if(editorBusy()){pendingRefresh=true;return;}const same=JSON.stringify(rows)===JSON.stringify(result.profiles);const poolsSame=JSON.stringify(unusedConflicts)===JSON.stringify(result.unusedConflicts||[]);unusedConflicts=Array.isArray(result.unusedConflicts)?result.unusedConflicts:[];if(!same){const scroll={x:window.scrollX,y:window.scrollY};rows=result.profiles;customGroups=result.customGroups||{};selected=new Set([...selected].filter(id=>stage==='unused'?(unusedAccounts.some(x=>x.id===id)||rows.some(x=>x.id===id&&x.bank!=='live'&&x.stage==='in-progress')):rows.some(x=>x.id===id)));draw();window.scrollTo(scroll.x,scroll.y);}else if(!poolsSame||priorUnused!==JSON.stringify(unusedAccounts)||priorCards!==JSON.stringify(bankAssets.cardPool||[]))draw();else { /* The visible DOM and selected count have not changed. */ }note(customerName()+' · '+visible().length+' profiles · '+retailName[q('retailer').value]+' · '+(bankAssets.cardPool||[]).filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value)).length+' eligible cards · '+bankAssets.addresses.length+' saved addresses');}catch(e){if(ticket===refreshTicket&&ownerEpoch===epoch){rows=[];bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();note(e.message);}}}
- function close(){epoch++;restoreFromBackup.hidden=true;restoreStatus.textContent='Scan this vault before previewing any restoration.';reviewOutput.textContent='No recovery scan has been run for this vault.';rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
- async function open(next){if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;close();stage='unused';pageIndex=0;scope=next;issueView='all';q('view').value='all';customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;customerList();q('customer-label').hidden=scope==='personal';q('owner-title').textContent=scope==='personal'?'PERSONAL VAULT':'CUSTOMER VAULTS';q('sync').hidden=scope==='personal';q('pkc-reconcile').hidden=scope!=='personal';websiteVault.hidden=scope==='personal';websiteVault.open=false;websiteLoad++;for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;main.hidden=false;for(const b of nav.querySelectorAll('button'))b.classList.remove('on');(scope==='personal'?personalProfiles:customerProfiles).classList.add('on');d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent=scope==='personal'?'Personal Profiles':'Customer Profiles';await window.desktopAPI.site?.hide?.();await refresh();void passiveHealthCheck();}
+ function close(){epoch++;backupPanel.hidden=true;restoreFromBackup.hidden=true;restoreStatus.textContent='Scan this vault before previewing any restoration.';reviewOutput.textContent='No recovery scan has been run for this vault.';rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
+ async function open(next){if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;close();stage='unused';pageIndex=0;scope=next;issueView='all';q('view').value='all';customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;customerList();q('customer-label').hidden=scope==='personal';q('owner-title').textContent=scope==='personal'?'PERSONAL VAULT':'CUSTOMER VAULTS';q('sync').hidden=scope==='personal';q('pkc-reconcile').hidden=scope!=='personal';websiteVault.hidden=scope==='personal';websiteVault.open=false;websiteLoad++;for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;main.hidden=false;backupPanel.hidden=scope!=='personal';if(scope==='personal')void updateBackupPanel();for(const b of nav.querySelectorAll('button'))b.classList.remove('on');(scope==='personal'?personalProfiles:customerProfiles).classList.add('on');d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent=scope==='personal'?'Personal Profiles':'Customer Profiles';await window.desktopAPI.site?.hide?.();await refresh();void passiveHealthCheck();}
  q('manage-cards').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'cards');};
  q('manage-addresses').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'addresses');};
  customerProfiles.onclick=()=>void open('aco');personalProfiles.onclick=()=>void open('personal');for(const b of nav.querySelectorAll('button'))if(b!==customerProfiles&&b!==personalProfiles)b.addEventListener('click',()=>{if(!main.hidden)close();});
@@ -1218,6 +1281,9 @@
  renamePersonalJigs();
  new MutationObserver(renamePersonalJigs).observe(d.body,{childList:true,subtree:true});
  d.addEventListener('jigstudio:customers-updated',()=>{if(!main.hidden&&scope==='aco'&&websiteVault.open&&!d.querySelector('.profileLibraryModal'))void loadWebsiteVault();if(window.JigWebsiteCustomers?.connected?.()===false){queuedCustomers.clear();if(scope==='aco')close();return;}if(scope==='aco'&&!main.hidden&&!editorBusy())customerList();void autoSync();});d.addEventListener('jigstudio:personal-locked',()=>{if(scope==='personal')close();});d.addEventListener('jigstudio:bank-context-updated',()=>{if(!main.hidden)void refresh();});
+ // Daily automatic checkpoints are refreshed without showing any sensitive values.
+ const backupTimer=setInterval(()=>{if(scope==='personal'&&!main.hidden)void updateBackupPanel();},60*60*1000);
+ window.addEventListener('beforeunload',()=>clearInterval(backupTimer),{once:true});
  window.ACOProfileLibraryRefresh=Object.freeze({async all(){await autoSync();if(!main.hidden)await refresh();return {ok:true};},async current(){if(!main.hidden)await refresh();return {ok:true};}});
 })();
 
