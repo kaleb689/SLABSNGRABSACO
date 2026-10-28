@@ -10,7 +10,7 @@ const safeStorage={
 };
 async function scenario(t){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'aco-encrypted-workspace-'));
- t.after(()=>fs.rm(root,{force:true,recursive:true}));
+ t.after(async()=>{await fs.rm(root,{force:true,recursive:true});await fs.rm(root+'.encrypted-recovery-backups',{force:true,recursive:true});});
  const manager=createBackupManager({baseDir:root,safeStorage});
  const names=['personal-retailer-profiles.encrypted','aco-customer-retailer-profiles.encrypted',
   'jig-studio-personal-cards.encrypted','jig-studio-personal-addresses.encrypted',
@@ -53,13 +53,13 @@ test('rollback must refuse changed live vaults after preview without modifying a
 });
 test('corrupted checkpoints are never offered for unsafe restoration',async t=>{
  const h=await scenario(t),saved=await h.manager.checkpoint('manual');
- const file=path.join(h.root,'encrypted-owner-workspace-checkpoints',saved.id,h.names[2]);
+ const file=path.join(h.root+'.encrypted-recovery-backups',saved.id,h.names[2]);
  await fs.writeFile(file,Buffer.from('CORRUPTED'));
  await assert.rejects(h.manager.previewRestore(saved.id),/integrity failed/);
  assert.equal(await h.read(h.names[2]),'original-2');
 });
 test('profile writes retain automatic historical pre-write backups and full workspace checkpoints',async t=>{
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'aco-automatic-prewrite-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'aco-automatic-prewrite-'));t.after(async()=>{await fs.rm(root,{recursive:true,force:true});await fs.rm(root+'.encrypted-recovery-backups',{recursive:true,force:true});});
  const vault=makeProfileVault({baseDir:root,safeStorage});
  const set=value=>vault.libraryTransaction('personal',null,ctx=>{ctx.settings.label=value;},()=>{});
  await set('original');await set('changed');await set('later');
