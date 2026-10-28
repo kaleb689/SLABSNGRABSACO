@@ -88,14 +88,14 @@ test('Cross-retailer email reuse is allowed, while duplicates inside the selecte
  await h.vault.importRows({scope:'aco',customerId:'customer-1',retailer:'pokemoncenter',rows:[row('shared@example.test')]});
  await h.vault.importRows({scope:'aco',customerId:'customer-2',retailer:'target',rows:[row('taken@example.test')]});
  const before=await fs.readFile(h.vault.paths.aco),p=await h.importer.choose(event,'target');
- assert.equal(p.skipped,2);assert.equal(p.ready,2);
- assert.ok(!p.conflicts.some(x=>x.email==='shared@example.test'));
+ assert.equal(p.skipped,3);assert.equal(p.ready,1);
+ assert.ok(p.conflicts.some(x=>x.email==='shared@example.test'));
  assert.ok(p.conflicts.some(x=>x.email==='taken@example.test'));
  await assert.rejects(h.importer.confirm(event,{token:p.token,confirmPersonalOnly:true}),/duplicate warnings/);
- const r=await h.confirm(p);assert.equal(r.added,2);assert.equal(r.skipped,2);
+ const r=await h.confirm(p);assert.equal(r.added,1);assert.equal(r.skipped,3);
  assert.deepEqual(await fs.readFile(h.vault.paths.aco),before);
  const records=Core.parseFile(r.entries[0].name,r.entries[0].text).records.map(x=>x.email.toLowerCase()).sort();
- assert.deepEqual(records,['good@example.test','shared@example.test']);
+ assert.deepEqual(records,['good@example.test']);
 });
 test('Website duplicate scan is read-only and incomplete coverage requires acknowledgement',async t=>{
  const h=await harness(t,{online:false});let p=await h.importer.choose(event,'target');assert.equal(p.websiteComplete,false);
@@ -115,7 +115,10 @@ test('Serialized vault guard catches a customer write occurring after the final 
   webAccounts:async()=>({records:[],complete:true}),vault:{...h.vault,scanRows:async(...args)=>{
    const result=await h.vault.scanRows(...args);if(++scanCount===2)await h.vault.importRows({scope:'aco',customerId:'customer-1',retailer:'target',rows:[row('race@example.test')]});return result;
   }}});
- const p=await importer.choose(event,'target');await assert.rejects(importer.confirm(event,{token:p.token,confirmPersonalOnly:true}),/already exists in the selected retailer pool|Banks changed after review/);
+ const p=await importer.choose(event,'target');const changed=await importer.confirm(event,{token:p.token,confirmPersonalOnly:true});
+ assert.equal(changed.reviewRequired,true);assert.equal(changed.preview.ready,0);
+ const skipped=await importer.confirm(event,{token:p.token,confirmPersonalOnly:true,skipDuplicates:true});
+ assert.equal(skipped.saved,true);assert.equal(skipped.added,0);assert.equal(skipped.skipped,1);
  assert.equal((await h.vault.list('personal',null)).profiles.length,0);
 });
 test('Malformed file and customer-tagged metadata abort whole batch without partial imports',async t=>{
