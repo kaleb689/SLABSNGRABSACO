@@ -840,6 +840,8 @@ test('Auto second-line sources saved unitless Main addresses when all selected p
  await h.service.addAddress(event,{...h.p,address:baseTwo});
  for(let i=0;i<5;i++){
   const original=complete('target','apartment-batch-'+i+'@example.test');
+  original.shipping_street=String(1100+i)+' Example Avenue';
+  original.billing_street=String(1100+i)+' Example Avenue';
   original.shipping_street_2='Apt 1309';
   original.billing_street_2='Apt 1309';
   original.profileSecurityCode='REFERENCE-'+i;
@@ -911,9 +913,9 @@ test('Auto unitless sourcing stays inside the active owner/customer vault and fa
 });
 test('Owner batch Jig defaults match billing and enables automatic Address Bank fallback only with explicit optional unit selection',()=>{
  const ui=require('node:fs').readFileSync(require('node:path').join(__dirname,'../profile-library-ui.js'),'utf8');
- assert.match(ui,/billingBox\\.checked=true/);
- assert.match(ui,/autoUnitFromAddressBank:optionalUnitToggle\\.checked/);
- assert.match(ui,/billingBox\\.disabled=true/);
+ assert.ok(ui.includes('billingBox.checked=true'));
+ assert.ok(ui.includes('autoUnitFromAddressBank:optionalUnitToggle.checked'));
+ assert.ok(ui.includes('billingBox.disabled=true'));
 });
 
 test('Selected Target integer house additions are recognized as consolidated rule family',()=>{
