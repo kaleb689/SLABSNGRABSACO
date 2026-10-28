@@ -428,6 +428,60 @@
 
  const request=()=>({scope,customerId:scope==='aco'?customerId:null});
  const note=s=>q('status').textContent=s;
+ async function reviewBlockedExport(params,error){
+  const message=String(error?.message||error);
+  if(!message.includes('Export BLOCKED:')){note('Export failed: '+message);return;}
+  let report;
+  try{report=await api.exportFile({...params,diagnoseOnly:true});}
+  catch(diagnosticError){note('Export blocked, and review failed: '+String(diagnosticError?.message||diagnosticError));return;}
+  if(!report?.diagnostics)return note('Export blocked: unable to identify incomplete profiles.');
+  const win=dialog('Review blocked export');
+  win.body.append(
+   text('p',report.selected+' profiles selected · '+report.ready+' complete · '+report.missing+' missing reference(s) · '+report.conflicting+' conflicting reference(s).'),
+   text('p','No file was saved and no saved codes changed. Resolve the listed accounts to export the full batch.')
+  );
+  for(const issue of report.issues){
+   const box=d.createElement('div');box.className='profileLibraryCard';
+   const summary=(issue.reason==='conflicting'?'Conflicting':'Missing')+' Security Code: '+issue.email+
+    (issue.cardLast4?' · card ending '+issue.cardLast4:' · card number unavailable');
+   const focus=text('button','Find this profile');focus.type='button';focus.className='btn secondary slim';
+   focus.onclick=()=>{if(!win.valid())return;win.wrap.remove();q('search').value=issue.email;q('search').oninput?.();note(summary+' — review this saved profile or its matching Card Bank entry.');};
+   box.append(text('p',summary),focus);win.body.append(box);
+  }
+  const actions=d.createElement('div');actions.className='buttons';
+  const dismiss=text('button','Keep all profiles and close');dismiss.type='button';dismiss.className='btn secondary';
+  dismiss.onclick=()=>{win.wrap.remove();void flushRefresh();};
+  actions.append(dismiss);
+  if(report.ready>0&&report.issues.length>0){
+   const exportComplete=text('button','Export '+report.ready+' complete profiles only');
+   exportComplete.type='button';exportComplete.className='btn primary';
+   exportComplete.onclick=async()=>{
+    if(!win.valid())return;
+    if(!window.confirm('Export only '+report.ready+' of '+report.selected+' selected profiles? '+report.issues.length+
+     ' incomplete or conflicting profile(s) will NOT be in this file. Nothing will be deleted or assigned a fabricated code.'))return;
+    exportComplete.disabled=true;
+    try{
+     const latest=await api.exportFile({...params,diagnoseOnly:true});
+     if(!win.valid())return;
+     if(latest.ready!==report.ready||latest.selected!==report.selected||
+      JSON.stringify(latest.readyProfileIds)!==JSON.stringify(report.readyProfileIds))
+      throw Error('Profiles or references changed. Review the batch again before exporting.');
+     const validParams={...params,exportAllUnique:false,previewOnly:false,diagnoseOnly:false,profileIds:latest.readyProfileIds};
+     const result=await api.exportFile(validParams);
+     if(!win.valid())return;
+     if(result?.saved){
+      win.wrap.remove();
+      await refresh();
+      note('Exported '+result.count+' complete profiles to '+result.name+'. '+report.issues.length+
+       ' incomplete profile(s) remain saved and were deliberately excluded. Fix their Security Codes before exporting them.');
+     }else{win.status().textContent='Export cancelled; no profiles were changed.';exportComplete.disabled=false;}
+    }catch(failure){if(win.valid())win.status().textContent='Export not completed: '+String(failure?.message||failure);exportComplete.disabled=false;}
+   };
+   actions.append(exportComplete);
+  }
+  win.body.append(actions);
+  note('Export blocked: '+report.issues.length+' profile(s) need review. The affected accounts are listed in the open dialog.');
+ }
  async function exportFromContext(row=null){
   if(stage==='unused'){note('Choose Ready for Export or Live Profiles to export profiles.');return;}
   const page=pageRows();
@@ -438,7 +492,7 @@
    if(chosen.some(x=>x.retailer!==retailer))throw Error('Only the active retailer can be exported.');
    const result=await api.exportFile({...request(),retailer,profileIds:chosen.map(x=>x.id),customerName:customerName(),exportFormat:exportType.value});
    if(result?.saved){await refresh();note('Exported '+result.count+' selected '+retailName[retailer]+' profiles: '+result.name+(result.markError?' · Tab status not updated: '+result.markError:''));}
-  }catch(error){note('Selected profile export failed: '+String(error?.message||error));}
+  }catch(error){await reviewBlockedExport({...request(),retailer:q('retailer').value,profileIds:chosen.map(x=>x.id),customerName:customerName(),exportFormat:exportType.value},error);}
  }
  // Customer website/app information is displayed from the authoritative live
  // vault, not copied to Personal or silently treated as local-only profile data.
@@ -1121,7 +1175,7 @@
   }catch(error){note('Unique export failed: '+String(error.message||error));}
  };
  q('export-archive').onclick=async()=>{try{const result=await api.exportArchive({...request(),retailer:q('retailer').value,profileIds:pageRows().filter(x=>selected.has(x.id)).map(x=>x.id),customerName:customerName()});if(result.saved)note('Saved full profile JSON ('+result.count+' profiles): '+result.name);}catch(e){note(e.message);}};
- q('export').onclick=async()=>{try{const result=await api.exportFile({...request(),retailer:q('retailer').value,profileIds:pageRows().filter(x=>selected.has(x.id)).map(x=>x.id),customerName:customerName(),exportFormat:exportType.value});if(result.saved){await refresh();note('Exported '+result.count+' profiles: '+result.name+(result.markError?' · Tab status not updated: '+result.markError:''));}}catch(e){note(e.message);}};
+ q('export').onclick=async()=>{try{const result=await api.exportFile({...request(),retailer:q('retailer').value,profileIds:pageRows().filter(x=>selected.has(x.id)).map(x=>x.id),customerName:customerName(),exportFormat:exportType.value});if(result.saved){await refresh();note('Exported '+result.count+' profiles: '+result.name+(result.markError?' · Tab status not updated: '+result.markError:''));}}catch(e){await reviewBlockedExport({...request(),retailer:q('retailer').value,profileIds:pageRows().filter(x=>selected.has(x.id)).map(x=>x.id),customerName:customerName(),exportFormat:exportType.value},e);}};
  q('import').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}if(stage==='live'){q('live-file').value='';q('live-file').click();return;}q('file').value='';q('file').click();};
  q('import-live').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}q('live-file').value='';q('live-file').click();};
  reconcileExistingLive.onclick=async()=>{

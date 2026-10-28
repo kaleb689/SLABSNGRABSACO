@@ -717,7 +717,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    skippedEmail:sameEmail,skippedCard:sameCard,fingerprint};
  }
  // Export-only code resolution; this function never writes to encrypted vaults.
- async function prepareSecurityCodeExport(a,rows){
+ async function reviewSecurityCodeExport(a,rows){
   const saved=cardVault?await cardVault(a.scope).securityReferences(cardKey(a.scope,a.id)):[];
   a.check();
   const byCard=new Map(),ambiguous=new Set();
@@ -728,21 +728,28 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(byCard.has(number)&&byCard.get(number)!==code)ambiguous.add(number);
    else byCard.set(number,code);
   }
-  let missing=0,conflicting=0;
-  const output=[];
+  const output=[],issues=[];
   for(const row of rows){
    const number=CardPolicy.normalized(C.payment(row.data).number);
    const profileCode=C.profileCode(row.data);
    const bankCode=number?byCard.get(number)||'':'';
-   if((number&&ambiguous.has(number))||(profileCode&&bankCode&&profileCode!==bankCode)){conflicting++;continue;}
+   if((number&&ambiguous.has(number))||(profileCode&&bankCode&&profileCode!==bankCode)){
+   issues.push({profileId:row.id,email:row.email,cardLast4:number.slice(-4),reason:'conflicting'});continue;
+  }
    const code=profileCode||bankCode;
-   if(!code){missing++;continue;}
+   if(!code){issues.push({profileId:row.id,email:row.email,cardLast4:number.slice(-4),reason:'missing'});continue;}
    if(code.length>100||/[\x00-\x1f\x7f]/.test(code))throw Error('Invalid profile Security Code. Export blocked; vault unchanged.');
    // Only a temporary shallow data copy receives a resolved code.
    output.push({...row,data:{...row.data,profileSecurityCode:code}});
   }
-  if(missing||conflicting)throw Error('Export BLOCKED: '+missing+' missing and '+conflicting+' conflicting Security Code(s). No file was saved and no stored codes changed. Check full card-number matches in Card Bank and Recovery Source Review.');
-  return output;
+  return {readyRows:output,issues};
+ }
+ async function prepareSecurityCodeExport(a,rows){
+  const result=await reviewSecurityCodeExport(a,rows);
+  const missing=result.issues.filter(item=>item.reason==='missing').length;
+  const conflicting=result.issues.filter(item=>item.reason==='conflicting').length;
+  if(missing||conflicting)throw Error('Export BLOCKED: '+missing+' missing and '+conflicting+' conflicting Security Code(s). No file was saved and no stored codes changed. Review the affected profiles or use the explicit complete-only export option.');
+  return result.readyRows;
  }
  function securityCodeExportSignature(rows){
   return crypto.createHash('sha256').update(JSON.stringify(rows.map(row=>[row.id,CardPolicy.normalized(C.payment(row.data).number),C.profileCode(row.data)]))).digest('hex');
@@ -759,7 +766,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      skippedDuplicates:selection.skippedDuplicates,skippedEmail:selection.skippedEmail,
      skippedCard:selection.skippedCard,fingerprint:selection.fingerprint};
    }
-   if(p.confirmedUniqueExport!==true||p.expectedFingerprint!==selection.fingerprint)
+   if(p.diagnoseOnly!==true&&(p.confirmedUniqueExport!==true||p.expectedFingerprint!==selection.fingerprint))
     throw Error('Duplicate export preview expired. Review the counts again.');
    rows=selection.rows;
   }else{
@@ -769,6 +776,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(rows.some(x=>!x))throw Error('Every exported profile must still belong to this vault and retailer.');
   }
   if(!rows.length)throw Error('No eligible profiles remain to export.');
+  if(p.diagnoseOnly===true){
+   const result=await reviewSecurityCodeExport(a,rows);
+   a.check();
+   return {diagnostics:true,selected:rows.length,ready:result.readyRows.length,
+    missing:result.issues.filter(item=>item.reason==='missing').length,
+    conflicting:result.issues.filter(item=>item.reason==='conflicting').length,
+    issues:result.issues,readyProfileIds:result.readyRows.map(row=>row.id)};
+  }
   const exportRows=await prepareSecurityCodeExport(a,rows);
   const signature=securityCodeExportSignature(exportRows);
   const content=C.exportSelectedRows(exportRows,retailer,p.customerName||'Personal',p.exportFormat||'retailer');
