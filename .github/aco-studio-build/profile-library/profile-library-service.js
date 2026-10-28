@@ -754,6 +754,25 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  function securityCodeExportSignature(rows){
   return crypto.createHash('sha256').update(JSON.stringify(rows.map(row=>[row.id,CardPolicy.normalized(C.payment(row.data).number),C.profileCode(row.data)]))).digest('hex');
  }
+ async function verifiedExportCustomerName(a,p){
+  if(a.scope==='personal')return 'Personal';
+  let canonical='';
+  if(typeof getCustomerProfileSource==='function'){
+   const source=await getCustomerProfileSource(a.id);
+   a.check();
+   if(source?.customer?.id!==a.id)throw Error('Customer signup identity does not match the authorized vault.');
+   const customer=source.customer;
+   canonical=String(customer?.name||customer?.fullName||customer?.displayName||
+    [customer?.firstName,customer?.lastName].filter(Boolean).join(' ')||'').trim();
+  }
+  // Legacy owner customer picker may still supply the signup display name.
+  // Never export internal IDs, "Customer", or "Personal" as profile names.
+  const supplied=String(p?.customerName||'').trim();
+  const actual=canonical&&canonical!==String(a.id)?canonical:supplied;
+  if(!actual||actual===String(a.id)||['personal','customer'].includes(actual.toLowerCase()))
+   throw Error('The customer signup name is missing. Select that customer again before exporting.');
+  return actual;
+ }
  async function exportFile(e,p){
   const a=await access(e,p),retailer=C.retailer(p?.retailer),unique=p?.exportAllUnique===true;
   const before=await profiles.fieldSnapshot(a.scope,a.id);
@@ -786,7 +805,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }
   const exportRows=await prepareSecurityCodeExport(a,rows);
   const signature=securityCodeExportSignature(exportRows);
-  const content=C.exportSelectedRows(exportRows,retailer,p.customerName||'Personal',p.exportFormat||'retailer');
+  const exportOwner=await verifiedExportCustomerName(a,p);
+  const content=C.exportSelectedRows(exportRows,retailer,exportOwner,p.exportFormat||'retailer',a.scope);
   if(unique)content.name=content.name.replace(/(\.[^.]+)$/,' - no duplicates$1');
   if(!await confirmExport(e))return {cancelled:true};
   const ext=path.extname(content.name),choice=await chooseSave(e,{name:content.name,extension:ext.slice(1)});
@@ -837,7 +857,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(rows.some(row=>!row))throw Error('Profiles must belong to this vault and retailer.');
   const exportRows=await prepareSecurityCodeExport(a,rows);
   const signature=securityCodeExportSignature(exportRows);
-  const content=C.exportArchiveRows(exportRows,p.retailer,p.customerName||'Personal');
+  const exportOwner=await verifiedExportCustomerName(a,p);
+  const content=C.exportArchiveRows(exportRows,p.retailer,exportOwner,a.scope);
   if(!await confirmExport(e))return {cancelled:true};
   const choice=await chooseSave(e,{name:content.name,extension:'json'});
   if(choice.canceled||!choice.filePath)return {cancelled:true};
