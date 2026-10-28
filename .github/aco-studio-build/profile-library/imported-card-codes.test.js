@@ -791,3 +791,55 @@ test('Saved-bank recovery restores only exact full-card matches and preserves al
  assert.equal(stored.find(x=>x.email==='missing-bank-7@example.test').data.profileSecurityCode,'KEEP-PROFILE-REFERENCE');
  assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
 });
+
+test('Selected 45 Target profiles: diagnose the single missing reference without exposing or editing any codes',async t=>{
+ const h=await library(t),sources=[];
+ for(let i=0;i<45;i++){
+  const data=complete('target','one-missing-'+i+'@example.test');
+  LC.putCard(data,{...fullCard,number:'411111111111'+String(3000+i)});
+  if(i!==28)data.profileSecurityCode='NONPAYMENT-REFERENCE-'+i;
+  sources.push(data);
+ }
+ await commit(h,await preview(h,sources));
+ const rows=(await h.lib.list(event,h.p)).profiles,ids=rows.map(row=>row.id);
+ const encryptedBefore=await fs.readFile(h.profiles.paths.personal);
+ const diagnose=await h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:ids,diagnoseOnly:true});
+ assert.deepEqual([diagnose.selected,diagnose.ready,diagnose.missing,diagnose.conflicting],[45,44,1,0]);
+ assert.equal(diagnose.issues.length,1);
+ assert.equal(diagnose.issues[0].email,'one-missing-28@example.test');
+ assert.equal(diagnose.issues[0].cardLast4,'3028');
+ assert.equal(diagnose.issues[0].reason,'missing');
+ assert.equal(diagnose.readyProfileIds.length,44);
+ assert.ok(!diagnose.readyProfileIds.includes(diagnose.issues[0].profileId));
+ assert.ok(!JSON.stringify(diagnose).includes('NONPAYMENT-REFERENCE-'),'read-only diagnostics must not reveal any reference values');
+ assert.deepEqual(await fs.readFile(h.profiles.paths.personal),encryptedBefore,'diagnostics must not change vault data');
+ assert.equal(h.writes.length,0,'diagnostic mode must not export or write anything');
+ await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:ids}),/Export BLOCKED: 1 missing and 0 conflicting/);
+ assert.equal(h.writes.length,0);
+ const result=await h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:diagnose.readyProfileIds});
+ assert.equal(result.saved,true);assert.equal(result.count,44);
+ const parsed=Core.parseFile('44 ready profiles.csv',h.writes.at(-1)[1]);
+ assert.equal(parsed.records.length,44);
+ assert.ok(parsed.records.every(row=>typeof row.cc_cvv==='string'&&row.cc_cvv.length>0));
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,45,'incomplete profile must remain saved');
+});
+test('Read-only export diagnostics obey owner authentication and never leak sensitive reference values',async t=>{
+ const h=await library(t);
+ const data=complete('target','scoped-export-diagnosis@example.test');
+ data.profileSecurityCode='PRIVATE-REFERENCE-EXAMPLE';
+ await commit(h,await preview(h,[data]));
+ const id=(await h.lib.list(event,h.p)).profiles[0].id;
+ await assert.rejects(h.lib.exportFile(foreign,{...h.p,retailer:'target',profileIds:[id],diagnoseOnly:true}),/owner|unauthorized/i);
+ const diagnosis=await h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:[id],diagnoseOnly:true});
+ assert.equal(diagnosis.ready,1);
+ assert.ok(!JSON.stringify(diagnosis).includes('PRIVATE-REFERENCE-EXAMPLE'));
+ assert.equal(h.writes.length,0);
+});
+test('Selected export failure UI highlights the problem and requires consent before excluding any profile',()=>{
+ const ui=require('node:fs').readFileSync(require.resolve('../profile-library-ui.js'),'utf8');
+ assert.match(ui,/Review blocked export/);
+ assert.match(ui,/diagnoseOnly:true/);
+ assert.match(ui,/Find this profile/);
+ assert.match(ui,/Export '\+report\.ready\+' complete profiles only/);
+ assert.match(ui,/window\.confirm\('Export only '/);
+});
