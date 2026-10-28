@@ -418,11 +418,15 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
 {
  const file=path.join(root,'tests','personal-profiles-security.test.js');
  const source=fs.readFileSync(file,'utf8');
- const diagnosticStart=source.indexOf("test('duplicates: show cross-bank collisions but never reveal locked Personal record'");
- if(diagnosticStart>=0){const diagnosticEnd=source.indexOf('\ntest(',diagnosticStart+10);console.log('IMPORT-REGRESSION-TEST-SOURCE-BEGIN\\n'+source.slice(diagnosticStart,diagnosticEnd<0?diagnosticStart+3500:diagnosticEnd)+'\\nIMPORT-REGRESSION-TEST-SOURCE-END');}
  const expected=/(\[\s*['"]aco-customer-retailer-profiles\.encrypted['"]\s*,\s*)(['"]personal-retailer-profiles\.encrypted['"]\s*\])/;
  if(!expected.test(source))throw Error('Owner vault security test layout changed; update the encrypted backup assertion manually.');
- const next=source.replace(expected,(_match,first,last)=>first+"'encrypted-owner-profile-snapshots', "+last);
+ let next=source.replace(expected,(_match,first,last)=>first+"'encrypted-owner-profile-snapshots', "+last);
+ // Preserve legacy duplicate/privacy coverage without creating NEW cross-vault
+ // ownership using the importer. The importer must now skip this email.
+ const oldImport="  await v.importRows({scope:'aco',customerId:'customer1',retailer:'target',rows:[sample('repeat@sample.test')]});";
+ const historical="  const rejected=await v.importRows({scope:'aco',customerId:'customer1',retailer:'target',rows:[sample('repeat@sample.test')]});\\n  assert.equal(rejected.skippedForeign,1);\\n  const saved=(await v.fieldSnapshot('personal',null))[0];\\n  await v.libraryTransaction('aco','customer1',ctx=>{ctx.rows.push({...structuredClone(saved),id:'historical-personal-customer-clash'});},()=>{});";
+ if(next.split(oldImport).length!==2)throw Error('Legacy Personal privacy fixture changed; review before release.');
+ next=next.replace(oldImport,historical.replaceAll('\\n','\n'));
  fs.writeFileSync(file,next);
 }
 
