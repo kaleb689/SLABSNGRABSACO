@@ -858,7 +858,7 @@ test('Auto second-line sources saved unitless Main addresses when all selected p
  for(const item of changed){
   assert.equal(item.before.address2,'Apt 1309');
   assert.ok(/Forest Lane|Sunrise Road/.test(item.after.address1));
-  assert.match(item.after.address2,/^(?:(?:Apt|Unit|Ste|#)\\s+)?(?:[A-D]|[1-9])$/);
+  assert.match(item.after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
   assert.ok(item.appliedRuleIds.includes('second-line.add'));
   assert.equal(item.category,'automatic Address Bank source');
  }
@@ -910,7 +910,7 @@ test('Auto unitless sourcing stays inside the active owner/customer vault and fa
  assert.equal(LC.values(same.profiles[0].data)['shipping.address2'],'Apt 41');
 });
 test('Owner batch Jig defaults match billing and enables automatic Address Bank fallback only with explicit optional unit selection',()=>{
- const ui=require('node:fs').readFileSync(require('node:path').join(__dirname,'profile-library-ui.js'),'utf8');
+ const ui=require('node:fs').readFileSync(require('node:path').join(__dirname,'../profile-library-ui.js'),'utf8');
  assert.match(ui,/billingBox\\.checked=true/);
  assert.match(ui,/autoUnitFromAddressBank:optionalUnitToggle\\.checked/);
  assert.match(ui,/billingBox\\.disabled=true/);
