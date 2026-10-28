@@ -1,13 +1,7 @@
 name: Release ACO Studio 4.13.48 Windows after native verification
 on:
-  # Next-version release triggered by this workflow merge; full native tests, signing and preservation gate publishing.
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/release-aco-studio-v41348-windows.yml'
-      - '.github/aco-studio-build/profile-library/**'
-      - '.github/aco-studio-build/completed-profiles/**'
-      - 'private-edition/**'
+  # Historical Windows 4.13.48 release. Manual-only: a current Mac jig
+  # release must never republish this older Windows automatic-update feed.
   workflow_dispatch:
 permissions:
   contents: write
