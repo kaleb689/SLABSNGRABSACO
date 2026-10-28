@@ -50453,8 +50453,14 @@ await initializeArrayFile(
               item.type === type && restoreHoldRemainingItems(item).some(entry => String(entry.managedAccountId) === String(resolvedManagedAccountId)));
             if (!hold) throw new Error("This expired profile is no longer on Restore Hold.");
             const customerAccountId = hold.customerAccountId;
-            const restored = await restoreHeldManagedAccountsForCustomer(customerAccountId, type);
-            if (!restored.managedAccountIds.map(String).includes(String(resolvedManagedAccountId))) throw new Error("Unable to restore this profile for extension.");
+            // Extend only the staff-selected held account. The old code
+            // restored *every* held account belonging to this customer before
+            // extending one, unexpectedly consuming unrelated Restore Holds.
+            const restored = await restoreHeldManagedAccountsForCustomer(
+              customerAccountId, type, [String(resolvedManagedAccountId)]
+            );
+            if (!restored.managedAccountIds.map(String).includes(String(resolvedManagedAccountId)))
+              throw new Error("Unable to restore this profile for extension.");
             const assignments = type === "free" ? await getFreeAssignments() : await getRentalAssignments();
             const assignment = assignments.find(item => String(managedAssignmentMembershipId(item)) === String(resolvedManagedAccountId) && String(item.customerAccountId) === String(customerAccountId));
             if (!assignment) throw new Error("Restored profile assignment was not found.");

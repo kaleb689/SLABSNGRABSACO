@@ -45,6 +45,41 @@ export function discordValidationFieldPaths(responseBody = {}) {
   walk(responseBody?.errors);
   return result;
 }
+// Keep the staff-only bulk result actionable without exposing source errors,
+ // card data, secrets, or individual account identifiers in an error message.
+export function lapseExtensionFailureReason(error) {
+  const message=String(error?.message||"");
+  if (/active paid or gifted tier/i.test(message)) return "Customer has no active paid or gifted tier; restore is blocked.";
+  if (/no longer on Restore Hold/i.test(message)) return "Restore Hold is no longer active; this checklist may be stale.";
+  if (/Unable to restore this profile/i.test(message)) return "Selected account could not be restored (missing, in use, or duplicate in the pool).";
+  if (/Restored profile assignment was not found/i.test(message)) return "Restoration could not be confirmed in linked assignments.";
+  if (/not configured/i.test(message)) return "Profile extension is not configured on the server.";
+  if (/invalid profile type/i.test(message)) return "The selected profile type is invalid.";
+  return "Extension failed; check the server log for the exact internal error.";
+}
+export async function extendSelectedLapsedProfiles(selections=[],amount,unit,onExtend) {
+  const selected=[...new Set(Array.isArray(selections)?selections:[])];
+  const result={succeeded:0,failed:[]};
+  for (const [index,value] of selected.entries()) {
+    const [type,...idParts]=String(value||"").split(":");
+    const managedAccountId=idParts.join(":");
+    if (!["free","rented"].includes(type)||!managedAccountId) {
+      result.failed.push({position:index+1,type,reason:"Selected profile ID or type is invalid."});
+      continue;
+    }
+    try {
+      if(typeof onExtend!=="function") throw Error("Profile extension is not configured.");
+      const saved=await onExtend({type,managedAccountId,amount,unit});
+      if(!saved?.expiresAt||!Number.isFinite(Date.parse(saved.expiresAt)))
+        throw Error("Restored profile assignment was not found.");
+      result.succeeded++;
+    } catch(error) {
+      result.failed.push({position:index+1,type,reason:lapseExtensionFailureReason(error)});
+    }
+  }
+  return result;
+}
+
 export function lapseGroupPayload(group = {}, requestedPage = 0) {
   const unique = new Map();
   for (const item of Array.isArray(group.items) ? group.items : []) {
@@ -3421,8 +3456,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         }});
       }
       if (d.type === 3 && /^lapse:bulk:extend:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member,userId))
+          return await reply("Only the owner or Support Staff can extend these profiles.");
         const selectionKey = d.data.custom_id.split(":").at(-1), selection = lapseBulkSelections.get(selectionKey);
-        if (!selection) return await reply("That selection expired. Select the accounts again.");
+        if (!selection || selection.channelId !== d.channel_id || Date.now()-selection.createdAt>10*60*1000)
+          return await reply("That selection expired. Select the accounts again.");
         return await api(callback, "POST", { type: 9, data: { custom_id: "lapse:bulk:extend-submit:" + selectionKey, title: "Extend Selected Accounts",
           components: [
             { type: 1, components: [{ type: 4, custom_id: "amount", label: "Amount", style: 1, min_length: 1, max_length: 4, required: true, placeholder: "Example: 12" }] },
@@ -3430,19 +3468,24 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           ] }});
       }
       if (d.type === 5 && /^lapse:bulk:extend-submit:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== adminProfilesChannelId || !supportStaff(d.member,userId))
+          return await reply("Only the owner or Support Staff can extend these profiles.");
         const selectionKey = d.data.custom_id.split(":").at(-1), selection = lapseBulkSelections.get(selectionKey);
-        if (!selection) return await reply("That selection expired. Select the accounts again.");
+        if (!selection || selection.channelId !== d.channel_id || Date.now()-selection.createdAt>10*60*1000)
+          return await reply("That selection expired. Select the accounts again.");
         const fields = Object.fromEntries((d.data.components || []).flatMap(row => row.components || []).map(item => [item.custom_id, item.value]));
-        const amount = Number.parseInt(String(fields.amount || ""), 10), unit = String(fields.unit || "").trim().toLowerCase();
-        if (!Number.isInteger(amount) || amount < 1 || amount > 9999 || !["hour","hours","day","days"].includes(unit)) return await reply("Enter a valid amount and use hours or days.");
+        const amount = Number(String(fields.amount || "").trim()), unit = String(fields.unit || "").trim().toLowerCase();
+        if (!Number.isInteger(amount) || amount < 1 || amount > 9999 || !["hour","hours","day","days"].includes(unit))
+          return await reply("Enter a valid whole-number amount and use hours or days.");
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
-        let succeeded = 0; const failed = [];
-        for (const value of selection.selected) {
-          const parts = value.split(":"), type = parts.shift(), managedAccountId = parts.join(":");
-          try { await onExtendLapsedProfile({ type, managedAccountId, amount, unit }); succeeded += 1; } catch { failed.push(value); }
-        }
+        const outcome=await extendSelectedLapsedProfiles(selection.selected,amount,unit,onExtendLapsedProfile);
         lapseBulkSelections.delete(selectionKey);
-        return await api("/webhooks/" + d.application_id + "/" + d.token + "/messages/@original", "PATCH", { content: "Extended **" + succeeded + "** account(s)." + (failed.length ? " **" + failed.length + "** failed and remain unresolved." : "") });
+        const details=outcome.failed.slice(0,12).map(item=>"#"+item.position+" ("+item.type+"): "+item.reason);
+        if(outcome.failed.length>12)details.push("And "+(outcome.failed.length-12)+" more unresolved account(s).");
+        const content=("Extended **"+outcome.succeeded+"** account(s)."+
+          (outcome.failed.length?" **"+outcome.failed.length+"** failed and remain unresolved.\n"+details.join("\n"):"")).slice(0,1950);
+        return await api("/webhooks/" + d.application_id + "/" + d.token + "/messages/@original", "PATCH",
+          {content,allowed_mentions:{parse:[]},components:[]});
       }
       if (d.type === 3 && /^lapse:bulk:rtp:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
         const selectionKey = d.data.custom_id.split(":").at(-1), selection = lapseBulkSelections.get(selectionKey);
