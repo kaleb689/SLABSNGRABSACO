@@ -44,21 +44,6 @@ jobs:
           node .github/aco-studio-build/completed-profiles/apply.cjs build-src/App
           node .github/aco-studio-build/profile-library/apply.cjs build-src/App
           node .github/aco-studio-build/drop-news/apply.cjs build-src/App
-      - name: Inspect local vault write integration points
-        working-directory: build-src/App
-        run: |
-          node - <<'NODE'
-          const fs=require('node:fs');
-          for(const f of ['local-card-vault.js','jig-address-banks.js']){
-            const s=fs.readFileSync(f,'utf8');
-            const matches=[...s.matchAll(/(?:async function write|async write\(|const write\s*=|function write\()/g)].slice(0,10);
-            console.log('VAULT '+f+' anchors '+matches.length);
-            for(const m of matches){
-              const start=Math.max(0,m.index-160),end=Math.min(s.length,m.index+600);
-              console.log('SEGMENT '+s.slice(start,end).replace(/\n/g,'\\n'));
-            }
-          }
-          NODE
       - name: Run assembled ACO Studio regression suite
         working-directory: build-src/App
         run: |
