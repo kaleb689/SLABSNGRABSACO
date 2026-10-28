@@ -67,6 +67,10 @@
  restoreFromBackup.type='button';restoreFromBackup.className='btn secondary';
  restoreFromBackup.textContent='Preview Restore from Encrypted Backups';
  restoreFromBackup.hidden=true;reviewControls.append(restoreFromBackup);
+ const restoreFromBank=d.createElement('button');
+ restoreFromBank.type='button';restoreFromBank.className='btn secondary';
+ restoreFromBank.textContent='Preview saved Card Bank recovery';
+ restoreFromBank.hidden=true;reviewControls.append(restoreFromBank);
  const restoreStatus=d.createElement('p');restoreStatus.setAttribute('role','status');
  restoreStatus.textContent='Restoration is available only after a read-only preview and explicit confirmation.';
  const reviewOutput=d.createElement('div');reviewOutput.setAttribute('role','status');
@@ -81,9 +85,12 @@
  };
  function showRecoveryReview(report){
   restoreFromBackup.hidden=!(Number(report.backups?.potentialMatches||0)>0);
-  restoreStatus.textContent=restoreFromBackup.hidden
-   ?'No independently named references from encrypted snapshots are available for restoration.'
-   :'Encrypted snapshots contain independently named reference candidates. Preview them before any restore.';
+  restoreFromBank.hidden=!(Number(report.savedCardBank?.potentialMatches||0)>0);
+  restoreStatus.textContent=!restoreFromBank.hidden
+   ?report.savedCardBank.potentialMatches+' saved Card Bank candidates are available for review; no references have been restored.'
+   :restoreFromBackup.hidden
+    ?'No independently named references from encrypted snapshots are available for restoration.'
+    :'Encrypted snapshots contain independently named reference candidates. Preview them before any restore.';
   reviewOutput.replaceChildren();
   reviewOutput.append(
    reviewLine('Vault:',report.scope==='personal'?'Personal':'Selected customer'),
@@ -138,7 +145,7 @@
  }
  async function scanRecoverySources(){
   if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
-  restoreFromBackup.hidden=true;
+  restoreFromBackup.hidden=true;restoreFromBank.hidden=true;
   reviewScan.disabled=true;
   reviewOutput.textContent='Choose a folder in the Mac window. ACO Studio will check eligible original files in that folder together with its existing sources. No saved data will be changed.';
   try{
@@ -180,6 +187,34 @@
   }catch(error){
    if(openedEpoch===epoch&&!main.hidden)restoreStatus.textContent='Restore not completed: '+String(error?.message||error)+'. Review the current vault before retrying.';
   }finally{restoreFromBackup.disabled=false;reviewScan.disabled=false;}
+ };
+ restoreFromBank.onclick=async()=>{
+  if(scope==='aco'&&!customerId){restoreStatus.textContent='Select a customer vault first.';return;}
+  const owner=request(),openedEpoch=epoch;
+  restoreFromBank.disabled=true;reviewScan.disabled=true;
+  try{
+   if(scope==='personal'&&!await window.JigPersonalGuard?.ensureUnlocked?.())
+    throw Error('Unlock your Personal vault before reviewing saved-card matches.');
+   const plan=await api.recoverCodesFromSavedCards({...owner,confirmed:false});
+   if(openedEpoch!==epoch||main.hidden)return;
+   if(!plan?.preview||!plan.token||!plan.recoverable){
+    restoreStatus.textContent='No verified full-card matches are available; no data changed.';
+    return;
+   }
+   const scopeLabel=scope==='personal'?'Personal':'selected customer';
+   const kinds=Object.entries(plan.byRetailer||{}).map(([k,n])=>k+': '+n).join(', ');
+   restoreStatus.textContent=plan.recoverable+' matched reference(s) in '+scopeLabel+' Card Bank ('+kinds+'); '+plan.stillMissing+' remain unmatched. Preview only.';
+   if(!window.confirm('Restore '+plan.recoverable+' missing independent references from the '+scopeLabel+' saved Card Bank? Full card numbers must match. Existing nonempty references and unrelated data are preserved.'))return;
+   if(openedEpoch!==epoch||main.hidden)throw Error('Profile view changed. Scan again before restoring.');
+   const result=await api.recoverCodesFromSavedCards({...owner,confirmed:true,token:plan.token});
+   if(openedEpoch!==epoch||main.hidden)return;
+   const fresh=await api.recoveryReview(owner);
+   showRecoveryReview(fresh);
+   restoreStatus.textContent='Restored '+result.restored+' missing references; '+result.stillMissing+' remain missing. Other saved records were preserved.';
+   await refresh();
+  }catch(error){
+   if(openedEpoch===epoch&&!main.hidden)restoreStatus.textContent='Saved Card Bank recovery did not finish: '+String(error.message||error);
+  }finally{restoreFromBank.disabled=false;reviewScan.disabled=false;}
  };
  const advanced=d.createElement('details');advanced.className='profileLibraryAdvanced';
  advanced.innerHTML='<summary>Advanced tools &amp; maintenance</summary><div class="buttons"><button type="button" class="btn secondary slim" data-advanced-jig>Legacy jig editor</button><button type="button" class="btn secondary slim" data-advanced-directory>Customer directory</button><button type="button" class="btn secondary slim" data-advanced-settings>Existing Jig Settings</button><button type="button" class="btn secondary slim" data-health-scan>Check website, builds &amp; app health</button><button type="button" class="btn secondary slim" data-health-ai>Explain with optional local AI</button></div><p data-health-report role="status">Read-only. Checks report problems but never apply fixes, deploy, or edit customer information.</p><small>Optional local AI uses Ollama on this Mac and may require installing a model. No paid AI API key is required; computer and hosting resources still have costs. Advanced tools only appear here, not as duplicate top-level tabs.</small>';
