@@ -754,3 +754,40 @@ test('45-row Target export refuses 40 missing Security Codes without writing any
  await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:rows.map(row=>row.id)}),/Export BLOCKED: 40 missing/);
  assert.equal(h.writes.length,0);
 });
+
+test('Recovery review offers an explicitly confirmed saved Card Bank restore action',()=>{
+ const ui=require('node:fs').readFileSync(require.resolve('../profile-library-ui.js'),'utf8');
+ assert.match(ui,/Preview saved Card Bank recovery/);
+ assert.match(ui,/restoreFromBank\.hidden=!\(Number\(report\.savedCardBank\?\.potentialMatches/);
+ assert.match(ui,/recoverCodesFromSavedCards\(\{\.\.\.owner,confirmed:false\}\)/);
+ assert.match(ui,/window\.confirm\('Restore '\+plan\.recoverable/);
+ assert.match(ui,/recoverCodesFromSavedCards\(\{\.\.\.owner,confirmed:true,token:plan\.token\}\)/);
+});
+test('Saved-bank recovery restores only exact full-card matches and preserves all unrelated profiles',async t=>{
+ const h=await library(t),data=[];
+ for(let i=0;i<8;i++){
+  const row=complete('target','missing-bank-'+i+'@example.test');
+  LC.putCard(row,{...fullCard,number:'411111111111'+String(1000+i)});
+  data.push(row);
+ }
+ data[7].profileSecurityCode='KEEP-PROFILE-REFERENCE';
+ await commit(h,await preview(h,data));
+ for(let i=0;i<4;i++)await h.service.addCard(event,{...h.p,card:{...card,number:'411111111111'+String(1000+i),customSecurityCode:'REF-EXACT-'+i}});
+ // Last four digits alone, a different complete card number, or the wrong vault never qualifies.
+ await h.service.addCard(event,{...h.a,card:{...card,number:'4111111111111004',customSecurityCode:'OTHER-VAULT-REF'}});
+ const scan=await h.lib.recoveryReview(event,h.p);
+ assert.equal(scan.savedCardBank.potentialMatches,4);
+ assert.equal(scan.missingProfiles,7);
+ const planned=await h.lib.recoverCodesFromSavedCards(event,{...h.p,confirmed:false});
+ assert.equal(planned.recoverable,4);
+ assert.equal((await h.lib.list(event,h.p)).profiles.filter(x=>LC.profileCode(x.data)).length,1);
+ await assert.rejects(h.lib.recoverCodesFromSavedCards(event,{...h.p,confirmed:true,token:'incorrect-token'}),/expired/);
+ const result=await h.lib.recoverCodesFromSavedCards(event,{...h.p,confirmed:true,token:planned.token});
+ assert.equal(result.restored,4);
+ assert.equal(result.stillMissing,3);
+ const stored=(await h.lib.list(event,h.p)).profiles;
+ for(let i=0;i<4;i++)assert.equal(stored.find(x=>x.email==='missing-bank-'+i+'@example.test').data.profileSecurityCode,'REF-EXACT-'+i);
+ for(let i=4;i<7;i++)assert.equal(LC.profileCode(stored.find(x=>x.email==='missing-bank-'+i+'@example.test').data),'');
+ assert.equal(stored.find(x=>x.email==='missing-bank-7@example.test').data.profileSecurityCode,'KEEP-PROFILE-REFERENCE');
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
+});
