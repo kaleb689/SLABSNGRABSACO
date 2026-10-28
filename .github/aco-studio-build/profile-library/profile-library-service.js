@@ -1151,7 +1151,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    // Try actual distinct eligible rules. A no-op or an attempted change to a
    // saved unit is NOT an applied jig. Interleave hard/soft to ensure hard
    // choices are not starved by a large collection of soft rules.
-   const offset=Math.max(0,globalIndex);
+   // Vary the starting rule within the approved set on every preview, while
+   // keeping the selected categories, hard-family caps and unit safeguards.
+   const offset=Math.max(0,globalIndex)+crypto.randomInt(Math.max(1,addressRules.length));
    const rotated=(list,shift)=>list.length?list.slice(shift%list.length).concat(list.slice(0,shift%list.length)):[];
    const softOrder=rotated(soft,offset);
    const hardFamily=id=>id.startsWith('target.house.fraction.')?'fraction':
@@ -1320,6 +1322,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const next=styles.filter(style=>remaining[style]>0).sort((a,b)=>(sequence.filter(x=>x===a).length/counts[a])-(sequence.filter(x=>x===b).length/counts[b])||styles.indexOf(a)-styles.indexOf(b))[0];
    sequence.push(next);remaining[next]--;
   }
+  // Preserve the exact per-style counts, but don't assign the same ordered
+  // pattern every time a user previews a batch.
+  for(let i=sequence.length-1;i>0;i--){
+   const j=crypto.randomInt(i+1);
+   [sequence[i],sequence[j]]=[sequence[j],sequence[i]];
+  }
   return {sequence,counts};
  }
  async function batchJigPreview(e,p){
@@ -1394,6 +1402,15 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     const preferred=jigPosition>0&&p.combine!==true?distribution.sequence[distributionIndex++]:null;
     const chosenRules=preferred?[...p.ruleIds.filter(id=>C.jigStyle(id)===preferred),...p.ruleIds.filter(id=>id===C.FL_PHONE_RULE)]:p.ruleIds;
     let generated=bulkJigData(row,chosenRules,jigPosition,p.combine===true,p.billingSameAsShipping===true,phoneSeed,regularIndex);
+    // An even-distribution preference isn't an instruction to leave a
+    // profile untouched when its chosen style cannot apply (for example an
+    // existing Apt cannot have its unit label rewritten). Search other
+    // enabled styles before declaring this profile unchanged.
+    if(jigPosition>0&&preferred&&p.distribution?.enabled!==true&&
+       !generated.appliedRuleIds.some(id=>id!==C.FL_PHONE_RULE)){
+     generated=bulkJigData(row,p.ruleIds,jigPosition,p.combine===true,
+      p.billingSameAsShipping===true,phoneSeed,regularIndex);
+    }
     if(jigPosition>0&&plannedAddressKeys.has(mainAddressKey({data:generated.data}))){
      // Avoid assigning an already used jig when a different selected
      // fractional/hyphen or soft variation can produce a distinct address.
