@@ -750,6 +750,7 @@ test('45-row Target export refuses 40 missing Security Codes without writing any
  }
  await commit(h,await preview(h,sources));
  const rows=(await h.lib.list(event,h.p)).profiles;
+ assert.throws(()=>LC.exportRows(rows,'target','Partial 45'),/Export blocked: 40 Target profiles/,'Direct retailer format export must also fail closed');
  await assert.rejects(h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:rows.map(row=>row.id)}),/Export BLOCKED: 40 missing/);
  assert.equal(h.writes.length,0);
 });
