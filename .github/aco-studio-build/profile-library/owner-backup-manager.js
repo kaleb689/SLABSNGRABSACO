@@ -7,7 +7,7 @@ const sha=buf=>crypto.createHash('sha256').update(buf).digest('hex');
 const validId=id=>typeof id==='string'&&/^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{16}$/.test(id);
 function createBackupManager({baseDir,safeStorage,fs=fsp,clock=()=>new Date()}={}){
  if(!baseDir||!safeStorage)throw Error('An encrypted local vault is required for backup management.');
- const root=path.join(baseDir,'encrypted-owner-workspace-checkpoints');
+ const root=path.join(path.dirname(baseDir),path.basename(baseDir)+'.encrypted-recovery-backups');
  const allowed=name=>/^[a-z0-9][a-z0-9_.-]*\.encrypted$/i.test(name)&&
   /(?:personal|aco|jig|studio|owner|customer|profile|card|address|email|vault)/i.test(name);
  const ensureCrypto=()=>{if(!safeStorage.isEncryptionAvailable())throw Error('OS encryption is unavailable. No backup or restore was performed.');};
@@ -47,9 +47,8 @@ function createBackupManager({baseDir,safeStorage,fs=fsp,clock=()=>new Date()}={
     if(!before.isFile()||before.size>40*1024*1024)throw Error('One encrypted file is unsupported or oversized.');
     const bytes=await fs.readFile(source);
     if(bytes.length!==before.size)throw Error('An encrypted vault changed during backup. Retry.');
-    // The bytes must be decryptable by the same Mac. No decoded values leave this function.
-    if(typeof safeStorage.decryptString!=='function'||typeof safeStorage.decryptString(bytes)!=='string')
-     throw Error('A vault could not be authenticated with the device keychain.');
+    // Copy only already-encrypted byte streams. Card, address and profile vaults
+    // can use distinct encryption adapters; never ask one adapter to decrypt another.
     const after=await fs.stat(source);
     if(before.mtimeMs!==after.mtimeMs||before.size!==after.size)throw Error('A vault changed during backup. Retry.');
     await fs.writeFile(path.join(dest,name),bytes,{mode:0o600,flag:'wx'});
@@ -91,7 +90,6 @@ function createBackupManager({baseDir,safeStorage,fs=fsp,clock=()=>new Date()}={
     throw Error('Checkpoint file manifest failed validation.');
    const bytes=await fs.readFile(path.join(folder,item.name));
    if(bytes.length!==item.size||sha(bytes)!==item.digest)throw Error('Checkpoint integrity failed. Current data was not modified.');
-   if(typeof safeStorage.decryptString(bytes)!=='string')throw Error('Checkpoint cannot be decrypted on this Mac.');
    records.push({name:item.name,bytes});
   }
   return {manifest:m,records};
