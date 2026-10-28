@@ -169,9 +169,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  }
  async function livePreview(e,p,a,parsed){
   const existing=await profiles.fieldSnapshot(a.scope,a.id),foreign=await profiles.foreignEmails(a.scope,a.id),entries=[],occurrences=new Map(),counts={};
-  let skippedForeign=0;
+  let skippedForeign=0,retailerConflicts=0;
   for(const raw of parsed.records){
-   const retailer=detectedRetailer(raw.retailerId||raw.retailer||raw.store||raw.site)||detectedRetailer(p.fileName.replace(/\.[^.]+$/,''))||p.retailer;C.retailer(retailer);
+   const labeled=detectedRetailer(raw.retailerId||raw.retailer||raw.store||raw.site)||detectedRetailer(p.fileName.replace(/\.[^.]+$/,''));
+   if(labeled&&labeled!==p.retailer)retailerConflicts++;
+   const retailer=p.overrideRetailer===true?p.retailer:(labeled||p.retailer);C.retailer(retailer);
    const native=(Object.hasOwn(raw,'cc_number')&&C.format(retailer)==='shikari')||(raw.card&&raw.shipping&&C.format(retailer)==='valor');
    const data=native?structuredClone(raw):C.normalized(raw,retailer),email=C.email(C.values(data).email);
    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('Every live profile needs a valid account email.');data.email=email;
@@ -182,12 +184,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    entries.push({retailer,data,format:C.format(retailer),occurrence,expectedMatches:matches.map(x=>({id:x.id,hash:require('./jig-field-core').hash(x)})),storedMatches:matches.length});counts[retailer]=(counts[retailer]||0)+1;
   }
   const token=uuid();a.check();for(const [id,plan]of plans)if(now()-plan.at>600000)plans.delete(id);if(plans.size>30)throw Error('Close an older import preview first.');
-  plans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,bank:'live',entries,skippedForeign,fileNames:p.fileNames||[p.fileName],at:now(),epoch:ep(e)});
+  plans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,bank:'live',entries,skippedForeign,retailerConflicts,overrideRetailer:p.overrideRetailer===true,fileNames:p.fileNames||[p.fileName],at:now(),epoch:ep(e)});
   const identities=new Set(entries.map(x=>x.retailer+'|'+x.data.email));
   const superseded=existing.filter(x=>identities.has(x.retailer+'|'+C.email(x.email)));
   const incomingRepeated=entries.length-identities.size;
   const blockedLinkedCount=superseded.filter(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile').length;
-  return {token,bank:'live',count:entries.length,skippedForeign,effectiveCount:identities.size,counts,
+  return {token,bank:'live',count:entries.length,skippedForeign,retailerConflicts,overrideRetailer:p.overrideRetailer===true,effectiveCount:identities.size,counts,
    supersedeLive:superseded.filter(x=>x.bank==='live').length,
    supersedeNonLive:superseded.filter(x=>x.bank!=='live').length,
    collapsedInImport:incomingRepeated,blockedLinkedCount,
@@ -230,7 +232,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  if(p.bank==='live'&&Array.isArray(p.files)){
   if(!p.files.length||p.files.length>100)throw Error('Select 1-100 profile files.');let bytes=0;const records=[];
   for(const file of p.files){if(typeof file.fileName!=='string'||file.fileName!==path.basename(file.fileName)||file.fileName.length>200||typeof file.text!=='string')throw Error('Choose local profile files.');bytes+=Buffer.byteLength(file.text);if(bytes>26*1024*1024)throw Error('Choose profile files totaling less than 26 MB.');
-   const parsed=Core.parseFile(file.fileName,file.text);for(const row of parsed.records||[]){if(row.scope&&row.scope!==a.scope||row.customerId&&row.customerId!==a.id||row.acoCustomerId&&row.acoCustomerId!==a.id)throw Error('Imported profile ownership does not match this vault.');records.push({...row,retailer:row.retailerId||row.retailer||row.store||row.site||detectedRetailer(file.fileName.replace(/\.[^.]+$/,''))||p.retailer});}}
+   const parsed=Core.parseFile(file.fileName,file.text);for(const row of parsed.records||[]){if(row.scope&&row.scope!==a.scope||row.customerId&&row.customerId!==a.id||row.acoCustomerId&&row.acoCustomerId!==a.id)throw Error('Imported profile ownership does not match this vault.');records.push({...row,retailer:p.overrideRetailer===true?p.retailer:(row.retailerId||row.retailer||row.store||row.site||detectedRetailer(file.fileName.replace(/\.[^.]+$/,''))||p.retailer)});}}
   if(!records.length||records.length>10000)throw Error('Import 1-10000 live profiles.');return livePreview(e,{...p,fileName:'live-profiles.json',fileNames:p.files.map(f=>f.fileName)},a,{records});
  }
  if(typeof p.fileName!=='string'||p.fileName!==path.basename(p.fileName)||p.fileName.length>200||typeof p.text!=='string'||Buffer.byteLength(p.text)>26*1024*1024)throw Error('Choose a local profile file.');const parsed=Core.parseFile(p.fileName,p.text);if(!parsed.records?.length||parsed.records.length>(p.bank==='live'?10000:500))throw Error(p.bank==='live'?'Import 1-10000 live profiles.':'Import 1-500 profiles.');
