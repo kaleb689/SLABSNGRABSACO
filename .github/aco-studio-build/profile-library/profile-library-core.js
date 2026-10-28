@@ -34,15 +34,77 @@ function profileCode(data){
  const value=candidates.find(x=>typeof x==='string'&&x.length>0);
  return value===undefined?'':value;
 }
-function exportRows(rows,r,customerName='Personal'){if(!rows.length)throw Error('Choose completed profiles to export.');const model=require('./site-model'),profiles=rows.map(x=>{const v=values(x.data),c=payment(x.data),address=role=>({firstName:v[role+'.first'],lastName:v[role+'.last'],phone:v[role+'.phone'],address:v[role+'.address1'],address2:v[role+'.address2'],city:v[role+'.city'],state:v[role+'.state'],zip:v[role+'.zip'],country:v[role+'.country']||'US'});return {email:v.email,phone:v.phone,shipping:address('shipping'),billing:address('billing'),card:c,profileSecurityCode:profileCode(x.data)};});
+
+function exportProfileName(row,index,owner='Personal',scope='personal'){
+ if(scope==='personal'){
+  const address=clean(values(row.data).email||row.email);
+  if(!address||!address.includes('@'))throw Error('A Personal profile cannot export without its saved login email.');
+  return address;
+ }
+ const actualName=clean(owner).replace(/\s+/g,' ');
+ if(!actualName||actualName==='Customer'||actualName==='Personal'||/^[a-f0-9-]{30,}$/i.test(actualName))
+  throw Error('Customer signup name is unavailable. Load the customer record before exporting.');
+ return actualName+' '+(index+1);
+}
+// Replaces only the first field of each CSV record, preserving every other
+// byte (particularly independent security references and leading zeroes).
+function rewriteShikariNames(body,names){
+ if(typeof body!=='string')throw Error('Invalid Target export content.');
+ const records=[];let start=0,inQuotes=false;
+ for(let i=0;i<body.length;i++){
+  if(body[i]==='"'){
+   if(inQuotes&&body[i+1]==='"'){i++;continue;}
+   inQuotes=!inQuotes;
+  }
+  if(body[i]==='\n'&&!inQuotes){records.push(body.slice(start,i+1));start=i+1;}
+ }
+ if(inQuotes)throw Error('Malformed Target CSV quoted field.');
+ if(start<body.length)records.push(body.slice(start));
+ if(!records.length)throw Error('Empty Target CSV.');
+ function firstFieldEnd(row){
+  let inQuote=false;
+  for(let i=0;i<row.length;i++){
+   if(row[i]==='"'){if(inQuote&&row[i+1]==='"'){i++;continue;}inQuote=!inQuote;}
+   else if(row[i]===','&&!inQuote)return i;
+  }
+  throw Error('Target CSV must include a profile_name column.');
+ }
+ const headerEnd=firstFieldEnd(records[0]);
+ if(records[0].slice(0,headerEnd).replace(/^\uFEFF/,'').replace(/^"|"$/g,'')!=='profile_name')
+  throw Error('Unexpected Target CSV profile-name header.');
+ let index=0;
+ const result=records.map((raw,i)=>{
+  if(i===0||!raw.trim())return raw;
+  if(index>=names.length)throw Error('Target CSV contains more records than selected profiles.');
+  const end=firstFieldEnd(raw),name='"'+String(names[index++]).replace(/"/g,'""')+'"';
+  return name+raw.slice(end);
+ });
+ if(index!==names.length)throw Error('Target CSV profile-name count mismatch.');
+ return result.join('');
+}
+function rewriteValorNames(body,names){
+ const data=JSON.parse(body);
+ if(!data||typeof data!=='object'||Array.isArray(data))throw Error('Unexpected Valor export structure.');
+ const profiles=Object.values(data);
+ if(profiles.length!==names.length||profiles.some(x=>!x||typeof x!=='object'||Array.isArray(x)))
+  throw Error('Valor export profile-name count mismatch.');
+ for(let i=0;i<profiles.length;i++)profiles[i].name=names[i];
+ return JSON.stringify(data,null,2);
+}
+function exportRows(rows,r,customerName='Personal',scope='personal'){
+ if(!rows.length)throw Error('Choose completed profiles to export.');
+ const exportNames=rows.map((row,i)=>exportProfileName(row,i,customerName,scope));
+ const model=require('./site-model'),profiles=rows.map(x=>{const v=values(x.data),c=payment(x.data),address=role=>({firstName:v[role+'.first'],lastName:v[role+'.last'],phone:v[role+'.phone'],address:v[role+'.address1'],address2:v[role+'.address2'],city:v[role+'.city'],state:v[role+'.state'],zip:v[role+'.zip'],country:v[role+'.country']||'US'});return {email:v.email,phone:v.phone,shipping:address('shipping'),billing:address('billing'),card:c,profileSecurityCode:profileCode(x.data)};});
  const out=model.exportTemplates(r==='costco'||r==='sams'?'walmart':r,customerName,profiles,null,{localOwnerCards:profiles.map(x=>({...x.card,expiration:x.card.month+'/'+x.card.year.slice(-2),cvv:x.profileSecurityCode||''}))});
- out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(format(r)==='shikari'?'.csv':'.json');if(r==='target'){
-  const parsed=Core.parseFile(out.name,out.body);
-  const records=parsed?.records||[];
+ out.body=format(r)==='shikari'?rewriteShikariNames(out.body,exportNames):rewriteValorNames(out.body,exportNames);
+ out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(format(r)==='shikari'?'.csv':'.json');
+ if(r==='target'){
+  const parsed=Core.parseFile(out.name,out.body),records=parsed?.records||[];
   if(records.length!==rows.length)throw Error('Export blocked: generated Target CSV row count is incomplete.');
   const blank=records.filter(record=>typeof record.cc_cvv!=='string'||record.cc_cvv.length===0).length;
   if(blank)throw Error('Export blocked: '+blank+' Target profiles have an empty required reference field in the generated CSV. Original saved data was not changed.');
- }return out;
+ }
+ return out;
 }
 // Independent profile access codes are kept apart from all card verification fields.
 // Export is explicitly initiated from the authenticated desktop owner/customer profile vault.
@@ -60,31 +122,32 @@ function archiveSafe(value){
  }
  return out;
 }
-function exportArchiveRows(rows,r,owner='Personal'){
+function exportArchiveRows(rows,r,owner='Personal',scope='personal'){
  retailer(r);
  if(!rows.length)throw Error('Select profiles to export.');
- const records=rows.map(row=>({
-  retailer:row.retailer,profileId:row.id,label:row.label,email:row.email,
-  profileSecurityCode:profileCode(row.data),
-  data:(()=>{
-   const copy=archiveSafe(row.data);
-   // Export *only*: populate the requested retailer CVV slot, without
-   // reintroducing a verifier field in the encrypted master profile.
-   if(row.retailer==='target')copy.cc_cvv=profileCode(row.data);
-   else {copy.card||={};copy.card.cvv=profileCode(row.data);}
-   return copy;
-  })()
- }));
+ const records=rows.map((row,index)=>{
+  const name=exportProfileName(row,index,owner,scope);
+  const copy=archiveSafe(row.data);
+  // Export-only name aliases for Shikari / Valor. Stored profiles retain
+  // their original labels, names, emails and card/security references.
+  if(format(r)==='shikari')copy.profile_name=name;
+  else copy.name=name;
+  // Independent reference in CVV-named retailer slot (unchanged).
+  if(row.retailer==='target')copy.cc_cvv=profileCode(row.data);
+  else {copy.card||={};copy.card.cvv=profileCode(row.data);}
+  return {retailer:row.retailer,profileId:row.id,label:name,email:row.email,
+   profileSecurityCode:profileCode(row.data),data:copy};
+ });
  const name=clean(owner).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' full profiles.json';
  return {name,body:JSON.stringify({version:1,retailer:r,profiles:records},null,2)};
 }
 // Explicit export choices never rewrite the underlying profile's original
 // retailer structure. Text/tabular exports flatten a temporary copy only.
-function exportSelectedRows(rows,r,owner='Personal',choice='retailer'){
+function exportSelectedRows(rows,r,owner='Personal',choice='retailer',scope='personal'){
  const type=String(choice||'retailer').toLowerCase();
- if(type==='retailer')return exportRows(rows,r,owner);
+ if(type==='retailer')return exportRows(rows,r,owner,scope);
  if(!['json','csv','tsv','txt'].includes(type))throw Error('Choose retailer format, JSON, CSV, TSV, or TXT.');
- const archive=exportArchiveRows(rows,r,owner);
+ const archive=exportArchiveRows(rows,r,owner,scope);
  if(type==='json')return archive;
  const records=JSON.parse(archive.body).profiles;
  const flat=records.map(record=>{
