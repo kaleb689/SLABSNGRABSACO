@@ -636,14 +636,15 @@
   const cardQuery=(q('card-bank-search')?.value||'').trim().toLowerCase();
   const matchingCards=pool.filter(x=>[x.fullNumber,x.last4,x.label,x.status,...(x.linkedAccounts||[]).flatMap(y=>[y.email,retailName[y.retailer]])].filter(Boolean).join(' ').toLowerCase().includes(cardQuery));
   const eligible=pool.filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value));
-  cardCount.textContent='· '+eligible.length+' available for '+retailName[q('retailer').value]+' / '+pool.length+' distinct cards';
+  const missingSavedHard=pool.filter(x=>x.hardCard&&!x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value));
+  cardCount.textContent='· '+eligible.length+' saved eligible for '+retailName[q('retailer').value]+' / '+pool.length+' distinct cards'+(missingSavedHard.length?' · '+missingSavedHard.length+' profile-only Hard Cards not in saved bank (Audit Hard Cards)':'');
   addressCount.textContent='· '+addresses.length+' saved';
   if(!pool.length)cardBox.append(text('p','No cards found in this '+(scope==='personal'?'Personal':'customer')+' vault or its saved profiles.'));
   for(const card of matchingCards.slice(0,visibleCardLimit)){
-   const row=d.createElement('article');row.className='profileResourceRow profileSelectableCard'+(card.availableRetailers?.includes(q('retailer').value)?' isAvailable':' isUsed');
+   const row=d.createElement('article');row.className='profileResourceRow profileSelectableCard'+(card.fromSavedBank&&card.availableRetailers?.includes(q('retailer').value)?' isAvailable':' isUsed');
    row.tabIndex=0;row.onclick=e=>{if(!e.target.closest('button,input'))window.ACOProfileWorkshop?.openVault?.(request(),'cards',card.fullNumber||card.last4);};row.oncontextmenu=e=>showContext(e,[[ 'View / edit card',()=>window.ACOProfileWorkshop?.openVault?.(request(),'cards',card.fullNumber||card.last4)],['Set / unset Hard Card',()=>row.querySelector('button')?.click()]]);row.onkeydown=e=>{if(e.key==='Enter')row.click();};
     const body=d.createElement('div'),title=text('strong',card.fullNumber||'Card ending '+card.last4),meta=text('small',[card.expiry,card.hardCard?'Hard Card':'Regular card',card.brand,card.fromSavedBank?'Saved bank and profiles':'Found in imported profiles'].filter(Boolean).join(' · '));
-   const current=card.availableRetailers?.includes(q('retailer').value);
+   const current=!!card.fromSavedBank&&!!card.availableRetailers?.includes(q('retailer').value);
    const linked=text('small',card.linkedAccounts?.length?card.linkedAccounts.map(a=>a.email+' · '+(retailName[a.retailer]||a.retailer)).join(' | '):'Unused — not linked to a retailer profile');
     linked.style.display='block';
     title.style.wordBreak='break-all';
@@ -659,7 +660,7 @@
     if(relatedReferences.size===1)body.append(text('small','Security Code: '+[...relatedReferences][0]));
     else if(relatedReferences.size>1)body.append(text('small','Security Code: conflicting saved references — review matching profiles'));
 
-   const state=text('span',current?'Available for '+retailName[q('retailer').value]:'Unavailable for '+retailName[q('retailer').value]);state.className='profileResourceState';
+   const state=text('span',!card.fromSavedBank?'Profile-only card · save to Card Bank':current?'Available for '+retailName[q('retailer').value]:'Unavailable for '+retailName[q('retailer').value]);state.className='profileResourceState';
    const toggle=text('button',card.hardCard?'Unset Hard Card':'Set Hard Card');toggle.type='button';toggle.className='btn slim secondary';
    toggle.onclick=async()=>{
     if(!confirm((card.hardCard?'Unset':'Set')+' Hard Card for card ending '+card.last4+' in '+(scope==='personal'?'your Personal vault':'this exact customer vault')+'? Hard Cards can be linked only once per retailer; Regular Cards are linked only once in total.'))return;
@@ -1101,6 +1102,59 @@
  }
  function openJig(row){if(row.sourceLinked){void linkedJig(row);return;}const owner=request();close();(owner.scope==='personal'?personal:customer)?.click();setTimeout(()=>void window.ACOProfileWorkshop.openSaved({...owner,profileId:row.id}),0);}
  q('card-bank-search').oninput=()=>{visibleCardLimit=80;drawResourceBanks();};
+
+ // Owner-authorized, read-only check of saved Hard Cards and retailer usage.
+ // Missing bank copies can be explicitly restored from existing local profiles.
+ const auditHardCards=text('button','Audit Hard Cards');
+ auditHardCards.type='button';auditHardCards.className='btn slim secondary';
+ q('manage-cards').after(auditHardCards);
+ auditHardCards.onclick=async()=>{
+  const owner=request(),retailer=q('retailer').value;
+  auditHardCards.disabled=true;
+  try{
+   const fresh=await window.desktopAPI.profileWorkshop.assets({...owner,retailer,showFullCards:false});
+   if(scope!==owner.scope||customerId!==owner.customerId||retailer!==q('retailer').value)return;
+   const pool=Array.isArray(fresh.cardPool)?fresh.cardPool:[],saved=pool.filter(x=>x.fromSavedBank);
+   const eligible=saved.filter(x=>x.availableRetailers?.includes(retailer));
+   const hard=saved.filter(x=>x.hardCard);
+   const targetRegular=saved.filter(x=>!x.hardCard&&x.linked?.includes('target')&&!x.linked?.includes(retailer));
+   const alreadyUsed=hard.filter(x=>x.linked?.includes(retailer));
+   const held=saved.filter(x=>x.hasConflict&&!(x.linked||[]).length);
+   const missing=pool.filter(x=>x.hardCard&&!x.fromSavedBank&&x.availableRetailers?.includes(retailer)&&String(x.id).startsWith('profile:'));
+   const win=dialog('Hard Card availability · '+retailName[retailer]);
+   win.body.append(
+    text('p',eligible.length+' eligible saved cards for '+retailName[retailer]+'; '+saved.length+' saved cards total, '+hard.length+' marked Hard Card.'),
+    text('p',missing.length+' Hard Cards found in existing profiles but missing a saved Card Bank copy. '+targetRegular.length+' Target-used saved cards currently marked Regular.'),
+    text('p',alreadyUsed.length+' saved Hard Cards already linked to '+retailName[retailer]+'; '+held.length+' saved cards held for unresolved prior assignments.'),
+    text('p','Hard Card means one profile per retailer. This check changes no cards or profiles and cannot inspect absent card records or encrypted snapshots.')
+   );
+   for(const [heading,items] of [['Hard Cards needing a saved bank copy',missing],['Target-used cards currently marked Regular',targetRegular],['Old assignments needing review',held]]){
+    if(!items.length)continue;
+    win.body.append(text('strong',heading),text('p',items.slice(0,50).map(x=>'ending '+x.last4).join(', ')+(items.length>50?' and '+(items.length-50)+' more':'')));
+   }
+   if(missing.length){
+    const save=text('button','Save '+missing.length+' profile-only Hard Card(s) to Card Bank');
+    save.type='button';save.className='btn primary';
+    save.onclick=async()=>{
+     if(!win.valid()||!confirm('Save the '+missing.length+' existing, marked Hard Cards from their matching profiles to this vault’s Card Bank? No profile, card number, Hard Card flag or independent reference is changed.'))return;
+     save.disabled=true;let restored=0,skipped=0;
+     try{
+      for(const card of missing){
+       if(scope!==owner.scope||customerId!==owner.customerId)throw Error('Vault changed; re-open Audit Hard Cards.');
+       const result=await window.desktopAPI.profileWorkshop.addProfileCardToBank({...owner,profileId:card.id.slice(8),confirmed:true});
+       if(result?.saved)restored++;else if(result?.alreadyExists)skipped++;
+      }
+      if(win.valid())win.body.append(text('p',restored+' saved to Card Bank; '+skipped+' already present. Recheck the available count before generation.'));
+      await refresh();
+     }catch(error){if(win.valid())win.body.append(text('p','Stopped after '+restored+' saves: '+String(error.message||error)+'. Review current bank status before proceeding.'));}
+     finally{save.disabled=false;}
+    };
+    win.body.append(save);
+   }
+  }catch(error){note('Hard Card audit failed: '+String(error.message||error));}
+  finally{auditHardCards.disabled=false;}
+ };
+
   q('customer').onchange=()=>{epoch++;websiteLoad++;websiteVault.open=false;websiteVault.querySelector('[data-web-records]').replaceChildren();customerId=q('customer').value||null;rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;bankAssets={addresses:[],cards:[]};selected.clear();pageIndex=0;group='all';issueView='all';q('view').value='all';drawResourceBanks();void refresh();};q('retailer').onchange=()=>{selected.clear();pageIndex=0;group='all';q('search').value='';issueView='all';q('view').value='all';unusedAccounts=[];unusedConflicts=[];poolReport=null;draw();void refresh();};q('search').oninput=()=>{selected.clear();pageIndex=0;if(q('search').value.trim())group='all';draw();};q('view').onchange=()=>{issueView=q('view').value;selected.clear();pageIndex=0;group='all';draw();note(issueView==='duplicates'?'Showing only duplicate profiles.':issueView==='issues'?'Showing only profiles that need attention.':customerName()+' · '+visible().length+' profiles');};for(const b of main.querySelectorAll('[data-stage]'))b.onclick=()=>{stage=b.dataset.stage;pageIndex=0;group='all';selected.clear();q('search').value='';issueView='all';q('view').value='all';for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab===b));draw();};q('all').onclick=()=>{selected.clear();for(const r of pageRows())selected.add(r.id);updateSelection();};q('clear').onclick=()=>{selected.clear();updateSelection();};
  async function jigUnusedSelected(){
    const chosen=pageRows().filter(x=>selected.has(x.id));
