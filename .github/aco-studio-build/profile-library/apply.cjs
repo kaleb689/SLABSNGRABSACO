@@ -429,8 +429,11 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  const blockEnd=next.indexOf('\ntest(',blockStart+10);
  if(blockStart<0||blockEnd<0)throw Error('Legacy Personal privacy test boundary changed; review before release.');
  const block=next.slice(blockStart,blockEnd);
- if(!block.includes(oldImport))throw Error('Legacy Personal privacy import line changed; review before release.');
- next=next.slice(0,blockStart)+block.replace(oldImport,historical.replaceAll('\\n','\n'))+next.slice(blockEnd);
+ const importStart=block.indexOf("await v.importRows({scope:'aco',customerId:'customer1'");
+ const importEnd=importStart>=0?block.indexOf(';',importStart):-1;
+ if(importStart<0||importEnd<0)throw Error('Legacy Personal privacy import statement changed; review before release.');
+ const updated=block.slice(0,importStart)+historical.replaceAll('\\n','\n')+block.slice(importEnd+1);
+ next=next.slice(0,blockStart)+updated+next.slice(blockEnd);
  fs.writeFileSync(file,next);
 }
 
