@@ -21,9 +21,9 @@ async function env(t){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'aco-work
 
 test('Email imports normalize, skip batch/retailer collisions and retain cross-retailer reuse',async t=>{const h=await env(t);
  let r=await h.service.importEmails(event,{...h.p,retailer:'target',emails:[' OWN@example.test ','own@example.test','bad']});assert.equal(r.added,1);assert.equal(r.skipped,1);assert.equal(r.invalid,1);
- r=await h.service.importEmails(event,{...h.a,retailer:'target',emails:['own@example.test','annette@example.test']});assert.equal(r.added,2);assert.equal(r.skipped,0);
+ r=await h.service.importEmails(event,{...h.a,retailer:'target',emails:['own@example.test','annette@example.test']});assert.equal(r.added,1);assert.equal(r.skipped,0);assert.equal(r.skippedForeign,1);
  r=await h.service.importEmails(event,{...h.p,retailer:'walmart',emails:['own@example.test']});assert.equal(r.added,1);
- assert.deepEqual((await h.service.emails(event,{...h.a,retailer:'target'})).emails.map(x=>x.email),['own@example.test','annette@example.test']);
+ assert.deepEqual((await h.service.emails(event,{...h.a,retailer:'target'})).emails.map(x=>x.email),['annette@example.test']);
  assert.equal((await h.service.emails(event,{...h.b,retailer:'target'})).emails.length,0);
 });
 async function stock(h,scope,email){await h.service.importEmails(event,{...scope,retailer:'target',emails:[email]});const a=await h.service.addAddress(event,{...scope,address});const c=await h.service.addCard(event,{...scope,card});return {...scope,retailer:'target',count:1,format:'shikari',randomNames:true,addressIds:[a.id],cardIds:[c.id]};}
@@ -42,12 +42,12 @@ test('Concurrent generations use each email/card once',async t=>{const h=await e
 test('Customer email and account records never consume another customer or Personal generation pool',async t=>{const h=await env(t);
  await h.profiles.importRows({scope:'aco',customerId:'customer-a',retailer:'target',rows:[{email:'existing@example.test'}]});
  const imported=await h.service.importEmails(event,{...h.p,retailer:'target',emails:['existing@example.test']});
- assert.equal(imported.added,1);assert.equal(imported.skipped,0);
+ assert.equal(imported.added,0);assert.equal(imported.skippedForeign,1);
  const p=await stock(h,h.p,'reserved@example.test');
  await h.profiles.importRows({scope:'aco',customerId:'customer-b',retailer:'target',rows:[{email:'reserved@example.test'}]});
  const created=await h.service.generate(event,p);
  assert.equal(created.created,1);
- assert.equal((await h.profiles.fieldSnapshot('aco','customer-b')).length,1);
+ assert.equal((await h.profiles.fieldSnapshot('aco','customer-b')).length,0);
  assert.equal((await h.profiles.fieldSnapshot('aco','customer-a')).length,1);
 });
 test('Missing customer and non-owner frame cannot read/import/generate',async t=>{const h=await env(t);for(const method of ['emails','importEmails','generate']){await assert.rejects(h.service[method](foreign,{...h.p,retailer:'target',emails:['a@example.test']}));await assert.rejects(h.service[method](event,{scope:'aco',customerId:null,retailer:'target',emails:['a@example.test']}));}});
