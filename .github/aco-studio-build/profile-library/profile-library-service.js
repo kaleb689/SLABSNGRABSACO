@@ -1549,9 +1549,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      throw Error('All 65 Apt/Unit/Ste/#/number combinations (A-D or 1-9) are already used for this address. Select another base address or enable more address jig styles.');
     }
     let data=result.data;
-    if(p.billingSameAsShipping===true){
+    if(p.billingSameAsShipping===true||autoUnitFromAddressBank){
+     // A generated unit must accompany the matching shipping street, city,
+     // ZIP and state on billing; do not produce a mismatched mixed address.
      const values=D.toValues(data);
-     values['billing.address2']=values['shipping.address2'];
+     for(const field of ['address1','address2','city','state','zip'])
+      values['billing.'+field]=values['shipping.'+field];
      data=D.manualEdit(data,values);
     }
     row.data=C.syncCardholderToProfile(data);
