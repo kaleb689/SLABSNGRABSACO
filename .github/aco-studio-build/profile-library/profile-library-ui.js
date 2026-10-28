@@ -1009,16 +1009,21 @@
    duplicateLabel.className='check';duplicateLabel.hidden=true;
    const allowDuplicates=d.createElement('input');allowDuplicates.type='checkbox';allowDuplicates.checked=false;
    duplicateLabel.prepend(allowDuplicates);
-   const review=d.createElement('div');let token=null,duplicateCount=0;
+   const review=d.createElement('div');let token=null,duplicateCount=0,previewRevision=0,previewTimer=null;
    allowDuplicates.onchange=()=>{save.disabled=!token||(duplicateCount>0&&!allowDuplicates.checked);};
    win.body.append(info,rules,distributionLabel,distributionPanel,combine,billing,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
-   const invalidatePreview=()=>{token=null;duplicateCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
-   for(const control of [rules,distributionToggle,distributionPanel,combineBox,billingBox,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',invalidatePreview);
+   const invalidatePreview=()=>{previewRevision++;token=null;duplicateCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
+   // Every checkbox or quantity edit invalidates the old approval token and
+   // recomputes against the currently selected rules. Never apply a stale plan.
+   const schedulePreview=()=>{invalidatePreview();if(previewTimer!==null)clearTimeout(previewTimer);
+    previewTimer=setTimeout(()=>{previewTimer=null;if(win.valid()&&(!reuseToggle.checked||reuseLoaded))void preview.onclick?.();},400);};
+   for(const control of [rules,distributionToggle,distributionPanel,combineBox,billingBox,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',schedulePreview);
+   for(const control of [unitQuantity,reuseCount,distributionPanel])control.addEventListener('input',schedulePreview);
    reuseToggle.onchange=async()=>{
-    invalidatePreview();reusePanel.hidden=!reuseToggle.checked;
-    if(!reuseToggle.checked)return;
+    invalidatePreview();if(previewTimer!==null){clearTimeout(previewTimer);previewTimer=null;}reusePanel.hidden=!reuseToggle.checked;
+    if(!reuseToggle.checked){schedulePreview();return;}
     if(chosen.length<2){reuseToggle.checked=false;reusePanel.hidden=true;win.status().textContent='Select at least two profiles to share an address.';return;}
-    if(reuseLoaded)return;
+    if(reuseLoaded){schedulePreview();return;}
     reuseSelect.disabled=true;win.status().textContent='Loading this vault’s Main and Jigged addresses...';
     try{
      const result=await api.reuseChoices({...win.owner});if(!win.valid())return;
@@ -1031,12 +1036,12 @@
       reuseSelect.append(group);
      }
      if(!reuseSelect.options.length)throw Error('No saved Main or Jigged shipping addresses are available in this vault.');
-     reuseLoaded=true;win.status().textContent='Select the exact address and quantity, then preview each profile.';
+     reuseLoaded=true;win.status().textContent='Select the exact address and quantity; preview refreshes as you change options.';schedulePreview();
     }catch(error){win.status().textContent=error.message||'Could not load saved addresses.';reuseToggle.checked=false;reusePanel.hidden=true;
     }finally{reuseSelect.disabled=false;}
    };
    preview.onclick=async()=>{
-    preview.disabled=true;invalidatePreview();
+    preview.disabled=true;invalidatePreview();const activeRevision=previewRevision;
     try{
      const quantity=Number(reuseCount.value);
      if(reuseToggle.checked&&(!reuseLoaded||!reuseSelect.value||!Number.isSafeInteger(quantity)||quantity<2||quantity>chosen.length))
@@ -1051,9 +1056,9 @@
       const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),distribution,
       ruleIds:selectedJigChoices(rules),combine:combineBox.checked,
       billingSameAsShipping:billingBox.checked,optionalUnitCount,postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
-     if(!win.valid())return;token=result.token;
+     if(!win.valid()||activeRevision!==previewRevision)return;token=result.token;
       if(result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
-     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional second-line unit(s) added.'));
+     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional second-line unit(s) added ('+result.optionalUnitEligible+' eligible selected addresses without units).'));
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      for(const row of result.profiles.slice(0,100))review.append(jigPreviewEntry(row,settings));
      if(result.profiles.length>100)review.append(text('p','+'+(result.profiles.length-100)+' more selected profiles included in this batch.'));
@@ -1066,7 +1071,7 @@
      }
      save.disabled=duplicateCount>0&&!allowDuplicates.checked;
      win.status().textContent=duplicateCount?'Duplicate addresses detected. Review them and explicitly allow reuse if required.':'Preview ready. One Apply action will process the whole selected set.';
-    }catch(error){win.status().textContent=error.message;}finally{preview.disabled=false;}
+    }catch(error){if(win.valid()&&activeRevision===previewRevision)win.status().textContent=error.message;}finally{if(win.valid()&&activeRevision===previewRevision)preview.disabled=false;}
    };
    save.onclick=async()=>{
     if(!token||!confirm('Apply the reviewed jig to all '+chosen.length+' selected profiles now?'))return;
