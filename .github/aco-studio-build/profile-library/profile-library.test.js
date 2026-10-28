@@ -1058,7 +1058,7 @@ test('Walmart Jig uses every eligible saved Main house, adds unique optional sec
  const after=await h.lib.list(event,h.p);
  assert.equal(after.profiles.length,4);
  assert.equal(after.profiles.filter(x=>mainAddresses.some(a=>LC.values(x.data)['shipping.address1'].startsWith(a.address1.replace(/ (Lane|Road)$/,'')))).length,4);
- assert.equal(new Set(after.profiles.map(x=>LC.values(x.data)['shipping.address2'])).size,4);
+ assert.equal(new Set(after.profiles.map(x=>['shipping.address1','shipping.address2','shipping.city','shipping.state','shipping.zip'].map(k=>LC.values(x.data)[k]).join('|'))).size,4,'Full shipping addresses are distinct even when independent houses reuse the same unit label');
 });
 
 test('Walmart full bank sourcing fails safely if there are no saved unitless homes',async t=>{
