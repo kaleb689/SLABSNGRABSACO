@@ -169,6 +169,13 @@ replace('jig-address-banks.js',"  async addWorkshopAddress(scope,customerId,inpu
   },
   async addWorkshopAddress(scope,customerId,input,beforeWrite){`);
 
+// Keep full encrypted recovery checkpoints before card and address vault writes.
+replace('local-card-vault.js'," async function write(data){\n  encrypted();",` async function write(data){
+  encrypted();
+  await require('./owner-backup-manager').forVault({baseDir,safeStorage,fs}).checkpoint('pre-change');`);
+replace('jig-address-banks.js'," async function write(file,data){\n  requireCrypto();",` async function write(file,data){
+  requireCrypto();
+  await require('./owner-backup-manager').forVault({baseDir,safeStorage,fs}).checkpoint('pre-change');`);
 replace('site-bridge.js',"adminView.webContents.loadURL(ORIGIN+'/admin.html').catch(()=>notifyOwner());","adminView.webContents.loadURL(ORIGIN+'/admin.html?acoDesktop=1').catch(()=>notifyOwner());");
 replace('site-bridge.js',"adminWindow.loadURL(ORIGIN+'/admin.html');","adminWindow.loadURL(ORIGIN+'/admin.html?acoDesktop=1');");
 replace('site-bridge.js'," function signIn(){",` async function prepareDesktopUnlock(){
