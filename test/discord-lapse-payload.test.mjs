@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {lapseGroupPayload,discordValidationFieldPaths} from "../discord-community.js";
+import {lapseGroupPayload,discordValidationFieldPaths,extendSelectedLapsedProfiles,lapseExtensionFailureReason} from "../discord-community.js";
+import {activeLapseHoldKeys} from "../membership-lapse-notifications.js";
 
 const profile = (i) => ({
   type: i % 2 ? "rented" : "free", managedAccountId: "account-" + i,
@@ -70,4 +71,57 @@ test("unchanged lapse groups rehydrate selection state without re-sending a Disc
  assert.match(discord,/export function rememberDiscordLapseChecklistGroup\(/);
  assert.match(discord,/if \(lapseChecklistMessages\.has\(id\)\) return true/);
  assert.match(discord,/const displayedPage = pageLabel \? Math\.max\(0, Number\(pageLabel\[1\]\) - 1\) : saved\.page/);
+});
+
+test("staff bulk extend targets only selected managed accounts and requires saved expiry",async()=>{
+ const seen=[];
+ const callback=async({type,managedAccountId,amount,unit})=>{
+   seen.push({type,managedAccountId,amount,unit});
+   return {expiresAt:"2026-11-01T00:00:00.000Z"};
+ };
+ const result=await extendSelectedLapsedProfiles(["rented:account-one","rented:account-two"],12,"hours",callback);
+ assert.equal(result.succeeded,2);
+ assert.deepEqual(result.failed,[]);
+ assert.deepEqual(seen,[
+   {type:"rented",managedAccountId:"account-one",amount:12,unit:"hours"},
+   {type:"rented",managedAccountId:"account-two",amount:12,unit:"hours"}
+ ]);
+});
+test("failed extension remains unresolved with actionable staff-only reason; never reports false success",async()=>{
+ const result=await extendSelectedLapsedProfiles(["rented:missing-tier","free:expired-hold","free:success"],1,"days",
+  async({managedAccountId})=>{
+   if(managedAccountId==="missing-tier")throw Error("This customer does not currently have an active paid or gifted tier.");
+   if(managedAccountId==="expired-hold")throw Error("This expired profile is no longer on Restore Hold.");
+   return {expiresAt:"2026-11-01T00:00:00.000Z"};
+  });
+ assert.equal(result.succeeded,1);
+ assert.equal(result.failed.length,2);
+ assert.match(result.failed[0].reason,/active paid or gifted tier/);
+ assert.match(result.failed[1].reason,/no longer active/);
+ assert.ok(!result.failed.some(x=>JSON.stringify(x).includes("account-one")));
+});
+test("bulk extension rejects an invalid selection and unconfirmed outcomes",async()=>{
+ const result=await extendSelectedLapsedProfiles(["rented:","unknown:a","free:no-expiry"],4,"hours",async()=>({}));
+ assert.equal(result.succeeded,0);
+ assert.equal(result.failed.length,3);
+ assert.match(result.failed[2].reason,/linked assignments/);
+ const unknown=lapseExtensionFailureReason(new Error("Bearer secret-key; john@example.test"));
+ assert.match(unknown,/server log/);
+ assert.doesNotMatch(unknown,/Bearer|secret-key|example.test/);
+});
+test("only active Restore Holds contribute to a lapsed Discord checklist",()=>{
+ const now=Date.parse("2026-10-28T05:00:00Z"),day=86400000;
+ const holds=[
+  {type:"rented",status:"held",holdUntil:new Date(now+day).toISOString(),items:[
+    {managedAccountId:"eligible"}, {managedAccountId:"restored",restoredAt:new Date(now-1000).toISOString()},
+    {managedAccountId:"released",releasedAt:new Date(now-1000).toISOString()}]},
+  {type:"free",status:"partial",holdUntil:new Date(now+day).toISOString(),items:[{managedAccountId:"gift"}]},
+  {type:"rented",status:"held",holdUntil:new Date(now-day).toISOString(),items:[{managedAccountId:"outdated"}]},
+  {type:"rented",status:"released",holdUntil:new Date(now+day).toISOString(),items:[{managedAccountId:"returned"}]}
+ ];
+ assert.deepEqual([...activeLapseHoldKeys(holds,now)].sort(),["free:gift","rented:eligible"]);
+});
+test("single-account server extension never restores every held account for a customer",()=>{
+ const source=readFileSync(new URL("../server.js",import.meta.url),"utf8");
+ assert.match(source,/restoreHeldManagedAccountsForCustomer\(\s*customerAccountId, type, \[String\(resolvedManagedAccountId\)\]/);
 });
