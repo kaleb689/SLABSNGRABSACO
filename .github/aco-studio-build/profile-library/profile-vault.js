@@ -55,6 +55,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
  }catch(e){if(e.code==='ENOENT'){if((await backupList(scope)).length)throw Error('Encrypted '+scope+' profile bank is missing, but recovery snapshots exist. Restore a snapshot before modifying saved information.');return {version:1,groups:{},audit:{}};}throw Error('Unable to open encrypted '+scope+' profile bank; data was preserved.');}}
 
  const snapshotsDir=path.join(baseDir,'encrypted-owner-profile-snapshots');
+ const workspaceBackup=require('./owner-backup-manager').forVault({baseDir,safeStorage,fs});
  const scopeValue=scope=>{if(scope!=='personal'&&scope!=='aco')throw Error('Unknown owner profile backup scope.');return scope;};
  async function backupList(scope){
    scopeValue(scope);requireCrypto();let names;
@@ -141,6 +142,8 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    const tmp=paths[scope]+'.'+uuid()+'.tmp';
    try{
      await backupPrevious(scope);
+     // Full encrypted workspace checkpoint, including Card and Address Banks.
+     await workspaceBackup.checkpoint('pre-change');
      await fs.writeFile(tmp,safeStorage.encryptString(JSON.stringify(data)),{mode:0o600,flag:'wx'});
      await fs.rename(tmp,paths[scope]);
    }catch(e){await fs.rm(tmp,{force:true}).catch(()=>{});throw e;}
@@ -964,7 +967,12 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   }
   return {scannedAt:now(),duplicates:details.sort((a,b)=>b.count-a.count||a.retailer.localeCompare(b.retailer)),scanned:[...index.values()].reduce((n,items)=>n+items.length,0),personalDetailsVisible:Boolean(allowPersonalDetail)};
  }
- return Object.freeze({paths,backupList,backupRestore,codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileExistingLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,unusedEmailConflicts,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+ return Object.freeze({paths,backupList,backupRestore,
+  backupStatus:async()=>{await workspaceBackup.checkpoint('daily');return workspaceBackup.status();},
+  backupCheckpoint:()=>workspaceBackup.checkpoint('manual'),
+  backupPreview:id=>workspaceBackup.previewRestore(id),
+  backupConfirm:params=>workspaceBackup.restore(params),
+  codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,importLiveProfiles,reconcileExistingLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,unusedEmailConflicts,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 
