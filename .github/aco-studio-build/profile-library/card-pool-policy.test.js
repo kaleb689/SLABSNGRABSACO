@@ -112,3 +112,21 @@ test('Hard Card scanning never combines owner, customer A, or customer B vaults'
  assert.equal(CardPolicy.hardCard(N,customerASettings),false);
  assert.equal(CardPolicy.hardCard(N,customerBSettings),false);
 });
+
+test('Fifteen Target-used Hard Cards remain eligible for 15 PKC accounts and 15 Walmart accounts',()=>{
+ const numbers=Array.from({length:15},(_,i)=>'424242424242'+String(i).padStart(4,'0'));
+ let settings={};
+ for(const n of numbers)settings=CardPolicy.toggle(settings,n,true);
+ const rows=numbers.map((n,i)=>profile('target-'+i,'target',n));
+ const saved=numbers.map((n,i)=>({id:'saved-'+i,number:n,month:'09',year:'2031'}));
+ const inventory=CardPolicy.inventory({rows,savedCards:saved,settings});
+ assert.equal(inventory.length,15);
+ assert.equal(inventory.filter(item=>item.hardCard).length,15);
+ assert.equal(inventory.filter(item=>item.fromSavedBank&&item.availableRetailers.includes('pokemoncenter')).length,15);
+ assert.equal(inventory.filter(item=>item.fromSavedBank&&item.availableRetailers.includes('walmart')).length,15);
+ assert.doesNotThrow(()=>CardPolicy.checkAllocation(rows,'pokemoncenter',numbers,settings));
+ assert.throws(()=>CardPolicy.checkAllocation(rows,'target',[numbers[0]],settings),/one per retailer/);
+ const afterPkc=rows.concat(numbers.map((n,i)=>profile('pkc-'+i,'pokemoncenter',n)));
+ assert.equal(CardPolicy.inventory({rows:afterPkc,savedCards:saved,settings}).filter(item=>item.availableRetailers.includes('pokemoncenter')).length,0);
+ assert.equal(CardPolicy.inventory({rows:afterPkc,savedCards:saved,settings}).filter(item=>item.availableRetailers.includes('walmart')).length,15);
+});

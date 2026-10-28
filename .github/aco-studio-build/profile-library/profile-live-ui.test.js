@@ -395,3 +395,18 @@ test('Both Jig entrypoints offer explicit optional unit and do not silently auto
  assert.match(workshopSource,/optionalUnitCount,combine:state\.combine/);
  assert.match(workshopSource,/randomUnit:0/);
 });
+
+
+test('PKC Hard Card audit distinguishes saved eligible cards from profile-only cards and requires explicit bank recovery confirmation',()=>{
+ assert.match(source,/Audit Hard Cards/);
+ assert.match(source,/saved eligible for /);
+ assert.match(source,/!card\.fromSavedBank\?'Profile-only card/);
+ assert.match(source,/profileOnly=pool\.filter\(x=>!x\.fromSavedBank/);
+ assert.match(source,/targetRegular=saved\.filter\(x=>!x\.hardCard/);
+ assert.match(source,/Restore selected Hard Card flags/);
+ assert.match(source,/Copy selected profile cards to saved bank/);
+ assert.match(source,/profileWorkshop\.setHardCards/);
+ assert.match(source,/if\(!confirm\('Apply '/);
+ assert.match(source,/profileWorkshop\.addProfileCardToBank/);
+ assert.doesNotMatch(source,/cardPool\.hard\s*=\s*\[\]/);
+});
