@@ -252,7 +252,13 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const after=C.collisions([row],seen,retailer)[0];if(after.includes('email'))throw Error('Duplicate email remains. Select Replace duplicate emails.');if(after.length&&!options.allowShared)throw Error('Duplicate name or card remains. Repair it or explicitly allow shared names/cards.');
   if(!C.values(row).email)throw Error('A profile email is missing.');usedEmails.add(C.email(row.email));usedNames.add(C.nameKey(row));seen.push({retailer,data:row});added.push(row);
  }return added;}
- async function importCommit(e,p){const plan=plans.get(p.token);if(!plan||plan.sender!==e.sender.id||now()-plan.at>600000||plan.epoch!==ep(e))throw Error('Import preview expired. Preview again.');const a=await access(e,{scope:plan.scope,customerId:plan.id});if(p.confirmed!==true)throw Error('Review the import first.');if(plan.bank==='live'){const result=await profiles.importLiveProfiles(a.scope,a.id,plan.entries,{updateExisting:p.updateExisting===true,batchId:uuid(),fileNames:plan.fileNames||[]},()=>{a.check();if(plans.get(p.token)!==plan)throw Error('Import was already saved.');},
+ async function importCommit(e,p){const plan=plans.get(p.token);if(!plan||plan.sender!==e.sender.id||now()-plan.at>600000||plan.epoch!==ep(e))throw Error('Import preview expired. Preview again.');
+  // Reject a confirmation from a different selected customer/retailer. The
+  // preview token alone is not permission to transfer between isolated vaults.
+  if(p.expectedScope!==undefined&&p.expectedScope!==plan.scope||
+     p.expectedCustomerId!==undefined&&p.expectedCustomerId!==plan.id)
+   throw Error('Customer vault selection changed. Review the import for the selected vault.');
+  const a=await access(e,{scope:plan.scope,customerId:plan.id});if(p.confirmed!==true)throw Error('Review the import first.');if(plan.bank==='live'){const result=await profiles.importLiveProfiles(a.scope,a.id,plan.entries,{updateExisting:p.updateExisting===true,batchId:uuid(),fileNames:plan.fileNames||[]},()=>{a.check();if(plans.get(p.token)!==plan)throw Error('Import was already saved.');},
  async(displaced,incoming)=>{
   a.check();
   if(plans.get(p.token)!==plan)throw Error('Live import was cancelled before card preservation.');
