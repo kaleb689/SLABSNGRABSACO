@@ -86,9 +86,11 @@
  function showRecoveryReview(report){
   restoreFromBackup.hidden=!(Number(report.backups?.potentialMatches||0)>0);
   restoreFromBank.hidden=!(Number(report.savedCardBank?.potentialMatches||0)>0);
-  restoreStatus.textContent=restoreFromBackup.hidden
-   ?'No independently named references from encrypted snapshots are available for restoration.'
-   :'Encrypted snapshots contain independently named reference candidates. Preview them before any restore.';
+  restoreStatus.textContent=!restoreFromBank.hidden
+   ?report.savedCardBank.potentialMatches+' saved Card Bank candidates are available for review; no references have been restored.'
+   :restoreFromBackup.hidden
+    ?'No independently named references from encrypted snapshots are available for restoration.'
+    :'Encrypted snapshots contain independently named reference candidates. Preview them before any restore.';
   reviewOutput.replaceChildren();
   reviewOutput.append(
    reviewLine('Vault:',report.scope==='personal'?'Personal':'Selected customer'),
