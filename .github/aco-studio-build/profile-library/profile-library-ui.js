@@ -1109,48 +1109,67 @@
  auditHardCards.type='button';auditHardCards.className='btn slim secondary';
  q('manage-cards').after(auditHardCards);
  auditHardCards.onclick=async()=>{
-  const owner=request(),retailer=q('retailer').value;
+  const owner=request(),retailer=q('retailer').value,initialEpoch=epoch;
   auditHardCards.disabled=true;
   try{
    const fresh=await window.desktopAPI.profileWorkshop.assets({...owner,retailer,showFullCards:false});
-   if(scope!==owner.scope||customerId!==owner.customerId||retailer!==q('retailer').value)return;
+   if(scope!==owner.scope||customerId!==owner.customerId||retailer!==q('retailer').value||epoch!==initialEpoch)return;
    const pool=Array.isArray(fresh.cardPool)?fresh.cardPool:[],saved=pool.filter(x=>x.fromSavedBank);
    const eligible=saved.filter(x=>x.availableRetailers?.includes(retailer));
    const hard=saved.filter(x=>x.hardCard);
-   const targetRegular=saved.filter(x=>!x.hardCard&&x.linked?.includes('target')&&!x.linked?.includes(retailer));
-   const alreadyUsed=hard.filter(x=>x.linked?.includes(retailer));
+   const targetRegular=saved.filter(x=>!x.hardCard&&!x.hasConflict&&x.linked?.length===1&&x.linked[0]==='target'&&retailer!=='target');
+   const usedHere=hard.filter(x=>x.linked?.includes(retailer));
    const held=saved.filter(x=>x.hasConflict&&!(x.linked||[]).length);
-   const missing=pool.filter(x=>x.hardCard&&!x.fromSavedBank&&x.availableRetailers?.includes(retailer)&&String(x.id).startsWith('profile:'));
+   const profileOnly=pool.filter(x=>!x.fromSavedBank&&!x.hasConflict&&x.linked?.length===1&&x.linked[0]==='target'&&retailer!=='target'&&String(x.id).startsWith('profile:'));
    const win=dialog('Hard Card availability · '+retailName[retailer]);
    win.body.append(
     text('p',eligible.length+' eligible saved cards for '+retailName[retailer]+'; '+saved.length+' saved cards total, '+hard.length+' marked Hard Card.'),
-    text('p',missing.length+' Hard Cards found in existing profiles but missing a saved Card Bank copy. '+targetRegular.length+' Target-used saved cards currently marked Regular.'),
-    text('p',alreadyUsed.length+' saved Hard Cards already linked to '+retailName[retailer]+'; '+held.length+' saved cards held for unresolved prior assignments.'),
-    text('p','Hard Card means one profile per retailer. This check changes no cards or profiles and cannot inspect absent card records or encrypted snapshots.')
+    text('p',targetRegular.length+' saved Target-used cards are marked Regular; '+profileOnly.length+' Target profile cards are missing from the saved Card Bank.'),
+    text('p',usedHere.length+' saved Hard Cards already linked to '+retailName[retailer]+'; '+held.length+' saved cards on unresolved historical hold.'),
+    text('p','A Hard Card permits one saved profile in each retailer; using it in Target must not block PKC. Nothing changes until you select and explicitly confirm cards below. No values are taken from other vaults or backups.')
    );
-   for(const [heading,items] of [['Hard Cards needing a saved bank copy',missing],['Target-used cards currently marked Regular',targetRegular],['Old assignments needing review',held]]){
-    if(!items.length)continue;
-    win.body.append(text('strong',heading),text('p',items.slice(0,50).map(x=>'ending '+x.last4).join(', ')+(items.length>50?' and '+(items.length-50)+' more':'')));
-   }
-   if(missing.length){
-    const save=text('button','Save '+missing.length+' profile-only Hard Card(s) to Card Bank');
-    save.type='button';save.className='btn primary';
-    save.onclick=async()=>{
-     if(!win.valid()||!confirm('Save the '+missing.length+' existing, marked Hard Cards from their matching profiles to this vault’s Card Bank? No profile, card number, Hard Card flag or independent reference is changed.'))return;
-     save.disabled=true;let restored=0,skipped=0;
+   const alive=()=>win.valid()&&scope===owner.scope&&customerId===owner.customerId&&epoch===initialEpoch;
+   function chooseCards(heading,items,buttonTitle,commit){
+    if(!items.length)return;
+    win.body.append(text('strong',heading));
+    const choices=[],subset=items.slice(0,200);
+    for(const item of subset){
+     const label=d.createElement('label');label.className='check';
+     const checkbox=d.createElement('input');checkbox.type='checkbox';
+     label.append(checkbox,text('span','Card ending '+item.last4+' · '+item.status));
+     win.body.append(label);choices.push({item,checkbox});
+    }
+    if(items.length>subset.length)win.body.append(text('p','Showing the first '+subset.length+' candidates. Review additional cards in the Card Bank search.'));
+    const action=text('button',buttonTitle);action.type='button';action.className='btn secondary';
+    action.onclick=async()=>{
+     const selected=choices.filter(x=>x.checkbox.checked).map(x=>x.item);
+     if(!selected.length){win.status().textContent='Select the exact cards to correct first.';return;}
+     if(!alive())return;
+     if(!confirm('Apply '+buttonTitle+' to exactly '+selected.length+' selected card(s) in this unlocked '+(owner.scope==='personal'?'Personal':'customer')+' vault? Other cards and profile records remain untouched.'))return;
+     action.disabled=true;
      try{
-      for(const card of missing){
-       if(scope!==owner.scope||customerId!==owner.customerId)throw Error('Vault changed; re-open Audit Hard Cards.');
-       const result=await window.desktopAPI.profileWorkshop.addProfileCardToBank({...owner,profileId:card.id.slice(8),confirmed:true});
-       if(result?.saved)restored++;else if(result?.alreadyExists)skipped++;
-      }
-      if(win.valid())win.body.append(text('p',restored+' saved to Card Bank; '+skipped+' already present. Recheck the available count before generation.'));
+      await commit(selected);
+      if(alive())win.status().textContent=selected.length+' card(s) processed. Close this audit and reopen it to verify the updated '+retailName[retailer]+' count.';
       await refresh();
-     }catch(error){if(win.valid())win.body.append(text('p','Stopped after '+restored+' saves: '+String(error.message||error)+'. Review current bank status before proceeding.'));}
-     finally{save.disabled=false;}
+     }catch(error){if(alive())win.status().textContent='Action stopped: '+String(error.message||error)+'. Reopen Audit Hard Cards for current counts. No card or profile was deleted.';}
+     finally{action.disabled=false;}
     };
-    win.body.append(save);
+    win.body.append(action);
    }
+   chooseCards('Target-used saved cards currently marked Regular — choose only cards you originally designated Hard Cards',targetRegular,'Restore selected Hard Card flags',async selected=>{
+    if(!alive())throw Error('Vault changed. Reopen the audit.');
+    const res=await window.desktopAPI.profileWorkshop.setHardCards({...owner,cardRefs:selected.map(x=>x.id),hard:true,confirmed:true});
+    if(res?.saved!==true||res.updated!==selected.length)throw Error('Hard Card status could not be verified; refresh the audit.');
+   });
+   chooseCards('Cards found in saved Target profiles but missing from the saved Card Bank',profileOnly,'Copy selected profile cards to saved bank',async selected=>{
+    for(const card of selected){
+     if(!alive())throw Error('Vault changed. Reopen the audit.');
+     const res=await window.desktopAPI.profileWorkshop.addProfileCardToBank({...owner,profileId:card.id.slice(8),confirmed:true});
+     if(res?.saved!==true&&res?.alreadyExists!==true)throw Error('Could not verify saved bank copy for card ending '+card.last4+'.');
+    }
+   });
+   if(held.length)win.body.append(text('p','Historical-assignment holds: '+held.slice(0,30).map(x=>'ending '+x.last4).join(', ')+'. Do not bypass these without matching the original profile.'));
+   if(!targetRegular.length&&!profileOnly.length)win.body.append(text('p','No recoverable Target-only cards were found in the current vault. Check encrypted backups before adding replacements; this audit does not prove missing records were deleted.'));
   }catch(error){note('Hard Card audit failed: '+String(error.message||error));}
   finally{auditHardCards.disabled=false;}
  };
