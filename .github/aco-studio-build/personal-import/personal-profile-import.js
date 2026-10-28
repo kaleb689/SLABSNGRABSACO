@@ -84,6 +84,17 @@ function createPersonalImporter({requireAccess, chooseFiles, readFiles=readSelec
         reason:saved.some(x => x.scope === 'aco' || x.scope === 'website') ? 'Already in this retailer customer or linked website pool' :
           saved.length ? 'Already in this Personal retailer pool' : 'Repeated within the selected files'});
     }
+    // Personal and customer inventories are mutually exclusive by login email,
+    // even when a customer used another retailer. Ordinary cross-retailer reuse
+    // inside Personal is still supported.
+    const foreign=typeof vault.foreignEmails==='function'?
+      await vault.foreignEmails('personal',null):new Set();
+    for(let index=0;index<stage.rows.length;index++){
+      const email=stage.rows[index].email;
+      if(!foreign.has(email)||skipped.has(index))continue;
+      skipped.add(index);
+      conflicts.push({email,count:1,reason:'Already used in a customer vault; skipped without importing'});
+    }
     const websiteComplete = site.complete === true;
     const fingerprint = JSON.stringify({skipped:[...skipped].sort((a,b)=>a-b), websiteComplete});
     return {skipped, fingerprint, summary:{token:stage.token, destination:'Personal only', retailer:stage.retailer,
