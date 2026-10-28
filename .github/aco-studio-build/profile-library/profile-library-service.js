@@ -189,7 +189,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const superseded=existing.filter(x=>identities.has(x.retailer+'|'+C.email(x.email)));
   const incomingRepeated=entries.length-identities.size;
   const blockedLinkedCount=superseded.filter(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile').length;
-  const linkedAssignments=a.scope==='aco'?existing.filter(x=>x.retailer&&x.source==='website-linked-profile'&&x.sourceLinked===true&&x.remoteManagedId&&['free','rented'].includes(x.remoteType))
+  const linkedAssignments=a.scope==='aco'?existing.filter(x=>x.retailer&&x.source==='website-linked-profile'&&x.sourceLinked===true&&!x.needsReview&&!x.manualOverride&&x.remoteManagedId&&['free','rented'].includes(x.remoteType))
    .map(x=>({profileId:x.id,revision:x.revision||0,retailer:x.retailer,email:x.email,managedId:x.remoteManagedId,
     type:x.remoteType,updatedAt:x.remoteUpdatedAt||''})): [];
   return {token,bank:'live',count:entries.length,skippedForeign,retailerConflicts,overrideRetailer:p.overrideRetailer===true,effectiveCount:identities.size,counts,linkedAssignments,
@@ -271,15 +271,16 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    throw Error('Website-linked login sync is unavailable for the selected vault.');
   const selected=new Set(),remoteIds=new Set(),mappedOps=[];
   if(mapped.length){
-   const current=await profiles.fieldSnapshot(a.scope,a.id);a.check();
+   const [current,foreignNow]=await Promise.all([profiles.fieldSnapshot(a.scope,a.id),profiles.foreignEmails(a.scope,a.id)]);a.check();
    for(const m of mapped){
     const index=m?.entryIndex,linked=current.find(x=>x.id===m?.profileId);
     if(!Number.isSafeInteger(index)||index<0||index>=plan.entries.length||selected.has(index)||
        !linked||linked.revision!==m.revision||linked.source!=='website-linked-profile'||linked.sourceLinked!==true||
        !linked.remoteManagedId||!['free','rented'].includes(linked.remoteType)||linked.needsReview||
-       linked.retailer!==plan.entries[index].retailer||remoteIds.has(linked.remoteManagedId))
+       linked.retailer!==plan.entries[index].retailer||linked.manualOverride||remoteIds.has(linked.remoteManagedId))
      throw Error('An exact website assignment could not be matched. Review again; no records changed.');
     const entry=plan.entries[index],email=C.email(C.values(entry.data).email);
+    if(foreignNow.has(email))continue; // Already owned elsewhere; ordinary import filter skips it.
     selected.add(index);remoteIds.add(linked.remoteManagedId);
     mappedOps.push({entryIndex:index,profile:linked,email});
    }
@@ -311,9 +312,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(remote?.remoteSaved!==true)throw Error('Linked website login did not verify. Refresh both website and ACO Studio.');
    linkedUpdated++;
   }
-  if(linkedUpdated)await syncCustomer(e,{scope:'aco',customerId:a.id});
+  let mirrorNeedsRefresh=false;
+  if(linkedUpdated){try{await syncCustomer(e,{scope:'aco',customerId:a.id});}catch{mirrorNeedsRefresh=true;}}
   plans.delete(p.token);
-  return {...result,linkedUpdated,skippedForeign:(plan.skippedForeign||0)+(result.skippedForeign||0)};
+  return {...result,linkedUpdated,mirrorNeedsRefresh,skippedForeign:(plan.skippedForeign||0)+(result.skippedForeign||0)};
   }return withCards(a,p.cardIds||[],cards=>profiles.libraryTransaction(a.scope,a.id,async ctx=>{if(plans.get(p.token)!==plan)throw Error('Import was already saved.');const foreign=await ctx.foreignEmails(),eligible=plan.data.filter(row=>!foreign.has(C.email(C.values(row).email))),skippedForeign=(plan.skippedForeign||0)+plan.data.length-eligible.length;
   if(!eligible.length){plans.delete(p.token);return {imported:0,skippedForeign};}
   const data=resolve(eligible,plan.retailer,ctx,p.repairs||{},cards,foreign),importBatchId=uuid(),customerLabel=profileOwnerLabel(p.customerName||p.group),existingCustomerCount=ctx.rows.filter(x=>x.source==='owner-created-profile').length,added=data.map((row,index)=>{const id=uuid(),email=C.email(row.email),label=a.scope==='personal'?email:customerLabel+' '+(existingCustomerCount+index+1),named=C.syncCardholderToProfile(D.manualEdit(row,{...D.toValues(row),label})),entry={id,retailer:plan.retailer,email,label,group:a.scope==='personal'?plan.retailer:customerLabel,source:'owner-created-profile',importBatchId,status:p.asAvailable===true?'available':'active',jiggedAt:p.alreadyJigged?new Date(now()).toISOString():null,createdAt:new Date(now()).toISOString(),revision:0,data:named,format:C.format(plan.retailer),assetRefs:{}};for(const bank of ctx.emails)if(bank.retailer===plan.retailer&&bank.email===email&&(!bank.profileId||String(bank.profileId).startsWith('pending-')))bank.profileId=id;ctx.rows.push(entry);ctx.audit('library-import',email,{retailer:plan.retailer});return entry;});ctx.importBatches.push({id:importBatchId,at:new Date(now()).toISOString(),bank:'working',retailers:[plan.retailer],fileNames:[plan.fileName||'import'],createdIds:added.map(x=>x.id),imported:added.length,updatedExisting:0,removedAt:null});plans.delete(p.token);return {imported:added.length,skippedForeign,batchId:importBatchId};},a.check));}
