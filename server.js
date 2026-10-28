@@ -1,4 +1,5 @@
 import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
+import {ownerWalmartUnused} from "./owner-walmart-unused.js";
 import { registerPrivateStudioLicensing } from "./private-studio-license.js";
 import { createBillingReceiptHandler } from "./billing-receipts.js";
 import { createCustomerPaymentActions } from "./customer-payment-records.js";
@@ -17887,6 +17888,7 @@ async function getManagedAvailability() {
     }
   }
 
+  availability.walmart.available=0; // Owner Personal Unused only.
   return availability;
 }
 
@@ -17906,6 +17908,8 @@ async function getAvailableManagedAccountsForRetailer(
   if (!normalizedRetailer) {
     return [];
   }
+  // OWNER_WALMART_UNUSED_POLICY_V1: no Walmart inventory is customer-allocatable.
+  if (normalizedRetailer === "walmart") return [];
 
   const [
     managedAccounts,
@@ -19634,6 +19638,34 @@ app.post("/api/admin/managed-pool/:id/override-hold", requireAdmin, async (req, 
   }
 });
 
+
+/* Owner-only Walmart inventory. Credentials remain encrypted in existing
+   staff-managed records until explicitly imported into owner Personal vault.
+   Never alter any active assignment, restore hold or card/profile records. */
+app.post("/api/admin/owner-walmart-unused/export",requireAdmin,async(req,res)=>{
+ try{
+  if(req.body?.confirmed!==true)return res.status(400).json({error:"Confirm owner Walmart Unused transfer."});
+  const [managed,free,rented,holds]=await Promise.all([
+   getManagedAccounts(),getFreeAssignments(),getRentalAssignments(),getRestoreHolds()
+  ]);
+  const linked=assignment=>managedAssignmentIsLinked(assignment);
+  const inUseIds=new Set([...free,...rented].filter(linked)
+   .map(item=>String(item.managedAccountId||item.freeMembershipId||item.rentedMembershipId||"")));
+  const duplicateIds=managedDuplicateCredentialState(managed,inUseIds).duplicateIds;
+  const result=ownerWalmartUnused({
+   managed,free,rented,holds:heldManagedAccountIdsFromHolds(holds),duplicates:duplicateIds,linked,
+   decrypt:account=>account.credentials?normalizeRetailerCredentials(decryptJson(account.credentials)):emptyRetailerCredentials()
+  });
+  if(result.accounts.length>20000)return res.status(409).json({error:"Owner inventory exceeds import limit."});
+  res.set("Cache-Control","no-store, private");res.set("Pragma","no-cache");
+  return res.json({ok:true,scope:"personal",retailer:"walmart",ownerOnly:true,
+   accounts:result.accounts,counts:result.counts,source:"staff-managed-walmart"});
+ }catch(error){
+  console.error("Owner Walmart unused inventory error:",error?.message);
+  return res.status(503).json({error:"Unable to read owner Walmart inventory. No data was changed."});
+ }
+});
+
 /* ADMIN POOL PROFILE SEARCH: never transmit passwords, cards or security codes. */
 app.get("/api/admin/jig-options", requireAdmin, (_req, res) => {
   res.setHeader("Cache-Control","no-store");
@@ -19693,7 +19725,7 @@ app.get("/api/admin/managed-pool/search", requireAdmin, async (req, res) => {
           profileName: clean(account.profileName || "", 150),
           accountEmail: clean(account.accountEmail || "", 254),
           notes: clean(account.notes || "", 500),
-          status, assignedTo: owner,
+          status:retailer==="walmart"&&status==="available"?"owner_unused":status, assignedTo: owner,
           assignmentType: assigned?.type || null,
           assignmentId: assigned ? String(assigned.assignment.id || "") : null
         });
