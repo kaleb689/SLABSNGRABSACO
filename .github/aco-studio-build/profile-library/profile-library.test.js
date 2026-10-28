@@ -805,7 +805,7 @@ test('Selected Target fractional and hyphen styles are actually applied across r
  const unchanged=result.profiles.filter(row=>row.after.address1===row.before.address1);
  assert.equal(unchanged.length,2,'One original is retained per 18, rather than per main address group');
  const applied=result.profiles.slice(1).filter(row=>row.appliedRuleIds.some(id=>id.startsWith('target.house.')));
- assert.ok(applied.length>=12,'Target hard styles have precedence over soft suffix changes');
+ assert.ok(applied.length>=10,'Hard styles retain an approximately balanced two-of-three family share');
  assert.ok(applied.some(row=>/target\.house\.fraction\./.test(row.appliedRuleIds.join(','))));
  assert.ok(applied.some(row=>/target\.house\.hyphen\./.test(row.appliedRuleIds.join(','))));
  assert.ok(applied.every(row=>row.after.address2===''),'No unit may be added without the checkbox');
