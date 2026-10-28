@@ -1128,3 +1128,64 @@ test('Customer file import UI does not postpone bank refresh for focused custome
  assert.match(ui,/syncOwnerWalmart\.hidden=\!\(scope==='personal'/);
  assert.match(ui,/if\(owner\.scope==='aco'&&!owner\.customerId\)throw Error/);
 });
+
+
+test('Personal import skips customer-owned emails and continues importing unrelated profiles',async t=>{
+ const h=await library(t),occupied='customer-owned@example.test';
+ await commit(h,await preview(h,[complete('target',occupied)],h.a));
+ const incoming=await preview(h,[complete('walmart',occupied),complete('walmart','personal-new@example.test')],h.p,'walmart');
+ assert.equal(incoming.count,1);assert.equal(incoming.skippedForeign,1);
+ const result=await commit(h,incoming);
+ assert.equal(result.imported,1);assert.equal(result.skippedForeign,1);
+ assert.deepEqual((await h.lib.list(event,h.p)).profiles.map(x=>x.email),['personal-new@example.test']);
+ assert.deepEqual((await h.lib.list(event,h.a)).profiles.map(x=>x.email),[occupied]);
+ assert.equal((await h.lib.list(event,h.b)).profiles.length,0);
+});
+test('Customer import skips Personal and other-customer email ownership, including across retailers',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('walmart','owner-reserved@example.test')],h.p,'walmart'));
+ await commit(h,await preview(h,[complete('target','customer-a-reserved@example.test')],h.a));
+ const incoming=await preview(h,[
+  complete('pokemoncenter','owner-reserved@example.test'),
+  complete('pokemoncenter','customer-a-reserved@example.test'),
+  complete('pokemoncenter','eligible-customer-b@example.test')
+ ],h.b,'pokemoncenter');
+ assert.equal(incoming.count,1);assert.equal(incoming.skippedForeign,2);
+ const result=await commit(h,incoming);
+ assert.equal(result.imported,1);assert.equal(result.skippedForeign,2);
+ assert.deepEqual((await h.lib.list(event,h.b)).profiles.map(x=>x.email),['eligible-customer-b@example.test']);
+ assert.deepEqual((await h.lib.list(event,h.p)).profiles.map(x=>x.email),['owner-reserved@example.test']);
+ assert.deepEqual((await h.lib.list(event,h.a)).profiles.map(x=>x.email),['customer-a-reserved@example.test']);
+});
+test('Pasted accounts skip cross-vault used emails and preserve the eligible rest',async t=>{
+ const h=await library(t);
+ await h.lib.importPastedAccounts(event,{...h.a,retailer:'target',confirmed:true,accounts:[
+  {email:'already-customer@example.test',password:'customer-secret'}]});
+ const imported=await h.lib.importPastedAccounts(event,{...h.p,retailer:'walmart',confirmed:true,accounts:[
+  {email:'already-customer@example.test',password:'not-imported'},
+  {email:'new-personal@example.test',password:'owner-secret'},
+  {email:'new-personal@example.test',password:'repeat'}]});
+ assert.equal(imported.added,1);assert.equal(imported.skippedForeign,1);
+ const p=await h.profiles.emailInventory('personal',null,'walmart');
+ assert.ok(p.emails.some(x=>x.email==='new-personal@example.test'));
+ assert.ok(!p.emails.some(x=>x.email==='already-customer@example.test'));
+ const customer=await h.lib.importPastedAccounts(event,{...h.b,retailer:'target',confirmed:true,accounts:[
+  {email:'new-personal@example.test',password:'do-not-import'},
+  {email:'new-customer@example.test',password:'customer-b-secret'}]});
+ assert.equal(customer.added,1);assert.equal(customer.skippedForeign,1);
+ const b=await h.profiles.emailInventory('aco','customer-b','target');
+ assert.deepEqual(b.emails.filter(x=>x.status==='available').map(x=>x.email),['new-customer@example.test']);
+});
+test('Multi-file customer Live import skips foreign-owned emails and preserves source owners',async t=>{
+ const h=await library(t);
+ await commit(h,await preview(h,[complete('walmart','owner-live-occupied@example.test')],h.p,'walmart'));
+ const incoming=await h.lib.importPreview(event,{...h.a,retailer:'walmart',bank:'live',files:[
+  {fileName:'a.json',text:JSON.stringify([complete('walmart','owner-live-occupied@example.test')])},
+  {fileName:'b.json',text:JSON.stringify([complete('walmart','free-customer-live@example.test')])}
+ ]});
+ assert.equal(incoming.count,1);assert.equal(incoming.skippedForeign,1);
+ const done=await h.lib.importCommit(event,{token:incoming.token,confirmed:true,expectedScope:'aco',expectedCustomerId:'customer-a'});
+ assert.equal(done.imported,1);assert.equal(done.skippedForeign,1);
+ assert.deepEqual((await h.lib.list(event,h.a)).profiles.map(x=>x.email),['free-customer-live@example.test']);
+ assert.deepEqual((await h.lib.list(event,h.p)).profiles.map(x=>x.email),['owner-live-occupied@example.test']);
+});
