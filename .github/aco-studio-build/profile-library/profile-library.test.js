@@ -673,7 +673,7 @@ test('Pasted credentials preserve password in encrypted retailer bank and keep c
  await assert.rejects(h.lib.importPastedAccounts({sender:{id:2}},{...h.a,retailer:'pokemoncenter',accounts,confirmed:true}),/Not owner/);
 });
 
-test('Jig address collisions across retailer accounts require an explicit Allow override',async t=>{
+test('Optional second-line generator avoids exact occupied addresses across retailers without override',async t=>{
  const h=await library(t);
  const original=complete('target','to-jig@example.test');
  const already=complete('pokemoncenter','already-used@example.test');
@@ -683,16 +683,15 @@ test('Jig address collisions across retailer accounts require an explicit Allow 
  const row=(await h.lib.list(event,h.p)).profiles.find(x=>x.email==='to-jig@example.test');
  const arg={...h.p,retailer:'target',profileIds:[row.id],ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false,optionalUnitCount:1};
  const plan=await h.lib.batchJigPreview(event,arg);
- assert.equal(plan.duplicateAddresses.length,1);
- assert.match(plan.duplicateAddresses[0].address,/100 Example Ave/);
- assert.deepEqual(plan.duplicateAddresses[0].matches.map(x=>x.email),['already-used@example.test']);
- await assert.rejects(h.lib.batchJigCommit(event,{token:plan.token,confirmed:true}),/Allow duplicate jig addresses/);
- const before=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
- assert.match(LC.values(before.data)['shipping.address1'],/Avenue/);
- const applied=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true,allowDuplicateAddresses:true});
- assert.equal(applied.duplicateOverrides,1);
+ assert.equal(plan.optionalUnitEligible,1);
+ assert.equal(plan.optionalUnitAdded,1);
+ assert.equal(plan.duplicateAddresses.length,0,'Generated address must not collide with the existing PKC account');
+ assert.notEqual(plan.profiles[0].after.address2,'Unit A','Previously allocated second line must not be reused');
+ const applied=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.equal(applied.duplicateOverrides||0,0);
  const after=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
  assert.equal(LC.values(after.data)['shipping.address1'],'100 Example Ave');
+ assert.notEqual(LC.values(after.data)['shipping.address2'],'Unit A');
 });
 test('Other customers cannot cause a jig duplicate warning in this customer vault',async t=>{
  const h=await library(t);
@@ -726,7 +725,7 @@ test('Optional second lines are OFF by default and added to exactly the owner-se
  }
  assert.ok(receiving.some(x=>x.after.address1!==x.before.address1),'Unit jig may accompany an address jig');
  assert.equal(new Set(receiving.map(x=>x.after.address2)).size,3);
- await assert.rejects(h.lib.batchJigPreview(event,{...args,optionalUnitCount:9}),/Only 8 selected profiles/);
+ await assert.rejects(h.lib.batchJigPreview(event,{...args,optionalUnitCount:9}),/Only 8(?: of 8)? selected profiles/);
 
 });
 test('Existing Apt, Ste, bare number and inline unit never change even if unit rules are selected',async t=>{
@@ -741,7 +740,7 @@ test('Existing Apt, Ste, bare number and inline unit never change even if unit r
  const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:all.map(x=>x.id),
   ruleIds:['avenue_short','target.house.hyphen.a'],combine:true,billingSameAsShipping:false,optionalUnitCount:0});
  await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:all.map(x=>x.id),
-  ruleIds:['avenue_short','target.house.hyphen.a'],combine:true,billingSameAsShipping:false,optionalUnitCount:1}),/Only 0 selected profiles/);
+  ruleIds:['avenue_short','target.house.hyphen.a'],combine:true,billingSameAsShipping:false,optionalUnitCount:1}),/Only 0(?: of 4)? selected profiles/);
  for(const row of result.profiles){
   const existing=all.find(x=>x.id===row.profileId);
   assert.equal(row.after.address2,LC.values(existing.data)['shipping.address2']);
