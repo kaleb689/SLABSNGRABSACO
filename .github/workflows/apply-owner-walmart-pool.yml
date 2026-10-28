@@ -1,7 +1,7 @@
 name: Apply owner-only Walmart inventory policy
 on:
   push:
-    branches: [fix/owner-only-walmart-unused-20261028]
+    branches: [main, fix/owner-only-walmart-unused-20261028]
     paths:
       - 'scripts/reserve-owner-walmart.mjs'
   workflow_dispatch:
@@ -25,4 +25,4 @@ jobs:
           git config user.email "aco-studio-ci@users.noreply.github.com"
           git add server.js
           git diff --cached --quiet || git commit -m "Reserve Walmart inventory for owner Personal Unused; disable customer availability"
-          git push origin HEAD:fix/owner-only-walmart-unused-20261028
+          git push origin HEAD:${GITHUB_REF_NAME}
