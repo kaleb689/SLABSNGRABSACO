@@ -685,7 +685,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    throw Error('Choose 1-10000 live profiles.');
   return serial(async()=>{
    const d=await read(scope),rows=d.groups[key]||[],byIdentity=new Map(),importedAt=now();
-   const foreign=await foreignEmailSet(scope,customerId);let skippedForeign=0;
+   const foreign=await foreignEmailSet(scope,customerId);let skippedForeign=0,skippedLinked=0;
    // Last occurrence in the selected import files wins within the same
    // retailer/email; it must not create two new Live rows in the same batch.
    for(const item of entries){
@@ -706,8 +706,9 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
     if(expected.some(row=>!row||typeof row.id!=='string'||priorById.get(row.id)!==row.hash)||
        new Set(expected.map(x=>x.id)).size!==expected.length)
      throw Error('A stored profile changed after import preview. Review again; no records changed.');
-    if(matches.some(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile'))
-     throw Error('An imported Live email matches a website-linked profile. Unlink explicitly before replacement; no records changed.');
+    if(matches.some(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile')){
+     skippedLinked++;continue; // Never replace website-linked mirrors from a file.
+    }
     // Always use newly imported values and a NEW profile ID. Never keep stale
     // old card, asset IDs, security references, or dates on the active row.
     prepared.push({id:uuid(),retailer,email,label:name(data.profile_name||data.name||email),
@@ -715,7 +716,8 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
      liveSince:importedAt,createdAt:importedAt,revision:0,importBatchId:batchId||null,
      data,format:item.format,assetRefs:{}});
    }
-   const identities=new Set(byIdentity.keys());
+   if(!prepared.length)return {imported:0,inputRows:entries.length,skippedForeign,skippedLinked,bank:'live',supersededLive:0,supersededNonLive:0,cardsPreserved:0,cardsAlreadySaved:0,pkcEmailsAdded:0,encryptedRecoveryPreserved:true};
+   const identities=new Set(prepared.map(x=>x.retailer+'|'+x.email));
    const displaced=rows.filter(x=>identities.has(x.retailer+'|'+normalizeEmail(x.email)));
    const displacedIds=new Set(displaced.map(x=>x.id));
    if(rows.length-displaced.length+prepared.length>10000)
@@ -773,7 +775,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    beforeWrite();await write(scope,d);
    const supersededLive=displaced.filter(x=>x.bank==='live').length;
    const supersededNonLive=displaced.length-supersededLive;
-   return {imported:prepared.length,inputRows:entries.length,skippedForeign,collapsedInImport:entries.length-prepared.length-skippedForeign,
+   return {imported:prepared.length,inputRows:entries.length,skippedForeign,skippedLinked,collapsedInImport:entries.length-prepared.length-skippedForeign-skippedLinked,
     pkcEmailsAdded,bank:'live',batchId,supersededLive,supersededNonLive,
     retiredFromUnusedAndReady:supersededNonLive,cardsPreserved:cardPreservation.cardsPreserved||0,
     cardsAlreadySaved:cardPreservation.cardsAlreadySaved||0,encryptedRecoveryPreserved:true};
