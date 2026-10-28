@@ -1,6 +1,6 @@
 'use strict';
 const path=require('node:path'),crypto=require('node:crypto'),Core=require('./app'),D=require('./profile-draft-core'),C=require('./profile-library-core'),Completion=require('./profile-completion-core'),CardPolicy=require('./card-pool-policy');
-function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,getPostalJigOptions,chooseHistoricalFolder,chooseOriginalFiles,now=Date.now,uuid=crypto.randomUUID}={}){
+function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSave,confirmExport,writeFile=require('node:fs/promises').writeFile,getCustomerProfileSource,saveCustomerProfile,getCustomerSavedData,updateCustomerSavedData,changeCustomerAssignment,getOwnerWalmartUnused,getPostalJigOptions,chooseHistoricalFolder,chooseOriginalFiles,now=Date.now,uuid=crypto.randomUUID}={}){
  const plans=new Map(),reconciliationPlans=new Map(),duplicateRepairPlans=new Map(),jigPlans=new Map(),codeRestorePlans=new Map(),epochs=new Map();
  const supportedRule=id=>id===C.FL_PHONE_RULE||Boolean(C.ruleById(id));
  const nonStackingRules=ids=>{let targetPrimary=false;return ids.filter(id=>{if(C.ruleById(id)?.family!=='target-primary')return true;if(targetPrimary)return false;targetPrimary=true;return true;});};
@@ -1783,6 +1783,47 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    return {moved:targets.length,group};
   },a.check);
  }
+
+ async function syncOwnerWalmartUnused(e,p){
+  if(p?.scope!=='personal'||p?.customerId)return Promise.reject(Error('Only the unlocked owner Personal vault may receive Walmart unused accounts.'));
+  if(p.confirmed!==true)throw Error('Confirm the exact Personal Walmart unused transfer.');
+  const a=await access(e,p);
+  if(a.scope!=='personal'||typeof getOwnerWalmartUnused!=='function')throw Error('Secure owner Walmart inventory sync is unavailable.');
+  const snapshot=await getOwnerWalmartUnused();
+  a.check();
+  if(snapshot?.ok!==true||snapshot?.scope!=='personal'||snapshot?.retailer!=='walmart'||snapshot?.ownerOnly!==true||
+     !Array.isArray(snapshot.accounts)||snapshot.accounts.length>20000)
+   throw Error('Website did not return a verified owner-only Walmart inventory. Nothing was saved.');
+  const normalized=[],unique=new Set();
+  for(const row of snapshot.accounts){
+   const email=String(row?.email||'').trim().toLowerCase(),password=String(row?.password||'');
+   if(!/^[^\s@:]+@[^\s@:]+\.[^\s@:]+$/.test(email)||unique.has(email)||
+      password.length>1024||/[\x00-\x1f\x7f]/.test(password))
+    throw Error('Website Walmart inventory has an invalid or duplicate email/account. No records were changed.');
+   unique.add(email);
+   normalized.push({email,password,managedAccountId:String(row.accountId||'')});
+  }
+  if(!normalized.length)return {retailer:'walmart',scope:'personal',added:0,skipped:0,source:0,counts:snapshot.counts||{}};
+  return profiles.libraryTransaction('personal',null,ctx=>{
+   const existing=new Set([
+    ...ctx.rows.filter(x=>x.retailer==='walmart').map(x=>x.email),
+    ...ctx.emails.filter(x=>x.retailer==='walmart').map(x=>x.email)
+   ]);
+   if(ctx.emails.length+normalized.length>20000)throw Error('Personal encrypted email bank capacity reached. No records were changed.');
+   let added=0,skipped=0;
+   for(const item of normalized){
+    if(existing.has(item.email)){skipped++;continue;}
+    existing.add(item.email);
+    ctx.emails.push({id:uuid(),email:item.email,password:item.password,retailer:'walmart',
+     createdAt:new Date().toISOString(),profileId:null,source:'owner-managed-walmart-pool',
+     sourceManagedAccountId:item.managedAccountId});
+    added++;
+   }
+   ctx.audit('owner-walmart-unused-import','',{retailer:'walmart',added,skipped,source:normalized.length});
+   return {scope:'personal',retailer:'walmart',added,skipped,source:normalized.length,counts:snapshot.counts||{}};
+  },a.check);
+ }
+
  async function importPastedAccounts(e,p){
   const a=await access(e,p),retailer=C.retailer(p.retailer);
   if(p.confirmed!==true||!Array.isArray(p.accounts)||!p.accounts.length||p.accounts.length>5000)
@@ -1815,7 +1856,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  }
  async function rules(e,p){const a=await access(e,p),retailer=C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id),saved=settings[retailer];a.check();const legacyTarget=retailer==='target'&&Array.isArray(saved?.rules)&&saved?.presetVersion!==2;const selected=legacyTarget?[...new Set([...saved.rules,...C.TARGET_PRIMARY_RULES.map(x=>x.id)])]:(saved?.rules||C.defaultRules(retailer));const grouped=[...new Set(selected.map(id=>/^(street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)_(short|long|abbr|full)$/i.test(id)?'suffix.matching':id))];return {selected:grouped,legacyMigrated:legacyTarget||grouped.length!==selected.length||grouped.some((id,i)=>id!==selected[i]),presetVersion:2,options:[...C.ruleOptions(retailer),{id:C.FL_PHONE_RULE,label:'Random Florida phone number',risk:'standard',family:'phone'}]};}
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:2};return {saved:true,presetVersion:2};},a.check);}
- return {importPastedAccounts,customerCardDetails,jigAssets,reuseChoices,list,duplicateRepairPreview,duplicateRepairCommit,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,reconcileLivePreview,reconcileLiveCommit,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
+ return {syncOwnerWalmartUnused,importPastedAccounts,customerCardDetails,jigAssets,reuseChoices,list,duplicateRepairPreview,duplicateRepairCommit,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,reconcileLivePreview,reconcileLiveCommit,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
 }
 function registerLibrary(options){
  const chooseHistoricalFolder=options.chooseHistoricalFolder||(async e=>{
@@ -1843,7 +1884,7 @@ function registerLibrary(options){
   const backupTick=setInterval(automaticBackup,60*60*1000);
   backupTick.unref?.();
  }
- const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['importPastedAccounts','customerCardDetails','jigAssets','reuseChoices','list','duplicateRepairPreview','duplicateRepairCommit','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','reconcileLivePreview','reconcileLiveCommit','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
+ const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['syncOwnerWalmartUnused','importPastedAccounts','customerCardDetails','jigAssets','reuseChoices','list','duplicateRepairPreview','duplicateRepairCommit','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','reconcileLivePreview','reconcileLiveCommit','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
  // Complete encrypted local workspace checkpoints. Never expose decrypted data.
  for(const [method,invoke] of Object.entries({
   backupStatus:()=>options.profiles.backupStatus(),

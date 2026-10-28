@@ -3,7 +3,7 @@
  * Only pass sanitized display metadata, not decrypted credentials.
  */
 const RETAILERS = new Set(["target", "walmart", "pokemoncenter"]);
-const STATUSES = new Set(["available", "linked", "held", "needs_repair", "duplicate"]);
+const STATUSES = new Set(["available", "owner_unused", "linked", "held", "needs_repair", "duplicate"]);
 
 export function searchManagedPoolProfiles(records, options = {}) {
   const query = String(options.query ?? "").trim().toLowerCase().slice(0, 150);
