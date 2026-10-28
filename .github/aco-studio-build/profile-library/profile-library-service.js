@@ -1340,6 +1340,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const requestedCounts=hardCounts(p.hardCounts),hasHard=p.distribution?.enabled===true?false:requestedCounts&&HARD_KINDS.some(k=>requestedCounts[k]>0);
   // Optional count applies only within this explicitly reviewed batch.
   const optionalUnitCount=p.optionalUnitCount??0;
+  // Explicitly opting into optional units permits using a different unitless
+  // saved Main address for a selected profile when its current base has a unit.
+  // Never rewrite the saved Address Bank entry or silently rebase otherwise.
+  if(p.autoUnitFromAddressBank!==undefined&&typeof p.autoUnitFromAddressBank!=='boolean')
+   throw Error('Invalid automatic Address Bank source option.');
+  const autoUnitFromAddressBank=p.autoUnitFromAddressBank===true&&optionalUnitCount>0;
   if(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<0||optionalUnitCount>500)
    throw Error('Choose an optional unit count between 0 and 500.');
   const reuse=p.reuse??null;
@@ -1353,6 +1359,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const all=await profiles.fieldSnapshot(a.scope,a.id),selected=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===retailer));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
+  const unitlessBankChoices=autoUnitFromAddressBank?(await reusableShippingChoices(a,all)).filter(item=>
+   item.id.startsWith('bank:')&&item.type==='main'&&!item.address.address2.trim()&&
+   !inlineUnit(item.address.address1)):[];
   const source=reuse?await resolveReuse(a,reuse.sourceId):null;
   const regularSelected=selected.slice(reuseCount);
   // Online directory ZIP/state matches are suggestions, not USPS delivery-point
@@ -1463,19 +1472,64 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     category:reuseThis?'reused saved address':hardResults?.[regularIndex]?.kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),
     mainAddress:reuseThis?source.address:hardResults?.[regularIndex]?.mainAddress||before};
   });
-  // Optional unit creation is an independent 65-choice pool on EACH selected
-  // unitless address. It may accompany another jig, but never alters a saved unit.
-  const optionalUnitEligible=rows.filter(row=>
-   row.category!=='reused saved address'&&!String(row.before.address2||'').trim()&&
-   !inlineUnit(row.before.address1)&&!String(row.after.address2||'').trim()&&
-   !inlineUnit(row.after.address1));
+  // First use selected profiles whose existing address is unitless. If the
+  // owner enabled automatic sourcing, pull unitless Main entries from THIS
+  // vault's Address Bank for the remaining requested profiles. This is a
+  // reviewed reassignment to a different saved base; it never edits the
+  // original saved unit, the source bank entry, or other profiles.
+  const isUnitless=row=>row.category!=='reused saved address'&&
+   !String(row.after.address2||'').trim()&&!inlineUnit(row.after.address1);
+  const nativeUnitless=rows.filter(row=>isUnitless(row)&&
+   !String(row.before.address2||'').trim()&&!inlineUnit(row.before.address1));
+  let bankReassigned=0;
+  if(autoUnitFromAddressBank&&nativeUnitless.length<optionalUnitCount){
+   const needed=optionalUnitCount-nativeUnitless.length;
+   const candidates=rows.filter(row=>row.category!=='reused saved address'&&
+    !nativeUnitless.includes(row));
+   if(!unitlessBankChoices.length||candidates.length<needed)
+    throw Error('This batch needs '+needed+' unitless saved Main address source(s), but none are available for the selected profiles in this vault’s Address Bank. Add a genuine unitless Main address to Address Bank, or reduce the requested count.');
+   // Shuffle addresses and recipient order. Cycle the bank if requested count
+   // exceeds the number of bases: each new A-D / 1-9 second line must remain
+   // unique, with full-address conflicts checked before confirmation.
+   const shuffle=list=>{const out=[...list];for(let i=out.length-1;i>0;i--){const j=crypto.randomInt(i+1);[out[i],out[j]]=[out[j],out[i]];}return out;};
+   const sources=shuffle(unitlessBankChoices);
+   const recipientOrder=shuffle(candidates);
+   for(let i=0;i<needed;i++){
+    const row=recipientOrder[i],bank=sources[i%sources.length];
+    const values=D.toValues(row.data);
+    for(const field of ['address1','address2','city','state','zip']){
+     values['shipping.'+field]=bank.address[field];
+     values['billing.'+field]=bank.address[field];
+    }
+    const bankData=C.syncCardholderToProfile(D.manualEdit(row.data,values));
+    // Apply only the explicitly chosen address formatting rules to the NEW
+    // unitless base. Phone already uses its own selected profile-side rule.
+    const enabledAddressRules=p.ruleIds.filter(id=>id!==C.FL_PHONE_RULE);
+    const jigged=bulkJigData({data:bankData,retailer:row.retailer},enabledAddressRules,
+     1,p.combine===true,true,phoneSeed,i+1);
+    row.data=C.syncCardholderToProfile(jigged.data);
+    row.after=addressView(row.data);
+    row.appliedRuleIds.push(...jigged.appliedRuleIds);
+    row.category='automatic Address Bank source';
+    row.unitBankSourceId=bank.id;
+    row.unitBankSourceAddress={...bank.address};
+    row.mainAddress={...bank.address};
+    bankReassigned++;
+   }
+  }
+  // The explicit optional-unit count is exact, but it can now be satisfied
+  // by saved unitless bases even if all five selected profiles had apartments.
+  const optionalUnitEligible=rows.filter(row=>isUnitless(row)&&
+   (row.unitBankSourceId||(!String(row.before.address2||'').trim()&&!inlineUnit(row.before.address1))));
   if(optionalUnitCount){
    const alreadyJigged=row=>['address1','address2','city','state','zip']
     .some(field=>row.before[field]!==row.after[field]);
    if(optionalUnitEligible.length<optionalUnitCount)
     throw Error('Only '+optionalUnitEligible.length+' of '+rows.length+' selected profiles have an available, unitless address. Existing Apt/Unit/Ste values are preserved. Reduce the optional unit quantity.');
    const ranked=optionalUnitEligible.map((row,i)=>({row,i})).sort((a,b)=>
-    Number(alreadyJigged(b.row))-Number(alreadyJigged(a.row))||a.i-b.i);
+    Number(alreadyJigged(b.row))-Number(alreadyJigged(a.row))||
+    // Rebased entries are already intentionally selected for a new unit.
+    Number(!!b.row.unitBankSourceId)-Number(!!a.row.unitBankSourceId)||a.i-b.i);
    const occupied=new Map(),chosenIds=new Set(selected.map(item=>item.id));
    const reserve=(key,delta)=>{const n=(occupied.get(key)||0)+delta;if(n>0)occupied.set(key,n);else occupied.delete(key);};
    for(const item of all)if(!chosenIds.has(item.id))reserve(mainAddressKey(item),1);
@@ -1483,12 +1537,13 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    let added=0;
    const generatedLabelsByBase=new Map();
    for(const {row} of ranked.slice(0,optionalUnitCount)){
-    const sameMain=['address1','city','state','zip'].map(k=>normalizedAddressPart(row.before[k])).join('|');
+    const sameMain=['address1','city','state','zip'].map(k=>normalizedAddressPart(row.unitBankSourceId?row.mainAddress[k]:row.before[k])).join('|');
     if(!generatedLabelsByBase.has(sameMain))generatedLabelsByBase.set(sameMain,new Set());
     const usedUnitLabels=generatedLabelsByBase.get(sameMain);
     const previous=mainAddressKey({data:row.data});
     reserve(previous,-1);
-    const result=addMissingUnitLine(row.originalData,row.data,crypto.randomInt(65),new Set(occupied.keys()),usedUnitLabels);
+    const result=addMissingUnitLine(row.unitBankSourceId?row.data:row.originalData,row.data,
+     crypto.randomInt(65),new Set(occupied.keys()),usedUnitLabels);
     if(!result.added){
      reserve(previous,1);
      throw Error('All 65 Apt/Unit/Ste/#/number combinations (A-D or 1-9) are already used for this address. Select another base address or enable more address jig styles.');
@@ -1503,7 +1558,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     row.after=addressView(row.data);
     usedUnitLabels.add(normalizedAddressPart(row.after.address2));
     reserve(mainAddressKey({data:row.data}),1);
-    ensureExistingUnitPreserved(row.before,row.after);
+    ensureExistingUnitPreserved(row.unitBankSourceId?row.unitBankSourceAddress:row.before,row.after);
     row.appliedRuleIds.push('second-line.add');
     added++;
    }
@@ -1521,21 +1576,34 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const token=uuid();
   for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
   jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,duplicateAddresses,at:now(),epoch:ep(e),
+   autoUnitFromAddressBank,
    reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
-  return {token,duplicateAddresses,optionalUnitEligible:optionalUnitEligible.length,optionalUnitAdded:rows.filter(row=>row.appliedRuleIds.includes('second-line.add')).length,
+  return {token,duplicateAddresses,optionalUnitEligible:optionalUnitEligible.length,optionalUnitBankReassigned:bankReassigned,
+   optionalUnitAdded:rows.filter(row=>row.appliedRuleIds.includes('second-line.add')).length,
    count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
    postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
    postalCityApplied:rows.filter(x=>x.postalCityApplied).length,postalStreetVerified:false,
-   distribution:distribution.counts,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,appliedRuleIds:x.appliedRuleIds,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
+   distribution:distribution.counts,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,unitBankSourceId:x.unitBankSourceId||null,appliedRuleIds:x.appliedRuleIds,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
  }
  async function batchJigCommit(e,p){
   const plan=jigPlans.get(p.token);
   if(!plan||plan.sender!==e.sender.id||now()-plan.at>600000||plan.epoch!==ep(e))throw Error('Bulk jig preview expired. Preview the selected profiles again.');
   if(p.confirmed!==true)throw Error('Confirm the reviewed bulk jig before saving.');
   const a=await access(e,{scope:plan.scope,customerId:plan.id}),latest=await profiles.fieldSnapshot(plan.scope,plan.id);
+  const bankChoices=plan.autoUnitFromAddressBank?await reusableShippingChoices(a,latest):[];
   for(const change of plan.rows){
-   ensureExistingUnitPreserved(addressView(change.originalData),addressView(change.data));
+   if(change.unitBankSourceId){
+    if(!plan.autoUnitFromAddressBank||!change.appliedRuleIds.includes('second-line.add'))
+     throw Error('Automatic unit source is not authorized for this profile.');
+    const saved=bankChoices.find(item=>item.id===change.unitBankSourceId&&
+     item.id.startsWith('bank:')&&item.type==='main'&&!item.address.address2.trim()&&
+     !inlineUnit(item.address.address1));
+    if(!saved||Object.values(saved.address).map(normalizedAddressPart).join('|')!==
+      Object.values(change.unitBankSourceAddress).map(normalizedAddressPart).join('|'))
+     throw Error('A saved Address Bank base changed after preview. Reopen Jig before applying.');
+    ensureExistingUnitPreserved(saved.address,addressView(change.data));
+   }else ensureExistingUnitPreserved(addressView(change.originalData),addressView(change.data));
    const row=latest.find(x=>x.id===change.profileId&&x.retailer===plan.retailer);
    if(!row||(row.revision||0)!==change.revision||require('./jig-field-core').hash(row.data)!==change.hash)throw Error('A selected profile changed after preview. Nothing was saved; preview the batch again.');
   }
