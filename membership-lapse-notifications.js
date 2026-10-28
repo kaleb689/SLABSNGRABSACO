@@ -18,6 +18,23 @@ async function save(file, value) {
   await fs.writeFile(file, JSON.stringify(value, null, 2), { mode: 0o600 });
 }
 function list(value) { return Array.isArray(value) ? value : []; }
+// A lapsed checklist is actionable only while its exact managed account is
+// still held. Historical expired assignments by themselves are not restorable.
+export function activeLapseHoldKeys(records, now = Date.now()) {
+  const keys=new Set();
+  for(const hold of list(records)) {
+    if(!["held","partial"].includes(String(hold?.status||"")))continue;
+    const until=Date.parse(hold?.holdUntil||"");
+    if(!Number.isFinite(until)||until<=now)continue;
+    const type=String(hold?.type||"");
+    if(!["free","rented"].includes(type))continue;
+    for(const item of list(hold?.items)){
+      const id=String(item?.managedAccountId||"").trim();
+      if(id&&!item?.restoredAt&&!item?.releasedAt)keys.add(type+":"+id);
+    }
+  }
+  return keys;
+}
 function date(value) {
   const d = value ? new Date(value) : null;
   return d && Number.isFinite(d.getTime()) ? d : null;
@@ -94,7 +111,8 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
     gifted: path.join(dataDir, "free-assignments.json"),
     state: path.join(dataDir, "membership-lapse-discord-state.json"),
     batches: path.join(dataDir, "discord-renewal-batches.json"),
-    rtpFinal: path.join(dataDir, "rtp-final-reminders.json")
+    rtpFinal: path.join(dataDir, "rtp-final-reminders.json"),
+    restoreHolds: path.join(dataDir, "managed-restore-holds.json")
   };
   let running = false;
 
@@ -102,13 +120,14 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
     if (running) return;
     running = true;
     try {
-      const [accountsRaw, paidRaw, rentedRaw, giftedRaw, stateRaw, rtpFinalRaw] = await Promise.all([
-        read(paths.accounts), read(paths.paid), read(paths.rented), read(paths.gifted), read(paths.state, {}), read(paths.rtpFinal, [])
+      const [accountsRaw, paidRaw, rentedRaw, giftedRaw, stateRaw, rtpFinalRaw, restoreHoldsRaw] = await Promise.all([
+        read(paths.accounts), read(paths.paid), read(paths.rented), read(paths.gifted), read(paths.state, {}), read(paths.rtpFinal, []), read(paths.restoreHolds, [])
       ]);
       const accounts = new Map(list(accountsRaw).map(a => [String(a?.id || ""), a]));
       const state = stateRaw && typeof stateRaw === "object" ? stateRaw : {};
       let changed = false;
       const now = Date.now();
+      const heldAccountKeys=activeLapseHoldKeys(restoreHoldsRaw,now);
       const renewalGroups = new Map();
       const renewalBatches = {};
       const rtpFinal = list(rtpFinalRaw);
@@ -221,7 +240,9 @@ export function startMembershipLapseNotificationScheduler({ dataDir, token, admi
             renewalGroups.get(groupKey).records.push(record);
           }
           const manuallyReturned = ["returned_to_pool", "returned", "released", "admin_returned"].includes(String(record?.endReason || "").toLowerCase());
-          if (remaining <= 0 && !manuallyReturned) {
+          const heldType=kind==="rented"?"rented":"free";
+          const heldId=String(record?.managedAccountId || record?.rentedMembershipId || record?.freeMembershipId || record?.assignmentId || record?.id || "").trim();
+          if (remaining <= 0 && !manuallyReturned && heldAccountKeys.has(heldType+":"+heldId)) {
             const notice = `${base}:${end.toISOString()}:admin`, snap = state[snapshotKey] || {};
             if (snap.customerAccountId && snap.email) {
               const groupKey = String(snap.customerAccountId);
