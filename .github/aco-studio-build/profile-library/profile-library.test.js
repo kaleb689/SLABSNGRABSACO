@@ -942,13 +942,77 @@ test('Batch jig distribution uses even allocation or an exact preferred style co
 });
 
 
-test('temporary export naming probe for retailer template field shape',()=>{
- const rows=[
-  {id:'probe-1',retailer:'target',label:'Personal 1',email:'probe1@example.test',data:Object.assign(complete('target','probe1@example.test'),{profileSecurityCode:'999'})},
-  {id:'probe-2',retailer:'target',label:'Personal 2',email:'probe2@example.test',data:Object.assign(complete('target','probe2@example.test'),{profileSecurityCode:'888'})}
- ];
- const target=LC.exportSelectedRows(rows,'target','Personal','retailer');
- const walmart=LC.exportSelectedRows(rows.map(x=>({...x,retailer:'walmart',data:complete('walmart',x.email)})),'walmart','Personal','retailer');
- console.log('EXPORT_PROFILE_NAME_PROBE_TARGET',target.body.split('\\n').slice(0,3).map(x=>x.slice(0,270)));
- console.log('EXPORT_PROFILE_NAME_PROBE_VALOR',walmart.body.slice(0,800));
+
+test('Personal Shikari profile names equal each exact profile login email, not Personal numbers',()=>{
+ const rows=['owner.one@example.test','owner.two@example.test'].map((mail,i)=>({
+  id:'owner-'+i,retailer:'target',label:'Personal '+(i+1),email:mail,
+  data:Object.assign(complete('target',mail),{profileSecurityCode:i?'007':'099'})
+ }));
+ const original=structuredClone(rows);
+ const output=LC.exportSelectedRows(rows,'target','Personal','retailer','personal');
+ const parsed=Core.parseFile(output.name,output.body).records;
+ assert.deepEqual(parsed.map(x=>x.profile_name),rows.map(x=>x.email));
+ assert.deepEqual(parsed.map(x=>x.cc_cvv),['099','007'],'Leading zeroes in independently saved codes preserved');
+ assert.deepEqual(rows,original,'No stored labels or payment data changed');
+});
+test('Personal Valor exports use account emails as names in all supported retailer types',()=>{
+ for(const retailer of ['pokemoncenter','walmart','costco','sams']){
+  const rows=['personal1@example.test','personal2@example.test'].map((mail,i)=>({
+   id:'p'+i,retailer,label:'Personal '+(i+1),email:mail,
+   data:Object.assign(complete(retailer,mail),{profileSecurityCode:'0'+(i+1)+'5'})
+  }));
+  const output=LC.exportSelectedRows(rows,retailer,'Personal','retailer','personal');
+  const profiles=Object.values(JSON.parse(output.body));
+  assert.deepEqual(profiles.map(x=>x.name),rows.map(x=>x.email),retailer);
+ }
+});
+test('Customer signup name is numbered from 1 in Shikari and Valor retailer exports',()=>{
+ for(const retailer of ['target','pokemoncenter','walmart']){
+  const rows=['first','second','third'].map((id,i)=>({
+   id,retailer,label:'Personal '+(i+1),email:id+'@example.test',
+   data:Object.assign(complete(retailer,id+'@example.test'),{profileSecurityCode:'0'+i+'9'})
+  }));
+  const output=LC.exportSelectedRows(rows,retailer,'Sami Afanelh','retailer','aco');
+  const names=retailer==='target'
+   ?Core.parseFile(output.name,output.body).records.map(x=>x.profile_name)
+   :Object.values(JSON.parse(output.body)).map(x=>x.name);
+  assert.deepEqual(names,['Sami Afanelh 1','Sami Afanelh 2','Sami Afanelh 3']);
+ });
+});
+test('Alternate JSON, CSV and TXT names are transformed only in export copies',()=>{
+ const rows=['target','target'].map((retailer,i)=>({
+  id:'alt-'+i,retailer,label:'Personal '+(i+1),email:'alternate'+i+'@example.test',
+  data:Object.assign(complete(retailer,'alternate'+i+'@example.test'),{profileSecurityCode:'00'+(i+1)})
+ }));
+ const baseline=structuredClone(rows);
+ for(const scope of ['personal','aco']){
+  const wanted=scope==='personal'
+   ?rows.map(x=>x.email):['Customer Signup 1','Customer Signup 2'];
+  const json=JSON.parse(LC.exportSelectedRows(rows,'target','Customer Signup','json',scope).body).profiles;
+  assert.deepEqual(json.map(x=>x.label),wanted);
+  assert.deepEqual(json.map(x=>x.data.profile_name),wanted);
+  assert.deepEqual(json.map(x=>x.data.cc_cvv),['001','002']);
+  const csv=LC.exportSelectedRows(rows,'target','Customer Signup','csv',scope).body;
+  for(const name of wanted)assert.ok(csv.includes(name),'CSV contains '+name);
+  const txt=LC.exportSelectedRows(rows,'target','Customer Signup','txt',scope).body;
+  for(const name of wanted)assert.ok(txt.includes(name),'TXT contains '+name);
+ }
+ assert.deepEqual(rows,baseline,'Export naming does not mutate master data');
+});
+test('Profile library service exports customer signup label 1 and personal account email',async t=>{
+ const h=await library(t);
+ const owner=Object.assign(complete('target','ownertest@example.test'),{profileSecurityCode:'003'});
+ const customer=Object.assign(complete('target','customerlogin@example.test'),{profileSecurityCode:'004'});
+ await commit(h,await preview(h,[owner]));
+ await commit(h,await preview(h,[customer],h.a));
+ const ownerProfile=(await h.lib.list(event,h.p)).profiles[0];
+ const customerProfile=(await h.lib.list(event,h.a)).profiles[0];
+ await h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:[ownerProfile.id],customerName:'Personal'});
+ const ownerCsv=h.writes.at(-1)[1];
+ assert.equal(Core.parseFile('owner.csv',ownerCsv).records[0].profile_name,'ownertest@example.test');
+ await h.lib.exportFile(event,{...h.a,retailer:'target',profileIds:[customerProfile.id],customerName:'Customer Signup'});
+ const customerCsv=h.writes.at(-1)[1];
+ assert.equal(Core.parseFile('customer.csv',customerCsv).records[0].profile_name,'Customer Signup 1');
+ assert.equal(Core.parseFile('customer.csv',customerCsv).records[0].cc_cvv,'004');
+ assert.equal((await h.lib.list(event,h.a)).profiles[0].email,'customerlogin@example.test');
 });
