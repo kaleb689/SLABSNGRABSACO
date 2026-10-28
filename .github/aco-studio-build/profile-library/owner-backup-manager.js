@@ -11,7 +11,7 @@ function createBackupManager({baseDir,safeStorage,fs=fsp,clock=()=>new Date()}={
  const allowed=name=>/^[a-z0-9][a-z0-9_.-]*\.encrypted$/i.test(name)&&
   /(?:personal|aco|jig|studio|owner|customer|profile|card|address|email|vault)/i.test(name);
  const ensureCrypto=()=>{if(!safeStorage.isEncryptionAvailable())throw Error('OS encryption is unavailable. No backup or restore was performed.');};
- let pending=Promise.resolve(),previews=new Map();
+ let pending=Promise.resolve(),previews=new Map(),lastAutomatic=new Map();
  const serial=fn=>{const result=pending.then(fn);pending=result.catch(()=>{});return result;};
  async function sources(){
   let entries;try{entries=await fs.readdir(baseDir,{withFileTypes:true});}catch(e){if(e.code==='ENOENT')return [];throw e;}
@@ -61,10 +61,16 @@ function createBackupManager({baseDir,safeStorage,fs=fsp,clock=()=>new Date()}={
  async function checkpoint(reason='manual',options={}){
   if(!['manual','daily','pre-change','pre-restore'].includes(reason))throw Error('Unsupported checkpoint type.');
   return serial(async()=>{
-   const rows=await index(),latest=rows.find(r=>r.reason===reason);
    const minAge=reason==='daily'?24*3600e3:reason==='pre-change'?2*60e3:0;
-   if(latest&&minAge&&Date.now()-Date.parse(latest.createdAt)<minAge)return {created:false,id:latest.id,reason:'Recent encrypted checkpoint already exists.'};
+   const cached=lastAutomatic.get(reason);
+   if(minAge&&cached&&Date.now()-cached.at<minAge)return {created:false,id:cached.id,reason:'Recent encrypted checkpoint already exists.'};
+   const rows=await index(),latest=rows.find(r=>r.reason===reason);
+   if(latest&&minAge&&Date.now()-Date.parse(latest.createdAt)<minAge){
+    lastAutomatic.set(reason,{at:Date.parse(latest.createdAt),id:latest.id});
+    return {created:false,id:latest.id,reason:'Recent encrypted checkpoint already exists.'};
+   }
    const result=await createUnsafe(reason);
+   if(result.created)lastAutomatic.set(reason,{at:Date.now(),id:result.id});
    // Keep a rolling recent history and weekly/monthly anchors instead of
    // discarding all older checkpoints after 120 rapid edits.
    const all=await index(),keepers=new Set(all.slice(0,150).map(x=>x.id));
