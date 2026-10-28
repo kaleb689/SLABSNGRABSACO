@@ -36,7 +36,13 @@ function profileCode(data){
 }
 function exportRows(rows,r,customerName='Personal'){if(!rows.length)throw Error('Choose completed profiles to export.');const model=require('./site-model'),profiles=rows.map(x=>{const v=values(x.data),c=payment(x.data),address=role=>({firstName:v[role+'.first'],lastName:v[role+'.last'],phone:v[role+'.phone'],address:v[role+'.address1'],address2:v[role+'.address2'],city:v[role+'.city'],state:v[role+'.state'],zip:v[role+'.zip'],country:v[role+'.country']||'US'});return {email:v.email,phone:v.phone,shipping:address('shipping'),billing:address('billing'),card:c,profileSecurityCode:profileCode(x.data)};});
  const out=model.exportTemplates(r==='costco'||r==='sams'?'walmart':r,customerName,profiles,null,{localOwnerCards:profiles.map(x=>({...x.card,expiration:x.card.month+'/'+x.card.year.slice(-2),cvv:x.profileSecurityCode||''}))});
- out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(format(r)==='shikari'?'.csv':'.json');return out;
+ out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(format(r)==='shikari'?'.csv':'.json');if(r==='target'){
+  const parsed=Core.parseFile(out.name,out.body);
+  const records=parsed?.records||[];
+  if(records.length!==rows.length)throw Error('Export blocked: generated Target CSV row count is incomplete.');
+  const blank=records.filter(record=>typeof record.cc_cvv!=='string'||record.cc_cvv.length===0).length;
+  if(blank)throw Error('Export blocked: '+blank+' Target profiles have an empty required reference field in the generated CSV. Original saved data was not changed.');
+ }return out;
 }
 // Independent profile access codes are kept apart from all card verification fields.
 // Export is explicitly initiated from the authenticated desktop owner/customer profile vault.
