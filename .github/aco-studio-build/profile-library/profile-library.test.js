@@ -1079,3 +1079,52 @@ test('Walmart UI opts into saved Address Bank and random second lines by default
  assert.match(ui,/sourceMainFromBank:retailer==='walmart'&&bankSourceToggle\.checked/);
  assert.match(ui,/autoUnitFromAddressBank:optionalUnitToggle\.checked/);
 });
+
+
+test('Customer non-Live import works in its own vault even while other vaults contain profiles',async t=>{
+ const h=await library(t);
+ const personal=await preview(h,[complete('target','owner-unchanged@example.test')],h.p);
+ await commit(h,personal);
+ const customer=await preview(h,[complete('target','customer-a-new@example.test')],h.a);
+ await assert.rejects(h.lib.importCommit(event,{token:customer.token,confirmed:true,
+  expectedScope:'aco',expectedCustomerId:'customer-b'}),/Customer vault selection changed/);
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,0,'Wrong-vault confirm must not write');
+ const done=await h.lib.importCommit(event,{token:customer.token,confirmed:true,
+  expectedScope:'aco',expectedCustomerId:'customer-a',customerName:'Customer A',
+  repairs:{allowShared:true},cardIds:[]});
+ assert.equal(done.imported,1);
+ const a=(await h.lib.list(event,h.a)).profiles;
+ assert.equal(a.length,1);
+ assert.equal(a[0].email,'customer-a-new@example.test');
+ assert.equal(a[0].label,'Customer 1');
+ assert.equal((await h.lib.list(event,h.b)).profiles.length,0);
+ assert.deepEqual((await h.lib.list(event,h.p)).profiles.map(x=>x.email),['owner-unchanged@example.test']);
+});
+test('Customer multi-file Live import uses exact selected customer vault and preserves other customers',async t=>{
+ const h=await library(t);
+ const data=complete('pokemoncenter','customer-live@example.test');
+ const p=await h.lib.importPreview(event,{...h.a,retailer:'pokemoncenter',bank:'live',
+  files:[{fileName:'customer-pkc.json',text:JSON.stringify([data])}]});
+ assert.equal(p.count,1);
+ assert.equal(p.profiles[0].retailer,'pokemoncenter');
+ await assert.rejects(h.lib.importCommit(event,{token:p.token,confirmed:true,
+  expectedScope:'personal',expectedCustomerId:null}),/Customer vault selection changed/);
+ const result=await h.lib.importCommit(event,{token:p.token,confirmed:true,
+  expectedScope:'aco',expectedCustomerId:'customer-a'});
+ assert.equal(result.imported,1);
+ const a=(await h.lib.list(event,h.a)).profiles;
+ assert.equal(a.length,1);
+ assert.equal(a[0].bank,'live');
+ assert.equal(a[0].email,'customer-live@example.test');
+ assert.equal((await h.lib.list(event,h.b)).profiles.length,0);
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,0);
+});
+test('Customer file import UI does not postpone bank refresh for focused customer selectors',()=>{
+ const ui=require('node:fs').readFileSync(require('node:path').join(__dirname,'profile-library-ui.js'),'utf8');
+ const portion=ui.slice(ui.indexOf('function editorBusy()'),ui.indexOf('async function refresh()'));
+ assert.match(portion,/profileLibraryModal/);
+ assert.doesNotMatch(portion,/activeElement|profileLibraryPage input|profileLibraryPage select/);
+ assert.match(ui,/expectedCustomerId:owner\.customerId/);
+ assert.match(ui,/syncOwnerWalmart\.hidden=\!\(scope==='personal'/);
+ assert.match(ui,/if\(owner\.scope==='aco'&&!owner\.customerId\)throw Error/);
+});
