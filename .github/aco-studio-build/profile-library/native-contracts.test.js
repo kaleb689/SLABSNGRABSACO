@@ -182,6 +182,8 @@ test('one read-only recovery action is wired through preload and scoped IPC; leg
  assert.ok(ui.includes('api.recoverCodes({...owner,confirmed:false,independentOnly:true})'));
  assert.ok(ui.includes('window.confirm('),'owner must explicitly approve a restore');
  assert.ok(ui.includes('api.recoverCodes({...owner,confirmed:true,token:preview.token,independentOnly:true})'));
- for(const obsolete of ['api.recoverCodesFromFile(', 'api.recoverCodesFromSavedCards('])
-  assert.ok(!ui.includes(obsolete),'ambiguous file and bank recovery must not have separate visible controls');
+ assert.ok(!ui.includes('api.recoverCodesFromFile('),'ambiguous legacy-file recovery remains inaccessible in the UI');
+ assert.ok(ui.includes('api.recoverCodesFromSavedCards({...owner,confirmed:false})'),'saved bank recovery requires read-only preview');
+ assert.ok(ui.includes('api.recoverCodesFromSavedCards({...owner,confirmed:true,token:plan.token})'),'saved bank recovery requires confirmation with its preview token');
+ assert.ok(ui.includes('restoreFromBank.hidden=!(Number(report.savedCardBank?.potentialMatches||0)>0)'),'only offer restore when exact-match candidates exist');
 });
