@@ -418,6 +418,8 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
 {
  const file=path.join(root,'tests','personal-profiles-security.test.js');
  const source=fs.readFileSync(file,'utf8');
+ const diagnosticStart=source.indexOf("test('duplicates: show cross-bank collisions but never reveal locked Personal record'");
+ if(diagnosticStart>=0){const diagnosticEnd=source.indexOf('\ntest(',diagnosticStart+10);console.log('IMPORT-REGRESSION-TEST-SOURCE-BEGIN\\n'+source.slice(diagnosticStart,diagnosticEnd<0?diagnosticStart+3500:diagnosticEnd)+'\\nIMPORT-REGRESSION-TEST-SOURCE-END');}
  const expected=/(\[\s*['"]aco-customer-retailer-profiles\.encrypted['"]\s*,\s*)(['"]personal-retailer-profiles\.encrypted['"]\s*\])/;
  if(!expected.test(source))throw Error('Owner vault security test layout changed; update the encrypted backup assertion manually.');
  const next=source.replace(expected,(_match,first,last)=>first+"'encrypted-owner-profile-snapshots', "+last);
