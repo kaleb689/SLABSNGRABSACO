@@ -67,6 +67,10 @@
  restoreFromBackup.type='button';restoreFromBackup.className='btn secondary';
  restoreFromBackup.textContent='Preview Restore from Encrypted Backups';
  restoreFromBackup.hidden=true;reviewControls.append(restoreFromBackup);
+ const restoreFromBank=d.createElement('button');
+ restoreFromBank.type='button';restoreFromBank.className='btn secondary';
+ restoreFromBank.textContent='Preview saved Card Bank recovery';
+ restoreFromBank.hidden=true;reviewControls.append(restoreFromBank);
  const restoreStatus=d.createElement('p');restoreStatus.setAttribute('role','status');
  restoreStatus.textContent='Restoration is available only after a read-only preview and explicit confirmation.';
  const reviewOutput=d.createElement('div');reviewOutput.setAttribute('role','status');
@@ -81,6 +85,7 @@
  };
  function showRecoveryReview(report){
   restoreFromBackup.hidden=!(Number(report.backups?.potentialMatches||0)>0);
+  restoreFromBank.hidden=!(Number(report.savedCardBank?.potentialMatches||0)>0);
   restoreStatus.textContent=restoreFromBackup.hidden
    ?'No independently named references from encrypted snapshots are available for restoration.'
    :'Encrypted snapshots contain independently named reference candidates. Preview them before any restore.';
@@ -138,7 +143,7 @@
  }
  async function scanRecoverySources(){
   if(scope==='aco'&&!customerId){reviewOutput.textContent='Select a customer vault first.';return;}
-  restoreFromBackup.hidden=true;
+  restoreFromBackup.hidden=true;restoreFromBank.hidden=true;
   reviewScan.disabled=true;
   reviewOutput.textContent='Choose a folder in the Mac window. ACO Studio will check eligible original files in that folder together with its existing sources. No saved data will be changed.';
   try{
