@@ -1057,7 +1057,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  // rather than inventing building-level delivery facts in the Main bank.
  const SECOND_LINE_LABELS=['Apt','Unit','#','Ste',''];
  const SECOND_LINE_IDS=['A','B','C','D','1','2','3','4','5','6','7','8','9'];
- function addMissingUnitLine(original,generated,position,occupiedKeys=new Set()){
+ function addMissingUnitLine(original,generated,position,occupiedKeys=new Set(),usedUnitLabels=new Set()){
   const originalAddress=addressView(original),after=addressView(generated);
   if(originalAddress.address2.trim()||inlineUnit(originalAddress.address1)||after.address2.trim())
    return {data:generated,added:false,reason:'existing-unit'};
@@ -1066,16 +1066,20 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   // thirteen identifiers before saying the pool is exhausted.
   const total=SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length;
   const start=((Math.floor(Number(position)||0)%total)+total)%total;
-  for(let step=0;step<total;step++){
+  for(let pass=0;pass<2;pass++)for(let step=0;step<total;step++){
    const idx=(start+step*17)%total; // 17 is coprime to 65: visits all 65.
    const label=SECOND_LINE_LABELS[idx%SECOND_LINE_LABELS.length];
    const identifier=SECOND_LINE_IDS[Math.floor(idx/SECOND_LINE_LABELS.length)%SECOND_LINE_IDS.length];
    const unit=label==='#'?'# '+identifier:label?label+' '+identifier:identifier;
+   // Prefer distinct new second lines among profiles using the same main
+   // address. After all 65 are used, another street jig may still allow a
+   // unique full address, so only then permit a reused unit label.
+   if(pass===0&&usedUnitLabels.has(normalizedAddressPart(unit)))continue;
    const values=D.toValues(generated);
    values['shipping.address2']=unit;
    const candidate=D.manualEdit(generated,values);
    if(!occupiedKeys.has(mainAddressKey({data:candidate})))
-    return {data:candidate,added:true,optionsChecked:step+1};
+    return {data:candidate,added:true,optionsChecked:step+1+pass*total};
   }
   return {data:generated,added:false,reason:'exhausted',optionsChecked:total};
  }
@@ -1477,10 +1481,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    for(const item of all)if(!chosenIds.has(item.id))reserve(mainAddressKey(item),1);
    for(const item of rows)reserve(mainAddressKey({data:item.data}),1);
    let added=0;
+   const generatedLabelsByBase=new Map();
    for(const {row} of ranked.slice(0,optionalUnitCount)){
+    const sameMain=['address1','city','state','zip'].map(k=>normalizedAddressPart(row.before[k])).join('|');
+    if(!generatedLabelsByBase.has(sameMain))generatedLabelsByBase.set(sameMain,new Set());
+    const usedUnitLabels=generatedLabelsByBase.get(sameMain);
     const previous=mainAddressKey({data:row.data});
     reserve(previous,-1);
-    const result=addMissingUnitLine(row.originalData,row.data,crypto.randomInt(65),new Set(occupied.keys()));
+    const result=addMissingUnitLine(row.originalData,row.data,crypto.randomInt(65),new Set(occupied.keys()),usedUnitLabels);
     if(!result.added){
      reserve(previous,1);
      throw Error('All 65 Apt/Unit/Ste/#/number combinations (A-D or 1-9) are already used for this address. Select another base address or enable more address jig styles.');
@@ -1493,6 +1501,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     }
     row.data=C.syncCardholderToProfile(data);
     row.after=addressView(row.data);
+    usedUnitLabels.add(normalizedAddressPart(row.after.address2));
     reserve(mainAddressKey({data:row.data}),1);
     ensureExistingUnitPreserved(row.before,row.after);
     row.appliedRuleIds.push('second-line.add');
