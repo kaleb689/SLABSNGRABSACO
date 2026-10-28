@@ -167,6 +167,23 @@ test('Every selected export format maps the independent Security Code into its r
 });
 
 
+test('Target native CSV round-trips exact three-character codes including leading zeros',async t=>{
+ const h=await library(t);
+ const codes=['559','046','030','004'];
+ for(let i=0;i<codes.length;i++){
+  const source=complete('target','three-digit-'+i+'@example.test');
+  source.profileSecurityCode=codes[i];
+  await commit(h,await h.lib.importPreview(event,{...h.p,retailer:'target',fileName:'profiles.json',text:JSON.stringify([source])}));
+ }
+ const ids=(await h.lib.list(event,h.p)).profiles.filter(row=>row.retailer==='target').map(row=>row.id);
+ await h.lib.exportFile(event,{...h.p,retailer:'target',profileIds:ids,customerName:'Personal',exportFormat:'retailer'});
+ const content=h.writes.at(-1)[1];
+ const parsed=Core.parseFile('Personal profiles.csv',content).records;
+ assert.equal(parsed.length,codes.length);
+ assert.deepEqual(parsed.map(x=>x.cc_cvv),codes);
+ assert.deepEqual((await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target').map(x=>x.data.profileSecurityCode),codes);
+});
+
 test('Original imported profile can restore its missing Security Code without re-importing profile records',async t=>{
  const h=await library(t),original=complete('target','recover-original@example.test');
  original.cc_cvv='0099'; // Legacy file contained the unrelated reference here.
