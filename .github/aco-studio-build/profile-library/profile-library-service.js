@@ -168,24 +168,26 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(v.includes('costco')||v.includes('cosco'))return 'costco';if(v.includes('sams'))return 'sams';return null;
  }
  async function livePreview(e,p,a,parsed){
-  const existing=await profiles.fieldSnapshot(a.scope,a.id),entries=[],occurrences=new Map(),counts={};
+  const existing=await profiles.fieldSnapshot(a.scope,a.id),foreign=await profiles.foreignEmails(a.scope,a.id),entries=[],occurrences=new Map(),counts={};
+  let skippedForeign=0;
   for(const raw of parsed.records){
    const retailer=detectedRetailer(raw.retailerId||raw.retailer||raw.store||raw.site)||detectedRetailer(p.fileName.replace(/\.[^.]+$/,''))||p.retailer;C.retailer(retailer);
    const native=(Object.hasOwn(raw,'cc_number')&&C.format(retailer)==='shikari')||(raw.card&&raw.shipping&&C.format(retailer)==='valor');
    const data=native?structuredClone(raw):C.normalized(raw,retailer),email=C.email(C.values(data).email);
    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('Every live profile needs a valid account email.');data.email=email;
    if(JSON.stringify(data).length>16000)throw Error('A profile exceeds the supported record size.');
+   if(foreign.has(email)){skippedForeign++;continue;}
    const key=retailer+'|'+email,occurrence=occurrences.get(key)||0;occurrences.set(key,occurrence+1);
    const matches=existing.filter(x=>x.retailer===retailer&&x.email===email);
    entries.push({retailer,data,format:C.format(retailer),occurrence,expectedMatches:matches.map(x=>({id:x.id,hash:require('./jig-field-core').hash(x)})),storedMatches:matches.length});counts[retailer]=(counts[retailer]||0)+1;
   }
   const token=uuid();a.check();for(const [id,plan]of plans)if(now()-plan.at>600000)plans.delete(id);if(plans.size>30)throw Error('Close an older import preview first.');
-  plans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,bank:'live',entries,fileNames:p.fileNames||[p.fileName],at:now(),epoch:ep(e)});
+  plans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,bank:'live',entries,skippedForeign,fileNames:p.fileNames||[p.fileName],at:now(),epoch:ep(e)});
   const identities=new Set(entries.map(x=>x.retailer+'|'+x.data.email));
   const superseded=existing.filter(x=>identities.has(x.retailer+'|'+C.email(x.email)));
   const incomingRepeated=entries.length-identities.size;
   const blockedLinkedCount=superseded.filter(x=>x.sourceLinked||x.websiteAuthoritative||x.source==='website-linked-profile').length;
-  return {token,bank:'live',count:entries.length,effectiveCount:identities.size,counts,
+  return {token,bank:'live',count:entries.length,skippedForeign,effectiveCount:identities.size,counts,
    supersedeLive:superseded.filter(x=>x.bank==='live').length,
    supersedeNonLive:superseded.filter(x=>x.bank!=='live').length,
    collapsedInImport:incomingRepeated,blockedLinkedCount,
@@ -234,12 +236,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  if(typeof p.fileName!=='string'||p.fileName!==path.basename(p.fileName)||p.fileName.length>200||typeof p.text!=='string'||Buffer.byteLength(p.text)>26*1024*1024)throw Error('Choose a local profile file.');const parsed=Core.parseFile(p.fileName,p.text);if(!parsed.records?.length||parsed.records.length>(p.bank==='live'?10000:500))throw Error(p.bank==='live'?'Import 1-10000 live profiles.':'Import 1-500 profiles.');
  for(const row of parsed.records)if(row.scope&&row.scope!==a.scope||row.customerId&&row.customerId!==a.id||row.acoCustomerId&&row.acoCustomerId!==a.id)throw Error('Imported profile ownership does not match this vault.');
  if(p.bank==='live')return livePreview(e,p,a,parsed);
- const data=parsed.records.map(row=>C.normalized(row,p.retailer));if(data.some(x=>JSON.stringify(x).length>16000))throw Error('A profile exceeds the supported record size.');const existing=await profiles.fieldSnapshot(a.scope,a.id),duplicates=C.collisions(data,existing,p.retailer),token=uuid();a.check();for(const [id,plan]of plans)if(now()-plan.at>600000)plans.delete(id);if(plans.size>30)throw Error('Close an older import preview first.');plans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer:p.retailer,fileName:p.fileName,data,at:now(),epoch:ep(e)});return {token,count:data.length,profiles:data.map((row,i)=>({email:C.values(row).email,name:C.nameKey(row),cardLast4:C.payment(row).number.slice(-4),duplicates:duplicates[i]}))};}
+ const incoming=parsed.records.map(row=>C.normalized(row,p.retailer));if(incoming.some(x=>JSON.stringify(x).length>16000))throw Error('A profile exceeds the supported record size.');const foreign=await profiles.foreignEmails(a.scope,a.id),data=incoming.filter(row=>!foreign.has(C.email(C.values(row).email))),skippedForeign=incoming.length-data.length,existing=await profiles.fieldSnapshot(a.scope,a.id),duplicates=C.collisions(data,existing,p.retailer),token=uuid();a.check();for(const [id,plan]of plans)if(now()-plan.at>600000)plans.delete(id);if(plans.size>30)throw Error('Close an older import preview first.');plans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer:p.retailer,fileName:p.fileName,data,skippedForeign,at:now(),epoch:ep(e)});return {token,count:data.length,skippedForeign,profiles:data.map((row,i)=>({email:C.values(row).email,name:C.nameKey(row),cardLast4:C.payment(row).number.slice(-4),duplicates:duplicates[i]}))};}
  async function withCards(a,ids,fn){if(!Array.isArray(ids)||ids.length>500||ids.some(x=>typeof x!=='string')||new Set(ids).size!==ids.length)throw Error('Choose saved cards in this vault.');return ids.length?cardVault(a.scope).withSelectedForJig(cardKey(a.scope,a.id),ids,fn):fn([]);}
- function resolve(data,retailer,ctx,options,cards){const existing=ctx.rows.filter(x=>x.retailer===retailer),seen=existing.map(x=>({retailer,data:x.data})),usedNames=new Set(existing.map(x=>C.nameKey(x.data))),usedEmails=new Set(existing.map(x=>C.email(x.email))),usedCards=new Set(ctx.rows.map(x=>C.payment(x.data).number));const added=[];
+ function resolve(data,retailer,ctx,options,cards,foreign=new Set()){const existing=ctx.rows.filter(x=>x.retailer===retailer),seen=existing.map(x=>({retailer,data:x.data})),usedNames=new Set(existing.map(x=>C.nameKey(x.data))),usedEmails=new Set(existing.map(x=>C.email(x.email))),usedCards=new Set(ctx.rows.map(x=>C.payment(x.data).number));const added=[];
  for(let index=0;index<data.length;index++){let row=structuredClone(data[index]);const flags=C.collisions([row],seen,retailer)[0];
   if(options.name&&(flags.includes('name')||options.all)){row=C.randomName(row,usedNames);}
-  if(options.email&&(flags.includes('email')||options.all)){const email=ctx.emails.find(x=>x.retailer===retailer&&!x.profileId&&!usedEmails.has(x.email));if(!email)throw Error('Not enough unused emails in this vault and retailer.');row.email=email.email;email.profileId='pending-'+index;}
+  if(options.email&&(flags.includes('email')||options.all)){const email=ctx.emails.find(x=>x.retailer===retailer&&!x.profileId&&!usedEmails.has(x.email)&&!foreign.has(C.email(x.email)));if(!email)throw Error('Not enough unused emails in this vault and retailer.');row.email=email.email;email.profileId='pending-'+index;}
   if(options.card&&(flags.includes('card')||options.all)){
    const staged=ctx.rows.concat(added.map((data,i)=>({id:'pending-card-'+i,retailer,data})));
    const card=cards.find(c=>{
@@ -258,7 +260,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(p.expectedScope!==undefined&&p.expectedScope!==plan.scope||
      p.expectedCustomerId!==undefined&&p.expectedCustomerId!==plan.id)
    throw Error('Customer vault selection changed. Review the import for the selected vault.');
-  const a=await access(e,{scope:plan.scope,customerId:plan.id});if(p.confirmed!==true)throw Error('Review the import first.');if(plan.bank==='live'){const result=await profiles.importLiveProfiles(a.scope,a.id,plan.entries,{updateExisting:p.updateExisting===true,batchId:uuid(),fileNames:plan.fileNames||[]},()=>{a.check();if(plans.get(p.token)!==plan)throw Error('Import was already saved.');},
+  const a=await access(e,{scope:plan.scope,customerId:plan.id});if(p.confirmed!==true)throw Error('Review the import first.');if(plan.bank==='live'){
+  if(!plan.entries.length){plans.delete(p.token);return {imported:0,skippedForeign:plan.skippedForeign||0,bank:'live'};}
+  const result=await profiles.importLiveProfiles(a.scope,a.id,plan.entries,{updateExisting:p.updateExisting===true,batchId:uuid(),fileNames:plan.fileNames||[]},()=>{a.check();if(plans.get(p.token)!==plan)throw Error('Import was already saved.');},
  async(displaced,incoming)=>{
   a.check();
   if(plans.get(p.token)!==plan)throw Error('Live import was cancelled before card preservation.');
@@ -267,7 +271,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    displaced,incoming,vault:cardVault(a.scope),key:cardKey(a.scope,a.id),
    check:()=>{a.check();if(plans.get(p.token)!==plan)throw Error('Live import cancelled while preserving prior cards.');}
   });
- });plans.delete(p.token);return result;}return withCards(a,p.cardIds||[],cards=>profiles.libraryTransaction(a.scope,a.id,ctx=>{if(plans.get(p.token)!==plan)throw Error('Import was already saved.');const data=resolve(plan.data,plan.retailer,ctx,p.repairs||{},cards),importBatchId=uuid(),customerLabel=profileOwnerLabel(p.customerName||p.group),existingCustomerCount=ctx.rows.filter(x=>x.source==='owner-created-profile').length,added=data.map((row,index)=>{const id=uuid(),email=C.email(row.email),label=a.scope==='personal'?email:customerLabel+' '+(existingCustomerCount+index+1),named=C.syncCardholderToProfile(D.manualEdit(row,{...D.toValues(row),label})),entry={id,retailer:plan.retailer,email,label,group:a.scope==='personal'?plan.retailer:customerLabel,source:'owner-created-profile',importBatchId,status:p.asAvailable===true?'available':'active',jiggedAt:p.alreadyJigged?new Date(now()).toISOString():null,createdAt:new Date(now()).toISOString(),revision:0,data:named,format:C.format(plan.retailer),assetRefs:{}};for(const bank of ctx.emails)if(bank.retailer===plan.retailer&&bank.email===email&&(!bank.profileId||String(bank.profileId).startsWith('pending-')))bank.profileId=id;ctx.rows.push(entry);ctx.audit('library-import',email,{retailer:plan.retailer});return entry;});ctx.importBatches.push({id:importBatchId,at:new Date(now()).toISOString(),bank:'working',retailers:[plan.retailer],fileNames:[plan.fileName||'import'],createdIds:added.map(x=>x.id),imported:added.length,updatedExisting:0,removedAt:null});plans.delete(p.token);return {imported:added.length,batchId:importBatchId};},a.check));}
+ });plans.delete(p.token);return {...result,skippedForeign:(plan.skippedForeign||0)+(result.skippedForeign||0)};}return withCards(a,p.cardIds||[],cards=>profiles.libraryTransaction(a.scope,a.id,async ctx=>{if(plans.get(p.token)!==plan)throw Error('Import was already saved.');const foreign=await ctx.foreignEmails(),eligible=plan.data.filter(row=>!foreign.has(C.email(C.values(row).email))),skippedForeign=(plan.skippedForeign||0)+plan.data.length-eligible.length;
+  if(!eligible.length){plans.delete(p.token);return {imported:0,skippedForeign};}
+  const data=resolve(eligible,plan.retailer,ctx,p.repairs||{},cards,foreign),importBatchId=uuid(),customerLabel=profileOwnerLabel(p.customerName||p.group),existingCustomerCount=ctx.rows.filter(x=>x.source==='owner-created-profile').length,added=data.map((row,index)=>{const id=uuid(),email=C.email(row.email),label=a.scope==='personal'?email:customerLabel+' '+(existingCustomerCount+index+1),named=C.syncCardholderToProfile(D.manualEdit(row,{...D.toValues(row),label})),entry={id,retailer:plan.retailer,email,label,group:a.scope==='personal'?plan.retailer:customerLabel,source:'owner-created-profile',importBatchId,status:p.asAvailable===true?'available':'active',jiggedAt:p.alreadyJigged?new Date(now()).toISOString():null,createdAt:new Date(now()).toISOString(),revision:0,data:named,format:C.format(plan.retailer),assetRefs:{}};for(const bank of ctx.emails)if(bank.retailer===plan.retailer&&bank.email===email&&(!bank.profileId||String(bank.profileId).startsWith('pending-')))bank.profileId=id;ctx.rows.push(entry);ctx.audit('library-import',email,{retailer:plan.retailer});return entry;});ctx.importBatches.push({id:importBatchId,at:new Date(now()).toISOString(),bank:'working',retailers:[plan.retailer],fileNames:[plan.fileName||'import'],createdIds:added.map(x=>x.id),imported:added.length,updatedExisting:0,removedAt:null});plans.delete(p.token);return {imported:added.length,skippedForeign,batchId:importBatchId};},a.check));}
  async function repair(e,p){const a=await access(e,p);return withCards(a,p.cardIds||[],cards=>profiles.libraryTransaction(a.scope,a.id,async ctx=>{
   const row=ctx.rows.find(x=>x.id===p.profileId);if(!row||row.revision!==p.revision)throw Error('Profile changed. Reopen it.');
   const linked=a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked===true;
