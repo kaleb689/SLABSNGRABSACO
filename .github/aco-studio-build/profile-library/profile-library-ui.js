@@ -1021,9 +1021,9 @@
    for(const control of [unitQuantity,reuseCount,distributionPanel])control.addEventListener('input',schedulePreview);
    reuseToggle.onchange=async()=>{
     invalidatePreview();if(previewTimer!==null){clearTimeout(previewTimer);previewTimer=null;}reusePanel.hidden=!reuseToggle.checked;
-    if(!reuseToggle.checked)return;
+    if(!reuseToggle.checked){schedulePreview();return;}
     if(chosen.length<2){reuseToggle.checked=false;reusePanel.hidden=true;win.status().textContent='Select at least two profiles to share an address.';return;}
-    if(reuseLoaded)return;
+    if(reuseLoaded){schedulePreview();return;}
     reuseSelect.disabled=true;win.status().textContent='Loading this vault’s Main and Jigged addresses...';
     try{
      const result=await api.reuseChoices({...win.owner});if(!win.valid())return;
