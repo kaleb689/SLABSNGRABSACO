@@ -1057,18 +1057,27 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  // rather than inventing building-level delivery facts in the Main bank.
  const SECOND_LINE_LABELS=['Apt','Unit','#','Ste',''];
  const SECOND_LINE_IDS=['A','B','C','D','1','2','3','4','5','6','7','8','9'];
- function addMissingUnitLine(original,generated,position){
+ function addMissingUnitLine(original,generated,position,occupiedKeys=new Set()){
   const originalAddress=addressView(original),after=addressView(generated);
   if(originalAddress.address2.trim()||inlineUnit(originalAddress.address1)||after.address2.trim())
-   return {data:generated,added:false};
+   return {data:generated,added:false,reason:'existing-unit'};
   if(inlineUnit(after.address1))throw Error('Generated unit must be on address line 2, not added to the street.');
-  const idx=Math.max(0,Number(position)||0);
-  const label=SECOND_LINE_LABELS[idx%SECOND_LINE_LABELS.length];
-  const identifier=SECOND_LINE_IDS[Math.floor(idx/SECOND_LINE_LABELS.length)%SECOND_LINE_IDS.length];
-  const unit=label==='#'?'# '+identifier:label?label+' '+identifier:identifier;
-  const values=D.toValues(generated);
-  values['shipping.address2']=unit;
-  return {data:D.manualEdit(generated,values),added:true};
+  // Keep the approved A-D / 1-9 range. Search ALL five label styles times
+  // thirteen identifiers before saying the pool is exhausted.
+  const total=SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length;
+  const start=((Math.floor(Number(position)||0)%total)+total)%total;
+  for(let step=0;step<total;step++){
+   const idx=(start+step*17)%total; // 17 is coprime to 65: visits all 65.
+   const label=SECOND_LINE_LABELS[idx%SECOND_LINE_LABELS.length];
+   const identifier=SECOND_LINE_IDS[Math.floor(idx/SECOND_LINE_LABELS.length)%SECOND_LINE_IDS.length];
+   const unit=label==='#'?'# '+identifier:label?label+' '+identifier:identifier;
+   const values=D.toValues(generated);
+   values['shipping.address2']=unit;
+   const candidate=D.manualEdit(generated,values);
+   if(!occupiedKeys.has(mainAddressKey({data:candidate})))
+    return {data:candidate,added:true,optionsChecked:step+1};
+  }
+  return {data:generated,added:false,reason:'exhausted',optionsChecked:total};
  }
  function normalizedAddressPart(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,' ');}
  function mainAddressKey(row){
@@ -1433,25 +1442,32 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     category:reuseThis?'reused saved address':hardResults?.[regularIndex]?.kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),
     mainAddress:reuseThis?source.address:hardResults?.[regularIndex]?.mainAddress||before};
   });
-  // Add optional second-line identifiers to exactly the owner-requested
-  // number of eligible, unitless profiles. Prefer profiles with another jig
-  // so that the intentionally preserved Main address remains available.
+  // Optional unit creation is an independent 65-choice pool on EACH selected
+  // unitless address. It may accompany another jig, but never alters a saved unit.
+  const optionalUnitEligible=rows.filter(row=>
+   row.category!=='reused saved address'&&!String(row.before.address2||'').trim()&&
+   !inlineUnit(row.before.address1)&&!String(row.after.address2||'').trim()&&
+   !inlineUnit(row.after.address1));
   if(optionalUnitCount){
    const alreadyJigged=row=>['address1','address2','city','state','zip']
     .some(field=>row.before[field]!==row.after[field]);
-   const eligible=rows.filter(row=>
-    row.category!=='reused saved address'&&!String(row.before.address2||'').trim()&&
-    !inlineUnit(row.before.address1)&&!String(row.after.address2||'').trim()&&
-    !inlineUnit(row.after.address1));
-   if(eligible.length<optionalUnitCount)
-    throw Error('Only '+eligible.length+' selected profiles have an available, unitless address. Reduce the optional unit quantity.');
-   const ranked=eligible.map((row,i)=>({row,i})).sort((a,b)=>
+   if(optionalUnitEligible.length<optionalUnitCount)
+    throw Error('Only '+optionalUnitEligible.length+' of '+rows.length+' selected profiles have an available, unitless address. Existing Apt/Unit/Ste values are preserved. Reduce the optional unit quantity.');
+   const ranked=optionalUnitEligible.map((row,i)=>({row,i})).sort((a,b)=>
     Number(alreadyJigged(b.row))-Number(alreadyJigged(a.row))||a.i-b.i);
+   const occupied=new Map(),chosenIds=new Set(selected.map(item=>item.id));
+   const reserve=(key,delta)=>{const n=(occupied.get(key)||0)+delta;if(n>0)occupied.set(key,n);else occupied.delete(key);};
+   for(const item of all)if(!chosenIds.has(item.id))reserve(mainAddressKey(item),1);
+   for(const item of rows)reserve(mainAddressKey({data:item.data}),1);
    let added=0;
    for(const {row} of ranked.slice(0,optionalUnitCount)){
-    // Choose alternate label + A-D / 1-9 identifier for this batch.
-    const result=addMissingUnitLine(row.originalData,row.data,added+rows.indexOf(row)+1);
-    if(!result.added)throw Error('An existing unit prevented the optional second-line jig.');
+    const previous=mainAddressKey({data:row.data});
+    reserve(previous,-1);
+    const result=addMissingUnitLine(row.originalData,row.data,crypto.randomInt(65),new Set(occupied.keys()));
+    if(!result.added){
+     reserve(previous,1);
+     throw Error('All 65 Apt/Unit/Ste/#/number combinations (A-D or 1-9) are already used for this address. Select another base address or enable more address jig styles.');
+    }
     let data=result.data;
     if(p.billingSameAsShipping===true){
      const values=D.toValues(data);
@@ -1460,6 +1476,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     }
     row.data=C.syncCardholderToProfile(data);
     row.after=addressView(row.data);
+    reserve(mainAddressKey({data:row.data}),1);
     ensureExistingUnitPreserved(row.before,row.after);
     row.appliedRuleIds.push('second-line.add');
     added++;
@@ -1479,7 +1496,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
   jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,duplicateAddresses,at:now(),epoch:ep(e),
    reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
-  return {token,duplicateAddresses,optionalUnitAdded:rows.filter(row=>row.appliedRuleIds.includes('second-line.add')).length,
+  return {token,duplicateAddresses,optionalUnitEligible:optionalUnitEligible.length,optionalUnitAdded:rows.filter(row=>row.appliedRuleIds.includes('second-line.add')).length,
    count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
    postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
