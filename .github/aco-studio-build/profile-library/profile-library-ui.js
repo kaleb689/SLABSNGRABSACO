@@ -988,11 +988,16 @@
     const billing=text('label','Automatically match the jigged shipping and billing addresses'),billingBox=d.createElement('input');billing.className='check';billingBox.type='checkbox';billingBox.checked=true;billing.prepend(billingBox);
    const optionalUnitLabel=text('label','Add random Apt / Unit / Ste / # / number to address line 2 (only if no unit exists)');
    optionalUnitLabel.className='check';
-   const optionalUnitToggle=d.createElement('input');optionalUnitToggle.type='checkbox';optionalUnitToggle.checked=false;optionalUnitLabel.prepend(optionalUnitToggle);
+   const optionalUnitToggle=d.createElement('input');optionalUnitToggle.type='checkbox';optionalUnitToggle.checked=retailer==='walmart';optionalUnitLabel.prepend(optionalUnitToggle);
    const unitQuantityLabel=text('label','How many eligible selected profiles should receive a new unit?');
    const unitQuantity=d.createElement('input');unitQuantity.type='number';unitQuantity.min='1';unitQuantity.max=String(chosen.length);
-   unitQuantity.step='1';unitQuantity.value=String(chosen.length);unitQuantityLabel.append(unitQuantity);unitQuantityLabel.hidden=true;
-   const optionalUnitHelp=text('small','OFF until you select it. Studio first uses unitless selected profiles, then automatically sources unitless Main addresses from this vault’s Address Bank for any remaining selected profiles. A source reassignment is shown before Apply; saved Address Bank entries and original unit numbers remain untouched. New Apt/Unit/Ste/#/bare A–D or 1–9 identifiers are chosen automatically and shipping/billing are matched. Generated units are not delivery-point verified.');
+   unitQuantity.step='1';unitQuantity.value=String(chosen.length);unitQuantityLabel.append(unitQuantity);unitQuantityLabel.hidden=!optionalUnitToggle.checked;
+   const optionalUnitHelp=text('small','Walmart defaults to ON for random second-line generation, with an editable quantity; other retailers remain OFF. New Apt/Unit/Ste/#/bare A-D or 1-9 identifiers only apply to unitless Main houses. Original bank addresses remain unchanged. Generated units are not delivery-point verified.');
+   const bankSourceLabel=text('label','Walmart: randomize using the entire saved Address Bank (not just these profiles)');
+   bankSourceLabel.className='check';bankSourceLabel.hidden=retailer!=='walmart';
+   const bankSourceToggle=d.createElement('input');bankSourceToggle.type='checkbox';bankSourceToggle.checked=retailer==='walmart';bankSourceLabel.prepend(bankSourceToggle);
+   const bankSourceHelp=text('small','Walmart starts with randomly distributed Main addresses from your full saved bank. When random units are enabled, only unitless Main houses are used. Turn this OFF to jig the current addresses. All changes appear in Preview before Apply.');
+   if(optionalUnitToggle.checked){billingBox.checked=true;billingBox.disabled=true;}
    optionalUnitToggle.onchange=()=>{
     unitQuantityLabel.hidden=!optionalUnitToggle.checked;
     if(optionalUnitToggle.checked){billingBox.checked=true;billingBox.disabled=true;}
@@ -1022,13 +1027,13 @@
    duplicateLabel.prepend(allowDuplicates);
    const review=d.createElement('div');let token=null,duplicateCount=0,previewRevision=0,previewTimer=null;
    allowDuplicates.onchange=()=>{save.disabled=!token||(duplicateCount>0&&!allowDuplicates.checked);};
-   win.body.append(info,rules,distributionLabel,distributionPanel,combine,billing,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
+   win.body.append(info,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
    const invalidatePreview=()=>{previewRevision++;token=null;duplicateCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
    // Every checkbox or quantity edit invalidates the old approval token and
    // recomputes against the currently selected rules. Never apply a stale plan.
    const schedulePreview=()=>{invalidatePreview();if(previewTimer!==null)clearTimeout(previewTimer);
     previewTimer=setTimeout(()=>{previewTimer=null;if(win.valid()&&(!reuseToggle.checked||reuseLoaded))void preview.onclick?.();},400);};
-   for(const control of [rules,distributionToggle,distributionPanel,combineBox,billingBox,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',schedulePreview);
+   for(const control of [rules,distributionToggle,distributionPanel,combineBox,billingBox,bankSourceToggle,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',schedulePreview);
    for(const control of [unitQuantity,reuseCount,distributionPanel])control.addEventListener('input',schedulePreview);
    reuseToggle.onchange=async()=>{
     invalidatePreview();if(previewTimer!==null){clearTimeout(previewTimer);previewTimer=null;}reusePanel.hidden=!reuseToggle.checked;
@@ -1067,7 +1072,7 @@
       const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),distribution,
       ruleIds:selectedJigChoices(rules),combine:combineBox.checked,
       billingSameAsShipping:billingBox.checked||optionalUnitToggle.checked,optionalUnitCount,
-      autoUnitFromAddressBank:optionalUnitToggle.checked,
+      autoUnitFromAddressBank:optionalUnitToggle.checked,sourceMainFromBank:retailer==='walmart'&&bankSourceToggle.checked,
       postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
      if(!win.valid()||activeRevision!==previewRevision)return;token=result.token;
       if(result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
