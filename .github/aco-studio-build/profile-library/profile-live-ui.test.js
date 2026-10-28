@@ -384,9 +384,9 @@ test('Jig UI groups related ordinal, compass, unit and Target hard variants',()=
  assert.match(source,/allowDuplicateAddresses:duplicateCount>0&&allowDuplicates.checked/);
 });
 
-test('Both Jig entrypoints offer explicit optional unit and do not silently auto-add units',()=>{
+test('Both Jig entrypoints allow optional units, with Walmart opt-in by default and unchanged other-retailer defaults',()=>{
  assert.match(source,/Add random Apt \/ Unit \/ Ste \/ # \/ number/);
- assert.match(source,/optionalUnitToggle\.checked=false/);
+ assert.match(source,/optionalUnitToggle\.checked=retailer==='walmart'/);
  assert.match(source,/optionalUnitCount,/);
  assert.match(source,/autoUnitFromAddressBank:optionalUnitToggle\.checked/);
  assert.match(source,/postalScan:postalScanBox\.checked/);
