@@ -323,7 +323,7 @@ test('A website-linked Ready profile blocks automatic Live duplicate removal and
  },()=>{});
  const before=(await h.lib.list(event,h.p)).profiles;
  const p=await live(h,[complete('pokemoncenter',email)],h.p,'pokemoncenter');
- await assert.rejects(commit(h,p),/Unlink.*explicitly/i);
+ const result=await commit(h,p);assert.equal(result.imported,0);assert.equal(result.skippedLinked,1);
  const after=(await h.lib.list(event,h.p)).profiles;
  assert.deepEqual(after,before);
 });
@@ -481,7 +481,7 @@ test('New Live import will not silently replace website-linked Live record',asyn
  const before=(await h.lib.list(event,h.p)).profiles;
  const plan=await live(h,[complete('target',email)]);
  assert.equal(plan.blockedLinkedCount,1);
- await assert.rejects(commit(h,plan),/website-linked/i);
+ const result=await commit(h,plan);assert.equal(result.imported,0);assert.equal(result.skippedLinked,1);
  assert.deepEqual((await h.lib.list(event,h.p)).profiles,before);
 });
 test('A second concurrent Live import preview cannot overwrite a newer saved Live import',async t=>{
@@ -493,4 +493,78 @@ test('A second concurrent Live import preview cannot overwrite a newer saved Liv
  await assert.rejects(commit(h,old),/changed after .*preview/i);
  const profiles=(await h.lib.list(event,h.p)).profiles;
  assert.equal(profiles.length,1);assert.equal(profiles[0].data.password,'new');
+});
+
+
+test('Selecting Walmart reports embedded Target mismatch and explicit confirmed override imports into Walmart only',async t=>{
+ const h=await library(t),source={...complete('target','walmart-corrected@example.test'),retailer:'target'};
+ const before=await h.lib.importPreview(event,{...h.a,bank:'live',retailer:'walmart',
+  fileName:'target_profiles.json',files:[{fileName:'target_profiles.json',text:JSON.stringify([source])}]});
+ assert.equal(before.profiles[0].retailer,'target');
+ assert.equal(before.retailerConflicts,1);
+ const reviewed=await h.lib.importPreview(event,{...h.a,bank:'live',retailer:'walmart',overrideRetailer:true,
+  fileName:'target_profiles.json',files:[{fileName:'target_profiles.json',text:JSON.stringify([source])}]});
+ assert.equal(reviewed.profiles[0].retailer,'walmart');
+ assert.equal(reviewed.retailerConflicts,1);
+ const committed=await commit(h,reviewed);
+ assert.equal(committed.imported,1);
+ const rows=(await h.lib.list(event,h.a)).profiles;
+ assert.equal(rows.length,1);assert.equal(rows[0].retailer,'walmart');
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,0);
+});
+test('Website-linked row is skipped; other eligible Walmart Live rows in same import continue',async t=>{
+ const h=await library(t);
+ await commit(h,await live(h,[complete('walmart','existing-linked@example.test')],h.a,'walmart'));
+ await h.profiles.libraryTransaction('aco','customer-a',ctx=>{
+  const linked=ctx.rows.find(x=>x.email==='existing-linked@example.test');
+  linked.source='website-linked-profile';linked.sourceLinked=true;linked.websiteAuthoritative=true;
+ },()=>{});
+ const incoming=await live(h,[complete('walmart','existing-linked@example.test'),
+  complete('walmart','new-unlinked@example.test')],h.a,'walmart');
+ assert.equal(incoming.blockedLinkedCount,1);
+ const imported=await commit(h,incoming);
+ assert.equal(imported.imported,1);assert.equal(imported.skippedLinked,1);
+ const rows=(await h.lib.list(event,h.a)).profiles;
+ assert.equal(rows.length,2);
+ assert.ok(rows.find(x=>x.email==='existing-linked@example.test'&&x.sourceLinked===true));
+ assert.ok(rows.find(x=>x.email==='new-unlinked@example.test'&&x.bank==='live'));
+});
+test('Explicit mapping updates exact Walmart website assignment and refreshes local customer mirror; no Personal changes',async t=>{
+ const h=await env(t);
+ let remoteEmail='old-linked@example.test',changes=[];
+ const {createLibrary}=require('../profile-library-service');
+ const lib=createLibrary({
+  profiles:h.profiles,cardVault:s=>s==='personal'?h.personal:h.customers,
+  authorize:async(e,s,id)=>s==='personal'?null:id,
+  guard:()=>{},
+  getCustomerProfileSource:async id=>({
+   customer:{id,name:'Customer A'},
+   linked:[{customerId:id,assignmentId:'assignment-1',managedAccountId:'managed-1',
+    assignmentType:'free',remoteUpdatedAt:'assignment-version-1',retailer:'walmart',
+    active:true,data:complete('walmart',remoteEmail)}]
+  }),
+  updateLinkedLogin:async (id,remote,change)=>{
+   changes.push({id,remote,change});remoteEmail=change.newEmail;return {remoteSaved:true};
+  }
+ });
+ await lib.syncCustomer(event,h.a);
+ const old=(await lib.list(event,h.a)).profiles[0];
+ assert.equal(old.sourceLinked,true);
+ const incoming=await lib.importPreview(event,{...h.a,bank:'live',retailer:'walmart',
+  fileName:'walmart-live.json',text:JSON.stringify([complete('walmart','new-linked@example.test')])});
+ assert.equal(incoming.linkedAssignments.length,1);
+ const done=await lib.importCommit(event,{token:incoming.token,confirmed:true,
+  expectedScope:'aco',expectedCustomerId:'customer-a',
+  linkMappings:[{entryIndex:0,profileId:old.id,revision:old.revision}]});
+ assert.equal(done.imported,0);assert.equal(done.linkedUpdated,1);
+ assert.equal(changes.length,1);
+ assert.equal(changes[0].id,'customer-a');
+ assert.equal(changes[0].remote.managedAccountId,'managed-1');
+ assert.equal(changes[0].change.expectedEmail,'old-linked@example.test');
+ assert.equal(changes[0].change.newEmail,'new-linked@example.test');
+ const rows=(await lib.list(event,h.a)).profiles;
+ assert.equal(rows.length,1);
+ assert.equal(rows[0].sourceLinked,true);
+ assert.equal(rows[0].email,'new-linked@example.test');
+ assert.equal((await lib.list(event,h.p)).profiles.length,0);
 });

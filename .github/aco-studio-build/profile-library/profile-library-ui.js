@@ -1338,27 +1338,68 @@
   }catch(error){note('Live reconciliation unavailable: '+String(error.message||error));}
   finally{reconcileExistingLive.disabled=false;}
  };
+ let forceLiveRetailerOnReview=false;
  q('live-file').onchange=async()=>{
   const files=[...q('live-file').files];if(!files.length)return;const owner=request(),at=epoch;
   try{
    if(owner.scope==='aco'&&!owner.customerId)throw Error('Select a customer vault before importing.');
    if(files.reduce((n,f)=>n+f.size,0)>26*1024*1024)throw Error('Choose files totaling less than 26 MB.');
-   const preview=await api.importPreview({...owner,bank:'live',retailer:q('retailer').value,files:await Promise.all(files.map(async f=>({fileName:f.name,text:await f.text()})))});
+   const selectedRetailer=q('retailer').value,overrideRetailer=forceLiveRetailerOnReview;forceLiveRetailerOnReview=false;
+   const preview=await api.importPreview({...owner,bank:'live',retailer:selectedRetailer,overrideRetailer,files:await Promise.all(files.map(async f=>({fileName:f.name,text:await f.text()})))});
    if(at!==epoch||main.hidden)return;const win=dialog('Import into Live Profiles'),form=d.createElement('form');win.body.append(form);
    form.append(text('p',preview.count+' eligible input rows → '+(preview.effectiveCount??preview.count)+' latest unique Live profiles: '+Object.entries(preview.counts).map(([r,n])=>retailName[r]+' '+n).join(' · ')+'. '+(preview.skippedForeign||0)+' email(s) already owned by another vault will be skipped; eligible rows continue.'));
    form.append(text('p','These profiles stay in Live Profiles when edited or jigged. Retailer labels and filenames determine the bank; unlabeled files use the retailer selected before import. Check the assignments below. Emails not already in a PKC profile or email bank are also added to this vault’s PKC email pool.'));
    form.append(text('p','The newest imported row automatically REPLACES all older Live and Ready/Unused profiles with the SAME EMAIL in the SAME retailer and vault. '+(preview.supersedeLive||0)+' existing Live and '+(preview.supersedeNonLive||0)+' Ready/Unused profiles will be archived then removed from active lists. '+(preview.collapsedInImport||0)+' repeated email(s) inside these files will use the last imported row. Original different cards and independent references are preserved. Other retailers, customers, and unrelated emails are unchanged.'));
-   if(preview.blockedLinkedCount)form.append(text('p','Warning: '+preview.blockedLinkedCount+' website-linked profile(s) require manual unlink before import; no data will be changed if you continue while they are linked.'));
+   if(preview.blockedLinkedCount)form.append(text('p',preview.blockedLinkedCount+' exact website-linked email matches will be skipped, not replaced or unlinked. Other eligible profiles will still import. To change a linked retailer login email, use the verified website assignment update instead of replacing its local mirror.'));
+   if(preview.retailerConflicts){
+    form.append(text('p',preview.retailerConflicts+' imported row(s) contain an embedded/filename retailer different from the selected '+retailName[selectedRetailer]+'. '+(preview.overrideRetailer?'You explicitly chose to import all rows as '+retailName[selectedRetailer]+'.':'Do not import the wrong retailer. Confirm the override or cancel.')));
+    if(!preview.overrideRetailer){
+     const force=text('button','Review all '+preview.count+' profiles as '+retailName[selectedRetailer]);
+     force.type='button';force.className='btn secondary';
+     force.onclick=()=>{
+      if(!win.valid()||at!==epoch||q('retailer').value!==selectedRetailer)return;
+      if(!confirm('Override the file retailer labels and treat every selected profile as '+retailName[selectedRetailer]+'? Only do this if all imported accounts truly belong to that retailer.'))return;
+      forceLiveRetailerOnReview=true;win.wrap.remove();void q('live-file').onchange();
+     };
+     form.append(force);
+    }
+   }
    const review=d.createElement('details');review.open=true;review.append(text('summary','Review retailer assignments'));
    for(const row of preview.profiles.slice(0,100))review.append(text('p',retailName[row.retailer]+' · '+row.email+(row.duplicates.length?' · matches a stored profile':'')));
    if(preview.count>100)review.append(text('p','And '+(preview.count-100)+' more profiles included.'));form.append(review);
+   const linkMappingsUI=[];
+   if(owner.scope==='aco'&&preview.linkedAssignments?.length){
+    const section=d.createElement('section');section.className='profileLibraryForm';
+    section.append(text('h3','Sync imported retailer login to an exact website/customer assignment'),
+     text('p','For a changed email, explicitly select which existing linked retailer account it replaces. Only the selected account’s login email is updated on the website and app. Unmapped imported rows continue normally; exact website-linked matches are skipped rather than deleted.'));
+    for(let i=0;i<Math.min(100,preview.profiles.length);i++){
+     const imported=preview.profiles[i],linked=preview.linkedAssignments.filter(x=>x.retailer===imported.retailer);
+     if(!linked.length)continue;
+     const label=text('label','Imported '+retailName[imported.retailer]+' · '+imported.email);
+     const choice=d.createElement('select');choice.append(new Option('Do not change a website link; import/skip normally',''));
+     for(const account of linked)choice.append(new Option('Update linked '+account.email+' · assignment '+String(account.managedId).slice(-6),account.profileId));
+     label.append(choice);section.append(label);
+     linkMappingsUI.push({entryIndex:i,choice,accounts:linked});
+    }
+    const pwd=text('label','Also update the linked retailer login password from selected imported profiles');
+    const passwordToggle=d.createElement('input');passwordToggle.type='checkbox';passwordToggle.checked=false;pwd.prepend(passwordToggle);section.append(pwd);
+    form.append(section);
+    form.dataset.hasLinkedChoices='true';form._linkMappingsUI=linkMappingsUI;form._passwordToggle=passwordToggle;
+   }
    const warn=text('button','Duplicates: '+(preview.duplicateCount||0)+' · Review');warn.type='button';warn.className='btn secondary';warn.onclick=()=>{review.open=true;review.replaceChildren(text('summary','Duplicate emails in this import'));for(const row of preview.profiles.filter(x=>x.duplicates.length))review.append(text('p',retailName[row.retailer]+' · '+row.email));};form.append(warn);form.append(text('p','All matched older Live and non-Live profiles are fully archived in encrypted recovery history before replacement. Different original cards are saved in your existing Card Bank first, without creating duplicate full-number entries. If preservation or writing fails, the old profiles remain active.'));
    // The newest import is authoritative for an exact same-retailer email.
    // There is no opt-out that could silently create another Live duplicate.
-   const save=text('button','Import '+(preview.effectiveCount??preview.count)+' latest Live profiles');save.type='submit';save.className='btn primary';form.append(save);
+   const save=text('button','Import '+(preview.effectiveCount??preview.count)+' latest Live profiles');save.type='submit';save.className='btn primary';save.disabled=owner.scope==='aco'&&preview.retailerConflicts>0&&!preview.overrideRetailer;form.append(save);
    form.onsubmit=async event=>{event.preventDefault();
     if(!win.valid()||at!==epoch||owner.scope!==scope||owner.customerId!==request().customerId){win.status().textContent='Customer selection changed. Reopen this import for the current vault.';return;}
-    save.disabled=true;try{const result=await api.importCommit({token:preview.token,confirmed:true,expectedScope:owner.scope,expectedCustomerId:owner.customerId});if(!win.valid())return;win.wrap.remove();stage='live';group='all';selected.clear();for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab.dataset.stage==='live'));await refresh();issueView='all';q('view').value='all';draw();note('Imported '+result.imported+' latest Live profiles · Skipped '+(result.skippedForeign||0)+' email(s) already used in another vault · Replaced '+(result.supersededLive||0)+' older Live and '+(result.supersededNonLive||0)+' Ready/Unused records · '+(result.collapsedInImport||0)+' repeated import rows collapsed · '+(result.cardsPreserved||0)+' original cards preserved · '+(result.cardsAlreadySaved||0)+' already saved · encrypted recovery history retained · '+result.pkcEmailsAdded+' PKC emails added.');}catch(error){win.status().textContent=error.message;save.disabled=false;}};
+    if(owner.scope==='aco'&&preview.retailerConflicts&&!preview.overrideRetailer){win.status().textContent='Review the mismatched retailer labels before importing.';return;}
+    const linkMappings=(form._linkMappingsUI||[]).filter(x=>x.choice.value).map(x=>{
+     const row=x.accounts.find(y=>y.profileId===x.choice.value);
+     return {entryIndex:x.entryIndex,profileId:row.profileId,revision:row.revision};
+    });
+    if(new Set(linkMappings.map(x=>x.profileId)).size!==linkMappings.length){win.status().textContent='Each website-linked account may be matched to only one imported row.';return;}
+    if(linkMappings.length&&!confirm('Update '+linkMappings.length+' explicitly matched retailer account login email(s) on the live website and customer app? Unrelated customer assignments, cards and existing records will not be changed.'))return;
+    save.disabled=true;try{const result=await api.importCommit({token:preview.token,confirmed:true,expectedScope:owner.scope,expectedCustomerId:owner.customerId,linkMappings,syncPasswords:form._passwordToggle?.checked===true});if(!win.valid())return;win.wrap.remove();stage='live';group='all';selected.clear();for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab.dataset.stage==='live'));await refresh();issueView='all';q('view').value='all';draw();note('Imported '+result.imported+' latest Live profiles · Synchronized '+(result.linkedUpdated||0)+' exact linked retailer logins with website/app'+(result.mirrorNeedsRefresh?' · Local mirror needs Refresh; website update was verified':'')+' · Skipped '+(result.skippedForeign||0)+' email(s) used in another vault and '+(result.skippedLinked||0)+' exact website-linked profiles · Replaced '+(result.supersededLive||0)+' older Live and '+(result.supersededNonLive||0)+' Ready/Unused records · '+(result.collapsedInImport||0)+' repeated import rows collapsed · '+(result.cardsPreserved||0)+' original cards preserved · '+(result.cardsAlreadySaved||0)+' already saved · encrypted recovery history retained · '+result.pkcEmailsAdded+' PKC emails added.');}catch(error){win.status().textContent=error.message;save.disabled=false;}};
   }catch(error){note(error.message);}
  };
  const pasteAccountsButton=text('button','Paste accounts');
