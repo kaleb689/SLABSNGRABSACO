@@ -34,6 +34,9 @@
  const main=d.createElement('main');main.id='profileLibraryPage';main.className='shell main profileLibrary';main.hidden=true;
  main.innerHTML='<header><div><div class="eyebrow" data-owner-title></div><h1>Profiles</h1><p>Choose a retailer, prepare unused accounts, review completed jigs, export, then move selected profiles to Live.</p></div><div class="buttons"><button type="button" class="btn primary" data-create-pools>Create profiles from pools</button><button type="button" class="btn secondary" data-import>Import</button><button type="button" class="btn secondary" data-import-live>Import live profiles</button><button type="button" class="btn secondary" data-jig-selected disabled>Jig selected</button><button type="button" class="btn secondary" data-bulk-move disabled>Move All Selected</button><button type="button" class="btn plain" data-bulk-delete disabled>Delete All Selected</button><button type="button" class="btn secondary" data-import-history>Import History</button><button type="button" class="btn primary" data-export>Export selected</button><button type="button" class="btn secondary" data-export-archive>Export full profile JSON</button></div></header><div class="profileLibraryControls"><label data-customer-label>Customer<select data-customer></select></label><label data-retailer-picker hidden>Retailer<select data-retailer aria-label="Current retailer"><option value="target">Target · Shikari CSV</option><option value="walmart">Walmart · Valor JSON</option><option value="pokemoncenter">Pokémon Center · Valor JSON</option><option value="costco">Costco · Valor JSON</option><option value="sams">Sam’s · Valor JSON</option></select></label><div class="profileRetailerButtons" data-retailer-tabs role="group" aria-label="Choose retailer"></div><label>Search<input type="search" data-search placeholder="Email, card or address"></label><label>View<select data-view><option value="all">All profiles</option><option value="issues">Issues only</option><option value="duplicates">Duplicates only</option></select></label><button type="button" class="btn secondary" data-pkc-reconcile>Reconcile PKC email pool</button><button type="button" class="btn secondary" data-rules>Retailer jig rules</button><button type="button" class="btn secondary" data-sync>Sync linked profiles</button></div><section data-retailer-workspace class="profileRetailerWorkspace" aria-label="Profiles for selected retailer"><div class="profileLibraryTabs"><button type="button" class="btn secondary" data-stage="unused" aria-pressed="true">Unused</button><button type="button" class="btn secondary" data-stage="new">New · Not Exported</button><button type="button" class="btn secondary" data-stage="completed">Ready for Export</button><button type="button" class="btn secondary" data-stage="live">Live Profiles</button><button type="button" class="btn plain" data-all>Select All on Page</button><button type="button" class="btn plain" data-clear>Clear selection</button></div><p data-current-retailer role="status">Target · Unused accounts</p></section><p data-selected-count role="status" aria-live="polite" style="position:sticky;top:0;z-index:2;background:#0d1b2a;padding:10px;border:1px solid #32d6d9;border-radius:8px">0 profiles selected on this page</p><p data-pool-counts role="status"></p><section class="profileResourceBanks" data-resource-banks><div class="profileResourceBank"><header><div><span class="eyebrow">AVAILABLE RESOURCES</span><h3>Card Bank <span data-card-count></span></h3></div><button type="button" class="btn slim secondary" data-manage-cards>Manage cards</button></header><input type="search" data-card-bank-search aria-label="Search Card Bank by full card number, linked email or retailer" placeholder="Search card number, email, retailer, label…" autocomplete="off"><div class="profileResourceList" data-card-bank><p>Loading saved cards…</p></div></div><div class="profileResourceBank"><header><div><span class="eyebrow">AVAILABLE RESOURCES</span><h3>Address Bank <span data-address-count></span></h3></div><button type="button" class="btn slim secondary" data-manage-addresses>Manage addresses</button></header><div class="profileResourceList" data-address-bank><p>Loading saved addresses…</p></div></div></section><p class="profileLibrarySummary" data-status role="status"></p><div class="profileLibraryLayout"><aside class="profileLibraryGroups" data-groups></aside><section class="profileLibraryCards" data-cards></section></div><input type="file" data-file hidden accept=".csv,.json,.txt,.tsv"><input type="file" data-live-file hidden multiple accept=".csv,.json,.txt,.tsv">';
  $('sitePage').before(main);const q=s=>main.querySelector('[data-'+s+']');
+ const returnToPoolsButton=text('button','Delete & Return to Pools');
+ returnToPoolsButton.type='button';returnToPoolsButton.className='btn secondary';
+ q('bulk-delete').after(returnToPoolsButton);
  const syncOwnerWalmart=text('button','Sync Walmart emails into Personal Unused');
  syncOwnerWalmart.type='button';syncOwnerWalmart.className='btn secondary';
  syncOwnerWalmart.hidden=true;q('pkc-reconcile').after(syncOwnerWalmart);
@@ -341,7 +344,7 @@
   const actionDetails=d.createElement('div');actionDetails.className='profileSelectionDockPrimary';
   const actionManage=d.createElement('div');actionManage.className='profileSelectionDockSecondary';
   actionDetails.append(q('selected-count'),q('all'),q('clear'));
-  actionManage.append(q('jig-selected'),q('bulk-move'),q('bulk-delete'),q('export'),exportAllUnique,exportTypeLabel,q('export-archive'));
+  actionManage.append(q('jig-selected'),q('bulk-move'),q('bulk-delete'),returnToPoolsButton,q('export'),exportAllUnique,exportTypeLabel,q('export-archive'));
   floatingActions.append(actionDetails,actionManage);main.querySelector('.profileLibraryLayout').before(floatingActions);
  const timeValue=value=>{const t=Date.parse(value||'');return Number.isFinite(t)?t:0;};
  const creationTime=row=>timeValue(row.profileGeneratedAt)||timeValue(row.createdAt)||timeValue(row.completedAt);
@@ -799,8 +802,11 @@
  q('jig-selected').disabled=busy||!selectedVisible.length;
  q('jig-selected').textContent=selectedVisible.length?(stage==='unused'?'Jig selected ('+selectedVisible.length+')':'Re-jig selected ('+selectedVisible.length+')'):(stage==='unused'?'Jig selected':'Re-jig selected');
  for(const key of ['bulk-move','bulk-delete'])q(key).disabled=busy||stage==='unused'||!selectedVisible.length;
+ returnToPoolsButton.disabled=busy||stage==='unused'||!selectedVisible.length;
+ q('bulk-delete').disabled=q('bulk-delete').disabled||selectedVisible.some(x=>x.sourceLinked);
  q('bulk-move').textContent=(stage==='live'?'Return selected to Working':'Move selected Ready for Export to Live')+(selectedVisible.length?' ('+selectedVisible.length+')':'');
- q('bulk-delete').textContent=selectedVisible.length?'Delete All Selected ('+selectedVisible.length+')':'Delete All Selected';
+ q('bulk-delete').textContent=selectedVisible.length?'Delete Local Only ('+selectedVisible.length+')':'Delete Local Only';
+ returnToPoolsButton.textContent=selectedVisible.length?'Delete & Return to Pools ('+selectedVisible.length+')':'Delete & Return to Pools';
  }
  d.addEventListener('keydown',e=>{if(main.hidden||d.querySelector('.profileLibraryModal,.workshopModal:not([hidden])'))return;if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='a'&&!e.target.closest('input,textarea,select')){e.preventDefault();selected.clear();for(const x of pageRows())selected.add(x.id);updateSelection();}});
  main.addEventListener('click',e=>{if(e.target.closest('.profileSelectableCard')&&!e.target.closest('button,input,a'))return;});
@@ -1240,6 +1246,45 @@
     profileIds:selectedRows.map(x=>x.id),revisions:selectedRows.map(x=>x.revision||0),confirmed:true});
    selected.clear();await refresh();note('Moved '+result.count+' selected profiles into '+toBank+' for '+retailName[retailer]+'.');
   }catch(error){note('Move failed: '+error.message);}
+ };
+ returnToPoolsButton.onclick=async()=>{
+  try{
+   const {selectedRows,retailer,fromBank}=chosenForBulk(),owner=request(),ownerEpoch=epoch;
+   const linked=selectedRows.filter(row=>row.sourceLinked).length,local=selectedRows.length-linked;
+   const win=dialog('Delete & Return '+selectedRows.length+' profiles to pools');
+   win.body.append(
+    text('p',local+' local profile(s): retailer logins return to Unused in this exact vault. '+linked+
+      ' website-linked account(s): their exact retailer assignments return to the website pool first.'),
+    text('p','A complete encrypted recovery checkpoint is required. Original profile history, Security Codes, customer card and address banks remain protected. Profile-only local cards are preserved in this vault’s Card Bank before deletion. Nothing moves between customer and Personal vaults.'),
+    text('p','Only these '+retailName[retailer]+' profiles in '+customerName()+' / '+fromBank+' are affected.'));
+   const review=d.createElement('details');review.open=true;review.append(text('summary','Review exact selected profiles'));
+   for(const row of selectedRows)review.append(text('p',row.email+' · '+(row.sourceLinked?'Website linked':'Local/unlinked')));
+   win.body.append(review);
+   const confirmLabel=text('label','I reviewed these exact retailer accounts and authorize their return to pools and removal from active Studio profiles.');
+   confirmLabel.className='check';
+   const check=d.createElement('input');check.type='checkbox';confirmLabel.prepend(check);
+   const run=text('button','Confirm Delete & Return to Pools');run.type='button';run.className='btn primary';run.disabled=true;
+   check.onchange=()=>{run.disabled=!check.checked;};
+   win.body.append(confirmLabel,run);
+   run.onclick=async()=>{
+    if(!win.valid()||ownerEpoch!==epoch||owner.scope!==scope||owner.customerId!==customerId||
+       retailer!==q('retailer').value||fromBank!==(stage==='live'?'live':'working')){
+     win.status().textContent='Vault, retailer or bank changed. Reopen the selection.';return;
+    }
+    run.disabled=true;
+    try{
+     const result=await api.returnToPools({...owner,retailer,fromBank,confirmed:true,
+      profileIds:selectedRows.map(x=>x.id),revisions:selectedRows.map(x=>x.revision||0)});
+     if(!win.valid())return;
+     if(result.partial){win.status().textContent=result.message+' Website accounts returned: '+result.websiteReturned+'. No local profiles deleted.';return;}
+     win.wrap.remove();selected.clear();await refresh();
+     note('Returned '+result.count+' profiles to their original pools · '+result.websiteReturned+
+      ' website assignments unlinked · '+result.cardsSaved+' saved Card Bank copies · '+
+      result.cardsAlreadySaved+' cards already saved · encrypted recovery preserved.');
+    }catch(error){if(win.valid())win.status().textContent='Return to pools stopped: '+String(error?.message||error);}
+    finally{run.disabled=false;}
+   };
+  }catch(error){note('Return to pools unavailable: '+String(error.message||error));}
  };
  q('bulk-delete').onclick=async()=>{
   try{
