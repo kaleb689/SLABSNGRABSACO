@@ -86,7 +86,9 @@ test('Profiles export is disabled in Unused and without selected profiles, but a
 });
 
 test('Select All on Page never includes any profile from a different pagination page',()=>{
- const helperStart=source.indexOf(' const PAGE_SIZE=200;let pageIndex=0;');
+ const pageSize=Number(source.match(/ const PAGE_SIZE=(\d+);let pageIndex=0;/)?.[1]);
+ assert.ok(Number.isSafeInteger(pageSize)&&pageSize>=1&&pageSize<=500,'page size is bounded');
+ const helperStart=source.indexOf(' const PAGE_SIZE='+pageSize+';let pageIndex=0;');
  const helperEnd=source.indexOf('\n let sortMode=',helperStart);
  assert.ok(helperStart>0&&helperEnd>helperStart,'page-scoped selection helper exists');
  const handlerStart=source.indexOf("q('all').onclick=()=>{selected.clear();");
@@ -100,13 +102,13 @@ test('Select All on Page never includes any profile from a different pagination 
  vm.runInContext(source.slice(helperStart,helperEnd)+'\n'+source.slice(pageStart,pageEnd)+'\n'+source.slice(handlerStart,handlerEnd+1)+'\nthis.pageRows=pageRows;',context);
  vm.runInContext('pageIndex=1;',context);
  selectAll.onclick();
- assert.deepEqual([...context.selected],entries.slice(200,400).map(x=>x.id));
+ assert.deepEqual([...context.selected],entries.slice(pageSize,pageSize*2).map(x=>x.id));
  assert.equal(context.selected.has('foreign-vault'),false);
  assert.equal(context.selected.has('record-0'),false);
  vm.runInContext('pageIndex=2;',context);
  selectAll.onclick();
- assert.deepEqual([...context.selected],entries.slice(400,451).map(x=>x.id));
- assert.equal(context.selected.size,51);
+ assert.deepEqual([...context.selected],entries.slice(pageSize*2,pageSize*3).map(x=>x.id));
+ assert.equal(context.selected.size,Math.min(pageSize,entries.length-pageSize*2));
  assert.equal(drawCount,2);
 });
 
