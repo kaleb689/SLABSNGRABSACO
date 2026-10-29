@@ -893,9 +893,36 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
    });
    if(operation==='move')for(const row of found){row.bank=toBank;if(toBank==='live')row.liveSince=row.liveSince||now();row.revision=(row.revision||0)+1;}
    else{
-    const ids=new Set(profileIds);
-    d.groups[key]=rows.filter(x=>!ids.has(x.id));
-    for(const email of d.emailBanks?.[key]||[])if(ids.has(email.profileId)){email.profileId=null;email.usedAt=null;}
+    const ids=new Set(profileIds),remaining=rows.filter(x=>!ids.has(x.id));
+    // Explicit owner deletion archives complete profiles in the SAME OS
+    // encrypted owner/customer vault before removing active rows. This is
+    // separate from workspace checkpoints and preserves independent references.
+    d.deletedProfileArchives||={};d.deletedProfileArchives[key]||=[];
+    if(d.deletedProfileArchives[key].length+found.length>20000)
+     throw Error('Encrypted deleted-profile archive is full. Nothing was deleted.');
+    const stamp=now();
+    for(const row of found)d.deletedProfileArchives[key].push({
+     profile:structuredClone(row),deletedAt:stamp,reason:'owner-return-to-unused-pools'});
+    d.groups[key]=remaining;
+    d.emailBanks||={};d.emailBanks[key]||=[];
+    for(const entry of d.emailBanks[key])if(ids.has(entry.profileId)){
+     entry.profileId=null;entry.usedAt=null;
+    }
+    // Owner-created accounts return to Unused in their exact retailer and
+    // owning vault. Website-managed retailer accounts return through the
+    // website assignment API; NEVER duplicate those in a local pool.
+    for(const row of found){
+     if(row.source==='website-linked-profile')continue;
+     const email=normalizeEmail(row.email);
+     if(!email||remaining.some(x=>x.retailer===row.retailer&&normalizeEmail(x.email)===email))continue;
+     const existing=d.emailBanks[key].find(x=>x.retailer===row.retailer&&normalizeEmail(x.email)===email);
+     if(existing)continue;
+     d.emailBanks[key].push({
+      id:uuid(),email,retailer:row.retailer,
+      ...(typeof row.data?.password==='string'&&row.data.password?{password:row.data.password}:{}),
+      createdAt:stamp,profileId:null,source:'returned-profile'});
+    }
+    if(d.emailBanks[key].length>20000)throw Error('Encrypted email bank is full. Nothing was deleted.');
    }
    auditRecord(d,key,operation==='move'?'bulk-move-local':'bulk-delete-local','',
     {retailer,fromBank,toBank:operation==='move'?toBank:null,count:found.length});
