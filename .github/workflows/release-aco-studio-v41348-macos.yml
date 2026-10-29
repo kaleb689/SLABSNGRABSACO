@@ -1,4 +1,4 @@
-name: Publish ACO Studio 4.13.95 Mac only after full native verification
+name: Publish ACO Studio 4.13.96 Mac only after full native verification
 on:
   # Authorized publication when approved changes reach main. The publish
   # job is gated by full native Mac regression, signature, first-launch,
@@ -16,10 +16,10 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: aco-studio-495-macos
+  group: aco-studio-496-macos
   cancel-in-progress: false
 env:
-  ACO_VERSION: '4.13.95'
+  ACO_VERSION: '4.13.96'
 jobs:
   mac:
     if: github.ref == 'refs/heads/main'
@@ -282,7 +282,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ACO-Studio-4.13.95-*
+          pattern: ACO-Studio-4.13.96-*
           path: installers
           merge-multiple: true
       - name: Verify Apple Silicon before publishing
@@ -290,7 +290,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,json,hashlib
-          root=pathlib.Path('installers');v='4.13.95';platforms={};sums=[]
+          root=pathlib.Path('installers');v='4.13.96';platforms={};sums=[]
           arch='arm64'
           mode=(root/f'signing-{arch}.txt').read_text().strip()
           assert mode in ('adhoc','developer-id')
@@ -303,7 +303,7 @@ jobs:
             with p.open('rb') as f:digest=hashlib.file_digest(f,'sha256').hexdigest()
             sums.append(digest+'  '+p.name)
             if ext=='zip':platforms['darwin-'+arch]={'url':f'https://github.com/kaleb689/SLABSNGRABSACO/releases/download/{tag}/{p.name}','sha256':digest,'size':p.stat().st_size,'bundleName':'ACO Studio.app','signing':mode}
-          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'ACO Studio 4.13.95 names Personal exports by login email and customer exports by signup name plus ascending 1-based index. The exported copies alone are renamed; Security Codes and saved profile fields remain unchanged. Studio also auto-selects unitless Address Bank Main addresses when selected profiles already have apartment numbers, adds the owner-requested unit variation, and automatically matches shipping and billing. Original bank entries, cards and security codes remain unchanged. Jig previews whenever options change, randomizes eligible style allocation while respecting selected distribution counts, and tests up to 65 approved Apt/Unit/Ste/#/bare A-D or 1-9 second-line choices on unitless addresses without modifying saved apartment numbers. Existing profile, card, code and bank data remain preserved. ACO Studio now reuses its existing Mac app instance to prevent duplicate Dock launch icons, offers a verified Desktop shortcut to the Applications copy, and no longer force-launches extra instances on updates. Profile action buttons now follow the profile list in a sticky grouped toolbar with right-click Delete Profile and Delete Selected confirmations. Card bank renders in smaller batches, profile card rendering uses one document fragment, and cached page selection prevents avoidable repeat work. Existing records and backups remain preserved. Customer Profiles now offer an owner-only View card details & code action for saved full-number Studio cards, showing existing independent profile references from the exact customer vault without exposing payment CVV/CVC or unmasking website-only cards. New retailer profiles stay in their own unexported tab until saved to an export file. Export All can preview and skip matching emails or optionally full-card duplicates without changing the saved vault. Per-retailer counts show Live, New, Ready and Draft; previously approved quantity and selection fixes remain. Profile creation quantities can be typed when accounts are selected. A smaller quantity uses only the first requested accounts from that selection, with exact emails shown for confirmation. Selection highlights update in place without rebuilding the card grid, unchanged background data no longer rebuilds the Unused page, and open creation windows defer background redraws. Selected profile counts remain visible and opening a batch from an already-selected account preserves the batch. Existing profiles, cards, addresses, email banks and routing rules are preserved.','platforms':platforms},indent=2))
+          (root/'mac-update.json').write_text(json.dumps({'schema':1,'channel':'owner','appId':'com.slabsngrabsaco.jigstudio.owner','version':v,'notes':'ACO Studio 4.13.96 reduces repeated sync traffic and speeds customer/Personal/retailer navigation, with bounded read-only import preview retries and unchanged saved vault data. Previously shipped features remain. ACO Studio 4.13.95 names Personal exports by login email and customer exports by signup name plus ascending 1-based index. The exported copies alone are renamed; Security Codes and saved profile fields remain unchanged. Studio also auto-selects unitless Address Bank Main addresses when selected profiles already have apartment numbers, adds the owner-requested unit variation, and automatically matches shipping and billing. Original bank entries, cards and security codes remain unchanged. Jig previews whenever options change, randomizes eligible style allocation while respecting selected distribution counts, and tests up to 65 approved Apt/Unit/Ste/#/bare A-D or 1-9 second-line choices on unitless addresses without modifying saved apartment numbers. Existing profile, card, code and bank data remain preserved. ACO Studio now reuses its existing Mac app instance to prevent duplicate Dock launch icons, offers a verified Desktop shortcut to the Applications copy, and no longer force-launches extra instances on updates. Profile action buttons now follow the profile list in a sticky grouped toolbar with right-click Delete Profile and Delete Selected confirmations. Card bank renders in smaller batches, profile card rendering uses one document fragment, and cached page selection prevents avoidable repeat work. Existing records and backups remain preserved. Customer Profiles now offer an owner-only View card details & code action for saved full-number Studio cards, showing existing independent profile references from the exact customer vault without exposing payment CVV/CVC or unmasking website-only cards. New retailer profiles stay in their own unexported tab until saved to an export file. Export All can preview and skip matching emails or optionally full-card duplicates without changing the saved vault. Per-retailer counts show Live, New, Ready and Draft; previously approved quantity and selection fixes remain. Profile creation quantities can be typed when accounts are selected. A smaller quantity uses only the first requested accounts from that selection, with exact emails shown for confirmation. Selection highlights update in place without rebuilding the card grid, unchanged background data no longer rebuilds the Unused page, and open creation windows defer background redraws. Selected profile counts remain visible and opening a batch from an already-selected account preserves the batch. Existing profiles, cards, addresses, email banks and routing rules are preserved.','platforms':platforms},indent=2))
           (root/'SHA256SUMS.txt').write_text('\n'.join(sums)+'\n');(root/'release-tag.txt').write_text(tag)
           PY
       - name: Release the tested installers and advance verified feed
@@ -312,6 +312,7 @@ jobs:
         run: |
           TAG="$(cat installers/release-tag.txt)"
           cat > notes.md <<'NOTES'
+          ACO Studio 4.13.96 reduces redundant customer syncs, rate-limited import preview failures, and expensive profile rendering when switching customers, retailers or the Personal vault. Read-only import preview retries are bounded; write commits never retry automatically. Vault isolation, card references and existing profile data stay unchanged.
           ACO Studio 4.13.95 fixes customer Walmart Live imports whose embedded retailer metadata was mislabeled Target: preview now identifies retailer mismatches and provides an explicit reviewed Walmart override. Exact website-linked emails are skipped while other imported accounts continue. Owner may map a different incoming Walmart email to the exact existing linked website/customer assignment, confirms any login-password change separately, and website and app readback must verify the updated assignment. No automatic matching by name, card or file order; no unlinking or deletion. Customer and Personal vaults, card references and encrypted Security Codes remain isolated and unchanged unless expressly modified.
           ACO Studio 4.13.95 skips cross-vault email ownership collisions in BOTH directions during Personal/customer profile files, multi-file Live profiles, pasted credentials, imported email banks and the owner Walmart sync. Emails already held in another encrypted Personal/customer vault are left out; all remaining eligible records continue to import. Email reuse across retailers within the same owner vault remains allowed; unrelated customer assignments and all saved cards/security references remain unchanged. Imports report eligible and skipped counts without disclosing another vault’s data.
           ACO Studio 4.13.95 repairs customer-side file imports and Live multi-file imports: customer dropdown or picker focus no longer blocks profile/bank refresh; imported records appear in the intended customer vault immediately. Confirmed imports bind to the exact selected scope and customer; stale or cross-customer approvals are rejected. Unrelated saved cards are not auto-selected for import replacements; only explicitly selected cards can be used for reviewed repairs. Existing linked accounts, Personal records, customer vaults, Security Codes and encrypted recovery snapshots remain untouched.
@@ -333,9 +334,9 @@ jobs:
           NOTES
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.95 Mac' --notes-file notes.md --prerelease
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.96 Mac' --notes-file notes.md --prerelease
           else
-            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.95 Mac' --notes-file notes.md --prerelease
+            gh release create "$TAG" installers/*arm64.dmg installers/*arm64.zip installers/SHA256SUMS.txt installers/mac-update.json installers/update-test-arm64.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'ACO Studio 4.13.96 Mac' --notes-file notes.md --prerelease
           fi
           # Check that published artifacts exist before advertising the
           # update to existing owners.

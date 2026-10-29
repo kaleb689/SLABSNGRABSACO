@@ -34,6 +34,9 @@
  const main=d.createElement('main');main.id='profileLibraryPage';main.className='shell main profileLibrary';main.hidden=true;
  main.innerHTML='<header><div><div class="eyebrow" data-owner-title></div><h1>Profiles</h1><p>Choose a retailer, prepare unused accounts, review completed jigs, export, then move selected profiles to Live.</p></div><div class="buttons"><button type="button" class="btn primary" data-create-pools>Create profiles from pools</button><button type="button" class="btn secondary" data-import>Import</button><button type="button" class="btn secondary" data-import-live>Import live profiles</button><button type="button" class="btn secondary" data-jig-selected disabled>Jig selected</button><button type="button" class="btn secondary" data-bulk-move disabled>Move All Selected</button><button type="button" class="btn plain" data-bulk-delete disabled>Delete All Selected</button><button type="button" class="btn secondary" data-import-history>Import History</button><button type="button" class="btn primary" data-export>Export selected</button><button type="button" class="btn secondary" data-export-archive>Export full profile JSON</button></div></header><div class="profileLibraryControls"><label data-customer-label>Customer<select data-customer></select></label><label data-retailer-picker hidden>Retailer<select data-retailer aria-label="Current retailer"><option value="target">Target · Shikari CSV</option><option value="walmart">Walmart · Valor JSON</option><option value="pokemoncenter">Pokémon Center · Valor JSON</option><option value="costco">Costco · Valor JSON</option><option value="sams">Sam’s · Valor JSON</option></select></label><div class="profileRetailerButtons" data-retailer-tabs role="group" aria-label="Choose retailer"></div><label>Search<input type="search" data-search placeholder="Email, card or address"></label><label>View<select data-view><option value="all">All profiles</option><option value="issues">Issues only</option><option value="duplicates">Duplicates only</option></select></label><button type="button" class="btn secondary" data-pkc-reconcile>Reconcile PKC email pool</button><button type="button" class="btn secondary" data-rules>Retailer jig rules</button><button type="button" class="btn secondary" data-sync>Sync linked profiles</button></div><section data-retailer-workspace class="profileRetailerWorkspace" aria-label="Profiles for selected retailer"><div class="profileLibraryTabs"><button type="button" class="btn secondary" data-stage="unused" aria-pressed="true">Unused</button><button type="button" class="btn secondary" data-stage="new">New · Not Exported</button><button type="button" class="btn secondary" data-stage="completed">Ready for Export</button><button type="button" class="btn secondary" data-stage="live">Live Profiles</button><button type="button" class="btn plain" data-all>Select All on Page</button><button type="button" class="btn plain" data-clear>Clear selection</button></div><p data-current-retailer role="status">Target · Unused accounts</p></section><p data-selected-count role="status" aria-live="polite" style="position:sticky;top:0;z-index:2;background:#0d1b2a;padding:10px;border:1px solid #32d6d9;border-radius:8px">0 profiles selected on this page</p><p data-pool-counts role="status"></p><section class="profileResourceBanks" data-resource-banks><div class="profileResourceBank"><header><div><span class="eyebrow">AVAILABLE RESOURCES</span><h3>Card Bank <span data-card-count></span></h3></div><button type="button" class="btn slim secondary" data-manage-cards>Manage cards</button></header><input type="search" data-card-bank-search aria-label="Search Card Bank by full card number, linked email or retailer" placeholder="Search card number, email, retailer, label…" autocomplete="off"><div class="profileResourceList" data-card-bank><p>Loading saved cards…</p></div></div><div class="profileResourceBank"><header><div><span class="eyebrow">AVAILABLE RESOURCES</span><h3>Address Bank <span data-address-count></span></h3></div><button type="button" class="btn slim secondary" data-manage-addresses>Manage addresses</button></header><div class="profileResourceList" data-address-bank><p>Loading saved addresses…</p></div></div></section><p class="profileLibrarySummary" data-status role="status"></p><div class="profileLibraryLayout"><aside class="profileLibraryGroups" data-groups></aside><section class="profileLibraryCards" data-cards></section></div><input type="file" data-file hidden accept=".csv,.json,.txt,.tsv"><input type="file" data-live-file hidden multiple accept=".csv,.json,.txt,.tsv">';
  $('sitePage').before(main);const q=s=>main.querySelector('[data-'+s+']');
+ const returnToPoolsButton=text('button','Delete & Return to Pools');
+ returnToPoolsButton.type='button';returnToPoolsButton.className='btn secondary';
+ q('bulk-delete').after(returnToPoolsButton);
  const syncOwnerWalmart=text('button','Sync Walmart emails into Personal Unused');
  syncOwnerWalmart.type='button';syncOwnerWalmart.className='btn secondary';
  syncOwnerWalmart.hidden=true;q('pkc-reconcile').after(syncOwnerWalmart);
@@ -323,7 +326,7 @@
  }
  // Selection belongs to one rendered page of the current retailer and stage.
  // Keep the preexisting 200-card display size, but make later pages accessible.
- const PAGE_SIZE=200;let pageIndex=0;let selectionAnchor=null,customGroups={};
+ const PAGE_SIZE=100;let pageIndex=0;let selectionAnchor=null,customGroups={};
  let sortMode='newest';let visibleCardLimit=80;let lastResourceSignature='';let lastResourceRetailer='';
  const sortToolbar=d.createElement('div');sortToolbar.className='profileLibrarySortToolbar';
  const sortLabel=d.createElement('label');sortLabel.textContent='Profile order';
@@ -331,7 +334,7 @@
  for(const [value,label]of [['newest','Newest accounts at top'],['oldest','Newest accounts at bottom'],['email','Email A–Z']])sortSelect.append(new Option(label,value));
  sortLabel.append(sortSelect);
  const latestLabel=d.createElement('label');latestLabel.textContent='Newest profiles to select';
- const latestCount=d.createElement('input');latestCount.type='number';latestCount.min='1';latestCount.max='200';latestCount.step='1';latestCount.value='26';latestCount.setAttribute('aria-label','Number of newest profiles to select');
+ const latestCount=d.createElement('input');latestCount.type='number';latestCount.min='1';latestCount.max=String(PAGE_SIZE);latestCount.step='1';latestCount.value='26';latestCount.setAttribute('aria-label','Number of newest profiles to select');
  latestLabel.append(latestCount);
  const selectNewest=text('button','Select newest 26');selectNewest.type='button';selectNewest.className='btn secondary';
  sortToolbar.append(sortLabel,latestLabel,selectNewest);q('current-retailer').after(sortToolbar);
@@ -341,7 +344,7 @@
   const actionDetails=d.createElement('div');actionDetails.className='profileSelectionDockPrimary';
   const actionManage=d.createElement('div');actionManage.className='profileSelectionDockSecondary';
   actionDetails.append(q('selected-count'),q('all'),q('clear'));
-  actionManage.append(q('jig-selected'),q('bulk-move'),q('bulk-delete'),q('export'),exportAllUnique,exportTypeLabel,q('export-archive'));
+  actionManage.append(q('jig-selected'),q('bulk-move'),q('bulk-delete'),returnToPoolsButton,q('export'),exportAllUnique,exportTypeLabel,q('export-archive'));
   floatingActions.append(actionDetails,actionManage);main.querySelector('.profileLibraryLayout').before(floatingActions);
  const timeValue=value=>{const t=Date.parse(value||'');return Number.isFinite(t)?t:0;};
  const creationTime=row=>timeValue(row.profileGeneratedAt)||timeValue(row.createdAt)||timeValue(row.completedAt);
@@ -643,6 +646,17 @@
   cardCount.textContent='· '+eligible.length+' saved eligible for '+retailName[q('retailer').value]+' / '+pool.length+' distinct cards'+(missingSavedHard.length?' · '+missingSavedHard.length+' profile-only Hard Cards not in saved bank (Audit Hard Cards)':'');
   addressCount.textContent='· '+addresses.length+' saved';
   if(!pool.length)cardBox.append(text('p','No cards found in this '+(scope==='personal'?'Personal':'customer')+' vault or its saved profiles.'));
+  // Index exact full-card references once, instead of scanning every profile
+  // for every displayed card on each retailer/customer switch.
+  const codesByFullNumber=new Map();
+  for(const profile of rows){
+   const number=String(cardFields(profile.data||{}).number||'').replace(/\D/g,'');
+   if(!/^\d{12,19}$/.test(number))continue;
+   const code=String(profile.data?.profileSecurityCode||profile.data?.security_code||profile.data?.custom_security_code||profile.data?.card?.custom_security_code||'').trim();
+   if(!code)continue;
+   if(!codesByFullNumber.has(number))codesByFullNumber.set(number,new Set());
+   codesByFullNumber.get(number).add(code);
+  }
   for(const card of matchingCards.slice(0,visibleCardLimit)){
    const row=d.createElement('article');row.className='profileResourceRow profileSelectableCard'+(card.fromSavedBank&&card.availableRetailers?.includes(q('retailer').value)?' isAvailable':' isUsed');
    row.tabIndex=0;row.onclick=e=>{if(!e.target.closest('button,input'))window.ACOProfileWorkshop?.openVault?.(request(),'cards',card.fullNumber||card.last4);};row.oncontextmenu=e=>showContext(e,[[ 'View / edit card',()=>window.ACOProfileWorkshop?.openVault?.(request(),'cards',card.fullNumber||card.last4)],['Set / unset Hard Card',()=>row.querySelector('button')?.click()]]);row.onkeydown=e=>{if(e.key==='Enter')row.click();};
@@ -655,11 +669,7 @@
     // Show only an independent saved profile reference, never a payment verifier.
     // These rows belong to the selected, authenticated Personal/customer vault.
     // Require exact complete card identity and suppress conflicting references.
-    const relatedReferences=new Set(rows.filter(profile=>
-      String(cardFields(profile.data||{}).number||'').replace(/\D/g,'')===String(card.fullNumber||'').replace(/\D/g,'') &&
-      /^\d{12,19}$/.test(String(card.fullNumber||'').replace(/\D/g,'')))
-      .map(profile=>String(profile.data?.profileSecurityCode||profile.data?.security_code||profile.data?.custom_security_code||profile.data?.card?.custom_security_code||'').trim())
-      .filter(Boolean));
+    const relatedReferences=codesByFullNumber.get(String(card.fullNumber||'').replace(/\D/g,''))||new Set();
     if(relatedReferences.size===1)body.append(text('small','Security Code: '+[...relatedReferences][0]));
     else if(relatedReferences.size>1)body.append(text('small','Security Code: conflicting saved references — review matching profiles'));
 
@@ -792,8 +802,11 @@
  q('jig-selected').disabled=busy||!selectedVisible.length;
  q('jig-selected').textContent=selectedVisible.length?(stage==='unused'?'Jig selected ('+selectedVisible.length+')':'Re-jig selected ('+selectedVisible.length+')'):(stage==='unused'?'Jig selected':'Re-jig selected');
  for(const key of ['bulk-move','bulk-delete'])q(key).disabled=busy||stage==='unused'||!selectedVisible.length;
+ returnToPoolsButton.disabled=busy||stage==='unused'||!selectedVisible.length;
+ q('bulk-delete').disabled=q('bulk-delete').disabled||selectedVisible.some(x=>x.sourceLinked);
  q('bulk-move').textContent=(stage==='live'?'Return selected to Working':'Move selected Ready for Export to Live')+(selectedVisible.length?' ('+selectedVisible.length+')':'');
- q('bulk-delete').textContent=selectedVisible.length?'Delete All Selected ('+selectedVisible.length+')':'Delete All Selected';
+ q('bulk-delete').textContent=selectedVisible.length?'Delete Local Only ('+selectedVisible.length+')':'Delete Local Only';
+ returnToPoolsButton.textContent=selectedVisible.length?'Delete & Return to Pools ('+selectedVisible.length+')':'Delete & Return to Pools';
  }
  d.addEventListener('keydown',e=>{if(main.hidden||d.querySelector('.profileLibraryModal,.workshopModal:not([hidden])'))return;if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='a'&&!e.target.closest('input,textarea,select')){e.preventDefault();selected.clear();for(const x of pageRows())selected.add(x.id);updateSelection();}});
  main.addEventListener('click',e=>{if(e.target.closest('.profileSelectableCard')&&!e.target.closest('button,input,a'))return;});
@@ -808,9 +821,24 @@
   // until the user clicked elsewhere. Only open editors may defer refresh.
   return !!d.querySelector('.profileLibraryModal,.workshopModal:not([hidden])');
  }
- async function refresh(){if(editorBusy()){pendingRefresh=true;return;}const ticket=++refreshTicket,owner=request(),ownerEpoch=epoch,priorCards=JSON.stringify(bankAssets.cardPool||[]),priorUnused=JSON.stringify(unusedAccounts);if(scope==='aco'&&!customerId){rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();return;}try{if(scope==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;const [result]=await Promise.all([api.list(owner),loadResourceBanks(owner,ticket,ownerEpoch)]);if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;if(editorBusy()){pendingRefresh=true;return;}const same=JSON.stringify(rows)===JSON.stringify(result.profiles);const poolsSame=JSON.stringify(unusedConflicts)===JSON.stringify(result.unusedConflicts||[]);unusedConflicts=Array.isArray(result.unusedConflicts)?result.unusedConflicts:[];if(!same){const scroll={x:window.scrollX,y:window.scrollY};rows=result.profiles;customGroups=result.customGroups||{};selected=new Set([...selected].filter(id=>stage==='unused'?(unusedAccounts.some(x=>x.id===id)||rows.some(x=>x.id===id&&x.bank!=='live'&&x.stage==='in-progress')):rows.some(x=>x.id===id)));draw();window.scrollTo(scroll.x,scroll.y);}else if(!poolsSame||priorUnused!==JSON.stringify(unusedAccounts)||priorCards!==JSON.stringify(bankAssets.cardPool||[]))draw();else { /* The visible DOM and selected count have not changed. */ }note(customerName()+' · '+visible().length+' profiles · '+retailName[q('retailer').value]+' · '+(bankAssets.cardPool||[]).filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value)).length+' eligible cards · '+bankAssets.addresses.length+' saved addresses');}catch(e){if(ticket===refreshTicket&&ownerEpoch===epoch){rows=[];bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();note(e.message);}}}
+ // Snapshot revisions are authoritative for UI updates. Avoid expensive
+ // JSON serialization of thousands of complete customer profiles on refresh.
+ function sameProfileRows(previous,incoming){
+  if(previous===incoming)return true;
+  if(!Array.isArray(previous)||!Array.isArray(incoming)||previous.length!==incoming.length)return false;
+  for(let i=0;i<previous.length;i++){
+   const a=previous[i],b=incoming[i];
+   if(a.id!==b.id||a.revision!==b.revision||a.email!==b.email||
+      a.bank!==b.bank||a.stage!==b.stage||a.retailer!==b.retailer||
+      a.group!==b.group||a.status!==b.status||a.sourceLinked!==b.sourceLinked||
+      a.needsReview!==b.needsReview||a.needsFirstExport!==b.needsFirstExport||
+      a.profileGeneratedAt!==b.profileGeneratedAt||a.exportedAt!==b.exportedAt)return false;
+  }
+  return true;
+ }
+ async function refresh(){if(editorBusy()){pendingRefresh=true;return;}const ticket=++refreshTicket,owner=request(),ownerEpoch=epoch,priorCards=JSON.stringify(bankAssets.cardPool||[]),priorUnused=JSON.stringify(unusedAccounts);if(scope==='aco'&&!customerId){rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();return;}try{if(scope==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;const [result]=await Promise.all([api.list(owner),loadResourceBanks(owner,ticket,ownerEpoch)]);if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;if(editorBusy()){pendingRefresh=true;return;}const same=sameProfileRows(rows,result.profiles);const poolsSame=JSON.stringify(unusedConflicts)===JSON.stringify(result.unusedConflicts||[]);unusedConflicts=Array.isArray(result.unusedConflicts)?result.unusedConflicts:[];if(!same){const scroll={x:window.scrollX,y:window.scrollY};rows=result.profiles;customGroups=result.customGroups||{};selected=new Set([...selected].filter(id=>stage==='unused'?(unusedAccounts.some(x=>x.id===id)||rows.some(x=>x.id===id&&x.bank!=='live'&&x.stage==='in-progress')):rows.some(x=>x.id===id)));draw();window.scrollTo(scroll.x,scroll.y);}else if(!poolsSame||priorUnused!==JSON.stringify(unusedAccounts)||priorCards!==JSON.stringify(bankAssets.cardPool||[]))draw();else { /* The visible DOM and selected count have not changed. */ }note(customerName()+' · '+visible().length+' profiles · '+retailName[q('retailer').value]+' · '+(bankAssets.cardPool||[]).filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value)).length+' eligible cards · '+bankAssets.addresses.length+' saved addresses');}catch(e){if(ticket===refreshTicket&&ownerEpoch===epoch){rows=[];bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();note(e.message);}}}
  function close(){epoch++;backupPanel.hidden=true;restoreFromBackup.hidden=true;restoreStatus.textContent='Scan this vault before previewing any restoration.';reviewOutput.textContent='No recovery scan has been run for this vault.';rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
- async function open(next){if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;close();stage='unused';pageIndex=0;scope=next;issueView='all';q('view').value='all';customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;customerList();q('customer-label').hidden=scope==='personal';q('owner-title').textContent=scope==='personal'?'PERSONAL VAULT':'CUSTOMER VAULTS';q('sync').hidden=scope==='personal';q('pkc-reconcile').hidden=scope!=='personal';websiteVault.hidden=scope==='personal';websiteVault.open=false;websiteLoad++;for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;main.hidden=false;backupPanel.hidden=scope!=='personal';if(scope==='personal')void updateBackupPanel();for(const b of nav.querySelectorAll('button'))b.classList.remove('on');(scope==='personal'?personalProfiles:customerProfiles).classList.add('on');d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent=scope==='personal'?'Personal Profiles':'Customer Profiles';await window.desktopAPI.site?.hide?.();await refresh();void passiveHealthCheck();}
+ async function open(next){if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;close();stage='unused';pageIndex=0;scope=next;lastVaultSwitchAt=Date.now();issueView='all';q('view').value='all';customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;customerList();q('customer-label').hidden=scope==='personal';q('owner-title').textContent=scope==='personal'?'PERSONAL VAULT':'CUSTOMER VAULTS';q('sync').hidden=scope==='personal';q('pkc-reconcile').hidden=scope!=='personal';websiteVault.hidden=scope==='personal';websiteVault.open=false;websiteLoad++;for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;main.hidden=false;backupPanel.hidden=scope!=='personal';if(scope==='personal')void updateBackupPanel();for(const b of nav.querySelectorAll('button'))b.classList.remove('on');(scope==='personal'?personalProfiles:customerProfiles).classList.add('on');d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent=scope==='personal'?'Personal Profiles':'Customer Profiles';await window.desktopAPI.site?.hide?.();await refresh();void passiveHealthCheck();}
  q('manage-cards').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'cards');};
  q('manage-addresses').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'addresses');};
  customerProfiles.onclick=()=>void open('aco');personalProfiles.onclick=()=>void open('personal');for(const b of nav.querySelectorAll('button'))if(b!==customerProfiles&&b!==personalProfiles)b.addEventListener('click',()=>{if(!main.hidden)close();});
@@ -1187,7 +1215,7 @@
   finally{auditHardCards.disabled=false;}
  };
 
-  q('customer').onchange=()=>{epoch++;websiteLoad++;websiteVault.open=false;websiteVault.querySelector('[data-web-records]').replaceChildren();customerId=q('customer').value||null;rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;bankAssets={addresses:[],cards:[]};selected.clear();pageIndex=0;group='all';issueView='all';q('view').value='all';drawResourceBanks();void refresh();};q('retailer').onchange=()=>{selected.clear();pageIndex=0;group='all';q('search').value='';issueView='all';q('view').value='all';unusedAccounts=[];unusedConflicts=[];poolReport=null;draw();void refresh();};q('search').oninput=()=>{selected.clear();pageIndex=0;if(q('search').value.trim())group='all';draw();};q('view').onchange=()=>{issueView=q('view').value;selected.clear();pageIndex=0;group='all';draw();note(issueView==='duplicates'?'Showing only duplicate profiles.':issueView==='issues'?'Showing only profiles that need attention.':customerName()+' · '+visible().length+' profiles');};for(const b of main.querySelectorAll('[data-stage]'))b.onclick=()=>{stage=b.dataset.stage;pageIndex=0;group='all';selected.clear();q('search').value='';issueView='all';q('view').value='all';for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab===b));draw();};q('all').onclick=()=>{selected.clear();for(const r of pageRows())selected.add(r.id);updateSelection();};q('clear').onclick=()=>{selected.clear();updateSelection();};
+  q('customer').onchange=()=>{epoch++;websiteLoad++;websiteVault.open=false;websiteVault.querySelector('[data-web-records]').replaceChildren();customerId=q('customer').value||null;lastVaultSwitchAt=Date.now();rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;bankAssets={addresses:[],cards:[]};selected.clear();pageIndex=0;group='all';issueView='all';q('view').value='all';drawResourceBanks();void refresh();};q('retailer').onchange=()=>{selected.clear();pageIndex=0;group='all';q('search').value='';issueView='all';q('view').value='all';unusedAccounts=[];unusedConflicts=[];poolReport=null;draw();void refresh();};q('search').oninput=()=>{selected.clear();pageIndex=0;if(q('search').value.trim())group='all';draw();};q('view').onchange=()=>{issueView=q('view').value;selected.clear();pageIndex=0;group='all';draw();note(issueView==='duplicates'?'Showing only duplicate profiles.':issueView==='issues'?'Showing only profiles that need attention.':customerName()+' · '+visible().length+' profiles');};for(const b of main.querySelectorAll('[data-stage]'))b.onclick=()=>{stage=b.dataset.stage;pageIndex=0;group='all';selected.clear();q('search').value='';issueView='all';q('view').value='all';for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab===b));draw();};q('all').onclick=()=>{selected.clear();for(const r of pageRows())selected.add(r.id);updateSelection();};q('clear').onclick=()=>{selected.clear();updateSelection();};
  async function jigUnusedSelected(){
    const chosen=pageRows().filter(x=>selected.has(x.id));
    if(stage!=='unused'||!chosen.length){note('Select one or more unused accounts or unfinished profiles from this retailer page.');return;}
@@ -1218,6 +1246,45 @@
     profileIds:selectedRows.map(x=>x.id),revisions:selectedRows.map(x=>x.revision||0),confirmed:true});
    selected.clear();await refresh();note('Moved '+result.count+' selected profiles into '+toBank+' for '+retailName[retailer]+'.');
   }catch(error){note('Move failed: '+error.message);}
+ };
+ returnToPoolsButton.onclick=async()=>{
+  try{
+   const {selectedRows,retailer,fromBank}=chosenForBulk(),owner=request(),ownerEpoch=epoch;
+   const linked=selectedRows.filter(row=>row.sourceLinked).length,local=selectedRows.length-linked;
+   const win=dialog('Delete & Return '+selectedRows.length+' profiles to pools');
+   win.body.append(
+    text('p',local+' local profile(s): retailer logins return to Unused in this exact vault. '+linked+
+      ' website-linked account(s): their exact retailer assignments return to the website pool first.'),
+    text('p','A complete encrypted recovery checkpoint is required. Original profile history, Security Codes, customer card and address banks remain protected. Profile-only local cards are preserved in this vault’s Card Bank before deletion. Nothing moves between customer and Personal vaults.'),
+    text('p','Only these '+retailName[retailer]+' profiles in '+customerName()+' / '+fromBank+' are affected.'));
+   const review=d.createElement('details');review.open=true;review.append(text('summary','Review exact selected profiles'));
+   for(const row of selectedRows)review.append(text('p',row.email+' · '+(row.sourceLinked?'Website linked':'Local/unlinked')));
+   win.body.append(review);
+   const confirmLabel=text('label','I reviewed these exact retailer accounts and authorize their return to pools and removal from active Studio profiles.');
+   confirmLabel.className='check';
+   const check=d.createElement('input');check.type='checkbox';confirmLabel.prepend(check);
+   const run=text('button','Confirm Delete & Return to Pools');run.type='button';run.className='btn primary';run.disabled=true;
+   check.onchange=()=>{run.disabled=!check.checked;};
+   win.body.append(confirmLabel,run);
+   run.onclick=async()=>{
+    if(!win.valid()||ownerEpoch!==epoch||owner.scope!==scope||owner.customerId!==customerId||
+       retailer!==q('retailer').value||fromBank!==(stage==='live'?'live':'working')){
+     win.status().textContent='Vault, retailer or bank changed. Reopen the selection.';return;
+    }
+    run.disabled=true;
+    try{
+     const result=await api.returnToPools({...owner,retailer,fromBank,confirmed:true,
+      profileIds:selectedRows.map(x=>x.id),revisions:selectedRows.map(x=>x.revision||0)});
+     if(!win.valid())return;
+     if(result.partial){win.status().textContent=result.message+' Website accounts returned: '+result.websiteReturned+'. No local profiles deleted.';return;}
+     win.wrap.remove();selected.clear();await refresh();
+     note('Returned '+result.count+' profiles to their original pools · '+result.websiteReturned+
+      ' website assignments unlinked · '+result.cardsSaved+' saved Card Bank copies · '+
+      result.cardsAlreadySaved+' cards already saved · encrypted recovery preserved.');
+    }catch(error){if(win.valid())win.status().textContent='Return to pools stopped: '+String(error?.message||error);}
+    finally{run.disabled=false;}
+   };
+  }catch(error){note('Return to pools unavailable: '+String(error.message||error));}
  };
  q('bulk-delete').onclick=async()=>{
   try{
@@ -1338,6 +1405,26 @@
   }catch(error){note('Live reconciliation unavailable: '+String(error.message||error));}
   finally{reconcileExistingLive.disabled=false;}
  };
+ // Only read-only previews retry after 429; commits must never be retried
+ // automatically because a partially completed write could be duplicated.
+ let importPreviewInProgress=false;
+ async function importPreviewWithRetry(payload,ownerEpoch){
+  if(importPreviewInProgress)throw Error('An import preview is already in progress.');
+  importPreviewInProgress=true;
+  try{
+   for(let attempt=0;attempt<5;attempt++){
+    if(main.hidden||epoch!==ownerEpoch||scope!==payload.scope||
+       (payload.scope==='aco'&&customerId!==payload.customerId))
+     throw Error('Customer vault selection changed. Reopen the import.');
+    try{return await api.importPreview(payload);}
+    catch(error){
+     if(!/(too many requests|rate.?limit|\b429\b)/i.test(String(error?.message||error))||attempt===4)throw error;
+     note('Import preview is rate-limited. Retrying safely; no profiles or cards have changed.');
+     await new Promise(resolve=>setTimeout(resolve,[3000,6000,12000,24000][attempt]));
+    }
+   }
+  }finally{importPreviewInProgress=false;}
+ }
  let forceLiveRetailerOnReview=false;
  q('live-file').onchange=async()=>{
   const files=[...q('live-file').files];if(!files.length)return;const owner=request(),at=epoch;
@@ -1345,7 +1432,7 @@
    if(owner.scope==='aco'&&!owner.customerId)throw Error('Select a customer vault before importing.');
    if(files.reduce((n,f)=>n+f.size,0)>26*1024*1024)throw Error('Choose files totaling less than 26 MB.');
    const selectedRetailer=q('retailer').value,overrideRetailer=forceLiveRetailerOnReview;forceLiveRetailerOnReview=false;
-   const preview=await api.importPreview({...owner,bank:'live',retailer:selectedRetailer,overrideRetailer,files:await Promise.all(files.map(async f=>({fileName:f.name,text:await f.text()})))});
+   const preview=await importPreviewWithRetry({...owner,bank:'live',retailer:selectedRetailer,overrideRetailer,files:await Promise.all(files.map(async f=>({fileName:f.name,text:await f.text()})))},at);
    if(at!==epoch||main.hidden)return;const win=dialog('Import into Live Profiles'),form=d.createElement('form');win.body.append(form);
    form.append(text('p',preview.count+' eligible input rows → '+(preview.effectiveCount??preview.count)+' latest unique Live profiles: '+Object.entries(preview.counts).map(([r,n])=>retailName[r]+' '+n).join(' · ')+'. '+(preview.skippedForeign||0)+' email(s) already owned by another vault will be skipped; eligible rows continue.'));
    form.append(text('p','These profiles stay in Live Profiles when edited or jigged. Retailer labels and filenames determine the bank; unlabeled files use the retailer selected before import. Check the assignments below. Emails not already in a PKC profile or email bank are also added to this vault’s PKC email pool.'));
@@ -1451,7 +1538,7 @@
  };
  q('create-pools').onclick=()=>void window.ACOPoolCreator?.open({...request(),retailer:q('retailer').value,...(stage==='unused'&&pageRows().some(x=>selected.has(x.id)&&x.kind==='unused-account')?{emailIds:pageRows().filter(x=>selected.has(x.id)&&x.kind==='unused-account').map(x=>x.id)}:{})});
  d.addEventListener('jigstudio:pools-generated',()=>{if(!main.hidden)void refresh();});
- q('file').onchange=async()=>{const file=q('file').files[0];if(!file)return;const owner=request(),at=epoch,retailer=q('retailer').value;try{if(owner.scope==='aco'&&!owner.customerId)throw Error('Select a customer vault before importing.');if(file.size>26*1024*1024)throw Error('Choose a file smaller than 26 MB.');const preview=await api.importPreview({...owner,retailer,fileName:file.name,text:await file.text()});if(at!==epoch||main.hidden)return;const win=dialog('Review profile import · '+customerName()),form=d.createElement('form');win.body.append(text('p',preview.count+' eligible profiles · '+(preview.skippedForeign||0)+' email(s) in another Personal/customer vault skipped · '+preview.profiles.filter(x=>x.duplicates.length).length+' eligible rows with duplicate email, name or card.'),form);for(const row of preview.profiles.filter(x=>x.duplicates.length).slice(0,80))form.append(text('p',row.email+' · Duplicate '+row.duplicates.join(', ')));form.insertAdjacentHTML('beforeend','<label class="check"><input name="name" type="checkbox" checked> Generate new names for duplicates</label><label class="check"><input name="email" type="checkbox" checked> Replace duplicate emails from this retailer’s bank</label><label class="check"><input name="card" type="checkbox" checked> Replace duplicate cards from this vault</label><label class="check"><input name="allowShared" type="checkbox"> Keep shared names/cards when their repair option is off</label><label class="check"><input name="alreadyJigged" type="checkbox" checked> Imported profiles have already been jigged / formatted</label>');field(form,'group','Group',retailName[retailer]);const choices=d.createElement('div');form.append(choices);const assets=await window.desktopAPI.profileWorkshop.assets(owner);if(!win.valid())return;for(const card of assets.cards.filter(x=>x.unused)){const label=text('label',card.label+' · ending '+card.last4),c=d.createElement('input');c.type='checkbox';c.checked=false;c.value=card.id;label.prepend(c);choices.append(label);}const b=text('button','Import reviewed profiles');b.type='submit';b.className='btn primary';form.append(b);form.onsubmit=async e=>{e.preventDefault();
+ q('file').onchange=async()=>{const file=q('file').files[0];if(!file)return;const owner=request(),at=epoch,retailer=q('retailer').value;try{if(owner.scope==='aco'&&!owner.customerId)throw Error('Select a customer vault before importing.');if(file.size>26*1024*1024)throw Error('Choose a file smaller than 26 MB.');const preview=await importPreviewWithRetry({...owner,retailer,fileName:file.name,text:await file.text()},at);if(at!==epoch||main.hidden)return;const win=dialog('Review profile import · '+customerName()),form=d.createElement('form');win.body.append(text('p',preview.count+' eligible profiles · '+(preview.skippedForeign||0)+' email(s) in another Personal/customer vault skipped · '+preview.profiles.filter(x=>x.duplicates.length).length+' eligible rows with duplicate email, name or card.'),form);for(const row of preview.profiles.filter(x=>x.duplicates.length).slice(0,80))form.append(text('p',row.email+' · Duplicate '+row.duplicates.join(', ')));form.insertAdjacentHTML('beforeend','<label class="check"><input name="name" type="checkbox" checked> Generate new names for duplicates</label><label class="check"><input name="email" type="checkbox" checked> Replace duplicate emails from this retailer’s bank</label><label class="check"><input name="card" type="checkbox" checked> Replace duplicate cards from this vault</label><label class="check"><input name="allowShared" type="checkbox"> Keep shared names/cards when their repair option is off</label><label class="check"><input name="alreadyJigged" type="checkbox" checked> Imported profiles have already been jigged / formatted</label>');field(form,'group','Group',retailName[retailer]);const choices=d.createElement('div');form.append(choices);const assets=await window.desktopAPI.profileWorkshop.assets(owner);if(!win.valid())return;for(const card of assets.cards.filter(x=>x.unused)){const label=text('label',card.label+' · ending '+card.last4),c=d.createElement('input');c.type='checkbox';c.checked=false;c.value=card.id;label.prepend(c);choices.append(label);}const b=text('button','Import reviewed profiles');b.type='submit';b.className='btn primary';form.append(b);form.onsubmit=async e=>{e.preventDefault();
    if(!win.valid()||at!==epoch||owner.scope!==scope||owner.customerId!==request().customerId||retailer!==q('retailer').value){win.status().textContent='Customer or retailer changed. Reopen this import to avoid writing into the wrong vault.';return;}
    b.disabled=true;try{const result=await api.importCommit({token:preview.token,confirmed:true,expectedScope:owner.scope,expectedCustomerId:owner.customerId,customerName:customerName(),group:form.elements.group.value,alreadyJigged:form.elements.alreadyJigged.checked,repairs:Object.fromEntries(['name','email','card','allowShared'].map(k=>[k,form.elements[k].checked])),cardIds:form.elements.card.checked?[...choices.querySelectorAll('input:checked')].map(x=>x.value):[]});if(!win.valid())return;win.wrap.remove();await refresh();note('Imported '+result.imported+' profiles into '+customerName()+' / '+retailName[retailer]+'; '+(result.skippedForeign||0)+' emails already used in other Personal/customer vaults were skipped.');}catch(e){win.status().textContent=e.message;b.disabled=false;}};}catch(e){note(e.message);}};
  const syncFailures=new Map();let syncChain=Promise.resolve();function syncCustomer(id,manual=false){const run=async()=>{try{const r=await api.syncCustomer({scope:'aco',customerId:id});syncFailures.delete(id);if(!main.hidden&&scope==='aco'&&customerId===id){await refresh();if(manual)note('Linked profiles: '+r.created+' created, '+r.updated+' updated, '+r.needsReview+' need review.');}}catch(e){if(manual||syncFailures.get(id)!==e.message){note('Customer synchronization failed: '+e.message);syncFailures.set(id,e.message);}}};const task=syncChain.catch(()=>{}).then(run);syncChain=task.catch(()=>{});return task;}
@@ -1475,8 +1562,37 @@
  q('sync').onclick=()=>customerId?void syncCustomer(customerId,true):note('Select a customer first.');
  async function flushRefresh(){if(pendingRefresh&&!editorBusy()){pendingRefresh=false;await refresh();}}
  d.addEventListener('focusout',()=>setTimeout(()=>void flushRefresh(),0));
- new MutationObserver(()=>{if(pendingRefresh&&!editorBusy())void flushRefresh();}).observe(d.body,{childList:true});
- const queuedCustomers=new Set();let autoRunning=false;async function autoSync(){for(const c of window.JigWebsiteCustomers?.list?.()||[])if(c.id&&c.paid)queuedCustomers.add(c.id);if(autoRunning)return;autoRunning=true;try{while(queuedCustomers.size){const id=queuedCustomers.values().next().value;queuedCustomers.delete(id);await syncCustomer(id);}}finally{autoRunning=false;}}
+ new MutationObserver(()=>{if(pendingRefresh&&!editorBusy())void flushRefresh();}).observe(main,{childList:true,subtree:false});
+ // Debounce repeated website events. Keep automatic reconciliation paced,
+ // never compete with the foreground import or customer switch.
+ const queuedCustomers=new Set(),lastAutomaticSync=new Map();
+ let autoRunning=false,autoSyncResume=null,lastVaultSwitchAt=0;
+ const AUTO_SYNC_COOLDOWN_MS=5*60*1000,AUTO_SYNC_SPACING_MS=2500;
+ async function autoSync(){
+  if(main.hidden||scope!=='aco'||!customerId)return;
+  const now=Date.now();
+  for(const c of window.JigWebsiteCustomers?.list?.()||[])
+   if(c.id&&c.paid&&now-(lastAutomaticSync.get(c.id)||0)>=AUTO_SYNC_COOLDOWN_MS)queuedCustomers.add(c.id);
+  if(autoRunning)return;
+  autoRunning=true;
+  try{
+   while(queuedCustomers.size){
+    if(main.hidden||scope!=='aco'||!customerId){queuedCustomers.clear();break;}
+    if(editorBusy()||importPreviewInProgress||Date.now()-lastVaultSwitchAt<1500)break;
+    if(window.JigWebsiteCustomers?.connected?.()===false){queuedCustomers.clear();break;}
+    const id=queuedCustomers.values().next().value;
+    queuedCustomers.delete(id);
+    if(Date.now()-(lastAutomaticSync.get(id)||0)<AUTO_SYNC_COOLDOWN_MS)continue;
+    lastAutomaticSync.set(id,Date.now());
+    await syncCustomer(id);
+    if(queuedCustomers.size)await new Promise(resolve=>setTimeout(resolve,AUTO_SYNC_SPACING_MS));
+   }
+  }finally{
+   autoRunning=false;
+   if(queuedCustomers.size&&!autoSyncResume)
+    autoSyncResume=setTimeout(()=>{autoSyncResume=null;void autoSync();},10000);
+  }
+ }
  d.addEventListener('aco-studio:edit-profile',async event=>{
   const detail=event.detail||{};
   if(!['aco','personal'].includes(detail.scope)||!detail.profileId)return;

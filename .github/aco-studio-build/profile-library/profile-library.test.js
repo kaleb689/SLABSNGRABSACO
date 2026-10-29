@@ -1189,3 +1189,72 @@ test('Multi-file customer Live import skips foreign-owned emails and preserves s
  assert.deepEqual((await h.lib.list(event,h.a)).profiles.map(x=>x.email),['free-customer-live@example.test']);
  assert.deepEqual((await h.lib.list(event,h.p)).profiles.map(x=>x.email),['owner-live-occupied@example.test']);
 });
+
+test('Delete & Return to Pools archives a local profile and restores its retailer email and card only in the same vault',async t=>{
+ const h=await library(t),source=Object.assign(complete('target','return-local@example.test'),{password:'demo-pass',profileSecurityCode:'REF-006'});
+ await commit(h,await preview(h,[source]));
+ const row=(await h.lib.list(event,h.p)).profiles.find(x=>x.email==='return-local@example.test');
+ const result=await h.lib.returnToPools(event,{...h.p,retailer:'target',fromBank:'working',
+  profileIds:[row.id],revisions:[row.revision],confirmed:true});
+ assert.equal(result.count,1);assert.equal(result.websiteReturned,0);assert.equal(result.cardsSaved,1);
+ assert.equal((await h.lib.list(event,h.p)).profiles.length,0);
+ const emails=await h.service.emails(event,{...h.p,retailer:'target'});
+ assert.ok(emails.emails.some(x=>x.email==='return-local@example.test'&&x.status==='available'));
+ assert.equal((await h.personal.list('personal:owner')).cards.length,1);
+ assert.equal((await h.customers.list('customer-a')).cards.length,0);
+ assert.equal((await h.lib.list(event,h.a)).profiles.length,0);
+ const stored=await fs.readFile(path.join(h.dir,'personal-retailer-profiles.encrypted'));
+ const saved=JSON.parse(stored.toString().slice('ENCRYPTED:'.length));
+ assert.equal(saved.deletedProfileArchives.owner.at(-1).profile.data.profileSecurityCode,'REF-006');
+ assert.equal(saved.deletedProfileArchives.owner.at(-1).profile.email,'return-local@example.test');
+});
+
+test('Delete & Return to Pools unlinks only the exact website assignment, then removes its archived mirror',async t=>{
+ const h=await env(t),account={customerId:'customer-a',assignmentId:'assign-w1',managedAccountId:'managed-w1',
+  assignmentType:'free',remoteUpdatedAt:'v1',retailer:'walmart',active:true,
+  data:complete('walmart','linked-return@example.test')},calls=[];
+ const lib=createLibrary({
+  profiles:h.profiles,cardVault:s=>s==='personal'?h.personal:h.customers,
+  authorize:async(e,s,id)=>s==='personal'?null:id,guard:()=>{},
+  getCustomerProfileSource:async id=>({customer:{id,name:'Example'},linked:account.active?[{...account}]:[]}),
+  changeCustomerAssignment:async(id,remote,operation,payload)=>{
+   calls.push({id,remote,operation,payload});account.active=false;return {saved:true};
+  }
+ });
+ await lib.syncCustomer(event,h.a);
+ const row=(await lib.list(event,h.a)).profiles[0];
+ const result=await lib.returnToPools(event,{...h.a,retailer:'walmart',fromBank:'working',
+  profileIds:[row.id],revisions:[row.revision],confirmed:true});
+ assert.equal(result.count,1);assert.equal(result.websiteReturned,1);
+ assert.equal(calls.length,1);assert.equal(calls[0].id,'customer-a');
+ assert.equal(calls[0].operation,'unlink');assert.equal(calls[0].remote.id,'managed-w1');
+ assert.equal(calls[0].remote.retailer,'walmart');
+ assert.equal((await lib.list(event,h.a)).profiles.length,0);
+ assert.equal((await h.service.emails(event,{...h.a,retailer:'walmart'})).emails.length,0,
+  'Website credentials must not be duplicated in a Studio customer Unused bank');
+ assert.equal((await lib.list(event,h.p)).profiles.length,0);
+ assert.equal((await lib.list(event,h.b)).profiles.length,0);
+});
+
+test('Failed or stale website returns do not delete local customer mirrors or move credentials across vaults',async t=>{
+ const h=await env(t),account={customerId:'customer-a',assignmentId:'assign-w2',managedAccountId:'managed-w2',
+  assignmentType:'free',remoteUpdatedAt:'v2',retailer:'walmart',active:true,
+  data:complete('walmart','linked-failed@example.test')};
+ const lib=createLibrary({
+  profiles:h.profiles,cardVault:s=>s==='personal'?h.personal:h.customers,
+  authorize:async(e,s,id)=>s==='personal'?null:id,guard:()=>{},
+  getCustomerProfileSource:async id=>({customer:{id,name:'Example'},linked:[{...account}]}),
+  changeCustomerAssignment:async()=>{throw Error('No matching live website assignment');}
+ });
+ await lib.syncCustomer(event,h.a);
+ let row=(await lib.list(event,h.a)).profiles[0];
+ const payload={...h.a,retailer:'walmart',fromBank:'working',
+  profileIds:[row.id],revisions:[row.revision],confirmed:true};
+ const failed=await lib.returnToPools(event,payload);
+ assert.equal(failed.partial,true);assert.equal(failed.deleted,0);
+ assert.equal((await lib.list(event,h.a)).profiles.length,1);
+ await assert.rejects(lib.returnToPools(event,{...payload,customerId:'customer-b'}),/changed|different retailer|customer/i);
+ row=(await lib.list(event,h.a)).profiles[0];
+ assert.equal(row.sourceLinked,true);
+ assert.equal((await lib.list(event,h.b)).profiles.length,0);
+});

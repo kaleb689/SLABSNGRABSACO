@@ -1811,6 +1811,117 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  async function importHistory(e,p){const a=await access(e,p);const result=await profiles.importHistory(a.scope,a.id);a.check();return {batches:result};}
  async function removeImportBatch(e,p){const a=await access(e,p);return profiles.removeImportBatch(a.scope,a.id,p,a.check);}
  async function bulkManage(e,p){const a=await access(e,p);return profiles.bulkManage(a.scope,a.id,p,a.check);}
+ // Verified owner-initiated return of exact profiles to their original
+ // retailer/customer pools. Never infer an account from its email alone.
+ async function returnToPools(e,p){
+  const a=await access(e,p),retailer=C.retailer(p?.retailer);
+  if(p?.confirmed!==true||!['live','working'].includes(p.fromBank)||
+     !Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||
+     new Set(p.profileIds).size!==p.profileIds.length||
+     !Array.isArray(p.revisions)||p.revisions.length!==p.profileIds.length)
+   throw Error('Review and confirm up to 500 exact profiles in the selected retailer and bank.');
+  const original=await profiles.fieldSnapshot(a.scope,a.id);a.check();
+  const selected=p.profileIds.map((id,i)=>{
+   const row=original.find(x=>x.id===id);
+   if(!row||row.retailer!==retailer||
+      (row.bank==='live'?'live':'working')!==p.fromBank||
+      (row.revision||0)!==p.revisions[i])
+    throw Error('A selected profile changed or belongs to a different retailer, bank or customer. Reload before returning anything.');
+   return row;
+  });
+  const linked=selected.filter(x=>x.source==='website-linked-profile');
+  if(linked.length&&a.scope!=='aco')throw Error('Website-linked accounts cannot be moved into Personal.');
+  if(linked.length&&(!getCustomerProfileSource||!changeCustomerAssignment))
+   throw Error('Website assignment verification is unavailable. No profiles were deleted.');
+  const source=linked.length?await getCustomerProfileSource(a.id):null;
+  if(source&&(source.customer?.id!==a.id||(source.linked||[]).some(x=>x.customerId!==a.id)))
+   throw Error('Website customer identity mismatch. Nothing was changed.');
+  const exact=(row,src)=>(src.linked||[]).filter(item=>
+    item.active&&C.retailer(item.retailer)===row.retailer&&
+    row.remoteKey===row.retailer+'|'+item.assignmentId&&
+    String(item.managedAccountId||'')===String(row.remoteManagedId||''));
+  for(const row of linked){
+   const current=exact(row,source);
+   if(row.sourceLinked===true){
+    if(current.length!==1||!row.remoteManagedId||!['free','rented'].includes(row.remoteType)||
+       String(current[0].remoteUpdatedAt||'')!==String(row.remoteUpdatedAt||''))
+     throw Error('Linked retailer assignment changed. Refresh the exact website customer before returning any accounts.');
+   }else if(current.length)throw Error('An unlinked mirror has a live website assignment. Refresh before deleting anything.');
+  }
+  // Capture a complete encrypted checkpoint before an external unlink or a
+  // local vault write. A missing backup blocks the entire requested operation.
+  if(typeof profiles.backupCheckpoint!=='function')
+   throw Error('Encrypted workspace backup is unavailable. No accounts were returned.');
+  await profiles.backupCheckpoint();a.check();
+  const local=selected.filter(x=>x.source!=='website-linked-profile');
+  let cardsSaved=0,cardsAlreadySaved=0;
+  if(local.length){
+   const vault=cardVault?.(a.scope);
+   if(!vault||typeof vault.list!=='function'||typeof vault.selectedForJig!=='function'||typeof vault.addWorkshopCard!=='function')
+    throw Error('Encrypted Card Bank is unavailable. No profiles were deleted.');
+   const key=cardKey(a.scope,a.id),inventory=await vault.list(key);a.check();
+   const current=inventory.cards?.length?await vault.selectedForJig(key,inventory.cards.map(x=>x.id)):[];
+   const savedNumbers=new Set(current.map(x=>String(x.number||'').replace(/\D/g,'')));
+   const add=[];
+   for(const row of local){
+    const card=C.payment(row.data),number=String(card.number||'').replace(/\D/g,'');
+    if(!number)continue;
+    if(!/^\d{12,19}$/.test(number)||!/^(0[1-9]|1[0-2])$/.test(card.month)||
+       !/^20\d\d$/.test(card.year))
+     throw Error('A selected card is incomplete. Repair it before returning these profiles; none were deleted.');
+    if(savedNumbers.has(number)){cardsAlreadySaved++;continue;}
+    savedNumbers.add(number);
+    add.push({number,month:card.month,year:card.year,expMonth:card.month,expYear:card.year,
+     cardholder:card.cardholder||'Unassigned',label:'Returned profile card',brand:card.type||''});
+   }
+   for(const card of add){a.check();await vault.addWorkshopCard(key,card,a.check);cardsSaved++;}
+  }
+  let websiteReturned=0;
+  for(const row of linked.filter(x=>x.sourceLinked===true)){
+   a.check();
+   try{
+    const result=await changeCustomerAssignment(a.id,{
+     id:row.remoteManagedId,type:row.remoteType,retailer:row.retailer,
+     updatedAt:row.remoteUpdatedAt},'unlink',{});
+    if(result?.saved!==true)throw Error('Website did not confirm the account return.');
+    websiteReturned++;
+   }catch{
+    // Some earlier returns may already have succeeded. No unsafe retry,
+    // deletion or reassignment occurs on a partial remote failure.
+    try{await syncCustomer(e,{scope:'aco',customerId:a.id});}catch{}
+    return {saved:false,partial:true,websiteReturned,cardsSaved,cardsAlreadySaved,
+     deleted:0,remaining:selected.length,
+     message:'A website return was rejected. No local profiles were deleted. Refresh the customer and retry.'};
+   }
+  }
+  if(linked.length){
+   try{
+    await syncCustomer(e,{scope:'aco',customerId:a.id});
+    const after=await getCustomerProfileSource(a.id);a.check();
+    if(after.customer?.id!==a.id||linked.some(row=>exact(row,after).length))
+     throw Error('A linked assignment remains active.');
+   }catch{
+    return {saved:false,partial:true,websiteReturned,cardsSaved,cardsAlreadySaved,
+     deleted:0,remaining:selected.length,
+     message:'Website return verification is incomplete. No local profiles were deleted. Refresh and retry.'};
+   }
+  }
+  const currentRows=await profiles.fieldSnapshot(a.scope,a.id);a.check();
+  const latest=selected.map(row=>{
+   const item=currentRows.find(x=>x.id===row.id);
+   if(!item||item.retailer!==retailer||
+      (item.bank==='live'?'live':'working')!==p.fromBank||
+      (item.source==='website-linked-profile'&&item.sourceLinked===true))
+    throw Error('A selected profile changed after the website return. No local profiles were deleted.');
+   return item;
+  });
+  const deleted=await profiles.bulkManage(a.scope,a.id,{
+   operation:'delete',retailer,fromBank:p.fromBank,
+   profileIds:latest.map(x=>x.id),revisions:latest.map(x=>x.revision||0),
+   confirmed:true},a.check);
+  return {...deleted,websiteReturned,cardsSaved,cardsAlreadySaved,remaining:0,
+   recoveryPreserved:true};
+ }
  async function manageGroups(e,p){
   const a=await access(e,p),retailer=C.retailer(p?.retailer),operation=String(p?.operation||'');
   if(!['create','move'].includes(operation))throw Error('Choose a group action.');
@@ -1917,7 +2028,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  }
  async function rules(e,p){const a=await access(e,p),retailer=C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id),saved=settings[retailer];a.check();const legacyTarget=retailer==='target'&&Array.isArray(saved?.rules)&&saved?.presetVersion!==2;const selected=legacyTarget?[...new Set([...saved.rules,...C.TARGET_PRIMARY_RULES.map(x=>x.id)])]:(saved?.rules||C.defaultRules(retailer));const grouped=[...new Set(selected.map(id=>/^(street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)_(short|long|abbr|full)$/i.test(id)?'suffix.matching':id))];return {selected:grouped,legacyMigrated:legacyTarget||grouped.length!==selected.length||grouped.some((id,i)=>id!==selected[i]),presetVersion:2,options:[...C.ruleOptions(retailer),{id:C.FL_PHONE_RULE,label:'Random Florida phone number',risk:'standard',family:'phone'}]};}
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:2};return {saved:true,presetVersion:2};},a.check);}
- return {syncOwnerWalmartUnused,importPastedAccounts,customerCardDetails,jigAssets,reuseChoices,list,duplicateRepairPreview,duplicateRepairCommit,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,reconcileLivePreview,reconcileLiveCommit,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
+ return {syncOwnerWalmartUnused,importPastedAccounts,customerCardDetails,jigAssets,reuseChoices,list,duplicateRepairPreview,duplicateRepairCommit,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,reconcileLivePreview,reconcileLiveCommit,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,returnToPools,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
 }
 function registerLibrary(options){
  const chooseHistoricalFolder=options.chooseHistoricalFolder||(async e=>{
@@ -1945,7 +2056,7 @@ function registerLibrary(options){
   const backupTick=setInterval(automaticBackup,60*60*1000);
   backupTick.unref?.();
  }
- const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['syncOwnerWalmartUnused','importPastedAccounts','customerCardDetails','jigAssets','reuseChoices','list','duplicateRepairPreview','duplicateRepairCommit','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','reconcileLivePreview','reconcileLiveCommit','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
+ const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['syncOwnerWalmartUnused','importPastedAccounts','customerCardDetails','jigAssets','reuseChoices','list','duplicateRepairPreview','duplicateRepairCommit','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','reconcileLivePreview','reconcileLiveCommit','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','returnToPools','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
  // Complete encrypted local workspace checkpoints. Never expose decrypted data.
  for(const [method,invoke] of Object.entries({
   backupStatus:()=>options.profiles.backupStatus(),
