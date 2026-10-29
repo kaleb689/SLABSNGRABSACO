@@ -323,7 +323,7 @@
  }
  // Selection belongs to one rendered page of the current retailer and stage.
  // Keep the preexisting 200-card display size, but make later pages accessible.
- const PAGE_SIZE=200;let pageIndex=0;let selectionAnchor=null,customGroups={};
+ const PAGE_SIZE=100;let pageIndex=0;let selectionAnchor=null,customGroups={};
  let sortMode='newest';let visibleCardLimit=80;let lastResourceSignature='';let lastResourceRetailer='';
  const sortToolbar=d.createElement('div');sortToolbar.className='profileLibrarySortToolbar';
  const sortLabel=d.createElement('label');sortLabel.textContent='Profile order';
@@ -331,7 +331,7 @@
  for(const [value,label]of [['newest','Newest accounts at top'],['oldest','Newest accounts at bottom'],['email','Email A–Z']])sortSelect.append(new Option(label,value));
  sortLabel.append(sortSelect);
  const latestLabel=d.createElement('label');latestLabel.textContent='Newest profiles to select';
- const latestCount=d.createElement('input');latestCount.type='number';latestCount.min='1';latestCount.max='200';latestCount.step='1';latestCount.value='26';latestCount.setAttribute('aria-label','Number of newest profiles to select');
+ const latestCount=d.createElement('input');latestCount.type='number';latestCount.min='1';latestCount.max=String(PAGE_SIZE);latestCount.step='1';latestCount.value='26';latestCount.setAttribute('aria-label','Number of newest profiles to select');
  latestLabel.append(latestCount);
  const selectNewest=text('button','Select newest 26');selectNewest.type='button';selectNewest.className='btn secondary';
  sortToolbar.append(sortLabel,latestLabel,selectNewest);q('current-retailer').after(sortToolbar);
@@ -643,6 +643,17 @@
   cardCount.textContent='· '+eligible.length+' saved eligible for '+retailName[q('retailer').value]+' / '+pool.length+' distinct cards'+(missingSavedHard.length?' · '+missingSavedHard.length+' profile-only Hard Cards not in saved bank (Audit Hard Cards)':'');
   addressCount.textContent='· '+addresses.length+' saved';
   if(!pool.length)cardBox.append(text('p','No cards found in this '+(scope==='personal'?'Personal':'customer')+' vault or its saved profiles.'));
+  // Index exact full-card references once, instead of scanning every profile
+  // for every displayed card on each retailer/customer switch.
+  const codesByFullNumber=new Map();
+  for(const profile of rows){
+   const number=String(cardFields(profile.data||{}).number||'').replace(/\D/g,'');
+   if(!/^\d{12,19}$/.test(number))continue;
+   const code=String(profile.data?.profileSecurityCode||profile.data?.security_code||profile.data?.custom_security_code||profile.data?.card?.custom_security_code||'').trim();
+   if(!code)continue;
+   if(!codesByFullNumber.has(number))codesByFullNumber.set(number,new Set());
+   codesByFullNumber.get(number).add(code);
+  }
   for(const card of matchingCards.slice(0,visibleCardLimit)){
    const row=d.createElement('article');row.className='profileResourceRow profileSelectableCard'+(card.fromSavedBank&&card.availableRetailers?.includes(q('retailer').value)?' isAvailable':' isUsed');
    row.tabIndex=0;row.onclick=e=>{if(!e.target.closest('button,input'))window.ACOProfileWorkshop?.openVault?.(request(),'cards',card.fullNumber||card.last4);};row.oncontextmenu=e=>showContext(e,[[ 'View / edit card',()=>window.ACOProfileWorkshop?.openVault?.(request(),'cards',card.fullNumber||card.last4)],['Set / unset Hard Card',()=>row.querySelector('button')?.click()]]);row.onkeydown=e=>{if(e.key==='Enter')row.click();};
@@ -655,11 +666,7 @@
     // Show only an independent saved profile reference, never a payment verifier.
     // These rows belong to the selected, authenticated Personal/customer vault.
     // Require exact complete card identity and suppress conflicting references.
-    const relatedReferences=new Set(rows.filter(profile=>
-      String(cardFields(profile.data||{}).number||'').replace(/\D/g,'')===String(card.fullNumber||'').replace(/\D/g,'') &&
-      /^\d{12,19}$/.test(String(card.fullNumber||'').replace(/\D/g,'')))
-      .map(profile=>String(profile.data?.profileSecurityCode||profile.data?.security_code||profile.data?.custom_security_code||profile.data?.card?.custom_security_code||'').trim())
-      .filter(Boolean));
+    const relatedReferences=codesByFullNumber.get(String(card.fullNumber||'').replace(/\D/g,''))||new Set();
     if(relatedReferences.size===1)body.append(text('small','Security Code: '+[...relatedReferences][0]));
     else if(relatedReferences.size>1)body.append(text('small','Security Code: conflicting saved references — review matching profiles'));
 
@@ -808,9 +815,24 @@
   // until the user clicked elsewhere. Only open editors may defer refresh.
   return !!d.querySelector('.profileLibraryModal,.workshopModal:not([hidden])');
  }
- async function refresh(){if(editorBusy()){pendingRefresh=true;return;}const ticket=++refreshTicket,owner=request(),ownerEpoch=epoch,priorCards=JSON.stringify(bankAssets.cardPool||[]),priorUnused=JSON.stringify(unusedAccounts);if(scope==='aco'&&!customerId){rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();return;}try{if(scope==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;const [result]=await Promise.all([api.list(owner),loadResourceBanks(owner,ticket,ownerEpoch)]);if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;if(editorBusy()){pendingRefresh=true;return;}const same=JSON.stringify(rows)===JSON.stringify(result.profiles);const poolsSame=JSON.stringify(unusedConflicts)===JSON.stringify(result.unusedConflicts||[]);unusedConflicts=Array.isArray(result.unusedConflicts)?result.unusedConflicts:[];if(!same){const scroll={x:window.scrollX,y:window.scrollY};rows=result.profiles;customGroups=result.customGroups||{};selected=new Set([...selected].filter(id=>stage==='unused'?(unusedAccounts.some(x=>x.id===id)||rows.some(x=>x.id===id&&x.bank!=='live'&&x.stage==='in-progress')):rows.some(x=>x.id===id)));draw();window.scrollTo(scroll.x,scroll.y);}else if(!poolsSame||priorUnused!==JSON.stringify(unusedAccounts)||priorCards!==JSON.stringify(bankAssets.cardPool||[]))draw();else { /* The visible DOM and selected count have not changed. */ }note(customerName()+' · '+visible().length+' profiles · '+retailName[q('retailer').value]+' · '+(bankAssets.cardPool||[]).filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value)).length+' eligible cards · '+bankAssets.addresses.length+' saved addresses');}catch(e){if(ticket===refreshTicket&&ownerEpoch===epoch){rows=[];bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();note(e.message);}}}
+ // Snapshot revisions are authoritative for UI updates. Avoid expensive
+ // JSON serialization of thousands of complete customer profiles on refresh.
+ function sameProfileRows(previous,incoming){
+  if(previous===incoming)return true;
+  if(!Array.isArray(previous)||!Array.isArray(incoming)||previous.length!==incoming.length)return false;
+  for(let i=0;i<previous.length;i++){
+   const a=previous[i],b=incoming[i];
+   if(a.id!==b.id||a.revision!==b.revision||a.email!==b.email||
+      a.bank!==b.bank||a.stage!==b.stage||a.retailer!==b.retailer||
+      a.group!==b.group||a.status!==b.status||a.sourceLinked!==b.sourceLinked||
+      a.needsReview!==b.needsReview||a.needsFirstExport!==b.needsFirstExport||
+      a.profileGeneratedAt!==b.profileGeneratedAt||a.exportedAt!==b.exportedAt)return false;
+  }
+  return true;
+ }
+ async function refresh(){if(editorBusy()){pendingRefresh=true;return;}const ticket=++refreshTicket,owner=request(),ownerEpoch=epoch,priorCards=JSON.stringify(bankAssets.cardPool||[]),priorUnused=JSON.stringify(unusedAccounts);if(scope==='aco'&&!customerId){rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();return;}try{if(scope==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;const [result]=await Promise.all([api.list(owner),loadResourceBanks(owner,ticket,ownerEpoch)]);if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;if(editorBusy()){pendingRefresh=true;return;}const same=sameProfileRows(rows,result.profiles);const poolsSame=JSON.stringify(unusedConflicts)===JSON.stringify(result.unusedConflicts||[]);unusedConflicts=Array.isArray(result.unusedConflicts)?result.unusedConflicts:[];if(!same){const scroll={x:window.scrollX,y:window.scrollY};rows=result.profiles;customGroups=result.customGroups||{};selected=new Set([...selected].filter(id=>stage==='unused'?(unusedAccounts.some(x=>x.id===id)||rows.some(x=>x.id===id&&x.bank!=='live'&&x.stage==='in-progress')):rows.some(x=>x.id===id)));draw();window.scrollTo(scroll.x,scroll.y);}else if(!poolsSame||priorUnused!==JSON.stringify(unusedAccounts)||priorCards!==JSON.stringify(bankAssets.cardPool||[]))draw();else { /* The visible DOM and selected count have not changed. */ }note(customerName()+' · '+visible().length+' profiles · '+retailName[q('retailer').value]+' · '+(bankAssets.cardPool||[]).filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value)).length+' eligible cards · '+bankAssets.addresses.length+' saved addresses');}catch(e){if(ticket===refreshTicket&&ownerEpoch===epoch){rows=[];bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();note(e.message);}}}
  function close(){epoch++;backupPanel.hidden=true;restoreFromBackup.hidden=true;restoreStatus.textContent='Scan this vault before previewing any restoration.';reviewOutput.textContent='No recovery scan has been run for this vault.';rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
- async function open(next){if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;close();stage='unused';pageIndex=0;scope=next;issueView='all';q('view').value='all';customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;customerList();q('customer-label').hidden=scope==='personal';q('owner-title').textContent=scope==='personal'?'PERSONAL VAULT':'CUSTOMER VAULTS';q('sync').hidden=scope==='personal';q('pkc-reconcile').hidden=scope!=='personal';websiteVault.hidden=scope==='personal';websiteVault.open=false;websiteLoad++;for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;main.hidden=false;backupPanel.hidden=scope!=='personal';if(scope==='personal')void updateBackupPanel();for(const b of nav.querySelectorAll('button'))b.classList.remove('on');(scope==='personal'?personalProfiles:customerProfiles).classList.add('on');d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent=scope==='personal'?'Personal Profiles':'Customer Profiles';await window.desktopAPI.site?.hide?.();await refresh();void passiveHealthCheck();}
+ async function open(next){if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;close();stage='unused';pageIndex=0;scope=next;lastVaultSwitchAt=Date.now();issueView='all';q('view').value='all';customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;customerList();q('customer-label').hidden=scope==='personal';q('owner-title').textContent=scope==='personal'?'PERSONAL VAULT':'CUSTOMER VAULTS';q('sync').hidden=scope==='personal';q('pkc-reconcile').hidden=scope!=='personal';websiteVault.hidden=scope==='personal';websiteVault.open=false;websiteLoad++;for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;main.hidden=false;backupPanel.hidden=scope!=='personal';if(scope==='personal')void updateBackupPanel();for(const b of nav.querySelectorAll('button'))b.classList.remove('on');(scope==='personal'?personalProfiles:customerProfiles).classList.add('on');d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent=scope==='personal'?'Personal Profiles':'Customer Profiles';await window.desktopAPI.site?.hide?.();await refresh();void passiveHealthCheck();}
  q('manage-cards').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'cards');};
  q('manage-addresses').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'addresses');};
  customerProfiles.onclick=()=>void open('aco');personalProfiles.onclick=()=>void open('personal');for(const b of nav.querySelectorAll('button'))if(b!==customerProfiles&&b!==personalProfiles)b.addEventListener('click',()=>{if(!main.hidden)close();});
@@ -1187,7 +1209,7 @@
   finally{auditHardCards.disabled=false;}
  };
 
-  q('customer').onchange=()=>{epoch++;websiteLoad++;websiteVault.open=false;websiteVault.querySelector('[data-web-records]').replaceChildren();customerId=q('customer').value||null;rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;bankAssets={addresses:[],cards:[]};selected.clear();pageIndex=0;group='all';issueView='all';q('view').value='all';drawResourceBanks();void refresh();};q('retailer').onchange=()=>{selected.clear();pageIndex=0;group='all';q('search').value='';issueView='all';q('view').value='all';unusedAccounts=[];unusedConflicts=[];poolReport=null;draw();void refresh();};q('search').oninput=()=>{selected.clear();pageIndex=0;if(q('search').value.trim())group='all';draw();};q('view').onchange=()=>{issueView=q('view').value;selected.clear();pageIndex=0;group='all';draw();note(issueView==='duplicates'?'Showing only duplicate profiles.':issueView==='issues'?'Showing only profiles that need attention.':customerName()+' · '+visible().length+' profiles');};for(const b of main.querySelectorAll('[data-stage]'))b.onclick=()=>{stage=b.dataset.stage;pageIndex=0;group='all';selected.clear();q('search').value='';issueView='all';q('view').value='all';for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab===b));draw();};q('all').onclick=()=>{selected.clear();for(const r of pageRows())selected.add(r.id);updateSelection();};q('clear').onclick=()=>{selected.clear();updateSelection();};
+  q('customer').onchange=()=>{epoch++;websiteLoad++;websiteVault.open=false;websiteVault.querySelector('[data-web-records]').replaceChildren();customerId=q('customer').value||null;lastVaultSwitchAt=Date.now();rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;bankAssets={addresses:[],cards:[]};selected.clear();pageIndex=0;group='all';issueView='all';q('view').value='all';drawResourceBanks();void refresh();};q('retailer').onchange=()=>{selected.clear();pageIndex=0;group='all';q('search').value='';issueView='all';q('view').value='all';unusedAccounts=[];unusedConflicts=[];poolReport=null;draw();void refresh();};q('search').oninput=()=>{selected.clear();pageIndex=0;if(q('search').value.trim())group='all';draw();};q('view').onchange=()=>{issueView=q('view').value;selected.clear();pageIndex=0;group='all';draw();note(issueView==='duplicates'?'Showing only duplicate profiles.':issueView==='issues'?'Showing only profiles that need attention.':customerName()+' · '+visible().length+' profiles');};for(const b of main.querySelectorAll('[data-stage]'))b.onclick=()=>{stage=b.dataset.stage;pageIndex=0;group='all';selected.clear();q('search').value='';issueView='all';q('view').value='all';for(const tab of main.querySelectorAll('[data-stage]'))tab.setAttribute('aria-pressed',String(tab===b));draw();};q('all').onclick=()=>{selected.clear();for(const r of pageRows())selected.add(r.id);updateSelection();};q('clear').onclick=()=>{selected.clear();updateSelection();};
  async function jigUnusedSelected(){
    const chosen=pageRows().filter(x=>selected.has(x.id));
    if(stage!=='unused'||!chosen.length){note('Select one or more unused accounts or unfinished profiles from this retailer page.');return;}
@@ -1338,6 +1360,26 @@
   }catch(error){note('Live reconciliation unavailable: '+String(error.message||error));}
   finally{reconcileExistingLive.disabled=false;}
  };
+ // Only read-only previews retry after 429; commits must never be retried
+ // automatically because a partially completed write could be duplicated.
+ let importPreviewInProgress=false;
+ async function importPreviewWithRetry(payload,ownerEpoch){
+  if(importPreviewInProgress)throw Error('An import preview is already in progress.');
+  importPreviewInProgress=true;
+  try{
+   for(let attempt=0;attempt<5;attempt++){
+    if(main.hidden||epoch!==ownerEpoch||scope!==payload.scope||
+       (payload.scope==='aco'&&customerId!==payload.customerId))
+     throw Error('Customer vault selection changed. Reopen the import.');
+    try{return await api.importPreview(payload);}
+    catch(error){
+     if(!/(too many requests|rate.?limit|\b429\b)/i.test(String(error?.message||error))||attempt===4)throw error;
+     note('Import preview is rate-limited. Retrying safely; no profiles or cards have changed.');
+     await new Promise(resolve=>setTimeout(resolve,[3000,6000,12000,24000][attempt]));
+    }
+   }
+  }finally{importPreviewInProgress=false;}
+ }
  let forceLiveRetailerOnReview=false;
  q('live-file').onchange=async()=>{
   const files=[...q('live-file').files];if(!files.length)return;const owner=request(),at=epoch;
@@ -1345,7 +1387,7 @@
    if(owner.scope==='aco'&&!owner.customerId)throw Error('Select a customer vault before importing.');
    if(files.reduce((n,f)=>n+f.size,0)>26*1024*1024)throw Error('Choose files totaling less than 26 MB.');
    const selectedRetailer=q('retailer').value,overrideRetailer=forceLiveRetailerOnReview;forceLiveRetailerOnReview=false;
-   const preview=await api.importPreview({...owner,bank:'live',retailer:selectedRetailer,overrideRetailer,files:await Promise.all(files.map(async f=>({fileName:f.name,text:await f.text()})))});
+   const preview=await importPreviewWithRetry({...owner,bank:'live',retailer:selectedRetailer,overrideRetailer,files:await Promise.all(files.map(async f=>({fileName:f.name,text:await f.text()})))},at);
    if(at!==epoch||main.hidden)return;const win=dialog('Import into Live Profiles'),form=d.createElement('form');win.body.append(form);
    form.append(text('p',preview.count+' eligible input rows → '+(preview.effectiveCount??preview.count)+' latest unique Live profiles: '+Object.entries(preview.counts).map(([r,n])=>retailName[r]+' '+n).join(' · ')+'. '+(preview.skippedForeign||0)+' email(s) already owned by another vault will be skipped; eligible rows continue.'));
    form.append(text('p','These profiles stay in Live Profiles when edited or jigged. Retailer labels and filenames determine the bank; unlabeled files use the retailer selected before import. Check the assignments below. Emails not already in a PKC profile or email bank are also added to this vault’s PKC email pool.'));
@@ -1451,7 +1493,7 @@
  };
  q('create-pools').onclick=()=>void window.ACOPoolCreator?.open({...request(),retailer:q('retailer').value,...(stage==='unused'&&pageRows().some(x=>selected.has(x.id)&&x.kind==='unused-account')?{emailIds:pageRows().filter(x=>selected.has(x.id)&&x.kind==='unused-account').map(x=>x.id)}:{})});
  d.addEventListener('jigstudio:pools-generated',()=>{if(!main.hidden)void refresh();});
- q('file').onchange=async()=>{const file=q('file').files[0];if(!file)return;const owner=request(),at=epoch,retailer=q('retailer').value;try{if(owner.scope==='aco'&&!owner.customerId)throw Error('Select a customer vault before importing.');if(file.size>26*1024*1024)throw Error('Choose a file smaller than 26 MB.');const preview=await api.importPreview({...owner,retailer,fileName:file.name,text:await file.text()});if(at!==epoch||main.hidden)return;const win=dialog('Review profile import · '+customerName()),form=d.createElement('form');win.body.append(text('p',preview.count+' eligible profiles · '+(preview.skippedForeign||0)+' email(s) in another Personal/customer vault skipped · '+preview.profiles.filter(x=>x.duplicates.length).length+' eligible rows with duplicate email, name or card.'),form);for(const row of preview.profiles.filter(x=>x.duplicates.length).slice(0,80))form.append(text('p',row.email+' · Duplicate '+row.duplicates.join(', ')));form.insertAdjacentHTML('beforeend','<label class="check"><input name="name" type="checkbox" checked> Generate new names for duplicates</label><label class="check"><input name="email" type="checkbox" checked> Replace duplicate emails from this retailer’s bank</label><label class="check"><input name="card" type="checkbox" checked> Replace duplicate cards from this vault</label><label class="check"><input name="allowShared" type="checkbox"> Keep shared names/cards when their repair option is off</label><label class="check"><input name="alreadyJigged" type="checkbox" checked> Imported profiles have already been jigged / formatted</label>');field(form,'group','Group',retailName[retailer]);const choices=d.createElement('div');form.append(choices);const assets=await window.desktopAPI.profileWorkshop.assets(owner);if(!win.valid())return;for(const card of assets.cards.filter(x=>x.unused)){const label=text('label',card.label+' · ending '+card.last4),c=d.createElement('input');c.type='checkbox';c.checked=false;c.value=card.id;label.prepend(c);choices.append(label);}const b=text('button','Import reviewed profiles');b.type='submit';b.className='btn primary';form.append(b);form.onsubmit=async e=>{e.preventDefault();
+ q('file').onchange=async()=>{const file=q('file').files[0];if(!file)return;const owner=request(),at=epoch,retailer=q('retailer').value;try{if(owner.scope==='aco'&&!owner.customerId)throw Error('Select a customer vault before importing.');if(file.size>26*1024*1024)throw Error('Choose a file smaller than 26 MB.');const preview=await importPreviewWithRetry({...owner,retailer,fileName:file.name,text:await file.text()},at);if(at!==epoch||main.hidden)return;const win=dialog('Review profile import · '+customerName()),form=d.createElement('form');win.body.append(text('p',preview.count+' eligible profiles · '+(preview.skippedForeign||0)+' email(s) in another Personal/customer vault skipped · '+preview.profiles.filter(x=>x.duplicates.length).length+' eligible rows with duplicate email, name or card.'),form);for(const row of preview.profiles.filter(x=>x.duplicates.length).slice(0,80))form.append(text('p',row.email+' · Duplicate '+row.duplicates.join(', ')));form.insertAdjacentHTML('beforeend','<label class="check"><input name="name" type="checkbox" checked> Generate new names for duplicates</label><label class="check"><input name="email" type="checkbox" checked> Replace duplicate emails from this retailer’s bank</label><label class="check"><input name="card" type="checkbox" checked> Replace duplicate cards from this vault</label><label class="check"><input name="allowShared" type="checkbox"> Keep shared names/cards when their repair option is off</label><label class="check"><input name="alreadyJigged" type="checkbox" checked> Imported profiles have already been jigged / formatted</label>');field(form,'group','Group',retailName[retailer]);const choices=d.createElement('div');form.append(choices);const assets=await window.desktopAPI.profileWorkshop.assets(owner);if(!win.valid())return;for(const card of assets.cards.filter(x=>x.unused)){const label=text('label',card.label+' · ending '+card.last4),c=d.createElement('input');c.type='checkbox';c.checked=false;c.value=card.id;label.prepend(c);choices.append(label);}const b=text('button','Import reviewed profiles');b.type='submit';b.className='btn primary';form.append(b);form.onsubmit=async e=>{e.preventDefault();
    if(!win.valid()||at!==epoch||owner.scope!==scope||owner.customerId!==request().customerId||retailer!==q('retailer').value){win.status().textContent='Customer or retailer changed. Reopen this import to avoid writing into the wrong vault.';return;}
    b.disabled=true;try{const result=await api.importCommit({token:preview.token,confirmed:true,expectedScope:owner.scope,expectedCustomerId:owner.customerId,customerName:customerName(),group:form.elements.group.value,alreadyJigged:form.elements.alreadyJigged.checked,repairs:Object.fromEntries(['name','email','card','allowShared'].map(k=>[k,form.elements[k].checked])),cardIds:form.elements.card.checked?[...choices.querySelectorAll('input:checked')].map(x=>x.value):[]});if(!win.valid())return;win.wrap.remove();await refresh();note('Imported '+result.imported+' profiles into '+customerName()+' / '+retailName[retailer]+'; '+(result.skippedForeign||0)+' emails already used in other Personal/customer vaults were skipped.');}catch(e){win.status().textContent=e.message;b.disabled=false;}};}catch(e){note(e.message);}};
  const syncFailures=new Map();let syncChain=Promise.resolve();function syncCustomer(id,manual=false){const run=async()=>{try{const r=await api.syncCustomer({scope:'aco',customerId:id});syncFailures.delete(id);if(!main.hidden&&scope==='aco'&&customerId===id){await refresh();if(manual)note('Linked profiles: '+r.created+' created, '+r.updated+' updated, '+r.needsReview+' need review.');}}catch(e){if(manual||syncFailures.get(id)!==e.message){note('Customer synchronization failed: '+e.message);syncFailures.set(id,e.message);}}};const task=syncChain.catch(()=>{}).then(run);syncChain=task.catch(()=>{});return task;}
@@ -1475,8 +1517,37 @@
  q('sync').onclick=()=>customerId?void syncCustomer(customerId,true):note('Select a customer first.');
  async function flushRefresh(){if(pendingRefresh&&!editorBusy()){pendingRefresh=false;await refresh();}}
  d.addEventListener('focusout',()=>setTimeout(()=>void flushRefresh(),0));
- new MutationObserver(()=>{if(pendingRefresh&&!editorBusy())void flushRefresh();}).observe(d.body,{childList:true});
- const queuedCustomers=new Set();let autoRunning=false;async function autoSync(){for(const c of window.JigWebsiteCustomers?.list?.()||[])if(c.id&&c.paid)queuedCustomers.add(c.id);if(autoRunning)return;autoRunning=true;try{while(queuedCustomers.size){const id=queuedCustomers.values().next().value;queuedCustomers.delete(id);await syncCustomer(id);}}finally{autoRunning=false;}}
+ new MutationObserver(()=>{if(pendingRefresh&&!editorBusy())void flushRefresh();}).observe(main,{childList:true,subtree:false});
+ // Debounce repeated website events. Keep automatic reconciliation paced,
+ // never compete with the foreground import or customer switch.
+ const queuedCustomers=new Set(),lastAutomaticSync=new Map();
+ let autoRunning=false,autoSyncResume=null,lastVaultSwitchAt=0;
+ const AUTO_SYNC_COOLDOWN_MS=5*60*1000,AUTO_SYNC_SPACING_MS=2500;
+ async function autoSync(){
+  if(main.hidden||scope!=='aco'||!customerId)return;
+  const now=Date.now();
+  for(const c of window.JigWebsiteCustomers?.list?.()||[])
+   if(c.id&&c.paid&&now-(lastAutomaticSync.get(c.id)||0)>=AUTO_SYNC_COOLDOWN_MS)queuedCustomers.add(c.id);
+  if(autoRunning)return;
+  autoRunning=true;
+  try{
+   while(queuedCustomers.size){
+    if(main.hidden||scope!=='aco'||!customerId){queuedCustomers.clear();break;}
+    if(editorBusy()||importPreviewInProgress||Date.now()-lastVaultSwitchAt<1500)break;
+    if(window.JigWebsiteCustomers?.connected?.()===false){queuedCustomers.clear();break;}
+    const id=queuedCustomers.values().next().value;
+    queuedCustomers.delete(id);
+    if(Date.now()-(lastAutomaticSync.get(id)||0)<AUTO_SYNC_COOLDOWN_MS)continue;
+    lastAutomaticSync.set(id,Date.now());
+    await syncCustomer(id);
+    if(queuedCustomers.size)await new Promise(resolve=>setTimeout(resolve,AUTO_SYNC_SPACING_MS));
+   }
+  }finally{
+   autoRunning=false;
+   if(queuedCustomers.size&&!autoSyncResume)
+    autoSyncResume=setTimeout(()=>{autoSyncResume=null;void autoSync();},10000);
+  }
+ }
  d.addEventListener('aco-studio:edit-profile',async event=>{
   const detail=event.detail||{};
   if(!['aco','personal'].includes(detail.scope)||!detail.profileId)return;
