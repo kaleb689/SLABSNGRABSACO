@@ -1871,7 +1871,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      throw Error('A selected card is incomplete. Repair it before returning these profiles; none were deleted.');
     if(savedNumbers.has(number)){cardsAlreadySaved++;continue;}
     savedNumbers.add(number);
-    add.push({number,month:card.month,year:card.year,
+    add.push({number,month:card.month,year:card.year,expMonth:card.month,expYear:card.year,
      cardholder:card.cardholder||'Unassigned',label:'Returned profile card',brand:card.type||''});
    }
    for(const card of add){a.check();await vault.addWorkshopCard(key,card,a.check);cardsSaved++;}
