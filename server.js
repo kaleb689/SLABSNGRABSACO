@@ -45368,7 +45368,12 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         // Customer mailboxes can enrich only their own already-attributed hits.
         const unmatchedBusinessReceipt = Boolean(mailbox.operatorApproved === true &&
           record && !record.customerAccountId);
-        if ((!account || account.disabled === true) && !unmatchedBusinessReceipt) continue;
+        // All existing Discord orders can receive owner-approved receipt
+        // evidence, even if an old customer's membership has since lapsed.
+        // No customer mailbox is ever scanned and this cannot relink orders.
+        const ownerPriceMatch = Boolean(mailbox.operatorApproved === true && retailerMatchedRecord);
+        if ((!account || account.disabled === true) &&
+            !unmatchedBusinessReceipt && !ownerPriceMatch) continue;
         // Never create checkouts from mailbox evidence. Require an exact
         // order number, an authorized retailer sender and a Discord source.
         if (retailerMatchedRecord && normalizeSuccessRetailer(record.retailer) === "PKC" &&
