@@ -40676,7 +40676,7 @@ function safeSuccessCheckout(
     Array.isArray(record?.items)
       ? record.items.map(item => {
           const safe = safeSuccessItem(item);
-          return { ...safe, imageUrl: publicSuccessProductImage(safe.name, normalizeSuccessRetailer(record.retailer), safe.imageUrl, safe.sku) };
+          return { ...safe, imageUrl: publicSuccessProductImage(item.name || safe.name, normalizeSuccessRetailer(record.retailer), safe.imageUrl, safe.sku) };
         })
       : [];
 
