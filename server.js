@@ -40676,7 +40676,11 @@ function safeSuccessCheckout(
                 source: event.source === "carrier_api" ? "carrier_api" : "retailer_email"
               })) : [],
             address: record.shipping.address ? compactShippingAddress(record.shipping.address) : null,
-            updatedAt: record.shipping.updatedAt || null
+            updatedAt: record.shipping.updatedAt || null,
+            // Safe provenance lets the customer app distinguish verified
+            // carrier scans and email updates without exposing mailbox data.
+            source: ["carrier_api", "retailer_email"].includes(record.shipping.source)
+              ? record.shipping.source : null
           }
         : null
   };
