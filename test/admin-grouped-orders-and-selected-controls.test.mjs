@@ -26,7 +26,7 @@ function extractFunction(source,begin,end){
 test("Mobile Admin keeps bundled items inside one actual checkout, does not price from item subtotals",()=>{
   const source=read("public/admin-mobile.js");
   const fn=extractFunction(source,"  function ordersMarkup(","  function accountsMarkup(");
-  const labelHelper=extractFunction(source,"function sngCheckoutDisplayName(","let tab="overview");
+  const labelHelper=extractFunction(source,"function sngCheckoutDisplayName(","let tab=");
   const verifiedAmount=row=>row.orderTotalKnown===true&&Number(row.orderTotal)>0?Number(row.orderTotal):0;
   const amount=row=>row.checkoutValueKnown===true?Number(row.checkoutValue):verifiedAmount(row);
   const hasCheckoutValue=row=>amount(row)>0;
