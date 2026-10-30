@@ -41,6 +41,7 @@ import { applyOwnerVerifiedOrderEvidence, ownerOrderEvidenceAudit } from "./chec
 import { verifiedSameDayCheckoutOwner } from "./checkout-owner-verified-day.js";
 import { planDiscordCommunityHits } from "./discord-hit-mirror-policy.js";
 import { checkoutPaidAmount, checkoutItemSubtotal, checkoutUnitPrice, checkoutPriceSignature, checkoutExplicitPaidTotal, checkoutOrderValue } from "./checkout-price-policy.js";
+import { reconcileRetailerEmailTotal, checkoutPriceEvidence } from "./checkout-price-reconciliation.js";
 import { verifiedSkuProductImage } from "./checkout-product-image-policy.js";
 import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
@@ -40636,12 +40637,11 @@ function safeSuccessItem(item) {
     );
 
   return {
-    name:
-      clean(
-        item?.name ||
-        "Item",
-        300
-      ),
+    // The raw webhook title remains unchanged in storage for SKU matching.
+    // Customer and Admin order views never show embedded retailer SKU prefixes.
+    name: communityProductName(publicSuccessProductName(item?.name || "Item")),
+
+    productKey: communityProductKey(item?.name || "Item", item?.sku),
 
     sku: /^[A-Za-z0-9][A-Za-z0-9-]{2,49}$/.test(String(item?.sku || "")) ? String(item.sku) : null,
     quantity,
@@ -40732,6 +40732,7 @@ function safeSuccessCheckout(
     orderTotal: checkoutPaidAmount(record) ?? 0,
     // A known item subtotal is NOT the actual final charged amount.
     orderTotalKnown: checkoutPaidAmount(record) !== null,
+    ...checkoutPriceEvidence(record),
 
     itemCount:
       Math.max(
@@ -45399,20 +45400,19 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
           }
         }
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
-        if (retailerMatchedRecord && receiptTotal && customerCheckoutPurchase(record) &&
-            record.orderTotalBasis !== "retailer_receipt" &&
-            record.priceSource !== "verified_retailer_receipt") {
-          // Only attach amount to the existing, uniquely matched Discord
-          // checkout. Never turn an email receipt into a new order or owner.
-          record.orderTotal = receiptTotal;
-          record.orderTotalBasis = "retailer_receipt";
-          record.priceSource = "verified_retailer_receipt";
-          pendingChanges.push({
-            id: record.id, customerAccountId: account ? String(account.id) : "",
-            retailer: record.retailer, orderNumber: record.orderNumber,
-            orderTotal: receiptTotal
-          });
-          changed = true;
+        if (retailerMatchedRecord && receiptTotal && customerCheckoutPurchase(record)) {
+          // Reconcile confirmed paid amounts from BOTH sources. A complete,
+          // exact-order retailer receipt can fill a missing webhook amount;
+          // different explicit totals are retained and flagged for review.
+          const price = reconcileRetailerEmailTotal(record, receiptTotal, messageAt);
+          if (price.changed) {
+            pendingChanges.push({
+              id: record.id, customerAccountId: account ? String(account.id) : "",
+              retailer: record.retailer, orderNumber: record.orderNumber,
+              verifiedReceiptTotal: receiptTotal, verifiedReceiptAt: messageAt
+            });
+            changed = true;
+          }
         }
         // Ownership-free business receipts may update spending only. They
         // must never create customer shipment alerts or change attribution.
@@ -45604,16 +45604,14 @@ async function syncShippingTrackers() {
           }
           continue;
         }
-        if (update.orderTotal) {
-          if (customerCheckoutPurchase(record) &&
-              record.orderTotalBasis !== "retailer_receipt" &&
-              record.priceSource !== "verified_retailer_receipt") {
-            record.orderTotal = update.orderTotal;
-            record.orderTotalBasis = "retailer_receipt";
-            record.priceSource = "verified_retailer_receipt";
-            record.verifiedPaidAt = new Date().toISOString();
-            receiptChanged = true;
-            if (update.customerAccountId) changedAccounts.add(update.customerAccountId);
+        if (update.verifiedReceiptTotal) {
+          if (customerCheckoutPurchase(record)) {
+            const price = reconcileRetailerEmailTotal(record,
+              update.verifiedReceiptTotal, update.verifiedReceiptAt);
+            if (price.changed) {
+              receiptChanged = true;
+              if (update.customerAccountId) changedAccounts.add(update.customerAccountId);
+            }
           }
           continue;
         }
