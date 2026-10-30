@@ -27,6 +27,8 @@ import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity,
 import { webhookOnlyCheckouts, discordCheckoutIds, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, matchVerifiedWebhookShippingEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { isModuleLifecycleDiscordMessage, isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
 import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
+import { operatorImapProvider, validateOperatorImapEntry, combineOperatorImapSources,
+  publicOperatorImapEntry, MAX_OPERATOR_IMAP_INBOXES, OPERATOR_IMAP_HOSTS } from "./operator-imap-policy.js";
 import { createCarrierTrackingClient, trackingEvidenceFromEmail, officialTrackingUrl, knownCarrier, cleanTrackingNumber, mergeCarrierShipping } from "./carrier-tracking.js";
 import { pokemonCenterFulfillmentDetails, mergeRetailerFulfillmentItems } from "./retailer-order-enrichment.js";
 import { verifiedRetailerOrderTotal } from "./retailer-order-total.js";
@@ -18152,6 +18154,103 @@ app.post(
   }
 );
 
+
+// Owner-only IMAP Health. No customer mailbox or customer-saved app password
+// is accessible from this scanner or these endpoints.
+app.get("/api/admin/imap-health", requireAdmin, async (req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  try { return res.json(await operatorImapHealthSnapshot()); }
+  catch(error) {
+    console.error("Owner IMAP health read failed:",error?.code||error?.name||"storage_error");
+    return res.status(500).json({error:"Unable to read encrypted owner IMAP inboxes."});
+  }
+});
+app.post("/api/admin/imap-health", requireAdmin, async (req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  try {
+    const payload = validateOperatorImapEntry(req.body);
+    const existing = await approvedOperatorImapInboxes();
+    if(existing.some(item=>item.email===payload.email))
+      return res.status(409).json({error:"This inbox is already configured."});
+    const stored = await storedOperatorImapInboxes();
+    if(stored.length>=MAX_OPERATOR_IMAP_INBOXES)
+      return res.status(400).json({error:"Maximum additional IMAP inboxes reached."});
+    const now=new Date().toISOString();
+    const inbox={...payload,id:crypto.randomUUID(),createdAt:now,updatedAt:now};
+    await saveOperatorImapInboxes([...stored,inbox]);
+    const result=await testApprovedOperatorImapConnection(inbox);
+    return res.status(201).json({ok:true,entry:publicOperatorImapEntry(inbox,
+      (await readJson(OPERATOR_IMAP_HEALTH_FILE,{}))[inbox.id]),connection:result});
+  }catch(error){
+    if(/Enter |Choose |must be |characters|inbox name/i.test(error?.message||""))
+      return res.status(400).json({error:error.message});
+    console.error("Owner IMAP create failed:",error?.code||error?.name||"save_error");
+    return res.status(500).json({error:"Could not save the encrypted owner IMAP login."});
+  }
+});
+app.put("/api/admin/imap-health/:id",requireAdmin,async(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  try {
+    const stored=await storedOperatorImapInboxes();
+    const index=stored.findIndex(item=>item.id===req.params.id);
+    if(index<0)return res.status(404).json({error:"Admin-managed inbox not found. Render inboxes are edited in Render settings."});
+    const prior=stored[index];
+    const checked=validateOperatorImapEntry({...prior,...req.body, password:req.body?.password||""},{existingPassword:true});
+    if((await approvedOperatorImapInboxes()).some(item=>
+      item.id!==prior.id&&item.email===checked.email))
+      return res.status(409).json({error:"This inbox is already configured."});
+    const now=new Date().toISOString();
+    const next={...prior,...checked,password:checked.password||prior.password,updatedAt:now};
+    stored[index]=next;
+    await saveOperatorImapInboxes(stored);
+    const connection=next.enabled===false?{connected:false,status:"paused"}:
+      await testApprovedOperatorImapConnection(next);
+    return res.json({ok:true,entry:publicOperatorImapEntry(next,
+      (await readJson(OPERATOR_IMAP_HEALTH_FILE,{}))[next.id]),connection});
+  }catch(error){
+    if(/Enter |Choose |must be |characters|inbox name/i.test(error?.message||""))
+      return res.status(400).json({error:error.message});
+    console.error("Owner IMAP update failed:",error?.code||error?.name||"update_error");
+    return res.status(500).json({error:"Unable to update encrypted owner IMAP inbox."});
+  }
+});
+app.delete("/api/admin/imap-health/:id",requireAdmin,async(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  try {
+    const stored=await storedOperatorImapInboxes();
+    const filtered=stored.filter(item=>item.id!==req.params.id);
+    if(filtered.length===stored.length)
+      return res.status(404).json({error:"Admin-managed inbox not found. Render inboxes cannot be deleted here."});
+    await saveOperatorImapInboxes(filtered);
+    // Removed inbox remains absent even if its former health audit persists.
+    return res.json({ok:true});
+  }catch(error) {
+    console.error("Owner IMAP removal failed:",error?.code||error?.name||"remove_error");
+    return res.status(500).json({error:"Unable to remove admin-managed inbox."});
+  }
+});
+app.post("/api/admin/imap-health/:id/test",requireAdmin,async(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  try {
+    const inbox=(await approvedOperatorImapInboxes()).find(item=>item.id===req.params.id);
+    if(!inbox)return res.status(404).json({error:"Inbox not found."});
+    if(!inbox.enabled)return res.status(409).json({error:"Enable this inbox before testing it."});
+    if(!inbox.password)return res.status(409).json({error:"Inbox app password is not configured."});
+    const result=await testApprovedOperatorImapConnection(inbox);
+    return res.json({ok:true,...result});
+  }catch(error) {
+    console.error("Owner IMAP test failed:",error?.code||error?.name||"test_error");
+    return res.status(500).json({error:"Unable to test owner IMAP mailbox."});
+  }
+});
+app.post("/api/admin/imap-health/scan",requireAdmin,async(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  if(shippingTrackerRunning)return res.json({ok:true,running:true});
+  // The automatic scheduler uses this same scanner. Never import or create
+  // checkout records; verified retailer and carrier emails only enrich hits.
+  void syncShippingTrackers();
+  return res.status(202).json({ok:true,started:true});
+});
 
 app.get(
   "/api/admin/security-status",
@@ -44936,6 +45035,108 @@ async function getCustomerSuccessMailboxes(
 
 
 
+// All shipping enrichment is sourced from the operator's explicit inbox list.
+// Customer-owned IMAP credentials are NEVER a shipping-scanner input.
+const OPERATOR_IMAP_FILE = path.join(DATA_DIR, "operator-imap-inboxes.encrypted.json");
+const OPERATOR_IMAP_BACKUP_FILE = path.join(DATA_DIR, "operator-imap-inboxes.previous.encrypted.json");
+const OPERATOR_IMAP_HEALTH_FILE = path.join(DATA_DIR, "operator-imap-health.json");
+async function storedOperatorImapInboxes() {
+  let encrypted;
+  try { encrypted = JSON.parse(await fs.readFile(OPERATOR_IMAP_FILE, "utf8")); }
+  catch(error) {
+    if (error?.code==="ENOENT") return [];
+    // A damaged encrypted vault is never mistaken for a new, empty one.
+    throw error;
+  }
+  const decoded = decryptJson(encrypted);
+  if (!decoded || !Array.isArray(decoded.inboxes)) throw new Error("Operator mailbox storage is invalid.");
+  return decoded.inboxes;
+}
+async function saveOperatorImapInboxes(entries) {
+  // Preserve the prior encrypted generation before any credential mutation.
+  // No plaintext backup or password is exposed in logs or response payloads.
+  let prior = null;
+  try {prior = await fs.readFile(OPERATOR_IMAP_FILE,"utf8");}
+  catch(error) {if(error?.code!=="ENOENT")throw error;}
+  if(prior) {
+    JSON.parse(prior); // Fail closed if the existing vault cannot be read.
+    await fs.writeFile(OPERATOR_IMAP_BACKUP_FILE,prior,{mode:0o600});
+  }
+  await writeJson(OPERATOR_IMAP_FILE, encryptJson({version: 1, inboxes: entries}));
+}
+function environmentOperatorImapInboxes() {
+  const primary = managedSuccessMailboxConfig();
+  const testEmail = normalizeEmail(process.env.IMAP_TEST_EMAIL || "");
+  const testPassword = String(process.env.IMAP_TEST_PASSWORD || "");
+  const testProvider = operatorImapProvider(testEmail);
+  const environments = [];
+  if (primary.email) environments.push({
+    id: "render-managed", source: "environment", email: primary.email,
+    label: "Managed shipping inbox (Render)", provider: operatorImapProvider(primary.email) || "custom",
+    password: primary.password, enabled: true, managedHost: primary.host,
+    managedPort: primary.port, createdAt: null
+  });
+  if (testEmail) environments.push({
+    id: "render-test", source: "environment", email: testEmail,
+    label: "Second owner inbox (Render test settings)", provider: testProvider || "custom",
+    password: testPassword, enabled: true, createdAt: null
+  });
+  return environments;
+}
+async function approvedOperatorImapInboxes() {
+  const stored = await storedOperatorImapInboxes();
+  return combineOperatorImapSources(environmentOperatorImapInboxes(),
+    stored.map(item => ({...item, source: "admin"})));
+}
+async function operatorImapHealthSnapshot() {
+  const [inboxes, health] = await Promise.all([
+    approvedOperatorImapInboxes(), readJson(OPERATOR_IMAP_HEALTH_FILE,{})
+  ]);
+  return {
+    ok: true, customerEmailScanning: false, scanIntervalSeconds: SHIPPING_SCAN_INTERVAL_MS / 1000,
+    running: shippingTrackerRunning,
+    maxAdditionalInboxes: MAX_OPERATOR_IMAP_INBOXES,
+    inboxes: inboxes.map(item => publicOperatorImapEntry(item,health?.[item.id]))
+  };
+}
+let operatorImapHealthWriteQueue=Promise.resolve();
+function updateOperatorImapHealth(id, changes) {
+  // Serialize scanner and manual-test health writes. Simultaneous calls must
+  // never overwrite another mailbox's recent success/failure.
+  const task=operatorImapHealthWriteQueue.catch(()=>{}).then(async()=>{
+    const all=await readJson(OPERATOR_IMAP_HEALTH_FILE,{});
+    const next=all && typeof all==="object" && !Array.isArray(all) ? all : {};
+    // Health is free of credentials, addresses and message bodies.
+    next[id]={...(next[id]||{}),...changes};
+    await writeJson(OPERATOR_IMAP_HEALTH_FILE,next);
+  });
+  operatorImapHealthWriteQueue=task;
+  return task;
+}
+async function testApprovedOperatorImapConnection(inbox) {
+  const now = new Date().toISOString();
+  await updateOperatorImapHealth(inbox.id,{lastAttemptAt:now,lastTestAt:now});
+  try {
+    const client = shippingMailboxClient(inbox);
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock("INBOX",{readOnly:true});
+      try { /* Opening INBOX validates read access, not merely SMTP/login. */ }
+      finally { lock.release(); }
+    } finally {
+      if(client.usable) {try{await client.logout();}catch{client.close();}}
+      else client.close();
+    }
+    await updateOperatorImapHealth(inbox.id,{
+      lastConnectedAt:new Date().toISOString(),lastError:null,lastTestAt:now
+    });
+    return {connected:true,status:"connected"};
+  } catch(error) {
+    const reason = mailboxFailureReason(error);
+    await updateOperatorImapHealth(inbox.id,{lastError:reason,lastTestAt:now});
+    return {connected:false,status:reason};
+  }
+}
 const SHIPPING_SCAN_INTERVAL_MS = 3 * 60 * 1000;
 const shippingDiscordDms = createShippingDiscordDmLedger({dataDir:DATA_DIR});
 let shippingTrackerRunning = false;
@@ -45063,11 +45264,16 @@ async function sendShippingDiscordDm(account, record, shipping) {
 }
 
 function shippingMailboxClient(mailbox) {
-  if (!mailbox.managedHost) return createCustomerImapClient(mailbox.email, mailbox.password).client;
-  // Read-only business mailbox supplied by Render configuration. The host
-  // is never taken from an HTTP request or another customer account.
+  // The provider is an allowlisted preset (or a trusted Render environment
+  // setting). Never accept a hostname/port from a browser request.
+  const host = mailbox.managedHost ||
+    OPERATOR_IMAP_HOSTS[mailbox.provider]?.host;
+  const port = mailbox.managedHost ? mailbox.managedPort :
+    OPERATOR_IMAP_HOSTS[mailbox.provider]?.port;
+  if (!host || !Number.isInteger(Number(port)) || Number(port)!==993)
+    throw Object.assign(new Error("Unsupported owner IMAP provider"),{code:"UNSUPPORTED_PROVIDER"});
   return protectImapClient(new ImapFlow({
-    host: mailbox.managedHost, port: mailbox.managedPort, secure: true,
+    host, port, secure: true,
     auth: { user: mailbox.email,
       pass: normalizeImapPassword(mailbox.email, mailbox.password) },
     logger: false, connectionTimeout: 15000, greetingTimeout: 10000,
@@ -45076,7 +45282,8 @@ function shippingMailboxClient(mailbox) {
 }
 async function scanMailboxForShipping(mailbox, records, accountsById, pendingChanges) {
   const client = shippingMailboxClient(mailbox);
-  let changed = false;
+  let changed = false, messagesExamined = 0, matchedMessages = 0;
+  const initialUpdates = pendingChanges.length;
   try {
     await client.connect();
     const lock = await client.getMailboxLock("INBOX", { readOnly: true });
@@ -45115,6 +45322,7 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         { uid: true }
       ) : [];
 
+      messagesExamined = candidates.length;
       for (const message of candidates) {
         const subject = String(message.envelope?.subject || "");
         const decoded = await decodeImapMessage(message.source);
@@ -45148,11 +45356,12 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const retailerMatchedRecord = matchVerifiedWebhookEmail(records, matchEvidence);
         const record = retailerMatchedRecord ||
           matchVerifiedWebhookShippingEmail(records, matchEvidence);
+        if (record) matchedMessages++;
         const account = accountsById.get(String(record?.customerAccountId || ""));
         // A trusted OWNER-MANAGED business mailbox can verify the final paid
         // amount of an unmatched webhook checkout without assigning its owner.
         // Customer mailboxes can enrich only their own already-attributed hits.
-        const unmatchedBusinessReceipt = Boolean(mailbox.managedHost &&
+        const unmatchedBusinessReceipt = Boolean(mailbox.operatorApproved === true &&
           record && !record.customerAccountId);
         if ((!account || account.disabled === true) && !unmatchedBusinessReceipt) continue;
         // Never create checkouts from mailbox evidence. Require an exact
@@ -45271,7 +45480,10 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
       try { await client.logout(); } catch { client.close(); }
     } else client.close();
   }
-  return changed;
+  return {
+    changed, messagesExamined, matchedMessages,
+    candidateUpdates:pendingChanges.length-initialUpdates
+  };
 }
 
 async function syncShippingTrackers() {
@@ -45289,43 +45501,37 @@ async function syncShippingTrackers() {
       customerCheckoutPurchase(record) && !cancelledOrder(record));
     const trackable = businessPriceCandidates.filter(record =>
       accountsById.has(String(record.customerAccountId || "")));
-    if (!businessPriceCandidates.length) return;
+    // Even with zero verified checkouts, keep the health and connection
+    // diagnostics current for every explicitly approved inbox.
 
-    // Customer-connected mailboxes can contain unrelated personal purchases;
-    // they are never checkout sources and may update only their owner's
-    // exact, authoritative webhook orders.
-    let customerMailboxesScanned = 0;
-    for (const account of accountsById.values()) {
-      const owned = trackable.filter(record =>
-        String(record.customerAccountId || "") === String(account.id));
-      if (!owned.length) continue;
-      let mailboxes = [];
-      try { mailboxes = await getCustomerSuccessMailboxes(account.id); }
-      catch { continue; }
-      for (const mailbox of mailboxes) {
-        try {
-          await scanMailboxForShipping(mailbox, owned, accountsById, pendingChanges);
-          customerMailboxesScanned++;
-        } catch (error) {
-          console.error("Shipping tracker customer mailbox scan:", mailboxFailureReason(error));
-        }
-      }
-    }
-
-    // Owner-managed retailer confirmations often arrive in the business
-    // mailbox, not the customer's personal inbox. Read it ONCE for all
-    // verified owners and never import an email as a new Success checkout.
-    const managed = managedSuccessMailboxConfig();
-    let managedMailboxConnected = false;
-    if (managed.configured) {
+    // SCAN ONLY explicitly operator-managed IMAP inboxes. Customer saved
+    // credentials, retailer login accounts, and personal email are excluded.
+    const configuredInboxes = await approvedOperatorImapInboxes();
+    let operatorMailboxesScanned = 0, operatorMailboxesFailed = 0;
+    for (const mailbox of configuredInboxes) {
+      if (mailbox.enabled === false || !mailbox.password ||
+          (!mailbox.managedHost && !OPERATOR_IMAP_HOSTS[mailbox.provider])) continue;
+      const lastAttemptAt = new Date().toISOString();
+      await updateOperatorImapHealth(mailbox.id, {lastAttemptAt});
       try {
-        await scanMailboxForShipping({
-          email: managed.email, password: managed.password,
-          managedHost: managed.host, managedPort: managed.port
-        }, businessPriceCandidates, accountsById, pendingChanges);
-        managedMailboxConnected = true;
-      } catch (error) {
-        console.error("Shipping tracker managed mailbox scan:", mailboxFailureReason(error));
+        const stats = await scanMailboxForShipping({...mailbox,operatorApproved:true},
+          businessPriceCandidates,accountsById,pendingChanges);
+        operatorMailboxesScanned++;
+        const lastScanAt = new Date().toISOString();
+        await updateOperatorImapHealth(mailbox.id,{
+          lastConnectedAt:lastScanAt,lastScanAt,lastError:null,
+          messagesExamined:stats.messagesExamined,matchedMessages:stats.matchedMessages,
+          candidateUpdates:stats.candidateUpdates
+        });
+        console.log("Operator shipping inbox scan:",JSON.stringify({
+          id:mailbox.id,connected:true,examined:stats.messagesExamined,
+          matched:stats.matchedMessages,updates:stats.candidateUpdates
+        }));
+      } catch(error) {
+        operatorMailboxesFailed++;
+        const reason=mailboxFailureReason(error);
+        await updateOperatorImapHealth(mailbox.id,{lastError:reason});
+        console.error("Operator shipping inbox failed:",mailbox.id,reason);
       }
     }
     // Safe aggregate observability: track REAL verified checkout prices so
@@ -45340,9 +45546,9 @@ async function syncShippingTrackers() {
         record => checkoutPaidAmount(record) === null).length,
       verifiedSpendCents: businessPriceCandidates.reduce(
         (sum,record) => sum + Math.round((checkoutPaidAmount(record) ?? 0) * 100), 0),
-      customerMailboxesScanned,
-      managedConfigured: managed.configured,
-      managedConnected: managedMailboxConnected,
+      customerMailboxesScanned: 0,
+      operatorMailboxesConfigured:configuredInboxes.length,
+      operatorMailboxesScanned,operatorMailboxesFailed,
       candidateUpdates: pendingChanges.length
     }));
     if (!pendingChanges.length) return;
@@ -45564,6 +45770,9 @@ async function syncCustomerTargetSuccess(
     force = false
   } = {}
 ) {
+  // Legacy import worker is deliberately disabled. Customer inbox credentials
+  // are not authorized for shipping or Success mailbox scanning.
+  return {scanned:false,reason:"customer_mailbox_scanning_disabled"};
   const accountId =
     String(
       customerAccountId ||
