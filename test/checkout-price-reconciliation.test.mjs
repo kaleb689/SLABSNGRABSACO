@@ -138,5 +138,5 @@ test("customer and admin checkout price propagation remains owner-only and read-
   const checkout=source.slice(source.indexOf("function safeSuccessCheckout("),
     source.indexOf("async function sendDiscordSuccessNotification("));
   assert.match(checkout,/\.\.\.checkoutPriceEvidence\(record\)/);
-  assert.match(checkout,/communityProductName\(publicSuccessProductName\(item\?\.name/);
+  assert.match(source,/communityProductName\(publicSuccessProductName\(item\?\.name/);
 });
