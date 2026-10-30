@@ -72,7 +72,7 @@ export function verifiedShippingStatus(shipping = {}) {
   // shown or pushed to customers until a real delivery notice confirms it.
   if (shipping?.status === "delivered" &&
       shipping.source === "retailer_email" &&
-      shipping.deliveryProof !== "explicit_email") return "shipped";
+      shipping.deliveryProof !== "explicit_email") return shipping.trackingNumber ? "shipped" : null;
   return shipping?.status || null;
 }
 
