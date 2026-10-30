@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import webpush from "web-push";
 import {RETAILER_ALERT_KEYS, receivesRetailerAlert} from "./retailer-alert-roles.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
+import {verifiedShippingStatus} from "./shipping-tracking-policy.js";
 
 const shippingLabels = { shipped: "Shipped", in_transit: "In transit", out_for_delivery: "Out for delivery", delivered: "Delivered" };
 export function cancelledOrder(record) {
@@ -27,7 +28,7 @@ export function orderSnapshot(record) {
   const cancelled = cancelledOrder(record);
   return { eligible: !cancelled && /^(confirmed|success|successful|placed|paid|completed|shipped|delivered)$/i.test(record.status || ""),
     reviewHold: !cancelled && record.status === "review_hold",
-    cancelled, shipping: JSON.stringify([record.shipping?.status || "", record.shipping?.estimatedDelivery || "", record.shipping?.trackingUrl || "", record.shipping?.trackingNumber || "", record.shipping?.events?.[0]?.status || "", record.shipping?.events?.[0]?.at || "", record.shipping?.events?.[0]?.location || ""]) };
+    cancelled, shipping: JSON.stringify([verifiedShippingStatus(record.shipping) || "", record.shipping?.estimatedDelivery || "", record.shipping?.trackingUrl || "", record.shipping?.trackingNumber || "", record.shipping?.events?.[0]?.status || "", record.shipping?.events?.[0]?.at || "", record.shipping?.events?.[0]?.location || ""]) };
 }
 export function orderEvents(record, previous) {
   const next = orderSnapshot(record);
@@ -52,12 +53,16 @@ export function orderEvents(record, previous) {
   // tracking, but must not generate another "shipped" push notification.
   let previousStage = null;
   try { previousStage = JSON.parse(previous?.shipping || "[]")[0] || null; } catch {}
-  if (shippingLabels[record.shipping?.status] && previousStage !== record.shipping.status) {
-    const status = shippingLabels[record.shipping.status];
+  const stage = verifiedShippingStatus(record.shipping);
+  const unverifiedLegacyDelivery = record.shipping?.status === "delivered" && stage !== "delivered";
+  if (!unverifiedLegacyDelivery && shippingLabels[stage] && previousStage !== stage) {
+    const status = shippingLabels[stage];
+    const correction = previousStage === "delivered" && stage === "out_for_delivery";
     events.push({
       kind: "shipping_update",
-      title: `${retailer} order ${status.toLowerCase()}`,
-      message: `${product} • ${orderNumber}${record.shipping?.events?.[0]?.source === "carrier_api" ? ` • ${String(record.shipping.events[0].status || "").slice(0, 90)}${record.shipping.events[0].location ? ` (${String(record.shipping.events[0].location).slice(0, 60)})` : ""}` : ""}${record.shipping.estimatedDelivery ? ` • Est. delivery ${String(record.shipping.estimatedDelivery).slice(0, 80)}` : ""}`,
+      title: correction ? `${retailer} shipping status corrected: out for delivery`
+        : `${retailer} order ${status.toLowerCase()}`,
+      message: `${product} • ${orderNumber}${correction ? " • A newer verified shipping notice replaced an unconfirmed delivery status" : ""}${record.shipping?.events?.[0]?.source === "carrier_api" ? ` • ${String(record.shipping.events[0].status || "").slice(0, 90)}${record.shipping.events[0].location ? ` (${String(record.shipping.events[0].location).slice(0, 60)})` : ""}` : ""}${record.shipping.estimatedDelivery ? ` • Est. delivery ${String(record.shipping.estimatedDelivery).slice(0, 80)}` : ""}`,
       tab: "success"
     });
   }
@@ -216,6 +221,25 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
         const key = orderKey(record);
         const previous = state.snapshots[key];
         const next = orderSnapshot(record);
+        let previousStage = null;
+        try {previousStage = JSON.parse(previous?.shipping || "[]")[0] || null;} catch {}
+        const unverifiedDelivery = record.shipping?.source === "retailer_email" &&
+          record.shipping.deliveryProof !== "explicit_email" &&
+          (record.shipping.status === "delivered" ||
+            (record.shipping.status === "out_for_delivery" && previousStage === "delivered"));
+        if (unverifiedDelivery) {
+          // Remove incorrect delivered notices from pending pushes and the
+          // in-app inbox. Reset only this false delivery event so a future
+          // genuinely delivered package can notify its owner exactly once.
+          const falseDeliveryAlert = item => item?.kind === "shipping_update" &&
+            /\bdelivered\b/i.test(String(item?.title || "")) &&
+            !/\bcorrected\b/i.test(String(item?.title || ""));
+          state.outbox = state.outbox.filter(item =>
+            item.key !== key || !falseDeliveryAlert(item.notification));
+          state.inbox[record.customerAccountId] = (state.inbox[record.customerAccountId] || [])
+            .filter(item => item.orderKey !== key || !falseDeliveryAlert(item));
+          delete state.eventHistory[key + ":shipping_update:delivered"];
+        }
         // Retire checkout-confirmed or shipping alerts when the authoritative
         // hook changes to orange/unknown. Previously delivered pushes cannot
         // be recalled, but the in-app inbox and queued pushes must not lie.

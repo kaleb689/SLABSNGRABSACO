@@ -17,6 +17,8 @@ on:
       - shipping-tracking-policy.js
       - test/success-source-policy.test.mjs
       - test/shipping-sheet-live-state.test.mjs
+      - test/shipping-delivery-verification.test.mjs
+      - test/order-notifications.test.js
       - public/app.js
       - public/app-dashboard.js
       - public/index.html
@@ -40,6 +42,8 @@ on:
       - shipping-tracking-policy.js
       - test/success-source-policy.test.mjs
       - test/shipping-sheet-live-state.test.mjs
+      - test/shipping-delivery-verification.test.mjs
+      - test/order-notifications.test.js
       - public/app.js
       - public/app-dashboard.js
       - public/index.html
@@ -53,9 +57,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Syntax check
         run: |
           node --check carrier-tracking.js
+          node --check shipping-tracking-policy.js
           node --check order-notifications.js
           node --check server.js
           node --check public/app.js
@@ -64,4 +71,4 @@ jobs:
           node --check public/operator-imap-health.js
           node --check public/admin-mobile.js
       - name: Carrier API contract and event tests
-        run: node --test tests/carrier-tracking.test.js test/success-source-policy.test.mjs test/shipping-sheet-live-state.test.mjs test/operator-imap-health.test.mjs
+        run: node --test tests/carrier-tracking.test.js test/success-source-policy.test.mjs test/shipping-sheet-live-state.test.mjs test/operator-imap-health.test.mjs test/shipping-delivery-verification.test.mjs test/order-notifications.test.js

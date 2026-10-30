@@ -194,22 +194,36 @@ export function mergeCarrierShipping(prior = {}, update, observedAt = new Date()
   const stages = {shipped: 1, in_transit: 2, out_for_delivery: 3, delivered: 4};
   const oldRank = stages[prior.status] || 0, newRank = stages[update.status] || 0;
   const history = normalizeEvents([...(prior.events || []), ...(update.events || [])]);
+  const falseLegacyDelivery = prior.status === "delivered" &&
+    prior.source === "retailer_email" && prior.deliveryProof !== "explicit_email";
+  const correction = falseLegacyDelivery && update.status === "out_for_delivery";
+  const stageChanged = correction || newRank > oldRank;
+  const verifiedDelivery = newRank >= 4 && (newRank >= oldRank || falseLegacyDelivery);
+  const nextStatus = correction ? "out_for_delivery"
+    : newRank > oldRank ? update.status : prior.status || update.status || null;
   const next = {
     ...prior,
-    status: newRank > oldRank ? update.status : prior.status || update.status || null,
+    status: nextStatus,
     estimatedDelivery: update.estimatedDelivery || prior.estimatedDelivery || null,
     trackingNumber: update.trackingNumber,
     trackingUrl: update.trackingUrl || prior.trackingUrl || null,
     carrier: update.carrier || prior.carrier || null,
     events: history,
-    deliveredAt: newRank >= 4 && oldRank < 4 ? history.find(e => e.stage === "delivered")?.at || observedAt : prior.deliveredAt || null,
+    deliveredAt: correction ? null : verifiedDelivery
+      ? history.find(e => e.stage === "delivered")?.at || prior.deliveredAt || observedAt
+      : prior.deliveredAt || null,
+    deliveryProof: correction ? null :
+      verifiedDelivery ? "carrier_api" : prior.deliveryProof || null,
     enRouteAt: prior.enRouteAt || (newRank >= 1 ? history.find(e => e.stage === "shipped" || e.stage === "in_transit")?.at || observedAt : null),
+    statusUpdatedAt: stageChanged || (verifiedDelivery && prior.deliveryProof !== "carrier_api") ? observedAt
+      : prior.statusUpdatedAt || prior.updatedAt || null,
     updatedAt: observedAt,
-    source: "carrier_api"
+    source: (newRank >= oldRank && newRank > 0) || correction ? "carrier_api" : prior.source || null
   };
   const meaningful = value => JSON.stringify([
     value.status, value.estimatedDelivery, value.trackingNumber, value.trackingUrl,
-    value.carrier, value.deliveredAt, value.enRouteAt, normalizeEvents(value.events)
+    value.carrier, value.deliveredAt, value.enRouteAt, normalizeEvents(value.events),
+    value.deliveryProof, value.source
   ]);
   return meaningful(prior) === meaningful(next) ? null : next;
 }
