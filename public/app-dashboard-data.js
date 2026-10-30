@@ -104,9 +104,9 @@ export function dashboardTotals(orders) {
  */
 export function displayProductName(value) {
   let name = String(value || "").trim(), match;
-  const prefix = /^\\s*\\((?:(?:sku|pid|tcin|dpci)\\s*[:#]?\\s*)?([a-z0-9]+(?:-[a-z0-9]+)+|\\d{8,})\\)\\s*/i;
-  while ((match = name.match(prefix)) && /\\d/.test(match[1]) &&
-    !/\\b(?:pack|count|pk|ct|edition|anniversary)\\b/i.test(match[1]))
+  const prefix = /^\s*\((?:(?:sku|pid|tcin|dpci)\s*[:#]?\s*)?([a-z0-9]+(?:-[a-z0-9]+)+|\d{8,})\)\s*/i;
+  while ((match = name.match(prefix)) && /\d/.test(match[1]) &&
+    !/\b(?:pack|count|pk|ct|edition|anniversary)\b/i.test(match[1]))
     name = name.slice(match[0].length).trim();
   return name || "Product";
 }
@@ -116,7 +116,7 @@ export function dashboardProducts(orders) {
     const entries = (Array.isArray(order.items) ? order.items : [])
       .filter(item => item && Number(item.quantity) > 0 && String(item.name || "").trim());
     const identity = item => String(item.productKey || displayProductName(item.name)
-      .normalize("NFKD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase()
+      .normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
       .replace(/[^a-z0-9]+/g, " ").trim());
     const singleProduct = new Set(entries.map(identity)).size === 1;
     const counted = new Set();
