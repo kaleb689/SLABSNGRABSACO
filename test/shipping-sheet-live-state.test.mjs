@@ -25,6 +25,14 @@ test("the shipping change does not navigate or recreate customer account",()=>{
  assert.doesNotMatch(source.slice(start,end),/location\.reload|window\.location|window\.scrollTo/);
 });
 
+test("customer order details identify the last verified shipping update and its source",()=>{
+ assert.match(source,/Latest shipping update/);
+ assert.match(source,/Tracking source/);
+ assert.match(source,/Verified shipping email/);
+ assert.match(source,/Official carrier scan/);
+ assert.match(source,/No verified shipping update yet/);
+});
+
 test("carrier action resolves only official direct result links with tracking number",()=>{
  const start=source.indexOf("const officialCarrierHref =");
  const end=source.indexOf("const trackingRecords =",start);

@@ -24,7 +24,7 @@ import { createOrderNotifications, cancelledOrder, lateCancellation } from "./or
 import { createShippingDiscordDmLedger } from "./shipping-discord-dm-ledger.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
-import { webhookOnlyCheckouts, discordCheckoutIds, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
+import { webhookOnlyCheckouts, discordCheckoutIds, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, matchVerifiedWebhookShippingEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { isModuleLifecycleDiscordMessage, isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
 import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
 import { createCarrierTrackingClient, trackingEvidenceFromEmail, officialTrackingUrl, knownCarrier, cleanTrackingNumber, mergeCarrierShipping } from "./carrier-tracking.js";
@@ -44932,7 +44932,7 @@ async function getCustomerSuccessMailboxes(
 
 
 
-const SHIPPING_SCAN_INTERVAL_MS = 5 * 60 * 1000;
+const SHIPPING_SCAN_INTERVAL_MS = 3 * 60 * 1000;
 const shippingDiscordDms = createShippingDiscordDmLedger({dataDir:DATA_DIR});
 let shippingTrackerRunning = false;
 
@@ -45088,7 +45088,11 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         since,
         or: [
           { subject: "shipped" }, { subject: "shipping" }, { subject: "delivery" },
-          { subject: "delivered" }, { subject: "on the way" }, { subject: "tracking" }, { subject: "cancel" }
+          { subject: "delivered" }, { subject: "out for delivery" },
+          { subject: "arriving" }, { subject: "arrival" }, { subject: "package" },
+          { subject: "in transit" }, { subject: "UPS" }, { subject: "FedEx" },
+          { subject: "USPS" }, { subject: "on the way" },
+          { subject: "tracking" }, { subject: "cancel" }
         ]
       }, { uid: true });
       // Some Shikari hooks omit the checkout price. Read receipts separately
@@ -45125,13 +45129,21 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         // A customer's inbox can include purchases outside this ACO service.
         // Require an exact existing webhook order number, one unique match,
         // and a trusted retailer From address. Product names never match.
-        const record = matchVerifiedWebhookEmail(records, {
+        const matchEvidence = {
           senders: message.envelope?.from || [],
           subject,
           text: decoded.text || "",
           html: decoded.html || "",
-          receivedAt: message.internalDate || message.envelope?.date
-        });
+          receivedAt: message.internalDate || message.envelope?.date,
+          trackingNumber: emailTracking.trackingNumber || pkcDetails.trackingNumber,
+          carrier: emailTracking.carrier || pkcDetails.carrier
+        };
+        // Retailer emails need the exact verified order number. Carrier
+        // messages often have ONLY the tracking number; they may update a
+        // pre-linked, unique package but never verify a checkout or its price.
+        const retailerMatchedRecord = matchVerifiedWebhookEmail(records, matchEvidence);
+        const record = retailerMatchedRecord ||
+          matchVerifiedWebhookShippingEmail(records, matchEvidence);
         const account = accountsById.get(String(record?.customerAccountId || ""));
         // A trusted OWNER-MANAGED business mailbox can verify the final paid
         // amount of an unmatched webhook checkout without assigning its owner.
@@ -45141,7 +45153,7 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         if ((!account || account.disabled === true) && !unmatchedBusinessReceipt) continue;
         // Never create checkouts from mailbox evidence. Require an exact
         // order number, an authorized retailer sender and a Discord source.
-        if (normalizeSuccessRetailer(record.retailer) === "PKC" &&
+        if (retailerMatchedRecord && normalizeSuccessRetailer(record.retailer) === "PKC" &&
             customerCheckoutPurchase(record) && pkcDetails.items.length) {
           const receiptItems = mergeRetailerFulfillmentItems(record.items, pkcDetails.items);
           if (receiptItems.changed || Number(record.itemCount || 0) !== receiptItems.itemCount) {
@@ -45170,7 +45182,7 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
           }
         }
         const messageAt = new Date(message.internalDate || message.envelope?.date || Date.now()).toISOString();
-        if (receiptTotal && customerCheckoutPurchase(record) &&
+        if (retailerMatchedRecord && receiptTotal && customerCheckoutPurchase(record) &&
             record.orderTotalBasis !== "retailer_receipt" &&
             record.priceSource !== "verified_retailer_receipt") {
           // Only attach amount to the existing, uniquely matched Discord
@@ -45189,6 +45201,9 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         // must never create customer shipment alerts or change attribution.
         if (!account || (!status && !emailTracking.trackingNumber)) continue;
         if (cancellation) {
+          // Carrier notices without an exact retailer order number cannot
+          // cancel a confirmed checkout.
+          if (!retailerMatchedRecord) continue;
           if (!cancelledOrder(record)) {
             record.status = cancellation;
             record.cancelledAt = messageAt;
@@ -45203,22 +45218,30 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         }
         if (cancelledOrder(record)) continue;
         const prior = record.shipping && typeof record.shipping === "object" ? record.shipping : {};
-        if (status && shippingStatusRank(status) < shippingStatusRank(prior.status)) continue;
-        if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(messageAt)) continue;
+        // A delayed "shipped" email must not roll back "delivered", but may
+        // still supply a missing tracking number or shipping address.
+        const priorTime = Date.parse(prior.updatedAt || "");
+        const messageTime = Date.parse(messageAt);
+        const stageIsFresh = !Number.isFinite(priorTime) || messageTime >= priorTime;
+        const mayAdvance = Boolean(status && stageIsFresh &&
+          shippingStatusRank(status) >= shippingStatusRank(prior.status));
+        const nextStatus = mayAdvance ? status : prior.status || null;
         const trackingNumber = emailTracking.trackingNumber || pkcDetails.trackingNumber || prior.trackingNumber || null;
         const carrier = emailTracking.carrier || pkcDetails.carrier || knownCarrier(prior.carrier, trackingNumber) || null;
         const next = {
           ...prior,
-          status: status || prior.status || null,
-          enRouteAt: prior.enRouteAt || (status && status !== "delivered" ? messageAt : null),
-          estimatedDelivery: shippingEstimateFromText(combined) || prior.estimatedDelivery || null,
-          deliveredAt: status === "delivered" ? messageAt : prior.deliveredAt || null,
+          status: nextStatus,
+          enRouteAt: prior.enRouteAt || (mayAdvance && status !== "delivered" ? messageAt : null),
+          estimatedDelivery: (stageIsFresh ? shippingEstimateFromText(combined) : null) || prior.estimatedDelivery || null,
+          deliveredAt: mayAdvance && status === "delivered" ? messageAt : prior.deliveredAt || null,
           trackingUrl: officialTrackingUrl(carrier, trackingNumber) ||
             emailTracking.trackingUrl || shippingTrackingUrl(decoded.html, decoded.text) || prior.trackingUrl || null,
           carrier, trackingNumber,
           address: matchCustomerShippingAddress(account, combined) || prior.address || null,
-          updatedAt: messageAt,
-          source: "retailer_email"
+          updatedAt: Number.isFinite(priorTime) && priorTime > messageTime ? prior.updatedAt : messageAt,
+          source: "retailer_email",
+          // Startup cleanup must never erase a freshly verified shipping event.
+          verifiedWebhookCheckoutId: String(record.id)
         };
 
         // Do not persist a new updatedAt or notify when the mailbox repeats
@@ -45385,6 +45408,7 @@ async function syncShippingTrackers() {
         const next = update.shipping;
         if (shippingStatusRank(next.status) < shippingStatusRank(prior.status)) continue;
         if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(next.updatedAt)) continue;
+        if (next.verifiedWebhookCheckoutId !== String(record.id)) continue;
         const before = JSON.stringify([prior.status, prior.enRouteAt, prior.estimatedDelivery,
           prior.deliveredAt, prior.trackingUrl, prior.address, prior.carrier, prior.trackingNumber]);
         const after = JSON.stringify([next.status, next.enRouteAt, next.estimatedDelivery,

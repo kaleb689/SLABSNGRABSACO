@@ -184,6 +184,12 @@ if (appEnabled) {
     const orderNumber = String(order.orderNumber || '');
     const trackingNumber = String(shipping.trackingNumber || '');
     const carrier = String(shipping.carrier || 'Carrier pending');
+    const lastEvent = shipping.updatedAt ? new Date(shipping.updatedAt) : null;
+    const lastEventLabel = lastEvent && Number.isFinite(lastEvent.getTime()) ?
+      lastEvent.toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) :
+      'No verified shipping update yet';
+    const trackingSource = shipping.source === 'carrier_api' ? 'Official carrier scan' :
+      shipping.source === 'retailer_email' ? 'Verified shipping email' : 'Awaiting verified carrier update';
     const carrierUrl = officialCarrierHref(shipping);
     const date = order.checkoutAt ? new Date(order.checkoutAt).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric'
@@ -256,6 +262,8 @@ if (appEnabled) {
           <div class="sng-sheet-details">${detail('Status',stageLabels[status] || 'Ordered')}
             ${detail('Carrier',carrier)}${detail('Tracking #',trackingNumber)}
             ${detail('Estimated delivery',shipping.estimatedDelivery)}
+            ${detail('Latest shipping update',lastEventLabel)}
+            ${detail('Tracking source',trackingSource)}
           </div>
         </section>
         <details class="sng-sheet-history">

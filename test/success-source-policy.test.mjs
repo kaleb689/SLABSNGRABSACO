@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { webhookOnlyCheckouts, isVerifiedDiscordCheckout,
-  hasExactWebhookOrderNumber, isTrustedRetailerSender, matchVerifiedWebhookEmail, authoritativeDiscordCheckouts } from "../success-source-policy.js";
+  hasExactWebhookOrderNumber, isTrustedRetailerSender, matchVerifiedWebhookEmail, matchVerifiedWebhookShippingEmail, authoritativeDiscordCheckouts } from "../success-source-policy.js";
 
 const id = "discord:1532179373292257290:1580000000000000001";
 const now = new Date().toISOString();
@@ -68,6 +68,54 @@ test("legacy shipment sourced only from retailer email is discarded for re-verif
   ], { resetLegacyShipping: true });
   assert.equal(safe.shipping, undefined);
   assert.equal(safe.customerAccountId, "customer-a");
+});
+
+test("restart migration preserves an explicitly webhook-verified retailer email shipment", () => {
+  const stored = {
+    ...confirmed,
+    shipping: { status: "out_for_delivery", source: "retailer_email",
+      trackingNumber: "1Z999AA10123456784", verifiedWebhookCheckoutId: id }
+  };
+  const [restored] = webhookOnlyCheckouts([stored], {resetLegacyShipping: true});
+  assert.deepEqual(restored.shipping, stored.shipping);
+  assert.deepEqual(webhookOnlyCheckouts([restored], {resetLegacyShipping: true}), [restored]);
+  const [mismatched] = webhookOnlyCheckouts([
+    {...stored, shipping: {...stored.shipping, verifiedWebhookCheckoutId: "discord:123:456"}}
+  ], {resetLegacyShipping: true});
+  assert.equal(mismatched.shipping, undefined);
+});
+
+test("carrier IMAP notice can advance only one verified order with the same existing number", () => {
+  const trackingNumber = "1Z999AA10123456784";
+  const withShipping = {...confirmed, shipping: {
+    trackingNumber, carrier: "UPS", status: "shipped",
+    verifiedWebhookCheckoutId: id
+  }};
+  const notice = {
+    senders: [{address: "notifications@ups.com"}],
+    subject: "Your package is out for delivery",
+    text: "Tracking Number: " + trackingNumber,
+    receivedAt: new Date().toISOString(),
+    trackingNumber, carrier: "UPS"
+  };
+  assert.equal(matchVerifiedWebhookShippingEmail([withShipping], notice)?.id, id);
+  assert.equal(matchVerifiedWebhookShippingEmail([confirmed], notice), null);
+  assert.equal(matchVerifiedWebhookShippingEmail([withShipping], {
+    ...notice, trackingNumber: "1Z999AA10123456785"
+  }), null);
+  assert.equal(matchVerifiedWebhookShippingEmail([withShipping], {
+    ...notice, senders: [{address: "fake@ups.com.evil.test"}]
+  }), null);
+  assert.equal(matchVerifiedWebhookShippingEmail([
+    withShipping, {...withShipping, id: "discord:1532179373292257290:1580000000000000002",
+      customerAccountId: "different-customer"}
+  ], notice), null);
+  assert.equal(matchVerifiedWebhookShippingEmail([withShipping], {
+    ...notice, receivedAt: "2020-01-01T00:00:00Z"
+  }), null);
+  assert.equal(matchVerifiedWebhookShippingEmail([
+    {...withShipping, customerAccountId: null}
+  ], notice), null);
 });
 
 test("only exact retailer order numbers count; product names and partial numbers do not", () => {
