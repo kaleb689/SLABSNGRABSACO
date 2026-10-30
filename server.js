@@ -45085,12 +45085,19 @@ async function operatorImapHealthSnapshot() {
     inboxes: inboxes.map(item => publicOperatorImapEntry(item,health?.[item.id]))
   };
 }
-async function updateOperatorImapHealth(id, changes) {
-  const all = await readJson(OPERATOR_IMAP_HEALTH_FILE,{});
-  const next = all && typeof all === "object" && !Array.isArray(all) ? all : {};
-  // Health is free of credentials, addresses and message bodies.
-  next[id] = {...(next[id]||{}), ...changes};
-  await writeJson(OPERATOR_IMAP_HEALTH_FILE,next);
+let operatorImapHealthWriteQueue=Promise.resolve();
+function updateOperatorImapHealth(id, changes) {
+  // Serialize scanner and manual-test health writes. Simultaneous calls must
+  // never overwrite another mailbox's recent success/failure.
+  const task=operatorImapHealthWriteQueue.catch(()=>{}).then(async()=>{
+    const all=await readJson(OPERATOR_IMAP_HEALTH_FILE,{});
+    const next=all && typeof all==="object" && !Array.isArray(all) ? all : {};
+    // Health is free of credentials, addresses and message bodies.
+    next[id]={...(next[id]||{}),...changes};
+    await writeJson(OPERATOR_IMAP_HEALTH_FILE,next);
+  });
+  operatorImapHealthWriteQueue=task;
+  return task;
 }
 async function testApprovedOperatorImapConnection(inbox) {
   const now = new Date().toISOString();
@@ -45480,7 +45487,8 @@ async function syncShippingTrackers() {
       customerCheckoutPurchase(record) && !cancelledOrder(record));
     const trackable = businessPriceCandidates.filter(record =>
       accountsById.has(String(record.customerAccountId || "")));
-    if (!businessPriceCandidates.length) return;
+    // Even with zero verified checkouts, keep the health and connection
+    // diagnostics current for every explicitly approved inbox.
 
     // SCAN ONLY explicitly operator-managed IMAP inboxes. Customer saved
     // credentials, retailer login accounts, and personal email are excluded.
