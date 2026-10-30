@@ -129,9 +129,10 @@ export function dashboardProducts(orders) {
         imageUrl: item.imageUrl, quantity: 0, value: 0, delivered: 0, orders: 0,
         pricedQuantity: 0, unpricedQuantity: 0,
         singleProductOrders: true, knownOrderValues: true,
-        verifiedOrderValues: true, orderValueCents: 0
+        verifiedOrderValues: true, orderValueCents: 0, hasPriceConflict: false
       };
       product.retailers.add(retailer);
+      if (order.priceVerification === "conflict") product.hasPriceConflict = true;
       if (!product.imageUrl && item.imageUrl) product.imageUrl = item.imageUrl;
       const qty = Math.max(0, Number(item.quantity) || 0);
       const price = Number(item.price);
