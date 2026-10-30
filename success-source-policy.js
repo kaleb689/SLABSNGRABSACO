@@ -1,4 +1,5 @@
 import { isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
+import { cleanTrackingNumber, knownCarrier } from "./carrier-tracking.js";
 
 // Customer orders may originate only from an actual Discord Success webhook message.
 // Mailbox imports, including customer-owned purchases, are never checkouts.
@@ -57,7 +58,8 @@ export function webhookOnlyCheckouts(records, { resetLegacyShipping = false } = 
         next.priceSource = null;
       }
     }
-    if (mixedWithMailbox || (resetLegacyShipping && next.shipping?.source === "retailer_email")) {
+    if (mixedWithMailbox || (resetLegacyShipping && next.shipping?.source === "retailer_email" &&
+        next.shipping?.verifiedWebhookCheckoutId !== canonicalId)) {
       delete next.shipping;
     }
     // Only legacy mixed-mailbox imports may contain an untrusted cancellation.
@@ -118,6 +120,38 @@ export function matchVerifiedWebhookEmail(records, { senders = [], subject = "",
       received >= placed - 48 * 60 * 60 * 1000 &&
       isTrustedRetailerSender(record.retailer, senders) &&
       hasExactWebhookOrderNumber(record, body);
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+// Carrier notices frequently omit the retailer order number. They may enrich
+// only an already-linked, Discord-confirmed checkout with the EXACT same
+// previously verified tracking number. Ambiguous tracking numbers are ignored.
+export function matchVerifiedWebhookShippingEmail(records, evidence = {}) {
+  const direct = matchVerifiedWebhookEmail(records, evidence);
+  if (direct) return direct;
+  if (!Array.isArray(records)) return null;
+  const number = cleanTrackingNumber(evidence.trackingNumber);
+  const carrier = knownCarrier(evidence.carrier, number);
+  const received = Date.parse(evidence.receivedAt || "");
+  if (!number || !carrier || !Number.isFinite(received) ||
+      received > Date.now() + 24 * 60 * 60 * 1000) return null;
+  const addresses = Array.isArray(evidence.senders) ? evidence.senders : [];
+  const trustedCarrier = addresses.some(item => {
+    const email = String(typeof item === "string" ? item : item?.address || "").toLowerCase();
+    const host = email.split("@")[1] || "";
+    const domain = carrier === "UPS" ? "ups.com" :
+      carrier === "FedEx" ? "fedex.com" : "usps.com";
+    return host === domain || host.endsWith("." + domain);
+  });
+  const matches = records.filter(record => {
+    const placed = Date.parse(record?.checkoutAt || "");
+    const oldNumber = cleanTrackingNumber(record?.shipping?.trackingNumber);
+    const oldCarrier = knownCarrier(record?.shipping?.carrier, oldNumber);
+    return isVerifiedDiscordCheckout(record) && Boolean(record.customerAccountId) &&
+      Number.isFinite(placed) && received >= placed - 48 * 60 * 60 * 1000 &&
+      oldNumber === number && oldCarrier === carrier &&
+      (trustedCarrier || isTrustedRetailerSender(record.retailer, addresses));
   });
   return matches.length === 1 ? matches[0] : null;
 }
