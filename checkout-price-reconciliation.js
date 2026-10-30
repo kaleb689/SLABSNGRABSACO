@@ -52,6 +52,8 @@ export function reconcileRetailerEmailTotal(record, total, verifiedAt = null) {
         ? "email_verified" : discord === amount ? "matched" : "conflict";
     }
   }
+  if (paidCents(record.conflictingEmailTotal) !== null)
+    record.priceVerification = "conflict";
   const changed = priceState(record) !== before;
   if (changed && verifiedAt && Number.isFinite(Date.parse(verifiedAt)))
     record.priceVerifiedAt = new Date(verifiedAt).toISOString();
@@ -72,6 +74,8 @@ export function reconcileDiscordPaidTotal(record, total) {
     record.priceVerification = email === amount ? "matched" : "conflict";
   else if (record.priceVerification !== "conflict")
     record.priceVerification = "webhook_verified";
+  if (paidCents(record.conflictingEmailTotal) !== null)
+    record.priceVerification = "conflict";
   return {changed:priceState(record) !== before,
     conflict:record.priceVerification === "conflict"};
 }
