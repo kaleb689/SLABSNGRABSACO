@@ -58,4 +58,7 @@ jobs:
             test/app-dashboard.test.mjs \
             test/customer-checkout-values.test.mjs \
             test/community-product-identity.test.mjs \
-            test/pkc-receipt-enrichment.test.mjs
+            test/pkc-receipt-enrichment.test.mjs \
+            test/admin-grouped-orders-and-selected-controls.test.mjs \
+            test/checkout-images-and-embeds.test.mjs \
+            test/shikari-checkout.test.mjs
