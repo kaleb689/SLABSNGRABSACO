@@ -1,0 +1,66 @@
+name: Verify dual-source checkout prices and SKU-free product displays
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'checkout-price-reconciliation.js'
+      - 'checkout-price-policy.js'
+      - 'webhook-success.js'
+      - 'retailer-order-total.js'
+      - 'server.js'
+      - 'public/app.js'
+      - 'public/app-dashboard.js'
+      - 'public/app-dashboard-data.js'
+      - 'public/admin-mobile.js'
+      - 'public/admin-success.js'
+      - 'public/index.html'
+      - 'test/checkout-price-reconciliation.test.mjs'
+      - 'test/checkout-price-policy.test.mjs'
+      - '.github/workflows/checkout-dual-source-verification.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'checkout-price-reconciliation.js'
+      - 'webhook-success.js'
+      - 'server.js'
+      - 'public/app-dashboard-data.js'
+      - 'test/checkout-price-reconciliation.test.mjs'
+      - '.github/workflows/checkout-dual-source-verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  checkout-price-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install checkout notification dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Syntax check server and every changed checkout view
+        run: |
+          node --check server.js
+          node --check webhook-success.js
+          node --check checkout-price-reconciliation.js
+          node --check public/app-dashboard-data.js
+          node --check public/app-dashboard.js
+          node --check public/app.js
+          node --check public/admin-success.js
+          node --check public/admin-mobile.js
+      - name: Verify source comparison, checkout amounts and product identity
+        run: |
+          node --test \
+            test/checkout-price-reconciliation.test.mjs \
+            test/checkout-price-policy.test.mjs \
+            test/app-dashboard.test.mjs \
+            test/customer-checkout-values.test.mjs \
+            test/community-product-identity.test.mjs \
+            test/pkc-receipt-enrichment.test.mjs \
+            test/admin-grouped-orders-and-selected-controls.test.mjs \
+            test/checkout-images-and-embeds.test.mjs \
+            test/shikari-checkout.test.mjs

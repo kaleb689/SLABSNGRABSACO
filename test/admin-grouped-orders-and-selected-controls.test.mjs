@@ -26,10 +26,11 @@ function extractFunction(source,begin,end){
 test("Mobile Admin keeps bundled items inside one actual checkout, does not price from item subtotals",()=>{
   const source=read("public/admin-mobile.js");
   const fn=extractFunction(source,"  function ordersMarkup(","  function accountsMarkup(");
+  const labelHelper=extractFunction(source,"function sngCheckoutDisplayName(","let tab=");
   const verifiedAmount=row=>row.orderTotalKnown===true&&Number(row.orderTotal)>0?Number(row.orderTotal):0;
   const amount=row=>row.checkoutValueKnown===true?Number(row.checkoutValue):verifiedAmount(row);
   const hasCheckoutValue=row=>amount(row)>0;
-  const markup=vm.runInNewContext(fn+"\nordersMarkup(rows)",{
+  const markup=vm.runInNewContext(labelHelper+"\n"+fn+"\nordersMarkup(rows)",{
     rows,esc,dollars:money,safeImage:()=>false,successOpenOrderCards:new Set(),
     amount,verifiedAmount,hasCheckoutValue,
     Math,Number,Date,Intl,String,Array
@@ -48,11 +49,12 @@ test("Full Admin Success groups checkouts per customer and does not invent purch
   const source=read("public/admin-success.js");
   const customers=extractFunction(source,"  function renderCustomers(","  function render(");
   const products=extractFunction(source,"  function renderProducts(","  function renderCustomers(");
+  const labelHelper=extractFunction(source,"function sngCheckoutDisplayName(","  const historicalOrders = 240;");
   const nodes={customers:{innerHTML:""},products:{innerHTML:""}};
   const linked=rows.map(row=>({...row,customerAccountId:"example-member",customerName:"Example Member"}));
   const total=row=>row.orderTotalKnown===true?Number(row.orderTotal)||0:0;
   const quantity=row=>row.items.reduce((sum,item)=>sum+item.quantity,0);
-  vm.runInNewContext(customers+"\n"+products+"\nrenderCustomers(rows); renderProducts(rows);",{
+  vm.runInNewContext(labelHelper+"\n"+customers+"\n"+products+"\nrenderCustomers(rows); renderProducts(rows);",{
     rows:linked,$:id=>nodes[id],esc,money,paid:total,checkoutValue:total,hasValue:row=>total(row)>0,quantity,
     recordDate:row=>Date.parse(row.checkoutAt)||0,
     Map,Math,Number,Date,Intl,String,Array

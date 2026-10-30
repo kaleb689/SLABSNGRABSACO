@@ -98,28 +98,78 @@ export function dashboardTotals(orders) {
     delivered: orders.filter(r => shippingStage(r) === 'delivered').length,
     awaiting: orders.filter(r => shippingStage(r) === 'ordered').length };
 }
+/**
+ * Presentation only: never alter stored webhook titles or SKU identity.
+ * Preserve real pack/edition information such as (3-Pack) and (151).
+ */
+export function displayProductName(value) {
+  let name = String(value || "").trim(), match;
+  const prefix = /^\s*\((?:(?:sku|pid|tcin|dpci)\s*[:#]?\s*)?([a-z0-9]+(?:-[a-z0-9]+)+|\d{8,})\)\s*/i;
+  while ((match = name.match(prefix)) && /\d/.test(match[1]) &&
+    !/\b(?:pack|count|pk|ct|edition|anniversary)\b/i.test(match[1]))
+    name = name.slice(match[0].length).trim();
+  return name || "Product";
+}
 export function dashboardProducts(orders) {
   const products = new Map();
-  for (const order of orders) for (const item of order.items || []) {
-    const key = `${order.retailer}:${item.name}`;
-    const product = products.get(key) || { name: item.name || 'Product', retailer: order.retailer, imageUrl: item.imageUrl,
-      quantity: 0, value: 0, delivered: 0, orders: 0, pricedQuantity: 0, unpricedQuantity: 0 };
-    if (!product.imageUrl && item.imageUrl) product.imageUrl = item.imageUrl;
-    const qty = Math.max(0, Number(item.quantity) || 1);
-    const unitPrice = Number(item.price);
-    product.quantity += qty;
-    if (Number.isFinite(unitPrice) && unitPrice > 0 && unitPrice <= 1000000) {
-      product.value += qty * unitPrice;
-      product.pricedQuantity += qty;
-    } else {
-      // Do NOT claim $0.00 item value when the webhook omitted a price.
-      product.unpricedQuantity += qty;
+  for (const order of orders) {
+    const entries = (Array.isArray(order.items) ? order.items : [])
+      .filter(item => item && Number(item.quantity) > 0 && String(item.name || "").trim());
+    const identity = item => String(item.productKey || displayProductName(item.name)
+      .normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ").trim());
+    const singleProduct = new Set(entries.map(identity)).size === 1;
+    const counted = new Set();
+    for (const item of entries) {
+      const key = identity(item);
+      if (!key) continue;
+      const retailer = String(order.retailer || "Retailer");
+      const product = products.get(key) || {
+        name: displayProductName(item.name), retailer, retailers: new Set(),
+        imageUrl: item.imageUrl, quantity: 0, value: 0, delivered: 0, orders: 0,
+        pricedQuantity: 0, unpricedQuantity: 0,
+        singleProductOrders: true, knownOrderValues: true,
+        verifiedOrderValues: true, orderValueCents: 0, hasPriceConflict: false
+      };
+      product.retailers.add(retailer);
+      if (order.priceVerification === "conflict") product.hasPriceConflict = true;
+      if (!product.imageUrl && item.imageUrl) product.imageUrl = item.imageUrl;
+      const qty = Math.max(0, Number(item.quantity) || 0);
+      const price = Number(item.price);
+      product.quantity += qty;
+      if (Number.isFinite(price) && price > 0 && price <= 1000000) {
+        product.value += qty * price;
+        product.pricedQuantity += qty;
+      } else {
+        product.unpricedQuantity += qty;
+      }
+      if (shippingStage(order) === "delivered") product.delivered += qty;
+      // The FULL retailer order total belongs to a product only if that
+      // product is the sole distinct product on the order (including qty > 1).
+      // Multi-product orders must never allocate tax or fees arbitrarily.
+      if (!counted.has(key)) {
+        product.orders++;
+        product.singleProductOrders &&= singleProduct;
+        if (singleProduct) {
+          const orderValue = customerOrderValue(order);
+          if (orderValue > 0) product.orderValueCents += Math.round(orderValue * 100);
+          else product.knownOrderValues = false;
+          const verifiedPaid = Number(order.verifiedPaidTotal) > 0 ||
+            (order.orderTotalKnown === true &&
+             ["retailer_receipt", "discord_webhook"].includes(order.priceSource));
+          if (!verifiedPaid) product.verifiedOrderValues = false;
+        }
+        counted.add(key);
+      }
+      products.set(key, product);
     }
-    product.orders++;
-    if (shippingStage(order) === 'delivered') product.delivered += qty;
-    products.set(key, product);
   }
-  return [...products.values()].sort((a, b) => b.value - a.value);
+  return [...products.values()].map(product => ({
+    ...product, retailer: [...product.retailers].join(" · "),
+    retailers: [...product.retailers],
+    orderValue: product.orderValueCents / 100
+  })).sort((a, b) => (b.singleProductOrders && b.knownOrderValues ? b.orderValue : b.value) -
+    (a.singleProductOrders && a.knownOrderValues ? a.orderValue : a.value));
 }
 export function dashboardActivity(orders, days, now = new Date(), range = null) {
   const source = Array.isArray(orders) ? orders : [];

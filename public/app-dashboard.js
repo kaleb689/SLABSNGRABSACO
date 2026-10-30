@@ -1,4 +1,4 @@
-import { checkoutRequestRange, shippingStage, visibleLateCancellation, periodStart, periodBounds, customDateBounds, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges } from './app-dashboard-data.js';
+import { checkoutRequestRange, shippingStage, visibleLateCancellation, periodStart, periodBounds, customDateBounds, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges, displayProductName } from './app-dashboard-data.js';
 import { createCustomerDropEditor } from './app-drop-controls.js';
 
 const appEnabled = window.self === window.top && (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true ||
@@ -118,15 +118,24 @@ if (appEnabled) {
     return `<img src="${e(src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${fallback}'">`;
   };
   const productPriceText = product => {
+    if (product.singleProductOrders && product.knownOrderValues &&
+        Number(product.orderValue) > 0) {
+      return {
+        value: money(product.orderValue),
+        label: product.hasPriceConflict ? 'EMAIL / WEBHOOK DIFFER · REVIEW' :
+          product.verifiedOrderValues ? 'VERIFIED ORDER TOTAL' :
+          'CHECKOUT VALUE · FEES MAY VARY'
+      };
+    }
     if (Number(product.unpricedQuantity || 0) > 0)
       return Number(product.pricedQuantity || 0) > 0
-        ? { value: money(product.value) + '+', label: 'PARTIAL ITEM VALUE' }
-        : { value: 'Price pending', label: 'NOT PROVIDED BY WEBHOOK' };
+        ? { value: money(product.value) + '+', label: 'PARTIAL ITEM VALUE · SEE ORDERS' }
+        : { value: 'See orders', label: 'ITEM PRICE NOT ITEMIZED' };
     return { value: money(product.value), label: 'ITEM VALUE (EXCL. FEES)' };
   };
   const productRows = (products, ranked = false) => products.map((product, index) => {
     const display = productPriceText(product);
-    return `<article class="sng-product-row">${ranked ? `<b class="sng-rank">${index + 1}</b>` : ''}<div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong class="${display.value === 'Price pending' ? 'sng-awaiting-value' : ''}">${e(display.value)}</strong><small>${e(display.label)}</small></div></article>`;
+    return `<article class="sng-product-row">${ranked ? `<b class="sng-rank">${index + 1}</b>` : ''}<div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · ${product.quantity} secured · ${product.delivered} delivered</small><div class="sng-progress"><span style="width:${product.quantity ? product.delivered / product.quantity * 100 : 0}%"></span></div></div><div class="sng-row-value"><strong class="${display.value === 'See orders' ? 'sng-awaiting-value' : ''}">${e(display.value)}</strong><small>${e(display.label)}</small></div></article>`;
   }).join('') || '<p class="sng-empty">No products in this date range.</p>';
 
   // Build a direct result link only for a recognized official carrier and
@@ -239,7 +248,7 @@ if (appEnabled) {
           <div class="sng-sheet-section-heading"><strong>Items</strong><span>${quantity} total · ${products.length} product lines</span></div>
           <div class="sng-sheet-items">${products.map(product =>
             '<div class="sng-sheet-item"><span class="sng-sheet-item-image">' + image(product) +
-            '</span><div><strong>' + e(product.name || 'Product') +
+            '</span><div><strong>' + e(displayProductName(product.name || 'Product')) +
             '</strong><small>Qty ' + e(Math.max(0, Number(product.quantity) || 0)) +
             (Number(product.price) > 0 ? ' · ' + money(product.price) + ' each' : ' · Unit price pending') +
             '</small></div><span class="sng-sheet-item-stage">' + e(stageLabels[status] || 'Ordered') + '</span></div>'
@@ -302,21 +311,23 @@ if (appEnabled) {
       const address = shipping.address || {};
       const trackingUrl = officialCarrierHref(shipping);
       const known = order.checkoutValueKnown ?? order.orderTotalKnown;
+      const priceDisagreement = order.priceVerification === 'conflict' ? ' · PRICE REVIEW' : '';
       const totalLabel = known === false ? 'Value not provided' : money(order.checkoutValue ?? order.orderTotal);
+      const totalSource = priceDisagreement || (order.priceSource === 'retailer_receipt' ? ' · RETAILER EMAIL' : '');
       if (tracking) return `<button type="button" class="sng-tracking-row stage-${e(stage)}"
         data-app-order-open="${e(recordKey(order))}">
         <span class="sng-product-image">${image(item)}</span>
-        <span class="sng-row-main"><strong>${e(item.name || (order.retailer + ' order'))}</strong>
+        <span class="sng-row-main"><strong>${e(displayProductName(item.name || (order.retailer + ' order')))}</strong>
           <small>${e(order.retailer)} · ${dateLabel(order.checkoutAt)} · ${Number(order.itemCount) || 0} items</small>
           <small class="sng-stage">● ${e(stageLabels[stage] || 'Ordered')}</small></span>
-        <span class="sng-row-value"><strong>${e(totalLabel)}</strong><small>VIEW ORDER →</small></span>
+        <span class="sng-row-value"><strong>${e(totalLabel)}</strong><small>VIEW ORDER${e(totalSource)} →</small></span>
       </button>`;
       return `<details class="sng-order-card stage-${stage}" data-order-id="${e(order.id || order.orderNumber)}" ${expanded.has(order.id || order.orderNumber) ? 'open' : ''}>
-        <summary><div class="sng-product-image">${image(item)}</div><div class="sng-row-main"><strong>${e(item.name || `${order.retailer} order`)}</strong><small>${e(order.retailer)} · ${dateLabel(order.checkoutAt)} · ${Number(order.itemCount) || 0} items</small></div><div class="sng-row-value"><strong>${e(totalLabel)}</strong><small class="sng-stage">● ${stageLabels[stage]}</small></div></summary>
+        <summary><div class="sng-product-image">${image(item)}</div><div class="sng-row-main"><strong>${e(displayProductName(item.name || `${order.retailer} order`))}</strong><small>${e(order.retailer)} · ${dateLabel(order.checkoutAt)} · ${Number(order.itemCount) || 0} items</small></div><div class="sng-row-value"><strong>${e(totalLabel)}</strong><small class="sng-stage">● ${stageLabels[stage]}</small></div></summary>
         ${stage === 'review_hold' ? '<p class="sng-delivery">Review hold — the retailer is reviewing this order and may still cancel it. Included in order value until cancelled.</p>' :
           tracking ? stage === 'cancelled' ? '<p class="sng-delivery">Order cancelled — no shipment expected.</p>' :
           `<div class="sng-shipping-steps">${steps.map((s, i) => `<span class="${i <= step ? 'done' : ''}">${stageLabels[s]}</span>`).join('')}</div><p class="sng-delivery">${stage === 'delivered' ? 'Delivered' : 'Expected delivery'} · ${e(shipping.estimatedDelivery || 'Waiting for carrier update')}</p>` : ''}
-        <div class="sng-order-details"><span>Order ${e(order.orderNumber || '—')}</span>${(order.items || []).map(product => `<p class="sng-detail-product"><span class="sng-product-image">${image(product)}</span>${e(product.name)} × ${Number(product.quantity) || 1}</p>`).join('')}
+        <div class="sng-order-details"><span>Order ${e(order.orderNumber || '—')}</span>${(order.items || []).map(product => `<p class="sng-detail-product"><span class="sng-product-image">${image(product)}</span>${e(displayProductName(product.name))} × ${Number(product.quantity) || 1}</p>`).join('')}
         <p>${e(shipping.carrier || 'Carrier pending')}${shipping.trackingNumber ? ` · ${e(shipping.trackingNumber)}` : ''}</p>
         ${trackingUrl ? `<a href="${e(trackingUrl)}" target="_blank" rel="noopener noreferrer">Track with carrier ↗</a>` : '<span>Tracking link pending carrier verification</span>'}
         ${address.address ? `<p>${e([address.name, address.address, address.address2, address.city, address.state, address.zip].filter(Boolean).join(', '))}</p>` : ''}</div></details>`;

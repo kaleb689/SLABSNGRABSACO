@@ -113,7 +113,8 @@ test("unknown unit prices are not represented as zero-dollar purchases",()=>{
   assert.equal(products[1].unpricedQuantity,2);
   assert.equal(products[1].value,0);
   const dashboard=readFileSync(new URL("../public/app-dashboard.js",import.meta.url),"utf8");
-  assert.match(dashboard,/Price pending/);
+  assert.match(dashboard,/ITEM PRICE NOT ITEMIZED/);
+  assert.match(dashboard,/See orders/);
   assert.match(dashboard,/PARTIAL ITEM VALUE/);
   assert.match(dashboard,/product-image-pending\.svg/);
   assert.doesNotMatch(dashboard,/fallback = '\/slabsngrabs-aco-logo-transparent\.png'/);

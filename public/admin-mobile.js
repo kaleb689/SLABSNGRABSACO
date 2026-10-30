@@ -1,5 +1,14 @@
 (() => {
 const $=id=>document.getElementById(id),esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function sngCheckoutDisplayName(value) {
+  let name = String(value || "").trim(), match;
+  const prefix = /^\s*\((?:(?:sku|pid|tcin|dpci)\s*[:#]?\s*)?([a-z0-9]+(?:-[a-z0-9]+)+|\d{8,})\)\s*/i;
+  while ((match = name.match(prefix)) && /\d/.test(match[1]) &&
+    !/\b(?:pack|count|pk|ct|edition|anniversary)\b/i.test(match[1]))
+    name = name.slice(match[0].length).trim();
+  return name || "Product";
+}
+
 let tab="overview",data={customers:[],registered:[],activation:null,availability:null,usage:null,billing:null,success:{records:[]}},authenticated=false,stream=null;
 let successDays=30,successCustomerId="all",successAccountKey="all";
 let successCustomRange=null,successCalendarOpen=false,successCalendarError="";
@@ -314,7 +323,7 @@ if(tab==="overview"){
   const recentRows=recent.map(order=>{
     const items=Array.isArray(order.items)?order.items:[];
     const first=items[0]||{};
-    const name=String(first.name||order.productName||"Confirmed checkout");
+    const name=sngCheckoutDisplayName(first.name||order.productName||"Confirmed checkout");
     const more=items.length>1?" + "+(items.length-1)+" more product"+(items.length===2?"":"s"):"";
     const qty=items.reduce((sum,item)=>sum+Math.max(0,Math.floor(Number(item.quantity)||0)),0);
     const when=Date.parse(order.checkoutAt);
@@ -446,7 +455,7 @@ if(tab==="success"){
   function productsMarkup(rows,limit=30) {
     const goods=new Map();
     rows.forEach(order=>(order.items||[]).forEach(item=>{
-      const name=String(item.name||"Product");
+      const name=sngCheckoutDisplayName(item.name||"Product");
       const retailer=String(order.retailer||"Retailer");
       const key=String(item.productKey||name.toLowerCase());
       const entry=goods.get(key)||{name,retailers:new Set(),quantity:0,imageUrl:item.imageUrl||""};
@@ -488,7 +497,7 @@ if(tab==="success"){
         const qty=Math.max(0,Math.floor(Number(item.quantity)||0));
         const image=safeImage(item.imageUrl)?item.imageUrl:"/slabsngrabs-aco-logo-transparent.png";
         return '<div class="success-order-item"><img src="'+esc(image)+'" loading="lazy" alt="">'+
-          '<strong>'+esc(item.name||"Product")+'</strong><span class="success-qty">×'+qty+'</span></div>';
+          '<strong>'+esc(sngCheckoutDisplayName(item.name||"Product"))+'</strong><span class="success-qty">×'+qty+'</span></div>';
       }).join("")||'<p class="success-empty">Product details unavailable for this order.</p>';
       return '<details class="success-order-card" data-success-order="'+esc(key)+'" '+
         (successOpenOrderCards.has(key)?'open':'')+'><summary>'+
@@ -513,7 +522,7 @@ if(tab==="success"){
     return '<div class="success-account-list">'+entries.map(x=>{
       const tally=new Map();
       x.orders.forEach(order=>(order.items||[]).forEach(item=>{
-        const name=String(item.name||"Product");
+        const name=sngCheckoutDisplayName(item.name||"Product");
         tally.set(name,(tally.get(name)||0)+Math.max(0,Number(item.quantity)||0));
       }));
       const productSummary=[...tally.entries()].slice(0,5).map(([name,qty])=>

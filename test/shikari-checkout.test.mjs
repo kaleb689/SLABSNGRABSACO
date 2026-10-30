@@ -155,11 +155,11 @@ test("retailer emails enrich only existing exact-number webhook orders, never in
     source.indexOf("async function syncShippingTrackers("));
   assert.match(scan,/matchVerifiedWebhookEmail\(records/);
   assert.match(scan,/verifiedRetailerOrderTotal\(decoded\.text, decoded\.html\)/);
-  assert.match(scan,/record\.orderTotalBasis = "retailer_receipt"/);
+  assert.match(scan,/reconcileRetailerEmailTotal\(record, receiptTotal, messageAt\)/);
   const merge = source.slice(source.indexOf("async function syncShippingTrackers("),
     source.indexOf("function startShippingTrackerScheduler("));
   assert.match(merge,/withSuccessStoreLock\(async \(\) => \{/);
-  assert.match(merge,/record\.priceSource = "verified_retailer_receipt"/);
+  assert.match(merge,/reconcileRetailerEmailTotal\(record,\s*update\.verifiedReceiptTotal/);
 });
 
 test("real Discord spoiler wrappers are stripped for Shikari Account, Profile and Order ID without persisting secrets", () => {
