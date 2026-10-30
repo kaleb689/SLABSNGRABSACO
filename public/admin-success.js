@@ -3,6 +3,15 @@
   const $ = id => document.getElementById(id);
   const money = value => new Intl.NumberFormat("en-US", {style:"currency", currency:"USD"}).format(Number(value) || 0);
   const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char]));
+function sngCheckoutDisplayName(value) {
+  let name = String(value || "").trim(), match;
+  const prefix = /^\s*\((?:(?:sku|pid|tcin|dpci)\s*[:#]?\s*)?([a-z0-9]+(?:-[a-z0-9]+)+|\d{8,})\)\s*/i;
+  while ((match = name.match(prefix)) && /\d/.test(match[1]) &&
+    !/\b(?:pack|count|pk|ct|edition|anniversary)\b/i.test(match[1]))
+    name = name.slice(match[0].length).trim();
+  return name || "Product";
+}
+
   const historicalOrders = 240;
   const historicalSpend = 15876.11;
   let report = {records:[], communityRecords:[]};
@@ -83,7 +92,7 @@
   function renderProducts(rows) {
     const map = new Map();
     for (const row of rows) for (const item of Array.isArray(row?.items) ? row.items : []) {
-      const name = String(item?.name || item?.title || item?.product || "Product");
+      const name = sngCheckoutDisplayName(item?.name || item?.title || item?.product || "Product");
       const key = String(item?.productKey || name.toLowerCase());
       const current = map.get(key) || {name, qty:0, retailers:new Set(), image:item?.image || item?.imageUrl || ""};
       current.retailers.add(String(row?.retailer || "Retailer"));
