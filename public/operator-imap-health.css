@@ -1,0 +1,38 @@
+.sng-operator-imap{font:inherit;color:inherit;display:block;max-width:100%;width:100%;overflow-wrap:anywhere}
+.sng-imap-header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:14px}
+.sng-imap-header h3{font-size:19px;font-weight:900;margin:0 0 6px;color:inherit}
+.sng-imap-header p,.sng-imap-footnote{font-size:12px;line-height:1.5;opacity:.85;margin:4px 0 12px}
+.sng-imap-buttons,.sng-imap-actions,.sng-imap-form-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sng-operator-imap button{cursor:pointer;min-height:40px;padding:9px 12px;border-radius:11px;border:1px solid #3391b7;background:#102c42;color:#dbf8ff;font-size:12px;font-weight:800}
+.sng-operator-imap button:hover{border-color:#6ee6ff}
+.sng-operator-imap button:disabled{opacity:.5;cursor:not-allowed}
+.sng-operator-imap .sng-imap-main-button{background:linear-gradient(130deg,#6050c3,#078ca2);border-color:#77d8f0;color:white}
+.sng-imap-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:14px 0}
+.sng-imap-stat{padding:11px;border:1px solid #2b718d;border-radius:12px;background:#092338;min-width:0}
+.sng-imap-stat small{display:block;color:#b1d4e1;font-size:11px;line-height:1.35}
+.sng-imap-stat strong{display:block;font-size:20px;color:#8deaff;margin-top:5px}
+.sng-imap-feedback{min-height:18px;color:#a8f0ff;font-size:12px;line-height:1.5}
+.sng-imap-list{display:grid;gap:10px}
+.sng-imap-inbox{padding:14px;border:1px solid #376179;border-radius:15px;background:linear-gradient(135deg,#10263c,#0c1729);min-width:0}
+.sng-imap-inbox-heading{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:flex-start}
+.sng-imap-inbox-heading strong{display:block;font-size:15px;color:#fff}
+.sng-imap-inbox-heading small{display:block;margin:4px 0;color:#9ecddd;font-size:12px;word-break:break-all}
+.sng-imap-state{display:inline-flex;align-items:center;border-radius:99px;border:1px solid #777;padding:5px 9px;font-size:11px;font-weight:800;background:#263745;color:#d7e6ed}
+.sng-imap-state.state-healthy{color:#9ff9ca;border-color:#2bbd8f;background:#103d36}
+.sng-imap-state.state-error,.sng-imap-state.state-not_configured{color:#ffb3bd;border-color:#da5665;background:#461e30}
+.sng-imap-state.state-stale,.sng-imap-state.state-pending{color:#ffe3a4;border-color:#ae8d45;background:#40301b}
+.sng-imap-times{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:13px 0}
+.sng-imap-times span{font-size:11px;color:#9bb5c5;display:block}
+.sng-imap-times strong{display:block;margin-top:3px;color:#ecfaff;font-size:12px}
+.sng-imap-error{color:#ffbcc6;font-size:12px}
+.sng-imap-managed{font-size:11px;color:#9bb5c5}
+.sng-operator-imap .sng-imap-danger{border-color:#9d4762;color:#ffaec3}
+.sng-imap-edit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;padding:13px;margin:12px 0;border:1px solid #52b5d5;border-radius:13px;background:#0c283a}
+.sng-imap-edit h4,.sng-imap-edit p,.sng-imap-edit .sng-imap-form-actions{grid-column:1/-1;margin:0}
+.sng-imap-edit h4{font-size:16px}
+.sng-imap-edit p{font-size:11px}
+.sng-imap-edit label{margin:0;font-size:12px}
+.sng-imap-edit input,.sng-imap-edit select{box-sizing:border-box;margin-top:5px;display:block;width:100%;min-width:0;min-height:43px;border-radius:9px;padding:9px;background:#071623;border:1px solid #39718d;color:#fff;font-size:16px}
+.sng-imap-empty{font-size:12px}
+@media(max-width:520px){.sng-imap-edit{grid-template-columns:minmax(0,1fr)}.sng-imap-buttons button{flex:1}.sng-imap-times{gap:8px}}
+@media(min-width:750px){.sng-imap-overview{grid-template-columns:repeat(4,minmax(0,1fr))}.sng-imap-times{grid-template-columns:repeat(5,minmax(0,1fr))}}
