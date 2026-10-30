@@ -18,6 +18,7 @@ on:
       - test/success-source-policy.test.mjs
       - test/shipping-sheet-live-state.test.mjs
       - test/shipping-delivery-verification.test.mjs
+      - test/order-notifications.test.js
       - public/app.js
       - public/app-dashboard.js
       - public/index.html
@@ -42,6 +43,7 @@ on:
       - test/success-source-policy.test.mjs
       - test/shipping-sheet-live-state.test.mjs
       - test/shipping-delivery-verification.test.mjs
+      - test/order-notifications.test.js
       - public/app.js
       - public/app-dashboard.js
       - public/index.html
@@ -60,6 +62,7 @@ jobs:
       - name: Syntax check
         run: |
           node --check carrier-tracking.js
+          node --check shipping-tracking-policy.js
           node --check order-notifications.js
           node --check server.js
           node --check public/app.js
