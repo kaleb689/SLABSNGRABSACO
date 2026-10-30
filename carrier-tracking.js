@@ -215,7 +215,7 @@ export function mergeCarrierShipping(prior = {}, update, observedAt = new Date()
     deliveryProof: correction ? null :
       verifiedDelivery ? "carrier_api" : prior.deliveryProof || null,
     enRouteAt: prior.enRouteAt || (newRank >= 1 ? history.find(e => e.stage === "shipped" || e.stage === "in_transit")?.at || observedAt : null),
-    statusUpdatedAt: stageChanged || verifiedDelivery ? observedAt
+    statusUpdatedAt: stageChanged || (verifiedDelivery && prior.deliveryProof !== "carrier_api") ? observedAt
       : prior.statusUpdatedAt || prior.updatedAt || null,
     updatedAt: observedAt,
     source: newRank >= oldRank && newRank > 0 || correction ? "carrier_api" : prior.source || "carrier_api"
@@ -223,7 +223,7 @@ export function mergeCarrierShipping(prior = {}, update, observedAt = new Date()
   const meaningful = value => JSON.stringify([
     value.status, value.estimatedDelivery, value.trackingNumber, value.trackingUrl,
     value.carrier, value.deliveredAt, value.enRouteAt, normalizeEvents(value.events),
-    value.deliveryProof, value.statusUpdatedAt, value.source
+    value.deliveryProof, value.source
   ]);
   return meaningful(prior) === meaningful(next) ? null : next;
 }
