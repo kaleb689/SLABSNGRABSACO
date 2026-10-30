@@ -45412,7 +45412,7 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
           const price = reconcileRetailerEmailTotal(record, receiptTotal, messageAt);
           if (price.changed) {
             pendingChanges.push({
-              id: record.id, customerAccountId: account ? String(account.id) : "",
+              id: record.id, customerAccountId: String(record.customerAccountId || ""),
               retailer: record.retailer, orderNumber: record.orderNumber,
               verifiedReceiptTotal: receiptTotal, verifiedReceiptAt: messageAt
             });
