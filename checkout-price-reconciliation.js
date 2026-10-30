@@ -1,82 +1,89 @@
 /**
- * Owner-approved IMAP receipts enrich an existing Discord checkout only after
- * trusted retailer sender and exact unique retailer order-number matching.
- * This module handles PRICE evidence; it never creates orders or changes owners.
+ * Compare paid totals reported by Discord with exact-order retailer receipts.
+ * The caller MUST match a trusted sender + unique retailer order number first.
+ * This module never creates checkouts or changes customer ownership.
  */
-const cents = value => {
-  const number = Number(value);
-  const result = Math.round(number * 100);
-  return Number.isFinite(number) && Number.isSafeInteger(result) &&
-    result > 0 && result <= 100000000 ? result : null;
-};
-const dollars = value => cents(value) === null ? null : cents(value) / 100;
-const snapshot = record => JSON.stringify([
+function paidCents(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  const cents = Math.round(n * 100);
+  return Number.isFinite(n) && Number.isSafeInteger(cents) &&
+    cents > 0 && cents <= 100000000 ? cents : null;
+}
+const priceState = record => JSON.stringify([
   record.orderTotal, record.orderTotalBasis, record.priceSource,
   record.emailReceiptTotal, record.discordReportedTotal,
-  record.priceVerification, record.priceVerifiedAt
+  record.conflictingEmailTotal, record.priceVerification,
+  record.priceVerifiedAt
 ]);
 
-/**
- * A final order total from a trusted retailer email is stronger than a
- * provisional item subtotal. Two *different* claimed final paid amounts are
- * a conflict, not permission to silently replace the first value.
- */
-export function reconcileRetailerEmailTotal(record, amount, verifiedAt = null) {
-  if (!record || typeof record !== "object" || cents(amount) === null)
-    return { changed: false, priceChanged: false, conflict: false };
-  const before = snapshot(record);
-  const priorPaid = ["order_total", "retailer_receipt"].includes(record.orderTotalBasis)
-    ? dollars(record.orderTotal) : null;
-  const emailTotal = dollars(amount);
-  const previousEmail = dollars(record.emailReceiptTotal);
-  const discordTotal = dollars(record.discordReportedTotal) ||
-    (record.orderTotalBasis === "order_total" ? priorPaid : null);
-  if (record.priceSource === "admin_verified_retailer_receipt") {
-    // An owner-verified admin correction is immutable to an automated scan.
-    return { changed: false, priceChanged: false, conflict: false };
-  }
-  if (record.orderTotalBasis === "order_total" && priorPaid !== null &&
-      dollars(record.discordReportedTotal) === null) record.discordReportedTotal = priorPaid;
-  if (previousEmail !== null && previousEmail !== emailTotal) {
+/** A trusted full retailer receipt takes precedence over a webhook subtotal. */
+export function reconcileRetailerEmailTotal(record, total, verifiedAt = null) {
+  const amount = paidCents(total);
+  if (!record || typeof record !== "object" || amount === null)
+    return {changed:false, conflict:false};
+  const before = priceState(record);
+  const existingEmail = paidCents(record.emailReceiptTotal) ??
+    (record.orderTotalBasis === "retailer_receipt" &&
+     record.priceSource === "verified_retailer_receipt"
+      ? paidCents(record.orderTotal) : null);
+  const storedPaid = ["order_total", "retailer_receipt"].includes(record.orderTotalBasis)
+    ? paidCents(record.orderTotal) : null;
+  const discord = paidCents(record.discordReportedTotal) ??
+    (record.orderTotalBasis === "order_total" ? storedPaid : null);
+
+  if (discord !== null) record.discordReportedTotal = discord / 100;
+  if (existingEmail !== null && existingEmail !== amount) {
+    // Different receipt amounts may be split charges, payment adjustments,
+    // or partial shipments. Preserve first evidence and require review.
+    record.conflictingEmailTotal = amount / 100;
     record.priceVerification = "conflict";
-    // Retain both amounts in the private audit; do not replace the first
-    // accepted retailer receipt with a later, potentially partial payment.
   } else {
-    record.emailReceiptTotal = emailTotal;
-    if (record.orderTotalBasis === "order_total" && priorPaid !== null) {
-      record.priceVerification = cents(priorPaid) === cents(emailTotal)
-        ? "matched" : "conflict";
-    } else if (record.orderTotalBasis === "retailer_receipt" && priorPaid !== null) {
-      record.priceVerification = cents(priorPaid) !== cents(emailTotal)
-        ? "conflict" : discordTotal === null ? "email_verified" :
-          cents(discordTotal) === cents(emailTotal) ? "matched" : "conflict";
+    record.emailReceiptTotal = amount / 100;
+    const adminVerified = record.priceSource === "admin_verified_retailer_receipt";
+    if (adminVerified) {
+      // A human-confirmed corrected price is never rewritten by automation.
+      record.priceVerification = storedPaid === amount ? "matched" : "conflict";
     } else {
-      // Webhook omitted a final amount or gave only an item subtotal.
-      record.orderTotal = emailTotal;
+      record.orderTotal = amount / 100;
       record.orderTotalBasis = "retailer_receipt";
       record.priceSource = "verified_retailer_receipt";
-      record.priceVerification = "email_verified";
+      record.priceVerification = discord === null
+        ? "email_verified" : discord === amount ? "matched" : "conflict";
     }
   }
-  const changed = snapshot(record) !== before;
+  const changed = priceState(record) !== before;
   if (changed && verifiedAt && Number.isFinite(Date.parse(verifiedAt)))
     record.priceVerifiedAt = new Date(verifiedAt).toISOString();
-  return { changed, priceChanged: dollars(record.orderTotal) !== priorPaid,
-    conflict: record.priceVerification === "conflict" };
+  return {changed, conflict:record.priceVerification === "conflict"};
 }
 
-/** Compare a late-arriving explicit Discord total with a saved email receipt. */
-export function reconcileDiscordPaidTotal(record, amount) {
-  if (!record || typeof record !== "object" || cents(amount) === null)
-    return { changed: false, conflict: false };
-  const before = snapshot(record);
-  const total = dollars(amount);
-  record.discordReportedTotal = total;
-  const emailTotal = dollars(record.emailReceiptTotal) ||
-    (record.orderTotalBasis === "retailer_receipt" &&
-     record.priceSource === "verified_retailer_receipt" ? dollars(record.orderTotal) : null);
-  if (emailTotal !== null && record.priceSource !== "admin_verified_retailer_receipt")
-    record.priceVerification = cents(total) === cents(emailTotal) ? "matched" : "conflict";
-  return { changed: snapshot(record) !== before,
-    conflict: record.priceVerification === "conflict" };
+/** A late-arriving explicit final webhook amount can confirm a saved receipt. */
+export function reconcileDiscordPaidTotal(record, total) {
+  const amount = paidCents(total);
+  if (!record || typeof record !== "object" || amount === null)
+    return {changed:false, conflict:false};
+  const before = priceState(record);
+  record.discordReportedTotal = amount / 100;
+  const email = paidCents(record.emailReceiptTotal) ??
+    (record.priceSource === "verified_retailer_receipt" &&
+     record.orderTotalBasis === "retailer_receipt" ? paidCents(record.orderTotal) : null);
+  if (email !== null)
+    record.priceVerification = email === amount ? "matched" : "conflict";
+  else if (record.priceVerification !== "conflict")
+    record.priceVerification = "webhook_verified";
+  return {changed:priceState(record) !== before,
+    conflict:record.priceVerification === "conflict"};
+}
+
+/** Read-only customer/admin provenance without any email address or credentials. */
+export function checkoutPriceEvidence(record) {
+  const paid = ["order_total","retailer_receipt"].includes(record?.orderTotalBasis) &&
+    paidCents(record?.orderTotal) !== null;
+  return {
+    priceVerification: String(record?.priceVerification || (paid ? "webhook_verified" : "unverified")),
+    priceSource: record?.priceSource === "verified_retailer_receipt" ||
+      record?.priceSource === "admin_verified_retailer_receipt"
+      ? "retailer_receipt" : paid ? "discord_webhook" : "unverified"
+  };
 }
