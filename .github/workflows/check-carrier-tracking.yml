@@ -6,6 +6,13 @@ on:
       - carrier-tracking.js
       - order-notifications.js
       - server.js
+      - operator-imap-policy.js
+      - public/operator-imap-health.js
+      - public/operator-imap-health.css
+      - test/operator-imap-health.test.mjs
+      - public/admin-mobile.js
+      - public/admin-app.html
+      - public/admin.html
       - success-source-policy.js
       - shipping-tracking-policy.js
       - test/success-source-policy.test.mjs
@@ -22,6 +29,13 @@ on:
       - carrier-tracking.js
       - order-notifications.js
       - server.js
+      - operator-imap-policy.js
+      - public/operator-imap-health.js
+      - public/operator-imap-health.css
+      - test/operator-imap-health.test.mjs
+      - public/admin-mobile.js
+      - public/admin-app.html
+      - public/admin.html
       - success-source-policy.js
       - shipping-tracking-policy.js
       - test/success-source-policy.test.mjs
@@ -46,5 +60,8 @@ jobs:
           node --check server.js
           node --check public/app.js
           node --check public/app-dashboard.js
+          node --check operator-imap-policy.js
+          node --check public/operator-imap-health.js
+          node --check public/admin-mobile.js
       - name: Carrier API contract and event tests
-        run: node --test tests/carrier-tracking.test.js test/success-source-policy.test.mjs test/shipping-sheet-live-state.test.mjs
+        run: node --test tests/carrier-tracking.test.js test/success-source-policy.test.mjs test/shipping-sheet-live-state.test.mjs test/operator-imap-health.test.mjs
