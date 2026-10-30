@@ -1,3 +1,5 @@
+import { reconcileDiscordPaidTotal } from "./checkout-price-reconciliation.js";
+
 // Reconcile the same checkout across email and bot sources without double counting.
 export function sameCheckout(a, b) {
   const aliases = new Set([a.id, ...(a.sourceIds || [])].filter(Boolean).map(String));
@@ -132,6 +134,10 @@ export function reconcileWebhookCheckout(records, order, attribution = null) {
   // webhook's sometimes-incomplete count field.
   merged.itemCount = merged.items.reduce((sum, item) =>
     sum + Math.max(0, Math.floor(Number(item?.quantity) || 0)), 0);
+  // Compare explicit full-price webhook evidence against an already verified
+  // exact-order retailer email; never replace the retailer receipt silently.
+  if (order.orderTotalBasis === "order_total")
+    reconcileDiscordPaidTotal(merged, order.orderTotal);
   const changed = matches.length !== 1 || JSON.stringify(merged) !== JSON.stringify(prior);
   if (changed) {
     const index = matches.length ? records.indexOf(matches[0]) : records.length;
