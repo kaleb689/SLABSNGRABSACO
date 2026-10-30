@@ -40,6 +40,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install checkout notification dependencies
+        run: npm ci --no-audit --no-fund
       - name: Syntax check server and every changed checkout view
         run: |
           node --check server.js
