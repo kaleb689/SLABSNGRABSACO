@@ -44,12 +44,12 @@ test("trusted business mailbox can enrich an ownerless confirmed Discord checkou
   const finish=server.indexOf("function startShippingTrackerScheduler(",start);
   const tracker=server.slice(start,finish);
   assert.ok(start>0&&finish>start);
-  assert.match(tracker,/const unmatchedBusinessReceipt = Boolean\(mailbox\.managedHost/);
+  assert.match(tracker,/const unmatchedBusinessReceipt = Boolean\(mailbox\.operatorApproved === true/);
   assert.match(tracker,/matchVerifiedWebhookEmail\(records/);
   assert.ok(tracker.includes("if (!account || (!status && !emailTracking.trackingNumber)) continue;"));
   assert.match(tracker,/businessPriceCandidates = records\.filter/);
   assert.match(tracker,/customerCheckoutPurchase\(record\)/);
-  assert.match(tracker,/}, businessPriceCandidates, accountsById, pendingChanges\)/);
+  assert.match(tracker,/scanMailboxForShipping\(\{\.\.\.mailbox,operatorApproved:true\}/);
   assert.match(tracker,/String\(update\.customerAccountId \|\| ""\)/);
   assert.match(tracker,/let receiptChanged = false/);
   assert.match(tracker,/changedAccounts\.size \|\| receiptChanged/);
