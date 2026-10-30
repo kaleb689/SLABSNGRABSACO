@@ -18155,6 +18155,103 @@ app.post(
 );
 
 
+// Owner-only IMAP Health. No customer mailbox or customer-saved app password
+// is accessible from this scanner or these endpoints.
+app.get("/api/admin/imap-health", requireAdmin, async (req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  try { return res.json(await operatorImapHealthSnapshot()); }
+  catch(error) {
+    console.error("Owner IMAP health read failed:",error?.code||error?.name||"storage_error");
+    return res.status(500).json({error:"Unable to read encrypted owner IMAP inboxes."});
+  }
+});
+app.post("/api/admin/imap-health", requireAdmin, async (req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  try {
+    const payload = validateOperatorImapEntry(req.body);
+    const existing = await approvedOperatorImapInboxes();
+    if(existing.some(item=>item.email===payload.email))
+      return res.status(409).json({error:"This inbox is already configured."});
+    const stored = await storedOperatorImapInboxes();
+    if(stored.length>=MAX_OPERATOR_IMAP_INBOXES)
+      return res.status(400).json({error:"Maximum additional IMAP inboxes reached."});
+    const now=new Date().toISOString();
+    const inbox={...payload,id:crypto.randomUUID(),createdAt:now,updatedAt:now};
+    await saveOperatorImapInboxes([...stored,inbox]);
+    const result=await testApprovedOperatorImapConnection(inbox);
+    return res.status(201).json({ok:true,entry:publicOperatorImapEntry(inbox,
+      (await readJson(OPERATOR_IMAP_HEALTH_FILE,{}))[inbox.id]),connection:result});
+  }catch(error){
+    if(/Enter |Choose |must be |characters|inbox name/i.test(error?.message||""))
+      return res.status(400).json({error:error.message});
+    console.error("Owner IMAP create failed:",error?.code||error?.name||"save_error");
+    return res.status(500).json({error:"Could not save the encrypted owner IMAP login."});
+  }
+});
+app.put("/api/admin/imap-health/:id",requireAdmin,async(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  try {
+    const stored=await storedOperatorImapInboxes();
+    const index=stored.findIndex(item=>item.id===req.params.id);
+    if(index<0)return res.status(404).json({error:"Admin-managed inbox not found. Render inboxes are edited in Render settings."});
+    const prior=stored[index];
+    const checked=validateOperatorImapEntry({...prior,...req.body, password:req.body?.password||""},{existingPassword:true});
+    if((await approvedOperatorImapInboxes()).some(item=>
+      item.id!==prior.id&&item.email===checked.email))
+      return res.status(409).json({error:"This inbox is already configured."});
+    const now=new Date().toISOString();
+    const next={...prior,...checked,password:checked.password||prior.password,updatedAt:now};
+    stored[index]=next;
+    await saveOperatorImapInboxes(stored);
+    const connection=next.enabled===false?{connected:false,status:"paused"}:
+      await testApprovedOperatorImapConnection(next);
+    return res.json({ok:true,entry:publicOperatorImapEntry(next,
+      (await readJson(OPERATOR_IMAP_HEALTH_FILE,{}))[next.id]),connection});
+  }catch(error){
+    if(/Enter |Choose |must be |characters|inbox name/i.test(error?.message||""))
+      return res.status(400).json({error:error.message});
+    console.error("Owner IMAP update failed:",error?.code||error?.name||"update_error");
+    return res.status(500).json({error:"Unable to update encrypted owner IMAP inbox."});
+  }
+});
+app.delete("/api/admin/imap-health/:id",requireAdmin,async(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  try {
+    const stored=await storedOperatorImapInboxes();
+    const filtered=stored.filter(item=>item.id!==req.params.id);
+    if(filtered.length===stored.length)
+      return res.status(404).json({error:"Admin-managed inbox not found. Render inboxes cannot be deleted here."});
+    await saveOperatorImapInboxes(filtered);
+    // Removed inbox remains absent even if its former health audit persists.
+    return res.json({ok:true});
+  }catch(error) {
+    console.error("Owner IMAP removal failed:",error?.code||error?.name||"remove_error");
+    return res.status(500).json({error:"Unable to remove admin-managed inbox."});
+  }
+});
+app.post("/api/admin/imap-health/:id/test",requireAdmin,async(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  try {
+    const inbox=(await approvedOperatorImapInboxes()).find(item=>item.id===req.params.id);
+    if(!inbox)return res.status(404).json({error:"Inbox not found."});
+    if(!inbox.enabled)return res.status(409).json({error:"Enable this inbox before testing it."});
+    if(!inbox.password)return res.status(409).json({error:"Inbox app password is not configured."});
+    const result=await testApprovedOperatorImapConnection(inbox);
+    return res.json({ok:true,...result});
+  }catch(error) {
+    console.error("Owner IMAP test failed:",error?.code||error?.name||"test_error");
+    return res.status(500).json({error:"Unable to test owner IMAP mailbox."});
+  }
+});
+app.post("/api/admin/imap-health/scan",requireAdmin,async(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  if(shippingTrackerRunning)return res.json({ok:true,running:true});
+  // The automatic scheduler uses this same scanner. Never import or create
+  // checkout records; verified retailer and carrier emails only enrich hits.
+  void syncShippingTrackers();
+  return res.status(202).json({ok:true,started:true});
+});
+
 app.get(
   "/api/admin/security-status",
   requireAdmin,
@@ -45146,11 +45243,16 @@ async function sendShippingDiscordDm(account, record, shipping) {
 }
 
 function shippingMailboxClient(mailbox) {
-  if (!mailbox.managedHost) return createCustomerImapClient(mailbox.email, mailbox.password).client;
-  // Read-only business mailbox supplied by Render configuration. The host
-  // is never taken from an HTTP request or another customer account.
+  // The provider is an allowlisted preset (or a trusted Render environment
+  // setting). Never accept a hostname/port from a browser request.
+  const host = mailbox.managedHost ||
+    OPERATOR_IMAP_HOSTS[mailbox.provider]?.host;
+  const port = mailbox.managedHost ? mailbox.managedPort :
+    OPERATOR_IMAP_HOSTS[mailbox.provider]?.port;
+  if (!host || !Number.isInteger(Number(port)) || Number(port)!==993)
+    throw Object.assign(new Error("Unsupported owner IMAP provider"),{code:"UNSUPPORTED_PROVIDER"});
   return protectImapClient(new ImapFlow({
-    host: mailbox.managedHost, port: mailbox.managedPort, secure: true,
+    host, port, secure: true,
     auth: { user: mailbox.email,
       pass: normalizeImapPassword(mailbox.email, mailbox.password) },
     logger: false, connectionTimeout: 15000, greetingTimeout: 10000,
