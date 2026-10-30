@@ -218,7 +218,7 @@ export function mergeCarrierShipping(prior = {}, update, observedAt = new Date()
     statusUpdatedAt: stageChanged || (verifiedDelivery && prior.deliveryProof !== "carrier_api") ? observedAt
       : prior.statusUpdatedAt || prior.updatedAt || null,
     updatedAt: observedAt,
-    source: newRank >= oldRank && newRank > 0 || correction ? "carrier_api" : prior.source || "carrier_api"
+    source: (newRank >= oldRank && newRank > 0) || correction ? "carrier_api" : prior.source || null
   };
   const meaningful = value => JSON.stringify([
     value.status, value.estimatedDelivery, value.trackingNumber, value.trackingUrl,
