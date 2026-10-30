@@ -13153,6 +13153,15 @@ function renderSuccessChart(
    SUCCESS — RECENT ORDER CAROUSEL
 ===================================================== */
 
+function sngCheckoutDisplayName(value) {
+  let name = String(value || "").trim(), match;
+  const prefix = /^\s*\((?:(?:sku|pid|tcin|dpci)\s*[:#]?\s*)?([a-z0-9]+(?:-[a-z0-9]+)+|\d{8,})\)\s*/i;
+  while ((match = name.match(prefix)) && /\d/.test(match[1]) &&
+    !/\b(?:pack|count|pk|ct|edition|anniversary)\b/i.test(match[1]))
+    name = name.slice(match[0].length).trim();
+  return name || "Product";
+}
+
 let successCheckoutIndex = 0;
 
 
@@ -13223,10 +13232,8 @@ function renderSuccessProductPreview(
   item,
   index
 ) {
-  const name =
-    item?.name ||
-    item?.productName ||
-    `Item ${index + 1}`;
+  const name = sngCheckoutDisplayName(
+    item?.name || item?.productName || `Item ${index + 1}`);
 
   const image =
     getSuccessItemImage(
@@ -13547,7 +13554,7 @@ function renderSuccessCheckouts(
     );
 
   const primaryItem = items[0] || {};
-  const primaryName = primaryItem.name || primaryItem.productName || "Successful Checkout";
+  const primaryName = sngCheckoutDisplayName(primaryItem.name || primaryItem.productName || "Successful Checkout");
   const primaryImage = getSuccessItemImage(primaryItem);
   const shippingRank = successShippingRank(shipping?.status);
   const statusTone = reviewHold ? "waiting" : shippingRank === 4 ? "delivered" : shippingRank ? "transit" : "waiting";
@@ -13953,10 +13960,7 @@ function renderSuccessAllOrders(
           items.length
             ? items
                 .map(item => {
-                  const name =
-                    item.name ||
-                    item.productName ||
-                    "Item";
+                  const name = sngCheckoutDisplayName(item.name || item.productName || "Item");
 
                   const itemQuantity =
                     Math.max(
@@ -16333,7 +16337,7 @@ function renderPublicSuccessProduct() {
       imageWrap.textContent = "Image unavailable";
     }
     const name = document.createElement("strong");
-    name.textContent = product.name;
+    name.textContent = sngCheckoutDisplayName(product.name);
     const count = document.createElement("span");
     count.append(document.createTextNode("×"));
     const quantity = document.createElement("b");
