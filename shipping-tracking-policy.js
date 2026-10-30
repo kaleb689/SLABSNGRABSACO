@@ -47,9 +47,11 @@ export function shippingStatusFromMessage(subject = "", text = "") {
   if (/\b(?:out for delivery|on vehicle for delivery)\b/.test(s)) return "out_for_delivery";
   if (explicitDeliveryConfirmation(s, "")) return "delivered";
   const current = body.match(/\b(?:current\s+)?(?:tracking|shipping|shipment|package|delivery)\s+status\s*[:\-]\s*(delivered|out for delivery|in transit|shipped)\b/);
-  if (current && current[1] !== "delivered")
-    return current[1] === "out for delivery" ? "out_for_delivery" :
-      current[1] === "in transit" ? "in_transit" : "shipped";
+  if (current)
+    return current[1] === "delivered"
+      ? (explicitDeliveryConfirmation("", text) ? "delivered" : null)
+      : current[1] === "out for delivery" ? "out_for_delivery"
+      : current[1] === "in transit" ? "in_transit" : "shipped";
   // Target's "Arriving today" email says "Shipped · Out for delivery".
   // Never treat that as a delivery confirmation even if legal/FAQ copy
   // elsewhere in the message discusses packages after delivery.
