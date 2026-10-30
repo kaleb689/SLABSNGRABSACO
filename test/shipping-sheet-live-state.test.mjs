@@ -33,6 +33,12 @@ test("customer order details identify the last verified shipping update and its 
  assert.match(source,/No verified shipping update yet/);
 });
 
+test("authenticated Success response exposes safe shipping status provenance",()=>{
+ const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
+ assert.match(server,/source: \["carrier_api", "retailer_email"\]\.includes\(record\.shipping\.source\)/);
+ assert.match(server,/updatedAt: record\.shipping\.updatedAt \|\| null/);
+});
+
 test("carrier action resolves only official direct result links with tracking number",()=>{
  const start=source.indexOf("const officialCarrierHref =");
  const end=source.indexOf("const trackingRecords =",start);
