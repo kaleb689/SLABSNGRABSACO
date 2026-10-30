@@ -45756,6 +45756,9 @@ async function syncCustomerTargetSuccess(
     force = false
   } = {}
 ) {
+  // Legacy import worker is deliberately disabled. Customer inbox credentials
+  // are not authorized for shipping or Success mailbox scanning.
+  return {scanned:false,reason:"customer_mailbox_scanning_disabled"};
   const accountId =
     String(
       customerAccountId ||
