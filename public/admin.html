@@ -5424,7 +5424,7 @@
 <link rel="stylesheet" href="/admin-header-organized.css?v=20261010-1">
 <link rel="stylesheet" href="/admin-membership-kpis.css?v=20261010">  <style>.admin-member-billing-breakdown{border:1px solid #326c8d;border-radius:13px;padding:13px 16px;margin:12px 0 18px;background:#0b2437;color:#d8f5ff}.admin-member-billing-breakdown summary{cursor:pointer;font-weight:850;color:#8ae6ff}.admin-member-billing-line{border-top:1px solid #36566d;padding:12px 0}.admin-member-billing-line p{font-size:12px;margin:6px 0;overflow-wrap:anywhere}</style>
 <link rel="stylesheet" href="/admin-workspace-tabs.css?v=20261013-sixcol-1"><link rel="stylesheet" href="/admin-ipad-notifications.css?v=20261013-1"><link rel="stylesheet" href="/admin-ipad-passkeys.css?v=20261013-1"><link rel="stylesheet" href="/admin-jig-picker.css?v=20261012-4">
-</head>
+<link rel="stylesheet" href="/operator-imap-health.css?v=20261030-owner1"></head>
 
 
 <body class="admin-page">
@@ -5744,13 +5744,9 @@ PAID SUBSCRIPTIONS
     </details>
 </div>
 
-<div class="admin-mailbox-status">
-  <strong>Managed Success mailbox</strong>
-  <span id="managedSuccessMailboxStatus" role="status">Check configuration and latest order scan.</span>
-  <button type="button" id="checkManagedSuccessMailbox">Check mailbox status</button>
-  <button type="button" id="scanManagedSuccessMailbox">Scan now</button>
-  <span class="admin-scan-progress" id="managedSuccessScanProgress" role="status" aria-live="polite" hidden><progress id="managedSuccessScanBar" max="100" value="0"></progress><span id="managedSuccessScanPercent">0%</span></span>
-</div>
+<section class="admin-feature-panel" id="operatorImapHealthSection" aria-label="Operator IMAP Health">
+  <div id="operator-imap-health-desktop-root" data-imap-health-root>Loading owner IMAP Health…</div>
+</section>
 
 <div class="admin-global-profile-search">
   <label class="eyebrow" for="adminGlobalProfileSearch">
@@ -24678,5 +24674,9 @@ document.addEventListener("click", event => {
 <script src="/admin-theme-toggle.js?v=20261009"></script>
 <script src="/nested-details-reset.js?v=20261013"></script>
 <link rel="stylesheet" href="/membership-extension-picker.css?v=20261023"><script src="/membership-extension-picker.js?v=20261023"></script><script src="/admin-private-studio.js" defer></script>
+<script src="/operator-imap-health.js?v=20261030-owner1"></script>
+<script>
+  window.SNGOperatorImapHealth?.mount(document.getElementById("operator-imap-health-desktop-root"));
+</script>
 </body>
 </html>
