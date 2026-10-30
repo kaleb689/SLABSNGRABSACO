@@ -26,7 +26,7 @@ import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js"
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
 import { webhookOnlyCheckouts, discordCheckoutIds, isVerifiedDiscordCheckout, matchVerifiedWebhookEmail, matchVerifiedWebhookShippingEmail, authoritativeDiscordCheckouts } from "./success-source-policy.js";
 import { isModuleLifecycleDiscordMessage, isModuleLifecycleCheckout } from "./discord-checkout-event-policy.js";
-import { shippingStatusFromMessage, cancellationFromSubject } from "./shipping-tracking-policy.js";
+import { shippingStatusFromMessage, cancellationFromSubject, explicitDeliveryConfirmation, evaluateVerifiedEmailShippingTransition, verifiedShippingStatus } from "./shipping-tracking-policy.js";
 import { operatorImapProvider, validateOperatorImapEntry, combineOperatorImapSources,
   publicOperatorImapEntry, MAX_OPERATOR_IMAP_INBOXES, OPERATOR_IMAP_HOSTS } from "./operator-imap-policy.js";
 import { createCarrierTrackingClient, trackingEvidenceFromEmail, officialTrackingUrl, knownCarrier, cleanTrackingNumber, mergeCarrierShipping } from "./carrier-tracking.js";
@@ -40757,10 +40757,11 @@ function safeSuccessCheckout(
     shipping:
       record?.shipping && typeof record.shipping === "object"
         ? {
-            status: clean(record.shipping.status, 40) || null,
+            status: clean(verifiedShippingStatus(record.shipping), 40) || null,
             enRouteAt: record.shipping.enRouteAt || null,
             estimatedDelivery: clean(record.shipping.estimatedDelivery, 80) || null,
-            deliveredAt: record.shipping.deliveredAt || null,
+            deliveredAt: verifiedShippingStatus(record.shipping) === "delivered"
+              ? record.shipping.deliveredAt || null : null,
             trackingUrl: safeSuccessImageUrl(officialTrackingUrl(record.shipping.carrier, record.shipping.trackingNumber) || record.shipping.trackingUrl),
             carrier: clean(record.shipping.carrier, 60) || null,
             trackingNumber: clean(record.shipping.trackingNumber, 60) || null,
@@ -45315,7 +45316,7 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
           { subject: "order" }, { subject: "purchase" },
           { subject: "charged" }, { subject: "payment" }]
       }, { uid: true });
-      const recentUids = [...new Set([...uids.slice(-120), ...receiptUids.slice(-240)])];
+      const recentUids = [...new Set([...uids.slice(-120), ...receiptUids.slice(-240)])].sort((a,b)=>Number(a)-Number(b));
       const candidates = recentUids.length ? await client.fetchAll(
         recentUids,
         { uid: true, envelope: true, internalDate: true, source: true },
@@ -45328,7 +45329,10 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         const decoded = await decodeImapMessage(message.source);
         const combined = normalizedShippingText(`${subject}\n${decoded.text}\n${decoded.html}`);
         const cancellation = cancellationFromSubject(subject);
-        const status = cancellation || shippingStatusFromMessage(subject, combined);
+        const shippingEmailBody = decoded.text || decoded.html || "";
+        const status = cancellation || shippingStatusFromMessage(subject, shippingEmailBody);
+        const deliveryProven = status === "delivered" &&
+          explicitDeliveryConfirmation(subject, shippingEmailBody);
         const receiptTotal = verifiedRetailerOrderTotal(decoded.text, decoded.html);
         const pkcDetails = pokemonCenterFulfillmentDetails({
           subject, text: decoded.text || "", html: decoded.html || ""
@@ -45431,44 +45435,54 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         }
         if (cancelledOrder(record)) continue;
         const prior = record.shipping && typeof record.shipping === "object" ? record.shipping : {};
-        // A delayed "shipped" email must not roll back "delivered", but may
-        // still supply a missing tracking number or shipping address.
+        // Only an affirmative delivery notice can advance a package to
+        // Delivered. A newer exact-order out-for-delivery email may correct a
+        // legacy unproven email delivery without touching verified carrier data.
         const priorTime = Date.parse(prior.updatedAt || "");
         const messageTime = Date.parse(messageAt);
         const stageIsFresh = !Number.isFinite(priorTime) || messageTime >= priorTime;
-        const mayAdvance = Boolean(status && stageIsFresh &&
-          shippingStatusRank(status) >= shippingStatusRank(prior.status));
+        const transition = evaluateVerifiedEmailShippingTransition(prior, {
+          status, eventAt: messageAt, deliveryProof: deliveryProven ? "explicit_email" : null
+        });
+        const mayAdvance = transition.accept;
         const nextStatus = mayAdvance ? status : prior.status || null;
         const trackingNumber = emailTracking.trackingNumber || pkcDetails.trackingNumber || prior.trackingNumber || null;
         const carrier = emailTracking.carrier || pkcDetails.carrier || knownCarrier(prior.carrier, trackingNumber) || null;
         const next = {
           ...prior,
           status: nextStatus,
+          statusUpdatedAt: mayAdvance ? messageAt : prior.statusUpdatedAt || prior.updatedAt || null,
           enRouteAt: prior.enRouteAt || (mayAdvance && status !== "delivered" ? messageAt : null),
           estimatedDelivery: (stageIsFresh ? shippingEstimateFromText(combined) : null) || prior.estimatedDelivery || null,
-          deliveredAt: mayAdvance && status === "delivered" ? messageAt : prior.deliveredAt || null,
+          deliveredAt: transition.correction ? null :
+            mayAdvance && nextStatus === "delivered" ? messageAt : prior.deliveredAt || null,
+          deliveryProof: mayAdvance
+            ? (nextStatus === "delivered" ? "explicit_email" : null)
+            : prior.deliveryProof || null,
           trackingUrl: officialTrackingUrl(carrier, trackingNumber) ||
             emailTracking.trackingUrl || shippingTrackingUrl(decoded.html, decoded.text) || prior.trackingUrl || null,
           carrier, trackingNumber,
           address: matchCustomerShippingAddress(account, combined) || prior.address || null,
-          updatedAt: Number.isFinite(priorTime) && priorTime > messageTime ? prior.updatedAt : messageAt,
-          source: "retailer_email",
-          // Startup cleanup must never erase a freshly verified shipping event.
+          updatedAt: transition.correction || mayAdvance || !Number.isFinite(priorTime) || messageTime >= priorTime
+            ? messageAt : prior.updatedAt,
+          source: mayAdvance ? "retailer_email" : prior.source || "retailer_email",
           verifiedWebhookCheckoutId: String(record.id)
         };
 
         // Do not persist a new updatedAt or notify when the mailbox repeats
         // an unchanged status or the same tracking details.
         const before = JSON.stringify([prior.status, prior.enRouteAt, prior.estimatedDelivery,
-          prior.deliveredAt, prior.trackingUrl, prior.address, prior.carrier, prior.trackingNumber]);
+          prior.deliveredAt, prior.trackingUrl, prior.address, prior.carrier, prior.trackingNumber,
+          prior.deliveryProof, prior.statusUpdatedAt, prior.source]);
         const after = JSON.stringify([next.status, next.enRouteAt, next.estimatedDelivery,
-          next.deliveredAt, next.trackingUrl, next.address, next.carrier, next.trackingNumber]);
+          next.deliveredAt, next.trackingUrl, next.address, next.carrier, next.trackingNumber,
+          next.deliveryProof, next.statusUpdatedAt, next.source]);
         if (before === after) continue;
         record.shipping = next;
         pendingChanges.push({
           id: record.id, customerAccountId: String(account.id),
           retailer: record.retailer, orderNumber: record.orderNumber,
-          shipping: next
+          shipping: next, statusCorrection: transition.correction
         });
         changed = true;
       }
@@ -45616,13 +45630,20 @@ async function syncShippingTrackers() {
         if (cancelledOrder(record)) continue;
         const prior = record.shipping || {};
         const next = update.shipping;
-        if (shippingStatusRank(next.status) < shippingStatusRank(prior.status)) continue;
-        if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(next.updatedAt)) continue;
         if (next.verifiedWebhookCheckoutId !== String(record.id)) continue;
+        const correction = update.statusCorrection === true &&
+          prior.status === "delivered" && prior.source === "retailer_email" &&
+          prior.deliveryProof !== "explicit_email" && next.status === "out_for_delivery";
+        if (shippingStatusRank(next.status) < shippingStatusRank(prior.status) && !correction) continue;
+        if (prior.updatedAt && Date.parse(prior.updatedAt) > Date.parse(next.updatedAt) && !correction) continue;
+        if (prior.status === "delivered" && prior.source === "carrier_api" &&
+            next.status !== "delivered") continue;
         const before = JSON.stringify([prior.status, prior.enRouteAt, prior.estimatedDelivery,
-          prior.deliveredAt, prior.trackingUrl, prior.address, prior.carrier, prior.trackingNumber]);
+          prior.deliveredAt, prior.trackingUrl, prior.address, prior.carrier, prior.trackingNumber,
+          prior.deliveryProof, prior.statusUpdatedAt, prior.source]);
         const after = JSON.stringify([next.status, next.enRouteAt, next.estimatedDelivery,
-          next.deliveredAt, next.trackingUrl, next.address, next.carrier, next.trackingNumber]);
+          next.deliveredAt, next.trackingUrl, next.address, next.carrier, next.trackingNumber,
+          next.deliveryProof, next.statusUpdatedAt, next.source]);
         if (before === after) continue;
         record.shipping = next;
         changedAccounts.add(update.customerAccountId);
