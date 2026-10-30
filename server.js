@@ -45038,16 +45038,30 @@ async function getCustomerSuccessMailboxes(
 // All shipping enrichment is sourced from the operator's explicit inbox list.
 // Customer-owned IMAP credentials are NEVER a shipping-scanner input.
 const OPERATOR_IMAP_FILE = path.join(DATA_DIR, "operator-imap-inboxes.encrypted.json");
+const OPERATOR_IMAP_BACKUP_FILE = path.join(DATA_DIR, "operator-imap-inboxes.previous.encrypted.json");
 const OPERATOR_IMAP_HEALTH_FILE = path.join(DATA_DIR, "operator-imap-health.json");
 async function storedOperatorImapInboxes() {
-  const encrypted = await readJson(OPERATOR_IMAP_FILE, null);
-  if (!encrypted) return [];
-  // Fail closed if the encrypted mailbox store cannot be decoded.
+  let encrypted;
+  try { encrypted = JSON.parse(await fs.readFile(OPERATOR_IMAP_FILE, "utf8")); }
+  catch(error) {
+    if (error?.code==="ENOENT") return [];
+    // A damaged encrypted vault is never mistaken for a new, empty one.
+    throw error;
+  }
   const decoded = decryptJson(encrypted);
   if (!decoded || !Array.isArray(decoded.inboxes)) throw new Error("Operator mailbox storage is invalid.");
   return decoded.inboxes;
 }
 async function saveOperatorImapInboxes(entries) {
+  // Preserve the prior encrypted generation before any credential mutation.
+  // No plaintext backup or password is exposed in logs or response payloads.
+  let prior = null;
+  try {prior = await fs.readFile(OPERATOR_IMAP_FILE,"utf8");}
+  catch(error) {if(error?.code!=="ENOENT")throw error;}
+  if(prior) {
+    JSON.parse(prior); // Fail closed if the existing vault cannot be read.
+    await fs.writeFile(OPERATOR_IMAP_BACKUP_FILE,prior,{mode:0o600});
+  }
   await writeJson(OPERATOR_IMAP_FILE, encryptJson({version: 1, inboxes: entries}));
 }
 function environmentOperatorImapInboxes() {
