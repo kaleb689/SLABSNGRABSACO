@@ -45347,7 +45347,7 @@ async function scanMailboxForShipping(mailbox, records, accountsById, pendingCha
         // A trusted OWNER-MANAGED business mailbox can verify the final paid
         // amount of an unmatched webhook checkout without assigning its owner.
         // Customer mailboxes can enrich only their own already-attributed hits.
-        const unmatchedBusinessReceipt = Boolean(mailbox.managedHost &&
+        const unmatchedBusinessReceipt = Boolean(mailbox.operatorApproved === true &&
           record && !record.customerAccountId);
         if ((!account || account.disabled === true) && !unmatchedBusinessReceipt) continue;
         // Never create checkouts from mailbox evidence. Require an exact
@@ -45500,7 +45500,8 @@ async function syncShippingTrackers() {
       const lastAttemptAt = new Date().toISOString();
       await updateOperatorImapHealth(mailbox.id, {lastAttemptAt});
       try {
-        const stats = await scanMailboxForShipping(mailbox,businessPriceCandidates,accountsById,pendingChanges);
+        const stats = await scanMailboxForShipping({...mailbox,operatorApproved:true},
+          businessPriceCandidates,accountsById,pendingChanges);
         operatorMailboxesScanned++;
         const lastScanAt = new Date().toISOString();
         await updateOperatorImapHealth(mailbox.id,{
