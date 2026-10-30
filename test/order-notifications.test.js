@@ -402,3 +402,37 @@ test('account-notification preference prevents membership reminder pushes withou
   await f.service.tick();assert.equal(f.sent.length,0);
   assert.equal((await f.service.list('a')).filter(x=>x.kind==='membership_reminder').length,1);
 });
+
+test('old false Delivered push is withdrawn and an actual later delivery can alert exactly once',async t=>{
+  const shipping={status:'delivered',source:'retailer_email',
+    trackingNumber:'1ZWY06570310017016'};
+  const f=await fixture(t,[order('false-delivery',{shipping})]);
+  await f.service.subscribe('a',subscription);
+  const file=path.join(f.options.dataDir,'app-order-notifications.json');
+  const state=JSON.parse(await fs.readFile(file,'utf8'));
+  const key='a:target:false-delivery';
+  state.snapshots[key]={eligible:true,cancelled:false,reviewHold:false,shipping:JSON.stringify(['delivered'])};
+  const ghost={kind:'shipping_update',title:'Target order delivered',
+    message:'Earlier unverified email status',orderKey:key,deliveryEventKey:key+':shipping_update:delivered'};
+  state.inbox.a=[ghost];
+  state.outbox.push({key,accountId:'a',endpoint:subscription.endpoint,
+    notification:ghost,attempts:0});
+  state.eventHistory[key+':shipping_update:delivered']=true;
+  await fs.writeFile(file,JSON.stringify(state));
+  f.service=createOrderNotifications(f.options);
+  await f.service.initialize();
+  await f.service.tick();
+  assert.equal(f.sent.length,0,'unverified delivery is never pushed');
+  assert.equal((await f.service.list('a')).some(x=>x.title==='Target order delivered'),false);
+  shipping.status='out_for_delivery';
+  await f.service.tick();
+  assert.equal(f.sent.length,1);
+  assert.match(f.sent[0].title,/out for delivery/);
+  shipping.status='delivered';
+  shipping.deliveryProof='explicit_email';
+  await f.service.tick();
+  assert.equal(f.sent.length,2);
+  assert.equal(f.sent[1].title,'Target order delivered');
+  await f.service.tick();
+  assert.equal(f.sent.length,2);
+});
