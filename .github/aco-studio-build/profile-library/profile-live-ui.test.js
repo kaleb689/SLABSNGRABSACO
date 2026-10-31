@@ -420,3 +420,21 @@ test('Delete & Return to Pools is a distinct reviewed action on the selected cus
  assert.match(source,/profileIds:selectedRows\.map\(x=>x\.id\)/);
  assert.match(source,/if\(result\.partial\)/);
 });
+
+test('Saved Card Bank reconciliation is explicit, scoped, idempotent and reports partial failures',()=>{
+ const ui=require('node:fs').readFileSync(require.resolve('../profile-workshop-ui.js'),'utf8');
+ assert.match(ui,/data-reconcile-cards/);
+ assert.match(ui,/missingBankEntries=.*card=>!card\.fromSavedBank/);
+ assert.match(ui,/card\.id\.startsWith\('profile:'\)/);
+ assert.match(ui,/Review \/ restore /);
+ assert.match(ui,/Saved in Card Bank/);
+ assert.match(ui,/Saved in profile only/);
+ assert.match(ui,/if\(!confirm\('Restore '\+missing\.length/);
+ assert.match(ui,/await api\.addProfileCardToBank\(\{\.\.\.owner,profileId:card\.id\.slice\(8\),confirmed:true\}\)/);
+ assert.match(ui,/result\?\.alreadyExists===true/);
+ assert.match(ui,/result\?\.saved===true/);
+ assert.match(ui,/failed\+\+/);
+ assert.match(ui,/await refreshVault\(\)/);
+ assert.match(ui,/bankRepairBusy/);
+ assert.doesNotMatch(ui,/bankRepairBusy=true;.*api\.manageResource/s);
+});
