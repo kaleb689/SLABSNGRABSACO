@@ -310,12 +310,23 @@
  // Scoped vault modal, with search/paging instead of an endlessly growing list.
  const modal=d.createElement('div');modal.className='workshopModal';modal.hidden=true;
  modal.innerHTML=`<div class="workshopBox" role="dialog" aria-modal="true" aria-labelledby="workshopVaultTitle"><div class="workshopHead"><div><h2 id="workshopVaultTitle">Cards &amp; Addresses Vault</h2><p id="workshopVaultOwner"></p></div><button class="btn plain slim" data-close type="button" aria-label="Close vault">X</button></div>
- <div class="buttons"><button class="btn secondary slim" data-tab="cards" type="button">Cards</button><button class="btn secondary slim" data-tab="addresses" type="button">Addresses</button><button class="btn secondary slim" data-tab="profiles" type="button">In Progress</button><button class="btn secondary slim" data-tab="completed" type="button">Completed Profiles</button><button class="btn primary slim" data-add type="button">+ Add card</button></div><input id="workshopVaultSearch" type="search" placeholder="Search card number, linked email, retailer or label" aria-label="Search Card Bank by number, email, retailer or label"><div class="buttons" data-bulk-cards hidden><button type="button" class="btn secondary slim" data-card-select-page>Select All on Page</button><button type="button" class="btn plain slim" data-card-clear>Clear selection</button><button type="button" class="btn primary slim" data-bulk-set-hard disabled>Set Hard Card for selected</button><button type="button" class="btn secondary slim" data-bulk-unset-hard disabled>Remove Hard Card for selected</button><span data-card-selected-count role="status"></span></div><div id="workshopVaultRows"></div><div class="buttons"><button class="btn slim plain" data-prev type="button">Previous</button><span data-page></span><button class="btn slim plain" data-next type="button">Next</button></div><div id="workshopVaultForm" hidden></div><p id="workshopVaultStatus" role="status"></p></div>`;
- d.body.append(modal);let vaultScope=null,vaultData=null,tab='cards',page=0,vaultTicket=0,selectedCards=new Set();
+ <div class="buttons"><button class="btn secondary slim" data-tab="cards" type="button">Cards</button><button class="btn secondary slim" data-tab="addresses" type="button">Addresses</button><button class="btn secondary slim" data-tab="profiles" type="button">In Progress</button><button class="btn secondary slim" data-tab="completed" type="button">Completed Profiles</button><button class="btn primary slim" data-add type="button">+ Add card</button></div><input id="workshopVaultSearch" type="search" placeholder="Search card number, linked email, retailer or label" aria-label="Search Card Bank by number, email, retailer or label"><div class="buttons" data-bulk-cards hidden><button type="button" class="btn secondary slim" data-reconcile-cards>Review missing Card Bank entries</button><span data-bank-summary role="status"></span><button type="button" class="btn secondary slim" data-card-select-page>Select All on Page</button><button type="button" class="btn plain slim" data-card-clear>Clear selection</button><button type="button" class="btn primary slim" data-bulk-set-hard disabled>Set Hard Card for selected</button><button type="button" class="btn secondary slim" data-bulk-unset-hard disabled>Remove Hard Card for selected</button><span data-card-selected-count role="status"></span></div><div id="workshopVaultRows"></div><div class="buttons"><button class="btn slim plain" data-prev type="button">Previous</button><span data-page></span><button class="btn slim plain" data-next type="button">Next</button></div><div id="workshopVaultForm" hidden></div><p id="workshopVaultStatus" role="status"></p></div>`;
+ d.body.append(modal);let vaultScope=null,vaultData=null,tab='cards',page=0,vaultTicket=0,selectedCards=new Set(),bankRepairBusy=false;
  const vnote=(s,error=false)=>{$('workshopVaultStatus').textContent=s;$('workshopVaultStatus').classList.toggle('profileBankError',error);};
+ // A distinct card appears once in cardPool, even when several retailer profiles
+ // use it. Only exact vault-scoped profile records without a saved bank entry
+ // qualify for this optional, explicit repair.
+ const missingBankEntries=()=> (vaultData?.cardPool||[]).filter(card=>!card.fromSavedBank&&typeof card.id==='string'&&card.id.startsWith('profile:'));
  const field=(name,label,type='text',extra='')=>`<label>${label}<input name="${name}" type="${type}" autocomplete="off" ${extra}></label>`;
  async function refreshVault(){const ticket=++vaultTicket,scope={...vaultScope};const data=await api.assets({...scope,showFullCards:true});if(ticket!==vaultTicket||modal.hidden)return;vaultData=data;renderVault();}
- function renderVault(){const q=$('workshopVaultSearch').value.toLowerCase();const rows=(tab==='cards'?(vaultData?.cardPool||[]):tab==='profiles'?(vaultData?.profiles||[]).filter(x=>x.stage!=='completed'):tab==='completed'?(vaultData?.profiles||[]).filter(x=>x.stage==='completed'):(vaultData?.[tab]||[])).filter(x=>[x.label,x.email,x.fullNumber,x.last4,x.address1,x.city,...(x.linkedAccounts||[]).flatMap(a=>[a.email,retail[a.retailer]||a.retailer])].filter(Boolean).join(' ').toLowerCase().includes(q));const pages=Math.max(1,Math.ceil(rows.length/10));page=Math.min(page,pages-1);modal.querySelector('[data-bulk-cards]').hidden=tab!=='cards';$('workshopVaultRows').replaceChildren();modal.querySelector('[data-page]').textContent=(page+1)+' / '+pages+' | '+rows.length+' items';modal.querySelector('[data-prev]').disabled=page===0;modal.querySelector('[data-next]').disabled=page+1===pages;
+ function renderVault(){const q=$('workshopVaultSearch').value.toLowerCase();const rows=(tab==='cards'?(vaultData?.cardPool||[]):tab==='profiles'?(vaultData?.profiles||[]).filter(x=>x.stage!=='completed'):tab==='completed'?(vaultData?.profiles||[]).filter(x=>x.stage==='completed'):(vaultData?.[tab]||[])).filter(x=>[x.label,x.email,x.fullNumber,x.last4,x.address1,x.city,...(x.linkedAccounts||[]).flatMap(a=>[a.email,retail[a.retailer]||a.retailer])].filter(Boolean).join(' ').toLowerCase().includes(q));const pages=Math.max(1,Math.ceil(rows.length/10));page=Math.min(page,pages-1);modal.querySelector('[data-bulk-cards]').hidden=tab!=='cards';
+  const missingBank=missingBankEntries(),savedBank=(vaultData?.cardPool||[]).filter(card=>card.fromSavedBank).length;
+  const reconcile=modal.querySelector('[data-reconcile-cards]');
+  reconcile.textContent='Review / restore '+missingBank.length+' missing bank '+(missingBank.length===1?'entry':'entries');
+  reconcile.disabled=bankRepairBusy||tab!=='cards'||!missingBank.length;
+  reconcile.hidden=tab!=='cards'||!missingBank.length;
+  modal.querySelector('[data-bank-summary]').textContent=savedBank+' in Card Bank · '+missingBank.length+' saved in profiles only';
+  $('workshopVaultRows').replaceChildren();modal.querySelector('[data-page]').textContent=(page+1)+' / '+pages+' | '+rows.length+' items';modal.querySelector('[data-prev]').disabled=page===0;modal.querySelector('[data-next]').disabled=page+1===pages;
   modal.querySelector('[data-add]').textContent=tab==='cards'?'+ Add card':tab==='addresses'?'+ Add address':'+ Create Blank Profile';
   for(const button of modal.querySelectorAll('[data-tab]'))button.setAttribute('aria-pressed',String(button.dataset.tab===tab));
   const shown=rows.slice(page*10,page*10+10);
@@ -331,7 +342,9 @@
     linked.textContent=r.linkedAccounts?.length?r.linkedAccounts.map(a=>a.email+' · '+(retail[a.retailer]||a.retailer)).join(' | '):'Unused · no linked retailer accounts';
     const meta=d.createElement('small');meta.style.display='block';
     meta.textContent=[r.expiry,r.hardCard?'Hard Card':'Regular card',r.status,r.availableRetailers?.length?'Available for '+r.availableRetailers.map(x=>retail[x]||x).join(', '):'Not eligible for additional profiles'].filter(Boolean).join(' · ');
-    text.append(heading,linked,meta);
+    const bankStatus=d.createElement('small');bankStatus.style.display='block';
+    bankStatus.textContent=r.fromSavedBank?'Saved in Card Bank':'Saved in profile only · separate bank entry missing';
+    text.append(heading,linked,meta,bankStatus);
     const cb=d.createElement('input');cb.type='checkbox';cb.setAttribute('aria-label','Select card ending '+r.last4);
     cb.checked=selectedCards.has(r.id);cb.onchange=()=>{if(cb.checked)selectedCards.add(r.id);else selectedCards.delete(r.id);renderVault();};line.prepend(cb);
     const toggle=d.createElement('button');toggle.type='button';toggle.className='btn slim secondary';toggle.textContent=r.hardCard?'Remove Hard Card':'Set Hard Card';
@@ -344,9 +357,9 @@
     const stored=(vaultData?.cards||[]).find(x=>'saved:'+x.id===r.id);
     if(stored){
      const edit=d.createElement('button');edit.type='button';edit.className='btn slim secondary';edit.textContent='View / Edit';edit.onclick=()=>openResourceForm('cards',stored);
-     const remove=d.createElement('button');remove.type='button';remove.className='btn slim plain';remove.textContent='Remove saved copy';
+     const remove=d.createElement('button');remove.type='button';remove.className='btn slim plain';remove.textContent='Remove saved bank copy';
      remove.onclick=async()=>{
-      if(!confirm('Remove this saved card? Existing profiles keep their independent data.'))return;
+      if(!confirm('Remove the separate Card Bank copy? The card remains in its existing profiles, but is no longer available as a saved bank resource.'))return;
       remove.disabled=true;
       try{await api.manageResource({...vaultScope,kind:'card',operation:'remove',resourceId:stored.id});selectedCards.clear();await refreshVault();vnote('Saved card removed from this vault.');}
       catch(e){vnote(e.message,true);remove.disabled=false;}
@@ -361,11 +374,11 @@
       d.dispatchEvent(new CustomEvent('aco-studio:edit-profile',{detail:{...owner,profileId}}));
      };
      line.append(view);
-     const save=d.createElement('button');save.type='button';save.className='btn slim secondary';save.textContent='Add to saved Card Bank';
+     const save=d.createElement('button');save.type='button';save.className='btn slim secondary';save.textContent='Restore bank entry';
      save.onclick=async()=>{
-      if(!confirm('Add this imported-profile card to the current vault? The separate profile Security Code stays on its original profile.'))return;
+      if(!confirm('Restore the missing saved Card Bank entry from this existing profile? Exact-number duplicates are skipped. Linked profiles and their separate references remain unchanged.'))return;
       save.disabled=true;
-      try{await api.addProfileCardToBank({...vaultScope,profileId:r.id.slice(8),confirmed:true});selectedCards.clear();await refreshVault();vnote('Card copied to this vault’s saved bank.');}
+      try{await api.addProfileCardToBank({...vaultScope,profileId:r.id.slice(8),confirmed:true});selectedCards.clear();await refreshVault();vnote('Saved Card Bank entry restored without changing the original profile.');}
       catch(e){vnote(e.message,true);save.disabled=false;}
      };line.append(save);
     }
@@ -394,6 +407,36 @@
    $('workshopVaultRows').append(line);
   }if(!rows.length)$('workshopVaultRows').textContent='Nothing saved here yet. Use the Add button.';
  }
+ // This is deliberately owner-confirmed rather than automatic on every load:
+ // a removed saved copy must not reappear silently, and imported profiles
+ // remain intact even when a bank repair cannot be completed.
+ modal.querySelector('[data-reconcile-cards]').onclick=async()=>{
+  if(bankRepairBusy||!vaultData||!vaultScope)return;
+  const scope=vaultScope,owner={...scope},missing=missingBankEntries().map(card=>({id:card.id,last4:card.last4}));
+  if(!missing.length)return vnote('Every listed card already has a saved Card Bank entry.');
+  if(!confirm('Restore '+missing.length+' missing Card Bank '+(missing.length===1?'entry':'entries')+' from cards already stored in this exact vault? This adds only missing, exact-number bank copies; existing profiles, Hard Card settings and independent references are preserved.'))return;
+  bankRepairBusy=true;renderVault();
+  let restored=0,alreadySaved=0,failed=0;const failures=[];
+  try{
+   for(let i=0;i<missing.length;i++){
+    if(modal.hidden||vaultScope!==scope){vnote('Bank reconciliation stopped because the selected vault changed.');break;}
+    const card=missing[i];
+    try{
+     const result=await api.addProfileCardToBank({...owner,profileId:card.id.slice(8),confirmed:true});
+     if(result?.alreadyExists===true)alreadySaved++;
+     else if(result?.saved===true)restored++;
+     else throw Error('The saved bank copy was not verified.');
+    }catch(error){failed++;if(failures.length<5)failures.push('ending '+card.last4+': '+String(error.message||error));}
+    vnote('Card Bank reconciliation '+(i+1)+'/'+missing.length+' · '+restored+' restored · '+alreadySaved+' already saved · '+failed+' need review');
+   }
+  }finally{
+   bankRepairBusy=false;
+   if(!modal.hidden&&vaultScope===scope){
+    try{await refreshVault();vnote('Card Bank reconciliation: '+restored+' restored, '+alreadySaved+' already saved, '+failed+' need review.'+(failures.length?' '+failures.join(' | '):''),failed>0);}
+    catch(error){vnote('Reconciliation results could not be refreshed: '+String(error.message||error),true);}
+   }
+  }
+ };
  async function openVault(p=fallback(),initial='cards',search=''){try{await unlock(p);vaultScope={scope:p.scope,customerId:p.customerId||null};tab=initial;page=0;selectedCards.clear();vaultData=null;modal.style.zIndex='11600';modal.hidden=false;$('workshopVaultOwner').textContent=ownerText(p)+' | No transfers to another vault';$('workshopVaultSearch').value=String(search||'');$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;vnote('Loading this vault...');await refreshVault();vnote('Full saved card numbers and expiration dates are shown in this vault. "Unused" means not assigned by this app or present in its saved profiles.');modal.querySelector('[data-close]').focus();}catch(e){note(e.message,true);}}
  function closeVault(){d.querySelectorAll('.profileFullDetails').forEach(x=>x.remove());vaultTicket++;modal.hidden=true;vaultData=null;selectedCards.clear();$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;if(checked().card||checked().address)void loadAssets();}
  for(const b of modal.querySelectorAll('[data-tab]'))b.addEventListener('click',()=>{tab=b.dataset.tab;page=0;selectedCards.clear();$('workshopVaultForm').replaceChildren();$('workshopVaultForm').hidden=true;renderVault();});
