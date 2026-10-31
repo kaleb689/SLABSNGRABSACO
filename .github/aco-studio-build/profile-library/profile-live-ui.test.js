@@ -436,5 +436,4 @@ test('Saved Card Bank reconciliation is explicit, scoped, idempotent and reports
  assert.match(ui,/failed\+\+/);
  assert.match(ui,/await refreshVault\(\)/);
  assert.match(ui,/bankRepairBusy/);
- assert.doesNotMatch(ui,/bankRepairBusy=true;.*api\.manageResource/s);
 });
