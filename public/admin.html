@@ -24050,8 +24050,13 @@ async function loadMembershipTools() {
       membershipApi("/api/admin/discount-codes")
     ]);
     const customers = document.getElementById("giftTierCustomer");
+    // Background refreshes rebuild this list; keep the customer already picked.
+    const selectedCustomer = customers.value;
     customers.replaceChildren(new Option("Select customer", ""));
     for (const customer of customerData.customers || []) customers.add(new Option(customer.email, customer.id));
+    if (selectedCustomer && [...customers.options].some(option => option.value === selectedCustomer)) {
+      customers.value = selectedCustomer;
+    }
     const giftList = document.getElementById("giftTierList");
     giftList.replaceChildren();
     for (const gift of (giftData.memberships || []).slice().reverse()) {

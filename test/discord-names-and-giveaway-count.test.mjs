@@ -72,3 +72,31 @@ test("admin website shows the Discord name under the customer's name and heading
   assert.match(render, /<\/div>\s*\$\{discordLine\}\s*<small>/);
   assert.match(render, /<\/h2>\s*\$\{discordLine\}/);
 });
+
+test("gift customer dropdown keeps the picked customer when the admin page refreshes", async () => {
+  const admin = read("public/admin.html");
+  const code = slice(admin, "async function loadMembershipTools() {", "    const giftList = document.getElementById(\"giftTierList\");");
+  class Option { constructor(text, value) { this.text = text; this.value = value; } }
+  class Select {
+    constructor() { this.options = []; this.index = 0; }
+    get value() { return this.options[this.index]?.value ?? ""; }
+    set value(v) { const i = this.options.findIndex(o => o.value === v); this.index = i < 0 ? 0 : i; }
+    replaceChildren(...items) { this.options = items; this.index = 0; }
+    add(option) { this.options.push(option); }
+  }
+  const select = new Select();
+  let customers = [{ id: "a", email: "a@x.com" }, { id: "b", email: "dkartiganer5@gmail.com" }];
+  const context = {
+    Option, out: {},
+    document: { getElementById: () => select },
+    membershipApi: async path => path.includes("giftable") ? { customers } : {}
+  };
+  vm.runInNewContext(code + "\nreturn customers; } catch (error) { throw error; } }\nout.load = loadMembershipTools;", context);
+  await context.out.load();
+  select.value = "b";
+  await context.out.load();
+  assert.equal(select.value, "b");
+  customers = [{ id: "a", email: "a@x.com" }];
+  await context.out.load();
+  assert.equal(select.value, "");
+});
