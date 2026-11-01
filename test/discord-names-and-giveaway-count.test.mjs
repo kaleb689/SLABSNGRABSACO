@@ -100,3 +100,32 @@ test("gift customer dropdown keeps the picked customer when the admin page refre
   await context.out.load();
   assert.equal(select.value, "");
 });
+
+test("gifting a tier sends the customer one in-app notice that the app can push", async () => {
+  const server = read("server.js");
+  const start = server.indexOf("    // One in-app notice per gift request;");
+  const end = server.indexOf("    return res.status(201).json({ok:true,membership:grant});", start);
+  assert.ok(start > -1 && end > start);
+  const account = { id: "cust-1", notifications: [] };
+  let saves = 0;
+  const context = {
+    crypto: { randomUUID: () => "note-" + (saves + 1) },
+    customerAccountId: "cust-1", requestId: "req-123456789abc", quantity: 1, unit: "weeks",
+    grant: { tierName: "Pro", expiresAt: "2026-11-15T15:36:32.000Z", billingDeferredUntil: "2026-11-15T15:36:32.000Z" },
+    getCustomerAccounts: async () => [account],
+    saveCustomerAccounts: async () => { saves++; },
+    customerNotifications: a => a.notifications,
+    console, out: {}
+  };
+  vm.runInNewContext("out.run = async () => {\n" + server.slice(start, end) + "};", context);
+  await context.out.run();
+  await context.out.run(); // the same gift request must not notify twice
+  assert.equal(account.notifications.length, 1);
+  assert.equal(saves, 1);
+  const notice = account.notifications[0];
+  assert.equal(notice.kind, "membership_gifted");
+  assert.equal(notice.title, "Membership gifted");
+  assert.match(notice.message, /^You've been gifted 1 week of Pro membership through November 15, 2026\. Your next Stripe renewal is deferred/);
+  // New account notices are what the app turns into phone pushes.
+  assert.match(read("order-notifications.js"), /for \(const notification of account\.notifications \|\| \[\]\)[\s\S]*enqueue\(account\.id/);
+});

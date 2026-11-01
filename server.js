@@ -16324,6 +16324,29 @@ app.post("/api/admin/gifted-memberships", requireAdmin, async (req, res) => {
     };
     records.push(grant);
     await saveGiftedMemberships(records);
+    // One in-app notice per gift request; the app pushes new notices to the
+    // customer's phone when they have notifications turned on.
+    try {
+      const freshAccounts=await getCustomerAccounts();
+      const notifyAccount=freshAccounts.find(x=>String(x.id)===customerAccountId);
+      if(notifyAccount){
+        const notes=customerNotifications(notifyAccount);
+        if(!notes.some(x=>x.kind==="membership_gifted"&&x.giftRequestId===requestId)){
+          const time=new Date().toISOString();
+          const length=quantity+" "+(unit==="weeks"?(quantity===1?"week":"weeks"):(quantity===1?"month":"months"));
+          const through=new Date(grant.expiresAt).toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
+          notes.push({id:crypto.randomUUID(),kind:"membership_gifted",giftRequestId:requestId,
+            title:"Membership gifted",
+            message:"You've been gifted "+length+" of "+grant.tierName+" membership through "+through+"."+
+              (grant.billingDeferredUntil?" Your next Stripe renewal is deferred until this date. No extra payment was charged.":""),
+            createdAt:time,updatedAt:time});
+          notifyAccount.updatedAt=time;
+          await saveCustomerAccounts(freshAccounts);
+        }
+      }
+    } catch(error) {
+      console.error("Gifted membership notice failed:",error?.message||error);
+    }
     return res.status(201).json({ok:true,membership:grant});
   }catch(error){
     console.error("Gifted membership creation failed:",error?.message||error);
