@@ -1491,6 +1491,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       await cleanupOrphanedTicketAlerts().catch(error =>
         console.error("Discord old ticket alert cleanup:", error.message));
       await finishDueGiveaways();
+      await addCountButtonToOpenGiveaways().catch(error =>
+        console.error("Discord giveaway count button:", error.message));
       discordCommunityStatus.introReady = true;
       discordCommunityStatus.rulesReady = true;
       discordCommunityStatus.giveawayReady = true;
@@ -2016,19 +2018,52 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const id = crypto.randomBytes(8).toString("hex");
       const endAt = Date.now() + minutes * 60000;
       const content = `🎁 **${title}**\nEnter with the button below. Closes <t:${Math.floor(endAt / 1000)}:R>. ${winnerCount} winner${winnerCount === 1 ? "" : "s"} will be drawn at random.`;
-      const message = await sendMessage(giveawayChannelId, content, { components: [{ type: 1, components: [
-        { type: 2, style: 1, label: "Enter Giveaway", custom_id: `giveaway:enter:${id}` }
-      ] }] });
+      const message = await sendMessage(giveawayChannelId, content, { components: openGiveawayComponents(id) });
       try {
         const records = await readGiveaways();
         records.push({ id, guildId, channelId: giveawayChannelId, messageId: message.id, title,
-          creatorId, endAt, winnerCount, entrants: [], status: "open" });
+          creatorId, endAt, winnerCount, entrants: [], status: "open", countButtonAdded: true });
         await writeGiveaways(records);
       } catch (error) {
         await api(`/channels/${giveawayChannelId}/messages/${message.id}`, "DELETE").catch(() => {});
         throw error;
       }
       return message;
+    });
+  }
+  // The entry count button replies privately and only to the server owner.
+  function openGiveawayComponents(id) {
+    return [{ type: 1, components: [
+      { type: 2, style: 1, label: "Enter Giveaway", custom_id: `giveaway:enter:${id}` },
+      { type: 2, style: 2, label: "Entry count (owner)", custom_id: `giveaway:count:${id}` }
+    ] }];
+  }
+  async function giveawayEntryCount(id, messageId) {
+    const records = await readGiveaways();
+    const item = records.find(record => record.id === id && record.guildId === guildId &&
+      record.channelId === giveawayChannelId && record.messageId === messageId);
+    if (!item) return "This giveaway is unavailable.";
+    const count = Array.isArray(item.entrants) ? item.entrants.length : 0;
+    const open = item.status === "open" && Date.now() < item.endAt;
+    return `**${item.title}**: ${count} ${count === 1 ? "person has" : "people have"} entered` +
+      (open ? ` so far. Closes <t:${Math.floor(item.endAt / 1000)}:R>.` : `. This giveaway has closed.`);
+  }
+  // Posts made before the count button existed get it added once on startup.
+  async function addCountButtonToOpenGiveaways() {
+    if (!giveawayChannelId || !guildId) return;
+    await withGiveaways(async () => {
+      const records = await readGiveaways();
+      let changed = false;
+      for (const item of records.filter(record => record.guildId === guildId &&
+        record.status === "open" && record.endAt > Date.now() && !record.countButtonAdded)) {
+        try {
+          await api(`/channels/${item.channelId}/messages/${item.messageId}`, "PATCH",
+            { components: openGiveawayComponents(item.id) });
+        } catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
+        item.countButtonAdded = true;
+        changed = true;
+      }
+      if (changed) await writeGiveaways(records);
     });
   }
   async function enterGiveaway(id, userId, messageId) {
@@ -2067,7 +2102,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         try {
           await api(`/channels/${item.channelId}/messages/${item.messageId}`, "PATCH", {
             components: [{ type: 1, components: [{ type: 2, style: 2, label: "Giveaway closed",
-              custom_id: `giveaway:enter:${item.id}`, disabled: true }] }]
+              custom_id: `giveaway:enter:${item.id}`, disabled: true },
+              { type: 2, style: 2, label: "Entry count (owner)", custom_id: `giveaway:count:${item.id}` }] }]
           });
         } catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
         const result = item.winners.length
@@ -3734,6 +3770,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", {
           content: `Giveaway posted: https://discord.com/channels/${guildId}/${giveawayChannelId}/${created.id}`
         });
+      }
+      if (d.type === 3 && /^giveaway:count:[0-9a-f]{16}$/.test(d.data?.custom_id || "")) {
+        if (!ownerId || userId !== ownerId) return await reply("Only the server owner can view the entry count.");
+        return await reply(await giveawayEntryCount(d.data.custom_id.split(":")[2], d.message?.id));
       }
       if (d.type === 3 && /^giveaway:enter:[0-9a-f]{16}$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== giveawayChannelId) return await reply("Use the Enter Giveaway button in #giveaways.");

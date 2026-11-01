@@ -100,6 +100,9 @@ body.sng-admin-app #workspace .admin-customer-identity strong {
 body.sng-admin-app #workspace .admin-customer-email {
   margin-top:6px!important;font-size:11px!important;line-height:1.45;
 }
+body.sng-admin-app #workspace .admin-customer-discord {
+  display:block;margin-top:4px;color:#8ea1ff!important;font-size:12px!important;font-weight:800;
+}
 body.sng-admin-app #workspace .admin-customer-status {
   display:block;color:#f0bd91!important;font-size:10px!important;
 }

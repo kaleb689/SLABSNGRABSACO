@@ -181,6 +181,8 @@ function metric(label,value){return '<div class="metric"><small>'+esc(label)+'</
 function panel(title,body){return '<section class="panel"><h2>'+esc(title)+'</h2>'+body+'</section>';}
 function collapsiblePanel(title,body){return '<details class="panel admin-overview-disclosure"><summary>'+esc(title)+'</summary><div class="admin-overview-disclosure-content">'+body+'</div></details>';}
 function customerName(x){const p=x.profile||{};return [p.firstName,p.lastName].filter(Boolean).join(" ")||p.profileName||p.email||"Customer";}
+// Discord name from the linked website account, shown under the real name.
+function customerDiscordLine(x){const name=String(x?.discordUsername||"").trim().replace(/^@+/,"");return name?'<small class="admin-customer-discord">Discord: @'+esc(name)+'</small>':"";}
 function customerMoney(cents){
   return cents==null||!Number.isFinite(Number(cents))?"Unavailable":
     new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(cents)/100);
@@ -316,7 +318,7 @@ if(tab==="overview"){
     .sort((a,b)=>(Date.parse(b.accountCreatedAt||b.createdAt)||0)-(Date.parse(a.accountCreatedAt||a.createdAt)||0))
     .slice(0,5);
   const recentSignupRows=recentSignups.map(person=>
-    '<article class="item admin-new-signup"><strong>'+esc(customerName(person))+'</strong>'+
+    '<article class="item admin-new-signup"><strong>'+esc(customerName(person))+'</strong>'+customerDiscordLine(person)+
     '<small>'+esc(person.profile?.email||"")+' · Registered · No paid membership</small>'+
     '<button type="button" data-view="'+esc(person.customerAccountId||person.id)+'">VIEW CUSTOMER PAGE ↗</button></article>'
   ).join("")||'<p>New accounts without a membership will appear here.</p>';
@@ -761,7 +763,7 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
         return '<article class="item admin-customer-tier-row admin-customer-'+tier.color+'">'+
           '<div class="admin-customer-topline"><div class="admin-customer-identity">'+
           '<small class="admin-customer-eyebrow">CUSTOMER ACCOUNT</small>'+
-          '<strong>'+esc(customerName(x))+'</strong>'+
+          '<strong>'+esc(customerName(x))+'</strong>'+customerDiscordLine(x)+
           '<small class="admin-customer-email">'+esc(x.profile?.email||"")+'</small>'+
           (status ? '<small class="admin-customer-status">'+esc(status)+'</small>' : '')+'</div>'+
           '<div class="admin-customer-tier-badge"><small>MEMBERSHIP TIER</small>'+
@@ -797,7 +799,7 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
           return '<article class="item admin-customer-tier-row admin-customer-standard">'+
             '<div class="admin-customer-topline"><div class="admin-customer-identity">'+
             '<small class="admin-customer-eyebrow">CUSTOMER ACCOUNT</small>'+
-            '<strong>'+esc(customerName(x))+'</strong>'+
+            '<strong>'+esc(customerName(x))+'</strong>'+customerDiscordLine(x)+
             '<small class="admin-customer-email">'+esc(x.profile?.email||x.email||"")+'</small></div>'+
             '<div class="admin-customer-tier-badge"><small>MEMBERSHIP TIER</small>'+
             '<strong>Details unavailable</strong></div></div>'+
@@ -811,7 +813,7 @@ if(tab==="customers"){c.innerHTML='<p class="admin-customer-summary">'+registere
       // Never leave an empty results area when a customer record is malformed.
       console.error("Admin customer directory could not be rendered",error);
       output.innerHTML=registeredCustomerList.slice(0,150).map(x=>
-        '<article class="item"><strong>'+esc(customerName(x))+'</strong>'+
+        '<article class="item"><strong>'+esc(customerName(x))+'</strong>'+customerDiscordLine(x)+
         '<small>'+esc(x.profile?.email||x.email||"")+'</small>'+
         '<button type="button" data-view="'+esc(x.customerAccountId||x.id)+'">VIEW CUSTOMER PAGE ↗</button></article>'
       ).join("")||'<p class="error">Could not display customers. Tap Refresh to retry.</p>';

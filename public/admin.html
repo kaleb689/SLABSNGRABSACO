@@ -2035,6 +2035,12 @@
        OG MEMBER BADGE
     ========================================= */
 
+    .admin-customer-discord {
+      display: block;
+      color: #8ea1ff;
+      font-weight: 700;
+    }
+
     .admin-customer-name-line {
       display: flex;
       align-items: center;
@@ -6959,6 +6965,15 @@ function renderOrder(x) {
     profile.profileName ||
     "Customer";
 
+  // Discord name from the linked website account, shown under the real name.
+  const discordName =
+    String(x.discordUsername || "").trim().replace(/^@+/, "");
+
+  const discordLine =
+    discordName
+      ? `<small class="admin-customer-discord">Discord: @${escapeHtml(discordName)}</small>`
+      : "";
+
   const address =
     [
       profile.address,
@@ -7071,6 +7086,8 @@ function renderOrder(x) {
             ${`<button type="button" class="admin-view-customer-button" data-view-as-user="${escapeHtml(x.customerAccountId || x.id)}" title="Open this customer's page">VIEW CUSTOMER PAGE ↗</button>`}
           </div>
 
+          ${discordLine}
+
           <small>
             ${escapeHtml(
               profile.email || ""
@@ -7171,6 +7188,8 @@ function renderOrder(x) {
             <h2>
               ${escapeHtml(customerName)}
             </h2>
+
+            ${discordLine}
 
             <div class="order-id">
               Order ID:

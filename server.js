@@ -17081,6 +17081,10 @@ if (
           successFullHistory:
             customerAccountMap.get(String(record.customerAccountId))?.successFullHistory === true,
 
+          // Display only: the Discord name saved on the linked website account.
+          discordUsername:
+            String(customerAccountMap.get(String(record.customerAccountId))?.discordUsername || "").trim(),
+
           ogMember,
 
           linkedProfileCount,
@@ -17224,6 +17228,9 @@ app.get(
 
     accountOnly:
       true,
+
+    discordUsername:
+      String(account.discordUsername || "").trim(),
 
     profile: {
       profileName:
