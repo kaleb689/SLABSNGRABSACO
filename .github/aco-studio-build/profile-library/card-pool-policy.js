@@ -71,17 +71,26 @@ function checkAllocation(rows,retailer,cards,settings,{excludeProfileIds=[]}={})
  }
  return true;
 }
+function cardType(n){
+ if(/^4/.test(n))return 'Visa';
+ const two=Number(n.slice(0,2)),four=Number(n.slice(0,4));
+ if((two>=51&&two<=55)||(four>=2221&&four<=2720))return 'Mastercard';
+ if(/^3[47]/.test(n))return 'American Express';
+ if(/^6(?:011|5|4[4-9])/.test(n))return 'Discover';
+ return '';
+}
 function inventory({rows=[],savedCards=[],settings={}}={}){
  const used=profileUses(rows),cards=new Map();
  function add(n,record,source){
   n=normalized(n);if(!n)return;
   let group=cards.get(n);
-  if(!group){group={number:n,savedRefs:[],profileRefs:[],expiry:'',name:'',brand:'',sourceRefs:[]};cards.set(n,group);}
+  if(!group){group={number:n,savedRefs:[],profileRefs:[],expiry:'',name:'',brand:'',bank:'',sourceRefs:[]};cards.set(n,group);}
   if(source==='saved')group.savedRefs.push(record.id);
   else group.profileRefs.push(record.id);
   const exp=expiry(record);if(exp)group.expiry=group.expiry||exp;
   group.name=group.name||String(record.label||record.cardholder||record.holder||'').slice(0,100);
   group.brand=group.brand||String(record.brand||record.type||'').slice(0,30);
+  group.bank=group.bank||String(record.bank||'').slice(0,40);
  }
  for(const card of savedCards){add(card.number,card,'saved');}
  for(const row of rows){add(fromProfile(row),row,'profile');}
@@ -91,7 +100,7 @@ function inventory({rows=[],savedCards=[],settings={}}={}){
   const availableRetailers=isHard?RETAILERS.filter(r=>!usedRetailers.includes(r)):uses.length?[]:[...RETAILERS];
   const duplicateRetailers=isHard?RETAILERS.filter(r=>uses.filter(x=>x.retailer===r).length>1):(uses.length>1?['all']:[]);
   output.push({id:card.savedRefs.length?'saved:'+card.savedRefs[0]:'profile:'+card.profileRefs[0],last4:n.slice(-4),
-    label:card.name||'Card ending '+n.slice(-4),expiry:card.expiry,brand:card.brand,
+    label:card.name||'Card ending '+n.slice(-4),expiry:card.expiry,brand:card.brand&&card.brand!=='Other'?card.brand:cardType(n),bank:card.bank,
     hardCard:isHard,linked:usedRetailers,linkedAccounts:uses.map(x=>({email:x.email,retailer:x.retailer})),linkedCount:uses.length,availableRetailers,
     status:uses.length?'Linked '+usedRetailers.map(r=>({pokemoncenter:'PKC',sams:"Sam's"}[r]||r)).join(', '):'Unused',
     hasConflict:duplicateRetailers.length>0,duplicateRetailers,fromSavedBank:card.savedRefs.length>0});

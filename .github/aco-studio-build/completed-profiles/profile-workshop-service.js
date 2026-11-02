@@ -5,6 +5,8 @@ function ids(v,label){if(!Array.isArray(v)||!v.length||v.length>500||v.some(x=>t
 const cardKey=(scope,id)=>scope==='personal'?'personal:owner':id;
 const same=(a,b)=>Fields.hash(a)===Fields.hash(b);
 function numberOf(row){return String(row?.cc_number||row?.card?.number||'').replace(/[ -]/g,'');}
+const CARD_TYPES=['Visa','Mastercard','American Express','Discover','JCB','Diners Club','Other'];
+function chosenBrand(choice,number){return CARD_TYPES.includes(choice)?choice:brandFromNumber(number);}
 function brandFromNumber(value){
  const n=String(value||'').replace(/\D/g,'');
  if(/^4\d{6,}$/.test(n))return 'Visa';
@@ -177,7 +179,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    const eligibleRetailers=isHard?CardPolicy.RETAILERS.filter(ret=>!assignedUses.some(usage=>usage.retailer===ret)):assignedUses.length?[]:[...CardPolicy.RETAILERS];
    const unresolved=assigned.has(x.id)&&!assignedUses.length;
    const eligible=!unresolved&&(!p.retailer||!CardPolicy.RETAILERS.includes(p.retailer)?eligibleRetailers.length>0:eligibleRetailers.includes(p.retailer));
-   return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:brandFromNumber(raw.number),customReference:savedReferences.get(x.id)||''}:{}),usedCount:used,unused:eligible,hardCard:isHard,eligibleRetailers:unresolved?[]:eligibleRetailers,previouslyAssigned:assigned.has(x.id)};
+   return {...x,label,...(p.showFullCards===true?{number:raw.number,cardholder:displayHolder,expMonth:raw.month,expYear:raw.year,brand:raw.type&&raw.type!=='Other'?raw.type:brandFromNumber(raw.number),bank:raw.bank||'',customReference:savedReferences.get(x.id)||''}:{}),usedCount:used,unused:eligible,hardCard:isHard,eligibleRetailers:unresolved?[]:eligibleRetailers,previouslyAssigned:assigned.has(x.id)};
   });
   const result={scope,customerId:id,cardPool,addresses:a.addresses.map(x=>({...x,uses:rows.filter(r=>r.assetRefs?.addressId===x.id).length})),cards,profiles:rows.map(x=>({id:x.id,label:x.label,email:x.email,retailer:x.retailer,bank:x.bank||'working',status:x.status,stage:x.stage||'in-progress',missing:require('./profile-completion-core').inspect(x).missing,revision:x.revision,createdInWorkshop:x.source==='owner-created-profile'}))};
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed while loading.');return result;
@@ -187,7 +189,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   const current=await vault.list(key),number=String(p?.card?.number||'').replace(/\D/g,'');
   if(!/^\d{12,19}$/.test(number))throw Error('Enter a valid card number.');
   const next=(current?.cards?.length||0)+1;
-  const card={...p.card,number,label:'Unlinked card '+next,cardholder:String(p?.card?.cardholder||'').trim()||'Unassigned',brand:brandFromNumber(number)};
+  const card={...p.card,number,label:'Unlinked card '+next,cardholder:String(p?.card?.cardholder||'').trim()||'Unassigned',brand:chosenBrand(p?.card?.brand,number),bank:String(p?.card?.bank||'').trim().slice(0,40)};
   delete card.id;
   return vault.addWorkshopCard(key,card,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before save.');});
  }
@@ -255,7 +257,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    const number=String(p?.value?.number||'').replace(/\D/g,'');
    if(!/^\d{12,19}$/.test(number))throw Error('Enter a valid card number.');
    const full=(await vault.selectedForJig(key,[resourceId]))[0];
-   return vault.updateWorkshopCard(key,resourceId,{...p.value,label:item.label||'Unlinked card',cardholder:full.cardholder||'Unassigned',brand:brandFromNumber(number),number},beforeWrite);
+   return vault.updateWorkshopCard(key,resourceId,{...p.value,label:item.label||'Unlinked card',cardholder:full.cardholder||'Unassigned',brand:chosenBrand(p?.value?.brand,number),bank:String(p?.value?.bank??full.bank??'').trim().slice(0,40),number},beforeWrite);
   }
   const inventory=await bank(scope,id),item=(inventory.addresses||[]).find(x=>String(x.id)===resourceId);
   if(!item)throw Error('Saved address is no longer in this vault.');
