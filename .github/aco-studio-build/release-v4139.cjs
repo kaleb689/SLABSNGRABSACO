@@ -26,7 +26,7 @@ replace('profile-workshop-ui.js',"   $('workshopVaultRows').append(line);",`   i
 const p=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(p,'utf8'));
 if(pkg.version!=='4.13.5')throw Error('Expected the verified original source before release preparation');
 const version=process.env.ACO_VERSION;
-if(!/^4\.13\.[1-9][0-9]*$/.test(version||''))throw Error('Invalid release version');
+if(!/^4\.(?:1[3-9]|[2-9][0-9])\.(?:0|[1-9][0-9]*)$/.test(version||''))throw Error('Invalid release version');
 pkg.version=version;
 pkg.build.productName='ACO Studio';
 pkg.build.mac.artifactName='ACO-Studio-${version}-${arch}.${ext}';

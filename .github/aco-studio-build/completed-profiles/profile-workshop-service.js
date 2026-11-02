@@ -229,6 +229,16 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
     return {saved:true,hardCard:p.hard,last4:number.slice(-4),...scan};
   },check);
  }
+ // Release a saved card held only by a legacy distribution assignment.
+ async function releaseCard(e,p){
+  const {scope,id}=await access(e,p),generation=epoch(e);
+  if(p?.confirmed!==true||typeof p?.cardRef!=='string'||!/^saved:[a-z0-9-]{1,150}$/i.test(p.cardRef))throw Error('Confirm the saved card to release.');
+  const cardId=p.cardRef.slice(6),vault=cardVault(scope),key=cardKey(scope,id);
+  const [raw]=await vault.selectedForJig(key,[cardId]);
+  const rows=await profiles.fieldSnapshot(scope,id);
+  if(rows.some(r=>r.assetRefs?.cardId===cardId||numberOf(r.data)===raw.number))throw Error('This card is still used by a saved profile. Delete or change that profile first.');
+  return vault.releaseAssignment(key,cardId,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before release.');});
+ }
  // Imported profile cards become selectable saved-bank resources without
  // copying unrelated per-profile Security Code fields.
  async function addProfileCardToBank(e,p){
@@ -452,8 +462,8 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   if(!await confirmExport(e))return {cancelled:true};const ext=path.extname(entry.name),choice=await chooseSave(e,{name:entry.name,extension:ext.slice(1)});
   if(choice.canceled||!choice.filePath)return {cancelled:true};if(path.extname(choice.filePath).toLowerCase()!==ext)throw Error('Keep the selected profile format.');const latest=await profiles.preview(scope,id,p.profileId);if(latest.profile.revision!==v.profile.revision)throw Error('Profile changed before export. Try again.');guard(e,scope);await writeFile(choice.filePath,entry.text,{encoding:'utf8',mode:0o600});return {saved:true};
  }
- return Object.freeze({assets,addCard,addAddress,setHardCard,setHardCards,addProfileCardToBank,manageResource,emails,importEmails,generate,create,edit,load,preview,apply,save,exportFile,exportSaved,cancel});
+ return Object.freeze({assets,releaseCard,addCard,addAddress,setHardCard,setHardCards,addProfileCardToBank,manageResource,emails,importEmails,generate,create,edit,load,preview,apply,save,exportFile,exportSaved,cancel});
 }
-function registerWorkshop(options){const service=createWorkshop(options);for(const method of ['assets','addCard','addAddress','setHardCard','setHardCards','addProfileCardToBank','manageResource','emails','importEmails','generate','create','edit','load','preview','apply','save','exportFile','exportSaved'])options.ipcMain.handle('profile:workshop:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:workshop:cancel',(e,t)=>{options.requireOwner(e);return service.cancel(e,t);});return service;}
+function registerWorkshop(options){const service=createWorkshop(options);for(const method of ['assets','releaseCard','addCard','addAddress','setHardCard','setHardCards','addProfileCardToBank','manageResource','emails','importEmails','generate','create','edit','load','preview','apply','save','exportFile','exportSaved'])options.ipcMain.handle('profile:workshop:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:workshop:cancel',(e,t)=>{options.requireOwner(e);return service.cancel(e,t);});return service;}
 module.exports={createWorkshop,registerWorkshop,numberOf};
 

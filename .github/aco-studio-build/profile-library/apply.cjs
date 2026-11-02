@@ -570,3 +570,22 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  swap("type:c.brand,customSecurityCode:c.customCode||''","type:c.brand,bank:c.bank||'',customSecurityCode:c.customCode||''",2);
  fs.writeFileSync(p,s);
 }
+// Card Bank: release a saved card held only by an old "Distribute evenly"
+// assignment so it returns to Unused. Active profile uses are never touched.
+{
+ const vp=path.join(root,'local-card-vault.js');let v=fs.readFileSync(vp,'utf8');
+ const anchor='  async list(rawKey){';
+ if(v.split(anchor).length!==2)throw Error('local-card-vault.js: release anchor changed');
+ v=v.replace(anchor,`  async releaseAssignment(rawKey,cardId,beforeWrite){const k=customerKey(rawKey),id=text(cardId);return schedule(async()=>{
+   const d=await read(),e=entry(d,k);if(!e.cards.some(x=>x.id===id))throw Error('Saved card is no longer in this vault.');
+   const before=(e.assignments||[]).length;e.assignments=(e.assignments||[]).filter(a=>a.cardId!==id);
+   if(e.assignments.length===before)return {released:false};
+   e.updatedAt=now();d.customers[k]=e;beforeWrite();await write(d);return {released:true};
+  });},
+`+anchor);
+ fs.writeFileSync(vp,v);
+ const pp=path.join(root,'preload.js');let pre=fs.readFileSync(pp,'utf8');
+ const pa='profileWorkshop:Object.freeze({';
+ if(pre.split(pa).length!==2)throw Error('preload.js: workshop anchor changed');
+ fs.writeFileSync(pp,pre.replace(pa,pa+"releaseCard:payload=>ipcRenderer.invoke('profile:workshop:releaseCard',payload),"));
+}
