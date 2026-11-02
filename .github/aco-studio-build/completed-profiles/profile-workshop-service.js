@@ -273,6 +273,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   Draft.blank(p.retailer,p.format,{}); // Validate retailer and format before selecting assets.
   const aIDs=ids(p.addressIds,'addresses'),cIDs=ids(p.cardIds,'cards');
   return addressBanks.withWorkshopAddresses(scope,id,aIDs,addresses=>cardVault(scope).withSelectedForJig(cardKey(scope,id),cIDs,cards=>profiles.createEmailProfiles(scope,id,p.retailer,p.count,async(emails,inventory,accounts=[],settings={})=>{
+   cards=CardPolicy.hardFirst(cards,settings);
    if(cards.some(c=>c.previouslyAssigned&&!inventory.some(v=>v.assetRefs?.cardId===c.id||numberOf(v.data)===c.number)))
     throw Error('A saved card has an unresolved historical assignment. Review it before reusing.');
    if(cards.length<emails.length)throw Error('Select one distinct card per profile. Hard Cards cannot be reused within the same retailer.');
@@ -294,7 +295,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
  async function selected(scope,id,p,choices,callback){
   const aIDs=choices.address?ids(p.addressIds,'addresses'):[],cIDs=choices.card?ids(p.cardIds,'saved cards'):[];
   const run=async(addresses,cards)=>callback({addresses,cards,hash:Fields.hash({addresses,cards})});
-  const withCards=addresses=>choices.card?cardVault(scope).withSelectedForJig(cardKey(scope,id),cIDs,cards=>run(addresses,cards)):run(addresses,[]);
+  const withCards=addresses=>choices.card?cardVault(scope).withSelectedForJig(cardKey(scope,id),cIDs,async cards=>run(addresses,CardPolicy.hardFirst(cards,await profiles.librarySettings(scope,id)))):run(addresses,[]);
   return choices.address?addressBanks.withWorkshopAddresses(scope,id,aIDs,withCards):withCards([]);
  }
  async function source(e,p,scope,id){

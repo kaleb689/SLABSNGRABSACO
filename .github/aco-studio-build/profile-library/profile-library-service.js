@@ -97,7 +97,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      CardPolicy.checkAllocation(rows,retailer,[x.number],settings,{excludeProfileIds:[row.id]});
      return /^\d{12,19}$/.test(String(x.number||''))&&/^(0[1-9]|1[0-2])$/.test(x.month||x.expMonth||'')&&/^20\d\d$/.test(x.year||x.expYear||'');
     }catch{return false;}
-   }).sort((x,y)=>String(x.number).localeCompare(String(y.number)))[0];
+   }).sort((x,y)=>(CardPolicy.hardCard(y.number,settings)-CardPolicy.hardCard(x.number,settings))||String(x.number).localeCompare(String(y.number)))[0];
    if(!candidate)throw Error('No unused saved card is eligible under the Card Bank/Hard Card rules. Add an available card before repairing.');
   }
   a.check();const token=uuid();
@@ -249,7 +249,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(options.email&&(flags.includes('email')||options.all)){const email=ctx.emails.find(x=>x.retailer===retailer&&!x.profileId&&!usedEmails.has(x.email)&&!foreign.has(C.email(x.email)));if(!email)throw Error('Not enough unused emails in this vault and retailer.');row.email=email.email;email.profileId='pending-'+index;}
   if(options.card&&(flags.includes('card')||options.all)){
    const staged=ctx.rows.concat(added.map((data,i)=>({id:'pending-card-'+i,retailer,data})));
-   const card=cards.find(c=>{
+   const card=CardPolicy.hardFirst(cards,ctx.settings).find(c=>{
     if(c.previouslyAssigned&&!CardPolicy.hardCard(c.number,ctx.settings))return false;
     try{CardPolicy.checkAllocation(staged,retailer,[c.number],ctx.settings);return true;}catch{return false;}
    });

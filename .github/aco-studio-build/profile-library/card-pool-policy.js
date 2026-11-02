@@ -136,6 +136,12 @@ function resolveReference(ref,rows,savedCards){
  if(!selected||!normalized(n))throw Error('Selected card is not in this vault. Refresh the inventory.');
  return normalized(n);
 }
+// New profiles use Hard Cards first, then Regular cards. Original order is
+// kept within each group so distribution stays predictable.
+function hardFirst(cards,settings){
+ return (cards||[]).map((card,index)=>({card,index,hard:hardCard(typeof card==='string'?card:card?.number,settings)}))
+  .sort((a,b)=>(b.hard-a.hard)||(a.index-b.index)).map(x=>x.card);
+}
 function toggle(settings,n,hard){
  if(typeof hard!=='boolean'||!normalized(n))throw Error('Choose a valid Hard Card setting.');
  const next=structuredClone(settings||{});
@@ -147,4 +153,4 @@ function toggle(settings,n,hard){
  next.cardPool.hard=[...set].slice(0,15000);
  return next;
 }
-module.exports={RETAILERS,number,fromProfile,normalized,fingerprint,hardCard,profileUses,violations,checkAllocation,inventory,scanVault,resolveReference,toggle};
+module.exports={RETAILERS,number,fromProfile,normalized,fingerprint,hardCard,profileUses,violations,checkAllocation,inventory,scanVault,resolveReference,toggle,hardFirst};
