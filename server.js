@@ -16493,6 +16493,65 @@ app.get("/api/public/membership-discounts", async (req, res) => {
   return res.json({ discounts });
 });
 
+// Remove a customer from the website, the ACO Studio app and admin rosters.
+// Active Stripe subscriptions are cancelled first; if any cancellation fails
+// nothing is disabled, so billing never keeps running for a hidden customer.
+// The account is disabled (not deleted) so it can be restored later.
+app.post("/api/admin/customers/:id/remove", requireAdmin, async (req, res) => {
+  try {
+    if (req.body?.confirmed !== true) return res.status(400).json({ error: "Confirm removing this customer." });
+    const id = String(req.params.id || "").trim();
+    if (!id || id.length > 150) return res.status(400).json({ error: "Invalid customer." });
+    const [accounts, paidRaw] = await Promise.all([getCustomerAccounts(), readJson(PAID_FILE, [])]);
+    const paid = Array.isArray(paidRaw) ? paidRaw : [];
+    let account = accounts.find(item => String(item.id) === id) || null;
+    if (!account) {
+      const order = paid.find(item => String(item.id) === id);
+      if (order) account = accounts.find(item => String(item.id) === String(order.customerAccountId || "")) ||
+        accounts.find(item => normalizeEmail(item.email) && normalizeEmail(item.email) === normalizeEmail(order.profile?.email)) || null;
+    }
+    const email = normalizeEmail(account?.email);
+    const records = paid.filter(item => String(item.id) === id ||
+      (account && String(item.customerAccountId || "") === String(account.id)) ||
+      (email && !item.customerAccountId && normalizeEmail(item.profile?.email) === email));
+    if (!account && !records.length) return res.status(404).json({ error: "Customer not found." });
+    const subscriptionIds = [...new Set(records.map(item => String(item.stripeSubscriptionId || "")).filter(Boolean))];
+    const cancelled = [];
+    for (const subscriptionId of subscriptionIds) {
+      let subscription;
+      try { subscription = await stripe.subscriptions.retrieve(subscriptionId); }
+      catch (error) {
+        if (error?.code === "resource_missing") continue;
+        throw error;
+      }
+      if (["canceled", "incomplete_expired"].includes(subscription.status)) continue;
+      await stripe.subscriptions.cancel(subscriptionId);
+      cancelled.push(subscriptionId);
+    }
+    const removedAt = new Date().toISOString();
+    for (const record of records) {
+      record.adminRemovedAt = removedAt;
+      if (cancelled.includes(String(record.stripeSubscriptionId || ""))) record.subscriptionStatus = "canceled";
+    }
+    if (records.length) await writeJson(PAID_FILE, paid);
+    if (account) {
+      account.disabled = true;
+      account.adminRemovedAt = removedAt;
+      await saveCustomerAccounts(accounts);
+    }
+    membershipRevenueCache = null;
+    const name = String(account?.name || account?.email || records[0]?.profile?.email || "Customer");
+    return res.json({
+      ok: true,
+      cancelledSubscriptions: cancelled.length,
+      message: name + " was removed" + (cancelled.length ? " and " + cancelled.length + " Stripe subscription(s) cancelled." : ". No active Stripe subscription was found.")
+    });
+  } catch (error) {
+    console.error("Admin remove customer failed:", error?.message || error);
+    return res.status(502).json({ error: "Could not remove this customer. Nothing was disabled; check Stripe and try again." });
+  }
+});
+
 app.put("/api/admin/customers/:id/og-status", requireAdmin, async (req, res) => {
   try {
     const accounts = await getCustomerAccounts();
@@ -16814,6 +16873,28 @@ app.get("/api/admin/membership-revenue", requireAdmin, async (_req, res) => {
   try {
     if (!membershipRevenueCache || Date.now() - membershipRevenueCache.when > 20000) {
       const summary = await stripeMembershipRevenue(stripe);
+      // Label each subscription with its website customer for the admin
+      // upcoming-renewals list. Unlinked subscriptions keep a null name.
+      try {
+        const [paid, accounts] = await Promise.all([readJson(PAID_FILE, []), getCustomerAccounts()]);
+        const accountById = new Map(accounts.map(account => [String(account.id), account]));
+        const bySubscription = new Map();
+        for (const record of Array.isArray(paid) ? paid : []) {
+          const id = String(record?.stripeSubscriptionId || "");
+          if (id && !bySubscription.has(id)) bySubscription.set(id, record);
+        }
+        for (const member of summary.memberships || []) {
+          const record = bySubscription.get(String(member.subscriptionId));
+          const account = accountById.get(String(record?.customerAccountId || ""));
+          const profileName = [record?.profile?.firstName, record?.profile?.lastName].filter(Boolean).join(" ");
+          member.customerAccountId = account ? String(account.id) : null;
+          member.customerName = String(account?.name || account?.displayName ||
+            [account?.firstName, account?.lastName].filter(Boolean).join(" ") || profileName || "").slice(0, 120) || null;
+          member.customerEmail = String(account?.email || record?.profile?.email || "").slice(0, 200) || null;
+        }
+      } catch (error) {
+        console.error("Membership renewal customer labels unavailable:", error?.message || error);
+      }
       membershipRevenueCache = {when: Date.now(), summary};
     }
     return res.json({ok: true, ...membershipRevenueCache.summary});
@@ -17137,7 +17218,8 @@ if (
 
 
       return res.json(
-        result
+        result.filter(item => !item.adminRemovedAt &&
+          customerAccountMap.get(String(item.customerAccountId))?.adminRemovedAt == null)
       );
 
     } catch (error) {
@@ -17206,6 +17288,7 @@ app.get(
               );
 
             return (
+              !account.adminRemovedAt &&
               !linkedAccountIds.has(
                 account.id
               ) &&

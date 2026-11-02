@@ -81,6 +81,7 @@ function mutation(action,raw={}){
   const message=clean(raw.message,1200);if(!message)throw Error('Enter the customer notification.');
   path='/api/admin/submissions/'+ident(raw.orderId)+'/message-customer';data={message};break;
  }
+ case 'customer-remove':path='/api/admin/customers/'+ident(raw.customerId)+'/remove';data={confirmed:raw.confirmed===true};if(!data.confirmed)throw Error('Confirm removing this customer.');break;
  case 'customer-reset-password':path='/api/admin/customers/'+ident(raw.customerId)+'/reset-password';break;
  case 'gift-create':{
   const tier=Number(raw.tier),durationUnit=raw.unit==='weeks'?'weeks':'months',durationQuantity=Number(raw.quantity);

@@ -421,19 +421,19 @@
  function openResourceForm(type,existing=null){
   const holder=$('workshopVaultForm');holder.hidden=false;const form=d.createElement('form');form.autocomplete='off';form.className='workshopForm';
   form.innerHTML=type==='cards'
-   ?field('number','Card number','password','inputmode="numeric" maxlength="26" required')+field('expMonth','Expiration month','text','inputmode="numeric" maxlength="2" placeholder="MM" required')+field('expYear','Expiration year','text','inputmode="numeric" maxlength="4" placeholder="YYYY" required')+field('customSecurityCode','Security Code (separate saved reference)','text','maxlength="64"')
+   ?field('number','Card number','text','inputmode="numeric" maxlength="26" spellcheck="false" required')+field('expMonth','Expiration month','text','inputmode="numeric" maxlength="2" placeholder="MM" required')+field('expYear','Expiration year','text','inputmode="numeric" maxlength="4" placeholder="YYYY" required')+field('customSecurityCode','Security Code (separate saved reference)','text','maxlength="64"')
    :field('label','Address label','text','maxlength="100" required')+field('address1','Street address','text','maxlength="160" required')+field('address2','Apartment / unit','text','maxlength="120"')+field('city','City','text','maxlength="120" required')+field('state','State','text','maxlength="2" required')+field('zip','ZIP / verified ZIP+4','text','maxlength="10" required');
-  form.insertAdjacentHTML('beforeend','<div class="buttons"><button class="btn primary" type="submit">'+(existing?'Save changes':'Save to this vault')+'</button><button class="btn plain" data-cancel type="button">Cancel</button></div>');
+  form.insertAdjacentHTML('beforeend','<div class="buttons"><button class="btn primary" type="submit">'+(existing?'Save changes':'Save to this vault')+'</button>'+(type==='cards'&&!existing?'<button class="btn secondary" data-save-hard type="submit">Save as Hard Card</button>':'')+'<button class="btn plain" data-cancel type="button">Cancel</button></div>');
   holder.replaceChildren(form);
   if(existing){for(const [k,v] of Object.entries({...existing,customSecurityCode:existing.customSecurityCode??existing.customReference??''})){const el=form.elements.namedItem(k);if(el&&v!=null)el.value=v;}}
   form.querySelector('[data-cancel]').addEventListener('click',()=>{holder.replaceChildren();holder.hidden=true;});const scope={...vaultScope};
-  form.addEventListener('submit',async e=>{e.preventDefault();const submit=form.querySelector('[type=submit]');submit.disabled=true;try{
+  form.addEventListener('submit',async e=>{e.preventDefault();const submits=[...form.querySelectorAll('[type=submit]')],asHard=e.submitter?.hasAttribute('data-save-hard')===true;submits.forEach(b=>b.disabled=true);let added=null;try{
    const value=Object.fromEntries(new FormData(form));
    if(existing)await api.manageResource({...scope,kind:type==='cards'?'card':'address',operation:'update',resourceId:existing.id,value});
-   else if(type==='cards')await api.addCard({...scope,card:value});
+   else if(type==='cards'){added=await api.addCard({...scope,card:value});if(asHard){if(!added?.id)throw Error('Card saved, but Hard Card could not be set. Use the Hard Card toggle on the saved card.');await api.setHardCard({...scope,cardRef:'saved:'+added.id,hard:true,confirmed:true});}}
    else await api.addAddress({...scope,address:value});
-   holder.replaceChildren();holder.hidden=true;await refreshVault();vnote((existing?'Updated':'Saved')+' in '+ownerText(scope)+' only. No other vault was changed.');
-  }catch(error){vnote(error.message,true);submit.disabled=false;}});form.querySelector('input').focus();
+   holder.replaceChildren();holder.hidden=true;await refreshVault();vnote((existing?'Updated':asHard?'Saved as a Hard Card':'Saved')+' in '+ownerText(scope)+' only. No other vault was changed.');
+  }catch(error){if(added){holder.replaceChildren();holder.hidden=true;await refreshVault().catch(()=>{});vnote('Card saved, but Hard Card was not set: '+error.message,true);return;}vnote(error.message,true);submits.forEach(b=>b.disabled=false);}});form.querySelector('input').focus();
  }
  modal.querySelector('[data-add]').addEventListener('click',()=>{if(tab==='profiles'||tab==='completed'){openDraft(vaultScope);return;}openResourceForm(tab);});
  // Create an empty structured profile or edit only its non-payment form fields.

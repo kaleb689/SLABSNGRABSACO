@@ -111,6 +111,21 @@ function selectTab(id){
 }
 bar.addEventListener('click',e=>{const b=e.target.closest('[data-native]');if(b)selectTab(b.dataset.native);});
 root.addEventListener('click',e=>{const b=e.target.closest('[data-refresh]');if(b)void load(b.dataset.refresh);});
+// Active memberships that will renew, soonest first. Cancelled (cancel at
+// period end / scheduled cancel), paused and $0 gifted periods are excluded.
+function upcomingRenewals(rev,error){
+ if(!rev)return panel('Upcoming membership renewals',empty(error||'Renewals unavailable'));
+ const now=Date.now(),day=86400000;
+ const rows=arr(rev.memberships).map(m=>({...m,at:Date.parse(m.nextBillingAt||''),cents:m.nextInvoiceCents??m.currentAmountCents}))
+  .filter(m=>['active','trialing'].includes(m.status)&&!m.cancelAtPeriodEnd&&!m.cancelAt&&!m.paused&&Number.isFinite(m.at)&&m.at>=now-day)
+  .sort((x,y)=>x.at-y.at);
+ const within=n=>rows.filter(m=>m.at<=now+n*day).reduce((sum,m)=>sum+(Number(m.cents)||0),0);
+ const date=v=>new Date(v).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+ const inDays=v=>{const n=Math.ceil((v-now)/day);return n<=0?'Today':n===1?'Tomorrow':'In '+n+' days';};
+ const totals=`<div class="aco-native-stats"><div class="aco-native-stat"><small>Renewing next 7 days</small><b>${centsAmount(within(7))}</b></div><div class="aco-native-stat"><small>Renewing next 30 days</small><b>${centsAmount(within(30))}</b></div><div class="aco-native-stat"><small>Upcoming renewals</small><b>${esc(rows.length)}</b></div></div>`;
+ const list=rows.length?`<div class="aco-native-table-scroll"><table class="aco-native-table"><thead><tr><th>Renewal date</th><th>Customer</th><th>Membership price</th><th>Last paid</th></tr></thead><tbody>${rows.map(m=>`<tr><td><strong>${esc(date(m.at))}</strong><small>${esc(inDays(m.at))}${m.giftedUntil?' · gifted until then':''}</small></td><td><strong>${esc(m.customerName||m.customerEmail||'Unlinked subscription')}</strong><small>${esc(m.customerName?m.customerEmail||'':m.subscriptionId||'')}</small></td><td><strong>${m.cents==null?'—':esc(centsAmount(m.cents))}</strong><small>${m.regularAmountCents!=null&&m.cents!=null&&m.regularAmountCents!==m.cents?'Regular '+esc(centsAmount(m.regularAmountCents))+'/mo':'per month'}</small></td><td>${m.lastPaidAt?esc(new Date(m.lastPaidAt).toLocaleDateString())+'<small>'+esc(centsAmount(m.lastPaidCents))+'</small>':'—'}</td></tr>`).join('')}</tbody></table></div>`:empty('No active, non-cancelled memberships are scheduled to renew.');
+ return panel('Upcoming membership renewals',totals+list,'<span class="aco-native-count">'+esc(rows.length)+' renewing</span>');
+}
 function renderHome(response){
  const rev=dataKey(response,'membership-revenue'),orders=dataKey(response,'success-overview'),usage=dataKey(response,'app-usage'),notification=dataKey(response,'site-notification');
  const rows=arr(orders?.records).slice(0,8);
@@ -118,6 +133,7 @@ function renderHome(response){
  resultBox('home').innerHTML=`<div class="aco-native-stats"><div class="aco-native-stat"><small>Confirmed checkouts</small><b>${esc(total.checkouts??rows.length)}</b></div><div class="aco-native-stat"><small>Community spend</small><b>${amount(total.spent)}</b></div><div class="aco-native-stat"><small>Unmatched orders</small><b>${esc(orders?.unmatchedCount??'—')}</b></div><div class="aco-native-stat"><small>Membership billing</small><b>${esc(rev?.monthlyRevenueFormatted||rev?.totalMonthlyRevenueFormatted||rev?.monthlyTotalFormatted||(rev?.monthlyRecurringCents!=null?centsAmount(rev.monthlyRecurringCents):'Open breakdown'))}</b></div></div>
  <div class="aco-native-columns">${panel('Membership revenue',rev?stats(rev):empty(errKey(response,'membership-revenue')||'Revenue unavailable'))}
  ${panel('App usage',usage?stats(usage):empty(errKey(response,'app-usage')||'App usage unavailable'))}</div>
+ ${upcomingRenewals(rev,errKey(response,'membership-revenue'))}
  ${panel('Recent checkouts',rows.length?ordersTable(rows):empty('No attributed orders loaded.'),'<button type="button" class="btn slim plain" data-go="orders">See all →</button>')}
  ${panel('Current website notification',notification?.notification?.active?`<strong>${esc(notification.notification.title)}</strong><p>${esc(notification.notification.message)}</p>`:empty('No active broadcast.'))}`;
 }
@@ -187,8 +203,28 @@ async function act(action,payload,{message='Confirm this change?'}={}){
  return result;
 }
 function formFields(form){return Object.fromEntries(new FormData(form).entries());}
+// Customers roster: add a Remove action to every row the roster renders.
+function addRemoveButtons(){
+ for(const row of document.querySelectorAll('#siteCustomerRows .siteCustomerRow')){
+  const actions=row.querySelector('.viceCustomerActions'),open=actions?.querySelector('[data-customer]');
+  if(!actions||!open||actions.querySelector('[data-customer-remove]'))continue;
+  const b=document.createElement('button');b.type='button';b.className='btn slim plain aco-native-danger';b.textContent='Remove';
+  b.dataset.customerRemove=open.dataset.customer;b.dataset.customerName=row.querySelector('.viceCustomerIdentity strong')?.textContent||'this customer';
+  b.style.color='#ff6b8a';b.title='Remove from website, app and admin';actions.append(b);
+ }
+}
+{const rows=$('siteCustomerRows');if(rows){new MutationObserver(addRemoveButtons).observe(rows,{childList:true});addRemoveButtons();}}
 root.addEventListener('click',async e=>{
  const go=e.target.closest('[data-go]');if(go){selectTab(go.dataset.go);return;}
+ const removeCustomer=e.target.closest('[data-customer-remove]');if(removeCustomer){
+  const name=removeCustomer.dataset.customerName;
+  try{removeCustomer.disabled=true;
+   if(await act('customer-remove',{customerId:removeCustomer.dataset.customerRemove,confirmed:true},{message:'Remove '+name+'?\n\nThis cancels any active Stripe membership immediately (no further charges), signs them out of the website and ACO Studio, blocks login, and removes them from the Customers list. The account is disabled, not deleted, so it can be restored later.'})){
+    removeCustomer.closest('.siteCustomerRow')?.remove();$('siteRefresh')?.click();void load('home',true);
+   }
+  }catch(err){alert(err.message);}finally{removeCustomer.disabled=false;}
+  return;
+ }
  const discountEdit=e.target.closest('[data-discount-edit]');if(discountEdit){dirtySections.add('memberships');const d=arr(dataKey(memberSnapshot,'discount-codes')?.codes).find(c=>c.id===discountEdit.dataset.discountEdit);if(!d)return;selectTab('memberships');const form=$('acoDiscountForm');if(!form)return;for(const [key,value] of Object.entries({...d,id:d.id,audience:d.recipientEmail?'private':d.ogOnly?'og':'sitewide'})){const input=form.elements.namedItem(key);if(input){if(input.type==='checkbox')input.checked=value===true;else input.value=value??'';}}form.querySelector('[type=submit]').textContent='Update discount';form.scrollIntoView({block:'nearest'});return;}
  const toggle=e.target.closest('[data-discount-toggle]');if(toggle){const d=arr(dataKey(memberSnapshot,'discount-codes')?.codes).find(c=>c.id===toggle.dataset.discountToggle);if(!d)return;try{if(await act('discount-toggle',{id:d.id,active:!d.active},{message:`${d.active?'Disable':'Enable'} ${d.code}?`}))await load('memberships',true);}catch(err){alert(err.message);}return;}
  const remove=e.target.closest('[data-discount-remove]');if(remove){try{if(await act('discount-delete',{id:remove.dataset.discountRemove},{message:'Permanently delete this discount code from Stripe and the website?'}))await load('memberships',true);}catch(err){alert(err.message);}return;}
