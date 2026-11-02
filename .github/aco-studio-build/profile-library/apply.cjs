@@ -560,3 +560,13 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  amend(mark,mark.replace("setup(h);","setup(h,'WORKSHOP-EXPORT-REF');"));
  fs.writeFileSync(p,source);
 }
+// Card Bank: keep an optional issuing bank on saved cards and return it with
+// card summaries and Jig selections. Card type (brand) was already stored.
+{
+ const p=path.join(root,'local-card-vault.js');let s=fs.readFileSync(p,'utf8');
+ const swap=(a,b,count=1)=>{if(s.split(a).length!==count+1)throw Error('local-card-vault.js: bank anchor changed');s=s.split(a).join(b);};
+ swap("  brand:text(data?.brand).slice(0,35),customCode:code};","  brand:text(data?.brand).slice(0,35),bank:text(data?.bank).slice(0,40),customCode:code};");
+ swap("expYear:card.expYear,brand:card.brand,hasCustomCode","expYear:card.expYear,brand:card.brand,bank:card.bank||'',hasCustomCode");
+ swap("type:c.brand,customSecurityCode:c.customCode||''","type:c.brand,bank:c.bank||'',customSecurityCode:c.customCode||''",2);
+ fs.writeFileSync(p,s);
+}

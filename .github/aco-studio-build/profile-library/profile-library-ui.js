@@ -660,7 +660,7 @@
   for(const card of matchingCards.slice(0,visibleCardLimit)){
    const row=d.createElement('article');row.className='profileResourceRow profileSelectableCard'+(card.fromSavedBank&&card.availableRetailers?.includes(q('retailer').value)?' isAvailable':' isUsed');
    row.tabIndex=0;row.onclick=e=>{if(!e.target.closest('button,input'))window.ACOProfileWorkshop?.openVault?.(request(),'cards',card.fullNumber||card.last4);};row.oncontextmenu=e=>showContext(e,[[ 'View / edit card',()=>window.ACOProfileWorkshop?.openVault?.(request(),'cards',card.fullNumber||card.last4)],['Set / unset Hard Card',()=>row.querySelector('button')?.click()]]);row.onkeydown=e=>{if(e.key==='Enter')row.click();};
-    const body=d.createElement('div'),title=text('strong',card.fullNumber||'Card ending '+card.last4),meta=text('small',[card.expiry,card.hardCard?'Hard Card':'Regular card',card.brand,card.fromSavedBank?'Saved bank and profiles':'Found in imported profiles'].filter(Boolean).join(' · '));
+    const body=d.createElement('div'),title=text('strong',card.fullNumber||'Card ending '+card.last4),meta=text('small',[card.expiry,card.hardCard?'Hard Card':'Regular card',card.brand,card.bank,card.fromSavedBank?'Saved bank and profiles':'Found in imported profiles'].filter(Boolean).join(' · '));
    const current=!!card.fromSavedBank&&!!card.availableRetailers?.includes(q('retailer').value);
    const linked=text('small',card.linkedAccounts?.length?card.linkedAccounts.map(a=>a.email+' · '+(retailName[a.retailer]||a.retailer)).join(' | '):'Unused — not linked to a retailer profile');
     linked.style.display='block';
