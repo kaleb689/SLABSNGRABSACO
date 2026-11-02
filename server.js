@@ -16814,6 +16814,28 @@ app.get("/api/admin/membership-revenue", requireAdmin, async (_req, res) => {
   try {
     if (!membershipRevenueCache || Date.now() - membershipRevenueCache.when > 20000) {
       const summary = await stripeMembershipRevenue(stripe);
+      // Label each subscription with its website customer for the admin
+      // upcoming-renewals list. Unlinked subscriptions keep a null name.
+      try {
+        const [paid, accounts] = await Promise.all([readJson(PAID_FILE, []), getCustomerAccounts()]);
+        const accountById = new Map(accounts.map(account => [String(account.id), account]));
+        const bySubscription = new Map();
+        for (const record of Array.isArray(paid) ? paid : []) {
+          const id = String(record?.stripeSubscriptionId || "");
+          if (id && !bySubscription.has(id)) bySubscription.set(id, record);
+        }
+        for (const member of summary.memberships || []) {
+          const record = bySubscription.get(String(member.subscriptionId));
+          const account = accountById.get(String(record?.customerAccountId || ""));
+          const profileName = [record?.profile?.firstName, record?.profile?.lastName].filter(Boolean).join(" ");
+          member.customerAccountId = account ? String(account.id) : null;
+          member.customerName = String(account?.name || account?.displayName ||
+            [account?.firstName, account?.lastName].filter(Boolean).join(" ") || profileName || "").slice(0, 120) || null;
+          member.customerEmail = String(account?.email || record?.profile?.email || "").slice(0, 200) || null;
+        }
+      } catch (error) {
+        console.error("Membership renewal customer labels unavailable:", error?.message || error);
+      }
       membershipRevenueCache = {when: Date.now(), summary};
     }
     return res.json({ok: true, ...membershipRevenueCache.summary});

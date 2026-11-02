@@ -44,6 +44,10 @@ export async function stripeMembershipRevenue(stripe, now = new Date()) {
       invoice=paid.data?.[0]||null;
     }catch { /* No fabricated past payment when invoice lookup is unavailable. */ }
     return {subscriptionId:sub.id,status:sub.status,
+      stripeCustomerId:typeof sub.customer==="string"?sub.customer:sub.customer?.id||null,
+      cancelAtPeriodEnd:sub.cancel_at_period_end===true,
+      cancelAt:Number(sub.cancel_at)>0?new Date(Number(sub.cancel_at)*1000).toISOString():null,
+      paused:Boolean(sub.pause_collection),
       currentAmountCents:rate.currentMonthlyCents??null,
       regularAmountCents:rate.regularMonthlyCents??null,
       nextInvoiceCents:rate.nextChargeCents??null,
