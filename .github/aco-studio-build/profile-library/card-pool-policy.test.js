@@ -130,3 +130,11 @@ test('Fifteen Target-used Hard Cards remain eligible for 15 PKC accounts and 15 
  assert.equal(CardPolicy.inventory({rows:afterPkc,savedCards:saved,settings}).filter(item=>item.availableRetailers.includes('pokemoncenter')).length,0);
  assert.equal(CardPolicy.inventory({rows:afterPkc,savedCards:saved,settings}).filter(item=>item.availableRetailers.includes('walmart')).length,15);
 });
+
+test('new profiles use Hard Cards first, then remaining Regular cards in order',()=>{
+ const P=require('../card-pool-policy');
+ let settings={};settings=P.toggle(settings,'4111111111111111',true);settings=P.toggle(settings,'4000000000000002',true);
+ const cards=[{id:'r1',number:'5555555555554444'},{id:'h1',number:'4111111111111111'},{id:'r2',number:'378282246310005'},{id:'h2',number:'4000000000000002'}];
+ assert.deepEqual(P.hardFirst(cards,settings).map(x=>x.id),['h1','h2','r1','r2']);
+ assert.deepEqual(P.hardFirst(cards,{}).map(x=>x.id),['r1','h1','r2','h2']);
+});
