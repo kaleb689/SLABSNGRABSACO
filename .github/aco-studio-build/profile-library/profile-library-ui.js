@@ -680,6 +680,12 @@
     else if(relatedReferences.size>1)body.append(text('small','Security Code: conflicting saved references — review matching profiles'));
 
    const state=text('span',!card.fromSavedBank?'Profile-only card · save to Card Bank':current?'Available for '+retailName[q('retailer').value]:'Unavailable for '+retailName[q('retailer').value]);state.className='profileResourceState';
+   if(card.fromSavedBank&&/^Previously assigned/.test(card.status||'')&&!card.linkedCount){
+    const release=text('button','Release to Unused');release.type='button';release.className='btn slim secondary';
+    release.onclick=async e=>{e.stopPropagation();if(!confirm('Release card ending '+card.last4+' back to Unused? No saved profile uses it.'))return;release.disabled=true;
+     try{await window.desktopAPI.profileWorkshop.releaseCard({...request(),cardRef:card.id,confirmed:true});await refresh();note('Card ending '+card.last4+' is back in Unused.');}catch(error){note(error.message,true);release.disabled=false;}};
+    row.append(release);
+   }
    const toggle=text('button',card.hardCard?'Unset Hard Card':'Set Hard Card');toggle.type='button';toggle.className='btn slim secondary';
    toggle.onclick=async()=>{
     if(!confirm((card.hardCard?'Unset':'Set')+' Hard Card for card ending '+card.last4+' in '+(scope==='personal'?'your Personal vault':'this exact customer vault')+'? Hard Cards can be linked only once per retailer; Regular Cards are linked only once in total.'))return;

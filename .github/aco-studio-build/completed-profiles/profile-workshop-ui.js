@@ -332,6 +332,12 @@
     const meta=d.createElement('small');meta.style.display='block';
     meta.textContent=[r.expiry,r.hardCard?'Hard Card':'Regular card',r.status,r.availableRetailers?.length?'Available for '+r.availableRetailers.map(x=>retail[x]||x).join(', '):'Not eligible for additional profiles'].filter(Boolean).join(' · ');
     text.append(heading,linked,meta);
+    if(r.fromSavedBank&&/^Previously assigned/.test(r.status||'')&&!r.linkedCount){
+     const release=d.createElement('button');release.type='button';release.className='btn slim secondary';release.textContent='Release to Unused';
+     release.onclick=async()=>{if(!confirm('Release card ending '+r.last4+' back to Unused in '+ownerText(vaultScope)+'? No saved profile uses it.'))return;release.disabled=true;
+      try{await api.releaseCard({...vaultScope,cardRef:r.id,confirmed:true});await refreshVault();vnote('Card ending '+r.last4+' is back in Unused.');}catch(error){vnote(error.message,true);release.disabled=false;}};
+     line.append(release);
+    }
     const cb=d.createElement('input');cb.type='checkbox';cb.setAttribute('aria-label','Select card ending '+r.last4);
     cb.checked=selectedCards.has(r.id);cb.onchange=()=>{if(cb.checked)selectedCards.add(r.id);else selectedCards.delete(r.id);renderVault();};line.prepend(cb);
     const toggle=d.createElement('button');toggle.type='button';toggle.className='btn slim secondary';toggle.textContent=r.hardCard?'Remove Hard Card':'Set Hard Card';
