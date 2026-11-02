@@ -203,8 +203,28 @@ async function act(action,payload,{message='Confirm this change?'}={}){
  return result;
 }
 function formFields(form){return Object.fromEntries(new FormData(form).entries());}
+// Customers roster: add a Remove action to every row the roster renders.
+function addRemoveButtons(){
+ for(const row of document.querySelectorAll('#siteCustomerRows .siteCustomerRow')){
+  const actions=row.querySelector('.viceCustomerActions'),open=actions?.querySelector('[data-customer]');
+  if(!actions||!open||actions.querySelector('[data-customer-remove]'))continue;
+  const b=document.createElement('button');b.type='button';b.className='btn slim plain aco-native-danger';b.textContent='Remove';
+  b.dataset.customerRemove=open.dataset.customer;b.dataset.customerName=row.querySelector('.viceCustomerIdentity strong')?.textContent||'this customer';
+  b.style.color='#ff6b8a';b.title='Remove from website, app and admin';actions.append(b);
+ }
+}
+{const rows=$('siteCustomerRows');if(rows){new MutationObserver(addRemoveButtons).observe(rows,{childList:true});addRemoveButtons();}}
 root.addEventListener('click',async e=>{
  const go=e.target.closest('[data-go]');if(go){selectTab(go.dataset.go);return;}
+ const removeCustomer=e.target.closest('[data-customer-remove]');if(removeCustomer){
+  const name=removeCustomer.dataset.customerName;
+  try{removeCustomer.disabled=true;
+   if(await act('customer-remove',{customerId:removeCustomer.dataset.customerRemove,confirmed:true},{message:'Remove '+name+'?\n\nThis cancels any active Stripe membership immediately (no further charges), signs them out of the website and ACO Studio, blocks login, and removes them from the Customers list. The account is disabled, not deleted, so it can be restored later.'})){
+    removeCustomer.closest('.siteCustomerRow')?.remove();$('siteRefresh')?.click();void load('home',true);
+   }
+  }catch(err){alert(err.message);}finally{removeCustomer.disabled=false;}
+  return;
+ }
  const discountEdit=e.target.closest('[data-discount-edit]');if(discountEdit){dirtySections.add('memberships');const d=arr(dataKey(memberSnapshot,'discount-codes')?.codes).find(c=>c.id===discountEdit.dataset.discountEdit);if(!d)return;selectTab('memberships');const form=$('acoDiscountForm');if(!form)return;for(const [key,value] of Object.entries({...d,id:d.id,audience:d.recipientEmail?'private':d.ogOnly?'og':'sitewide'})){const input=form.elements.namedItem(key);if(input){if(input.type==='checkbox')input.checked=value===true;else input.value=value??'';}}form.querySelector('[type=submit]').textContent='Update discount';form.scrollIntoView({block:'nearest'});return;}
  const toggle=e.target.closest('[data-discount-toggle]');if(toggle){const d=arr(dataKey(memberSnapshot,'discount-codes')?.codes).find(c=>c.id===toggle.dataset.discountToggle);if(!d)return;try{if(await act('discount-toggle',{id:d.id,active:!d.active},{message:`${d.active?'Disable':'Enable'} ${d.code}?`}))await load('memberships',true);}catch(err){alert(err.message);}return;}
  const remove=e.target.closest('[data-discount-remove]');if(remove){try{if(await act('discount-delete',{id:remove.dataset.discountRemove},{message:'Permanently delete this discount code from Stripe and the website?'}))await load('memberships',true);}catch(err){alert(err.message);}return;}
