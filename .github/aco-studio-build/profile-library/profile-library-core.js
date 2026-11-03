@@ -284,7 +284,8 @@ const SUFFIX_MATCH_RULE={id:'suffix.matching',label:'Matching street type (St/St
  }};
 // Stable family IDs are shared with the batch UI and allocation engine.
 function jigStyle(id){
- if(/^target\.direction\.(?:alternate|spaced)$/.test(id))return 'directions-alt';
+ if(id==='target.direction.alternate')return 'direction-alternate';
+ if(id==='target.direction.spaced')return 'direction-spaced';
  if(/^target\.direction\./.test(id))return 'directions';
  if(/^target\.house\.integer\./.test(id))return 'integer-house';
  if(/^target\.house\.fraction\./.test(id))return 'fraction-house';
