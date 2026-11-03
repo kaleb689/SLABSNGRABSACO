@@ -341,7 +341,7 @@ test('selection highlights and count update without recreating any of 200 render
  const nodes={},cards=Array.from({length:200},(_,i)=>({dataset:{profileId:'p'+i},classList:{toggle(_name,on){this.on=on;}},setAttribute(){},querySelector:()=>null}));
  for(const key of ['export','export-archive','jig-selected','bulk-move','bulk-delete','selected-count'])nodes[key]={};
  nodes.cards={querySelectorAll:()=>cards};const move={};nodes.groups={querySelector:()=>move};
- const context={q:key=>nodes[key],pageRows:()=>cards.map(x=>({id:x.dataset.profileId})),selected:new Set(),returnToPoolsButton:{},stage:'completed',busy:false};vm.createContext(context);
+ const context={q:key=>nodes[key],pageRows:()=>cards.map(x=>({id:x.dataset.profileId})),selected:new Set(),returnToPoolsButton:{},stage:'completed',busy:false,allSavedRetailerProfiles:()=>[],rejigAllButton:{},retailName:{target:'Target'}};nodes.retailer={value:'target'};vm.createContext(context);
  const start=source.indexOf(' function updateSelection()'),end=source.indexOf("\n d.addEventListener('keydown'",start);vm.runInContext(source.slice(start,end)+';this.run=updateSelection;',context);
  for(let i=0;i<200;i++){context.selected.add('p'+i);context.run();}
  assert.equal(cards.every(x=>x.classList.on),true);assert.match(nodes['selected-count'].textContent,/200 profile/);assert.equal(move.hidden,false);
@@ -356,7 +356,7 @@ test('opening Jig from an already selected unused account preserves the batch',(
 test('selection dock is sticky, groups related actions, and keeps existing handlers',()=>{
  assert.match(source,/profileSelectionDock/);
  assert.match(source,/floatingActions\.append\(actionDetails,actionManage\)/);
- assert.match(source,/actionManage\.append\(q\('jig-selected'\),q\('bulk-move'\),q\('bulk-delete'\),returnToPoolsButton,q\('export'\)/);
+ assert.match(source,/actionManage\.append\(q\('jig-selected'\),rejigAllButton,q\('bulk-move'\),q\('bulk-delete'\),returnToPoolsButton,q\('export'\)/);
  assert.match(source,/main\.querySelector\('\.profileLibraryLayout'\)\.before\(floatingActions\)/);
  assert.match(source,/Delete selected profiles…/);
  assert.match(source,/Delete this saved draft…/);
