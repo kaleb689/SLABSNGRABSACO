@@ -81,11 +81,13 @@ test("In-Store Drops posts are formatted for viewing only, with no SKU picker", 
   const context = { guildId: "guild", ownerId: "owner", inStoreChannelId: "instore", inStoreRoleId: "role123",
     dropChannelIds: new Set(["drop"]), isNewDropPost: () => true, parseDropNews, dropNewsPayloads, parseDropSkus,
     api: async (path, method, body) => { calls.push([method, path, body?.embeds?.[0]?.title, body]); return { id: "card" }; },
-    ensureSkuControls: async () => controls.push(1), console };
+    ensureSkuControls: async () => controls.push(1), console,
+    waitForLinkPreviews: async message => message,
+    postDropImages: async () => { calls.push(["IMAGES"]); return { id: "pics" }; } };
   vm.createContext(context); vm.runInContext(snippet, context);
   const content = "Nov 6\nTarget only\n\nUltra Premium Collection Day\nSKU: 1012850570\nRetail: $249.99";
   await context.onDropPost({ guild_id: "guild", channel_id: "instore", id: "raw", author: { id: "owner" }, content });
-  assert.deepEqual(calls.map(c => c[0]), ["POST", "DELETE"]);
+  assert.deepEqual(calls.map(c => c[0]), ["POST", "IMAGES", "DELETE"], "card, then picture grid, then raw paste removed");
   assert.equal(calls[0][2], "In-Store Drop · Target");
   assert.equal(controls.length, 0, "no SKU selection controls in In-Store Drops");
   assert.equal(calls[0][3].content, "<@&role123>", "pings the In-Store Drop Alerts role");

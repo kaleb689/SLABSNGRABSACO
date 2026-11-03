@@ -5,6 +5,7 @@ import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload 
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
 import { parseDropNews, dropNewsPayloads, isDropNewsPaste } from "./drop-news-format.js";
+import { dropImageSources, hasLinks, imageExtension, MAX_DROP_IMAGE_BYTES } from "./drop-images.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 import { createDropMessageRetention } from "./discord-drop-retention.js";
 import { installDiscordAnimatedEmojis } from "./discord-emoji-pack.js";
@@ -857,6 +858,52 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       }
       return response.status === 204 ? null : response.json();
     }
+  }
+  // Discord adds link previews to a new message a moment after it is posted.
+  // Wait briefly (at most ~7.5s) so the product pictures can be collected.
+  async function waitForLinkPreviews(message) {
+    if (!hasLinks(message)) return message;
+    const links = new Set(String(message.content || "").match(/https?:\/\/\S+/g) || []);
+    let latest = message;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      try { latest = await api(`/channels/${message.channel_id}/messages/${message.id}`); }
+      catch { return latest; }
+      const previews = (latest.embeds || []).filter(embed => embed && embed.type !== "rich").length;
+      if (previews >= links.size) break;
+    }
+    return latest;
+  }
+  // Re-posts the paste's product pictures as one compact image grid under the
+  // card, so the raw paste's large link previews can be removed.
+  async function postDropImages(channelId, message) {
+    const sources = dropImageSources(message);
+    if (!sources.length) return null;
+    const form = new FormData(), attachments = [];
+    let total = 0;
+    for (const source of sources) {
+      try {
+        const response = await fetch(source.url, { signal: AbortSignal.timeout(10000) });
+        const type = response.headers.get("content-type") || "";
+        if (!response.ok || !/^image\//i.test(type)) continue;
+        const bytes = Buffer.from(await response.arrayBuffer());
+        if (bytes.length > MAX_DROP_IMAGE_BYTES || total + bytes.length > 24 * 1024 * 1024) continue;
+        total += bytes.length;
+        const id = attachments.length, filename = source.name + "-" + (id + 1) + "." + imageExtension(type);
+        attachments.push({ id, filename });
+        form.append("files[" + id + "]", new Blob([bytes], { type }), filename);
+      } catch (error) {
+        console.warn("Drop image download skipped:", error.message);
+      }
+    }
+    if (!attachments.length) return null;
+    form.append("payload_json", JSON.stringify({ attachments, allowed_mentions: { parse: [] } }));
+    const response = await fetch(`${API}/channels/${channelId}/messages`, {
+      method: "POST", headers: { Authorization: headers.Authorization }, body: form,
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!response.ok) throw new Error("Discord drop image upload: HTTP " + response.status);
+    return response.json();
   }
   let serverRolesChannelId, upcomingChannelId, inStoreChannelId, inStoreRoleId; const retailerRoleIds = new Map();
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
@@ -3158,11 +3205,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const cardSkus = new Set(payloads.flatMap(payload => parseDropSkus(payload).map(item => item.sku)));
     if (!payloads.length || rawSkus.size !== cardSkus.size || ![...rawSkus].every(sku => cardSkus.has(sku))) return;
     try {
+      const withPreviews = await waitForLinkPreviews(d);
       for (const [index, payload] of payloads.entries()) {
         const ping = index === 0 && inStoreRoleId;
         await api(`/channels/${d.channel_id}/messages`, "POST", ping ? { ...payload,
           content: `<@&${inStoreRoleId}>`, allowed_mentions: { parse: [], roles: [inStoreRoleId] } } : payload);
       }
+      await postDropImages(d.channel_id, withPreviews)
+        .catch(error => console.error("In-Store drop images:", error.message));
       await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE")
         .catch(error => console.error("In-Store card posted; could not remove raw paste:", error.message));
     } catch (error) {
@@ -3220,12 +3270,17 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const cardSkus = new Set(payloads.flatMap(payload => parseDropSkus(payload).map(item => item.sku)));
       if (payloads.length && rawSkus.size === cardSkus.size && [...rawSkus].every(sku => cardSkus.has(sku))) {
         try {
+          const withPreviews = await waitForLinkPreviews(d);
           const rendered = [];
           for (const payload of payloads) {
             const saved = await api(`/channels/${d.channel_id}/messages`, "POST", payload);
-            const formatted = { ...saved, channel_id: d.channel_id, guild_id: guildId,
-              embeds: payload.embeds, type: 0, author: saved.author || { id: appId, bot: true } };
-            rendered.push(formatted);
+            rendered.push({ ...saved, channel_id: d.channel_id, guild_id: guildId,
+              embeds: payload.embeds, type: 0, author: saved.author || { id: appId, bot: true } });
+          }
+          // Pictures sit directly under the card; the SKU panel follows them.
+          await postDropImages(d.channel_id, withPreviews)
+            .catch(error => console.error("Drop images:", error.message));
+          for (const formatted of rendered) {
             await ensureSkuControls(formatted);
             await notifyRetailerSkuChange(formatted);
           }
