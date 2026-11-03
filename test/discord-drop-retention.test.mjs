@@ -78,9 +78,9 @@ test("In-Store Drops posts are formatted for viewing only, with no SKU picker", 
   const { parseDropNews, dropNewsPayloads } = await import("../drop-news-format.js");
   const { parseDropSkus } = await import("../discord-community.js");
   const calls = [], controls = [];
-  const context = { guildId: "guild", ownerId: "owner", inStoreChannelId: "instore",
+  const context = { guildId: "guild", ownerId: "owner", inStoreChannelId: "instore", inStoreRoleId: "role123",
     dropChannelIds: new Set(["drop"]), isNewDropPost: () => true, parseDropNews, dropNewsPayloads, parseDropSkus,
-    api: async (path, method, body) => { calls.push([method, path, body?.embeds?.[0]?.title]); return { id: "card" }; },
+    api: async (path, method, body) => { calls.push([method, path, body?.embeds?.[0]?.title, body]); return { id: "card" }; },
     ensureSkuControls: async () => controls.push(1), console };
   vm.createContext(context); vm.runInContext(snippet, context);
   const content = "Nov 6\nTarget only\n\nUltra Premium Collection Day\nSKU: 1012850570\nRetail: $249.99";
@@ -88,6 +88,8 @@ test("In-Store Drops posts are formatted for viewing only, with no SKU picker", 
   assert.deepEqual(calls.map(c => c[0]), ["POST", "DELETE"]);
   assert.equal(calls[0][2], "In-Store Drop · Target");
   assert.equal(controls.length, 0, "no SKU selection controls in In-Store Drops");
+  assert.equal(calls[0][3].content, "<@&role123>", "pings the In-Store Drop Alerts role");
+  assert.equal(JSON.stringify(calls[0][3].allowed_mentions), JSON.stringify({ parse: [], roles: ["role123"] }));
   calls.length = 0;
   await context.onDropPost({ guild_id: "guild", channel_id: "instore", id: "chat", author: { id: "staff" }, content });
   assert.deepEqual(calls, [], "only the owner's pastes are reformatted");

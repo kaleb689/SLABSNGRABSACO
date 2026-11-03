@@ -366,6 +366,7 @@ export function recentSelectableDropPosts(messages, appId, limit=12) {
 export function isNewDropPost(message) {
   return !message?.message_reference?.message_id && message?.type !== 19;
 }
+export const IN_STORE_ROLE_NAME = "In-Store Drop Alerts";
 const skuItemToken = key => codeHash(key).slice(0, 16);
 const skuSafeText = value => String(value || "").replace(/[\r\n<>*_`~|]/g, " ").trim();
 
@@ -857,7 +858,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       return response.status === 204 ? null : response.json();
     }
   }
-  let serverRolesChannelId, upcomingChannelId, inStoreChannelId; const retailerRoleIds = new Map();
+  let serverRolesChannelId, upcomingChannelId, inStoreChannelId, inStoreRoleId; const retailerRoleIds = new Map();
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   async function cleanupLegacyLapseAlerts() {
     let removed = 0, scanned = 0, matched = 0;
@@ -1318,8 +1319,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         const parentId = upcoming?.parent_id || important.id;
         const inStoreName = "❗️│in-store-drops";
         const inStoreTopic = "SLABSNGRABSACO In-Store Drops: in-store release info and SKUs to view. No SKU selection here.";
-        const inStoreOverwrites = readOnlyOverwrites().map(item =>
-          item.id === appId ? dropBotPermissionOverwrite(item, appId) : item);
+        const inStoreOverwrites = readOnlyOverwrites().map(item => {
+          if (item.id !== appId) return item;
+          const bot = dropBotPermissionOverwrite(item, appId);
+          return { ...bot, allow: (BigInt(bot.allow) | 131072n).toString() };
+        });
         let inStore = channels.find(item => [0, 5].includes(item.type) && dropChannelKind(item.name) === "instoredrops");
         if (!inStore) {
           inStore = await api(`/guilds/${guildId}/channels`, "POST", {
@@ -1331,6 +1335,16 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         // View-only: formatted posts, but no SKU picker, skip button,
         // reminders or app listing, so it is not added to dropChannelIds.
         inStoreChannelId = inStore.id;
+        // Let the bot ping the In-Store Drop Alerts role in this channel only.
+        const inStoreBot = (inStore.permission_overwrites || []).find(item => item.id === appId);
+        const inStoreNeeded = BigInt(inStoreOverwrites.find(item => item.id === appId).allow);
+        if (!inStoreBot || (BigInt(inStoreBot.allow || "0") & inStoreNeeded) !== inStoreNeeded ||
+            (BigInt(inStoreBot.deny || "0") & inStoreNeeded) !== 0n) {
+          await api(`/channels/${inStore.id}/permissions/${appId}`, "PUT", {
+            type: 1, allow: (BigInt(inStoreBot?.allow || "0") | inStoreNeeded).toString(),
+            deny: (BigInt(inStoreBot?.deny || "0") & ~inStoreNeeded).toString()
+          }).catch(error => console.warn("Discord In-Store bot permission repair unavailable:", error.message));
+        }
         if (upcoming) {
           const siblings = channels.filter(item => item.parent_id === parentId && [0, 5].includes(item.type))
             .sort((a, b) => (a.position - b.position) || String(a.id).localeCompare(String(b.id)));
@@ -1545,6 +1559,13 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           });
           retailerRoleIds.set(spec.key,item.id);
         }
+        // In-Store alerts are Discord-only (no app retailer filter), pinged
+        // when the owner posts in In-Store Drops.
+        let inStoreRole=allRoles.find(role=>role.name===IN_STORE_ROLE_NAME&&!role.managed);
+        if(!inStoreRole) inStoreRole=await api(`/guilds/${guildId}/roles`,"POST",{
+          name:IN_STORE_ROLE_NAME,color:0x41b6e6,permissions:"0",mentionable:false,hoist:false
+        });
+        inStoreRoleId=inStoreRole.id;
         const desiredName="⭐│server-roles";
         const position=Number(rules.position||1)+1;
         const topic="Choose your retailer drop notifications here. Click a button again to unsubscribe. Link your Discord account to receive matching app alerts.";
@@ -1564,8 +1585,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         await ensurePanel(serverRolesChannelId,"server-roles",
           "**Choose your retailer notifications.** Click any retailer to subscribe; click again to unsubscribe.\n\n"+
           "You'll receive that retailer's drop and SKU announcements. If your Discord is linked to your SLABSNGRABSACO account, your app alert preferences are updated as well. To receive phone alerts, enable notifications in the installed customer app and allow notifications on your device.\n\n"+
+          "**In-Store** pings you when new in-store releases are posted in In-Store Drops.\n\n"+
           "Your choices are private. Each button confirms your current status.",
-          {components:retailerAlertButtons()});
+          {components:[...retailerAlertButtons(),{type:1,components:[
+            {type:2,style:2,label:"In-Store",custom_id:"instore:role",emoji:{name:"🏬"}}]}]});
         discordCommunityStatus.serverRolesReady=true;
       }catch(error){
         discordCommunityStatus.serverRolesReady=false;
@@ -3135,7 +3158,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const cardSkus = new Set(payloads.flatMap(payload => parseDropSkus(payload).map(item => item.sku)));
     if (!payloads.length || rawSkus.size !== cardSkus.size || ![...rawSkus].every(sku => cardSkus.has(sku))) return;
     try {
-      for (const payload of payloads) await api(`/channels/${d.channel_id}/messages`, "POST", payload);
+      for (const [index, payload] of payloads.entries()) {
+        const ping = index === 0 && inStoreRoleId;
+        await api(`/channels/${d.channel_id}/messages`, "POST", ping ? { ...payload,
+          content: `<@&${inStoreRoleId}>`, allowed_mentions: { parse: [], roles: [inStoreRoleId] } } : payload);
+      }
       await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE")
         .catch(error => console.error("In-Store card posted; could not remove raw paste:", error.message));
     } catch (error) {
@@ -3367,6 +3394,26 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
 
+      if(d.type===3&&d.data?.custom_id==="instore:role"){
+        if(d.channel_id!==serverRolesChannelId)return await reply("Use the buttons in #server-roles.");
+        if(!inStoreRoleId)return await reply("The In-Store role is not ready. Please try again.");
+        await api(callback,"POST",{type:5,data:{flags:64}});
+        try{
+          const member=await api(`/guilds/${guildId}/members/${userId}`);
+          const enabled=!member.roles.includes(inStoreRoleId);
+          await api(`/guilds/${guildId}/members/${userId}/roles/${inStoreRoleId}`,enabled?"PUT":"DELETE");
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`,"PATCH",{
+            content:enabled?"You are now **subscribed to In-Store** alerts. You'll be pinged when in-store releases are posted.":
+              "You are now **unsubscribed from In-Store** alerts.",
+            allowed_mentions:{parse:[]}
+          });
+        }catch(error){
+          console.error("In-Store role toggle:",error.message);
+          return await api(`/webhooks/${appId}/${d.token}/messages/@original`,"PATCH",{
+            content:"Could not save the In-Store alert preference. Please try the button again."
+          });
+        }
+      }
       if(d.type===3&&/^retailer:role:(target|walmart|pokemoncenter|costco|sams)$/.test(d.data?.custom_id||"")){
         if(d.channel_id!==serverRolesChannelId)return await reply("Use the buttons in #server-roles.");
         const key=d.data.custom_id.split(":")[2],spec=retailerAlert(key),roleId=retailerRoleIds.get(key);
