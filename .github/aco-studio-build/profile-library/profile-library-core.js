@@ -217,7 +217,183 @@ const TARGET_PRIMARY_RULES=Object.freeze([
  ...[['target.house.fraction.half','1/2'],['target.house.fraction.third','1/3'],['target.house.fraction.quarter','1/4']].map(([id,value])=>({id,label:'Target house number + '+value,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\d+\s/.test(street))return null;const changed=street.replace(/^(\d+)(?=\s)/,'$1 '+value);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}})),
  ...'ABCDEFGH'.split('').map(letter=>({id:'target.house.hyphen.'+letter.toLowerCase(),label:'Target house number -'+letter,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\d+\s/.test(street))return null;const changed=street.replace(/^(\d+)(?=\s)/,'$1-'+letter);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}}))
 ]);
+// Target-only direction formats: never invent a direction that is absent
+// from the real street address. Non-USPS shorthands remain separate opt-ins.
+const TARGET_DIRECTION_FORMS=Object.freeze([
+ {short:'N',long:'North',alternate:'No'},
+ {short:'S',long:'South',alternate:'So'},
+ {short:'E',long:'East',alternate:'Ea'},
+ {short:'W',long:'West',alternate:'We'},
+ {short:'NE',long:'Northeast',alternate:'N.E.',spaced:'North East'},
+ {short:'NW',long:'Northwest',alternate:'N.W.',spaced:'North West'},
+ {short:'SE',long:'Southeast',alternate:'S.E.',spaced:'South East'},
+ {short:'SW',long:'Southwest',alternate:'S.W.',spaced:'South West'}
+]);
+function applyTargetDirection(address,variant){
+ const street=clean(address?.address1||address?.address||'');
+ const parts=street.split(/\s+/);
+ if(parts.length<4||!/^\d+[A-Z0-9/-]*$/i.test(parts[0]))return null;
+ const matching=(start,count)=>{
+  const token=parts.slice(start,start+count).join(' ').toLowerCase();
+  return TARGET_DIRECTION_FORMS.find(form=>
+   [form.short,form.long,form.alternate,form.spaced].filter(Boolean).some(s=>s.toLowerCase()===token));
+ };
+ let match=null,start=-1,count=0;
+ // Pre-directional must leave an actual street name plus suffix after it.
+ for(const width of [2,1]){
+  if(parts.length-(1+width)<2)continue;
+  const found=matching(1,width);
+  if(found){match=found;start=1;count=width;break;}
+ }
+ // Post-directional must follow a recognized street suffix, not a street name.
+ if(!match)for(const width of [2,1]){
+  const at=parts.length-width;
+  if(at<3)continue;
+  const prior=parts[at-1].replace(/\.$/,'').toLowerCase();
+  if(!suffixEquivalents.some(pair=>pair.some(x=>x.toLowerCase()===prior)))continue;
+  const found=matching(at,width);
+  if(found){match=found;start=at;count=width;break;}
+ }
+ if(!match||!match[variant])return null;
+ const changed=[...parts.slice(0,start),match[variant],...parts.slice(start+count)].join(' ');
+ if(changed.toLowerCase()===street.toLowerCase())return null;
+ const next={...address};
+ if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;
+ return next;
+}
+const TARGET_DIRECTION_RULES=Object.freeze([
+ {id:'target.direction.short',label:'Directional abbreviations (North→N; South→S; East→E; West→W; Northeast→NE)',risk:'standard',family:'target-direction',apply:address=>applyTargetDirection(address,'short')},
+ {id:'target.direction.long',label:'Directional full forms (N→North; S→South; E→East; W→West; NE→Northeast)',risk:'standard',family:'target-direction',apply:address=>applyTargetDirection(address,'long')},
+ {id:'target.direction.alternate',label:'Alternate directional abbreviations (North→No; South→So; East→Ea; West→We; NE→N.E.)',risk:'higher',family:'target-direction',apply:address=>applyTargetDirection(address,'alternate')},
+ {id:'target.direction.spaced',label:'Spaced diagonal directions (NE→North East; NW→North West; SE→South East; SW→South West)',risk:'higher',family:'target-direction',apply:address=>applyTargetDirection(address,'spaced')}
+]);
 const suffixEquivalents=[['Street','St'],['Road','Rd'],['Avenue','Ave'],['Drive','Dr'],['Lane','Ln'],['Boulevard','Blvd'],['Court','Ct'],['Terrace','Ter'],['Circle','Cir'],['Parkway','Pkwy'],['Trail','Trl'],['Highway','Hwy'],['Place','Pl'],['Way','Wy'],['Alley','Aly'],['Square','Sq']];
+
+// Target address-specific suffix exceptions. These apply ONLY to these four
+// base streets, and a full/short spelling of a chosen suffix remains valid.
+const TARGET_PRIORITY_SUFFIXES=Object.freeze([
+ {key:'bayberry',house:'980',base:'Bayberry Point',city:'PLANTATION',zip:'33324',original:'Drive',allowed:['Drive','Road','Trail','Way','Lane','Court']},
+ {key:'sabal',house:'1811',base:'Sabal Palm',city:'FORT LAUDERDALE',zip:'33324',original:'Drive',allowed:['Drive','Road','Lane','Way','Court','Circle']},
+ {key:'turtle',house:'3775',base:'Turtle Run',city:'CORAL SPRINGS',zip:'33067',original:'Boulevard',allowed:['Boulevard','Road','Drive','Lane','Way','Court']},
+ {key:'bristol',house:'5871',base:'Bristol',city:'DAVIE',zip:'33331',original:'Lane',allowed:['Lane','Road','Drive','Way','Court','Place']}
+]);
+const TARGET_451_LIMITS=Object.freeze({letters:Object.freeze(['A','B','C','D']),numbers:Object.freeze([1,2,3,4,5,6,7,8,9])});
+const TARGET_451_DESIGNATORS=Object.freeze(['Apt','Unit','Ste','Room','Rm','#','Lot','Fl','Bldg']);
+const targetSuffixPair=word=>suffixEquivalents.find(([full,short])=>
+ String(word||'').replace(/\.$/,'').toLowerCase()===full.toLowerCase()||
+ String(word||'').replace(/\.$/,'').toLowerCase()===short.toLowerCase());
+function targetPriorityBase(address,entry){
+ const raw=clean(address?.address1||address?.address||'');
+ const parts=raw.split(/\s+/);
+ if(String(address?.state||'FL').toUpperCase()!=='FL'||
+    String(address?.zip||'').slice(0,5)!==entry.zip||
+    String(address?.city||'').toUpperCase()!==entry.city)return null;
+ if(parts.length!==entry.base.split(' ').length+2||parts[0]!==entry.house)return null;
+ const name=parts.slice(1,-1).join(' ');
+ if(name.toLowerCase()!==entry.base.toLowerCase())return null;
+ const pair=targetSuffixPair(parts.at(-1));
+ if(!pair||!entry.allowed.includes(pair[0]))return null;
+ return {parts,pair,raw};
+}
+const TARGET_PRIORITY_SUFFIX_RULES=Object.freeze(TARGET_PRIORITY_SUFFIXES.flatMap(entry=>
+ entry.allowed.flatMap(suffix=>[suffix,...(targetSuffixPair(suffix)?[targetSuffixPair(suffix)[1]]:[])]
+ .map(spelling=>({
+  id:'target.special-suffix.'+entry.key+'.'+spelling.toLowerCase(),
+  label:entry.house+' '+entry.base+': '+spelling+' (only this address)',
+  risk:spelling===entry.original?'standard':'higher',
+  family:'target-special-suffix',
+  apply:address=>{
+   const found=targetPriorityBase(address,entry);if(!found)return null;
+   if(found.parts.at(-1).toLowerCase()===spelling.toLowerCase())return null;
+   const next={...address},street=[...found.parts.slice(0,-1),spelling].join(' ');
+   if(Object.hasOwn(next,'address1'))next.address1=street;else next.address=street;
+   return next;
+  }
+ })))));
+function target451UnitInfo(address){
+ const street=clean(address?.address1||address?.address||''),second=clean(address?.address2||'');
+ if(String(address?.state||'FL').toUpperCase()!=='FL'||String(address?.zip||'').slice(0,5)!=='33324')return null;
+ if(String(address?.city||'').toUpperCase()!=='PLANTATION')return null;
+ const front=/^451\s+(?:NW|NORTHWEST|NORTH\s+WEST)\s+87TH?\s+(?:LANE|LN|AVENUE\s+LANE)\b/i;
+ const matched=front.exec(street);
+ if(!matched)return null;
+ const tail=street.slice(matched[0].length).replace(/^[,\s]+/,'').trim();
+ const unitSource=second||tail;
+ const unit=/^(?:APT|APARTMENT|UNIT|STE|SUITE|ROOM|RM|LOT|BLDG|BUILDING|FL|#)\s*#?\s*(102|103)(?=$|[A-Z]|\-|[\s,])/i.exec(unitSource);
+ if(!unit)return null;
+ return {street:matched[0],unit:unit[1],currentUnit:unitSource,hadSecond:!!second,tail};
+}
+function target451Variant(address,mode,detail){
+ const info=target451UnitInfo(address);if(!info)return null;
+ const number=info.unit;
+ let unit='Apt '+number;
+ if(mode==='label'){
+  unit=detail==='#'?'#'+number:detail+' '+number;
+ }else if(mode==='letter'){
+  if(!TARGET_451_LIMITS.letters.includes(detail))return null;
+  unit='Apt '+number+detail;
+ }else if(mode==='hyphen'){
+  if(!TARGET_451_LIMITS.numbers.includes(detail))return null;
+  unit='Apt '+number+'-'+detail;
+ }else if(mode==='floor'){
+  if(!TARGET_451_LIMITS.numbers.includes(detail))return null;
+  unit='Apt '+number+', Fl '+detail;
+ }else if(mode==='box'){
+  if(!TARGET_451_LIMITS.letters.includes(detail))return null;
+  unit='Apt '+number+', Box '+detail;
+ }else if(mode==='two-label'||mode==='two-label-line2'){
+  if(!TARGET_451_LIMITS.letters.includes(detail))return null;
+  unit='Unit '+number+' Ste '+detail;
+ }else if(mode==='avenue-lane'){
+  const street=info.street.replace(/\b(?:LANE|LN)$/i,'Avenue Lane');
+  const next={...address};
+  if(Object.hasOwn(next,'address1'))next.address1=street+(info.hadSecond?'':', '+info.currentUnit);
+  else next.address=street+(info.hadSecond?'':', '+info.currentUnit);
+  return next.address1===address.address1?null:next;
+ }
+ const next={...address},street=info.street.trim();
+ if(mode==='line2'||mode==='two-label-line2'){
+  next.address1=street;next.address2=unit;
+ }else{
+  next.address1=street+', '+unit;next.address2='';
+ }
+ if(!Object.hasOwn(address,'address1')){next.address=next.address1;delete next.address1;}
+ return next.address1===address.address1&&next.address2===address.address2?null:next;
+}
+const TARGET_451_RULES=Object.freeze([
+ ...TARGET_451_DESIGNATORS.map(label=>({
+  id:'target.451.unit-label.'+(label==='#'?'hash':label.toLowerCase()),
+  label:'451 NW 87th Lane, Apt 102/103 → '+(label==='#'?'#':label+' ')+ '102/103 (unit label)',
+  risk:'higher',family:'target-451-label',apply:address=>target451Variant(address,'label',label)
+ })),
+ ...TARGET_451_LIMITS.letters.map(letter=>({
+  id:'target.451.letter.'+letter.toLowerCase(),
+  label:'451 Apt 102/103 → 102'+letter+'/103'+letter,
+  risk:'higher',family:'target-451-unit-letter',apply:address=>target451Variant(address,'letter',letter)
+ })),
+ ...TARGET_451_LIMITS.numbers.map(number=>({
+  id:'target.451.hyphen.'+number,
+  label:'451 Apt 102/103 → 102-'+number+'/103-'+number,
+  risk:'higher',family:'target-451-unit-hyphen',apply:address=>target451Variant(address,'hyphen',number)
+ })),
+ ...TARGET_451_LIMITS.numbers.map(number=>({
+  id:'target.451.floor.'+number,
+  label:'451 Apt 102/103 → Apt 102/103, Fl '+number,
+  risk:'higher',family:'target-451-unit-floor',apply:address=>target451Variant(address,'floor',number)
+ })),
+ ...TARGET_451_LIMITS.letters.map(letter=>({
+  id:'target.451.box.'+letter.toLowerCase(),
+  label:'451 Apt 102/103 → Apt 102/103, Box '+letter,
+  risk:'higher',family:'target-451-unit-box',apply:address=>target451Variant(address,'box',letter)
+ })),
+ ...TARGET_451_LIMITS.letters.flatMap(letter=>[
+  {id:'target.451.unit-ste.'+letter.toLowerCase(),label:'451 Apt 102/103 → Unit 102/103 Ste '+letter+' (Line 1)',risk:'higher',family:'target-451-unit-ste',apply:address=>target451Variant(address,'two-label',letter)},
+  {id:'target.451.unit-ste-line2.'+letter.toLowerCase(),label:'451 Apt 102/103 → Unit 102/103 Ste '+letter+' (Line 2)',risk:'higher',family:'target-451-unit-ste',apply:address=>target451Variant(address,'two-label-line2',letter)}
+ ]),
+ {id:'target.451.line2',label:'451 NW 87th Lane, Apt 102/103 on Line 2 (original placement)',risk:'standard',family:'target-451-placement',apply:address=>target451Variant(address,'line2')},
+ {id:'target.451.avenue-lane',label:'451 NW 87th Lane → 451 NW 87th Avenue Lane (451 only)',risk:'higher',family:'target-451-street',apply:address=>target451Variant(address,'avenue-lane')}
+]);
+
 const oldSuffixRule=id=>/^(?:street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)_(?:short|long|abbr|full)$/i.test(id)
  ||/^suffix[._-](?:street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)(?:[._-](?:short|long|abbr|full))?$/i.test(id);
 const SUFFIX_MATCH_RULE={id:'suffix.matching',label:'Matching street type (St/Street, Rd/Road, etc.)',risk:'standard',family:'standard',
@@ -234,6 +410,11 @@ const SUFFIX_MATCH_RULE={id:'suffix.matching',label:'Matching street type (St/St
  }};
 // Stable family IDs are shared with the batch UI and allocation engine.
 function jigStyle(id){
+ if(id.startsWith('target.special-suffix.'))return 'special-suffix';
+ if(id.startsWith('target.451.'))return '451-special';
+ if(id==='target.direction.alternate')return 'direction-alternate';
+ if(id==='target.direction.spaced')return 'direction-spaced';
+ if(/^target\.direction\./.test(id))return 'directions';
  if(/^target\.house\.integer\./.test(id))return 'integer-house';
  if(/^target\.house\.fraction\./.test(id))return 'fraction-house';
  if(/^target\.house\.hyphen\./.test(id))return 'hyphen-house';
@@ -246,22 +427,23 @@ function jigStyle(id){
  return id;
 }
 const coreRule=id=>id===SUFFIX_MATCH_RULE.id?SUFFIX_MATCH_RULE:Core.RULES.find(x=>x.id===id);
-const targetRule=id=>TARGET_PRIMARY_RULES.find(x=>x.id===id),ruleById=id=>coreRule(id)||targetRule(id);
+const targetRule=id=>[...TARGET_PRIORITY_SUFFIX_RULES,...TARGET_451_RULES,...TARGET_PRIMARY_RULES,...TARGET_DIRECTION_RULES].find(x=>x.id===id),ruleById=id=>coreRule(id)||targetRule(id);
 function ruleOptions(r){
  retailer(r);
  const standard=Core.RULES.filter(x=>!/^prefix_three/.test(x.id)&&!oldSuffixRule(x.id)).map(x=>({id:x.id,label:x.label,risk:'standard',family:'standard'}));
  const {id,label,risk,family}=SUFFIX_MATCH_RULE;const matching={id,label,risk,family};
- return r==='target'?[...standard,matching,...TARGET_PRIMARY_RULES.map(({id,label,risk,family})=>({id,label,risk,family}))]:[...standard,matching];
+ return r==='target'?[...standard,matching,...TARGET_PRIORITY_SUFFIX_RULES,...TARGET_451_RULES,...TARGET_DIRECTION_RULES,...TARGET_PRIMARY_RULES].map(({id,label,risk,family})=>({id,label,risk,family})):[...standard,matching];
 }
 const defaultRules=r=>{
  const safe=[...new Set(Core.defaultRuleIDs.filter(id=>!/(prefix|fraction|fictitious|fabricated|phone)/i.test(id))
   .map(id=>oldSuffixRule(id)?SUFFIX_MATCH_RULE.id:id))];
  if(!safe.includes(SUFFIX_MATCH_RULE.id))safe.push(SUFFIX_MATCH_RULE.id);
- return retailer(r)==='target'?[...safe,...TARGET_PRIMARY_RULES.map(x=>x.id)]:safe;
+ return retailer(r)==='target'?[...new Set([...safe,...TARGET_PRIORITY_SUFFIX_RULES.map(x=>x.id),...TARGET_451_RULES.map(x=>x.id),...TARGET_DIRECTION_RULES.filter(x=>x.risk==='standard').map(x=>x.id),...TARGET_PRIMARY_RULES.map(x=>x.id)])]:safe;
 };
 function jig(data,r,index,rules=defaultRules(r)){
  retailer(r);
  if(!Array.isArray(rules)||rules.some(id=>!ruleById(id)))throw Error('Unknown retailer jig rule.');
+ if(r!=='target'&&rules.some(id=>id.startsWith('target.')))throw Error('Target-only jig rules cannot be applied to another retailer.');
  const out=clone(data);if(index===0)return out;const map=Core.autoMap([out]);
  for(const role of ['shipping','billing']){
   const addr={};for(const k of ['address1','address2','city','state','zip'])addr[k]=Core.get(out,map[role+'.'+k])||'';
@@ -320,5 +502,5 @@ function existingLiveReconciliation(rows,retailer){
   cardOnlyMatches:candidates.filter(x=>x.reason==='full-card').length,
   blockedCount:blocked.length,blocked,unmatchedCount:unmatched.length,signature};
 }
-module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,jigStyle,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
+module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,jigStyle,TARGET_PRIMARY_RULES,TARGET_DIRECTION_RULES,TARGET_PRIORITY_SUFFIXES,TARGET_PRIORITY_SUFFIX_RULES,TARGET_451_RULES,TARGET_451_LIMITS,target451UnitInfo,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
 

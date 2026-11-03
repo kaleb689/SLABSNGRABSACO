@@ -382,18 +382,26 @@ test('Jig UI groups related ordinal, compass, unit and Target hard variants',()=
  assert.equal(group({id:'target.house.fraction.half',label:'1/2'})[0],'fraction-house');
  assert.equal(group({id:'target.house.fraction.quarter',label:'1/4'})[0],'fraction-house');
  assert.equal(group({id:'target.house.hyphen.a',label:'-A'})[0],'hyphen-house');
+ assert.equal(group({id:'target.direction.alternate',label:'Alternate directional abbreviations'})[0],'direction-alternate');
+ assert.equal(group({id:'target.direction.spaced',label:'Spaced diagonal directions'})[0],'direction-spaced');
+ assert.equal(group({id:'target.direction.short',label:'North → N'})[0],'directions');
+ assert.match(source,/North → No; South → So; East → Ea; West → We/);
+ assert.match(source,/Street suffix spelling \(123 Main Street → 123 Main St/);
  assert.match(source,/Allow duplicate jig addresses only for the conflicts listed below/);
  assert.match(source,/allowDuplicateAddresses:duplicateCount>0&&allowDuplicates.checked/);
 });
 
 test('Both Jig entrypoints allow optional units, with Walmart opt-in by default and unchanged other-retailer defaults',()=>{
- assert.match(source,/Add random Apt \/ Unit \/ Ste \/ # \/ number/);
+ assert.match(source,/Append random Apt \/ Unit \/ Ste \/ Lot \/ Rm \/ # \/ Fl \/ Bldg/);
+ assert.match(source,/123 Main St Apt A/);
  assert.match(source,/optionalUnitToggle\.checked=retailer==='walmart'/);
  assert.match(source,/optionalUnitCount,/);
  assert.match(source,/autoUnitFromAddressBank:optionalUnitToggle\.checked/);
  assert.match(source,/postalScan:postalScanBox\.checked/);
  assert.match(workshopSource,/data-optional-unit type="checkbox"/);
  assert.match(workshopSource,/data-optional-unit-count type="number"/);
+ assert.match(workshopSource,/Append Random Apt \/ Unit \/ Ste \/ Lot \/ Rm \/ # \/ Fl \/ Bldg/);
+ assert.match(workshopSource,/Address Line 1/);
  assert.match(workshopSource,/optionalUnitCount,combine:state\.combine/);
  assert.match(workshopSource,/randomUnit:0/);
 });

@@ -900,7 +900,7 @@
   groupedJigChoices(choices,settings);
   const combine=text('label','Combine selected jig styles'),combineCheck=d.createElement('input');combineCheck.type='checkbox';combine.className='check';combine.prepend(combineCheck);
   const billing=text('label','Billing same as jigged shipping address'),billingCheck=d.createElement('input');billingCheck.type='checkbox';billing.className='check';billing.prepend(billingCheck);
-  const unitToggleLabel=text('label','Optional: add a random Apt / Unit / Ste / # / number to address line 2 when no unit exists');
+  const unitToggleLabel=text('label','Optional: append Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg to Address Line 1 (123 Main St → 123 Main St Apt A; never just A)');
   unitToggleLabel.className='check';const unitToggle=d.createElement('input');unitToggle.type='checkbox';unitToggle.checked=false;unitToggleLabel.prepend(unitToggle);
   const preview=text('button','Preview saved-resource jig options');preview.type='button';preview.className='btn secondary';
   win.body.append(sources,choices,combine,billing,unitToggleLabel,preview,previews);
@@ -933,13 +933,42 @@
  // applicable variations per profile rather than requiring dozens of clicks.
  function jigFamily(option){
   const id=String(option.id||''),name=String(option.label||''),value=id+' '+name;
-  if(/^target\.house\.integer\./.test(id))return ['integer-house','Integer house-number additions (+1 to +9)'];
-   if(/^target\.house\.fraction\./.test(id))return ['fraction-house','Fractional house numbers (1/2, 1/3, 1/4)'];
-  if(/^target\.house\.hyphen\./.test(id))return ['hyphen-house','Hyphenated house numbers (-A through -H)'];
-  if(/ordinal|\b(?:2nd|3rd|4th|second|third|fourth)\b|\b[234]\s*(?:→|->)\s*(?:2nd|second|3rd|third|4th|fourth)\b/i.test(value))return ['ordinals','Street ordinals (2, 2nd, second, etc.)'];
-  if(/(?:compass|direction|north|south|east|west|\bnw\b|\bne\b|\bsw\b|\bse\b)/i.test(value))return ['directions','Compass directions (NW, Northwest, etc.)'];
-  if(/(?:apt|apartment|suite|\bste\b|\bunit\b|\broom\b|\bfloor\b|\bcondo\b)/i.test(value))return ['units','Apartment / suite / unit labels (Apt, Ste, Unit, #, etc.)'];
-  if(/(?:suffix|street type|road|avenue|lane|boulevard|drive|terrace)/i.test(value))return ['suffix','Street type spelling (St/Street, Rd/Road, etc.)'];
+  if(id.startsWith('target.special-suffix.')){
+   const key=id.split('.')[2];
+   const kinds={
+    bayberry:['980 Bayberry Point Drive','Drive/Dr, Road/Rd, Trail/Trl, Way/Wy, Lane/Ln, Court/Ct'],
+    sabal:['1811 Sabal Palm Drive','Drive/Dr, Road/Rd, Lane/Ln, Way/Wy, Court/Ct, Circle/Cir'],
+    turtle:['3775 Turtle Run Boulevard','Boulevard/Blvd, Road/Rd, Drive/Dr, Lane/Ln, Way/Wy, Court/Ct'],
+    bristol:['5871 Bristol Lane','Lane/Ln, Road/Rd, Drive/Dr, Way/Wy, Court/Ct, Place/Pl']
+   };
+   const pair=kinds[key];if(pair)return ['special-'+key,pair[0]+' — approved Target-specific suffixes ('+pair[1]+'; this street only)'];
+  }
+  if(id.startsWith('target.451.')){
+   if(id.startsWith('target.451.unit-label.'))return ['target-451-label','451 NW 87th Lane Apt 102/103 — unit labels (Apt 102 → Unit 102, Ste 102, Room 102, Rm 102, #102, etc.)'];
+   if(id.startsWith('target.451.letter.'))return ['target-451-letter','451 Apt 102/103 letter suffix (102A–102D; 103A–103D)'];
+   if(id.startsWith('target.451.hyphen.'))return ['target-451-hyphen','451 Apt 102/103 hyphen numbers (102-1 through 102-9; 103-1 through 103-9)'];
+   if(id.startsWith('target.451.floor.'))return ['target-451-floor','451 Apt 102/103 floor add-on (Apt 102, Fl 1–9; Apt 103, Fl 1–9)'];
+   if(id.startsWith('target.451.box.'))return ['target-451-box','451 Apt 102/103 box add-on (Apt 102, Box A–D; Apt 103, Box A–D)'];
+   if(id.startsWith('target.451.unit-ste-line2.'))return ['target-451-unit-ste-line2','451 Apt 102/103 Line 2 label (Unit 102 Ste A–D; Unit 103 Ste A–D on Line 2)'];
+   if(id.startsWith('target.451.unit-ste.'))return ['target-451-unit-ste','451 Apt 102/103 inline label (Unit 102 Ste A–D; Unit 103 Ste A–D on Line 1)'];
+   if(id==='target.451.line2')return ['target-451-line2','451 Apt 102/103 placement (Street on Line 1, original Apt 102 or 103 on Line 2)'];
+   if(id==='target.451.avenue-lane')return ['target-451-avenue-lane','451 street extension (NW 87th Lane → NW 87th Avenue Lane; 451 only)'];
+  }
+  // Keep alternate shorthands separate and opt-in; do not conflate postal
+  // abbreviations (N/S/E/W/NE/NW/SE/SW) with nonstandard spellings.
+  if(id==='target.direction.alternate')return ['direction-alternate','Alternate directional abbreviations (North → No; South → So; East → Ea; West → We; NE → N.E.; NW → N.W.; SE → S.E.; SW → S.W.)'];
+  if(id==='target.direction.spaced')return ['direction-spaced','Diagonal direction spacing (Northeast → North East; Northwest → North West; Southeast → South East; Southwest → South West)'];
+  if(/^target\.house\.integer\./.test(id))return ['integer-house','Integer house-number additions (123 Main St → 123 1 Main St through 123 9 Main St)'];
+  if(/^target\.house\.fraction\./.test(id))return ['fraction-house','Fractional house numbers (123 Main St → 123 1/2 Main St; 1/3 or 1/4)'];
+  if(/^target\.house\.hyphen\./.test(id))return ['hyphen-house','Hyphenated house numbers (123 Main St → 123-A Main St through 123-H Main St)'];
+  if(/ordinal|\b(?:2nd|3rd|4th|second|third|fourth)\b|\b[234]\s*(?:→|->)\s*(?:2nd|second|3rd|third|4th|fourth)\b/i.test(value))return ['ordinals','Street ordinals (123 2nd St → 123 Second St)'];
+  if(/^target\.direction\./.test(id)||/(?:compass|direction|north|south|east|west|\bnw\b|\bne\b|\bsw\b|\bse\b)/i.test(value))
+    return ['directions','Standard directions (North → N; South → S; East → E; West → W; NE/NW/SE/SW and full names)'];
+  if(/(?:apt|apartment|suite|\bste\b|\bunit\b|\broom\b|\bfloor\b|\bcondo\b)/i.test(value))
+    return ['units','Existing unit labels (Apt 4, Unit 4, Ste 4; saved unit labels and numbers are protected)'];
+  if(/(?:suffix|street type|road|avenue|lane|boulevard|drive|terrace)/i.test(value))
+    return ['suffix','Street suffix spelling (123 Main Street → 123 Main St; Road → Rd)'];
+  if(id==='phone_florida_random')return ['phone','Florida phone format (e.g., 954-555-0101)'];
   return [id,name];
  }
  function groupedJigChoices(host,settings){
@@ -998,7 +1027,7 @@
    info.style.cssText='display:block;margin-top:5px;color:#ffd28c';
    block.append(info);
   }
-  const rules=(row.appliedRuleIds||[]).map(id=>id==='second-line.add'?'Added second-line unit':id.startsWith('hard.')?'Hard '+id.slice(5):(settings.options||[]).find(rule=>rule.id===id)?.label||id);
+  const rules=(row.appliedRuleIds||[]).map(id=>id==='second-line.add'?'Appended unit to Address Line 1':id.startsWith('hard.')?'Hard '+id.slice(5):(settings.options||[]).find(rule=>rule.id===id)?.label||id);
   if(rules.length){
    const label=d.createElement('small');label.textContent='Applied: '+rules.join(' · ');
    label.style.cssText='display:block;margin-top:5px;color:#8dddd4';block.append(label);
@@ -1034,13 +1063,13 @@
     distributionToggle.onchange=()=>{distributionPanel.hidden=!distributionToggle.checked;distributionInputs();};
     rules.addEventListener('change',()=>{if(distributionToggle.checked)distributionInputs();});
     const billing=text('label','Automatically match the jigged shipping and billing addresses'),billingBox=d.createElement('input');billing.className='check';billingBox.type='checkbox';billingBox.checked=true;billing.prepend(billingBox);
-   const optionalUnitLabel=text('label','Add random Apt / Unit / Ste / # / number to address line 2 (only if no unit exists)');
+   const optionalUnitLabel=text('label','Append random Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg after the street on Line 1 (no existing unit)');
    optionalUnitLabel.className='check';
    const optionalUnitToggle=d.createElement('input');optionalUnitToggle.type='checkbox';optionalUnitToggle.checked=retailer==='walmart';optionalUnitLabel.prepend(optionalUnitToggle);
    const unitQuantityLabel=text('label','How many eligible selected profiles should receive a new unit?');
    const unitQuantity=d.createElement('input');unitQuantity.type='number';unitQuantity.min='1';unitQuantity.max=String(chosen.length);
    unitQuantity.step='1';unitQuantity.value=String(chosen.length);unitQuantityLabel.append(unitQuantity);unitQuantityLabel.hidden=!optionalUnitToggle.checked;
-   const optionalUnitHelp=text('small','Walmart defaults to ON for random second-line generation, with an editable quantity; other retailers remain OFF. New Apt/Unit/Ste/#/bare A-D or 1-9 identifiers only apply to unitless Main houses. Original bank addresses remain unchanged. Generated units are not delivery-point verified.');
+   const optionalUnitHelp=text('small','Walmart defaults to ON for optional inline-designator generation, with an editable quantity; other retailers remain OFF. Appended designators appear after the street on Address Line 1 (e.g. 123 Main St Apt A), and Address Line 2 remains empty. Only unitless Main houses qualify; no bare A-D / 1-9 identifiers. Original bank addresses remain unchanged. Generated units are not delivery-point verified.');
    const bankSourceLabel=text('label','Walmart: randomize using the entire saved Address Bank (not just these profiles)');
    bankSourceLabel.className='check';bankSourceLabel.hidden=retailer!=='walmart';
    const bankSourceToggle=d.createElement('input');bankSourceToggle.type='checkbox';bankSourceToggle.checked=retailer==='walmart';bankSourceLabel.prepend(bankSourceToggle);
@@ -1074,9 +1103,10 @@
    const allowDuplicates=d.createElement('input');allowDuplicates.type='checkbox';allowDuplicates.checked=false;
    duplicateLabel.prepend(allowDuplicates);
    const review=d.createElement('div');let token=null,duplicateCount=0,previewRevision=0,previewTimer=null;
-   allowDuplicates.onchange=()=>{save.disabled=!token||(duplicateCount>0&&!allowDuplicates.checked);};
+   let changedCount=0;
+   allowDuplicates.onchange=()=>{save.disabled=!token||changedCount===0||(duplicateCount>0&&!allowDuplicates.checked);};
    win.body.append(info,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
-   const invalidatePreview=()=>{previewRevision++;token=null;duplicateCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
+   const invalidatePreview=()=>{previewRevision++;token=null;duplicateCount=0;changedCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
    // Every checkbox or quantity edit invalidates the old approval token and
    // recomputes against the currently selected rules. Never apply a stale plan.
    const schedulePreview=()=>{invalidatePreview();if(previewTimer!==null)clearTimeout(previewTimer);
@@ -1122,9 +1152,9 @@
       billingSameAsShipping:billingBox.checked||optionalUnitToggle.checked,optionalUnitCount,
       autoUnitFromAddressBank:optionalUnitToggle.checked,sourceMainFromBank:retailer==='walmart'&&bankSourceToggle.checked,
       postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
-     if(!win.valid()||activeRevision!==previewRevision)return;token=result.token;
+     if(!win.valid()||activeRevision!==previewRevision)return;token=result.token;changedCount=result.changed;
       if(result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
-     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional second-line unit(s) added ('+result.optionalUnitEligible+' eligible unitless source addresses; '+(result.optionalUnitBankReassigned||0)+' selected profile(s) sourced automatically from Address Bank).'));
+     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional inline Address Line 1 unit(s) added ('+result.optionalUnitEligible+' eligible unitless source addresses; '+(result.optionalUnitBankReassigned||0)+' selected profile(s) sourced automatically from Address Bank).'));
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      for(const row of result.profiles.slice(0,100))review.append(jigPreviewEntry(row,settings));
      if(result.profiles.length>100)review.append(text('p','+'+(result.profiles.length-100)+' more selected profiles included in this batch.'));
@@ -1135,8 +1165,8 @@
       review.prepend(warning);
       for(const clash of result.duplicateAddresses.slice(0,100))review.append(text('p',clash.email+' → '+clash.address+' · already used by '+clash.matches.map(x=>x.email+' ('+retailName[x.retailer]+')').join(', ')));
      }
-     save.disabled=duplicateCount>0&&!allowDuplicates.checked;
-     win.status().textContent=duplicateCount?'Duplicate addresses detected. Review them and explicitly allow reuse if required.':'Preview ready. One Apply action will process the whole selected set.';
+     save.disabled=result.changed===0||(duplicateCount>0&&!allowDuplicates.checked);
+     win.status().textContent=result.changed===0?'This batch already uses its first available address slots; there are no edits to apply. Select more profiles or change your jig rules.':duplicateCount?'Duplicate addresses detected. Review them and explicitly allow reuse if required.':'Preview ready. One Apply action will process the whole selected set.';
     }catch(error){if(win.valid()&&activeRevision===previewRevision)win.status().textContent=error.message;}finally{if(win.valid()&&activeRevision===previewRevision)preview.disabled=false;}
    };
    save.onclick=async()=>{

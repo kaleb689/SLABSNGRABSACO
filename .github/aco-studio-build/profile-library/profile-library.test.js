@@ -67,7 +67,7 @@ test('Target preset keeps fractional 1/2 through 1/4 and A-H hyphen house-number
  for(const id of ['target.house.fraction.half','target.house.fraction.third','target.house.fraction.quarter',...'abcdefgh'.split('').map(x=>'target.house.hyphen.'+x)])assert.ok(settings.selected.includes(id),id+' default');
 });
 
-test('Bulk Target jig leaves one original per main address and then distributes soft and hard variants',async t=>{
+test('Target fills four slots per exact base before applying different enabled jig styles',async t=>{
  const h=await library(t);
  for(let i=0;i<4;i++)await commit(h,await preview(h,[complete('target','mix'+i+'@example.test')]));
  const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
@@ -76,8 +76,9 @@ test('Bulk Target jig leaves one original per main address and then distributes 
  const streets=plan.profiles.map(x=>x.after.address1);
  assert.equal(streets[0],'100 Example Avenue');
  assert.ok(plan.profiles.every(x=>!x.after.address2),'Unitless addresses must not receive a unit without checking the new optional box');
- assert.ok(plan.profiles.slice(1).some(x=>x.appliedRuleIds.some(id=>id.startsWith('target.house.'))),'Selected hard jigs are used');
- assert.equal(new Set(plan.profiles.map(x=>x.after.address1+'|'+x.after.address2)).size,4);
+ assert.equal(plan.changed,0,'Four original address slots should be filled before moving on');
+ assert.equal(new Set(plan.profiles.map(x=>x.after.address1+'|'+x.after.address2)).size,1);
+ await assert.rejects(h.lib.batchJigCommit(event,{token:plan.token,confirmed:true}),/No profile address changes/);
 });
 
 test('Multiple hard Target primary jigs stack only when Combine is explicitly enabled',async t=>{
@@ -87,8 +88,8 @@ test('Multiple hard Target primary jigs stack only when Combine is explicitly en
  const normal=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
   ruleIds:['target.house.fraction.half','target.house.hyphen.a'],combine:false,billingSameAsShipping:false});
  assert.equal(normal.profiles[0].after.address1,'100 Example Avenue');
- assert.match(normal.profiles[1].after.address1,/^100(?:-A| 1\/2) Example Avenue$/i);
- assert.doesNotMatch(normal.profiles[1].after.address1,/-A 1\/2/i,'Normal mode must never stack two hard variants');
+ assert.equal(normal.profiles[1].after.address1,'100 Example Avenue','Second profile still uses the available original format slot');
+ assert.doesNotMatch(normal.profiles[1].after.address1,/-A 1\/2/i,'No forced stacking');
  const mixed=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
   ruleIds:['target.house.fraction.half','target.house.hyphen.a'],combine:true,billingSameAsShipping:false});
  assert.equal(mixed.profiles[0].after.address1,'100 Example Avenue');
@@ -188,7 +189,7 @@ test('Exact Main/Jigged reuse count changes the chosen profiles only and can be 
  assert.equal(result.profiles[2].after.address2,'','The explicitly preserved original in the remaining group stays unchanged');
  const before=(await h.lib.list(event,h.p)).profiles;
  assert.ok(before.every(x=>!String(LC.values(x.data)['shipping.address2']||'').includes('Apt 2')));
- assert.equal(result.duplicateAddresses.length,2,'Intentional exact address reuse must show the two conflicts');
+ assert.equal(result.duplicateAddresses.length,0,'Two matching Target profiles remain within the four-per-variation ceiling');
  await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:true});
  const after=(await h.lib.list(event,h.p)).profiles;
  assert.equal(after.filter(x=>String(LC.values(x.data)['shipping.address2']).toUpperCase()==='APT 2').length,2);
@@ -198,7 +199,7 @@ test('Exact Main/Jigged reuse count changes the chosen profiles only and can be 
 });
 
 
-test('Exact reuse quantity is protected by automatic unique second lines on other jigged profiles',async t=>{
+test('Exact reuse quantity is protected by unique inline designators on other jigged profiles',async t=>{
  const h=await library(t);
  await h.service.addAddress(event,{...h.p,address:{...address,address2:'',label:'Existing identical Main'}});
  for(let n=0;n<3;n++)await commit(h,await preview(h,[complete('target','same-main-'+n+'@example.test')]));
@@ -209,8 +210,9 @@ test('Exact reuse quantity is protected by automatic unique second lines on othe
   profileIds:selected.map(x=>x.id),ruleIds:[LC.FL_PHONE_RULE],combine:false,
   billingSameAsShipping:false,reuse:{sourceId:option.id,count:2},optionalUnitCount:1});
  assert.equal(result.reused,2);
- assert.notEqual(result.profiles[2].after.address2,'');
- assert.equal(result.profiles.filter(x=>x.after.address2==='').length,2);
+ assert.match(result.profiles[2].after.address1,/(?:Apt|Unit|Ste|Lot|Rm|#|Fl|Bldg)\s+(?:[A-D]|[1-9])$/);
+ assert.ok(result.profiles.every(x=>x.after.address2===''),'No generated unit should use Address Line 2');
+ assert.equal(result.profiles.filter(x=>!x.appliedRuleIds.includes('second-line.add')).length,2);
 });
 test('Owner import history removes only exact batch profiles and preserves later imports, cards and customers',async t=>{
  const h=await library(t);
@@ -673,7 +675,7 @@ test('Pasted credentials preserve password in encrypted retailer bank and keep c
  await assert.rejects(h.lib.importPastedAccounts({sender:{id:2}},{...h.a,retailer:'pokemoncenter',accounts,confirmed:true}),/Not owner/);
 });
 
-test('Optional second-line generator avoids exact occupied addresses across retailers without override',async t=>{
+test('Optional inline-designator generator avoids occupied addresses across retailers even when unit is on Line 2',async t=>{
  const h=await library(t);
  const original=complete('target','to-jig@example.test');
  const already=complete('pokemoncenter','already-used@example.test');
@@ -686,12 +688,13 @@ test('Optional second-line generator avoids exact occupied addresses across reta
  assert.equal(plan.optionalUnitEligible,1);
  assert.equal(plan.optionalUnitAdded,1);
  assert.equal(plan.duplicateAddresses.length,0,'Generated address must not collide with the existing PKC account');
- assert.notEqual(plan.profiles[0].after.address2,'Unit A','Previously allocated second line must not be reused');
+ assert.notEqual(plan.profiles[0].after.address1,'100 Example Ave Unit A','Existing PKC unit in Address Line 2 must be detected as the same delivery address');
+ assert.equal(plan.profiles[0].after.address2,'','Optional designator must stay on Address Line 1');
  const applied=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
  assert.equal(applied.duplicateOverrides||0,0);
  const after=(await h.lib.list(event,h.p)).profiles.find(x=>x.id===row.id);
- assert.equal(LC.values(after.data)['shipping.address1'],'100 Example Ave');
- assert.notEqual(LC.values(after.data)['shipping.address2'],'Unit A');
+ assert.match(LC.values(after.data)['shipping.address1'],/(?:Apt|Unit|Ste|Lot|Rm|#|Fl|Bldg)\s+(?:[A-D]|[1-9])$/);
+ assert.equal(LC.values(after.data)['shipping.address2'],'');
 });
 test('Other customers cannot cause a jig duplicate warning in this customer vault',async t=>{
  const h=await library(t);
@@ -705,7 +708,7 @@ test('Other customers cannot cause a jig duplicate warning in this customer vaul
  assert.equal(plan.duplicateAddresses.length,0);
 });
 
-test('Optional second lines are OFF by default and added to exactly the owner-selected number',async t=>{
+test('Optional inline designators are OFF by default and appended to exactly the owner-selected number',async t=>{
  const h=await library(t);
  for(let i=0;i<8;i++)await commit(h,await preview(h,[complete('target','auto-unit-'+i+'@example.test')]));
  const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
@@ -716,15 +719,15 @@ test('Optional second lines are OFF by default and added to exactly the owner-se
  assert.equal(off.profiles.filter(x=>x.after.address2).length,0);
  const result=await h.lib.batchJigPreview(event,{...args,optionalUnitCount:3});
  assert.equal(result.optionalUnitAdded,3,'Only three profiles get the optional unit');
- const receiving=result.profiles.filter(x=>x.after.address2);
+ const receiving=result.profiles.filter(x=>x.appliedRuleIds.includes('second-line.add'));
  assert.equal(receiving.length,3);
  for(const item of receiving){
-  assert.match(item.after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
-  assert.ok(item.appliedRuleIds.includes('second-line.add'));
+  assert.match(item.after.address1,/(?:Apt|Unit|Ste|Lot|Rm|#|Fl|Bldg)\s+(?:[A-D]|[1-9])$/,'A labeled unit must appear after the street on Address Line 1');
+  assert.equal(item.after.address2,'','Address Line 2 must remain empty');
   assert.equal(item.before.address2,'');
  }
  assert.ok(receiving.some(x=>x.after.address1!==x.before.address1),'Unit jig may accompany an address jig');
- assert.equal(new Set(receiving.map(x=>x.after.address2)).size,3);
+ assert.equal(new Set(receiving.map(x=>x.after.address1)).size,1,'Identical inline designators can each fill four exact-address slots');
  await assert.rejects(h.lib.batchJigPreview(event,{...args,optionalUnitCount:9}),/Only 8(?: of 8)? selected profiles/);
 
 });
@@ -746,7 +749,7 @@ test('Existing Apt, Ste, bare number and inline unit never change even if unit r
   assert.equal(row.after.address2,LC.values(existing.data)['shipping.address2']);
   assert.doesNotMatch(row.appliedRuleIds.join(','),/second-line.add/);
  }
- await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:result.duplicateAddresses.length>0});
+ if(result.changed)await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:result.duplicateAddresses.length>0});
  const updated=(await h.lib.list(event,h.p)).profiles;
  for(const original of all){
   const saved=updated.find(x=>x.id===original.id);
@@ -773,8 +776,9 @@ test('Target hard fraction and hyphen groups appear in a realistic multi-address
  const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
   ruleIds:selected,combine:false,billingSameAsShipping:false,optionalUnitCount:0});
  const rules=result.profiles.flatMap(x=>x.appliedRuleIds);
- assert.ok(rules.some(x=>x.startsWith('target.house.fraction.')),'Fraction group must actually run');
- assert.ok(rules.some(x=>x.startsWith('target.house.hyphen.')),'Hyphen group must actually run');
+ assert.ok(rules.some(x=>x.startsWith('target.house.')),'Primary house-number jigs must remain available after preferred address spellings');
+ const addressCounts=new Map();for(const row of result.profiles){const key=[row.after.address1,row.after.address2,row.after.city,row.after.zip].join('|').toUpperCase();addressCounts.set(key,(addressCounts.get(key)||0)+1);}
+ assert.ok([...addressCounts.values()].every(count=>count<=4),'A Target variation cannot be allocated more than four times');
  assert.equal(rules.filter(x=>x==='second-line.add').length,0,'Unit box unchecked means no new units');
  assert.equal(result.profiles.filter(x=>x.after.address2).length,0,'Legacy unit-formatting rules may not add second lines without explicit checkbox');
 });
@@ -787,15 +791,17 @@ test('Unit addition alone works when explicitly enabled without any other jig ch
   ruleIds:[],combine:false,billingSameAsShipping:false,optionalUnitCount:2});
  assert.equal(result.optionalUnitAdded,2);
  assert.equal(result.profiles.filter(x=>x.appliedRuleIds.includes('second-line.add')).length,2);
- assert.equal(result.profiles.filter(x=>!x.after.address2).length,1);
+ assert.equal(result.profiles.filter(x=>!x.appliedRuleIds.includes('second-line.add')).length,1);
+ assert.ok(result.profiles.every(x=>x.after.address2===''),'Generated unit must not occupy Line 2');
  await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:result.duplicateAddresses.length>0});
  const saved=(await h.lib.list(event,h.p)).profiles;
- assert.equal(saved.filter(x=>LC.values(x.data)['shipping.address2']).length,2);
+ assert.equal(saved.filter(x=>/(?:Apt|Unit|Ste|Lot|Rm|#|Fl|Bldg)\s+(?:[A-D]|[1-9])$/.test(LC.values(x.data)['shipping.address1'])).length,2);
+ assert.ok(saved.every(x=>LC.values(x.data)['shipping.address2']===''));
 });
 
 test('Selected Target fractional and hyphen styles are actually applied across repeated main addresses',async t=>{
  const h=await library(t);
- for(let i=0;i<19;i++)await commit(h,await preview(h,[complete('target','hard-family-'+i+'@example.test')]));
+ for(let i=0;i<37;i++)await commit(h,await preview(h,[complete('target','hard-family-'+i+'@example.test')]));
  const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
  const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',
   profileIds:rows.map(x=>x.id),ruleIds:['suffix.matching','target.house.fraction.half',
@@ -803,9 +809,9 @@ test('Selected Target fractional and hyphen styles are actually applied across r
   'target.house.hyphen.b','target.house.hyphen.c'],combine:false,billingSameAsShipping:false,
   optionalUnitCount:0});
  const unchanged=result.profiles.filter(row=>row.after.address1===row.before.address1);
- assert.equal(unchanged.length,2,'One original is retained per 18, rather than per main address group');
+ assert.equal(unchanged.length,4,'Exactly four profiles get the original written address first');
  const applied=result.profiles.slice(1).filter(row=>row.appliedRuleIds.some(id=>id.startsWith('target.house.')));
- assert.ok(applied.length>=10,'Hard styles retain an approximately balanced two-of-three family share');
+ assert.ok(applied.length>=16,'Once preferred full and short slots fill, subsequent profiles receive hard transformations');
  assert.ok(applied.some(row=>/target\.house\.fraction\./.test(row.appliedRuleIds.join(','))));
  assert.ok(applied.some(row=>/target\.house\.hyphen\./.test(row.appliedRuleIds.join(','))));
  assert.ok(applied.every(row=>row.after.address2===''),'No unit may be added without the checkbox');
@@ -828,7 +834,8 @@ test('Jig Studio optional-unit-only works with zero counted hard categories',asy
   ruleIds:[],hardCounts:{fraction:0,hyphen:0,doubleLetter:0,randomUnit:0},
   optionalUnitCount:2,combine:false,billingSameAsShipping:false});
  assert.equal(result.optionalUnitAdded,2);
- assert.equal(result.profiles.filter(x=>x.after.address2).length,2);
+ assert.equal(result.profiles.filter(x=>/(?:Apt|Unit|Ste|Lot|Rm|#|Fl|Bldg)\s+(?:[A-D]|[1-9])$/.test(x.after.address1)).length,2);
+ assert.ok(result.profiles.every(x=>x.after.address2===''));
  assert.equal(result.profiles.filter(x=>x.appliedRuleIds.includes('second-line.add')).length,2);
 });
 
@@ -860,7 +867,8 @@ test('Auto second-line sources saved unitless Main addresses when all selected p
  for(const item of changed){
   assert.equal(item.before.address2,'Apt 1309');
   assert.ok(/Forest Lane|Sunrise Road/.test(item.after.address1));
-  assert.match(item.after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
+  assert.match(item.after.address1,/(?:Apt|Unit|Ste|Lot|Rm|#|Fl|Bldg)\s+(?:[A-D]|[1-9])$/);
+  assert.equal(item.after.address2,'');
   assert.ok(item.appliedRuleIds.includes('second-line.add'));
   assert.equal(item.category,'automatic Address Bank source');
  }
@@ -1046,7 +1054,8 @@ test('Walmart Jig uses every eligible saved Main house, adds unique optional sec
  for(const p of plan.profiles){
   assert.equal(p.before.address2,'Apt 41');
   assert.equal(p.category,'random saved Address Bank source');
-  assert.match(p.after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
+  assert.match(p.after.address1,/(?:Apt|Unit|Ste|Lot|Rm|#|Fl|Bldg)\s+(?:[A-D]|[1-9])$/);
+  assert.equal(p.after.address2,'');
   assert.ok(mainAddresses.some(a=>a.address1===p.mainAddress.address1));
   assert.ok(p.unitBankSourceId?.startsWith('bank:'));
   assert.ok(p.appliedRuleIds.includes('second-line.add'));
@@ -1257,4 +1266,156 @@ test('Failed or stale website returns do not delete local customer mirrors or mo
  row=(await lib.list(event,h.a)).profiles[0];
  assert.equal(row.sourceLinked,true);
  assert.equal((await lib.list(event,h.b)).profiles.length,0);
+});
+
+
+test('Target directional rules normalize all eight directions and keep alternate formats opt-in',()=>{
+ const cases=[
+  ['North','N','No'],['South','S','So'],['East','E','Ea'],['West','W','We'],
+  ['Northeast','NE','N.E.'],['Northwest','NW','N.W.'],['Southeast','SE','S.E.'],['Southwest','SW','S.W.']
+ ];
+ const ids=LC.ruleOptions('target').map(x=>x.id);
+ for(const id of ['target.direction.short','target.direction.long','target.direction.alternate','target.direction.spaced'])
+  assert.ok(ids.includes(id),id+' must be selectable in Target Jig Settings');
+ const original=complete('target','directions@example.test');
+ function address(street){
+  return D.manualEdit(original,{...D.toValues(original),'shipping.address1':street,'billing.address1':street});
+ }
+ for(const [long,short,alternate] of cases){
+  const full='100 '+long+' Example Avenue';
+  const result=LC.jig(address(full),'target',1,['target.direction.short']);
+  assert.equal(D.toValues(result)['shipping.address1'],'100 '+short+' Example Avenue',long+' standard short');
+  const nonstandard=LC.jig(address(full),'target',1,['target.direction.alternate']);
+  assert.equal(D.toValues(nonstandard)['shipping.address1'],'100 '+alternate+' Example Avenue',long+' alternative');
+  const restored=LC.jig(address('100 '+short+' Example Avenue'),'target',1,['target.direction.long']);
+  assert.equal(D.toValues(restored)['shipping.address1'],full,long+' full direction');
+ }
+ for(const [short,spaced] of [['NE','North East'],['NW','North West'],['SE','South East'],['SW','South West']]){
+  const result=LC.jig(address('100 '+short+' Example Avenue'),'target',1,['target.direction.spaced']);
+  assert.equal(D.toValues(result)['shipping.address1'],'100 '+spaced+' Example Avenue',short+' spaced diagonal');
+  const normalized=LC.jig(address('100 '+spaced+' Example Avenue'),'target',1,['target.direction.short']);
+  assert.equal(D.toValues(normalized)['shipping.address1'],'100 '+short+' Example Avenue',short+' spaced normalizes');
+ }
+ const post=LC.jig(address('100 Example Avenue Northeast'),'target',1,['target.direction.short']);
+ assert.equal(D.toValues(post)['shipping.address1'],'100 Example Avenue NE');
+ const noDirection=LC.jig(address('100 Example Avenue'),'target',1,['target.direction.alternate']);
+ assert.equal(D.toValues(noDirection)['shipping.address1'],'100 Example Avenue','Never insert a direction that is not already present');
+ assert.equal(LC.jigStyle('target.direction.alternate'),'direction-alternate');
+ assert.equal(LC.jigStyle('target.direction.spaced'),'direction-spaced');
+});
+
+test('Random inline-unit generator allows only eight labeled formats after Address Line 1, never a bare number',()=>{
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../profile-library-service.js'),'utf8');
+ assert.match(source,/SECOND_LINE_LABELS=\['Apt','Unit','Ste','Lot','Rm','#','Fl','Bldg'\]/);
+ assert.match(source,/const unit=label\+' '\+identifier/);
+ assert.match(source,/values\['shipping\.address1'\]=after\.address1\.trimEnd\(\)\+' '\+unit/);
+ assert.doesNotMatch(source,/SECOND_LINE_LABELS=\[[^\n]*''\]/);
+ assert.match(source,/crypto\.randomInt\(SECOND_LINE_LABELS\.length\*SECOND_LINE_IDS\.length\)/);
+});
+
+
+function targetAddressForTest(street,unit,city,zip){
+ const source=complete('target','address-format@example.test'),v=D.toValues(source);
+ return D.manualEdit(source,{...v,
+  'shipping.address1':street,'shipping.address2':unit,'shipping.city':city,'shipping.state':'FL','shipping.zip':zip,
+  'billing.address1':street,'billing.address2':unit,'billing.city':city,'billing.state':'FL','billing.zip':zip});
+}
+
+test('Target specific suffix substitutions never leak beyond their four approved base streets',()=>{
+ const lists=[
+  ['bayberry','980 Bayberry Point Drive','PLANTATION','33324-3507',['Drive','Road','Trail','Way','Lane','Court']],
+  ['sabal','1811 Sabal Palm Drive','FORT LAUDERDALE','33324-5930',['Drive','Road','Lane','Way','Court','Circle']],
+  ['turtle','3775 Turtle Run Boulevard','CORAL SPRINGS','33067-4252',['Boulevard','Road','Drive','Lane','Way','Court']],
+  ['bristol','5871 Bristol Lane','DAVIE','33331-3242',['Lane','Road','Drive','Way','Court','Place']]
+ ];
+ const options=LC.ruleOptions('target').map(x=>x.id);
+ for(const [key,street,city,zip,allow] of lists){
+  const record=targetAddressForTest(street,key==='sabal'?'Apt 201':key==='turtle'?'Apt 1433':'',city,zip);
+  const ruleIds=options.filter(id=>id.startsWith('target.special-suffix.'+key+'.'));
+  assert.equal(ruleIds.length,allow.length*2,'Every allowed spelling has a full form and USPS-style abbreviation');
+  for(const suffix of allow){
+   const rule='target.special-suffix.'+key+'.'+suffix.toLowerCase();
+   assert.ok(options.includes(rule),rule+' should be selectable');
+   const out=LC.jig(record,'target',1,[rule]),values=D.toValues(out);
+   assert.equal(values['shipping.address1'],street.replace(/\b(?:Drive|Lane|Boulevard)$/i,suffix),key+' '+suffix);
+   assert.equal(values['shipping.address2'],D.toValues(record)['shipping.address2'],'Never rewrite an apartment');
+  }
+  const altered=targetAddressForTest(street.replace(/^\d+/,v=>String(Number(v)+1)),'',city,zip);
+  const bad=LC.jig(altered,'target',1,[ruleIds.find(id=>id.endsWith('.road'))||ruleIds[0]]);
+  assert.equal(D.toValues(bad)['shipping.address1'],D.toValues(altered)['shipping.address1'],'Whitelisted jigs cannot change a different building');
+ }
+ const sample=targetAddressForTest('980 Bayberry Point Drive','','PLANTATION','33324-3507');
+ const wrongCity=targetAddressForTest('980 Bayberry Point Drive','','DAVIE','33324-3507');
+ assert.equal(D.toValues(LC.jig(wrongCity,'target',1,['target.special-suffix.bayberry.road']))['shipping.address1'],'980 Bayberry Point Drive');
+ assert.throws(()=>LC.jig(sample,'pokemoncenter',1,['target.special-suffix.bayberry.road']),/Target-only jig rules/);
+});
+
+test('451 Apt 102 and 103 special formats retain the original numbered unit and scope',()=>{
+ const allowed=LC.ruleOptions('target').map(x=>x.id);
+ for(const unit of ['102','103']){
+  const base=targetAddressForTest('451 NW 87th Lane','Apt '+unit,'PLANTATION','33324-6540');
+  const cases=[
+   ['target.451.unit-label.unit','451 NW 87th Lane, Unit '+unit,''],
+   ['target.451.letter.d','451 NW 87th Lane, Apt '+unit+'D',''],
+   ['target.451.hyphen.9','451 NW 87th Lane, Apt '+unit+'-9',''],
+   ['target.451.floor.9','451 NW 87th Lane, Apt '+unit+', Fl 9',''],
+   ['target.451.box.d','451 NW 87th Lane, Apt '+unit+', Box D',''],
+   ['target.451.unit-ste-line2.a','451 NW 87th Lane','Unit '+unit+' Ste A'],
+   ['target.451.avenue-lane','451 NW 87th Avenue Lane','Apt '+unit]
+  ];
+  for(const [id,expected1,expected2] of cases){
+   assert.ok(allowed.includes(id),id+' is a separate Target-only rule');
+   const v=D.toValues(LC.jig(base,'target',1,[id]));
+   assert.equal(v['shipping.address1'],expected1,id+' '+unit+' Line 1');
+   assert.equal(v['shipping.address2'],expected2,id+' '+unit+' Line 2');
+   assert.equal(v['shipping.zip'],'33324-6540');
+  }
+  assert.equal(LC.target451UnitInfo({address1:'451 NW 87th Lane',address2:'Apt '+unit,city:'Plantation',state:'FL',zip:'33324-6540'}).unit,unit);
+ }
+ for(const [street,unit,city,zip] of [
+  ['451 NW 87th Lane','Apt 104','PLANTATION','33324-6540'],
+  ['450 NW 87th Lane','Apt 102','PLANTATION','33324-6540'],
+  ['451 NW 87th Lane','Apt 102','DAVIE','33324-6540'],
+  ['451 NW 87th Lane','Apt 102','PLANTATION','33325']
+ ]){
+  const base=targetAddressForTest(street,unit,city,zip);
+  const v=D.toValues(LC.jig(base,'target',1,['target.451.letter.a']));
+  assert.equal(v['shipping.address1'],street,'Do not apply 451 unit exceptions outside Apt 102/103 at this building');
+  assert.equal(v['shipping.address2'],unit);
+ }
+ assert.deepEqual(LC.TARGET_451_LIMITS.letters,['A','B','C','D']);
+ assert.deepEqual(LC.TARGET_451_LIMITS.numbers,[1,2,3,4,5,6,7,8,9]);
+});
+
+test('Target preview and commit allow 451 Apt 102 special format only after validating original unit',async t=>{
+ const h=await library(t);
+ const source=targetAddressForTest('451 NW 87th Lane','Apt 102','PLANTATION','33324-6540');
+ await commit(h,await preview(h,[source]));
+ const existing=(await h.lib.list(event,h.p)).profiles[0];
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[existing.id],
+  ruleIds:['target.451.letter.a'],combine:false,billingSameAsShipping:true});
+ assert.equal(plan.profiles[0].after.address1,'451 NW 87th Lane, Apt 102A');
+ assert.equal(plan.profiles[0].after.address2,'');
+ assert.equal(plan.changed,1);
+ const commitResult=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.ok(commitResult);
+ const saved=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(D.toValues(saved.data)['shipping.address1'],'451 NW 87th Lane, Apt 102A');
+ assert.equal(D.toValues(saved.data)['shipping.address2'],'');
+});
+
+test('Five Target profiles use four identical full addresses followed by first standard abbreviation',async t=>{
+ const h=await library(t);
+ for(let i=0;i<5;i++)await commit(h,await preview(h,[complete('target','four-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false});
+ assert.equal(plan.profiles.length,5);
+ assert.deepEqual(plan.profiles.map(x=>x.after.address1),[
+  '100 Example Avenue','100 Example Avenue','100 Example Avenue','100 Example Avenue','100 Example Ave']);
+ assert.equal(plan.changed,1);
+ assert.equal(plan.duplicateAddresses.length,0,'Exact repeat within four slots does not need an override');
+ await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ const saved=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(saved.filter(x=>D.toValues(x.data)['shipping.address1']==='100 Example Ave').length,1);
 });
