@@ -1533,14 +1533,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const bankRows=bankChoices.filter(item=>item.id.startsWith('bank:')&&item.type==='main');
   const unique=new Map();
   const rank=address=>{
-   const street=String(address.address1||'').toUpperCase().replace(/\\s+/g,' ');
-   if(/^(980 BAYBERRY POINT|1811 SABAL PALM|3775 TURTLE RUN|5871 BRISTOL)\\b/.test(street))return 0;
-   if(/^451\\s+(?:NW|NORTHWEST|NORTH WEST)\\s+87TH?\\s+/.test(street))return 1;
+   const street=String(address.address1||'').toUpperCase().replace(/\s+/g,' ');
+   if(/^(980 BAYBERRY POINT|1811 SABAL PALM|3775 TURTLE RUN|5871 BRISTOL)\b/.test(street))return 0;
+   if(/^451\s+(?:NW|NORTHWEST|NORTH WEST)\s+87TH?\s+/.test(street))return 1;
    return 2;
   };
   for(const item of bankRows){
    const address=item.address;
-   if(/^451\\s+(?:NW|NORTHWEST|NORTH WEST)\\s+87TH?\\s+/.test(String(address.address1||'').toUpperCase())&&
+   if(/^451\s+(?:NW|NORTHWEST|NORTH WEST)\s+87TH?\s+/.test(String(address.address1||'').toUpperCase())&&
       (normalizedAddressPart(address.city)!=='PLANTATION'||String(address.zip||'').slice(0,5)!=='33324'))
     throw Error('451 NW 87th Lane must be saved in this Address Bank with city Plantation and ZIP 33324 before Target Rejig. No changes made.');
    const values=D.toValues(rows[0].originalData);
@@ -1593,7 +1593,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   for(let i=0;i<extras.length;i++){
    const row=extras[i];let done=false;
    for(let offset=0;offset<mains.length;offset++){
-    const main=mains[(i+offset)%mains.length];
+    const main=mains[offset];
     const baseData=sourceData(row,main);
     try{
      const plan=preferredTargetJig({data:baseData},ruleIds,occupancy,{single:true,mirrorBilling});
@@ -1683,7 +1683,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   // verification. Only the city name may change; ZIP/state/street stay intact.
   const postalScanned=new Map();
   let postalAlternativeCount=0;
-  if(p.postalScan===true){
+  if(p.postalScan===true&&!targetMainFromBank){
    if(typeof getPostalJigOptions!=='function')throw Error('Online postal city crossover scanner is unavailable in this Studio build.');
    const distinct=new Map();
    for(const row of regularSelected){
