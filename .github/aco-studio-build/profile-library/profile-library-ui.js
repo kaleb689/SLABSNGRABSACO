@@ -900,7 +900,7 @@
   groupedJigChoices(choices,settings);
   const combine=text('label','Combine selected jig styles'),combineCheck=d.createElement('input');combineCheck.type='checkbox';combine.className='check';combine.prepend(combineCheck);
   const billing=text('label','Billing same as jigged shipping address'),billingCheck=d.createElement('input');billingCheck.type='checkbox';billing.className='check';billing.prepend(billingCheck);
-  const unitToggleLabel=text('label','Optional: add a random Apt / Unit / Ste / # / number to address line 2 when no unit exists');
+  const unitToggleLabel=text('label','Optional: add Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg to line 2 (e.g., Apt A; never just A)');
   unitToggleLabel.className='check';const unitToggle=d.createElement('input');unitToggle.type='checkbox';unitToggle.checked=false;unitToggleLabel.prepend(unitToggle);
   const preview=text('button','Preview saved-resource jig options');preview.type='button';preview.className='btn secondary';
   win.body.append(sources,choices,combine,billing,unitToggleLabel,preview,previews);
@@ -933,13 +933,21 @@
  // applicable variations per profile rather than requiring dozens of clicks.
  function jigFamily(option){
   const id=String(option.id||''),name=String(option.label||''),value=id+' '+name;
-  if(/^target\.house\.integer\./.test(id))return ['integer-house','Integer house-number additions (+1 to +9)'];
-   if(/^target\.house\.fraction\./.test(id))return ['fraction-house','Fractional house numbers (1/2, 1/3, 1/4)'];
-  if(/^target\.house\.hyphen\./.test(id))return ['hyphen-house','Hyphenated house numbers (-A through -H)'];
-  if(/ordinal|\b(?:2nd|3rd|4th|second|third|fourth)\b|\b[234]\s*(?:→|->)\s*(?:2nd|second|3rd|third|4th|fourth)\b/i.test(value))return ['ordinals','Street ordinals (2, 2nd, second, etc.)'];
-  if(/(?:compass|direction|north|south|east|west|\bnw\b|\bne\b|\bsw\b|\bse\b)/i.test(value))return ['directions','Compass directions (NW, Northwest, etc.)'];
-  if(/(?:apt|apartment|suite|\bste\b|\bunit\b|\broom\b|\bfloor\b|\bcondo\b)/i.test(value))return ['units','Apartment / suite / unit labels (Apt, Ste, Unit, #, etc.)'];
-  if(/(?:suffix|street type|road|avenue|lane|boulevard|drive|terrace)/i.test(value))return ['suffix','Street type spelling (St/Street, Rd/Road, etc.)'];
+  // Keep alternate shorthands separate and opt-in; do not conflate postal
+  // abbreviations (N/S/E/W/NE/NW/SE/SW) with nonstandard spellings.
+  if(id==='target.direction.alternate')return ['direction-alternate','Alternate directional abbreviations (North → No; South → So; East → Ea; West → We; NE → N.E.; NW → N.W.; SE → S.E.; SW → S.W.)'];
+  if(id==='target.direction.spaced')return ['direction-spaced','Diagonal direction spacing (Northeast → North East; Northwest → North West; Southeast → South East; Southwest → South West)'];
+  if(/^target\.house\.integer\./.test(id))return ['integer-house','Integer house-number additions (123 Main St → 123 1 Main St through 123 9 Main St)'];
+  if(/^target\.house\.fraction\./.test(id))return ['fraction-house','Fractional house numbers (123 Main St → 123 1/2 Main St; 1/3 or 1/4)'];
+  if(/^target\.house\.hyphen\./.test(id))return ['hyphen-house','Hyphenated house numbers (123 Main St → 123-A Main St through 123-H Main St)'];
+  if(/ordinal|\b(?:2nd|3rd|4th|second|third|fourth)\b|\b[234]\s*(?:→|->)\s*(?:2nd|second|3rd|third|4th|fourth)\b/i.test(value))return ['ordinals','Street ordinals (123 2nd St → 123 Second St)'];
+  if(/^target\.direction\./.test(id)||/(?:compass|direction|north|south|east|west|\bnw\b|\bne\b|\bsw\b|\bse\b)/i.test(value))
+    return ['directions','Standard directions (North → N; South → S; East → E; West → W; NE/NW/SE/SW and full names)'];
+  if(/(?:apt|apartment|suite|\bste\b|\bunit\b|\broom\b|\bfloor\b|\bcondo\b)/i.test(value))
+    return ['units','Existing unit labels (Apt 4, Unit 4, Ste 4; saved unit labels and numbers are protected)'];
+  if(/(?:suffix|street type|road|avenue|lane|boulevard|drive|terrace)/i.test(value))
+    return ['suffix','Street suffix spelling (123 Main Street → 123 Main St; Road → Rd)'];
+  if(id==='phone_florida_random')return ['phone','Florida phone format (e.g., 954-555-0101)'];
   return [id,name];
  }
  function groupedJigChoices(host,settings){
@@ -1034,13 +1042,13 @@
     distributionToggle.onchange=()=>{distributionPanel.hidden=!distributionToggle.checked;distributionInputs();};
     rules.addEventListener('change',()=>{if(distributionToggle.checked)distributionInputs();});
     const billing=text('label','Automatically match the jigged shipping and billing addresses'),billingBox=d.createElement('input');billing.className='check';billingBox.type='checkbox';billingBox.checked=true;billing.prepend(billingBox);
-   const optionalUnitLabel=text('label','Add random Apt / Unit / Ste / # / number to address line 2 (only if no unit exists)');
+   const optionalUnitLabel=text('label','Add random Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg to line 2 (only if no unit exists)');
    optionalUnitLabel.className='check';
    const optionalUnitToggle=d.createElement('input');optionalUnitToggle.type='checkbox';optionalUnitToggle.checked=retailer==='walmart';optionalUnitLabel.prepend(optionalUnitToggle);
    const unitQuantityLabel=text('label','How many eligible selected profiles should receive a new unit?');
    const unitQuantity=d.createElement('input');unitQuantity.type='number';unitQuantity.min='1';unitQuantity.max=String(chosen.length);
    unitQuantity.step='1';unitQuantity.value=String(chosen.length);unitQuantityLabel.append(unitQuantity);unitQuantityLabel.hidden=!optionalUnitToggle.checked;
-   const optionalUnitHelp=text('small','Walmart defaults to ON for random second-line generation, with an editable quantity; other retailers remain OFF. New Apt/Unit/Ste/#/bare A-D or 1-9 identifiers only apply to unitless Main houses. Original bank addresses remain unchanged. Generated units are not delivery-point verified.');
+   const optionalUnitHelp=text('small','Walmart defaults to ON for random second-line generation, with an editable quantity; other retailers remain OFF. New Apt/Unit/Ste/Lot/Rm/#/Fl/Bldg plus A-D or 1-9 identifiers only apply to unitless Main houses. A bare identifier is never generated. Original bank addresses remain unchanged. Generated units are not delivery-point verified.');
    const bankSourceLabel=text('label','Walmart: randomize using the entire saved Address Bank (not just these profiles)');
    bankSourceLabel.className='check';bankSourceLabel.hidden=retailer!=='walmart';
    const bankSourceToggle=d.createElement('input');bankSourceToggle.type='checkbox';bankSourceToggle.checked=retailer==='walmart';bankSourceLabel.prepend(bankSourceToggle);
