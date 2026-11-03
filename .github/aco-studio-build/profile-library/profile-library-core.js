@@ -217,6 +217,56 @@ const TARGET_PRIMARY_RULES=Object.freeze([
  ...[['target.house.fraction.half','1/2'],['target.house.fraction.third','1/3'],['target.house.fraction.quarter','1/4']].map(([id,value])=>({id,label:'Target house number + '+value,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\d+\s/.test(street))return null;const changed=street.replace(/^(\d+)(?=\s)/,'$1 '+value);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}})),
  ...'ABCDEFGH'.split('').map(letter=>({id:'target.house.hyphen.'+letter.toLowerCase(),label:'Target house number -'+letter,risk:'higher',family:'target-primary',apply:address=>{const next={...address},street=clean(next.address1||next.address||'');if(!/^\d+\s/.test(street))return null;const changed=street.replace(/^(\d+)(?=\s)/,'$1-'+letter);if(changed===street)return null;if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;return next;}}))
 ]);
+// Target-only direction formats: never invent a direction that is absent
+// from the real street address. Non-USPS shorthands remain separate opt-ins.
+const TARGET_DIRECTION_FORMS=Object.freeze([
+ {short:'N',long:'North',alternate:'No'},
+ {short:'S',long:'South',alternate:'So'},
+ {short:'E',long:'East',alternate:'Ea'},
+ {short:'W',long:'West',alternate:'We'},
+ {short:'NE',long:'Northeast',alternate:'N.E.',spaced:'North East'},
+ {short:'NW',long:'Northwest',alternate:'N.W.',spaced:'North West'},
+ {short:'SE',long:'Southeast',alternate:'S.E.',spaced:'South East'},
+ {short:'SW',long:'Southwest',alternate:'S.W.',spaced:'South West'}
+]);
+function applyTargetDirection(address,variant){
+ const street=clean(address?.address1||address?.address||'');
+ const parts=street.split(/\s+/);
+ if(parts.length<4||!/^\d+[A-Z0-9/-]*$/i.test(parts[0]))return null;
+ const matching=(start,count)=>{
+  const token=parts.slice(start,start+count).join(' ').toLowerCase();
+  return TARGET_DIRECTION_FORMS.find(form=>
+   [form.short,form.long,form.alternate,form.spaced].filter(Boolean).some(s=>s.toLowerCase()===token));
+ };
+ let match=null,start=-1,count=0;
+ // Pre-directional must leave an actual street name plus suffix after it.
+ for(const width of [2,1]){
+  if(parts.length-(1+width)<2)continue;
+  const found=matching(1,width);
+  if(found){match=found;start=1;count=width;break;}
+ }
+ // Post-directional must follow a recognized street suffix, not a street name.
+ if(!match)for(const width of [2,1]){
+  const at=parts.length-width;
+  if(at<3)continue;
+  const prior=parts[at-1].replace(/\.$/,'').toLowerCase();
+  if(!suffixEquivalents.some(pair=>pair.some(x=>x.toLowerCase()===prior)))continue;
+  const found=matching(at,width);
+  if(found){match=found;start=at;count=width;break;}
+ }
+ if(!match||!match[variant])return null;
+ const changed=[...parts.slice(0,start),match[variant],...parts.slice(start+count)].join(' ');
+ if(changed.toLowerCase()===street.toLowerCase())return null;
+ const next={...address};
+ if(Object.hasOwn(next,'address1'))next.address1=changed;else next.address=changed;
+ return next;
+}
+const TARGET_DIRECTION_RULES=Object.freeze([
+ {id:'target.direction.short',label:'Directional abbreviations (North→N; South→S; East→E; West→W; Northeast→NE)',risk:'standard',family:'target-direction',apply:address=>applyTargetDirection(address,'short')},
+ {id:'target.direction.long',label:'Directional full forms (N→North; S→South; E→East; W→West; NE→Northeast)',risk:'standard',family:'target-direction',apply:address=>applyTargetDirection(address,'long')},
+ {id:'target.direction.alternate',label:'Alternate directional abbreviations (North→No; South→So; East→Ea; West→We; NE→N.E.)',risk:'higher',family:'target-direction',apply:address=>applyTargetDirection(address,'alternate')},
+ {id:'target.direction.spaced',label:'Spaced diagonal directions (NE→North East; NW→North West; SE→South East; SW→South West)',risk:'higher',family:'target-direction',apply:address=>applyTargetDirection(address,'spaced')}
+]);
 const suffixEquivalents=[['Street','St'],['Road','Rd'],['Avenue','Ave'],['Drive','Dr'],['Lane','Ln'],['Boulevard','Blvd'],['Court','Ct'],['Terrace','Ter'],['Circle','Cir'],['Parkway','Pkwy'],['Trail','Trl'],['Highway','Hwy'],['Place','Pl'],['Way','Wy'],['Alley','Aly'],['Square','Sq']];
 const oldSuffixRule=id=>/^(?:street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)_(?:short|long|abbr|full)$/i.test(id)
  ||/^suffix[._-](?:street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)(?:[._-](?:short|long|abbr|full))?$/i.test(id);
@@ -234,6 +284,8 @@ const SUFFIX_MATCH_RULE={id:'suffix.matching',label:'Matching street type (St/St
  }};
 // Stable family IDs are shared with the batch UI and allocation engine.
 function jigStyle(id){
+ if(/^target\.direction\.(?:alternate|spaced)$/.test(id))return 'directions-alt';
+ if(/^target\.direction\./.test(id))return 'directions';
  if(/^target\.house\.integer\./.test(id))return 'integer-house';
  if(/^target\.house\.fraction\./.test(id))return 'fraction-house';
  if(/^target\.house\.hyphen\./.test(id))return 'hyphen-house';
@@ -246,18 +298,18 @@ function jigStyle(id){
  return id;
 }
 const coreRule=id=>id===SUFFIX_MATCH_RULE.id?SUFFIX_MATCH_RULE:Core.RULES.find(x=>x.id===id);
-const targetRule=id=>TARGET_PRIMARY_RULES.find(x=>x.id===id),ruleById=id=>coreRule(id)||targetRule(id);
+const targetRule=id=>[...TARGET_PRIMARY_RULES,...TARGET_DIRECTION_RULES].find(x=>x.id===id),ruleById=id=>coreRule(id)||targetRule(id);
 function ruleOptions(r){
  retailer(r);
  const standard=Core.RULES.filter(x=>!/^prefix_three/.test(x.id)&&!oldSuffixRule(x.id)).map(x=>({id:x.id,label:x.label,risk:'standard',family:'standard'}));
  const {id,label,risk,family}=SUFFIX_MATCH_RULE;const matching={id,label,risk,family};
- return r==='target'?[...standard,matching,...TARGET_PRIMARY_RULES.map(({id,label,risk,family})=>({id,label,risk,family}))]:[...standard,matching];
+ return r==='target'?[...standard,matching,...TARGET_DIRECTION_RULES,...TARGET_PRIMARY_RULES].map(({id,label,risk,family})=>({id,label,risk,family})):[...standard,matching];
 }
 const defaultRules=r=>{
  const safe=[...new Set(Core.defaultRuleIDs.filter(id=>!/(prefix|fraction|fictitious|fabricated|phone)/i.test(id))
   .map(id=>oldSuffixRule(id)?SUFFIX_MATCH_RULE.id:id))];
  if(!safe.includes(SUFFIX_MATCH_RULE.id))safe.push(SUFFIX_MATCH_RULE.id);
- return retailer(r)==='target'?[...safe,...TARGET_PRIMARY_RULES.map(x=>x.id)]:safe;
+ return retailer(r)==='target'?[...new Set([...safe,...TARGET_DIRECTION_RULES.filter(x=>x.risk==='standard').map(x=>x.id),...TARGET_PRIMARY_RULES.map(x=>x.id)])]:safe;
 };
 function jig(data,r,index,rules=defaultRules(r)){
  retailer(r);
@@ -320,5 +372,5 @@ function existingLiveReconciliation(rows,retailer){
   cardOnlyMatches:candidates.filter(x=>x.reason==='full-card').length,
   blockedCount:blocked.length,blocked,unmatchedCount:unmatched.length,signature};
 }
-module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,jigStyle,TARGET_PRIMARY_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
+module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,jigStyle,TARGET_PRIMARY_RULES,TARGET_DIRECTION_RULES,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
 
