@@ -900,7 +900,7 @@
   groupedJigChoices(choices,settings);
   const combine=text('label','Combine selected jig styles'),combineCheck=d.createElement('input');combineCheck.type='checkbox';combine.className='check';combine.prepend(combineCheck);
   const billing=text('label','Billing same as jigged shipping address'),billingCheck=d.createElement('input');billingCheck.type='checkbox';billing.className='check';billing.prepend(billingCheck);
-  const unitToggleLabel=text('label','Optional: add Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg to line 2 (e.g., Apt A; never just A)');
+  const unitToggleLabel=text('label','Optional: append Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg to Address Line 1 (123 Main St → 123 Main St Apt A; never just A)');
   unitToggleLabel.className='check';const unitToggle=d.createElement('input');unitToggle.type='checkbox';unitToggle.checked=false;unitToggleLabel.prepend(unitToggle);
   const preview=text('button','Preview saved-resource jig options');preview.type='button';preview.className='btn secondary';
   win.body.append(sources,choices,combine,billing,unitToggleLabel,preview,previews);
@@ -1006,7 +1006,7 @@
    info.style.cssText='display:block;margin-top:5px;color:#ffd28c';
    block.append(info);
   }
-  const rules=(row.appliedRuleIds||[]).map(id=>id==='second-line.add'?'Added second-line unit':id.startsWith('hard.')?'Hard '+id.slice(5):(settings.options||[]).find(rule=>rule.id===id)?.label||id);
+  const rules=(row.appliedRuleIds||[]).map(id=>id==='second-line.add'?'Appended unit to Address Line 1':id.startsWith('hard.')?'Hard '+id.slice(5):(settings.options||[]).find(rule=>rule.id===id)?.label||id);
   if(rules.length){
    const label=d.createElement('small');label.textContent='Applied: '+rules.join(' · ');
    label.style.cssText='display:block;margin-top:5px;color:#8dddd4';block.append(label);
@@ -1042,13 +1042,13 @@
     distributionToggle.onchange=()=>{distributionPanel.hidden=!distributionToggle.checked;distributionInputs();};
     rules.addEventListener('change',()=>{if(distributionToggle.checked)distributionInputs();});
     const billing=text('label','Automatically match the jigged shipping and billing addresses'),billingBox=d.createElement('input');billing.className='check';billingBox.type='checkbox';billingBox.checked=true;billing.prepend(billingBox);
-   const optionalUnitLabel=text('label','Add random Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg to line 2 (only if no unit exists)');
+   const optionalUnitLabel=text('label','Append random Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg after the street on Line 1 (no existing unit)');
    optionalUnitLabel.className='check';
    const optionalUnitToggle=d.createElement('input');optionalUnitToggle.type='checkbox';optionalUnitToggle.checked=retailer==='walmart';optionalUnitLabel.prepend(optionalUnitToggle);
    const unitQuantityLabel=text('label','How many eligible selected profiles should receive a new unit?');
    const unitQuantity=d.createElement('input');unitQuantity.type='number';unitQuantity.min='1';unitQuantity.max=String(chosen.length);
    unitQuantity.step='1';unitQuantity.value=String(chosen.length);unitQuantityLabel.append(unitQuantity);unitQuantityLabel.hidden=!optionalUnitToggle.checked;
-   const optionalUnitHelp=text('small','Walmart defaults to ON for random second-line generation, with an editable quantity; other retailers remain OFF. New Apt/Unit/Ste/Lot/Rm/#/Fl/Bldg plus A-D or 1-9 identifiers only apply to unitless Main houses. A bare identifier is never generated. Original bank addresses remain unchanged. Generated units are not delivery-point verified.');
+   const optionalUnitHelp=text('small','Walmart defaults to ON for optional inline-designator generation, with an editable quantity; other retailers remain OFF. Appended designators appear after the street on Address Line 1 (e.g. 123 Main St Apt A), and Address Line 2 remains empty. Only unitless Main houses qualify; no bare A-D / 1-9 identifiers. Original bank addresses remain unchanged. Generated units are not delivery-point verified.');
    const bankSourceLabel=text('label','Walmart: randomize using the entire saved Address Bank (not just these profiles)');
    bankSourceLabel.className='check';bankSourceLabel.hidden=retailer!=='walmart';
    const bankSourceToggle=d.createElement('input');bankSourceToggle.type='checkbox';bankSourceToggle.checked=retailer==='walmart';bankSourceLabel.prepend(bankSourceToggle);
