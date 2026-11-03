@@ -1130,16 +1130,17 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const violation=existingUnitViolation(before,after);
   if(violation)throw Error(violation+' Unit jigs only apply when the original address has no unit.');
  }
- // Opt-in generated secondary lines: no bare number-only label. Existing real
- // unit identifiers must never be changed or replaced. Generated suffixes are
+ // Opt-in inline secondary designators: append at the end of Address Line 1
+ // only. Never populate Line 2, never generate bare-number labels, and never
+ // rewrite a real unit already present on either address line. These are
  // formatting experiments, not verified USPS delivery-point identifiers.
  const SECOND_LINE_LABELS=['Apt','Unit','Ste','Lot','Rm','#','Fl','Bldg'];
  const SECOND_LINE_IDS=['A','B','C','D','1','2','3','4','5','6','7','8','9'];
  function addMissingUnitLine(original,generated,position,occupiedKeys=new Set(),usedUnitLabels=new Set()){
   const originalAddress=addressView(original),after=addressView(generated);
-  if(originalAddress.address2.trim()||inlineUnit(originalAddress.address1)||after.address2.trim())
+  if(originalAddress.address2.trim()||inlineUnit(originalAddress.address1)||
+     after.address2.trim()||inlineUnit(after.address1))
    return {data:generated,added:false,reason:'existing-unit'};
-  if(inlineUnit(after.address1))throw Error('Generated unit must be on address line 2, not added to the street.');
   // Retain A-D / 1-9 identifiers. Visit all eight label styles and all
   // thirteen identifiers before reporting that the finite pool is exhausted.
   const total=SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length;
@@ -1149,15 +1150,16 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const label=SECOND_LINE_LABELS[idx%SECOND_LINE_LABELS.length];
    const identifier=SECOND_LINE_IDS[Math.floor(idx/SECOND_LINE_LABELS.length)%SECOND_LINE_IDS.length];
    const unit=label+' '+identifier;
-   // Prefer distinct new second lines among profiles using the same main
-   // address. After all 65 are used, another street jig may still allow a
-   // unique full address, so only then permit a reused unit label.
+   // Prefer distinct appended designators across profiles using the same
+   // base address. Try the whole 104-variant palette before reusing a label
+   // on a different street jig; full-address conflicts are still rejected.
    if(pass===0&&usedUnitLabels.has(normalizedAddressPart(unit)))continue;
    const values=D.toValues(generated);
-   values['shipping.address2']=unit;
+   values['shipping.address1']=after.address1.trimEnd()+' '+unit;
+   // Address Line 2 must remain untouched.
    const candidate=D.manualEdit(generated,values);
    if(!occupiedKeys.has(mainAddressKey({data:candidate})))
-    return {data:candidate,added:true,optionsChecked:step+1+pass*total};
+    return {data:candidate,added:true,unit,optionsChecked:step+1+pass*total};
   }
   return {data:generated,added:false,reason:'exhausted',optionsChecked:total};
  }
@@ -1322,7 +1324,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(variant>=SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length)return null;
    const label=SECOND_LINE_LABELS[variant%SECOND_LINE_LABELS.length];
    const identifier=SECOND_LINE_IDS[Math.floor(variant/SECOND_LINE_LABELS.length)];
-   nextUnit=label+' '+identifier;
+   next=street+' '+label+' '+identifier;
   }else return null;
   if(next===street&&nextUnit===unit)return null;
   return D.manualEdit(data,{...v,'shipping.address1':next,'shipping.address2':nextUnit});
@@ -1442,8 +1444,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
   const savedBankChoices=(autoUnitFromAddressBank||sourceMainFromBank)?(await reusableShippingChoices(a,all)).filter(item=>item.id.startsWith('bank:')):[];
   const unitlessBankChoices=savedBankChoices.filter(item=>item.type==='main'&&!item.address.address2.trim()&&!inlineUnit(item.address.address1));
-  // Random new Apt/Unit lines use only unitless Main houses from the entire
-  // saved bank. With units OFF, every saved Main or Jigged bank entry is eligible.
+  // Random appended Apt/Unit/etc. designators use only unitless Main
+  // houses from the saved bank. With units OFF, every saved bank entry is eligible.
   const walmartPool=sourceMainFromBank?(optionalUnitCount?unitlessBankChoices:savedBankChoices):[];
   if(sourceMainFromBank&&!walmartPool.length)throw Error(optionalUnitCount?
    'No unitless saved Main addresses are available in the selected vault. Add a unitless house or turn off random second lines.':
@@ -1575,8 +1577,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(!unitlessBankChoices.length||candidates.length<needed)
     throw Error('This batch needs '+needed+' unitless saved Main address source(s), but none are available for the selected profiles in this vault’s Address Bank. Add a genuine unitless Main address to Address Bank, or reduce the requested count.');
    // Shuffle addresses and recipient order. Cycle the bank if requested count
-   // exceeds the number of bases: each new A-D / 1-9 second line must remain
-   // unique, with full-address conflicts checked before confirmation.
+   // exceeds the number of bases: each new A-D / 1-9 inline designator
+   // remains unique, with full-address conflicts checked before confirmation.
    const shuffle=list=>{const out=[...list];for(let i=out.length-1;i>0;i--){const j=crypto.randomInt(i+1);[out[i],out[j]]=[out[j],out[i]];}return out;};
    const sources=shuffle(unitlessBankChoices);
    const recipientOrder=shuffle(candidates);
@@ -1659,12 +1661,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      crypto.randomInt(SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length),new Set(occupied.keys()),usedUnitLabels);
     if(!result.added){
      reserve(previous,1);
-     throw Error('All '+(SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length)+' Apt/Unit/Ste/Lot/Rm/#/Fl/Bldg combinations (A-D or 1-9) are already used for this address. Select another base address or enable more address jig styles.');
+     throw Error('All '+(SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length)+' inline Apt/Unit/Ste/Lot/Rm/#/Fl/Bldg combinations (A-D or 1-9) are already used for this address. Select another base address or enable more address jig styles.');
     }
     let data=result.data;
     if(p.billingSameAsShipping===true||autoUnitFromAddressBank){
-     // A generated unit must accompany the matching shipping street, city,
-     // ZIP and state on billing; do not produce a mismatched mixed address.
+     // The complete jigged Address Line 1 (including the appended designator)
+     // must also be used for billing when billing mirroring is enabled.
      const values=D.toValues(data);
      for(const field of ['address1','address2','city','state','zip'])
       values['billing.'+field]=values['shipping.'+field];
@@ -1672,7 +1674,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     }
     row.data=C.syncCardholderToProfile(data);
     row.after=addressView(row.data);
-    usedUnitLabels.add(normalizedAddressPart(row.after.address2));
+    usedUnitLabels.add(normalizedAddressPart(result.unit));
     reserve(mainAddressKey({data:row.data}),1);
     ensureExistingUnitPreserved(row.unitBankSourceId?row.unitBankSourceAddress:row.before,row.after);
     row.appliedRuleIds.push('second-line.add');
