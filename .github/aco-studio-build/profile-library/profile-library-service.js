@@ -1474,7 +1474,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   for(const base of baseFormats)for(const dir of ['target.direction.alternate','target.direction.spaced']){
    const transformed=apply(base,dir);if(transformed){add(transformed,[dir]);directional.push(transformed);}
   }
-  const remaining=enabled.filter(id=>id!=='suffix.matching'&&!id.startsWith('target.direction.'));
+  const remaining=enabled.filter(id=>id!=='suffix.matching'&&!id.startsWith('target.direction.')).sort((a,b)=>{
+   const rank=id=>id.startsWith('target.special-suffix.')?0:id.startsWith('target.451.')?1:2;
+   return rank(a)-rank(b);
+  });
   // The requested settings determine which other jig transformations run.
   // A two-step combination uses a preferred base + one selected rule.
   for(const id of remaining)for(const base of [...baseFormats,...directional]){
@@ -1680,7 +1683,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     }
    }
    const after=addressView(data);
-   ensureExistingUnitPreserved(before,after);
+   ensureExistingUnitPreserved(before,after,appliedRuleIds);
    if(!after.address1||!after.city||!after.state||!after.zip)throw Error('A selected profile is missing a complete shipping address.');
    return {profileId:row.id,revision:row.revision||0,hash:require('./jig-field-core').hash(row.data),originalData:row.data,email:row.email,label:row.label,retailer:row.retailer,
     linked:a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false,before,after,data,group:row.group||row.retailer,
