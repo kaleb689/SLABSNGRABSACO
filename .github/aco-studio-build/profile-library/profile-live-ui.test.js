@@ -428,3 +428,33 @@ test('Delete & Return to Pools is a distinct reviewed action on the selected cus
  assert.match(source,/profileIds:selectedRows\.map\(x=>x\.id\)/);
  assert.match(source,/if\(result\.partial\)/);
 });
+
+
+test('Re-jig all selects every completed profile in active retailer across Live, Working and pagination without cross-vault selection',()=>{
+ assert.match(source,/Re-jig all saved retailer profiles/);
+ assert.match(source,/function allSavedRetailerProfiles\(\)/);
+ assert.match(source,/rows\.filter\(x=>x\.retailer===retailer&&x\.stage!=='in-progress'\)/);
+ assert.match(source,/mode==='all'\?allSavedRetailerProfiles\(\):pageRows\(\)/);
+ assert.match(source,/rejigAllButton\.onclick=\(\)=>void bulkJigSelected\('all'\)/);
+ assert.match(source,/MAX_BULK_REJIG_PROFILES=10000/);
+ assert.doesNotMatch(source,/if\(chosen\.length>500\)\{note\('Select no more than 500 profiles at a time/);
+ const start=source.indexOf(' function allSavedRetailerProfiles(){'),end=source.indexOf(' async function bulkJigSelected(',start);
+ const ctx={rows:[
+  {id:'a',retailer:'target',stage:'completed',bank:'live'},
+  {id:'b',retailer:'target',stage:'completed',bank:'working'},
+  {id:'c',retailer:'target',stage:'in-progress',bank:'working'},
+  {id:'d',retailer:'pokemoncenter',stage:'completed',bank:'live'}
+ ],q:()=>({value:'target'})};
+ vm.createContext(ctx);
+ const ids=vm.runInContext(source.slice(start,end)+'\nallSavedRetailerProfiles().map(x=>x.id)',ctx);
+ assert.equal(ids.length,2);assert.deepEqual([...ids],['a','b']);
+});
+
+test('Re-jig Preview pages through every result instead of hiding profiles beyond 100',()=>{
+ assert.match(source,/const back=text\('button','Previous 100'\),forward=text\('button','Next 100'\)/);
+ assert.match(source,/result\.profiles\.slice\(first,last\)/);
+ assert.match(source,/reviewPage\+\+/);
+ assert.match(source,/Reviewing profiles /);
+ assert.match(source,/including all preview pages/);
+ assert.match(source,/const schedulePreview=\(\)=>\{invalidatePreview\(\)/);
+});
