@@ -1312,3 +1312,110 @@ test('Random inline-unit generator allows only eight labeled formats after Addre
  assert.doesNotMatch(source,/SECOND_LINE_LABELS=\[[^\n]*''\]/);
  assert.match(source,/crypto\.randomInt\(SECOND_LINE_LABELS\.length\*SECOND_LINE_IDS\.length\)/);
 });
+
+
+function targetAddressForTest(street,unit,city,zip){
+ const source=complete('target','address-format@example.test'),v=D.toValues(source);
+ return D.manualEdit(source,{...v,
+  'shipping.address1':street,'shipping.address2':unit,'shipping.city':city,'shipping.state':'FL','shipping.zip':zip,
+  'billing.address1':street,'billing.address2':unit,'billing.city':city,'billing.state':'FL','billing.zip':zip});
+}
+
+test('Target specific suffix substitutions never leak beyond their four approved base streets',()=>{
+ const lists=[
+  ['bayberry','980 Bayberry Point Drive','PLANTATION','33324-3507',['Drive','Road','Trail','Way','Lane','Court']],
+  ['sabal','1811 Sabal Palm Drive','FORT LAUDERDALE','33324-5930',['Drive','Road','Lane','Way','Court','Circle']],
+  ['turtle','3775 Turtle Run Boulevard','CORAL SPRINGS','33067-4252',['Boulevard','Road','Drive','Lane','Way','Court']],
+  ['bristol','5871 Bristol Lane','DAVIE','33331-3242',['Lane','Road','Drive','Way','Court','Place']]
+ ];
+ const options=LC.ruleOptions('target').map(x=>x.id);
+ for(const [key,street,city,zip,allow] of lists){
+  const record=targetAddressForTest(street,key==='sabal'?'Apt 201':key==='turtle'?'Apt 1433':'',city,zip);
+  const ruleIds=options.filter(id=>id.startsWith('target.special-suffix.'+key+'.'));
+  assert.equal(ruleIds.length,allow.length*2,'Every allowed spelling has a full form and USPS-style abbreviation');
+  for(const suffix of allow){
+   const rule='target.special-suffix.'+key+'.'+suffix.toLowerCase();
+   assert.ok(options.includes(rule),rule+' should be selectable');
+   const out=LC.jig(record,'target',1,[rule]),values=D.toValues(out);
+   assert.equal(values['shipping.address1'],street.replace(/\b(?:Drive|Lane|Boulevard)$/i,suffix),key+' '+suffix);
+   assert.equal(values['shipping.address2'],D.toValues(record)['shipping.address2'],'Never rewrite an apartment');
+  }
+  const altered=targetAddressForTest(street.replace(/^\d+/,v=>String(Number(v)+1)),'',city,zip);
+  const bad=LC.jig(altered,'target',1,[ruleIds.find(id=>id.endsWith('.road'))||ruleIds[0]]);
+  assert.equal(D.toValues(bad)['shipping.address1'],D.toValues(altered)['shipping.address1'],'Whitelisted jigs cannot change a different building');
+ }
+ const sample=targetAddressForTest('980 Bayberry Point Drive','','PLANTATION','33324-3507');
+ const wrongCity=targetAddressForTest('980 Bayberry Point Drive','','DAVIE','33324-3507');
+ assert.equal(D.toValues(LC.jig(wrongCity,'target',1,['target.special-suffix.bayberry.road']))['shipping.address1'],'980 Bayberry Point Drive');
+ assert.equal(D.toValues(LC.jig(sample,'pokemoncenter',1,['target.special-suffix.bayberry.road']))['shipping.address1'],'980 Bayberry Point Drive');
+});
+
+test('451 Apt 102 and 103 special formats retain the original numbered unit and scope',()=>{
+ const allowed=LC.ruleOptions('target').map(x=>x.id);
+ for(const unit of ['102','103']){
+  const base=targetAddressForTest('451 NW 87th Lane','Apt '+unit,'PLANTATION','33324-6540');
+  const cases=[
+   ['target.451.unit-label.unit','451 NW 87th Lane, Unit '+unit,''],
+   ['target.451.letter.d','451 NW 87th Lane, Apt '+unit+'D',''],
+   ['target.451.hyphen.9','451 NW 87th Lane, Apt '+unit+'-9',''],
+   ['target.451.floor.9','451 NW 87th Lane, Apt '+unit+', Fl 9',''],
+   ['target.451.box.d','451 NW 87th Lane, Apt '+unit+', Box D',''],
+   ['target.451.unit-ste-line2.a','451 NW 87th Lane','Unit '+unit+' Ste A'],
+   ['target.451.avenue-lane','451 NW 87th Avenue Lane','Apt '+unit]
+  ];
+  for(const [id,expected1,expected2] of cases){
+   assert.ok(allowed.includes(id),id+' is a separate Target-only rule');
+   const v=D.toValues(LC.jig(base,'target',1,[id]));
+   assert.equal(v['shipping.address1'],expected1,id+' '+unit+' Line 1');
+   assert.equal(v['shipping.address2'],expected2,id+' '+unit+' Line 2');
+   assert.equal(v['shipping.zip'],'33324-6540');
+  }
+  assert.equal(LC.target451UnitInfo({address1:'451 NW 87th Lane',address2:'Apt '+unit,city:'Plantation',state:'FL',zip:'33324-6540'}).unit,unit);
+ }
+ for(const [street,unit,city,zip] of [
+  ['451 NW 87th Lane','Apt 104','PLANTATION','33324-6540'],
+  ['450 NW 87th Lane','Apt 102','PLANTATION','33324-6540'],
+  ['451 NW 87th Lane','Apt 102','DAVIE','33324-6540'],
+  ['451 NW 87th Lane','Apt 102','PLANTATION','33325']
+ ]){
+  const base=targetAddressForTest(street,unit,city,zip);
+  const v=D.toValues(LC.jig(base,'target',1,['target.451.letter.a']));
+  assert.equal(v['shipping.address1'],street,'Do not apply 451 unit exceptions outside Apt 102/103 at this building');
+  assert.equal(v['shipping.address2'],unit);
+ }
+ assert.deepEqual(LC.TARGET_451_LIMITS.letters,['A','B','C','D']);
+ assert.deepEqual(LC.TARGET_451_LIMITS.numbers,[1,2,3,4,5,6,7,8,9]);
+});
+
+test('Target preview and commit allow 451 Apt 102 special format only after validating original unit',async t=>{
+ const h=await library(t);
+ const source=targetAddressForTest('451 NW 87th Lane','Apt 102','PLANTATION','33324-6540');
+ await commit(h,await preview(h,[source]));
+ const existing=(await h.lib.list(event,h.p)).profiles[0];
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[existing.id],
+  ruleIds:['target.451.letter.a'],combine:false,billingSameAsShipping:true});
+ assert.equal(plan.profiles[0].after.address1,'451 NW 87th Lane, Apt 102A');
+ assert.equal(plan.profiles[0].after.address2,'');
+ assert.equal(plan.changed,1);
+ const commitResult=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.ok(commitResult);
+ const saved=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(D.toValues(saved.data)['shipping.address1'],'451 NW 87th Lane, Apt 102A');
+ assert.equal(D.toValues(saved.data)['shipping.address2'],'');
+});
+
+test('Five Target profiles use four identical full addresses followed by first standard abbreviation',async t=>{
+ const h=await library(t);
+ for(let i=0;i<5;i++)await commit(h,await preview(h,[complete('target','four-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:['suffix.matching'],combine:false,billingSameAsShipping:false});
+ assert.equal(plan.profiles.length,5);
+ assert.deepEqual(plan.profiles.map(x=>x.after.address1),[
+  '100 Example Avenue','100 Example Avenue','100 Example Avenue','100 Example Avenue','100 Example Ave']);
+ assert.equal(plan.changed,1);
+ assert.equal(plan.duplicateAddresses.length,0,'Exact repeat within four slots does not need an override');
+ await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ const saved=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(saved.filter(x=>D.toValues(x.data)['shipping.address1']==='100 Example Ave').length,1);
+});
