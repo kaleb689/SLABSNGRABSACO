@@ -341,7 +341,7 @@ test('selection highlights and count update without recreating any of 200 render
  const nodes={},cards=Array.from({length:200},(_,i)=>({dataset:{profileId:'p'+i},classList:{toggle(_name,on){this.on=on;}},setAttribute(){},querySelector:()=>null}));
  for(const key of ['export','export-archive','jig-selected','bulk-move','bulk-delete','selected-count'])nodes[key]={};
  nodes.cards={querySelectorAll:()=>cards};const move={};nodes.groups={querySelector:()=>move};
- const context={q:key=>nodes[key],pageRows:()=>cards.map(x=>({id:x.dataset.profileId})),selected:new Set(),returnToPoolsButton:{},stage:'completed',busy:false};vm.createContext(context);
+ const context={q:key=>nodes[key],pageRows:()=>cards.map(x=>({id:x.dataset.profileId})),selected:new Set(),returnToPoolsButton:{},stage:'completed',busy:false,allSavedRetailerProfiles:()=>[],rejigAllButton:{},retailName:{target:'Target'}};nodes.retailer={value:'target'};vm.createContext(context);
  const start=source.indexOf(' function updateSelection()'),end=source.indexOf("\n d.addEventListener('keydown'",start);vm.runInContext(source.slice(start,end)+';this.run=updateSelection;',context);
  for(let i=0;i<200;i++){context.selected.add('p'+i);context.run();}
  assert.equal(cards.every(x=>x.classList.on),true);assert.match(nodes['selected-count'].textContent,/200 profile/);assert.equal(move.hidden,false);
@@ -356,7 +356,7 @@ test('opening Jig from an already selected unused account preserves the batch',(
 test('selection dock is sticky, groups related actions, and keeps existing handlers',()=>{
  assert.match(source,/profileSelectionDock/);
  assert.match(source,/floatingActions\.append\(actionDetails,actionManage\)/);
- assert.match(source,/actionManage\.append\(q\('jig-selected'\),q\('bulk-move'\),q\('bulk-delete'\),returnToPoolsButton,q\('export'\)/);
+ assert.match(source,/actionManage\.append\(q\('jig-selected'\),rejigAllButton,q\('bulk-move'\),q\('bulk-delete'\),returnToPoolsButton,q\('export'\)/);
  assert.match(source,/main\.querySelector\('\.profileLibraryLayout'\)\.before\(floatingActions\)/);
  assert.match(source,/Delete selected profiles…/);
  assert.match(source,/Delete this saved draft…/);
@@ -427,4 +427,34 @@ test('Delete & Return to Pools is a distinct reviewed action on the selected cus
  assert.match(source,/api\.returnToPools\(/);
  assert.match(source,/profileIds:selectedRows\.map\(x=>x\.id\)/);
  assert.match(source,/if\(result\.partial\)/);
+});
+
+
+test('Re-jig all selects every completed profile in active retailer across Live, Working and pagination without cross-vault selection',()=>{
+ assert.match(source,/Re-jig all saved retailer profiles/);
+ assert.match(source,/function allSavedRetailerProfiles\(\)/);
+ assert.match(source,/rows\.filter\(x=>x\.retailer===retailer&&x\.stage!=='in-progress'\)/);
+ assert.match(source,/mode==='all'\?allSavedRetailerProfiles\(\):pageRows\(\)/);
+ assert.match(source,/rejigAllButton\.onclick=\(\)=>void bulkJigSelected\('all'\)/);
+ assert.match(source,/MAX_BULK_REJIG_PROFILES=10000/);
+ assert.doesNotMatch(source,/if\(chosen\.length>500\)\{note\('Select no more than 500 profiles at a time/);
+ const start=source.indexOf(' function allSavedRetailerProfiles(){'),end=source.indexOf(' async function bulkJigSelected(',start);
+ const ctx={rows:[
+  {id:'a',retailer:'target',stage:'completed',bank:'live'},
+  {id:'b',retailer:'target',stage:'completed',bank:'working'},
+  {id:'c',retailer:'target',stage:'in-progress',bank:'working'},
+  {id:'d',retailer:'pokemoncenter',stage:'completed',bank:'live'}
+ ],q:()=>({value:'target'})};
+ vm.createContext(ctx);
+ const ids=vm.runInContext(source.slice(start,end)+'\nallSavedRetailerProfiles().map(x=>x.id)',ctx);
+ assert.equal(ids.length,2);assert.deepEqual([...ids],['a','b']);
+});
+
+test('Re-jig Preview pages through every result instead of hiding profiles beyond 100',()=>{
+ assert.match(source,/const back=text\('button','Previous 100'\),forward=text\('button','Next 100'\)/);
+ assert.match(source,/result\.profiles\.slice\(first,last\)/);
+ assert.match(source,/reviewPage\+\+/);
+ assert.match(source,/Reviewing profiles /);
+ assert.match(source,/including all preview pages/);
+ assert.match(source,/const schedulePreview=\(\)=>\{invalidatePreview\(\)/);
 });

@@ -326,7 +326,7 @@
  }
  // Selection belongs to one rendered page of the current retailer and stage.
  // Keep the preexisting 200-card display size, but make later pages accessible.
- const PAGE_SIZE=100;let pageIndex=0;let selectionAnchor=null,customGroups={};
+ const PAGE_SIZE=100;let pageIndex=0;const MAX_BULK_REJIG_PROFILES=10000;let selectionAnchor=null,customGroups={};
  let sortMode='newest';let visibleCardLimit=80;let lastResourceSignature='';let lastResourceRetailer='';
  const sortToolbar=d.createElement('div');sortToolbar.className='profileLibrarySortToolbar';
  const sortLabel=d.createElement('label');sortLabel.textContent='Profile order';
@@ -343,8 +343,10 @@
   floatingActions.setAttribute('role','toolbar');floatingActions.setAttribute('aria-label','Selected profile actions');
   const actionDetails=d.createElement('div');actionDetails.className='profileSelectionDockPrimary';
   const actionManage=d.createElement('div');actionManage.className='profileSelectionDockSecondary';
+  const rejigAllButton=text('button','Re-jig all saved retailer profiles');
+  rejigAllButton.type='button';rejigAllButton.className='btn primary slim';
   actionDetails.append(q('selected-count'),q('all'),q('clear'));
-  actionManage.append(q('jig-selected'),q('bulk-move'),q('bulk-delete'),returnToPoolsButton,q('export'),exportAllUnique,exportTypeLabel,q('export-archive'));
+  actionManage.append(q('jig-selected'),rejigAllButton,q('bulk-move'),q('bulk-delete'),returnToPoolsButton,q('export'),exportAllUnique,exportTypeLabel,q('export-archive'));
   floatingActions.append(actionDetails,actionManage);main.querySelector('.profileLibraryLayout').before(floatingActions);
  const timeValue=value=>{const t=Date.parse(value||'');return Number.isFinite(t)?t:0;};
  const creationTime=row=>timeValue(row.profileGeneratedAt)||timeValue(row.createdAt)||timeValue(row.completedAt);
@@ -811,6 +813,9 @@
  const groupMove=q('groups').querySelector('[data-group-move]');if(groupMove)groupMove.hidden=!selectedVisible.length;
  q('export').disabled=busy||stage==='unused'||!selectedVisible.length;q('export-archive').disabled=busy||stage==='unused'||!selectedVisible.length;
  q('selected-count').textContent=selectedVisible.length+' profile(s) selected on this page';
+ const totalRejig=allSavedRetailerProfiles().length;
+ rejigAllButton.disabled=busy||totalRejig===0||totalRejig>MAX_BULK_REJIG_PROFILES;
+ rejigAllButton.textContent='Re-jig all '+retailName[q('retailer').value]+' saved profiles ('+totalRejig+')';
  q('jig-selected').disabled=busy||!selectedVisible.length;
  q('jig-selected').textContent=selectedVisible.length?(stage==='unused'?'Jig selected ('+selectedVisible.length+')':'Re-jig selected ('+selectedVisible.length+')'):(stage==='unused'?'Jig selected':'Re-jig selected');
  for(const key of ['bulk-move','bulk-delete'])q(key).disabled=busy||stage==='unused'||!selectedVisible.length;
@@ -1037,10 +1042,18 @@
   }
   return block;
  }
- async function bulkJigSelected(){
-  const chosen=pageRows().filter(x=>selected.has(x.id)),retailer=q('retailer').value;
-  if(!chosen.length){note('Select the profiles you want to jig first.');return;}
-  if(chosen.length>500){note('Select no more than 500 profiles at a time.');return;}
+ function allSavedRetailerProfiles(){
+  const retailer=q('retailer').value;
+  // Choose saved profiles from this vault and retailer across Live and Working
+  // pages. Incomplete drafts are not safe to Re-jig as completed accounts.
+  return rows.filter(x=>x.retailer===retailer&&x.stage!=='in-progress');
+ }
+ async function bulkJigSelected(mode='selected'){
+  const retailer=q('retailer').value;
+  const chosen=mode==='all'?allSavedRetailerProfiles():pageRows().filter(x=>selected.has(x.id));
+  if(!chosen.length){note(mode==='all'?'No saved profiles available in this retailer and vault.':'Select the profiles you want to jig first.');return;}
+  if(chosen.length>MAX_BULK_REJIG_PROFILES){note('This retailer has '+chosen.length+' profiles. The maximum per Rejig is '+MAX_BULK_REJIG_PROFILES+'. No profiles were changed.');return;}
+  if(mode==='all'&&chosen.some(x=>x.needsReview)){note('Some '+retailName[retailer]+' profiles have unresolved website conflicts. Resolve those before Re-jig all; no profiles changed.');return;}
   try{
    const win=dialog('Jig '+chosen.length+' selected '+retailName[retailer]+' profiles'),settings=await api.rules({...win.owner,retailer});
    if(!win.valid())return;
@@ -1170,8 +1183,24 @@
      if(!result.targetAllocation&&result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
      review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional inline Address Line 1 unit(s) added ('+result.optionalUnitEligible+' eligible unitless source addresses; '+(result.optionalUnitBankReassigned||0)+' selected profile(s) sourced automatically from Address Bank).'));
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
-     for(const row of result.profiles.slice(0,100))review.append(jigPreviewEntry(row,settings));
-     if(result.profiles.length>100)review.append(text('p','+'+(result.profiles.length-100)+' more selected profiles included in this batch.'));
+     // Keep the review responsive while making EVERY account inspectable.
+     const previewRows=d.createElement('section'),previewNav=d.createElement('nav'),previewLabel=text('small','');
+     previewNav.className='buttons';
+     const back=text('button','Previous 100'),forward=text('button','Next 100');
+     for(const b of [back,forward]){b.type='button';b.className='btn secondary slim';}
+     let reviewPage=0;
+     function showReviewPage(){
+      previewRows.replaceChildren();
+      const first=reviewPage*100,last=Math.min(first+100,result.profiles.length);
+      for(const row of result.profiles.slice(first,last))previewRows.append(jigPreviewEntry(row,settings));
+      previewLabel.textContent='Reviewing profiles '+(first+1)+'–'+last+' of '+result.profiles.length+' · page '+(reviewPage+1)+' of '+Math.ceil(result.profiles.length/100);
+      back.disabled=reviewPage===0;forward.disabled=last>=result.profiles.length;
+     }
+     back.onclick=()=>{if(reviewPage>0){reviewPage--;showReviewPage();}};
+     forward.onclick=()=>{if((reviewPage+1)*100<result.profiles.length){reviewPage++;showReviewPage();}};
+     previewNav.append(back,previewLabel,forward);
+     review.append(previewNav,previewRows);
+     showReviewPage();
      duplicateCount=(result.duplicateAddresses||[]).length;
      if(duplicateCount){
       duplicateLabel.hidden=false;
@@ -1184,7 +1213,7 @@
     }catch(error){if(win.valid()&&activeRevision===previewRevision)win.status().textContent=error.message;}finally{if(win.valid()&&activeRevision===previewRevision)preview.disabled=false;}
    };
    save.onclick=async()=>{
-    if(!token||!confirm('Apply the reviewed jig to all '+chosen.length+' selected profiles now?'))return;
+    if(!token||!confirm('Apply the reviewed jig to all '+chosen.length+' '+retailName[retailer]+' profiles in this one vault, including all preview pages?'))return;
     save.disabled=true;preview.disabled=true;
     try{
      const result=await api.batchJigCommit({token,confirmed:true,allowDuplicateAddresses:duplicateCount>0&&allowDuplicates.checked});
@@ -1283,6 +1312,7 @@
    await window.ACOPoolCreator.open({...request(),retailer:q('retailer').value,emailIds:emails.map(x=>x.id)});
   }
   q('jig-selected').onclick=()=>void(stage==='unused'?jigUnusedSelected():bulkJigSelected());
+  rejigAllButton.onclick=()=>void bulkJigSelected('all');
  function chosenForBulk(){
   if(stage==='unused')throw Error('Unused accounts must be jigged before they can move or be deleted as profiles.');
    const retailer=q('retailer').value,selectedRows=pageRows().filter(x=>selected.has(x.id)&&x.retailer===retailer);

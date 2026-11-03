@@ -1502,3 +1502,55 @@ test('Main-first Target Rejig allocates 100 profiles across 18 Mains and fills e
  assert.equal(JSON.stringify((await h.lib.list(event,h.p)).profiles),before,'preview is read-only');
  assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore);
 });
+
+
+test('Rejig all 560 selected Target profiles across more than five 100-row pages in one reviewed transaction',async t=>{
+ const h=await library(t),mains=Array.from({length:140},(_,i)=>({...address,label:'Bulk Main '+i,
+  address1:(5000+i)+' Example Road',address2:'',city:'Plantation',zip:'33324'}));
+ for(const main of mains)await h.service.addAddress(event,{...h.p,address:main});
+ for(let start=0;start<560;start+=280){
+  const items=Array.from({length:280},(_,j)=>complete('target','bulk-all-'+(start+j)+'@example.test'));
+  await commit(h,await preview(h,items));
+ }
+ const saved=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ assert.equal(saved.length,560);
+ const before=JSON.stringify(saved),bankBefore=JSON.stringify((await h.addresses.listPersonal()).addresses);
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:saved.map(x=>x.id),
+  targetMainFromBank:true,ruleIds:[],billingSameAsShipping:true,combine:false});
+ assert.equal(plan.count,560);
+ assert.deepEqual(plan.targetAllocation,{mainAddresses:140,originalSlots:560,extraVariations:0});
+ assert.equal(plan.profiles.length,560);
+ assert.equal(plan.changed,560);
+ assert.equal(plan.duplicateAddresses.length,0,'All exact Target Mains have four or fewer occupancies');
+ const counts=new Map();
+ for(const row of plan.profiles){
+  const key=[row.after.address1,row.after.address2,row.after.city,row.after.state,row.after.zip].join('|');
+  counts.set(key,(counts.get(key)||0)+1);
+ }
+ assert.equal(counts.size,140);
+ assert.ok([...counts.values()].every(n=>n===4),'Each original Main gets exactly four accounts');
+ assert.equal(JSON.stringify((await h.lib.list(event,h.p)).profiles),before,'Preview does not save anything');
+ const applied=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.deepEqual([applied.updated,applied.localSaved,applied.remoteSaved],[560,560,0]);
+ const after=(await h.lib.list(event,h.p)).profiles;
+ assert.equal(after.length,560);
+ assert.equal(after.filter(x=>/^5\d\d\d Example Road$/.test(LC.values(x.data)['shipping.address1'])).length,560);
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore,'Address Bank never changed');
+});
+
+test('Large local Target Rejig rejects stale revisions before applying any profile or Address Bank edits',async t=>{
+ const h=await library(t);
+ for(const a of [
+  {...address,label:'Bank Main 1',address1:'8111 Example Road',address2:'',city:'Plantation'},
+  {...address,label:'Bank Main 2',address1:'8112 Example Road',address2:'',city:'Plantation'}
+ ])await h.service.addAddress(event,{...h.p,address:a});
+ for(let i=0;i<6;i++)await commit(h,await preview(h,[complete('target','stale-rejig-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:[],targetMainFromBank:true,billingSameAsShipping:true});
+ const first=rows[0];
+ await h.lib.edit(event,{...h.p,profileId:first.id,revision:first.revision,fields:LC.values(first.data)});
+ const before=JSON.stringify((await h.lib.list(event,h.p)).profiles);
+ await assert.rejects(h.lib.batchJigCommit(event,{token:plan.token,confirmed:true}),/changed|preview again/i);
+ assert.equal(JSON.stringify((await h.lib.list(event,h.p)).profiles),before,'Failed batch is atomic');
+});
