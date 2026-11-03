@@ -113,7 +113,8 @@ test('Bulk forwarding destination edit never publishes or creates aliases and re
 
 test('Email Gen provides an owner-only CSV download with a generic export password and sequential profile names',()=>{
  assert.match(html,/id="randomAliasExport"/);
- assert.match(html,/email,password,profile_name/);
+ assert.match(html,/id="randomAliasExportShikari"/);
+ assert.match(html,/profile_name,email,password/);
  assert.match(app,/const EMAIL_GEN_EXPORT_PASSWORD='Freeshit1!'/);
  assert.match(app,/downloadEmailGenExport\(\)/);
  assert.match(app,/if\(!unlocked\)throw Error\('Unlock your encrypted owner Email Gen bank/);
@@ -131,10 +132,10 @@ test('Email Gen provides an owner-only CSV download with a generic export passwo
  const ctx={OWNER_DOMAIN:'sng.sarl',validEmail:email=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),sample};
  const result=vm.runInNewContext(snippet+'\nbuildEmailGenExportCsv(sample)',ctx);
  assert.equal(result.count,3,'only encrypted bank aliases for the owner domain are exported');
- assert.equal(result.csv,'email,password,profile_name\r\n'+
-  '"sng0001@sng.sarl","Freeshit1!","aco gen 1"\r\n'+
-  '"manual@sng.sarl","Freeshit1!","aco gen 2"\r\n'+
-  '"sng0003@sng.sarl","Freeshit1!","aco gen 3"\r\n');
+ assert.equal(result.csv,'profile_name,email,password\r\n'+
+  '"aco gen 1","sng0001@sng.sarl","Freeshit1!"\r\n'+
+  '"aco gen 2","manual@sng.sarl","Freeshit1!"\r\n'+
+  '"aco gen 3","sng0003@sng.sarl","Freeshit1!"\r\n');
  assert.equal(sample[0].password,undefined,'preset password must not be stored in aliases');
  assert.equal(sample[1].profileName,undefined,'profile name is only in the export copy');
 });
@@ -145,8 +146,8 @@ test('Email Gen CSV creates 100 names in stable order and rejects duplicate alia
  const names=Array.from({length:100},(_,i)=>({alias:'sng'+i+'@sng.sarl'}));
  const data=vm.runInNewContext(app.slice(start,end)+'\nbuildEmailGenExportCsv('+JSON.stringify(names)+')',ctx);
  assert.equal(data.count,100);
- assert.ok(data.csv.includes('"sng0@sng.sarl","Freeshit1!","aco gen 1"'));
- assert.ok(data.csv.includes('"sng99@sng.sarl","Freeshit1!","aco gen 100"'));
+ assert.ok(data.csv.includes('"aco gen 1","sng0@sng.sarl","Freeshit1!"'));
+ assert.ok(data.csv.includes('"aco gen 100","sng99@sng.sarl","Freeshit1!"'));
  assert.equal((data.csv.match(/Freeshit1!/g)||[]).length,100);
  assert.throws(()=>vm.runInNewContext("buildEmailGenExportCsv([{alias:'x@sng.sarl'},{alias:'X@sng.sarl'}])",ctx),/Duplicate/);
  assert.throws(()=>vm.runInNewContext("buildEmailGenExportCsv([{alias:'=SUM(1)@sng.sarl'}])",ctx),/spreadsheet-leading character/);
@@ -172,4 +173,34 @@ test('Email Gen CSV download requires unlocked owner; export does not edit Cloud
  assert.equal(ownerChecks,2);
  assert.equal(stored,0);assert.equal(published,0);
  assert.equal(aliases[0].status,'draft');assert.equal(aliases[0].poolTarget,null);
+});
+
+
+test('Both Email Gen exports put Shikari profile_name first and avoid BOM before the header',()=>{
+ const start=app.indexOf(" const EMAIL_GEN_EXPORT_PASSWORD="),end=app.indexOf(" const unassignedRandom=",start);
+ const ctx={OWNER_DOMAIN:'sng.sarl',validEmail:email=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)};
+ vm.createContext(ctx);vm.runInContext(app.slice(start,end),ctx);
+ const rows=[{alias:'first@sng.sarl'},{alias:'second@sng.sarl'}];
+ for(const mode of ['basic','shikari']){
+  ctx.data=rows;
+  const result=vm.runInContext("buildEmailGenExportCsv(data,'"+mode+"')",ctx);
+  const [header,...data]=result.csv.trim().split('\r\n');
+  assert.equal(header.split(',')[0],'profile_name');
+  assert.equal(result.csv.charCodeAt(0),'p'.charCodeAt(0),'No UTF-8 BOM before first Shikari header');
+  assert.equal(result.count,2);
+  assert.ok(data[0].startsWith('"aco gen 1",'));
+  assert.ok(data[1].startsWith('"aco gen 2",'));
+  assert.ok(data[0].includes('"first@sng.sarl"'));
+  assert.ok(data[0].includes('"Freeshit1!"'));
+ }
+ const shikari=vm.runInContext("buildEmailGenExportCsv(data,'shikari')",Object.assign(ctx,{data:rows}));
+ const cols=shikari.csv.split('\r\n')[0].split(',');
+ for(const field of ['profile_name','email','password','first_name','last_name','phone_num',
+  'cc_number','cc_exp_month','cc_exp_year','cc_cvv','shipping_street','shipping_city',
+  'shipping_zip_code','billing_street','billing_city'])assert.ok(cols.includes(field),field);
+ assert.equal(cols[0],'profile_name');
+ assert.equal(shikari.csv.split('\r\n')[1].split(',').length,cols.length);
+ assert.match(app,/new Blob\(\[result\.csv\]/,'CSV must not prepend BOM');
+ assert.match(app,/shikari-email-profile-template-/);
+ assert.match(html,/Export Shikari profile template CSV/);
 });
