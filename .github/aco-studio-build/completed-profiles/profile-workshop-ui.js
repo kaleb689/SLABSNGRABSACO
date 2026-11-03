@@ -58,9 +58,9 @@
  <label class="workshopCheck"><input data-postal-scan type="checkbox" checked> Scan online ZIP/city crossovers during Jig Profiles preview</label>
  <label class="workshopCheck"><input data-postal-apply type="checkbox" checked> Apply ZIP/state-matched alternate city names when available</label>
  <small>City names come from an online ZIP listing, not a verified USPS street delivery address. Only ZIP is sent online; street, email, cards and personal details stay local.</small>
- <label class="workshopCheck"><input data-optional-unit type="checkbox"> Add Random Apt / Unit / Ste / # / Number (optional, OFF by default)</label>
+ <label class="workshopCheck"><input data-optional-unit type="checkbox"> Add Random Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg (e.g., Apt A; OFF by default)</label>
  <label data-optional-unit-count-wrap hidden>How many selected unitless profiles? <input data-optional-unit-count type="number" min="1" max="500" step="1" value="1"></label>
- <small>Optional — OFF by default. Never change, remove or rename an existing Apt/Ste/Unit or unit number. Applies alongside selected fractional, hyphen and other jig styles. Generated units are not confirmed delivery points.</small>
+ <small>Optional — OFF by default. Never change, remove or rename any existing Apt/Unit/Ste/Lot/Rm/#/Fl/Bldg or its identifier. New second lines always use a named label plus A-D or 1-9 (never bare numbers). Applies alongside the selected jig styles. Generated units are not confirmed delivery points.</small>
  <label class="workshopCheck"><input data-distribution-toggle type="checkbox"> Choose more of one or more jig styles</label><div data-distribution-panel hidden><small>OFF: selected styles are distributed evenly. ON: enter preferred counts and the remainder is distributed automatically.</small><div data-distribution-rows></div></div><label class="workshopCheck"><input data-reuse-toggle type="checkbox"> Reuse a saved Main or Jigged shipping address across selected profiles</label>
  <section data-reuse-panel hidden><p>Choose the exact Main or previously Jigged address to use. Its complete shipping fields are copied without generating another jig.</p>
  <label>Choose Main or Jigged address<select data-reuse-choice></select></label>
