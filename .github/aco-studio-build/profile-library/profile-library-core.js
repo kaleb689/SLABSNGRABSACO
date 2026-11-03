@@ -321,7 +321,7 @@ function target451UnitInfo(address){
  const unitSource=second||tail;
  const unit=/^(?:APT|APARTMENT|UNIT|STE|SUITE|ROOM|RM|LOT|BLDG|BUILDING|FL|#)\s*#?\s*(102|103)(?=$|[A-Z]|\-|[\s,])/i.exec(unitSource);
  if(!unit)return null;
- return {street:matched[0],unit:unit[2],currentUnit:unitSource,hadSecond:!!second,tail};
+ return {street:matched[0],unit:unit[1],currentUnit:unitSource,hadSecond:!!second,tail};
 }
 function target451Variant(address,mode,detail){
  const info=target451UnitInfo(address);if(!info)return null;
