@@ -137,3 +137,20 @@ Retail: $29.99`;
   assert.deepEqual(raw, ["6685562", "6685563", "6685564"]);
   assert.deepEqual(parseDropSkus(card).map(x => x.sku).sort(), raw);
 });
+
+test("Walmart drawing paste with 'Name:' then 'SKU:' lines formats every SKU", async () => {
+  const { parseDropSkus } = await import("../discord-community.js");
+  const content = "Enter here: https://mavely.app.link/LBrg6LAMY5b\nDrawing Window: Nov 4, 2:00pm - 3:00pm PST\n" +
+    "- <t:1793840400:F> - <t:1793844000:t> (<t:1793840400:R>)\n\nProducts & SKUs\n" +
+    "Prismatic Evolutions Elite Trainer Box: SKU: 18170913799\n\n" +
+    "Mega Evolution Delta Reign 3 Pack Blister:\nSKU: 20952651588\n" +
+    "30th Celebration Ultra-Premium Collection: Day and Night:\nSKU: 20887353294\n" +
+    "Delta Reign Elite Trainer Box:\nSKU: 20964873413";
+  const [card] = dropNewsPayloads(parseDropNews(content), "Walmart Drops", content);
+  const rawSkus = parseDropSkus({ content }).map(item => item.sku).sort();
+  const cardSkus = parseDropSkus(card).map(item => item.sku).sort();
+  assert.deepEqual(cardSkus, rawSkus);
+  assert.equal(rawSkus.length, 4);
+  assert.match(card.embeds[0].description, /<t:1793840400:F>/);
+  assert.match(card.embeds[0].description, /\*\*Delta Reign Elite Trainer Box\*\* `20964873413`/);
+});

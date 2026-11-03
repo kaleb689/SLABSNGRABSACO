@@ -278,7 +278,7 @@ export function parseDropSkus(message) {
       seen.add(id);
     };
     for(const raw of section.split(/\r?\n/)){
-      const line=raw.replace(/[*_`~]/g,"").trim();
+      const line=raw.replace(/[*_`~]/g,"").trim().replace(/^>\s*/,"");
       if(!line)continue;
       if(pendingId){
         pendingId=false;

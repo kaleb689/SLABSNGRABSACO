@@ -18,10 +18,19 @@ const NOTES_HEADING = /^(?:additional\s*info(?:rmation)?|notes?|info|details)\s*
 
 const strip = value => String(value || "").replace(/\*\*|__|`/g, "").replace(/^>\s?/, "").trim();
 // "@ Store Open" keeps its @; an @ touching a name is dropped (no mentions).
-const safe = value => String(value || "").replace(/[\r\n<>`]/g, " ").replace(/@(?=\S)/g, "")
-  .replace(/\s+/g, " ").trim();
+// Discord timestamps the owner typed (<t:1793840400:F>) are kept as-is.
+const TIMESTAMP = /<t:\d{1,12}(?::[tTdDfFR])?>/g;
+const safe = value => {
+  const kept = [];
+  const text = String(value || "").replace(TIMESTAMP, token => "\u0000" + (kept.push(token) - 1) + "\u0000")
+    .replace(/[\r\n<>`]/g, " ").replace(/@(?=\S)/g, "").replace(/\s+/g, " ").trim();
+  return text.replace(/\u0000(\d+)\u0000/g, (_, n) => kept[Number(n)]);
+};
 const isUrl = value => /^https:\/\/\S+$/i.test(String(value || "").trim());
 const bareSku = line => /:|https?:\/\/|www\./i.test(line) ? null : /^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.exec(line);
+// "Prismatic Evolutions Elite Trainer Box: SKU: 18170913799" on one line.
+const inlineSku = line => /^(.*[A-Za-z].*?)\s*[:\-|]\s*(?:sku|pid|tcin|dpci|upc|item\s*#?)\s*[:#]?\s*([A-Z0-9][A-Z0-9._-]{2,79})$/i.exec(line);
+const productName = value => String(value || "").replace(/\s*:\s*$/, "").trim();
 const validSku = value => /^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(String(value || ""));
 
 function labeled(line) {
@@ -121,7 +130,23 @@ export function parseDropNews(input, now = Date.now()) {
       if (current && !current.link) current.link = line; else notes.push(line);
       continue;
     }
+    const inline = inlineSku(line);
+    if (inline && !SKU_LABEL.test(inline[1].trim())) {
+      current = { name: productName(inline[1]), sku: inline[2].toUpperCase(), fields: [], link: "" };
+      products.push(current);
+      continue;
+    }
     const field = labeled(line);
+    // "Delta Reign Elite Trainer Box:" with "SKU: ..." on the next line is a
+    // product name, not an empty header field.
+    if (field && !field.value && !SKU_LABEL.test(field.label)) {
+      const next = labeled(nextFilled(i + 1));
+      if (next && SKU_LABEL.test(next.label)) {
+        current = { name: productName(field.label), sku: "", fields: [], link: "" };
+        products.push(current);
+        continue;
+      }
+    }
     if (field && SKU_LABEL.test(field.label)) {
       const sku = field.value.split(/\s+/)[0].toUpperCase();
       if (current && !current.sku && validSku(sku)) current.sku = sku;
@@ -152,7 +177,7 @@ export function parseDropNews(input, now = Date.now()) {
     const following = labeled(nextFilled(i + 1));
     const startsProduct = bare || (following && (SKU_LABEL.test(following.label) || PRODUCT_FIELD.test(following.label)));
     if (startsProduct) {
-      current = { name: bare ? bare[1].trim() : line, sku: bare ? bare[2] : "", fields: [], link: "" };
+      current = { name: bare ? bare[1].trim() : productName(line), sku: bare ? bare[2] : "", fields: [], link: "" };
       products.push(current);
       continue;
     }
@@ -187,7 +212,9 @@ function quoteLine(label, value) {
   return "> **" + safe(label).slice(0, 40) + ":** " + emojiFix(safe(value)).slice(0, 300);
 }
 function renderProduct(product) {
-  const numeric = /^\d{6,14}$/.test(product.sku);
+  // A name with ":" ("Collection: Day and Night") gets its SKU on its own
+  // line so the SKU reader still pairs the number with the product.
+  const numeric = /^\d{6,14}$/.test(product.sku) && !/:/.test(product.name);
   const lines = ["**" + safe(product.name).slice(0, 200) + "**" + (numeric ? " `" + product.sku + "`" : "")];
   if (!numeric && product.sku) lines.push("> **SKU:** `" + safe(product.sku).slice(0, 80) + "`");
   // The owner does not want the "Market: eBay Sold" line in formatted posts.
