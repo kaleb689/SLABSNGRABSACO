@@ -116,7 +116,7 @@ test('Email Gen provides an owner-only CSV download with a generic export passwo
  assert.match(html,/id="randomAliasExportShikari"/);
  assert.match(html,/profile_name,email,password/);
  assert.match(app,/const EMAIL_GEN_EXPORT_PASSWORD='Freeshit1!'/);
- assert.match(app,/downloadEmailGenExport\(\)/);
+ assert.match(app,/function downloadEmailGenExport\(mode='basic'\)/);
  assert.match(app,/if\(!unlocked\)throw Error\('Unlock your encrypted owner Email Gen bank/);
  assert.match(app,/requireOwner\(\)/);
  const start=app.indexOf(" const EMAIL_GEN_EXPORT_PASSWORD=");
