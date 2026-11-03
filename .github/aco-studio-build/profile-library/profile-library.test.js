@@ -801,7 +801,7 @@ test('Unit addition alone works when explicitly enabled without any other jig ch
 
 test('Selected Target fractional and hyphen styles are actually applied across repeated main addresses',async t=>{
  const h=await library(t);
- for(let i=0;i<25;i++)await commit(h,await preview(h,[complete('target','hard-family-'+i+'@example.test')]));
+ for(let i=0;i<37;i++)await commit(h,await preview(h,[complete('target','hard-family-'+i+'@example.test')]));
  const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
  const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',
   profileIds:rows.map(x=>x.id),ruleIds:['suffix.matching','target.house.fraction.half',
@@ -1347,7 +1347,7 @@ test('Target specific suffix substitutions never leak beyond their four approved
  const sample=targetAddressForTest('980 Bayberry Point Drive','','PLANTATION','33324-3507');
  const wrongCity=targetAddressForTest('980 Bayberry Point Drive','','DAVIE','33324-3507');
  assert.equal(D.toValues(LC.jig(wrongCity,'target',1,['target.special-suffix.bayberry.road']))['shipping.address1'],'980 Bayberry Point Drive');
- assert.equal(D.toValues(LC.jig(sample,'pokemoncenter',1,['target.special-suffix.bayberry.road']))['shipping.address1'],'980 Bayberry Point Drive');
+ assert.throws(()=>LC.jig(sample,'pokemoncenter',1,['target.special-suffix.bayberry.road']),/Target-only jig rules/);
 });
 
 test('451 Apt 102 and 103 special formats retain the original numbered unit and scope',()=>{
