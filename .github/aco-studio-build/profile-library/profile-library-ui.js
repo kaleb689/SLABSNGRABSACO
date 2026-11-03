@@ -326,7 +326,7 @@
  }
  // Selection belongs to one rendered page of the current retailer and stage.
  // Keep the preexisting 200-card display size, but make later pages accessible.
- const PAGE_SIZE=100;const MAX_BULK_REJIG_PROFILES=10000;let pageIndex=0;let selectionAnchor=null,customGroups={};
+ const PAGE_SIZE=100;let pageIndex=0;const MAX_BULK_REJIG_PROFILES=10000;let selectionAnchor=null,customGroups={};
  let sortMode='newest';let visibleCardLimit=80;let lastResourceSignature='';let lastResourceRetailer='';
  const sortToolbar=d.createElement('div');sortToolbar.className='profileLibrarySortToolbar';
  const sortLabel=d.createElement('label');sortLabel.textContent='Profile order';
