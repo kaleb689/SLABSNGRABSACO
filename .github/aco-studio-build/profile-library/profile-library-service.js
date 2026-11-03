@@ -1076,7 +1076,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const a=await access(e,p);if(a.scope!=='aco')throw Error('Choose an active website-linked customer profile.');
   const row=(await profiles.preview(a.scope,a.id,p.profileId)).profile;a.check();
   if(row.revision!==p.revision||row.source!=='website-linked-profile'||row.sourceLinked!==true||row.needsReview)throw Error('Reopen the current linked profile before previewing jigs.');
-  if(!Array.isArray(p.ruleIds)||!p.ruleIds.length||p.ruleIds.length>100||p.ruleIds.some(id=>/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported retailer jig options.');
+  if(!Array.isArray(p.ruleIds)||!p.ruleIds.length||p.ruleIds.length>300||p.ruleIds.some(id=>/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported retailer jig options.');
   const baseAddress=await jigResource(a,'address',p.addressSourceId);if(p.cardSourceId)await jigResource(a,'card',p.cardSourceId);
   const batches=p.combine?[nonStackingRules(p.ruleIds)]:p.ruleIds.map(id=>[id]),candidates=[];
   for(const batch of batches){let data=structuredClone(row.data);if(baseAddress){const fields=D.toValues(data);for(const [k,v] of Object.entries(baseAddress))fields['shipping.'+k]=v;data=D.manualEdit(data,fields);}const addressRules=batch.filter(id=>id!==C.FL_PHONE_RULE);for(const rule of addressRules)data=C.jig(data,row.retailer,1,[rule]);if(batch.includes(C.FL_PHONE_RULE))data=C.applyFloridaPhone(data,uuid(),0);
@@ -1118,7 +1118,17 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const match=/(?:^|[\s,])((?:(?:apt|apartment|ste|suite|unit|room|rm|floor|fl|lot|bldg|building|condo)\.?\s*#?\s*[a-z0-9][a-z0-9/-]*|#\s*[a-z0-9][a-z0-9/-]*))\s*$/i.exec(value);
   return match?match[1]:null;
  }
- function existingUnitViolation(before,after){
+ // Only explicitly selected, address-scoped 451 rules can change the
+ // presentation of Apt 102 or Apt 103. Preserve the real numbered base.
+ function approved451UnitChange(before,after,ids=[]){
+  if(!ids.some(id=>id.startsWith('target.451.')))return false;
+  const prior=C.target451UnitInfo(before),next=C.target451UnitInfo(after);
+  if(!prior||!next||prior.unit!==next.unit)return false;
+  if(['city','state','zip'].some(k=>normalizedAddressPart(before[k])!==normalizedAddressPart(after[k])))return false;
+  return true;
+ }
+ function existingUnitViolation(before,after,ids=[]){
+  if(approved451UnitChange(before,after,ids))return '';
   const second=String(before?.address2||'');
   if(second.trim()&&second!==String(after?.address2||''))return 'Existing address line 2 "'+second+'" must remain exactly unchanged.';
   const embedded=inlineUnit(before?.address1);
@@ -1126,8 +1136,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    return 'Existing inline unit "'+embedded+'" must remain exactly unchanged.';
   return '';
  }
- function ensureExistingUnitPreserved(before,after){
-  const violation=existingUnitViolation(before,after);
+ function ensureExistingUnitPreserved(before,after,ids=[]){
+  const violation=existingUnitViolation(before,after,ids);
   if(violation)throw Error(violation+' Unit jigs only apply when the original address has no unit.');
  }
  // Opt-in inline secondary designators: append at the end of Address Line 1
@@ -1286,8 +1296,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(isHardRule(id)&&appliedFamilies.has(hardFamily(id)))continue;
     const candidate=applyOne(data,row,id),address=addressView(candidate);
     // Legacy unit rules cannot add a new line: only the explicit optional count can.
-    if(existingUnitViolation(beforeAddress,address)||(!inlineUnit(beforeAddress.address1)&&inlineUnit(address.address1))||
-       (!beforeAddress.address2.trim()&&!inlineUnit(beforeAddress.address1)&&address.address2.trim()))continue;
+    const approved451=approved451UnitChange(beforeAddress,address,[...appliedRuleIds,id]);
+    if(existingUnitViolation(beforeAddress,address,[...appliedRuleIds,id])||
+       (!approved451&&!inlineUnit(beforeAddress.address1)&&inlineUnit(address.address1))||
+       (!approved451&&!beforeAddress.address2.trim()&&!inlineUnit(beforeAddress.address1)&&address.address2.trim()))continue;
     if(['address1','address2','city','state','zip'].every(key=>
       normalizedAddressPart(address[key])===normalizedAddressPart(addressView(data)[key])))continue;
     data=candidate;appliedRuleIds.push(id);
@@ -1301,7 +1313,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(addressView(data).phone!==beforeAddress.phone)appliedRuleIds.push(C.FL_PHONE_RULE);
   }
   // Unit addition is opt-in at the batch level, never automatic.
-  ensureExistingUnitPreserved(beforeAddress,addressView(data));
+  ensureExistingUnitPreserved(beforeAddress,addressView(data),appliedRuleIds);
   const before=D.toValues(original),after=D.toValues(data),edits={...after};
   if(billingSameAsShipping){
    for(const key of ['address1','address2','city','state','zip'])edits['billing.'+key]=after['shipping.'+key];
@@ -1416,21 +1428,21 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const enabled=[...new Set(ruleIds.filter(id=>id!==C.FL_PHONE_RULE))];
   const allow=id=>enabled.includes(id)&&!!C.ruleById(id);
   const candidates=[],known=new Set();
-  const valid=(data)=>{
-   const after=addressView(data);
-   return !existingUnitViolation(originalAddress,after)&&
-    !(originalAddress.address2.trim()===''&&after.address2.trim()!=='')&&
-    !(inlineUnit(originalAddress.address1)==null&&inlineUnit(after.address1)!=null);
+  const valid=(data,ids=[])=>{
+   const after=addressView(data),allowed=approved451UnitChange(originalAddress,after,ids);
+   return !existingUnitViolation(originalAddress,after,ids)&&
+    (allowed||!(originalAddress.address2.trim()===''&&after.address2.trim()!==''))&&
+    (allowed||!(inlineUnit(originalAddress.address1)==null&&inlineUnit(after.address1)!=null));
   };
   function add(data,ids,baseline=false){
-   if(!data||!valid(data))return;
+   if(!data||!valid(data,ids))return;
    const key=mainAddressKey({data});
    if(known.has(key))return;
    known.add(key);candidates.push({data,ids,key,baseline});
   }
   function apply(data,id){
    if(!allow(id))return null;
-   try{const next=C.jig(data,retailer,1,[id]);return valid(next)?next:null;}
+   try{const next=C.jig(data,retailer,1,[id]);return valid(next,[id])?next:null;}
    catch{return null;}
   }
   const street=String(originalAddress.address1||'');
@@ -1536,7 +1548,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    throw Error('Choose an existing address and a profile count.');
   const reuseCount=reuse?reuse.count:0;
   if(reuse&&(!Number.isSafeInteger(reuseCount)||reuseCount<2||reuseCount>p.profileIds.length))throw Error('Choose between 2 and the selected profile count for address reuse.');
-  if(!Array.isArray(p.ruleIds)||p.ruleIds.length>100||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id))||
+  if(!Array.isArray(p.ruleIds)||p.ruleIds.length>300||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id))||
      (p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard&&!optionalUnitCount))
    throw Error('Choose supported jig rules for the remaining profiles, or explicitly reuse one saved address for the entire selection.');
   const all=await profiles.fieldSnapshot(a.scope,a.id),selected=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===retailer));
@@ -1831,8 +1843,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     if(!saved||Object.values(saved.address).map(normalizedAddressPart).join('|')!==
       Object.values(change.unitBankSourceAddress).map(normalizedAddressPart).join('|'))
      throw Error('A saved Address Bank base changed after preview. Reopen Jig before applying.');
-    ensureExistingUnitPreserved(saved.address,addressView(change.data));
-   }else ensureExistingUnitPreserved(addressView(change.originalData),addressView(change.data));
+    ensureExistingUnitPreserved(saved.address,addressView(change.data),change.appliedRuleIds);
+   }else ensureExistingUnitPreserved(addressView(change.originalData),addressView(change.data),change.appliedRuleIds);
    const row=latest.find(x=>x.id===change.profileId&&x.retailer===plan.retailer);
    if(!row||(row.revision||0)!==change.revision||require('./jig-field-core').hash(row.data)!==change.hash)throw Error('A selected profile changed after preview. Nothing was saved; preview the batch again.');
   }
@@ -2144,7 +2156,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   return result;
  }
  async function rules(e,p){const a=await access(e,p),retailer=C.retailer(p.retailer);const settings=await profiles.librarySettings(a.scope,a.id),saved=settings[retailer];a.check();const legacyTarget=retailer==='target'&&Array.isArray(saved?.rules)&&saved?.presetVersion!==2;const selected=legacyTarget?[...new Set([...saved.rules,...C.TARGET_PRIMARY_RULES.map(x=>x.id)])]:(saved?.rules||C.defaultRules(retailer));const grouped=[...new Set(selected.map(id=>/^(street|road|avenue|drive|lane|boulevard|court|terrace|circle|parkway|trail|highway|place|way|alley|square)_(short|long|abbr|full)$/i.test(id)?'suffix.matching':id))];return {selected:grouped,legacyMigrated:legacyTarget||grouped.length!==selected.length||grouped.some((id,i)=>id!==selected[i]),presetVersion:2,options:[...C.ruleOptions(retailer),{id:C.FL_PHONE_RULE,label:'Random Florida phone number',risk:'standard',family:'phone'}]};}
- async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>100||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:2};return {saved:true,presetVersion:2};},a.check);}
+ async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>300||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:2};return {saved:true,presetVersion:2};},a.check);}
  return {syncOwnerWalmartUnused,importPastedAccounts,customerCardDetails,jigAssets,reuseChoices,list,duplicateRepairPreview,duplicateRepairCommit,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,reconcileLivePreview,reconcileLiveCommit,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,returnToPools,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
 }
 function registerLibrary(options){
