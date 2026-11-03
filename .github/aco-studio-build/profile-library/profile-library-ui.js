@@ -933,6 +933,27 @@
  // applicable variations per profile rather than requiring dozens of clicks.
  function jigFamily(option){
   const id=String(option.id||''),name=String(option.label||''),value=id+' '+name;
+  if(id.startsWith('target.special-suffix.')){
+   const key=id.split('.')[2];
+   const kinds={
+    bayberry:['980 Bayberry Point Drive','Drive/Dr, Road/Rd, Trail/Trl, Way/Wy, Lane/Ln, Court/Ct'],
+    sabal:['1811 Sabal Palm Drive','Drive/Dr, Road/Rd, Lane/Ln, Way/Wy, Court/Ct, Circle/Cir'],
+    turtle:['3775 Turtle Run Boulevard','Boulevard/Blvd, Road/Rd, Drive/Dr, Lane/Ln, Way/Wy, Court/Ct'],
+    bristol:['5871 Bristol Lane','Lane/Ln, Road/Rd, Drive/Dr, Way/Wy, Court/Ct, Place/Pl']
+   };
+   const pair=kinds[key];if(pair)return ['special-'+key,pair[0]+' — approved Target-specific suffixes ('+pair[1]+'; this street only)'];
+  }
+  if(id.startsWith('target.451.')){
+   if(id.startsWith('target.451.unit-label.'))return ['target-451-label','451 NW 87th Lane Apt 102/103 — unit labels (Apt 102 → Unit 102, Ste 102, Room 102, Rm 102, #102, etc.)'];
+   if(id.startsWith('target.451.letter.'))return ['target-451-letter','451 Apt 102/103 letter suffix (102A–102D; 103A–103D)'];
+   if(id.startsWith('target.451.hyphen.'))return ['target-451-hyphen','451 Apt 102/103 hyphen numbers (102-1 through 102-9; 103-1 through 103-9)'];
+   if(id.startsWith('target.451.floor.'))return ['target-451-floor','451 Apt 102/103 floor add-on (Apt 102, Fl 1–9; Apt 103, Fl 1–9)'];
+   if(id.startsWith('target.451.box.'))return ['target-451-box','451 Apt 102/103 box add-on (Apt 102, Box A–D; Apt 103, Box A–D)'];
+   if(id.startsWith('target.451.unit-ste-line2.'))return ['target-451-unit-ste-line2','451 Apt 102/103 Line 2 label (Unit 102 Ste A–D; Unit 103 Ste A–D on Line 2)'];
+   if(id.startsWith('target.451.unit-ste.'))return ['target-451-unit-ste','451 Apt 102/103 inline label (Unit 102 Ste A–D; Unit 103 Ste A–D on Line 1)'];
+   if(id==='target.451.line2')return ['target-451-line2','451 Apt 102/103 placement (Street on Line 1, original Apt 102 or 103 on Line 2)'];
+   if(id==='target.451.avenue-lane')return ['target-451-avenue-lane','451 street extension (NW 87th Lane → NW 87th Avenue Lane; 451 only)'];
+  }
   // Keep alternate shorthands separate and opt-in; do not conflate postal
   // abbreviations (N/S/E/W/NE/NW/SE/SW) with nonstandard spellings.
   if(id==='target.direction.alternate')return ['direction-alternate','Alternate directional abbreviations (North → No; South → So; East → Ea; West → We; NE → N.E.; NW → N.W.; SE → S.E.; SW → S.W.)'];
