@@ -1157,7 +1157,7 @@
      const optionalUnitCount=optionalUnitToggle.checked?Number(unitQuantity.value):0;
      if(optionalUnitToggle.checked&&(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<1||optionalUnitCount>chosen.length))
       throw Error('Choose how many selected profiles should receive an optional new unit (1–'+chosen.length+').');
-     win.status().textContent=postalScanBox.checked?'Checking online ZIP/city matches for selected main addresses…':'Preparing offline jig preview…';
+     win.status().textContent=targetMainToggle.checked?'Allocating saved Target Main addresses (four per exact address) before additional enabled jigs…':postalScanBox.checked?'Checking online ZIP/city matches for selected main addresses…':'Preparing offline jig preview…';
      const counts=Object.fromEntries([...distributionPanel.querySelectorAll('input[data-style]')].map(input=>[input.dataset.style,Number(input.value)]));
       const distribution={enabled:distributionToggle.checked,counts};
       const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),distribution,
