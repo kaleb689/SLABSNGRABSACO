@@ -372,6 +372,7 @@ test("customer app loads multiple posts per retailer and saves without removing 
  assert.match(src,/return perChannel\.flat\(\)/);
  assert.doesNotMatch(src,/candidates\.find\(message => parseDropSkus/);
  assert.doesNotMatch(src,/submitted\.size !== live\.length/);
- assert.match(src,/const stillSaved = old\.filter/);
+ assert.match(src,/const stillSaved = carried\.filter/);
+ assert.match(src,/withoutSupersededSkus\(carried,/);
  assert.match(src,/isSelectableSkuSource\(source, appId\)/);
 });

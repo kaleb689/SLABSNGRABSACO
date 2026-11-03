@@ -4,6 +4,7 @@ import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
+import { parseDropNews, dropNewsPayloads, isDropNewsPaste } from "./drop-news-format.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 import { createDropMessageRetention } from "./discord-drop-retention.js";
 import { installDiscordAnimatedEmojis } from "./discord-emoji-pack.js";
@@ -287,6 +288,11 @@ export function parseDropSkus(message) {
       if(sku){
         const prefix=line.slice(0,sku.index).replace(/[-:|\s]+$/,"").trim();
         addSku(sku[1],prefix||title);
+      }else if(!/[:\/]/.test(line)&&/^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.test(line)){
+        // "Figure Collection Mew 1012793603": a bare retailer ID ending a
+        // product line (no label, no links or times) is that product's SKU.
+        const bare=/^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.exec(line);
+        addSku(bare[2],bare[1].trim());
       }else if(!/^(?:qty|quantity|price|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?|https?:\/\/|<@)/i.test(line)){
         title=line.replace(/^(?:product(?: name)?|item(?: name)?)\s*:\s*/i,"").slice(0,100);
       }
@@ -323,7 +329,8 @@ export function dropBotPermissionOverwrite(current={},botId) {
 export function isCoveredRawMonitorPost(raw, messages, ownerId, appId) {
   if(!raw || raw.pinned || String(raw.author?.id)!==String(ownerId) ||
       raw.author?.bot || raw.webhook_id) return false;
-  const original=parseMonitorDropProducts(raw);
+  let original=parseMonitorDropProducts(raw);
+  if(!original.length){const news=parseDropNews(raw);if(isDropNewsPaste(news))original=news.products;}
   if(!original.length)return false;
   const at=message=> {
     let value=Date.parse(message?.timestamp||"");
@@ -401,6 +408,17 @@ export function skuControlPayload(message, products, tonightChannelId, retailerD
     ],
     allowed_mentions: { parse: [] }
   };
+}
+// The newest post in a channel decides a SKU: confirming a drop replaces any
+// earlier selection of the same SKU from an older copy in that channel (for
+// example a raw paste and its reformatted card), so the owner sees it once.
+export function withoutSupersededSkus(items, channelId, sourceId, skus) {
+  const listed = new Set([...(skus || [])].map(sku => String(sku).toUpperCase()));
+  return (Array.isArray(items) ? items : []).filter(item => {
+    const [itemChannel, itemSource] = String(item?.key || "").split(":");
+    return !(itemChannel === String(channelId) && itemSource !== String(sourceId) &&
+      listed.has(String(item?.sku || "").toUpperCase()));
+  });
 }
 export function skuBrowsePayload(sourceId, products, requestedPage = 0, draft = []) {
   const pages = Math.ceil(products.length / 25);
@@ -2546,6 +2564,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   const skuDraftsFile = path.join(dataDir, "discord-sku-drafts.json");
   const skuReminderPanelsFile = path.join(dataDir, "discord-sku-reminder-panels.json");
   const skuReminderHistoryFile = path.join(dataDir, "discord-sku-reminder-history.json");
+  // One-time safety copy taken before the newest-post-wins selection change
+  // can touch saved data. COPYFILE_EXCL never overwrites an earlier copy.
+  for (const file of [skuSelectionsFile, skuDraftsFile]) {
+    fs.copyFile(file, file.replace(/\.json$/, ".backup-2026-11-02.json"), fs.constants.COPYFILE_EXCL)
+      .then(() => console.log("SKU data safety copy saved:", path.basename(file)))
+      .catch(error => { if (!["EEXIST", "ENOENT"].includes(error.code)) console.error("SKU data safety copy failed:", error.message); });
+  }
   let skuReminderPanelQueue = Promise.resolve();
   function withSkuReminderPanelQueue(task) {
     const next = skuReminderPanelQueue.then(task);
@@ -2605,6 +2630,17 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       return drafts[key].items;
     });
   }
+  // Each change posts a fresh owner message (so it notifies and lands at the
+  // bottom of #sku-requests) and then removes the member's previous one,
+  // keeping a single current message per member.
+  async function publishOwnerSkuRecord(record, payload) {
+    const posted = await api("/channels/" + skuRequestsChannelId + "/messages", "POST", payload);
+    if (record?.messageId && record.messageId !== posted.id) {
+      await api("/channels/" + skuRequestsChannelId + "/messages/" + record.messageId, "DELETE")
+        .catch(error => { if (!/HTTP 404/.test(error.message)) console.error("Old owner SKU message cleanup:", error.message); });
+    }
+    return posted;
+  }
   async function confirmSkuDraft(userId, username, sourceId, channelId) {
     if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
     const source = await api("/channels/" + channelId + "/messages/" + sourceId);
@@ -2620,7 +2656,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
       const records = await readSkuFile(skuSelectionsFile);
       const record = records[userId] || { username, messageId: null, items: [] };
-      const other = (record.items || []).filter(item => !item.key.startsWith(channelId + ":" + sourceId + ":"));
+      const other = withoutSupersededSkus(record.items, channelId, sourceId, validSkus)
+        .filter(item => !item.key.startsWith(channelId + ":" + sourceId + ":"));
       const chosenQty = draft.items.length ? uniformSkuQuantity(draft.items) : uniformSkuQuantity(other);
       const next = setGlobalSkuQuantity([...other, ...draft.items], chosenQty || 1);
       if (next.length > 200) throw new Error("You can have up to 200 SKUs across drops. Remove older selections first.");
@@ -2630,12 +2667,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         : (record.skippedUpcomingDrops || []);
       const payload = ownerSkuPayload(userId, username, next,
         "Confirmed " + draft.items.length + " SKU(s) for this drop", skipTonightDate, skippedUpcomingDrops);
-      let posted;
-      if (record.messageId) {
-        try { posted = await api("/channels/" + skuRequestsChannelId + "/messages/" + record.messageId, "PATCH", payload); }
-        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
-      }
-      if (!posted) posted = await api("/channels/" + skuRequestsChannelId + "/messages", "POST", payload);
+      const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { username, items: next, messageId: posted.id, skipTonightDate,
         skippedUpcomingDrops, updatedAt: new Date().toISOString() });
       records[userId] = record;
@@ -3061,6 +3093,41 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         console.error("Discord monitor-paste formatting failed; original message preserved:", error.message);
       }
     }
+    // Owner "drop news" pastes (Product / Retail / Resale / Link blocks) are
+    // re-posted in the community layout. The raw paste is removed only after
+    // every card posts and the cards carry exactly the same SKUs.
+    if (!monitored.length && isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")) {
+      const label = retailerDropLabels[d.channel_id] ||
+        (d.channel_id === tonightChannelId ? "Dropping Tonight" : "Upcoming Drops");
+      const payloads = dropNewsPayloads(parseDropNews(d), label);
+      const rawSkus = new Set(parseDropSkus(d).map(item => item.sku));
+      const cardSkus = new Set(payloads.flatMap(payload => parseDropSkus(payload).map(item => item.sku)));
+      if (payloads.length && rawSkus.size === cardSkus.size && [...rawSkus].every(sku => cardSkus.has(sku))) {
+        try {
+          const rendered = [];
+          for (const payload of payloads) {
+            const saved = await api(`/channels/${d.channel_id}/messages`, "POST", payload);
+            const formatted = { ...saved, channel_id: d.channel_id, guild_id: guildId,
+              embeds: payload.embeds, type: 0, author: saved.author || { id: appId, bot: true } };
+            rendered.push(formatted);
+            await ensureSkuControls(formatted);
+            await notifyRetailerSkuChange(formatted);
+          }
+          if (rendered.length === payloads.length) {
+            try {
+              await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
+              await retireReformattedRawSource(d.channel_id, d.id);
+              console.log("Discord formatted owner drop paste:", d.channel_id, d.id, rawSkus.size);
+            } catch (error) {
+              console.error("Formatted drop published; could not remove raw paste:", error.message);
+            }
+            return;
+          }
+        } catch (error) {
+          console.error("Discord drop-paste formatting failed; original message preserved:", error.message);
+        }
+      }
+    }
     await ensureSkuControls(d);
     await notifyRetailerSkuChange(d);
     await notifyUpcomingRetailerAnnouncement(d);
@@ -3086,7 +3153,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
     if (!dropChannelIds.has(channelId)) throw new Error("This option is only available in a drop channel.");
     const source = await api(`/channels/${channelId}/messages/${sourceId}`);
-    if (source.author?.bot || source.webhook_id) throw new Error("The original drop post is unavailable.");
+    if (source.webhook_id || (source.author?.bot && !isFormattedDropPost(source, appId)))
+      throw new Error("The original drop post is unavailable.");
     return withSkuQueue(async () => {
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };
@@ -3101,12 +3169,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
       const payload = ownerSkuPayload(userId, username, next,
         tonight ? "Requested: do not run profiles tonight" : "Requested: do not run profiles for this upcoming drop", date, skipped);
-      let posted;
-      if (record.messageId) {
-        try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
-        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
-      }
-      if (!posted) posted = await api(`/channels/${skuRequestsChannelId}/messages`, "POST", payload);
+      const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { username, items: next, skipTonightDate: date, skippedUpcomingDrops: skipped, messageId: posted.id, updatedAt: new Date().toISOString() });
       selections[userId] = record;
       await writeSkuFile(skuSelectionsFile, selections);
@@ -3123,12 +3186,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       if (!quantity) next.splice(next.findIndex(item => skuItemToken(item.key) === token), 1);
       const normalized = setGlobalSkuQuantity(next, quantity || uniformSkuQuantity(next) || 1);
       const payload = ownerSkuPayload(userId, record.username, normalized, quantity ? `Changed ${skuSafeText(item.sku)} to Qty: ${quantity}` : `Removed ${skuSafeText(item.sku)}`, record.skipTonightDate, record.skippedUpcomingDrops);
-      let posted;
-      if (record.messageId) {
-        try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
-        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
-      }
-      if (!posted) posted = await api(`/channels/${skuRequestsChannelId}/messages`, "POST", payload);
+      const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { items: normalized, messageId: posted.id, updatedAt: new Date().toISOString() });
       await writeSkuFile(skuSelectionsFile, selections);
       return normalized;
@@ -3145,12 +3203,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const payload = ownerSkuPayload(userId, record.username, next,
         "Set Qty " + quantity + " for ALL " + next.length + " selected SKUs",
         record.skipTonightDate, record.skippedUpcomingDrops);
-      let posted;
-      if (record.messageId) {
-        try { posted = await api("/channels/" + skuRequestsChannelId + "/messages/" + record.messageId, "PATCH", payload); }
-        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
-      }
-      if (!posted) posted = await api("/channels/" + skuRequestsChannelId + "/messages", "POST", payload);
+      const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { items: next, messageId: posted.id, updatedAt: new Date().toISOString() });
       await writeSkuFile(skuSelectionsFile, selections);
       return next;
@@ -3159,7 +3212,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function recordSkuSelection(userId, username, sourceId, target, quantity, channelId) {
     if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
     const source = await api(`/channels/${channelId}/messages/${sourceId}`);
-    if (source.author?.bot || source.webhook_id) throw new Error("The original drop post is unavailable.");
+    if (!isSelectableSkuSource(source, appId)) throw new Error("The original drop post is unavailable.");
     const products = parseDropSkus(source);
     const chosen = target === "all" ? products : [products[Number(target)]].filter(Boolean);
     if (!chosen.length) throw new Error("That SKU is no longer on the drop post.");
@@ -3167,18 +3220,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };
       record.username = username;
-      record.items = changeSkuItems(record.items, chosen, sourceId, channelId, quantity);
+      record.items = changeSkuItems(quantity ? withoutSupersededSkus(record.items, channelId, sourceId,
+        chosen.map(item => item.sku)) : record.items, chosen, sourceId, channelId, quantity);
       if (channelId === tonightChannelId && quantity) delete record.skipTonightDate;
       if (channelId !== tonightChannelId && quantity) record.skippedUpcomingDrops =
         (record.skippedUpcomingDrops || []).filter(drop => drop.channelId !== channelId || drop.sourceId !== sourceId);
       record.updatedAt = new Date().toISOString();
       const payload = ownerSkuPayload(userId, username, record.items, quantity ? `Selected ${chosen.length} SKU(s) at Qty: ${quantity}` : `Removed ${chosen.length} SKU(s)`, record.skipTonightDate, record.skippedUpcomingDrops);
-      let posted;
-      if (record.messageId) {
-        try { posted = await api(`/channels/${skuRequestsChannelId}/messages/${record.messageId}`, "PATCH", payload); }
-        catch (error) { if (!/HTTP 404/.test(error.message)) throw error; }
-      }
-      if (!posted) posted = await api(`/channels/${skuRequestsChannelId}/messages`, "POST", payload);
+      const posted = await publishOwnerSkuRecord(record, payload);
       record.messageId = posted.id;
       selections[userId] = record;
       await writeSkuFile(skuSelectionsFile, selections);
@@ -4060,7 +4109,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const items = Array.isArray(saved.items) ? saved.items : [];
     return {
       sources, quantity: uniformSkuQuantity(items) || 1,
-      selectedKeys: items.map(item => String(item.key || "")),
+      // A SKU picked from an older copy of the same drop channel still shows
+      // as selected on the current post; saving that post replaces the old row.
+      selectedKeys: [...new Set([...items.map(item => String(item.key || "")),
+        ...sources.flatMap(source => source.products.filter(product => items.some(item => {
+          const [itemChannel] = String(item.key || "").split(":");
+          return itemChannel === source.channelId && String(item.sku || "").toUpperCase() === product.sku;
+        })).map(product => source.channelId + ":" + source.sourceId + ":" + product.sku))])],
       optedOutKeys: sources.filter(source =>
         (source.channelId === tonightChannelId
           ? saved.skipTonightDate === tonightDate()
@@ -4095,13 +4150,18 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     }
     // Require a complete snapshot so hidden or stale forms cannot silently
     // overwrite part of the user's saved preferences.
-    // A new unrelated drop may appear while the customer is choosing. Save only\n    // the submitted sources; never clear selections in unsubmitted new posts.\n    if (!submitted.size && entries.length) throw new Error("Invalid drop selections.");
+    // A new unrelated drop may appear while the customer is choosing. Save only
+    // the submitted sources; never clear selections in unsubmitted new posts.
+    if (!submitted.size && entries.length) throw new Error("Invalid drop selections.");
     return withSkuQueue(async () => {
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };
       const old = Array.isArray(record.items) ? record.items : [];
       const active = new Set(submitted.keys());
-      const stillSaved = old.filter(item => {
+      let carried = old;
+      for (const { source } of submitted.values()) carried = withoutSupersededSkus(carried,
+        source.channelId, source.sourceId, source.products.map(product => product.sku));
+      const stillSaved = carried.filter(item => {
         const parts = String(item.key || "").split(":");
         return !active.has(parts.slice(0, 2).join(":")) &&
           !(parts[0] === tonightChannelId && [...submitted.values()].some(row =>
@@ -4142,16 +4202,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const payload = ownerSkuPayload(userId, username, next,
         "Submitted " + chosen.length + " active SKU(s) from the customer app",
         skipTonightDate, skippedUpcomingDrops);
-      let posted;
-      if (record.messageId) {
-        try {
-          posted = await api("/channels/" + skuRequestsChannelId + "/messages/" +
-            record.messageId, "PATCH", payload);
-        } catch (error) {
-          if (!/HTTP 404/.test(error.message)) throw error;
-        }
-      }
-      if (!posted) posted = await api("/channels/" + skuRequestsChannelId + "/messages", "POST", payload);
+      const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { username, items: next, messageId: posted.id,
         skipTonightDate, skippedUpcomingDrops, updatedAt: new Date().toISOString() });
       selections[userId] = record;

@@ -35,6 +35,6 @@ test("Discord enforces paid-only SKU confirmation and preserves older saved sele
   assert.match(server, /getPaidSkuAllowance: async accountId/);
   assert.match(discord, /if \(!await hasPaidSkuAccess\(userId\)\)/);
   assert.match(discord, /confirmSkuDraft\(userId/);
-  assert.match(discord, /const other = \(record.items \|\| \[\]\).filter/);
+  assert.match(discord, /const other = withoutSupersededSkus\(record\.items, channelId, sourceId, validSkus\)\n\s*\.filter/);
   assert.match(discord, /writeSkuFile\(skuSelectionsFile, records\)/);
 });
