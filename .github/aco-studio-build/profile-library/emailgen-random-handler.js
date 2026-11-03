@@ -9,7 +9,19 @@
  // Forwarding aliases are not mailboxes: this password never authenticates
  // to Cloudflare, IMAP, SMTP, or the encrypted Personal email vault.
  const EMAIL_GEN_EXPORT_PASSWORD='Freeshit1!';
- function buildEmailGenExportCsv(source){
+ // Match the first profile_name column in ACO Studio's own Shikari CSV.
+ // Shikari seed export adds the profile schema without inventing unowned
+ // names, payment cards, shipping addresses, or verified account logins.
+ const SHIKARI_SEED_COLUMNS=Object.freeze([
+  'profile_name','first_name','last_name','email','password','phone_num',
+  'cc_number','cc_exp_month','cc_exp_year','cc_cvv','cc_name','cc_type','custom_security_code',
+  'shipping_first_name','shipping_last_name','shipping_street','shipping_street_2',
+  'shipping_city','shipping_state','shipping_zip_code','shipping_country','shipping_phone',
+  'billing_first_name','billing_last_name','billing_street','billing_street_2',
+  'billing_city','billing_state','billing_zip_code','billing_country','billing_phone'
+ ]);
+ function buildEmailGenExportCsv(source,mode='basic'){
+  if(!['basic','shikari'].includes(mode))throw Error('Unknown Email Gen export format.');
   const owned=Array.isArray(source)?source.filter(row=>
    typeof row?.alias==='string'&&row.alias.toLowerCase().endsWith('@'+OWNER_DOMAIN)&&validEmail(row.alias)):[];
   const seen=new Set();
@@ -19,28 +31,34 @@
    seen.add(alias);
    if(/^[=+\-@]/.test(alias))throw Error('Invalid spreadsheet-leading character in alias. Review the Email Bank before exporting.');
   }
+  const headers=mode==='shikari'?SHIKARI_SEED_COLUMNS:['profile_name','email','password'];
   const cell=value=>'"'+String(value).replace(/"/g,'""')+'"';
-  const csv='email,password,profile_name\r\n'+owned.map((row,index)=>
-   [row.alias,EMAIL_GEN_EXPORT_PASSWORD,'aco gen '+(index+1)].map(cell).join(',')).join('\r\n')+'\r\n';
+  const csv=headers.join(',')+'\r\n'+owned.map((row,index)=>{
+   const values={profile_name:'aco gen '+(index+1),email:row.alias,password:EMAIL_GEN_EXPORT_PASSWORD};
+   return headers.map(key=>cell(values[key]??'')).join(',');
+  }).join('\r\n')+'\r\n';
+  if(!csv.startsWith('profile_name,')||csv.charCodeAt(0)===65279)throw Error('Shikari export header is invalid.');
   return {count:owned.length,csv};
  }
- function downloadEmailGenExport(){
+ function downloadEmailGenExport(mode='basic',extension='csv'){
+  if(!['csv','txt'].includes(extension))throw Error('Unsupported Shikari export file type.');
   requireOwner();
   if(!unlocked)throw Error('Unlock your encrypted owner Email Gen bank to export its aliases.');
-  const result=buildEmailGenExportCsv(records);
+  const result=buildEmailGenExportCsv(records,mode);
   if(!result.count)throw Error('Create emails in Email Gen before exporting.');
-  const blob=new Blob(['\ufeff',result.csv],{type:'text/csv;charset=utf-8'});
+  // Never add UTF-8 BOM before profile_name; importers that don't strip BOM
+  // fail to recognize the first column even when the header text looks right.
+  const blob=new Blob([result.csv],{type:extension==='txt'?'text/plain;charset=utf-8':'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   try{
    const link=document.createElement('a');
    link.href=url;
-   link.download='aco-gen-emails-'+new Date().toISOString().slice(0,10)+'.csv';
+   link.download=(mode==='shikari'?'shikari-email-profile-template-':'aco-gen-emails-')+new Date().toISOString().slice(0,10)+'.'+extension;
    link.hidden=true;
    document.body.appendChild(link);
    try{link.click();}
    finally{link.remove();}
   }finally{
-   // Do not revoke a blob while Electron is still resolving the download.
    setTimeout(()=>URL.revokeObjectURL(url),15000);
   }
   return result.count;
@@ -251,13 +269,13 @@
  function setupRandomEmailGen(){
   const create=$e('randomAliasCreate'),assign=$e('randomAliasAssign'),sync=$e('randomAliasSync');
   if(!create||!assign||!sync)throw Error('Random Email Gen controls are unavailable.');
-  const exportButton=$e('randomAliasExport');
-  if(!exportButton)throw Error('Email Gen CSV export control is unavailable.');
-  exportButton.addEventListener('click',()=>{
+  const exportButton=$e('randomAliasExport'),shikariButton=$e('randomAliasExportShikari'),shikariTextButton=$e('randomAliasExportShikariTxt');
+  if(!exportButton||!shikariButton||!shikariTextButton)throw Error('Email Gen and Shikari export controls are unavailable.');
+  for(const [button,mode,extension] of [[exportButton,'basic','csv'],[shikariButton,'shikari','csv'],[shikariTextButton,'shikari','txt']])button.addEventListener('click',()=>{
    if(randomGenBusy)return;
    try{
-    const count=downloadEmailGenExport();
-    randomNotice('Downloaded '+count+' Email Gen alias(es) with profile names aco gen 1 through aco gen '+count+' and the requested export-only default password.',true);
+    const count=downloadEmailGenExport(mode,extension);
+    randomNotice('Downloaded '+count+' Email Gen row(s), with profile_name first, aco gen 1 through aco gen '+count+' and the requested export-only password. '+(mode==='shikari'?'Other Shikari profile fields are empty until complete profiles are created.':''),true);
    }catch(error){randomNotice(String(error?.message||error));}
   });
   create.addEventListener('click',async()=>{
