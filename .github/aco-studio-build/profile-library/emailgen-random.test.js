@@ -109,3 +109,67 @@ test('Bulk forwarding destination edit never publishes or creates aliases and re
  const func=app.slice(app.indexOf(' async function changeDraftDestinations('),app.indexOf(' function refreshDraftDestinations(){'));
  assert.doesNotMatch(func,/api\(\)\.publish|makeAlias\(|records\.push\(|profileWorkshop\.importEmails/);
 });
+
+
+test('Email Gen provides an owner-only CSV download with a generic export password and sequential profile names',()=>{
+ assert.match(html,/id="randomAliasExport"/);
+ assert.match(html,/email,password,profile_name/);
+ assert.match(app,/const EMAIL_GEN_EXPORT_PASSWORD='Freeshit1!'/);
+ assert.match(app,/downloadEmailGenExport\(\)/);
+ assert.match(app,/if\(!unlocked\)throw Error\('Unlock your encrypted owner Email Gen bank/);
+ assert.match(app,/requireOwner\(\)/);
+ const start=app.indexOf(" const EMAIL_GEN_EXPORT_PASSWORD=");
+ const end=app.indexOf(" const unassignedRandom=",start);
+ assert.ok(start>=0&&end>start,'export helper is in the owner-only Email Gen closure');
+ const snippet=app.slice(start,end);
+ const sample=[
+  {alias:'sng0001@sng.sarl',randomGenerated:true,status:'draft'},
+  {alias:'manual@sng.sarl',randomGenerated:false,status:'live'},
+  {alias:'sng0003@sng.sarl',randomGenerated:true,status:'live'},
+  {alias:'outside@example.test',randomGenerated:true,status:'live'}
+ ];
+ const ctx={OWNER_DOMAIN:'sng.sarl',validEmail:email=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),sample};
+ const result=vm.runInNewContext(snippet+'\nbuildEmailGenExportCsv(sample)',ctx);
+ assert.equal(result.count,3,'only encrypted bank aliases for the owner domain are exported');
+ assert.equal(result.csv,'email,password,profile_name\r\n'+
+  '"sng0001@sng.sarl","Freeshit1!","aco gen 1"\r\n'+
+  '"manual@sng.sarl","Freeshit1!","aco gen 2"\r\n'+
+  '"sng0003@sng.sarl","Freeshit1!","aco gen 3"\r\n');
+ assert.equal(sample[0].password,undefined,'preset password must not be stored in aliases');
+ assert.equal(sample[1].profileName,undefined,'profile name is only in the export copy');
+});
+
+test('Email Gen CSV creates 100 names in stable order and rejects duplicate aliases and unsafe spreadsheet prefixes',()=>{
+ const start=app.indexOf(" const EMAIL_GEN_EXPORT_PASSWORD="),end=app.indexOf(" const unassignedRandom=",start);
+ const ctx={OWNER_DOMAIN:'sng.sarl',validEmail:email=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)};
+ const names=Array.from({length:100},(_,i)=>({alias:'sng'+i+'@sng.sarl'}));
+ const data=vm.runInNewContext(app.slice(start,end)+'\nbuildEmailGenExportCsv('+JSON.stringify(names)+')',ctx);
+ assert.equal(data.count,100);
+ assert.ok(data.csv.includes('"sng0@sng.sarl","Freeshit1!","aco gen 1"'));
+ assert.ok(data.csv.includes('"sng99@sng.sarl","Freeshit1!","aco gen 100"'));
+ assert.equal((data.csv.match(/Freeshit1!/g)||[]).length,100);
+ assert.throws(()=>vm.runInNewContext("buildEmailGenExportCsv([{alias:'x@sng.sarl'},{alias:'X@sng.sarl'}])",ctx),/Duplicate/);
+ assert.throws(()=>vm.runInNewContext("buildEmailGenExportCsv([{alias:'=SUM(1)@sng.sarl'}])",ctx),/spreadsheet-leading character/);
+});
+
+test('Email Gen CSV download requires unlocked owner; export does not edit Cloudflare, aliases or retailer pools',()=>{
+ const start=app.indexOf(" const EMAIL_GEN_EXPORT_PASSWORD="),end=app.indexOf(" const unassignedRandom=",start);
+ const snippet=app.slice(start,end),aliases=[{alias:'sngtest@sng.sarl',randomGenerated:true,status:'draft',poolTarget:null}];
+ let ownerChecks=0,clicked=0,revoked=0,stored=0,published=0;
+ const anchor={click(){clicked++;},remove(){},href:null,download:null,hidden:false};
+ const ctx={OWNER_DOMAIN:'sng.sarl',validEmail:email=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
+  records:aliases,unlocked:false,requireOwner(){ownerChecks++;},Date,
+  document:{createElement:()=>anchor,body:{appendChild:()=>{}}},
+  Blob,URL:{createObjectURL:()=>'blob:aco',revokeObjectURL:()=>revoked++},
+  setTimeout:callback=>callback(),store(){stored++;},api(){published++;}};
+ vm.createContext(ctx);vm.runInContext(snippet,ctx);
+ assert.throws(()=>vm.runInContext('downloadEmailGenExport()',ctx),/Unlock/);
+ assert.equal(clicked,0);
+ ctx.unlocked=true;
+ assert.equal(vm.runInContext('downloadEmailGenExport()',ctx),1);
+ assert.equal(anchor.download.match(/^aco-gen-emails-\d{4}-\d\d-\d\d\.csv$/)?.length>0,true);
+ assert.equal(clicked,1);assert.equal(revoked,1);
+ assert.equal(ownerChecks,2);
+ assert.equal(stored,0);assert.equal(published,0);
+ assert.equal(aliases[0].status,'draft');assert.equal(aliases[0].poolTarget,null);
+});

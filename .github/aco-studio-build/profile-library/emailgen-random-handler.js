@@ -5,6 +5,46 @@
   const bytes=crypto.getRandomValues(new Uint8Array(12));
   return 'sng'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
  }
+ // CSV export values are an owner-requested template for external imports.
+ // Forwarding aliases are not mailboxes: this password never authenticates
+ // to Cloudflare, IMAP, SMTP, or the encrypted Personal email vault.
+ const EMAIL_GEN_EXPORT_PASSWORD='Freeshit1!';
+ function buildEmailGenExportCsv(source){
+  const owned=Array.isArray(source)?source.filter(row=>
+   typeof row?.alias==='string'&&row.alias.toLowerCase().endsWith('@'+OWNER_DOMAIN)&&validEmail(row.alias)):[];
+  const seen=new Set();
+  for(const row of owned){
+   const alias=row.alias.toLowerCase();
+   if(seen.has(alias))throw Error('Duplicate Email Gen aliases found. Review the bank before exporting.');
+   seen.add(alias);
+   if(/^[=+\-@]/.test(alias))throw Error('Invalid spreadsheet-leading character in alias. Review the Email Bank before exporting.');
+  }
+  const cell=value=>'"'+String(value).replace(/"/g,'""')+'"';
+  const csv='email,password,profile_name\r\n'+owned.map((row,index)=>
+   [row.alias,EMAIL_GEN_EXPORT_PASSWORD,'aco gen '+(index+1)].map(cell).join(',')).join('\r\n')+'\r\n';
+  return {count:owned.length,csv};
+ }
+ function downloadEmailGenExport(){
+  requireOwner();
+  if(!unlocked)throw Error('Unlock your encrypted owner Email Gen bank to export its aliases.');
+  const result=buildEmailGenExportCsv(records);
+  if(!result.count)throw Error('Create emails in Email Gen before exporting.');
+  const blob=new Blob(['\ufeff',result.csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  try{
+   const link=document.createElement('a');
+   link.href=url;
+   link.download='aco-gen-emails-'+new Date().toISOString().slice(0,10)+'.csv';
+   link.hidden=true;
+   document.body.appendChild(link);
+   try{link.click();}
+   finally{link.remove();}
+  }finally{
+   // Do not revoke a blob while Electron is still resolving the download.
+   setTimeout(()=>URL.revokeObjectURL(url),15000);
+  }
+  return result.count;
+ }
  const unassignedRandom=()=>records.filter(r=>r.randomGenerated===true&&!r.poolTarget);
  const unsyncedRandom=()=>records.filter(r=>r.randomGenerated===true&&RANDOM_RETAILERS[r.poolTarget]&&!r.poolImportedAt);
  function randomNotice(message,ok=false){alertMessage('randomAliasStatus',message,ok);}
@@ -211,6 +251,15 @@
  function setupRandomEmailGen(){
   const create=$e('randomAliasCreate'),assign=$e('randomAliasAssign'),sync=$e('randomAliasSync');
   if(!create||!assign||!sync)throw Error('Random Email Gen controls are unavailable.');
+  const exportButton=$e('randomAliasExport');
+  if(!exportButton)throw Error('Email Gen CSV export control is unavailable.');
+  exportButton.addEventListener('click',()=>{
+   if(randomGenBusy)return;
+   try{
+    const count=downloadEmailGenExport();
+    randomNotice('Downloaded '+count+' Email Gen alias(es) with profile names aco gen 1 through aco gen '+count+' and the requested export-only default password.',true);
+   }catch(error){randomNotice(String(error?.message||error));}
+  });
   create.addEventListener('click',async()=>{
    if(randomGenBusy)return;randomGenBusy=true;create.disabled=true;
    try{
