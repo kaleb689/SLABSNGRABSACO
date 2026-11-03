@@ -1136,7 +1136,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  // formatting experiments, not verified USPS delivery-point identifiers.
  const SECOND_LINE_LABELS=['Apt','Unit','Ste','Lot','Rm','#','Fl','Bldg'];
  const SECOND_LINE_IDS=['A','B','C','D','1','2','3','4','5','6','7','8','9'];
- function addMissingUnitLine(original,generated,position,occupiedKeys=new Set(),usedUnitLabels=new Set()){
+ const TARGET_MAX_PER_FORMAT=4;
+ function addMissingUnitLine(original,generated,position,occupiedKeys=new Set(),usedUnitLabels=new Set(),maxPerFormat=1){
   const originalAddress=addressView(original),after=addressView(generated);
   if(originalAddress.address2.trim()||inlineUnit(originalAddress.address1)||
      after.address2.trim()||inlineUnit(after.address1))
@@ -1153,12 +1154,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    // Prefer distinct appended designators across profiles using the same
    // base address. Try the whole 104-variant palette before reusing a label
    // on a different street jig; full-address conflicts are still rejected.
-   if(pass===0&&usedUnitLabels.has(normalizedAddressPart(unit)))continue;
+   if(maxPerFormat===1&&pass===0&&usedUnitLabels.has(normalizedAddressPart(unit)))continue;
    const values=D.toValues(generated);
    values['shipping.address1']=after.address1.trimEnd()+' '+unit;
    // Address Line 2 must remain untouched.
    const candidate=D.manualEdit(generated,values);
-   if(!occupiedKeys.has(mainAddressKey({data:candidate})))
+   const key=mainAddressKey({data:candidate});
+   const used=occupiedKeys instanceof Map?(occupiedKeys.get(key)||0):(occupiedKeys.has(key)?1:0);
+   if(used<maxPerFormat)
     return {data:candidate,added:true,unit,optionsChecked:step+1+pass*total};
   }
   return {data:generated,added:false,reason:'exhausted',optionsChecked:total};
@@ -1195,9 +1198,15 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   for(const plan of planned){
    if(mainAddressKey({data:plan.data})===mainAddressKey({data:plan.originalData}))continue;
    const key=mainAddressKey({data:plan.data});
-   const matches=occupied.filter(entry=>entry.id!==plan.profileId&&entry.key===key);
+   const matches=occupied.filter(entry=>entry.id!==plan.profileId&&entry.key===key&&
+     (plan.retailer!=='target'||entry.retailer==='target'));
+   // Target explicitly allows four profiles per exact formatted street address
+   // in this vault. Other retailers retain the existing strict warning policy.
+   if(plan.retailer==='target'&&matches.length<TARGET_MAX_PER_FORMAT)continue;
    if(matches.length)conflicts.push({profileId:plan.profileId,email:plan.email,retailer:plan.retailer,
     address:[plan.after.address1,plan.after.address2,plan.after.city,plan.after.state,plan.after.zip].filter(Boolean).join(', '),
+    limit:plan.retailer==='target'?TARGET_MAX_PER_FORMAT:1,
+    count:matches.length+1,
     matches:matches.slice(0,8).map(entry=>({email:entry.email,retailer:entry.retailer}))});
   }
   return conflicts;
@@ -1396,6 +1405,89 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }
   return outcome;
  }
+ // Prioritize the Target formats documented by successful order examples:
+ // full/short street suffixes, then full/short compass direction forms,
+ // before experimental numeric, fractional, hyphen and other selected rules.
+ // Allocate the same exact formatted address to at most four Target profiles.
+ // A matching account belonging to another retailer does not consume a Target
+ // slot, and different customers' encrypted vaults are never inspected.
+ function preferredTargetJig(row,ruleIds,counts,{single=false,mirrorBilling=false}={}){
+  const original=row.data,retailer='target',originalAddress=addressView(original);
+  const enabled=[...new Set(ruleIds.filter(id=>id!==C.FL_PHONE_RULE))];
+  const allow=id=>enabled.includes(id)&&!!C.ruleById(id);
+  const candidates=[],known=new Set();
+  const valid=(data)=>{
+   const after=addressView(data);
+   return !existingUnitViolation(originalAddress,after)&&
+    !(originalAddress.address2.trim()===''&&after.address2.trim()!=='')&&
+    !(inlineUnit(originalAddress.address1)==null&&inlineUnit(after.address1)!=null);
+  };
+  function add(data,ids,baseline=false){
+   if(!data||!valid(data))return;
+   const key=mainAddressKey({data});
+   if(known.has(key))return;
+   known.add(key);candidates.push({data,ids,key,baseline});
+  }
+  function apply(data,id){
+   if(!allow(id))return null;
+   try{const next=C.jig(data,retailer,1,[id]);return valid(next)?next:null;}
+   catch{return null;}
+  }
+  const street=String(originalAddress.address1||'');
+  const longSuffix=/(?:\b(?:Street|Road|Avenue|Drive|Lane|Boulevard|Court|Terrace|Circle|Parkway|Trail|Highway|Place|Alley|Square)\b)(?=\s|$)/i.test(street);
+  const suffixVariant=apply(original,'suffix.matching');
+  // If the stored address uses an abbreviation, prefer its spelled-out form
+  // first, matching "123 Main Street" x4 before "123 Main St" x4.
+  const full=longSuffix||!suffixVariant?original:suffixVariant;
+  const short=suffixVariant?(longSuffix?suffixVariant:original):null;
+  add(full,full===original?[]:['suffix.matching'],true);
+  if(short)add(short,short===original?[]:['suffix.matching']);
+  const baseFormats=[full,short].filter(Boolean);
+  const dirs=['target.direction.long','target.direction.short'];
+  const directional=[];
+  for(const base of baseFormats)for(const dir of dirs){
+   const transformed=apply(base,dir);
+   if(transformed){add(transformed,[dir]);directional.push(transformed);}
+  }
+  // Other approved directions remain possible, but are less preferred than
+  // standard compass/USPS-compatible spellings.
+  for(const base of baseFormats)for(const dir of ['target.direction.alternate','target.direction.spaced']){
+   const transformed=apply(base,dir);if(transformed){add(transformed,[dir]);directional.push(transformed);}
+  }
+  const remaining=enabled.filter(id=>id!=='suffix.matching'&&!id.startsWith('target.direction.'));
+  // The requested settings determine which other jig transformations run.
+  // A two-step combination uses a preferred base + one selected rule.
+  for(const id of remaining)for(const base of [...baseFormats,...directional]){
+   const transformed=apply(base,id);
+   if(transformed)add(transformed,[id]);
+  }
+  // Only combine two non-primary formatting rules if ordinary choices are
+  // exhausted. Existing unit fields remain protected by valid().
+  for(const first of remaining)for(const second of remaining){
+   if(first===second||first.startsWith('target.house.')&&second.startsWith('target.house.'))continue;
+   for(const base of baseFormats){
+    const one=apply(base,first);
+    if(one){const two=apply(one,second);if(two)add(two,[first,second]);}
+   }
+  }
+  // A single selected profile with a requested style must actually jig, rather
+  // than silently remaining unchanged simply because its source has capacity.
+  const order=single&&enabled.length?[
+   ...candidates.filter(item=>item.ids.length),
+   ...candidates.filter(item=>!item.ids.length)]:candidates;
+  const selected=order.find(item=>(counts.get(item.key)||0)<TARGET_MAX_PER_FORMAT&&
+   !(single&&enabled.length&&item.baseline&&item.key===mainAddressKey(row)));
+  if(!selected)throw Error('Target has no available four-use address variation slots for this batch. Enable more jig settings or select additional genuine saved addresses; nothing was changed.');
+  counts.set(selected.key,(counts.get(selected.key)||0)+1);
+  const values=D.toValues(selected.data),base=D.toValues(original);
+  if(mirrorBilling)for(const key of ['address1','address2','city','state','zip'])
+   values['billing.'+key]=values['shipping.'+key];
+  else for(const key of ['first','last','phone','address1','address2','city','state','zip','country'])
+   values['billing.'+key]=base['billing.'+key];
+  const data=C.syncCardholderToProfile(D.manualEdit(selected.data,values));
+  return {data,appliedRuleIds:selected.ids};
+ }
+
  function distributeJigs(ruleIds,count,preferences){
   const styles=[...new Set(ruleIds.filter(id=>id!==C.FL_PHONE_RULE).map(C.jigStyle))];
   if(!styles.length)return {sequence:[],counts:{}};
@@ -1486,7 +1578,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }
   const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&hasHard?perAddressHardRows(regularSelected,p,phoneSeed):null;
   for(const row of regularSelected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
-  const plannedAddressKeys=new Set(),distribution=distributeJigs(p.ruleIds,regularSelected.length-(regularSelected.length>1?Math.ceil(regularSelected.length/18):0),p.distribution);
+  const plannedAddressKeys=new Set(),targetCounts=new Map(),targetFourMode=retailer==='target'&&!hasHard&&p.distribution?.enabled!==true;
+  if(retailer==='target')for(const existing of all)if(existing.retailer==='target'&&!selected.some(row=>row.id===existing.id)){
+   const key=mainAddressKey(existing);targetCounts.set(key,(targetCounts.get(key)||0)+1);
+  }
+  const distribution=distributeJigs(p.ruleIds,regularSelected.length-(regularSelected.length>1?Math.ceil(regularSelected.length/18):0),p.distribution);
   let distributionIndex=0;
   const rows=selected.map((row,index)=>{
    const reuseThis=!!source&&index<reuseCount,regularIndex=index-reuseCount;
@@ -1503,6 +1599,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      if(p.billingSameAsShipping===true)values['billing.'+field]=source.address[field];
     }
     data=C.syncCardholderToProfile(D.manualEdit(row.data,values));
+   }else if(targetFourMode){
+    const preferred=preferredTargetJig(row,p.ruleIds,targetCounts,{single:regularSelected.length===1,mirrorBilling:p.billingSameAsShipping===true});
+    data=preferred.data;appliedRuleIds=preferred.appliedRuleIds;
+    if(p.ruleIds.includes(C.FL_PHONE_RULE))data=C.applyFloridaPhone(data,phoneSeed,regularIndex);
    }else if(hardResults){
     data=hardResults[regularIndex].data;
     if(hardResults[regularIndex].kind!=='original'&&hardResults[regularIndex].kind!=='soft')
@@ -1666,7 +1766,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     const previous=mainAddressKey({data:row.data});
     reserve(previous,-1);
     const result=addMissingUnitLine(row.unitBankSourceId?row.data:row.originalData,row.data,
-     crypto.randomInt(SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length),new Set(occupied.keys()),usedUnitLabels);
+     retailer==='target'?0:crypto.randomInt(SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length),
+     retailer==='target'?occupied:new Set(occupied.keys()),usedUnitLabels,
+     retailer==='target'?TARGET_MAX_PER_FORMAT:1);
     if(!result.added){
      reserve(previous,1);
      throw Error('All '+(SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length)+' inline Apt/Unit/Ste/Lot/Rm/#/Fl/Bldg combinations (A-D or 1-9) are already used for this address. Select another base address or enable more address jig styles.');
@@ -1734,10 +1836,15 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const row=latest.find(x=>x.id===change.profileId&&x.retailer===plan.retailer);
    if(!row||(row.revision||0)!==change.revision||require('./jig-field-core').hash(row.data)!==change.hash)throw Error('A selected profile changed after preview. Nothing was saved; preview the batch again.');
   }
+  // Target's four-profile ceiling is a hard rule. A preview/override cannot
+  // silently authorize five or more uses of one exact address variation.
   // A user must explicitly allow any duplicate jig after seeing the complete
   // conflicting address and accounts. Recheck here to catch new conflicts
   // arising after preview. No partial profile edits have been made yet.
   const latestDuplicates=jigAddressConflicts(plan.rows,latest);
+  if(latestDuplicates.some(entry=>entry.retailer==='target')){
+   throw Error('Target allows a maximum of four profiles per exact formatted address variation. Re-jig the overflowing profiles before applying.');
+  }
   if(latestDuplicates.length&&p.allowDuplicateAddresses!==true){
    throw Error('This jig duplicates '+latestDuplicates.length+' saved account address(es). Review the preview and check Allow duplicate jig addresses to continue.');
   }
