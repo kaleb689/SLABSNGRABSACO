@@ -1192,23 +1192,21 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  // Detect exact full-address reuse across all saved accounts in this one vault,
  // including other retailer tabs. Do not read any other customer's vault.
  // Existing unchanged addresses aren't new jigs and are not flagged.
+ const MAX_BULK_REJIG_PROFILES=10000;
+ const BULK_REJIG_PREVIEW_LIFETIME_MS=30*60*1000;
  function jigAddressConflicts(planned,inventory){
-  const selected=new Map(planned.map(row=>[row.profileId,row]));
-  const occupied=[];
-  for(const row of inventory){
-   const plan=selected.get(row.id);
-   if(plan)continue;
-   occupied.push({id:row.id,email:row.email,retailer:row.retailer,key:mainAddressKey(row)});
-  }
-  for(const plan of planned){
-   occupied.push({id:plan.profileId,email:plan.email,retailer:plan.retailer,
-    key:mainAddressKey({data:plan.data})});
-  }
+  const selectedIds=new Set(planned.map(row=>row.profileId)),occupiedByKey=new Map();
+  const add=(id,email,retailer,key)=>{
+   if(!occupiedByKey.has(key))occupiedByKey.set(key,[]);
+   occupiedByKey.get(key).push({id,email,retailer});
+  };
+  for(const row of inventory)if(!selectedIds.has(row.id))add(row.id,row.email,row.retailer,mainAddressKey(row));
+  for(const plan of planned)add(plan.profileId,plan.email,plan.retailer,mainAddressKey({data:plan.data}));
   const conflicts=[];
   for(const plan of planned){
-   if(mainAddressKey({data:plan.data})===mainAddressKey({data:plan.originalData}))continue;
    const key=mainAddressKey({data:plan.data});
-   const matches=occupied.filter(entry=>entry.id!==plan.profileId&&entry.key===key&&
+   if(key===mainAddressKey({data:plan.originalData}))continue;
+   const matches=(occupiedByKey.get(key)||[]).filter(entry=>entry.id!==plan.profileId&&
      (plan.retailer!=='target'||entry.retailer==='target'));
    // Target explicitly allows four profiles per exact formatted street address
    // in this vault. Other retailers retain the existing strict warning policy.
@@ -1617,16 +1615,17 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(preferences?.enabled===true){
    const fixed=preferences.counts||{};
    if(!fixed||typeof fixed!=='object'||Array.isArray(fixed)||Object.keys(fixed).some(k=>!styles.includes(k)))throw Error('Invalid jig distribution styles.');
-   for(const style of styles){const n=fixed[style]??0;if(!Number.isSafeInteger(n)||n<0||n>500)throw Error('Invalid jig distribution quantity.');counts[style]=n;}
+   for(const style of styles){const n=fixed[style]??0;if(!Number.isSafeInteger(n)||n<0||n>MAX_BULK_REJIG_PROFILES)throw Error('Invalid jig distribution quantity.');counts[style]=n;}
    if(Object.values(counts).reduce((a,b)=>a+b,0)>count)throw Error('Jig distribution exceeds '+count+' available profiles.');
   }
-  while(Object.values(counts).reduce((a,b)=>a+b,0)<count){
-   const next=styles.reduce((best,style)=>counts[style]<counts[best]?style:best,styles[0]);counts[next]++;
+  let sum=Object.values(counts).reduce((a,b)=>a+b,0);
+  while(sum<count){
+   const next=styles.reduce((best,style)=>counts[style]<counts[best]?style:best,styles[0]);counts[next]++;sum++;
   }
-  const remaining={...counts},sequence=[];
+  const remaining={...counts},applied=Object.fromEntries(styles.map(style=>[style,0])),sequence=[];
   while(sequence.length<count){
-   const next=styles.filter(style=>remaining[style]>0).sort((a,b)=>(sequence.filter(x=>x===a).length/counts[a])-(sequence.filter(x=>x===b).length/counts[b])||styles.indexOf(a)-styles.indexOf(b))[0];
-   sequence.push(next);remaining[next]--;
+   const next=styles.filter(style=>remaining[style]>0).sort((a,b)=>(applied[a]/counts[a])-(applied[b]/counts[b])||styles.indexOf(a)-styles.indexOf(b))[0];
+   sequence.push(next);remaining[next]--;applied[next]++;
   }
   // Preserve the exact per-style counts, but don't assign the same ordered
   // pattern every time a user previews a batch.
@@ -1638,7 +1637,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  }
  async function batchJigPreview(e,p){
   const a=await access(e,p),retailer=C.retailer(p.retailer);
-  if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>500||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-500 profiles to jig together.');
+  if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>MAX_BULK_REJIG_PROFILES||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-'+MAX_BULK_REJIG_PROFILES+' saved profiles in this retailer and vault.');
   const requestedCounts=hardCounts(p.hardCounts),hasHard=p.distribution?.enabled===true?false:requestedCounts&&HARD_KINDS.some(k=>requestedCounts[k]>0);
   // Optional count applies only within this explicitly reviewed batch.
   const optionalUnitCount=p.optionalUnitCount??0;
@@ -1656,8 +1655,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(p.sourceMainFromBank!==undefined&&typeof p.sourceMainFromBank!=='boolean')throw Error('Invalid full Address Bank source setting.');
   const sourceMainFromBank=p.sourceMainFromBank===true;
   if(sourceMainFromBank&&retailer!=='walmart')throw Error('Full Address Bank sourcing currently applies to Walmart Jig only.');
-  if(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<0||optionalUnitCount>500)
-   throw Error('Choose an optional unit count between 0 and 500.');
+  if(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<0||optionalUnitCount>MAX_BULK_REJIG_PROFILES)
+   throw Error('Choose an optional unit count between 0 and '+MAX_BULK_REJIG_PROFILES+'.');
   const reuse=p.reuse??null;
   if(reuse!==null&&(!reuse||typeof reuse!=='object'||Array.isArray(reuse)||Object.keys(reuse).some(k=>!['sourceId','count'].includes(k))))
    throw Error('Choose an existing address and a profile count.');
@@ -1666,7 +1665,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(!Array.isArray(p.ruleIds)||p.ruleIds.length>300||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id))||
      (p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard&&!optionalUnitCount&&!targetMainFromBank))
    throw Error('Choose supported jig rules for the remaining profiles, or explicitly reuse one saved address for the entire selection.');
-  const all=await profiles.fieldSnapshot(a.scope,a.id),selected=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===retailer));
+  const all=await profiles.fieldSnapshot(a.scope,a.id),byId=new Map(all.filter(x=>x.retailer===retailer).map(x=>[x.id,x]));
+  const selected=p.profileIds.map(id=>byId.get(id));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
   const savedBankChoices=(autoUnitFromAddressBank||sourceMainFromBank||targetMainFromBank)?(await reusableShippingChoices(a,all)).filter(item=>item.id.startsWith('bank:')):[];
@@ -1706,7 +1706,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&hasHard?perAddressHardRows(regularSelected,p,phoneSeed):null;
   for(const row of regularSelected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
   const plannedAddressKeys=new Set(),targetCounts=new Map(),targetFourMode=retailer==='target'&&!hasHard&&p.distribution?.enabled!==true&&p.combine!==true;
-  if(retailer==='target')for(const existing of all)if(existing.retailer==='target'&&!selected.some(row=>row.id===existing.id)){
+  const chosenIds=new Set(p.profileIds);
+  if(retailer==='target')for(const existing of all)if(existing.retailer==='target'&&!chosenIds.has(existing.id)){
    const key=mainAddressKey(existing);targetCounts.set(key,(targetCounts.get(key)||0)+1);
   }
   const distribution=distributeJigs(p.ruleIds,regularSelected.length-(regularSelected.length>1?Math.ceil(regularSelected.length/18):0),p.distribution);
@@ -1937,7 +1938,9 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    throw Error('Every selected profile already has the requested address and no changes would be saved.');
   const duplicateAddresses=jigAddressConflicts(rows,all);
   const token=uuid();
-  for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
+  // Each new preview invalidates old plans from this owner/vault/retailer.
+  for(const [id,plan] of jigPlans)if(now()-plan.at>BULK_REJIG_PREVIEW_LIFETIME_MS||
+   (plan.sender===e.sender.id&&plan.scope===a.scope&&plan.id===a.id&&plan.retailer===retailer))jigPlans.delete(id);
   jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,duplicateAddresses,at:now(),epoch:ep(e),
    autoUnitFromAddressBank,sourceMainFromBank,targetMainFromBank,
    reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
