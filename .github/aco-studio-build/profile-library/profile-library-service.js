@@ -1954,11 +1954,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  }
  async function batchJigCommit(e,p){
   const plan=jigPlans.get(p.token);
-  if(!plan||plan.sender!==e.sender.id||now()-plan.at>600000||plan.epoch!==ep(e))throw Error('Bulk jig preview expired. Preview the selected profiles again.');
+  if(!plan||plan.sender!==e.sender.id||now()-plan.at>BULK_REJIG_PREVIEW_LIFETIME_MS||plan.epoch!==ep(e))throw Error('Bulk jig preview expired. Preview the selected profiles again.');
   if(p.confirmed!==true)throw Error('Confirm the reviewed bulk jig before saving.');
   if(plan.rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('No profile address changes to apply.');
   const a=await access(e,{scope:plan.scope,customerId:plan.id}),latest=await profiles.fieldSnapshot(plan.scope,plan.id);
   const bankChoices=plan.autoUnitFromAddressBank||plan.sourceMainFromBank||plan.targetMainFromBank?await reusableShippingChoices(a,latest):[];
+  const latestById=new Map(latest.map(row=>[row.id,row]));
   for(const change of plan.rows){
    if(change.unitBankSourceId){
     const fullBankSource=(plan.sourceMainFromBank&&change.category==='random saved Address Bank source')||
@@ -1973,8 +1974,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      throw Error('A saved Address Bank base changed after preview. Reopen Jig before applying.');
     ensureExistingUnitPreserved(saved.address,addressView(change.data),change.appliedRuleIds);
    }else ensureExistingUnitPreserved(addressView(change.originalData),addressView(change.data),change.appliedRuleIds);
-   const row=latest.find(x=>x.id===change.profileId&&x.retailer===plan.retailer);
-   if(!row||(row.revision||0)!==change.revision||require('./jig-field-core').hash(row.data)!==change.hash)throw Error('A selected profile changed after preview. Nothing was saved; preview the batch again.');
+   const row=latestById.get(change.profileId);
+   if(!row||row.retailer!==plan.retailer||(row.revision||0)!==change.revision||require('./jig-field-core').hash(row.data)!==change.hash)throw Error('A selected profile changed after preview. Nothing was saved; preview the batch again.');
   }
   // Target's four-profile ceiling is a hard rule. A preview/override cannot
   // silently authorize five or more uses of one exact address variation.
@@ -1997,6 +1998,38 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(Object.values(current.address).map(normalizedAddressPart).join('|')!==plan.reusedSource.key)
     throw Error('The saved address changed after preview. Review the batch again.');
   }
+  // Local-only Rejig applies to the exact selected IDs in ONE encrypted vault
+  // transaction. This prevents per-profile disk rewrites and partial commits.
+  if(plan.rows.every(change=>!change.linked)){
+   const outcome=await profiles.libraryTransaction(a.scope,a.id,ctx=>{
+    const current=new Map(ctx.rows.map(row=>[row.id,row]));
+    for(const change of plan.rows){
+     const row=current.get(change.profileId);
+     if(!row||row.retailer!==plan.retailer||(row.revision||0)!==change.revision||
+        require('./jig-field-core').hash(row.data)!==change.hash||
+        (a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false))
+      throw Error('A selected profile changed or became website-linked. Nothing saved; preview again.');
+    }
+    const conflicts=jigAddressConflicts(plan.rows,ctx.rows);
+    if(JSON.stringify(conflicts)!==JSON.stringify(latestDuplicates))
+     throw Error('Address usage changed during Apply. Nothing saved; preview again.');
+    for(const change of plan.rows){
+     const row=current.get(change.profileId);
+     row.data=structuredClone(change.data);
+     row.label=C.values(row.data).label;
+     row.group=String(change.group||row.group||row.retailer).slice(0,100);
+     row.revision=(row.revision||0)+1;
+     row.manualOverride=true;row.needsReview=false;
+     if(row.pendingSourceHash){row.sourceHash=row.pendingSourceHash;delete row.pendingSourceHash;}
+    }
+    ctx.audit('bulk-rejig-local',plan.retailer,{count:plan.rows.length});
+    return {updated:plan.rows.length};
+   },a.check);
+   jigPlans.delete(p.token);a.check();
+   return {saved:true,updated:outcome.updated,remoteSaved:0,localSaved:outcome.updated,duplicateOverrides:latestDuplicates.length};
+  }
+  // Linked customer accounts still use per-assignment website verification;
+  // never perform an unverified bulk overwrite on website-managed profiles.
   let updated=0,remoteSaved=0;
   for(const change of plan.rows){
    const result=await edit(e,{scope:plan.scope,customerId:plan.id,profileId:change.profileId,revision:change.revision,fields:C.values(change.data),group:change.group,card:C.payment(change.data)});
