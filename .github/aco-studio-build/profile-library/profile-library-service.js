@@ -1115,7 +1115,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  // through a reuse override or a legacy transformation rule.
  function inlineUnit(address1){
   const value=String(address1||'');
-  const match=/(?:^|[\s,])((?:(?:apt|apartment|ste|suite|unit|room|rm|floor|fl|condo)\.?\s*#?\s*[a-z0-9][a-z0-9/-]*|#\s*[a-z0-9][a-z0-9/-]*))\s*$/i.exec(value);
+  const match=/(?:^|[\s,])((?:(?:apt|apartment|ste|suite|unit|room|rm|floor|fl|lot|bldg|building|condo)\.?\s*#?\s*[a-z0-9][a-z0-9/-]*|#\s*[a-z0-9][a-z0-9/-]*))\s*$/i.exec(value);
   return match?match[1]:null;
  }
  function existingUnitViolation(before,after){
@@ -1130,25 +1130,25 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const violation=existingUnitViolation(before,after);
   if(violation)throw Error(violation+' Unit jigs only apply when the original address has no unit.');
  }
- // Jigged second lines are additive and never change an existing apartment,
- // suite, unit, bare number or inline designation. Use a small fixed palette
- // rather than inventing building-level delivery facts in the Main bank.
- const SECOND_LINE_LABELS=['Apt','Unit','#','Ste',''];
+ // Opt-in generated secondary lines: no bare number-only label. Existing real
+ // unit identifiers must never be changed or replaced. Generated suffixes are
+ // formatting experiments, not verified USPS delivery-point identifiers.
+ const SECOND_LINE_LABELS=['Apt','Unit','Ste','Lot','Rm','#','Fl','Bldg'];
  const SECOND_LINE_IDS=['A','B','C','D','1','2','3','4','5','6','7','8','9'];
  function addMissingUnitLine(original,generated,position,occupiedKeys=new Set(),usedUnitLabels=new Set()){
   const originalAddress=addressView(original),after=addressView(generated);
   if(originalAddress.address2.trim()||inlineUnit(originalAddress.address1)||after.address2.trim())
    return {data:generated,added:false,reason:'existing-unit'};
   if(inlineUnit(after.address1))throw Error('Generated unit must be on address line 2, not added to the street.');
-  // Keep the approved A-D / 1-9 range. Search ALL five label styles times
-  // thirteen identifiers before saying the pool is exhausted.
+  // Retain A-D / 1-9 identifiers. Visit all eight label styles and all
+  // thirteen identifiers before reporting that the finite pool is exhausted.
   const total=SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length;
   const start=((Math.floor(Number(position)||0)%total)+total)%total;
   for(let pass=0;pass<2;pass++)for(let step=0;step<total;step++){
-   const idx=(start+step*17)%total; // 17 is coprime to 65: visits all 65.
+   const idx=(start+step*17)%total; // 17 is coprime to 104: visits all combinations.
    const label=SECOND_LINE_LABELS[idx%SECOND_LINE_LABELS.length];
    const identifier=SECOND_LINE_IDS[Math.floor(idx/SECOND_LINE_LABELS.length)%SECOND_LINE_IDS.length];
-   const unit=label==='#'?'# '+identifier:label?label+' '+identifier:identifier;
+   const unit=label+' '+identifier;
    // Prefer distinct new second lines among profiles using the same main
    // address. After all 65 are used, another street jig may still allow a
    // unique full address, so only then permit a reused unit label.
@@ -1318,11 +1318,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const pos=variant,word=match[2];next=match[1]+word.slice(0,pos+1)+word[pos]+word.slice(pos+1)+match[3];
   }else if(kind==='randomUnit'){
    // Never manufacture an additional unit for an address with an existing one.
-   if(unit||/(?:\b(?:apt|apartment|unit|suite|ste|condo|floor|fl|room|rm)\b|#\s*\w)/i.test(street)||variant>=500)return null;
+   if(unit||inlineUnit(street)||/(?:\b(?:apt|apartment|unit|suite|ste|lot|bldg|building|condo|floor|fl|room|rm)\b|#\s*\w)/i.test(street)||variant>=500)return null;
    if(variant>=SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length)return null;
    const label=SECOND_LINE_LABELS[variant%SECOND_LINE_LABELS.length];
    const identifier=SECOND_LINE_IDS[Math.floor(variant/SECOND_LINE_LABELS.length)];
-   nextUnit=label==='#'?'# '+identifier:label?label+' '+identifier:identifier;
+   nextUnit=label+' '+identifier;
   }else return null;
   if(next===street&&nextUnit===unit)return null;
   return D.manualEdit(data,{...v,'shipping.address1':next,'shipping.address2':nextUnit});
@@ -1656,10 +1656,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     const previous=mainAddressKey({data:row.data});
     reserve(previous,-1);
     const result=addMissingUnitLine(row.unitBankSourceId?row.data:row.originalData,row.data,
-     crypto.randomInt(65),new Set(occupied.keys()),usedUnitLabels);
+     crypto.randomInt(SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length),new Set(occupied.keys()),usedUnitLabels);
     if(!result.added){
      reserve(previous,1);
-     throw Error('All 65 Apt/Unit/Ste/#/number combinations (A-D or 1-9) are already used for this address. Select another base address or enable more address jig styles.');
+     throw Error('All '+(SECOND_LINE_LABELS.length*SECOND_LINE_IDS.length)+' Apt/Unit/Ste/Lot/Rm/#/Fl/Bldg combinations (A-D or 1-9) are already used for this address. Select another base address or enable more address jig styles.');
     }
     let data=result.data;
     if(p.billingSameAsShipping===true||autoUnitFromAddressBank){
