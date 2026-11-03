@@ -443,6 +443,7 @@ const defaultRules=r=>{
 function jig(data,r,index,rules=defaultRules(r)){
  retailer(r);
  if(!Array.isArray(rules)||rules.some(id=>!ruleById(id)))throw Error('Unknown retailer jig rule.');
+ if(r!=='target'&&rules.some(id=>id.startsWith('target.')))throw Error('Target-only jig rules cannot be applied to another retailer.');
  const out=clone(data);if(index===0)return out;const map=Core.autoMap([out]);
  for(const role of ['shipping','billing']){
   const addr={};for(const k of ['address1','address2','city','state','zip'])addr[k]=Core.get(out,map[role+'.'+k])||'';
