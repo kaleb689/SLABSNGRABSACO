@@ -189,7 +189,7 @@ function renderProduct(product) {
 export function dropNewsPayloads(parsed, label, rawText = "") {
   if (!isDropNewsPaste(parsed)) return [];
   let title = formattedDropName(label);
-  if (/upcoming|tonight/i.test(String(label || ""))) {
+  if (/upcoming|tonight|in-?store/i.test(String(label || ""))) {
     const found = mentionedRetailers(rawText);
     if (found.length === 1 && retailerAlert(found[0])?.name) title += " · " + retailerAlert(found[0]).name;
   }

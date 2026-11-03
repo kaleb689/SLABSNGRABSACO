@@ -851,7 +851,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       return response.status === 204 ? null : response.json();
     }
   }
-  let serverRolesChannelId, upcomingChannelId; const retailerRoleIds = new Map();
+  let serverRolesChannelId, upcomingChannelId, inStoreChannelId; const retailerRoleIds = new Map();
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   async function cleanupLegacyLapseAlerts() {
     let removed = 0, scanned = 0, matched = 0;
@@ -919,6 +919,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
 
   let dropChannelIds = new Set(), tonightChannelId;
   const retailerDropLabels = {};
+  // Display label for any drop channel. In-Store is not a retailer channel
+  // (posts can be any store), so it never feeds retailer alert roles.
+  const dropChannelLabel = channelId => retailerDropLabels[channelId] ||
+    (channelId === tonightChannelId ? "Dropping Tonight" :
+      channelId && channelId === inStoreChannelId ? "In-Store Drops" : "Upcoming Drops");
   // Channel names may have a Unicode emoji and divider before their functional name.
   const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
   function sameOverwrites(actual, expected) {
@@ -1299,6 +1304,42 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
             }
           }
         }
+      }
+      // In-Store Drops sits directly below Upcoming Drops. It reuses an existing
+      // channel (and its ID / saved selections) when one is already there.
+      try {
+        const upcoming = found[0];
+        const parentId = upcoming?.parent_id || important.id;
+        const inStoreName = "❗️│in-store-drops";
+        const inStoreTopic = "SLABSNGRABSACO In-Store Drops: in-store release info and SKUs to view. No SKU selection here.";
+        const inStoreOverwrites = readOnlyOverwrites().map(item =>
+          item.id === appId ? dropBotPermissionOverwrite(item, appId) : item);
+        let inStore = channels.find(item => [0, 5].includes(item.type) && dropChannelKind(item.name) === "instoredrops");
+        if (!inStore) {
+          inStore = await api(`/guilds/${guildId}/channels`, "POST", {
+            name: inStoreName, type: 0, parent_id: parentId,
+            topic: inStoreTopic, permission_overwrites: inStoreOverwrites
+          });
+          channels.push(inStore);
+        }
+        // View-only: formatted posts, but no SKU picker, skip button,
+        // reminders or app listing, so it is not added to dropChannelIds.
+        inStoreChannelId = inStore.id;
+        if (upcoming) {
+          const siblings = channels.filter(item => item.parent_id === parentId && [0, 5].includes(item.type))
+            .sort((a, b) => (a.position - b.position) || String(a.id).localeCompare(String(b.id)));
+          const order = siblings.filter(item => item.id !== inStore.id);
+          order.splice(order.findIndex(item => item.id === upcoming.id) + 1, 0, inStore);
+          const current = siblings.map(item => item.id).join(","), wanted = order.map(item => item.id).join(",");
+          if (current !== wanted) {
+            await api(`/guilds/${guildId}/channels`, "PATCH",
+              order.map((item, index) => ({ id: item.id, position: index })))
+              .catch(error => console.warn("Discord In-Store Drops position unavailable:", error.message));
+          }
+        }
+        discordCommunityStatus.inStoreDropsReady = true;
+      } catch (error) {
+        console.error("Discord In-Store Drops channel setup:", error.message);
       }
       // Provision the three retailer drop channels under Important. Reuse existing
        // channels and their IDs so saved per-customer drop selections remain intact.
@@ -2724,7 +2765,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         return;
       }
       const retailer = retailerDropLabels[message.channel_id] ||
-        (message.channel_id === tonightChannelId ? "Dropping Tonight" : "Upcoming Drops");
+        dropChannelLabel(message.channel_id);
       const payload = skuReminderOwnerPanel({
         guildId, channelId: message.channel_id, sourceId: message.id, retailer,
         skuCount: products.length
@@ -3077,7 +3118,26 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }catch(error){console.error("Upcoming retailer announcement DM:",error.message);}
     }
   }
+  // In-Store Drops is view-only: the owner's paste is re-posted in the drop
+  // layout, with no SKU picker, skip button, reminders or SKU alerts.
+  async function onInStorePost(d) {
+    if (d.guild_id !== guildId || !inStoreChannelId || d.channel_id !== inStoreChannelId || !d.id ||
+      d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0) || !isNewDropPost(d) ||
+      String(d.author?.id || "") !== String(ownerId || "")) return;
+    const payloads = dropNewsPayloads(parseDropNews(d), "In-Store Drops", d.content || "");
+    const rawSkus = new Set(parseDropSkus(d).map(item => item.sku));
+    const cardSkus = new Set(payloads.flatMap(payload => parseDropSkus(payload).map(item => item.sku)));
+    if (!payloads.length || rawSkus.size !== cardSkus.size || ![...rawSkus].every(sku => cardSkus.has(sku))) return;
+    try {
+      for (const payload of payloads) await api(`/channels/${d.channel_id}/messages`, "POST", payload);
+      await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE")
+        .catch(error => console.error("In-Store card posted; could not remove raw paste:", error.message));
+    } catch (error) {
+      console.error("In-Store drop formatting failed; original message preserved:", error.message);
+    }
+  }
   async function onDropPost(d) {
+    if (d.channel_id && d.channel_id === inStoreChannelId) return onInStorePost(d);
     if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id ||
       d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0)) return;
     // Posting a new drop never deletes earlier messages. The periodic
@@ -3088,8 +3148,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       ? parseMonitorDropProducts(d) : [];
     if (monitored.length) {
       try {
-        const label = retailerDropLabels[d.channel_id] ||
-          (d.channel_id === tonightChannelId ? "Dropping Tonight" : "Upcoming Drops");
+        const label = dropChannelLabel(d.channel_id);
         const payloads = formattedDropPayloads(monitored, label);
         const rendered = [];
         for (const payload of payloads) {
@@ -3122,8 +3181,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // re-posted in the community layout. The raw paste is removed only after
     // every card posts and the cards carry exactly the same SKUs.
     if (!monitored.length && isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")) {
-      const label = retailerDropLabels[d.channel_id] ||
-        (d.channel_id === tonightChannelId ? "Dropping Tonight" : "Upcoming Drops");
+      const label = dropChannelLabel(d.channel_id);
       const payloads = dropNewsPayloads(parseDropNews(d), label, d.content || "");
       const rawSkus = new Set(parseDropSkus(d).map(item => item.sku));
       const cardSkus = new Set(payloads.flatMap(payload => parseDropSkus(payload).map(item => item.sku)));
@@ -4141,7 +4199,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
       const sources=recentSelectableDropPosts(messages,appId);
       const label=retailerDropLabels[channelId]||
-        (channelId===tonightChannelId?"Dropping Tonight":"Upcoming Drops");
+        dropChannelLabel(channelId);
       const retailer=/target/i.test(label)?"target":
         /walmart/i.test(label)?"walmart":
         /pkc|pokemon|pokémon/i.test(label)?"pokemon":

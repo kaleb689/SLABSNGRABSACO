@@ -58,6 +58,7 @@ test("successful monitor paste cleanup removes only the raw source after posting
   const snippet=source.slice(start,source.indexOf("\n  async function ",start+10));
   const calls=[];
   const context={guildId:"guild",ownerId:"owner",appId:"bot",dropChannelIds:new Set(["drop"]),retailerDropLabels:{drop:"Target"},
+    inStoreChannelId:"instore",dropChannelLabel:()=>"Target",
     isNewDropPost:()=>true,parseMonitorDropProducts:()=>[{name:"Box",sku:"12345"}],
     formattedDropPayloads:()=>[{content:"formatted",embeds:[]}],
     api:async(path,method)=>{calls.push(method);return {id:"formatted"};},
@@ -67,4 +68,27 @@ test("successful monitor paste cleanup removes only the raw source after posting
   assert.deepEqual(calls,[]);
   await context.onDropPost({guild_id:"guild",channel_id:"drop",id:"paste",author:{id:"owner"}});
   assert.deepEqual(calls,["POST","DELETE"]);
+});
+
+test("In-Store Drops posts are formatted for viewing only, with no SKU picker", async () => {
+  const source = readFileSync(new URL("../discord-community.js", import.meta.url), "utf8");
+  const start = source.indexOf("  async function onInStorePost(d) {");
+  const end = source.indexOf("\n  async function onDropPost(d) {", start);
+  const snippet = source.slice(start, source.indexOf("\n  async function ", end + 10));
+  const { parseDropNews, dropNewsPayloads } = await import("../drop-news-format.js");
+  const { parseDropSkus } = await import("../discord-community.js");
+  const calls = [], controls = [];
+  const context = { guildId: "guild", ownerId: "owner", inStoreChannelId: "instore",
+    dropChannelIds: new Set(["drop"]), isNewDropPost: () => true, parseDropNews, dropNewsPayloads, parseDropSkus,
+    api: async (path, method, body) => { calls.push([method, path, body?.embeds?.[0]?.title]); return { id: "card" }; },
+    ensureSkuControls: async () => controls.push(1), console };
+  vm.createContext(context); vm.runInContext(snippet, context);
+  const content = "Target in-store\nUltra Premium Collection Day\nSKU: 1012850570\nRetail: $249.99";
+  await context.onDropPost({ guild_id: "guild", channel_id: "instore", id: "raw", author: { id: "owner" }, content });
+  assert.deepEqual(calls.map(c => c[0]), ["POST", "DELETE"]);
+  assert.equal(calls[0][2], "In-Store Drop · Target");
+  assert.equal(controls.length, 0, "no SKU selection controls in In-Store Drops");
+  calls.length = 0;
+  await context.onDropPost({ guild_id: "guild", channel_id: "instore", id: "chat", author: { id: "staff" }, content });
+  assert.deepEqual(calls, [], "only the owner's pastes are reformatted");
 });

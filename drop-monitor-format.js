@@ -82,6 +82,7 @@ export function formattedDropName(label) {
   if (/walmart/i.test(name)) return "Walmart Draw";
   if (/^pkc$/i.test(name)) return "PKC Drop";
   if (/upcoming/i.test(name)) return "Upcoming Drop";
+  if (/in-?store/i.test(name)) return "In-Store Drop";
   if (/tonight/i.test(name)) return "Dropping Tonight";
   return (name || "Retailer") + " Drop";
 }

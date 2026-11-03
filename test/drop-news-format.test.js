@@ -102,3 +102,11 @@ test("owner SKU request breakdown lists SKUs under each retailer", async () => {
   const text = skuOwnerDetails(rows, label).description;
   assert.match(text, /^\*\*Target\*\* \(2\)\n\(111111, 333333\)\n\n\*\*Walmart\*\* \(1\)\n\(222222\)\n\n\*\*Qty: 2 for ALL SKUs\*\*$/);
 });
+
+test("In-Store Drops cards are titled for the channel and name the store", () => {
+  const text = "Best Buy in-store Friday\nNov 6 @ Store Open\n\nDelta Reign Elite Trainer Box 6689672\nRetail: $49.99";
+  const [card] = dropNewsPayloads(parseDropNews(text, NOW), "In-Store Drops", text);
+  assert.equal(card.embeds[0].title, "In-Store Drop");
+  const target = "Target in-store\nUltra Premium Collection Day\nSKU: 1012850570\nRetail: $249.99";
+  assert.equal(dropNewsPayloads(parseDropNews(target, NOW), "In-Store Drops", target)[0].embeds[0].title, "In-Store Drop · Target");
+});
