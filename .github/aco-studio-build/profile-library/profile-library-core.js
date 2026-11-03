@@ -278,7 +278,7 @@ const TARGET_PRIORITY_SUFFIXES=Object.freeze([
  {key:'bristol',house:'5871',base:'Bristol',city:'DAVIE',zip:'33331',original:'Lane',allowed:['Lane','Road','Drive','Way','Court','Place']}
 ]);
 const TARGET_451_LIMITS=Object.freeze({letters:Object.freeze(['A','B','C','D']),numbers:Object.freeze([1,2,3,4,5,6,7,8,9])});
-const TARGET_451_DESIGNATORS=Object.freeze(['Apt','Unit','Ste','Rm','#','Lot','Fl','Bldg']);
+const TARGET_451_DESIGNATORS=Object.freeze(['Apt','Unit','Ste','Room','Rm','#','Lot','Fl','Bldg']);
 const targetSuffixPair=word=>suffixEquivalents.find(([full,short])=>
  String(word||'').replace(/\.$/,'').toLowerCase()===full.toLowerCase()||
  String(word||'').replace(/\.$/,'').toLowerCase()===short.toLowerCase());
@@ -341,7 +341,7 @@ function target451Variant(address,mode,detail){
  }else if(mode==='box'){
   if(!TARGET_451_LIMITS.letters.includes(detail))return null;
   unit='Apt '+number+', Box '+detail;
- }else if(mode==='two-label'){
+ }else if(mode==='two-label'||mode==='two-label-line2'){
   if(!TARGET_451_LIMITS.letters.includes(detail))return null;
   unit='Unit '+number+' Ste '+detail;
  }else if(mode==='avenue-lane'){
@@ -352,7 +352,7 @@ function target451Variant(address,mode,detail){
   return next.address1===address.address1?null:next;
  }
  const next={...address},street=info.street.trim();
- if(mode==='line2'){
+ if(mode==='line2'||mode==='two-label-line2'){
   next.address1=street;next.address2=unit;
  }else{
   next.address1=street+', '+unit;next.address2='';
@@ -386,11 +386,10 @@ const TARGET_451_RULES=Object.freeze([
   label:'451 Apt 102/103 → Apt 102/103, Box '+letter,
   risk:'higher',family:'target-451-unit-box',apply:address=>target451Variant(address,'box',letter)
  })),
- ...TARGET_451_LIMITS.letters.map(letter=>({
-  id:'target.451.unit-ste.'+letter.toLowerCase(),
-  label:'451 Apt 102/103 → Unit 102/103 Ste '+letter,
-  risk:'higher',family:'target-451-unit-ste',apply:address=>target451Variant(address,'two-label',letter)
- })),
+ ...TARGET_451_LIMITS.letters.flatMap(letter=>[
+  {id:'target.451.unit-ste.'+letter.toLowerCase(),label:'451 Apt 102/103 → Unit 102/103 Ste '+letter+' (Line 1)',risk:'higher',family:'target-451-unit-ste',apply:address=>target451Variant(address,'two-label',letter)},
+  {id:'target.451.unit-ste-line2.'+letter.toLowerCase(),label:'451 Apt 102/103 → Unit 102/103 Ste '+letter+' (Line 2)',risk:'higher',family:'target-451-unit-ste',apply:address=>target451Variant(address,'two-label-line2',letter)}
+ ]),
  {id:'target.451.line2',label:'451 NW 87th Lane, Apt 102/103 on Line 2 (original placement)',risk:'standard',family:'target-451-placement',apply:address=>target451Variant(address,'line2')},
  {id:'target.451.avenue-lane',label:'451 NW 87th Lane → 451 NW 87th Avenue Lane (451 only)',risk:'higher',family:'target-451-street',apply:address=>target451Variant(address,'avenue-lane')}
 ]);
@@ -502,5 +501,5 @@ function existingLiveReconciliation(rows,retailer){
   cardOnlyMatches:candidates.filter(x=>x.reason==='full-card').length,
   blockedCount:blocked.length,blocked,unmatchedCount:unmatched.length,signature};
 }
-module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,jigStyle,TARGET_PRIMARY_RULES,TARGET_DIRECTION_RULES,TARGET_PRIORITY_SUFFIXES,TARGET_PRIORITY_SUFFIX_RULES,TARGET_451_RULES,TARGET_451_LIMITS,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
+module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,jigStyle,TARGET_PRIMARY_RULES,TARGET_DIRECTION_RULES,TARGET_PRIORITY_SUFFIXES,TARGET_PRIORITY_SUFFIX_RULES,TARGET_451_RULES,TARGET_451_LIMITS,target451UnitInfo,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
 
