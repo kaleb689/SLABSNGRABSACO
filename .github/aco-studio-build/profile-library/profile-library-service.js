@@ -1427,7 +1427,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const original=row.data,retailer='target',originalAddress=addressView(original);
   const enabled=[...new Set(ruleIds.filter(id=>id!==C.FL_PHONE_RULE))];
   const allow=id=>enabled.includes(id)&&!!C.ruleById(id);
-  const candidates=[],known=new Set();
+  const candidates=[],known=new Set();let winner=null;
   const valid=(data,ids=[])=>{
    const after=addressView(data),allowed=approved451UnitChange(originalAddress,after,ids);
    return !existingUnitViolation(originalAddress,after,ids)&&
@@ -1438,10 +1438,18 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(!data||!valid(data,ids))return;
    const key=mainAddressKey({data});
    if(known.has(key))return;
-   known.add(key);candidates.push({data,ids,key,baseline});
+   known.add(key);
+   const candidate={data,ids,key,baseline};
+   candidates.push(candidate);
+   // Priority order is deliberate: exhaust the first written address to four
+   // uses before considering its abbreviation or a more invasive jig. Stop
+   // searching once a slot is available; never enumerate rule-pair Cartesian
+   // products for every profile in a large batch.
+   if(!winner&&(counts.get(key)||0)<TARGET_MAX_PER_FORMAT&&
+      !(single&&enabled.length&&baseline&&key===mainAddressKey(row)))winner=candidate;
   }
   function apply(data,id){
-   if(!allow(id))return null;
+   if(winner||!allow(id))return null;
    try{const next=C.jig(data,retailer,1,[id]);return valid(next,[id])?next:null;}
    catch{return null;}
   }
@@ -1487,7 +1495,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const order=single&&enabled.length?[
    ...candidates.filter(item=>item.ids.length),
    ...candidates.filter(item=>!item.ids.length)]:candidates;
-  const selected=order.find(item=>(counts.get(item.key)||0)<TARGET_MAX_PER_FORMAT&&
+  const selected=winner||order.find(item=>(counts.get(item.key)||0)<TARGET_MAX_PER_FORMAT&&
    !(single&&enabled.length&&item.baseline&&item.key===mainAddressKey(row)));
   if(!selected)throw Error('Target has no available four-use address variation slots for this batch. Enable more jig settings or select additional genuine saved addresses; nothing was changed.');
   counts.set(selected.key,(counts.get(selected.key)||0)+1);
@@ -1590,7 +1598,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   }
   const phoneSeed=uuid(),positions=new Map(),groupSizes=new Map(),hardResults=regularSelected.length&&hasHard?perAddressHardRows(regularSelected,p,phoneSeed):null;
   for(const row of regularSelected){const key=mainAddressKey(row);groupSizes.set(key,(groupSizes.get(key)||0)+1);}
-  const plannedAddressKeys=new Set(),targetCounts=new Map(),targetFourMode=retailer==='target'&&!hasHard&&p.distribution?.enabled!==true;
+  const plannedAddressKeys=new Set(),targetCounts=new Map(),targetFourMode=retailer==='target'&&!hasHard&&p.distribution?.enabled!==true&&p.combine!==true;
   if(retailer==='target')for(const existing of all)if(existing.retailer==='target'&&!selected.some(row=>row.id===existing.id)){
    const key=mainAddressKey(existing);targetCounts.set(key,(targetCounts.get(key)||0)+1);
   }
@@ -1811,7 +1819,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(assigned!==reuseCount)throw Error('The chosen address would be used by '+assigned+
     ' selected profiles, not the requested '+reuseCount+'. Change the remaining jig rules or selected profiles and preview again.');
   }
-  if(rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('Every selected profile already has the requested address and no changes would be saved.');
+  // Previewing a batch that already occupies the first four preferred
+  // variations is useful: show all rows unchanged instead of pretending it
+  // must consume an unsafe jig. The Apply button stays disabled for no-ops.
+  if(retailer!=='target'&&rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))
+   throw Error('Every selected profile already has the requested address and no changes would be saved.');
   const duplicateAddresses=jigAddressConflicts(rows,all);
   const token=uuid();
   for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
@@ -1830,6 +1842,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const plan=jigPlans.get(p.token);
   if(!plan||plan.sender!==e.sender.id||now()-plan.at>600000||plan.epoch!==ep(e))throw Error('Bulk jig preview expired. Preview the selected profiles again.');
   if(p.confirmed!==true)throw Error('Confirm the reviewed bulk jig before saving.');
+  if(plan.rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('No profile address changes to apply.');
   const a=await access(e,{scope:plan.scope,customerId:plan.id}),latest=await profiles.fieldSnapshot(plan.scope,plan.id);
   const bankChoices=plan.autoUnitFromAddressBank||plan.sourceMainFromBank?await reusableShippingChoices(a,latest):[];
   for(const change of plan.rows){
