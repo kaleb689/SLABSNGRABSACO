@@ -1082,9 +1082,10 @@
    const allowDuplicates=d.createElement('input');allowDuplicates.type='checkbox';allowDuplicates.checked=false;
    duplicateLabel.prepend(allowDuplicates);
    const review=d.createElement('div');let token=null,duplicateCount=0,previewRevision=0,previewTimer=null;
-   allowDuplicates.onchange=()=>{save.disabled=!token||(duplicateCount>0&&!allowDuplicates.checked);};
+   let changedCount=0;
+   allowDuplicates.onchange=()=>{save.disabled=!token||changedCount===0||(duplicateCount>0&&!allowDuplicates.checked);};
    win.body.append(info,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
-   const invalidatePreview=()=>{previewRevision++;token=null;duplicateCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
+   const invalidatePreview=()=>{previewRevision++;token=null;duplicateCount=0;changedCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
    // Every checkbox or quantity edit invalidates the old approval token and
    // recomputes against the currently selected rules. Never apply a stale plan.
    const schedulePreview=()=>{invalidatePreview();if(previewTimer!==null)clearTimeout(previewTimer);
@@ -1130,9 +1131,9 @@
       billingSameAsShipping:billingBox.checked||optionalUnitToggle.checked,optionalUnitCount,
       autoUnitFromAddressBank:optionalUnitToggle.checked,sourceMainFromBank:retailer==='walmart'&&bankSourceToggle.checked,
       postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
-     if(!win.valid()||activeRevision!==previewRevision)return;token=result.token;
+     if(!win.valid()||activeRevision!==previewRevision)return;token=result.token;changedCount=result.changed;
       if(result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
-     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional second-line unit(s) added ('+result.optionalUnitEligible+' eligible unitless source addresses; '+(result.optionalUnitBankReassigned||0)+' selected profile(s) sourced automatically from Address Bank).'));
+     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional inline Address Line 1 unit(s) added ('+result.optionalUnitEligible+' eligible unitless source addresses; '+(result.optionalUnitBankReassigned||0)+' selected profile(s) sourced automatically from Address Bank).'));
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      for(const row of result.profiles.slice(0,100))review.append(jigPreviewEntry(row,settings));
      if(result.profiles.length>100)review.append(text('p','+'+(result.profiles.length-100)+' more selected profiles included in this batch.'));
@@ -1143,8 +1144,8 @@
       review.prepend(warning);
       for(const clash of result.duplicateAddresses.slice(0,100))review.append(text('p',clash.email+' → '+clash.address+' · already used by '+clash.matches.map(x=>x.email+' ('+retailName[x.retailer]+')').join(', ')));
      }
-     save.disabled=duplicateCount>0&&!allowDuplicates.checked;
-     win.status().textContent=duplicateCount?'Duplicate addresses detected. Review them and explicitly allow reuse if required.':'Preview ready. One Apply action will process the whole selected set.';
+     save.disabled=result.changed===0||(duplicateCount>0&&!allowDuplicates.checked);
+     win.status().textContent=result.changed===0?'This batch already uses its first available address slots; there are no edits to apply. Select more profiles or change your jig rules.':duplicateCount?'Duplicate addresses detected. Review them and explicitly allow reuse if required.':'Preview ready. One Apply action will process the whole selected set.';
     }catch(error){if(win.valid()&&activeRevision===previewRevision)win.status().textContent=error.message;}finally{if(win.valid()&&activeRevision===previewRevision)preview.disabled=false;}
    };
    save.onclick=async()=>{
