@@ -114,9 +114,10 @@ test('Bulk forwarding destination edit never publishes or creates aliases and re
 test('Email Gen provides an owner-only CSV download with a generic export password and sequential profile names',()=>{
  assert.match(html,/id="randomAliasExport"/);
  assert.match(html,/id="randomAliasExportShikari"/);
+ assert.match(html,/id="randomAliasExportShikariTxt"/);
  assert.match(html,/profile_name,email,password/);
  assert.match(app,/const EMAIL_GEN_EXPORT_PASSWORD='Freeshit1!'/);
- assert.match(app,/function downloadEmailGenExport\(mode='basic'\)/);
+ assert.match(app,/function downloadEmailGenExport\(mode='basic',extension='csv'\)/);
  assert.match(app,/if\(!unlocked\)throw Error\('Unlock your encrypted owner Email Gen bank/);
  assert.match(app,/requireOwner\(\)/);
  const start=app.indexOf(" const EMAIL_GEN_EXPORT_PASSWORD=");
@@ -203,4 +204,26 @@ test('Both Email Gen exports put Shikari profile_name first and avoid BOM before
  assert.match(app,/new Blob\(\[result\.csv\]/,'CSV must not prepend BOM');
  assert.match(app,/shikari-email-profile-template-/);
  assert.match(html,/Export Shikari profile template CSV/);
+ assert.match(html,/Export Shikari TXT/);
+ assert.match(app,/\[shikariTextButton,'shikari','txt'\]/);
+ assert.match(app,/Unsupported Shikari export file type/);
+});
+
+
+test('Shikari TXT option uses the same first-column profile_name rows but has an actual .txt extension',()=>{
+ const start=app.indexOf(" const EMAIL_GEN_EXPORT_PASSWORD="),end=app.indexOf(" const unassignedRandom=",start);
+ let download='',type='';
+ const anchor={click(){},remove(){},set href(v){},set download(v){download=v},hidden:false};
+ const ctx={OWNER_DOMAIN:'sng.sarl',validEmail:email=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
+  records:[{alias:'one@sng.sarl'}],unlocked:true,requireOwner(){},
+  Date,document:{createElement:()=>anchor,body:{appendChild(){}}},
+  Blob:class{constructor(data,opts){type=opts.type;assert.equal(data[0].startsWith('profile_name,'),true);}},
+  URL:{createObjectURL:()=>'blob:local',revokeObjectURL(){}},
+  setTimeout:fn=>fn()};
+ vm.createContext(ctx);vm.runInContext(app.slice(start,end),ctx);
+ const result=vm.runInContext("downloadEmailGenExport('shikari','txt')",ctx);
+ assert.equal(result,1);
+ assert.match(download,/^shikari-email-profile-template-\d{4}-\d\d-\d\d\.txt$/);
+ assert.match(type,/^text\/plain/);
+ assert.throws(()=>vm.runInContext("downloadEmailGenExport('shikari','exe')",ctx),/Unsupported/);
 });
