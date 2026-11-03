@@ -1480,17 +1480,26 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   });
   // The requested settings determine which other jig transformations run.
   // A two-step combination uses a preferred base + one selected rule.
-  for(const id of remaining)for(const base of [...baseFormats,...directional]){
-   const transformed=apply(base,id);
-   if(transformed)add(transformed,[id]);
+  for(const id of remaining){
+   if(winner)break;
+   for(const base of [...baseFormats,...directional]){
+    if(winner)break;
+    const transformed=apply(base,id);
+    if(transformed)add(transformed,[id]);
+   }
   }
   // Only combine two non-primary formatting rules if ordinary choices are
   // exhausted. Existing unit fields remain protected by valid().
-  for(const first of remaining)for(const second of remaining){
-   if(first===second||first.startsWith('target.house.')&&second.startsWith('target.house.'))continue;
-   for(const base of baseFormats){
-    const one=apply(base,first);
-    if(one){const two=apply(one,second);if(two)add(two,[first,second]);}
+  if(!winner)for(const first of remaining){
+   if(winner)break;
+   for(const second of remaining){
+    if(winner)break;
+    if(first===second||first.startsWith('target.house.')&&second.startsWith('target.house.'))continue;
+    for(const base of baseFormats){
+     if(winner)break;
+     const one=apply(base,first);
+     if(one){const two=apply(one,second);if(two)add(two,[first,second]);}
+    }
    }
   }
   // A single selected profile with a requested style must actually jig, rather
